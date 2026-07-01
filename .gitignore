@@ -1,0 +1,6 @@
+runs/
+logs/
+state/
+.env
+*.pyc
+__pycache__/
