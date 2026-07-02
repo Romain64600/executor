@@ -1,6 +1,31 @@
+# Runtime / generated
 runs/
 logs/
 state/
-.env
 *.pyc
 __pycache__/
+.DS_Store
+
+# Environment & local config
+.env
+.env.*
+config/*.local.*
+
+# Secrets / credentials — never commit (see docs/AUDIT.md S1)
+# Specific patterns only, so source files are never accidentally ignored.
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+auth.txt
+secrets.json
+*.secret
+*.token
+
+# Cookies / sessions / 2FA / network captures
+cookies.txt
+cookies.json
+*.cookies
+*.har
+*.otp

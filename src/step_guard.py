@@ -107,18 +107,28 @@ class StepGuard:
         self,
         *,
         max_attempts_per_signature: int = 2,
+        max_failures_per_signature: int = 2,
         max_consecutive_failures: int = 3,
         max_failures_per_task: int = 5,
         clock: Callable[[], str] = _utc_now_iso,
     ) -> None:
+        # ``max_attempts_per_signature`` is the *attempt* ceiling checked BEFORE
+        # execution (success or failure count) — a soft, per-signature deny.
+        # ``max_failures_per_signature`` is the *failure* threshold that hard-
+        # blocks the task. They are intentionally distinct (see docs/AUDIT.md C4):
+        # a success followed by a failure can exhaust the attempt ceiling (soft
+        # deny) without hard-blocking.
         if max_attempts_per_signature < 1:
             raise ValueError("max_attempts_per_signature must be >= 1")
+        if max_failures_per_signature < 1:
+            raise ValueError("max_failures_per_signature must be >= 1")
         if max_consecutive_failures < 1:
             raise ValueError("max_consecutive_failures must be >= 1")
         if max_failures_per_task < 1:
             raise ValueError("max_failures_per_task must be >= 1")
 
         self.max_attempts_per_signature = max_attempts_per_signature
+        self.max_failures_per_signature = max_failures_per_signature
         self.max_consecutive_failures = max_consecutive_failures
         self.max_failures_per_task = max_failures_per_task
         self._clock = clock
@@ -182,13 +192,7 @@ class StepGuard:
                 signature=signature,
             )
         if self._blocked:
-            return GuardDecision(
-                allowed=False,
-                rule=self._blocked_rule,
-                reason=self._blocked_reason or "guard is blocked until a new task starts",
-                task_id=self._task_id,
-                signature=signature,
-            )
+            return self._blocked_decision(signature)
 
         attempts = self._attempts_by_sig.get(signature, 0)
         if attempts >= self.max_attempts_per_signature:
@@ -248,7 +252,7 @@ class StepGuard:
             return
 
         sig_failures = self._failures_by_sig[signature]
-        if sig_failures >= self.max_attempts_per_signature:
+        if sig_failures >= self.max_failures_per_signature:
             self._block(
                 "repeated_signature_failure",
                 f"signature '{signature}' failed {sig_failures} time(s) in task "
@@ -272,13 +276,15 @@ class StepGuard:
         self._blocked_rule = rule
         self._blocked_reason = reason
 
-    def _block_decision(self) -> GuardDecision:
+    def _blocked_decision(self, signature: str | None = None) -> GuardDecision:
+        """Single builder for a blocked decision (used by check and run_step)."""
+
         return GuardDecision(
             allowed=False,
             rule=self._blocked_rule,
-            reason=self._blocked_reason or "guard is blocked",
+            reason=self._blocked_reason or "guard is blocked until a new task starts",
             task_id=self._task_id,
-            signature=None,
+            signature=signature,
         )
 
     # -- high-level helper ---------------------------------------------
@@ -316,7 +322,7 @@ class StepGuard:
         self.record_result(tool, signature, ok, detail_text)
 
         if self._blocked:
-            raise StepGuardError(self._block_decision())
+            raise StepGuardError(self._blocked_decision(signature))
         return result
 
     # -- serialization --------------------------------------------------
@@ -330,6 +336,7 @@ class StepGuard:
             "blocked_reason": self._blocked_reason,
             "limits": {
                 "max_attempts_per_signature": self.max_attempts_per_signature,
+                "max_failures_per_signature": self.max_failures_per_signature,
                 "max_consecutive_failures": self.max_consecutive_failures,
                 "max_failures_per_task": self.max_failures_per_task,
             },

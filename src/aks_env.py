@@ -14,7 +14,7 @@ import platform
 import socket
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 OFFICIAL_CDP_ENDPOINT = "http://172.17.0.1:9223/json/version"
 HOST_CDP_ENDPOINT = "http://127.0.0.1:9222/json/version"
@@ -115,15 +115,19 @@ def validate_cdp_version_shape(cdp_version: dict[str, Any]) -> CheckResult:
     )
 
 
-def validate_aks_direct_status(status: int | None) -> CheckResult:
-    """Require AKS direct HTTP reachability."""
+# The skill/invariants define the acceptable set narrowly and deliberately.
+ACCEPTED_AKS_STATUSES = (200, 301, 302)
 
-    ok = status is not None and 200 <= status < 400
+
+def validate_aks_direct_status(status: int | None) -> CheckResult:
+    """Require AKS direct HTTP reachability with a documented status (200/301/302)."""
+
+    ok = status in ACCEPTED_AKS_STATUSES
     return CheckResult(
         name="aks_direct_status",
         ok=ok,
         detail="AKS direct URL is reachable" if ok else "AKS direct URL is not reachable",
-        data={"url": AKS_DIRECT_URL, "status": status},
+        data={"url": AKS_DIRECT_URL, "status": status, "accepted": list(ACCEPTED_AKS_STATUSES)},
     )
 
 
@@ -203,25 +207,50 @@ def _response_to_probe(url: str, response: HTTPResponse) -> HttpProbeResult:
     body = response.read().decode("utf-8", errors="replace")
     return HttpProbeResult(
         url=url,
-        ok=200 <= response.status < 400,
+        ok=response.status in ACCEPTED_AKS_STATUSES or 200 <= response.status < 300,
         status=response.status,
         body=body,
         headers=dict(response.headers.items()),
     )
 
 
-def http_get(url: str, timeout: int = 5) -> HttpProbeResult:
-    """Perform a read-only GET request."""
+class _NoRedirectHandler(HTTPRedirectHandler):
+    """Refuse to follow redirects so callers see the true first hop.
+
+    Returning None makes urllib raise ``HTTPError`` for a 3xx instead of
+    transparently following it (e.g. a redirect to a login or geo wall). The
+    caller then sees the real 3xx status and validates it deliberately.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D401
+        return None
+
+
+def _http_open(request: Request, timeout: int, follow_redirects: bool = True):
+    """Single, patchable IO seam for all read-only HTTP in this module."""
+
+    if follow_redirects:
+        return urlopen(request, timeout=timeout)
+    return build_opener(_NoRedirectHandler()).open(request, timeout=timeout)
+
+
+def http_get(url: str, timeout: int = 5, follow_redirects: bool = True) -> HttpProbeResult:
+    """Perform a read-only GET request.
+
+    With ``follow_redirects=False`` a 3xx is reported with its real status code
+    (surfaced via ``HTTPError``) rather than being followed, so reachability
+    checks see the true first hop.
+    """
 
     request = Request(url, method="GET", headers={"User-Agent": REQUIRED_USER_AGENT})
     try:
-        with urlopen(request, timeout=timeout) as response:
+        with _http_open(request, timeout=timeout, follow_redirects=follow_redirects) as response:
             return _response_to_probe(url, response)
     except HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
         return HttpProbeResult(
             url=url,
-            ok=False,
+            ok=exc.code in ACCEPTED_AKS_STATUSES,
             status=exc.code,
             body=body,
             error=str(exc),
@@ -233,15 +262,15 @@ def http_get(url: str, timeout: int = 5) -> HttpProbeResult:
         return HttpProbeResult(url=url, ok=False, status=None, body="", error=str(exc))
 
 
-def http_head_status(url: str, timeout: int = 10) -> HttpProbeResult:
+def http_head_status(url: str, timeout: int = 10, follow_redirects: bool = True) -> HttpProbeResult:
     """Perform a read-only HEAD request for reachability checks."""
 
     request = Request(url, method="HEAD", headers={"User-Agent": REQUIRED_USER_AGENT})
     try:
-        with urlopen(request, timeout=timeout) as response:
+        with _http_open(request, timeout=timeout, follow_redirects=follow_redirects) as response:
             return HttpProbeResult(
                 url=url,
-                ok=200 <= response.status < 400,
+                ok=response.status in ACCEPTED_AKS_STATUSES or 200 <= response.status < 300,
                 status=response.status,
                 body="",
                 headers=dict(response.headers.items()),
@@ -249,7 +278,7 @@ def http_head_status(url: str, timeout: int = 10) -> HttpProbeResult:
     except HTTPError as exc:
         return HttpProbeResult(
             url=url,
-            ok=False,
+            ok=exc.code in ACCEPTED_AKS_STATUSES,
             status=exc.code,
             body="",
             error=str(exc),

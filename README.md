@@ -70,15 +70,23 @@ aks-controlled-executor/
 │   ├── ARCHITECTURE.md         # roles & target flow
 │   ├── INVARIANTS.md           # non-negotiable browser/network invariants
 │   ├── SPRINT_1_PLAN.md        # read-only foundation scope
-│   └── EXECUTOR_RULES.md       # deterministic per-stage spec (from the skill)
+│   ├── EXECUTOR_RULES.md       # deterministic per-stage spec (from the skill)
+│   ├── DATA_CONTRACTS.md       # stage I/O JSON schemas + run-log format
+│   ├── AUDIT.md                # audit findings + resolution status
+│   ├── CONTRIBUTING.md         # developer guide
+│   └── CHANGELOG.md            # notable changes
+├── .github/workflows/ci.yml    # CI: unittest suite + secret scan (push / PR)
 ├── scripts/
 │   ├── 00_audit_env.sh         # read-only env audit, tags PASS/FAIL/N-A
-│   └── 01_check_invariants.py  # read-only invariant gate → JSON, fail-closed
+│   └── 01_check_invariants.py  # thin CLI over src/invariants.py (fail-closed JSON)
 ├── src/
 │   ├── aks_env.py              # constants, pure validators, env classification, HTTP probes
 │   ├── cdp_client.py           # read-only CDP /json/version client (no browser actions)
+│   ├── invariants.py           # invariant report builder — probes run through the StepGuard
+│   ├── contracts.py            # stage I/O data contracts (RawSnapshot / NormalizedOffer)
+│   ├── run_log.py              # append-only JSONL run logger (redacting)
 │   └── step_guard.py           # deterministic, fail-closed StepGuard
-├── tests/                      # pure unit tests
+├── tests/                      # unit tests (72)
 ├── config/  runs/  logs/  state/   # runtime dirs (runs/logs/state are gitignored)
 └── .gitignore
 ```
@@ -161,17 +169,22 @@ starts, so a mid-task "retry past it" is impossible. See
 
 ## Roadmap
 
-- [x] **Sprint 1 — read-only foundations:** invariant checks, read-only CDP
-  `/json/version` client, deterministic StepGuard, environment-aware audit, pure
-  unit tests.
+- [x] **Sprint 1 — read-only foundations:** invariant checks (run through the
+  StepGuard), read-only CDP `/json/version` client, deterministic StepGuard,
+  environment-aware audit, unit tests, and CI. Audited; all P1 + P2 findings
+  remediated (see [`docs/AUDIT.md`](docs/AUDIT.md) / [`docs/CHANGELOG.md`](docs/CHANGELOG.md)).
 - [ ] **Sprint 2 — read-only feed extractor** (gated on green VPS invariants):
   refresh the pending feed from scratch, extract current offers, snapshot JSON.
+  Foundations ready: data contracts (`src/contracts.py`) and JSONL run logs
+  (`src/run_log.py`).
 - [ ] **Sprint 3 — read-only matcher:** port the skill's matching rules
   (strict name match, region-from-URL, edition detection, SKIP lists, ≤100).
 - [ ] **Validation** — generate a validation file requiring exact candidate ids.
 - [ ] **Submitter** — dry-run by default, locked behind validation; submit only
   via the AKS feed UI modal; `success = offer gone from the refreshed pending feed`.
-- [ ] **Post-save verifier + JSONL run logs.**
+- [x] **Data contracts + JSONL run-log infrastructure** (`src/contracts.py`,
+  `src/run_log.py`) — ready for the stages above to use.
+- [ ] **Post-save verifier.**
 
 ---
 

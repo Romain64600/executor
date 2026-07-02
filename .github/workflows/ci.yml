@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -v
+
+      - name: Secret scan (code dirs only)
+        run: |
+          # Scan source dirs only, so this workflow's own patterns don't self-match.
+          if grep -rInE 'BEGIN (RSA |OPENSSH )?PRIVATE KEY|xox[baprs]-[0-9A-Za-z-]{10,}|ghp_[A-Za-z0-9]{30,}' src scripts tests; then
+            echo "::error::Potential secret detected in source"; exit 1
+          fi
+          echo "No obvious secrets in source."

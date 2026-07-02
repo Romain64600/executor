@@ -1,17 +1,41 @@
+import io
 import json
 import unittest
+from unittest import mock
+from urllib.error import HTTPError, URLError
 
 from src.aks_env import (
     OFFICIAL_CDP_ENDPOINT,
     REQUIRED_USER_AGENT,
     checks_to_dict,
     classify_environment,
+    current_environment,
+    http_get,
+    http_head_status,
     parse_cdp_version_payload,
     validate_aks_direct_status,
     validate_cdp_version_shape,
     validate_official_cdp_endpoint,
     validate_required_user_agent,
 )
+
+
+class _FakeResp:
+    """Minimal context-manager stand-in for an HTTP response."""
+
+    def __init__(self, status, body=b"", headers=None):
+        self.status = status
+        self._body = body
+        self.headers = headers or {}
+
+    def read(self):
+        return self._body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
 
 
 def valid_cdp_payload():
@@ -67,11 +91,11 @@ class AksEnvTests(unittest.TestCase):
         self.assertFalse(result.ok)
         self.assertEqual(result.data["missing"], ["webSocketDebuggerUrl"])
 
-    def test_validate_aks_direct_status_accepts_2xx_and_3xx_only(self):
-        self.assertTrue(validate_aks_direct_status(200).ok)
-        self.assertTrue(validate_aks_direct_status(302).ok)
-        self.assertFalse(validate_aks_direct_status(404).ok)
-        self.assertFalse(validate_aks_direct_status(None).ok)
+    def test_validate_aks_direct_status_accepts_only_200_301_302(self):
+        for good in (200, 301, 302):
+            self.assertTrue(validate_aks_direct_status(good).ok, good)
+        for bad in (204, 307, 308, 400, 404, 500, None):
+            self.assertFalse(validate_aks_direct_status(bad).ok, bad)
 
     def test_checks_to_dict_fails_closed_when_any_check_fails(self):
         checks = [validate_aks_direct_status(200), validate_official_cdp_endpoint("bad")]
@@ -108,6 +132,79 @@ class ClassifyEnvironmentTests(unittest.TestCase):
         )
 
         self.assertFalse(env["authoritative"])
+
+
+class HttpProbeTests(unittest.TestCase):
+    def test_http_get_success_2xx(self):
+        with mock.patch("src.aks_env._http_open", return_value=_FakeResp(200, b'{"a":1}')):
+            probe = http_get("http://example.test")
+        self.assertTrue(probe.ok)
+        self.assertEqual(probe.status, 200)
+        self.assertIn('"a"', probe.body)
+
+    def test_http_get_uses_get_method(self):
+        opener = mock.MagicMock(return_value=_FakeResp(200, b"{}"))
+        with mock.patch("src.aks_env._http_open", opener):
+            http_get("http://example.test")
+        self.assertEqual(opener.call_args.args[0].get_method(), "GET")
+
+    def test_http_head_uses_head_method(self):
+        opener = mock.MagicMock(return_value=_FakeResp(200, b""))
+        with mock.patch("src.aks_env._http_open", opener):
+            probe = http_head_status("http://example.test")
+        self.assertEqual(opener.call_args.args[0].get_method(), "HEAD")
+        self.assertTrue(probe.ok)
+
+    def test_http_get_http_error_maps_status(self):
+        err = HTTPError("http://example.test", 404, "Not Found", {}, io.BytesIO(b"nope"))
+        with mock.patch("src.aks_env._http_open", side_effect=err):
+            probe = http_get("http://example.test")
+        self.assertFalse(probe.ok)
+        self.assertEqual(probe.status, 404)
+        self.assertIsNotNone(probe.error)
+
+    def test_http_get_no_follow_reports_302_which_validator_accepts(self):
+        err = HTTPError("http://example.test", 302, "Found", {}, io.BytesIO(b""))
+        with mock.patch("src.aks_env._http_open", side_effect=err):
+            probe = http_get("http://example.test", follow_redirects=False)
+        self.assertEqual(probe.status, 302)
+        self.assertTrue(validate_aks_direct_status(probe.status).ok)
+
+    def test_http_get_url_error_status_none(self):
+        with mock.patch("src.aks_env._http_open", side_effect=URLError("down")):
+            probe = http_get("http://example.test")
+        self.assertFalse(probe.ok)
+        self.assertIsNone(probe.status)
+
+    def test_http_get_timeout_status_none(self):
+        with mock.patch("src.aks_env._http_open", side_effect=TimeoutError("slow")):
+            probe = http_get("http://example.test")
+        self.assertFalse(probe.ok)
+        self.assertIsNone(probe.status)
+
+
+class CurrentEnvironmentTests(unittest.TestCase):
+    def _env(self, *, system="Linux", marker=False, aks_target=None):
+        environ = {} if aks_target is None else {"AKS_TARGET": aks_target}
+        with mock.patch.dict("src.aks_env.os.environ", environ, clear=True), mock.patch(
+            "src.aks_env.platform.system", return_value=system
+        ), mock.patch("src.aks_env.os.path.exists", return_value=marker), mock.patch(
+            "src.aks_env.socket.gethostname", return_value="host"
+        ):
+            return current_environment()
+
+    def test_aks_target_vps_forces_authoritative(self):
+        self.assertTrue(self._env(aks_target="vps")["authoritative"])
+
+    def test_aks_target_dev_overrides_even_if_marker_present(self):
+        self.assertFalse(self._env(aks_target="dev", marker=True)["authoritative"])
+
+    def test_marker_file_fallback_when_no_override(self):
+        self.assertTrue(self._env(marker=True)["authoritative"])
+        self.assertFalse(self._env(marker=False)["authoritative"])
+
+    def test_vps_override_still_requires_linux(self):
+        self.assertFalse(self._env(system="Darwin", aks_target="vps")["authoritative"])
 
 
 if __name__ == "__main__":

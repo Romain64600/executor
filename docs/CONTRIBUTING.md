@@ -65,8 +65,14 @@ production failure and never unlocks write stages. Force detection with
 - A test that asserts **behavior at a boundary** is worth more than one that
   restates the implementation. Example: assert the HTTP *method* used for the AKS
   probe, so the shell/Python gates can't silently diverge (AUDIT.md C1).
-- Run the whole suite before every commit; it must stay green. CI is not yet set
-  up (AUDIT.md T1) — until it is, running locally is mandatory.
+- Run the whole suite before every commit; it must stay green. CI
+  (`.github/workflows/ci.yml`) runs the suite + a source secret-scan on every
+  push/PR, but still run it locally first (the sandbox builder can't push, so it
+  won't trigger CI for you).
+- The invariant report logic lives in `src/invariants.py` (`build_report`), which
+  runs its probes through the StepGuard — use it as the template for new stages.
+  Mock the IO seams in tests: `src.aks_env._http_open`, `src.cdp_client.http_get`,
+  or `src.invariants.http_get` / `src.invariants.ReadOnlyCdpClient`.
 
 ---
 

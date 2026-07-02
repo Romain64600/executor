@@ -24,6 +24,14 @@ reachability/gate code is the least-tested code in the repo).
 Severity: **P0** = blocks / unsafe now · **P1** = fix before building write
 stages · **P2** = nice-to-have / debt.
 
+> **Resolution status (2026-07-02).** All audit findings are addressed
+> (**72 tests green**): P1 — C1, C2, C3, S1, G1, G2, G3, T1–T4; P2 — C4, C5, C6,
+> S3, T5, T6. The only item left is **S2** — delete the stale
+> `runs/audit_2026-07-01` artifact (gitignored, never in VCS; the sandbox can't
+> unlink it, so remove it locally with `rm -rf runs/audit_20260701_150912`). See
+> [`CHANGELOG.md`](CHANGELOG.md) and [`DATA_CONTRACTS.md`](DATA_CONTRACTS.md). The
+> read-only extractor (Sprint 2) stays gated on green VPS invariants.
+
 ---
 
 ## Axis 1 — Correctness & fail-closed adherence

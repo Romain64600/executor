@@ -43,6 +43,18 @@ class ReadOnlyCdpClient:
         """Fetch /json/version and validate endpoint, shape, and User-Agent."""
 
         checks = [validate_official_cdp_endpoint(self.endpoint)]
+        # Fail closed BEFORE any network I/O: never probe a non-official endpoint
+        # (the invariants forbid 127.0.0.1:9222 and random 0.0.0.x probes).
+        if not checks[0].ok:
+            return CdpVersionResult(
+                endpoint=self.endpoint,
+                ok=False,
+                payload=None,
+                checks=checks,
+                probe=HttpProbeResult(url=self.endpoint, ok=False, status=None, body=""),
+                error="endpoint is not the official CDP proxy; refusing to probe",
+            )
+
         probe = http_get(self.endpoint, timeout=self.timeout)
         if not probe.ok:
             checks.append(

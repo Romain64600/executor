@@ -14,7 +14,12 @@ def make_guard(**kwargs):
 
 class ConstructorTests(unittest.TestCase):
     def test_rejects_non_positive_limits(self):
-        for bad in ("max_attempts_per_signature", "max_consecutive_failures", "max_failures_per_task"):
+        for bad in (
+            "max_attempts_per_signature",
+            "max_failures_per_signature",
+            "max_consecutive_failures",
+            "max_failures_per_task",
+        ):
             with self.assertRaises(ValueError):
                 make_guard(**{bad: 0})
 
@@ -104,7 +109,7 @@ class HardBlockTests(unittest.TestCase):
 
 class TaskLifecycleTests(unittest.TestCase):
     def test_same_task_id_does_not_clear_block_but_new_one_does(self):
-        guard = make_guard(max_attempts_per_signature=1)
+        guard = make_guard(max_attempts_per_signature=1, max_failures_per_signature=1)
         guard.start_task("t1")
         guard.record_result("tool", "x", False)  # 1 failure hits the limit -> block
         self.assertTrue(guard.blocked)
@@ -149,7 +154,7 @@ class RunStepTests(unittest.TestCase):
         self.assertTrue(guard.history[0].success)
 
     def test_run_step_raises_when_denied_before_execution(self):
-        guard = make_guard(max_attempts_per_signature=1)
+        guard = make_guard(max_attempts_per_signature=1, max_failures_per_signature=1)
         guard.start_task("t1")
         guard.record_result("tool", "x", False)  # blocks the task
 
@@ -158,7 +163,7 @@ class RunStepTests(unittest.TestCase):
         self.assertFalse(ctx.exception.decision.allowed)
 
     def test_run_step_raises_when_result_triggers_block(self):
-        guard = make_guard(max_attempts_per_signature=1)
+        guard = make_guard(max_attempts_per_signature=1, max_failures_per_signature=1)
         guard.start_task("t1")
 
         with self.assertRaises(StepGuardError) as ctx:
@@ -203,6 +208,52 @@ class SnapshotTests(unittest.TestCase):
         guard.record_result("tool", "a", True)
 
         self.assertEqual(guard.history[0].at, "2020-01-01T00:00:00Z")
+
+
+class P2CoverageTests(unittest.TestCase):
+    def test_success_then_failure_soft_denies_without_hard_block(self):
+        guard = make_guard(max_attempts_per_signature=2, max_failures_per_signature=2)
+        guard.start_task("t1")
+        guard.record_result("tool", "a", True)
+        guard.record_result("tool", "a", False)
+
+        self.assertFalse(guard.blocked)
+        denied = guard.check("tool", "a")
+        self.assertFalse(denied.allowed)
+        self.assertEqual(denied.rule, "max_attempts_per_signature")
+        self.assertTrue(guard.check("tool", "b").allowed)
+
+    def test_blocked_decision_keeps_signature(self):
+        guard = make_guard(max_failures_per_signature=1)
+        guard.start_task("t1")
+        guard.record_result("tool", "x", False)
+
+        decision = guard.check("tool", "y")
+        self.assertFalse(decision.allowed)
+        self.assertEqual(decision.signature, "y")
+        self.assertEqual(decision.rule, "repeated_signature_failure")
+
+    def test_record_while_blocked_keeps_block_and_grows_history(self):
+        guard = make_guard(max_failures_per_signature=1)
+        guard.start_task("t1")
+        guard.record_result("tool", "x", False)  # blocks
+        self.assertTrue(guard.blocked)
+
+        guard.record_result("tool", "x", False)  # recorded, block unchanged
+        self.assertTrue(guard.blocked)
+        self.assertEqual(len(guard.history), 2)
+
+    def test_snapshot_counters_reflect_failures(self):
+        guard = make_guard(max_failures_per_signature=5, max_consecutive_failures=5)
+        guard.start_task("t1")
+        guard.record_result("tool", "a", False)
+        guard.record_result("tool", "a", False)
+        guard.record_result("tool", "b", True)
+
+        snap = guard.snapshot()
+        self.assertEqual(snap["counters"]["failures_by_signature"], {"a": 2})
+        self.assertEqual(snap["counters"]["attempts_by_signature"], {"a": 2, "b": 1})
+        self.assertIn("max_failures_per_signature", snap["limits"])
 
 
 if __name__ == "__main__":

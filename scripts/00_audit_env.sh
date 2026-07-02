@@ -63,14 +63,15 @@ status_line() {
   echo
 
   # --- Universal: AKS direct must work without VPN ---
+  # GET, no redirect-follow (curl default), accept only 200/301/302 — identical
+  # to the Python invariant checker so the two gates cannot diverge.
   aks_code="$(curl -s -o /dev/null -w '%{http_code}' -A "$UA" --max-time 10 \
     https://www.allkeyshop.com/blog/ 2>/dev/null)"
   aks_code="${aks_code:-000}"
-  if [ "$aks_code" -ge 200 ] 2>/dev/null && [ "$aks_code" -lt 400 ] 2>/dev/null; then
-    status_line PASS "AKS direct reachable without VPN" "HTTP $aks_code"
-  else
-    status_line FAIL "AKS direct reachable without VPN" "HTTP ${aks_code:-none}"
-  fi
+  case "$aks_code" in
+    200|301|302) status_line PASS "AKS direct reachable without VPN" "HTTP $aks_code" ;;
+    *)           status_line FAIL "AKS direct reachable without VPN" "HTTP $aks_code" ;;
+  esac
 
   # --- Universal: OpenVPN must be stopped ---
   if pgrep -x openvpn >/dev/null 2>&1; then
@@ -147,12 +148,14 @@ status_line() {
     status_line NA "docker containers" "Debian runtime only"
   fi
 
-  # --- Debian-VPS-only: hermes terminal config excerpt (informational) ---
+  # --- Debian-VPS-only: hermes network-mode config (whitelisted keys only) ---
+  # Whitelist specific non-secret keys instead of dumping the section, so tokens
+  # in the config never land in the persisted report (see docs/AUDIT.md S3).
   if [ "$IS_TARGET" = "1" ] && [ -f "$TARGET_MARKER" ]; then
-    status_line INFO "hermes terminal config excerpt:"
-    grep -nA20 '^terminal:' "$TARGET_MARKER" 2>/dev/null | sed 's/^/    /'
+    status_line INFO "hermes network-mode config (whitelisted keys):"
+    grep -nE 'docker_extra_args|container_persistent|network' "$TARGET_MARKER" 2>/dev/null | sed 's/^/    /'
   else
-    status_line NA "hermes terminal config excerpt" "Debian runtime only"
+    status_line NA "hermes network-mode config" "Debian runtime only"
   fi
 
   echo
