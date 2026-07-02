@@ -3,6 +3,27 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-02 — Sprint 2: read-only feed extractor
+
+The extractor stage is built (still strictly read-only). **Suite: 83 tests green.**
+Unblocked by the VPS invariant gate going green + authoritative.
+
+- `src/cdp_session.py` — stdlib raw-socket CDP session adapted from the skill's
+  proven transport (no Origin header → avoids the Docker-terminal 403). Exposes
+  only `navigate` + `evaluate_readonly`; refuses mutation-looking expressions
+  (`.click(`, `dispatchEvent`, `setValue`, `admin-ajax`, `fetch(`…). Never clicks,
+  fills, or submits. Zero new dependencies.
+- `src/extractor.py` — `feed_url` (pagination `&p=N`), `parse_offers_payload`
+  (`html.unescape` + `json.loads`, skill rule F05), paginated extraction through
+  the StepGuard, dedupe-by-id → `RawSnapshot` + `NormalizedFeed`, logged via
+  `RunLogger`.
+- `scripts/02_extract_feed.py` — CLI that **refuses to run unless invariants are
+  green AND authoritative**, then writes `runs/<run_id>/raw.json` + `offers.json`.
+- 11 tests (feed URL, payload/entities, pagination/dedupe/stop rules, guard
+  wiring, read-only refusal). The live CDP path runs on the VPS.
+
+Run on the VPS: `python3 scripts/02_extract_feed.py --merchant Driffle --store-id 127`.
+
 ## 2026-07-02 — P2 debt cleanup
 
 Closed the P2 findings from `AUDIT.md`. **Suite: 72 tests green.**

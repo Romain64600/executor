@@ -43,6 +43,10 @@ python3 scripts/01_check_invariants.py
 
 # Unit tests (pure — run anywhere).
 python3 -m unittest discover -s tests -v
+
+# Read-only feed extractor (VPS only — needs the live CDP session).
+# Refuses to run unless invariants are green + authoritative.
+python3 scripts/02_extract_feed.py --merchant Driffle --store-id 127
 ```
 
 **Environment classification.** Both tools detect where they run; only the real

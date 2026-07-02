@@ -106,6 +106,10 @@ site** `[F01]`.
 **Never** open the submit modal, submit, edit, or log in from this stage. Write
 a raw snapshot JSON + a normalized offers JSON.
 
+Implemented in `src/extractor.py` + `scripts/02_extract_feed.py`, driving a
+read-only CDP session (`src/cdp_session.py`, navigate + evaluate only). Output
+shapes: see [`DATA_CONTRACTS.md`](DATA_CONTRACTS.md).
+
 ---
 
 ## 4. Stage 2 — Matcher (pure, deterministic)

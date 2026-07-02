@@ -78,15 +78,18 @@ aks-controlled-executor/
 ├── .github/workflows/ci.yml    # CI: unittest suite + secret scan (push / PR)
 ├── scripts/
 │   ├── 00_audit_env.sh         # read-only env audit, tags PASS/FAIL/N-A
-│   └── 01_check_invariants.py  # thin CLI over src/invariants.py (fail-closed JSON)
+│   ├── 01_check_invariants.py  # thin CLI over src/invariants.py (fail-closed JSON)
+│   └── 02_extract_feed.py      # read-only feed extractor CLI (gated on green invariants)
 ├── src/
 │   ├── aks_env.py              # constants, pure validators, env classification, HTTP probes
 │   ├── cdp_client.py           # read-only CDP /json/version client (no browser actions)
+│   ├── cdp_session.py          # read-only CDP WebSocket session (navigate + evaluate)
 │   ├── invariants.py           # invariant report builder — probes run through the StepGuard
 │   ├── contracts.py            # stage I/O data contracts (RawSnapshot / NormalizedOffer)
+│   ├── extractor.py            # Sprint 2 read-only feed extractor
 │   ├── run_log.py              # append-only JSONL run logger (redacting)
 │   └── step_guard.py           # deterministic, fail-closed StepGuard
-├── tests/                      # unit tests (72)
+├── tests/                      # unit tests (83)
 ├── config/  runs/  logs/  state/   # runtime dirs (runs/logs/state are gitignored)
 └── .gitignore
 ```
@@ -173,10 +176,11 @@ starts, so a mid-task "retry past it" is impossible. See
   StepGuard), read-only CDP `/json/version` client, deterministic StepGuard,
   environment-aware audit, unit tests, and CI. Audited; all P1 + P2 findings
   remediated (see [`docs/AUDIT.md`](docs/AUDIT.md) / [`docs/CHANGELOG.md`](docs/CHANGELOG.md)).
-- [ ] **Sprint 2 — read-only feed extractor** (gated on green VPS invariants):
-  refresh the pending feed from scratch, extract current offers, snapshot JSON.
-  Foundations ready: data contracts (`src/contracts.py`) and JSONL run logs
-  (`src/run_log.py`).
+- [x] **Sprint 2 — read-only feed extractor** — built (`src/extractor.py`,
+  `src/cdp_session.py`, `scripts/02_extract_feed.py`): navigates the merchant feed
+  read-only via CDP, paginates (`&p=N`), dedupes, emits RawSnapshot +
+  NormalizedFeed; gated at runtime on green + authoritative invariants. Pure core
+  unit-tested; **first live run happens on the VPS**.
 - [ ] **Sprint 3 — read-only matcher:** port the skill's matching rules
   (strict name match, region-from-URL, edition detection, SKIP lists, ≤100).
 - [ ] **Validation** — generate a validation file requiring exact candidate ids.
