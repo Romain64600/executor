@@ -17,8 +17,13 @@ The matcher stage is built (read-only). **Suite: 109 tests green.**
 - `scripts/03_match.py` — reads `offers.json`, resolves candidates against AKS
   (read-only GET), writes `candidates.json` + `skipped.json` + a normalized-text
   `report.txt` (no tables). Aborts if AKS is unreachable.
-- 26 tests. Forbidden-region short tokens (NA/OTHER/SEA) excluded to avoid title
+- 33 tests. Forbidden-region short tokens (NA/OTHER/SEA) excluded to avoid title
   collisions ("Sea of Thieves"); candidates are human-reviewed before any submit.
+- Hardened from the first live Driffle run (272 → 5 candidates): added the
+  different/expanded-product guard (≥2 extra significant words, or an extra version
+  number → SKIP — e.g. GreedFall "The Dying World" ≠ base GreedFall) and Gift
+  region detection (Steam 25/259, Battle.net 570/567). Re-validated: 5 → 3 clean
+  candidates.
 
 Run on the VPS: `python3 scripts/03_match.py runs/<run_id>/offers.json`.
 

@@ -55,7 +55,18 @@ REGION_IDS = {
     "UBISOFT": {"global": "50", "eu": "54", "us": "55", "uk": "52"},
     "EPIC": {"global": "80", "eu": "80eu"},
     "EA": {"global": "3", "eu": "3eu"},
-    "BATTLENET": {"global": "45", "eu": "4", "us": "41", "uk": "47"},
+    "BATTLENET": {"global": "45", "eu": "4", "us": "41", "uk": "47", "gift": "570", "gift_eu": "567"},
+}
+# Tokens that do NOT count as a "significant extra" word (platform / region /
+# format / edition / stopwords). Used by the different-product guard.
+NOISE_TOKENS = {
+    "PC", "MAC", "STEAM", "GOG", "EPIC", "EA", "APP", "ORIGIN", "UPLAY", "UBISOFT",
+    "BATTLE", "NET", "BATTLENET", "KEY", "KEYS", "CD", "CDKEY", "DIGITAL", "DOWNLOAD",
+    "CODE", "GAME", "VERSION", "FULL", "PLATFORM", "WINDOWS", "ACTIVATION", "EDITION",
+    "STANDARD", "GLOBAL", "WORLDWIDE", "WW", "EU", "EUROPE", "US", "USA", "UK", "ROW",
+    "GIFT", "REGION", "FREE", "DELUXE", "ULTIMATE", "PREMIUM", "GOLD", "GOTY",
+    "COMPLETE", "COLLECTION", "BUNDLE", "PACK", "DEFINITIVE", "REMASTERED", "REMASTER",
+    "ANNIVERSARY", "THE", "OF", "AND", "A", "AN", "FOR", "TO", "WITH", "VS",
 }
 PLATFORM_LABEL = {
     "STEAM": "Steam", "GOG": "GOG", "EPIC": "Epic", "EA": "EA App",
@@ -93,6 +104,23 @@ def missing_aks_words(aks_name: str, merchant_title: str) -> list[str]:
 
     merchant = set(tokenize(merchant_title))
     return [w for w in tokenize(aks_name) if w not in merchant]
+
+
+def extra_significant_words(aks_name: str, merchant_title: str) -> list[str]:
+    """Merchant tokens absent from the AKS name and not platform/region/format noise.
+
+    ≥2 of these (or an extra bare number = version) signals a different or expanded
+    product (skill CORE: "titre a ≥2 mots absents du nom AKS → SKIP"; e.g. GreedFall
+    "The Dying World" is not base GreedFall).
+    """
+
+    aks = set(tokenize(aks_name))
+    extras: list[str] = []
+    for token in tokenize(merchant_title):
+        if token in aks or token in NOISE_TOKENS:
+            continue
+        extras.append(token)
+    return extras
 
 
 def dangerous_qualifier(merchant_title: str, aks_name: str) -> str | None:
@@ -150,31 +178,37 @@ def _region_id(platform: str, key: str) -> str | None:
 
 
 def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | None, bool]:
-    """Return (label, region_id, implicit). URL wins over title (rule Ga01)."""
+    """Return (label, region_id, implicit). URL wins over title (rule Ga01).
+
+    Gift is layered on top of the base region (Steam 25/259, Battle.net 570/567).
+    """
 
     url = offer.url.lower()
     padded = " " + offer.name.upper() + " "
-    if "gift-eu" in url:
-        return ("GIFT EU", _region_id(platform, "gift_eu"), False)
-    if "-global" in url:
-        return ("GLOBAL", _region_id(platform, "global"), False)
-    if re.search(r"-eu(?:[-/]|$)", url):
-        return ("EU", _region_id(platform, "eu"), False)
-    if " EU " in padded or "(EU)" in padded:
-        return ("EU", _region_id(platform, "eu"), False)
-    if " UK " in padded or "(UK)" in padded:
-        return ("UK", _region_id(platform, "uk"), False)
-    if " GLOBAL " in padded or "(GLOBAL)" in padded or " WORLDWIDE " in padded:
-        return ("GLOBAL", _region_id(platform, "global"), False)
-    match = re.match(r"^[^(]*\(([^)]+)\)", offer.name)
-    if match:
-        reg = match.group(1).strip().upper()
+    is_gift = "gift-" in url or "-gift" in url or " GIFT " in padded or "GIFT)" in padded
+
+    base, label, implicit = "global", "GLOBAL", False
+    if "gift-eu" in url or re.search(r"-eu(?:[-/]|$)", url) or " EU " in padded or "(EU)" in padded:
+        base, label = "eu", "EU"
+    elif "-global" in url or " GLOBAL " in padded or "(GLOBAL)" in padded or " WORLDWIDE " in padded:
+        base, label = "global", "GLOBAL"
+    elif " UK " in padded or "(UK)" in padded:
+        base, label = "uk", "UK"
+    else:
+        match = re.match(r"^[^(]*\(([^)]+)\)", offer.name)
+        reg = match.group(1).strip().upper() if match else ""
         if reg in ("EU", "EUROPE"):
-            return ("EU", _region_id(platform, "eu"), False)
-        if reg in ("GLOBAL", "WORLDWIDE", "WW"):
-            return ("GLOBAL", _region_id(platform, "global"), False)
-    # Kinguin-style implicit GLOBAL (no forbidden region present)
-    return ("GLOBAL", _region_id(platform, "global"), True)
+            base, label = "eu", "EU"
+        elif reg in ("GLOBAL", "WORLDWIDE", "WW"):
+            base, label = "global", "GLOBAL"
+        else:
+            implicit = True  # Kinguin-style implicit GLOBAL
+
+    if is_gift:
+        if base == "eu":
+            return ("GIFT EU", _region_id(platform, "gift_eu"), implicit)
+        return ("GIFT", _region_id(platform, "gift"), implicit)
+    return (label, _region_id(platform, base), implicit)
 
 
 def detect_edition(title: str) -> tuple[str, str]:
@@ -336,6 +370,10 @@ def match_offer(
     missing = missing_aks_words(resolution.aks_name, offer.name)
     if missing:
         return SkippedOffer(offer, f"name mismatch, missing AKS words: {missing}")
+
+    extras = extra_significant_words(resolution.aks_name, offer.name)
+    if len(extras) >= 2 or any(e.isdigit() for e in extras):
+        return SkippedOffer(offer, f"different/expanded product — extra words: {extras}")
 
     qualifier = dangerous_qualifier(offer.name, resolution.aks_name)
     if qualifier:

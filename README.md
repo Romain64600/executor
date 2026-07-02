@@ -91,7 +91,7 @@ aks-controlled-executor/
 │   ├── matcher.py              # Sprint 3 read-only matcher (candidates + skipped)
 │   ├── run_log.py              # append-only JSONL run logger (redacting)
 │   └── step_guard.py           # deterministic, fail-closed StepGuard
-├── tests/                      # unit tests (109)
+├── tests/                      # unit tests (116)
 ├── config/  runs/  logs/  state/   # runtime dirs (runs/logs/state are gitignored)
 └── .gitignore
 ```

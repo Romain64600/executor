@@ -11,6 +11,7 @@ from src.matcher import (
     detect_edition,
     detect_platform,
     detect_region,
+    extra_significant_words,
     match_feed,
     match_offer,
     missing_aks_words,
@@ -162,6 +163,49 @@ class MatchOfferTests(unittest.TestCase):
         self.assertIn("#1 —", block)
         self.assertIn("205027", block)
         self.assertIn("Steam GLOBAL(2), Standard(1)", block)
+
+
+class DifferentProductTests(unittest.TestCase):
+    def _resolver(self, aks_name):
+        res = AksResolution("slug", "https://aks/x", "27577", aks_name, {"1": {"name": "Standard"}})
+        return lambda name: res
+
+    def test_extra_words_detected(self):
+        extras = extra_significant_words(
+            "Greedfall",
+            "GreedFall - The Dying World - Deluxe Edition (Europe) (PC) - Steam - Digital Key",
+        )
+        self.assertIn("DYING", extras)
+        self.assertIn("WORLD", extras)
+
+    def test_the_dying_world_is_skipped(self):
+        offer = _offer("GreedFall - The Dying World - Deluxe Edition (Global) (PC) - Steam - Digital Key")
+        result = match_offer(offer, self._resolver("Greedfall"))
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("extra words", result.reason)
+
+    def test_version_number_is_skipped(self):
+        result = match_offer(_offer("FIFA 23 - Steam"), self._resolver("FIFA"))
+        self.assertIsInstance(result, SkippedOffer)
+
+    def test_matching_base_game_still_a_candidate(self):
+        offer = _offer("Bus Simulator 27 (Global) (PC) - Steam - Digital Key")
+        result = match_offer(offer, self._resolver("Bus Simulator 27"))
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual((result.region_label, result.region_id), ("GLOBAL", "2"))
+
+
+class GiftRegionTests(unittest.TestCase):
+    def test_battlenet_gift_maps_to_570(self):
+        offer = _offer("Overwatch Skin Bundle (Global) (PC) - Battle.net Gift",
+                       url="https://driffle.com/x-battlenet-gift-p1")
+        self.assertEqual(detect_region(offer, "BATTLENET"), ("GIFT", "570", False))
+
+    def test_steam_gift_maps_to_25(self):
+        self.assertEqual(detect_region(_offer("Game Steam Gift GLOBAL"), "STEAM"), ("GIFT", "25", False))
+
+    def test_steam_gift_eu_maps_to_259(self):
+        self.assertEqual(detect_region(_offer("Game Steam Gift EU"), "STEAM"), ("GIFT EU", "259", False))
 
 
 class MatchFeedTests(unittest.TestCase):
