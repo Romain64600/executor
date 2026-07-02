@@ -3,6 +3,22 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-02 — Stage 3: validation gate
+
+Read-only validation — the fail-closed gate before any submission. **125 tests green.**
+
+- `src/validation.py` — `validation_template` (operator fills approve + who/when)
+  and `load_validation`, which verifies a filled file against the CURRENT
+  candidates: `run_id` must match, `validated_by`/`validated_at` required, and every
+  approved entry must be an exact current candidate by fingerprint
+  (`offer_id|aks_product_id|region_id|edition_id`) — a re-match that changes a
+  region/edition invalidates a stale approval (skill S15). Any problem rejects the
+  whole file (never partially honored).
+- `scripts/04_validate.py` — `template` writes `validation.template.json`; `check`
+  verifies a filled `validation.json` and writes `approved.json`. Read-only.
+- 9 tests. This approval is the lock the future submitter will require — no
+  submission is possible without it.
+
 ## 2026-07-02 — Sprint 3: read-only matcher
 
 The matcher stage is built (read-only). **Suite: 109 tests green.**

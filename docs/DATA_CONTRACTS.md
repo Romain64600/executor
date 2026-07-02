@@ -83,6 +83,16 @@ resolved AKS product (`aks_product_id`, `aks_url`, `aks_name`), and the detected
 `platform` / `region {label,id,implicit}` / `edition {label,id}`. A `SkippedOffer`
 is `{offer, reason}`. The report is text only (no tables), one block per candidate.
 
+## Validation file (Stage 3)
+
+`src/validation.py` generates a `validation.template.json` from `candidates.json`;
+the operator sets `approve:true` and fills `validated_by` / `validated_at`, then
+`check` verifies it. A candidate is keyed by `fingerprint`
+(`offer_id|aks_product_id|region_id|edition_id`). `load_validation` requires the
+`run_id` to match, who/when to be present, and every approved `fingerprint` to be an
+exact current candidate — otherwise the whole file is rejected (fail-closed). Output:
+`approved.json` (the exact offers cleared for a future submitter).
+
 ## Run log (JSONL)
 
 `src/run_log.py`'s `RunLogger` writes one JSON object per line to

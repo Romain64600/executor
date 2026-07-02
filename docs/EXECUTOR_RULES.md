@@ -181,6 +181,11 @@ candidates** of the **current active task** `[S15]`. The validator takes the
 candidates JSON and requires: exact candidate ids, `run_id`, `validated_by`,
 `validated_at`. A previous "oui" never authorizes a new/later batch.
 
+Implemented in `src/validation.py` + `scripts/04_validate.py`. Candidates are
+matched by fingerprint (`offer_id|aks_product_id|region_id|edition_id`), so a
+re-match that changes region/edition invalidates a stale approval; any problem
+rejects the whole file (fail-closed). See [`DATA_CONTRACTS.md`](DATA_CONTRACTS.md).
+
 ---
 
 ## 6. Stage 4 — Submitter (dry-run by default, locked behind validation)

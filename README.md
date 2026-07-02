@@ -80,7 +80,8 @@ aks-controlled-executor/
 │   ├── 00_audit_env.sh         # read-only env audit, tags PASS/FAIL/N-A
 │   ├── 01_check_invariants.py  # thin CLI over src/invariants.py (fail-closed JSON)
 │   ├── 02_extract_feed.py      # read-only feed extractor CLI (gated on green invariants)
-│   └── 03_match.py             # read-only matcher CLI → candidates/skipped/report
+│   ├── 03_match.py             # read-only matcher CLI → candidates/skipped/report
+│   └── 04_validate.py          # validation CLI (template + check, fail-closed gate)
 ├── src/
 │   ├── aks_env.py              # constants, pure validators, env classification, HTTP probes
 │   ├── cdp_client.py           # read-only CDP /json/version client (no browser actions)
@@ -89,9 +90,10 @@ aks-controlled-executor/
 │   ├── contracts.py            # stage I/O data contracts (RawSnapshot / NormalizedOffer)
 │   ├── extractor.py            # Sprint 2 read-only feed extractor
 │   ├── matcher.py              # Sprint 3 read-only matcher (candidates + skipped)
+│   ├── validation.py           # Stage 3 validation gate (approve exact candidates)
 │   ├── run_log.py              # append-only JSONL run logger (redacting)
 │   └── step_guard.py           # deterministic, fail-closed StepGuard
-├── tests/                      # unit tests (116)
+├── tests/                      # unit tests (125)
 ├── config/  runs/  logs/  state/   # runtime dirs (runs/logs/state are gitignored)
 └── .gitignore
 ```
@@ -187,7 +189,8 @@ starts, so a mid-task "retry past it" is impossible. See
   strict name match (R01/R01b), SKIP lists, region-from-URL, edition detection,
   AKS slug resolve (`data-product-id` + editions), ≤100 candidates, normalized-text
   report. Pure core unit-tested; live AKS resolve runs on the VPS.
-- [ ] **Validation** — generate a validation file requiring exact candidate ids.
+- [x] **Validation** (`src/validation.py`, `scripts/04_validate.py`) — fail-closed
+  gate: approve exact candidates by fingerprint; no submission without it.
 - [ ] **Submitter** — dry-run by default, locked behind validation; submit only
   via the AKS feed UI modal; `success = offer gone from the refreshed pending feed`.
 - [x] **Data contracts + JSONL run-log infrastructure** (`src/contracts.py`,

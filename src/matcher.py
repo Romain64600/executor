@@ -317,8 +317,15 @@ class Candidate:
     edition_id: str
     region_implicit: bool = False
 
+    @property
+    def fingerprint(self) -> str:
+        """Exact submission identity — a stale approval fails if any part changes."""
+
+        return f"{self.offer.offer_id}|{self.aks_product_id}|{self.region_id}|{self.edition_id}"
+
     def to_dict(self) -> dict[str, Any]:
         return {
+            "fingerprint": self.fingerprint,
             "offer": self.offer.to_dict(),
             "aks_product_id": self.aks_product_id,
             "aks_url": self.aks_url,
