@@ -3,6 +3,25 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-02 — Sprint 3: read-only matcher
+
+The matcher stage is built (read-only). **Suite: 109 tests green.**
+
+- `src/matcher.py` — ports EXECUTOR_RULES §4: apostrophe-normalized tokenizer,
+  R01 strict name match, R01b dangerous-qualifier guard, categorical SKIP lists
+  (console, forbidden region, currency/gift/sub, DLC, bundle, language
+  restriction), platform + region (URL-first) + edition detection, AKS slug build
+  + read-only resolve (`data-product-id` + editions), cap 100. `Candidate` +
+  `SkippedOffer` dataclasses; `normalized_block` emits the skill's exact report
+  format (`#N — … / 🎯 id — name / 🔗 url / 🎯 aks-url / Platform REGION(id), Edition(id)`).
+- `scripts/03_match.py` — reads `offers.json`, resolves candidates against AKS
+  (read-only GET), writes `candidates.json` + `skipped.json` + a normalized-text
+  `report.txt` (no tables). Aborts if AKS is unreachable.
+- 26 tests. Forbidden-region short tokens (NA/OTHER/SEA) excluded to avoid title
+  collisions ("Sea of Thieves"); candidates are human-reviewed before any submit.
+
+Run on the VPS: `python3 scripts/03_match.py runs/<run_id>/offers.json`.
+
 ## 2026-07-02 — Sprint 2: read-only feed extractor
 
 The extractor stage is built (still strictly read-only). **Suite: 83 tests green.**

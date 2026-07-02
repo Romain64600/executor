@@ -74,6 +74,15 @@ Validation (`NormalizedOffer.from_raw` / `NormalizedFeed.from_snapshot`): missin
 fix, not to hide). Note: filtering (console/DLC/region SKIPs) is the **matcher's**
 job, not the extractor's — normalization keeps every well-formed row.
 
+## Candidate / SkippedOffer (matcher output — Sprint 3)
+
+`src/matcher.py` turns a `NormalizedFeed` into `candidates.json` (list of
+`Candidate.to_dict()`) and `skipped.json` (list of `SkippedOffer.to_dict()`), plus
+a normalized-text `report.txt`. A `Candidate` carries the source offer, the
+resolved AKS product (`aks_product_id`, `aks_url`, `aks_name`), and the detected
+`platform` / `region {label,id,implicit}` / `edition {label,id}`. A `SkippedOffer`
+is `{offer, reason}`. The report is text only (no tables), one block per candidate.
+
 ## Run log (JSONL)
 
 `src/run_log.py`'s `RunLogger` writes one JSON object per line to

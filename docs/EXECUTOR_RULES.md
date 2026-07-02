@@ -168,6 +168,10 @@ after investigation → **SKIP**, do not ask `[G02]`. The live WP-admin dropdown
 the source of truth for region **and** edition; static tables are only a guide
 `[CORE rule 7][P06][E04]`.
 
+Implemented in `src/matcher.py` + `scripts/03_match.py` (read-only GET resolve).
+Candidates are for Romain's validation, never auto-submitted; short forbidden
+tokens (NA/OTHER/SEA) are excluded from the SKIP list to avoid title collisions.
+
 ---
 
 ## 5. Stage 3 — Validation

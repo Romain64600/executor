@@ -1,0 +1,381 @@
+"""Read-only matcher (Sprint 3) — ports the skill's matching rules.
+
+Consumes a :class:`~src.contracts.NormalizedFeed` and produces candidates +
+skipped offers. It never submits; candidates are for Romain's validation.
+
+Deterministic rules (see EXECUTOR_RULES §4), in order:
+  1. categorical SKIP (console, forbidden region, currency/gift/sub, DLC, bundle,
+     language restriction);
+  2. detect platform, region (URL-first), edition;
+  3. build AKS slug(s) from the merchant name and resolve them (200 +
+     ``data-product-id`` + editions map) — read-only GET;
+  4. R01 strict name match (every AKS-name word in the merchant title) and R01b
+     dangerous-qualifier guard (remaster/DLC/HD… absent from the AKS name).
+Doubt → SKIP. The whole module is pure except ``resolve_aks``, whose HTTP client
+is injectable for tests.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from dataclasses import dataclass, field
+from typing import Any, Callable
+
+from src.aks_env import http_get
+from src.contracts import NormalizedFeed, NormalizedOffer
+
+AKS_BUY_URL = "https://www.allkeyshop.com/blog/buy-{slug}-cd-key-compare-prices/"
+
+# -- classification tables --------------------------------------------------
+CONSOLE_TOKENS = ("XBOX", "PLAYSTATION", "PS4", "PS5", "PSN", "NINTENDO", "SWITCH")
+# Bare short tokens (NA/OTHER/SEA) are deliberately excluded — they collide with
+# ordinary title words (e.g. "Sea of Thieves"). Candidates are human-reviewed.
+FORBIDDEN_REGIONS = (
+    "ROW", "ROW ONLY", "AMERICAS", "ASIA", "NORTH AMERICA", "EMEA",
+    "CIS", "TURKEY", "GERMANY", "EASTERN EUROPE", "MIDDLE EAST", "MENA",
+    "LATAM", "SOUTH AMERICA", "RU ONLY", "CHINA", "JAPAN", "KOREA", "BRAZIL",
+    "INDIA", "ARGENTINA", "RUSSIA", "AUSTRALIA",
+)
+CATEGORY_SKIP = (
+    "GIFT CARD", "WALLET", "CASH CARD", "SHARK CARD", "VOUCHER", "SUBSCRIPTION",
+    "PREPAID", "SOFTWARE", "ANTIVIRUS", "OFFICE", "VPN", "POINTS", "CREDITS",
+    "COINS", "GEMS", "DIAMONDS", "TOP-UP", "TOP UP", "MEMBERSHIP", "CURRENCY",
+    "ACTIVATION LINK", "STEAM ACCOUNT", "STEAM GIFT CARD",
+)
+DANGEROUS_QUALIFIERS = (
+    "REMASTERED", "REMASTER", "REBOOT", "REMAKE", "REDUX", "SEASON PASS", "DLC",
+    "UPGRADE", "SOUNDTRACK", "ARTBOOK", "DIGITAL BOOK", " HD",
+)
+
+# platform -> region key -> AKS region id (EXECUTOR_RULES §10; dropdown is truth)
+REGION_IDS = {
+    "STEAM": {"global": "2", "eu": "9", "us": "8", "uk": "71", "gift": "25", "gift_eu": "259"},
+    "GOG": {"global": "6", "eu": "62", "us": "63", "uk": "64"},
+    "UBISOFT": {"global": "50", "eu": "54", "us": "55", "uk": "52"},
+    "EPIC": {"global": "80", "eu": "80eu"},
+    "EA": {"global": "3", "eu": "3eu"},
+    "BATTLENET": {"global": "45", "eu": "4", "us": "41", "uk": "47"},
+}
+PLATFORM_LABEL = {
+    "STEAM": "Steam", "GOG": "GOG", "EPIC": "Epic", "EA": "EA App",
+    "UBISOFT": "Ubisoft", "BATTLENET": "Battle.net",
+}
+# ordered so specific hints win (Ultimate Collection before Ultimate/Collection)
+EDITION_HINTS = (
+    (r"\bULTIMATE COLLECTION\b", "Ultimate Collection", "348"),
+    (r"\bGAME OF THE YEAR\b|\bGOTY\b", "GOTY", "9"),
+    (r"\bDELUXE\b", "Deluxe", "7"),
+    (r"\bGOLD\b", "Gold", "10"),
+    (r"\bPREMIUM\b", "Premium", "34"),
+    (r"\bCOMPLETE\b", "Complete", "91"),
+    (r"\bULTIMATE\b", "Ultimate", "21"),
+    (r"\bBUNDLE\b|\bPACK\b|\bTRILOGY\b", "Bundle", "8"),
+    (r"\bCOLLECTION\b", "Collection", "98"),
+    (r"\bDLC\b", "DLC", "16"),
+)
+
+
+# -- pure helpers -----------------------------------------------------------
+def normalize_apostrophes(text: str) -> str:
+    return text.replace("’", "'").replace("‘", "'")
+
+
+def tokenize(name: str) -> list[str]:
+    """Uppercase word tokens, apostrophes normalized, punctuation stripped."""
+
+    cleaned = normalize_apostrophes(name).upper()
+    return [t for t in re.findall(r"[A-Z0-9']+", cleaned) if t.strip("'")]
+
+
+def missing_aks_words(aks_name: str, merchant_title: str) -> list[str]:
+    """R01: AKS-name tokens absent from the merchant title (empty list = match)."""
+
+    merchant = set(tokenize(merchant_title))
+    return [w for w in tokenize(aks_name) if w not in merchant]
+
+
+def dangerous_qualifier(merchant_title: str, aks_name: str) -> str | None:
+    """R01b: a dangerous qualifier in the merchant title but not the AKS name."""
+
+    mt = " " + merchant_title.upper() + " "
+    an = " " + aks_name.upper() + " "
+    for q in DANGEROUS_QUALIFIERS:
+        if q in mt and q not in an:
+            return q.strip()
+    return None
+
+
+def precheck_skip(offer: NormalizedOffer) -> str | None:
+    """Categorical SKIPs from the merchant title/URL, before any AKS lookup."""
+
+    padded = " " + re.sub(r"[^A-Z0-9]+", " ", offer.name.upper()) + " "
+    if any(f" {t} " in padded for t in CONSOLE_TOKENS):
+        return "console"
+    for region in FORBIDDEN_REGIONS:
+        if f" {region} " in padded:
+            return f"forbidden region: {region}"
+    upper = offer.name.upper()
+    for cat in CATEGORY_SKIP:
+        if cat in upper:
+            return f"skip category: {cat}"
+    if " DLC " in padded or "DOWNLOADABLE CONTENT" in upper:
+        return "DLC in title"
+    if " + " in offer.name:
+        return "possible multi-game bundle"
+    if "LANGUAGES ONLY" in upper or "LANGUAGE ONLY" in upper:
+        return "language restriction"
+    if re.search(r"\b(EN|FR|ES|DE|IT|PT|CS|PL|RU)\s*/\s*(EN|FR|ES|DE|IT|PT|CS|PL|RU)\b", upper):
+        return "language restriction"
+    return None
+
+
+def detect_platform(title: str) -> str:
+    t = title.upper()
+    if "GOG" in t:
+        return "GOG"
+    if "EPIC" in t:
+        return "EPIC"
+    if "UBISOFT" in t or "UPLAY" in t:
+        return "UBISOFT"
+    if "EA APP" in t or "ORIGIN KEY" in t or "EA ORIGIN" in t or "ORIGIN CD KEY" in t:
+        return "EA"  # R14: bare "Origin" in a game name is NOT the EA platform
+    if "BATTLE.NET" in t or "BATTLENET" in t:
+        return "BATTLENET"
+    return "STEAM"  # default; most PC keys are Steam
+
+
+def _region_id(platform: str, key: str) -> str | None:
+    return REGION_IDS.get(platform, REGION_IDS["STEAM"]).get(key)
+
+
+def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | None, bool]:
+    """Return (label, region_id, implicit). URL wins over title (rule Ga01)."""
+
+    url = offer.url.lower()
+    padded = " " + offer.name.upper() + " "
+    if "gift-eu" in url:
+        return ("GIFT EU", _region_id(platform, "gift_eu"), False)
+    if "-global" in url:
+        return ("GLOBAL", _region_id(platform, "global"), False)
+    if re.search(r"-eu(?:[-/]|$)", url):
+        return ("EU", _region_id(platform, "eu"), False)
+    if " EU " in padded or "(EU)" in padded:
+        return ("EU", _region_id(platform, "eu"), False)
+    if " UK " in padded or "(UK)" in padded:
+        return ("UK", _region_id(platform, "uk"), False)
+    if " GLOBAL " in padded or "(GLOBAL)" in padded or " WORLDWIDE " in padded:
+        return ("GLOBAL", _region_id(platform, "global"), False)
+    match = re.match(r"^[^(]*\(([^)]+)\)", offer.name)
+    if match:
+        reg = match.group(1).strip().upper()
+        if reg in ("EU", "EUROPE"):
+            return ("EU", _region_id(platform, "eu"), False)
+        if reg in ("GLOBAL", "WORLDWIDE", "WW"):
+            return ("GLOBAL", _region_id(platform, "global"), False)
+    # Kinguin-style implicit GLOBAL (no forbidden region present)
+    return ("GLOBAL", _region_id(platform, "global"), True)
+
+
+def detect_edition(title: str) -> tuple[str, str]:
+    upper = title.upper()
+    for pattern, label, edition_id in EDITION_HINTS:
+        if re.search(pattern, upper):
+            return (label, edition_id)
+    return ("Standard", "1")
+
+
+def _clean_name_for_slug(name: str) -> str:
+    without_parens = re.sub(r"\([^)]*\)", " ", normalize_apostrophes(name))
+    head = re.split(r"\s[-–—]\s", without_parens)[0]
+    return head
+
+
+def build_slug_candidates(name: str) -> list[str]:
+    base = _clean_name_for_slug(name).lower()
+    variants = [
+        re.sub(r"[^a-z0-9]+", "-", base.replace("'", "")).strip("-"),
+        re.sub(r"[^a-z0-9]+", "-", base).strip("-"),
+    ]
+    out: list[str] = []
+    for variant in variants:
+        variant = re.sub(r"-+", "-", variant)
+        if variant and variant not in out:
+            out.append(variant)
+    return out
+
+
+def aks_url(slug: str) -> str:
+    return AKS_BUY_URL.format(slug=slug)
+
+
+# -- AKS page extraction ----------------------------------------------------
+def extract_product_id(body: str) -> str | None:
+    match = re.search(r'data-product-id=["\']?(\d+)', body)
+    return match.group(1) if match else None
+
+
+def extract_aks_name(body: str) -> str | None:
+    match = re.search(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)', body)
+    if not match:
+        match = re.search(r"<title>([^<]+)</title>", body, re.IGNORECASE)
+    if not match:
+        return None
+    name = match.group(1)
+    name = re.split(r"(?i)\bcd key\b", name)[0]
+    name = re.sub(r"(?i)^\s*buy\s+", "", name)
+    name = re.split(r"\s[|\-–]\s", name)[0]
+    return name.strip() or None
+
+
+def extract_editions(body: str) -> dict[str, Any]:
+    match = re.search(r'"editions"\s*:\s*(\{(?:[^{}]|\{[^{}]*\})*\})', body)
+    if not match:
+        return {}
+    try:
+        return json.loads(match.group(1))
+    except ValueError:
+        return {}
+
+
+@dataclass(frozen=True)
+class AksResolution:
+    slug: str
+    url: str
+    product_id: str
+    aks_name: str
+    editions: dict[str, Any] = field(default_factory=dict)
+
+
+def resolve_aks(name: str, http_get_fn: Callable[..., Any] = http_get) -> AksResolution | None:
+    """Try each candidate slug read-only; return the first real product page."""
+
+    for slug in build_slug_candidates(name):
+        url = aks_url(slug)
+        probe = http_get_fn(url, timeout=8)
+        if not (probe.ok and probe.status == 200 and probe.body):
+            continue
+        product_id = extract_product_id(probe.body)
+        if not product_id:
+            continue
+        aks_name = extract_aks_name(probe.body) or name
+        return AksResolution(
+            slug=slug,
+            url=url,
+            product_id=product_id,
+            aks_name=aks_name,
+            editions=extract_editions(probe.body),
+        )
+    return None
+
+
+# -- results ----------------------------------------------------------------
+@dataclass(frozen=True)
+class Candidate:
+    offer: NormalizedOffer
+    aks_product_id: str
+    aks_url: str
+    aks_name: str
+    platform: str
+    region_label: str
+    region_id: str
+    edition_label: str
+    edition_id: str
+    region_implicit: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "offer": self.offer.to_dict(),
+            "aks_product_id": self.aks_product_id,
+            "aks_url": self.aks_url,
+            "aks_name": self.aks_name,
+            "platform": self.platform,
+            "region": {"label": self.region_label, "id": self.region_id, "implicit": self.region_implicit},
+            "edition": {"label": self.edition_label, "id": self.edition_id},
+        }
+
+    def normalized_block(self, index: int) -> str:
+        platform = PLATFORM_LABEL.get(self.platform, self.platform)
+        implicit = " [region implicit]" if self.region_implicit else ""
+        return (
+            f"#{index} — {self.offer.name}\n"
+            f"\U0001F3AF {self.aks_product_id} — {self.aks_name}\n"
+            f"\U0001F517 {self.offer.url}\n"
+            f"\U0001F3AF {self.aks_url}\n"
+            f"{platform} {self.region_label}({self.region_id}), "
+            f"{self.edition_label}({self.edition_id}){implicit}"
+        )
+
+
+@dataclass(frozen=True)
+class SkippedOffer:
+    offer: NormalizedOffer
+    reason: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"offer": self.offer.to_dict(), "reason": self.reason}
+
+
+def match_offer(
+    offer: NormalizedOffer,
+    resolver: Callable[[str], AksResolution | None] = resolve_aks,
+) -> Candidate | SkippedOffer:
+    reason = precheck_skip(offer)
+    if reason:
+        return SkippedOffer(offer, reason)
+
+    platform = detect_platform(offer.name)
+    region_label, region_id, implicit = detect_region(offer, platform)
+    if region_id is None:
+        return SkippedOffer(offer, f"no region id for {platform}/{region_label}")
+
+    resolution = resolver(offer.name)
+    if resolution is None:
+        return SkippedOffer(offer, "no AKS product page found (slug not 200)")
+
+    missing = missing_aks_words(resolution.aks_name, offer.name)
+    if missing:
+        return SkippedOffer(offer, f"name mismatch, missing AKS words: {missing}")
+
+    qualifier = dangerous_qualifier(offer.name, resolution.aks_name)
+    if qualifier:
+        return SkippedOffer(offer, f"dangerous qualifier absent from AKS name: {qualifier}")
+
+    edition_label, edition_id = detect_edition(offer.name)
+    # CORE rule 4 / E05: an edition word that is part of the AKS game name is not
+    # an edition — fall back to Standard.
+    if edition_id != "1" and edition_label.upper() in resolution.aks_name.upper():
+        edition_label, edition_id = "Standard", "1"
+
+    return Candidate(
+        offer=offer,
+        aks_product_id=resolution.product_id,
+        aks_url=resolution.url,
+        aks_name=resolution.aks_name,
+        platform=platform,
+        region_label=region_label,
+        region_id=region_id,
+        edition_label=edition_label,
+        edition_id=edition_id,
+        region_implicit=implicit,
+    )
+
+
+def match_feed(
+    feed: NormalizedFeed,
+    resolver: Callable[[str], AksResolution | None] = resolve_aks,
+    *,
+    max_candidates: int = 100,
+) -> tuple[list[Candidate], list[SkippedOffer]]:
+    candidates: list[Candidate] = []
+    skipped: list[SkippedOffer] = []
+    for offer in feed.offers:
+        result = match_offer(offer, resolver)
+        if isinstance(result, Candidate):
+            if len(candidates) < max_candidates:
+                candidates.append(result)
+            else:
+                skipped.append(SkippedOffer(offer, "candidate cap reached (max 100)"))
+        else:
+            skipped.append(result)
+    return candidates, skipped

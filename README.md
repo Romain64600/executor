@@ -79,7 +79,8 @@ aks-controlled-executor/
 ├── scripts/
 │   ├── 00_audit_env.sh         # read-only env audit, tags PASS/FAIL/N-A
 │   ├── 01_check_invariants.py  # thin CLI over src/invariants.py (fail-closed JSON)
-│   └── 02_extract_feed.py      # read-only feed extractor CLI (gated on green invariants)
+│   ├── 02_extract_feed.py      # read-only feed extractor CLI (gated on green invariants)
+│   └── 03_match.py             # read-only matcher CLI → candidates/skipped/report
 ├── src/
 │   ├── aks_env.py              # constants, pure validators, env classification, HTTP probes
 │   ├── cdp_client.py           # read-only CDP /json/version client (no browser actions)
@@ -87,9 +88,10 @@ aks-controlled-executor/
 │   ├── invariants.py           # invariant report builder — probes run through the StepGuard
 │   ├── contracts.py            # stage I/O data contracts (RawSnapshot / NormalizedOffer)
 │   ├── extractor.py            # Sprint 2 read-only feed extractor
+│   ├── matcher.py              # Sprint 3 read-only matcher (candidates + skipped)
 │   ├── run_log.py              # append-only JSONL run logger (redacting)
 │   └── step_guard.py           # deterministic, fail-closed StepGuard
-├── tests/                      # unit tests (83)
+├── tests/                      # unit tests (109)
 ├── config/  runs/  logs/  state/   # runtime dirs (runs/logs/state are gitignored)
 └── .gitignore
 ```
@@ -181,8 +183,10 @@ starts, so a mid-task "retry past it" is impossible. See
   read-only via CDP, paginates (`&p=N`), dedupes, emits RawSnapshot +
   NormalizedFeed; gated at runtime on green + authoritative invariants. Pure core
   unit-tested; **first live run happens on the VPS**.
-- [ ] **Sprint 3 — read-only matcher:** port the skill's matching rules
-  (strict name match, region-from-URL, edition detection, SKIP lists, ≤100).
+- [x] **Sprint 3 — read-only matcher** (`src/matcher.py`, `scripts/03_match.py`):
+  strict name match (R01/R01b), SKIP lists, region-from-URL, edition detection,
+  AKS slug resolve (`data-product-id` + editions), ≤100 candidates, normalized-text
+  report. Pure core unit-tested; live AKS resolve runs on the VPS.
 - [ ] **Validation** — generate a validation file requiring exact candidate ids.
 - [ ] **Submitter** — dry-run by default, locked behind validation; submit only
   via the AKS feed UI modal; `success = offer gone from the refreshed pending feed`.
