@@ -19,6 +19,11 @@ only adds Claude-specific notes on top of them.
   genuinely new task. "go" only authorizes the exact current validated action
   under the strict process.
 
+- The deterministic, per-stage rules derived from the `aks-data-entry` skill live
+  in **`docs/EXECUTOR_RULES.md`**. Read it before building or changing any
+  executor stage. Key example: a submit `success` = the offer disappeared from
+  the refreshed pending feed, never `[data-success]`.
+
 - **Fail-closed.** If anything is uncertain, stop. No fallback browser, no
   Playwright, no Browserbase, no VPN when AKS direct works, no ad-hoc browser
   actions, no degraded submit mode.

@@ -58,6 +58,11 @@ https://www.allkeyshop.com/blog/
 
 ## Required architecture
 
+The deterministic, per-stage rules (extractor, matcher, submitter, post-save
+verification, reporting) derived from the `aks-data-entry` skill are specified in
+`docs/EXECUTOR_RULES.md`. Read and follow it when implementing any stage; it is
+the authoritative bridge between the skill and this code.
+
 Build in stages:
 
 1. Environment audit script.
