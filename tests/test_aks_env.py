@@ -5,6 +5,7 @@ from src.aks_env import (
     OFFICIAL_CDP_ENDPOINT,
     REQUIRED_USER_AGENT,
     checks_to_dict,
+    classify_environment,
     parse_cdp_version_payload,
     validate_aks_direct_status,
     validate_cdp_version_shape,
@@ -79,6 +80,34 @@ class AksEnvTests(unittest.TestCase):
 
         self.assertFalse(result["ok"])
         self.assertEqual(len(result["checks"]), 2)
+
+
+class ClassifyEnvironmentTests(unittest.TestCase):
+    def test_linux_with_target_marker_is_authoritative(self):
+        env = classify_environment(
+            system="Linux", target_marker_present=True, hostname="vps-debian"
+        )
+
+        self.assertTrue(env["is_target"])
+        self.assertTrue(env["authoritative"])
+        self.assertEqual(env["hostname"], "vps-debian")
+
+    def test_macos_is_not_authoritative(self):
+        env = classify_environment(
+            system="Darwin", target_marker_present=False, hostname="MacBook-Air"
+        )
+
+        self.assertFalse(env["is_target"])
+        self.assertFalse(env["authoritative"])
+        self.assertIn("NOT", env["note"])
+
+    def test_linux_without_marker_is_not_authoritative(self):
+        # Debian-derived sandbox (Ubuntu CI) must NOT be treated as the VPS.
+        env = classify_environment(
+            system="Linux", target_marker_present=False, hostname="ubuntu-sandbox"
+        )
+
+        self.assertFalse(env["authoritative"])
 
 
 if __name__ == "__main__":

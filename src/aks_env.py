@@ -9,6 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from http.client import HTTPResponse
 import json
+import os
+import platform
+import socket
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -139,6 +142,61 @@ def checks_to_dict(checks: list[CheckResult]) -> dict[str, Any]:
             for check in checks
         ],
     }
+
+
+# A runtime marker that only exists on the real Debian VPS target. We do NOT
+# use /etc/debian_version because Debian-derived sandboxes (e.g. Ubuntu CI)
+# also carry it and would be misclassified as the production target.
+TARGET_MARKER_PATH = "/home/debian/.hermes/config.yaml"
+
+
+def classify_environment(
+    system: str, target_marker_present: bool, hostname: str
+) -> dict[str, Any]:
+    """Classify where the checker runs. Pure, so it is unit-testable.
+
+    Only the real Debian VPS target (Linux + a runtime marker) is treated as
+    authoritative. Anywhere else (macOS dev, a Debian-derived CI sandbox) an
+    invariant failure is NOT a production failure and must never unlock write
+    stages.
+    """
+
+    is_target = system == "Linux" and target_marker_present
+    return {
+        "hostname": hostname,
+        "platform": system,
+        "is_target": is_target,
+        "authoritative": is_target,
+        "note": (
+            "Debian VPS target: invariant result is authoritative"
+            if is_target
+            else "not the Debian VPS target: invariant failures here are NOT "
+            "production failures"
+        ),
+    }
+
+
+def current_environment() -> dict[str, Any]:
+    """Classify the current runtime using stdlib probes only.
+
+    ``AKS_TARGET=vps`` forces the target marker on; ``AKS_TARGET=dev`` (or
+    ``sandbox``/``local``) forces it off; otherwise the runtime marker file is
+    probed.
+    """
+
+    override = os.environ.get("AKS_TARGET", "").strip().lower()
+    if override == "vps":
+        marker = True
+    elif override in {"dev", "sandbox", "local"}:
+        marker = False
+    else:
+        marker = os.path.exists(TARGET_MARKER_PATH)
+
+    return classify_environment(
+        system=platform.system(),
+        target_marker_present=marker,
+        hostname=socket.gethostname(),
+    )
 
 
 def _response_to_probe(url: str, response: HTTPResponse) -> HttpProbeResult:

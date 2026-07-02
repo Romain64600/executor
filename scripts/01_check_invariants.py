@@ -21,6 +21,7 @@ from src.aks_env import (  # noqa: E402
     AKS_DIRECT_URL,
     OFFICIAL_CDP_ENDPOINT,
     checks_to_dict,
+    current_environment,
     http_head_status,
     validate_aks_direct_status,
 )
@@ -34,11 +35,17 @@ def build_report(endpoint: str, timeout: int) -> dict[str, object]:
     cdp_result = ReadOnlyCdpClient(endpoint=endpoint, timeout=timeout).get_version()
     checks = [aks_check, *cdp_result.checks]
     aggregate = checks_to_dict(checks)
+    environment = current_environment()
 
     return {
         "ok": aggregate["ok"],
+        # `authoritative` is true only on the Debian VPS target. A red result
+        # with authoritative=false (macOS/sandbox) is NOT a production failure
+        # and must never unlock write stages.
+        "authoritative": environment["authoritative"],
         "mode": "read-only",
         "dry_run": True,
+        "environment": environment,
         "aks_direct": {
             "url": AKS_DIRECT_URL,
             "ok": aks_probe.ok,
@@ -68,6 +75,15 @@ def main() -> int:
 
     report = build_report(endpoint=args.endpoint, timeout=args.timeout)
     print(json.dumps(report, indent=2, sort_keys=True))
+
+    if not report["authoritative"]:
+        print(
+            "NOTE: authoritative=false — not the Debian VPS target. "
+            "A failure here is NOT a production failure. Run on the VPS to gate "
+            "write stages.",
+            file=sys.stderr,
+        )
+
     return 0 if report["ok"] else 1
 
 
