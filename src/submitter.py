@@ -216,8 +216,10 @@ class Submitter(_SubmitterBase):
             entry["region_select"], entry["region_id"], entry["edition_select"], entry["edition_id"]
         )
         entry["create"] = status
-        if status != "CLICKED":
-            entry["post_save"] = f"create failed: {status}"
+        # Only a settled click (success signal, or no signal but no error) proceeds to
+        # the real post-save proof. An ERROR: / NO_SELECTS / NO_BUTTON is a hard fail.
+        if status not in ("SUCCESS", "NO_SIGNAL"):
+            entry["post_save"] = f"create not confirmed: {status}"
             return False
         gone = self._verify_gone(
             entry["offer_id"], ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"]

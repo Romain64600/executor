@@ -79,8 +79,20 @@ _FILL_CREATE_JS = (
     "var e=document.querySelector('select[name=\"'+%s+'\"]');"
     "if(!r||!e||!r.selectize||!e.selectize){resolve('NO_SELECTS');return;}"
     "r.selectize.setValue(%s);e.selectize.setValue(%s);"
-    "setTimeout(function(){var b=document.querySelector('#TB_ajaxContent .button-primary');"
-    "if(!b){resolve('NO_BUTTON');return;}b.click();resolve('CLICKED');},500);"
+    "setTimeout(function(){"
+    "var b=document.querySelector('#TB_ajaxContent .button-primary');"
+    "if(!b){resolve('NO_BUTTON');return;}"
+    "b.click();"
+    # After the click, wait for the modal AJAX to settle before returning — do NOT
+    # let the caller navigate away mid-request. Poll [data-success]/[data-error].
+    "var n=0,iv=setInterval(function(){n++;"
+    "var s=document.querySelector('[data-success]');"
+    "var er=document.querySelector('[data-error]');"
+    "if(s){clearInterval(iv);resolve('SUCCESS');}"
+    "else if(er){clearInterval(iv);resolve('ERROR:'+((er.textContent||'').trim().slice(0,120)));}"
+    "else if(n>=40){clearInterval(iv);resolve('NO_SIGNAL');}"
+    "},200);"
+    "},500);"
     "});})()"
 )
 
