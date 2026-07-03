@@ -582,6 +582,37 @@ class WriteSubmitSession(SubmitSession):
         diag["status"] = "CLICKED"
         return diag
 
+    def _scroll_rect_into_viewport(self, rect: dict[str, Any]) -> dict[str, Any]:
+        """If ``rect`` is (partially) outside the viewport, issue one CDP
+        ``Input.synthesizeScrollGesture`` (mouse source) to bring it around 40 %
+        of viewport height and wait 500 ms for settle. Returns
+        ``{scrolled: bool, scroll_y_distance: int}``. ``#TB_window`` is
+        ``position: fixed`` so the modal stays put; scrolling the page only
+        moves body-attached elements (e.g. Selectize's body-parented dropdown).
+        """
+
+        vp = rect.get("viewport") or {}
+        top = rect.get("top", rect.get("y", 0))
+        bottom = rect.get("bottom", top + rect.get("height", 0))
+        if not vp or (top >= 0 and bottom <= vp["h"]):
+            return {"scrolled": False}
+        target_y = vp["h"] * 0.4
+        current_y = (top + bottom) / 2
+        y_distance = int(current_y - target_y)
+        self._cmd(
+            "Input.synthesizeScrollGesture",
+            {
+                "x": vp["w"] // 2,
+                "y": vp["h"] // 2,
+                "xDistance": 0,
+                "yDistance": y_distance,
+                "gestureSourceType": "mouse",
+                "speed": 800,
+            },
+        )
+        time.sleep(0.5)
+        return {"scrolled": True, "scroll_y_distance": y_distance}
+
     def select_via_trusted(self, select_name: str, value_id: str) -> dict[str, Any]:
         """Selectize humanisé (Chantier n°1 extension, 2026-07-03).
 
@@ -589,15 +620,20 @@ class WriteSubmitSession(SubmitSession):
         2. Trusted CDP click on it — the dropdown opens naturally.
         3. Wait 250 ms for dropdown render + option layout.
         4. Read the ``[data-value="{value_id}"]`` option rect (S02-safe).
-        5. Trusted CDP click on it — Selectize applies the value, plugin's own
-           listeners fire.
-        6. Wait 200 ms for state settle.
-        7. Read back ``select.value`` + ``select.selectize.getValue()`` +
+        5. If the option is off-viewport (Selectize v0.x with
+           ``dropdownParent:'body'`` puts its dropdown at document coords, which
+           can land far below when the pending feed page is long),
+           ``Input.synthesizeScrollGesture`` to bring it into view + re-read rect.
+        6. Trusted CDP click at the option's center — Selectize applies the
+           value, plugin's own listeners fire.
+        7. Wait 200 ms for state settle.
+        8. Read back ``select.value`` + ``select.selectize.getValue()`` +
            ``select.validity.valid``.
 
         Returns a diag dict: select_name, value_id, status
-        ('SELECTED' | 'NO_SELECTIZE_INPUT' | 'NO_OPTION'), input_rect,
-        option_rect, open_click, option_click, readback.
+        ('SELECTED' | 'NO_SELECTIZE_INPUT' | 'NO_OPTION' |
+        'NO_OPTION_AFTER_SCROLL'), input_rect, option_rect, open_click,
+        option_scroll, option_click, readback.
         """
 
         input_raw = self.evaluate_readonly(
@@ -626,6 +662,22 @@ class WriteSubmitSession(SubmitSession):
             diag["status"] = "NO_OPTION"
             diag["reason"] = option_rect.get("reason")
             return diag
+
+        # Bring the option into viewport if Selectize rendered its dropdown far
+        # below (body-parented). #TB_window is position:fixed so the modal
+        # itself stays put — we only move the body-attached dropdown.
+        scroll = self._scroll_rect_into_viewport(option_rect)
+        diag["option_scroll"] = scroll
+        if scroll["scrolled"]:
+            option_raw = self.evaluate_readonly(
+                _SELECTIZE_OPTION_RECT_JS
+                % (json.dumps(select_name), json.dumps(str(value_id)))
+            )
+            option_rect = json.loads(option_raw) if option_raw else {"ok": False}
+            if not option_rect.get("ok"):
+                diag["status"] = "NO_OPTION_AFTER_SCROLL"
+                diag["reason"] = option_rect.get("reason")
+                return diag
 
         diag["option_rect"] = {
             "x": option_rect["x"], "y": option_rect["y"],
