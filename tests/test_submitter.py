@@ -551,17 +551,37 @@ class SelectViaTrustedTests(unittest.TestCase):
         self.assertEqual(result["reason"], "no_wrapper")
         self.assertEqual(sess._sent, [])
 
-    def test_no_option_after_open_click_returns_no_option(self):
+    def test_no_option_after_open_click_falls_back_to_add_item(self):
         input_rect = json.dumps({"ok": True, "x": 100, "y": 200, "width": 240, "height": 32,
                                  "top": 200, "left": 100, "bottom": 232, "right": 340,
                                  "viewport": {"w": 1280, "h": 720}})
-        option_rect = json.dumps({"ok": False, "reason": "dropdown_not_open"})
+        option_rect = json.dumps({"ok": False, "reason": "no_option"})
         sess = self._sess([input_rect, option_rect])
+        # Stub _evaluate to simulate a successful addItem fallback.
+        sess._evaluate = lambda js: {
+            "ok": True, "select_value": "9",
+            "selectize_value": "9", "validity_valid": True,
+        }
         result = sess.select_via_trusted("offer[region]", "9")
-        self.assertEqual(result["status"], "NO_OPTION")
-        self.assertEqual(result["reason"], "dropdown_not_open")
-        # Only the open click fired (3 Input events); no option click.
+        self.assertEqual(result["status"], "SELECTED")
+        self.assertEqual(result["fallback"], "addItem")
+        self.assertEqual(result["readback"]["selectize_value"], "9")
+        # Only the open click via CDP (3 Input events); addItem via _evaluate,
+        # not via CDP mouse events → sent list stays at 3.
         self.assertEqual(len(sess._sent), 3)
+
+    def test_no_option_and_add_item_fails_returns_no_option(self):
+        input_rect = json.dumps({"ok": True, "x": 100, "y": 200, "width": 240, "height": 32,
+                                 "top": 200, "left": 100, "bottom": 232, "right": 340,
+                                 "viewport": {"w": 1280, "h": 720}})
+        option_rect = json.dumps({"ok": False, "reason": "no_option"})
+        sess = self._sess([input_rect, option_rect])
+        # addItem fallback also fails — value_not_in_options.
+        sess._evaluate = lambda js: {"ok": False, "reason": "value_not_in_options"}
+        result = sess.select_via_trusted("offer[region]", "99")
+        self.assertEqual(result["status"], "NO_OPTION")
+        self.assertEqual(result["reason"], "no_option")
+        self.assertEqual(result["addItem_result"], {"ok": False, "reason": "value_not_in_options"})
 
     def test_selectize_probe_js_are_readonly_safe(self):
         from src.cdp_session import is_readonly_expression
