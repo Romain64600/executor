@@ -705,10 +705,13 @@ class WriteSubmitSession(SubmitSession):
             # filter/paginate). Call `sel.selectize.addItem(val, false)` — same
             # Selectize API path a user click on the option internally invokes.
             # Fires `item_add` on Selectize + `change` on the underlying <select>.
-            add = self._evaluate(
-                _SELECTIZE_ADDITEM_JS
-                % (json.dumps(select_name), json.dumps(str(value_id)))
-            )
+            try:
+                add = self._evaluate(
+                    _SELECTIZE_ADDITEM_JS
+                    % (json.dumps(select_name), json.dumps(str(value_id)))
+                )
+            except Exception as exc:
+                add = {"ok": False, "reason": "exception", "detail": str(exc)[:200]}
             if isinstance(add, dict) and add.get("ok"):
                 diag["fallback"] = "addItem"
                 diag["dropdown_options"] = option_rect.get("dropdown_options")
