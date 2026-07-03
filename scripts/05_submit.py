@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,11 +57,23 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=None, help="With --submit: max offers to create.")
     args = parser.parse_args()
 
-    # Fail-closed gate: invariants must be green AND authoritative.
+    # Fail-closed gate: invariants must be green AND authoritative. Retry a couple
+    # times — a transient red (e.g. AKS rate-limit right after the matcher's GET
+    # burst) should not abort; a persistent one still does.
     report = build_report(endpoint=args.endpoint)
+    for _ in range(2):
+        if report["ok"] and report["authoritative"]:
+            break
+        time.sleep(5)
+        report = build_report(endpoint=args.endpoint)
     if not (report["ok"] and report["authoritative"]):
-        print(json.dumps({"aborted": True, "reason": "invariants not green/authoritative",
-                          "ok": report["ok"], "authoritative": report["authoritative"]}, indent=2))
+        print(json.dumps({
+            "aborted": True,
+            "reason": "invariants not green/authoritative after retries",
+            "ok": report["ok"],
+            "authoritative": report["authoritative"],
+            "failing_checks": [c for c in report.get("checks", []) if not c["ok"]],
+        }, indent=2))
         return 2
 
     approved = json.loads(Path(args.approved).read_text(encoding="utf-8"))
