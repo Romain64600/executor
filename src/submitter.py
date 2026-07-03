@@ -27,6 +27,7 @@ from src.step_guard import StepGuard
 
 class _SubmitterBase:
     write_mode = False
+    event_name = "dry_run_offer"
 
     def __init__(self, session: Any, *, guard: StepGuard | None = None, logger: RunLogger | None = None) -> None:
         self.session = session
@@ -163,7 +164,7 @@ class _SubmitterBase:
                 "submit", signature, success, detail=entry.get("blocker", "") or entry.get("post_save", "")
             )
             self._log(
-                "submit_offer" if self.write_mode else "dry_run_offer",
+                self.event_name,
                 offer_id=offer_id, ready=entry["ready"], success=success,
                 blocker=entry.get("blocker"), post_save=entry.get("post_save"),
             )
@@ -193,6 +194,7 @@ class DryRunSubmitter(_SubmitterBase):
     """Rehearsal — never writes."""
 
     write_mode = False
+    event_name = "dry_run_offer"
 
     def _process(self, entry, candidate, ctx):
         if entry.get("ready"):
@@ -204,6 +206,24 @@ class DryRunSubmitter(_SubmitterBase):
         return bool(entry.get("ready"))
 
 
+class InspectSubmitter(_SubmitterBase):
+    """S18 investigation — open each ready offer's modal and dump a read-only
+    DOM inspection (`session.inspect_modal_dom()`). No fill, no clicks on
+    Create, no writes. Used to identify the true submit-trigger element after
+    the canary #3 diag showed native/dispatch clicks producing zero network
+    requests on Driffle (2026-07-03).
+    """
+
+    write_mode = False
+    event_name = "inspect_offer"
+
+    def _process(self, entry, candidate, ctx):
+        if not entry.get("ready"):
+            return False
+        entry["inspection"] = self.session.inspect_modal_dom()
+        return True
+
+
 class Submitter(_SubmitterBase):
     """Real submitter — WRITES. Requires a WriteSubmitSession (has fill_and_create).
 
@@ -212,6 +232,7 @@ class Submitter(_SubmitterBase):
     """
 
     write_mode = True
+    event_name = "submit_offer"
 
     def __init__(self, session: Any, *, click_mode: str = "native", **kw: Any) -> None:
         super().__init__(session, **kw)

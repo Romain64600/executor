@@ -46,6 +46,60 @@ _MODAL_CTX_JS = (
     ".map(function(s){return s.name;})};})())"
 )
 
+# Read-only DOM probe of the currently-open modal (S02). Passes the
+# ReadOnlyCdpSession's mutation guard (no click/submit/fetch/dispatchEvent/
+# setValue/.value=/createElement etc.). Returns a structured diag of the button
+# targeted by S09 (`.button-primary`), its parent <form> if any, other forms in
+# the modal, [data-success]/[data-error] node locations, #TB_window visibility,
+# and the current selects state. Used by --inspect to diagnose why the S09 click
+# does not reach the network on Driffle (canary #3, 2026-07-03).
+_INSPECT_MODAL_JS = (
+    "JSON.stringify((function(){"
+    "function attrs(el,pre){return Array.prototype.filter.call(el.attributes,"
+    "function(a){return pre?a.name.indexOf(pre)===0:true;})"
+    ".map(function(a){return a.name+'='+String(a.value).slice(0,80);});}"
+    "function path(el,md){var p=[],c=el,d=0;"
+    "while(c&&c!==document.body&&d<md){"
+    "var s=c.tagName.toLowerCase();if(c.id)s+='#'+c.id;"
+    "else if(c.className&&typeof c.className==='string')"
+    "s+='.'+c.className.trim().split(/\\s+/).slice(0,2).join('.');"
+    "p.unshift(s);c=c.parentElement;d++;}return p.join(' > ');}"
+    "function elDesc(el){if(!el)return null;return {"
+    "tag:el.tagName,type_prop:el.type||null,type_attr:el.getAttribute('type'),"
+    "id:el.id||null,klass:el.className||null,href:el.getAttribute('href'),"
+    "name:el.name||null,text:(el.textContent||'').trim().slice(0,60),"
+    "data_attrs:attrs(el,'data-'),path:path(el,8)};}"
+    "var content=document.querySelector('#TB_ajaxContent');"
+    "var tbwin=document.querySelector('#TB_window');var tbstyle=null;"
+    "if(tbwin){var cs=getComputedStyle(tbwin);"
+    "tbstyle={display:cs.display,visibility:cs.visibility,opacity:cs.opacity};}"
+    "if(!content)return {modal_ok:false,tbwindow_present:!!tbwin,tbwindow_style:tbstyle};"
+    "var buttons=Array.prototype.slice.call(content.querySelectorAll('.button-primary'));"
+    "var button=buttons[0]||null;"
+    "var form=button?button.closest('form'):null;"
+    "var formDesc=form?{"
+    "tag:form.tagName,id:form.id||null,klass:form.className||null,"
+    "action:form.getAttribute('action'),method:form.getAttribute('method')||form.method,"
+    "onsubmit_attr:!!form.getAttribute('onsubmit')}:null;"
+    "var forms=Array.prototype.slice.call(content.querySelectorAll('form')).map(function(f){"
+    "return {id:f.id||null,action:f.getAttribute('action'),"
+    "method:f.getAttribute('method')||f.method};});"
+    "function locate(sel,scope){"
+    "return Array.prototype.slice.call(scope.querySelectorAll(sel)).slice(0,10)"
+    ".map(function(el){return {path:path(el,6),text:(el.textContent||'').trim().slice(0,60)};});}"
+    "return {modal_ok:true,tbwindow_present:!!tbwin,tbwindow_style:tbstyle,"
+    "button:elDesc(button),button_count_in_modal:buttons.length,"
+    "form:formDesc,forms_in_modal:forms.length,forms:forms,"
+    "data_success_in_modal:locate('[data-success]',content),"
+    "data_error_in_modal:locate('[data-error]',content),"
+    "data_success_in_doc:document.querySelectorAll('[data-success]').length,"
+    "data_error_in_doc:document.querySelectorAll('[data-error]').length,"
+    "modal_selects:Array.prototype.slice.call(content.querySelectorAll('select'))"
+    ".map(function(s){return {name:s.name,has_selectize:!!s.selectize,"
+    "options:Array.prototype.slice.call(s.options).map(function(o){return o.value;})};})"
+    "};})())"
+)
+
 _IS_LOGIN_JS = "!!document.querySelector('#loginform') || /wp-login/.test(location.href)"
 
 
@@ -68,6 +122,19 @@ class SubmitSession(ReadOnlyCdpSession):
     def modal_context(self) -> dict[str, Any]:
         raw = self.evaluate_readonly(_MODAL_CTX_JS)
         return json.loads(raw) if raw else {"ok": False, "select_names": []}
+
+    def inspect_modal_dom(self) -> dict[str, Any]:
+        """Read-only DOM inspection of the currently-open modal (S02).
+
+        Returns a diag dict describing the S09 `.button-primary` target (tag /
+        type / id / class / href / data-*), its parent `<form>` if any (action /
+        method / onsubmit_attr), other forms in the modal, `[data-success]` /
+        `[data-error]` node locations (in modal + doc counts), `#TB_window`
+        visibility, and the selects' current state. No clicks, no writes.
+        """
+
+        raw = self.evaluate_readonly(_INSPECT_MODAL_JS)
+        return json.loads(raw) if raw else {"modal_ok": False}
 
 
 # The ONE mutating interaction: set region+edition via selectize, then click the

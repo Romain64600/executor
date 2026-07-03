@@ -3,6 +3,45 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-03 — S18 investigation: `--inspect` modal DOM probe (read-only)
+
+Canary #3 (Driffle) with the pre-existing signal guard active produced
+`requests: []` + `status: NO_SIGNAL` in **both** `native` and `dispatch` click
+modes: the click reaches no handler that fires an admin-ajax request. Prime
+suspect now: the `.button-primary` sniper matches an element that has no
+handler bound (WP admin `<a href="#">`, or a delegated listener not rebound
+after the ThickBox AJAX load). Read-only DOM probe added to identify the
+true submit-trigger element and its form, without clicking Create.
+
+- `src/submit_session.py` — new `_INSPECT_MODAL_JS` + `SubmitSession.inspect_modal_dom()`:
+  read-only probe returning `{ button: {tag, type_prop, type_attr, id, klass,
+  href, name, text, data_attrs, path}, button_count_in_modal, form: {tag, id,
+  klass, action, method, onsubmit_attr}, forms_in_modal, forms, modal_selects,
+  data_success_in_modal[…], data_error_in_modal[…], data_success_in_doc,
+  data_error_in_doc, tbwindow_style }`. Passes the S02 mutation guard (no
+  click/submit/fetch/setValue/dispatchEvent).
+- `src/submitter.py` — new `InspectSubmitter` (write_mode=False, event_name
+  `inspect_offer`): reuses `_index_feed` / `_prepare` and calls
+  `inspect_modal_dom` on each ready entry. No clicks on Create, no writes.
+- `scripts/05_submit.py` — new `--inspect` flag (mutex with `--submit`; canary
+  of 1 by default, `--limit N` / `--all` to widen). Writes `modal_inspection.json`.
+- +6 tests (inspect flow, JSON parsing, S02 read-only guard on the probe JS).
+
+**Next diag** on the VPS:
+
+```
+python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle \
+    --store-id 127 --inspect
+```
+
+Then inspect `runs/<id>/modal_inspection.json`. Reading grid:
+- `button.tag=A` + `href='#'` → the real trigger is elsewhere (jQuery delegated
+  handler somewhere up the DOM path); look at `button.data_attrs` for hints.
+- `form.action` non-vide → soumission `<form>` classique ; le vrai geste est
+  peut-être un `form.submit()` intercepté (S09-forbidden — regarder `data_attrs`
+  et `onsubmit_attr`).
+- `button_count_in_modal > 1` → on ciblait le mauvais bouton depuis le début.
+
 ## 2026-07-03 — S18 investigation: network taps + dispatch click mode (derogation)
 
 Live canary #2 (Driffle) eliminated hypothesis #1: the selectize readback proved

@@ -33,7 +33,7 @@ from src.aks_env import OFFICIAL_CDP_ENDPOINT  # noqa: E402
 from src.invariants import build_report  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
 from src.submit_session import SubmitSession, WriteSubmitSession  # noqa: E402
-from src.submitter import DryRunSubmitter, Submitter  # noqa: E402
+from src.submitter import DryRunSubmitter, InspectSubmitter, Submitter  # noqa: E402
 
 
 def _status(entry, write):
@@ -53,15 +53,24 @@ def main() -> int:
     parser.add_argument("--available", default="all", choices=["all", "pending"])
     parser.add_argument("--max-pages", type=int, default=40)
     parser.add_argument("--submit", action="store_true", help="REAL write (default: dry-run).")
-    parser.add_argument("--all", action="store_true", help="With --submit: full batch (default: canary of 1).")
-    parser.add_argument("--limit", type=int, default=None, help="With --submit: max offers to create.")
+    parser.add_argument("--all", action="store_true", help="With --submit / --inspect: full batch (default: canary of 1).")
+    parser.add_argument("--limit", type=int, default=None, help="With --submit / --inspect: max offers to process.")
     parser.add_argument(
         "--click-mode", default="native", choices=["native", "dispatch"],
         help="With --submit: 'native' = button.click() (default); 'dispatch' = MouseEvent "
              "sequence on the Create button ONLY (documented derogation, Romain 2026-07-03).",
     )
+    parser.add_argument(
+        "--inspect", action="store_true",
+        help="INSPECT mode — open the modal for approved offers and dump a read-only DOM "
+             "inspection to modal_inspection.json. No writes, no clicks on Create. "
+             "Defaults to a canary of 1 (use --all / --limit N for more).",
+    )
     args = parser.parse_args()
 
+    if args.inspect and args.submit:
+        print("--inspect and --submit are mutually exclusive", file=sys.stderr)
+        return 2
     if args.click_mode != "native" and not args.submit:
         print("--click-mode is only meaningful with --submit", file=sys.stderr)
         return 2
@@ -89,6 +98,33 @@ def main() -> int:
     out_dir = Path(args.approved).resolve().parent
     run_id = out_dir.name
     logger = RunLogger(run_id, log_dir=str(ROOT / "logs"))
+
+    if args.inspect:
+        limit = args.limit if args.limit is not None else (None if args.all else 1)
+        approved_slice = approved if limit is None else approved[:limit]
+        print(
+            f"INSPECT MODE — will open modal for up to "
+            f"{limit if limit is not None else 'ALL'} offer(s) (no writes, no clicks on Create).",
+            file=sys.stderr,
+        )
+        with SubmitSession(args.endpoint) as session:
+            result = InspectSubmitter(session, logger=logger).run(
+                run_id=run_id, merchant=args.merchant, store_id=args.store_id,
+                approved=approved_slice, available=args.available, max_pages=args.max_pages,
+            )
+        (out_dir / "modal_inspection.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+        inspected = sum(1 for p in result["plan"] if p.get("inspection") is not None)
+        print(json.dumps({
+            "mode": "inspect",
+            "aborted": result["aborted"],
+            "stopped": result["stopped"],
+            "feed_offers": result.get("feed_offers"),
+            "inspected": inspected,
+            "total": len(result["plan"]),
+            "out_dir": str(out_dir),
+            "artifact": "modal_inspection.json",
+        }, indent=2))
+        return 0
 
     write = args.submit
     limit = args.limit if args.limit is not None else (None if args.all else 1)

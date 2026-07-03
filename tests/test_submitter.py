@@ -1,7 +1,7 @@
 import re
 import unittest
 
-from src.submitter import DryRunSubmitter, Submitter
+from src.submitter import DryRunSubmitter, InspectSubmitter, Submitter
 
 
 def _cand(offer_id, region_id="2", edition_id="1"):
@@ -209,6 +209,83 @@ class ClickModeValidationTests(unittest.TestCase):
         session = WriteSubmitSession.__new__(WriteSubmitSession)  # no socket needed
         with self.assertRaises(ValueError):
             session.fill_and_create("offer[region]", "9", "offer[edition]", "1", click_mode="xhr")
+
+
+class FakeInspectSession(FakeSubmitSession):
+    def __init__(self, pages, *, inspection=None, **kw):
+        super().__init__(pages, **kw)
+        self.inspection = inspection or {
+            "modal_ok": True,
+            "button": {"tag": "A", "type_prop": None, "href": "#"},
+            "button_count_in_modal": 1,
+            "form": None,
+            "forms_in_modal": 0,
+        }
+        self.inspect_calls = 0
+
+    def inspect_modal_dom(self):
+        self.inspect_calls += 1
+        return dict(self.inspection)
+
+
+def _inspect(session, approved):
+    return InspectSubmitter(session).run(
+        run_id="r", merchant="Driffle", store_id="127", approved=approved, pace=0
+    )
+
+
+class InspectSubmitterTests(unittest.TestCase):
+    def test_inspects_ready_offers(self):
+        session = FakeInspectSession([["1", "2"]])
+        result = _inspect(session, [_cand("1"), _cand("2")])
+        self.assertEqual(session.inspect_calls, 2)
+        self.assertTrue(all("inspection" in p and p["inspection"]["modal_ok"] for p in result["plan"]))
+        self.assertIsNone(result["aborted"])
+        self.assertIsNone(result["stopped"])
+
+    def test_skips_offer_not_in_feed_without_inspecting(self):
+        session = FakeInspectSession([["1"]])  # "9" absent
+        result = _inspect(session, [_cand("9")])
+        self.assertEqual(session.inspect_calls, 0)
+        self.assertFalse(result["plan"][0].get("ready"))
+        self.assertNotIn("inspection", result["plan"][0])
+
+    def test_login_preflight_aborts_inspect(self):
+        session = FakeInspectSession([["1"]], login=True)
+        result = _inspect(session, [_cand("1")])
+        self.assertEqual(result["aborted"], "not_logged_in")
+        self.assertEqual(session.inspect_calls, 0)
+
+    def test_writes_none_in_inspect_mode(self):
+        session = FakeInspectSession([["1"]])
+        result = _inspect(session, [_cand("1")])
+        # write_mode=False → writes reported as None (like dry-run).
+        self.assertIsNone(result["writes"])
+
+
+class InspectModalDomParsingTests(unittest.TestCase):
+    def test_parses_raw_json(self):
+        from src.submit_session import SubmitSession
+
+        sess = SubmitSession.__new__(SubmitSession)
+        sess.evaluate_readonly = lambda js: '{"modal_ok": true, "button": null}'
+        result = sess.inspect_modal_dom()
+        self.assertTrue(result["modal_ok"])
+        self.assertIsNone(result["button"])
+
+    def test_empty_response_returns_modal_not_ok(self):
+        from src.submit_session import SubmitSession
+
+        sess = SubmitSession.__new__(SubmitSession)
+        sess.evaluate_readonly = lambda js: ""
+        result = sess.inspect_modal_dom()
+        self.assertEqual(result, {"modal_ok": False})
+
+    def test_inspect_js_is_readonly(self):
+        from src.cdp_session import is_readonly_expression
+        from src.submit_session import _INSPECT_MODAL_JS
+
+        self.assertTrue(is_readonly_expression(_INSPECT_MODAL_JS))
 
 
 if __name__ == "__main__":
