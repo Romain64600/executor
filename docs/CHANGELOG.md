@@ -3,6 +3,28 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-02 — Stage 4: real submitter (WRITES, canary-first)
+
+The real write path — approved by Romain, and validated end-to-end in **dry-run on
+the VPS first** (modals open; Driffle selects are `offer[region]`/`offer[edition]`;
+Battle.net Gift region resolves to 570). **138 tests green.**
+
+- `src/submit_session.py` — `WriteSubmitSession(SubmitSession)` adds the ONE mutating
+  op, `fill_and_create`: `selectize.setValue` on the verified select names, then
+  click `#TB_ajaxContent .button-primary` (Promise + 500 ms; skill S09/S17/S19). No
+  XHR, no `dispatchEvent`, no `form.submit()`.
+- `src/submitter.py` — `Submitter` (real): `fill_and_create`, then **post-save
+  verification** — re-scan the feed; `success = the offer disappeared from pending`
+  (never `[data-success]`; skill S18). Shares its base flow with the dry-run.
+- `scripts/05_submit.py` — `--submit` writes; **canary default = 1 offer**, `--all`
+  for the full batch, `--limit N` otherwise. Gated on green + authoritative invariants
+  + pre-flight login; one attempt per offer, skip + continue, stop after 10 consecutive.
+- 5 tests (canary stops after 1, full batch, still-present = failure, unconfirmed
+  click = failure, not-ready never writes).
+
+First real run (canary):
+`python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127 --submit`
+
 ## 2026-07-02 — Stage 4: submitter (DRY-RUN only, no writes)
 
 The submit flow, dry-run only — **no writes**. **132 tests green.** Approach

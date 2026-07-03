@@ -1,9 +1,9 @@
 # SUBMITTER_SPEC.md — Stage 4 design (for approval, no code yet)
 
-**Status: PROPOSAL. Nothing here is built.** This is the design of the only stage
-that *writes* to AKS. Per the project's fail-closed rule, it exists for Romain to
-review and approve the approach + gates **before** any submit code is written. The
-first implementation will be **dry-run only** (no real clicks).
+**Status: BUILT** (approved by Romain; dry-run validated end-to-end on the VPS
+first, then the real write path added with a **canary default of 1**). This is the
+design of the only stage that *writes* to AKS. See `CHANGELOG.md` for the two build
+entries (dry-run, then real).
 
 Grounded in `EXECUTOR_RULES.md` §6/§7 and the skill's submitter rules
 (`[S09]` `[S17]` `[S18]` and the DB-proof override).

@@ -1,14 +1,18 @@
-"""Stage 4 — DRY-RUN submitter (no writes).
+"""Stage 4 — submitters (dry-run and real).
 
-For each approved offer, it rehearses the submit flow read-only: pre-flight login
-check, refresh + locate the exact current row, open the modal, verify the modal
-context and select names, and report exactly what it *would* set and click — but it
-never fills a form or clicks "Create offer" (that capability does not exist in this
-build).
+Shared flow (`_SubmitterBase`): pre-flight login check, refresh + index the current
+feed, locate each approved offer's exact row, open its modal, verify context +
+select names.
 
-Fail-closed per Romain's decisions (SUBMITTER_SPEC §6/§11): one attempt per offer;
-on failure log + skip + continue; stop the whole run after 10 consecutive failures.
-The flow depends only on a ``session`` object, so it is unit-testable with a fake.
+- `DryRunSubmitter` stops there and reports what it *would* submit — **no writes**.
+- `Submitter` (real) additionally fills region/edition and clicks "Create offer",
+  then verifies post-save that the offer **disappeared** from the pending feed —
+  success = gone (skill S18; never `[data-success]`).
+
+Fail-closed per Romain's decisions (SUBMITTER_SPEC §6): one attempt per offer; on
+failure log + skip + continue; stop the run after 10 consecutive failures. The real
+submitter defaults to a **canary of 1 write** unless a larger limit is given.
+Depends only on a ``session`` object, so both are unit-testable with a fake.
 """
 
 from __future__ import annotations
@@ -21,14 +25,16 @@ from src.run_log import RunLogger
 from src.step_guard import StepGuard
 
 
-class DryRunSubmitter:
+class _SubmitterBase:
+    write_mode = False
+
     def __init__(self, session: Any, *, guard: StepGuard | None = None, logger: RunLogger | None = None) -> None:
         self.session = session
         self.guard = guard or StepGuard(
             max_attempts_per_signature=1,
-            max_failures_per_signature=2,   # a single per-offer failure must not global-block
-            max_consecutive_failures=10,    # stop the run after 10 consecutive failures
-            max_failures_per_task=10 ** 9,  # disable the total-budget rule; only "10 in a row" stops
+            max_failures_per_signature=2,
+            max_consecutive_failures=10,
+            max_failures_per_task=10 ** 9,
         )
         self.logger = logger
 
@@ -58,7 +64,7 @@ class DryRunSubmitter:
                 empty = 0
         return index
 
-    def _dry_one(self, candidate: dict[str, Any], offer_id: str, index: dict[str, str]) -> dict[str, Any]:
+    def _prepare(self, candidate: dict[str, Any], offer_id: str, index: dict[str, str]) -> dict[str, Any]:
         entry: dict[str, Any] = {
             "offer_id": offer_id,
             "merchant_title": candidate["offer"]["name"],
@@ -93,12 +99,22 @@ class DryRunSubmitter:
             entry["blocker"] = "region/edition select not found"
             return entry
         entry["ready"] = True
-        entry["would_submit"] = (
-            f"set {region_select}={entry['region_id']}, "
-            f"{edition_select}={entry['edition_id']}, "
-            "click .button-primary (NOT clicked — dry-run)"
-        )
         return entry
+
+    def _verify_gone(self, offer_id, store_id, feed_page, available, max_pages) -> bool:
+        """Post-save: re-scan the feed; True iff the offer id is no longer present."""
+
+        for page in range(1, max_pages + 1):
+            self.session.navigate(feed_url(store_id, page=page, feed_page=feed_page, available=available))
+            ids = self.session.page_offer_ids()
+            if not ids:
+                break
+            if offer_id in ids:
+                return False
+        return True
+
+    def _process(self, entry: dict[str, Any], candidate: dict[str, Any], ctx: dict[str, Any]) -> bool:
+        raise NotImplementedError
 
     def run(
         self,
@@ -111,20 +127,27 @@ class DryRunSubmitter:
         available: str = "all",
         max_pages: int = 40,
         pace: float = 0.5,
+        limit: int | None = None,
     ) -> dict[str, Any]:
-        # Pre-flight login check (SUBMITTER_SPEC §2.4).
+        # Pre-flight login check.
         self.session.navigate(feed_url(store_id, feed_page=feed_page, available=available))
         if self.session.is_login_page():
             self._log("aborted", reason="not logged in (wp-login)")
-            return {"aborted": "not_logged_in", "stopped": None, "feed_offers": 0, "plan": []}
+            return {"aborted": "not_logged_in", "stopped": None, "feed_offers": 0, "writes": 0, "plan": []}
 
         self.guard.start_task(run_id)
         index = self._index_feed(store_id, feed_page, available, max_pages)
         self._log("feed_indexed", offers=len(index))
+        ctx = {"store_id": store_id, "feed_page": feed_page, "available": available, "max_pages": max_pages}
 
         plan: list[dict[str, Any]] = []
         stopped: str | None = None
+        writes = 0
         for candidate in approved:
+            if self.write_mode and limit is not None and writes >= limit:
+                stopped = "limit_reached"
+                self._log("run_stopped", reason=stopped)
+                break
             offer_id = str(candidate["offer"]["offer_id"])
             signature = f"submit:{offer_id}"
             if not self.guard.check("submit", signature).allowed:
@@ -132,20 +155,73 @@ class DryRunSubmitter:
                 self._log("run_stopped", reason=stopped)
                 break
 
-            entry = self._dry_one(candidate, offer_id, index)
-            self.guard.record_result("submit", signature, entry["ready"], detail=entry.get("blocker", ""))
-            self._log("dry_run_offer", offer_id=offer_id, ready=entry["ready"], blocker=entry.get("blocker"))
-            if not entry["ready"]:
-                self._log("skip", offer_id=offer_id, reason=entry.get("blocker"))
+            entry = self._prepare(candidate, offer_id, index)
+            success = self._process(entry, candidate, ctx)
+            if self.write_mode and entry.get("ready"):
+                writes += 1
+            self.guard.record_result(
+                "submit", signature, success, detail=entry.get("blocker", "") or entry.get("post_save", "")
+            )
+            self._log(
+                "submit_offer" if self.write_mode else "dry_run_offer",
+                offer_id=offer_id, ready=entry["ready"], success=success,
+                blocker=entry.get("blocker"), post_save=entry.get("post_save"),
+            )
+            if not success:
+                self._log("skip", offer_id=offer_id, reason=entry.get("blocker") or entry.get("post_save"))
             plan.append(entry)
 
             if self.guard.blocked:
                 stopped = "ten_consecutive_failures"
                 self._log("run_stopped", reason=stopped)
                 break
-            if pace:
+            if pace and (not self.write_mode or entry.get("ready")):
                 time.sleep(pace)
 
         if self.logger is not None:
             self.logger.log_guard(self.guard.snapshot())
-        return {"aborted": None, "stopped": stopped, "feed_offers": len(index), "plan": plan}
+        return {
+            "aborted": None,
+            "stopped": stopped,
+            "feed_offers": len(index),
+            "writes": writes if self.write_mode else None,
+            "plan": plan,
+        }
+
+
+class DryRunSubmitter(_SubmitterBase):
+    """Rehearsal — never writes."""
+
+    write_mode = False
+
+    def _process(self, entry, candidate, ctx):
+        if entry.get("ready"):
+            entry["would_submit"] = (
+                f"set {entry['region_select']}={entry['region_id']}, "
+                f"{entry['edition_select']}={entry['edition_id']}, "
+                "click .button-primary (NOT clicked — dry-run)"
+            )
+        return bool(entry.get("ready"))
+
+
+class Submitter(_SubmitterBase):
+    """Real submitter — WRITES. Requires a WriteSubmitSession (has fill_and_create)."""
+
+    write_mode = True
+
+    def _process(self, entry, candidate, ctx):
+        if not entry.get("ready"):
+            return False
+        status = self.session.fill_and_create(
+            entry["region_select"], entry["region_id"], entry["edition_select"], entry["edition_id"]
+        )
+        entry["create"] = status
+        if status != "CLICKED":
+            entry["post_save"] = f"create failed: {status}"
+            return False
+        gone = self._verify_gone(
+            entry["offer_id"], ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"]
+        )
+        entry["submitted"] = gone
+        entry["post_save"] = "gone from pending" if gone else "STILL in pending — FAILED"
+        return gone

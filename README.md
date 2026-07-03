@@ -96,7 +96,7 @@ aks-controlled-executor/
 │   ├── submitter.py            # Stage 4 DRY-RUN submitter (no writes)
 │   ├── run_log.py              # append-only JSONL run logger (redacting)
 │   └── step_guard.py           # deterministic, fail-closed StepGuard
-├── tests/                      # unit tests (132)
+├── tests/                      # unit tests (138)
 ├── config/  runs/  logs/  state/   # runtime dirs (runs/logs/state are gitignored)
 └── .gitignore
 ```
@@ -194,11 +194,12 @@ starts, so a mid-task "retry past it" is impossible. See
   report. Pure core unit-tested; live AKS resolve runs on the VPS.
 - [x] **Validation** (`src/validation.py`, `scripts/04_validate.py`) — fail-closed
   gate: approve exact candidates by fingerprint; no submission without it.
-- [~] **Submitter — DRY-RUN built** (`src/submitter.py`, `src/submit_session.py`,
-  `scripts/05_submit.py`): rehearses the flow read-only (locate row, open modal,
-  verify context/selects, report what it *would* submit). No create capability
-  exists yet. Real write path (`.button-primary`, `success = gone from pending`) is
-  a separate, explicitly-authorized build. See [`docs/SUBMITTER_SPEC.md`](docs/SUBMITTER_SPEC.md).
+- [x] **Submitter — built** (`src/submitter.py`, `src/submit_session.py`,
+  `scripts/05_submit.py`): dry-run rehearsal + real write path. Real `--submit`
+  fills region/edition, clicks `.button-primary`, and verifies post-save
+  (`success = offer gone from pending`, never `[data-success]`). **Canary default of
+  1**, `--all` for the batch; gated + StepGuard (skip+continue, stop after 10). Dry-run
+  validated live on the VPS first. See [`docs/SUBMITTER_SPEC.md`](docs/SUBMITTER_SPEC.md).
 - [x] **Data contracts + JSONL run-log infrastructure** (`src/contracts.py`,
   `src/run_log.py`) — ready for the stages above to use.
 - [ ] **Post-save verifier.**

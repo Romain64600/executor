@@ -1,7 +1,7 @@
 import re
 import unittest
 
-from src.submitter import DryRunSubmitter
+from src.submitter import DryRunSubmitter, Submitter
 
 
 def _cand(offer_id, region_id="2", edition_id="1"):
@@ -98,6 +98,70 @@ class DryRunTests(unittest.TestCase):
         result = _run(session, [_cand(i) for i in ids])
         self.assertEqual(result["stopped"], "ten_consecutive_failures")
         self.assertEqual(len(result["plan"]), 10)  # stopped after the 10th consecutive failure
+
+
+class FakeWriteSession(FakeSubmitSession):
+    def __init__(self, pages, *, create_status="CLICKED", create_removes=True, **kw):
+        super().__init__(pages, **kw)
+        self.create_status = create_status
+        self.create_removes = create_removes
+        self.created = set()
+        self.fill_calls = []
+        self._last_opened = None
+
+    def open_offer_modal(self, offer_id):
+        self._last_opened = offer_id
+        return super().open_offer_modal(offer_id)
+
+    def page_offer_ids(self):
+        return [i for i in super().page_offer_ids() if i not in self.created]
+
+    def fill_and_create(self, region_select, region_id, edition_select, edition_id):
+        self.fill_calls.append((region_select, region_id, edition_select, edition_id))
+        if self.create_status == "CLICKED" and self.create_removes:
+            self.created.add(self._last_opened)
+        return self.create_status
+
+
+def _real(session, approved, **kw):
+    return Submitter(session).run(
+        run_id="r", merchant="Driffle", store_id="127", approved=approved, pace=0, **kw
+    )
+
+
+class RealSubmitTests(unittest.TestCase):
+    def test_canary_creates_one_then_stops(self):
+        session = FakeWriteSession([["1", "2"]])
+        result = _real(session, [_cand("1"), _cand("2")], limit=1)
+        self.assertEqual(result["writes"], 1)
+        self.assertEqual(result["stopped"], "limit_reached")
+        self.assertEqual(len(result["plan"]), 1)
+        self.assertTrue(result["plan"][0]["submitted"])
+        self.assertEqual(session.fill_calls, [("offer[region]", "2", "offer[edition]", "1")])
+
+    def test_full_batch_creates_all(self):
+        session = FakeWriteSession([["1", "2"]])
+        result = _real(session, [_cand("1"), _cand("2")], limit=None)
+        self.assertEqual(result["writes"], 2)
+        self.assertTrue(all(p["submitted"] for p in result["plan"]))
+
+    def test_still_present_after_create_is_failure(self):
+        session = FakeWriteSession([["1"]], create_removes=False)
+        result = _real(session, [_cand("1")], limit=1)
+        self.assertFalse(result["plan"][0]["submitted"])
+        self.assertIn("STILL in pending", result["plan"][0]["post_save"])
+
+    def test_create_click_not_confirmed_is_failure(self):
+        session = FakeWriteSession([["1"]], create_status="NO_SELECTS")
+        result = _real(session, [_cand("1")], limit=1)
+        self.assertEqual(result["plan"][0]["create"], "NO_SELECTS")
+        self.assertIn("create failed", result["plan"][0]["post_save"])
+
+    def test_not_ready_offer_is_not_written(self):
+        session = FakeWriteSession([["1"]])  # offer "9" absent from feed
+        result = _real(session, [_cand("9")], limit=1)
+        self.assertEqual(session.fill_calls, [])  # never wrote
+        self.assertFalse(result["plan"][0]["ready"])
 
 
 if __name__ == "__main__":
