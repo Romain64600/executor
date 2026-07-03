@@ -259,35 +259,51 @@ _FILL_CREATE_JS = (
 )
 
 
-# Chantier n°1 (2026-07-03) — TRUSTED click via CDP `Input.dispatchMouseEvent`.
-# The click itself is NOT synthesized in JS (that's what `dispatch` did, and
-# Driffle's handler ignores it because `event.isTrusted` is false). The DOM-side
-# JS below only fills selectize and installs the same diagnostic taps used by
-# `fill_and_create`; the click is fired from Python via CDP once prep resolves.
-# A companion poll JS then observes the signal + returns the captured network
-# requests and restores the taps.
+# Chantier n°1 extension (2026-07-03) — "Selectize humanisé".
 #
-# The taps live on ``window.__s18taps`` (prep) and ``window.__s18orig`` (originals
-# to restore). Between prep and poll, no other JS should run in this tab; the
-# submitter never runs concurrent work.
+# Inspect on Driffle canary-trusted-1625 proved the DOM-level `setValue()` path
+# leaves the form invalid (`form_all_inputs_valid: false`): Selectize's own
+# .selectize-input text field stays empty with `required invalid not-full`,
+# blocking HTML5 form validation and preventing any `submit` event. On top of
+# that, the form has an `offer[targets][]` required text field that a real user
+# interaction likely populates.
+#
+# The new flow no longer touches `setValue` at all. Instead:
+#   1. PREP JS installs the network taps + records pre-existing signal counts
+#      *and* text snapshots (so text UPDATES on existing template nodes count
+#      as ACKs, not just new nodes). NO fill.
+#   2. Python drives `select_via_trusted(select_name, value_id)` twice (region,
+#      edition): trusted CDP click on the .selectize-input → dropdown opens →
+#      trusted click on the .option[data-value="{id}"] → dropdown closes,
+#      Selectize applies value, plugin's own listeners fire naturally.
+#   3. Python drives `click_trusted_at_element("#TB_ajaxContent .button-primary")`
+#      (unchanged path — trusted CDP click on the submit button center).
+#   4. POLL JS observes signal ACK.
+#
+# All events land in Chrome with `isTrusted: true`. No `form.submit()`, no XHR,
+# no `.click()`, no `setValue`, no `dispatchEvent`. Post-save (offer gone from
+# refreshed pending feed) remains the ONLY success proof.
+#
+# Taps live on ``window.__s18taps`` (prep) and ``window.__s18orig`` (originals
+# to restore). Between prep and poll, no other JS should run in this tab.
 _TRUSTED_PREP_JS = (
     "(function(){return new Promise(function(resolve){"
-    "var rn=%s,en=%s,rid=%s,eid=%s;"
+    "var rn=%s,en=%s;"
     "var r=document.querySelector('select[name=\"'+rn+'\"]');"
     "var e=document.querySelector('select[name=\"'+en+'\"]');"
     "function opts(s){return s?Array.prototype.slice.call(s.options).map(function(o){return o.value;}):[];}"
     "function count(sel){return document.querySelectorAll(sel).length;}"
+    "function texts(sel){return Array.prototype.slice.call(document.querySelectorAll(sel))"
+    ".map(function(el){return (el.textContent||'').trim();});}"
     "if(!r||!e||!r.selectize||!e.selectize){resolve({status:'NO_SELECTS'});return;}"
-    "r.selectize.setValue(rid);e.selectize.setValue(eid);"
-    "setTimeout(function(){"
     "var b=document.querySelector('#TB_ajaxContent .button-primary');"
     "if(!b){resolve({status:'NO_BUTTON'});return;}"
-    "var diag={region_target:rid,edition_target:eid,"
-    "region_set:String(r.selectize.getValue()),edition_set:String(e.selectize.getValue()),"
-    "region_options:opts(r),edition_options:opts(e),"
+    "var diag={region_options:opts(r),edition_options:opts(e),"
     "button:{disabled:!!b.disabled,visible:b.offsetParent!==null,"
     "text:(b.textContent||'').trim().slice(0,40)}};"
-    "window.__s18taps={reqs:[],pre_s:count('[data-success]'),pre_er:count('[data-error]')};"
+    "window.__s18taps={reqs:[],"
+    "pre_s:count('[data-success]'),pre_er:count('[data-error]'),"
+    "pre_s_texts:texts('[data-success]'),pre_er_texts:texts('[data-error]')};"
     "var _f=window.fetch,_o=XMLHttpRequest.prototype.open,_s=XMLHttpRequest.prototype.send;"
     "window.__s18orig={f:_f,o:_o,s:_s};"
     "if(_f){window.fetch=function(u,o){var m=(o&&o.method)||'GET';"
@@ -302,32 +318,106 @@ _TRUSTED_PREP_JS = (
     "return _s.apply(this,arguments);};"
     "diag.pre_existing={success:window.__s18taps.pre_s,error:window.__s18taps.pre_er};"
     "diag.status='PREPARED';resolve(diag);"
-    "},500);"
     "});})()"
 )
 
-# Poll for a NEW [data-success]/[data-error] node after the trusted click has
-# been dispatched from Python. Restores the taps installed by prep and returns
-# the captured requests + signal text. Same accepted signal semantics as
-# `_FILL_CREATE_JS` (only a new node — count increased — counts as ack).
+# Poll for an ACK after the trusted click. Accepts EITHER a NEW
+# [data-success]/[data-error] node (count increased) OR a TEXT CHANGE on an
+# existing template node (Driffle's actual pattern: the plugin updates the
+# pre-existing <p data-success> textContent on ACK, doesn't add a node). The
+# taps installed by prep are restored on resolution.
 _TRUSTED_POLL_JS = (
     "(function(){return new Promise(function(resolve){"
     "function count(sel){return document.querySelectorAll(sel).length;}"
-    "var t=window.__s18taps||{reqs:[],pre_s:0,pre_er:0};"
+    "function texts(sel){return Array.prototype.slice.call(document.querySelectorAll(sel))"
+    ".map(function(el){return (el.textContent||'').trim();});}"
+    "var t=window.__s18taps||{reqs:[],pre_s:0,pre_er:0,pre_s_texts:[],pre_er_texts:[]};"
+    "function textChanged(cur,pre){"
+    "for(var i=0;i<Math.min(cur.length,pre.length);i++){"
+    "if(cur[i]!==(pre[i]||'')&&cur[i].length>0)return cur[i];}"
+    "return null;}"
     "var n=0,iv=setInterval(function(){n++;"
     "var cs=count('[data-success]'),ce=count('[data-error]');"
-    "function fin(st,sel){clearInterval(iv);"
-    "var out={status:st,polls:n,requests:t.reqs};"
-    "if(sel){var nodes=document.querySelectorAll(sel);var el=nodes[nodes.length-1];"
-    "out.signal=el?(el.textContent||'').trim().slice(0,150):'';}else{out.signal='';}"
+    "var cs_t=texts('[data-success]'),ce_t=texts('[data-error]');"
+    "var s_txt=textChanged(cs_t,t.pre_s_texts);"
+    "var e_txt=textChanged(ce_t,t.pre_er_texts);"
+    "function fin(st,sig){clearInterval(iv);"
+    "var out={status:st,polls:n,requests:t.reqs,signal:sig||''};"
     "var o=window.__s18orig;if(o){window.fetch=o.f;XMLHttpRequest.prototype.open=o.o;"
     "XMLHttpRequest.prototype.send=o.s;delete window.__s18orig;}"
     "delete window.__s18taps;resolve(out);}"
-    "if(cs>t.pre_s){fin('SUCCESS','[data-success]');}"
-    "else if(ce>t.pre_er){fin('ERROR','[data-error]');}"
-    "else if(n>=40){fin('NO_SIGNAL',null);}"
+    # NEW node → SUCCESS/ERROR
+    "if(cs>t.pre_s){var ns=document.querySelectorAll('[data-success]');"
+    "var els=ns[ns.length-1];fin('SUCCESS',els?(els.textContent||'').trim().slice(0,150):'');}"
+    "else if(ce>t.pre_er){var ne=document.querySelectorAll('[data-error]');"
+    "var ele=ne[ne.length-1];fin('ERROR',ele?(ele.textContent||'').trim().slice(0,150):'');}"
+    # TEXT CHANGE on pre-existing template node → SUCCESS/ERROR (Driffle pattern)
+    "else if(s_txt){fin('SUCCESS',s_txt.slice(0,150));}"
+    "else if(e_txt){fin('ERROR',e_txt.slice(0,150));}"
+    "else if(n>=40){fin('NO_SIGNAL','');}"
     "},200);"
     "});})()"
+)
+
+# Selectize UI probes — S02-safe (read-only). Locate the .selectize-input rect
+# (for trusted click-to-open) and the .option[data-value="X"] rect (for
+# trusted click-to-select once the dropdown is visible). The wrapper is found
+# via `sel.selectize.$wrapper[0]` (Selectize's own jQuery accessor) with a DOM
+# sibling walk as fallback.
+_SELECTIZE_INPUT_RECT_JS = (
+    "JSON.stringify((function(){"
+    "var name=%s;"
+    "var sel=document.querySelector('select[name=\"'+name+'\"]');"
+    "if(!sel)return {ok:false,reason:'no_select'};"
+    "var wrap=null;"
+    "if(sel.selectize&&sel.selectize.$wrapper&&sel.selectize.$wrapper[0])"
+    "{wrap=sel.selectize.$wrapper[0];}else{"
+    "var nx=sel.nextElementSibling;while(nx){"
+    "if(nx.classList&&nx.classList.contains('selectize-control')){wrap=nx;break;}"
+    "nx=nx.nextElementSibling;}}"
+    "if(!wrap)return {ok:false,reason:'no_wrapper'};"
+    "var inp=wrap.querySelector('.selectize-input');"
+    "if(!inp)return {ok:false,reason:'no_input'};"
+    "var r=inp.getBoundingClientRect();"
+    "return {ok:true,x:r.x,y:r.y,width:r.width,height:r.height,"
+    "top:r.top,left:r.left,bottom:r.bottom,right:r.right,"
+    "viewport:{w:window.innerWidth,h:window.innerHeight}};"
+    "})())"
+)
+
+_SELECTIZE_OPTION_RECT_JS = (
+    "JSON.stringify((function(){"
+    "var name=%s,val=%s;"
+    "var sel=document.querySelector('select[name=\"'+name+'\"]');"
+    "if(!sel)return {ok:false,reason:'no_select'};"
+    "var wrap=null;"
+    "if(sel.selectize&&sel.selectize.$wrapper&&sel.selectize.$wrapper[0])"
+    "{wrap=sel.selectize.$wrapper[0];}else{"
+    "var nx=sel.nextElementSibling;while(nx){"
+    "if(nx.classList&&nx.classList.contains('selectize-control')){wrap=nx;break;}"
+    "nx=nx.nextElementSibling;}}"
+    "if(!wrap)return {ok:false,reason:'no_wrapper'};"
+    "var dd=wrap.querySelector('.selectize-dropdown');"
+    "if(!dd||getComputedStyle(dd).display==='none')"
+    "return {ok:false,reason:'dropdown_not_open'};"
+    "var opt=wrap.querySelector('.selectize-dropdown-content [data-value=\"'+val+'\"]');"
+    "if(!opt)return {ok:false,reason:'no_option'};"
+    "var r=opt.getBoundingClientRect();"
+    "return {ok:true,x:r.x,y:r.y,width:r.width,height:r.height,"
+    "top:r.top,left:r.left,bottom:r.bottom,right:r.right,"
+    "viewport:{w:window.innerWidth,h:window.innerHeight}};"
+    "})())"
+)
+
+_SELECTIZE_READBACK_JS = (
+    "JSON.stringify((function(){"
+    "var name=%s;"
+    "var sel=document.querySelector('select[name=\"'+name+'\"]');"
+    "if(!sel)return {ok:false};"
+    "var stz=sel.selectize?String(sel.selectize.getValue()):null;"
+    "return {ok:true,select_value:sel.value||'',selectize_value:stz,"
+    "validity_valid:sel.validity?sel.validity.valid:null};"
+    "})())"
 )
 
 # Emergency tap cleanup used if prep succeeded but the trusted click could not
@@ -403,6 +493,31 @@ class WriteSubmitSession(SubmitSession):
         raw = self.evaluate_readonly(_RECT_JS % json.dumps(selector))
         return json.loads(raw) if raw else {"ok": False}
 
+    def _trusted_click_at_rect(self, rect: dict[str, Any]) -> dict[str, Any]:
+        """Fire a trusted mousedown → dwell → mouseup at the rect's center.
+
+        ``rect`` must have ``x``, ``y``, ``width``, ``height`` (viewport coords).
+        Caller must ensure the rect is in the current viewport. Returns
+        ``{cx, cy, delay_ms}``.
+        """
+
+        cx = rect["x"] + rect["width"] / 2
+        cy = rect["y"] + rect["height"] / 2
+        self._cmd("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": cx, "y": cy})
+        self._cmd(
+            "Input.dispatchMouseEvent",
+            {"type": "mousePressed", "x": cx, "y": cy,
+             "button": "left", "buttons": 1, "clickCount": 1},
+        )
+        delay_ms = random.randint(40, 90)
+        time.sleep(delay_ms / 1000.0)
+        self._cmd(
+            "Input.dispatchMouseEvent",
+            {"type": "mouseReleased", "x": cx, "y": cy,
+             "button": "left", "buttons": 0, "clickCount": 1},
+        )
+        return {"cx": cx, "cy": cy, "delay_ms": delay_ms}
+
     def click_trusted_at_element(
         self, selector: str = "#TB_ajaxContent .button-primary",
     ) -> dict[str, Any]:
@@ -411,13 +526,12 @@ class WriteSubmitSession(SubmitSession):
         Reads the rect via ``_read_rect``. If the element is outside the viewport,
         issues one ``Input.synthesizeScrollGesture`` (mouse source, speed 800) to
         bring its center around 40 % of viewport height, waits 500 ms, re-reads
-        the rect. Then sends ``mouseMoved`` → ``mousePressed`` (left, clickCount 1)
-        → random 40-90 ms delay → ``mouseReleased`` at the (post-scroll) center.
+        the rect. Then fires the trusted mouse sequence at the center.
         Events land in Chrome with ``isTrusted:true``.
 
         Returns a diag dict: selector, rect, viewport, scrolled, scroll_y_distance
         (if scrolled), rect_after_scroll (if scrolled), click_x, click_y, delay_ms,
-        status ('CLICKED' | 'NO_ELEMENT'), mode='trusted'.
+        status ('CLICKED' | 'NO_ELEMENT' | 'NO_ELEMENT_AFTER_SCROLL'), mode='trusted'.
         """
 
         rect = self._read_rect(selector)
@@ -437,7 +551,7 @@ class WriteSubmitSession(SubmitSession):
         if needs_scroll:
             target_y = vp["h"] * 0.4
             current_y = (rect["top"] + rect["bottom"]) / 2
-            y_distance = int(current_y - target_y)  # +down / -up (CDP convention)
+            y_distance = int(current_y - target_y)
             self._cmd(
                 "Input.synthesizeScrollGesture",
                 {
@@ -449,7 +563,7 @@ class WriteSubmitSession(SubmitSession):
                     "speed": 800,
                 },
             )
-            time.sleep(0.5)  # Romain: 500 ms settle after synthesizeScrollGesture.
+            time.sleep(0.5)
             rect = self._read_rect(selector)
             diag["scrolled"] = True
             diag["scroll_y_distance"] = y_distance
@@ -461,31 +575,70 @@ class WriteSubmitSession(SubmitSession):
                 diag["status"] = "NO_ELEMENT_AFTER_SCROLL"
                 return diag
 
-        cx = rect["x"] + rect["width"] / 2
-        cy = rect["y"] + rect["height"] / 2
-        diag["click_x"] = cx
-        diag["click_y"] = cy
-
-        # Pre-click hover — a human moves the pointer to the button before pressing.
-        self._cmd("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": cx, "y": cy})
-        self._cmd(
-            "Input.dispatchMouseEvent",
-            {"type": "mousePressed", "x": cx, "y": cy,
-             "button": "left", "buttons": 1, "clickCount": 1},
-        )
-
-        # Human-like press→release dwell (bounded random).
-        delay_ms = random.randint(40, 90)
-        diag["delay_ms"] = delay_ms
-        time.sleep(delay_ms / 1000.0)
-
-        self._cmd(
-            "Input.dispatchMouseEvent",
-            {"type": "mouseReleased", "x": cx, "y": cy,
-             "button": "left", "buttons": 0, "clickCount": 1},
-        )
-
+        click = self._trusted_click_at_rect(rect)
+        diag["click_x"] = click["cx"]
+        diag["click_y"] = click["cy"]
+        diag["delay_ms"] = click["delay_ms"]
         diag["status"] = "CLICKED"
+        return diag
+
+    def select_via_trusted(self, select_name: str, value_id: str) -> dict[str, Any]:
+        """Selectize humanisé (Chantier n°1 extension, 2026-07-03).
+
+        1. Read the ``.selectize-input`` rect for the given select name (S02-safe).
+        2. Trusted CDP click on it — the dropdown opens naturally.
+        3. Wait 250 ms for dropdown render + option layout.
+        4. Read the ``[data-value="{value_id}"]`` option rect (S02-safe).
+        5. Trusted CDP click on it — Selectize applies the value, plugin's own
+           listeners fire.
+        6. Wait 200 ms for state settle.
+        7. Read back ``select.value`` + ``select.selectize.getValue()`` +
+           ``select.validity.valid``.
+
+        Returns a diag dict: select_name, value_id, status
+        ('SELECTED' | 'NO_SELECTIZE_INPUT' | 'NO_OPTION'), input_rect,
+        option_rect, open_click, option_click, readback.
+        """
+
+        input_raw = self.evaluate_readonly(
+            _SELECTIZE_INPUT_RECT_JS % json.dumps(select_name)
+        )
+        input_rect = json.loads(input_raw) if input_raw else {"ok": False}
+        diag: dict[str, Any] = {"select_name": select_name, "value_id": str(value_id)}
+        if not input_rect.get("ok"):
+            diag["status"] = "NO_SELECTIZE_INPUT"
+            diag["reason"] = input_rect.get("reason")
+            return diag
+
+        diag["input_rect"] = {
+            "x": input_rect["x"], "y": input_rect["y"],
+            "w": input_rect["width"], "h": input_rect["height"],
+        }
+        diag["open_click"] = self._trusted_click_at_rect(input_rect)
+        time.sleep(0.25)  # dropdown render + option layout
+
+        option_raw = self.evaluate_readonly(
+            _SELECTIZE_OPTION_RECT_JS
+            % (json.dumps(select_name), json.dumps(str(value_id)))
+        )
+        option_rect = json.loads(option_raw) if option_raw else {"ok": False}
+        if not option_rect.get("ok"):
+            diag["status"] = "NO_OPTION"
+            diag["reason"] = option_rect.get("reason")
+            return diag
+
+        diag["option_rect"] = {
+            "x": option_rect["x"], "y": option_rect["y"],
+            "w": option_rect["width"], "h": option_rect["height"],
+        }
+        diag["option_click"] = self._trusted_click_at_rect(option_rect)
+        time.sleep(0.2)  # dropdown close + state settle
+
+        readback_raw = self.evaluate_readonly(
+            _SELECTIZE_READBACK_JS % json.dumps(select_name)
+        )
+        diag["readback"] = json.loads(readback_raw) if readback_raw else {"ok": False}
+        diag["status"] = "SELECTED"
         return diag
 
     def fill_then_click_trusted(
@@ -495,31 +648,60 @@ class WriteSubmitSession(SubmitSession):
         edition_select: str,
         edition_id: str,
     ) -> dict[str, Any]:
-        """Trusted-click variant of ``fill_and_create``: fills selectize + installs
-        network taps in-page (JS prep), fires a TRUSTED click via CDP `Input.*`,
-        then polls for the ack + returns the captured requests (JS poll). Same
-        output shape as ``fill_and_create`` (region_set/target, options, button,
-        pre_existing, requests, polls, status, signal) plus a ``click`` sub-dict
-        (rect, viewport, scrolled, click_x/y, delay_ms). ``click_mode='trusted'``.
+        """Trusted-click variant of ``fill_and_create`` — Selectize humanisé
+        (Chantier n°1 extension, 2026-07-03):
+
+        1. Prep JS: install network taps + record pre-existing signal state
+           (counts + text snapshots) + button visibility. NO setValue.
+        2. ``select_via_trusted(region_select, region_id)``: trusted CDP click on
+           Selectize UI (open + pick option). Selectize fires its own events.
+        3. ``select_via_trusted(edition_select, edition_id)``: same.
+        4. ``click_trusted_at_element("#TB_ajaxContent .button-primary")``:
+           trusted CDP click on the submit button center.
+        5. Poll JS: accept either a NEW [data-success]/[data-error] node OR a
+           TEXT CHANGE on the existing template node (Driffle's actual pattern),
+           report captured requests, restore taps.
+
+        Post-save (offer gone from refreshed pending) remains the ONLY success
+        proof — this method's ``status`` is diagnostic only.
         """
 
         prep = self._evaluate(
             _TRUSTED_PREP_JS
-            % (
-                json.dumps(region_select),
-                json.dumps(edition_select),
-                json.dumps(str(region_id)),
-                json.dumps(str(edition_id)),
-            )
+            % (json.dumps(region_select), json.dumps(edition_select))
         )
         if not isinstance(prep, dict) or prep.get("status") != "PREPARED":
             return prep if isinstance(prep, dict) else {"status": "NO_RESULT", "raw": prep}
 
+        prep["click_mode"] = "trusted"
+        prep["region_target"] = str(region_id)
+        prep["edition_target"] = str(edition_id)
+
+        region_pick = self.select_via_trusted(region_select, str(region_id))
+        prep["region_pick"] = region_pick
+        if region_pick.get("status") != "SELECTED":
+            self._evaluate(_TRUSTED_CLEANUP_JS)
+            prep["status"] = "NO_REGION_PICK"
+            return prep
+
+        edition_pick = self.select_via_trusted(edition_select, str(edition_id))
+        prep["edition_pick"] = edition_pick
+        if edition_pick.get("status") != "SELECTED":
+            self._evaluate(_TRUSTED_CLEANUP_JS)
+            prep["status"] = "NO_EDITION_PICK"
+            return prep
+
+        prep["region_set"] = str(
+            (region_pick.get("readback") or {}).get("selectize_value", "")
+        )
+        prep["edition_set"] = str(
+            (edition_pick.get("readback") or {}).get("selectize_value", "")
+        )
+
         click = self.click_trusted_at_element("#TB_ajaxContent .button-primary")
         prep["click"] = click
-        prep["click_mode"] = "trusted"
         if click.get("status") != "CLICKED":
-            self._evaluate(_TRUSTED_CLEANUP_JS)  # restore taps; leave selectize as-is
+            self._evaluate(_TRUSTED_CLEANUP_JS)
             prep["status"] = "NO_TRUSTED_CLICK"
             return prep
 

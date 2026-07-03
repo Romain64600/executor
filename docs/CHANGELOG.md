@@ -3,6 +3,83 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-03 — Chantier n°1 extension: Selectize humanisé (no more `setValue`)
+
+Canary #4 (FRACT OSC, offer 92625611) with `--click-mode trusted` proved the
+trusted click LANDS on the correct button (`element_at_center.is_button: true`,
+`button_style.pointer_events: auto`) — yet still `requests: []`. Enriched
+`--inspect` probe revealed the real blocker: **`form_all_inputs_valid: false`**.
+Three `required` text inputs are empty at click time:
+
+- `offer[targets][]` — a real named data field, never filled by our setValue path.
+- Two anonymous `<input type="text" required>` inside Selectize wrappers whose
+  `parent_class` is `selectize-input items required invalid not-full has-options`
+  — Selectize's own UI text input inherits `required` from the underlying
+  `<select required>`, and stays empty when the value is set via `.selectize.setValue()`
+  because that's a programmatic setter, not a real user interaction.
+
+Consequence: HTML5 form validation blocks the `submit` event before any
+handler fires. No handler ⇒ no XHR ⇒ `requests: []`.
+
+**Fix — Selectize humanisé** (Chantier n°1 extension, authorized Romain 2026-07-03):
+replace `setValue` with a trusted CDP click on the `.selectize-input` (opens
+dropdown), wait 250 ms, trusted CDP click on `.selectize-dropdown-content
+.option[data-value="{id}"]` (selects). Same handler chain as a real operator —
+Selectize's own event listeners fire, likely populating `offer[targets][]` as
+a side-effect. Still no `.click()`, no `dispatchEvent`, no `form.submit()`,
+no XHR, no `setValue`. **169 tests green.**
+
+- `src/submit_session.py` — new `select_via_trusted(select_name, value_id)`:
+  reads `.selectize-input` rect (S02-safe `_SELECTIZE_INPUT_RECT_JS`),
+  trusted CDP click at its center, 250 ms settle, reads
+  `[data-value="{id}"]` rect (S02-safe `_SELECTIZE_OPTION_RECT_JS`,
+  requires the dropdown visible), trusted CDP click, 200 ms settle,
+  reads back `select.value` + `select.selectize.getValue()` + `select.validity.valid`
+  (`_SELECTIZE_READBACK_JS`). All events `isTrusted: true`.
+- `src/submit_session.py` — refactored the mousedown/dwell/mouseup sequence
+  into a private `_trusted_click_at_rect(rect)` helper; `click_trusted_at_element`
+  and `select_via_trusted` both use it. No behavior change for the button click.
+- `src/submit_session.py` — `_TRUSTED_PREP_JS` no longer calls `setValue`;
+  it only installs the network taps + captures pre-existing signal counts + texts
+  + button visibility. `_TRUSTED_POLL_JS` now accepts a text CHANGE on an
+  existing `[data-success]`/`[data-error]` template node as a valid ACK (Driffle
+  updates a pre-existing `<p data-success>` textContent instead of adding a
+  node — the previous "new node only" guard would have missed it).
+- `src/submit_session.py` (`_INSPECT_MODAL_JS`) — enriched:
+  `element_at_center` (`elementFromPoint` at button center), `button_style`
+  (pointer_events / z_index / opacity / visibility / display), `form_inputs`
+  (name / type / required / value_len / visible / willValidate / validity /
+  parent_class), `form_all_inputs_valid`. Read-only, S02-safe.
+- `src/submitter.py` — `Submitter._process` unchanged interface; still routes
+  to `fill_then_click_trusted` when `click_mode='trusted'`. The internal
+  orchestration now uses select_via_trusted twice + click_trusted_at_element.
+- Tests: +6 (SelectViaTrusted 4 tests: success chain reads/clicks/readback,
+  no_input early-out, no_option after open, S02 guard on the 3 new probes;
+  FillThenClickTrusted +3: full success chain merges prep+picks+click+poll,
+  region-pick failure triggers cleanup, edition-pick failure triggers cleanup).
+
+**S09 dérogation étendue (2)** : la couche de synthèse trusted couvre maintenant
+non seulement le clic sur "Create offer" mais aussi les interactions Selectize
+UI (open dropdown + pick option). Toujours aucun `form.submit()`, aucun XHR,
+aucun clavier synthétique. Post-save reste juge.
+
+**Next diag** on the VPS (approved.json still points at offer 92625611):
+
+```
+python3 scripts/05_submit.py runs/driffle-canary-trusted-1625/approved.json \
+    --merchant Driffle --store-id 127 --submit --click-mode trusted
+```
+
+Grille :
+- `region_pick.status: SELECTED` + `readback.selectize_value` == region_id + `validity_valid: true` → Selectize UI clic OK.
+- `requests: [POST admin-ajax.php … -> 200]` + offer gone from pending →
+  **Chantier n°1 + Selectize humanisé confirmés**, gel du mécanisme.
+- `region_pick.status: NO_OPTION` → dropdown open ok mais l'option n'était pas
+  encore rendue (timing) → augmenter le settle post-open ou attendre
+  `[data-value]` avant lecture rect.
+- `requests: []` **encore** → épuisé les hypothèses connues, on ouvre DevTools
+  live pour `getEventListeners(document)` sur la page pending.
+
 ## 2026-07-03 — Chantier n°1: `--click-mode trusted` (CDP `Input.dispatchMouseEvent`)
 
 Canary #3 (Driffle) confirmed the S18 root cause: both `native` (`.click()`) and

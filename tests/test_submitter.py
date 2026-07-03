@@ -408,7 +408,7 @@ class TrustedClickTests(unittest.TestCase):
 
 
 class FillThenClickTrustedTests(unittest.TestCase):
-    def _sess(self, prep_result, click_result, poll_result):
+    def _sess(self, prep_result, region_pick, edition_pick, click_result, poll_result):
         import unittest.mock as mock
         from src.submit_session import _TRUSTED_CLEANUP_JS, WriteSubmitSession
 
@@ -424,14 +424,20 @@ class FillThenClickTrustedTests(unittest.TestCase):
 
         sess._evaluate = eval_stub
         sess.click_trusted_at_element = lambda selector=None: click_result
+        pick_seq = [region_pick, edition_pick]
+        sess.select_via_trusted = lambda name, val: pick_seq.pop(0)
         sess._cleanup_called = cleanup_called
         mock.patch("src.submit_session.time.sleep").start()
         self.addCleanup(mock.patch.stopall)
         return sess
 
-    def test_success_flow_merges_prep_and_poll(self):
-        prep = {"status": "PREPARED", "region_target": "9", "edition_target": "1",
-                "region_set": "9", "edition_set": "1",
+    def _pick(self, value):
+        return {"status": "SELECTED", "select_name": "?", "value_id": str(value),
+                "readback": {"ok": True, "select_value": str(value),
+                             "selectize_value": str(value), "validity_valid": True}}
+
+    def test_success_flow_merges_prep_picks_click_and_poll(self):
+        prep = {"status": "PREPARED",
                 "region_options": ["9"], "edition_options": ["1"],
                 "button": {"disabled": False, "visible": True, "text": "Create offer"},
                 "pre_existing": {"success": 1, "error": 1}}
@@ -440,30 +446,140 @@ class FillThenClickTrustedTests(unittest.TestCase):
         poll = {"status": "SUCCESS", "polls": 3, "requests": [
             {"via": "xhr", "method": "POST", "url": "/wp-admin/admin-ajax.php", "status": 200}
         ], "signal": "Offer created"}
-        sess = self._sess(prep, click, poll)
+        sess = self._sess(prep, self._pick("9"), self._pick("1"), click, poll)
         result = sess.fill_then_click_trusted("offer[region]", "9", "offer[edition]", "1")
         self.assertEqual(result["status"], "SUCCESS")
         self.assertEqual(result["click_mode"], "trusted")
         self.assertEqual(result["click"], click)
+        self.assertEqual(result["region_pick"]["status"], "SELECTED")
+        self.assertEqual(result["edition_pick"]["status"], "SELECTED")
+        self.assertEqual(result["region_target"], "9")
+        self.assertEqual(result["region_set"], "9")
+        self.assertEqual(result["edition_set"], "1")
         self.assertEqual(result["signal"], "Offer created")
         self.assertEqual(len(result["requests"]), 1)
-        self.assertEqual(result["region_set"], "9")
 
     def test_no_selects_returns_early_no_click(self):
         prep = {"status": "NO_SELECTS"}
-        sess = self._sess(prep, {"status": "CLICKED"}, {"status": "SUCCESS"})
+        sess = self._sess(prep, self._pick("9"), self._pick("1"),
+                          {"status": "CLICKED"}, {"status": "SUCCESS"})
         result = sess.fill_then_click_trusted("offer[region]", "9", "offer[edition]", "1")
         self.assertEqual(result["status"], "NO_SELECTS")
 
+    def test_no_region_pick_triggers_cleanup(self):
+        prep = {"status": "PREPARED", "region_options": ["9"], "edition_options": ["1"],
+                "button": {}, "pre_existing": {"success": 0, "error": 0}}
+        region_fail = {"status": "NO_SELECTIZE_INPUT", "reason": "no_wrapper"}
+        sess = self._sess(prep, region_fail, self._pick("1"),
+                          {"status": "CLICKED"}, {"status": "SUCCESS"})
+        result = sess.fill_then_click_trusted("offer[region]", "9", "offer[edition]", "1")
+        self.assertEqual(result["status"], "NO_REGION_PICK")
+        self.assertEqual(result["region_pick"], region_fail)
+        self.assertEqual(len(sess._cleanup_called), 1)
+
+    def test_no_edition_pick_triggers_cleanup(self):
+        prep = {"status": "PREPARED", "region_options": ["9"], "edition_options": ["1"],
+                "button": {}, "pre_existing": {"success": 0, "error": 0}}
+        edition_fail = {"status": "NO_OPTION", "reason": "no_option"}
+        sess = self._sess(prep, self._pick("9"), edition_fail,
+                          {"status": "CLICKED"}, {"status": "SUCCESS"})
+        result = sess.fill_then_click_trusted("offer[region]", "9", "offer[edition]", "1")
+        self.assertEqual(result["status"], "NO_EDITION_PICK")
+        self.assertEqual(result["edition_pick"], edition_fail)
+        self.assertEqual(len(sess._cleanup_called), 1)
+
     def test_no_element_click_triggers_cleanup(self):
-        prep = {"status": "PREPARED", "region_target": "9", "edition_target": "1"}
+        prep = {"status": "PREPARED", "region_options": ["9"], "edition_options": ["1"],
+                "button": {}, "pre_existing": {"success": 0, "error": 0}}
         click = {"status": "NO_ELEMENT", "selector": "#TB_ajaxContent .button-primary"}
-        sess = self._sess(prep, click, {"status": "SUCCESS"})
+        sess = self._sess(prep, self._pick("9"), self._pick("1"), click,
+                          {"status": "SUCCESS"})
         result = sess.fill_then_click_trusted("offer[region]", "9", "offer[edition]", "1")
         self.assertEqual(result["status"], "NO_TRUSTED_CLICK")
         self.assertEqual(result["click"], click)
-        # Cleanup JS must have been called (to restore fetch/XHR).
         self.assertEqual(len(sess._cleanup_called), 1)
+
+
+class SelectViaTrustedTests(unittest.TestCase):
+    def _sess(self, evaluate_readonly_results):
+        import unittest.mock as mock
+        from src.submit_session import WriteSubmitSession
+
+        sess = WriteSubmitSession.__new__(WriteSubmitSession)
+        seq = list(evaluate_readonly_results)
+        sess.evaluate_readonly = lambda js: seq.pop(0) if seq else ""
+        sent: list = []
+        sess._cmd = lambda method, params=None: sent.append((method, params)) or {}
+        sess._sent = sent
+        mock.patch("src.submit_session.time.sleep").start()
+        mock.patch("src.submit_session.random.randint", return_value=55).start()
+        self.addCleanup(mock.patch.stopall)
+        return sess
+
+    def test_success_reads_input_option_readback_and_clicks_twice(self):
+        input_rect = json.dumps({"ok": True, "x": 100, "y": 200, "width": 240, "height": 32,
+                                 "top": 200, "left": 100, "bottom": 232, "right": 340,
+                                 "viewport": {"w": 1280, "h": 720}})
+        option_rect = json.dumps({"ok": True, "x": 100, "y": 240, "width": 240, "height": 24,
+                                  "top": 240, "left": 100, "bottom": 264, "right": 340,
+                                  "viewport": {"w": 1280, "h": 720}})
+        readback = json.dumps({"ok": True, "select_value": "9",
+                               "selectize_value": "9", "validity_valid": True})
+        sess = self._sess([input_rect, option_rect, readback])
+        result = sess.select_via_trusted("offer[region]", "9")
+        self.assertEqual(result["status"], "SELECTED")
+        self.assertEqual(result["select_name"], "offer[region]")
+        self.assertEqual(result["value_id"], "9")
+        self.assertEqual(result["readback"]["selectize_value"], "9")
+        # Two trusted clicks: 3 Input.dispatchMouseEvent per click × 2 = 6 events
+        methods = [c[0] for c in sess._sent]
+        self.assertEqual(methods, ["Input.dispatchMouseEvent"] * 6)
+        types = [c[1]["type"] for c in sess._sent]
+        self.assertEqual(types, ["mouseMoved", "mousePressed", "mouseReleased"] * 2)
+        # First click at input center (100+120, 200+16) = (220, 216)
+        self.assertEqual(sess._sent[1][1]["x"], 220.0)
+        self.assertEqual(sess._sent[1][1]["y"], 216.0)
+        # Second click at option center (100+120, 240+12) = (220, 252)
+        self.assertEqual(sess._sent[4][1]["x"], 220.0)
+        self.assertEqual(sess._sent[4][1]["y"], 252.0)
+
+    def test_no_selectize_input_returns_early_no_clicks(self):
+        input_rect = json.dumps({"ok": False, "reason": "no_wrapper"})
+        sess = self._sess([input_rect])
+        result = sess.select_via_trusted("offer[region]", "9")
+        self.assertEqual(result["status"], "NO_SELECTIZE_INPUT")
+        self.assertEqual(result["reason"], "no_wrapper")
+        self.assertEqual(sess._sent, [])
+
+    def test_no_option_after_open_click_returns_no_option(self):
+        input_rect = json.dumps({"ok": True, "x": 100, "y": 200, "width": 240, "height": 32,
+                                 "top": 200, "left": 100, "bottom": 232, "right": 340,
+                                 "viewport": {"w": 1280, "h": 720}})
+        option_rect = json.dumps({"ok": False, "reason": "dropdown_not_open"})
+        sess = self._sess([input_rect, option_rect])
+        result = sess.select_via_trusted("offer[region]", "9")
+        self.assertEqual(result["status"], "NO_OPTION")
+        self.assertEqual(result["reason"], "dropdown_not_open")
+        # Only the open click fired (3 Input events); no option click.
+        self.assertEqual(len(sess._sent), 3)
+
+    def test_selectize_probe_js_are_readonly_safe(self):
+        from src.cdp_session import is_readonly_expression
+        from src.submit_session import (
+            _SELECTIZE_INPUT_RECT_JS,
+            _SELECTIZE_OPTION_RECT_JS,
+            _SELECTIZE_READBACK_JS,
+        )
+
+        self.assertTrue(is_readonly_expression(
+            _SELECTIZE_INPUT_RECT_JS % json.dumps("offer[region]")
+        ))
+        self.assertTrue(is_readonly_expression(
+            _SELECTIZE_OPTION_RECT_JS % (json.dumps("offer[region]"), json.dumps("9"))
+        ))
+        self.assertTrue(is_readonly_expression(
+            _SELECTIZE_READBACK_JS % json.dumps("offer[region]")
+        ))
 
 
 class InspectModalDomParsingTests(unittest.TestCase):
