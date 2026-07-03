@@ -104,9 +104,11 @@ class ReadOnlyCdpSession:
         if settle:
             time.sleep(settle)
 
-    def evaluate_readonly(self, expression: str) -> object:
-        if not is_readonly_expression(expression):
-            raise ReadOnlyEvalError("refusing to evaluate a non-read-only expression")
+    def _evaluate(self, expression: str) -> object:
+        """Raw Runtime.evaluate (no read-only guard). Subclasses use this for their
+        own, explicitly-named safe interactions; callers should prefer
+        ``evaluate_readonly``."""
+
         response = self._cmd(
             "Runtime.evaluate",
             {"expression": expression, "returnByValue": True, "awaitPromise": True},
@@ -115,6 +117,11 @@ class ReadOnlyCdpSession:
         if "exceptionDetails" in result:
             raise RuntimeError(f"CDP evaluate raised: {result['exceptionDetails']}")
         return result.get("result", {}).get("value")
+
+    def evaluate_readonly(self, expression: str) -> object:
+        if not is_readonly_expression(expression):
+            raise ReadOnlyEvalError("refusing to evaluate a non-read-only expression")
+        return self._evaluate(expression)
 
     # -- internals (adapted from the skill's proven raw-socket client) ---
     def _page_ws_path(self) -> str:

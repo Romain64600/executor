@@ -214,9 +214,12 @@ forget"; degraded submit mode; inventing a `buy_url` (must be extracted from the
 feed). The merchant id is auto-assigned by the modal — a direct XHR would use the
 wrong one.
 
-If any step fails → **STOP immediately**: do not continue to the next candidate,
-do not retry blindly (StepGuard enforces the 2× ceiling), do not switch browser,
-write an error report `[anti-boucle]`.
+If any step fails → do not retry the same offer blindly, do not switch browser.
+Per [`SUBMITTER_SPEC.md`](SUBMITTER_SPEC.md) §6 (Romain's decision) the batch policy
+is: log + skip the failing offer + continue, and stop the whole run after 10
+consecutive failures. The **DRY-RUN** submitter (no writes) is built in
+`src/submitter.py` + `scripts/05_submit.py`; the real write path is a separate,
+explicitly-authorized build.
 
 ---
 

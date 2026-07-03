@@ -101,12 +101,15 @@ STOP that candidate, do **not** re-loop, write an error report. Reporting wordin
 
 ## 6. StepGuard, anti-loop, stop conditions
 
-- Each candidate: one attempt (`max_failures_per_signature = 1`). A failure blocks
-  that signature; the run stops for that offer.
-- A second failure anywhere, or login/2FA/CDP failing twice → **STOP** the whole
-  run, short diagnosis, wait for Romain `[S15]`.
+- Each candidate: **one attempt** — never retry the same offer.
+- On a per-offer failure: **log it, skip that offer, continue** with the rest.
+- **Stop the whole run after 10 consecutive failures** (a success resets the
+  streak). StepGuard config: `max_attempts_per_signature=1`,
+  `max_failures_per_signature=2` (so one per-offer failure does not global-block),
+  `max_consecutive_failures=10`, and `max_failures_per_task` disabled (so only the
+  "10 in a row" rule stops the run, not a cumulative budget).
 - A new instruction / interruption cancels the run (new `task_id`); leftover
-  approved offers are **not** auto-submitted.
+  approved offers are **not** auto-submitted `[S15]`.
 
 ---
 
@@ -153,18 +156,16 @@ pre-request `[I18]`.
 
 ---
 
-## 11. Open questions for you
+## 11. Decisions (Romain, 2026-07-02)
 
-1. **Dry-run depth:** should dry-run actually *open* each modal (read-only, to
-   verify context + select names live), or stop at "row located + would open"?
-   Opening is a better rehearsal but touches the UI (still no write).
-2. **Batch size / pacing:** submit all approved at once (≥500 ms apart), or a hard
-   cap per run (e.g. 10) with a pause?
-3. **On first failure:** stop the entire run (strictest), or skip that one offer and
-   continue the rest? The skill leans "stop and diagnose" — I propose **stop**.
-4. **Merchant login check:** is the CDP Chrome reliably logged into WP when you run
-   this, or do we need a pre-flight "am I logged in?" read (redirect to wp-login →
-   abort)? I propose the pre-flight.
+1. **Dry-run opens each modal** — full read-only rehearsal (verify context + select
+   names live), no fill, no create.
+2. **No batch cap for now** — process all approved offers, ≥500 ms apart.
+3. **On failure: log + skip that offer + continue.** Stop the whole run only after
+   **10 consecutive failures** (§6).
+4. **Pre-flight login check: yes** — redirect to `wp-login` → abort "not logged in".
 
-Tell me your calls on §11 (and any change to the gates), and I'll build the
-**dry-run** submitter first.
+Build order: **dry-run only** first. In that build, the create capability does not
+exist — the session can open a modal and read, but has **no method** that fills or
+clicks "Create offer". The real write path is a separate, explicitly-authorized
+build.

@@ -81,7 +81,8 @@ aks-controlled-executor/
 │   ├── 01_check_invariants.py  # thin CLI over src/invariants.py (fail-closed JSON)
 │   ├── 02_extract_feed.py      # read-only feed extractor CLI (gated on green invariants)
 │   ├── 03_match.py             # read-only matcher CLI → candidates/skipped/report
-│   └── 04_validate.py          # validation CLI (template + check, fail-closed gate)
+│   ├── 04_validate.py          # validation CLI (template + check, fail-closed gate)
+│   └── 05_submit.py            # submitter CLI — DRY-RUN only (no writes)
 ├── src/
 │   ├── aks_env.py              # constants, pure validators, env classification, HTTP probes
 │   ├── cdp_client.py           # read-only CDP /json/version client (no browser actions)
@@ -91,9 +92,11 @@ aks-controlled-executor/
 │   ├── extractor.py            # Sprint 2 read-only feed extractor
 │   ├── matcher.py              # Sprint 3 read-only matcher (candidates + skipped)
 │   ├── validation.py           # Stage 3 validation gate (approve exact candidates)
+│   ├── submit_session.py       # interactive CDP session (open modal + read; NO create)
+│   ├── submitter.py            # Stage 4 DRY-RUN submitter (no writes)
 │   ├── run_log.py              # append-only JSONL run logger (redacting)
 │   └── step_guard.py           # deterministic, fail-closed StepGuard
-├── tests/                      # unit tests (125)
+├── tests/                      # unit tests (132)
 ├── config/  runs/  logs/  state/   # runtime dirs (runs/logs/state are gitignored)
 └── .gitignore
 ```
@@ -191,8 +194,11 @@ starts, so a mid-task "retry past it" is impossible. See
   report. Pure core unit-tested; live AKS resolve runs on the VPS.
 - [x] **Validation** (`src/validation.py`, `scripts/04_validate.py`) — fail-closed
   gate: approve exact candidates by fingerprint; no submission without it.
-- [ ] **Submitter** — dry-run by default, locked behind validation; submit only
-  via the AKS feed UI modal; `success = offer gone from the refreshed pending feed`.
+- [~] **Submitter — DRY-RUN built** (`src/submitter.py`, `src/submit_session.py`,
+  `scripts/05_submit.py`): rehearses the flow read-only (locate row, open modal,
+  verify context/selects, report what it *would* submit). No create capability
+  exists yet. Real write path (`.button-primary`, `success = gone from pending`) is
+  a separate, explicitly-authorized build. See [`docs/SUBMITTER_SPEC.md`](docs/SUBMITTER_SPEC.md).
 - [x] **Data contracts + JSONL run-log infrastructure** (`src/contracts.py`,
   `src/run_log.py`) — ready for the stages above to use.
 - [ ] **Post-save verifier.**

@@ -3,6 +3,26 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-02 — Stage 4: submitter (DRY-RUN only, no writes)
+
+The submit flow, dry-run only — **no writes**. **132 tests green.** Approach
+approved by Romain (`docs/SUBMITTER_SPEC.md`).
+
+- `src/submit_session.py` — `SubmitSession` (extends the read-only CDP session):
+  list a page's offer ids, open an offer's modal, read the modal context, detect the
+  WP login page. **No method fills a form or clicks "Create offer"** — the create
+  capability does not exist in this build.
+- `src/submitter.py` — `DryRunSubmitter`: pre-flight login check, locate the exact
+  current row, open the modal, verify context + select names, report what it *would*
+  submit. Per Romain's decisions: one attempt per offer; on failure log + skip +
+  continue; stop the run after **10 consecutive** failures (StepGuard).
+- `scripts/05_submit.py` — `--dry-run` (default), gated on green + authoritative
+  invariants; `--submit` is **refused** (write path not built). Writes
+  `submit_plan.json` + `submit_report.txt`.
+- 7 tests (login abort, ready plan, skips, select-name conventions, stop-after-10).
+
+Run on the VPS: `python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127`.
+
 ## 2026-07-02 — Stage 3: validation gate
 
 Read-only validation — the fail-closed gate before any submission. **125 tests green.**
