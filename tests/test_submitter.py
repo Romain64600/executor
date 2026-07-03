@@ -65,6 +65,7 @@ class DryRunTests(unittest.TestCase):
         self.assertIsNone(result["aborted"])
         self.assertIsNone(result["stopped"])
         self.assertTrue(all(p["ready"] for p in result["plan"]))
+        self.assertEqual(result["feed_offers"], 2)
         self.assertIn("offer[region]=2", result["plan"][0]["would_submit"])
 
     def test_offer_not_in_feed_is_skipped(self):

@@ -116,10 +116,11 @@ class DryRunSubmitter:
         self.session.navigate(feed_url(store_id, feed_page=feed_page, available=available))
         if self.session.is_login_page():
             self._log("aborted", reason="not logged in (wp-login)")
-            return {"aborted": "not_logged_in", "stopped": None, "plan": []}
+            return {"aborted": "not_logged_in", "stopped": None, "feed_offers": 0, "plan": []}
 
         self.guard.start_task(run_id)
         index = self._index_feed(store_id, feed_page, available, max_pages)
+        self._log("feed_indexed", offers=len(index))
 
         plan: list[dict[str, Any]] = []
         stopped: str | None = None
@@ -147,4 +148,4 @@ class DryRunSubmitter:
 
         if self.logger is not None:
             self.logger.log_guard(self.guard.snapshot())
-        return {"aborted": None, "stopped": stopped, "plan": plan}
+        return {"aborted": None, "stopped": stopped, "feed_offers": len(index), "plan": plan}

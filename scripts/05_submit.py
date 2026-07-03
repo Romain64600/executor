@@ -79,7 +79,9 @@ def main() -> int:
     ready = [p for p in result["plan"] if p.get("ready")]
     lines = [
         f"DRY-RUN submit plan — {args.merchant} — "
-        f"{len(ready)}/{len(result['plan'])} ready, aborted={result['aborted']}, stopped={result['stopped']}",
+        f"{len(ready)}/{len(result['plan'])} ready, "
+        f"{result.get('feed_offers')} offers in current feed, "
+        f"aborted={result['aborted']}, stopped={result['stopped']}",
         "",
     ]
     for entry in result["plan"]:
@@ -93,6 +95,7 @@ def main() -> int:
         "dry_run": True,
         "aborted": result["aborted"],
         "stopped": result["stopped"],
+        "feed_offers": result.get("feed_offers"),
         "ready": len(ready),
         "total": len(result["plan"]),
         "out_dir": str(out_dir),
