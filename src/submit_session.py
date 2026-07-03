@@ -390,21 +390,39 @@ _SELECTIZE_OPTION_RECT_JS = (
     "var name=%s,val=%s;"
     "var sel=document.querySelector('select[name=\"'+name+'\"]');"
     "if(!sel)return {ok:false,reason:'no_select'};"
+    # Selectize v0.x with `dropdownParent:'body'` puts the ACTIVE dropdown at
+    # `<body>` (out of the .selectize-control wrapper). Try the wrapper first,
+    # then fall back to Selectize's own `$dropdown_content` accessor, then a
+    # document-wide search for the option matching data-value.
     "var wrap=null;"
     "if(sel.selectize&&sel.selectize.$wrapper&&sel.selectize.$wrapper[0])"
     "{wrap=sel.selectize.$wrapper[0];}else{"
     "var nx=sel.nextElementSibling;while(nx){"
     "if(nx.classList&&nx.classList.contains('selectize-control')){wrap=nx;break;}"
     "nx=nx.nextElementSibling;}}"
-    "if(!wrap)return {ok:false,reason:'no_wrapper'};"
-    "var dd=wrap.querySelector('.selectize-dropdown');"
-    "if(!dd||getComputedStyle(dd).display==='none')"
-    "return {ok:false,reason:'dropdown_not_open'};"
-    "var opt=wrap.querySelector('.selectize-dropdown-content [data-value=\"'+val+'\"]');"
+    "var opt=null;var opt_source='';"
+    "if(wrap){opt=wrap.querySelector('.selectize-dropdown-content [data-value=\"'+val+'\"]');"
+    "if(opt)opt_source='wrapper';}"
+    "if(!opt&&sel.selectize&&sel.selectize.$dropdown_content&&sel.selectize.$dropdown_content[0]){"
+    "opt=sel.selectize.$dropdown_content[0].querySelector('[data-value=\"'+val+'\"]');"
+    "if(opt)opt_source='$dropdown_content';}"
+    "if(!opt){var doc_all=document.querySelectorAll('.selectize-dropdown-content [data-value=\"'+val+'\"]');"
+    "for(var i=0;i<doc_all.length;i++){var el=doc_all[i];var dd=el.closest('.selectize-dropdown');"
+    "if(dd&&getComputedStyle(dd).display!=='none'){opt=el;opt_source='document_wide_visible';break;}}"
+    "if(!opt&&doc_all.length>0){opt=doc_all[0];opt_source='document_wide_first';}}"
     "if(!opt)return {ok:false,reason:'no_option'};"
+    # scrollIntoView walks up scrollable ancestors: body / wrapper / any
+    # container with overflow:auto|scroll gets scrolled so the option is in
+    # view. Falls back gracefully if nothing is scrollable. This is a scroll
+    # mutation only, no DOM change, no data change.
+    "opt.scrollIntoView({block:'center',inline:'nearest'});"
     "var r=opt.getBoundingClientRect();"
+    "var dd2=opt.closest('.selectize-dropdown');"
     "return {ok:true,x:r.x,y:r.y,width:r.width,height:r.height,"
     "top:r.top,left:r.left,bottom:r.bottom,right:r.right,"
+    "opt_source:opt_source,"
+    "dropdown_display:dd2?getComputedStyle(dd2).display:null,"
+    "pageYOffset:window.pageYOffset,"
     "viewport:{w:window.innerWidth,h:window.innerHeight}};"
     "})())"
 )
