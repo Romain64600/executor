@@ -108,6 +108,15 @@ def main() -> int:
         lines.append(f"[{_status(entry, write)}] {entry['offer_id']} — {entry['merchant_title']}")
         if entry.get("ready") and not write:
             lines.append(f"    {entry['would_submit']}")
+        if entry.get("ready") and write and not entry.get("submitted"):
+            d = entry.get("create") or {}
+            lines.append(
+                f"    create={d.get('status')} "
+                f"region set/target={d.get('region_set')}/{d.get('region_target')} "
+                f"edition set/target={d.get('edition_set')}/{d.get('edition_target')} "
+                f"signal={d.get('signal')!r}"
+            )
+            lines.append(f"    region_options={d.get('region_options')} edition_options={d.get('edition_options')}")
     (out_dir / "submit_report.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     print(json.dumps({

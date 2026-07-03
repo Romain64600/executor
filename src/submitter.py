@@ -212,14 +212,16 @@ class Submitter(_SubmitterBase):
     def _process(self, entry, candidate, ctx):
         if not entry.get("ready"):
             return False
-        status = self.session.fill_and_create(
+        diag = self.session.fill_and_create(
             entry["region_select"], entry["region_id"], entry["edition_select"], entry["edition_id"]
         )
-        entry["create"] = status
+        entry["create"] = diag  # dict: status + read-back values + options + signal
+        status = diag.get("status") if isinstance(diag, dict) else diag
         # Only a settled click (success signal, or no signal but no error) proceeds to
-        # the real post-save proof. An ERROR: / NO_SELECTS / NO_BUTTON is a hard fail.
+        # the real post-save proof. ERROR / NO_SELECTS / NO_BUTTON is a hard fail.
         if status not in ("SUCCESS", "NO_SIGNAL"):
-            entry["post_save"] = f"create not confirmed: {status}"
+            reason = diag.get("signal") if isinstance(diag, dict) else ""
+            entry["post_save"] = f"create not confirmed: {status}" + (f" — {reason}" if reason else "")
             return False
         gone = self._verify_gone(
             entry["offer_id"], ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"]

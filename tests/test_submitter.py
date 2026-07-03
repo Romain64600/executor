@@ -101,9 +101,10 @@ class DryRunTests(unittest.TestCase):
 
 
 class FakeWriteSession(FakeSubmitSession):
-    def __init__(self, pages, *, create_status="SUCCESS", create_removes=True, **kw):
+    def __init__(self, pages, *, create_status="SUCCESS", create_signal=None, create_removes=True, **kw):
         super().__init__(pages, **kw)
         self.create_status = create_status
+        self.create_signal = create_signal
         self.create_removes = create_removes
         self.created = set()
         self.fill_calls = []
@@ -120,7 +121,11 @@ class FakeWriteSession(FakeSubmitSession):
         self.fill_calls.append((region_select, region_id, edition_select, edition_id))
         if self.create_status in ("SUCCESS", "NO_SIGNAL") and self.create_removes:
             self.created.add(self._last_opened)
-        return self.create_status
+        diag = {"status": self.create_status, "region_set": region_id, "edition_set": edition_id,
+                "region_options": ["1", "2", "9"], "edition_options": ["1"]}
+        if self.create_signal:
+            diag["signal"] = self.create_signal
+        return diag
 
 
 def _real(session, approved, **kw):
@@ -154,15 +159,16 @@ class RealSubmitTests(unittest.TestCase):
     def test_create_not_confirmed_is_failure(self):
         session = FakeWriteSession([["1"]], create_status="NO_SELECTS")
         result = _real(session, [_cand("1")], limit=1)
-        self.assertEqual(result["plan"][0]["create"], "NO_SELECTS")
+        self.assertEqual(result["plan"][0]["create"]["status"], "NO_SELECTS")
         self.assertIn("create not confirmed", result["plan"][0]["post_save"])
 
     def test_server_error_is_reported(self):
-        session = FakeWriteSession([["1"]], create_status="ERROR:region invalid")
+        session = FakeWriteSession([["1"]], create_status="ERROR", create_signal="region invalid")
         result = _real(session, [_cand("1")], limit=1)
         self.assertFalse(result["plan"][0].get("submitted"))
-        self.assertIn("ERROR:region invalid", result["plan"][0]["post_save"])
-        self.assertEqual(session.fill_calls and True, True)  # it did attempt
+        self.assertEqual(result["plan"][0]["create"]["status"], "ERROR")
+        self.assertIn("region invalid", result["plan"][0]["post_save"])
+        self.assertTrue(session.fill_calls)  # it did attempt
 
     def test_no_signal_still_verifies_feed(self):
         session = FakeWriteSession([["1"]], create_status="NO_SIGNAL")  # settled, no signal

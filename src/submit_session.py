@@ -75,22 +75,27 @@ class SubmitSession(ReadOnlyCdpSession):
 # setValue and the click matches the proven pattern; the Promise lets us await it.
 _FILL_CREATE_JS = (
     "(function(){return new Promise(function(resolve){"
-    "var r=document.querySelector('select[name=\"'+%s+'\"]');"
-    "var e=document.querySelector('select[name=\"'+%s+'\"]');"
-    "if(!r||!e||!r.selectize||!e.selectize){resolve('NO_SELECTS');return;}"
-    "r.selectize.setValue(%s);e.selectize.setValue(%s);"
+    "var rn=%s,en=%s,rid=%s,eid=%s;"
+    "var r=document.querySelector('select[name=\"'+rn+'\"]');"
+    "var e=document.querySelector('select[name=\"'+en+'\"]');"
+    "function opts(s){return s?Array.prototype.slice.call(s.options).map(function(o){return o.value;}):[];}"
+    "if(!r||!e||!r.selectize||!e.selectize){resolve({status:'NO_SELECTS'});return;}"
+    "r.selectize.setValue(rid);e.selectize.setValue(eid);"
     "setTimeout(function(){"
+    # Diagnostic: read back what actually took, and the available options.
+    "var diag={region_target:rid,edition_target:eid,"
+    "region_set:String(r.selectize.getValue()),edition_set:String(e.selectize.getValue()),"
+    "region_options:opts(r),edition_options:opts(e)};"
     "var b=document.querySelector('#TB_ajaxContent .button-primary');"
-    "if(!b){resolve('NO_BUTTON');return;}"
+    "if(!b){diag.status='NO_BUTTON';resolve(diag);return;}"
     "b.click();"
-    # After the click, wait for the modal AJAX to settle before returning — do NOT
-    # let the caller navigate away mid-request. Poll [data-success]/[data-error].
+    # Wait for the modal AJAX to settle before returning (do NOT navigate away mid-request).
     "var n=0,iv=setInterval(function(){n++;"
     "var s=document.querySelector('[data-success]');"
     "var er=document.querySelector('[data-error]');"
-    "if(s){clearInterval(iv);resolve('SUCCESS');}"
-    "else if(er){clearInterval(iv);resolve('ERROR:'+((er.textContent||'').trim().slice(0,120)));}"
-    "else if(n>=40){clearInterval(iv);resolve('NO_SIGNAL');}"
+    "if(s){clearInterval(iv);diag.status='SUCCESS';diag.signal=(s.textContent||'').trim().slice(0,150);resolve(diag);}"
+    "else if(er){clearInterval(iv);diag.status='ERROR';diag.signal=(er.textContent||'').trim().slice(0,150);resolve(diag);}"
+    "else if(n>=40){clearInterval(iv);diag.status='NO_SIGNAL';resolve(diag);}"
     "},200);"
     "},500);"
     "});})()"
@@ -107,15 +112,18 @@ class WriteSubmitSession(SubmitSession):
 
     def fill_and_create(
         self, region_select: str, region_id: str, edition_select: str, edition_id: str
-    ) -> str:
-        return str(
-            self._evaluate(
-                _FILL_CREATE_JS
-                % (
-                    json.dumps(region_select),
-                    json.dumps(edition_select),
-                    json.dumps(str(region_id)),
-                    json.dumps(str(edition_id)),
-                )
+    ) -> dict[str, Any]:
+        """Set region+edition and click Create. Returns a diagnostic dict with
+        ``status`` plus read-back values (region_set/edition_set), the available
+        options, and the modal signal text."""
+
+        result = self._evaluate(
+            _FILL_CREATE_JS
+            % (
+                json.dumps(region_select),
+                json.dumps(edition_select),
+                json.dumps(str(region_id)),
+                json.dumps(str(edition_id)),
             )
         )
+        return result if isinstance(result, dict) else {"status": "NO_RESULT", "raw": result}
