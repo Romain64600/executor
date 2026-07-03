@@ -117,19 +117,20 @@ class FakeWriteSession(FakeSubmitSession):
     def page_offer_ids(self):
         return [i for i in super().page_offer_ids() if i not in self.created]
 
-    def fill_and_create(self, region_select, region_id, edition_select, edition_id):
-        self.fill_calls.append((region_select, region_id, edition_select, edition_id))
+    def fill_and_create(self, region_select, region_id, edition_select, edition_id, click_mode="native"):
+        self.fill_calls.append((region_select, region_id, edition_select, edition_id, click_mode))
         if self.create_status in ("SUCCESS", "NO_SIGNAL") and self.create_removes:
             self.created.add(self._last_opened)
         diag = {"status": self.create_status, "region_set": region_id, "edition_set": edition_id,
-                "region_options": ["1", "2", "9"], "edition_options": ["1"]}
+                "region_options": ["1", "2", "9"], "edition_options": ["1"],
+                "click_mode": click_mode, "requests": [], "pre_existing": {"success": 0, "error": 0}}
         if self.create_signal:
             diag["signal"] = self.create_signal
         return diag
 
 
-def _real(session, approved, **kw):
-    return Submitter(session).run(
+def _real(session, approved, click_mode="native", **kw):
+    return Submitter(session, click_mode=click_mode).run(
         run_id="r", merchant="Driffle", store_id="127", approved=approved, pace=0, **kw
     )
 
@@ -142,7 +143,7 @@ class RealSubmitTests(unittest.TestCase):
         self.assertEqual(result["stopped"], "limit_reached")
         self.assertEqual(len(result["plan"]), 1)
         self.assertTrue(result["plan"][0]["submitted"])
-        self.assertEqual(session.fill_calls, [("offer[region]", "2", "offer[edition]", "1")])
+        self.assertEqual(session.fill_calls, [("offer[region]", "2", "offer[edition]", "1", "native")])
 
     def test_full_batch_creates_all(self):
         session = FakeWriteSession([["1", "2"]])
@@ -180,6 +181,34 @@ class RealSubmitTests(unittest.TestCase):
         result = _real(session, [_cand("9")], limit=1)
         self.assertEqual(session.fill_calls, [])  # never wrote
         self.assertFalse(result["plan"][0]["ready"])
+
+    def test_dispatch_click_mode_is_passed_through(self):
+        session = FakeWriteSession([["1"]])
+        result = _real(session, [_cand("1")], click_mode="dispatch", limit=1)
+        self.assertEqual(session.fill_calls[0][-1], "dispatch")
+        self.assertEqual(result["plan"][0]["create"]["click_mode"], "dispatch")
+        # The derogation NEVER weakens the proof: post-save still decides.
+        self.assertTrue(result["plan"][0]["submitted"])
+
+    def test_dispatch_mode_still_fails_when_still_pending(self):
+        session = FakeWriteSession([["1"]], create_removes=False)
+        result = _real(session, [_cand("1")], click_mode="dispatch", limit=1)
+        self.assertFalse(result["plan"][0]["submitted"])
+        self.assertIn("STILL in pending", result["plan"][0]["post_save"])
+
+    def test_default_click_mode_is_native(self):
+        session = FakeWriteSession([["1"]])
+        _real(session, [_cand("1")], limit=1)
+        self.assertEqual(session.fill_calls[0][-1], "native")
+
+
+class ClickModeValidationTests(unittest.TestCase):
+    def test_unknown_click_mode_is_refused(self):
+        from src.submit_session import WriteSubmitSession
+
+        session = WriteSubmitSession.__new__(WriteSubmitSession)  # no socket needed
+        with self.assertRaises(ValueError):
+            session.fill_and_create("offer[region]", "9", "offer[edition]", "1", click_mode="xhr")
 
 
 if __name__ == "__main__":

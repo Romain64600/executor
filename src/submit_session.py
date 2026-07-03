@@ -73,29 +73,73 @@ class SubmitSession(ReadOnlyCdpSession):
 # The ONE mutating interaction: set region+edition via selectize, then click the
 # modal "Create offer" .button-primary (skill S09/S17/S19). A 500 ms settle between
 # setValue and the click matches the proven pattern; the Promise lets us await it.
+#
+# S18 investigation instrumentation (2026-07-03):
+# - PRE-CLICK: count the [data-success]/[data-error] nodes already in the DOM.
+#   The live canary showed a SUCCESS with an EMPTY signal text — consistent with a
+#   pre-existing (template/hidden) node being mistaken for the AJAX result. The
+#   poll now only accepts a signal if the node count INCREASED post-click (a new
+#   node) — otherwise it keeps polling and ends in NO_SIGNAL (post-save remains
+#   the only truth either way).
+# - NETWORK: window.fetch and XMLHttpRequest are wrapped (in-page, diagnostic
+#   only) just before the click, so the diag reports whether the click actually
+#   fired an admin-ajax request and what HTTP status came back. Method+URL(+status)
+#   only — never bodies, never headers/cookies.
+# - BUTTON STATE: disabled/visible are recorded; `polls` says how fast a signal
+#   appeared (polls=1 ⇒ almost certainly pre-existing/instant, not a server ack).
+# - CLICK MODE: 'native' (default) uses b.click(); 'dispatch' dispatches a full
+#   mousedown/mouseup/click MouseEvent sequence ON THE BUTTON ONLY — an explicit,
+#   documented derogation authorized by Romain (2026-07-03) after the native click
+#   was proven not to persist on Driffle. Still NO form.submit(), NO XHR.
 _FILL_CREATE_JS = (
     "(function(){return new Promise(function(resolve){"
-    "var rn=%s,en=%s,rid=%s,eid=%s;"
+    "var rn=%s,en=%s,rid=%s,eid=%s,mode=%s;"
     "var r=document.querySelector('select[name=\"'+rn+'\"]');"
     "var e=document.querySelector('select[name=\"'+en+'\"]');"
     "function opts(s){return s?Array.prototype.slice.call(s.options).map(function(o){return o.value;}):[];}"
+    "function count(sel){return document.querySelectorAll(sel).length;}"
     "if(!r||!e||!r.selectize||!e.selectize){resolve({status:'NO_SELECTS'});return;}"
     "r.selectize.setValue(rid);e.selectize.setValue(eid);"
     "setTimeout(function(){"
-    # Diagnostic: read back what actually took, and the available options.
     "var diag={region_target:rid,edition_target:eid,"
     "region_set:String(r.selectize.getValue()),edition_set:String(e.selectize.getValue()),"
-    "region_options:opts(r),edition_options:opts(e)};"
+    "region_options:opts(r),edition_options:opts(e),click_mode:mode,requests:[]};"
     "var b=document.querySelector('#TB_ajaxContent .button-primary');"
     "if(!b){diag.status='NO_BUTTON';resolve(diag);return;}"
-    "b.click();"
-    # Wait for the modal AJAX to settle before returning (do NOT navigate away mid-request).
+    "diag.button={disabled:!!b.disabled,visible:b.offsetParent!==null,"
+    "text:(b.textContent||'').trim().slice(0,40)};"
+    "var pre_s=count('[data-success]'),pre_er=count('[data-error]');"
+    "diag.pre_existing={success:pre_s,error:pre_er};"
+    # Diagnostic-only network taps (method + URL + status; never bodies/headers).
+    "var reqs=diag.requests;"
+    "var _fetch=window.fetch;"
+    "if(_fetch){window.fetch=function(u,o){var m=(o&&o.method)||'GET';"
+    "var rec={via:'fetch',method:m,url:String(u).slice(0,160),status:null};reqs.push(rec);"
+    "return _fetch.apply(this,arguments).then(function(res){rec.status=res.status;return res;});};}"
+    "var _open=XMLHttpRequest.prototype.open,_send=XMLHttpRequest.prototype.send;"
+    "XMLHttpRequest.prototype.open=function(m,u){this._diag={via:'xhr',method:m,"
+    "url:String(u).slice(0,160),status:null};return _open.apply(this,arguments);};"
+    "XMLHttpRequest.prototype.send=function(){var x=this;if(x._diag){reqs.push(x._diag);"
+    "x.addEventListener('loadend',function(){x._diag.status=x.status;});}"
+    "return _send.apply(this,arguments);};"
+    "if(mode==='dispatch'){"
+    "['mousedown','mouseup','click'].forEach(function(t){"
+    "b.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,view:window}));});"
+    "}else{b.click();}"
+    # Wait for the modal AJAX to settle before returning (do NOT navigate away
+    # mid-request). Only a NEW signal node (count increased) is accepted.
     "var n=0,iv=setInterval(function(){n++;"
-    "var s=document.querySelector('[data-success]');"
-    "var er=document.querySelector('[data-error]');"
-    "if(s){clearInterval(iv);diag.status='SUCCESS';diag.signal=(s.textContent||'').trim().slice(0,150);resolve(diag);}"
-    "else if(er){clearInterval(iv);diag.status='ERROR';diag.signal=(er.textContent||'').trim().slice(0,150);resolve(diag);}"
-    "else if(n>=40){clearInterval(iv);diag.status='NO_SIGNAL';resolve(diag);}"
+    "var cs=count('[data-success]'),ce=count('[data-error]');"
+    "function fin(st,sel){clearInterval(iv);diag.status=st;diag.polls=n;"
+    "var nodes=document.querySelectorAll(sel);var el=nodes[nodes.length-1];"
+    "diag.signal=el?(el.textContent||'').trim().slice(0,150):'';"
+    "window.fetch=_fetch;XMLHttpRequest.prototype.open=_open;XMLHttpRequest.prototype.send=_send;"
+    "resolve(diag);}"
+    "if(cs>pre_s){fin('SUCCESS','[data-success]');}"
+    "else if(ce>pre_er){fin('ERROR','[data-error]');}"
+    "else if(n>=40){diag.polls=n;"
+    "window.fetch=_fetch;XMLHttpRequest.prototype.open=_open;XMLHttpRequest.prototype.send=_send;"
+    "diag.status='NO_SIGNAL';resolve(diag);}"
     "},200);"
     "},500);"
     "});})()"
@@ -107,16 +151,33 @@ class WriteSubmitSession(SubmitSession):
 
     ``fill_and_create`` is the only method that writes: it sets region/edition on the
     verified select names and clicks "Create offer". No direct XHR, no
-    ``dispatchEvent``, no ``form.submit()`` (skill S09).
+    ``form.submit()`` (skill S09). ``click_mode='dispatch'`` (a MouseEvent sequence
+    on the Create button ONLY — never on the form) is an explicit derogation
+    authorized by Romain (2026-07-03) after the native ``.click()`` was proven not
+    to persist on Driffle; the post-save feed check remains the only success proof.
     """
 
+    CLICK_MODES = ("native", "dispatch")
+
     def fill_and_create(
-        self, region_select: str, region_id: str, edition_select: str, edition_id: str
+        self,
+        region_select: str,
+        region_id: str,
+        edition_select: str,
+        edition_id: str,
+        click_mode: str = "native",
     ) -> dict[str, Any]:
         """Set region+edition and click Create. Returns a diagnostic dict with
         ``status`` plus read-back values (region_set/edition_set), the available
-        options, and the modal signal text."""
+        options, the network requests fired by the click (method/url/status only),
+        the pre-existing signal-node counts, and the modal signal text.
 
+        ``click_mode='dispatch'`` (MouseEvent sequence on the button only) is an
+        explicit, documented derogation — see the JS block comment. Fail-closed:
+        an unknown mode raises instead of guessing."""
+
+        if click_mode not in self.CLICK_MODES:
+            raise ValueError(f"unknown click_mode: {click_mode!r} (allowed: {self.CLICK_MODES})")
         result = self._evaluate(
             _FILL_CREATE_JS
             % (
@@ -124,6 +185,7 @@ class WriteSubmitSession(SubmitSession):
                 json.dumps(edition_select),
                 json.dumps(str(region_id)),
                 json.dumps(str(edition_id)),
+                json.dumps(click_mode),
             )
         )
         return result if isinstance(result, dict) else {"status": "NO_RESULT", "raw": result}

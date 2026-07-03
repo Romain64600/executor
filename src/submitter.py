@@ -205,15 +205,24 @@ class DryRunSubmitter(_SubmitterBase):
 
 
 class Submitter(_SubmitterBase):
-    """Real submitter — WRITES. Requires a WriteSubmitSession (has fill_and_create)."""
+    """Real submitter — WRITES. Requires a WriteSubmitSession (has fill_and_create).
+
+    ``click_mode`` is passed through to the session: 'native' (default) or
+    'dispatch' (documented derogation — MouseEvent on the Create button only).
+    """
 
     write_mode = True
+
+    def __init__(self, session: Any, *, click_mode: str = "native", **kw: Any) -> None:
+        super().__init__(session, **kw)
+        self.click_mode = click_mode
 
     def _process(self, entry, candidate, ctx):
         if not entry.get("ready"):
             return False
         diag = self.session.fill_and_create(
-            entry["region_select"], entry["region_id"], entry["edition_select"], entry["edition_id"]
+            entry["region_select"], entry["region_id"], entry["edition_select"], entry["edition_id"],
+            click_mode=self.click_mode,
         )
         entry["create"] = diag  # dict: status + read-back values + options + signal
         status = diag.get("status") if isinstance(diag, dict) else diag

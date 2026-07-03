@@ -3,6 +3,45 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-03 — S18 investigation: network taps + dispatch click mode (derogation)
+
+Live canary #2 (Driffle) eliminated hypothesis #1: the selectize readback proved
+`setValue` took perfectly (`region_set=9`, `edition_set=1`, options exact) — yet
+`[data-success]` appeared with an **empty** signal text and the offer stayed in
+pending. Prime suspect: a pre-existing (template/hidden) `[data-success]` node
+being mistaken for the AJAX ack, and/or the native `.click()` not firing Driffle's
+real submit handler. **144 tests green.**
+
+- `src/submit_session.py` — `_FILL_CREATE_JS` instrumented:
+  - **pre-existing signal guard**: `[data-success]`/`[data-error]` nodes are counted
+    BEFORE the click; the poll only accepts a **new** node (count increased) —
+    otherwise it ends `NO_SIGNAL`. `polls` + `pre_existing` land in the diag.
+  - **network taps** (diagnostic only): `window.fetch` + `XMLHttpRequest` are wrapped
+    around the click and restored after; the diag reports `via/method/url/status`
+    for every request the click fired — never bodies, never headers/cookies. An
+    empty `requests` list = the click never reached the network.
+  - **button state** (`disabled`/`visible`/`text`) recorded pre-click.
+  - **`click_mode='dispatch'`** — full `mousedown/mouseup/click` MouseEvent sequence
+    **on the Create button ONLY**. This is an explicit, documented derogation from
+    the S09 no-`dispatchEvent` rule, **authorized by Romain (2026-07-03, authority
+    order #1)** after the native click was proven not to persist on Driffle. Still
+    no `form.submit()`, no XHR submission; unknown modes raise (fail-closed).
+- `src/submitter.py` — `Submitter(click_mode=...)` passes the mode through; the
+  post-save feed check remains the ONLY success proof, unchanged, in both modes.
+- `scripts/05_submit.py` — `--click-mode {native,dispatch}` (native default,
+  refused without `--submit`); the text report now prints polls / pre_existing /
+  button state and one `net:` line per captured request.
+- +4 tests (dispatch pass-through, dispatch still fails when still-pending, native
+  default, unknown mode refused).
+
+Also today (infra, no code): AKS dropped the VPS IP at TCP level (curl `000`,
+google OK, DNS OK, AKS up from elsewhere) — the documented skill pattern "AKS
+bloque les IPs après un burst". Resolved by Romain via the skill's Surfshark
+targeted-route rotation (`de-fra` TCP, `--route-nopull --route 176.31.53.220`);
+invariants back green+authoritative. Known doc drift to resolve: `00_audit_env.sh`
+still FAILs when an openvpn process runs — decision pending on wording it as
+"forbidden when direct works / tolerated targeted-route when AKS drops the IP".
+
 ## 2026-07-02 — Stage 4: real submitter (WRITES, canary-first)
 
 The real write path — approved by Romain, and validated end-to-end in **dry-run on

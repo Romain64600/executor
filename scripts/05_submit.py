@@ -55,7 +55,16 @@ def main() -> int:
     parser.add_argument("--submit", action="store_true", help="REAL write (default: dry-run).")
     parser.add_argument("--all", action="store_true", help="With --submit: full batch (default: canary of 1).")
     parser.add_argument("--limit", type=int, default=None, help="With --submit: max offers to create.")
+    parser.add_argument(
+        "--click-mode", default="native", choices=["native", "dispatch"],
+        help="With --submit: 'native' = button.click() (default); 'dispatch' = MouseEvent "
+             "sequence on the Create button ONLY (documented derogation, Romain 2026-07-03).",
+    )
     args = parser.parse_args()
+
+    if args.click_mode != "native" and not args.submit:
+        print("--click-mode is only meaningful with --submit", file=sys.stderr)
+        return 2
 
     # Fail-closed gate: invariants must be green AND authoritative. Retry a couple
     # times — a transient red (e.g. AKS rate-limit right after the matcher's GET
@@ -84,12 +93,17 @@ def main() -> int:
     write = args.submit
     limit = args.limit if args.limit is not None else (None if args.all else 1)
     if write:
-        print(f"REAL SUBMISSION — will create up to {limit if limit is not None else 'ALL'} offer(s).", file=sys.stderr)
+        print(
+            f"REAL SUBMISSION — will create up to {limit if limit is not None else 'ALL'} offer(s)"
+            f" (click_mode={args.click_mode}).",
+            file=sys.stderr,
+        )
 
     session_cls = WriteSubmitSession if write else SubmitSession
     submitter_cls = Submitter if write else DryRunSubmitter
+    submitter_kw = {"click_mode": args.click_mode} if write else {}
     with session_cls(args.endpoint) as session:
-        result = submitter_cls(session, logger=logger).run(
+        result = submitter_cls(session, logger=logger, **submitter_kw).run(
             run_id=run_id, merchant=args.merchant, store_id=args.store_id,
             approved=approved, available=args.available, max_pages=args.max_pages, limit=limit,
         )
@@ -117,6 +131,12 @@ def main() -> int:
                 f"signal={d.get('signal')!r}"
             )
             lines.append(f"    region_options={d.get('region_options')} edition_options={d.get('edition_options')}")
+            lines.append(
+                f"    click_mode={d.get('click_mode')} polls={d.get('polls')} "
+                f"pre_existing={d.get('pre_existing')} button={d.get('button')}"
+            )
+            for req in d.get("requests") or []:
+                lines.append(f"    net: {req.get('via')} {req.get('method')} {req.get('url')} -> {req.get('status')}")
     (out_dir / "submit_report.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
     print(json.dumps({
