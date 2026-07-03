@@ -405,7 +405,20 @@ _SELECTIZE_OPTION_RECT_JS = (
     "nx=nx.nextElementSibling;}}"
     "if(wrap){opt=wrap.querySelector('.selectize-dropdown-content [data-value=\"'+val+'\"]');"
     "if(opt)opt_source='wrapper';}}"
-    "if(!opt)return {ok:false,reason:'no_option',is_open:is_open};"
+    "if(!opt){"
+    # Diagnostic: dump the actual option values present so we can compare.
+    "var avail=[];"
+    "if(sel.selectize.$dropdown_content&&sel.selectize.$dropdown_content[0]){"
+    "var all=sel.selectize.$dropdown_content[0].querySelectorAll('[data-value]');"
+    "for(var k=0;k<all.length&&k<20;k++){avail.push({data_value:all[k].getAttribute('data-value'),"
+    "text:(all[k].textContent||'').trim().slice(0,40)});}}"
+    "var stz_opts=[];"
+    "if(sel.selectize.options){var oo=sel.selectize.options;"
+    "for(var kk in oo){if(oo.hasOwnProperty(kk)){stz_opts.push({key:kk,"
+    "value:(oo[kk]&&oo[kk].value)||null,text:(oo[kk]&&(oo[kk].text||oo[kk].label))||null});"
+    "if(stz_opts.length>=20)break;}}}"
+    "return {ok:false,reason:'no_option',is_open:is_open,"
+    "requested_value:val,dropdown_options:avail,selectize_options:stz_opts};}"
     "opt.scrollIntoView({block:'center',inline:'nearest'});"
     "var r=opt.getBoundingClientRect();"
     "var dd2=opt.closest('.selectize-dropdown');"
@@ -671,6 +684,8 @@ class WriteSubmitSession(SubmitSession):
             diag["status"] = "NO_OPTION"
             diag["reason"] = option_rect.get("reason")
             diag["is_open"] = option_rect.get("is_open")
+            diag["dropdown_options"] = option_rect.get("dropdown_options")
+            diag["selectize_options"] = option_rect.get("selectize_options")
             return diag
         diag["opt_source"] = option_rect.get("opt_source")
         diag["is_open"] = option_rect.get("is_open")
