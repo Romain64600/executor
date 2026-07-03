@@ -25,6 +25,16 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def candidate_fingerprint(candidate: dict[str, Any]) -> str:
+    """Compute the fingerprint from fields, so it works on any candidates.json
+    (robust to files written before the matcher stored a ``fingerprint`` key)."""
+
+    return (
+        f"{candidate['offer']['offer_id']}|{candidate['aks_product_id']}"
+        f"|{candidate['region']['id']}|{candidate['edition']['id']}"
+    )
+
+
 def validation_template(
     candidate_dicts: Iterable[dict[str, Any]], run_id: str, clock=_utc_now_iso
 ) -> dict[str, Any]:
@@ -34,7 +44,7 @@ def validation_template(
     for candidate in candidate_dicts:
         entries.append(
             {
-                "fingerprint": candidate["fingerprint"],
+                "fingerprint": candidate_fingerprint(candidate),
                 "offer_id": candidate["offer"]["offer_id"],
                 "merchant_title": candidate["offer"]["name"],
                 "aks_product_id": candidate["aks_product_id"],
@@ -82,7 +92,7 @@ def load_validation(
     if not str(data.get("validated_at", "")).strip():
         raise ValidationError("validated_at is required")
 
-    by_fingerprint = {c["fingerprint"]: c for c in candidate_dicts}
+    by_fingerprint = {candidate_fingerprint(c): c for c in candidate_dicts}
     approved: list[dict[str, Any]] = []
     for entry in data.get("candidates", []):
         if not entry.get("approve"):

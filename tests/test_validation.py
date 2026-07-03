@@ -89,5 +89,19 @@ class LoadValidationTests(unittest.TestCase):
         self.assertEqual(len(approved), 2)
 
 
+class RobustnessTests(unittest.TestCase):
+    def test_works_on_candidates_without_a_stored_fingerprint(self):
+        cand = _cand("1")
+        del cand["fingerprint"]  # simulate a candidates.json from before the field existed
+        tpl = validation_template([cand], run_id="r", clock=lambda: "t")
+        fingerprint = tpl["candidates"][0]["fingerprint"]
+        data = {
+            "run_id": "r", "validated_by": "R", "validated_at": "t",
+            "candidates": [{"fingerprint": fingerprint, "approve": True}],
+        }
+        approved = load_validation(data, [cand], expected_run_id="r")
+        self.assertEqual(len(approved), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
