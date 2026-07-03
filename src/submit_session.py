@@ -442,6 +442,26 @@ _SELECTIZE_READBACK_JS = (
     "})())"
 )
 
+# Fallback for select_via_trusted when the option [data-value="{id}"] isn't in
+# the visible dropdown DOM (Selectize can filter/paginate; the option can be
+# in the master data map but not rendered). Uses Selectize's own `addItem`
+# public API — same call the internal click handler makes when a user picks an
+# option, fires `item_add` + `change` events. NO form.submit(), NO XHR, still
+# scoped to Selectize's own state.
+_SELECTIZE_ADDITEM_JS = (
+    "(function(){"
+    "var name=%s,val=%s;"
+    "var sel=document.querySelector('select[name=\"'+name+'\"]');"
+    "if(!sel||!sel.selectize)return {ok:false,reason:'no_selectize'};"
+    "if(sel.selectize.options&&!sel.selectize.options[val])"
+    "return {ok:false,reason:'value_not_in_options',known:Object.keys(sel.selectize.options).slice(0,50)};"
+    "sel.selectize.addItem(val,false);"
+    "return {ok:true,select_value:sel.value||'',"
+    "selectize_value:String(sel.selectize.getValue()),"
+    "validity_valid:sel.validity?sel.validity.valid:null};"
+    "})()"
+)
+
 # Emergency tap cleanup used if prep succeeded but the trusted click could not
 # be dispatched (rare — e.g. NO_ELEMENT). Restores fetch/XHR to their originals
 # so the tab is not left with our wrappers.
@@ -681,11 +701,32 @@ class WriteSubmitSession(SubmitSession):
         )
         option_rect = json.loads(option_raw) if option_raw else {"ok": False}
         if not option_rect.get("ok"):
+            # Fallback: option not in the visible dropdown DOM (Selectize may
+            # filter/paginate). Call `sel.selectize.addItem(val, false)` — same
+            # Selectize API path a user click on the option internally invokes.
+            # Fires `item_add` on Selectize + `change` on the underlying <select>.
+            add = self._evaluate(
+                _SELECTIZE_ADDITEM_JS
+                % (json.dumps(select_name), json.dumps(str(value_id)))
+            )
+            if isinstance(add, dict) and add.get("ok"):
+                diag["fallback"] = "addItem"
+                diag["dropdown_options"] = option_rect.get("dropdown_options")
+                diag["selectize_options"] = option_rect.get("selectize_options")
+                diag["readback"] = {
+                    "ok": True,
+                    "select_value": add.get("select_value", ""),
+                    "selectize_value": add.get("selectize_value", ""),
+                    "validity_valid": add.get("validity_valid"),
+                }
+                diag["status"] = "SELECTED"
+                return diag
             diag["status"] = "NO_OPTION"
             diag["reason"] = option_rect.get("reason")
             diag["is_open"] = option_rect.get("is_open")
             diag["dropdown_options"] = option_rect.get("dropdown_options")
             diag["selectize_options"] = option_rect.get("selectize_options")
+            diag["addItem_result"] = add if isinstance(add, dict) else {"raw": add}
             return diag
         diag["opt_source"] = option_rect.get("opt_source")
         diag["is_open"] = option_rect.get("is_open")
