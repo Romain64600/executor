@@ -3,6 +3,64 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-03 — Chantier n°1: `--click-mode trusted` (CDP `Input.dispatchMouseEvent`)
+
+Canary #3 (Driffle) confirmed the S18 root cause: both `native` (`.click()`) and
+`dispatch` (MouseEvent) produced `requests: []` with a visible, enabled Create
+button. Driffle's handler almost certainly checks `event.isTrusted`, which is
+`false` for any DOM-synthesized event. `Input.dispatchMouseEvent` is the only
+CDP path that yields `isTrusted: true` — it's what a real desktop operator's
+mouse produces. **163 tests green.**
+
+- `src/submit_session.py` — new `click_trusted_at_element(selector)`:
+  reads target rect + viewport via `evaluate_readonly` (S02-safe `_RECT_JS`);
+  if outside viewport, sends one `Input.synthesizeScrollGesture` (mouse source,
+  speed 800), waits **500 ms** for settle, re-reads rect; then
+  `Input.dispatchMouseEvent` sequence `mouseMoved(cx,cy)` →
+  `mousePressed(cx,cy,left,clickCount=1,buttons=1)` → **random 40-90 ms** dwell
+  → `mouseReleased(cx,cy,left,clickCount=1,buttons=0)`. No `.click()`,
+  no `dispatchEvent`, no `form.submit()`, no XHR, no keyboard.
+- `src/submit_session.py` — new `fill_then_click_trusted(...)`: 2-phase orchestration.
+  `_TRUSTED_PREP_JS` fills selectize + installs network taps
+  (`window.fetch` / `XMLHttpRequest` wrapped into `window.__s18taps`) + records
+  `pre_existing` counts + returns button state; CDP trusted click follows;
+  `_TRUSTED_POLL_JS` waits for a NEW `[data-success]`/`[data-error]` node
+  (pre-existing guard), reports `requests`/`polls`/`signal`, and restores the
+  taps. `_TRUSTED_CLEANUP_JS` restores taps if the click cannot fire (rare).
+- `src/submitter.py` — `Submitter` routes to `fill_then_click_trusted` when
+  `click_mode='trusted'`; `fill_and_create` unchanged for `native`/`dispatch`.
+  `ALL_CLICK_MODES = ('native','dispatch','trusted')` validated at `__init__`
+  (`ValueError` on unknown). Post-save (offer gone from refreshed pending) is
+  **strictly unchanged** and remains the ONLY success proof in every mode.
+- `scripts/05_submit.py` — `--click-mode` accepts `trusted`; the text report
+  prints one `trusted_click:` line with click coords + delay_ms + scrolled +
+  viewport + rect + click status.
+- +12 tests (trusted click sequence order, in-viewport vs out-of-viewport paths,
+  scroll gesture params, element-disappears-after-scroll edge, `_RECT_JS`
+  read-only guard, `fill_then_click_trusted` merges prep+poll on success,
+  cleanup called on `NO_ELEMENT` click, `Submitter` refuses unknown
+  `click_mode`, trusted-mode success + still-pending failure).
+
+**S09 derogation étendue** (Romain, autorité n°1, 2026-07-03) : le bouton
+officiel visible reste **la seule cible** ; seule la couche de synthèse
+d'événement change (DOM → input CDP). `form.submit()` / XHR direct / clavier
+synthétique **restent interdits**.
+
+**Next diag on the VPS**:
+
+```
+python3 scripts/05_submit.py runs/<id>/approved.json \
+    --merchant Driffle --store-id 127 --submit --click-mode trusted
+```
+
+Grille de lecture :
+- `requests` contient un `POST /wp-admin/admin-ajax.php … -> 200` **et** offre
+  disparue du pending → **succès Chantier n°1 confirmé**, gel du mécanisme.
+- `requests` avec un 4xx/5xx → handler atteint mais rejet serveur (nonce,
+  merchant id, payload) — nouvelle piste, voie DOM restée saine.
+- `requests: []` **encore** → hypothèse trusted à revoir (rare : le handler
+  écoute autre chose qu'un click, ex : sur le form via `submit`).
+
 ## 2026-07-03 — S18 investigation: `--inspect` modal DOM probe (read-only)
 
 Canary #3 (Driffle) with the pre-existing signal guard active produced

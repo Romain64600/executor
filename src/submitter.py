@@ -225,30 +225,47 @@ class InspectSubmitter(_SubmitterBase):
 
 
 class Submitter(_SubmitterBase):
-    """Real submitter — WRITES. Requires a WriteSubmitSession (has fill_and_create).
+    """Real submitter — WRITES. Requires a WriteSubmitSession.
 
-    ``click_mode`` is passed through to the session: 'native' (default) or
-    'dispatch' (documented derogation — MouseEvent on the Create button only).
+    ``click_mode`` is passed through to the session: 'native' (default),
+    'dispatch' (documented S09 derogation — MouseEvent on the Create button
+    only) or 'trusted' (Chantier n°1, 2026-07-03 — CDP `Input.dispatchMouseEvent`
+    at the button center, produces `event.isTrusted:true`; the *only* mode that
+    reliably fires Driffle's handler). Post-save (offer gone from refreshed
+    pending) remains the ONLY success proof in every mode.
     """
 
     write_mode = True
     event_name = "submit_offer"
+    ALL_CLICK_MODES = ("native", "dispatch", "trusted")
 
     def __init__(self, session: Any, *, click_mode: str = "native", **kw: Any) -> None:
+        if click_mode not in self.ALL_CLICK_MODES:
+            raise ValueError(
+                f"unknown click_mode: {click_mode!r} (allowed: {self.ALL_CLICK_MODES})"
+            )
         super().__init__(session, **kw)
         self.click_mode = click_mode
 
     def _process(self, entry, candidate, ctx):
         if not entry.get("ready"):
             return False
-        diag = self.session.fill_and_create(
-            entry["region_select"], entry["region_id"], entry["edition_select"], entry["edition_id"],
-            click_mode=self.click_mode,
-        )
+        if self.click_mode == "trusted":
+            diag = self.session.fill_then_click_trusted(
+                entry["region_select"], entry["region_id"],
+                entry["edition_select"], entry["edition_id"],
+            )
+        else:
+            diag = self.session.fill_and_create(
+                entry["region_select"], entry["region_id"],
+                entry["edition_select"], entry["edition_id"],
+                click_mode=self.click_mode,
+            )
         entry["create"] = diag  # dict: status + read-back values + options + signal
         status = diag.get("status") if isinstance(diag, dict) else diag
         # Only a settled click (success signal, or no signal but no error) proceeds to
-        # the real post-save proof. ERROR / NO_SELECTS / NO_BUTTON is a hard fail.
+        # the real post-save proof. ERROR / NO_SELECTS / NO_BUTTON / NO_ELEMENT /
+        # NO_TRUSTED_CLICK / NO_ELEMENT_AFTER_SCROLL is a hard fail.
         if status not in ("SUCCESS", "NO_SIGNAL"):
             reason = diag.get("signal") if isinstance(diag, dict) else ""
             entry["post_save"] = f"create not confirmed: {status}" + (f" — {reason}" if reason else "")

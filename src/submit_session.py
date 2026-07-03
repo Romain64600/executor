@@ -13,6 +13,8 @@ happens until "Create offer"), which is why it is allowed for the rehearsal.
 from __future__ import annotations
 
 import json
+import random
+import time
 from typing import Any
 
 from src.cdp_session import ReadOnlyCdpSession
@@ -101,6 +103,20 @@ _INSPECT_MODAL_JS = (
 )
 
 _IS_LOGIN_JS = "!!document.querySelector('#loginform') || /wp-login/.test(location.href)"
+
+# Read-only rect probe (S02-safe): returns the target's getBoundingClientRect
+# and the viewport dims. Used by the trusted click to compute the mouse
+# coordinates. No mutation of any kind.
+_RECT_JS = (
+    "JSON.stringify((function(){"
+    "var el=document.querySelector(%s);"
+    "if(!el)return {ok:false};"
+    "var r=el.getBoundingClientRect();"
+    "return {ok:true,x:r.x,y:r.y,width:r.width,height:r.height,"
+    "top:r.top,left:r.left,bottom:r.bottom,right:r.right,"
+    "viewport:{w:window.innerWidth,h:window.innerHeight}};"
+    "})())"
+)
 
 
 class SubmitSession(ReadOnlyCdpSession):
@@ -213,15 +229,106 @@ _FILL_CREATE_JS = (
 )
 
 
+# Chantier n°1 (2026-07-03) — TRUSTED click via CDP `Input.dispatchMouseEvent`.
+# The click itself is NOT synthesized in JS (that's what `dispatch` did, and
+# Driffle's handler ignores it because `event.isTrusted` is false). The DOM-side
+# JS below only fills selectize and installs the same diagnostic taps used by
+# `fill_and_create`; the click is fired from Python via CDP once prep resolves.
+# A companion poll JS then observes the signal + returns the captured network
+# requests and restores the taps.
+#
+# The taps live on ``window.__s18taps`` (prep) and ``window.__s18orig`` (originals
+# to restore). Between prep and poll, no other JS should run in this tab; the
+# submitter never runs concurrent work.
+_TRUSTED_PREP_JS = (
+    "(function(){return new Promise(function(resolve){"
+    "var rn=%s,en=%s,rid=%s,eid=%s;"
+    "var r=document.querySelector('select[name=\"'+rn+'\"]');"
+    "var e=document.querySelector('select[name=\"'+en+'\"]');"
+    "function opts(s){return s?Array.prototype.slice.call(s.options).map(function(o){return o.value;}):[];}"
+    "function count(sel){return document.querySelectorAll(sel).length;}"
+    "if(!r||!e||!r.selectize||!e.selectize){resolve({status:'NO_SELECTS'});return;}"
+    "r.selectize.setValue(rid);e.selectize.setValue(eid);"
+    "setTimeout(function(){"
+    "var b=document.querySelector('#TB_ajaxContent .button-primary');"
+    "if(!b){resolve({status:'NO_BUTTON'});return;}"
+    "var diag={region_target:rid,edition_target:eid,"
+    "region_set:String(r.selectize.getValue()),edition_set:String(e.selectize.getValue()),"
+    "region_options:opts(r),edition_options:opts(e),"
+    "button:{disabled:!!b.disabled,visible:b.offsetParent!==null,"
+    "text:(b.textContent||'').trim().slice(0,40)}};"
+    "window.__s18taps={reqs:[],pre_s:count('[data-success]'),pre_er:count('[data-error]')};"
+    "var _f=window.fetch,_o=XMLHttpRequest.prototype.open,_s=XMLHttpRequest.prototype.send;"
+    "window.__s18orig={f:_f,o:_o,s:_s};"
+    "if(_f){window.fetch=function(u,o){var m=(o&&o.method)||'GET';"
+    "var rec={via:'fetch',method:m,url:String(u).slice(0,160),status:null};"
+    "window.__s18taps.reqs.push(rec);"
+    "return _f.apply(this,arguments).then(function(res){rec.status=res.status;return res;});};}"
+    "XMLHttpRequest.prototype.open=function(m,u){this._d18={via:'xhr',method:m,"
+    "url:String(u).slice(0,160),status:null};return _o.apply(this,arguments);};"
+    "XMLHttpRequest.prototype.send=function(){var x=this;if(x._d18){"
+    "window.__s18taps.reqs.push(x._d18);"
+    "x.addEventListener('loadend',function(){x._d18.status=x.status;});}"
+    "return _s.apply(this,arguments);};"
+    "diag.pre_existing={success:window.__s18taps.pre_s,error:window.__s18taps.pre_er};"
+    "diag.status='PREPARED';resolve(diag);"
+    "},500);"
+    "});})()"
+)
+
+# Poll for a NEW [data-success]/[data-error] node after the trusted click has
+# been dispatched from Python. Restores the taps installed by prep and returns
+# the captured requests + signal text. Same accepted signal semantics as
+# `_FILL_CREATE_JS` (only a new node — count increased — counts as ack).
+_TRUSTED_POLL_JS = (
+    "(function(){return new Promise(function(resolve){"
+    "function count(sel){return document.querySelectorAll(sel).length;}"
+    "var t=window.__s18taps||{reqs:[],pre_s:0,pre_er:0};"
+    "var n=0,iv=setInterval(function(){n++;"
+    "var cs=count('[data-success]'),ce=count('[data-error]');"
+    "function fin(st,sel){clearInterval(iv);"
+    "var out={status:st,polls:n,requests:t.reqs};"
+    "if(sel){var nodes=document.querySelectorAll(sel);var el=nodes[nodes.length-1];"
+    "out.signal=el?(el.textContent||'').trim().slice(0,150):'';}else{out.signal='';}"
+    "var o=window.__s18orig;if(o){window.fetch=o.f;XMLHttpRequest.prototype.open=o.o;"
+    "XMLHttpRequest.prototype.send=o.s;delete window.__s18orig;}"
+    "delete window.__s18taps;resolve(out);}"
+    "if(cs>t.pre_s){fin('SUCCESS','[data-success]');}"
+    "else if(ce>t.pre_er){fin('ERROR','[data-error]');}"
+    "else if(n>=40){fin('NO_SIGNAL',null);}"
+    "},200);"
+    "});})()"
+)
+
+# Emergency tap cleanup used if prep succeeded but the trusted click could not
+# be dispatched (rare — e.g. NO_ELEMENT). Restores fetch/XHR to their originals
+# so the tab is not left with our wrappers.
+_TRUSTED_CLEANUP_JS = (
+    "(function(){var o=window.__s18orig;if(o){window.fetch=o.f;"
+    "XMLHttpRequest.prototype.open=o.o;XMLHttpRequest.prototype.send=o.s;"
+    "delete window.__s18orig;}delete window.__s18taps;return true;})()"
+)
+
+
 class WriteSubmitSession(SubmitSession):
     """SubmitSession + the single mutating op. Instantiated ONLY under ``--submit``.
 
-    ``fill_and_create`` is the only method that writes: it sets region/edition on the
-    verified select names and clicks "Create offer". No direct XHR, no
-    ``form.submit()`` (skill S09). ``click_mode='dispatch'`` (a MouseEvent sequence
-    on the Create button ONLY — never on the form) is an explicit derogation
-    authorized by Romain (2026-07-03) after the native ``.click()`` was proven not
-    to persist on Driffle; the post-save feed check remains the only success proof.
+    ``fill_and_create`` (native/dispatch) and ``fill_then_click_trusted`` (Chantier
+    n°1 trusted) are the only methods that write: they set region/edition on the
+    verified select names and cause a click on the visible "Create offer" button.
+    No direct XHR, no ``form.submit()`` (S09). Three click_modes are supported:
+
+    - ``native``: DOM ``b.click()`` — default, was the original path.
+    - ``dispatch``: a MouseEvent sequence dispatched on the button ONLY (S09
+      derogation authorized by Romain 2026-07-03 after native was proven not
+      to persist on Driffle). ``event.isTrusted`` is false — Driffle ignores it.
+    - ``trusted`` (Chantier n°1, 2026-07-03): trusted click via CDP
+      ``Input.dispatchMouseEvent`` at the button's viewport center — `isTrusted`
+      is true, indistinguishable from a real mouse. No form.submit(), no XHR,
+      no keyboard synthesis. If the button is off-viewport, one
+      ``Input.synthesizeScrollGesture`` (mouse source) precedes the click with a
+      500 ms settle. Post-save (offer gone from refreshed pending feed) remains
+      the ONLY success proof in every mode.
     """
 
     CLICK_MODES = ("native", "dispatch")
@@ -256,3 +363,137 @@ class WriteSubmitSession(SubmitSession):
             )
         )
         return result if isinstance(result, dict) else {"status": "NO_RESULT", "raw": result}
+
+    # ------------------------------------------------------------------
+    # Chantier n°1 (2026-07-03) — trusted click via CDP `Input` domain.
+    # ------------------------------------------------------------------
+    def _read_rect(self, selector: str) -> dict[str, Any]:
+        """Read the target's viewport rect + window inner dims. Read-only."""
+
+        raw = self.evaluate_readonly(_RECT_JS % json.dumps(selector))
+        return json.loads(raw) if raw else {"ok": False}
+
+    def click_trusted_at_element(
+        self, selector: str = "#TB_ajaxContent .button-primary",
+    ) -> dict[str, Any]:
+        """Trusted click at the element's viewport center via CDP `Input.*`.
+
+        Reads the rect via ``_read_rect``. If the element is outside the viewport,
+        issues one ``Input.synthesizeScrollGesture`` (mouse source, speed 800) to
+        bring its center around 40 % of viewport height, waits 500 ms, re-reads
+        the rect. Then sends ``mouseMoved`` → ``mousePressed`` (left, clickCount 1)
+        → random 40-90 ms delay → ``mouseReleased`` at the (post-scroll) center.
+        Events land in Chrome with ``isTrusted:true``.
+
+        Returns a diag dict: selector, rect, viewport, scrolled, scroll_y_distance
+        (if scrolled), rect_after_scroll (if scrolled), click_x, click_y, delay_ms,
+        status ('CLICKED' | 'NO_ELEMENT'), mode='trusted'.
+        """
+
+        rect = self._read_rect(selector)
+        if not rect.get("ok"):
+            return {"status": "NO_ELEMENT", "selector": selector, "mode": "trusted"}
+
+        vp = rect["viewport"]
+        diag: dict[str, Any] = {
+            "selector": selector,
+            "mode": "trusted",
+            "viewport": vp,
+            "rect": {"x": rect["x"], "y": rect["y"], "w": rect["width"], "h": rect["height"]},
+            "scrolled": False,
+        }
+
+        needs_scroll = rect["top"] < 0 or rect["bottom"] > vp["h"]
+        if needs_scroll:
+            target_y = vp["h"] * 0.4
+            current_y = (rect["top"] + rect["bottom"]) / 2
+            y_distance = int(current_y - target_y)  # +down / -up (CDP convention)
+            self._cmd(
+                "Input.synthesizeScrollGesture",
+                {
+                    "x": vp["w"] // 2,
+                    "y": vp["h"] // 2,
+                    "xDistance": 0,
+                    "yDistance": y_distance,
+                    "gestureSourceType": "mouse",
+                    "speed": 800,
+                },
+            )
+            time.sleep(0.5)  # Romain: 500 ms settle after synthesizeScrollGesture.
+            rect = self._read_rect(selector)
+            diag["scrolled"] = True
+            diag["scroll_y_distance"] = y_distance
+            if rect.get("ok"):
+                diag["rect_after_scroll"] = {
+                    "x": rect["x"], "y": rect["y"], "w": rect["width"], "h": rect["height"],
+                }
+            else:
+                diag["status"] = "NO_ELEMENT_AFTER_SCROLL"
+                return diag
+
+        cx = rect["x"] + rect["width"] / 2
+        cy = rect["y"] + rect["height"] / 2
+        diag["click_x"] = cx
+        diag["click_y"] = cy
+
+        # Pre-click hover — a human moves the pointer to the button before pressing.
+        self._cmd("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": cx, "y": cy})
+        self._cmd(
+            "Input.dispatchMouseEvent",
+            {"type": "mousePressed", "x": cx, "y": cy,
+             "button": "left", "buttons": 1, "clickCount": 1},
+        )
+
+        # Human-like press→release dwell (bounded random).
+        delay_ms = random.randint(40, 90)
+        diag["delay_ms"] = delay_ms
+        time.sleep(delay_ms / 1000.0)
+
+        self._cmd(
+            "Input.dispatchMouseEvent",
+            {"type": "mouseReleased", "x": cx, "y": cy,
+             "button": "left", "buttons": 0, "clickCount": 1},
+        )
+
+        diag["status"] = "CLICKED"
+        return diag
+
+    def fill_then_click_trusted(
+        self,
+        region_select: str,
+        region_id: str,
+        edition_select: str,
+        edition_id: str,
+    ) -> dict[str, Any]:
+        """Trusted-click variant of ``fill_and_create``: fills selectize + installs
+        network taps in-page (JS prep), fires a TRUSTED click via CDP `Input.*`,
+        then polls for the ack + returns the captured requests (JS poll). Same
+        output shape as ``fill_and_create`` (region_set/target, options, button,
+        pre_existing, requests, polls, status, signal) plus a ``click`` sub-dict
+        (rect, viewport, scrolled, click_x/y, delay_ms). ``click_mode='trusted'``.
+        """
+
+        prep = self._evaluate(
+            _TRUSTED_PREP_JS
+            % (
+                json.dumps(region_select),
+                json.dumps(edition_select),
+                json.dumps(str(region_id)),
+                json.dumps(str(edition_id)),
+            )
+        )
+        if not isinstance(prep, dict) or prep.get("status") != "PREPARED":
+            return prep if isinstance(prep, dict) else {"status": "NO_RESULT", "raw": prep}
+
+        click = self.click_trusted_at_element("#TB_ajaxContent .button-primary")
+        prep["click"] = click
+        prep["click_mode"] = "trusted"
+        if click.get("status") != "CLICKED":
+            self._evaluate(_TRUSTED_CLEANUP_JS)  # restore taps; leave selectize as-is
+            prep["status"] = "NO_TRUSTED_CLICK"
+            return prep
+
+        poll = self._evaluate(_TRUSTED_POLL_JS)
+        if isinstance(poll, dict):
+            prep.update(poll)
+        return prep

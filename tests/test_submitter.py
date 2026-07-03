@@ -1,3 +1,4 @@
+import json
 import re
 import unittest
 
@@ -128,6 +129,21 @@ class FakeWriteSession(FakeSubmitSession):
             diag["signal"] = self.create_signal
         return diag
 
+    def fill_then_click_trusted(self, region_select, region_id, edition_select, edition_id):
+        self.fill_calls.append((region_select, region_id, edition_select, edition_id, "trusted"))
+        if self.create_status in ("SUCCESS", "NO_SIGNAL") and self.create_removes:
+            self.created.add(self._last_opened)
+        diag = {"status": self.create_status, "region_set": region_id, "edition_set": edition_id,
+                "region_options": ["1", "2", "9"], "edition_options": ["1"],
+                "click_mode": "trusted", "requests": [], "pre_existing": {"success": 0, "error": 0},
+                "click": {"selector": "#TB_ajaxContent .button-primary", "mode": "trusted",
+                          "viewport": {"w": 1280, "h": 720}, "rect": {"x": 500, "y": 400, "w": 120, "h": 40},
+                          "scrolled": False, "click_x": 560, "click_y": 420, "delay_ms": 60,
+                          "status": "CLICKED"}}
+        if self.create_signal:
+            diag["signal"] = self.create_signal
+        return diag
+
 
 def _real(session, approved, click_mode="native", **kw):
     return Submitter(session, click_mode=click_mode).run(
@@ -201,6 +217,21 @@ class RealSubmitTests(unittest.TestCase):
         _real(session, [_cand("1")], limit=1)
         self.assertEqual(session.fill_calls[0][-1], "native")
 
+    def test_trusted_click_mode_routes_to_fill_then_click_trusted(self):
+        session = FakeWriteSession([["1"]])
+        result = _real(session, [_cand("1")], click_mode="trusted", limit=1)
+        self.assertEqual(session.fill_calls[0][-1], "trusted")
+        self.assertEqual(result["plan"][0]["create"]["click_mode"], "trusted")
+        self.assertEqual(result["plan"][0]["create"]["click"]["status"], "CLICKED")
+        # Non-négociable: post-save reste seul juge, même en trusted.
+        self.assertTrue(result["plan"][0]["submitted"])
+
+    def test_trusted_mode_still_fails_when_still_pending(self):
+        session = FakeWriteSession([["1"]], create_removes=False)
+        result = _real(session, [_cand("1")], click_mode="trusted", limit=1)
+        self.assertFalse(result["plan"][0]["submitted"])
+        self.assertIn("STILL in pending", result["plan"][0]["post_save"])
+
 
 class ClickModeValidationTests(unittest.TestCase):
     def test_unknown_click_mode_is_refused(self):
@@ -209,6 +240,16 @@ class ClickModeValidationTests(unittest.TestCase):
         session = WriteSubmitSession.__new__(WriteSubmitSession)  # no socket needed
         with self.assertRaises(ValueError):
             session.fill_and_create("offer[region]", "9", "offer[edition]", "1", click_mode="xhr")
+
+    def test_submitter_refuses_unknown_click_mode_at_init(self):
+        session = FakeWriteSession([["1"]])
+        with self.assertRaises(ValueError):
+            Submitter(session, click_mode="xhr")
+
+    def test_submitter_accepts_all_three_click_modes(self):
+        session = FakeWriteSession([["1"]])
+        for mode in ("native", "dispatch", "trusted"):
+            Submitter(session, click_mode=mode)  # no raise
 
 
 class FakeInspectSession(FakeSubmitSession):
@@ -261,6 +302,168 @@ class InspectSubmitterTests(unittest.TestCase):
         result = _inspect(session, [_cand("1")])
         # write_mode=False → writes reported as None (like dry-run).
         self.assertIsNone(result["writes"])
+
+
+class TrustedClickTests(unittest.TestCase):
+    """Unit tests on the real WriteSubmitSession, mocking the CDP transport."""
+
+    def _fake_session(self, rects, *, patch_sleep=True):
+        """Build a WriteSubmitSession with mocked evaluate_readonly + _cmd.
+
+        ``rects`` is a list of dicts returned by successive `_read_rect` calls
+        (first call = initial; second call = after-scroll if applicable). Each
+        dict is either ``{"ok": False}`` or the full rect payload.
+        """
+
+        import unittest.mock as mock
+        from src.submit_session import WriteSubmitSession
+
+        sess = WriteSubmitSession.__new__(WriteSubmitSession)
+        rect_iter = iter(rects)
+        sess.evaluate_readonly = lambda js: json.dumps(next(rect_iter))
+        sent = []
+        sess._cmd = lambda method, params=None: sent.append((method, params)) or {}
+        sess._sent = sent
+        if patch_sleep:
+            self._sleep_patch = mock.patch("src.submit_session.time.sleep")
+            self._sleep_patch.start()
+            self.addCleanup(self._sleep_patch.stop)
+        self._rand_patch = mock.patch("src.submit_session.random.randint", return_value=60)
+        self._rand_patch.start()
+        self.addCleanup(self._rand_patch.stop)
+        return sess
+
+    def test_no_element_returns_no_element_status(self):
+        import json as _json  # local alias to avoid shadow
+        sess = self._fake_session([{"ok": False}])
+        result = sess.click_trusted_at_element("#nope")
+        self.assertEqual(result["status"], "NO_ELEMENT")
+        self.assertEqual(sess._sent, [])  # no CDP command sent
+
+    def test_in_viewport_sends_move_press_release_no_scroll(self):
+        rect = {"ok": True, "x": 500, "y": 400, "width": 120, "height": 40,
+                "top": 400, "left": 500, "bottom": 440, "right": 620,
+                "viewport": {"w": 1280, "h": 720}}
+        sess = self._fake_session([rect])
+        result = sess.click_trusted_at_element("#TB_ajaxContent .button-primary")
+        self.assertEqual(result["status"], "CLICKED")
+        self.assertFalse(result["scrolled"])
+        self.assertEqual(result["click_x"], 560.0)
+        self.assertEqual(result["click_y"], 420.0)
+        self.assertEqual(result["delay_ms"], 60)
+        methods = [c[0] for c in sess._sent]
+        self.assertEqual(methods, ["Input.dispatchMouseEvent"] * 3)
+        types = [c[1]["type"] for c in sess._sent]
+        self.assertEqual(types, ["mouseMoved", "mousePressed", "mouseReleased"])
+        press, release = sess._sent[1][1], sess._sent[2][1]
+        self.assertEqual(press["button"], "left")
+        self.assertEqual(release["button"], "left")
+        self.assertEqual(press["clickCount"], 1)
+        self.assertEqual(release["clickCount"], 1)
+        self.assertEqual(press["buttons"], 1)
+        self.assertEqual(release["buttons"], 0)
+        self.assertEqual(press["x"], release["x"])
+        self.assertEqual(press["y"], release["y"])
+
+    def test_out_of_viewport_triggers_scroll_gesture_then_click(self):
+        rect_before = {"ok": True, "x": 500, "y": 1200, "width": 120, "height": 40,
+                       "top": 1200, "left": 500, "bottom": 1240, "right": 620,
+                       "viewport": {"w": 1280, "h": 720}}
+        rect_after = {"ok": True, "x": 500, "y": 300, "width": 120, "height": 40,
+                      "top": 300, "left": 500, "bottom": 340, "right": 620,
+                      "viewport": {"w": 1280, "h": 720}}
+        sess = self._fake_session([rect_before, rect_after])
+        result = sess.click_trusted_at_element("#TB_ajaxContent .button-primary")
+        self.assertEqual(result["status"], "CLICKED")
+        self.assertTrue(result["scrolled"])
+        self.assertIn("rect_after_scroll", result)
+        methods = [c[0] for c in sess._sent]
+        self.assertEqual(methods[0], "Input.synthesizeScrollGesture")
+        self.assertEqual(methods[1:], ["Input.dispatchMouseEvent"] * 3)
+        scroll = sess._sent[0][1]
+        self.assertEqual(scroll["gestureSourceType"], "mouse")
+        self.assertEqual(scroll["speed"], 800)
+        # Button was below viewport (top=1200, vp=720), target_y=288, current_y=1220.
+        # y_distance = current - target = 932 (positive → scroll down, CDP convention).
+        self.assertGreater(scroll["yDistance"], 0)
+
+    def test_element_disappears_after_scroll(self):
+        rect_before = {"ok": True, "x": 500, "y": 1200, "width": 120, "height": 40,
+                       "top": 1200, "left": 500, "bottom": 1240, "right": 620,
+                       "viewport": {"w": 1280, "h": 720}}
+        sess = self._fake_session([rect_before, {"ok": False}])
+        result = sess.click_trusted_at_element("#TB_ajaxContent .button-primary")
+        self.assertEqual(result["status"], "NO_ELEMENT_AFTER_SCROLL")
+        # Scroll was sent, but no click follow-up.
+        methods = [c[0] for c in sess._sent]
+        self.assertEqual(methods, ["Input.synthesizeScrollGesture"])
+
+    def test_rect_js_is_readonly(self):
+        from src.cdp_session import is_readonly_expression
+        from src.submit_session import _RECT_JS
+
+        # It is a %s template; format it with a selector first.
+        js = _RECT_JS % json.dumps("#TB_ajaxContent .button-primary")
+        self.assertTrue(is_readonly_expression(js))
+
+
+class FillThenClickTrustedTests(unittest.TestCase):
+    def _sess(self, prep_result, click_result, poll_result):
+        import unittest.mock as mock
+        from src.submit_session import _TRUSTED_CLEANUP_JS, WriteSubmitSession
+
+        sess = WriteSubmitSession.__new__(WriteSubmitSession)
+        eval_seq = [prep_result, poll_result]
+        cleanup_called = []
+
+        def eval_stub(js):
+            if js == _TRUSTED_CLEANUP_JS:
+                cleanup_called.append(js)
+                return True
+            return eval_seq.pop(0)
+
+        sess._evaluate = eval_stub
+        sess.click_trusted_at_element = lambda selector=None: click_result
+        sess._cleanup_called = cleanup_called
+        mock.patch("src.submit_session.time.sleep").start()
+        self.addCleanup(mock.patch.stopall)
+        return sess
+
+    def test_success_flow_merges_prep_and_poll(self):
+        prep = {"status": "PREPARED", "region_target": "9", "edition_target": "1",
+                "region_set": "9", "edition_set": "1",
+                "region_options": ["9"], "edition_options": ["1"],
+                "button": {"disabled": False, "visible": True, "text": "Create offer"},
+                "pre_existing": {"success": 1, "error": 1}}
+        click = {"status": "CLICKED", "click_x": 500, "click_y": 400,
+                 "scrolled": False, "delay_ms": 60, "mode": "trusted"}
+        poll = {"status": "SUCCESS", "polls": 3, "requests": [
+            {"via": "xhr", "method": "POST", "url": "/wp-admin/admin-ajax.php", "status": 200}
+        ], "signal": "Offer created"}
+        sess = self._sess(prep, click, poll)
+        result = sess.fill_then_click_trusted("offer[region]", "9", "offer[edition]", "1")
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertEqual(result["click_mode"], "trusted")
+        self.assertEqual(result["click"], click)
+        self.assertEqual(result["signal"], "Offer created")
+        self.assertEqual(len(result["requests"]), 1)
+        self.assertEqual(result["region_set"], "9")
+
+    def test_no_selects_returns_early_no_click(self):
+        prep = {"status": "NO_SELECTS"}
+        sess = self._sess(prep, {"status": "CLICKED"}, {"status": "SUCCESS"})
+        result = sess.fill_then_click_trusted("offer[region]", "9", "offer[edition]", "1")
+        self.assertEqual(result["status"], "NO_SELECTS")
+
+    def test_no_element_click_triggers_cleanup(self):
+        prep = {"status": "PREPARED", "region_target": "9", "edition_target": "1"}
+        click = {"status": "NO_ELEMENT", "selector": "#TB_ajaxContent .button-primary"}
+        sess = self._sess(prep, click, {"status": "SUCCESS"})
+        result = sess.fill_then_click_trusted("offer[region]", "9", "offer[edition]", "1")
+        self.assertEqual(result["status"], "NO_TRUSTED_CLICK")
+        self.assertEqual(result["click"], click)
+        # Cleanup JS must have been called (to restore fetch/XHR).
+        self.assertEqual(len(sess._cleanup_called), 1)
 
 
 class InspectModalDomParsingTests(unittest.TestCase):

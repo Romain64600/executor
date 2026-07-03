@@ -56,9 +56,11 @@ def main() -> int:
     parser.add_argument("--all", action="store_true", help="With --submit / --inspect: full batch (default: canary of 1).")
     parser.add_argument("--limit", type=int, default=None, help="With --submit / --inspect: max offers to process.")
     parser.add_argument(
-        "--click-mode", default="native", choices=["native", "dispatch"],
+        "--click-mode", default="native", choices=["native", "dispatch", "trusted"],
         help="With --submit: 'native' = button.click() (default); 'dispatch' = MouseEvent "
-             "sequence on the Create button ONLY (documented derogation, Romain 2026-07-03).",
+             "sequence on the Create button (S09 derogation, Romain 2026-07-03); "
+             "'trusted' = CDP Input.dispatchMouseEvent at the button's viewport center "
+             "(isTrusted:true — Chantier n°1, 2026-07-03).",
     )
     parser.add_argument(
         "--inspect", action="store_true",
@@ -171,6 +173,14 @@ def main() -> int:
                 f"    click_mode={d.get('click_mode')} polls={d.get('polls')} "
                 f"pre_existing={d.get('pre_existing')} button={d.get('button')}"
             )
+            click = d.get("click") if isinstance(d.get("click"), dict) else None
+            if click:
+                lines.append(
+                    f"    trusted_click: click=({click.get('click_x')},{click.get('click_y')}) "
+                    f"delay_ms={click.get('delay_ms')} scrolled={click.get('scrolled')} "
+                    f"viewport={click.get('viewport')} rect={click.get('rect')} "
+                    f"status={click.get('status')}"
+                )
             for req in d.get("requests") or []:
                 lines.append(f"    net: {req.get('via')} {req.get('method')} {req.get('url')} -> {req.get('status')}")
     (out_dir / "submit_report.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
