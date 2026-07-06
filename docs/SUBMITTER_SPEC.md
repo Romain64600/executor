@@ -1,12 +1,20 @@
 # SUBMITTER_SPEC.md — Stage 4 design (for approval, no code yet)
 
-**Status: BUILT** (approved by Romain; dry-run validated end-to-end on the VPS
-first, then the real write path added with a **canary default of 1**). This is the
-design of the only stage that *writes* to AKS. See `CHANGELOG.md` for the two build
-entries (dry-run, then real).
+**Status: BUILT & LIVE-PROVEN** (approved by Romain; dry-run validated end-to-end
+on the VPS first, then the real write path added with a **canary default of 1**;
+**first live submissions confirmed 2026-07-06** — see §4b). This is the design of
+the only stage that *writes* to AKS. See `CHANGELOG.md` for the build + resolution
+entries.
 
 Grounded in `EXECUTOR_RULES.md` §6/§7 and the skill's submitter rules
 (`[S09]` `[S17]` `[S18]` and the DB-proof override).
+
+> **§4.7–§4.8 below describe the ORIGINAL (`setValue` + native `.button-primary`)
+> mechanism, which is SUPERSEDED.** It produced `isTrusted:false` events that
+> Driffle's handler ignores, and left `offer[targets][]` empty so HTML5 form
+> validation blocked the submit. The real, live-proven mechanism (trusted Selectize
+> picks + `offer[targets][]` fill + HTML5 validity gate + trusted click) is in
+> **§4b**.
 
 ---
 
@@ -73,12 +81,56 @@ For each offer in `approved.json`, wrapped in `StepGuard.run_step` with signatur
 5. **Verify the select names** before filling — they vary per feed
    (`offer[region]`/`offer[edition]` vs `offer[region_id]`/`offer[edition_id]`) `[S17]`.
 6. **(dry-run stops here)** — report exactly what *would* be set/clicked; no write.
-7. **(submit only)** Set region/edition via `selectize.setValue(...)` on the
-   verified names — not `.value =`.
-8. **(submit only)** Click `#TB_ajaxContent .button-primary` "Create offer" — the
-   only valid trigger `[S09]`.
+7. **(submit only — SUPERSEDED, see §4b)** ~~Set region/edition via
+   `selectize.setValue(...)`~~ → trusted Selectize picks + fill `offer[targets][]`
+   + HTML5 validity gate.
+8. **(submit only — SUPERSEDED, see §4b)** ~~Click `.button-primary` via
+   `.click()`~~ → **trusted** CDP click (`isTrusted:true`) on "Create offer" `[S09]`.
 9. Close via `#TB_closeWindowButton`; pace **≥ 500 ms** before the next `[S03]`.
 10. **Post-save verification (§5).**
+
+---
+
+## 4b. The real write mechanism (S18 RESOLVED, live-proven 2026-07-06)
+
+Steps 7–8 above are **superseded**. The working submit path (`WriteSubmitSession.
+fill_then_click_trusted`, `--click-mode trusted` which is now the default) is:
+
+1. **Trusted Selectize picks for region + edition** (`select_via_trusted`): a CDP
+   `Input.dispatchMouseEvent` (`isTrusted:true`) on the `.selectize-input` to open
+   the dropdown, then a trusted click on the `[data-value="{id}"]` option; an
+   `addItem(id, false)` fallback covers options not in the visible dropdown DOM
+   (Layer 3). `setValue()` is **not** used — it produces `isTrusted:false` and
+   leaves Selectize's own `required` text input empty.
+2. **Fill `offer[targets][]`** (`add_target_trusted`) — the missing piece.
+   `offer[targets][]` is a bare `<input type="text" required
+   pattern="(\d+)|(https?://.+)">` with a sibling add-button (chip/array field).
+   Trusted click to focus → `Input.insertText` types the **`aks_product_id`**
+   (numeric, matches `\d+`) → commit via the **adjacent add-button** (trusted
+   click), with a trusted-Enter (keyCode 13) fallback. Readback confirms
+   `valid:true`.
+3. **HTML5 validity gate** (`form_validity()`) — a **hard gate**. With region,
+   edition, and target filled, the `<form>` goes valid (`form_valid:true,
+   invalid_required:[]`). If it is still invalid, the submitter returns a
+   deterministic `FORM_INVALID` verdict and does **not** click. This is why the
+   old path silently fired zero admin-ajax: three `required` fields
+   (`offer[targets][]` + the two Selectize text inputs) were empty, so the browser
+   refused to dispatch the `submit` event.
+4. **Trusted click on "Create offer"** — drives the modal's **own**
+   `admin-ajax …do=create_offer`. We never issue a direct XHR (the merchant id is
+   auto-assigned by the modal — a direct XHR would use the wrong one `[S09]`); the
+   admin-ajax `200` + server signal `"Offer created for locale …"` are observed as
+   **corroborating** signals only. Authoritative proof stays §5 (gone from pending).
+
+**Live proof (2026-07-06):** Demigod canary (offer 93185190, Steam EU(9)/Standard)
++ 3 batch creations (Gambonanza, Hello Neighbor 2, Heart of the Machine) — all
+`target_add=ADDED`, `form_valid=true`, `create_offer 200`, gone from pending.
+
+**Layer 5 (known, expected):** some bundle / non-Standard offers reject
+server-side — `create_offer` returns `Bad request: paramètre "offer" manquant ou
+invalide` **even when the form is valid** (seen on Serious Sam HD Double Pack,
+GLOBAL/Bundle). Fail-closed handles it: `status=ERROR` → not submitted, no false
+success, batch continues. Not a regression.
 
 ---
 

@@ -10,8 +10,11 @@ reporting submissions that never actually landed in the database. The new design
 moves the risky work behind a scripted engine with a hard guardrail: the model
 **builds and supervises**, but never free-hands browser actions.
 
-> **Status — Sprint 1 (read-only foundations) complete.** All write stages are
-> gated behind green invariants on the Debian VPS target. See [Roadmap](#roadmap).
+> **Status — full pipeline built; submitter live-proven.** Read-only foundations
+> (Sprints 1–3) complete, and the write stage created its **first real AKS offers on
+> 2026-07-06** (Driffle, `--submit --click-mode trusted`). All write stages stay
+> gated behind green + authoritative invariants on the Debian VPS target. See
+> [Roadmap](#roadmap).
 
 ---
 
@@ -82,7 +85,7 @@ aks-controlled-executor/
 │   ├── 02_extract_feed.py      # read-only feed extractor CLI (gated on green invariants)
 │   ├── 03_match.py             # read-only matcher CLI → candidates/skipped/report
 │   ├── 04_validate.py          # validation CLI (template + check, fail-closed gate)
-│   └── 05_submit.py            # submitter CLI — DRY-RUN only (no writes)
+│   └── 05_submit.py            # submitter CLI — dry-run default; --submit = real write (trusted)
 ├── src/
 │   ├── aks_env.py              # constants, pure validators, env classification, HTTP probes
 │   ├── cdp_client.py           # read-only CDP /json/version client (no browser actions)
@@ -92,11 +95,11 @@ aks-controlled-executor/
 │   ├── extractor.py            # Sprint 2 read-only feed extractor
 │   ├── matcher.py              # Sprint 3 read-only matcher (candidates + skipped)
 │   ├── validation.py           # Stage 3 validation gate (approve exact candidates)
-│   ├── submit_session.py       # interactive CDP session (open modal + read; NO create)
-│   ├── submitter.py            # Stage 4 DRY-RUN submitter (no writes)
+│   ├── submit_session.py       # read-only + narrow WriteSubmitSession (trusted picks/target/click)
+│   ├── submitter.py            # Stage 4 submitter — dry-run + real write path
 │   ├── run_log.py              # append-only JSONL run logger (redacting)
 │   └── step_guard.py           # deterministic, fail-closed StepGuard
-├── tests/                      # unit tests (138)
+├── tests/                      # unit tests (190)
 ├── config/  runs/  logs/  state/   # runtime dirs (runs/logs/state are gitignored)
 └── .gitignore
 ```
@@ -194,12 +197,16 @@ starts, so a mid-task "retry past it" is impossible. See
   report. Pure core unit-tested; live AKS resolve runs on the VPS.
 - [x] **Validation** (`src/validation.py`, `scripts/04_validate.py`) — fail-closed
   gate: approve exact candidates by fingerprint; no submission without it.
-- [x] **Submitter — built** (`src/submitter.py`, `src/submit_session.py`,
-  `scripts/05_submit.py`): dry-run rehearsal + real write path. Real `--submit`
-  fills region/edition, clicks `.button-primary`, and verifies post-save
-  (`success = offer gone from pending`, never `[data-success]`). **Canary default of
-  1**, `--all` for the batch; gated + StepGuard (skip+continue, stop after 10). Dry-run
-  validated live on the VPS first. See [`docs/SUBMITTER_SPEC.md`](docs/SUBMITTER_SPEC.md).
+- [x] **Submitter — built & live-proven** (`src/submitter.py`,
+  `src/submit_session.py`, `scripts/05_submit.py`): dry-run rehearsal + real write
+  path. Real `--submit` (default `--click-mode trusted`) makes **trusted** Selectize
+  picks for region/edition, fills `offer[targets][]` with the `aks_product_id`,
+  passes a hard **HTML5 validity gate**, clicks "Create offer" with a trusted CDP
+  event, and verifies post-save (`success = offer gone from pending`, never
+  `[data-success]`). **First real AKS offers created 2026-07-06** (Demigod canary +
+  3 batch). **Canary default of 1**, `--all`/`--limit N` for the batch; gated +
+  StepGuard (skip+continue, stop after 10). See
+  [`docs/SUBMITTER_SPEC.md`](docs/SUBMITTER_SPEC.md) §4b.
 - [x] **Data contracts + JSONL run-log infrastructure** (`src/contracts.py`,
   `src/run_log.py`) — ready for the stages above to use.
 - [ ] **Post-save verifier.**

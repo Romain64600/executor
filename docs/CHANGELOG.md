@@ -3,6 +3,58 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-06 — S18 RESOLVED: `offer[targets][]` fill → first live submissions
+
+The Selectize-humanisé fix (2026-07-03) made region/edition valid but the form
+still would not submit: a trusted click on "Create offer" fired **zero**
+admin-ajax. A read-only probe (`probe_targets_field` / `_TARGETS_PROBE_JS`)
+isolated the last empty `required` field — `offer[targets][]`, a bare
+`<input type="text" required pattern="(\d+)|(https?://.+)">` with a sibling
+"add" button (a chip/array field). It wants the **AKS product id** (numeric) or
+an http(s) URL — both already on every candidate (`aks_product_id`, `aks_url`).
+
+**Fix — fill `offer[targets][]` in the trusted path, before the validity gate:**
+
+- `src/submit_session.py` — new `add_target_trusted(value)`: trusted CDP click to
+  focus the field, `Input.insertText` to type the value, then commit via the
+  **adjacent add-button** (trusted click) with a trusted-Enter (`_press_enter`,
+  keyCode 13) fallback. Read-only readback (`_TARGETS_READBACK_JS`) confirms the
+  input went `valid:true`. Wired into `fill_then_click_trusted(...,
+  target_value=...)` as step 4, **before** the HTML5 validity gate.
+- `src/submitter.py` — threads `candidate.aks_product_id` through `_prepare` →
+  `_process` → `target_value` (cleanest value, matches `\d+`).
+- **HTML5 validity gate is now a hard gate** (`form_validity()` /
+  `_FORM_VALIDITY_JS`): if the `<form>` is still invalid after region + edition +
+  target, the submitter returns a deterministic `FORM_INVALID` verdict and does
+  **not** click — no ambiguous "click ignored", no wasted admin-ajax.
+- `--click-mode` now **defaults to `trusted`** (the only mode proven to fire
+  Driffle's handler); `native`/`dispatch` kept only as documented diagnostics.
+- `scripts/05_submit.py` — report now prints `target_add=` (status/commit/value/
+  readback) and `form_valid=`/`invalid_required=` per offer.
+
+**First live-confirmed submissions (Romain-triggered `--submit`).** A canary of 1
+(offer 93185190 **Demigod**, Steam EU(9)/Standard(1), run
+`20260706-161225-driffle`) succeeded end-to-end: target filled
+(`valid:true`), `form_valid:true`, trusted click → **admin-ajax
+`…do=create_offer` → 200**, server signal `"[product 2101] Offer created for
+locale en_EU and merchant 408"`, and — the only authoritative proof — **gone
+from the refreshed pending feed** `[S18]`. We do **not** issue a direct XHR; the
+trusted click drives the modal's own `create_offer` and we merely *observe* the
+resulting request as a corroborating signal.
+
+**First scaled batch** (run `20260706-162745-driffle`, `--limit 100
+--available all`, 4 approved): **3 created** — Gambonanza, Hello Neighbor 2,
+Heart of the Machine (all Steam EU(9)/Standard(1), all gone from pending). **1
+clean fail (new Layer-5, server-side):** Serious Sam HD Double Pack
+(GLOBAL(2)/Bundle(8)) — region/edition picked, form **valid**, target filled,
+yet `create_offer` returned `Bad request: paramètre "offer" manquant ou
+invalide`. Fail-closed caught it (status=ERROR → not submitted, no false
+success, batch continued). This is **not** a regression — expect some
+bundle/non-Standard offers to reject server-side even when the form is valid.
+
+**190 tests green.** Commits `41c6bb5` (target fill) + `12fd2ec` (validity gate,
+probe, default trusted).
+
 ## 2026-07-03 — Chantier n°1 extension: Selectize humanisé (no more `setValue`)
 
 Canary #4 (FRACT OSC, offer 92625611) with `--click-mode trusted` proved the

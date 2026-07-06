@@ -201,12 +201,24 @@ For each validated candidate, in order, fail-closed:
    on others. Wrong name → silent `selectize` failure → false `[data-success]`
    `[S17]`. Read them:
    `Array.from(document.querySelectorAll('#TB_ajaxContent select')).map(e=>e.name)`.
-5. Set region/edition via `selectize.setValue(...)` on the correct names — **not**
-   `.value =`.
-6. Submit by **clicking the modal `.button-primary` "Create offer"** — the only
-   valid trigger `[S09]`.
-7. Verify post-save (§7), then close via `#TB_closeWindowButton`.
-8. Pacing ≥ 500 ms between submissions `[S03]`.
+5. Pick region/edition via **trusted Selectize** (`select_via_trusted`): a CDP
+   `Input.dispatchMouseEvent` (`isTrusted:true`) opens the `.selectize-input`
+   dropdown, a trusted click selects `[data-value="{id}"]` (with an
+   `addItem(id, false)` fallback). **Not** `selectize.setValue(...)` — that is
+   `isTrusted:false` and leaves Selectize's own `required` text input empty
+   (S18, 2026-07-06).
+6. Fill **`offer[targets][]`** (`add_target_trusted`) with the candidate's
+   `aks_product_id` — trusted focus click, `Input.insertText`, commit via the
+   adjacent add-button (trusted-Enter fallback). This is the last empty `required`
+   field; without it the form never validates.
+7. **HTML5 validity gate** (`form_validity()`, a hard gate): the `<form>` must be
+   valid (`form_valid:true`) — else return `FORM_INVALID` and do **not** click.
+8. Submit by a **trusted CDP click** (`isTrusted:true`) on the modal "Create offer"
+   button — the only trigger Driffle's handler honours `[S09]`. It drives the
+   modal's **own** `admin-ajax do=create_offer`; we never issue a direct XHR
+   (the merchant id is auto-assigned by the modal).
+9. Verify post-save (§7), then close via `#TB_closeWindowButton`.
+10. Pacing ≥ 500 ms between submissions `[S03]`.
 
 **Absolutely forbidden** `[SUBMISSION HARD OVERRIDE][S09][GOG]`: direct
 `admin-ajax` XHR; `form.dispatchEvent(...)`; `form.submit()`; any "fire and
@@ -217,9 +229,13 @@ wrong one.
 If any step fails → do not retry the same offer blindly, do not switch browser.
 Per [`SUBMITTER_SPEC.md`](SUBMITTER_SPEC.md) §6 (Romain's decision) the batch policy
 is: log + skip the failing offer + continue, and stop the whole run after 10
-consecutive failures. The **DRY-RUN** submitter (no writes) is built in
-`src/submitter.py` + `scripts/05_submit.py`; the real write path is a separate,
-explicitly-authorized build.
+consecutive failures. Both the DRY-RUN and the **real write path** are built in
+`src/submitter.py` + `src/submit_session.py` + `scripts/05_submit.py`; the real path
+(steps 5–8, `--submit --click-mode trusted`) is **live-proven** (first confirmed
+Driffle creations 2026-07-06 — see [`SUBMITTER_SPEC.md`](SUBMITTER_SPEC.md) §4b).
+Note the **Layer-5** case: some bundle/non-Standard offers reject server-side
+(`Bad request: paramètre "offer" manquant ou invalide`) even when the form is
+valid — fail-closed skips them, not a regression.
 
 ---
 
