@@ -177,6 +177,13 @@ def main() -> int:
                     f"    form_valid={fv.get('form_valid')} "
                     f"invalid_required={[x.get('name') for x in fv.get('invalid_required', [])]}"
                 )
+            ta = d.get("target_add")
+            if isinstance(ta, dict):
+                rb = ta.get("readback") if isinstance(ta.get("readback"), dict) else {}
+                lines.append(
+                    f"    target_add={ta.get('status')} commit={ta.get('commit')} "
+                    f"value={ta.get('value')!r} readback_count={rb.get('count')}"
+                )
             lines.append(
                 f"    click_mode={d.get('click_mode')} polls={d.get('polls')} "
                 f"pre_existing={d.get('pre_existing')} button={d.get('button')}"

@@ -581,6 +581,25 @@ _TRUSTED_CLEANUP_JS = (
     "delete window.__s18orig;}delete window.__s18taps;return true;})()"
 )
 
+# Read-only readback of the ``offer[targets][]`` control(s) after a target-add
+# (S18, 2026-07-06). Reports how many such inputs exist and, per input, its
+# value_len (never the value), visibility, required flag and HTML5 validity — the
+# deterministic signal that a target chip was committed (the field goes valid /
+# a hidden holder input appears). S02-safe: no ``.value=`` / click / fetch.
+_TARGETS_READBACK_JS = (
+    "JSON.stringify((function(){"
+    "var content=document.querySelector('#TB_ajaxContent');"
+    "if(!content)return {ok:false,reason:'no_modal'};"
+    "var inputs=content.querySelectorAll('input[name=\"offer[targets][]\"]');"
+    "var vals=[];"
+    "for(var i=0;i<inputs.length;i++){var el=inputs[i];"
+    "vals.push({value_len:(el.value||'').length,visible:el.offsetParent!==null,"
+    "type:el.type||null,required:!!el.required,"
+    "valid:el.validity?el.validity.valid:null});}"
+    "return {ok:true,count:inputs.length,inputs:vals};"
+    "})())"
+)
+
 
 class WriteSubmitSession(SubmitSession):
     """SubmitSession + the single mutating op. Instantiated ONLY under ``--submit``.
@@ -590,7 +609,8 @@ class WriteSubmitSession(SubmitSession):
     verified select names and cause a click on the visible "Create offer" button.
     No direct XHR, no ``form.submit()`` (S09). Three click_modes are supported:
 
-    - ``native``: DOM ``b.click()`` — default, was the original path.
+    - ``native``: DOM ``b.click()`` — the original path, ``isTrusted:false``,
+      proven NOT to persist on Driffle; kept only as a documented diagnostic.
     - ``dispatch``: a MouseEvent sequence dispatched on the button ONLY (S09
       derogation authorized by Romain 2026-07-03 after native was proven not
       to persist on Driffle). ``event.isTrusted`` is false — Driffle ignores it.
@@ -876,12 +896,71 @@ class WriteSubmitSession(SubmitSession):
         diag["status"] = "SELECTED"
         return diag
 
+    def _press_enter(self) -> None:
+        """Trusted Enter keypress via CDP ``Input.dispatchKeyEvent`` (keyDown +
+        keyUp). ``event.isTrusted`` is true. Used as the fallback commit for the
+        ``offer[targets][]`` chip field when its add-button can't be located."""
+
+        for kind in ("keyDown", "keyUp"):
+            self._cmd(
+                "Input.dispatchKeyEvent",
+                {"type": kind, "key": "Enter", "code": "Enter",
+                 "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13},
+            )
+
+    def add_target_trusted(self, value: str) -> dict[str, Any]:
+        r"""Fill the modal's ``offer[targets][]`` field the human way (S18,
+        2026-07-06). The field is a required ``<input type=text>`` with
+        ``pattern="(\d+)|(https?://.+)"`` and a sibling add-button — it wants the
+        AKS product id (numeric) or URL; ``value`` is the candidate's
+        ``aks_product_id``. Flow:
+
+        1. Trusted CDP click on ``#TB_ajaxContent input[name="offer[targets][]"]``
+           to focus it (with the usual scroll-into-view handling).
+        2. ``Input.insertText`` types ``value`` — a real ``input`` event, no
+           ``.value=`` / setValue.
+        3. Commit the chip: trusted click on the adjacent add-button
+           (``… + button``); if that element isn't found, fall back to a trusted
+           Enter keypress.
+        4. Read back the ``offer[targets][]`` input state (read-only).
+
+        Returns a diag: ``value, focus, typed, add_button, commit
+        ('button'|'enter'), readback, status ('ADDED' | 'NO_TARGETS_FIELD')``.
+        NOT a success proof — the caller's ``form_validity()`` gate + post-save
+        decide. ``NO_TARGETS_FIELD`` (field absent) is non-fatal: some products
+        may not require a target, and the validity gate is the backstop.
+        """
+
+        field_sel = "#TB_ajaxContent input[name=\"offer[targets][]\"]"
+        diag: dict[str, Any] = {"value": str(value)}
+        focus = self.click_trusted_at_element(field_sel)
+        diag["focus"] = focus
+        if focus.get("status") != "CLICKED":
+            diag["status"] = "NO_TARGETS_FIELD"
+            return diag
+        self._cmd("Input.insertText", {"text": str(value)})
+        diag["typed"] = True
+        time.sleep(0.2)
+        add_button = self.click_trusted_at_element(field_sel + " + button")
+        diag["add_button"] = add_button
+        if add_button.get("status") == "CLICKED":
+            diag["commit"] = "button"
+        else:
+            self._press_enter()
+            diag["commit"] = "enter"
+        time.sleep(0.3)
+        raw = self.evaluate_readonly(_TARGETS_READBACK_JS)
+        diag["readback"] = json.loads(raw) if raw else {"ok": False}
+        diag["status"] = "ADDED"
+        return diag
+
     def fill_then_click_trusted(
         self,
         region_select: str,
         region_id: str,
         edition_select: str,
         edition_id: str,
+        target_value: str | None = None,
     ) -> dict[str, Any]:
         """Trusted-click variant of ``fill_and_create`` — Selectize humanisé
         (Chantier n°1 extension, 2026-07-03):
@@ -891,13 +970,16 @@ class WriteSubmitSession(SubmitSession):
         2. ``select_via_trusted(region_select, region_id)``: trusted CDP click on
            Selectize UI (open + pick option). Selectize fires its own events.
         3. ``select_via_trusted(edition_select, edition_id)``: same.
-        4. ``form_validity()``: read-only HTML5 validity gate. If the form is
+        4. ``add_target_trusted(target_value)`` (when supplied): trusted type of
+           the AKS product id / URL into ``offer[targets][]`` + commit — the last
+           required field the Selectize picks don't populate.
+        5. ``form_validity()``: read-only HTML5 validity gate. If the form is
            positively invalid → STOP with ``status='FORM_INVALID'`` (+ the
            offending field names), do NOT click Create. A click on an invalid
            form fires zero requests and looks like "the site ignored the robot".
-        5. ``click_trusted_at_element("#TB_ajaxContent .button-primary")``:
+        6. ``click_trusted_at_element("#TB_ajaxContent .button-primary")``:
            trusted CDP click on the submit button center.
-        6. Poll JS: accept either a NEW [data-success]/[data-error] node OR a
+        7. Poll JS: accept either a NEW [data-success]/[data-error] node OR a
            TEXT CHANGE on the existing template node (Driffle's actual pattern),
            report captured requests, restore taps.
 
@@ -936,6 +1018,14 @@ class WriteSubmitSession(SubmitSession):
         prep["edition_set"] = str(
             (edition_pick.get("readback") or {}).get("selectize_value", "")
         )
+
+        # offer[targets][] — the last required field the Selectize picks don't
+        # touch (S18, 2026-07-06). Fill it (trusted type + commit) when a value
+        # is supplied; the validity gate below is the fail-closed proof that it
+        # actually cleared `required`. No hard-fail here: a wrong/absent target
+        # simply leaves the form invalid, which FORM_INVALID reports.
+        if target_value:
+            prep["target_add"] = self.add_target_trusted(str(target_value))
 
         # Fail-closed validity gate: a submit button whose form is invalid will
         # swallow the trusted click (browser blocks the submit, ZERO admin-ajax

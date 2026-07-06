@@ -70,6 +70,7 @@ class _SubmitterBase:
             "offer_id": offer_id,
             "merchant_title": candidate["offer"]["name"],
             "aks_url": candidate["aks_url"],
+            "aks_product_id": candidate.get("aks_product_id"),
             "region_id": candidate["region"]["id"],
             "edition_id": candidate["edition"]["id"],
             "ready": False,
@@ -267,6 +268,7 @@ class Submitter(_SubmitterBase):
             diag = self.session.fill_then_click_trusted(
                 entry["region_select"], entry["region_id"],
                 entry["edition_select"], entry["edition_id"],
+                target_value=entry.get("aks_product_id"),
             )
         else:
             diag = self.session.fill_and_create(

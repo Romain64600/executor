@@ -111,6 +111,7 @@ class FakeWriteSession(FakeSubmitSession):
         self.form_validity = form_validity
         self.created = set()
         self.fill_calls = []
+        self.last_target_value = None
         self._last_opened = None
 
     def open_offer_modal(self, offer_id):
@@ -131,8 +132,10 @@ class FakeWriteSession(FakeSubmitSession):
             diag["signal"] = self.create_signal
         return diag
 
-    def fill_then_click_trusted(self, region_select, region_id, edition_select, edition_id):
+    def fill_then_click_trusted(self, region_select, region_id, edition_select, edition_id,
+                                target_value=None):
         self.fill_calls.append((region_select, region_id, edition_select, edition_id, "trusted"))
+        self.last_target_value = target_value
         if self.create_status in ("SUCCESS", "NO_SIGNAL") and self.create_removes:
             self.created.add(self._last_opened)
         diag = {"status": self.create_status, "region_set": region_id, "edition_set": edition_id,
@@ -251,6 +254,19 @@ class RealSubmitTests(unittest.TestCase):
         self.assertEqual(result["plan"][0]["create"]["status"], "FORM_INVALID")
         self.assertIn("invalid required fields", result["plan"][0]["post_save"])
         self.assertIn("offer[targets][]", result["plan"][0]["post_save"])
+
+    def test_trusted_threads_aks_product_id_as_target(self):
+        # offer[targets][] wants the AKS product id — the trusted path must pass
+        # the candidate's aks_product_id down as target_value (S18, 2026-07-06).
+        session = FakeWriteSession([["1"]])
+        _real(session, [_cand("1")], click_mode="trusted", limit=1)
+        self.assertEqual(session.last_target_value, "1")
+
+    def test_native_path_does_not_thread_target(self):
+        # Only the trusted path fills offer[targets][]; native never touches it.
+        session = FakeWriteSession([["1"]])
+        _real(session, [_cand("1")], click_mode="native", limit=1)
+        self.assertIsNone(session.last_target_value)
 
 
 class ClickModeValidationTests(unittest.TestCase):
@@ -585,6 +601,38 @@ class FillThenClickTrustedTests(unittest.TestCase):
         self.assertEqual(result["click"], click)
         self.assertEqual(len(sess._cleanup_called), 1)
 
+    def test_target_value_fills_targets_and_stores_diag(self):
+        # A supplied target_value drives add_target_trusted; its diag lands under
+        # prep["target_add"] and the flow still reaches the validity gate + click.
+        prep = {"status": "PREPARED", "region_options": ["9"], "edition_options": ["1"],
+                "button": {}, "pre_existing": {"success": 0, "error": 0}}
+        click = {"status": "CLICKED", "mode": "trusted"}
+        poll = {"status": "SUCCESS", "polls": 2, "requests": [], "signal": "ok"}
+        sess = self._sess(prep, self._pick("9"), self._pick("1"), click, poll)
+        target_calls = []
+        sess.add_target_trusted = lambda val: (
+            target_calls.append(val) or {"status": "ADDED", "value": val, "commit": "button"}
+        )
+        result = sess.fill_then_click_trusted(
+            "offer[region]", "9", "offer[edition]", "1", target_value="210529"
+        )
+        self.assertEqual(target_calls, ["210529"])
+        self.assertEqual(result["target_add"]["status"], "ADDED")
+        self.assertEqual(result["target_add"]["value"], "210529")
+        self.assertEqual(result["status"], "SUCCESS")
+
+    def test_no_target_value_skips_target_fill(self):
+        prep = {"status": "PREPARED", "region_options": ["9"], "edition_options": ["1"],
+                "button": {}, "pre_existing": {"success": 0, "error": 0}}
+        click = {"status": "CLICKED", "mode": "trusted"}
+        poll = {"status": "SUCCESS", "polls": 2, "requests": [], "signal": "ok"}
+        sess = self._sess(prep, self._pick("9"), self._pick("1"), click, poll)
+        called = []
+        sess.add_target_trusted = lambda val: called.append(val)
+        result = sess.fill_then_click_trusted("offer[region]", "9", "offer[edition]", "1")
+        self.assertEqual(called, [])
+        self.assertNotIn("target_add", result)
+
 
 class SelectViaTrustedTests(unittest.TestCase):
     def _sess(self, evaluate_readonly_results):
@@ -686,6 +734,78 @@ class SelectViaTrustedTests(unittest.TestCase):
         self.assertTrue(is_readonly_expression(
             _SELECTIZE_READBACK_JS % json.dumps("offer[region]")
         ))
+
+
+class AddTargetTrustedTests(unittest.TestCase):
+    def _sess(self, *, focus_status="CLICKED", add_button_status="CLICKED", readback=None):
+        import unittest.mock as mock
+        from src.submit_session import WriteSubmitSession
+
+        sess = WriteSubmitSession.__new__(WriteSubmitSession)
+        calls = {"clicks": [], "cmds": []}
+
+        def click_stub(selector="#TB_ajaxContent .button-primary"):
+            calls["clicks"].append(selector)
+            status = add_button_status if selector.endswith(" + button") else focus_status
+            return {"status": status, "selector": selector}
+
+        sess.click_trusted_at_element = click_stub
+        sess._cmd = lambda method, params=None: calls["cmds"].append((method, params)) or {}
+        sess.evaluate_readonly = lambda js: (
+            readback if readback is not None
+            else json.dumps({"ok": True, "count": 1, "inputs": [
+                {"value_len": 6, "visible": True, "type": "text", "required": True, "valid": True}
+            ]})
+        )
+        sess._calls = calls
+        mock.patch("src.submit_session.time.sleep").start()
+        self.addCleanup(mock.patch.stopall)
+        return sess
+
+    def test_button_commit_types_via_insert_text(self):
+        sess = self._sess()
+        diag = sess.add_target_trusted("210529")
+        self.assertEqual(diag["status"], "ADDED")
+        self.assertEqual(diag["commit"], "button")
+        self.assertTrue(diag["typed"])
+        self.assertEqual(diag["value"], "210529")
+        # Value typed via trusted Input.insertText — never .value= / setValue.
+        insert = [c for c in sess._calls["cmds"] if c[0] == "Input.insertText"]
+        self.assertEqual(insert, [("Input.insertText", {"text": "210529"})])
+        self.assertFalse(any(c[0] == "Input.dispatchKeyEvent" for c in sess._calls["cmds"]))
+        self.assertEqual(diag["readback"]["count"], 1)
+
+    def test_no_targets_field_when_focus_fails(self):
+        sess = self._sess(focus_status="NO_ELEMENT")
+        diag = sess.add_target_trusted("210529")
+        self.assertEqual(diag["status"], "NO_TARGETS_FIELD")
+        # Nothing typed, no add-button click attempted (field absent = non-fatal).
+        self.assertEqual(sess._calls["cmds"], [])
+        self.assertEqual(
+            sess._calls["clicks"], ["#TB_ajaxContent input[name=\"offer[targets][]\"]"]
+        )
+
+    def test_enter_fallback_when_no_add_button(self):
+        sess = self._sess(add_button_status="NO_ELEMENT")
+        diag = sess.add_target_trusted("210529")
+        self.assertEqual(diag["status"], "ADDED")
+        self.assertEqual(diag["commit"], "enter")
+        # Enter fallback is a trusted keyDown + keyUp (keyCode 13).
+        keys = [c for c in sess._calls["cmds"] if c[0] == "Input.dispatchKeyEvent"]
+        self.assertEqual([k[1]["type"] for k in keys], ["keyDown", "keyUp"])
+        self.assertTrue(all(k[1]["windowsVirtualKeyCode"] == 13 for k in keys))
+
+    def test_only_trusted_input_primitives_used(self):
+        sess = self._sess()
+        sess.add_target_trusted("210529")
+        methods = [c[0] for c in sess._calls["cmds"]]
+        self.assertTrue(methods and all(m.startswith("Input.") for m in methods))
+
+    def test_readback_js_is_readonly_safe(self):
+        from src.cdp_session import is_readonly_expression
+        from src.submit_session import _TARGETS_READBACK_JS
+
+        self.assertTrue(is_readonly_expression(_TARGETS_READBACK_JS))
 
 
 class InspectModalDomParsingTests(unittest.TestCase):
