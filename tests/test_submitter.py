@@ -102,11 +102,13 @@ class DryRunTests(unittest.TestCase):
 
 
 class FakeWriteSession(FakeSubmitSession):
-    def __init__(self, pages, *, create_status="SUCCESS", create_signal=None, create_removes=True, **kw):
+    def __init__(self, pages, *, create_status="SUCCESS", create_signal=None,
+                 create_removes=True, form_validity=None, **kw):
         super().__init__(pages, **kw)
         self.create_status = create_status
         self.create_signal = create_signal
         self.create_removes = create_removes
+        self.form_validity = form_validity
         self.created = set()
         self.fill_calls = []
         self._last_opened = None
@@ -142,6 +144,8 @@ class FakeWriteSession(FakeSubmitSession):
                           "status": "CLICKED"}}
         if self.create_signal:
             diag["signal"] = self.create_signal
+        if self.form_validity is not None:
+            diag["form_validity"] = self.form_validity
         return diag
 
 
@@ -212,10 +216,16 @@ class RealSubmitTests(unittest.TestCase):
         self.assertFalse(result["plan"][0]["submitted"])
         self.assertIn("STILL in pending", result["plan"][0]["post_save"])
 
-    def test_default_click_mode_is_native(self):
+    def test_default_click_mode_is_trusted(self):
+        # native/dispatch are proven dead on Driffle; the class default must be
+        # the only working mode. Construct Submitter WITHOUT click_mode to assert
+        # the class default (not the _real helper's explicit native).
         session = FakeWriteSession([["1"]])
-        _real(session, [_cand("1")], limit=1)
-        self.assertEqual(session.fill_calls[0][-1], "native")
+        Submitter(session).run(
+            run_id="r", merchant="Driffle", store_id="127",
+            approved=[_cand("1")], pace=0, limit=1,
+        )
+        self.assertEqual(session.fill_calls[0][-1], "trusted")
 
     def test_trusted_click_mode_routes_to_fill_then_click_trusted(self):
         session = FakeWriteSession([["1"]])
@@ -231,6 +241,16 @@ class RealSubmitTests(unittest.TestCase):
         result = _real(session, [_cand("1")], click_mode="trusted", limit=1)
         self.assertFalse(result["plan"][0]["submitted"])
         self.assertIn("STILL in pending", result["plan"][0]["post_save"])
+
+    def test_trusted_form_invalid_is_reported_and_not_submitted(self):
+        fv = {"ok": True, "form_valid": False, "checked": 4,
+              "invalid_required": [{"name": "offer[targets][]", "valueMissing": True}]}
+        session = FakeWriteSession([["1"]], create_status="FORM_INVALID", form_validity=fv)
+        result = _real(session, [_cand("1")], click_mode="trusted", limit=1)
+        self.assertFalse(result["plan"][0].get("submitted"))
+        self.assertEqual(result["plan"][0]["create"]["status"], "FORM_INVALID")
+        self.assertIn("invalid required fields", result["plan"][0]["post_save"])
+        self.assertIn("offer[targets][]", result["plan"][0]["post_save"])
 
 
 class ClickModeValidationTests(unittest.TestCase):
@@ -253,7 +273,7 @@ class ClickModeValidationTests(unittest.TestCase):
 
 
 class FakeInspectSession(FakeSubmitSession):
-    def __init__(self, pages, *, inspection=None, **kw):
+    def __init__(self, pages, *, inspection=None, form_validity=None, targets_probe=None, **kw):
         super().__init__(pages, **kw)
         self.inspection = inspection or {
             "modal_ok": True,
@@ -262,11 +282,30 @@ class FakeInspectSession(FakeSubmitSession):
             "form": None,
             "forms_in_modal": 0,
         }
+        self._form_validity = form_validity or {
+            "ok": True, "form_valid": False, "checked": 3,
+            "invalid_required": [{"name": "offer[targets][]", "valueMissing": True}],
+        }
+        self._targets_probe = targets_probe or {
+            "ok": True, "count": 1,
+            "targets": [{
+                "tag": "INPUT", "type": "text", "name": "offer[targets][]",
+                "required": True, "value_len": 0, "placeholder": "Add a target",
+                "list_attr": None, "label": "Targets", "data_attrs": {},
+                "parents": ["div.form-row"], "next_sibs": [],
+            }],
+        }
         self.inspect_calls = 0
 
     def inspect_modal_dom(self):
         self.inspect_calls += 1
         return dict(self.inspection)
+
+    def form_validity(self):
+        return dict(self._form_validity)
+
+    def probe_targets_field(self):
+        return dict(self._targets_probe)
 
 
 def _inspect(session, approved):
@@ -283,6 +322,21 @@ class InspectSubmitterTests(unittest.TestCase):
         self.assertTrue(all("inspection" in p and p["inspection"]["modal_ok"] for p in result["plan"]))
         self.assertIsNone(result["aborted"])
         self.assertIsNone(result["stopped"])
+
+    def test_inspect_captures_form_validity_inventory(self):
+        session = FakeInspectSession([["1"]])
+        result = _inspect(session, [_cand("1")])
+        fv = result["plan"][0]["form_validity"]
+        self.assertFalse(fv["form_valid"])
+        names = [x["name"] for x in fv["invalid_required"]]
+        self.assertIn("offer[targets][]", names)
+
+    def test_inspect_captures_targets_probe(self):
+        session = FakeInspectSession([["1"]])
+        result = _inspect(session, [_cand("1")])
+        probe = result["plan"][0]["targets_probe"]
+        self.assertTrue(probe["ok"])
+        self.assertEqual(probe["targets"][0]["name"], "offer[targets][]")
 
     def test_skips_offer_not_in_feed_without_inspecting(self):
         session = FakeInspectSession([["1"]])  # "9" absent
@@ -408,7 +462,8 @@ class TrustedClickTests(unittest.TestCase):
 
 
 class FillThenClickTrustedTests(unittest.TestCase):
-    def _sess(self, prep_result, region_pick, edition_pick, click_result, poll_result):
+    def _sess(self, prep_result, region_pick, edition_pick, click_result, poll_result,
+              form_validity=None):
         import unittest.mock as mock
         from src.submit_session import _TRUSTED_CLEANUP_JS, WriteSubmitSession
 
@@ -426,6 +481,10 @@ class FillThenClickTrustedTests(unittest.TestCase):
         sess.click_trusted_at_element = lambda selector=None: click_result
         pick_seq = [region_pick, edition_pick]
         sess.select_via_trusted = lambda name, val: pick_seq.pop(0)
+        sess.form_validity = lambda: (
+            form_validity if form_validity is not None
+            else {"ok": True, "form_valid": True, "checked": 3, "invalid_required": []}
+        )
         sess._cleanup_called = cleanup_called
         mock.patch("src.submit_session.time.sleep").start()
         self.addCleanup(mock.patch.stopall)
@@ -487,6 +546,33 @@ class FillThenClickTrustedTests(unittest.TestCase):
         self.assertEqual(result["status"], "NO_EDITION_PICK")
         self.assertEqual(result["edition_pick"], edition_fail)
         self.assertEqual(len(sess._cleanup_called), 1)
+
+    def test_form_invalid_blocks_click_and_cleans_up(self):
+        prep = {"status": "PREPARED", "region_options": ["9"], "edition_options": ["1"],
+                "button": {}, "pre_existing": {"success": 0, "error": 0}}
+        invalid = {"ok": True, "form_valid": False, "checked": 4,
+                   "invalid_required": [{"name": "offer[targets][]", "valueMissing": True}]}
+        sess = self._sess(prep, self._pick("9"), self._pick("1"),
+                          {"status": "CLICKED"}, {"status": "SUCCESS"}, form_validity=invalid)
+        result = sess.fill_then_click_trusted("offer[region]", "9", "offer[edition]", "1")
+        self.assertEqual(result["status"], "FORM_INVALID")
+        self.assertEqual(result["form_validity"], invalid)
+        self.assertEqual(len(sess._cleanup_called), 1)
+        # The click was never attempted (form is invalid → submit would be a no-op).
+        self.assertNotIn("click", result)
+
+    def test_unreadable_form_validity_does_not_block(self):
+        # A probe that can't read the form (ok:false) must NOT block — post-save
+        # stays the real proof, so behaviour degrades to the prior click path.
+        prep = {"status": "PREPARED", "region_options": ["9"], "edition_options": ["1"],
+                "button": {}, "pre_existing": {"success": 0, "error": 0}}
+        click = {"status": "CLICKED", "mode": "trusted"}
+        poll = {"status": "SUCCESS", "polls": 2, "requests": [], "signal": "ok"}
+        sess = self._sess(prep, self._pick("9"), self._pick("1"), click, poll,
+                          form_validity={"ok": False, "reason": "no_form"})
+        result = sess.fill_then_click_trusted("offer[region]", "9", "offer[edition]", "1")
+        self.assertEqual(result["status"], "SUCCESS")
+        self.assertEqual(result["click"], click)
 
     def test_no_element_click_triggers_cleanup(self):
         prep = {"status": "PREPARED", "region_options": ["9"], "edition_options": ["1"],
@@ -625,6 +711,63 @@ class InspectModalDomParsingTests(unittest.TestCase):
         from src.submit_session import _INSPECT_MODAL_JS
 
         self.assertTrue(is_readonly_expression(_INSPECT_MODAL_JS))
+
+
+class FormValidityTests(unittest.TestCase):
+    def test_form_validity_js_is_readonly(self):
+        from src.cdp_session import is_readonly_expression
+        from src.submit_session import _FORM_VALIDITY_JS
+
+        self.assertTrue(is_readonly_expression(_FORM_VALIDITY_JS))
+
+    def test_parses_invalid_form(self):
+        from src.submit_session import SubmitSession
+
+        sess = SubmitSession.__new__(SubmitSession)
+        sess.evaluate_readonly = lambda js: (
+            '{"ok": true, "form_valid": false, "checked": 4, '
+            '"invalid_required": [{"name": "offer[targets][]", "valueMissing": true}]}'
+        )
+        result = sess.form_validity()
+        self.assertFalse(result["form_valid"])
+        self.assertEqual(result["invalid_required"][0]["name"], "offer[targets][]")
+
+    def test_empty_response_is_not_ok(self):
+        from src.submit_session import SubmitSession
+
+        sess = SubmitSession.__new__(SubmitSession)
+        sess.evaluate_readonly = lambda js: ""
+        self.assertFalse(sess.form_validity()["ok"])
+
+
+class TargetsProbeTests(unittest.TestCase):
+    def test_targets_probe_js_is_readonly(self):
+        from src.cdp_session import is_readonly_expression
+        from src.submit_session import _TARGETS_PROBE_JS
+
+        self.assertTrue(is_readonly_expression(_TARGETS_PROBE_JS))
+
+    def test_parses_targets_inventory(self):
+        from src.submit_session import SubmitSession
+
+        sess = SubmitSession.__new__(SubmitSession)
+        sess.evaluate_readonly = lambda js: (
+            '{"ok": true, "count": 1, "targets": [{"tag": "INPUT", '
+            '"name": "offer[targets][]", "placeholder": "Add a target", '
+            '"list_attr": "targets-list", "datalist": [{"value": "EU", "label": "Europe"}]}]}'
+        )
+        result = sess.probe_targets_field()
+        self.assertTrue(result["ok"])
+        t = result["targets"][0]
+        self.assertEqual(t["name"], "offer[targets][]")
+        self.assertEqual(t["datalist"][0]["value"], "EU")
+
+    def test_empty_response_is_not_ok(self):
+        from src.submit_session import SubmitSession
+
+        sess = SubmitSession.__new__(SubmitSession)
+        sess.evaluate_readonly = lambda js: ""
+        self.assertFalse(sess.probe_targets_field()["ok"])
 
 
 if __name__ == "__main__":

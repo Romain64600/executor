@@ -132,6 +132,92 @@ _INSPECT_MODAL_JS = (
     "};})())"
 )
 
+# Read-only validity probe (S02-safe). Finds the <form> that owns the modal
+# "Create offer" button and reports, per constraint-validated control
+# (``willValidate``), whether it is currently valid — WITHOUT calling
+# ``form.checkValidity()`` (which would fire ``invalid`` events) and WITHOUT
+# reading any field value. This answers the S18 question deterministically: a
+# trusted click on a submit button whose form is invalid fires ZERO network
+# requests (the browser blocks the submit) — that is HTML5 validation, not
+# server-side bot detection. ``invalid_required`` lists the offending controls
+# by name so the report says exactly which field to fill.
+_FORM_VALIDITY_JS = (
+    "JSON.stringify((function(){"
+    "var b=document.querySelector('#TB_ajaxContent .button-primary');"
+    "var form=b?b.closest('form'):null;"
+    "if(!form)return {ok:false,reason:'no_form'};"
+    "var inputs=form.querySelectorAll('input,select,textarea');"
+    "var invalid=[],checked=0;"
+    "for(var i=0;i<inputs.length;i++){var el=inputs[i];"
+    "if(!el.willValidate)continue;checked++;"
+    "var v=el.validity;if(v.valid)continue;"
+    "invalid.push({name:el.name||null,type:el.type||null,"
+    "required:!!el.required,visible:el.offsetParent!==null,"
+    "valueMissing:v.valueMissing,typeMismatch:v.typeMismatch,"
+    "patternMismatch:v.patternMismatch,badInput:v.badInput});}"
+    "return {ok:true,form_valid:invalid.length===0,checked:checked,"
+    "invalid_required:invalid};"
+    "})())"
+)
+
+# Read-only forensic probe of the modal's ``offer[targets][]`` control(s) (S18,
+# 2026-07-06). The form-validity gate proved `offer[targets][]` is the one
+# required field our fill path never populates; this dumps everything static we
+# need to learn what value it expects — WITHOUT reading the value itself
+# (value_len only) and WITHOUT any mutation. Captures, for every control whose
+# name contains "targets": tag/type/id/class, required/willValidate/validity,
+# placeholder / list / maxlength / pattern / autocomplete / role / aria-*, all
+# ``data-*`` attrs, the associated <label> text, the parent chain + next
+# siblings (to reveal a wrapping tag/autocomplete widget), the referenced
+# <datalist> options if any, and — if the control is a <select> — its option
+# vocabulary. S02-safe: no ``.value=``, ``.click(``, ``fetch(``, setValue, etc.
+_TARGETS_PROBE_JS = (
+    "JSON.stringify((function(){"
+    "function dataAttrs(el){var o={};for(var i=0;i<el.attributes.length;i++){"
+    "var a=el.attributes[i];if(a.name.indexOf('data-')!==0)continue;"
+    "o[a.name]=String(a.value).slice(0,120);}return o;}"
+    "function labelFor(el,form){var lbl=null;"
+    "if(el.id){var l=form.querySelector('label[for=\"'+el.id+'\"]');if(l)lbl=l;}"
+    "if(!lbl){var p=el.closest('label');if(p)lbl=p;}"
+    "if(!lbl){var pr=el.previousElementSibling,d=0;"
+    "while(pr&&d<4){if(pr.tagName==='LABEL'||pr.tagName==='LEGEND'){lbl=pr;break;}"
+    "pr=pr.previousElementSibling;d++;}}"
+    "return lbl?(lbl.textContent||'').trim().slice(0,80):null;}"
+    "function chain(el,fn){var out=[],c=fn(el),d=0;"
+    "while(c&&d<4){var s=c.tagName.toLowerCase();"
+    "if(c.className&&typeof c.className==='string')"
+    "s+='.'+c.className.trim().split(/\\s+/).slice(0,3).join('.');"
+    "out.push(s);c=fn(c);d++;}return out;}"
+    "var content=document.querySelector('#TB_ajaxContent');"
+    "if(!content)return {ok:false,reason:'no_modal'};"
+    "var form=content.querySelector('form')||content;"
+    "var all=form.querySelectorAll('input,select,textarea');"
+    "var targets=[];"
+    "for(var i=0;i<all.length;i++){var el=all[i];"
+    "if((el.name||'').indexOf('targets')<0)continue;"
+    "var rec={tag:el.tagName,type:el.type||null,name:el.name||null,id:el.id||null,"
+    "klass:el.className||null,required:!!el.required,willValidate:!!el.willValidate,"
+    "value_len:(el.value||'').length,visible:el.offsetParent!==null,"
+    "placeholder:el.getAttribute('placeholder'),list_attr:el.getAttribute('list'),"
+    "maxlength:el.getAttribute('maxlength'),pattern:el.getAttribute('pattern'),"
+    "autocomplete:el.getAttribute('autocomplete'),role:el.getAttribute('role'),"
+    "aria_label:el.getAttribute('aria-label'),"
+    "aria_describedby:el.getAttribute('aria-describedby'),"
+    "data_attrs:dataAttrs(el),label:labelFor(el,form),"
+    "parents:chain(el,function(x){return x.parentElement;}),"
+    "next_sibs:chain(el,function(x){return x.nextElementSibling;})};"
+    "if(rec.list_attr){var dl=document.getElementById(rec.list_attr);"
+    "if(dl){rec.datalist=Array.prototype.slice.call(dl.querySelectorAll('option'))"
+    ".slice(0,50).map(function(o){return {value:o.value,"
+    "label:(o.textContent||o.label||'').trim().slice(0,60)};});}}"
+    "if(el.tagName==='SELECT'){rec.has_selectize=!!el.selectize;"
+    "rec.options=Array.prototype.slice.call(el.options).slice(0,50)"
+    ".map(function(o){return {value:o.value,label:(o.textContent||'').trim().slice(0,60)};});}"
+    "targets.push(rec);}"
+    "return {ok:true,count:targets.length,targets:targets};"
+    "})())"
+)
+
 _IS_LOGIN_JS = "!!document.querySelector('#loginform') || /wp-login/.test(location.href)"
 
 # Read-only rect probe (S02-safe): returns the target's getBoundingClientRect
@@ -181,6 +267,30 @@ class SubmitSession(ReadOnlyCdpSession):
 
         raw = self.evaluate_readonly(_INSPECT_MODAL_JS)
         return json.loads(raw) if raw else {"modal_ok": False}
+
+    def form_validity(self) -> dict[str, Any]:
+        """Read-only HTML5 validity summary of the modal's "Create offer" form.
+
+        Returns ``{ok, form_valid, checked, invalid_required:[{name, ...}]}`` or
+        ``{ok: False, reason}`` when the form can't be located. Never reads a
+        field value, never calls ``checkValidity`` (no ``invalid`` events).
+        """
+
+        raw = self.evaluate_readonly(_FORM_VALIDITY_JS)
+        return json.loads(raw) if raw else {"ok": False, "reason": "no_result"}
+
+    def probe_targets_field(self) -> dict[str, Any]:
+        """Read-only forensic dump of the modal's ``offer[targets][]`` control(s).
+
+        Returns ``{ok, count, targets:[{tag, type, placeholder, label, list_attr,
+        datalist, data_attrs, parents, next_sibs, ...}]}`` — everything static
+        needed to learn what value the field expects, without reading its value
+        (``value_len`` only) and without any mutation. ``{ok: False, reason}`` if
+        the modal/field can't be located.
+        """
+
+        raw = self.evaluate_readonly(_TARGETS_PROBE_JS)
+        return json.loads(raw) if raw else {"ok": False, "reason": "no_result"}
 
 
 # The ONE mutating interaction: set region+edition via selectize, then click the
@@ -781,9 +891,13 @@ class WriteSubmitSession(SubmitSession):
         2. ``select_via_trusted(region_select, region_id)``: trusted CDP click on
            Selectize UI (open + pick option). Selectize fires its own events.
         3. ``select_via_trusted(edition_select, edition_id)``: same.
-        4. ``click_trusted_at_element("#TB_ajaxContent .button-primary")``:
+        4. ``form_validity()``: read-only HTML5 validity gate. If the form is
+           positively invalid → STOP with ``status='FORM_INVALID'`` (+ the
+           offending field names), do NOT click Create. A click on an invalid
+           form fires zero requests and looks like "the site ignored the robot".
+        5. ``click_trusted_at_element("#TB_ajaxContent .button-primary")``:
            trusted CDP click on the submit button center.
-        5. Poll JS: accept either a NEW [data-success]/[data-error] node OR a
+        6. Poll JS: accept either a NEW [data-success]/[data-error] node OR a
            TEXT CHANGE on the existing template node (Driffle's actual pattern),
            report captured requests, restore taps.
 
@@ -822,6 +936,20 @@ class WriteSubmitSession(SubmitSession):
         prep["edition_set"] = str(
             (edition_pick.get("readback") or {}).get("selectize_value", "")
         )
+
+        # Fail-closed validity gate: a submit button whose form is invalid will
+        # swallow the trusted click (browser blocks the submit, ZERO admin-ajax
+        # fired) — indistinguishable at the click level from "the site ignored a
+        # robot click". Prove it here instead: if the form is *positively*
+        # invalid, STOP and report the offending fields rather than clicking into
+        # the void. A probe that can't read the form (ok:false) does NOT block —
+        # post-save remains the real proof, so we degrade to prior behaviour.
+        validity = self.form_validity()
+        prep["form_validity"] = validity
+        if validity.get("ok") and not validity.get("form_valid", True):
+            self._evaluate(_TRUSTED_CLEANUP_JS)
+            prep["status"] = "FORM_INVALID"
+            return prep
 
         click = self.click_trusted_at_element("#TB_ajaxContent .button-primary")
         prep["click"] = click

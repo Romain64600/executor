@@ -221,25 +221,38 @@ class InspectSubmitter(_SubmitterBase):
         if not entry.get("ready"):
             return False
         entry["inspection"] = self.session.inspect_modal_dom()
+        # Read-only HTML5 validity summary (covers input/select/textarea — the
+        # Selectize region/edition selects included). At rest the form is
+        # expected invalid; the value is the *inventory* of required fields
+        # beyond region/edition (e.g. offer[targets][]) that a real operator
+        # fills and the robot currently does not — the S18 lead, obtainable with
+        # NO write.
+        entry["form_validity"] = self.session.form_validity()
+        # Forensic read-only dump of `offer[targets][]` — the one required field
+        # the fill path never populates (S18, 2026-07-06). Tells us what value it
+        # expects (placeholder / datalist / label / widget) with NO write.
+        entry["targets_probe"] = self.session.probe_targets_field()
         return True
 
 
 class Submitter(_SubmitterBase):
     """Real submitter — WRITES. Requires a WriteSubmitSession.
 
-    ``click_mode`` is passed through to the session: 'native' (default),
-    'dispatch' (documented S09 derogation — MouseEvent on the Create button
-    only) or 'trusted' (Chantier n°1, 2026-07-03 — CDP `Input.dispatchMouseEvent`
-    at the button center, produces `event.isTrusted:true`; the *only* mode that
-    reliably fires Driffle's handler). Post-save (offer gone from refreshed
-    pending) remains the ONLY success proof in every mode.
+    ``click_mode`` is passed through to the session: 'trusted' (default —
+    Chantier n°1, 2026-07-03 — CDP `Input.dispatchMouseEvent` at the button
+    center, produces `event.isTrusted:true`; the *only* mode that reliably fires
+    Driffle's handler), 'native' (`b.click()`) or 'dispatch' (documented S09
+    derogation — MouseEvent on the Create button only). native/dispatch produce
+    `isTrusted:false` and are proven NOT to persist on Driffle — kept only as
+    documented diagnostics. Post-save (offer gone from refreshed pending) remains
+    the ONLY success proof in every mode.
     """
 
     write_mode = True
     event_name = "submit_offer"
     ALL_CLICK_MODES = ("native", "dispatch", "trusted")
 
-    def __init__(self, session: Any, *, click_mode: str = "native", **kw: Any) -> None:
+    def __init__(self, session: Any, *, click_mode: str = "trusted", **kw: Any) -> None:
         if click_mode not in self.ALL_CLICK_MODES:
             raise ValueError(
                 f"unknown click_mode: {click_mode!r} (allowed: {self.ALL_CLICK_MODES})"
@@ -265,9 +278,14 @@ class Submitter(_SubmitterBase):
         status = diag.get("status") if isinstance(diag, dict) else diag
         # Only a settled click (success signal, or no signal but no error) proceeds to
         # the real post-save proof. ERROR / NO_SELECTS / NO_BUTTON / NO_ELEMENT /
-        # NO_TRUSTED_CLICK / NO_ELEMENT_AFTER_SCROLL is a hard fail.
+        # NO_TRUSTED_CLICK / NO_ELEMENT_AFTER_SCROLL / FORM_INVALID is a hard fail.
         if status not in ("SUCCESS", "NO_SIGNAL"):
             reason = diag.get("signal") if isinstance(diag, dict) else ""
+            if status == "FORM_INVALID" and isinstance(diag, dict):
+                fields = [
+                    x.get("name") for x in (diag.get("form_validity") or {}).get("invalid_required", [])
+                ]
+                reason = "invalid required fields: " + ", ".join(str(f) for f in fields)
             entry["post_save"] = f"create not confirmed: {status}" + (f" — {reason}" if reason else "")
             return False
         gone = self._verify_gone(

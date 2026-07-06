@@ -56,11 +56,12 @@ def main() -> int:
     parser.add_argument("--all", action="store_true", help="With --submit / --inspect: full batch (default: canary of 1).")
     parser.add_argument("--limit", type=int, default=None, help="With --submit / --inspect: max offers to process.")
     parser.add_argument(
-        "--click-mode", default="native", choices=["native", "dispatch", "trusted"],
-        help="With --submit: 'native' = button.click() (default); 'dispatch' = MouseEvent "
-             "sequence on the Create button (S09 derogation, Romain 2026-07-03); "
-             "'trusted' = CDP Input.dispatchMouseEvent at the button's viewport center "
-             "(isTrusted:true — Chantier n°1, 2026-07-03).",
+        "--click-mode", default=None, choices=["native", "dispatch", "trusted"],
+        help="With --submit: 'trusted' = CDP Input.dispatchMouseEvent at the button's "
+             "viewport center (isTrusted:true — Chantier n°1, 2026-07-03; DEFAULT, the "
+             "only mode proven to fire Driffle's handler). 'native' = button.click() and "
+             "'dispatch' = MouseEvent sequence (S09 derogation) both produce isTrusted:false "
+             "and are proven NOT to persist — kept only as documented diagnostics.",
     )
     parser.add_argument(
         "--inspect", action="store_true",
@@ -73,7 +74,7 @@ def main() -> int:
     if args.inspect and args.submit:
         print("--inspect and --submit are mutually exclusive", file=sys.stderr)
         return 2
-    if args.click_mode != "native" and not args.submit:
+    if args.click_mode is not None and not args.submit:
         print("--click-mode is only meaningful with --submit", file=sys.stderr)
         return 2
 
@@ -130,16 +131,17 @@ def main() -> int:
 
     write = args.submit
     limit = args.limit if args.limit is not None else (None if args.all else 1)
+    click_mode = args.click_mode if args.click_mode is not None else "trusted"
     if write:
         print(
             f"REAL SUBMISSION — will create up to {limit if limit is not None else 'ALL'} offer(s)"
-            f" (click_mode={args.click_mode}).",
+            f" (click_mode={click_mode}).",
             file=sys.stderr,
         )
 
     session_cls = WriteSubmitSession if write else SubmitSession
     submitter_cls = Submitter if write else DryRunSubmitter
-    submitter_kw = {"click_mode": args.click_mode} if write else {}
+    submitter_kw = {"click_mode": click_mode} if write else {}
     with session_cls(args.endpoint) as session:
         result = submitter_cls(session, logger=logger, **submitter_kw).run(
             run_id=run_id, merchant=args.merchant, store_id=args.store_id,
@@ -169,6 +171,12 @@ def main() -> int:
                 f"signal={d.get('signal')!r}"
             )
             lines.append(f"    region_options={d.get('region_options')} edition_options={d.get('edition_options')}")
+            fv = d.get("form_validity")
+            if isinstance(fv, dict):
+                lines.append(
+                    f"    form_valid={fv.get('form_valid')} "
+                    f"invalid_required={[x.get('name') for x in fv.get('invalid_required', [])]}"
+                )
             lines.append(
                 f"    click_mode={d.get('click_mode')} polls={d.get('polls')} "
                 f"pre_existing={d.get('pre_existing')} button={d.get('button')}"
