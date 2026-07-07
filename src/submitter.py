@@ -177,8 +177,19 @@ class _SubmitterBase:
         if self.logger is not None:
             self.logger.log(event, **fields)
 
-    def _index_feed(self, store_id, feed_page, available, max_pages) -> dict[str, str]:
+    def _scan_feed(self, store_id, feed_page, available, max_pages,
+                   stop_on: str | None = None) -> tuple[dict[str, str], bool]:
+        """Walk the feed pages building offer_id → page-url.
+
+        With ``stop_on``, stop as soon as that offer id is seen and report
+        found=True (the partial index is then unusable as a feed snapshot).
+        Without ``stop_on`` (plain indexing), two consecutive pages with no NEW
+        ids end the walk (G2A reflow renders duplicate pages); with it, only a
+        truly empty page does — a verify scan must reach the end of the feed
+        before concluding the offer is gone.
+        """
         index: dict[str, str] = {}
+        found = False
         empty = 0
         for page in range(1, max_pages + 1):
             url = feed_url(store_id, page=page, feed_page=feed_page, available=available)
@@ -191,12 +202,20 @@ class _SubmitterBase:
                 if offer_id not in index:
                     index[offer_id] = url
                     new += 1
-            if new == 0:
-                empty += 1
-                if empty >= 2:
-                    break
-            else:
-                empty = 0
+            if stop_on is not None and stop_on in index:
+                found = True
+                break
+            if stop_on is None:
+                if new == 0:
+                    empty += 1
+                    if empty >= 2:
+                        break
+                else:
+                    empty = 0
+        return index, found
+
+    def _index_feed(self, store_id, feed_page, available, max_pages) -> dict[str, str]:
+        index, _ = self._scan_feed(store_id, feed_page, available, max_pages)
         return index
 
     def _prepare(self, candidate: dict[str, Any], offer_id: str, index: dict[str, str]) -> dict[str, Any]:
@@ -239,17 +258,24 @@ class _SubmitterBase:
             self._resolve_from_catalog(entry, candidate)
         return entry
 
-    def _verify_gone(self, offer_id, store_id, feed_page, available, max_pages) -> bool:
-        """Post-save: re-scan the feed; True iff the offer id is no longer present."""
+    def _verify_gone(self, offer_id, store_id, feed_page, available, max_pages
+                     ) -> tuple[bool, dict[str, str] | None]:
+        """Post-save: re-scan the feed. Returns (gone, fresh_index).
 
-        for page in range(1, max_pages + 1):
-            self.session.navigate(feed_url(store_id, page=page, feed_page=feed_page, available=available))
-            ids = self.session.page_offer_ids()
-            if not ids:
-                break
-            if offer_id in ids:
-                return False
-        return True
+        gone is True iff the offer id is no longer present. In that case the
+        scan ran to the end of the feed and the collected index IS the current
+        feed state — callers reuse it to locate the next candidate on the
+        refreshed feed (AGENTS.md: "refresh current merchant feed; locate exact
+        current row". 2026-07-07 G2A: 8 creations reflowed the pagination and
+        the stale batch-start index yielded ROW_NOT_FOUND on a live offer).
+        fresh_index is None when the offer was found (partial scan, unusable).
+        """
+
+        index, found = self._scan_feed(
+            store_id, feed_page, available, max_pages, stop_on=offer_id)
+        if found:
+            return False, None
+        return True, index
 
     def _process(self, entry: dict[str, Any], candidate: dict[str, Any], ctx: dict[str, Any]) -> bool:
         raise NotImplementedError
@@ -293,7 +319,8 @@ class _SubmitterBase:
         self.guard.start_task(run_id)
         index = self._index_feed(store_id, feed_page, available, max_pages)
         self._log("feed_indexed", offers=len(index))
-        ctx = {"store_id": store_id, "feed_page": feed_page, "available": available, "max_pages": max_pages}
+        ctx = {"store_id": store_id, "feed_page": feed_page, "available": available,
+               "max_pages": max_pages, "index": index}
 
         plan: list[dict[str, Any]] = []
         stopped: str | None = None
@@ -452,9 +479,12 @@ class Submitter(_SubmitterBase):
                 reason = "invalid required fields: " + ", ".join(str(f) for f in fields)
             entry["post_save"] = f"create not confirmed: {status}" + (f" — {reason}" if reason else "")
             return False
-        gone = self._verify_gone(
+        gone, fresh_index = self._verify_gone(
             entry["offer_id"], ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"]
         )
+        if fresh_index is not None:
+            ctx["index"].clear()
+            ctx["index"].update(fresh_index)
         entry["submitted"] = gone
         entry["post_save"] = "gone from pending" if gone else "STILL in pending — FAILED"
         return gone

@@ -168,6 +168,30 @@ class FakeWriteSession(FakeSubmitSession):
         return diag
 
 
+class ReflowWriteSession(FakeWriteSession):
+    """Feed that re-chunks its pages after each creation (G2A pagination
+    reflow, 2026-07-07): removing a row shifts every later offer left, so an
+    offer indexed on page 2 at batch start may live on page 1 by the time the
+    batch reaches it. The modal only opens from a row on the CURRENT page.
+    """
+
+    def __init__(self, ids, per_page, **kw):
+        super().__init__([], **kw)
+        self.ids = list(ids)
+        self.per_page = per_page
+
+    def page_offer_ids(self):
+        live = [i for i in self.ids if i not in self.created]
+        start = self._page * self.per_page
+        return live[start:start + self.per_page]
+
+    def open_offer_modal(self, offer_id):
+        self._last_opened = offer_id
+        if offer_id not in self.page_offer_ids():
+            return "ROW_NOT_FOUND"
+        return super().open_offer_modal(offer_id)
+
+
 def _real(session, approved, click_mode="native", **kw):
     return Submitter(session, click_mode=click_mode).run(
         run_id="r", merchant="Driffle", store_id="127", approved=approved, pace=0, **kw
@@ -220,6 +244,31 @@ class RealSubmitTests(unittest.TestCase):
         result = _real(session, [_cand("9")], limit=1)
         self.assertEqual(session.fill_calls, [])  # never wrote
         self.assertFalse(result["plan"][0]["ready"])
+
+    def test_pagination_reflow_row_still_found(self):
+        # 2026-07-07 G2A: offer "4" starts on page 2; creating "1" reflows the
+        # feed so "4" moves to page 1. The verify-gone scan must refresh the
+        # row index, otherwise the stale page-2 URL yields ROW_NOT_FOUND.
+        session = ReflowWriteSession(["1", "2", "3", "4"], per_page=3)
+        result = _real(session, [_cand("1"), _cand("4")], limit=None)
+        by_id = {p["offer_id"]: p for p in result["plan"]}
+        self.assertTrue(by_id["1"]["submitted"])
+        self.assertTrue(by_id["4"]["submitted"], by_id["4"].get("blocker"))
+        self.assertEqual(result["writes"], 2)
+
+    def test_failed_verify_keeps_stale_index_but_reports_failure(self):
+        # If the offer is still pending after the click (create_removes=False),
+        # the scan stopped early — the partial index must NOT replace the row
+        # index, and the offer is reported as a post-save failure.
+        session = ReflowWriteSession(["1", "2", "3", "4"], per_page=3,
+                                     create_removes=False)
+        result = _real(session, [_cand("1"), _cand("4")], limit=None)
+        by_id = {p["offer_id"]: p for p in result["plan"]}
+        self.assertFalse(by_id["1"]["submitted"])
+        self.assertIn("STILL in pending", by_id["1"]["post_save"])
+        # no reflow happened (nothing was created), so "4" is still on page 2
+        # and the original index finds it there.
+        self.assertTrue(by_id["4"]["ready"])
 
     def test_dispatch_click_mode_is_passed_through(self):
         session = FakeWriteSession([["1"]])

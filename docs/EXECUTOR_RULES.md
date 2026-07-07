@@ -222,6 +222,11 @@ For each validated candidate, in order, fail-closed:
 
 1. Refresh the current merchant feed again; locate the **exact current row**
    (feeds are dynamic — re-scan, never trust saved page numbers) `[DRIFFLE][GOG]`.
+   In a batch, each creation shrinks the feed and **reflows the pagination**, so
+   a row index built at batch start goes stale (2026-07-07 G2A: offer drifted
+   from page 2 to page 1 after 8 creations → ROW_NOT_FOUND). The post-save
+   verify scan walks the whole refreshed feed anyway — its result **replaces**
+   the row index after every verified creation (zero extra page loads).
 2. Verify title, URL, price, merchant, page, row identity against the candidate.
 3. Open the modal from that row's `[data-create-offer]` button (`#TB_window`).
 4. **Verify the select names before filling** — they vary per feed:
