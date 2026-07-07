@@ -42,7 +42,13 @@ CATEGORY_SKIP = (
     "PREPAID", "SOFTWARE", "ANTIVIRUS", "OFFICE", "VPN", "POINTS", "CREDITS",
     "COINS", "GEMS", "DIAMONDS", "TOP-UP", "TOP UP", "MEMBERSHIP", "CURRENCY",
     "ACTIVATION LINK", "STEAM ACCOUNT", "STEAM GIFT CARD",
+    "MICROSOFT KEY", "SEASON PASS", "STEAM PLAYER TRADE",
 )
+# Short in-game currency tokens (G2A.md): substring matching would false-hit
+# ordinary words ("ORB" in "Absorber"), so these are word-boundary only.
+# GEM singular: "Growtopia Gem Fountain" (2026-07-07) is a gem-currency item
+# pack with its own AKS page — doubt goes to skip.
+CURRENCY_TOKENS = ("ORB", "ORBS", "VC", "VP", "GEM")
 DANGEROUS_QUALIFIERS = (
     "REMASTERED", "REMASTER", "REBOOT", "REMAKE", "REDUX", "SEASON PASS", "DLC",
     "UPGRADE", "SKIN", "SOUNDTRACK", "ARTBOOK", "DIGITAL BOOK", " HD",
@@ -53,7 +59,12 @@ DANGEROUS_QUALIFIERS = (
 # guard which only fires when the word is absent from the AKS name: the
 # Overwatch "Skin Bundle" candidate had a token-perfect AKS match and still must
 # be skipped. EXECUTOR_RULES §4.3.
-BUNDLE_SKIN_TOKENS = ("BUNDLE", "BUNDLES", "SKIN", "SKINS")
+# CS-item wear levels (G2A.md) count as skins even when "skin" is absent from
+# the title ("AK-47 | Redline (Field-Tested)").
+BUNDLE_SKIN_TOKENS = (
+    "BUNDLE", "BUNDLES", "SKIN", "SKINS",
+    "FIELD TESTED", "MINIMAL WEAR", "FACTORY NEW", "BATTLE SCARRED", "WELL WORN",
+)
 
 # platform -> region key -> AKS region id (EXECUTOR_RULES §10; dropdown is truth)
 REGION_IDS = {
@@ -74,6 +85,7 @@ NOISE_TOKENS = {
     "GIFT", "REGION", "FREE", "DELUXE", "ULTIMATE", "PREMIUM", "GOLD", "GOTY",
     "COMPLETE", "COLLECTION", "BUNDLE", "PACK", "DEFINITIVE", "REMASTERED", "REMASTER",
     "ANNIVERSARY", "THE", "OF", "AND", "A", "AN", "FOR", "TO", "WITH", "VS",
+    "UNITED", "STATES",
 }
 PLATFORM_LABEL = {
     "STEAM": "Steam", "GOG": "GOG", "EPIC": "Epic", "EA": "EA App",
@@ -157,10 +169,18 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
     for token in BUNDLE_SKIN_TOKENS:
         if f" {token} " in padded:
             return f"skip category: {token} (no bundles/skins)"
-    if " DLC " in padded or "DOWNLOADABLE CONTENT" in upper:
+    for token in CURRENCY_TOKENS:
+        if f" {token} " in padded:
+            return f"skip category: {token} (in-game currency)"
+    if " DLC " in padded or " ADD ON " in padded or "DOWNLOADABLE CONTENT" in upper:
         return "DLC in title"
+    if " PREORDER BONUS " in padded or " PRE ORDER BONUS " in padded:
+        return "preorder bonus"
     if " + " in offer.name:
         return "possible multi-game bundle"
+    if re.search(r"(?:DELUXE|GOLD|PREMIUM|ULTIMATE|COMPLETE|STANDARD|DEFINITIVE|GOTY)\s*&"
+                 r"|&\s*(?:DELUXE|GOLD|PREMIUM|ULTIMATE|COMPLETE|STANDARD|DEFINITIVE|GOTY)", upper):
+        return "two editions joined by '&'"
     if "LANGUAGES ONLY" in upper or "LANGUAGE ONLY" in upper:
         return "language restriction"
     if re.search(r"\b(EN|FR|ES|DE|IT|PT|CS|PL|RU)\s*/\s*(EN|FR|ES|DE|IT|PT|CS|PL|RU)\b", upper):
@@ -180,29 +200,46 @@ def detect_platform(title: str) -> str:
         return "EA"  # R14: bare "Origin" in a game name is NOT the EA platform
     if "BATTLE.NET" in t or "BATTLENET" in t:
         return "BATTLENET"
+    if "ROCKSTAR" in t:
+        return "ROCKSTAR"  # no REGION_IDS entry -> fail-closed skip, not Steam
     return "STEAM"  # default; most PC keys are Steam
 
 
 def _region_id(platform: str, key: str) -> str | None:
-    return REGION_IDS.get(platform, REGION_IDS["STEAM"]).get(key)
+    # No silent fallback to Steam ids: an unknown platform must fail closed.
+    return REGION_IDS.get(platform, {}).get(key)
 
 
 def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | None, bool]:
     """Return (label, region_id, implicit). URL wins over title (rule Ga01).
 
     Gift is layered on top of the base region (Steam 25/259, Battle.net 570/567).
+    Region may sit in the first parens (Driffle: "X (Europe) (PC) - …") or in a
+    trailing " - REGION" suffix (G2A: "X (PC) - Steam Key - EUROPE").
     """
 
-    url = offer.url.lower()
+    # Query strings carry campaign junk (COM_GLOBAL_PB, ___currency=EUR…) that
+    # would false-hit region tokens — only the path speaks for the product.
+    url = offer.url.lower().split("?", 1)[0]
     padded = " " + offer.name.upper() + " "
     is_gift = "gift-" in url or "-gift" in url or " GIFT " in padded or "GIFT)" in padded
+    tail = offer.name.rsplit(" - ", 1)[-1].strip().upper() if " - " in offer.name else ""
 
     base, label, implicit = "global", "GLOBAL", False
-    if "gift-eu" in url or re.search(r"-eu(?:[-/]|$)", url) or " EU " in padded or "(EU)" in padded:
+    if (
+        "gift-eu" in url
+        or re.search(r"-eu(?:[-/]|$)", url)
+        or re.search(r"-europe(?:[-/]|$)", url)
+        or " EU " in padded
+        or "(EU)" in padded
+        or tail in ("EU", "EUROPE")
+    ):
         base, label = "eu", "EU"
     elif "-global" in url or " GLOBAL " in padded or "(GLOBAL)" in padded or " WORLDWIDE " in padded:
         base, label = "global", "GLOBAL"
-    elif " UK " in padded or "(UK)" in padded:
+    elif re.search(r"-united-states(?:[-/]|$)", url) or tail in ("UNITED STATES", "US", "USA"):
+        base, label = "us", "US"
+    elif " UK " in padded or "(UK)" in padded or tail in ("UK", "UNITED KINGDOM"):
         base, label = "uk", "UK"
     else:
         match = re.match(r"^[^(]*\(([^)]+)\)", offer.name)
@@ -211,6 +248,8 @@ def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | Non
             base, label = "eu", "EU"
         elif reg in ("GLOBAL", "WORLDWIDE", "WW"):
             base, label = "global", "GLOBAL"
+        elif reg in ("US", "USA", "UNITED STATES"):
+            base, label = "us", "US"
         else:
             implicit = True  # Kinguin-style implicit GLOBAL
 
@@ -229,7 +268,7 @@ def slug_edition_text(url: str) -> str:
     """
 
     path = url.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1]
-    path = re.sub(r"-p\d+$", "", path)
+    path = re.sub(r"-[pi]\d+$", "", path)  # Driffle -p<id>, G2A -i<id>
     return re.sub(r"[^a-z0-9]+", " ", path.lower()).upper()
 
 
@@ -414,9 +453,18 @@ def match_offer(
 
     edition_label, edition_id = detect_edition(offer.name, offer.url)
     # CORE rule 4 / E05: an edition word that is part of the AKS game name is not
-    # an edition — fall back to Standard.
-    if edition_id != "1" and edition_label.upper() in resolution.aks_name.upper():
+    # an edition — fall back to Standard. Label match alone misses hint synonyms
+    # ("Trilogy" resolves to label "Bundle"), so also compare via re-detection on
+    # the AKS name: same edition id there = the word is product identity.
+    if edition_id != "1" and (
+        edition_label.upper() in resolution.aks_name.upper()
+        or detect_edition(resolution.aks_name)[1] == edition_id
+    ):
         edition_label, edition_id = "Standard", "1"
+    # Hard rule (Romain 2026-07-07): we NEVER enter bundles. A title that still
+    # resolves to the Bundle edition after E05 (Pack/Trilogy/…) is a bundle.
+    if edition_id == "8":
+        return SkippedOffer(offer, "bundle edition resolved — no bundles ever")
 
     return Candidate(
         offer=offer,

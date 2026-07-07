@@ -271,5 +271,96 @@ class MatchFeedTests(unittest.TestCase):
         self.assertTrue(any("cap" in s.reason for s in skipped))
 
 
+class G2ARulesTests(unittest.TestCase):
+    """G2A format: 'Game (PC) - Steam Key - REGION' — region is a bare suffix,
+    URLs keep ?params, and G2A.md adds merchant-specific categorical skips."""
+
+    def _resolver(self, aks_name="Neon Beats"):
+        res = AksResolution(
+            slug="neon-beats", url="https://aks/buy-neon-beats", product_id="205027",
+            aks_name=aks_name, editions={"1": {"name": "Standard"}},
+        )
+        return lambda name: res
+
+    def test_region_from_trailing_suffix(self):
+        self.assertEqual(
+            detect_region(_offer("Neon Beats (PC) - Steam Key - EUROPE"), "STEAM"),
+            ("EU", "9", False))
+        self.assertEqual(
+            detect_region(_offer("Neon Beats (PC) - Steam Key - UNITED STATES"), "STEAM"),
+            ("US", "8", False))
+        self.assertEqual(
+            detect_region(_offer("Neon Beats (PC) - GOG Key - GLOBAL"), "GOG"),
+            ("GLOBAL", "6", False))
+
+    def test_region_from_g2a_url_path(self):
+        url = ("https://www.g2a.com/runescape-pc-key-europe-i10000044281020"
+               "?___currency=EUR&utm_campaign=COM_GLOBAL_PB")
+        self.assertEqual(detect_region(_offer("X", url=url), "STEAM"), ("EU", "9", False))
+
+    def test_query_junk_never_sets_region(self):
+        url = "https://www.g2a.com/some-game-i123?adid=x-eu-y&utm_campaign=COM_GLOBAL_PB"
+        label, rid, implicit = detect_region(_offer("Some Game", url=url), "STEAM")
+        self.assertEqual((label, rid), ("GLOBAL", "2"))
+        self.assertTrue(implicit)
+
+    def test_unknown_platform_fails_closed(self):
+        self.assertEqual(detect_platform("GTA V (PC) - Rockstar Key - GLOBAL"), "ROCKSTAR")
+        result = match_offer(
+            _offer("Neon Beats (PC) - Rockstar Key - GLOBAL"), self._resolver())
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("no region id", result.reason)
+
+    def test_g2a_categorical_skips(self):
+        cases = {
+            "Forza Horizon 5 (PC) - Microsoft Key - GLOBAL": "MICROSOFT KEY",
+            "OMSI 2 Add-On Aachen (PC) - Steam Key - GLOBAL": "DLC",
+            "Hunt: Showdown Season Pass (PC) - Steam Key - GLOBAL": "SEASON PASS",
+            "CS2 AK-47 Redline (Field-Tested)": "no bundles/skins",
+            "NBA 2K25: 200,000 VC (PC) - Steam Key - GLOBAL": "VC",
+            "Path of Exile 100 Exalted Orbs (PC)": "ORBS",
+            "Growtopia Gem Fountain - GLOBAL": "GEM",
+            "Fallout 4 (PC) - Steam Player Trade - GLOBAL": "STEAM PLAYER TRADE",
+            "Elden Ring Pre-Order Bonus (PC) - Steam Key - EUROPE": "preorder",
+            "Resident Evil 4 Standard & Deluxe (PC) - Steam Key - GLOBAL": "&",
+        }
+        for name, expected in cases.items():
+            reason = precheck_skip(_offer(name))
+            self.assertIsNotNone(reason, name)
+            self.assertIn(expected, reason, name)
+
+    def test_ampersand_in_game_name_not_skipped(self):
+        self.assertIsNone(precheck_skip(_offer("Sam & Max Save the World (PC) - Steam Key - GLOBAL")))
+
+    def test_trilogy_without_aks_trilogy_is_bundle_skip(self):
+        result = match_offer(
+            _offer("Neon Beats Trilogy (PC) - Steam Key - GLOBAL"), self._resolver())
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("bundle edition", result.reason)
+
+    def test_trilogy_product_falls_back_to_standard(self):
+        # "…Trilogy" that IS the AKS product name (N. Sane style) = Standard.
+        result = match_offer(
+            _offer("Neon Beats Trilogy (PC) - Steam Key - GLOBAL"),
+            self._resolver(aks_name="Neon Beats Trilogy"))
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual((result.edition_label, result.edition_id), ("Standard", "1"))
+
+    def test_edition_from_g2a_url_slug(self):
+        self.assertEqual(
+            detect_edition(
+                "Game (PC) - Steam Key - UNITED STATES",
+                "https://www.g2a.com/game-premium-edition-upgrade-pc-key-united-states-i10000?___currency=EUR",
+            ),
+            ("Premium", "34"),
+        )
+
+    def test_us_region_offer_not_flagged_different_product(self):
+        result = match_offer(
+            _offer("Neon Beats (PC) - Steam Key - UNITED STATES"), self._resolver())
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual((result.region_label, result.region_id), ("US", "8"))
+
+
 if __name__ == "__main__":
     unittest.main()
