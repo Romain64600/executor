@@ -7,7 +7,7 @@ validation helpers plus read-only HTTP probes used by Sprint 1 tooling.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from http.client import HTTPResponse
+from http.client import HTTPException, HTTPResponse
 import json
 import os
 import platform
@@ -258,8 +258,12 @@ def http_get(url: str, timeout: int = 5, follow_redirects: bool = True) -> HttpP
         )
     except URLError as exc:
         return HttpProbeResult(url=url, ok=False, status=None, body="", error=str(exc))
-    except TimeoutError as exc:
-        return HttpProbeResult(url=url, ok=False, status=None, body="", error=str(exc))
+    except (HTTPException, TimeoutError, OSError) as exc:
+        # urllib does NOT wrap errors raised while reading the response (e.g.
+        # http.client.RemoteDisconnected from a dead proxy upstream) in URLError.
+        return HttpProbeResult(
+            url=url, ok=False, status=None, body="", error=f"{type(exc).__name__}: {exc}"
+        )
 
 
 def http_head_status(url: str, timeout: int = 10, follow_redirects: bool = True) -> HttpProbeResult:
@@ -286,5 +290,7 @@ def http_head_status(url: str, timeout: int = 10, follow_redirects: bool = True)
         )
     except URLError as exc:
         return HttpProbeResult(url=url, ok=False, status=None, body="", error=str(exc))
-    except TimeoutError as exc:
-        return HttpProbeResult(url=url, ok=False, status=None, body="", error=str(exc))
+    except (HTTPException, TimeoutError, OSError) as exc:
+        return HttpProbeResult(
+            url=url, ok=False, status=None, body="", error=f"{type(exc).__name__}: {exc}"
+        )

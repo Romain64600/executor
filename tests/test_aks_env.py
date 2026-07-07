@@ -182,6 +182,24 @@ class HttpProbeTests(unittest.TestCase):
         self.assertFalse(probe.ok)
         self.assertIsNone(probe.status)
 
+    def test_http_get_remote_disconnected_fails_closed(self):
+        # urllib does not wrap getresponse() errors in URLError; seen live
+        # 2026-07-07 when the 9223 proxy was up but host Chrome 9222 was down.
+        from http.client import RemoteDisconnected
+
+        exc = RemoteDisconnected("Remote end closed connection without response")
+        with mock.patch("src.aks_env._http_open", side_effect=exc):
+            probe = http_get("http://example.test")
+        self.assertFalse(probe.ok)
+        self.assertIsNone(probe.status)
+        self.assertIn("RemoteDisconnected", probe.error)
+
+    def test_http_get_connection_reset_fails_closed(self):
+        with mock.patch("src.aks_env._http_open", side_effect=ConnectionResetError(104, "reset")):
+            probe = http_get("http://example.test")
+        self.assertFalse(probe.ok)
+        self.assertIsNone(probe.status)
+
 
 class CurrentEnvironmentTests(unittest.TestCase):
     def _env(self, *, system="Linux", marker=False, aks_target=None):
