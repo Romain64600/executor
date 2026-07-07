@@ -101,6 +101,33 @@ class DetectTests(unittest.TestCase):
         self.assertEqual(detect_edition("Game Ultimate Collection"), ("Ultimate Collection", "348"))
         self.assertEqual(detect_edition("Game"), ("Standard", "1"))
 
+    def test_edition_from_driffle_url_slug(self):
+        # Driffle carries the edition in the URL slug; it wins over the title.
+        self.assertEqual(
+            detect_edition(
+                "Some Game (Europe) (PC) - Steam - Digital Key",
+                "https://www.driffle.com/some-game-deluxe-edition-europe-pc-steam-digital-key-p123",
+            ),
+            ("Deluxe", "7"),
+        )
+        # Base games (no edition token in the slug) fall back to Standard.
+        self.assertEqual(
+            detect_edition(
+                "Demigod (EU) (PC) - Steam - Digital Code",
+                "https://www.driffle.com/demigod-eu-pc-steam-digital-code-p9899229?currency=EUR",
+            ),
+            ("Standard", "1"),
+        )
+        # The trailing -p<id> and region/platform tokens must not be mistaken for
+        # an edition.
+        self.assertEqual(
+            detect_edition(
+                "Gambonanza (Europe) (PC / Mac / Linux) - Steam - Digital Key",
+                "https://www.driffle.com/gambonanza-europe-pc-mac-linux-steam-digital-key-p9988321",
+            ),
+            ("Standard", "1"),
+        )
+
 
 class SlugAndResolveTests(unittest.TestCase):
     def test_slug_candidates_strip_parens_and_suffix(self):

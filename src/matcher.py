@@ -211,11 +211,27 @@ def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | Non
     return (label, _region_id(platform, base), implicit)
 
 
-def detect_edition(title: str) -> tuple[str, str]:
-    upper = title.upper()
-    for pattern, label, edition_id in EDITION_HINTS:
-        if re.search(pattern, upper):
-            return (label, edition_id)
+def slug_edition_text(url: str) -> str:
+    """The Driffle URL slug as searchable text (rule: edition lives in the URL).
+
+    Takes the last path segment, drops the trailing ``-p<digits>`` product id and
+    any query string, and turns hyphens into spaces so EDITION_HINTS can match.
+    """
+
+    path = url.split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1]
+    path = re.sub(r"-p\d+$", "", path)
+    return re.sub(r"[^a-z0-9]+", " ", path.lower()).upper()
+
+
+def detect_edition(title: str, url: str = "") -> tuple[str, str]:
+    # Driffle carries the edition in the URL slug (Romain, 2026-07-07); it is the
+    # canonical merchant identity, so it wins over the AKS-normalized feed title.
+    for source in (slug_edition_text(url), title.upper()):
+        if not source:
+            continue
+        for pattern, label, edition_id in EDITION_HINTS:
+            if re.search(pattern, source):
+                return (label, edition_id)
     return ("Standard", "1")
 
 
@@ -386,7 +402,7 @@ def match_offer(
     if qualifier:
         return SkippedOffer(offer, f"dangerous qualifier absent from AKS name: {qualifier}")
 
-    edition_label, edition_id = detect_edition(offer.name)
+    edition_label, edition_id = detect_edition(offer.name, offer.url)
     # CORE rule 4 / E05: an edition word that is part of the AKS game name is not
     # an edition — fall back to Standard.
     if edition_id != "1" and edition_label.upper() in resolution.aks_name.upper():
