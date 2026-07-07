@@ -69,6 +69,23 @@ class PrecheckSkipTests(unittest.TestCase):
     def test_multi_game_bundle(self):
         self.assertIn("bundle", precheck_skip(_offer("Game A + Game B")))
 
+    def test_any_bundle_is_skipped_even_single_game(self):
+        # Romain (2026-07-07): no bundles, ever — even a cosmetic bundle with a
+        # token-perfect AKS page (the wrongly-proposed Overwatch candidate).
+        reason = precheck_skip(_offer(
+            "Overwatch Genji Complete Mythic Weapon Skin Bundle (Global) (PC) - Battle.net Gift"
+        ))
+        self.assertIn("no bundles/skins", reason)
+
+    def test_skins_are_skipped(self):
+        self.assertIn("no bundles/skins", precheck_skip(_offer("CS2 Dragon Lore Skin (PC) Steam")))
+        self.assertIn("no bundles/skins", precheck_skip(_offer("Rust Weapon Skins (PC) Steam")))
+        self.assertIn("no bundles/skins", precheck_skip(_offer("Valve Anthology Bundle Steam Key")))
+
+    def test_skin_requires_word_boundary(self):
+        # "Skinwalker Hunt" is a game, not a skin — must NOT be skipped.
+        self.assertIsNone(precheck_skip(_offer("Skinwalker Hunt Steam GLOBAL")))
+
     def test_language_restriction(self):
         self.assertIn("language", precheck_skip(_offer("Game (EN/FR) Steam")))
 

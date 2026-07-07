@@ -45,8 +45,15 @@ CATEGORY_SKIP = (
 )
 DANGEROUS_QUALIFIERS = (
     "REMASTERED", "REMASTER", "REBOOT", "REMAKE", "REDUX", "SEASON PASS", "DLC",
-    "UPGRADE", "SOUNDTRACK", "ARTBOOK", "DIGITAL BOOK", " HD",
+    "UPGRADE", "SKIN", "SOUNDTRACK", "ARTBOOK", "DIGITAL BOOK", " HD",
 )
+# Romain (2026-07-07, live correction): we NEVER enter bundles — not even
+# single-game / cosmetic ones with their own AKS page — and never skins. This is
+# categorical (word-boundary on the padded title), unlike the R01b qualifier
+# guard which only fires when the word is absent from the AKS name: the
+# Overwatch "Skin Bundle" candidate had a token-perfect AKS match and still must
+# be skipped. EXECUTOR_RULES §4.3.
+BUNDLE_SKIN_TOKENS = ("BUNDLE", "BUNDLES", "SKIN", "SKINS")
 
 # platform -> region key -> AKS region id (EXECUTOR_RULES §10; dropdown is truth)
 REGION_IDS = {
@@ -147,6 +154,9 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
     for cat in CATEGORY_SKIP:
         if cat in upper:
             return f"skip category: {cat}"
+    for token in BUNDLE_SKIN_TOKENS:
+        if f" {token} " in padded:
+            return f"skip category: {token} (no bundles/skins)"
     if " DLC " in padded or "DOWNLOADABLE CONTENT" in upper:
         return "DLC in title"
     if " + " in offer.name:

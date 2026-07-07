@@ -134,7 +134,13 @@ Console (Xbox/PS/Nintendo); forbidden regions
 (RoW/AMERICAS/ASIA/OTHER/North America/EU-NA/EMEA/NA/Eastern Europe/SEA/Middle
 East/Turkey/Germany); Country Gift (CZ/RU/TR/BR/AR/IN/CN);
 PREPAID/SOFTWARE/VPN/Subscription/Voucher/Gift Card/Currency; language
-restrictions (EN/FR/ES "… Languages Only", EN/CS); multi-game bundles/collections;
+restrictions (EN/FR/ES "… Languages Only", EN/CS);
+**ANY bundle and ANY skin** — categorical, word-boundary on the title
+(`Bundle(s)`/`Skin(s)`), even single-game/cosmetic bundles that have their own
+token-perfect AKS product page (Romain, direct rule 2026-07-07, after the
+Overwatch "Genji Mythic Weapon Skin Bundle" candidate was wrongly proposed;
+generalizes the G2A "skip skins" note in §11 and the Layer-5 server-side bundle
+rejects in §6); multi-game bundles/collections;
 DLC/extension without base game; title with ≥2 words absent from AKS name;
 year/version absent from AKS name; edition not present in the AKS dropdown.
 
