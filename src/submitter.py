@@ -25,6 +25,57 @@ from src.run_log import RunLogger
 from src.step_guard import StepGuard
 
 
+def fetch_session_catalog(
+    session: Any,
+    *,
+    store_id: str | int,
+    feed_page: str = DEFAULT_FEED_PAGE,
+    available: str = "all",
+    max_pages: int = 40,
+) -> dict[str, Any]:
+    """Fetch the full Édition + Région dropdown lists ONCE per data-entry session.
+
+    Both dropdowns are a global catalog (same across products); the ids can
+    change as AKS adds editions/regions, so they must come from the live dropdown
+    at session start rather than a hardcoded table. Read-only: opens one offer's
+    modal (any current offer), enumerates both selects in full, no fill/create.
+    Returns ``{ok, offer_id, region_select, edition_select, regions, editions}``
+    or ``{ok: False, reason}``. Callers should do this once and reuse the result
+    for every offer in the session.
+    """
+
+    session.navigate(feed_url(store_id, feed_page=feed_page, available=available))
+    if session.is_login_page():
+        return {"ok": False, "reason": "not_logged_in"}
+
+    for page in range(1, max_pages + 1):
+        session.navigate(feed_url(store_id, page=page, feed_page=feed_page, available=available))
+        ids = session.page_offer_ids()
+        if not ids:
+            break
+        for offer_id in ids:
+            if session.open_offer_modal(offer_id) != "OPENED":
+                continue
+            names = set(session.modal_context().get("select_names", []))
+            region_select = "offer[region]" if "offer[region]" in names else (
+                "offer[region_id]" if "offer[region_id]" in names else None
+            )
+            edition_select = "offer[edition]" if "offer[edition]" in names else (
+                "offer[edition_id]" if "offer[edition_id]" in names else None
+            )
+            if not region_select or not edition_select:
+                continue
+            return {
+                "ok": True,
+                "offer_id": offer_id,
+                "region_select": region_select,
+                "edition_select": edition_select,
+                "regions": session.probe_select_options(region_select),
+                "editions": session.probe_select_options(edition_select),
+            }
+    return {"ok": False, "reason": "no_openable_offer"}
+
+
 class _SubmitterBase:
     write_mode = False
     event_name = "dry_run_offer"
@@ -233,12 +284,6 @@ class InspectSubmitter(_SubmitterBase):
         # the fill path never populates (S18, 2026-07-06). Tells us what value it
         # expects (placeholder / datalist / label / widget) with NO write.
         entry["targets_probe"] = self.session.probe_targets_field()
-        # Full product-scoped option enumeration for region + edition (2026-07-07).
-        # The submit path forced a master-catalog id and created WRONG-edition
-        # offers; this dumps the real dropdown options (no 20-cap) so we can build
-        # the label→product-id mapping. Read-only (opens/closes the dropdown).
-        entry["edition_options_full"] = self.session.probe_select_options(entry["edition_select"])
-        entry["region_options_full"] = self.session.probe_select_options(entry["region_select"])
         return True
 
 

@@ -48,6 +48,10 @@ class FakeSubmitSession:
     def modal_context(self):
         return {"ok": self.ctx_ok, "select_names": list(self.select_names)}
 
+    def probe_select_options(self, select_name):
+        return {"ok": True, "select_name": select_name, "rendered_count": 2,
+                "rendered_options": [{"data_value": "77", "text": "Standard"}]}
+
 
 def _run(session, approved):
     return DryRunSubmitter(session).run(
@@ -286,6 +290,42 @@ class ClickModeValidationTests(unittest.TestCase):
         session = FakeWriteSession([["1"]])
         for mode in ("native", "dispatch", "trusted"):
             Submitter(session, click_mode=mode)  # no raise
+
+
+class FetchSessionCatalogTests(unittest.TestCase):
+    def test_fetches_both_dropdowns_from_first_openable_offer(self):
+        from src.submitter import fetch_session_catalog
+
+        session = FakeSubmitSession([["10", "11"]])
+        result = fetch_session_catalog(session, store_id="127")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["offer_id"], "10")
+        self.assertEqual(result["region_select"], "offer[region]")
+        self.assertEqual(result["edition_select"], "offer[edition]")
+        self.assertEqual(result["editions"]["rendered_options"],
+                         [{"data_value": "77", "text": "Standard"}])
+        self.assertEqual(result["regions"]["rendered_options"],
+                         [{"data_value": "77", "text": "Standard"}])
+
+    def test_login_page_aborts(self):
+        from src.submitter import fetch_session_catalog
+
+        result = fetch_session_catalog(FakeSubmitSession([["10"]], login=True), store_id="127")
+        self.assertEqual(result, {"ok": False, "reason": "not_logged_in"})
+
+    def test_skips_offers_whose_modal_wont_open(self):
+        from src.submitter import fetch_session_catalog
+
+        session = FakeSubmitSession([["10", "11"]], fail_ids=("10",))
+        result = fetch_session_catalog(session, store_id="127")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["offer_id"], "11")
+
+    def test_no_openable_offer_is_fail_closed(self):
+        from src.submitter import fetch_session_catalog
+
+        result = fetch_session_catalog(FakeSubmitSession([[]]), store_id="127")
+        self.assertEqual(result, {"ok": False, "reason": "no_openable_offer"})
 
 
 class FakeInspectSession(FakeSubmitSession):

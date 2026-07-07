@@ -33,7 +33,12 @@ from src.aks_env import OFFICIAL_CDP_ENDPOINT  # noqa: E402
 from src.invariants import build_report  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
 from src.submit_session import SubmitSession, WriteSubmitSession  # noqa: E402
-from src.submitter import DryRunSubmitter, InspectSubmitter, Submitter  # noqa: E402
+from src.submitter import (  # noqa: E402
+    DryRunSubmitter,
+    InspectSubmitter,
+    Submitter,
+    fetch_session_catalog,
+)
 
 
 def _status(entry, write):
@@ -69,10 +74,18 @@ def main() -> int:
              "inspection to modal_inspection.json. No writes, no clicks on Create. "
              "Defaults to a canary of 1 (use --all / --limit N for more).",
     )
+    parser.add_argument(
+        "--catalog", action="store_true",
+        help="CATALOG mode — fetch the full Édition + Région dropdown lists ONCE "
+             "(read-only: opens one current offer's modal, no writes). Writes "
+             "session_catalog.json next to the approved.json path. Run once per "
+             "data-entry session to pick up new regions/editions.",
+    )
     args = parser.parse_args()
 
-    if args.inspect and args.submit:
-        print("--inspect and --submit are mutually exclusive", file=sys.stderr)
+    modes = [m for m in (args.inspect, args.submit, args.catalog) if m]
+    if len(modes) > 1:
+        print("--inspect, --submit and --catalog are mutually exclusive", file=sys.stderr)
         return 2
     if args.click_mode is not None and not args.submit:
         print("--click-mode is only meaningful with --submit", file=sys.stderr)
@@ -97,9 +110,30 @@ def main() -> int:
         }, indent=2))
         return 2
 
-    approved = json.loads(Path(args.approved).read_text(encoding="utf-8"))
     out_dir = Path(args.approved).resolve().parent
     run_id = out_dir.name
+
+    if args.catalog:
+        print("CATALOG MODE — fetching full Édition + Région lists once (read-only).", file=sys.stderr)
+        with SubmitSession(args.endpoint) as session:
+            catalog = fetch_session_catalog(
+                session, store_id=args.store_id, available=args.available, max_pages=args.max_pages,
+            )
+        (out_dir / "session_catalog.json").write_text(json.dumps(catalog, indent=2), encoding="utf-8")
+        summary = {"mode": "catalog", "ok": catalog.get("ok"), "out_dir": str(out_dir),
+                   "artifact": "session_catalog.json"}
+        if catalog.get("ok"):
+            ed = catalog.get("editions") or {}
+            rg = catalog.get("regions") or {}
+            summary["editions_count"] = ed.get("rendered_count")
+            summary["regions_count"] = rg.get("rendered_count")
+            summary["offer_id"] = catalog.get("offer_id")
+        else:
+            summary["reason"] = catalog.get("reason")
+        print(json.dumps(summary, indent=2))
+        return 0 if catalog.get("ok") else 2
+
+    approved = json.loads(Path(args.approved).read_text(encoding="utf-8"))
     logger = RunLogger(run_id, log_dir=str(ROOT / "logs"))
 
     if args.inspect:
