@@ -828,8 +828,11 @@ class SelectViaTrustedTests(unittest.TestCase):
 
     def test_query_types_label_to_filter_then_clicks_option(self):
         # The wanted option may be beyond Selectize's ~1000 render cap, so a
-        # query must be typed (trusted Input.insertText) after opening the
-        # dropdown and before reading/clicking the option (2026-07-07 catalog).
+        # query must be TYPED with per-char trusted key events after opening the
+        # dropdown and before reading/clicking the option. Key events (not
+        # Input.insertText) are mandatory: Selectize v0.x refilters on keyup
+        # only — insertText left the dropdown unfiltered on the 2026-07-07
+        # canary (NO_EDITION_PICK).
         input_rect = json.dumps({"ok": True, "x": 100, "y": 200, "width": 240, "height": 32,
                                  "top": 200, "left": 100, "bottom": 232, "right": 340,
                                  "viewport": {"w": 1280, "h": 720}})
@@ -843,13 +846,34 @@ class SelectViaTrustedTests(unittest.TestCase):
         self.assertEqual(result["status"], "SELECTED")
         self.assertEqual(result["query"], "Standard")
         self.assertEqual(result["typed_query"], "Standard")
-        # insertText fired exactly once, between the two trusted clicks (3+1+3).
+        self.assertEqual(result["typed"], {"chars": 8})
+        # Sequence: open click (3 mouse) + 8 chars × (keyDown+keyUp) + option
+        # click (3 mouse). Never Input.insertText.
         methods = [c[0] for c in sess._sent]
         self.assertEqual(methods, ["Input.dispatchMouseEvent"] * 3
-                         + ["Input.insertText"]
+                         + ["Input.dispatchKeyEvent"] * 16
                          + ["Input.dispatchMouseEvent"] * 3)
-        insert = [c for c in sess._sent if c[0] == "Input.insertText"]
-        self.assertEqual(insert, [("Input.insertText", {"text": "Standard"})])
+        self.assertFalse(any(m == "Input.insertText" for m in methods))
+        keys = [c[1] for c in sess._sent if c[0] == "Input.dispatchKeyEvent"]
+        self.assertEqual([k["type"] for k in keys], ["keyDown", "keyUp"] * 8)
+        # keyDown carries the char text (Chrome inserts it); keyUp does not.
+        typed = "".join(k["text"] for k in keys if k["type"] == "keyDown")
+        self.assertEqual(typed, "Standard")
+        self.assertTrue(all("text" not in k for k in keys if k["type"] == "keyUp"))
+
+    def test_type_text_trusted_key_codes(self):
+        sess = self._sess([])
+        result = sess._type_text_trusted("Go (6)")
+        self.assertEqual(result, {"chars": 6})
+        downs = [c[1] for c in sess._sent if c[1]["type"] == "keyDown"]
+        by_char = {d["text"]: d for d in downs}
+        # ASCII alnum → uppercase char code; space → 32; punctuation → no vk.
+        self.assertEqual(by_char["G"]["windowsVirtualKeyCode"], ord("G"))
+        self.assertEqual(by_char["o"]["windowsVirtualKeyCode"], ord("O"))
+        self.assertEqual(by_char[" "]["windowsVirtualKeyCode"], 32)
+        self.assertEqual(by_char["6"]["windowsVirtualKeyCode"], ord("6"))
+        self.assertNotIn("windowsVirtualKeyCode", by_char["("])
+        self.assertNotIn("windowsVirtualKeyCode", by_char[")"])
 
     def test_no_query_does_not_type(self):
         input_rect = json.dumps({"ok": True, "x": 100, "y": 200, "width": 240, "height": 32,
@@ -863,7 +887,8 @@ class SelectViaTrustedTests(unittest.TestCase):
         sess = self._sess([input_rect, option_rect, readback])
         result = sess.select_via_trusted("offer[region]", "9")
         self.assertNotIn("typed_query", result)
-        self.assertFalse(any(c[0] == "Input.insertText" for c in sess._sent))
+        self.assertFalse(any(c[0] in ("Input.insertText", "Input.dispatchKeyEvent")
+                             for c in sess._sent))
 
     def test_no_selectize_input_returns_early_no_clicks(self):
         input_rect = json.dumps({"ok": False, "reason": "no_wrapper"})

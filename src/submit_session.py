@@ -579,8 +579,15 @@ _SELECTIZE_OPTION_RECT_JS = (
     "for(var kk in oo){if(oo.hasOwnProperty(kk)){stz_opts.push({key:kk,"
     "value:(oo[kk]&&oo[kk].value)||null,text:(oo[kk]&&(oo[kk].text||oo[kk].label))||null});"
     "if(stz_opts.length>=20)break;}}}"
+    # Where did the typed query land? Search-input value + focused element —
+    # proves whether the type-to-filter text reached Selectize's search box.
+    "var search=null;"
+    "try{search=sel.selectize.$control_input?String(sel.selectize.$control_input.val()):null;}catch(e){}"
+    "var ae=document.activeElement;"
+    "var active=ae?ae.tagName+(ae.className?'.'+String(ae.className).trim().split(/\\s+/)[0]:''):null;"
     "return {ok:false,reason:'no_option',is_open:is_open,"
-    "requested_value:val,dropdown_options:avail,selectize_options:stz_opts};}"
+    "requested_value:val,search_value:search,active_element:active,"
+    "dropdown_options:avail,selectize_options:stz_opts};}"
     "opt.scrollIntoView({block:'center',inline:'nearest'});"
     "var r=opt.getBoundingClientRect();"
     "var dd2=opt.closest('.selectize-dropdown');"
@@ -825,12 +832,13 @@ class WriteSubmitSession(SubmitSession):
         1. Read the ``.selectize-input`` rect for the given select name (S02-safe).
         2. Trusted CDP click on it — the dropdown opens naturally.
         3. Wait 500 ms for dropdown render + option layout.
-        4. If ``query`` is given, ``Input.insertText`` it into the (now-focused)
-           Selectize search box so the plugin filters/renders the matching option.
-           This is REQUIRED for the edition select: the catalog is ~14009 options
-           and Selectize only renders its ``maxOptions`` cap (~1000, sorted), so a
-           target like "Standard" (id 1) never renders until searched — the raw
-           dropdown scan would fail-closed NO_OPTION (2026-07-07 catalog fetch).
+        4. If ``query`` is given, type it into the (now-focused) Selectize search
+           box via per-char trusted key events (``_type_text_trusted``) so the
+           plugin filters/renders the matching option. This is REQUIRED for the
+           edition select: the catalog is ~14009 options and Selectize only
+           renders its ``maxOptions`` cap (~1000, sorted), so a target like
+           "Standard" (id 1) never renders until searched — the raw dropdown
+           scan would fail-closed NO_OPTION (2026-07-07 catalog fetch).
         5. Read the ``[data-value="{value_id}"]`` option rect (S02-safe).
         6. If the option is off-viewport (Selectize v0.x with
            ``dropdownParent:'body'`` puts its dropdown at document coords, which
@@ -870,11 +878,13 @@ class WriteSubmitSession(SubmitSession):
         if query:
             # Type the label so Selectize filters+renders the wanted option even
             # when it sits beyond the maxOptions render cap. The dropdown-open
-            # trusted click focused the plugin's search input; insertText fires a
-            # real `input` event (no `.value=`), which drives Selectize's filter.
-            self._cmd("Input.insertText", {"text": str(query)})
+            # trusted click focused the plugin's search input. MUST be per-char
+            # trusted key events: Selectize v0.x refilters on keyup only, and
+            # Input.insertText (input event only) was proven NOT to refilter on
+            # the 2026-07-07 canary (NO_EDITION_PICK).
+            diag["typed"] = self._type_text_trusted(str(query))
             diag["typed_query"] = str(query)
-            time.sleep(0.4)  # filter + re-render
+            time.sleep(0.5)  # keyup → refreshOptions + re-render settle
 
         option_raw = self.evaluate_readonly(
             _SELECTIZE_OPTION_RECT_JS
@@ -893,6 +903,8 @@ class WriteSubmitSession(SubmitSession):
             diag["status"] = "NO_OPTION"
             diag["reason"] = option_rect.get("reason")
             diag["is_open"] = option_rect.get("is_open")
+            diag["search_value"] = option_rect.get("search_value")
+            diag["active_element"] = option_rect.get("active_element")
             diag["dropdown_options"] = option_rect.get("dropdown_options")
             diag["selectize_options"] = option_rect.get("selectize_options")
             return diag
@@ -942,6 +954,43 @@ class WriteSubmitSession(SubmitSession):
                 {"type": kind, "key": "Enter", "code": "Enter",
                  "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13},
             )
+
+    def _type_text_trusted(self, text: str) -> dict[str, Any]:
+        """Type ``text`` into the focused element the human way: one trusted
+        ``Input.dispatchKeyEvent`` keyDown(+text)/keyUp pair per character, with
+        a small random dwell + inter-key delay.
+
+        Why not ``Input.insertText``: it fires only an ``input`` event, and
+        Selectize v0.x filters on **keyup** (``onKeyUp`` → ``refreshOptions()``),
+        so insertText leaves the dropdown unfiltered — proven live on the
+        2026-07-07 canary (NO_EDITION_PICK: after inserting "Standard" the
+        edition dropdown still showed the unfiltered alphabetical head). Real
+        per-char key events fire keydown/keypress/input/keyup, all
+        ``isTrusted:true``, covering every listener a real keyboard would.
+        """
+
+        chars = 0
+        for ch in str(text):
+            vk = 0
+            if ch.isascii() and ch.isalnum():
+                vk = ord(ch.upper())
+            elif ch == " ":
+                vk = 32
+            down: dict[str, Any] = {
+                "type": "keyDown", "text": ch, "unmodifiedText": ch, "key": ch,
+            }
+            up: dict[str, Any] = {"type": "keyUp", "key": ch}
+            if vk:
+                down["windowsVirtualKeyCode"] = vk
+                down["nativeVirtualKeyCode"] = vk
+                up["windowsVirtualKeyCode"] = vk
+                up["nativeVirtualKeyCode"] = vk
+            self._cmd("Input.dispatchKeyEvent", down)
+            time.sleep(random.randint(20, 50) / 1000.0)
+            self._cmd("Input.dispatchKeyEvent", up)
+            time.sleep(random.randint(30, 90) / 1000.0)
+            chars += 1
+        return {"chars": chars}
 
     def add_target_trusted(self, value: str) -> dict[str, Any]:
         r"""Fill the modal's ``offer[targets][]`` field the human way (S18,
