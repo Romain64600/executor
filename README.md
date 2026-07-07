@@ -209,7 +209,10 @@ starts, so a mid-task "retry past it" is impossible. See
   [`docs/SUBMITTER_SPEC.md`](docs/SUBMITTER_SPEC.md) §4b.
 - [x] **Data contracts + JSONL run-log infrastructure** (`src/contracts.py`,
   `src/run_log.py`) — ready for the stages above to use.
-- [ ] **Post-save verifier.**
+- [x] **Post-save verifier** — implemented inside the submitter (`_verify_gone`):
+  after every click, the whole refreshed feed is re-scanned; `success = offer no
+  longer present` (never `[data-success]`). Since 2026-07-07 the same scan also
+  refreshes the batch row index (pagination reflow).
 
 ---
 

@@ -14,6 +14,11 @@ Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/14
 AKS must work directly without VPN:
 https://www.allkeyshop.com/blog/
 
+No OpenVPN process may be running (a tunnel coming up mid-session would flip
+the egress IP under an authenticated AKS session). Enforced by
+`scripts/01_check_invariants.py` (`no_openvpn_process`, fail-closed: an
+undeterminable process state also fails) and `scripts/00_audit_env.sh`.
+
 ## Forbidden
 
 - Browserbase

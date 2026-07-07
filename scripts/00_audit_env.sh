@@ -75,9 +75,9 @@ status_line() {
 
   # --- Universal: OpenVPN must be stopped ---
   if pgrep -x openvpn >/dev/null 2>&1; then
-    status_line FAIL "OpenVPN stopped" "an openvpn process is running"
+    status_line FAIL "No OpenVPN process running" "openvpn is running — stop it (VPN forbidden while AKS direct works)"
   else
-    status_line PASS "OpenVPN stopped"
+    status_line PASS "No OpenVPN process running"
   fi
 
   # --- Universal: no stale AKS scripts ---

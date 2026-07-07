@@ -12,6 +12,7 @@ import json
 import os
 import platform
 import socket
+import subprocess
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
@@ -128,6 +129,31 @@ def validate_aks_direct_status(status: int | None) -> CheckResult:
         ok=ok,
         detail="AKS direct URL is reachable" if ok else "AKS direct URL is not reachable",
         data={"url": AKS_DIRECT_URL, "status": status, "accepted": list(ACCEPTED_AKS_STATUSES)},
+    )
+
+
+def validate_no_openvpn(pids: list[str] | None) -> CheckResult:
+    """Forbid a running OpenVPN process (VPN is forbidden while AKS direct works).
+
+    ``pids=None`` means the probe could not determine the process state; per the
+    fail-closed policy that is a failure, not a pass.
+    """
+
+    if pids is None:
+        return CheckResult(
+            name="no_openvpn_process",
+            ok=False,
+            detail="could not determine OpenVPN process state — fail closed",
+            data={"pids": None},
+        )
+    ok = not pids
+    return CheckResult(
+        name="no_openvpn_process",
+        ok=ok,
+        detail="no OpenVPN process running"
+        if ok
+        else "openvpn is running — stop it (VPN forbidden while AKS direct works)",
+        data={"pids": list(pids)},
     )
 
 
@@ -269,6 +295,32 @@ def http_get(
         return HttpProbeResult(
             url=url, ok=False, status=None, body="", error=f"{type(exc).__name__}: {exc}"
         )
+
+
+def list_openvpn_pids() -> list[str] | None:
+    """Return the PIDs of running ``openvpn`` processes (read-only probe).
+
+    Uses ``pgrep -x openvpn`` (exact process-name match, same as the shell
+    audit). Returns ``None`` when the state cannot be determined (pgrep missing,
+    timeout, usage/fatal error) so the caller fails closed instead of assuming
+    "no VPN".
+    """
+
+    try:
+        proc = subprocess.run(
+            ["pgrep", "-x", "openvpn"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if proc.returncode == 0:
+        return [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+    if proc.returncode == 1:  # pgrep contract: 1 = no process matched
+        return []
+    return None  # 2/3 = usage or fatal error — state unknown
 
 
 def http_head_status(url: str, timeout: int = 10, follow_redirects: bool = True) -> HttpProbeResult:

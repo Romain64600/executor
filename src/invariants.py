@@ -15,7 +15,9 @@ from src.aks_env import (
     checks_to_dict,
     current_environment,
     http_get,
+    list_openvpn_pids,
     validate_aks_direct_status,
+    validate_no_openvpn,
 )
 from src.cdp_client import CdpVersionResult, ReadOnlyCdpClient
 from src.step_guard import StepGuard
@@ -46,7 +48,10 @@ def build_report(
     exercised (and its snapshot logged) but cannot trip its own anti-loop block.
     """
 
-    guard = StepGuard(max_attempts_per_signature=2)
+    # One pass = each probe exactly once. Size the consecutive-failure limit
+    # above the probe count (3) so a fully-red environment still yields the
+    # fail-closed JSON report instead of tripping the guard mid-report.
+    guard = StepGuard(max_attempts_per_signature=2, max_consecutive_failures=4)
     guard.start_task("invariant-check")
 
     aks_probe = guard.run_step(
@@ -54,6 +59,12 @@ def build_report(
         "aks_direct",
         action=lambda: http_get(AKS_DIRECT_URL, timeout=timeout, follow_redirects=False),
         success_predicate=lambda p: validate_aks_direct_status(p.status).ok,
+    )
+    openvpn_pids = guard.run_step(
+        "probe",
+        "openvpn_process",
+        action=list_openvpn_pids,
+        success_predicate=lambda pids: validate_no_openvpn(pids).ok,
     )
     cdp_result: CdpVersionResult = guard.run_step(
         "probe",
@@ -63,7 +74,8 @@ def build_report(
     )
 
     aks_check = validate_aks_direct_status(aks_probe.status)
-    aggregate = checks_to_dict([aks_check, *cdp_result.checks])
+    openvpn_check = validate_no_openvpn(openvpn_pids)
+    aggregate = checks_to_dict([aks_check, openvpn_check, *cdp_result.checks])
     environment = current_environment()
 
     return {
@@ -79,6 +91,10 @@ def build_report(
             "ok": aks_check.ok,
             "status": aks_probe.status,
             "error": aks_probe.error,
+        },
+        "openvpn": {
+            "ok": openvpn_check.ok,
+            "pids": openvpn_pids,
         },
         "cdp": {
             "endpoint": endpoint,

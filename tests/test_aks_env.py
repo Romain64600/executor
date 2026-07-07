@@ -12,9 +12,11 @@ from src.aks_env import (
     current_environment,
     http_get,
     http_head_status,
+    list_openvpn_pids,
     parse_cdp_version_payload,
     validate_aks_direct_status,
     validate_cdp_version_shape,
+    validate_no_openvpn,
     validate_official_cdp_endpoint,
     validate_required_user_agent,
 )
@@ -104,6 +106,55 @@ class AksEnvTests(unittest.TestCase):
 
         self.assertFalse(result["ok"])
         self.assertEqual(len(result["checks"]), 2)
+
+
+class _FakeCompleted:
+    def __init__(self, returncode, stdout=""):
+        self.returncode = returncode
+        self.stdout = stdout
+
+
+class OpenVpnCheckTests(unittest.TestCase):
+    def test_no_pids_passes(self):
+        result = validate_no_openvpn([])
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.name, "no_openvpn_process")
+        self.assertEqual(result.data["pids"], [])
+
+    def test_running_openvpn_fails(self):
+        result = validate_no_openvpn(["1819"])
+
+        self.assertFalse(result.ok)
+        self.assertIn("VPN forbidden", result.detail)
+        self.assertEqual(result.data["pids"], ["1819"])
+
+    def test_unknown_state_fails_closed(self):
+        result = validate_no_openvpn(None)
+
+        self.assertFalse(result.ok)
+        self.assertIn("fail closed", result.detail)
+
+    def test_list_pids_parses_pgrep_matches(self):
+        with mock.patch(
+            "src.aks_env.subprocess.run",
+            return_value=_FakeCompleted(0, "1819\n2001\n"),
+        ):
+            self.assertEqual(list_openvpn_pids(), ["1819", "2001"])
+
+    def test_list_pids_empty_on_pgrep_no_match(self):
+        with mock.patch("src.aks_env.subprocess.run", return_value=_FakeCompleted(1)):
+            self.assertEqual(list_openvpn_pids(), [])
+
+    def test_list_pids_none_on_pgrep_error(self):
+        with mock.patch("src.aks_env.subprocess.run", return_value=_FakeCompleted(2)):
+            self.assertIsNone(list_openvpn_pids())
+
+    def test_list_pids_none_when_pgrep_missing(self):
+        with mock.patch(
+            "src.aks_env.subprocess.run", side_effect=FileNotFoundError("pgrep")
+        ):
+            self.assertIsNone(list_openvpn_pids())
 
 
 class ClassifyEnvironmentTests(unittest.TestCase):

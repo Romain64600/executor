@@ -3,6 +3,30 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-07 — Invariant gate hardened: `no_openvpn_process`
+
+A live audit found a Surfshark `openvpn` daemon running as root (no tun device,
+so AKS direct still worked) — a tunnel coming up mid-batch would flip the egress
+IP under an authenticated AKS session. The "VPN forbidden while AKS direct
+works" rule was only enforced by the shell audit, not by the authoritative gate
+that unlocks write stages.
+
+- `src/aks_env.py` — pure `validate_no_openvpn(pids)` (fail-closed: `None` =
+  undeterminable state = FAIL) + read-only `list_openvpn_pids()` probe
+  (`pgrep -x openvpn`, same match as the shell audit).
+- `src/invariants.py` — third StepGuard probe `openvpn_process` in
+  `build_report`; check joins the fail-closed aggregate and the report gains an
+  `openvpn` section. Guard consecutive-failure limit sized above the probe
+  count so a fully-red environment still emits the JSON report instead of
+  raising mid-build.
+- Doc drift fixes from the same audit: README roadmap now checks off the
+  implemented post-save verifier; `00_audit_env.sh` openvpn FAIL reworded.
+- Tests: 251 → 260.
+
+Effect on the VPS today: the gate is **red + authoritative**
+(`no_openvpn_process` FAIL, pid 1819) until the daemon is stopped — write
+stages stay locked, by design.
+
 ## 2026-07-06 — S18 RESOLVED: `offer[targets][]` fill → first live submissions
 
 The Selectize-humanisé fix (2026-07-03) made region/edition valid but the form
