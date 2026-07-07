@@ -153,7 +153,13 @@ token-perfect AKS product page (Romain, direct rule 2026-07-07, after the
 Overwatch "Genji Mythic Weapon Skin Bundle" candidate was wrongly proposed;
 generalizes the G2A "skip skins" note in §11 and the Layer-5 server-side bundle
 rejects in §6); multi-game bundles/collections;
-DLC/extension without base game; title with ≥2 words absent from AKS name;
+DLC/extension without base game; title with **≥1 significant word** absent from
+the AKS name (platform/format/region/edition noise excluded, incl. `COM` from
+"GOG.COM"; tightened from the CORE ≥2 floor on 2026-07-07 after the
+"Offworld Trading Company - Interdimensional" DLC escaped with a single extra
+word — doubt goes to skip) `[R16]`; **Microsoft Store Key / Microsoft Key**
+(key-type marker only — "Microsoft Flight Simulator … Steam Key" stays Steam;
+MICROSOFT platform has no region mapping → fail-closed) `[R17]`;
 year/version absent from AKS name; edition not present in the AKS dropdown.
 
 ### 4.4 Region — **URL decides, not the title** `[Ga01]`
@@ -179,6 +185,10 @@ Build the slug from the AKS name (lowercase, `[^a-z0-9] → -`), verify
 `/blog/buy-{slug}-cd-key-compare-prices/` returns **200**, then extract
 `data-product-id` (the AKS_ID) and `<title>`. Extract available editions from
 the embedded `"editions":{…}` JSON `[EDITIONS.md]`.
+**If the AKS product name cannot be read from the resolved page, the offer is
+SKIPPED with a distinct reason — never fall back to the offer title as the AKS
+name** (that turns the §4.1 identity check into a tautology; 2026-07-07 a
+Microsoft Store Key offer surfaced as a "Steam US" candidate this way) `[R15]`.
 
 ### 4.8 Limits & doubt
 Max **100** candidates by default unless Romain asks otherwise `[S26]`. Doubt
