@@ -323,6 +323,9 @@ class FakeInspectSession(FakeSubmitSession):
     def probe_targets_field(self):
         return dict(self._targets_probe)
 
+    def probe_select_options(self, select_name):
+        return {"ok": True, "select_name": select_name, "rendered_options": []}
+
 
 def _inspect(session, approved):
     return InspectSubmitter(session).run(
@@ -731,6 +734,39 @@ class SelectViaTrustedTests(unittest.TestCase):
         self.assertTrue(is_readonly_expression(
             _SELECTIZE_READBACK_JS % json.dumps("offer[region]")
         ))
+
+
+class ProbeSelectOptionsTests(unittest.TestCase):
+    def test_returns_full_enumeration_from_evaluate(self):
+        from src.submit_session import SubmitSession
+
+        sess = SubmitSession.__new__(SubmitSession)
+        payload = {
+            "ok": True, "select_name": "offer[edition]", "current_value": "",
+            "rendered_count": 21,
+            "rendered_options": [{"data_value": "636", "text": "+ 1 Month"},
+                                 {"data_value": "77", "text": "Standard"}],
+            "select_option_count": 1, "select_options": [{"value": "", "text": ""}],
+            "master_count": 2, "master_options": [{"key": "1", "text": "Standard"}],
+        }
+        seen = {}
+        def _eval(js):
+            seen["js"] = js
+            return payload
+        sess._evaluate = _eval
+        result = sess.probe_select_options("offer[edition]")
+        self.assertEqual(result["rendered_count"], 21)
+        self.assertIn({"data_value": "77", "text": "Standard"}, result["rendered_options"])
+        # The probe must target the requested select by name.
+        self.assertIn('"offer[edition]"', seen["js"])
+
+    def test_non_dict_result_is_fail_closed(self):
+        from src.submit_session import SubmitSession
+
+        sess = SubmitSession.__new__(SubmitSession)
+        sess._evaluate = lambda js: None
+        result = sess.probe_select_options("offer[edition]")
+        self.assertEqual(result, {"ok": False, "reason": "no_result"})
 
 
 class AddTargetTrustedTests(unittest.TestCase):

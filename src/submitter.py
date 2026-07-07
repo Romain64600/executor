@@ -233,6 +233,12 @@ class InspectSubmitter(_SubmitterBase):
         # the fill path never populates (S18, 2026-07-06). Tells us what value it
         # expects (placeholder / datalist / label / widget) with NO write.
         entry["targets_probe"] = self.session.probe_targets_field()
+        # Full product-scoped option enumeration for region + edition (2026-07-07).
+        # The submit path forced a master-catalog id and created WRONG-edition
+        # offers; this dumps the real dropdown options (no 20-cap) so we can build
+        # the label→product-id mapping. Read-only (opens/closes the dropdown).
+        entry["edition_options_full"] = self.session.probe_select_options(entry["edition_select"])
+        entry["region_options_full"] = self.session.probe_select_options(entry["region_select"])
         return True
 
 

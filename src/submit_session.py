@@ -218,6 +218,42 @@ _TARGETS_PROBE_JS = (
     "})())"
 )
 
+# Read-only enumeration of a Selectize select's FULL option set. The earlier
+# option-rect diagnostic capped `$dropdown_content` at 20 entries, which hid the
+# real editions: the product's options load into the dropdown (the bare <select>
+# is empty) and sort the "+ N …" add-ons before "Standard", so a 20-cap dropped
+# it — and the wanted id is product-scoped, not master-catalog "1". This opens
+# the dropdown (UI-only, no data written), dumps EVERY rendered option
+# (data_value + text), the master `selectize.options` map, and the <select>'s own
+# <option>s, then closes it. Used to build the label→product-id mapping.
+_SELECT_OPTIONS_PROBE_JS = (
+    "(function(){return new Promise(function(resolve){"
+    "var name=%s;"
+    "var sel=document.querySelector('select[name=\"'+name+'\"]');"
+    "if(!sel){resolve({ok:false,reason:'no_select'});return;}"
+    "if(!sel.selectize){resolve({ok:false,reason:'no_selectize'});return;}"
+    "var stz=sel.selectize;var before=String(stz.getValue());"
+    "try{stz.open();}catch(e){}"
+    "setTimeout(function(){"
+    "var dc=(stz.$dropdown_content&&stz.$dropdown_content[0])||null;"
+    "var rendered=[];"
+    "if(dc){var all=dc.querySelectorAll('[data-value]');"
+    "for(var i=0;i<all.length;i++){rendered.push({data_value:all[i].getAttribute('data-value'),"
+    "text:(all[i].textContent||'').trim().slice(0,60)});}}"
+    "var master=[];if(stz.options){for(var k in stz.options){"
+    "if(stz.options.hasOwnProperty(k)){master.push({key:k,"
+    "text:(stz.options[k]&&(stz.options[k].text||stz.options[k].label))||null});}}}"
+    "var selOpts=[];for(var j=0;j<sel.options.length;j++){"
+    "selOpts.push({value:sel.options[j].value,text:(sel.options[j].text||'').trim().slice(0,60)});}"
+    "try{stz.close();}catch(e){}"
+    "resolve({ok:true,select_name:name,current_value:before,"
+    "rendered_count:rendered.length,rendered_options:rendered,"
+    "select_option_count:sel.options.length,select_options:selOpts,"
+    "master_count:master.length,master_options:master});"
+    "},600);"
+    "});})()"
+)
+
 _IS_LOGIN_JS = "!!document.querySelector('#loginform') || /wp-login/.test(location.href)"
 
 # Read-only rect probe (S02-safe): returns the target's getBoundingClientRect
@@ -291,6 +327,22 @@ class SubmitSession(ReadOnlyCdpSession):
 
         raw = self.evaluate_readonly(_TARGETS_PROBE_JS)
         return json.loads(raw) if raw else {"ok": False, "reason": "no_result"}
+
+    def probe_select_options(self, select_name: str) -> dict[str, Any]:
+        """Read-only enumeration of a Selectize select's FULL option set.
+
+        Opens the dropdown (UI-only, no fill, no create), dumps every rendered
+        option (``data_value`` + ``text``), the master ``selectize.options`` map,
+        and the ``<select>``'s own ``<option>``s, then closes it. Used to learn
+        the real product-scoped editions/regions and the label→id mapping.
+        Returns ``{ok, select_name, current_value, rendered_options, ...}`` or
+        ``{ok: False, reason}``. Uses the raw evaluator — opening a dropdown is an
+        explicitly-allowed, non-persisting interaction (same class as
+        ``open_offer_modal``).
+        """
+
+        result = self._evaluate(_SELECT_OPTIONS_PROBE_JS % json.dumps(select_name))
+        return result if isinstance(result, dict) else {"ok": False, "reason": "no_result"}
 
 
 # The ONE mutating interaction: set region+edition via selectize, then click the
