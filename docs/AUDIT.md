@@ -251,3 +251,107 @@ and the checker · `G1` wire StepGuard into the checker as the template ·
   guard wiring (G1), tests (T4), redaction (C3).
 - `scripts/00_audit_env.sh` — read-only, well-guarded; method mismatch (C1) and
   config-excerpt leak (S3).
+
+---
+
+# Second-pass audit — `src/submit_session.py` (2026-07-07)
+
+**Scope:** the dedicated second-pass audit Romain requested after the file grew
+130 → 1204 lines. **Method:** full read, call-site mapping
+(`src/submitter.py`, `scripts/05_submit.py`, tests), rule cross-check against
+`EXECUTOR_RULES.md` §6–§7 / `SUBMITTER_SPEC.md`. Same severity scheme as above.
+
+## Verdict
+
+**No P0, no P1.** The mechanism is rule-compliant and genuinely fail-closed;
+the size is almost entirely inline JS probe blobs (~55 % of the lines) plus
+docstrings that carry the incident history — density, not rot. The one real
+drift (a false module docstring) is fixed in this pass. **Do not refactor the
+frozen, live-proven write path for cosmetics**; the P2s below become candidates
+only if the file is reopened for a functional reason.
+
+## Rule compliance (checked, all green)
+
+- **S09**: no `form.submit()`, no direct XHR anywhere in the write path. The
+  in-page `fetch`/XHR wrappers are *diagnostic taps* (method + URL + status
+  only — never bodies/headers/cookies) and are restored on every controlled
+  exit (`_TRUSTED_POLL_JS` resolution, every abort via `_TRUSTED_CLEANUP_JS`,
+  legacy `_FILL_CREATE_JS` end states).
+- **S02**: every probe used by the dry-run/inspect path is mutation-free;
+  tests assert the JS blobs contain no `.value=`/`click(`/`fetch(`/`setValue`/
+  `dispatchEvent` (`*_js_is_readonly*` tests).
+- **S10/S18**: `[data-success]` is treated as a UI signal only — every
+  docstring and the submitter agree post-save (gone from refreshed pending) is
+  the only success proof.
+- **Wrong-edition guards present and wired**: fail-closed `NO_OPTION` (no
+  `addItem` force), `DROPDOWN_STILL_OPEN` after the pick,
+  `CLICK_PATH_OBSTRUCTED` pre-click `elementFromPoint` probe, `FORM_INVALID`
+  gate before the click.
+- **Class boundary**: `SubmitSession` physically lacks any fill/create method;
+  `WriteSubmitSession` is instantiated only under `--submit`
+  (`scripts/05_submit.py:195`).
+- **Injection hygiene**: every Python→JS interpolation goes through
+  `json.dumps`; no secret/cookie/2FA ever read or logged; field values are
+  reported as `value_len` only.
+
+## Findings
+
+### SS1 · fixed in this pass · module docstring claimed the create capability "does not exist here"
+The header still described the Sprint-3 dry-run build ("This build has no
+method that fills a form or clicks Create offer — the create capability
+literally does not exist here") while `WriteSubmitSession.fill_and_create` /
+`fill_then_click_trusted` live in the same file. Misleading for any future
+auditor/agent that trusts the header. **Fixed**: the docstring now describes
+the two-class boundary and the `--submit` gating.
+
+### SS2 · P2 · diagnostic taps can leak on a mid-flow Python exception
+`fill_then_click_trusted` restores the fetch/XHR taps on every *controlled*
+abort, but there is no `try/finally`: a raised exception between prep and poll
+(e.g. CDP transport error) leaves the wrappers installed until the next
+navigation. Mitigation in practice: the flow always navigates (feed refresh)
+right after, and the taps are diagnostic-only. Candidate fix if reopened:
+wrap steps 2–7 in `try/except` → `_TRUSTED_CLEANUP_JS` + re-raise.
+
+### SS3 · P2 · residual `status:'PREPARED'` when the poll returns non-dict
+If `_evaluate(_TRUSTED_POLL_JS)` yields a non-dict, the returned diag keeps
+`status:'PREPARED'` (submit_session.py:1201-1204). Harmless — no caller treats
+any diag status as success (post-save only) — but an explicit
+`NO_POLL_RESULT` would read better in `submit_plan.json`.
+
+### SS4 · P2 · scroll-into-viewport logic duplicated
+`click_trusted_at_element` inlines the same scroll gesture (~25 lines, same
+40 %-viewport target, speed 800) that `_scroll_rect_into_viewport`
+encapsulates. Pure internal duplication; unify only alongside other changes.
+
+### SS5 · P2 · `CLICK_MODES` names only the legacy modes
+`CLICK_MODES = ("native", "dispatch")` gates `fill_and_create` while the class
+docstring says "Three click_modes are supported" — `trusted` is routed at the
+`Submitter` level to `fill_then_click_trusted` and validated there. Correct
+behaviour, confusing constant name (`LEGACY_CLICK_MODES` would be exact).
+
+### SS6 · P2 · `_press_enter` sends `keyDown` without `text` — no `keypress` will fire
+Chrome only synthesizes a `keypress` for key events carrying `text` (`"\r"`
+for Enter). The Enter fallback for the `offer[targets][]` commit has never
+fired live (backlog P4); if the P4 canary exercises it and the chip does not
+commit, this is the first thing to check.
+
+### SS7 · P2 · `select[name="…"]` built by string concatenation in the JS
+Select names read from the page are interpolated into `querySelector` strings
+without `CSS.escape`. Not a real vector (the names come from AKS's own modal;
+a malformed name throws → fail-closed), noted for completeness.
+
+## Test coverage verdict
+
+Better than the file's size suggests: ~45 of the 90 tests in
+`tests/test_submitter.py` target this module directly with a mocked CDP
+transport (`TrustedClickTests`, `FillThenClickTrustedTests`,
+`SelectViaTrustedTests`, `AddTargetTrustedTests`, `ProbeSelectOptionsTests`,
+probe-parsing suites). Every fail-closed status is pinned
+(`NO_REGION_PICK`/`NO_EDITION_PICK` + cleanup, `FORM_INVALID` blocks the
+click, `CLICK_PATH_OBSTRUCTED`, `NO_TRUSTED_CLICK`, `DROPDOWN_STILL_OPEN`,
+`NO_OPTION` without addItem), including the "unreadable probe does not block"
+degradations. Gaps (accepted): the *internals* of the legacy `_FILL_CREATE_JS`
+blob (diagnostics-only path — only its routing is tested) and the live
+behaviour of the Enter fallback (= P4). If the module is ever split, moving
+these ~45 tests to a dedicated `tests/test_submit_session.py` would follow the
+code, not precede it.

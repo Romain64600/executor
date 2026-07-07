@@ -1,13 +1,20 @@
-"""Interactive CDP session for the submitter DRY-RUN.
+"""Interactive CDP sessions for the submitter — dry-run AND write layers.
 
-Extends the read-only session with the *minimum* interaction the dry-run needs:
-list a page's offer ids, open an offer's modal, read the modal context, and check
-whether we've been bounced to the WP login page.
+Two classes, one strict boundary:
 
-**This build has no method that fills a form or clicks "Create offer".** The create
-capability literally does not exist here — the real write path is a separate,
-explicitly-authorized build. Opening a modal is a harmless UI action (no DB write
-happens until "Create offer"), which is why it is allowed for the rehearsal.
+- ``SubmitSession`` (dry-run): read + open-modal + read-only probes only. It can
+  list a page's offer ids, open an offer's modal, read the modal context /
+  validity / targets field, enumerate Selectize options, and detect the WP login
+  bounce. It has **no method that fills a form or clicks "Create offer"**.
+  Opening a modal or a dropdown is a harmless UI action (no DB write happens
+  until "Create offer"), which is why it is allowed for the rehearsal.
+- ``WriteSubmitSession`` (the write layer): adds the single mutating flow —
+  fill region/edition/targets and click the visible "Create offer" button
+  (trusted CDP path by default; native/dispatch kept as documented
+  diagnostics). It is instantiated ONLY under ``--submit``
+  (``scripts/05_submit.py``), behind the validation file and the green
+  authoritative gate. No ``form.submit()``, no direct XHR (S09); post-save
+  (offer gone from the refreshed pending feed) stays the only success proof.
 """
 
 from __future__ import annotations

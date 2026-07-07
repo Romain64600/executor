@@ -3,6 +3,19 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-07 — Second-pass audit of `src/submit_session.py`
+
+The dedicated audit Romain requested (130 → 1204 lines). Full report appended
+to [`AUDIT.md`](AUDIT.md). Verdict: **no P0/P1** — S02/S09/S10 compliant,
+fail-closed guards wired and pinned by ~45 tests; the size is inline JS probes
++ incident-history docstrings, not rot. One drift fixed in the pass (SS1: the
+module docstring still claimed "the create capability literally does not exist
+here" while `WriteSubmitSession` lives in the same file). Six P2 notes filed
+(tap leak on mid-flow exception, residual `PREPARED` status, scroll-logic
+duplication, `CLICK_MODES` naming, `_press_enter` keypress gap → check on the
+P4 canary, no `CSS.escape`) — candidates only if the file is reopened; no
+refactor of the frozen, live-proven mechanism.
+
 ## 2026-07-07 — Chantier n°2: page-par-page + pacing humain
 
 Invited by Romain's audit ("le prochain incrément logique") now that the
