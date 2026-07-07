@@ -817,24 +817,32 @@ class WriteSubmitSession(SubmitSession):
         time.sleep(0.5)
         return {"scrolled": True, "scroll_y_distance": y_distance}
 
-    def select_via_trusted(self, select_name: str, value_id: str) -> dict[str, Any]:
+    def select_via_trusted(
+        self, select_name: str, value_id: str, query: str | None = None,
+    ) -> dict[str, Any]:
         """Selectize humanisé (Chantier n°1 extension, 2026-07-03).
 
         1. Read the ``.selectize-input`` rect for the given select name (S02-safe).
         2. Trusted CDP click on it — the dropdown opens naturally.
-        3. Wait 250 ms for dropdown render + option layout.
-        4. Read the ``[data-value="{value_id}"]`` option rect (S02-safe).
-        5. If the option is off-viewport (Selectize v0.x with
+        3. Wait 500 ms for dropdown render + option layout.
+        4. If ``query`` is given, ``Input.insertText`` it into the (now-focused)
+           Selectize search box so the plugin filters/renders the matching option.
+           This is REQUIRED for the edition select: the catalog is ~14009 options
+           and Selectize only renders its ``maxOptions`` cap (~1000, sorted), so a
+           target like "Standard" (id 1) never renders until searched — the raw
+           dropdown scan would fail-closed NO_OPTION (2026-07-07 catalog fetch).
+        5. Read the ``[data-value="{value_id}"]`` option rect (S02-safe).
+        6. If the option is off-viewport (Selectize v0.x with
            ``dropdownParent:'body'`` puts its dropdown at document coords, which
            can land far below when the pending feed page is long),
            ``Input.synthesizeScrollGesture`` to bring it into view + re-read rect.
-        6. Trusted CDP click at the option's center — Selectize applies the
+        7. Trusted CDP click at the option's center — Selectize applies the
            value, plugin's own listeners fire.
-        7. Wait 200 ms for state settle.
-        8. Read back ``select.value`` + ``select.selectize.getValue()`` +
+        8. Wait 200 ms for state settle.
+        9. Read back ``select.value`` + ``select.selectize.getValue()`` +
            ``select.validity.valid``.
 
-        Returns a diag dict: select_name, value_id, status
+        Returns a diag dict: select_name, value_id, query, status
         ('SELECTED' | 'NO_SELECTIZE_INPUT' | 'NO_OPTION' |
         'NO_OPTION_AFTER_SCROLL'), input_rect, option_rect, open_click,
         option_scroll, option_click, readback.
@@ -845,6 +853,8 @@ class WriteSubmitSession(SubmitSession):
         )
         input_rect = json.loads(input_raw) if input_raw else {"ok": False}
         diag: dict[str, Any] = {"select_name": select_name, "value_id": str(value_id)}
+        if query is not None:
+            diag["query"] = str(query)
         if not input_rect.get("ok"):
             diag["status"] = "NO_SELECTIZE_INPUT"
             diag["reason"] = input_rect.get("reason")
@@ -856,6 +866,15 @@ class WriteSubmitSession(SubmitSession):
         }
         diag["open_click"] = self._trusted_click_at_rect(input_rect)
         time.sleep(0.5)  # dropdown render + option layout (was 250ms — too short)
+
+        if query:
+            # Type the label so Selectize filters+renders the wanted option even
+            # when it sits beyond the maxOptions render cap. The dropdown-open
+            # trusted click focused the plugin's search input; insertText fires a
+            # real `input` event (no `.value=`), which drives Selectize's filter.
+            self._cmd("Input.insertText", {"text": str(query)})
+            diag["typed_query"] = str(query)
+            time.sleep(0.4)  # filter + re-render
 
         option_raw = self.evaluate_readonly(
             _SELECTIZE_OPTION_RECT_JS
@@ -977,15 +996,20 @@ class WriteSubmitSession(SubmitSession):
         edition_select: str,
         edition_id: str,
         target_value: str | None = None,
+        region_query: str | None = None,
+        edition_query: str | None = None,
     ) -> dict[str, Any]:
         """Trusted-click variant of ``fill_and_create`` — Selectize humanisé
         (Chantier n°1 extension, 2026-07-03):
 
         1. Prep JS: install network taps + record pre-existing signal state
            (counts + text snapshots) + button visibility. NO setValue.
-        2. ``select_via_trusted(region_select, region_id)``: trusted CDP click on
-           Selectize UI (open + pick option). Selectize fires its own events.
-        3. ``select_via_trusted(edition_select, edition_id)``: same.
+        2. ``select_via_trusted(region_select, region_id, query=region_query)``:
+           trusted CDP click on the Selectize UI (open), type the label to filter
+           (renders options beyond the maxOptions cap), pick the option. Selectize
+           fires its own events.
+        3. ``select_via_trusted(edition_select, edition_id, query=edition_query)``:
+           same.
         4. ``add_target_trusted(target_value)`` (when supplied): trusted type of
            the AKS product id / URL into ``offer[targets][]`` + commit — the last
            required field the Selectize picks don't populate.
@@ -1014,14 +1038,14 @@ class WriteSubmitSession(SubmitSession):
         prep["region_target"] = str(region_id)
         prep["edition_target"] = str(edition_id)
 
-        region_pick = self.select_via_trusted(region_select, str(region_id))
+        region_pick = self.select_via_trusted(region_select, str(region_id), query=region_query)
         prep["region_pick"] = region_pick
         if region_pick.get("status") != "SELECTED":
             self._evaluate(_TRUSTED_CLEANUP_JS)
             prep["status"] = "NO_REGION_PICK"
             return prep
 
-        edition_pick = self.select_via_trusted(edition_select, str(edition_id))
+        edition_pick = self.select_via_trusted(edition_select, str(edition_id), query=edition_query)
         prep["edition_pick"] = edition_pick
         if edition_pick.get("status") != "SELECTED":
             self._evaluate(_TRUSTED_CLEANUP_JS)

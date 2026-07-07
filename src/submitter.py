@@ -17,12 +17,65 @@ Depends only on a ``session`` object, so both are unit-testable with a fake.
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any
 
 from src.extractor import DEFAULT_FEED_PAGE, feed_url
 from src.run_log import RunLogger
 from src.step_guard import StepGuard
+
+
+def _norm_option_text(text: str) -> str:
+    """Normalize a catalog option label for comparison: drop the trailing
+    ``(id)`` suffix regions carry (e.g. "Steam EU (9)"), lowercase, collapse
+    whitespace. Editions carry no suffix so are unaffected."""
+
+    text = re.sub(r"\s*\(\d+\)\s*$", "", (text or "").strip())
+    return re.sub(r"\s+", " ", text).lower()
+
+
+def resolve_catalog_id(
+    label: str, candidate_id: str, master_options: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Resolve a region/edition to its LIVE catalog id + canonical text.
+
+    The dropdowns are a global catalog whose ids drift as AKS adds
+    editions/regions, so the matcher's hardcoded id is not authoritative
+    ([[session-catalog-editions-regions]]). Resolution order:
+
+    1. **Unambiguous label match** — exactly one catalog option whose normalized
+       text equals ``label``. Prefer it (this is the wrong-edition fix: trust the
+       live label→id over a possibly-stale matcher id). e.g. edition "Standard".
+    2. **Validate the matcher id** — if the label is absent/ambiguous (regions
+       carry composite text like "Steam EU (9)" that a bare "EU" label can't
+       uniquely hit) but ``candidate_id`` exists in the catalog, use it and take
+       the catalog's canonical text.
+    3. **Fail-closed** — neither resolves → return ``None`` (caller blocks the
+       offer; never force, that created wrong-edition offers on 2026-07-06).
+
+    Returns ``{"id", "text", "source": "label"|"id", "matcher_id",
+    "changed": bool}`` or ``None``.
+    """
+
+    label_n = _norm_option_text(label)
+    if label_n:
+        matches = [o for o in master_options if _norm_option_text(o.get("text", "")) == label_n]
+        if len(matches) == 1:
+            key = str(matches[0].get("key"))
+            return {
+                "id": key, "text": matches[0].get("text"), "source": "label",
+                "matcher_id": str(candidate_id), "changed": key != str(candidate_id),
+            }
+
+    by_id = {str(o.get("key")): o for o in master_options}
+    if str(candidate_id) in by_id:
+        o = by_id[str(candidate_id)]
+        return {
+            "id": str(candidate_id), "text": o.get("text"), "source": "id",
+            "matcher_id": str(candidate_id), "changed": False,
+        }
+    return None
 
 
 def fetch_session_catalog(
@@ -89,6 +142,36 @@ class _SubmitterBase:
             max_failures_per_task=10 ** 9,
         )
         self.logger = logger
+        self.catalog: dict[str, Any] | None = None
+        self._region_master: list[dict[str, Any]] = []
+        self._edition_master: list[dict[str, Any]] = []
+
+    def _load_catalog(self, catalog: dict[str, Any]) -> None:
+        """Cache the session catalog + its master option lists for id resolution."""
+
+        self.catalog = catalog
+        self._region_master = ((catalog.get("regions") or {}).get("master_options")) or []
+        self._edition_master = ((catalog.get("editions") or {}).get("master_options")) or []
+
+    def _resolve_from_catalog(self, entry: dict[str, Any], candidate: dict[str, Any]) -> None:
+        """Re-resolve the offer's region/edition ids against the live session
+        catalog and stash the canonical text for type-to-filter. Fail-closed:
+        an unresolvable label/id blocks the offer (no forcing — that created the
+        2026-07-06 wrong-edition offers)."""
+
+        for kind, master in (("region", self._region_master), ("edition", self._edition_master)):
+            src = candidate.get(kind) or {}
+            resolved = resolve_catalog_id(src.get("label", ""), src.get("id", ""), master)
+            if resolved is None:
+                entry["ready"] = False
+                entry["blocker"] = (
+                    f"{kind} not in session catalog "
+                    f"(label={src.get('label')!r} id={src.get('id')!r})"
+                )
+                return
+            entry[f"{kind}_id"] = resolved["id"]
+            entry[f"{kind}_text"] = resolved["text"]
+            entry[f"{kind}_resolution"] = resolved
 
     def _log(self, event: str, **fields: Any) -> None:
         if self.logger is not None:
@@ -152,6 +235,8 @@ class _SubmitterBase:
             entry["blocker"] = "region/edition select not found"
             return entry
         entry["ready"] = True
+        if self.catalog is not None:
+            self._resolve_from_catalog(entry, candidate)
         return entry
 
     def _verify_gone(self, offer_id, store_id, feed_page, available, max_pages) -> bool:
@@ -181,12 +266,29 @@ class _SubmitterBase:
         max_pages: int = 40,
         pace: float = 0.5,
         limit: int | None = None,
+        catalog: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         # Pre-flight login check.
         self.session.navigate(feed_url(store_id, feed_page=feed_page, available=available))
         if self.session.is_login_page():
             self._log("aborted", reason="not logged in (wp-login)")
             return {"aborted": "not_logged_in", "stopped": None, "feed_offers": 0, "writes": 0, "plan": []}
+
+        # Write path resolves every offer's region/edition id against the LIVE
+        # dropdown catalog (ids drift; the matcher's are not authoritative). Fetch
+        # it once per run if the caller didn't pass one. Fail-closed: no catalog =
+        # no writes.
+        if self.write_mode:
+            if catalog is None:
+                catalog = fetch_session_catalog(
+                    self.session, store_id=store_id, feed_page=feed_page,
+                    available=available, max_pages=max_pages,
+                )
+            if not catalog.get("ok"):
+                self._log("aborted", reason="catalog fetch failed", detail=catalog.get("reason"))
+                return {"aborted": "catalog_unavailable", "stopped": None,
+                        "feed_offers": 0, "writes": 0, "plan": [], "catalog": catalog}
+            self._load_catalog(catalog)
 
         self.guard.start_task(run_id)
         index = self._index_feed(store_id, feed_page, available, max_pages)
@@ -233,13 +335,20 @@ class _SubmitterBase:
 
         if self.logger is not None:
             self.logger.log_guard(self.guard.snapshot())
-        return {
+        result = {
             "aborted": None,
             "stopped": stopped,
             "feed_offers": len(index),
             "writes": writes if self.write_mode else None,
             "plan": plan,
         }
+        if self.catalog is not None:
+            result["catalog"] = {
+                "offer_id": self.catalog.get("offer_id"),
+                "regions_count": len(self._region_master),
+                "editions_count": len(self._edition_master),
+            }
+        return result
 
 
 class DryRunSubmitter(_SubmitterBase):
@@ -320,6 +429,8 @@ class Submitter(_SubmitterBase):
                 entry["region_select"], entry["region_id"],
                 entry["edition_select"], entry["edition_id"],
                 target_value=entry.get("aks_product_id"),
+                region_query=entry.get("region_text"),
+                edition_query=entry.get("edition_text"),
             )
         else:
             diag = self.session.fill_and_create(

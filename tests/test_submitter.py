@@ -49,8 +49,16 @@ class FakeSubmitSession:
         return {"ok": self.ctx_ok, "select_names": list(self.select_names)}
 
     def probe_select_options(self, select_name):
+        # A minimal live "master catalog" so the write path's catalog resolution
+        # (resolve_catalog_id) can map the _cand labels/ids: region GLOBAL→2,
+        # Steam EU→9; edition Standard→1, Deluxe→7.
+        if "region" in select_name:
+            master = [{"key": "2", "text": "GLOBAL"}, {"key": "9", "text": "Steam EU (9)"}]
+        else:
+            master = [{"key": "1", "text": "Standard"}, {"key": "7", "text": "Deluxe"}]
         return {"ok": True, "select_name": select_name, "rendered_count": 2,
-                "rendered_options": [{"data_value": "77", "text": "Standard"}]}
+                "rendered_options": [{"data_value": "77", "text": "Standard"}],
+                "master_options": master}
 
 
 def _run(session, approved):
@@ -116,6 +124,8 @@ class FakeWriteSession(FakeSubmitSession):
         self.created = set()
         self.fill_calls = []
         self.last_target_value = None
+        self.last_region_query = None
+        self.last_edition_query = None
         self._last_opened = None
 
     def open_offer_modal(self, offer_id):
@@ -137,9 +147,11 @@ class FakeWriteSession(FakeSubmitSession):
         return diag
 
     def fill_then_click_trusted(self, region_select, region_id, edition_select, edition_id,
-                                target_value=None):
+                                target_value=None, region_query=None, edition_query=None):
         self.fill_calls.append((region_select, region_id, edition_select, edition_id, "trusted"))
         self.last_target_value = target_value
+        self.last_region_query = region_query
+        self.last_edition_query = edition_query
         if self.create_status in ("SUCCESS", "NO_SIGNAL") and self.create_removes:
             self.created.add(self._last_opened)
         diag = {"status": self.create_status, "region_set": region_id, "edition_set": edition_id,
@@ -326,6 +338,100 @@ class FetchSessionCatalogTests(unittest.TestCase):
 
         result = fetch_session_catalog(FakeSubmitSession([[]]), store_id="127")
         self.assertEqual(result, {"ok": False, "reason": "no_openable_offer"})
+
+
+class ResolveCatalogIdTests(unittest.TestCase):
+    REGIONS = [{"key": "2", "text": "GLOBAL"}, {"key": "9", "text": "Steam EU (9)"}]
+    EDITIONS = [{"key": "1", "text": "Standard"}, {"key": "7", "text": "Deluxe"}]
+
+    def test_unambiguous_label_match_wins_over_stale_id(self):
+        from src.submitter import resolve_catalog_id
+
+        # Matcher had a stale id (999) but the label maps cleanly → trust label.
+        r = resolve_catalog_id("Deluxe", "999", self.EDITIONS)
+        self.assertEqual(r["id"], "7")
+        self.assertEqual(r["text"], "Deluxe")
+        self.assertEqual(r["source"], "label")
+        self.assertTrue(r["changed"])
+        self.assertEqual(r["matcher_id"], "999")
+
+    def test_label_match_agrees_with_id_is_not_flagged_changed(self):
+        from src.submitter import resolve_catalog_id
+
+        r = resolve_catalog_id("Standard", "1", self.EDITIONS)
+        self.assertEqual(r["id"], "1")
+        self.assertFalse(r["changed"])
+
+    def test_ambiguous_label_falls_back_to_validated_id(self):
+        from src.submitter import resolve_catalog_id
+
+        # A bare "EU" label matches no single catalog text (regions are composite
+        # like "Steam EU (9)"); fall back to the matcher's id and take its text.
+        r = resolve_catalog_id("EU", "9", self.REGIONS)
+        self.assertEqual(r["id"], "9")
+        self.assertEqual(r["text"], "Steam EU (9)")
+        self.assertEqual(r["source"], "id")
+        self.assertFalse(r["changed"])
+
+    def test_region_suffix_is_stripped_for_matching(self):
+        from src.submitter import resolve_catalog_id
+
+        # The label carries the "(9)" suffix exactly as the catalog renders it.
+        r = resolve_catalog_id("Steam EU (9)", "2", self.REGIONS)
+        self.assertEqual(r["id"], "9")
+        self.assertEqual(r["source"], "label")
+        self.assertTrue(r["changed"])
+
+    def test_unknown_label_and_id_is_fail_closed(self):
+        from src.submitter import resolve_catalog_id
+
+        self.assertIsNone(resolve_catalog_id("Nonesuch", "424242", self.EDITIONS))
+
+
+class CatalogResolutionInWritePathTests(unittest.TestCase):
+    def test_write_path_fetches_catalog_and_threads_labels_as_queries(self):
+        session = FakeWriteSession([["1"]])
+        result = _real(session, [_cand("1")], click_mode="trusted", limit=1)
+        # Catalog was fetched once and summarized in the result.
+        self.assertEqual(result["catalog"]["regions_count"], 2)
+        self.assertEqual(result["catalog"]["editions_count"], 2)
+        # The canonical catalog text is threaded down as the type-to-filter query.
+        self.assertEqual(session.last_region_query, "GLOBAL")
+        self.assertEqual(session.last_edition_query, "Standard")
+        entry = result["plan"][0]
+        self.assertEqual(entry["edition_resolution"]["source"], "label")
+        self.assertEqual(entry["edition_text"], "Standard")
+
+    def test_stale_edition_id_is_overridden_by_catalog_label(self):
+        cand = _cand("1", edition_id="999")
+        cand["edition"]["label"] = "Deluxe"
+        session = FakeWriteSession([["1"]])
+        result = Submitter(session, click_mode="trusted").run(
+            run_id="r", merchant="Driffle", store_id="127", approved=[cand], pace=0, limit=1,
+        )
+        # Resolution swapped the stale 999 for the live Deluxe id (7) and the
+        # trusted fill used the resolved id, not the matcher's.
+        self.assertEqual(result["plan"][0]["edition_id"], "7")
+        self.assertTrue(result["plan"][0]["edition_resolution"]["changed"])
+        self.assertEqual(session.fill_calls[0], ("offer[region]", "2", "offer[edition]", "7", "trusted"))
+        self.assertEqual(session.last_edition_query, "Deluxe")
+
+    def test_label_absent_from_catalog_blocks_offer_no_write(self):
+        cand = _cand("1", edition_id="424242")
+        cand["edition"]["label"] = "Phantom Edition"
+        session = FakeWriteSession([["1"]])
+        result = _real(session, [cand], click_mode="trusted", limit=1)
+        entry = result["plan"][0]
+        self.assertFalse(entry["ready"])
+        self.assertIn("edition not in session catalog", entry["blocker"])
+        self.assertEqual(session.fill_calls, [])  # fail-closed: never wrote
+
+    def test_catalog_unavailable_aborts_before_any_write(self):
+        session = FakeWriteSession([[]])  # no openable offer → catalog fetch fails
+        result = _real(session, [_cand("1")], click_mode="trusted", limit=1)
+        self.assertEqual(result["aborted"], "catalog_unavailable")
+        self.assertEqual(result["plan"], [])
+        self.assertEqual(session.fill_calls, [])
 
 
 class FakeInspectSession(FakeSubmitSession):
@@ -539,7 +645,7 @@ class FillThenClickTrustedTests(unittest.TestCase):
         sess._evaluate = eval_stub
         sess.click_trusted_at_element = lambda selector=None: click_result
         pick_seq = [region_pick, edition_pick]
-        sess.select_via_trusted = lambda name, val: pick_seq.pop(0)
+        sess.select_via_trusted = lambda name, val, query=None: pick_seq.pop(0)
         sess.form_validity = lambda: (
             form_validity if form_validity is not None
             else {"ok": True, "form_valid": True, "checked": 3, "invalid_required": []}
@@ -719,6 +825,45 @@ class SelectViaTrustedTests(unittest.TestCase):
         # Second click at option center (100+120, 240+12) = (220, 252)
         self.assertEqual(sess._sent[4][1]["x"], 220.0)
         self.assertEqual(sess._sent[4][1]["y"], 252.0)
+
+    def test_query_types_label_to_filter_then_clicks_option(self):
+        # The wanted option may be beyond Selectize's ~1000 render cap, so a
+        # query must be typed (trusted Input.insertText) after opening the
+        # dropdown and before reading/clicking the option (2026-07-07 catalog).
+        input_rect = json.dumps({"ok": True, "x": 100, "y": 200, "width": 240, "height": 32,
+                                 "top": 200, "left": 100, "bottom": 232, "right": 340,
+                                 "viewport": {"w": 1280, "h": 720}})
+        option_rect = json.dumps({"ok": True, "x": 100, "y": 240, "width": 240, "height": 24,
+                                  "top": 240, "left": 100, "bottom": 264, "right": 340,
+                                  "viewport": {"w": 1280, "h": 720}})
+        readback = json.dumps({"ok": True, "select_value": "1",
+                               "selectize_value": "1", "validity_valid": True})
+        sess = self._sess([input_rect, option_rect, readback])
+        result = sess.select_via_trusted("offer[edition]", "1", query="Standard")
+        self.assertEqual(result["status"], "SELECTED")
+        self.assertEqual(result["query"], "Standard")
+        self.assertEqual(result["typed_query"], "Standard")
+        # insertText fired exactly once, between the two trusted clicks (3+1+3).
+        methods = [c[0] for c in sess._sent]
+        self.assertEqual(methods, ["Input.dispatchMouseEvent"] * 3
+                         + ["Input.insertText"]
+                         + ["Input.dispatchMouseEvent"] * 3)
+        insert = [c for c in sess._sent if c[0] == "Input.insertText"]
+        self.assertEqual(insert, [("Input.insertText", {"text": "Standard"})])
+
+    def test_no_query_does_not_type(self):
+        input_rect = json.dumps({"ok": True, "x": 100, "y": 200, "width": 240, "height": 32,
+                                 "top": 200, "left": 100, "bottom": 232, "right": 340,
+                                 "viewport": {"w": 1280, "h": 720}})
+        option_rect = json.dumps({"ok": True, "x": 100, "y": 240, "width": 240, "height": 24,
+                                  "top": 240, "left": 100, "bottom": 264, "right": 340,
+                                  "viewport": {"w": 1280, "h": 720}})
+        readback = json.dumps({"ok": True, "select_value": "9",
+                               "selectize_value": "9", "validity_valid": True})
+        sess = self._sess([input_rect, option_rect, readback])
+        result = sess.select_via_trusted("offer[region]", "9")
+        self.assertNotIn("typed_query", result)
+        self.assertFalse(any(c[0] == "Input.insertText" for c in sess._sent))
 
     def test_no_selectize_input_returns_early_no_clicks(self):
         input_rect = json.dumps({"ok": False, "reason": "no_wrapper"})

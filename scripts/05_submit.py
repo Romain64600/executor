@@ -194,6 +194,14 @@ def main() -> int:
     lines = [header, ""]
     for entry in result["plan"]:
         lines.append(f"[{_status(entry, write)}] {entry['offer_id']} — {entry['merchant_title']}")
+        for kind in ("region", "edition"):
+            res = entry.get(f"{kind}_resolution")
+            if isinstance(res, dict):
+                flag = " CHANGED" if res.get("changed") else ""
+                lines.append(
+                    f"    {kind}: id={res.get('id')} ({res.get('text')!r}) "
+                    f"via {res.get('source')} matcher_id={res.get('matcher_id')}{flag}"
+                )
         if entry.get("ready") and not write:
             lines.append(f"    {entry['would_submit']}")
         if entry.get("ready") and write and not entry.get("submitted"):
@@ -234,7 +242,7 @@ def main() -> int:
                 lines.append(f"    net: {req.get('via')} {req.get('method')} {req.get('url')} -> {req.get('status')}")
     (out_dir / "submit_report.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    print(json.dumps({
+    summary = {
         "mode": "submit" if write else "dry_run",
         "aborted": result["aborted"],
         "stopped": result["stopped"],
@@ -242,7 +250,10 @@ def main() -> int:
         "created" if write else "ready": len(done),
         "total": len(result["plan"]),
         "out_dir": str(out_dir),
-    }, indent=2))
+    }
+    if result.get("catalog"):
+        summary["catalog"] = result["catalog"]
+    print(json.dumps(summary, indent=2))
     return 0
 
 
