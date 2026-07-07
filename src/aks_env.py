@@ -234,7 +234,12 @@ def _http_open(request: Request, timeout: int, follow_redirects: bool = True):
     return build_opener(_NoRedirectHandler()).open(request, timeout=timeout)
 
 
-def http_get(url: str, timeout: int = 5, follow_redirects: bool = True) -> HttpProbeResult:
+def http_get(
+    url: str,
+    timeout: int = 5,
+    follow_redirects: bool = True,
+    user_agent: str | None = None,
+) -> HttpProbeResult:
     """Perform a read-only GET request.
 
     With ``follow_redirects=False`` a 3xx is reported with its real status code
@@ -242,7 +247,7 @@ def http_get(url: str, timeout: int = 5, follow_redirects: bool = True) -> HttpP
     checks see the true first hop.
     """
 
-    request = Request(url, method="GET", headers={"User-Agent": REQUIRED_USER_AGENT})
+    request = Request(url, method="GET", headers={"User-Agent": user_agent or REQUIRED_USER_AGENT})
     try:
         with _http_open(request, timeout=timeout, follow_redirects=follow_redirects) as response:
             return _response_to_probe(url, response)

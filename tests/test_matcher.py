@@ -3,6 +3,7 @@ import unittest
 from src.aks_env import HttpProbeResult
 from src.contracts import NormalizedFeed, NormalizedOffer
 from src.matcher import (
+    AksProbeUnreliable,
     AksResolution,
     Candidate,
     SkippedOffer,
@@ -152,7 +153,7 @@ class SlugAndResolveTests(unittest.TestCase):
         self.assertIn("tom-clancys-rainbow-six-siege", slugs)
 
     def test_resolve_returns_first_real_page(self):
-        def fake_http(url, timeout=8):
+        def fake_http(url, timeout=8, user_agent=None):
             return HttpProbeResult(url=url, ok=True, status=200, body=AKS_PAGE)
 
         res = resolve_aks("Neon Beats", fake_http)
@@ -162,10 +163,30 @@ class SlugAndResolveTests(unittest.TestCase):
         self.assertIn("7", res.editions)
 
     def test_resolve_none_when_not_found(self):
-        def fake_http(url, timeout=8):
+        def fake_http(url, timeout=8, user_agent=None):
             return HttpProbeResult(url=url, ok=False, status=404, body="")
 
         self.assertIsNone(resolve_aks("Nope", fake_http))
+
+    def test_resolve_transient_failure_raises_not_none(self):
+        # 403/429/timeout are throttling, not proof of absence: a silent None
+        # here made candidate lists flap between back-to-back runs (2026-07-07).
+        def fake_http(url, timeout=8, user_agent=None):
+            return HttpProbeResult(url=url, ok=False, status=403, body="", error="403")
+
+        with self.assertRaises(AksProbeUnreliable):
+            resolve_aks("Neon Beats", fake_http)
+
+    def test_resolve_probe_sends_staff_ua(self):
+        seen = []
+
+        def fake_http(url, timeout=8, user_agent=None):
+            seen.append(user_agent)
+            return HttpProbeResult(url=url, ok=False, status=404, body="")
+
+        resolve_aks("Neon Beats", fake_http)
+        self.assertTrue(seen)
+        self.assertTrue(all(ua == "AKS/Staff" for ua in seen))
 
 
 class MatchOfferTests(unittest.TestCase):
@@ -200,6 +221,15 @@ class MatchOfferTests(unittest.TestCase):
     def test_no_aks_page_skips(self):
         result = match_offer(_offer("Neon Beats - Steam"), lambda name: None)
         self.assertIsInstance(result, SkippedOffer)
+
+    def test_unreliable_probe_skips_distinctly(self):
+        def resolver(name):
+            raise AksProbeUnreliable("neon-beats -> 429")
+
+        result = match_offer(_offer("Neon Beats - Steam"), resolver)
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("unreliable", result.reason)
+        self.assertNotIn("no AKS product page", result.reason)
 
     def test_normalized_block(self):
         offer = _offer("Neon Beats - Full Version (PC) - Steam Key - GLOBAL")
@@ -320,6 +350,7 @@ class G2ARulesTests(unittest.TestCase):
             "NBA 2K25: 200,000 VC (PC) - Steam Key - GLOBAL": "VC",
             "Path of Exile 100 Exalted Orbs (PC)": "ORBS",
             "Growtopia Gem Fountain - GLOBAL": "GEM",
+            "Growtopia Royal Grow Pass - GLOBAL": "PASS",
             "Fallout 4 (PC) - Steam Player Trade - GLOBAL": "STEAM PLAYER TRADE",
             "Elden Ring Pre-Order Bonus (PC) - Steam Key - EUROPE": "preorder",
             "Resident Evil 4 Standard & Deluxe (PC) - Steam Key - GLOBAL": "&",

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -26,6 +27,11 @@ from src.aks_env import http_get
 from src.contracts import NormalizedFeed, NormalizedOffer
 
 AKS_BUY_URL = "https://www.allkeyshop.com/blog/buy-{slug}-cd-key-compare-prices/"
+# Staff anti-bot bypass UA for the resolve probes (2026-07-07): bulk runs with
+# the plain browser UA get intermittently throttled, which silently flipped
+# real product pages into "no AKS page" between two matcher runs.
+AKS_PROBE_UA = "AKS/Staff"
+AKS_PROBE_DELAY_S = 0.3
 
 # -- classification tables --------------------------------------------------
 CONSOLE_TOKENS = ("XBOX", "PLAYSTATION", "PS4", "PS5", "PSN", "NINTENDO", "SWITCH")
@@ -176,6 +182,10 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
         return "DLC in title"
     if " PREORDER BONUS " in padded or " PRE ORDER BONUS " in padded:
         return "preorder bonus"
+    # "Royal Grow Pass", "Battle Pass", "Game Pass"… — in-game passes are not
+    # games ("Season Pass" is caught above as a category).
+    if " PASS " in padded:
+        return "skip category: PASS (in-game/battle pass)"
     if " + " in offer.name:
         return "possible multi-game bundle"
     if re.search(r"(?:DELUXE|GOLD|PREMIUM|ULTIMATE|COMPLETE|STANDARD|DEFINITIVE|GOTY)\s*&"
@@ -346,13 +356,27 @@ class AksResolution:
     editions: dict[str, Any] = field(default_factory=dict)
 
 
+class AksProbeUnreliable(Exception):
+    """A slug probe failed with something other than a clean 404.
+
+    403/429/5xx/timeouts under bulk load are transient throttling, not proof
+    that the product page does not exist — treating them as "no AKS page"
+    makes candidate lists flap between runs. Fail closed, distinctly.
+    """
+
+
 def resolve_aks(name: str, http_get_fn: Callable[..., Any] = http_get) -> AksResolution | None:
     """Try each candidate slug read-only; return the first real product page."""
 
+    transient: list[str] = []
     for slug in build_slug_candidates(name):
         url = aks_url(slug)
-        probe = http_get_fn(url, timeout=8)
+        if http_get_fn is http_get:
+            time.sleep(AKS_PROBE_DELAY_S)  # politeness budget for bulk AKS runs
+        probe = http_get_fn(url, timeout=8, user_agent=AKS_PROBE_UA)
         if not (probe.ok and probe.status == 200 and probe.body):
+            if probe.status not in (404, 410):
+                transient.append(f"{slug} -> {probe.status or probe.error}")
             continue
         product_id = extract_product_id(probe.body)
         if not product_id:
@@ -365,6 +389,8 @@ def resolve_aks(name: str, http_get_fn: Callable[..., Any] = http_get) -> AksRes
             aks_name=aks_name,
             editions=extract_editions(probe.body),
         )
+    if transient:
+        raise AksProbeUnreliable("; ".join(transient))
     return None
 
 
@@ -435,7 +461,10 @@ def match_offer(
     if region_id is None:
         return SkippedOffer(offer, f"no region id for {platform}/{region_label}")
 
-    resolution = resolver(offer.name)
+    try:
+        resolution = resolver(offer.name)
+    except AksProbeUnreliable as exc:
+        return SkippedOffer(offer, f"AKS probe unreliable (throttled?): {exc}")
     if resolution is None:
         return SkippedOffer(offer, "no AKS product page found (slug not 200)")
 
