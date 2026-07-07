@@ -3,6 +3,7 @@ import unittest
 from src.aks_env import HttpProbeResult
 from src.contracts import NormalizedFeed, NormalizedOffer
 from src.matcher import (
+    AksNameUnreadable,
     AksProbeUnreliable,
     AksResolution,
     Candidate,
@@ -177,6 +178,19 @@ class SlugAndResolveTests(unittest.TestCase):
         with self.assertRaises(AksProbeUnreliable):
             resolve_aks("Neon Beats", fake_http)
 
+    def test_resolve_unreadable_name_raises_not_echoes(self):
+        # A 200 page with a product id but no extractable name must NOT fall
+        # back to the offer title (2026-07-07: the fallback made every name
+        # check compare the title to itself — a Microsoft Store Key offer
+        # became a candidate).
+        page = '<html><body><div data-product-id="207"></div></body></html>'
+
+        def fake_http(url, timeout=8, user_agent=None):
+            return HttpProbeResult(url=url, ok=True, status=200, body=page)
+
+        with self.assertRaises(AksNameUnreadable):
+            resolve_aks("Call of Duty: Modern Warfare 3 (2011)", fake_http)
+
     def test_resolve_probe_sends_staff_ua(self):
         seen = []
 
@@ -231,6 +245,14 @@ class MatchOfferTests(unittest.TestCase):
         self.assertIn("unreliable", result.reason)
         self.assertNotIn("no AKS product page", result.reason)
 
+    def test_unreadable_aks_name_skips_distinctly(self):
+        def resolver(name):
+            raise AksNameUnreadable("call-of-duty-modern-warfare-3")
+
+        result = match_offer(_offer("Neon Beats - Steam"), resolver)
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("unreadable", result.reason)
+
     def test_normalized_block(self):
         offer = _offer("Neon Beats - Full Version (PC) - Steam Key - GLOBAL")
         block = match_offer(offer, self._resolver()).normalized_block(1)
@@ -267,6 +289,23 @@ class DifferentProductTests(unittest.TestCase):
         result = match_offer(offer, self._resolver("Bus Simulator 27"))
         self.assertIsInstance(result, Candidate)
         self.assertEqual((result.region_label, result.region_id), ("GLOBAL", "2"))
+
+    def test_single_extra_word_is_a_different_product(self):
+        # 2026-07-07: "Interdimensional" is a DLC — one significant extra word
+        # is enough to skip (skill floor was ≥2, tightened; doubt → skip).
+        offer = _offer("Offworld Trading Company - Interdimensional (PC) - Steam Key - EUROPE")
+        result = match_offer(offer, self._resolver("Offworld Trading Company"))
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("extra words", result.reason)
+        self.assertIn("INTERDIMENSIONAL", result.reason)
+
+    def test_gog_com_key_is_not_an_extra_word(self):
+        # "GOG.COM Key" tokenizes to GOG + COM; both are format noise, not a
+        # different product ("Brutal Legend (PC) - GOG.COM Key - GLOBAL").
+        self.assertEqual(
+            extra_significant_words(
+                "Brutal Legend", "Brutal Legend (PC) - GOG.COM Key - GLOBAL"),
+            [])
 
 
 class GiftRegionTests(unittest.TestCase):
@@ -328,6 +367,24 @@ class G2ARulesTests(unittest.TestCase):
                "?___currency=EUR&utm_campaign=COM_GLOBAL_PB")
         self.assertEqual(detect_region(_offer("X", url=url), "STEAM"), ("EU", "9", False))
 
+    def test_microsoft_store_key_is_skipped(self):
+        # G2A.md skip list: Microsoft Key. "Microsoft STORE Key" dodged the
+        # MICROSOFT KEY substring on 2026-07-07 and surfaced as Steam US(8).
+        offer = _offer(
+            "Call of Duty: Modern Warfare 3 (2011) (PC) - Microsoft Store Key - UNITED STATES"
+        )
+        result = match_offer(offer, self._resolver())
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("skip category", result.reason)
+
+    def test_microsoft_platform_fails_closed_but_flight_simulator_is_steam(self):
+        self.assertEqual(detect_platform("X (PC) - Microsoft Store Key - GLOBAL"), "MICROSOFT")
+        self.assertEqual(detect_platform("X (PC) - Microsoft Key - GLOBAL"), "MICROSOFT")
+        self.assertEqual(
+            detect_platform("Microsoft Flight Simulator 2024 (PC) - Steam Key - GLOBAL"),
+            "STEAM",
+        )
+
     def test_query_junk_never_sets_region(self):
         url = "https://www.g2a.com/some-game-i123?adid=x-eu-y&utm_campaign=COM_GLOBAL_PB"
         label, rid, implicit = detect_region(_offer("Some Game", url=url), "STEAM")
@@ -363,11 +420,13 @@ class G2ARulesTests(unittest.TestCase):
     def test_ampersand_in_game_name_not_skipped(self):
         self.assertIsNone(precheck_skip(_offer("Sam & Max Save the World (PC) - Steam Key - GLOBAL")))
 
-    def test_trilogy_without_aks_trilogy_is_bundle_skip(self):
+    def test_trilogy_without_aks_trilogy_is_skipped(self):
+        # TRILOGY absent from the AKS name now trips the ≥1 extra-word guard
+        # before the bundle-edition backstop; either way it must be skipped.
         result = match_offer(
             _offer("Neon Beats Trilogy (PC) - Steam Key - GLOBAL"), self._resolver())
         self.assertIsInstance(result, SkippedOffer)
-        self.assertIn("bundle edition", result.reason)
+        self.assertIn("TRILOGY", result.reason)
 
     def test_trilogy_product_falls_back_to_standard(self):
         # "…Trilogy" that IS the AKS product name (N. Sane style) = Standard.

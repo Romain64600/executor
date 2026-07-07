@@ -48,7 +48,7 @@ CATEGORY_SKIP = (
     "PREPAID", "SOFTWARE", "ANTIVIRUS", "OFFICE", "VPN", "POINTS", "CREDITS",
     "COINS", "GEMS", "DIAMONDS", "TOP-UP", "TOP UP", "MEMBERSHIP", "CURRENCY",
     "ACTIVATION LINK", "STEAM ACCOUNT", "STEAM GIFT CARD",
-    "MICROSOFT KEY", "SEASON PASS", "STEAM PLAYER TRADE",
+    "MICROSOFT KEY", "MICROSOFT STORE", "SEASON PASS", "STEAM PLAYER TRADE",
 )
 # Short in-game currency tokens (G2A.md): substring matching would false-hit
 # ordinary words ("ORB" in "Absorber"), so these are word-boundary only.
@@ -88,6 +88,7 @@ NOISE_TOKENS = {
     "BATTLE", "NET", "BATTLENET", "KEY", "KEYS", "CD", "CDKEY", "DIGITAL", "DOWNLOAD",
     "CODE", "GAME", "VERSION", "FULL", "PLATFORM", "WINDOWS", "ACTIVATION", "EDITION",
     "STANDARD", "GLOBAL", "WORLDWIDE", "WW", "EU", "EUROPE", "US", "USA", "UK", "ROW",
+    "COM",  # "GOG.COM Key" tokenizes to GOG + COM
     "GIFT", "REGION", "FREE", "DELUXE", "ULTIMATE", "PREMIUM", "GOLD", "GOTY",
     "COMPLETE", "COLLECTION", "BUNDLE", "PACK", "DEFINITIVE", "REMASTERED", "REMASTER",
     "ANNIVERSARY", "THE", "OF", "AND", "A", "AN", "FOR", "TO", "WITH", "VS",
@@ -134,9 +135,11 @@ def missing_aks_words(aks_name: str, merchant_title: str) -> list[str]:
 def extra_significant_words(aks_name: str, merchant_title: str) -> list[str]:
     """Merchant tokens absent from the AKS name and not platform/region/format noise.
 
-    ≥2 of these (or an extra bare number = version) signals a different or expanded
-    product (skill CORE: "titre a ≥2 mots absents du nom AKS → SKIP"; e.g. GreedFall
-    "The Dying World" is not base GreedFall).
+    ANY of these signals a different or expanded product. The skill CORE floor is
+    ≥2 ("titre a ≥2 mots absents du nom AKS → SKIP"; e.g. GreedFall "The Dying
+    World"), tightened to ≥1 on 2026-07-07: "Offworld Trading Company -
+    Interdimensional" (a DLC) slipped through with the single extra word
+    "INTERDIMENSIONAL". Doubt goes to skip.
     """
 
     aks = set(tokenize(aks_name))
@@ -212,6 +215,10 @@ def detect_platform(title: str) -> str:
         return "BATTLENET"
     if "ROCKSTAR" in t:
         return "ROCKSTAR"  # no REGION_IDS entry -> fail-closed skip, not Steam
+    if "MICROSOFT STORE" in t or "MICROSOFT KEY" in t:
+        # Key-type markers only: "Microsoft Flight Simulator … Steam Key" is a
+        # Steam product. No REGION_IDS entry -> fail-closed skip (G2A.md).
+        return "MICROSOFT"
     return "STEAM"  # default; most PC keys are Steam
 
 
@@ -365,10 +372,21 @@ class AksProbeUnreliable(Exception):
     """
 
 
+class AksNameUnreadable(Exception):
+    """An AKS page answered 200 with a product id but no extractable name.
+
+    R01 (name verification) cannot run without it. Falling back to the offer
+    title made every name check compare the title to itself (2026-07-07: a
+    "Microsoft Store Key - UNITED STATES" offer sailed through as a
+    candidate). Fail closed, distinctly.
+    """
+
+
 def resolve_aks(name: str, http_get_fn: Callable[..., Any] = http_get) -> AksResolution | None:
     """Try each candidate slug read-only; return the first real product page."""
 
     transient: list[str] = []
+    unreadable: list[str] = []
     for slug in build_slug_candidates(name):
         url = aks_url(slug)
         if http_get_fn is http_get:
@@ -381,7 +399,12 @@ def resolve_aks(name: str, http_get_fn: Callable[..., Any] = http_get) -> AksRes
         product_id = extract_product_id(probe.body)
         if not product_id:
             continue
-        aks_name = extract_aks_name(probe.body) or name
+        aks_name = extract_aks_name(probe.body)
+        if not aks_name:
+            # Never fall back to the offer title: name checks would compare
+            # the title to itself and pass anything (fail-open).
+            unreadable.append(slug)
+            continue
         return AksResolution(
             slug=slug,
             url=url,
@@ -389,6 +412,8 @@ def resolve_aks(name: str, http_get_fn: Callable[..., Any] = http_get) -> AksRes
             aks_name=aks_name,
             editions=extract_editions(probe.body),
         )
+    if unreadable:
+        raise AksNameUnreadable("; ".join(unreadable))
     if transient:
         raise AksProbeUnreliable("; ".join(transient))
     return None
@@ -465,6 +490,8 @@ def match_offer(
         resolution = resolver(offer.name)
     except AksProbeUnreliable as exc:
         return SkippedOffer(offer, f"AKS probe unreliable (throttled?): {exc}")
+    except AksNameUnreadable as exc:
+        return SkippedOffer(offer, f"AKS page name unreadable — cannot verify product (R01): {exc}")
     if resolution is None:
         return SkippedOffer(offer, "no AKS product page found (slug not 200)")
 
@@ -473,7 +500,7 @@ def match_offer(
         return SkippedOffer(offer, f"name mismatch, missing AKS words: {missing}")
 
     extras = extra_significant_words(resolution.aks_name, offer.name)
-    if len(extras) >= 2 or any(e.isdigit() for e in extras):
+    if extras:
         return SkippedOffer(offer, f"different/expanded product — extra words: {extras}")
 
     qualifier = dangerous_qualifier(offer.name, resolution.aks_name)
