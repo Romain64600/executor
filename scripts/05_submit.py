@@ -31,6 +31,7 @@ if str(ROOT) not in sys.path:
 
 from src.aks_env import OFFICIAL_CDP_ENDPOINT  # noqa: E402
 from src.invariants import build_report  # noqa: E402
+from src.pacing import Pacer  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
 from src.submit_session import SubmitSession, WriteSubmitSession  # noqa: E402
 from src.submitter import (  # noqa: E402
@@ -81,6 +82,17 @@ def main() -> int:
              "session_catalog.json next to the approved.json path. Run once per "
              "data-entry session to pick up new regions/editions.",
     )
+    parser.add_argument(
+        "--pace-pages", default="1-3",
+        help="Seconds between feed-scan page loads (index + every post-save verify "
+             "re-walk the feed), 'N' or 'MIN-MAX' (bounded-random, burst mitigation). "
+             "0 disables. Default: 1-3.",
+    )
+    parser.add_argument(
+        "--pace-offers", default="5-15",
+        help="Seconds between successive offers, 'N' or 'MIN-MAX' (bounded-random). "
+             "0 disables. Default: 5-15.",
+    )
     args = parser.parse_args()
 
     modes = [m for m in (args.inspect, args.submit, args.catalog) if m]
@@ -90,6 +102,13 @@ def main() -> int:
     if args.click_mode is not None and not args.submit:
         print("--click-mode is only meaningful with --submit", file=sys.stderr)
         return 2
+    try:
+        page_pacer = Pacer.from_spec(args.pace_pages)
+        offer_pacer = Pacer.from_spec(args.pace_offers)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    pacer_kw = {"page_pacer": page_pacer, "offer_pacer": offer_pacer}
 
     # Fail-closed gate: invariants must be green AND authoritative. Retry a couple
     # times — a transient red (e.g. AKS rate-limit right after the matcher's GET
@@ -145,7 +164,7 @@ def main() -> int:
             file=sys.stderr,
         )
         with SubmitSession(args.endpoint) as session:
-            result = InspectSubmitter(session, logger=logger).run(
+            result = InspectSubmitter(session, logger=logger, **pacer_kw).run(
                 run_id=run_id, merchant=args.merchant, store_id=args.store_id,
                 approved=approved_slice, available=args.available, max_pages=args.max_pages,
             )
@@ -177,7 +196,7 @@ def main() -> int:
     submitter_cls = Submitter if write else DryRunSubmitter
     submitter_kw = {"click_mode": click_mode} if write else {}
     with session_cls(args.endpoint) as session:
-        result = submitter_cls(session, logger=logger, **submitter_kw).run(
+        result = submitter_cls(session, logger=logger, **pacer_kw, **submitter_kw).run(
             run_id=run_id, merchant=args.merchant, store_id=args.store_id,
             approved=approved, available=args.available, max_pages=args.max_pages, limit=limit,
         )

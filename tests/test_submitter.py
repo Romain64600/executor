@@ -2,6 +2,7 @@ import json
 import re
 import unittest
 
+from src.pacing import Pacer
 from src.submitter import DryRunSubmitter, InspectSubmitter, Submitter
 
 
@@ -63,7 +64,7 @@ class FakeSubmitSession:
 
 def _run(session, approved):
     return DryRunSubmitter(session).run(
-        run_id="r", merchant="Driffle", store_id="127", approved=approved, pace=0
+        run_id="r", merchant="Driffle", store_id="127", approved=approved
     )
 
 
@@ -194,7 +195,7 @@ class ReflowWriteSession(FakeWriteSession):
 
 def _real(session, approved, click_mode="native", **kw):
     return Submitter(session, click_mode=click_mode).run(
-        run_id="r", merchant="Driffle", store_id="127", approved=approved, pace=0, **kw
+        run_id="r", merchant="Driffle", store_id="127", approved=approved, **kw
     )
 
 
@@ -291,7 +292,7 @@ class RealSubmitTests(unittest.TestCase):
         session = FakeWriteSession([["1"]])
         Submitter(session).run(
             run_id="r", merchant="Driffle", store_id="127",
-            approved=[_cand("1")], pace=0, limit=1,
+            approved=[_cand("1")], limit=1,
         )
         self.assertEqual(session.fill_calls[0][-1], "trusted")
 
@@ -456,7 +457,7 @@ class CatalogResolutionInWritePathTests(unittest.TestCase):
         cand["edition"]["label"] = "Deluxe"
         session = FakeWriteSession([["1"]])
         result = Submitter(session, click_mode="trusted").run(
-            run_id="r", merchant="Driffle", store_id="127", approved=[cand], pace=0, limit=1,
+            run_id="r", merchant="Driffle", store_id="127", approved=[cand], limit=1,
         )
         # Resolution swapped the stale 999 for the live Deluxe id (7) and the
         # trusted fill used the resolved id, not the matcher's.
@@ -524,7 +525,7 @@ class FakeInspectSession(FakeSubmitSession):
 
 def _inspect(session, approved):
     return InspectSubmitter(session).run(
-        run_id="r", merchant="Driffle", store_id="127", approved=approved, pace=0
+        run_id="r", merchant="Driffle", store_id="127", approved=approved
     )
 
 
@@ -1244,6 +1245,38 @@ class TargetsProbeTests(unittest.TestCase):
         sess = SubmitSession.__new__(SubmitSession)
         sess.evaluate_readonly = lambda js: ""
         self.assertFalse(sess.probe_targets_field()["ok"])
+
+
+class PacingTests(unittest.TestCase):
+    def test_page_pacer_spaces_feed_scan_page_loads(self):
+        sleeps = []
+        pacer = Pacer(1, 1, sleeper=sleeps.append)
+        session = FakeSubmitSession([["1", "2"], ["3"]])
+        DryRunSubmitter(session, page_pacer=pacer).run(
+            run_id="r", merchant="Driffle", store_id="127", approved=[_cand("1")]
+        )
+        # index scan: p1 (never paced) → p2 (paced) → p3 empty (paced) = 2 waits
+        self.assertEqual(pacer.waits, 2)
+        self.assertEqual(sleeps, [1.0, 1.0])
+
+    def test_offer_pacer_waits_after_each_dry_run_offer(self):
+        pacer = Pacer(1, 1, sleeper=lambda s: None)
+        session = FakeSubmitSession([["1", "2"]])
+        DryRunSubmitter(session, offer_pacer=pacer).run(
+            run_id="r", merchant="Driffle", store_id="127",
+            approved=[_cand("1"), _cand("2")]
+        )
+        self.assertEqual(pacer.waits, 2)
+
+    def test_write_mode_offer_pacer_skips_not_ready_offers(self):
+        pacer = Pacer(1, 1, sleeper=lambda s: None)
+        session = FakeWriteSession([["1"]])
+        Submitter(session, click_mode="native", offer_pacer=pacer).run(
+            run_id="r", merchant="Driffle", store_id="127",
+            approved=[_cand("1"), _cand("9")], limit=None
+        )
+        # offer 1 is ready (paced after); offer 9 not in the feed (skip, no pace)
+        self.assertEqual(pacer.waits, 1)
 
 
 if __name__ == "__main__":

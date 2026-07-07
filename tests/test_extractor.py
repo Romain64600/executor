@@ -11,7 +11,9 @@ from src.extractor import (
     NotLoggedInError,
     feed_url,
     parse_offers_payload,
+    parse_page_range,
 )
+from src.pacing import Pacer
 from src.step_guard import StepGuard
 
 
@@ -247,6 +249,149 @@ class ExtractSweepTests(unittest.TestCase):
         self.assertEqual(extractor.last_stats["rows_seen"], 6)
         self.assertEqual(extractor.last_stats["last_page"], 2)
 
+
+class PageRangeTests(unittest.TestCase):
+    def test_single_page(self):
+        self.assertEqual(parse_page_range("3"), (3, 3))
+
+    def test_range(self):
+        self.assertEqual(parse_page_range("3-5"), (3, 5))
+
+    def test_invalid_ranges_rejected(self):
+        for bad in ("", "a", "0", "5-3", "1-2-3"):
+            with self.assertRaises(ValueError, msg=bad):
+                parse_page_range(bad)
+
+
+class ExtractPagesTests(unittest.TestCase):
+    def _feed4(self):
+        return FakeSession({
+            1: [_state([_offer(1)], nav_max=4)],
+            2: [_state([_offer(2)], nav_max=4)],
+            3: [_state([_offer(3)], nav_max=4)],
+            4: [_state([_offer(4)], nav_max=4)],
+        })
+
+    def test_slice_fetches_only_requested_pages_once(self):
+        session = self._feed4()
+        extractor = _extractor(session)
+        snapshot, feed = extractor.extract_pages(
+            run_id="r1", merchant="M", store_id=1, first_page=2, last_page=3
+        )
+        self.assertEqual([o.offer_id for o in feed.offers], ["2", "3"])
+        self.assertEqual(session.visits(1), 0)
+        self.assertEqual(session.visits(2), 1)
+        self.assertEqual(session.visits(3), 1)
+        self.assertEqual(session.visits(4), 0)
+        self.assertEqual(snapshot.pages_scanned, 2)
+        stats = extractor.last_stats
+        self.assertEqual(stats["mode"], "pages")
+        self.assertTrue(stats["partial"])
+        self.assertEqual(stats["pages_requested"], [2, 3])
+        self.assertEqual(stats["feed_last_page"], 4)
+
+    def test_slice_past_feed_end_stops_cleanly(self):
+        session = FakeSession({
+            1: [_state([_offer(1)], nav_max=2)],
+            2: [_state([_offer(2)], nav_max=2)],
+        })
+        extractor = _extractor(session)
+        _, feed = extractor.extract_pages(
+            run_id="r1", merchant="M", store_id=1, first_page=2, last_page=5
+        )
+        self.assertEqual([o.offer_id for o in feed.offers], ["2"])
+        self.assertEqual(session.visits(3), 2)  # a blank page is never trusted once
+        self.assertEqual(session.visits(4), 0)
+        self.assertEqual(extractor.last_stats["feed_last_page"], 2)
+
+    def test_slice_starting_past_end_returns_zero_offers(self):
+        session = FakeSession({1: [_state([_offer(1)], nav_max=0)]})
+        snapshot, feed = _extractor(session).extract_pages(
+            run_id="r1", merchant="M", store_id=1, first_page=3, last_page=4
+        )
+        self.assertEqual(len(feed.offers), 0)
+        self.assertEqual(snapshot.pages_scanned, 1)
+        self.assertEqual(session.visits(4), 0)
+
+    def test_slice_empty_feed_on_page_one(self):
+        session = FakeSession({1: [_state([], nav_max=0)]})
+        _, feed = _extractor(session).extract_pages(
+            run_id="r1", merchant="M", store_id=1, first_page=1, last_page=3
+        )
+        self.assertEqual(len(feed.offers), 0)
+        self.assertEqual(session.visits(1), 2)  # blank confirmed by re-fetch
+        self.assertEqual(session.visits(2), 0)
+
+    def test_slice_blank_in_range_page_aborts(self):
+        session = FakeSession({
+            1: [_state([_offer(1)], nav_max=3)],
+            2: [_state([], nav_max=3)],
+            3: [_state([_offer(3)], nav_max=3)],
+        })
+        with self.assertRaises(EmptyPageAnomaly):
+            _extractor(session).extract_pages(
+                run_id="r1", merchant="M", store_id=1, first_page=1, last_page=3
+            )
+
+    def test_slice_login_bounce_aborts(self):
+        session = FakeSession({2: [_state([], feed_ui=False, is_login=True)]})
+        with self.assertRaises(NotLoggedInError):
+            _extractor(session).extract_pages(
+                run_id="r1", merchant="M", store_id=1, first_page=2, last_page=2
+            )
+        self.assertEqual(session.visits(2), 1)  # no blind retry on a login bounce
+
+    def test_slice_dedupes_repeated_ids(self):
+        session = FakeSession({
+            1: [_state([_offer(1), _offer(2)], nav_max=2)],
+            2: [_state([_offer(2), _offer(3)], nav_max=2)],
+        })
+        _, feed = _extractor(session).extract_pages(
+            run_id="r1", merchant="M", store_id=1, first_page=1, last_page=2
+        )
+        self.assertEqual([o.offer_id for o in feed.offers], ["1", "2", "3"])
+
+    def test_slice_validates_range(self):
+        extractor = _extractor(self._feed4())
+        with self.assertRaises(ValueError):
+            extractor.extract_pages(
+                run_id="r1", merchant="M", store_id=1, first_page=0, last_page=1
+            )
+        with self.assertRaises(ValueError):
+            extractor.extract_pages(
+                run_id="r1", merchant="M", store_id=1, first_page=3, last_page=2
+            )
+
+    def test_slice_guard_signatures(self):
+        guard = StepGuard(max_attempts_per_signature=2)
+        _extractor(self._feed4(), guard=guard).extract_pages(
+            run_id="r1", merchant="M", store_id=1, first_page=2, last_page=2
+        )
+        sigs = guard.snapshot()["counters"]["attempts_by_signature"]
+        self.assertIn("feed:M:s1:p2", sigs)
+        self.assertFalse(guard.blocked)
+
+
+class ExtractorPacingTests(unittest.TestCase):
+    def test_slice_paces_between_fetches_never_before_first(self):
+        sleeps = []
+        pacer = Pacer(1, 1, sleeper=sleeps.append)
+        session = FakeSession({
+            1: [_state([_offer(1)], nav_max=2)],
+            2: [_state([_offer(2)], nav_max=2)],
+        })
+        _extractor(session, pacer=pacer).extract_pages(
+            run_id="r1", merchant="M", store_id=1, first_page=1, last_page=2
+        )
+        self.assertEqual(len(sleeps), 1)  # 2 fetches → 1 inter-page wait
+
+    def test_sweep_mode_paces_between_fetches(self):
+        sleeps = []
+        pacer = Pacer(1, 1, sleeper=sleeps.append)
+        session = FakeSession({1: [_state([_offer(1)], nav_max=0)]})
+        _extractor(session, pacer=pacer).extract(run_id="r1", merchant="M", store_id=1)
+        # sweep 1 p1 + confirming sweep 2 p1 = 2 fetches → 1 wait
+        self.assertEqual(len(sleeps), 1)
 
 class ReadOnlyGuardTests(unittest.TestCase):
     def test_page_state_js_is_considered_read_only(self):

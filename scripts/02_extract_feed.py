@@ -29,8 +29,10 @@ from src.extractor import (  # noqa: E402
     FeedExtractor,
     FeedUnstableError,
     NotLoggedInError,
+    parse_page_range,
 )
 from src.invariants import build_report  # noqa: E402
+from src.pacing import Pacer  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
 from src.step_guard import StepGuard, StepGuardError  # noqa: E402
 
@@ -49,9 +51,29 @@ def main() -> int:
         help="Full-feed sweeps to attempt; extraction is complete only when a "
         "whole sweep adds 0 new offers (unstable-ordering coverage proof).",
     )
+    parser.add_argument(
+        "--pages",
+        default=None,
+        help="Page-par-page mode: fetch ONLY these feed pages, once ('3' or "
+        "'3-5'). The result is PARTIAL (no coverage sweeps) — for working a "
+        "large feed one slice at a time. Ignores --max-pages/--max-sweeps.",
+    )
+    parser.add_argument(
+        "--pace",
+        default="2-5",
+        help="Seconds between page fetches, 'N' or 'MIN-MAX' (bounded-random, "
+        "burst mitigation). 0 disables. Default: 2-5.",
+    )
     parser.add_argument("--out-dir", default=None)
     parser.add_argument("--run-id", default=None)
     args = parser.parse_args()
+
+    try:
+        pacer = Pacer.from_spec(args.pace)
+        page_range = parse_page_range(args.pages) if args.pages else None
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
     # Fail-closed gate: never extract unless invariants are green on the target.
     report = build_report(endpoint=args.endpoint)
@@ -78,15 +100,25 @@ def main() -> int:
 
     try:
         with ReadOnlyCdpSession(args.endpoint) as session:
-            extractor = FeedExtractor(session, guard=guard, logger=logger)
-            snapshot, feed = extractor.extract(
-                run_id=run_id,
-                merchant=args.merchant,
-                store_id=args.store_id,
-                available=args.available,
-                max_pages=args.max_pages,
-                max_sweeps=args.max_sweeps,
-            )
+            extractor = FeedExtractor(session, guard=guard, logger=logger, pacer=pacer)
+            if page_range is not None:
+                snapshot, feed = extractor.extract_pages(
+                    run_id=run_id,
+                    merchant=args.merchant,
+                    store_id=args.store_id,
+                    first_page=page_range[0],
+                    last_page=page_range[1],
+                    available=args.available,
+                )
+            else:
+                snapshot, feed = extractor.extract(
+                    run_id=run_id,
+                    merchant=args.merchant,
+                    store_id=args.store_id,
+                    available=args.available,
+                    max_pages=args.max_pages,
+                    max_sweeps=args.max_sweeps,
+                )
     except (NotLoggedInError, EmptyPageAnomaly, FeedUnstableError, StepGuardError) as exc:
         print(
             json.dumps(
@@ -113,6 +145,7 @@ def main() -> int:
                 "raw_offers": len(snapshot.raw_offers),
                 "normalized_offers": len(feed.offers),
                 "coverage": extractor.last_stats,
+                "pacing": pacer.snapshot(),
                 "out_dir": str(out_dir),
                 "guard_blocked": guard.blocked,
             },

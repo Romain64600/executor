@@ -18,10 +18,10 @@ Depends only on a ``session`` object, so both are unit-testable with a fake.
 from __future__ import annotations
 
 import re
-import time
 from typing import Any
 
 from src.extractor import DEFAULT_FEED_PAGE, feed_url
+from src.pacing import Pacer
 from src.run_log import RunLogger
 from src.step_guard import StepGuard
 
@@ -133,7 +133,15 @@ class _SubmitterBase:
     write_mode = False
     event_name = "dry_run_offer"
 
-    def __init__(self, session: Any, *, guard: StepGuard | None = None, logger: RunLogger | None = None) -> None:
+    def __init__(
+        self,
+        session: Any,
+        *,
+        guard: StepGuard | None = None,
+        logger: RunLogger | None = None,
+        page_pacer: Pacer | None = None,
+        offer_pacer: Pacer | None = None,
+    ) -> None:
         self.session = session
         self.guard = guard or StepGuard(
             max_attempts_per_signature=1,
@@ -142,6 +150,11 @@ class _SubmitterBase:
             max_failures_per_task=10 ** 9,
         )
         self.logger = logger
+        # Burst mitigation (chantier n°2): page_pacer spaces the feed-scan page
+        # loads (index + every post-save verify re-walk the feed), offer_pacer
+        # spaces successive offers. Never a correctness mechanism.
+        self.page_pacer = page_pacer
+        self.offer_pacer = offer_pacer
         self.catalog: dict[str, Any] | None = None
         self._region_master: list[dict[str, Any]] = []
         self._edition_master: list[dict[str, Any]] = []
@@ -193,6 +206,8 @@ class _SubmitterBase:
         empty = 0
         for page in range(1, max_pages + 1):
             url = feed_url(store_id, page=page, feed_page=feed_page, available=available)
+            if page > 1 and self.page_pacer is not None:
+                self.page_pacer.wait()
             self.session.navigate(url)
             ids = self.session.page_offer_ids()
             if not ids:
@@ -290,7 +305,6 @@ class _SubmitterBase:
         feed_page: str = DEFAULT_FEED_PAGE,
         available: str = "all",
         max_pages: int = 40,
-        pace: float = 0.5,
         limit: int | None = None,
         catalog: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -357,10 +371,16 @@ class _SubmitterBase:
                 stopped = "ten_consecutive_failures"
                 self._log("run_stopped", reason=stopped)
                 break
-            if pace and (not self.write_mode or entry.get("ready")):
-                time.sleep(pace)
+            if self.offer_pacer is not None and (not self.write_mode or entry.get("ready")):
+                self.offer_pacer.wait()
 
         if self.logger is not None:
+            if self.page_pacer is not None or self.offer_pacer is not None:
+                self._log(
+                    "pacing",
+                    pages=self.page_pacer.snapshot() if self.page_pacer else None,
+                    offers=self.offer_pacer.snapshot() if self.offer_pacer else None,
+                )
             self.logger.log_guard(self.guard.snapshot())
         result = {
             "aborted": None,

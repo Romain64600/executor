@@ -29,6 +29,13 @@ signatures (``feed:<merchant>:s<sweep>:p<page>``, so the blank retry is attempt
 The extractor depends only on a ``session`` object exposing ``navigate(url)``
 and ``evaluate_readonly(expr)``, so it is fully unit-testable with a fake
 session.
+
+Chantier n°2 (2026-07-07): :meth:`FeedExtractor.extract_pages` is the
+page-par-page mode — it fetches ONE explicit page range once, so an iteration
+works a slice of the feed instead of sweeping all of it. A slice never proves
+coverage and is always reported ``partial``. An optional
+:class:`~src.pacing.Pacer` inserts a bounded-random delay between page fetches
+(both modes) so large feeds are not walked in a burst.
 """
 
 from __future__ import annotations
@@ -39,6 +46,7 @@ import time
 from typing import Any
 
 from src.contracts import NormalizedFeed, RawSnapshot
+from src.pacing import Pacer
 from src.run_log import RunLogger
 from src.step_guard import StepGuard
 
@@ -100,6 +108,26 @@ def feed_url(
     return admin_url + query
 
 
+def parse_page_range(spec: str) -> tuple[int, int]:
+    """Parse a CLI page-range spec: ``"3"`` → (3, 3), ``"3-5"`` → (3, 5)."""
+
+    parts = str(spec).strip().split("-")
+    try:
+        if len(parts) == 1:
+            first = last = int(parts[0])
+        elif len(parts) == 2:
+            first, last = int(parts[0]), int(parts[1])
+        else:
+            raise ValueError
+    except ValueError:
+        raise ValueError(f"invalid page range {spec!r} — want 'N' or 'FIRST-LAST'") from None
+    if first < 1:
+        raise ValueError(f"invalid page range {spec!r} — pages start at 1")
+    if first > last:
+        raise ValueError(f"invalid page range {spec!r} — first must be <= last")
+    return first, last
+
+
 def parse_offers_payload(payload: Any) -> list[dict]:
     """Parse a list of ``data-offer`` attribute strings into offer dicts.
 
@@ -130,19 +158,29 @@ class FeedExtractor:
         *,
         guard: StepGuard | None = None,
         logger: RunLogger | None = None,
+        pacer: Pacer | None = None,
     ) -> None:
         self.session = session
         self.guard = guard or StepGuard(max_attempts_per_signature=2)
         self.logger = logger
+        self.pacer = pacer
         self.empty_retry_wait_s = EMPTY_RETRY_WAIT_S
         self.last_stats: dict[str, Any] = {}
+        self._fetched_once = False
 
     def _log(self, event: str, **fields: Any) -> None:
         if self.logger is not None:
             self.logger.log(event, **fields)
 
+    def _pace(self) -> None:
+        """Bounded-random wait between page fetches — never before the first."""
+
+        if self.pacer is not None and self._fetched_once:
+            self.pacer.wait()
+
     def _page_state(self, *, merchant: str, sweep: int, page: int, url: str) -> Any:
         def _fetch() -> Any:
+            self._fetched_once = True
             self.session.navigate(url)
             payload = self.session.evaluate_readonly(PAGE_STATE_JS)
             return json.loads(payload) if isinstance(payload, str) else payload
@@ -223,6 +261,7 @@ class FeedExtractor:
                     )
 
                 url = feed_url(store_id, page=page, feed_page=feed_page, available=available)
+                self._pace()
                 state = self._settled_page_state(
                     merchant=merchant, sweep=sweep, page=page, url=url
                 )
@@ -310,6 +349,8 @@ class FeedExtractor:
             )
 
         self.last_stats = {
+            "mode": "sweeps",
+            "partial": False,
             "sweeps": sweeps_done,
             "last_page": last_page,
             "pages_scanned": max_page_reached,
@@ -335,5 +376,137 @@ class FeedExtractor:
             normalized_count=len(feed.offers),
         )
         if self.logger is not None:
+            if self.pacer is not None:
+                self.logger.log("pacing", **self.pacer.snapshot())
+            self.logger.log_guard(self.guard.snapshot())
+        return snapshot, feed
+
+    def extract_pages(
+        self,
+        *,
+        run_id: str,
+        merchant: str,
+        store_id: str | int,
+        first_page: int,
+        last_page: int,
+        feed_page: str = DEFAULT_FEED_PAGE,
+        available: str = "all",
+    ) -> tuple[RawSnapshot, NormalizedFeed]:
+        """Page-par-page mode: fetch ONE explicit page range, once, read-only.
+
+        A slice NEVER proves coverage — the result is always ``partial`` and
+        downstream must treat it as "these offers were on pages first..last at
+        fetch time", nothing more. Fail-closed classification is identical to
+        sweep mode (login bounce and unexplained blank pages abort); the two
+        legitimate early stops are an empty queue (page 1) and a slice that
+        extends past the feed's current end (``past_end``).
+        """
+
+        if first_page < 1:
+            raise ValueError("first_page must be >= 1")
+        if first_page > last_page:
+            raise ValueError("first_page must be <= last_page")
+
+        self.guard.start_task(run_id)
+        seen: set[str] = set()
+        raw_offers: list[dict] = []
+        rows_seen = 0
+        pages_fetched = 0
+        feed_last_page = 0
+        source_url = feed_url(
+            store_id, page=first_page, feed_page=feed_page, available=available
+        )
+
+        for page in range(first_page, last_page + 1):
+            url = feed_url(store_id, page=page, feed_page=feed_page, available=available)
+            self._pace()
+            state = self._settled_page_state(merchant=merchant, sweep=1, page=page, url=url)
+            pages_fetched += 1
+            page_offers = parse_offers_payload(state.get("offers"))
+            nav_max = int(state.get("nav_max") or 0)
+            feed_ui = bool(state.get("feed_ui"))
+            feed_last_page = max(feed_last_page, nav_max, 1 if feed_ui else 0)
+
+            if not page_offers:
+                if page == 1 and feed_ui and nav_max == 0:
+                    self._log(
+                        "feed_page",
+                        merchant=merchant, mode="pages", page=page,
+                        offers_on_page=0, new_offers=0, nav_max=0, empty_feed=True,
+                    )
+                    break
+                if feed_ui and nav_max < page:
+                    # The slice extends past the feed's current end — a
+                    # legitimate stop in slice mode, not an anomaly.
+                    self._log(
+                        "feed_page",
+                        merchant=merchant, mode="pages", page=page,
+                        offers_on_page=0, new_offers=0, nav_max=nav_max, past_end=True,
+                    )
+                    break
+                self._log(
+                    "aborted",
+                    reason="in-range page rendered 0 rows twice",
+                    mode="pages", page=page, feed_ui=feed_ui, nav_max=nav_max,
+                )
+                raise EmptyPageAnomaly(
+                    f"page {page}: 0 rows twice while "
+                    + (
+                        f"the feed UI is rendered and its nav advertises {nav_max} page(s)"
+                        if feed_ui
+                        else "the feed UI did not render"
+                    )
+                    + " — transient blank render or feed breakage; refusing to "
+                    "treat this as an empty feed"
+                )
+
+            rows_seen += len(page_offers)
+            new = 0
+            for offer in page_offers:
+                offer_id = str(offer.get("id", "")).strip()
+                if not offer_id or offer_id in seen:
+                    continue
+                seen.add(offer_id)
+                raw_offers.append(offer)
+                new += 1
+            self._log(
+                "feed_page",
+                merchant=merchant, mode="pages", page=page,
+                offers_on_page=len(page_offers), new_offers=new, nav_max=nav_max,
+            )
+
+        self.last_stats = {
+            "mode": "pages",
+            "partial": True,
+            "pages_requested": [first_page, last_page],
+            "pages_fetched": pages_fetched,
+            "feed_last_page": feed_last_page,
+            "rows_seen": rows_seen,
+            "distinct_offers": len(seen),
+        }
+        snapshot = RawSnapshot.create(
+            run_id=run_id,
+            merchant=merchant,
+            store_id=store_id,
+            source_url=source_url,
+            raw_offers=raw_offers,
+            pages_scanned=pages_fetched,
+        )
+        feed = NormalizedFeed.from_snapshot(snapshot)
+        self._log(
+            "feed_extracted",
+            merchant=merchant,
+            mode="pages",
+            partial=True,
+            pages_requested=[first_page, last_page],
+            pages_fetched=pages_fetched,
+            feed_last_page=feed_last_page,
+            rows_seen=rows_seen,
+            raw_count=len(raw_offers),
+            normalized_count=len(feed.offers),
+        )
+        if self.logger is not None:
+            if self.pacer is not None:
+                self.logger.log("pacing", **self.pacer.snapshot())
             self.logger.log_guard(self.guard.snapshot())
         return snapshot, feed

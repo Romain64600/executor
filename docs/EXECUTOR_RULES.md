@@ -114,6 +114,19 @@ site** `[F01]`.
   so the payload fits the return limit (skill Phase 1).
 - Fields available in `data-offer`: `id`, `name` (title — not `title`), `url`
   (not `buy_url`), `storeId`, `price`, `stock`. Names vary per merchant — verify.
+- **Pacing between page fetches** (burst / IP-ban mitigation): a bounded-random
+  wait (`Pacer`, `src/pacing.py`) before every page fetch after the first.
+  CLI `--pace MIN-MAX`, default `2-5` s, `0` disables. Pacing is **never a
+  correctness mechanism** — settle waits and retries are separate and stay.
+- **Page-par-page slice mode** (`--pages 3` or `--pages 3-5`): fetches ONLY the
+  requested pages, once, for working a large feed one slice at a time. The
+  result is **always `partial: true`** — a slice NEVER claims coverage (no
+  sweeps, no `FeedUnstableError`); never treat a slice output as a full-feed
+  snapshot. Same fail-closed classification as sweep mode: login bounce →
+  `NotLoggedInError`; blank in-range page after one re-fetch →
+  `EmptyPageAnomaly`; only two legitimate early stops (empty queue on page 1,
+  past-the-end page). The output reports `feed_last_page` (from the pagination
+  nav) so the operator can plan the next slice.
 
 **Never** open the submit modal, submit, edit, or log in from this stage. Write
 a raw snapshot JSON + a normalized offers JSON.
@@ -251,7 +264,12 @@ For each validated candidate, in order, fail-closed:
    modal's **own** `admin-ajax do=create_offer`; we never issue a direct XHR
    (the merchant id is auto-assigned by the modal).
 9. Verify post-save (§7), then close via `#TB_closeWindowButton`.
-10. Pacing ≥ 500 ms between submissions `[S03]`.
+10. Pacing ≥ 500 ms between submissions `[S03]` — implemented as bounded-random
+    pacers (`src/pacing.py`): `--pace-offers` (default `5-15` s) between offers,
+    and `--pace-pages` (default `1-3` s) between feed-scan page loads — the real
+    burst source, since the full feed is re-walked for the index **and after
+    every creation** for post-save verify. `0` disables either. Pacing is never
+    a correctness mechanism.
 
 **Absolutely forbidden** `[SUBMISSION HARD OVERRIDE][S09][GOG]`: direct
 `admin-ajax` XHR; `form.dispatchEvent(...)`; `form.submit()`; any "fire and

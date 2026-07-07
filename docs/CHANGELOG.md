@@ -3,6 +3,37 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-07 — Chantier n°2: page-par-page + pacing humain
+
+Invited by Romain's audit ("le prochain incrément logique") now that the
+creation mechanism is frozen and live-proven. Addresses the burst / IP-ban risk
+on large volumes: the true bursts were the submitter's full-feed `_scan_feed`
+walks (index build + re-walk after **every** creation for post-save verify) and
+the extractor's multi-sweep walks (e.g. G2A: 27 pages × ≥2 sweeps) — the old
+0.5 s inter-offer pause was negligible against those.
+
+- `src/pacing.py` (new) — `Pacer`: bounded-random `uniform(min,max)` waits,
+  injectable rng/sleeper (tests never sleep), aggregate counters
+  (`waits`, `total_waited_s`) logged once per run via `snapshot()`.
+  `parse_pace_spec("0" | "3" | "2-5")`. Never a correctness mechanism —
+  settle waits stay separate.
+- `src/extractor.py` — paces before every page fetch after the first (both
+  modes). New `extract_pages(first_page, last_page)` slice mode: fetches only
+  the requested pages, once; result **always `partial: true`** (a slice never
+  claims coverage — no sweeps, no `FeedUnstableError`); same fail-closed
+  classification (login bounce, blank in-range page); reports `feed_last_page`
+  so the operator plans the next slice.
+- `src/submitter.py` — `page_pacer` between feed-scan page loads, `offer_pacer`
+  between offers (skips offers not actually processed in write mode). The old
+  `pace: float = 0.5` run() kwarg is removed. Engine stays neutral: pacers
+  default to `None`; the CLIs are the opinionated layer.
+- CLIs — `02_extract_feed.py`: `--pace` (default `2-5` s) and `--pages 3` /
+  `--pages 3-5`; `05_submit.py`: `--pace-pages` (default `1-3` s),
+  `--pace-offers` (default `5-15` s). `0` disables any of them.
+- Tests: 260 → 285 (pacing unit tests, slice-mode extraction incl. past-end /
+  empty-queue / blank-anomaly / dedupe / guard signatures, pacer wiring in
+  extractor + submitter).
+
 ## 2026-07-07 — Invariant gate hardened: `no_openvpn_process`
 
 A live audit found a Surfshark `openvpn` daemon running as root (no tun device,
