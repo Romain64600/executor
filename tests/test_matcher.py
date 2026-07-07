@@ -14,6 +14,7 @@ from src.matcher import (
     detect_platform,
     detect_region,
     extra_significant_words,
+    extract_aks_name,
     match_feed,
     match_offer,
     missing_aks_words,
@@ -152,6 +153,90 @@ class SlugAndResolveTests(unittest.TestCase):
     def test_slug_candidates_strip_parens_and_suffix(self):
         slugs = build_slug_candidates("Tom Clancy's Rainbow Six Siege (EU) (PC) - Ubisoft - Digital Key")
         self.assertIn("tom-clancys-rainbow-six-siege", slugs)
+
+    def test_slug_candidates_k4g_grammar_no_separators(self):
+        # K4G: `<Product> [Region] <Platform> CD Key`, no parens or dashes —
+        # the 2026-07-07 K4G run 404'd all 95 slugs before suffix peeling.
+        slugs = build_slug_candidates("Kingdom Two Crowns Call of Olympus Europe Steam CD Key")
+        self.assertEqual(slugs[0], "kingdom-two-crowns-call-of-olympus")
+        slugs = build_slug_candidates("Champions of Anteria United States Ubisoft Connect CD Key")
+        self.assertEqual(slugs[0], "champions-of-anteria")
+
+    def test_slug_candidates_edition_variant_after_full(self):
+        slugs = build_slug_candidates("FIFA 21 Ultimate Edition Europe Steam CD Key")
+        self.assertIn("fifa-21-ultimate-edition", slugs)
+        self.assertIn("fifa-21", slugs)
+        self.assertLess(slugs.index("fifa-21-ultimate-edition"), slugs.index("fifa-21"))
+
+    def test_slug_candidates_keep_dashed_subtitle_first(self):
+        # Dash-split used to amputate real names ("Endless Space - Disharmony"
+        # → "endless-space", the wrong product). Full name now goes first; the
+        # legacy head stays as a later fallback for Driffle/G2A grammar.
+        slugs = build_slug_candidates("Endless Space - Disharmony Steam CD Key")
+        self.assertEqual(slugs[0], "endless-space-disharmony")
+        self.assertIn("endless-space", slugs)
+        slugs = build_slug_candidates("Endzone - A World Apart (PC) - Steam Key - EUROPE")
+        self.assertEqual(slugs[0], "endzone-a-world-apart")
+        self.assertIn("endzone", slugs)
+
+    def test_slug_candidates_word_boundary_protects_titles(self):
+        # ORIGINS must not lose its S to the ORIGIN phrase; "Among Us" must
+        # survive (bare US/EU are not in the trailing-noise list).
+        slugs = build_slug_candidates("Assassin's Creed Origins Ubisoft Connect CD Key")
+        self.assertEqual(slugs[0], "assassins-creed-origins")
+        slugs = build_slug_candidates("Among Us (PC) - Steam Key - GLOBAL")
+        self.assertEqual(slugs[0], "among-us")
+
+    def test_platform_leftovers_are_not_significant_extras(self):
+        # CONNECT/GAMES/LAUNCHER/STORE are storefront noise, not product words:
+        # without this, every K4G "… Ubisoft Connect CD Key" title skipped as
+        # "different/expanded product" after a correct AKS resolution.
+        self.assertEqual(
+            extra_significant_words(
+                "Champions of Anteria",
+                "Champions of Anteria United States Ubisoft Connect CD Key",
+            ),
+            [],
+        )
+        self.assertEqual(
+            extra_significant_words(
+                "Alan Wake", "Alan Wake Epic Games Store CD Key"
+            ),
+            [],
+        )
+
+    def test_extract_aks_name_both_title_grammars(self):
+        def page(title):
+            return f'<meta property="og:title" content="{title}">'
+
+        # Classic grammar.
+        self.assertEqual(
+            extract_aks_name(page("Buy Neon Beats CD Key Compare Prices")),
+            "Neon Beats",
+        )
+        # Second live grammar (fifa-21 page, 2026-07-07): no Buy, no CD Key.
+        self.assertEqual(
+            extract_aks_name(page("FIFA 21 PC KEY Compare Prices")), "FIFA 21"
+        )
+        # Bare trailing "Key" is a real name, not a platform marker.
+        self.assertEqual(
+            extract_aks_name(page("Buy The Key CD Key Compare Prices")), "The Key"
+        )
+
+    def test_extract_aks_name_unescapes_entities(self):
+        # Live og:titles, K4G run 2026-07-07 (AKS flattens punctuation, keeps
+        # entities): "Exile&#039;s" tokenized to EXILE/039/S and falsely failed
+        # R01; "&amp;" left an AMP token.
+        body = (
+            '<meta property="og:title" '
+            'content="Buy Fellowship Exile&#039;s Supporter Pack CD Key Compare Prices">'
+        )
+        self.assertEqual(extract_aks_name(body), "Fellowship Exile's Supporter Pack")
+        body = (
+            '<meta property="og:title" '
+            'content="Buy Demeo x Dungeons &amp; Dragons Battlemarked CD Key Compare Prices">'
+        )
+        self.assertEqual(extract_aks_name(body), "Demeo x Dungeons & Dragons Battlemarked")
 
     def test_resolve_returns_first_real_page(self):
         def fake_http(url, timeout=8, user_agent=None):

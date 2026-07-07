@@ -385,6 +385,11 @@ Gamivo 51, Allyouplay 17, GOG 34.
   `offer[region]`/`offer[edition]`; dynamic feed → re-scan before submit.
 - **GOG**: everything is GOG GLOBAL(6)/Standard(1) unless the AKS page says
   otherwise; ~50% DLC/demo/OST → filter hard; modal only, never XHR.
+- **K4G**: store 92; titles read `<Product> [Edition] [Region] <Platform> CD
+  Key` with NO parens/dash separators → slug building must peel trailing
+  platform/region phrases (matcher `_TRAILING_NOISE_PHRASES`), and dashes
+  inside product names are real ("Endless Space - Disharmony"); heavy
+  console share (~25%); pagination `&p=N`, sweep until 0 new offers.
 
 ---
 

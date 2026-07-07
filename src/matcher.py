@@ -17,6 +17,7 @@ is injectable for tests.
 
 from __future__ import annotations
 
+import html
 import json
 import re
 import time
@@ -85,6 +86,7 @@ REGION_IDS = {
 # format / edition / stopwords). Used by the different-product guard.
 NOISE_TOKENS = {
     "PC", "MAC", "STEAM", "GOG", "EPIC", "EA", "APP", "ORIGIN", "UPLAY", "UBISOFT",
+    "CONNECT", "GAMES", "LAUNCHER", "STORE",  # "Ubisoft Connect" / "Epic Games Store"
     "BATTLE", "NET", "BATTLENET", "KEY", "KEYS", "CD", "CDKEY", "DIGITAL", "DOWNLOAD",
     "CODE", "GAME", "VERSION", "FULL", "PLATFORM", "WINDOWS", "ACTIVATION", "EDITION",
     "STANDARD", "GLOBAL", "WORLDWIDE", "WW", "EU", "EUROPE", "US", "USA", "UK", "ROW",
@@ -301,23 +303,83 @@ def detect_edition(title: str, url: str = "") -> tuple[str, str]:
     return ("Standard", "1")
 
 
-def _clean_name_for_slug(name: str) -> str:
-    without_parens = re.sub(r"\([^)]*\)", " ", normalize_apostrophes(name))
-    head = re.split(r"\s[-–—]\s", without_parens)[0]
-    return head
+# Trailing platform/region/format phrases peeled off titles before slugging.
+# K4G grammar is `<Product> [Edition] [Region] <Platform> CD Key` with no
+# separators, so parens-stripping + dash-splitting alone leaves 404 slugs.
+# Longest-first so "UBISOFT CONNECT" wins over "UBISOFT". Bare US/EU are
+# deliberately absent ("Among Us"); word-boundary keeps ORIGINS ≠ ORIGIN.
+_TRAILING_NOISE_PHRASES = tuple(sorted(
+    {
+        "CD KEY", "KEY", "STEAM GIFT", "STEAM", "GOG.COM", "GOG",
+        "EPIC GAMES STORE", "EPIC GAMES", "EPIC", "EA APP", "EA PLAY",
+        "EA ORIGIN", "ORIGIN", "UBISOFT CONNECT", "UPLAY", "UBISOFT",
+        "BATTLE.NET", "BATTLENET", "ROCKSTAR GAMES LAUNCHER", "ROCKSTAR GAMES",
+        "ROCKSTAR", "MICROSOFT STORE", "WINDOWS 11", "WINDOWS 10", "WINDOWS",
+        "PC", "GIFT", "DIGITAL DOWNLOAD", "DIGITAL",
+        "EUROPE & NORTH AMERICA", "EUROPE", "UNITED STATES", "UNITED KINGDOM",
+        "GLOBAL", "WORLDWIDE", "USA", "UK",
+        *FORBIDDEN_REGIONS,
+    },
+    key=len,
+    reverse=True,
+))
+# Edition words stripped (trailing only) for the fallback slug variant.
+# EDITION_HINTS vocabulary minus BUNDLE/PACK/TRILOGY/DLC: those name a
+# different product, and bundle/DLC titles are hard-skipped upstream anyway.
+_TRAILING_EDITION_PHRASES = (
+    "ULTIMATE COLLECTION", "GAME OF THE YEAR", "GOTY", "DELUXE", "GOLD",
+    "PREMIUM", "COMPLETE", "ULTIMATE", "COLLECTION", "STANDARD", "EDITION",
+)
+
+_SEPARATOR_CHARS = " \t-–—:,&|"
+
+
+def _strip_trailing_phrases(text: str, phrases: tuple[str, ...]) -> str:
+    changed = True
+    while changed:
+        changed = False
+        text = text.rstrip(_SEPARATOR_CHARS)
+        for phrase in phrases:
+            pattern = r"(?<![A-Za-z0-9])" + re.escape(phrase) + r"\s*$"
+            new = re.sub(pattern, "", text, flags=re.IGNORECASE)
+            if new != text:
+                text = new
+                changed = True
+                break
+    return text
 
 
 def build_slug_candidates(name: str) -> list[str]:
-    base = _clean_name_for_slug(name).lower()
-    variants = [
-        re.sub(r"[^a-z0-9]+", "-", base.replace("'", "")).strip("-"),
-        re.sub(r"[^a-z0-9]+", "-", base).strip("-"),
+    """Ordered AKS slug guesses, most specific first.
+
+    Tier 1: full name, parens + trailing market noise stripped (keeps dashed
+    subtitles like "Endless Space - Disharmony"). Tier 2: trailing edition
+    words also stripped (edition-specific AKS pages exist, so tier 1 goes
+    first). Tier 3: legacy dash-split head (Driffle/G2A "Name - Platform -
+    Region" grammar). Over-stripping only costs a probe: a wrong-page 200 is
+    caught by the R01 / extra-words guards downstream.
+    """
+
+    without_parens = re.sub(r"\([^)]*\)", " ", normalize_apostrophes(name)).strip()
+    full = _strip_trailing_phrases(without_parens, _TRAILING_NOISE_PHRASES)
+    head = re.split(r"\s[-–—]\s", without_parens)[0]
+    head = _strip_trailing_phrases(head, _TRAILING_NOISE_PHRASES)
+    bases = [
+        full,
+        _strip_trailing_phrases(full, _TRAILING_EDITION_PHRASES),
+        head,
+        _strip_trailing_phrases(head, _TRAILING_EDITION_PHRASES),
     ]
     out: list[str] = []
-    for variant in variants:
-        variant = re.sub(r"-+", "-", variant)
-        if variant and variant not in out:
-            out.append(variant)
+    for base in bases:
+        base = base.lower()
+        for variant in (
+            re.sub(r"[^a-z0-9]+", "-", base.replace("'", "")).strip("-"),
+            re.sub(r"[^a-z0-9]+", "-", base).strip("-"),
+        ):
+            variant = re.sub(r"-+", "-", variant)
+            if variant and variant not in out:
+                out.append(variant)
     return out
 
 
@@ -337,9 +399,18 @@ def extract_aks_name(body: str) -> str | None:
         match = re.search(r"<title>([^<]+)</title>", body, re.IGNORECASE)
     if not match:
         return None
-    name = match.group(1)
+    # og:title comes in two grammars (both live 2026-07-07):
+    #   "Buy <Name> CD Key Compare Prices"  and  "<Name> PC KEY Compare Prices".
+    # Entities must be unescaped ("Exile&#039;s" tokenized to EXILE/039/S and
+    # falsely failed R01).
+    name = html.unescape(match.group(1))
     name = re.split(r"(?i)\bcd key\b", name)[0]
+    name = re.split(r"(?i)\bcompare prices\b", name)[0]
     name = re.sub(r"(?i)^\s*buy\s+", "", name)
+    # Only the exact "PC KEY" platform marker: a bare trailing "Key" can be a
+    # real name ("The Key"), a bare trailing "PC" cannot.
+    name = re.sub(r"(?i)\s+pc\s+key\s*$", "", name)
+    name = re.sub(r"(?i)\s+pc\s*$", "", name)
     name = re.split(r"\s[|\-–]\s", name)[0]
     return name.strip() or None
 

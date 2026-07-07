@@ -3,6 +3,35 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-07 — Matcher: trailing-suffix slug peeling (K4G grammar)
+
+First K4G run (226 offers) yielded 0 candidates: 95/226 fell in "no AKS
+product page found" because `build_slug_candidates` only stripped parens and
+dash-split the head — useless against K4G's separator-less `<Product>
+[Edition] [Region] <Platform> CD Key` grammar, and the dash-split silently
+amputated real dashed names ("Endless Space - Disharmony" → "endless-space",
+a G2A-affecting bug too). Fix in `src/matcher.py`:
+
+- `_strip_trailing_phrases` + `_TRAILING_NOISE_PHRASES`: iteratively peel
+  end-anchored platform/region/format phrases (longest-first, word-boundary,
+  case-insensitive). Bare `US`/`EU` deliberately excluded ("Among Us");
+  `ORIGINS` ≠ `ORIGIN` by boundary.
+- `build_slug_candidates` now tiered, most specific first: (1) full
+  suffix-stripped name (keeps dashed subtitles), (2) + trailing edition words
+  stripped (`_TRAILING_EDITION_PHRASES` = EDITION_HINTS vocab minus
+  BUNDLE/PACK/TRILOGY/DLC), (3) legacy dash-split head (Driffle/G2A grammar).
+  Over-stripping costs one probe; wrong-page 200s stay caught by R01 +
+  extra-words guards.
+- `NOISE_TOKENS` += CONNECT/GAMES/LAUNCHER/STORE so correct resolutions are
+  not skipped as "different/expanded product" on storefront leftovers.
+- `extract_aks_name`: (a) `html.unescape` — `Exile&#039;s` tokenized to
+  EXILE/039/S and `&amp;` to AMP, falsely failing R01 on real matches; (b) AKS
+  serves a second og:title grammar (`FIFA 21 PC KEY Compare Prices` — no Buy,
+  no CD Key) → also split on "Compare Prices" and strip the trailing
+  `PC KEY`/`PC` platform marker (bare trailing "Key" kept: "The Key" is a
+  real name). Both grammars probed live before fixing.
+- K4G note added to EXECUTOR_RULES §11. Tests: 285 → 292.
+
 ## 2026-07-07 — Second-pass audit of `src/submit_session.py`
 
 The dedicated audit Romain requested (130 → 1204 lines). Full report appended
