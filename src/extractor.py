@@ -32,6 +32,14 @@ EXTRACT_JS = (
     ".map(function(e){return e.getAttribute('data-offer');}))"
 )
 
+_IS_LOGIN_JS = "!!document.querySelector('#loginform') || /wp-login/.test(location.href)"
+
+
+class NotLoggedInError(RuntimeError):
+    """The feed bounced to wp-login — extraction must abort loudly, never
+    return a silent empty feed (a 0-offer result is otherwise a legitimate
+    state that downstream stages act on)."""
+
 
 def feed_url(
     store_id: str | int,
@@ -119,6 +127,16 @@ class FeedExtractor:
                 success_predicate=lambda offers: isinstance(offers, list),
             )
             pages_scanned = page
+
+            # Fail-closed: an empty first page is ambiguous — either the queue is
+            # genuinely empty (legitimate) or we were bounced to wp-login. Probe
+            # the already-loaded page (no extra navigation) and abort loudly on
+            # the latter instead of returning a silent empty feed.
+            if page == 1 and not page_offers and bool(
+                self.session.evaluate_readonly(_IS_LOGIN_JS)
+            ):
+                self._log("aborted", reason="not logged in (wp-login)")
+                raise NotLoggedInError("feed bounced to wp-login — not logged in")
 
             new = 0
             for offer in page_offers:

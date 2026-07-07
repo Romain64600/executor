@@ -15,8 +15,10 @@ def _offer(i, **over):
 class FakeSession:
     """Returns canned pages as the EXTRACT_JS payload (array of data-offer strings)."""
 
-    def __init__(self, pages):
+    def __init__(self, pages, login=False):
         self.pages = pages
+        self.login = login
+        self.login_probes = 0
         self.nav = []
         self._i = 0
 
@@ -24,6 +26,9 @@ class FakeSession:
         self.nav.append(url)
 
     def evaluate_readonly(self, expression):
+        if "loginform" in expression:
+            self.login_probes += 1
+            return self.login
         page = self.pages[self._i] if self._i < len(self.pages) else []
         self._i += 1
         return json.dumps([json.dumps(o) for o in page])
@@ -80,10 +85,29 @@ class ExtractTests(unittest.TestCase):
         self.assertEqual([o["id"] for o in snapshot.raw_offers], ["1"])
 
     def test_empty_feed_yields_empty_snapshot(self):
-        extractor = FeedExtractor(FakeSession([[]]))
+        session = FakeSession([[]])
+        extractor = FeedExtractor(session)
         snapshot, feed = extractor.extract(run_id="r1", merchant="M", store_id=1)
         self.assertEqual(snapshot.pages_scanned, 1)
         self.assertEqual(len(feed.offers), 0)
+        # The empty first page is ambiguous → the login probe ran (and said no).
+        self.assertEqual(session.login_probes, 1)
+
+    def test_empty_first_page_on_login_page_aborts_loudly(self):
+        # Fail-closed: a wp-login bounce must raise, never return a silent
+        # empty feed (0 offers is otherwise a legitimate state — seen live
+        # 2026-07-07 when the Driffle queue genuinely emptied).
+        from src.extractor import NotLoggedInError
+
+        with self.assertRaises(NotLoggedInError):
+            FeedExtractor(FakeSession([[]], login=True)).extract(
+                run_id="r1", merchant="M", store_id=1
+            )
+
+    def test_non_empty_first_page_skips_login_probe(self):
+        session = FakeSession([[_offer(1)], []])
+        FeedExtractor(session).extract(run_id="r1", merchant="M", store_id=1)
+        self.assertEqual(session.login_probes, 0)
 
     def test_guard_is_exercised_per_page(self):
         session = FakeSession([[_offer(1)], []])

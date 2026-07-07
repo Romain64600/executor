@@ -24,7 +24,7 @@ if str(ROOT) not in sys.path:
 
 from src.aks_env import OFFICIAL_CDP_ENDPOINT  # noqa: E402
 from src.cdp_session import ReadOnlyCdpSession  # noqa: E402
-from src.extractor import FeedExtractor  # noqa: E402
+from src.extractor import FeedExtractor, NotLoggedInError  # noqa: E402
 from src.invariants import build_report  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
 from src.step_guard import StepGuard  # noqa: E402
@@ -64,15 +64,19 @@ def main() -> int:
     logger = RunLogger(run_id, log_dir=str(ROOT / "logs"))
     guard = StepGuard(max_attempts_per_signature=2)
 
-    with ReadOnlyCdpSession(args.endpoint) as session:
-        extractor = FeedExtractor(session, guard=guard, logger=logger)
-        snapshot, feed = extractor.extract(
-            run_id=run_id,
-            merchant=args.merchant,
-            store_id=args.store_id,
-            available=args.available,
-            max_pages=args.max_pages,
-        )
+    try:
+        with ReadOnlyCdpSession(args.endpoint) as session:
+            extractor = FeedExtractor(session, guard=guard, logger=logger)
+            snapshot, feed = extractor.extract(
+                run_id=run_id,
+                merchant=args.merchant,
+                store_id=args.store_id,
+                available=args.available,
+                max_pages=args.max_pages,
+            )
+    except NotLoggedInError as exc:
+        print(json.dumps({"aborted": True, "reason": str(exc), "run_id": run_id}, indent=2))
+        return 2
 
     (out_dir / "raw.json").write_text(json.dumps(snapshot.to_dict(), indent=2), encoding="utf-8")
     (out_dir / "offers.json").write_text(json.dumps(feed.to_dict(), indent=2), encoding="utf-8")
