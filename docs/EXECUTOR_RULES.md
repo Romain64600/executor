@@ -96,6 +96,18 @@ site** `[F01]`.
   dropdown — the dropdown can return third-party URLs (Kinguin trap) `[KINGUIN]`.
 - Pagination is `&p=N` (**not** `paged=N`); dedupe by offer id across all pages;
   scan every page `[F03][F03b]`.
+- The real page count comes from the feed's own pagination nav (`.tablenav`
+  links, rendered on every page incl. past-the-end) — bound the scan by it,
+  never by "first empty page" heuristics.
+- Some feeds re-order between page fetches (G2A 2026-07-07: 762 rows seen /
+  482 distinct in one pass) → repeat **full sweeps**, unioning by offer id,
+  until a whole sweep adds 0 new offers. Sweeps exhausted while still finding
+  new ids = abort loudly (`FeedUnstableError`), coverage not proven.
+- A blank in-range page is NEVER accepted at face value (seen live 2026-07-07:
+  transient blank render on page 1 passed as "empty feed"): re-fetch once,
+  then only two blank states are legitimate — page 1 with feed UI and **no**
+  pagination (empty queue) or a past-the-end page after a mid-sweep shrink.
+  Anything else aborts loudly (`EmptyPageAnomaly`).
 - `data-offer` is HTML-entity-encoded → `html.unescape()` **before**
   `json.loads()` `[F05]`.
 - For large feeds (>50 offers) filter in-page JS to return only relevant PC rows

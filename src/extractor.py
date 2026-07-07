@@ -1,22 +1,41 @@
 """Read-only merchant-feed extractor (Sprint 2).
 
-Navigates the WordPress admin merchant feed via a read-only CDP session, extracts
-the ``data-offer`` rows page by page (``&p=N``), dedupes by offer id, and produces
-a :class:`~src.contracts.RawSnapshot` + :class:`~src.contracts.NormalizedFeed`.
+Navigates the WordPress admin merchant feed via a read-only CDP session and
+unions the ``data-offer`` rows over repeated full sweeps, because some feeds
+(G2A, 2026-07-07: 762 rows seen / 482 distinct in one pass) re-order between
+page fetches — a single pass provably misses offers. A sweep walks pages
+``1..last_page`` where ``last_page`` comes from the feed's own pagination nav
+(deterministic, rendered on every page); sweeps repeat until a full sweep adds
+zero new offer ids, which is what proves coverage.
 
-It NEVER opens the submit modal, submits, edits, or logs in. Every page fetch runs
-through the :class:`~src.step_guard.StepGuard`; events and the guard snapshot are
-written to the JSONL run log. Fail-closed: if a page fetch errors, the guard
-records the failure and the exception propagates — no partial silent success.
+Each page fetch evaluates ONE page-state expression returning the offer rows
+plus three deterministic markers:
 
-The extractor depends only on a ``session`` object exposing ``navigate(url)`` and
-``evaluate_readonly(expr)``, so it is fully unit-testable with a fake session.
+- ``feed_ui``  — the ``table.wp-list-table`` rendered (page actually loaded);
+- ``nav_max``  — highest ``&p=N`` in the pagination nav (real page count);
+- ``is_login`` — bounced to wp-login.
+
+A blank in-range page is ambiguous (transient blank render vs genuinely empty
+feed vs feed shrank mid-sweep) — seen live 2026-07-07 when page 1 rendered 0
+rows once and a clean "empty feed" was wrongly accepted. Policy: wait, re-fetch
+once, then classify; anything not provably "empty queue" or "past the end"
+raises :class:`EmptyPageAnomaly`. Fail-closed, never a silent empty feed.
+
+It NEVER opens the submit modal, submits, edits, or logs in. Every page fetch
+runs through the :class:`~src.step_guard.StepGuard` with sweep-scoped
+signatures (``feed:<merchant>:s<sweep>:p<page>``, so the blank retry is attempt
+2/2 and a third same-page fetch in the same sweep is refused).
+
+The extractor depends only on a ``session`` object exposing ``navigate(url)``
+and ``evaluate_readonly(expr)``, so it is fully unit-testable with a fake
+session.
 """
 
 from __future__ import annotations
 
 import html
 import json
+import time
 from typing import Any
 
 from src.contracts import NormalizedFeed, RawSnapshot
@@ -26,19 +45,43 @@ from src.step_guard import StepGuard
 AKS_ADMIN_URL = "https://www.allkeyshop.com/blog/wp-admin/admin.php"
 DEFAULT_FEED_PAGE = "aks-merchant-feeds-9"
 
-# Returns a JSON array of the raw data-offer attribute strings currently on the page.
-EXTRACT_JS = (
-    "JSON.stringify(Array.from(document.querySelectorAll('[data-offer]'))"
-    ".map(function(e){return e.getAttribute('data-offer');}))"
+# One evaluate per page: raw data-offer attribute strings + deterministic
+# page-state markers (probed live on G2A 2026-07-07: past-the-end pages render
+# the same chrome with 0 rows, and the pagination nav is the only element that
+# exposes the feed's real page count — there is no WP ".no-items" marker here).
+PAGE_STATE_JS = (
+    "JSON.stringify({"
+    "offers: Array.from(document.querySelectorAll('[data-offer]'))"
+    ".map(function(e){return e.getAttribute('data-offer');}),"
+    "feed_ui: !!document.querySelector('table.wp-list-table'),"
+    "nav_max: (function(){var m=0;var links=document.querySelectorAll('.tablenav a');"
+    "for(var i=0;i<links.length;i++){var h=links[i].getAttribute('href')||'';"
+    "var mm=h.match(/[?&]p=(\\d+)/);if(mm){var n=parseInt(mm[1],10);if(n>m){m=n;}}}"
+    "return m;})(),"
+    "is_login: !!document.querySelector('#loginform') || /wp-login/.test(location.href)"
+    "})"
 )
 
-_IS_LOGIN_JS = "!!document.querySelector('#loginform') || /wp-login/.test(location.href)"
+# Wait before the single re-fetch of a blank page (on top of navigate's settle).
+EMPTY_RETRY_WAIT_S = 5.0
 
 
 class NotLoggedInError(RuntimeError):
     """The feed bounced to wp-login — extraction must abort loudly, never
     return a silent empty feed (a 0-offer result is otherwise a legitimate
     state that downstream stages act on)."""
+
+
+class EmptyPageAnomaly(RuntimeError):
+    """An in-range page rendered 0 rows twice without a deterministic
+    explanation (empty queue on page 1, or past-the-end after a shrink).
+    Transient blank render or feed breakage — abort, do not under-extract."""
+
+
+class FeedUnstableError(RuntimeError):
+    """Coverage could not be proven: the last allowed sweep still discovered
+    new offer ids (feed churning faster than we can sweep), or the feed
+    advertises more pages than the configured cap."""
 
 
 def feed_url(
@@ -58,7 +101,7 @@ def feed_url(
 
 
 def parse_offers_payload(payload: Any) -> list[dict]:
-    """Parse the ``EXTRACT_JS`` return value into a list of offer dicts.
+    """Parse a list of ``data-offer`` attribute strings into offer dicts.
 
     ``payload`` is a JSON array (or its string form) whose elements are the
     ``data-offer`` attribute strings. Each is HTML-entity-encoded, so we
@@ -79,7 +122,7 @@ def parse_offers_payload(payload: Any) -> list[dict]:
 
 
 class FeedExtractor:
-    """Paginate a merchant feed read-only and normalize it, through the guard."""
+    """Sweep a merchant feed read-only until stable and normalize it."""
 
     def __init__(
         self,
@@ -91,10 +134,53 @@ class FeedExtractor:
         self.session = session
         self.guard = guard or StepGuard(max_attempts_per_signature=2)
         self.logger = logger
+        self.empty_retry_wait_s = EMPTY_RETRY_WAIT_S
+        self.last_stats: dict[str, Any] = {}
 
     def _log(self, event: str, **fields: Any) -> None:
         if self.logger is not None:
             self.logger.log(event, **fields)
+
+    def _page_state(self, *, merchant: str, sweep: int, page: int, url: str) -> Any:
+        def _fetch() -> Any:
+            self.session.navigate(url)
+            payload = self.session.evaluate_readonly(PAGE_STATE_JS)
+            return json.loads(payload) if isinstance(payload, str) else payload
+
+        return self.guard.run_step(
+            "extract",
+            f"feed:{merchant}:s{sweep}:p{page}",
+            action=_fetch,
+            success_predicate=lambda s: isinstance(s, dict)
+            and isinstance(s.get("offers"), list),
+        )
+
+    def _abort_if_login(self, state: Any, *, sweep: int, page: int) -> None:
+        if isinstance(state, dict) and state.get("is_login"):
+            self._log("aborted", reason="not logged in (wp-login)", sweep=sweep, page=page)
+            raise NotLoggedInError("feed bounced to wp-login — not logged in")
+
+    def _settled_page_state(
+        self, *, merchant: str, sweep: int, page: int, url: str
+    ) -> dict:
+        """Fetch a page's state; on a blank/unreadable render, wait and re-fetch
+        ONCE (guard attempt 2/2), then let the caller classify. A login bounce
+        aborts immediately — retrying it blind would be pointless."""
+
+        state = self._page_state(merchant=merchant, sweep=sweep, page=page, url=url)
+        self._abort_if_login(state, sweep=sweep, page=page)
+        if isinstance(state, dict) and state.get("offers"):
+            return state
+
+        time.sleep(self.empty_retry_wait_s)
+        state = self._page_state(merchant=merchant, sweep=sweep, page=page, url=url)
+        self._abort_if_login(state, sweep=sweep, page=page)
+        if not isinstance(state, dict):
+            self._log("aborted", reason="page state unreadable after retry", sweep=sweep, page=page)
+            raise EmptyPageAnomaly(
+                f"sweep {sweep} page {page}: page state unreadable after retry"
+            )
+        return state
 
     def extract(
         self,
@@ -105,78 +191,146 @@ class FeedExtractor:
         feed_page: str = DEFAULT_FEED_PAGE,
         available: str = "all",
         max_pages: int = 40,
+        max_sweeps: int = 5,
     ) -> tuple[RawSnapshot, NormalizedFeed]:
+        if max_sweeps < 2:
+            raise ValueError("max_sweeps must be >= 2 — the extra sweep is what proves coverage")
+
         self.guard.start_task(run_id)
         seen: set[str] = set()
         raw_offers: list[dict] = []
-        empty_streak = 0
-        pages_scanned = 0
+        rows_seen = 0
+        last_page = 1
+        max_page_reached = 1
+        sweeps_done = 0
+        stable = False
         source_url = feed_url(store_id, feed_page=feed_page, available=available)
 
-        for page in range(1, max_pages + 1):
-            url = feed_url(store_id, page=page, feed_page=feed_page, available=available)
+        for sweep in range(1, max_sweeps + 1):
+            sweeps_done = sweep
+            new_in_sweep = 0
+            page = 1
+            while page <= last_page:
+                if last_page > max_pages:
+                    self._log(
+                        "aborted",
+                        reason=f"feed advertises {last_page} pages > max_pages {max_pages}",
+                    )
+                    raise FeedUnstableError(
+                        f"feed advertises {last_page} pages, above the max_pages cap "
+                        f"({max_pages}) — refusing to silently truncate coverage; "
+                        "re-run with a higher --max-pages"
+                    )
 
-            def _fetch(target: str = url) -> list[dict]:
-                self.session.navigate(target)
-                return parse_offers_payload(self.session.evaluate_readonly(EXTRACT_JS))
+                url = feed_url(store_id, page=page, feed_page=feed_page, available=available)
+                state = self._settled_page_state(
+                    merchant=merchant, sweep=sweep, page=page, url=url
+                )
+                page_offers = parse_offers_payload(state.get("offers"))
+                nav_max = int(state.get("nav_max") or 0)
+                feed_ui = bool(state.get("feed_ui"))
 
-            page_offers = self.guard.run_step(
-                "extract",
-                f"feed:{merchant}:p{page}",
-                action=_fetch,
-                success_predicate=lambda offers: isinstance(offers, list),
-            )
-            pages_scanned = page
+                if not page_offers:
+                    if page == 1 and feed_ui and nav_max == 0:
+                        # Feed UI rendered, no rows, no pagination: the queue is
+                        # genuinely empty (confirmed by the re-fetch above).
+                        self._log(
+                            "feed_page",
+                            merchant=merchant, sweep=sweep, page=page,
+                            offers_on_page=0, new_offers=0, nav_max=0,
+                            empty_feed=True,
+                        )
+                        break
+                    if page > 1 and feed_ui and nav_max < page:
+                        # The feed shrank mid-sweep; this page is now past the
+                        # end (its nav advertises fewer pages than requested).
+                        last_page = max(1, nav_max)
+                        self._log(
+                            "feed_page",
+                            merchant=merchant, sweep=sweep, page=page,
+                            offers_on_page=0, new_offers=0, nav_max=nav_max,
+                            past_end=True,
+                        )
+                        break
+                    self._log(
+                        "aborted",
+                        reason="in-range page rendered 0 rows twice",
+                        sweep=sweep, page=page, feed_ui=feed_ui, nav_max=nav_max,
+                    )
+                    raise EmptyPageAnomaly(
+                        f"sweep {sweep} page {page}: 0 rows twice while "
+                        + (
+                            f"the feed UI is rendered and its nav advertises {nav_max} page(s)"
+                            if feed_ui
+                            else "the feed UI did not render"
+                        )
+                        + " — transient blank render or feed breakage; refusing to "
+                        "treat this as an empty feed"
+                    )
 
-            # Fail-closed: an empty first page is ambiguous — either the queue is
-            # genuinely empty (legitimate) or we were bounced to wp-login. Probe
-            # the already-loaded page (no extra navigation) and abort loudly on
-            # the latter instead of returning a silent empty feed.
-            if page == 1 and not page_offers and bool(
-                self.session.evaluate_readonly(_IS_LOGIN_JS)
-            ):
-                self._log("aborted", reason="not logged in (wp-login)")
-                raise NotLoggedInError("feed bounced to wp-login — not logged in")
+                last_page = max(last_page, nav_max, page)
+                max_page_reached = max(max_page_reached, page)
+                rows_seen += len(page_offers)
+                new = 0
+                for offer in page_offers:
+                    offer_id = str(offer.get("id", "")).strip()
+                    if not offer_id or offer_id in seen:
+                        continue
+                    seen.add(offer_id)
+                    raw_offers.append(offer)
+                    new += 1
+                new_in_sweep += new
 
-            new = 0
-            for offer in page_offers:
-                offer_id = str(offer.get("id", "")).strip()
-                if not offer_id or offer_id in seen:
-                    continue
-                seen.add(offer_id)
-                raw_offers.append(offer)
-                new += 1
+                self._log(
+                    "feed_page",
+                    merchant=merchant, sweep=sweep, page=page,
+                    offers_on_page=len(page_offers), new_offers=new, nav_max=nav_max,
+                )
+                page += 1
 
             self._log(
-                "feed_page",
-                merchant=merchant,
-                page=page,
-                offers_on_page=len(page_offers),
-                new_offers=new,
+                "feed_sweep",
+                merchant=merchant, sweep=sweep, new_offers=new_in_sweep,
+                distinct=len(seen), rows_seen=rows_seen, last_page=last_page,
+            )
+            if new_in_sweep == 0:
+                stable = True
+                break
+
+        if not stable:
+            self._log(
+                "aborted",
+                reason=f"{max_sweeps} sweeps exhausted, feed ordering unstable",
+                distinct=len(seen), rows_seen=rows_seen,
+            )
+            raise FeedUnstableError(
+                f"after {max_sweeps} full sweeps the last sweep still discovered new "
+                f"offers ({len(seen)} distinct so far) — feed ordering too unstable "
+                "to prove coverage; re-run (possibly with --max-sweeps raised)"
             )
 
-            if not page_offers:
-                break
-            if new == 0:
-                empty_streak += 1
-                if empty_streak >= 2:
-                    break
-            else:
-                empty_streak = 0
-
+        self.last_stats = {
+            "sweeps": sweeps_done,
+            "last_page": last_page,
+            "pages_scanned": max_page_reached,
+            "rows_seen": rows_seen,
+            "distinct_offers": len(seen),
+        }
         snapshot = RawSnapshot.create(
             run_id=run_id,
             merchant=merchant,
             store_id=store_id,
             source_url=source_url,
             raw_offers=raw_offers,
-            pages_scanned=pages_scanned,
+            pages_scanned=max_page_reached,
         )
         feed = NormalizedFeed.from_snapshot(snapshot)
         self._log(
             "feed_extracted",
             merchant=merchant,
-            pages_scanned=pages_scanned,
+            sweeps=sweeps_done,
+            pages_scanned=max_page_reached,
+            rows_seen=rows_seen,
             raw_count=len(raw_offers),
             normalized_count=len(feed.offers),
         )

@@ -24,10 +24,15 @@ if str(ROOT) not in sys.path:
 
 from src.aks_env import OFFICIAL_CDP_ENDPOINT  # noqa: E402
 from src.cdp_session import ReadOnlyCdpSession  # noqa: E402
-from src.extractor import FeedExtractor, NotLoggedInError  # noqa: E402
+from src.extractor import (  # noqa: E402
+    EmptyPageAnomaly,
+    FeedExtractor,
+    FeedUnstableError,
+    NotLoggedInError,
+)
 from src.invariants import build_report  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
-from src.step_guard import StepGuard  # noqa: E402
+from src.step_guard import StepGuard, StepGuardError  # noqa: E402
 
 
 def main() -> int:
@@ -37,6 +42,13 @@ def main() -> int:
     parser.add_argument("--endpoint", default=OFFICIAL_CDP_ENDPOINT)
     parser.add_argument("--available", default="all", choices=["all", "pending"])
     parser.add_argument("--max-pages", type=int, default=40)
+    parser.add_argument(
+        "--max-sweeps",
+        type=int,
+        default=5,
+        help="Full-feed sweeps to attempt; extraction is complete only when a "
+        "whole sweep adds 0 new offers (unstable-ordering coverage proof).",
+    )
     parser.add_argument("--out-dir", default=None)
     parser.add_argument("--run-id", default=None)
     args = parser.parse_args()
@@ -73,9 +85,20 @@ def main() -> int:
                 store_id=args.store_id,
                 available=args.available,
                 max_pages=args.max_pages,
+                max_sweeps=args.max_sweeps,
             )
-    except NotLoggedInError as exc:
-        print(json.dumps({"aborted": True, "reason": str(exc), "run_id": run_id}, indent=2))
+    except (NotLoggedInError, EmptyPageAnomaly, FeedUnstableError, StepGuardError) as exc:
+        print(
+            json.dumps(
+                {
+                    "aborted": True,
+                    "abort_type": type(exc).__name__,
+                    "reason": str(exc),
+                    "run_id": run_id,
+                },
+                indent=2,
+            )
+        )
         return 2
 
     (out_dir / "raw.json").write_text(json.dumps(snapshot.to_dict(), indent=2), encoding="utf-8")
@@ -89,6 +112,7 @@ def main() -> int:
                 "pages_scanned": snapshot.pages_scanned,
                 "raw_offers": len(snapshot.raw_offers),
                 "normalized_offers": len(feed.offers),
+                "coverage": extractor.last_stats,
                 "out_dir": str(out_dir),
                 "guard_blocked": guard.blocked,
             },

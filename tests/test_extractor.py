@@ -1,8 +1,17 @@
 import json
+import re
 import unittest
 
 from src.cdp_session import ReadOnlyCdpSession, ReadOnlyEvalError, is_readonly_expression
-from src.extractor import EXTRACT_JS, FeedExtractor, feed_url, parse_offers_payload
+from src.extractor import (
+    PAGE_STATE_JS,
+    EmptyPageAnomaly,
+    FeedExtractor,
+    FeedUnstableError,
+    NotLoggedInError,
+    feed_url,
+    parse_offers_payload,
+)
 from src.step_guard import StepGuard
 
 
@@ -12,26 +21,52 @@ def _offer(i, **over):
     return base
 
 
-class FakeSession:
-    """Returns canned pages as the EXTRACT_JS payload (array of data-offer strings)."""
+def _state(offers, *, nav_max=0, feed_ui=True, is_login=False):
+    return {
+        "offers": [json.dumps(o) for o in offers],
+        "feed_ui": feed_ui,
+        "nav_max": nav_max,
+        "is_login": is_login,
+    }
 
-    def __init__(self, pages, login=False):
-        self.pages = pages
-        self.login = login
-        self.login_probes = 0
+
+def _page_of(url):
+    m = re.search(r"[?&]p=(\d+)", url)
+    return int(m.group(1)) if m else 1
+
+
+class FakeSession:
+    """Serves PAGE_STATE_JS states keyed on the &p=N of the last navigated URL.
+
+    ``script[page]`` is a list of states consumed one per visit (the last one
+    repeats), so tests can simulate transient blank renders and inter-sweep
+    re-orderings. Pages absent from the script render as past-the-end.
+    """
+
+    def __init__(self, script):
+        self.script = {int(k): list(v) for k, v in script.items()}
         self.nav = []
-        self._i = 0
+        self._page = 1
 
     def navigate(self, url, settle=0):
         self.nav.append(url)
+        self._page = _page_of(url)
 
     def evaluate_readonly(self, expression):
-        if "loginform" in expression:
-            self.login_probes += 1
-            return self.login
-        page = self.pages[self._i] if self._i < len(self.pages) else []
-        self._i += 1
-        return json.dumps([json.dumps(o) for o in page])
+        states = self.script.get(self._page)
+        if not states:
+            return json.dumps(_state([], nav_max=max(self.script) if self.script else 0))
+        state = states.pop(0) if len(states) > 1 else states[0]
+        return json.dumps(state)
+
+    def visits(self, page):
+        return sum(1 for u in self.nav if _page_of(u) == page)
+
+
+def _extractor(session, **kwargs):
+    extractor = FeedExtractor(session, **kwargs)
+    extractor.empty_retry_wait_s = 0
+    return extractor
 
 
 class FeedUrlTests(unittest.TestCase):
@@ -55,6 +90,10 @@ class ParsePayloadTests(unittest.TestCase):
         offers = parse_offers_payload(payload)
         self.assertEqual([o["id"] for o in offers], ["1", "2"])
 
+    def test_parses_already_decoded_list(self):
+        offers = parse_offers_payload([json.dumps(_offer(1))])
+        self.assertEqual(offers[0]["id"], "1")
+
     def test_html_entities_are_unescaped(self):
         payload = json.dumps([json.dumps({"id": "1", "name": "A &amp; B", "url": "https://x/1"})])
         self.assertEqual(parse_offers_payload(payload)[0]["name"], "A & B")
@@ -63,64 +102,155 @@ class ParsePayloadTests(unittest.TestCase):
         self.assertEqual(parse_offers_payload(""), [])
         self.assertEqual(parse_offers_payload(None), [])
         self.assertEqual(parse_offers_payload("[]"), [])
+        self.assertEqual(parse_offers_payload([]), [])
 
 
-class ExtractTests(unittest.TestCase):
-    def test_paginates_dedupes_and_stops_on_empty_page(self):
-        session = FakeSession([[_offer(1), _offer(2)], [_offer(2), _offer(3)], []])
-        extractor = FeedExtractor(session)
-        snapshot, feed = extractor.extract(run_id="r1", merchant="Driffle", store_id=127)
+class ExtractSweepTests(unittest.TestCase):
+    def test_stable_feed_stops_after_confirming_sweep(self):
+        session = FakeSession({
+            1: [_state([_offer(1), _offer(2)], nav_max=2)],
+            2: [_state([_offer(3)], nav_max=1)],
+        })
+        snapshot, feed = _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
 
-        self.assertEqual(snapshot.pages_scanned, 3)
-        self.assertEqual([o["id"] for o in snapshot.raw_offers], ["1", "2", "3"])
         self.assertEqual([o.offer_id for o in feed.offers], ["1", "2", "3"])
-        self.assertIn("&p=3", session.nav[2])
-        self.assertFalse(extractor.guard.blocked)
+        self.assertEqual(snapshot.pages_scanned, 2)
+        # Sweep 1 + the stability-confirming sweep 2, bounded by the nav: no
+        # probe past the advertised last page, ever.
+        self.assertEqual(session.visits(1), 2)
+        self.assertEqual(session.visits(2), 2)
+        self.assertEqual(session.visits(3), 0)
 
-    def test_stops_after_two_consecutive_no_new(self):
-        session = FakeSession([[_offer(1)], [_offer(1)], [_offer(1)], [_offer(9)]])
-        extractor = FeedExtractor(session)
-        snapshot, _ = extractor.extract(run_id="r1", merchant="M", store_id=1)
-        self.assertEqual(snapshot.pages_scanned, 3)  # stopped before page 4
-        self.assertEqual([o["id"] for o in snapshot.raw_offers], ["1"])
+    def test_single_page_feed_never_fetches_page_two(self):
+        session = FakeSession({1: [_state([_offer(1)], nav_max=0)]})
+        _, feed = _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
+        self.assertEqual(len(feed.offers), 1)
+        self.assertEqual(session.visits(2), 0)
 
-    def test_empty_feed_yields_empty_snapshot(self):
-        session = FakeSession([[]])
-        extractor = FeedExtractor(session)
-        snapshot, feed = extractor.extract(run_id="r1", merchant="M", store_id=1)
-        self.assertEqual(snapshot.pages_scanned, 1)
+    def test_unstable_ordering_unions_across_sweeps(self):
+        # Sweep 1 never sees offer 4 (the feed re-ordered it onto an
+        # already-visited page); sweep 2 catches it; sweep 3 adds nothing.
+        session = FakeSession({
+            1: [
+                _state([_offer(1), _offer(2)], nav_max=2),
+                _state([_offer(1), _offer(4)], nav_max=2),
+            ],
+            2: [_state([_offer(2), _offer(3)], nav_max=1)],
+        })
+        _, feed = _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
+        self.assertEqual([o.offer_id for o in feed.offers], ["1", "2", "3", "4"])
+        self.assertEqual(session.visits(1), 3)
+
+    def test_blank_page_one_with_advertised_pages_aborts(self):
+        session = FakeSession({1: [_state([], nav_max=8)]})
+        with self.assertRaises(EmptyPageAnomaly):
+            _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
+        self.assertEqual(session.visits(1), 2)  # retried once before aborting
+
+    def test_blank_page_without_feed_ui_aborts(self):
+        session = FakeSession({1: [_state([], nav_max=0, feed_ui=False)]})
+        with self.assertRaises(EmptyPageAnomaly):
+            _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
+
+    def test_blank_mid_range_page_aborts(self):
+        # An in-range page (nav still advertises it) rendering 0 rows twice is
+        # an anomaly, not an end-of-feed — the old extractor accepted it.
+        session = FakeSession({
+            1: [_state([_offer(1)], nav_max=3)],
+            2: [_state([], nav_max=3)],
+            3: [_state([_offer(3)], nav_max=3)],
+        })
+        with self.assertRaises(EmptyPageAnomaly):
+            _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
+        self.assertEqual(session.visits(2), 2)
+
+    def test_transient_blank_page_recovers_on_retry(self):
+        session = FakeSession({
+            1: [_state([], nav_max=2), _state([_offer(1)], nav_max=2)],
+            2: [_state([_offer(2)], nav_max=1)],
+        })
+        _, feed = _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
+        self.assertEqual([o.offer_id for o in feed.offers], ["1", "2"])
+        self.assertEqual(session.visits(1), 3)  # blank + retry + stability sweep
+
+    def test_legit_empty_feed_confirmed_by_refetch(self):
+        session = FakeSession({1: [_state([], nav_max=0)]})
+        snapshot, feed = _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
         self.assertEqual(len(feed.offers), 0)
-        # The empty first page is ambiguous → the login probe ran (and said no).
-        self.assertEqual(session.login_probes, 1)
+        self.assertEqual(snapshot.pages_scanned, 1)
+        self.assertEqual(session.visits(1), 2)  # a blank page is never trusted once
 
-    def test_empty_first_page_on_login_page_aborts_loudly(self):
-        # Fail-closed: a wp-login bounce must raise, never return a silent
-        # empty feed (0 offers is otherwise a legitimate state — seen live
-        # 2026-07-07 when the Driffle queue genuinely emptied).
-        from src.extractor import NotLoggedInError
-
+    def test_login_bounce_aborts_immediately(self):
+        session = FakeSession({1: [_state([], feed_ui=False, is_login=True)]})
         with self.assertRaises(NotLoggedInError):
-            FeedExtractor(FakeSession([[]], login=True)).extract(
-                run_id="r1", merchant="M", store_id=1
+            _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
+        self.assertEqual(session.visits(1), 1)  # no blind retry on a login bounce
+
+    def test_login_bounce_mid_sweep_aborts(self):
+        session = FakeSession({
+            1: [_state([_offer(1)], nav_max=2)],
+            2: [_state([], feed_ui=False, is_login=True)],
+        })
+        with self.assertRaises(NotLoggedInError):
+            _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
+
+    def test_feed_shrinking_mid_sweep_is_past_end_not_anomaly(self):
+        session = FakeSession({
+            1: [_state([_offer(1)], nav_max=3), _state([_offer(1)], nav_max=2)],
+            2: [_state([_offer(2)], nav_max=3), _state([_offer(2)], nav_max=2)],
+            3: [_state([], nav_max=2)],
+        })
+        _, feed = _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
+        self.assertEqual([o.offer_id for o in feed.offers], ["1", "2"])
+        self.assertEqual(session.visits(3), 2)  # blank re-checked, then past-end
+
+    def test_unstable_beyond_max_sweeps_aborts(self):
+        session = FakeSession({
+            1: [
+                _state([_offer(1)], nav_max=0),
+                _state([_offer(2)], nav_max=0),
+                _state([_offer(3)], nav_max=0),
+            ],
+        })
+        with self.assertRaises(FeedUnstableError):
+            _extractor(session).extract(run_id="r1", merchant="M", store_id=1, max_sweeps=3)
+
+    def test_advertised_pages_above_cap_abort(self):
+        session = FakeSession({1: [_state([_offer(1)], nav_max=41)]})
+        with self.assertRaises(FeedUnstableError):
+            _extractor(session).extract(run_id="r1", merchant="M", store_id=1, max_pages=40)
+
+    def test_max_sweeps_below_two_is_refused(self):
+        with self.assertRaises(ValueError):
+            _extractor(FakeSession({})).extract(
+                run_id="r1", merchant="M", store_id=1, max_sweeps=1
             )
 
-    def test_non_empty_first_page_skips_login_probe(self):
-        session = FakeSession([[_offer(1)], []])
-        FeedExtractor(session).extract(run_id="r1", merchant="M", store_id=1)
-        self.assertEqual(session.login_probes, 0)
-
-    def test_guard_is_exercised_per_page(self):
-        session = FakeSession([[_offer(1)], []])
+    def test_guard_signatures_are_sweep_scoped(self):
         guard = StepGuard(max_attempts_per_signature=2)
-        FeedExtractor(session, guard=guard).extract(run_id="r1", merchant="M", store_id=1)
-        snap = guard.snapshot()
-        self.assertIn("feed:M:p1", snap["counters"]["attempts_by_signature"])
-        self.assertEqual(snap["counters"]["total_failures"], 0)
+        session = FakeSession({1: [_state([_offer(1)], nav_max=0)]})
+        _extractor(session, guard=guard).extract(run_id="r1", merchant="M", store_id=1)
+        sigs = guard.snapshot()["counters"]["attempts_by_signature"]
+        self.assertIn("feed:M:s1:p1", sigs)
+        self.assertIn("feed:M:s2:p1", sigs)
+        self.assertFalse(guard.blocked)
+
+    def test_last_stats_report_coverage(self):
+        session = FakeSession({
+            1: [_state([_offer(1), _offer(2)], nav_max=2)],
+            2: [_state([_offer(3)], nav_max=1)],
+        })
+        extractor = _extractor(session)
+        extractor.extract(run_id="r1", merchant="M", store_id=1)
+        self.assertEqual(extractor.last_stats["distinct_offers"], 3)
+        self.assertEqual(extractor.last_stats["sweeps"], 2)
+        self.assertEqual(extractor.last_stats["rows_seen"], 6)
+        self.assertEqual(extractor.last_stats["last_page"], 2)
 
 
 class ReadOnlyGuardTests(unittest.TestCase):
-    def test_extract_js_is_considered_read_only(self):
-        self.assertTrue(is_readonly_expression(EXTRACT_JS))
+    def test_page_state_js_is_considered_read_only(self):
+        self.assertTrue(is_readonly_expression(PAGE_STATE_JS))
 
     def test_evaluate_readonly_refuses_mutations(self):
         session = ReadOnlyCdpSession("http://172.17.0.1:9223/json/version")
