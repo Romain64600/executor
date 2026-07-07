@@ -607,7 +607,31 @@ _SELECTIZE_READBACK_JS = (
     "if(!sel)return {ok:false};"
     "var stz=sel.selectize?String(sel.selectize.getValue()):null;"
     "return {ok:true,select_value:sel.value||'',selectize_value:stz,"
+    "is_open:sel.selectize?!!sel.selectize.isOpen:null,"
     "validity_valid:sel.validity?sel.validity.valid:null};"
+    "})())"
+)
+
+# Pre-click obstruction probe (S02-safe, read-only). Returns what
+# document.elementFromPoint sees at the selector's center and whether any
+# Selectize dropdown is currently open. Root cause 2026-07-06/07: the edition
+# dropdown (body-parented) left open by the old addItem fallback covered the
+# "Create offer" button; the trusted click's mousedown landed on the dropdown
+# OPTION under the cursor, silently re-picking a random edition ("BTC 1500
+# PLN", id 14106) before the form was serialized — the wrong-edition offers.
+_CLICK_TARGET_PROBE_JS = (
+    "JSON.stringify((function(){"
+    "var el=document.querySelector(%s);"
+    "if(!el)return {ok:false,reason:'no_element'};"
+    "var r=el.getBoundingClientRect();"
+    "var at=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2);"
+    "var dds=document.querySelectorAll('.selectize-dropdown');"
+    "var open=false;for(var i=0;i<dds.length;i++){"
+    "if(getComputedStyle(dds[i]).display!=='none'){open=true;break;}}"
+    "return {ok:true,is_target:at===el||el.contains(at),"
+    "at:at?at.tagName+(at.className&&typeof at.className==='string'?"
+    "'.'+at.className.trim().split(/\\s+/).slice(0,2).join('.'):''):null,"
+    "any_selectize_dropdown_open:open};"
     "})())"
 )
 
@@ -728,6 +752,20 @@ class WriteSubmitSession(SubmitSession):
              "button": "left", "buttons": 0, "clickCount": 1},
         )
         return {"cx": cx, "cy": cy, "delay_ms": delay_ms}
+
+    def click_target_probe(
+        self, selector: str = "#TB_ajaxContent .button-primary",
+    ) -> dict[str, Any]:
+        """Read-only pre-click guard: is the element at the selector's center
+        actually the selector's element? Returns ``{ok, is_target, at,
+        any_selectize_dropdown_open}`` (or ``{ok: False, reason}``). Catches the
+        2026-07-06/07 wrong-edition root cause: a body-parented Selectize
+        dropdown left open OVER the Create button, so the trusted click's
+        mousedown re-picked the dropdown option under the cursor and the form
+        was serialized with a corrupted edition."""
+
+        raw = self.evaluate_readonly(_CLICK_TARGET_PROBE_JS % json.dumps(selector))
+        return json.loads(raw) if raw else {"ok": False, "reason": "no_result"}
 
     def click_trusted_at_element(
         self, selector: str = "#TB_ajaxContent .button-primary",
@@ -939,7 +977,17 @@ class WriteSubmitSession(SubmitSession):
         readback_raw = self.evaluate_readonly(
             _SELECTIZE_READBACK_JS % json.dumps(select_name)
         )
-        diag["readback"] = json.loads(readback_raw) if readback_raw else {"ok": False}
+        readback = json.loads(readback_raw) if readback_raw else {"ok": False}
+        diag["readback"] = readback
+        # Fail-closed: a dropdown still open after the pick can cover elements
+        # below (body-parented) and swallow a later trusted click's mousedown,
+        # silently re-picking whatever option sits under the cursor AFTER the
+        # readback — the 2026-07-06/07 wrong-edition root cause ("BTC 1500 PLN",
+        # id 14106, instead of Standard). A real option click closes the
+        # dropdown via onOptionSelect, so open-here means the pick didn't land.
+        if readback.get("is_open"):
+            diag["status"] = "DROPDOWN_STILL_OPEN"
+            return diag
         diag["status"] = "SELECTED"
         return diag
 
@@ -1128,6 +1176,19 @@ class WriteSubmitSession(SubmitSession):
         if validity.get("ok") and not validity.get("form_valid", True):
             self._evaluate(_TRUSTED_CLEANUP_JS)
             prep["status"] = "FORM_INVALID"
+            return prep
+
+        # Pre-click obstruction guard (fail-closed): the point we are about to
+        # click must actually BE the Create button. A body-parented Selectize
+        # dropdown left open over the button made yesterday's mousedown re-pick
+        # a random edition before the form was serialized (wrong-edition root
+        # cause). Only a positive "something else is at that point" blocks; a
+        # probe that can't read (ok:false) degrades to the click's own checks.
+        path_probe = self.click_target_probe("#TB_ajaxContent .button-primary")
+        prep["click_path"] = path_probe
+        if path_probe.get("ok") and not path_probe.get("is_target"):
+            self._evaluate(_TRUSTED_CLEANUP_JS)
+            prep["status"] = "CLICK_PATH_OBSTRUCTED"
             return prep
 
         click = self.click_trusted_at_element("#TB_ajaxContent .button-primary")

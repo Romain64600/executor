@@ -644,6 +644,10 @@ class FillThenClickTrustedTests(unittest.TestCase):
 
         sess._evaluate = eval_stub
         sess.click_trusted_at_element = lambda selector=None: click_result
+        sess.click_target_probe = lambda selector=None: {
+            "ok": True, "is_target": True, "at": "A.button-primary",
+            "any_selectize_dropdown_open": False,
+        }
         pick_seq = [region_pick, edition_pick]
         sess.select_via_trusted = lambda name, val, query=None: pick_seq.pop(0)
         sess.form_validity = lambda: (
@@ -738,6 +742,38 @@ class FillThenClickTrustedTests(unittest.TestCase):
         result = sess.fill_then_click_trusted("offer[region]", "9", "offer[edition]", "1")
         self.assertEqual(result["status"], "SUCCESS")
         self.assertEqual(result["click"], click)
+
+    def test_obstructed_click_path_blocks_before_clicking(self):
+        # Root cause 2026-07-06/07: a Selectize dropdown left open OVER the
+        # Create button re-picked a random edition on mousedown ("BTC 1500
+        # PLN"). If elementFromPoint at the button center is not the button,
+        # STOP before clicking — no blind trusted click into an overlay.
+        prep = {"status": "PREPARED", "region_options": ["9"], "edition_options": ["1"],
+                "button": {}, "pre_existing": {"success": 0, "error": 0}}
+        click = {"status": "CLICKED", "mode": "trusted"}
+        sess = self._sess(prep, self._pick("9"), self._pick("1"), click,
+                          {"status": "SUCCESS"})
+        sess.click_target_probe = lambda selector=None: {
+            "ok": True, "is_target": False, "at": "DIV.option",
+            "any_selectize_dropdown_open": True,
+        }
+        clicked = []
+        sess.click_trusted_at_element = lambda selector=None: clicked.append(selector) or click
+        result = sess.fill_then_click_trusted("offer[region]", "9", "offer[edition]", "1")
+        self.assertEqual(result["status"], "CLICK_PATH_OBSTRUCTED")
+        self.assertEqual(result["click_path"]["at"], "DIV.option")
+        self.assertEqual(clicked, [])  # the Create click was never attempted
+        self.assertEqual(len(sess._cleanup_called), 1)
+
+    def test_unreadable_click_path_probe_does_not_block(self):
+        prep = {"status": "PREPARED", "region_options": ["9"], "edition_options": ["1"],
+                "button": {}, "pre_existing": {"success": 0, "error": 0}}
+        click = {"status": "CLICKED", "mode": "trusted"}
+        poll = {"status": "SUCCESS", "polls": 2, "requests": [], "signal": "ok"}
+        sess = self._sess(prep, self._pick("9"), self._pick("1"), click, poll)
+        sess.click_target_probe = lambda selector=None: {"ok": False, "reason": "no_result"}
+        result = sess.fill_then_click_trusted("offer[region]", "9", "offer[edition]", "1")
+        self.assertEqual(result["status"], "SUCCESS")
 
     def test_no_element_click_triggers_cleanup(self):
         prep = {"status": "PREPARED", "region_options": ["9"], "edition_options": ["1"],
@@ -890,6 +926,26 @@ class SelectViaTrustedTests(unittest.TestCase):
         self.assertFalse(any(c[0] in ("Input.insertText", "Input.dispatchKeyEvent")
                              for c in sess._sent))
 
+    def test_dropdown_still_open_after_pick_fails_closed(self):
+        # A pick whose readback says the dropdown is STILL open didn't land as
+        # a real option click (onOptionSelect closes it). Left open, the
+        # body-parented dropdown covers elements below and a later trusted
+        # click re-picks whatever option is under the cursor — the 2026-07-06
+        # wrong-edition root cause. Must fail-closed, never proceed.
+        input_rect = json.dumps({"ok": True, "x": 100, "y": 200, "width": 240, "height": 32,
+                                 "top": 200, "left": 100, "bottom": 232, "right": 340,
+                                 "viewport": {"w": 1280, "h": 720}})
+        option_rect = json.dumps({"ok": True, "x": 100, "y": 240, "width": 240, "height": 24,
+                                  "top": 240, "left": 100, "bottom": 264, "right": 340,
+                                  "viewport": {"w": 1280, "h": 720}})
+        readback = json.dumps({"ok": True, "select_value": "1",
+                               "selectize_value": "1", "is_open": True,
+                               "validity_valid": True})
+        sess = self._sess([input_rect, option_rect, readback])
+        result = sess.select_via_trusted("offer[edition]", "1")
+        self.assertEqual(result["status"], "DROPDOWN_STILL_OPEN")
+        self.assertEqual(result["readback"]["selectize_value"], "1")
+
     def test_no_selectize_input_returns_early_no_clicks(self):
         input_rect = json.dumps({"ok": False, "reason": "no_wrapper"})
         sess = self._sess([input_rect])
@@ -926,6 +982,14 @@ class SelectViaTrustedTests(unittest.TestCase):
         self.assertEqual(result["selectize_options"], [{"key": "1", "value": "1", "text": "Standard"}])
         # Only the open click via CDP (3 Input events); no forcing.
         self.assertEqual(len(sess._sent), 3)
+
+    def test_click_target_probe_js_is_readonly(self):
+        from src.cdp_session import is_readonly_expression
+        from src.submit_session import _CLICK_TARGET_PROBE_JS
+
+        self.assertTrue(is_readonly_expression(
+            _CLICK_TARGET_PROBE_JS % json.dumps("#TB_ajaxContent .button-primary")
+        ))
 
     def test_selectize_probe_js_are_readonly_safe(self):
         from src.cdp_session import is_readonly_expression
