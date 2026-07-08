@@ -3,6 +3,23 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-08 — Matcher: DLC bucket on the AKS page = skip (R18)
+
+Romain's review of the first K4G candidate list (2026-07-07) caught 9 add-on
+contents ("Exoplanets Pack", "Janthir Wilds Expansion", "Supporter Pack", …)
+proposed as Standard(1): their titles carry no "DLC" word and match their own
+AKS product pages token-perfectly, so R01/R16/R01b all stay silent. The
+resolved page's editions map is the truth about the product's nature —
+`match_offer` now skips whenever it contains the DLC bucket
+(`_dlc_edition_on_page`: id 16, name-match "DLC" as the seatbelt if ids ever
+move), even when a Standard bucket coexists ("Brotato: Abyssal Terrors" has
+both and is still a DLC). Deliberately NOT extended to Bundle/Early Access
+buckets: those describe other offers listed on the page, not the product
+("GUILTY GEAR Xrd -SIGN-" {Standard, Bundle} and the Early Access indies were
+valid candidates). Zero extra requests — the map was already extracted at
+resolve time. Skill LEARNED_RULES R18 mirrored in EXECUTOR_RULES §4.3/§4.7.
+Tests: 292 → 295.
+
 ## 2026-07-07 — Matcher: trailing-suffix slug peeling (K4G grammar)
 
 First K4G run (226 offers) yielded 0 candidates: 95/226 fell in "no AKS
