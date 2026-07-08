@@ -1,6 +1,12 @@
+import json
 import unittest
 
-from src.validation import ValidationError, load_validation, validation_template
+from src.validation import (
+    ValidationError,
+    load_validation,
+    validation_template,
+    verify_approved_against_source,
+)
 
 
 def _cand(offer_id="1", pid="207861", region="2", edition="1", name="Bus Simulator 27"):
@@ -73,6 +79,51 @@ class LoadValidationTests(unittest.TestCase):
         data = _filled([old], entries=[{"fingerprint": old["fingerprint"], "approve": True}])
         with self.assertRaises(ValidationError):
             load_validation(data, [current], expected_run_id="r")
+
+
+class VerifyApprovedTests(unittest.TestCase):
+    """Submit-time re-verification (Romain's audit P1, 2026-07-08): approved.json
+    must equal the re-derivation from candidates.json + validation.json."""
+
+    def _setup(self):
+        c1, c2 = _cand("1"), _cand("2")
+        data = _filled(
+            [c1, c2],
+            entries=[
+                {"fingerprint": c1["fingerprint"], "approve": True},
+                {"fingerprint": c2["fingerprint"], "approve": False},
+            ],
+        )
+        return c1, c2, data
+
+    def test_matching_approved_passes(self):
+        c1, c2, data = self._setup()
+        verify_approved_against_source([c1], data, [c1, c2], expected_run_id="r")
+
+    def test_fabricated_extra_offer_rejected(self):
+        # approved.json smuggles in the offer the operator did NOT approve
+        c1, c2, data = self._setup()
+        with self.assertRaises(ValidationError):
+            verify_approved_against_source([c1, c2], data, [c1, c2], expected_run_id="r")
+
+    def test_hand_edited_field_rejected(self):
+        # fingerprint fields intact, but a payload field was edited after check
+        c1, c2, data = self._setup()
+        tampered = json.loads(json.dumps(c1))
+        tampered["aks_url"] = "https://aks/other"
+        with self.assertRaises(ValidationError):
+            verify_approved_against_source([tampered], data, [c1, c2], expected_run_id="r")
+
+    def test_underlying_validation_errors_propagate(self):
+        c1, c2, data = self._setup()
+        data["validated_by"] = ""
+        with self.assertRaises(ValidationError):
+            verify_approved_against_source([c1], data, [c1, c2], expected_run_id="r")
+
+    def test_run_id_mismatch_rejected(self):
+        c1, c2, data = self._setup()
+        with self.assertRaises(ValidationError):
+            verify_approved_against_source([c1], data, [c1, c2], expected_run_id="other")
 
     def test_approve_none_is_valid_and_empty(self):
         c1 = _cand("1")

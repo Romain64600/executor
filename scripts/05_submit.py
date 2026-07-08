@@ -7,8 +7,10 @@ Modes:
              (offer gone from pending). Defaults to a **canary of 1 offer**; pass
              --all for the full batch, or --limit N.
 
-Gates (fail-closed): invariants green + authoritative, `approved.json` present,
-pre-flight WP login check. Reads the approved offers (Stage 3), writes
+Gates (fail-closed): invariants green + authoritative, `approved.json` present
+AND re-verified at load time against its sibling `candidates.json` +
+`validation.json` (P1, 2026-07-08 — a fabricated/stale approved.json refuses to
+load), pre-flight WP login check. Reads the approved offers (Stage 3), writes
 `submit_plan.json` + `submit_report.txt`.
 
 Examples (on the VPS):
@@ -34,6 +36,7 @@ from src.invariants import build_report  # noqa: E402
 from src.pacing import Pacer  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
 from src.submit_session import SubmitSession, WriteSubmitSession  # noqa: E402
+from src.validation import ValidationError, verify_approved_against_source  # noqa: E402
 from src.submitter import (  # noqa: E402
     DryRunSubmitter,
     InspectSubmitter,
@@ -153,6 +156,32 @@ def main() -> int:
         return 0 if catalog.get("ok") else 2
 
     approved = json.loads(Path(args.approved).read_text(encoding="utf-8"))
+
+    # P1 (Romain's audit, 2026-07-08): approved.json alone is never authority.
+    # Re-derive the approval from candidates.json + validation.json HERE
+    # (run_id, validated_by/at and fingerprints re-checked by load_validation)
+    # and require approved.json to match exactly — in every mode that consumes
+    # it (dry-run, inspect, submit).
+    try:
+        candidates_path = out_dir / "candidates.json"
+        validation_path = out_dir / "validation.json"
+        if not candidates_path.exists() or not validation_path.exists():
+            raise ValidationError(
+                "candidates.json and validation.json must sit next to approved.json"
+            )
+        verify_approved_against_source(
+            approved,
+            json.loads(validation_path.read_text(encoding="utf-8")),
+            json.loads(candidates_path.read_text(encoding="utf-8")),
+            expected_run_id=run_id,
+        )
+    except (ValidationError, ValueError) as exc:
+        print(json.dumps({
+            "aborted": True,
+            "reason": f"submit-time validation re-check failed: {exc}",
+        }, indent=2))
+        return 2
+
     logger = RunLogger(run_id, log_dir=str(ROOT / "logs"))
 
     if args.inspect:
@@ -270,6 +299,9 @@ def main() -> int:
         "total": len(result["plan"]),
         "out_dir": str(out_dir),
     }
+    if write:
+        # P2 (audit 2026-07-08): attempts ≠ creations; surface both.
+        summary["write_attempts"] = result.get("write_attempts")
     if result.get("catalog"):
         summary["catalog"] = result["catalog"]
     print(json.dumps(summary, indent=2))

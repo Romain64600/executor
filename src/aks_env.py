@@ -15,6 +15,7 @@ import socket
 import subprocess
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 OFFICIAL_CDP_ENDPOINT = "http://172.17.0.1:9223/json/version"
@@ -24,6 +25,10 @@ REQUIRED_USER_AGENT = (
     "(KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
 )
 AKS_DIRECT_URL = "https://www.allkeyshop.com/blog/"
+# Staff anti-bot bypass UA for AKS HTTP probes — allkeyshop.com ONLY (Romain,
+# audit #4, 2026-07-08): CDP browsing keeps REQUIRED_USER_AGENT, and no other
+# host may ever see a staff/crawler UA. http_get enforces this fail-closed.
+AKS_STAFF_UA = "AKS/Staff"
 
 
 @dataclass(frozen=True)
@@ -260,6 +265,11 @@ def _http_open(request: Request, timeout: int, follow_redirects: bool = True):
     return build_opener(_NoRedirectHandler()).open(request, timeout=timeout)
 
 
+def _allkeyshop_host(url: str) -> bool:
+    host = (urlsplit(url).hostname or "").lower()
+    return host == "allkeyshop.com" or host.endswith(".allkeyshop.com")
+
+
 def http_get(
     url: str,
     timeout: int = 5,
@@ -273,6 +283,11 @@ def http_get(
     checks see the true first hop.
     """
 
+    if user_agent == AKS_STAFF_UA and not _allkeyshop_host(url):
+        raise ValueError(
+            f"{AKS_STAFF_UA!r} User-Agent is restricted to allkeyshop.com hosts"
+            f" (audit #4, 2026-07-08): {url}"
+        )
     request = Request(url, method="GET", headers={"User-Agent": user_agent or REQUIRED_USER_AGENT})
     try:
         with _http_open(request, timeout=timeout, follow_redirects=follow_redirects) as response:

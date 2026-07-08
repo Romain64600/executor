@@ -379,7 +379,8 @@ class _SubmitterBase:
         self.session.navigate(feed_url(store_id, feed_page=feed_page, available=available))
         if self.session.is_login_page():
             self._log("aborted", reason="not logged in (wp-login)")
-            return {"aborted": "not_logged_in", "stopped": None, "feed_offers": 0, "writes": 0, "plan": []}
+            return {"aborted": "not_logged_in", "stopped": None, "feed_offers": 0,
+                    "write_attempts": 0, "created": 0, "plan": []}
 
         # Write path resolves every offer's region/edition id against the LIVE
         # dropdown catalog (ids drift; the matcher's are not authoritative). Fetch
@@ -393,8 +394,8 @@ class _SubmitterBase:
                 )
             if not catalog.get("ok"):
                 self._log("aborted", reason="catalog fetch failed", detail=catalog.get("reason"))
-                return {"aborted": "catalog_unavailable", "stopped": None,
-                        "feed_offers": 0, "writes": 0, "plan": [], "catalog": catalog}
+                return {"aborted": "catalog_unavailable", "stopped": None, "feed_offers": 0,
+                        "write_attempts": 0, "created": 0, "plan": [], "catalog": catalog}
             self._load_catalog(catalog)
 
         self.guard.start_task(run_id)
@@ -405,9 +406,15 @@ class _SubmitterBase:
 
         plan: list[dict[str, Any]] = []
         stopped: str | None = None
-        writes = 0
+        # --limit counts ATTEMPTS (every ready offer we tried to write) —
+        # deliberately conservative. `created` counts VERIFIED creations only
+        # (post-save proof: gone from refreshed pending). Reported separately
+        # since Romain's audit P2 (2026-07-08): the old single `writes` field
+        # was the attempt counter but read like a creation count.
+        write_attempts = 0
+        created = 0
         for candidate in approved:
-            if self.write_mode and limit is not None and writes >= limit:
+            if self.write_mode and limit is not None and write_attempts >= limit:
                 stopped = "limit_reached"
                 self._log("run_stopped", reason=stopped)
                 break
@@ -429,7 +436,9 @@ class _SubmitterBase:
             entry = self._prepare(candidate, located)
             success = self._process(entry, candidate, ctx)
             if self.write_mode and entry.get("ready"):
-                writes += 1
+                write_attempts += 1
+                if entry.get("submitted"):
+                    created += 1
             self.guard.record_result(
                 "submit", signature, success, detail=entry.get("blocker", "") or entry.get("post_save", "")
             )
@@ -461,7 +470,8 @@ class _SubmitterBase:
             "aborted": None,
             "stopped": stopped,
             "feed_offers": len(index),
-            "writes": writes if self.write_mode else None,
+            "write_attempts": write_attempts if self.write_mode else None,
+            "created": created if self.write_mode else None,
             "plan": plan,
         }
         if self.catalog is not None:

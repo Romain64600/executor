@@ -13,6 +13,7 @@ has no heavy dependencies. Standard library only. Fail-closed: any problem raise
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any, Iterable
 
@@ -104,3 +105,27 @@ def load_validation(
             )
         approved.append(by_fingerprint[fingerprint])
     return approved
+
+
+def verify_approved_against_source(
+    approved: list[dict[str, Any]],
+    validation: dict[str, Any],
+    candidate_dicts: Iterable[dict[str, Any]],
+    *,
+    expected_run_id: str,
+) -> None:
+    """Submit-time re-verification (Romain's audit P1, 2026-07-08).
+
+    ``approved.json`` alone is never authority: re-derive the approval from
+    candidates + validation (run_id, validated_by/at and fingerprints are all
+    re-checked by ``load_validation``) and require the approved list to match
+    the re-derivation exactly. A fabricated, hand-edited or stale approved.json
+    raises ``ValidationError`` instead of loading.
+    """
+
+    rederived = load_validation(validation, candidate_dicts, expected_run_id=expected_run_id)
+    if json.dumps(approved, sort_keys=True) != json.dumps(rederived, sort_keys=True):
+        raise ValidationError(
+            "approved.json does not match candidates.json + validation.json "
+            "(stale, edited, or fabricated) — re-run 04_validate.py check"
+        )

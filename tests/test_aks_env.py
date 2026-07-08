@@ -5,6 +5,7 @@ from unittest import mock
 from urllib.error import HTTPError, URLError
 
 from src.aks_env import (
+    AKS_STAFF_UA,
     OFFICIAL_CDP_ENDPOINT,
     REQUIRED_USER_AGENT,
     checks_to_dict,
@@ -183,6 +184,38 @@ class ClassifyEnvironmentTests(unittest.TestCase):
         )
 
         self.assertFalse(env["authoritative"])
+
+
+class StaffUaPolicyTests(unittest.TestCase):
+    """Audit #4 (Romain, 2026-07-08): AKS/Staff is allkeyshop.com-only — every
+    other host keeps the required Chrome UA. The guard sits BEFORE any network
+    IO, so the refusal path needs no mocking."""
+
+    def test_staff_ua_refused_on_non_aks_hosts(self):
+        for url in (
+            "https://www.g2a.com/x",
+            "https://k4g.com/y",
+            "https://allkeyshop.com.evil.tld/z",  # suffix spoof
+        ):
+            with self.assertRaises(ValueError, msg=url):
+                http_get(url, user_agent=AKS_STAFF_UA)
+
+    def test_staff_ua_allowed_on_aks_hosts(self):
+        for url in ("https://www.allkeyshop.com/blog/x", "https://allkeyshop.com/y"):
+            opener = mock.Mock(return_value=_FakeResp(200, b"ok"))
+            with mock.patch("src.aks_env._http_open", opener):
+                probe = http_get(url, user_agent=AKS_STAFF_UA)
+            self.assertTrue(probe.ok, url)
+            request = opener.call_args[0][0]
+            self.assertEqual(request.get_header("User-agent"), AKS_STAFF_UA)
+
+    def test_default_ua_unaffected_on_any_host(self):
+        opener = mock.Mock(return_value=_FakeResp(200, b"ok"))
+        with mock.patch("src.aks_env._http_open", opener):
+            probe = http_get("https://www.g2a.com/x")
+        self.assertTrue(probe.ok)
+        request = opener.call_args[0][0]
+        self.assertEqual(request.get_header("User-agent"), REQUIRED_USER_AGENT)
 
 
 class HttpProbeTests(unittest.TestCase):

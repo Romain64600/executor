@@ -271,7 +271,7 @@ class RowRelocationTests(unittest.TestCase):
         self.assertTrue(entry["submitted"])
         self.assertEqual(entry["post_save"], "gone from pending")
         self.assertEqual(entry["offer_id"], "51")
-        self.assertEqual(result["writes"], 1)
+        self.assertEqual((result["write_attempts"], result["created"]), (1, 1))
 
     def test_mid_run_reimport_is_not_a_false_disappearance(self):
         # The row survives the click and re-appears under a fresh id: the
@@ -313,7 +313,7 @@ class RealSubmitTests(unittest.TestCase):
     def test_canary_creates_one_then_stops(self):
         session = FakeWriteSession([["1", "2"]])
         result = _real(session, [_cand("1"), _cand("2")], limit=1)
-        self.assertEqual(result["writes"], 1)
+        self.assertEqual((result["write_attempts"], result["created"]), (1, 1))
         self.assertEqual(result["stopped"], "limit_reached")
         self.assertEqual(len(result["plan"]), 1)
         self.assertTrue(result["plan"][0]["submitted"])
@@ -322,7 +322,7 @@ class RealSubmitTests(unittest.TestCase):
     def test_full_batch_creates_all(self):
         session = FakeWriteSession([["1", "2"]])
         result = _real(session, [_cand("1"), _cand("2")], limit=None)
-        self.assertEqual(result["writes"], 2)
+        self.assertEqual((result["write_attempts"], result["created"]), (2, 2))
         self.assertTrue(all(p["submitted"] for p in result["plan"]))
 
     def test_still_present_after_create_is_failure(self):
@@ -330,12 +330,26 @@ class RealSubmitTests(unittest.TestCase):
         result = _real(session, [_cand("1")], limit=1)
         self.assertFalse(result["plan"][0]["submitted"])
         self.assertIn("STILL in pending", result["plan"][0]["post_save"])
+        # P2 (audit 2026-07-08): the attempt is counted (conservative --limit),
+        # the creation is NOT — the old single `writes` field conflated them.
+        self.assertEqual((result["write_attempts"], result["created"]), (1, 0))
 
     def test_create_not_confirmed_is_failure(self):
         session = FakeWriteSession([["1"]], create_status="NO_SELECTS")
         result = _real(session, [_cand("1")], limit=1)
         self.assertEqual(result["plan"][0]["create"]["status"], "NO_SELECTS")
         self.assertIn("create not confirmed", result["plan"][0]["post_save"])
+
+    def test_unreadable_form_validity_blocks_click(self):
+        # Audit P1b (2026-07-08): ok:false from the validity probe hard-blocks
+        # in fill_and_create_trusted (FORM_VALIDITY_UNREADABLE) — no click, no
+        # degraded mode. At this level it surfaces as a non-confirmed create
+        # and never as a success.
+        session = FakeWriteSession([["1"]], create_status="FORM_VALIDITY_UNREADABLE")
+        result = _real(session, [_cand("1")], limit=1)
+        self.assertFalse(result["plan"][0].get("submitted"))
+        self.assertIn("create not confirmed", result["plan"][0]["post_save"])
+        self.assertEqual((result["write_attempts"], result["created"]), (1, 0))
 
     def test_server_error_is_reported(self):
         session = FakeWriteSession([["1"]], create_status="ERROR", create_signal="region invalid")
@@ -365,7 +379,7 @@ class RealSubmitTests(unittest.TestCase):
         by_id = {p["offer_id"]: p for p in result["plan"]}
         self.assertTrue(by_id["1"]["submitted"])
         self.assertTrue(by_id["4"]["submitted"], by_id["4"].get("blocker"))
-        self.assertEqual(result["writes"], 2)
+        self.assertEqual((result["write_attempts"], result["created"]), (2, 2))
 
     def test_failed_verify_keeps_stale_index_but_reports_failure(self):
         # If the offer is still pending after the click (create_removes=False),
@@ -679,8 +693,9 @@ class InspectSubmitterTests(unittest.TestCase):
     def test_writes_none_in_inspect_mode(self):
         session = FakeInspectSession([["1"]])
         result = _inspect(session, [_cand("1")])
-        # write_mode=False → writes reported as None (like dry-run).
-        self.assertIsNone(result["writes"])
+        # write_mode=False → both write counters reported as None (like dry-run).
+        self.assertIsNone(result["write_attempts"])
+        self.assertIsNone(result["created"])
 
 
 class TrustedClickTests(unittest.TestCase):
@@ -890,18 +905,23 @@ class FillThenClickTrustedTests(unittest.TestCase):
         # The click was never attempted (form is invalid → submit would be a no-op).
         self.assertNotIn("click", result)
 
-    def test_unreadable_form_validity_does_not_block(self):
-        # A probe that can't read the form (ok:false) must NOT block — post-save
-        # stays the real proof, so behaviour degrades to the prior click path.
+    def test_unreadable_form_validity_blocks_and_cleans_up(self):
+        # Audit P1b (Romain, 2026-07-08 — REVERSES the earlier degrade): a
+        # probe that can't read the form (ok:false) blocks the click too.
+        # Clicking a form we could not read was an explicit degraded mode, and
+        # the rules make form validity a hard gate before any click.
         prep = {"status": "PREPARED", "region_options": ["9"], "edition_options": ["1"],
                 "button": {}, "pre_existing": {"success": 0, "error": 0}}
-        click = {"status": "CLICKED", "mode": "trusted"}
-        poll = {"status": "SUCCESS", "polls": 2, "requests": [], "signal": "ok"}
-        sess = self._sess(prep, self._pick("9"), self._pick("1"), click, poll,
-                          form_validity={"ok": False, "reason": "no_form"})
+        unreadable = {"ok": False, "reason": "no_form"}
+        sess = self._sess(prep, self._pick("9"), self._pick("1"),
+                          {"status": "CLICKED"}, {"status": "SUCCESS"},
+                          form_validity=unreadable)
         result = sess.fill_then_click_trusted("offer[region]", "9", "offer[edition]", "1")
-        self.assertEqual(result["status"], "SUCCESS")
-        self.assertEqual(result["click"], click)
+        self.assertEqual(result["status"], "FORM_VALIDITY_UNREADABLE")
+        self.assertEqual(result["form_validity"], unreadable)
+        self.assertEqual(len(sess._cleanup_called), 1)
+        # The click was never attempted.
+        self.assertNotIn("click", result)
 
     def test_obstructed_click_path_blocks_before_clicking(self):
         # Root cause 2026-07-06/07: a Selectize dropdown left open OVER the

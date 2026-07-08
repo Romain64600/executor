@@ -1134,10 +1134,12 @@ class WriteSubmitSession(SubmitSession):
         4. ``add_target_trusted(target_value)`` (when supplied): trusted type of
            the AKS product id / URL into ``offer[targets][]`` + commit — the last
            required field the Selectize picks don't populate.
-        5. ``form_validity()``: read-only HTML5 validity gate. If the form is
-           positively invalid → STOP with ``status='FORM_INVALID'`` (+ the
-           offending field names), do NOT click Create. A click on an invalid
-           form fires zero requests and looks like "the site ignored the robot".
+        5. ``form_validity()``: read-only HTML5 validity gate — HARD (audit
+           P1b, 2026-07-08). Form positively invalid → STOP with
+           ``status='FORM_INVALID'`` (+ the offending field names); probe
+           unreadable (ok:false) → STOP with ``FORM_VALIDITY_UNREADABLE``.
+           Either way: do NOT click Create. A click on an invalid form fires
+           zero requests and looks like "the site ignored the robot".
         6. ``click_trusted_at_element("#TB_ajaxContent .button-primary")``:
            trusted CDP click on the submit button center.
         7. Poll JS: accept either a NEW [data-success]/[data-error] node OR a
@@ -1188,16 +1190,22 @@ class WriteSubmitSession(SubmitSession):
         if target_value:
             prep["target_add"] = self.add_target_trusted(str(target_value))
 
-        # Fail-closed validity gate: a submit button whose form is invalid will
-        # swallow the trusted click (browser blocks the submit, ZERO admin-ajax
-        # fired) — indistinguishable at the click level from "the site ignored a
-        # robot click". Prove it here instead: if the form is *positively*
-        # invalid, STOP and report the offending fields rather than clicking into
-        # the void. A probe that can't read the form (ok:false) does NOT block —
-        # post-save remains the real proof, so we degrade to prior behaviour.
+        # Fail-closed validity gate — HARD (Romain's audit P1b, 2026-07-08): a
+        # submit button whose form is invalid swallows the trusted click (the
+        # browser blocks the submit, ZERO admin-ajax fired) — indistinguishable
+        # at the click level from "the site ignored a robot click". Prove
+        # validity BEFORE clicking. Positively invalid → FORM_INVALID (+ the
+        # offending fields). Probe unreadable (ok:false) → also NO CLICK
+        # (FORM_VALIDITY_UNREADABLE): continuing to the click on a form we
+        # could not read was an explicit degraded mode, and degraded modes are
+        # banned. The rules make form validity a hard gate before any click.
         validity = self.form_validity()
         prep["form_validity"] = validity
-        if validity.get("ok") and not validity.get("form_valid", True):
+        if not validity.get("ok"):
+            self._evaluate(_TRUSTED_CLEANUP_JS)
+            prep["status"] = "FORM_VALIDITY_UNREADABLE"
+            return prep
+        if validity.get("form_valid") is not True:
             self._evaluate(_TRUSTED_CLEANUP_JS)
             prep["status"] = "FORM_INVALID"
             return prep
