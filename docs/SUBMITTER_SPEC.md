@@ -73,9 +73,14 @@ lives in one small, auditable place that can't be reached without the gates.
 For each offer in `approved.json`, wrapped in `StepGuard.run_step` with signature
 `submit:{offer_id}` and **`max_failures_per_signature = 1`** (no blind retry `[S15]`):
 
-1. **Refresh** the merchant pending feed from scratch (feeds are dynamic).
-2. **Locate the exact current row** by offer id; verify title, URL, price,
-   merchant, page — must match the approved candidate. Mismatch → STOP.
+1. **Refresh** the merchant feed from scratch (feeds are dynamic; same
+   `available` mode as the run).
+2. **Locate the exact current row** by offer id — full row check (name, URL
+   path; store/price when both sides carry values); a by-id mismatch falls
+   back to the **merchant URL path** identity (`check_price=False`): price is
+   a routing signal, never a blocker, and page is recomputed by the current
+   scan (EXECUTOR_RULES §6). No row by either key, or a store contradiction →
+   STOP.
 3. Open the modal from that row's `[data-create-offer]` button → `#TB_window`.
 4. **Verify modal context** (`#TB_ajaxContent` present).
 5. **Verify the select names** before filling — they vary per feed
@@ -122,11 +127,12 @@ fill_then_click_trusted`, `--click-mode trusted` which is now the default) is:
    `admin-ajax …do=create_offer`. We never issue a direct XHR (the merchant id is
    auto-assigned by the modal — a direct XHR would use the wrong one `[S09]`); the
    admin-ajax `200` + server signal `"Offer created for locale …"` are observed as
-   **corroborating** signals only. Authoritative proof stays §5 (gone from pending).
+   **corroborating** signals only. Authoritative proof stays §5 (gone from the refreshed feed).
 
 **Live proof (2026-07-06):** Demigod canary (offer 93185190, Steam EU(9)/Standard)
 + 3 batch creations (Gambonanza, Hello Neighbor 2, Heart of the Machine) — all
-`target_add=ADDED`, `form_valid=true`, `create_offer 200`, gone from pending.
+`target_add=ADDED`, `form_valid=true`, `create_offer 200`, gone from the
+refreshed feed.
 
 **Layer 5 (known, expected):** some bundle / non-Standard offers reject
 server-side — `create_offer` returns `Bad request: paramètre "offer" manquant ou
@@ -138,17 +144,18 @@ success, batch continues. Not a regression.
 
 ## 5. Deterministic success (the whole point) `[S18]` `[DB-proof]`
 
-After a submit, **reload the pending feed** (`window.location`) and check the offer
-**disappeared** from pending.
+After a submit, **reload the feed** (`window.location`), in the **same
+`available` mode the run scans**, and check the offer **disappeared**.
 
 ```
-success = (offer_id NOT in refreshed pending feed)
+success = (offer NOT in the refreshed feed — same available mode as the run)
 ```
 
 This boolean — not `[data-success]`, not a model judgment — is what is passed to
 `StepGuard.record_result`. If the offer is still present → the submission **failed**:
 STOP that candidate, do **not** re-loop, write an error report. Reporting wording:
-"soumis via modale UI, confirmé post-save côté feed (disparue du pending)" — never
+"soumis via modale UI, confirmé post-save côté feed (disparue du feed
+rafraîchi, même available que le run)" — never
 "créé en base".
 
 ---

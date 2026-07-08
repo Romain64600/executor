@@ -90,7 +90,7 @@ production failure and never unlocks write stages. Force detection with
   rather than raising for expected "not reachable" states, and raise loudly for
   states that must never happen (e.g. `websocket_url()` in read-only mode).
 - **Determinism:** any `success` value must come from code (HTTP status, a parsed
-  error field, "offer gone from the refreshed pending feed") — **never** a model
+  error field, "offer gone from the refreshed feed, same available mode as the run") — **never** a model
   self-assessment. This is the single most important rule; see `EXECUTOR_RULES.md`
   §2/§7.
 - Outputs: JSON for machine data, JSONL for event logs, Markdown for human
@@ -127,7 +127,7 @@ Rules of use:
   a block — only a genuinely new id does. Map the validation file's `run_id` to
   this `task_id` (AUDIT.md G4).
 - Pass a **deterministic** `success_predicate`. For submit, success =
-  `offer_disappeared_from_refreshed_pending_feed`, never `[data-success]`.
+  `offer_disappeared_from_refreshed_feed` (same `available` mode as the run), never `[data-success]`.
 - On a `StepGuardError`, stop and write an error report. Never retry the same
   signature, never switch browser/VPN/tool.
 - Persist `guard.snapshot()` to the JSONL run log (once G3 lands).

@@ -281,7 +281,8 @@ only if the file is reopened for a functional reason.
   tests assert the JS blobs contain no `.value=`/`click(`/`fetch(`/`setValue`/
   `dispatchEvent` (`*_js_is_readonly*` tests).
 - **S10/S18**: `[data-success]` is treated as a UI signal only — every
-  docstring and the submitter agree post-save (gone from refreshed pending) is
+  docstring and the submitter agree post-save (gone from the refreshed feed,
+  same available mode as the run) is
   the only success proof.
 - **Wrong-edition guards present and wired**: fail-closed `NO_OPTION` (no
   `addItem` force), `DROPDOWN_STILL_OPEN` after the pick,

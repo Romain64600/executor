@@ -1,7 +1,7 @@
 # AKS Controlled Executor
 
 A deterministic, auditable, **fail-closed** executor for AllKeyShop (AKS)
-merchant-feed data entry: scanning pending merchant offers, matching them to AKS
+merchant-feed data entry: scanning merchant-feed offers, matching them to AKS
 product pages, and submitting them through the WordPress admin feed.
 
 It replaces a free-form LLM agent ("Hermes") that improvised whenever it got
@@ -53,7 +53,7 @@ state and cannot be argued away by a language model.
   Playwright, no Browserbase, no VPN when AKS direct works, no degraded submit.
 - **Deterministic success.** Every recorded success comes from code — an HTTP
   status, a parsed error field, or *the offer disappearing from the refreshed
-  pending feed* — never from a model self-assessment.
+  feed (same available mode as the run)* — never from a model self-assessment.
 - **Guarded execution.** Every stage runs through the StepGuard.
 - **Read-only until green.** No write stage runs until the invariant checker is
   `authoritative: true` **and** `ok: true` on the Debian VPS target.
@@ -154,7 +154,7 @@ def submit():
 guard.run_step(
     "submit", "offer=92015031",
     action=submit,
-    success_predicate=lambda r: r["gone_from_pending"],  # deterministic success
+    success_predicate=lambda r: r["gone_from_feed"],  # deterministic success
 )
 ```
 
@@ -202,7 +202,7 @@ starts, so a mid-task "retry past it" is impossible. See
   path. Real `--submit` (default `--click-mode trusted`) makes **trusted** Selectize
   picks for region/edition, fills `offer[targets][]` with the `aks_product_id`,
   passes a hard **HTML5 validity gate**, clicks "Create offer" with a trusted CDP
-  event, and verifies post-save (`success = offer gone from pending`, never
+  event, and verifies post-save (`success = offer gone from the refreshed feed, same available mode`, never
   `[data-success]`). **First real AKS offers created 2026-07-06** (Demigod canary +
   3 batch). **Canary default of 1**, `--all`/`--limit N` for the batch; gated +
   StepGuard (skip+continue, stop after 10). See
@@ -222,6 +222,6 @@ starts, so a mid-task "retry past it" is impossible. See
 - Submission happens **only** through the AKS feed UI modal — never a direct
   `admin-ajax` XHR (the modal auto-assigns the merchant id).
 - `[data-success]` is never proof of creation. An offer is "created" only after
-  it disappears from the refreshed pending feed.
+  it disappears from the refreshed feed (same available mode as the run).
 - 2FA is never requested in advance; after two login/2FA/CDP failures, stop and
   report.

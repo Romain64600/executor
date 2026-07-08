@@ -3,6 +3,17 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-08 — Audit 5 (P3): secondary docs de-pending-ified
+
+README, SUBMITTER_SPEC, CONTRIBUTING and AUDIT still phrased the success proof
+as "gone from pending" (README §StepGuard example, SPEC §5, CONTRIBUTING
+determinism rule) — the canonical docs were already correct, but an agent
+reading only a secondary doc would relearn the stale rule. All now say "gone
+from the refreshed feed (same `available` mode as the run)"; legitimate
+`available=pending` mentions (end-of-merchant check) untouched. SPEC §2's row
+step also carried the pre-audit-3 absolute "verify title, URL, price,
+merchant, page" — aligned with the routing-signal rule and URL-path fallback.
+
 ## 2026-07-08 — Audit 4 (2×P2): post-save strings carry the real available mode; submit never fire-and-forget
 
 Romain's read-only audit after pull, two P2s. **1** — `_verify_gone` already
