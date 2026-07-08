@@ -338,6 +338,10 @@ For each validated candidate, in order, fail-closed:
    false-positive "gone" whenever a mid-run re-import re-ids a still-pending
    row.
 2. Verify title, URL, price, merchant, page, row identity against the candidate.
+   "Page" is deliberately **recomputed by the current scan**, never compared to
+   an approved-time value: no page number is stored at approval (step 1: saved
+   page numbers are never trusted — pagination reflows). The recomputed page is
+   surfaced as `page_url` in the plan entry and in the `row_relocated` log line.
 3. Open the modal from that row's `[data-create-offer]` button (`#TB_window`).
 4. **Verify the select names before filling** — they vary per feed:
    `offer[region]`/`offer[edition]` on some, `offer[region_id]`/`offer[edition_id]`
@@ -435,6 +439,11 @@ query, network payload inspection, XHR, admin-ajax, or curl backend probing.
 - Region in UPPERCASE with id: `GLOBAL(2)`, `EU(9)`, `US(8)`, `UK(71)`,
   `EMEA(emea)`. No `?` in id fields. Every field mandatory — if one is missing,
   don't present, go extract it `[CORE 5-point check]`.
+- `<Platform>` is any `REGION_IDS` key rendered via `PLATFORM_LABEL` — Steam,
+  GOG, Ubisoft, Epic, EA App, Battle.net, **or Publisher** (`platform:
+  "PUBLISHER"` in `candidates.json`, R20 revision §4.4). A `Publisher
+  GLOBAL(1)` block is a normal candidate, not an anomaly — the classic store
+  platforms are not the whole vocabulary.
 - Post-save wording: "soumis via la modale UI, confirmé post-save côté feed/UI"
   or "disparue du feed pending". **Never** "créé en base / en DB / confirmé en
   base" unless a real DB check was actually done (not the standard flow)

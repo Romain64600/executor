@@ -233,9 +233,17 @@ def main() -> int:
     (out_dir / "submit_plan.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
 
     done = [p for p in result["plan"] if (p.get("submitted") if write else p.get("ready"))]
+    if write:
+        # Audit P2: attempts ≠ creations — both counters explicit in the text
+        # header too, not only in the JSON summary.
+        counts = (
+            f"created={result.get('created')}, "
+            f"write_attempts={result.get('write_attempts')}, plan={len(result['plan'])}"
+        )
+    else:
+        counts = f"{len(done)}/{len(result['plan'])} ready"
     header = (
-        f"{'SUBMIT' if write else 'DRY-RUN'} — {args.merchant} — "
-        f"{len(done)}/{len(result['plan'])} {'created' if write else 'ready'}, "
+        f"{'SUBMIT' if write else 'DRY-RUN'} — {args.merchant} — {counts}, "
         f"{result.get('feed_offers')} offers in current feed, "
         f"aborted={result['aborted']}, stopped={result['stopped']}"
     )

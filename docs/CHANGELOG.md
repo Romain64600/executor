@@ -3,6 +3,27 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-08 — Robustness pass: CLI tests for 05_submit.py, page recompute documented, header counters, annotations
+
+Romain's five-point robustness follow-up, now that the big gaps are closed:
+**1** — new `tests/test_submit_cli.py` exercises `scripts/05_submit.py`'s
+`main()` in-process (fakes for `build_report`, sessions, submitters — no CDP):
+missing validation.json/candidates.json refused, tampered or fabricated
+approved.json refused in dry-run AND `--submit` (with proof no session is
+ever opened), invariants-red abort, a valid triple passing the gate, and the
+canary default (`limit=1`). **2** — "verify page" is deliberately satisfied
+by RECOMPUTING the page from the current scan (no page is stored at approval;
+pagination reflows): now documented in `_locate_row` + EXECUTOR_RULES §6, and
+the recomputed `page_url` is surfaced in the plan entry and the
+`row_relocated` log line. **3** — `_index_feed`'s return annotation caught up
+with the audit-P1 detail dicts (`dict[str, dict[str, str]]`). **4** — the
+`submit_report.txt` header now shows `created=` and `write_attempts=`
+explicitly in write mode (audit P2 counters), smoke-tested at the CLI level.
+**5** — `Candidate` docstring + EXECUTOR_RULES §8 state that `platform:
+"PUBLISHER"` is a normal candidate value (R20 revision), so operators don't
+assume the classic store platforms are the whole vocabulary.
+Tests: 337 → 345.
+
 ## 2026-07-08 — Audit 2 (P2): docs no longer claim an `addItem` fallback in `select_via_trusted`
 
 `docs/EXECUTOR_RULES.md` §6 step 5 and `docs/SUBMITTER_SPEC.md` §4b still said

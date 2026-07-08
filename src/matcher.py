@@ -533,6 +533,15 @@ def resolve_aks(name: str, http_get_fn: Callable[..., Any] = http_get) -> AksRes
 # -- results ----------------------------------------------------------------
 @dataclass(frozen=True)
 class Candidate:
+    """One matcher-approved offer, serialized to ``candidates.json``.
+
+    ``platform`` is one of the ``REGION_IDS`` keys — STEAM, GOG, UBISOFT,
+    EPIC, EA, BATTLENET, or **PUBLISHER** (R20 revision: a token-less title
+    whose AKS page lists `Direct Publisher` is a publisher key, region
+    "Publisher (1)" = the GLOBAL bucket). Operators reading reports should
+    expect PUBLISHER alongside the classic store platforms.
+    """
+
     offer: NormalizedOffer
     aks_product_id: str
     aks_url: str

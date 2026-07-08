@@ -306,7 +306,7 @@ class _SubmitterBase:
         return index, by_url, found
 
     def _index_feed(self, store_id, feed_page, available, max_pages
-                    ) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
+                    ) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]]]:
         index, by_url, _ = self._scan_feed(store_id, feed_page, available, max_pages)
         return index, by_url
 
@@ -323,7 +323,11 @@ class _SubmitterBase:
         After a re-import, by merchant URL with an exact-title (+ store)
         check, adopting the row's current id; price is not compared there —
         a re-import legitimately refreshes it. AGENTS.md: "locate exact
-        current row; verify title, URL, price, page, merchant".
+        current row; verify title, URL, price, page, merchant". "Page" is
+        deliberately RECOMPUTED by the current scan (`page_url` in the row
+        details), never compared to an approved-time value: no page is stored
+        at approval and pagination reflows constantly (2026-07-07 G2A: 8
+        creations moved a live row from page 2 to page 1).
         """
         id_mismatches: list[str] = []
         row = index.get(offer_id)
@@ -376,6 +380,7 @@ class _SubmitterBase:
         if located.get("blocker"):
             entry["blocker"] = located["blocker"]
             return entry
+        entry["page_url"] = located["page_url"]
         self.session.navigate(located["page_url"])  # refresh the row's page
         status = self.session.open_offer_modal(offer_id)
         entry["modal"] = status
@@ -499,6 +504,7 @@ class _SubmitterBase:
                     approved_offer_id=offer_id,
                     current_offer_id=located["offer_id"],
                     url=candidate["offer"].get("url"),
+                    page_url=located["page_url"],
                 )
             entry = self._prepare(candidate, located)
             success = self._process(entry, candidate, ctx)
