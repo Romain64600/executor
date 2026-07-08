@@ -173,6 +173,15 @@ token-perfect AKS product page (Romain, direct rule 2026-07-07, after the
 Overwatch "Genji Mythic Weapon Skin Bundle" candidate was wrongly proposed;
 generalizes the G2A "skip skins" note in §11 and the Layer-5 server-side bundle
 rejects in §6); multi-game bundles/collections;
+**ANY software/application — games only** — categorical, word-boundary
+brand + category tokens (`SOFTWARE_APP_TOKENS`: EaseUS/Avast/…/Adobe, VPN
+brands, Internet/Total Security, Todo Backup/Data Recovery/…, Microsoft
+Office/Office 20xx/365/Home, Windows 10/11/Server), even with a real AKS page
+and clean platform/region (Romain, direct rule 2026-07-08, after "EaseUS Todo
+Backup Workstation" reached validation on Kinguin p.2). Deliberately NOT
+matched: `NERO` (the game N.E.R.O.), `AVG` (genre tag), bare
+OFFICE/WINDOWS/BACKUP — `OFFICE`/`VPN` moved out of the substring category
+list to word-boundary for this reason `[R22]`;
 DLC/extension without base game; title with **≥1 significant word** absent from
 the AKS name (platform/format/region/edition noise excluded, incl. `COM` from
 "GOG.COM"; tightened from the CORE ≥2 floor on 2026-07-07 after the

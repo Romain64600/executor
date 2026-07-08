@@ -46,9 +46,11 @@ FORBIDDEN_REGIONS = (
     "LATAM", "SOUTH AMERICA", "RU ONLY", "CHINA", "JAPAN", "KOREA", "BRAZIL",
     "INDIA", "ARGENTINA", "RUSSIA", "AUSTRALIA",
 )
+# "OFFICE" and "VPN" moved to SOFTWARE_APP_TOKENS (R22, word-boundary): as
+# substrings here they false-hit game titles ("The Office Quest", "…Officer…").
 CATEGORY_SKIP = (
     "GIFT CARD", "WALLET", "CASH CARD", "SHARK CARD", "VOUCHER", "SUBSCRIPTION",
-    "PREPAID", "SOFTWARE", "ANTIVIRUS", "OFFICE", "VPN", "POINTS", "CREDITS",
+    "PREPAID", "SOFTWARE", "ANTIVIRUS", "POINTS", "CREDITS",
     "COINS", "GEMS", "DIAMONDS", "TOP-UP", "TOP UP", "MEMBERSHIP", "CURRENCY",
     "ACTIVATION LINK", "STEAM ACCOUNT", "STEAM GIFT CARD",
     "MICROSOFT KEY", "MICROSOFT STORE", "SEASON PASS", "STEAM PLAYER TRADE",
@@ -73,6 +75,27 @@ DANGEROUS_QUALIFIERS = (
 BUNDLE_SKIN_TOKENS = (
     "BUNDLE", "BUNDLES", "SKIN", "SKINS",
     "FIELD TESTED", "MINIMAL WEAR", "FACTORY NEW", "BATTLE SCARRED", "WELL WORN",
+)
+# Romain (2026-07-08, live correction on "EaseUS Todo Backup Workstation"):
+# software/applications are never candidates — games only. Same categorical
+# word-boundary mechanism as BUNDLE_SKIN_TOKENS. Brand names plus multi-word
+# product categories; deliberately NOT listed: "NERO" (the game N.E.R.O.
+# exists), "AVG" (Japanese AVG genre tag on game titles), bare "OFFICE" /
+# "WINDOWS" / "BACKUP" (common in game titles). Doubt goes to skip — a missed
+# app still reaches the human gate, a skipped game shows up in skipped.json.
+SOFTWARE_APP_TOKENS = (
+    # brands
+    "EASEUS", "AVAST", "NORTON", "MCAFEE", "KASPERSKY", "BITDEFENDER", "ESET",
+    "CCLEANER", "AIDA64", "WINRAR", "ASHAMPOO", "CYBERLINK", "COREL", "AUTOCAD",
+    "MALWAREBYTES", "IOBIT", "WONDERSHARE", "MOVAVI", "ADOBE",
+    "NORDVPN", "EXPRESSVPN", "SURFSHARK", "CYBERGHOST",
+    # product categories ("ANTIVIRUS" already in CATEGORY_SKIP as substring)
+    "INTERNET SECURITY", "TOTAL SECURITY", "VPN",
+    "TODO BACKUP", "DATA RECOVERY", "PARTITION MASTER",
+    "DRIVER BOOSTER", "DRIVER UPDATER",
+    "MICROSOFT OFFICE", "OFFICE HOME", "OFFICE 365", "OFFICE 2016",
+    "OFFICE 2019", "OFFICE 2021", "OFFICE 2024",
+    "WINDOWS 10", "WINDOWS 11", "WINDOWS SERVER",
 )
 # Merchant → required URL domain (EXECUTOR_RULES §11: a Kinguin candidate URL
 # must contain kinguin.net). Only merchants with a written §11 domain rule are
@@ -201,6 +224,9 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
     for token in BUNDLE_SKIN_TOKENS:
         if f" {token} " in padded:
             return f"skip category: {token} (no bundles/skins)"
+    for token in SOFTWARE_APP_TOKENS:
+        if f" {token} " in padded:
+            return f"skip category: {token} (software/app, not a game)"
     for token in CURRENCY_TOKENS:
         if f" {token} " in padded:
             return f"skip category: {token} (in-game currency)"

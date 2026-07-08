@@ -3,6 +3,20 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-08 — R22: software/apps are never candidates (games only)
+
+Live correction on Kinguin p.2: "EaseUS Todo Backup Workstation" reached
+validation as candidate #2 — real AKS page, clean Publisher GLOBAL/Standard —
+and Romain rejected it: "Skip c est une app". New categorical precheck
+`SOFTWARE_APP_TOKENS` (word-boundary, same mechanism as bundles/skins): app
+brands (EaseUS…Adobe, VPN brands) + product categories (Internet/Total
+Security, VPN, Todo Backup…, Microsoft Office/Office 20xx, Windows 10/11/
+Server), reason `software/app, not a game`. Deliberate non-matches where games
+exist: NERO, AVG, bare OFFICE/WINDOWS/BACKUP — which surfaced that
+`CATEGORY_SKIP` substring-matched `OFFICE`/`VPN` and would skip "The Office
+Quest" or "…Officer…" titles: both moved to the word-boundary list. Mirrored
+in EXECUTOR_RULES §4.3 and skill LEARNED_RULES R22; suite at 352.
+
 ## 2026-07-08 — Audit 5 (P3): secondary docs de-pending-ified
 
 README, SUBMITTER_SPEC, CONTRIBUTING and AUDIT still phrased the success proof

@@ -111,6 +111,23 @@ class PrecheckSkipTests(unittest.TestCase):
         # "Skinwalker Hunt" is a game, not a skin — must NOT be skipped.
         self.assertIsNone(precheck_skip(_offer("Skinwalker Hunt Steam GLOBAL")))
 
+    def test_software_apps_are_skipped(self):
+        # Romain (2026-07-08): "Skip c est une app" — EaseUS reached the human
+        # gate; software/applications are never candidates, games only.
+        for title in (
+            "EaseUS Todo Backup Workstation CD Key",
+            "Microsoft Office 2021 Professional Plus CD Key",
+            "Windows 11 Pro OEM CD Key",
+            "Avast Premium Security 2024 Key",
+            "Express VPN 12 Months Key",
+        ):
+            self.assertIn("software/app", precheck_skip(_offer(title)), title)
+
+    def test_software_tokens_require_word_boundary(self):
+        # Bare OFFICE / WINDOWS / BACKUP stay legal in game titles.
+        self.assertIsNone(precheck_skip(_offer("The Office Quest Steam GLOBAL")))
+        self.assertIsNone(precheck_skip(_offer("Backup Crew Steam GLOBAL")))
+
     def test_language_restriction(self):
         self.assertIn("language", precheck_skip(_offer("Game (EN/FR) Steam")))
 
