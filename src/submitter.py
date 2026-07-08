@@ -26,6 +26,17 @@ from src.run_log import RunLogger
 from src.step_guard import StepGuard
 
 
+def _url_key(url: str) -> str:
+    """Merchant-URL identity key: the URL path, query params stripped.
+
+    The path is the stable per-product identity across feed re-imports
+    (G2A 2026-07-08 vs 07-07: path stable 716/716 common products, FULL url
+    only 690/716 — the ``uuid=`` param drifts; K4G's hash lives in the path).
+    Unique in-feed for both (G2A 741/741, K4G 250/250 distinct paths)."""
+
+    return (url or "").split("?", 1)[0]
+
+
 def _norm_option_text(text: str) -> str:
     """Normalize a catalog option label for comparison: drop the trailing
     ``(id)`` suffix regions carry (e.g. "Steam EU (9)"), lowercase, collapse
@@ -194,11 +205,12 @@ class _SubmitterBase:
                    stop_on: str | None = None, stop_on_url: str | None = None,
                    ) -> tuple[dict[str, str], dict[str, dict[str, str]], bool]:
         """Walk the feed pages building offer_id → page-url AND
-        merchant-url → current row ``{offer_id, name, page_url}``.
+        merchant-url-path (`_url_key`) → current row ``{offer_id, name, page_url}``.
 
         The url map exists because AKS re-imports re-id EVERY row (K4G
         2026-07-08: 0/212 ids survived the 74 minutes between extraction and
-        submit) — the merchant URL is the stable row identity across imports.
+        submit; G2A: 0/716 in 24h) — the merchant URL path is the stable row
+        identity across imports (full-URL params drift on G2A, see `_url_key`).
 
         With ``stop_on``/``stop_on_url``, stop as soon as the offer is seen
         under EITHER key and report found=True (the partial index is then
@@ -211,6 +223,7 @@ class _SubmitterBase:
         """
         index: dict[str, str] = {}
         by_url: dict[str, dict[str, str]] = {}
+        stop_on_url = _url_key(stop_on_url) if stop_on_url else None
         found = False
         empty = 0
         for page in range(1, max_pages + 1):
@@ -229,7 +242,7 @@ class _SubmitterBase:
                 if offer_id not in index:
                     index[offer_id] = url
                     new += 1
-                row_url = str(row.get("url") or "")
+                row_url = _url_key(str(row.get("url") or ""))
                 if row_url and row_url not in by_url:
                     by_url[row_url] = {
                         "offer_id": offer_id,
@@ -267,7 +280,7 @@ class _SubmitterBase:
         """
         if offer_id in index:
             return {"offer_id": offer_id, "page_url": index[offer_id]}
-        url = str(candidate["offer"].get("url") or "")
+        url = _url_key(str(candidate["offer"].get("url") or ""))
         row = by_url.get(url) if url else None
         if row is None:
             return {"blocker": "offer not in current feed (by id and by URL)"}

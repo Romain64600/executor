@@ -283,6 +283,31 @@ class RowRelocationTests(unittest.TestCase):
         self.assertFalse(entry["submitted"])
         self.assertIn("STILL in pending", entry["post_save"])
 
+    def test_relocation_survives_query_param_drift(self):
+        # G2A 2026-07-08: a re-import rotated the ?uuid= param on 26/716 rows
+        # while the path stayed stable 716/716 — the URL key is the path.
+        cand = _cand("1")
+        cand["offer"]["url"] = "https://m/1?uuid=AAA&adid=x"
+        rows = {"51": {"url": "https://m/1?uuid=BBB&adid=x", "name": "Game 1"}}
+        session = FakeSubmitSession([["51"]], rows=rows)
+        entry = _run(session, [cand])["plan"][0]
+        self.assertTrue(entry["ready"])
+        self.assertEqual(entry["offer_id"], "51")
+        self.assertEqual(entry["located_by"], "url")
+
+    def test_mid_run_reimport_with_param_drift_is_not_a_false_disappearance(self):
+        # Worst case: mid-run re-import rotates BOTH the row id and the ?uuid=
+        # param. Under full-URL keying the row looks absent by both keys →
+        # false "gone from pending"; path keying must still see it.
+        cand = _cand("1")
+        cand["offer"]["url"] = "https://m/1?uuid=AAA"
+        rows = {"77": {"url": "https://m/1?uuid=BBB", "name": "Game 1"}}
+        session = ReimportingWriteSession([["1"]], {"1": "77"}, rows=rows)
+        result = _real(session, [cand])
+        entry = result["plan"][0]
+        self.assertFalse(entry["submitted"])
+        self.assertIn("STILL in pending", entry["post_save"])
+
 
 class RealSubmitTests(unittest.TestCase):
     def test_canary_creates_one_then_stops(self):

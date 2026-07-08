@@ -259,6 +259,18 @@ For each validated candidate, in order, fail-closed:
    from page 2 to page 1 after 8 creations → ROW_NOT_FOUND). The post-save
    verify scan walks the whole refreshed feed anyway — its result **replaces**
    the row index after every verified creation (zero extra page loads).
+   **Offer ids are import-batch-scoped, not row identities**: AKS re-imports a
+   feed on its own schedule and re-ids EVERY row (K4G 2026-07-08: 0/212 ids
+   survived 74 min; G2A: 0/716 in 24 h). The stable row identity is the
+   **merchant URL path** — query params drift across G2A re-imports (`uuid=`
+   changed on 26/716 rows in 24 h while the path held 716/716; unique in-feed
+   for both merchants). A candidate absent by id is re-located by URL path +
+   **exact-title check** (fail-closed on any drift) and adopts the row's
+   current id (`row_relocated` in the log). Absent by id AND path = the offer
+   genuinely left the feed (worked in parallel / delisted) — a correct SKIP.
+   Post-save disappearance (§7) is proven under BOTH keys: id-only would
+   false-positive "gone" whenever a mid-run re-import re-ids a still-pending
+   row.
 2. Verify title, URL, price, merchant, page, row identity against the candidate.
 3. Open the modal from that row's `[data-create-offer]` button (`#TB_window`).
 4. **Verify the select names before filling** — they vary per feed:

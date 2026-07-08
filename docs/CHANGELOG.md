@@ -3,6 +3,20 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-08 — Submit: URL relocation keys on the path (G2A `uuid=` param drift)
+
+Pre-submit check on the G2A go: 0/716 common products kept their offer id
+across 24 h (second merchant confirming import-batch-scoped ids), and the
+FULL merchant URL was only 96.4 % stable — the `?uuid=` param rotated on
+26/716 rows while the URL path held 716/716 (and is unique in-feed for both
+G2A 741/741 and K4G 250/250). Full-URL keying would have mis-skipped drifted
+rows ("not in current feed") and, worse, could prove a false "gone from
+pending" when a mid-run re-import rotates id + uuid together. `_url_key`
+(path, params stripped) now keys `by_url`, `_locate_row` and the
+`stop_on_url` disappearance probe. Report format unchanged (G2A candidate
+URLs keep their params for Romain's links). Tests: 301 → 303 (param-drift
+relocation + worst-case false-disappearance veto).
+
 ## 2026-07-08 — R18 revised: DLC bucket = candidate with edition DLC(16), not a skip
 
 Romain's direct rule ("quand on a DLC … sur la page produit AKS on ajoute ça
