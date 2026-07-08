@@ -3,6 +3,34 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-08 — Audit 2 (P2): docs no longer claim an `addItem` fallback in `select_via_trusted`
+
+`docs/EXECUTOR_RULES.md` §6 step 5 and `docs/SUBMITTER_SPEC.md` §4b still said
+the trusted Selectize pick had an `addItem(id, false)` fallback for
+non-rendered options. The code and tests say the opposite since the
+2026-07-06 wrong-edition incident (forcing `addItem` reads the generic master
+catalog and created 3 wrong-edition offers): a non-rendered id returns
+`NO_OPTION` and fails closed. Both docs now state the fail-closed behavior —
+the doc rule is the authority, so the stale text was a regression risk.
+
+## 2026-07-08 — Audit 2 (P1): full row verification on the by-id path before the modal
+
+Romain's second local audit: `_locate_row` accepted a feed row as soon as
+`offer_id in index`, but the index only mapped id → page_url — title/URL were
+only compared on the URL-relocation path, and `_PAGE_ROWS_JS` only surfaced
+id/url/name, so price and merchant were never verified (AGENTS.md requires
+"verify title, URL, price, page, merchant" before the modal). Fixed:
+`_PAGE_ROWS_JS` now also extracts `price` and `storeId` from `data-offer`;
+`_scan_feed` keeps full row details per id; a new `_row_check` compares name +
+URL path always, store_id and price when both sides carry a value (feed ids
+are import-batch-scoped and reusable, so a mismatching by-id row is treated as
+stale and falls through to the merchant-URL identity instead of being
+trusted). On the URL-relocation path price is deliberately NOT compared
+(re-imports legitimately refresh prices; price is never entered), but a
+store_id contradiction blocks. Plan entries record the verified fields as
+`row_checked` for the audit trail. Tests: 331 → 337 (RowVerificationTests:
+id-reuse distrust, relocation, price drift vs match, store mismatch block).
+
 ## 2026-07-08 — R20 revised: token-less keys on publisher-direct AKS pages entered as PUBLISHER, not skipped
 
 Romain's direct rule ("Rentrons les en publisher"), same-day revision — the

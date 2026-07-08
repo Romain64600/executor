@@ -98,10 +98,12 @@ fill_then_click_trusted`, `--click-mode trusted` which is now the default) is:
 
 1. **Trusted Selectize picks for region + edition** (`select_via_trusted`): a CDP
    `Input.dispatchMouseEvent` (`isTrusted:true`) on the `.selectize-input` to open
-   the dropdown, then a trusted click on the `[data-value="{id}"]` option; an
-   `addItem(id, false)` fallback covers options not in the visible dropdown DOM
-   (Layer 3). `setValue()` is **not** used — it produces `isTrusted:false` and
-   leaves Selectize's own `required` text input empty.
+   the dropdown, then a trusted click on the `[data-value="{id}"]` option. If the
+   wanted id is **not rendered** in the product-scoped dropdown the pick returns
+   `NO_OPTION` and fails closed — there is **no `addItem` fallback** (`addItem`
+   reads the generic master catalog; forcing it created 3 wrong-edition offers
+   on 2026-07-06). `setValue()` is **not** used — it produces `isTrusted:false`
+   and leaves Selectize's own `required` text input empty.
 2. **Fill `offer[targets][]`** (`add_target_trusted`) — the missing piece.
    `offer[targets][]` is a bare `<input type="text" required
    pattern="(\d+)|(https?://.+)">` with a sibling add-button (chip/array field).

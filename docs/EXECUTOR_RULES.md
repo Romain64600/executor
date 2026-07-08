@@ -346,10 +346,13 @@ For each validated candidate, in order, fail-closed:
    `Array.from(document.querySelectorAll('#TB_ajaxContent select')).map(e=>e.name)`.
 5. Pick region/edition via **trusted Selectize** (`select_via_trusted`): a CDP
    `Input.dispatchMouseEvent` (`isTrusted:true`) opens the `.selectize-input`
-   dropdown, a trusted click selects `[data-value="{id}"]` (with an
-   `addItem(id, false)` fallback). **Not** `selectize.setValue(...)` — that is
-   `isTrusted:false` and leaves Selectize's own `required` text input empty
-   (S18, 2026-07-06).
+   dropdown, a trusted click selects `[data-value="{id}"]`. If the wanted id is
+   **not rendered** in the product-scoped dropdown, the pick fails closed with
+   `NO_OPTION` — there is **no `addItem` fallback**: `addItem` reads Selectize's
+   generic master catalog (e.g. `"1"→"Standard"` for every product) and on
+   2026-07-06 that exact force created 3 wrong-edition offers. **Not**
+   `selectize.setValue(...)` either — that is `isTrusted:false` and leaves
+   Selectize's own `required` text input empty (S18, 2026-07-06).
 6. Fill **`offer[targets][]`** (`add_target_trusted`) with the candidate's
    `aks_product_id` — trusted focus click, `Input.insertText`, commit via the
    adjacent add-button (trusted-Enter fallback). This is the last empty `required`
