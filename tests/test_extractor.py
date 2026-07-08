@@ -12,6 +12,7 @@ from src.extractor import (
     feed_url,
     parse_offers_payload,
     parse_page_range,
+    unescape_attribute,
 )
 from src.pacing import Pacer
 from src.step_guard import StepGuard
@@ -99,6 +100,21 @@ class ParsePayloadTests(unittest.TestCase):
     def test_html_entities_are_unescaped(self):
         payload = json.dumps([json.dumps({"id": "1", "name": "A &amp; B", "url": "https://x/1"})])
         self.assertEqual(parse_offers_payload(payload)[0]["name"], "A & B")
+
+    def test_bare_ampersand_in_url_query_survives(self):
+        # &curren is a legacy HTML4 entity: html.unescape decodes it even
+        # without ';' and mangles the URL to '¤cy=EUR' (Kinguin, 2026-07-08).
+        url = "https://www.kinguin.net/en/category/1/x?nosalesbooster=1&currency=EUR"
+        payload = json.dumps([json.dumps({"id": "1", "name": "X", "url": url})])
+        self.assertEqual(parse_offers_payload(payload)[0]["url"], url)
+
+    def test_unescape_attribute_browser_semantics(self):
+        self.assertEqual(unescape_attribute("a &amp; b"), "a & b")
+        self.assertEqual(unescape_attribute("Exile&#039;s"), "Exile's")
+        self.assertEqual(unescape_attribute("&#x27;"), "'")
+        self.assertEqual(unescape_attribute("&curren;cy"), "¤cy")
+        self.assertEqual(unescape_attribute("&currency=EUR"), "&currency=EUR")
+        self.assertEqual(unescape_attribute("&unknownref;"), "&unknownref;")
 
     def test_empty_payload(self):
         self.assertEqual(parse_offers_payload(""), [])

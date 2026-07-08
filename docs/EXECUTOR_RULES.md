@@ -257,9 +257,18 @@ Otherwise, title hints:
 `[CORE rule 4]`. These are hints only; §4.7 overrides.
 
 ### 4.6 URL hygiene
-`url.split('?')[0]` for all merchants **except G2A**, where query params must be
-kept (stripping → 404) `[G2A]`. Verify the URL domain matches the merchant
-(e.g. must contain `kinguin.net` for Kinguin) `[KINGUIN]`.
+The merchant URL is kept **complete, exactly as the feed carries it** — never
+strip query params in artifacts or reports. G2A is not the only merchant with
+meaningful params (Romain, 2026-07-08): Kinguin rows carry
+`?nosalesbooster=1&currency=EUR`, G2A carries `?uuid=…&___currency=…`
+(stripping G2A → 404) `[R21]`. Row identity in the submitter compares the URL
+*path* internally (`_url_key`, §6 step 2) — a comparison key, never a rewrite
+of the stored or displayed URL. Fidelity includes entity decoding: `data-offer`
+blobs decode with browser attribute semantics (only `;`-terminated references),
+so a raw `&currency=EUR` in a query string survives instead of becoming
+`¤cy=EUR` (`unescape_attribute`, seen live on Kinguin 2026-07-08). Verify the
+URL domain matches the merchant (e.g. must contain `kinguin.net` for Kinguin)
+`[KINGUIN]`.
 
 ### 4.7 AKS resolution
 Build the slug from the AKS name (lowercase, `[^a-z0-9] → -`), verify
@@ -440,7 +449,7 @@ query, network payload inspection, XHR, admin-ajax, or curl backend probing.
   ```
   #N — <full merchant title, copied from the WP feed>
   🎯 <AKS_ID> — <AKS product name>
-  🔗 <real merchant URL from the feed>   (G2A: keep ?params; others: strip)
+  🔗 <real merchant URL from the feed>   (always complete, ?params included — all merchants, R21)
   🎯 https://www.allkeyshop.com/blog/buy-{slug}-cd-key-compare-prices/
   <Platform> <REGION(ID)>, <Edition(ID)>
   ```
@@ -504,10 +513,11 @@ Gamivo 51, Allyouplay 17, GOG 34.
 
 ## 11. Per-merchant deterministic notes (brief)
 
-- **G2A**: keep URL `?params`; heavy non-game noise (~2-3% yield); SKIP CIS/ROW/
+- **G2A**: heavy non-game noise (~2-3% yield); SKIP CIS/ROW/
   Turkey/Germany/currency/gift cards/skins.
 - **Kinguin**: filter by URL `&store=58`, not dropdown; candidate URL must
-  contain `kinguin.net`; Steam region often implicit GLOBAL.
+  contain `kinguin.net`; URLs carry `?params` (`nosalesbooster`, `currency`) —
+  report them as-is (§4.6); Steam region often implicit GLOBAL.
 - **Gamivo**: URL decides region (`-global`/`-eu`/`-gift-`/`-en-`), not the title.
 - **Driffle**: `name`/`url` fields; `stock` is `"y"`/`"n"`; modal selects are
   `offer[region]`/`offer[edition]`; dynamic feed → re-scan before submit.

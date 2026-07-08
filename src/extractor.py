@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 import time
 from typing import Any
 
@@ -128,13 +129,29 @@ def parse_page_range(spec: str) -> tuple[int, int]:
     return first, last
 
 
+_ENTITY_RE = re.compile(r"&(?:[a-zA-Z][a-zA-Z0-9]*|#[0-9]+|#[xX][0-9a-fA-F]+);")
+
+
+def unescape_attribute(value: str) -> str:
+    """Decode HTML entities with browser attribute-value semantics.
+
+    Only ``;``-terminated references decode (``&amp;`` → ``&``, ``&#039;`` →
+    ``'``). Bare legacy names stay literal: in ``&currency=EUR`` a browser
+    keeps ``&curren`` (next char is alphanumeric), while ``html.unescape``
+    would mangle it to ``¤cy=EUR`` — seen live on Kinguin URLs 2026-07-08.
+    """
+
+    return _ENTITY_RE.sub(lambda m: html.unescape(m.group(0)), value)
+
+
 def parse_offers_payload(payload: Any) -> list[dict]:
     """Parse a list of ``data-offer`` attribute strings into offer dicts.
 
     ``payload`` is a JSON array (or its string form) whose elements are the
     ``data-offer`` attribute strings. Each is HTML-entity-encoded, so we
-    ``html.unescape`` before ``json.loads`` (skill rule F05). Elements that are
-    already objects are passed through.
+    decode entities before ``json.loads`` (skill rule F05) — with attribute
+    semantics (:func:`unescape_attribute`), so raw ``&`` in URL query strings
+    survives. Elements that are already objects are passed through.
     """
 
     if payload in (None, ""):
@@ -143,7 +160,7 @@ def parse_offers_payload(payload: Any) -> list[dict]:
     offers: list[dict] = []
     for element in outer:
         if isinstance(element, str):
-            offers.append(json.loads(html.unescape(element)))
+            offers.append(json.loads(unescape_attribute(element)))
         elif isinstance(element, dict):
             offers.append(element)
     return offers

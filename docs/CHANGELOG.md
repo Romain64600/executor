@@ -3,6 +3,22 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-08 — R21: merchant URL always complete + attribute-faithful entity decoding
+
+Romain corrected the report rule live on Kinguin page 1: "il n'y a pas que G2A
+qui a des paramètres" — the old format note "G2A: keep `?params`; others:
+strip" was wrong, Kinguin rows carry real params too
+(`?nosalesbooster=1&currency=EUR`). Rule rewritten (R21): the merchant URL is
+always reported and stored **complete, exactly as the feed carries it**, for
+every merchant; the URL *path* stays an internal comparison key in the
+submitter, never a rewrite. The code already kept full URLs — the real defect
+was decode fidelity: `html.unescape` also decodes semicolon-less legacy
+entities, mangling `&currency=EUR` into `¤cy=EUR` inside `data-offer` URLs
+(a browser keeps `&curren` when unterminated in an attribute). New
+`unescape_attribute` in `src/extractor.py` decodes only `;`-terminated
+references; `parse_offers_payload` uses it. EXECUTOR_RULES §4.6/§8/§11 and the
+skill (SKILL.md format + LEARNED_RULES R21) updated. Tests 348 → 350.
+
 ## 2026-07-08 — Audit 3: price is a routing signal, not a blocker — rule made explicit, drift surfaced
 
 Romain's third audit, one residual point: price is compared on the by-id path
