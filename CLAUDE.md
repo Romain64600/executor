@@ -18,11 +18,13 @@ only adds Claude-specific notes on top of them.
   block. If the guard is blocked: STOP, write an error report, and wait for a
   genuinely new task. "go" only authorizes the exact current validated action
   under the strict process.
+  **Hard constraint:** Do not use multi-turn reasoning, retries, alternate
+  tools, or reframing to bypass a StepGuard block.
 
 - The deterministic, per-stage rules derived from the `aks-data-entry` skill live
   in **`docs/EXECUTOR_RULES.md`**. Read it before building or changing any
   executor stage. Key example: a submit `success` = the offer disappeared from
-  the refreshed pending feed, never `[data-success]`.
+  the refreshed feed (same available mode as the run), never `[data-success]`.
 
 - **Fail-closed.** If anything is uncertain, stop. No fallback browser, no
   Playwright, no Browserbase, no VPN when AKS direct works, no ad-hoc browser
@@ -33,9 +35,21 @@ only adds Claude-specific notes on top of them.
   (`authoritative: true` in its JSON output). Failures from local macOS or a
   sandbox (`authoritative: false`) are NOT production failures and never unlock
   write stages.
+  **Hard constraint:** If running on local macOS or any non-authoritative
+  environment, treat `authoritative:false` as expected local state. Do not try
+  to force a local green result by changing environment variables, networking,
+  endpoints, browser setup, or invariant code.
 
 - `success` passed to `record_result` must come from deterministic code (HTTP
   status, presence of an error field), never from a model self-assessment.
+
+- **Scope separation:** Claude must not self-initiate long-running asynchronous
+  batch tasks, cloud-polling workers, or massive parallel test generation.
+  Running executor pipeline stages (extract / match / report, submit only on
+  Romain's explicit go) is in scope when Romain directs the data entry,
+  including as background processes. Otherwise keep work scoped to local file
+  diffs, refactoring, focused tests, documentation, and deterministic Python
+  state evaluation.
 
 - Do not commit `runs/`, `logs/`, `state/`, `.env`, or any secret / cookie /
   2FA code.

@@ -83,8 +83,9 @@ actions through the guard.
 
 - Extractor: feed HTTP `200` **and** JSON parsed **and** ≥0 offers extracted.
 - AKS slug check: HTTP `200` on the product URL.
-- Submit: **the offer disappeared from the freshly-refreshed pending feed**
-  `[S10][S18]` — never `[data-success]`, never a model judgment.
+- Submit: **the offer disappeared from the freshly-refreshed feed (same
+  `available` mode as the run)** `[S10][S18]` — never `[data-success]`, never a
+  model judgment.
 
 ---
 
@@ -93,7 +94,7 @@ actions through the guard.
 **Source of offers is the WordPress AKS merchant feed, never the merchant
 site** `[F01]`.
 
-- Refresh the current merchant pending feed **from scratch** every session; use
+- Refresh the current merchant feed **from scratch** every session; use
   only offers visible in the freshly refreshed feed; never reuse candidates from
   memory or a previous session `[S25][fresh-feed override]`.
 - Scan via `available=all` (HTML). `available=pending` is AJAX and is used only
@@ -416,8 +417,8 @@ valid — fail-closed skips them, not a regression.
 `submit_plan.json` reports two write counters (audit P2, 2026-07-08):
 `write_attempts` (ready rows the write path attempted — the conservative count
 that drives `--limit`) and `created` (verified creations, i.e. post-save "gone
-from pending"). The old single `writes` counter conflated the two and
-overstated creations.
+from the refreshed feed"). The old single `writes` counter conflated the two
+and overstated creations.
 
 ---
 
@@ -429,12 +430,16 @@ This is THE rule of the skill `[DB proof override][S10][S18]`.
 - `[data-success]` is only a positive **UI signal**, confirmed as a false
   positive even with the correct button click `[S18]`.
 - **Neither is proof.** After every submission, reload the feed
-  (`window.location.href`) and confirm the offer **disappeared** from pending.
-  If it is still present → the submission failed → do not re-loop the same
-  action; STOP and diagnose `[R0b]`.
+  (`window.location.href`) and confirm the offer **disappeared** from the
+  refreshed feed, in the **same `available` mode the run scans**. If it is
+  still present → the submission failed → do not re-loop the same action; STOP
+  and diagnose `[R0b]`.
 
-`success = (offer no longer in refreshed pending feed)`. This boolean is what the
-submitter passes to `StepGuard.record_result`.
+`success = (offer no longer in the refreshed feed, same available mode as the
+run)`. This boolean is what the submitter passes to
+`StepGuard.record_result`. The mode matters: on Kinguin `available=pending` is
+empty even with 1197 rows in `available=all` (2026-07-08), so "gone from
+pending" would be trivially — and falsely — true.
 
 **Verification method is UI/feed only** `[S12]` — do **not** verify by direct DB
 query, network payload inspection, XHR, admin-ajax, or curl backend probing.
@@ -462,7 +467,7 @@ query, network payload inspection, XHR, admin-ajax, or curl backend probing.
   GLOBAL(1)` block is a normal candidate, not an anomaly — the classic store
   platforms are not the whole vocabulary.
 - Post-save wording: "soumis via la modale UI, confirmé post-save côté feed/UI"
-  or "disparue du feed pending". **Never** "créé en base / en DB / confirmé en
+  or "disparue du feed rafraîchi (même available que le run)". **Never** "créé en base / en DB / confirmé en
   base" unless a real DB check was actually done (not the standard flow)
   `[S13][S14]`.
 - Never declare a merchant "finished" without checking `available=pending` on all

@@ -3,6 +3,21 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-08 — Guidance refresh: CLAUDE.md hard constraints, AGENTS.md aligned, success wording fixed
+
+CLAUDE.md revision from Romain applied verbatim: explicit hard constraints
+(never bypass a StepGuard block via retries/reframing/alternate tools; never
+force a green invariants result in a non-authoritative environment) and a
+scope-separation note (pipeline stages incl. background runs are in scope when
+Romain directs data entry, `--submit` only on his go; no self-initiated batch
+workers). The submit success example now reads "disappeared from the refreshed
+feed (same `available` mode as the run)" — the old "pending feed" wording had
+become false: Kinguin `available=pending` is empty even with 1197 rows in
+`all`, so "gone from pending" would be trivially true. Same fix mirrored in
+EXECUTOR_RULES §2/§6/§7/§8, and AGENTS.md's submission constraints aligned
+with audit 3 (price = routing signal, page recomputed, post-save success
+criterion spelled out).
+
 ## 2026-07-08 — R21: merchant URL always complete + attribute-faithful entity decoding
 
 Romain corrected the report rule live on Kinguin page 1: "il n'y a pas que G2A

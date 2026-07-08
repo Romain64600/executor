@@ -91,13 +91,16 @@ The submitter must only process candidates from a validation JSON file.
 For each candidate:
 - refresh current merchant feed;
 - locate exact current row;
-- verify title, URL, price, page, merchant;
+- verify title, URL, merchant/store (price is a routing signal, never a
+  blocker after URL/store confirm; page is recomputed by the current scan —
+  EXECUTOR_RULES §6);
 - open modal from that row;
 - verify modal context;
 - fill visible region/edition controls;
 - click official visible submit button;
 - refresh feed;
-- verify post-save state.
+- verify post-save state: success = the offer disappeared from the refreshed
+  feed, same available mode as the run.
 
 No degraded mode.
 
