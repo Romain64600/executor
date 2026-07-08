@@ -3,6 +3,49 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-08 — Audit fixes: submit-time re-validation (P1a), hard validity gate (P1b), split write counters (P2), AKS/Staff UA host guard (#4)
+
+Romain's local audit, four findings, all fixed fail-closed:
+**P1a** — `scripts/05_submit.py` loaded `approved.json` directly, so a stale/
+edited/fabricated file bypassed the strict validation. It now re-derives the
+approved set from the sibling `candidates.json` + `validation.json`
+(`src/validation.py:verify_approved_against_source`, exact-match on canonical
+JSON) and aborts dry-run/inspect/submit alike on any mismatch or missing
+source. Live-checked on both 2026-07-08 run dirs + a real tamper (refused).
+**P1b** — `fill_then_click_trusted` continued to the click when
+`form_validity()` returned `ok:false` (explicit degraded mode). Unreadable
+validity now hard-blocks: new `FORM_VALIDITY_UNREADABLE` status, cleanup, no
+click; `FORM_INVALID` tightened to `form_valid is not True`. The old test that
+asserted the degrade was rewritten to assert the block.
+**P2** — the submitter's single `writes` counter counted ready attempts, not
+verified creations, overstating `submit_plan.json`. Split into
+`write_attempts` (drives `--limit`, conservative) and `created`
+(post-save-verified); both `None` outside write mode.
+**#4** — `AKS/Staff` UA is allkeyshop.com-only (Romain: "pour les requêtes sur
+allkeyshop et seulement celles-ci"): `AKS_STAFF_UA` moved to `src/aks_env.py`
+and `http_get` raises on any non-`allkeyshop.com` host (suffix-spoof safe);
+CDP browser keeps the Chrome 149 UA. Documented in EXECUTOR_RULES §1/§5/§6.
+Tests: 319 → 328.
+
+## 2026-07-08 — R20: title-derived platform verified against the AKS page's official-platforms list
+
+Escape reported by Romain: G2A "Su-27 for DCS World" (run 20260708-152435,
+offer 93547835) was entered Steam GLOBAL(2) but the product is
+publisher-direct (Eagle Dynamics) — he fixed the DB by hand. Root cause:
+`detect_platform` returns STEAM as a fail-open DEFAULT when no token matches
+(same pattern as the R19 edition default, one escape earlier). The AKS page's
+"official platforms:" line is the only deterministic signal; it is now
+extracted at resolve time (`extract_official_platforms`, zero extra requests)
+and gated in `match_offer` after R19: a DEFAULTED Steam needs a page list of
+exactly `Steam` (empty list or any mix → skip, distinct reasons); an EXPLICIT
+title token stays trusted (multi-platform pages are normal — Osmos Steam+GoG
+page, Steam key) unless the token's known page name (Steam/GoG/Epic Store) is
+absent from the list — contradiction → skip. Retro sweep of all 48
+created/attempted offers across 27 AKS pages: Su-27 is the only platform
+damage ever. Live check: Su-27 page → skip (R20); Frog Sqwad
+(Steam+Xbox Play Anywhere page, explicit "Steam" title) → still a candidate.
+Skill LEARNED_RULES R20 added + mirrored here. Tests: 307 → 319.
+
 ## 2026-07-08 — R19: empty editions map = stub AKS page → SKIP (edition unverifiable)
 
 Escape reported by Romain: G2A "DCS: A-10C Warthog" (run 20260708-125905)

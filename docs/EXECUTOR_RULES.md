@@ -45,6 +45,12 @@ stage that touches the browser runs `[S24][S25]`.
 - Chrome User-Agent is exactly
   `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36`
   and does **not** contain `HeadlessChrome` `[S24]`.
+- The `AKS/Staff` User-Agent is for **allkeyshop.com requests only** — never
+  for merchant or any other hosts (Romain, audit #4, 2026-07-08).
+  `src/aks_env.py:http_get` enforces it fail-closed (`ValueError` on any
+  non-`allkeyshop.com` host, suffix-spoof safe); the CDP browser keeps the
+  required Chrome UA above. Mirrors the host Chrome UA-Switcher policy
+  (AKS domains only).
 - CDP `/json/version` exposes `Browser`, `User-Agent`, `webSocketDebuggerUrl`.
 - OpenVPN is **not** used when AKS direct works `[S20]`.
 - No stale AKS scripts are running.
@@ -175,15 +181,36 @@ word — doubt goes to skip) `[R16]`; **Microsoft Store Key / Microsoft Key**
 MICROSOFT platform has no region mapping → fail-closed) `[R17]`;
 year/version absent from AKS name; edition not present in the AKS dropdown;
 resolved AKS page whose **editions map is empty** (stub record, zero offers —
-edition unverifiable) `[R19]`.
+edition unverifiable) `[R19]`; **platform unverified against the AKS page's
+"official platforms" list** — a defaulted STEAM on a page that is not
+Steam-only (or lists no platforms), or an explicit title platform that the
+page list contradicts (§4.4) `[R20]`.
 (A DLC bucket on the resolved AKS page is NOT a skip — it assigns the DLC
 edition, §4.5 `[R18]`.)
 
-### 4.4 Region — **URL decides, not the title** `[Ga01]`
+### 4.4 Region & platform — **URL and AKS page decide, not the title** `[Ga01]`
 Derive region from the offer URL when the merchant encodes it there
 (e.g. Gamivo `…-steam-global` / `-eu` / `-gift-eu`; look for `-en-` and
 `-gift-`) `[GAMIVO]`. Kinguin Steam titles often omit the region → accept as
 **GLOBAL implicit** unless a forbidden region is present `[KINGUIN]`.
+
+**Platform is page-verified, fail-closed `[R20]` (2026-07-08, Su-27 escape):**
+`detect_platform`'s STEAM is a **default**, not a detection — "Su-27 for DCS
+World Key GLOBAL" carries no platform token, was defaulted STEAM and entered
+Steam GLOBAL(2) when the product is publisher-direct (Eagle Dynamics); Romain
+had to fix the DB by hand. The only deterministic signal is the resolved AKS
+page's "official platforms:" line (extracted at resolve time, zero extra
+requests). Rules: a **defaulted** STEAM is trusted only when that list is
+exactly `Steam`; an empty/missing list or any other mix → SKIP with a distinct
+reason. An **explicit** title token is the merchant's declaration and is
+trusted — multi-platform pages are normal (an Osmos Steam+GoG page takes a
+Steam key) — **except** when the token has a known page vocabulary
+(STEAM→`Steam`, GOG→`GoG`, EPIC→`Epic Store`) and that name is totally absent
+from the page list: contradiction → SKIP. Tokens without a vocabulary entry
+(EA, UBISOFT, …) get no cross-check. Sweep 2026-07-08 over every offer ever
+created/attempted (48 offers, 27 AKS pages, stubs included): Su-27 was the
+only platform damage; page vocabulary observed live: Steam, GoG, Epic Store,
+Direct Publisher, Xbox Play Anywhere, Nintendo eShop, Xbox.
 
 ### 4.5 Edition detection (fallback hints — dropdown is truth) `[E0x]`
 **Stub guard first `[R19]` (2026-07-08, DCS A-10C Warthog escape):** an
@@ -239,7 +266,9 @@ present → the product is a DLC → edition DLC(16) per §4.5 `[R18]`. Systemat
 — the map is already in hand at resolve time (zero extra requests) — not "on
 suspicion" only. An **empty** map is a stub record → SKIP per §4.5 `[R19]`
 (stub pages serialize it as `"editions":[]` — the object-only extraction
-yields `{}` there by design).
+yields `{}` there by design). The same resolve pass extracts the page's
+"official platforms:" list (`extract_official_platforms`) that feeds the §4.4
+platform gate `[R20]`.
 
 ### 4.8 Limits & doubt
 Max **100** candidates by default unless Romain asks otherwise `[S26]`. Doubt
@@ -264,6 +293,15 @@ Implemented in `src/validation.py` + `scripts/04_validate.py`. Candidates are
 matched by fingerprint (`offer_id|aks_product_id|region_id|edition_id`), so a
 re-match that changes region/edition invalidates a stale approval; any problem
 rejects the whole file (fail-closed). See [`DATA_CONTRACTS.md`](DATA_CONTRACTS.md).
+
+**Submit-time re-verification (audit P1, 2026-07-08):** `approved.json` alone
+is never authority. `scripts/05_submit.py` re-derives the approved set from the
+sibling `candidates.json` + `validation.json`
+(`verify_approved_against_source`) and refuses to run — dry-run, inspect
+**and** submit — when `approved.json` does not match the re-derivation exactly
+(stale, hand-edited, or fabricated) or when either source file is missing.
+`validated_by` / `validated_at` / fingerprints are thus re-checked at the
+moment of submission, not only at 04_validate time.
 
 ---
 
@@ -309,6 +347,10 @@ For each validated candidate, in order, fail-closed:
    field; without it the form never validates.
 7. **HTML5 validity gate** (`form_validity()`, a hard gate): the `<form>` must be
    valid (`form_valid:true`) — else return `FORM_INVALID` and do **not** click.
+   An **unreadable** probe (`ok:false`) blocks the same way — return
+   `FORM_VALIDITY_UNREADABLE`, clean up, never click (audit P1b, 2026-07-08:
+   the old code continued to the click on `ok:false` — explicit degraded mode,
+   now removed).
 8. Submit by a **trusted CDP click** (`isTrusted:true`) on the modal "Create offer"
    button — the only trigger Driffle's handler honours `[S09]`. It drives the
    modal's **own** `admin-ajax do=create_offer`; we never issue a direct XHR
@@ -337,6 +379,12 @@ Driffle creations 2026-07-06 — see [`SUBMITTER_SPEC.md`](SUBMITTER_SPEC.md) §
 Note the **Layer-5** case: some bundle/non-Standard offers reject server-side
 (`Bad request: paramètre "offer" manquant ou invalide`) even when the form is
 valid — fail-closed skips them, not a regression.
+
+`submit_plan.json` reports two write counters (audit P2, 2026-07-08):
+`write_attempts` (ready rows the write path attempted — the conservative count
+that drives `--limit`) and `created` (verified creations, i.e. post-save "gone
+from pending"). The old single `writes` counter conflated the two and
+overstated creations.
 
 ---
 
