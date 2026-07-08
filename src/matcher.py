@@ -24,14 +24,15 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from src.aks_env import http_get
+from src.aks_env import AKS_STAFF_UA, http_get
 from src.contracts import NormalizedFeed, NormalizedOffer
 
 AKS_BUY_URL = "https://www.allkeyshop.com/blog/buy-{slug}-cd-key-compare-prices/"
 # Staff anti-bot bypass UA for the resolve probes (2026-07-07): bulk runs with
 # the plain browser UA get intermittently throttled, which silently flipped
-# real product pages into "no AKS page" between two matcher runs.
-AKS_PROBE_UA = "AKS/Staff"
+# real product pages into "no AKS page" between two matcher runs. Restricted to
+# allkeyshop.com — http_get refuses it for any other host (audit #4, 2026-07-08).
+AKS_PROBE_UA = AKS_STAFF_UA
 AKS_PROBE_DELAY_S = 0.3
 
 # -- classification tables --------------------------------------------------
@@ -100,6 +101,12 @@ PLATFORM_LABEL = {
     "STEAM": "Steam", "GOG": "GOG", "EPIC": "Epic", "EA": "EA App",
     "UBISOFT": "Ubisoft", "BATTLENET": "Battle.net",
 }
+# AKS page "official platforms:" vocabulary for our platform tokens, used by
+# the R20 cross-check. Observed live 2026-07-08 across all 27 created-offer
+# pages: Steam, GoG, Epic Store, Direct Publisher, Xbox Play Anywhere,
+# Nintendo eShop, Xbox. Tokens without an entry (EA, UBISOFT, …) get no page
+# cross-check — merchant declaration only.
+PAGE_PLATFORM_NAMES = {"STEAM": "Steam", "GOG": "GoG", "EPIC": "Epic Store"}
 # ordered so specific hints win (Ultimate Collection before Ultimate/Collection)
 EDITION_HINTS = (
     (r"\bULTIMATE COLLECTION\b", "Ultimate Collection", "348"),
@@ -203,7 +210,14 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
     return None
 
 
-def detect_platform(title: str) -> str:
+def explicit_platform(title: str) -> str | None:
+    """The platform the merchant DECLARES in the title, or None.
+
+    None means detect_platform will default to STEAM — a guess, not a
+    detection. R20 only trusts that guess when the AKS page's "official
+    platforms" list is Steam-only.
+    """
+
     t = title.upper()
     if "GOG" in t:
         return "GOG"
@@ -221,7 +235,13 @@ def detect_platform(title: str) -> str:
         # Key-type markers only: "Microsoft Flight Simulator … Steam Key" is a
         # Steam product. No REGION_IDS entry -> fail-closed skip (G2A.md).
         return "MICROSOFT"
-    return "STEAM"  # default; most PC keys are Steam
+    if "STEAM" in t:
+        return "STEAM"
+    return None
+
+
+def detect_platform(title: str) -> str:
+    return explicit_platform(title) or "STEAM"  # default; most PC keys are Steam
 
 
 def _region_id(platform: str, key: str) -> str | None:
@@ -425,6 +445,20 @@ def extract_editions(body: str) -> dict[str, Any]:
         return {}
 
 
+def extract_official_platforms(body: str) -> tuple[str, ...]:
+    """The AKS page's "official platforms:" list, () when absent.
+
+    Names are page-side vocabulary ("Steam", "GoG", "Direct Publisher", …),
+    comma-separated; capture stops at sentence/markup boundaries. Verified
+    live 2026-07-08: present on 27/27 created-offer pages, stubs included.
+    """
+
+    match = re.search(r'official platforms?:\s*([^.<"]+)', body, re.IGNORECASE)
+    if not match:
+        return ()
+    return tuple(p.strip() for p in match.group(1).split(",") if p.strip())
+
+
 @dataclass(frozen=True)
 class AksResolution:
     slug: str
@@ -432,6 +466,7 @@ class AksResolution:
     product_id: str
     aks_name: str
     editions: dict[str, Any] = field(default_factory=dict)
+    official_platforms: tuple[str, ...] = ()
 
 
 class AksProbeUnreliable(Exception):
@@ -482,6 +517,7 @@ def resolve_aks(name: str, http_get_fn: Callable[..., Any] = http_get) -> AksRes
             product_id=product_id,
             aks_name=aks_name,
             editions=extract_editions(probe.body),
+            official_platforms=extract_official_platforms(probe.body),
         )
     if unreadable:
         raise AksNameUnreadable("; ".join(unreadable))
@@ -564,7 +600,8 @@ def match_offer(
     if reason:
         return SkippedOffer(offer, reason)
 
-    platform = detect_platform(offer.name)
+    declared_platform = explicit_platform(offer.name)
+    platform = declared_platform or "STEAM"  # default — R20 verifies it below
     region_label, region_id, implicit = detect_region(offer, platform)
     if region_id is None:
         return SkippedOffer(offer, f"no region id for {platform}/{region_label}")
@@ -602,6 +639,39 @@ def match_offer(
         return SkippedOffer(
             offer, "AKS page carries no editions map — edition unverifiable (R19)"
         )
+
+    # R20 (2026-07-08, Su-27 for DCS World escape): detect_platform's STEAM is
+    # a DEFAULT, not a detection. "Su-27 … Key GLOBAL" carries no platform
+    # token; it went in as Steam GLOBAL(2) although its AKS page says
+    # "official platforms: Steam, Direct Publisher" and the key is an Eagle
+    # Dynamics (publisher) key. The page's official-platforms line is the only
+    # deterministic signal:
+    #   - a DEFAULTED Steam is trusted only when the page is Steam-only;
+    #   - an EXPLICIT title token is the merchant's declaration of what it
+    #     sells (multi-platform pages are normal — Osmos: Steam+GoG page,
+    #     Steam key), but when we know the page vocabulary for that token its
+    #     total absence from the page is a contradiction → fail closed.
+    page_platforms = {p.upper() for p in resolution.official_platforms}
+    if declared_platform is None:
+        if not page_platforms:
+            return SkippedOffer(
+                offer,
+                "no platform in title and AKS page lists no official platforms"
+                " — Steam default unverifiable (R20)",
+            )
+        if page_platforms != {"STEAM"}:
+            return SkippedOffer(
+                offer,
+                "no platform in title and AKS page is not Steam-only"
+                " — Steam default unverified (R20)",
+            )
+    else:
+        page_name = PAGE_PLATFORM_NAMES.get(declared_platform)
+        if page_name and page_platforms and page_name.upper() not in page_platforms:
+            return SkippedOffer(
+                offer,
+                f"title says {page_name} but AKS official platforms exclude it (R20)",
+            )
 
     # R18 as revised by Romain (2026-07-08, replacing the 07-07 skip): a title
     # can hide its DLC nature ("Exoplanets Pack" — no "DLC" word), but the

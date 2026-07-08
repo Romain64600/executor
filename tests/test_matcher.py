@@ -13,9 +13,11 @@ from src.matcher import (
     detect_edition,
     detect_platform,
     detect_region,
+    explicit_platform,
     extra_significant_words,
     extract_aks_name,
     extract_editions,
+    extract_official_platforms,
     match_feed,
     match_offer,
     missing_aks_words,
@@ -309,14 +311,40 @@ class ExtractEditionsTests(unittest.TestCase):
         self.assertEqual(extract_editions("<html><body>nothing</body></html>"), {})
 
 
+class ExtractOfficialPlatformsTests(unittest.TestCase):
+    def test_single(self):
+        body = "<p>Official platforms: Steam.</p>"
+        self.assertEqual(extract_official_platforms(body), ("Steam",))
+
+    def test_multi(self):
+        # Live Su-27 page shape (2026-07-08): the second name is why R20 exists.
+        body = "official platforms: Steam, Direct Publisher<br>"
+        self.assertEqual(extract_official_platforms(body), ("Steam", "Direct Publisher"))
+
+    def test_absent(self):
+        self.assertEqual(extract_official_platforms("<html><body>nothing</body></html>"), ())
+
+
+class ExplicitPlatformTests(unittest.TestCase):
+    def test_steam_token_is_explicit(self):
+        self.assertEqual(explicit_platform("Neon Beats - Steam Key - GLOBAL"), "STEAM")
+
+    def test_no_token_is_none_but_detect_still_defaults(self):
+        # R20 root cause: the STEAM default is a guess, not a detection.
+        self.assertIsNone(explicit_platform("Su-27 for DCS World Key GLOBAL"))
+        self.assertEqual(detect_platform("Su-27 for DCS World Key GLOBAL"), "STEAM")
+
+
 class MatchOfferTests(unittest.TestCase):
-    def _resolver(self, aks_name="Neon Beats", editions=None):
+    def _resolver(self, aks_name="Neon Beats", editions=None, official_platforms=("Steam",)):
         # {} must stay {} (R19 exercises a truly empty map) — only None
-        # means "default Standard map".
+        # means "default Standard map". official_platforms passes through
+        # untransformed for the same reason: () must stay () (R20).
         res = AksResolution(
             slug="neon-beats", url="https://aks/buy-neon-beats", product_id="205027",
             aks_name=aks_name,
             editions=editions if editions is not None else {"1": {"name": "Standard"}},
+            official_platforms=official_platforms,
         )
         return lambda name: res
 
@@ -405,6 +433,74 @@ class MatchOfferTests(unittest.TestCase):
             self.assertIsInstance(result, SkippedOffer, title)
             self.assertIn("R19", result.reason)
             self.assertIn("editions map", result.reason)
+
+    def test_defaulted_steam_requires_steam_only_page(self):
+        # R20 (2026-07-08): "Su-27 for DCS World Key GLOBAL" carries no
+        # platform token; detect_platform DEFAULTED to Steam and the offer was
+        # entered Steam GLOBAL(2), but its AKS page says "official platforms:
+        # Steam, Direct Publisher" — the key is an Eagle Dynamics (publisher)
+        # key. A defaulted Steam is trusted only on a Steam-only page.
+        result = match_offer(
+            _offer("Neon Beats Key GLOBAL"),
+            self._resolver(official_platforms=("Steam", "Direct Publisher")),
+        )
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("R20", result.reason)
+        self.assertIn("not Steam-only", result.reason)
+
+    def test_defaulted_steam_passes_on_steam_only_page(self):
+        result = match_offer(
+            _offer("Neon Beats Key GLOBAL"), self._resolver(official_platforms=("Steam",))
+        )
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual(result.platform, "STEAM")
+
+    def test_defaulted_steam_skips_when_page_lists_no_platforms(self):
+        result = match_offer(
+            _offer("Neon Beats Key GLOBAL"), self._resolver(official_platforms=())
+        )
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("R20", result.reason)
+        self.assertIn("no official platforms", result.reason)
+
+    def test_explicit_steam_trusted_on_multi_platform_page(self):
+        # An explicit token is the merchant's declaration of what it sells;
+        # multi-platform pages are normal (Osmos: Steam+GoG page, Steam key —
+        # retro sweep 2026-07-08 confirmed every explicit entry was right).
+        result = match_offer(
+            _offer("Neon Beats - Steam Key - GLOBAL"),
+            self._resolver(official_platforms=("Steam", "Direct Publisher")),
+        )
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual(result.platform, "STEAM")
+
+    def test_explicit_platform_contradicted_by_page_skips(self):
+        # The cross-check fires only on contradiction: title says GOG but the
+        # page's official platforms exclude GoG entirely.
+        result = match_offer(
+            _offer("Neon Beats GOG Key GLOBAL"),
+            self._resolver(official_platforms=("Steam",)),
+        )
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("R20", result.reason)
+
+    def test_explicit_platform_confirmed_by_page(self):
+        result = match_offer(
+            _offer("Neon Beats GOG Key GLOBAL"),
+            self._resolver(official_platforms=("Steam", "GoG")),
+        )
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual((result.platform, result.region_id), ("GOG", "6"))
+
+    def test_explicit_platform_without_page_vocab_is_trusted(self):
+        # EA has no PAGE_PLATFORM_NAMES entry — no cross-check possible; the
+        # merchant declaration stands even on a Steam-only page.
+        result = match_offer(
+            _offer("Neon Beats EA App Key GLOBAL"),
+            self._resolver(official_platforms=("Steam",)),
+        )
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual(result.platform, "EA")
 
     def test_unreliable_probe_skips_distinctly(self):
         def resolver(name):
