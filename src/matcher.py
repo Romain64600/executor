@@ -537,7 +537,8 @@ class Candidate:
 
 def _dlc_edition_on_page(editions: dict[str, Any]) -> str:
     """The DLC bucket of an AKS editions map, or "" (id 16 is canonical today,
-    the name match is the seatbelt if ids ever move)."""
+    the name match is the seatbelt if ids ever move). A truthy value means the
+    product ITSELF is a DLC — its edition, regardless of any title hint."""
 
     for key, value in editions.items():
         name = value.get("name") if isinstance(value, dict) else str(value)
@@ -589,29 +590,30 @@ def match_offer(
     if qualifier:
         return SkippedOffer(offer, f"dangerous qualifier absent from AKS name: {qualifier}")
 
-    # Romain (2026-07-07, K4G review): a title can hide its DLC nature
-    # ("Exoplanets Pack", "Janthir Wilds Expansion" — no "DLC" word), but the
+    # R18 as revised by Romain (2026-07-08, replacing the 07-07 skip): a title
+    # can hide its DLC nature ("Exoplanets Pack" — no "DLC" word), but the
     # resolved AKS page's editions map tells the truth. DLC bucket present →
-    # the product is a DLC → never entered, even when a Standard bucket
-    # coexists (Brotato: Abyssal Terrors had both and is still a DLC).
-    dlc = _dlc_edition_on_page(resolution.editions)
-    if dlc:
-        return SkippedOffer(offer, f"DLC edition on AKS product page: {dlc}")
-
-    edition_label, edition_id = detect_edition(offer.name, offer.url)
-    # CORE rule 4 / E05: an edition word that is part of the AKS game name is not
-    # an edition — fall back to Standard. Label match alone misses hint synonyms
-    # ("Trilogy" resolves to label "Bundle"), so also compare via re-detection on
-    # the AKS name: same edition id there = the word is product identity.
-    if edition_id != "1" and (
-        edition_label.upper() in resolution.aks_name.upper()
-        or detect_edition(resolution.aks_name)[1] == edition_id
-    ):
-        edition_label, edition_id = "Standard", "1"
-    # Hard rule (Romain 2026-07-07): we NEVER enter bundles. A title that still
-    # resolves to the Bundle edition after E05 (Pack/Trilogy/…) is a bundle.
-    if edition_id == "8":
-        return SkippedOffer(offer, "bundle edition resolved — no bundles ever")
+    # the product IS a DLC → enter it with the DLC edition, even when a
+    # Standard bucket coexists (Brotato: Abyssal Terrors). The page overrides
+    # every title hint, so the E05 fallback and the bundle-resolution guard
+    # below don't apply ("Pack" in a DLC's own name is identity, not a bundle).
+    if _dlc_edition_on_page(resolution.editions):
+        edition_label, edition_id = "DLC", "16"
+    else:
+        edition_label, edition_id = detect_edition(offer.name, offer.url)
+        # CORE rule 4 / E05: an edition word that is part of the AKS game name is not
+        # an edition — fall back to Standard. Label match alone misses hint synonyms
+        # ("Trilogy" resolves to label "Bundle"), so also compare via re-detection on
+        # the AKS name: same edition id there = the word is product identity.
+        if edition_id != "1" and (
+            edition_label.upper() in resolution.aks_name.upper()
+            or detect_edition(resolution.aks_name)[1] == edition_id
+        ):
+            edition_label, edition_id = "Standard", "1"
+        # Hard rule (Romain 2026-07-07): we NEVER enter bundles. A title that still
+        # resolves to the Bundle edition after E05 (Pack/Trilogy/…) is a bundle.
+        if edition_id == "8":
+            return SkippedOffer(offer, "bundle edition resolved — no bundles ever")
 
     return Candidate(
         offer=offer,

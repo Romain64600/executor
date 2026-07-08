@@ -321,36 +321,44 @@ class MatchOfferTests(unittest.TestCase):
         result = match_offer(_offer("Neon Beats - Steam"), lambda name: None)
         self.assertIsInstance(result, SkippedOffer)
 
-    def test_dlc_edition_on_aks_page_skips(self):
-        # Romain (2026-07-07, K4G): titles hide DLC-ness ("Exoplanets Pack");
-        # the resolved page's editions map is the truth. DLC bucket → skip,
-        # even when a Standard bucket coexists (Brotato: Abyssal Terrors).
-        result = match_offer(
-            _offer("Neon Beats - Steam GLOBAL"),
-            self._resolver(editions={"16": {"name": "DLC"}}),
-        )
-        self.assertIsInstance(result, SkippedOffer)
-        self.assertIn("DLC edition on AKS product page", result.reason)
+    def test_dlc_bucket_on_aks_page_sets_dlc_edition(self):
+        # R18 revised (Romain 2026-07-08, replacing the 07-07 skip): titles
+        # hide DLC-ness ("Exoplanets Pack"); the resolved page's editions map
+        # is the truth. DLC bucket → the product IS a DLC → entered with the
+        # DLC edition, even when a Standard bucket coexists (Brotato:
+        # Abyssal Terrors).
+        for editions in (
+            {"16": {"name": "DLC"}},
+            {"1": {"name": "Standard"}, "16": {"name": "DLC"}},
+        ):
+            result = match_offer(
+                _offer("Neon Beats - Steam GLOBAL"), self._resolver(editions=editions)
+            )
+            self.assertIsInstance(result, Candidate, editions)
+            self.assertEqual((result.edition_label, result.edition_id), ("DLC", "16"))
 
-        result = match_offer(
-            _offer("Neon Beats - Steam GLOBAL"),
-            self._resolver(editions={"1": {"name": "Standard"}, "16": {"name": "DLC"}}),
-        )
-        self.assertIsInstance(result, SkippedOffer)
-        self.assertIn("DLC edition on AKS product page", result.reason)
-
-    def test_dlc_edition_matched_by_name_when_id_moves(self):
+    def test_dlc_bucket_matched_by_name_when_id_moves(self):
         result = match_offer(
             _offer("Neon Beats - Steam GLOBAL"),
             self._resolver(editions={"99": {"name": "dlc"}}),
         )
-        self.assertIsInstance(result, SkippedOffer)
-        self.assertIn("DLC edition on AKS product page", result.reason)
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual((result.edition_label, result.edition_id), ("DLC", "16"))
 
-    def test_non_dlc_editions_do_not_skip(self):
+    def test_dlc_bucket_overrides_title_edition_hints(self):
+        # The page's DLC nature beats any edition word in the title — a
+        # "Deluxe" marker on a DLC product must not yield Deluxe(7).
+        result = match_offer(
+            _offer("Neon Beats Deluxe - Steam GLOBAL"),
+            self._resolver(editions={"16": {"name": "DLC"}}),
+        )
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual((result.edition_label, result.edition_id), ("DLC", "16"))
+
+    def test_non_dlc_buckets_do_not_alter_edition(self):
         # Bundle/Early Access buckets on the page describe other offers there,
         # not the product's nature — GUILTY GEAR (Standard+Bundle) and the
-        # Early Access indies were approved candidates on the K4G run.
+        # Early Access indies stay Standard.
         for editions in (
             {"1": {"name": "Standard"}, "8": {"name": "Bundle"}},
             {"5": {"name": "Early Access"}},
@@ -360,6 +368,7 @@ class MatchOfferTests(unittest.TestCase):
                 _offer("Neon Beats - Steam GLOBAL"), self._resolver(editions=editions)
             )
             self.assertIsInstance(result, Candidate, editions)
+            self.assertEqual(result.edition_id, "1", editions)
 
     def test_unreliable_probe_skips_distinctly(self):
         def resolver(name):

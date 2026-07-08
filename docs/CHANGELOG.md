@@ -3,6 +3,33 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-08 — R18 revised: DLC bucket = candidate with edition DLC(16), not a skip
+
+Romain's direct rule ("quand on a DLC … sur la page produit AKS on ajoute ça
+en édition DLC, on ne skip pas") replaces the same-day skip below: the DLC
+bucket on the resolved page states the product's NATURE, and the right entry
+is the offer with edition DLC(16) — never Standard, even with a coexisting
+Standard bucket. The page-nature override beats every title hint (E0x) and
+the bundle-resolution guard ("Pack"/"Deluxe" in a DLC's own name is identity).
+Bundle/Early Access buckets remain non-blocking and non-overriding. Skill R18
+rewritten + `.hermes` synced; EXECUTOR_RULES: clause moved out of §4.3 (skip
+list) into §4.5 (edition detection). Tests: 295 → 300 (net; suite also gained
+the submit relocation tests below).
+
+## 2026-07-08 — Submit: rows re-located by merchant URL across feed re-imports
+
+First K4G write session failed 0/10 fail-closed ("offer not in current
+feed"): AKS re-imported the feed between extraction (08:13) and submit
+(09:26) and re-id'd EVERY row — 0/212 ids survived, while the merchant URL
+stayed stable AND unique for all 212. `_scan_feed` now also builds
+url → current row; a candidate absent by id is re-located by URL with an
+exact-title check (fail-closed on drift), adopts the row's current id (logged
+`row_relocated`), and the post-save disappearance proof requires the offer
+gone under BOTH keys — id-only would false-positive "gone" whenever a
+re-import rotates ids mid-run. Second pass created the canary (GUILTY GEAR
+Xrd, relocated 93483480→93504363, gone from pending) with 3 correct
+absent-by-both-keys skips.
+
 ## 2026-07-08 — Matcher: DLC bucket on the AKS page = skip (R18)
 
 Romain's review of the first K4G candidate list (2026-07-07) caught 9 add-on
