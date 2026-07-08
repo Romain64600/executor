@@ -434,19 +434,57 @@ class MatchOfferTests(unittest.TestCase):
             self.assertIn("R19", result.reason)
             self.assertIn("editions map", result.reason)
 
-    def test_defaulted_steam_requires_steam_only_page(self):
+    def test_defaulted_on_publisher_page_enters_publisher(self):
         # R20 (2026-07-08): "Su-27 for DCS World Key GLOBAL" carries no
         # platform token; detect_platform DEFAULTED to Steam and the offer was
         # entered Steam GLOBAL(2), but its AKS page says "official platforms:
         # Steam, Direct Publisher" — the key is an Eagle Dynamics (publisher)
-        # key. A defaulted Steam is trusted only on a Steam-only page.
+        # key. Revised same day (Romain: "Rentrons les en publisher"): such an
+        # offer is entered as PUBLISHER — region "Publisher (1)" is the GLOBAL
+        # bucket in the WP-admin dropdown — instead of skipped.
+        for page in (("Steam", "Direct Publisher"), ("Direct Publisher",)):
+            result = match_offer(
+                _offer("Neon Beats Key GLOBAL"),
+                self._resolver(official_platforms=page),
+            )
+            self.assertIsInstance(result, Candidate, page)
+            self.assertEqual(
+                (result.platform, result.region_label, result.region_id),
+                ("PUBLISHER", "GLOBAL", "1"),
+                page,
+            )
+
+    def test_defaulted_publisher_maps_eu_region(self):
         result = match_offer(
-            _offer("Neon Beats Key GLOBAL"),
+            _offer("Neon Beats (Europe)"),
+            self._resolver(official_platforms=("Steam", "Direct Publisher")),
+        )
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual(
+            (result.platform, result.region_label, result.region_id),
+            ("PUBLISHER", "EU", "12"),
+        )
+
+    def test_defaulted_publisher_gift_fails_closed(self):
+        # PUBLISHER has no gift mapping in REGION_IDS — a token-less gift on a
+        # publisher page must skip, not fall back to another platform's id.
+        result = match_offer(
+            _offer("Neon Beats Gift GLOBAL"),
             self._resolver(official_platforms=("Steam", "Direct Publisher")),
         )
         self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("no region id for PUBLISHER", result.reason)
+
+    def test_defaulted_steam_requires_steam_only_or_publisher_page(self):
+        # Neither Steam-only nor publisher-direct (e.g. Steam+GoG): the
+        # defaulted Steam is still unverifiable → skip stays.
+        result = match_offer(
+            _offer("Neon Beats Key GLOBAL"),
+            self._resolver(official_platforms=("Steam", "GoG")),
+        )
+        self.assertIsInstance(result, SkippedOffer)
         self.assertIn("R20", result.reason)
-        self.assertIn("not Steam-only", result.reason)
+        self.assertIn("neither Steam-only nor publisher-direct", result.reason)
 
     def test_defaulted_steam_passes_on_steam_only_page(self):
         result = match_offer(

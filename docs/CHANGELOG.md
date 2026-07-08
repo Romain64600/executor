@@ -3,6 +3,21 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-08 — R20 revised: token-less keys on publisher-direct AKS pages entered as PUBLISHER, not skipped
+
+Romain's direct rule ("Rentrons les en publisher"), same-day revision — the
+same arc as R18 (first response = skip, revision = enter with the right
+metadata). When a title carries no platform token AND the resolved page's
+"official platforms" list contains `Direct Publisher`, the key is a publisher
+key: platform PUBLISHER, region ids from the live WP-admin dropdown catalog
+(identical across the 07-07 and 07-08 session catalogs): `Publisher (1)` is
+the GLOBAL bucket, EU 12, US 13, UK 266; no gift mapping → publisher gifts
+fail closed. Steam-only pages keep the STEAM default; empty lists still skip
+(unverifiable); mixes that are neither Steam-only nor publisher-direct still
+skip (reworded reason). Live: the Su-27 offer now matches as
+PUBLISHER GLOBAL(1) + DLC(16) on product 4496 — exactly Romain's manual DB
+correction. Tests: 328 → 331.
+
 ## 2026-07-08 — Audit fixes: submit-time re-validation (P1a), hard validity gate (P1b), split write counters (P2), AKS/Staff UA host guard (#4)
 
 Romain's local audit, four findings, all fixed fail-closed:

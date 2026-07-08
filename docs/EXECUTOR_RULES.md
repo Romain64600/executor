@@ -182,9 +182,11 @@ MICROSOFT platform has no region mapping → fail-closed) `[R17]`;
 year/version absent from AKS name; edition not present in the AKS dropdown;
 resolved AKS page whose **editions map is empty** (stub record, zero offers —
 edition unverifiable) `[R19]`; **platform unverified against the AKS page's
-"official platforms" list** — a defaulted STEAM on a page that is not
-Steam-only (or lists no platforms), or an explicit title platform that the
-page list contradicts (§4.4) `[R20]`.
+"official platforms" list** — a defaulted STEAM on a page that is neither
+Steam-only nor publisher-direct (or lists no platforms), or an explicit title
+platform that the page list contradicts (§4.4) `[R20]`.
+(A `Direct Publisher` entry on the page is NOT a skip for a token-less title —
+it assigns platform PUBLISHER, §4.4 `[R20]` revision.)
 (A DLC bucket on the resolved AKS page is NOT a skip — it assigns the DLC
 edition, §4.5 `[R18]`.)
 
@@ -201,8 +203,15 @@ Steam GLOBAL(2) when the product is publisher-direct (Eagle Dynamics); Romain
 had to fix the DB by hand. The only deterministic signal is the resolved AKS
 page's "official platforms:" line (extracted at resolve time, zero extra
 requests). Rules: a **defaulted** STEAM is trusted only when that list is
-exactly `Steam`; an empty/missing list or any other mix → SKIP with a distinct
-reason. An **explicit** title token is the merchant's declaration and is
+exactly `Steam`. **Revision same day (Romain: « Rentrons les en publisher »):**
+when the list instead contains `Direct Publisher`, the token-less key is a
+**publisher key** — enter it as platform PUBLISHER, region `Publisher (1)`
+(the dropdown's GLOBAL bucket; EU 12, US 13, UK 266 — ids read from the live
+session catalogs of 07-07/07-08, identical; no gift mapping → publisher gifts
+fail closed). Su-27 is exactly this case: Romain corrected the DB to
+publisher, not dropped the offer. An empty/missing list, or a mix that is
+neither Steam-only nor publisher-direct → SKIP with a distinct reason.
+An **explicit** title token is the merchant's declaration and is
 trusted — multi-platform pages are normal (an Osmos Steam+GoG page takes a
 Steam key) — **except** when the token has a known page vocabulary
 (STEAM→`Steam`, GOG→`GoG`, EPIC→`Epic Store`) and that name is totally absent
@@ -460,6 +469,7 @@ as a hint / sanity check. Each platform has its own ids.
 | Epic Games | 80 | 80eu | — | — | — | — |
 | Origin / EA App | 3 | 3eu | — | — | — | — |
 | Battle.net | 45 | 4 | 41 | 47 | 570 | 567 |
+| Publisher (Direct) | 1 | 12 | 13 | 266 | — | — |
 
 Notes: Steam Gift EU EN = 472, EN Language = 261 (a language restriction, not
 GLOBAL). Editions: Standard 1, Deluxe 7, Bundle 8, GOTY 9, Gold 10, DLC 16,

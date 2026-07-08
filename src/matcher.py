@@ -82,6 +82,10 @@ REGION_IDS = {
     "EPIC": {"global": "80", "eu": "80eu"},
     "EA": {"global": "3", "eu": "3eu"},
     "BATTLENET": {"global": "45", "eu": "4", "us": "41", "uk": "47", "gift": "570", "gift_eu": "567"},
+    # "Publisher (1)" is the GLOBAL bucket (the dropdown has no "Publisher
+    # GLOBAL" label); ids read from the live session catalogs of 2026-07-07
+    # and 2026-07-08 (identical). No gift mapping — publisher gifts fail closed.
+    "PUBLISHER": {"global": "1", "eu": "12", "us": "13", "uk": "266"},
 }
 # Tokens that do NOT count as a "significant extra" word (platform / region /
 # format / edition / stopwords). Used by the different-product guard.
@@ -99,7 +103,7 @@ NOISE_TOKENS = {
 }
 PLATFORM_LABEL = {
     "STEAM": "Steam", "GOG": "GOG", "EPIC": "Epic", "EA": "EA App",
-    "UBISOFT": "Ubisoft", "BATTLENET": "Battle.net",
+    "UBISOFT": "Ubisoft", "BATTLENET": "Battle.net", "PUBLISHER": "Publisher",
 }
 # AKS page "official platforms:" vocabulary for our platform tokens, used by
 # the R20 cross-check. Observed live 2026-07-08 across all 27 created-offer
@@ -647,6 +651,10 @@ def match_offer(
     # Dynamics (publisher) key. The page's official-platforms line is the only
     # deterministic signal:
     #   - a DEFAULTED Steam is trusted only when the page is Steam-only;
+    #   - revision same day (Romain: "Rentrons les en publisher"): when the
+    #     page instead offers Direct Publisher, the token-less key is a
+    #     publisher key — enter it as PUBLISHER (Su-27 was corrected in DB to
+    #     publisher, not dropped);
     #   - an EXPLICIT title token is the merchant's declaration of what it
     #     sells (multi-platform pages are normal — Osmos: Steam+GoG page,
     #     Steam key), but when we know the page vocabulary for that token its
@@ -660,11 +668,16 @@ def match_offer(
                 " — Steam default unverifiable (R20)",
             )
         if page_platforms != {"STEAM"}:
-            return SkippedOffer(
-                offer,
-                "no platform in title and AKS page is not Steam-only"
-                " — Steam default unverified (R20)",
-            )
+            if "DIRECT PUBLISHER" not in page_platforms:
+                return SkippedOffer(
+                    offer,
+                    "no platform in title and AKS page is neither Steam-only"
+                    " nor publisher-direct — Steam default unverified (R20)",
+                )
+            platform = "PUBLISHER"
+            region_label, region_id, implicit = detect_region(offer, platform)
+            if region_id is None:
+                return SkippedOffer(offer, f"no region id for {platform}/{region_label}")
     else:
         page_name = PAGE_PLATFORM_NAMES.get(declared_platform)
         if page_name and page_platforms and page_name.upper() not in page_platforms:
