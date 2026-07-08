@@ -48,6 +48,16 @@ _PAGE_IDS_JS = (
     "catch(x){return null;}}).filter(Boolean))"
 )
 
+# id + the stable row identity (merchant url, title). AKS re-imports re-id
+# EVERY row (K4G 2026-07-08: 0/212 ids survived 74 minutes), so approved ids
+# go stale while the merchant URL keeps identifying the same offer.
+_PAGE_ROWS_JS = (
+    "JSON.stringify(Array.from(document.querySelectorAll('tr[data-offer]'))"
+    ".map(function(e){try{var d=JSON.parse(e.getAttribute('data-offer'));"
+    "return {id:String(d.id),url:String(d.url||''),name:String(d.name||'')};}"
+    "catch(x){return null;}}).filter(Boolean))"
+)
+
 _MODAL_CTX_JS = (
     "JSON.stringify((function(){var c=document.querySelector('#TB_ajaxContent');"
     "if(!c){return {ok:false,select_names:[]};}"
@@ -286,6 +296,13 @@ class SubmitSession(ReadOnlyCdpSession):
 
     def page_offer_ids(self) -> list[str]:
         raw = self.evaluate_readonly(_PAGE_IDS_JS)
+        if not raw:
+            return []
+        return list(json.loads(raw))
+
+    def page_offer_rows(self) -> list[dict[str, str]]:
+        """Current page's rows as ``{id, url, name}`` (read-only)."""
+        raw = self.evaluate_readonly(_PAGE_ROWS_JS)
         if not raw:
             return []
         return list(json.loads(raw))

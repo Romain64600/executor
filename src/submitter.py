@@ -191,17 +191,26 @@ class _SubmitterBase:
             self.logger.log(event, **fields)
 
     def _scan_feed(self, store_id, feed_page, available, max_pages,
-                   stop_on: str | None = None) -> tuple[dict[str, str], bool]:
-        """Walk the feed pages building offer_id → page-url.
+                   stop_on: str | None = None, stop_on_url: str | None = None,
+                   ) -> tuple[dict[str, str], dict[str, dict[str, str]], bool]:
+        """Walk the feed pages building offer_id → page-url AND
+        merchant-url → current row ``{offer_id, name, page_url}``.
 
-        With ``stop_on``, stop as soon as that offer id is seen and report
-        found=True (the partial index is then unusable as a feed snapshot).
-        Without ``stop_on`` (plain indexing), two consecutive pages with no NEW
-        ids end the walk (G2A reflow renders duplicate pages); with it, only a
-        truly empty page does — a verify scan must reach the end of the feed
-        before concluding the offer is gone.
+        The url map exists because AKS re-imports re-id EVERY row (K4G
+        2026-07-08: 0/212 ids survived the 74 minutes between extraction and
+        submit) — the merchant URL is the stable row identity across imports.
+
+        With ``stop_on``/``stop_on_url``, stop as soon as the offer is seen
+        under EITHER key and report found=True (the partial index is then
+        unusable as a feed snapshot) — a disappearance proof must fail when
+        the row survived a mid-run re-import under a fresh id. Without them
+        (plain indexing), two consecutive pages with no NEW ids end the walk
+        (G2A reflow renders duplicate pages); with them, only a truly empty
+        page does — a verify scan must reach the end of the feed before
+        concluding the offer is gone.
         """
         index: dict[str, str] = {}
+        by_url: dict[str, dict[str, str]] = {}
         found = False
         empty = 0
         for page in range(1, max_pages + 1):
@@ -209,31 +218,69 @@ class _SubmitterBase:
             if page > 1 and self.page_pacer is not None:
                 self.page_pacer.wait()
             self.session.navigate(url)
-            ids = self.session.page_offer_ids()
-            if not ids:
+            rows = self.session.page_offer_rows()
+            if not rows:
                 break
             new = 0
-            for offer_id in ids:
+            for row in rows:
+                offer_id = str(row.get("id") or "")
+                if not offer_id:
+                    continue
                 if offer_id not in index:
                     index[offer_id] = url
                     new += 1
-            if stop_on is not None and stop_on in index:
+                row_url = str(row.get("url") or "")
+                if row_url and row_url not in by_url:
+                    by_url[row_url] = {
+                        "offer_id": offer_id,
+                        "name": str(row.get("name") or ""),
+                        "page_url": url,
+                    }
+            if (stop_on is not None and stop_on in index) or (
+                stop_on_url is not None and stop_on_url in by_url
+            ):
                 found = True
                 break
-            if stop_on is None:
+            if stop_on is None and stop_on_url is None:
                 if new == 0:
                     empty += 1
                     if empty >= 2:
                         break
                 else:
                     empty = 0
-        return index, found
+        return index, by_url, found
 
-    def _index_feed(self, store_id, feed_page, available, max_pages) -> dict[str, str]:
-        index, _ = self._scan_feed(store_id, feed_page, available, max_pages)
-        return index
+    def _index_feed(self, store_id, feed_page, available, max_pages
+                    ) -> tuple[dict[str, str], dict[str, dict[str, str]]]:
+        index, by_url, _ = self._scan_feed(store_id, feed_page, available, max_pages)
+        return index, by_url
 
-    def _prepare(self, candidate: dict[str, Any], offer_id: str, index: dict[str, str]) -> dict[str, Any]:
+    def _locate_row(self, candidate: dict[str, Any], offer_id: str,
+                    index: dict[str, str], by_url: dict[str, dict[str, str]]
+                    ) -> dict[str, Any]:
+        """Resolve an approved candidate to a row of the CURRENT feed.
+
+        By approved offer id while the import batch is unchanged; after a
+        re-import, by merchant URL with an exact-title check (fail-closed on
+        any drift), adopting the row's current id. AGENTS.md: "locate exact
+        current row; verify title, URL".
+        """
+        if offer_id in index:
+            return {"offer_id": offer_id, "page_url": index[offer_id]}
+        url = str(candidate["offer"].get("url") or "")
+        row = by_url.get(url) if url else None
+        if row is None:
+            return {"blocker": "offer not in current feed (by id and by URL)"}
+        if row["name"] != candidate["offer"]["name"]:
+            return {"blocker": (
+                "feed row at the approved URL has a different title — "
+                f"feed {row['name']!r} != approved {candidate['offer']['name']!r}"
+            )}
+        return {"offer_id": row["offer_id"], "page_url": row["page_url"],
+                "approved_offer_id": offer_id, "located_by": "url"}
+
+    def _prepare(self, candidate: dict[str, Any], located: dict[str, Any]) -> dict[str, Any]:
+        offer_id = str(located.get("offer_id") or candidate["offer"]["offer_id"])
         entry: dict[str, Any] = {
             "offer_id": offer_id,
             "merchant_title": candidate["offer"]["name"],
@@ -243,10 +290,13 @@ class _SubmitterBase:
             "edition_id": candidate["edition"]["id"],
             "ready": False,
         }
-        if offer_id not in index:
-            entry["blocker"] = "offer not in current feed"
+        if located.get("located_by") == "url":
+            entry["approved_offer_id"] = located["approved_offer_id"]
+            entry["located_by"] = "url"
+        if located.get("blocker"):
+            entry["blocker"] = located["blocker"]
             return entry
-        self.session.navigate(index[offer_id])  # refresh the row's page
+        self.session.navigate(located["page_url"])  # refresh the row's page
         status = self.session.open_offer_modal(offer_id)
         entry["modal"] = status
         if status != "OPENED":
@@ -273,24 +323,28 @@ class _SubmitterBase:
             self._resolve_from_catalog(entry, candidate)
         return entry
 
-    def _verify_gone(self, offer_id, store_id, feed_page, available, max_pages
-                     ) -> tuple[bool, dict[str, str] | None]:
-        """Post-save: re-scan the feed. Returns (gone, fresh_index).
+    def _verify_gone(self, offer_id, merchant_url, store_id, feed_page, available,
+                     max_pages) -> tuple[bool, dict[str, str] | None, dict[str, dict[str, str]] | None]:
+        """Post-save: re-scan the feed. Returns (gone, fresh_index, fresh_by_url).
 
-        gone is True iff the offer id is no longer present. In that case the
-        scan ran to the end of the feed and the collected index IS the current
-        feed state — callers reuse it to locate the next candidate on the
+        gone is True iff the offer is absent under BOTH keys — the row id we
+        just acted on AND the merchant URL. An id-only check would prove a
+        false disappearance whenever a re-import re-ids the row mid-run (K4G
+        2026-07-08) while it is in fact still pending. When gone, the scan ran
+        to the end of the feed and the collected maps ARE the current feed
+        state — callers reuse them to locate the next candidate on the
         refreshed feed (AGENTS.md: "refresh current merchant feed; locate exact
         current row". 2026-07-07 G2A: 8 creations reflowed the pagination and
         the stale batch-start index yielded ROW_NOT_FOUND on a live offer).
-        fresh_index is None when the offer was found (partial scan, unusable).
+        Both maps are None when the offer was found (partial scan, unusable).
         """
 
-        index, found = self._scan_feed(
-            store_id, feed_page, available, max_pages, stop_on=offer_id)
+        index, by_url, found = self._scan_feed(
+            store_id, feed_page, available, max_pages,
+            stop_on=offer_id, stop_on_url=merchant_url or None)
         if found:
-            return False, None
-        return True, index
+            return False, None, None
+        return True, index, by_url
 
     def _process(self, entry: dict[str, Any], candidate: dict[str, Any], ctx: dict[str, Any]) -> bool:
         raise NotImplementedError
@@ -331,10 +385,10 @@ class _SubmitterBase:
             self._load_catalog(catalog)
 
         self.guard.start_task(run_id)
-        index = self._index_feed(store_id, feed_page, available, max_pages)
+        index, by_url = self._index_feed(store_id, feed_page, available, max_pages)
         self._log("feed_indexed", offers=len(index))
         ctx = {"store_id": store_id, "feed_page": feed_page, "available": available,
-               "max_pages": max_pages, "index": index}
+               "max_pages": max_pages, "index": index, "by_url": by_url}
 
         plan: list[dict[str, Any]] = []
         stopped: str | None = None
@@ -351,7 +405,15 @@ class _SubmitterBase:
                 self._log("run_stopped", reason=stopped)
                 break
 
-            entry = self._prepare(candidate, offer_id, index)
+            located = self._locate_row(candidate, offer_id, ctx["index"], ctx["by_url"])
+            if located.get("located_by") == "url":
+                self._log(
+                    "row_relocated",
+                    approved_offer_id=offer_id,
+                    current_offer_id=located["offer_id"],
+                    url=candidate["offer"].get("url"),
+                )
+            entry = self._prepare(candidate, located)
             success = self._process(entry, candidate, ctx)
             if self.write_mode and entry.get("ready"):
                 writes += 1
@@ -499,12 +561,15 @@ class Submitter(_SubmitterBase):
                 reason = "invalid required fields: " + ", ".join(str(f) for f in fields)
             entry["post_save"] = f"create not confirmed: {status}" + (f" — {reason}" if reason else "")
             return False
-        gone, fresh_index = self._verify_gone(
-            entry["offer_id"], ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"]
+        gone, fresh_index, fresh_by_url = self._verify_gone(
+            entry["offer_id"], str(candidate["offer"].get("url") or ""),
+            ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"]
         )
         if fresh_index is not None:
             ctx["index"].clear()
             ctx["index"].update(fresh_index)
+            ctx["by_url"].clear()
+            ctx["by_url"].update(fresh_by_url)
         entry["submitted"] = gone
         entry["post_save"] = "gone from pending" if gone else "STILL in pending — FAILED"
         return gone

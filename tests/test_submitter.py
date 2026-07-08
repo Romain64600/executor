@@ -10,7 +10,7 @@ def _cand(offer_id, region_id="2", edition_id="1"):
     return {
         "fingerprint": f"{offer_id}|1|{region_id}|{edition_id}",
         "offer": {
-            "offer_id": offer_id, "name": f"Game {offer_id}", "url": "https://m/x",
+            "offer_id": offer_id, "name": f"Game {offer_id}", "url": f"https://m/{offer_id}",
             "merchant": "Driffle", "store_id": "127", "price": None, "stock": None,
         },
         "aks_product_id": "1", "aks_url": "https://aks/x", "aks_name": f"Game {offer_id}",
@@ -22,13 +22,15 @@ def _cand(offer_id, region_id="2", edition_id="1"):
 
 class FakeSubmitSession:
     def __init__(self, pages, *, login=False, modal_status="OPENED",
-                 select_names=("offer[region]", "offer[edition]"), ctx_ok=True, fail_ids=()):
+                 select_names=("offer[region]", "offer[edition]"), ctx_ok=True, fail_ids=(),
+                 rows=None):
         self.pages = pages
         self.login = login
         self.modal_status = modal_status
         self.select_names = list(select_names)
         self.ctx_ok = ctx_ok
         self.fail_ids = set(fail_ids)
+        self.rows = dict(rows or {})  # per-id {url, name} overrides
         self.nav = []
         self._page = 0
 
@@ -42,6 +44,16 @@ class FakeSubmitSession:
 
     def page_offer_ids(self):
         return list(self.pages[self._page]) if 0 <= self._page < len(self.pages) else []
+
+    def _row(self, offer_id):
+        row = {"id": offer_id, "url": f"https://m/{offer_id}", "name": f"Game {offer_id}"}
+        row.update(self.rows.get(offer_id, {}))
+        return row
+
+    def page_offer_rows(self):
+        # Derives from page_offer_ids so subclass behaviors (created-row
+        # filtering, pagination reflow) apply to both views of the feed.
+        return [self._row(i) for i in self.page_offer_ids()]
 
     def open_offer_modal(self, offer_id):
         return "ROW_NOT_FOUND" if offer_id in self.fail_ids else self.modal_status
@@ -197,6 +209,79 @@ def _real(session, approved, click_mode="native", **kw):
     return Submitter(session, click_mode=click_mode).run(
         run_id="r", merchant="Driffle", store_id="127", approved=approved, **kw
     )
+
+
+class ReimportingWriteSession(FakeWriteSession):
+    """Creation does NOT remove the row; instead the whole feed re-imports
+    right after the click — same rows, all-new ids (the K4G 2026-07-08 shape).
+    """
+
+    def __init__(self, pages, remap, **kw):
+        super().__init__(pages, create_removes=False, **kw)
+        self.remap = remap
+        self.clicked = False
+
+    def fill_and_create(self, *a, **kw):
+        diag = super().fill_and_create(*a, **kw)
+        self.clicked = True
+        return diag
+
+    def page_offer_ids(self):
+        ids = super().page_offer_ids()
+        if not self.clicked:
+            return ids
+        return [self.remap.get(i, i) for i in ids]
+
+
+class RowRelocationTests(unittest.TestCase):
+    """AKS re-imports re-id EVERY feed row (K4G 2026-07-08: 0/212 ids survived
+    the 74 minutes between extraction and submit — the whole batch failed with
+    'offer not in current feed'). The merchant URL is the stable row identity:
+    an approved id gone from the feed is re-located by URL + exact-title check.
+    """
+
+    ROTATED = {"51": {"url": "https://m/1", "name": "Game 1"}}
+
+    def test_rotated_id_relocated_by_url(self):
+        session = FakeSubmitSession([["51"]], rows=self.ROTATED)
+        result = _run(session, [_cand("1")])
+        entry = result["plan"][0]
+        self.assertTrue(entry["ready"])
+        self.assertEqual(entry["offer_id"], "51")          # current row id adopted
+        self.assertEqual(entry["approved_offer_id"], "1")  # traceability
+        self.assertEqual(entry["located_by"], "url")
+
+    def test_relocation_title_drift_fails_closed(self):
+        rows = {"51": {"url": "https://m/1", "name": "Game 1 Remastered"}}
+        session = FakeSubmitSession([["51"]], rows=rows)
+        result = _run(session, [_cand("1")])
+        entry = result["plan"][0]
+        self.assertFalse(entry["ready"])
+        self.assertIn("different title", entry["blocker"])
+
+    def test_absent_by_id_and_url_is_skipped(self):
+        session = FakeSubmitSession([["51"]], rows=self.ROTATED)
+        result = _run(session, [_cand("9")])
+        self.assertIn("not in current feed (by id and by URL)", result["plan"][0]["blocker"])
+
+    def test_write_path_submits_relocated_row_and_verifies_by_both_keys(self):
+        session = FakeWriteSession([["51"]], rows=self.ROTATED)
+        result = _real(session, [_cand("1")])
+        entry = result["plan"][0]
+        self.assertTrue(entry["submitted"])
+        self.assertEqual(entry["post_save"], "gone from pending")
+        self.assertEqual(entry["offer_id"], "51")
+        self.assertEqual(result["writes"], 1)
+
+    def test_mid_run_reimport_is_not_a_false_disappearance(self):
+        # The row survives the click and re-appears under a fresh id: the
+        # id-only proof would say "gone" — the URL key must veto it.
+        rows = {"77": {"url": "https://m/1", "name": "Game 1"}}
+        session = ReimportingWriteSession([["1"]], {"1": "77"}, rows=rows)
+        result = _real(session, [_cand("1")])
+        entry = result["plan"][0]
+        self.assertFalse(entry["submitted"])
+        self.assertIn("STILL in pending", entry["post_save"])
 
 
 class RealSubmitTests(unittest.TestCase):
