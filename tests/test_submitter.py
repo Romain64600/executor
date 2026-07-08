@@ -250,6 +250,8 @@ class RowRelocationTests(unittest.TestCase):
         self.assertEqual(entry["offer_id"], "51")          # current row id adopted
         self.assertEqual(entry["approved_offer_id"], "1")  # traceability
         self.assertEqual(entry["located_by"], "url")
+        # id simply absent (clean re-import) — no by-id contradiction to report
+        self.assertNotIn("id_mismatches", entry)
 
     def test_relocation_title_drift_fails_closed(self):
         rows = {"51": {"url": "https://m/1", "name": "Game 1 Remastered"}}
@@ -346,11 +348,13 @@ class RowVerificationTests(unittest.TestCase):
         self.assertTrue(entry["ready"])
         self.assertEqual(entry["offer_id"], "51")
         self.assertEqual(entry["located_by"], "url")
+        self.assertEqual(entry["id_mismatches"], ["name", "url"])
 
     def test_price_drift_on_same_row_falls_back_to_url_identity(self):
         # Same row, refreshed price: the id-path compare is strict, but the
         # URL path proves the identity (a re-import legitimately refreshes
-        # the price, which we do not enter anyway).
+        # the price, which we do not enter anyway). Deliberately NON-blocking
+        # (audit 3, 2026-07-08) — but the drift is surfaced in the entry.
         cand = _cand("1")
         cand["offer"]["price"] = "4.99"
         rows = {"1": {"price": "9.99"}}
@@ -359,6 +363,7 @@ class RowVerificationTests(unittest.TestCase):
         self.assertTrue(entry["ready"])
         self.assertEqual(entry["located_by"], "url")
         self.assertEqual(entry["offer_id"], "1")
+        self.assertEqual(entry["id_mismatches"], ["price"])
 
     def test_price_match_stays_on_id_path(self):
         cand = _cand("1")

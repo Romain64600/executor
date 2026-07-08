@@ -3,6 +3,24 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-08 — Audit 3: price is a routing signal, not a blocker — rule made explicit, drift surfaced
+
+Romain's third audit, one residual point: price is compared on the by-id path
+but a drift then falls through to the URL identity with `check_price=False`,
+so a price difference never blocks when name + URL (+ store) confirm the row —
+deliberate, but the doc rule still just said "verify title, URL, price, page,
+merchant". Resolved as **behavior intended, rule clarified**: live feeds
+reprice constantly between extract and submit and price is never part of what
+the modal enters, so blocking on it would be pure friction with zero
+protection; on the by-id path the compare's real job is to distrust a
+possibly-reused id and reroute to the URL identity. Now explicit in
+EXECUTOR_RULES §6 step 2, `_row_check` and `_locate_row` docstrings — and the
+drift is no longer silent: a by-id contradiction that ends in a successful URL
+relocation is surfaced as `id_mismatches` in the plan entry and the
+`row_relocated` log line (a store_id contradiction still blocks on both
+paths). Tests updated: price-drift and id-reuse relocations assert their
+`id_mismatches`, clean re-import relocation asserts none. Still 345.
+
 ## 2026-07-08 — Robustness pass: CLI tests for 05_submit.py, page recompute documented, header counters, annotations
 
 Romain's five-point robustness follow-up, now that the big gaps are closed:

@@ -44,10 +44,14 @@ def _row_check(row: dict[str, str], candidate: dict[str, Any], *,
     Audit P1 (Romain, 2026-07-08): the nominal by-id path accepted a row on id
     membership alone, verifying nothing — AGENTS.md requires "verify title,
     URL, price, page, merchant" before the modal. name and URL path are always
-    compared; price and store only when BOTH sides carry a value. price is not
-    compared across a URL relocation (check_price=False): a re-import
-    legitimately refreshes it, while the id-path compare guards against an
-    id reused by a re-import for a different row.
+    compared; price and store only when BOTH sides carry a value. Price is a
+    ROUTING signal, never a blocker (audit 3, 2026-07-08): on the by-id path
+    (check_price=True) a mismatch distrusts the id — possibly reused by a
+    re-import for a different row — and reroutes to the URL identity; it is
+    not compared across a URL relocation (check_price=False) because live
+    feeds reprice constantly between extract and submit and price is never
+    part of what the modal enters. Once name + URL (+ store) confirm the row,
+    price drift is deliberately non-blocking.
     """
 
     offer = candidate["offer"]
@@ -322,7 +326,10 @@ class _SubmitterBase:
         the id is treated as stale and the merchant-URL identity decides.
         After a re-import, by merchant URL with an exact-title (+ store)
         check, adopting the row's current id; price is not compared there —
-        a re-import legitimately refreshes it. AGENTS.md: "locate exact
+        a re-import legitimately refreshes it, so a price-only drift on an
+        otherwise confirmed row NEVER blocks: it is surfaced as
+        ``id_mismatches`` in the plan entry and the ``row_relocated`` log
+        instead (deliberate, audit 3 2026-07-08). AGENTS.md: "locate exact
         current row; verify title, URL, price, page, merchant". "Page" is
         deliberately RECOMPUTED by the current scan (`page_url` in the row
         details), never compared to an approved-time value: no page is stored
@@ -357,9 +364,15 @@ class _SubmitterBase:
                 "feed row at the approved URL contradicts the candidate "
                 f"({', '.join(mismatches)})"
             )}
-        return {"offer_id": row["offer_id"], "page_url": row["page_url"],
-                "approved_offer_id": offer_id, "located_by": "url",
-                "row_checked": checked}
+        located = {"offer_id": row["offer_id"], "page_url": row["page_url"],
+                   "approved_offer_id": offer_id, "located_by": "url",
+                   "row_checked": checked}
+        if id_mismatches:
+            # The by-id row existed but contradicted the candidate (id reuse /
+            # price drift) — non-blocking once the URL identity confirmed, but
+            # surfaced so the drift is visible in the plan and the log.
+            located["id_mismatches"] = id_mismatches
+        return located
 
     def _prepare(self, candidate: dict[str, Any], located: dict[str, Any]) -> dict[str, Any]:
         offer_id = str(located.get("offer_id") or candidate["offer"]["offer_id"])
@@ -375,6 +388,8 @@ class _SubmitterBase:
         if located.get("located_by") == "url":
             entry["approved_offer_id"] = located["approved_offer_id"]
             entry["located_by"] = "url"
+        if located.get("id_mismatches"):
+            entry["id_mismatches"] = located["id_mismatches"]
         if located.get("row_checked"):
             entry["row_checked"] = located["row_checked"]
         if located.get("blocker"):
@@ -505,6 +520,7 @@ class _SubmitterBase:
                     current_offer_id=located["offer_id"],
                     url=candidate["offer"].get("url"),
                     page_url=located["page_url"],
+                    id_mismatches=located.get("id_mismatches"),
                 )
             entry = self._prepare(candidate, located)
             success = self._process(entry, candidate, ctx)

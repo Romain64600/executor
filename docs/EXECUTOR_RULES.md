@@ -342,6 +342,14 @@ For each validated candidate, in order, fail-closed:
    an approved-time value: no page number is stored at approval (step 1: saved
    page numbers are never trusted — pagination reflows). The recomputed page is
    surfaced as `page_url` in the plan entry and in the `row_relocated` log line.
+   **Price is a routing signal, not a blocker** (audit 3, 2026-07-08): on the
+   by-id path a price mismatch (both sides present) distrusts the id — possibly
+   reused by a re-import — and reroutes to the URL identity. Once name + URL
+   path (+ store when present) confirm the row, price drift is **deliberately
+   non-blocking**: live feeds reprice constantly between extract and submit,
+   and price is never part of what the modal enters. The drift stays visible —
+   it is surfaced as `id_mismatches` in the plan entry and the `row_relocated`
+   log line. A **store_id** contradiction, by contrast, blocks on both paths.
 3. Open the modal from that row's `[data-create-offer]` button (`#TB_window`).
 4. **Verify the select names before filling** — they vary per feed:
    `offer[region]`/`offer[edition]` on some, `offer[region_id]`/`offer[edition_id]`
