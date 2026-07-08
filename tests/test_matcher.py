@@ -66,6 +66,25 @@ class PrecheckSkipTests(unittest.TestCase):
     def test_console(self):
         self.assertEqual(precheck_skip(_offer("Halo Xbox Series X")), "console")
 
+    def test_kinguin_row_on_foreign_domain_fails_closed(self):
+        # EXECUTOR_RULES §11: a Kinguin candidate URL must contain kinguin.net.
+        offer = NormalizedOffer(
+            offer_id="1", name="Elden Ring Steam Key GLOBAL",
+            url="https://www.g2a.com/elden-ring", merchant="Kinguin",
+        )
+        self.assertIn("merchant-domain mismatch", precheck_skip(offer))
+
+    def test_kinguin_row_on_kinguin_net_passes_precheck(self):
+        offer = NormalizedOffer(
+            offer_id="1", name="Elden Ring Steam Key GLOBAL",
+            url="https://www.kinguin.net/en/category/1/elden-ring", merchant="Kinguin",
+        )
+        self.assertIsNone(precheck_skip(offer))
+
+    def test_unmapped_merchant_has_no_domain_rule(self):
+        # _offer uses merchant="Test" — no §11 domain rule, any host passes.
+        self.assertIsNone(precheck_skip(_offer("Elden Ring Steam Key GLOBAL")))
+
     def test_forbidden_region(self):
         self.assertIn("forbidden region", precheck_skip(_offer("Game Steam Key TURKEY")))
 

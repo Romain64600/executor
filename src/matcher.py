@@ -23,6 +23,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 from src.aks_env import AKS_STAFF_UA, http_get
 from src.contracts import NormalizedFeed, NormalizedOffer
@@ -73,6 +74,10 @@ BUNDLE_SKIN_TOKENS = (
     "BUNDLE", "BUNDLES", "SKIN", "SKINS",
     "FIELD TESTED", "MINIMAL WEAR", "FACTORY NEW", "BATTLE SCARRED", "WELL WORN",
 )
+# Merchant → required URL domain (EXECUTOR_RULES §11: a Kinguin candidate URL
+# must contain kinguin.net). Only merchants with a written §11 domain rule are
+# listed; a mapped merchant whose row URL sits on another host fails closed.
+MERCHANT_DOMAINS = {"KINGUIN": "kinguin.net"}
 
 # platform -> region key -> AKS region id (EXECUTOR_RULES §10; dropdown is truth)
 REGION_IDS = {
@@ -178,6 +183,11 @@ def dangerous_qualifier(merchant_title: str, aks_name: str) -> str | None:
 def precheck_skip(offer: NormalizedOffer) -> str | None:
     """Categorical SKIPs from the merchant title/URL, before any AKS lookup."""
 
+    domain = MERCHANT_DOMAINS.get(offer.merchant.upper())
+    if domain:
+        host = urlparse(offer.url).netloc.lower()
+        if host != domain and not host.endswith("." + domain):
+            return f"offer URL not on {domain} (merchant-domain mismatch)"
     padded = " " + re.sub(r"[^A-Z0-9]+", " ", offer.name.upper()) + " "
     if any(f" {t} " in padded for t in CONSOLE_TOKENS):
         return "console"
