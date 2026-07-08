@@ -590,6 +590,19 @@ def match_offer(
     if qualifier:
         return SkippedOffer(offer, f"dangerous qualifier absent from AKS name: {qualifier}")
 
+    # R19 (2026-07-08, DCS A-10C Warthog escape): an AKS page with an EMPTY
+    # editions map is a stub record — "merchants":[],"editions":[],"prices":[],
+    # "regions":[] in the page blob, zero offers. Such a page can vouch for no
+    # edition at all, and it can hide a DLC: A-10C (empty map) was entered
+    # Standard(1) and Romain had to fix the DB by hand, while sibling DCS
+    # P-51D Mustang (populated map, DLC bucket) was correctly entered DLC(16)
+    # by R18 the same run. Neither the feed row nor the page carries any other
+    # deterministic edition signal → fail closed, skip with a distinct reason.
+    if not resolution.editions:
+        return SkippedOffer(
+            offer, "AKS page carries no editions map — edition unverifiable (R19)"
+        )
+
     # R18 as revised by Romain (2026-07-08, replacing the 07-07 skip): a title
     # can hide its DLC nature ("Exoplanets Pack" — no "DLC" word), but the
     # resolved AKS page's editions map tells the truth. DLC bucket present →

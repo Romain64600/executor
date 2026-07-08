@@ -3,6 +3,26 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-08 — R19: empty editions map = stub AKS page → SKIP (edition unverifiable)
+
+Escape reported by Romain: G2A "DCS: A-10C Warthog" (run 20260708-125905)
+was submitted Standard(1) but is a DLC — he fixed the DB by hand. Its AKS
+page is a stub (`"merchants":[],"editions":[],"prices":[],"regions":[]`,
+zero offers): R18 had no DLC bucket to read and the title/slug carry no DLC
+token, so the edition fell through to the Standard default — fail-open.
+Sibling "DCS: P-51D Mustang" (populated map, DLC bucket) went in correctly
+as DLC(16) in the same run. Sampling 25 candidate pages across G2A/K4G/
+Driffle runs: 23 have a populated map (mono-edition pages still show
+`1:Standard`); the 2 empty ones split one hidden DLC (A-10C) / one legit
+standalone (K4G "Goblin Vyke") — emptiness cannot decide an edition either
+way. `match_offer` now skips empty-map resolutions with a distinct reason
+("AKS page carries no editions map — edition unverifiable (R19)") before the
+R18 check; stub pages serialize the map as PHP `"editions":[]`, which the
+object-only `extract_editions` already reads as `{}`. Trade-off: legit
+standalones on stub pages (Goblin Vyke) are now skipped and stay visible in
+`skipped.json` for manual entry. Skill LEARNED_RULES R19 added + mirrored
+here. Tests: 303 → 307.
+
 ## 2026-07-08 — Submit: URL relocation keys on the path (G2A `uuid=` param drift)
 
 Pre-submit check on the G2A go: 0/716 common products kept their offer id

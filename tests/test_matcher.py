@@ -15,6 +15,7 @@ from src.matcher import (
     detect_region,
     extra_significant_words,
     extract_aks_name,
+    extract_editions,
     match_feed,
     match_offer,
     missing_aks_words,
@@ -288,11 +289,34 @@ class SlugAndResolveTests(unittest.TestCase):
         self.assertTrue(all(ua == "AKS/Staff" for ua in seen))
 
 
+class ExtractEditionsTests(unittest.TestCase):
+    def test_populated_object(self):
+        body = '<script>var x={"editions":{"1":{"name":"Standard"},"16":{"name":"DLC"}}};</script>'
+        self.assertEqual(
+            extract_editions(body),
+            {"1": {"name": "Standard"}, "16": {"name": "DLC"}},
+        )
+
+    def test_stub_page_php_empty_array_artifact(self):
+        # Stub AKS pages (zero offers) serialize the empty editions map as a
+        # PHP empty array — `"editions":[]`, not `{}` (live: DCS A-10C
+        # Warthog, 2026-07-08). The object-only regex must yield {} so R19
+        # sees it as empty rather than crashing or matching garbage.
+        body = '<script>var x={"merchants":[],"editions":[],"prices":[],"regions":[]};</script>'
+        self.assertEqual(extract_editions(body), {})
+
+    def test_absent_blob(self):
+        self.assertEqual(extract_editions("<html><body>nothing</body></html>"), {})
+
+
 class MatchOfferTests(unittest.TestCase):
     def _resolver(self, aks_name="Neon Beats", editions=None):
+        # {} must stay {} (R19 exercises a truly empty map) — only None
+        # means "default Standard map".
         res = AksResolution(
             slug="neon-beats", url="https://aks/buy-neon-beats", product_id="205027",
-            aks_name=aks_name, editions=editions or {"1": {"name": "Standard"}},
+            aks_name=aks_name,
+            editions=editions if editions is not None else {"1": {"name": "Standard"}},
         )
         return lambda name: res
 
@@ -362,13 +386,25 @@ class MatchOfferTests(unittest.TestCase):
         for editions in (
             {"1": {"name": "Standard"}, "8": {"name": "Bundle"}},
             {"5": {"name": "Early Access"}},
-            {},
         ):
             result = match_offer(
                 _offer("Neon Beats - Steam GLOBAL"), self._resolver(editions=editions)
             )
             self.assertIsInstance(result, Candidate, editions)
             self.assertEqual(result.edition_id, "1", editions)
+
+    def test_empty_editions_map_skips_edition_unverifiable(self):
+        # R19 (2026-07-08): an empty editions map = stub AKS record (zero
+        # offers) that can hide a DLC — "DCS: A-10C Warthog" went in as
+        # Standard(1) and Romain had to fix the DB by hand, while sibling
+        # "DCS: P-51D Mustang" (populated map, DLC bucket) was correctly
+        # entered DLC(16) by R18 the same run. No other deterministic edition
+        # signal exists → fail closed, whatever the title hints say.
+        for title in ("Neon Beats - Steam GLOBAL", "Neon Beats Deluxe - Steam GLOBAL"):
+            result = match_offer(_offer(title), self._resolver(editions={}))
+            self.assertIsInstance(result, SkippedOffer, title)
+            self.assertIn("R19", result.reason)
+            self.assertIn("editions map", result.reason)
 
     def test_unreliable_probe_skips_distinctly(self):
         def resolver(name):

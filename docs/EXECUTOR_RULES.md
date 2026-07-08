@@ -173,7 +173,9 @@ the AKS name (platform/format/region/edition noise excluded, incl. `COM` from
 word — doubt goes to skip) `[R16]`; **Microsoft Store Key / Microsoft Key**
 (key-type marker only — "Microsoft Flight Simulator … Steam Key" stays Steam;
 MICROSOFT platform has no region mapping → fail-closed) `[R17]`;
-year/version absent from AKS name; edition not present in the AKS dropdown.
+year/version absent from AKS name; edition not present in the AKS dropdown;
+resolved AKS page whose **editions map is empty** (stub record, zero offers —
+edition unverifiable) `[R19]`.
 (A DLC bucket on the resolved AKS page is NOT a skip — it assigns the DLC
 edition, §4.5 `[R18]`.)
 
@@ -184,7 +186,22 @@ Derive region from the offer URL when the merchant encodes it there
 **GLOBAL implicit** unless a forbidden region is present `[KINGUIN]`.
 
 ### 4.5 Edition detection (fallback hints — dropdown is truth) `[E0x]`
-**Page-nature override first `[R18]` (2026-07-08, revising the 07-07 skip):**
+**Stub guard first `[R19]` (2026-07-08, DCS A-10C Warthog escape):** an
+**empty** editions map on the resolved AKS page is a stub record —
+`"merchants":[],"editions":[],"prices":[],"regions":[]` in the page blob,
+zero offers (PHP serializes the empty map as `[]`, not `{}`). Such a page can
+vouch for no edition and can hide a DLC: A-10C (empty map) was entered
+Standard(1) and Romain had to fix the DB by hand, while sibling DCS P-51D
+Mustang (populated map, DLC bucket) was correctly entered DLC(16) by `[R18]`
+in the same run. Neither the feed row nor the page carries any other
+deterministic edition signal (measured 2026-07-08: 23/25 sampled candidate
+pages had a populated map — even mono-edition ones show `1:Standard`; the two
+empty ones split one hidden DLC / one legit standalone, so emptiness decides
+nothing). **SKIP with a distinct reason** ("AKS page carries no editions map —
+edition unverifiable (R19)"), whatever the title hints say. Trade-off accepted:
+a legit standalone on a stub page (e.g. K4G "Goblin Vyke") is skipped too and
+stays visible in `skipped.json` for manual entry.
+**Page-nature override next `[R18]` (2026-07-08, revising the 07-07 skip):**
 a DLC bucket in the resolved AKS page's editions map (id 16, or name "DLC" if
 the id ever moves) means the product ITSELF is a DLC — a title can hide it
 with no "DLC" word ("Exoplanets Pack", "Janthir Wilds Expansion") and match
@@ -220,7 +237,9 @@ Microsoft Store Key offer surfaced as a "Steam US" candidate this way) `[R15]`.
 The extracted editions map doubles as a product-nature check: DLC bucket
 present → the product is a DLC → edition DLC(16) per §4.5 `[R18]`. Systematic
 — the map is already in hand at resolve time (zero extra requests) — not "on
-suspicion" only.
+suspicion" only. An **empty** map is a stub record → SKIP per §4.5 `[R19]`
+(stub pages serialize it as `"editions":[]` — the object-only extraction
+yields `{}` there by design).
 
 ### 4.8 Limits & doubt
 Max **100** candidates by default unless Romain asks otherwise `[S26]`. Doubt
