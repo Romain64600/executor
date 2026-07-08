@@ -321,6 +321,46 @@ class MatchOfferTests(unittest.TestCase):
         result = match_offer(_offer("Neon Beats - Steam"), lambda name: None)
         self.assertIsInstance(result, SkippedOffer)
 
+    def test_dlc_edition_on_aks_page_skips(self):
+        # Romain (2026-07-07, K4G): titles hide DLC-ness ("Exoplanets Pack");
+        # the resolved page's editions map is the truth. DLC bucket → skip,
+        # even when a Standard bucket coexists (Brotato: Abyssal Terrors).
+        result = match_offer(
+            _offer("Neon Beats - Steam GLOBAL"),
+            self._resolver(editions={"16": {"name": "DLC"}}),
+        )
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("DLC edition on AKS product page", result.reason)
+
+        result = match_offer(
+            _offer("Neon Beats - Steam GLOBAL"),
+            self._resolver(editions={"1": {"name": "Standard"}, "16": {"name": "DLC"}}),
+        )
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("DLC edition on AKS product page", result.reason)
+
+    def test_dlc_edition_matched_by_name_when_id_moves(self):
+        result = match_offer(
+            _offer("Neon Beats - Steam GLOBAL"),
+            self._resolver(editions={"99": {"name": "dlc"}}),
+        )
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("DLC edition on AKS product page", result.reason)
+
+    def test_non_dlc_editions_do_not_skip(self):
+        # Bundle/Early Access buckets on the page describe other offers there,
+        # not the product's nature — GUILTY GEAR (Standard+Bundle) and the
+        # Early Access indies were approved candidates on the K4G run.
+        for editions in (
+            {"1": {"name": "Standard"}, "8": {"name": "Bundle"}},
+            {"5": {"name": "Early Access"}},
+            {},
+        ):
+            result = match_offer(
+                _offer("Neon Beats - Steam GLOBAL"), self._resolver(editions=editions)
+            )
+            self.assertIsInstance(result, Candidate, editions)
+
     def test_unreliable_probe_skips_distinctly(self):
         def resolver(name):
             raise AksProbeUnreliable("neon-beats -> 429")

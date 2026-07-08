@@ -173,6 +173,16 @@ the AKS name (platform/format/region/edition noise excluded, incl. `COM` from
 word — doubt goes to skip) `[R16]`; **Microsoft Store Key / Microsoft Key**
 (key-type marker only — "Microsoft Flight Simulator … Steam Key" stays Steam;
 MICROSOFT platform has no region mapping → fail-closed) `[R17]`;
+**DLC bucket in the resolved AKS page's editions map** (id 16, or name "DLC" if
+the id ever moves) — a title can hide its DLC nature with no "DLC" word
+("Exoplanets Pack", "Janthir Wilds Expansion", "Abyssal Terrors") and match its
+own AKS page token-perfectly, leaving R01/R16 silent; the page's map is the
+truth, and the skip holds even when a Standard bucket coexists ("Brotato:
+Abyssal Terrors" has both and is still a DLC). Do NOT extend to
+Bundle/Early Access buckets: those describe other offers listed on the page,
+not the product's nature (GUILTY GEAR Xrd {Standard, Bundle} and Early Access
+indies were valid candidates). 2026-07-07 K4G run: 9 hidden DLCs surfaced as
+Standard(1) candidates this way `[R18]`;
 year/version absent from AKS name; edition not present in the AKS dropdown.
 
 ### 4.4 Region — **URL decides, not the title** `[Ga01]`
@@ -202,6 +212,9 @@ the embedded `"editions":{…}` JSON `[EDITIONS.md]`.
 SKIPPED with a distinct reason — never fall back to the offer title as the AKS
 name** (that turns the §4.1 identity check into a tautology; 2026-07-07 a
 Microsoft Store Key offer surfaced as a "Steam US" candidate this way) `[R15]`.
+The extracted editions map doubles as a product-nature gate: DLC bucket present
+→ SKIP per §4.3 `[R18]`. The check is systematic — the map is already in hand
+at resolve time (zero extra requests) — not "on suspicion" only.
 
 ### 4.8 Limits & doubt
 Max **100** candidates by default unless Romain asks otherwise `[S26]`. Doubt

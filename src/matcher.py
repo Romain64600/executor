@@ -535,6 +535,17 @@ class Candidate:
         )
 
 
+def _dlc_edition_on_page(editions: dict[str, Any]) -> str:
+    """The DLC bucket of an AKS editions map, or "" (id 16 is canonical today,
+    the name match is the seatbelt if ids ever move)."""
+
+    for key, value in editions.items():
+        name = value.get("name") if isinstance(value, dict) else str(value)
+        if key == "16" or (isinstance(name, str) and name.strip().upper() == "DLC"):
+            return f"{key}: {name}"
+    return ""
+
+
 @dataclass(frozen=True)
 class SkippedOffer:
     offer: NormalizedOffer
@@ -577,6 +588,15 @@ def match_offer(
     qualifier = dangerous_qualifier(offer.name, resolution.aks_name)
     if qualifier:
         return SkippedOffer(offer, f"dangerous qualifier absent from AKS name: {qualifier}")
+
+    # Romain (2026-07-07, K4G review): a title can hide its DLC nature
+    # ("Exoplanets Pack", "Janthir Wilds Expansion" — no "DLC" word), but the
+    # resolved AKS page's editions map tells the truth. DLC bucket present →
+    # the product is a DLC → never entered, even when a Standard bucket
+    # coexists (Brotato: Abyssal Terrors had both and is still a DLC).
+    dlc = _dlc_edition_on_page(resolution.editions)
+    if dlc:
+        return SkippedOffer(offer, f"DLC edition on AKS product page: {dlc}")
 
     edition_label, edition_id = detect_edition(offer.name, offer.url)
     # CORE rule 4 / E05: an edition word that is part of the AKS game name is not
