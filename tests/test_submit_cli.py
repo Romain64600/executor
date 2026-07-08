@@ -240,8 +240,8 @@ class SubmitCliTests(unittest.TestCase):
             "aborted": None, "stopped": None, "feed_offers": 7,
             "write_attempts": 2, "created": 1,
             "plan": [
-                {"offer_id": "1", "merchant_title": "Game 1",
-                 "ready": True, "submitted": True},
+                {"offer_id": "1", "merchant_title": "Game 1", "ready": True,
+                 "submitted": True, "post_save": "gone from feed (available=all)"},
                 {"offer_id": "2", "merchant_title": "Game 2", "ready": True,
                  "submitted": False, "post_save": "still_pending", "create": {}},
             ],
@@ -264,7 +264,7 @@ class SubmitCliTests(unittest.TestCase):
             "SUBMIT — Driffle — created=1, write_attempts=2, plan=2, "
             "7 offers in current feed, aborted=None, stopped=None",
         )
-        self.assertIn("[CREATED (gone from pending)] 1 — Game 1", report)
+        self.assertIn("[CREATED (gone from feed (available=all))] 1 — Game 1", report)
         self.assertIn("[FAILED (still_pending)] 2 — Game 2", report)
         summary = json.loads(out)
         self.assertEqual(summary["created"], 1)

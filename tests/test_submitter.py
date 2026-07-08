@@ -271,7 +271,7 @@ class RowRelocationTests(unittest.TestCase):
         result = _real(session, [_cand("1")])
         entry = result["plan"][0]
         self.assertTrue(entry["submitted"])
-        self.assertEqual(entry["post_save"], "gone from pending")
+        self.assertEqual(entry["post_save"], "gone from feed (available=all)")
         self.assertEqual(entry["offer_id"], "51")
         self.assertEqual((result["write_attempts"], result["created"]), (1, 1))
 
@@ -283,7 +283,7 @@ class RowRelocationTests(unittest.TestCase):
         result = _real(session, [_cand("1")])
         entry = result["plan"][0]
         self.assertFalse(entry["submitted"])
-        self.assertIn("STILL in pending", entry["post_save"])
+        self.assertIn("STILL in feed", entry["post_save"])
 
     def test_relocation_survives_query_param_drift(self):
         # G2A 2026-07-08: a re-import rotated the ?uuid= param on 26/716 rows
@@ -300,7 +300,7 @@ class RowRelocationTests(unittest.TestCase):
     def test_mid_run_reimport_with_param_drift_is_not_a_false_disappearance(self):
         # Worst case: mid-run re-import rotates BOTH the row id and the ?uuid=
         # param. Under full-URL keying the row looks absent by both keys →
-        # false "gone from pending"; path keying must still see it.
+        # false "gone from feed"; path keying must still see it.
         cand = _cand("1")
         cand["offer"]["url"] = "https://m/1?uuid=AAA"
         rows = {"77": {"url": "https://m/1?uuid=BBB", "name": "Game 1"}}
@@ -308,7 +308,7 @@ class RowRelocationTests(unittest.TestCase):
         result = _real(session, [cand])
         entry = result["plan"][0]
         self.assertFalse(entry["submitted"])
-        self.assertIn("STILL in pending", entry["post_save"])
+        self.assertIn("STILL in feed", entry["post_save"])
 
 
 class RowVerificationTests(unittest.TestCase):
@@ -404,7 +404,7 @@ class RealSubmitTests(unittest.TestCase):
         session = FakeWriteSession([["1"]], create_removes=False)
         result = _real(session, [_cand("1")], limit=1)
         self.assertFalse(result["plan"][0]["submitted"])
-        self.assertIn("STILL in pending", result["plan"][0]["post_save"])
+        self.assertIn("STILL in feed", result["plan"][0]["post_save"])
         # P2 (audit 2026-07-08): the attempt is counted (conservative --limit),
         # the creation is NOT — the old single `writes` field conflated them.
         self.assertEqual((result["write_attempts"], result["created"]), (1, 0))
@@ -465,7 +465,7 @@ class RealSubmitTests(unittest.TestCase):
         result = _real(session, [_cand("1"), _cand("4")], limit=None)
         by_id = {p["offer_id"]: p for p in result["plan"]}
         self.assertFalse(by_id["1"]["submitted"])
-        self.assertIn("STILL in pending", by_id["1"]["post_save"])
+        self.assertIn("STILL in feed", by_id["1"]["post_save"])
         # no reflow happened (nothing was created), so "4" is still on page 2
         # and the original index finds it there.
         self.assertTrue(by_id["4"]["ready"])
@@ -482,7 +482,7 @@ class RealSubmitTests(unittest.TestCase):
         session = FakeWriteSession([["1"]], create_removes=False)
         result = _real(session, [_cand("1")], click_mode="dispatch", limit=1)
         self.assertFalse(result["plan"][0]["submitted"])
-        self.assertIn("STILL in pending", result["plan"][0]["post_save"])
+        self.assertIn("STILL in feed", result["plan"][0]["post_save"])
 
     def test_default_click_mode_is_trusted(self):
         # native/dispatch are proven dead on Driffle; the class default must be
@@ -508,7 +508,7 @@ class RealSubmitTests(unittest.TestCase):
         session = FakeWriteSession([["1"]], create_removes=False)
         result = _real(session, [_cand("1")], click_mode="trusted", limit=1)
         self.assertFalse(result["plan"][0]["submitted"])
-        self.assertIn("STILL in pending", result["plan"][0]["post_save"])
+        self.assertIn("STILL in feed", result["plan"][0]["post_save"])
 
     def test_trusted_form_invalid_is_reported_and_not_submitted(self):
         fv = {"ok": True, "form_valid": False, "checked": 4,

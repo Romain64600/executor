@@ -45,11 +45,17 @@ only adds Claude-specific notes on top of them.
 
 - **Scope separation:** Claude must not self-initiate long-running asynchronous
   batch tasks, cloud-polling workers, or massive parallel test generation.
-  Running executor pipeline stages (extract / match / report, submit only on
-  Romain's explicit go) is in scope when Romain directs the data entry,
-  including as background processes. Otherwise keep work scoped to local file
-  diffs, refactoring, focused tests, documentation, and deterministic Python
-  state evaluation.
+  When Romain directs the data entry, pipeline stages are in scope with an
+  explicit split:
+  - **extract / match / report (read-only):** may run as background processes,
+    with their logs and JSON outputs collected;
+  - **submit:** only on Romain's explicit go, and **never fire-and-forget**
+    (AGENTS.md) — the process stays attached or harness-supervised, canary of
+    1 by default, and its exit code + `submit_plan.json` are read and checked
+    before ANY continuation (rest of the batch, next page, next stage).
+
+  Otherwise keep work scoped to local file diffs, refactoring, focused tests,
+  documentation, and deterministic Python state evaluation.
 
 - Do not commit `runs/`, `logs/`, `state/`, `.env`, or any secret / cookie /
   2FA code.

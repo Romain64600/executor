@@ -3,6 +3,24 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-08 — Audit 4 (2×P2): post-save strings carry the real available mode; submit never fire-and-forget
+
+Romain's read-only audit after pull, two P2s. **1** — `_verify_gone` already
+checked the run's `available` mode, but the written proof still hardcoded
+"pending": `entry["post_save"]` said `gone from pending` / `STILL in pending`
+and the CLI rendered `CREATED (gone from pending)` while the default is
+`--available all` — a reader of the artifacts would believe a pending-mode
+proof that never ran. Now `post_save` reads `gone from feed (available=<mode>)`
+/ `STILL in feed (available=<mode>) — FAILED`, and the CLI renders the entry's
+own `post_save` string instead of composing its own (single source). Docstrings
+de-pending-ified. **2** — CLAUDE.md's scope-separation bullet said pipeline
+stages run "including as background processes", which rubbed against AGENTS.md's
+forbidden "fire-and-forget submission". Split explicitly: background OK for the
+read-only stages (extract/match/report) with logs collected; submit only on
+Romain's go, never fire-and-forget — attached or harness-supervised, canary of
+1 by default, exit code + `submit_plan.json` read before any continuation.
+Still 350 tests.
+
 ## 2026-07-08 — Guidance refresh: CLAUDE.md hard constraints, AGENTS.md aligned, success wording fixed
 
 CLAUDE.md revision from Romain applied verbatim: explicit hard constraints

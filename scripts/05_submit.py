@@ -4,8 +4,9 @@
 Modes:
   (default)  DRY-RUN — rehearse the flow, no writes.
   --submit   REAL — fill region/edition + click "Create offer" + verify post-save
-             (offer gone from pending). Defaults to a **canary of 1 offer**; pass
-             --all for the full batch, or --limit N.
+             (offer gone from the refreshed feed, same available mode as the
+             run). Defaults to a **canary of 1 offer**; pass --all for the full
+             batch, or --limit N.
 
 Gates (fail-closed): invariants green + authoritative, `approved.json` present
 AND re-verified at load time against its sibling `candidates.json` +
@@ -50,7 +51,9 @@ def _status(entry, write):
         return f"SKIP ({entry.get('blocker')})"
     if not write:
         return "READY"
-    return "CREATED (gone from pending)" if entry.get("submitted") else f"FAILED ({entry.get('post_save')})"
+    if entry.get("submitted"):
+        return f"CREATED ({entry.get('post_save')})"
+    return f"FAILED ({entry.get('post_save')})"
 
 
 def main() -> int:

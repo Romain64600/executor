@@ -6,8 +6,9 @@ select names.
 
 - `DryRunSubmitter` stops there and reports what it *would* submit — **no writes**.
 - `Submitter` (real) additionally fills region/edition and clicks "Create offer",
-  then verifies post-save that the offer **disappeared** from the pending feed —
-  success = gone (skill S18; never `[data-success]`).
+  then verifies post-save that the offer **disappeared** from the refreshed
+  feed, in the same ``available`` mode the run scans — success = gone (skill
+  S18; never `[data-success]`).
 
 Fail-closed per Romain's decisions (SUBMITTER_SPEC §6): one attempt per offer; on
 failure log + skip + continue; stop the run after 10 consecutive failures. The real
@@ -430,7 +431,7 @@ class _SubmitterBase:
         gone is True iff the offer is absent under BOTH keys — the row id we
         just acted on AND the merchant URL. An id-only check would prove a
         false disappearance whenever a re-import re-ids the row mid-run (K4G
-        2026-07-08) while it is in fact still pending. When gone, the scan ran
+        2026-07-08) while it is in fact still in the feed. When gone, the scan ran
         to the end of the feed and the collected maps ARE the current feed
         state — callers reuse them to locate the next candidate on the
         refreshed feed (AGENTS.md: "refresh current merchant feed; locate exact
@@ -495,7 +496,7 @@ class _SubmitterBase:
         stopped: str | None = None
         # --limit counts ATTEMPTS (every ready offer we tried to write) —
         # deliberately conservative. `created` counts VERIFIED creations only
-        # (post-save proof: gone from refreshed pending). Reported separately
+        # (post-save proof: gone from the refreshed feed). Reported separately
         # since Romain's audit P2 (2026-07-08): the old single `writes` field
         # was the attempt counter but read like a creation count.
         write_attempts = 0
@@ -626,8 +627,8 @@ class Submitter(_SubmitterBase):
     Driffle's handler), 'native' (`b.click()`) or 'dispatch' (documented S09
     derogation — MouseEvent on the Create button only). native/dispatch produce
     `isTrusted:false` and are proven NOT to persist on Driffle — kept only as
-    documented diagnostics. Post-save (offer gone from refreshed pending) remains
-    the ONLY success proof in every mode.
+    documented diagnostics. Post-save (offer gone from the refreshed feed, same
+    available mode as the run) remains the ONLY success proof in every mode.
     """
 
     write_mode = True
@@ -683,5 +684,9 @@ class Submitter(_SubmitterBase):
             ctx["by_url"].clear()
             ctx["by_url"].update(fresh_by_url)
         entry["submitted"] = gone
-        entry["post_save"] = "gone from pending" if gone else "STILL in pending — FAILED"
+        mode = ctx["available"]
+        entry["post_save"] = (
+            f"gone from feed (available={mode})" if gone
+            else f"STILL in feed (available={mode}) — FAILED"
+        )
         return gone
