@@ -309,6 +309,76 @@ class RowRelocationTests(unittest.TestCase):
         self.assertIn("STILL in pending", entry["post_save"])
 
 
+class RowVerificationTests(unittest.TestCase):
+    """Audit P1 (Romain, 2026-07-08): the nominal by-id path accepted a row on
+    id membership alone — the index held offer_id → page_url only, so title/
+    URL/price/merchant were never compared before the modal opened. Ids are
+    import-batch-scoped and can be REUSED by a re-import for a different row:
+    the by-id row must match the candidate (name, URL path, price/store when
+    both sides carry them) or the merchant-URL identity decides.
+    """
+
+    def test_happy_id_path_records_checked_fields(self):
+        result = _run(FakeSubmitSession([["1"]]), [_cand("1")])
+        entry = result["plan"][0]
+        self.assertTrue(entry["ready"])
+        self.assertEqual(entry["row_checked"], ["name", "url"])
+
+    def test_id_reused_for_another_product_is_not_trusted(self):
+        # The approved id is in the feed but now carries ANOTHER product and
+        # the approved URL is nowhere → fail closed, never open that modal.
+        rows = {"1": {"url": "https://m/other", "name": "Other Game"}}
+        result = _run(FakeSubmitSession([["1"]], rows=rows), [_cand("1")])
+        entry = result["plan"][0]
+        self.assertFalse(entry["ready"])
+        self.assertIn("contradicts the candidate", entry["blocker"])
+        self.assertIn("name", entry["blocker"])
+
+    def test_id_reused_but_url_still_present_relocates(self):
+        # Re-import reused the approved id for another product while the real
+        # offer lives on under a fresh id — the URL identity wins.
+        rows = {
+            "1": {"url": "https://m/other", "name": "Other Game"},
+            "51": {"url": "https://m/1", "name": "Game 1"},
+        }
+        result = _run(FakeSubmitSession([["1", "51"]], rows=rows), [_cand("1")])
+        entry = result["plan"][0]
+        self.assertTrue(entry["ready"])
+        self.assertEqual(entry["offer_id"], "51")
+        self.assertEqual(entry["located_by"], "url")
+
+    def test_price_drift_on_same_row_falls_back_to_url_identity(self):
+        # Same row, refreshed price: the id-path compare is strict, but the
+        # URL path proves the identity (a re-import legitimately refreshes
+        # the price, which we do not enter anyway).
+        cand = _cand("1")
+        cand["offer"]["price"] = "4.99"
+        rows = {"1": {"price": "9.99"}}
+        result = _run(FakeSubmitSession([["1"]], rows=rows), [cand])
+        entry = result["plan"][0]
+        self.assertTrue(entry["ready"])
+        self.assertEqual(entry["located_by"], "url")
+        self.assertEqual(entry["offer_id"], "1")
+
+    def test_price_match_stays_on_id_path(self):
+        cand = _cand("1")
+        cand["offer"]["price"] = "9.99"
+        rows = {"1": {"price": "9.99"}}
+        result = _run(FakeSubmitSession([["1"]], rows=rows), [cand])
+        entry = result["plan"][0]
+        self.assertTrue(entry["ready"])
+        self.assertNotIn("located_by", entry)
+        self.assertIn("price", entry["row_checked"])
+
+    def test_store_mismatch_at_relocated_url_blocks(self):
+        # The relocated row belongs to another store → fail closed.
+        rows = {"51": {"url": "https://m/1", "name": "Game 1", "store_id": "38"}}
+        result = _run(FakeSubmitSession([["51"]], rows=rows), [_cand("1")])
+        entry = result["plan"][0]
+        self.assertFalse(entry["ready"])
+        self.assertIn("store_id", entry["blocker"])
+
+
 class RealSubmitTests(unittest.TestCase):
     def test_canary_creates_one_then_stops(self):
         session = FakeWriteSession([["1", "2"]])

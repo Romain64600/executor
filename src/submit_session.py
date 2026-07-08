@@ -48,13 +48,17 @@ _PAGE_IDS_JS = (
     "catch(x){return null;}}).filter(Boolean))"
 )
 
-# id + the stable row identity (merchant url, title). AKS re-imports re-id
-# EVERY row (K4G 2026-07-08: 0/212 ids survived 74 minutes), so approved ids
-# go stale while the merchant URL keeps identifying the same offer.
+# id + the stable row identity (merchant url, title) + the row details the
+# rules require verifying before the modal (price, store — audit P1,
+# 2026-07-08). AKS re-imports re-id EVERY row (K4G 2026-07-08: 0/212 ids
+# survived 74 minutes), so approved ids go stale while the merchant URL keeps
+# identifying the same offer.
 _PAGE_ROWS_JS = (
     "JSON.stringify(Array.from(document.querySelectorAll('tr[data-offer]'))"
     ".map(function(e){try{var d=JSON.parse(e.getAttribute('data-offer'));"
-    "return {id:String(d.id),url:String(d.url||''),name:String(d.name||'')};}"
+    "return {id:String(d.id),url:String(d.url||''),name:String(d.name||''),"
+    "price:d.price==null?'':String(d.price),"
+    "store_id:d.storeId==null?'':String(d.storeId)};}"
     "catch(x){return null;}}).filter(Boolean))"
 )
 

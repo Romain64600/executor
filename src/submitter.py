@@ -37,6 +37,40 @@ def _url_key(url: str) -> str:
     return (url or "").split("?", 1)[0]
 
 
+def _row_check(row: dict[str, str], candidate: dict[str, Any], *,
+               check_price: bool) -> tuple[list[str], list[str]]:
+    """(mismatches, checked): feed-row fields verified against the candidate.
+
+    Audit P1 (Romain, 2026-07-08): the nominal by-id path accepted a row on id
+    membership alone, verifying nothing — AGENTS.md requires "verify title,
+    URL, price, page, merchant" before the modal. name and URL path are always
+    compared; price and store only when BOTH sides carry a value. price is not
+    compared across a URL relocation (check_price=False): a re-import
+    legitimately refreshes it, while the id-path compare guards against an
+    id reused by a re-import for a different row.
+    """
+
+    offer = candidate["offer"]
+    mismatches: list[str] = []
+    checked = ["name", "url"]
+    if row.get("name", "") != offer["name"]:
+        mismatches.append("name")
+    if _url_key(row.get("url", "")) != _url_key(str(offer.get("url") or "")):
+        mismatches.append("url")
+    row_store, cand_store = row.get("store_id", ""), str(offer.get("store_id") or "")
+    if row_store and cand_store:
+        checked.append("store_id")
+        if row_store != cand_store:
+            mismatches.append("store_id")
+    if check_price:
+        row_price, cand_price = row.get("price", ""), str(offer.get("price") or "")
+        if row_price and cand_price:
+            checked.append("price")
+            if row_price != cand_price:
+                mismatches.append("price")
+    return mismatches, checked
+
+
 def _norm_option_text(text: str) -> str:
     """Normalize a catalog option label for comparison: drop the trailing
     ``(id)`` suffix regions carry (e.g. "Steam EU (9)"), lowercase, collapse
@@ -203,9 +237,13 @@ class _SubmitterBase:
 
     def _scan_feed(self, store_id, feed_page, available, max_pages,
                    stop_on: str | None = None, stop_on_url: str | None = None,
-                   ) -> tuple[dict[str, str], dict[str, dict[str, str]], bool]:
-        """Walk the feed pages building offer_id → page-url AND
-        merchant-url-path (`_url_key`) → current row ``{offer_id, name, page_url}``.
+                   ) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]], bool]:
+        """Walk the feed pages building offer_id → row details AND
+        merchant-url-path (`_url_key`) → current row. Both maps carry the full
+        row details ``{page_url, name, url, price, store_id}`` so `_locate_row`
+        can verify the row against the candidate BEFORE the modal opens
+        (audit P1, 2026-07-08 — previously the id map held the page url only,
+        so the nominal by-id path verified nothing).
 
         The url map exists because AKS re-imports re-id EVERY row (K4G
         2026-07-08: 0/212 ids survived the 74 minutes between extraction and
@@ -221,7 +259,7 @@ class _SubmitterBase:
         page does — a verify scan must reach the end of the feed before
         concluding the offer is gone.
         """
-        index: dict[str, str] = {}
+        index: dict[str, dict[str, str]] = {}
         by_url: dict[str, dict[str, str]] = {}
         stop_on_url = _url_key(stop_on_url) if stop_on_url else None
         found = False
@@ -239,16 +277,20 @@ class _SubmitterBase:
                 offer_id = str(row.get("id") or "")
                 if not offer_id:
                     continue
+                details = {
+                    "offer_id": offer_id,
+                    "page_url": url,
+                    "name": str(row.get("name") or ""),
+                    "url": str(row.get("url") or ""),
+                    "price": str(row.get("price") or ""),
+                    "store_id": str(row.get("store_id") or ""),
+                }
                 if offer_id not in index:
-                    index[offer_id] = url
+                    index[offer_id] = details
                     new += 1
-                row_url = _url_key(str(row.get("url") or ""))
+                row_url = _url_key(details["url"])
                 if row_url and row_url not in by_url:
-                    by_url[row_url] = {
-                        "offer_id": offer_id,
-                        "name": str(row.get("name") or ""),
-                        "page_url": url,
-                    }
+                    by_url[row_url] = details
             if (stop_on is not None and stop_on in index) or (
                 stop_on_url is not None and stop_on_url in by_url
             ):
@@ -269,28 +311,51 @@ class _SubmitterBase:
         return index, by_url
 
     def _locate_row(self, candidate: dict[str, Any], offer_id: str,
-                    index: dict[str, str], by_url: dict[str, dict[str, str]]
+                    index: dict[str, dict[str, str]], by_url: dict[str, dict[str, str]]
                     ) -> dict[str, Any]:
         """Resolve an approved candidate to a row of the CURRENT feed.
 
-        By approved offer id while the import batch is unchanged; after a
-        re-import, by merchant URL with an exact-title check (fail-closed on
-        any drift), adopting the row's current id. AGENTS.md: "locate exact
-        current row; verify title, URL".
+        By approved offer id while the import batch is unchanged — the row's
+        name/URL-path (+ price/store when present) must match the candidate
+        (audit P1, 2026-07-08: id membership alone verified nothing, and a
+        re-import can reuse an id for a DIFFERENT row). On any contradiction
+        the id is treated as stale and the merchant-URL identity decides.
+        After a re-import, by merchant URL with an exact-title (+ store)
+        check, adopting the row's current id; price is not compared there —
+        a re-import legitimately refreshes it. AGENTS.md: "locate exact
+        current row; verify title, URL, price, page, merchant".
         """
-        if offer_id in index:
-            return {"offer_id": offer_id, "page_url": index[offer_id]}
+        id_mismatches: list[str] = []
+        row = index.get(offer_id)
+        if row is not None:
+            id_mismatches, checked = _row_check(row, candidate, check_price=True)
+            if not id_mismatches:
+                return {"offer_id": offer_id, "page_url": row["page_url"],
+                        "row_checked": checked}
         url = _url_key(str(candidate["offer"].get("url") or ""))
         row = by_url.get(url) if url else None
         if row is None:
+            if id_mismatches:
+                return {"blocker": (
+                    "row at the approved id contradicts the candidate "
+                    f"({', '.join(id_mismatches)}) and the approved URL is "
+                    "not in the current feed"
+                )}
             return {"blocker": "offer not in current feed (by id and by URL)"}
-        if row["name"] != candidate["offer"]["name"]:
+        mismatches, checked = _row_check(row, candidate, check_price=False)
+        if "name" in mismatches:
             return {"blocker": (
                 "feed row at the approved URL has a different title — "
                 f"feed {row['name']!r} != approved {candidate['offer']['name']!r}"
             )}
+        if mismatches:
+            return {"blocker": (
+                "feed row at the approved URL contradicts the candidate "
+                f"({', '.join(mismatches)})"
+            )}
         return {"offer_id": row["offer_id"], "page_url": row["page_url"],
-                "approved_offer_id": offer_id, "located_by": "url"}
+                "approved_offer_id": offer_id, "located_by": "url",
+                "row_checked": checked}
 
     def _prepare(self, candidate: dict[str, Any], located: dict[str, Any]) -> dict[str, Any]:
         offer_id = str(located.get("offer_id") or candidate["offer"]["offer_id"])
@@ -306,6 +371,8 @@ class _SubmitterBase:
         if located.get("located_by") == "url":
             entry["approved_offer_id"] = located["approved_offer_id"]
             entry["located_by"] = "url"
+        if located.get("row_checked"):
+            entry["row_checked"] = located["row_checked"]
         if located.get("blocker"):
             entry["blocker"] = located["blocker"]
             return entry
@@ -337,7 +404,7 @@ class _SubmitterBase:
         return entry
 
     def _verify_gone(self, offer_id, merchant_url, store_id, feed_page, available,
-                     max_pages) -> tuple[bool, dict[str, str] | None, dict[str, dict[str, str]] | None]:
+                     max_pages) -> tuple[bool, dict[str, dict[str, str]] | None, dict[str, dict[str, str]] | None]:
         """Post-save: re-scan the feed. Returns (gone, fresh_index, fresh_by_url).
 
         gone is True iff the offer is absent under BOTH keys — the row id we
