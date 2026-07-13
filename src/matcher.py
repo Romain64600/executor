@@ -750,7 +750,30 @@ def match_offer(
             edition_label.upper() in resolution.aks_name.upper()
             or detect_edition(resolution.aks_name)[1] == edition_id
         ):
-            edition_label, edition_id = "Standard", "1"
+            # R23 (2026-07-13, Valve Complete Pack escape): the E05 identity
+            # heuristic assumes a name-embedded edition word can't be a real
+            # edition, but some products genuinely sell Standard AND a
+            # same-worded tier (AKS 831 "Valve Complete Pack" page carries
+            # both Standard(1) and Complete Pack(92) — the generic EDITION_HINTS
+            # id for "Complete" (91) isn't even this page's own id). The page's
+            # own editions map is the authoritative source (already in hand,
+            # zero extra requests): if it has a non-Standard entry whose name
+            # contains the detected label, trust that page-verified id/label
+            # over the identity collapse. No match on the page → Standard(1)
+            # as before.
+            page_edition = next(
+                (
+                    (eid, str(data.get("name", "")))
+                    for eid, data in resolution.editions.items()
+                    if str(data.get("name", "")).strip().upper() != "STANDARD"
+                    and edition_label.upper() in str(data.get("name", "")).upper()
+                ),
+                None,
+            )
+            if page_edition:
+                edition_id, edition_label = page_edition
+            else:
+                edition_label, edition_id = "Standard", "1"
         # Hard rule (Romain 2026-07-07): we NEVER enter bundles. A title that still
         # resolves to the Bundle edition after E05 (Pack/Trilogy/…) is a bundle.
         if edition_id == "8":

@@ -266,6 +266,19 @@ Otherwise, title hints:
 "Collection"/"Gold" **in the AKS name** = part of the game name → Standard(1)
 `[CORE rule 4]`. These are hints only; §4.7 overrides.
 
+**Page-verified exception to the identity collapse `[R23]` (2026-07-13, Valve
+Complete Pack escape):** "in the AKS name → Standard(1)" above assumes a
+name-embedded edition word is never a real edition, but some products
+genuinely sell both — AKS 831 "Valve Complete Pack" carries `{92: "Complete
+Pack", 1: "Standard"}` on its own page, a real split the identity heuristic
+can't see (and the generic hint id, 91 for "Complete", isn't even this page's
+own id — 92). Before collapsing to Standard, check the page's own editions map
+(already in hand, zero extra requests) for a non-Standard entry whose name
+contains the detected label; a page-verified match wins over both the
+collapse and the generic hint id. No match on the page → Standard(1) as
+before. The same mis-collapse had already mis-submitted an earlier offer of
+this exact product that morning; Romain deleted the bad AKS entry by hand.
+
 ### 4.6 URL hygiene
 The merchant URL is kept **complete, exactly as the feed carries it** — never
 strip query params in artifacts or reports. G2A is not the only merchant with
@@ -415,7 +428,10 @@ wrong one.
 If any step fails → do not retry the same offer blindly, do not switch browser.
 Per [`SUBMITTER_SPEC.md`](SUBMITTER_SPEC.md) §6 (Romain's decision) the batch policy
 is: log + skip the failing offer + continue, and stop the whole run after 10
-consecutive failures. Both the DRY-RUN and the **real write path** are built in
+consecutive failures. **No separate canary-of-1 gate on top `[R23b]`**
+(2026-07-13, Romain): validation (`approved.json`) is already the safety gate
+for which offers submit, so `--submit` processes the full approved batch by
+default; `--limit N` still narrows it explicitly. Both the DRY-RUN and the **real write path** are built in
 `src/submitter.py` + `src/submit_session.py` + `scripts/05_submit.py`; the real path
 (steps 5–8, `--submit --click-mode trusted`) is **live-proven** (first confirmed
 Driffle creations 2026-07-06 — see [`SUBMITTER_SPEC.md`](SUBMITTER_SPEC.md) §4b).

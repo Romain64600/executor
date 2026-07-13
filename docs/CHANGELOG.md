@@ -3,6 +3,32 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-13 — R23 (matcher) + R23b (submitter): Valve Complete Pack escape
+
+Live correction on a fresh Driffle run: "Valve Complete Pack (Global) (PC) -
+Steam Gift" matched AKS 831, but E05 (an edition word inside the AKS product's
+own name is identity, not a real edition) collapsed it to Standard(1) — the
+same collapse had already mis-submitted an earlier offer of the same product
+that morning (Romain deleted the bad AKS entry by hand). The page's own
+editions map for 831 is `{92: "Complete Pack", 1: "Standard"}` — a real
+Standard-vs-Complete-Pack split the identity heuristic can't see. **R23**:
+before collapsing to Standard, check the AKS page's own editions map (already
+in hand, zero extra requests) for a non-Standard entry whose name contains the
+detected label; a page-verified match wins over both the identity collapse and
+the generic `EDITION_HINTS` id (which wasn't even this page's own id: 91
+generic "Complete" vs. 831's actual 92 "Complete Pack"). No page match →
+Standard(1) as before. `src/matcher.py`.
+
+Separately, Romain requested a standing process change: **R23b** — a
+`--submit` run no longer defaults to a canary of 1 before the full batch.
+Validation (`approved.json`) is already the safety gate for *which* offers
+submit; the per-offer failure handling and 10-consecutive-failure stop
+condition are the safety net for *how* a run behaves, and neither needs a
+canary on top. `--submit` now processes the full approved batch by default;
+`--limit N` still narrows it explicitly. `--inspect` keeps its own
+canary-of-1 default (diagnostic mode, not asked to change). `scripts/05_submit.py`,
+mirrored in `CLAUDE.md`, `SUBMITTER_SPEC.md` §6, skill `LEARNED_RULES.md` S27.
+
 ## 2026-07-08 — R22: software/apps are never candidates (games only)
 
 Live correction on Kinguin p.2: "EaseUS Todo Backup Workstation" reached

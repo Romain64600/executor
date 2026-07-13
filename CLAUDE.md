@@ -50,9 +50,14 @@ only adds Claude-specific notes on top of them.
   - **extract / match / report (read-only):** may run as background processes,
     with their logs and JSON outputs collected;
   - **submit:** only on Romain's explicit go, and **never fire-and-forget**
-    (AGENTS.md) — the process stays attached or harness-supervised, canary of
-    1 by default, and its exit code + `submit_plan.json` are read and checked
-    before ANY continuation (rest of the batch, next page, next stage).
+    (AGENTS.md) — the process stays attached or harness-supervised. Once a
+    report is validated (`approved.json` generated), submit processes the
+    **full validated batch** by default — no canary-of-1 on top of an
+    already-validated batch (R23b, 2026-07-13, Romain: "on ne lance plus un
+    canary quand on est en mode safe"; `--limit N` still narrows it
+    explicitly). Its exit code + `submit_plan.json` are read and checked
+    before ANY continuation to a **new** run/page/stage — the in-run stop
+    condition (10 consecutive failures) is unchanged.
 
   Otherwise keep work scoped to local file diffs, refactoring, focused tests,
   documentation, and deterministic Python state evaluation.

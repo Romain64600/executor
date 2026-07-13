@@ -5,8 +5,9 @@ Modes:
   (default)  DRY-RUN — rehearse the flow, no writes.
   --submit   REAL — fill region/edition + click "Create offer" + verify post-save
              (offer gone from the refreshed feed, same available mode as the
-             run). Defaults to a **canary of 1 offer**; pass --all for the full
-             batch, or --limit N.
+             run). Processes the **full validated batch** by default (R23b,
+             2026-07-13 — Romain: validation is already the safety gate, no
+             canary needed on top of it); pass --limit N to narrow it.
 
 Gates (fail-closed): invariants green + authoritative, `approved.json` present
 AND re-verified at load time against its sibling `candidates.json` +
@@ -16,8 +17,8 @@ load), pre-flight WP login check. Reads the approved offers (Stage 3), writes
 
 Examples (on the VPS):
   python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127
-  python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127 --submit          # canary (1)
-  python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127 --submit --all     # full batch
+  python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127 --submit           # full approved batch
+  python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127 --submit --limit 1 # narrow to 1
 """
 
 from __future__ import annotations
@@ -65,8 +66,8 @@ def main() -> int:
     parser.add_argument("--available", default="all", choices=["all", "pending"])
     parser.add_argument("--max-pages", type=int, default=40)
     parser.add_argument("--submit", action="store_true", help="REAL write (default: dry-run).")
-    parser.add_argument("--all", action="store_true", help="With --submit / --inspect: full batch (default: canary of 1).")
-    parser.add_argument("--limit", type=int, default=None, help="With --submit / --inspect: max offers to process.")
+    parser.add_argument("--all", action="store_true", help="With --inspect: full batch (default: canary of 1). No-op with --submit — full batch is already the default there.")
+    parser.add_argument("--limit", type=int, default=None, help="With --submit (default: full approved batch) / --inspect (default: canary of 1): max offers to process.")
     parser.add_argument(
         "--click-mode", default=None, choices=["native", "dispatch", "trusted"],
         help="With --submit: 'trusted' = CDP Input.dispatchMouseEvent at the button's "
@@ -215,7 +216,13 @@ def main() -> int:
         return 0
 
     write = args.submit
-    limit = args.limit if args.limit is not None else (None if args.all else 1)
+    # R23b (2026-07-13, Romain): the write path used to default to a canary of
+    # 1 offer even though it only ever runs on an already-validated
+    # approved.json — validation IS the safety gate, so a submit run now
+    # processes the full approved batch by default. --limit N still narrows
+    # it explicitly when wanted; --all is a no-op here (kept for --inspect,
+    # which retains its own canary-of-1 default below).
+    limit = args.limit
     click_mode = args.click_mode if args.click_mode is not None else "trusted"
     if write:
         print(

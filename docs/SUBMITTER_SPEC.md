@@ -1,10 +1,13 @@
 # SUBMITTER_SPEC.md — Stage 4 design (for approval, no code yet)
 
 **Status: BUILT & LIVE-PROVEN** (approved by Romain; dry-run validated end-to-end
-on the VPS first, then the real write path added with a **canary default of 1**;
-**first live submissions confirmed 2026-07-06** — see §4b). This is the design of
-the only stage that *writes* to AKS. See `CHANGELOG.md` for the build + resolution
-entries.
+on the VPS first, then the real write path added with a canary default of 1;
+**first live submissions confirmed 2026-07-06** — see §4b. **Canary-of-1 default
+removed 2026-07-13** (R23b, Romain): a submit run only ever processes an
+already-validated `approved.json`, so validation is the safety gate and the full
+batch is now the default; `--limit N` still narrows it explicitly). This is the
+design of the only stage that *writes* to AKS. See `CHANGELOG.md` for the build +
+resolution entries.
 
 Grounded in `EXECUTOR_RULES.md` §6/§7 and the skill's submitter rules
 (`[S09]` `[S17]` `[S18]` and the DB-proof override).
@@ -171,6 +174,11 @@ rafraîchi, même available que le run)" — never
   "10 in a row" rule stops the run, not a cumulative budget).
 - A new instruction / interruption cancels the run (new `task_id`); leftover
   approved offers are **not** auto-submitted `[S15]`.
+- **Batch size `[R23b]` (2026-07-13, Romain):** no separate canary-of-1 gate
+  before the full batch — validation (`approved.json`) already is the safety
+  gate, so `--submit` runs the whole approved batch by default. The per-offer
+  and 10-consecutive-failure stop conditions above are unchanged and remain
+  the actual safety net during a run.
 
 ---
 

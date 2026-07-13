@@ -457,6 +457,35 @@ class MatchOfferTests(unittest.TestCase):
             self.assertIsInstance(result, Candidate, editions)
             self.assertEqual(result.edition_id, "1", editions)
 
+    def test_name_embedded_edition_word_uses_page_verified_edition(self):
+        # R23 (2026-07-13, Valve Complete Pack escape): "Complete" is part of
+        # the AKS name ("Neon Beats Complete Pack"), so E05 would collapse to
+        # Standard — but the page's own editions map genuinely offers a
+        # distinct "Complete Pack" tier (id 92, not the generic hint id 91).
+        # The page-verified entry must win.
+        result = match_offer(
+            _offer("Neon Beats Complete Pack - Steam GLOBAL"),
+            self._resolver(
+                aks_name="Neon Beats Complete Pack",
+                editions={"1": {"name": "Standard"}, "92": {"name": "Complete Pack"}},
+            ),
+        )
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual((result.edition_label, result.edition_id), ("Complete Pack", "92"))
+
+    def test_name_embedded_edition_word_without_page_match_falls_back_to_standard(self):
+        # Same name-embedded "Complete" word, but the page offers no distinct
+        # non-Standard tier — the E05 collapse to Standard still applies.
+        result = match_offer(
+            _offer("Neon Beats Complete Pack - Steam GLOBAL"),
+            self._resolver(
+                aks_name="Neon Beats Complete Pack",
+                editions={"1": {"name": "Standard"}},
+            ),
+        )
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual((result.edition_label, result.edition_id), ("Standard", "1"))
+
     def test_empty_editions_map_skips_edition_unverifiable(self):
         # R19 (2026-07-08): an empty editions map = stub AKS record (zero
         # offers) that can hide a DLC — "DCS: A-10C Warthog" went in as

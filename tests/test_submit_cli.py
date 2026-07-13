@@ -255,8 +255,9 @@ class SubmitCliTests(unittest.TestCase):
             ),
         )
         self.assertEqual(code, 0)
-        # canary default: no --all/--limit means limit=1
-        self.assertEqual(fake_submitter.run_kwargs["limit"], 1)
+        # R23b (2026-07-13): no canary-of-1 default — full approved batch
+        # unless --limit is given explicitly.
+        self.assertEqual(fake_submitter.run_kwargs["limit"], None)
         report = (self.run_dir / "submit_report.txt").read_text(encoding="utf-8")
         header = report.splitlines()[0]
         self.assertEqual(
