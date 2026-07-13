@@ -486,6 +486,59 @@ class MatchOfferTests(unittest.TestCase):
         self.assertIsInstance(result, Candidate)
         self.assertEqual((result.edition_label, result.edition_id), ("Standard", "1"))
 
+    def test_page_verified_edition_prefers_exact_match(self):
+        # P2 fix (2026-07-13, Romain's review of R23): when the page lists
+        # both an exact label match and a substring-only match, the exact one
+        # wins deterministically — not whichever the page happened to list
+        # first (dict/page order is not a matching criterion).
+        result = match_offer(
+            _offer("Neon Beats Complete Pack - Steam GLOBAL"),
+            self._resolver(
+                aks_name="Neon Beats Complete Pack",
+                editions={
+                    "1": {"name": "Standard"},
+                    "92": {"name": "Complete Pack"},
+                    "91": {"name": "Complete"},
+                },
+            ),
+        )
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual((result.edition_label, result.edition_id), ("Complete", "91"))
+
+    def test_page_verified_edition_ambiguous_is_skipped(self):
+        # P2 fix: two distinct non-Standard entries both matching the
+        # detected label, neither an exact match — a guess, not a
+        # page-verified pick. Fail closed instead of taking page order.
+        result = match_offer(
+            _offer("Neon Beats Complete Pack - Steam GLOBAL"),
+            self._resolver(
+                aks_name="Neon Beats Complete Pack",
+                editions={
+                    "1": {"name": "Standard"},
+                    "92": {"name": "Complete Pack"},
+                    "93": {"name": "Complete Deluxe Pack"},
+                },
+            ),
+        )
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("ambiguous page-verified edition", result.reason)
+
+    def test_bundle_label_never_page_verified(self):
+        # P2 fix: a title whose OWN AKS name embeds "Trilogy" (detected label
+        # "Bundle") must still collapse to Standard, even when the page
+        # happens to list its own Bundle-named tier — "we never enter
+        # bundles, ever" is absolute, there is no legitimate page-verified
+        # Bundle pick to resurrect here.
+        result = match_offer(
+            _offer("Neon Beats Trilogy - Steam GLOBAL"),
+            self._resolver(
+                aks_name="Neon Beats Trilogy",
+                editions={"1": {"name": "Standard"}, "50": {"name": "Trilogy Bundle"}},
+            ),
+        )
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual((result.edition_label, result.edition_id), ("Standard", "1"))
+
     def test_empty_editions_map_skips_edition_unverifiable(self):
         # R19 (2026-07-08): an empty editions map = stub AKS record (zero
         # offers) that can hide a DLC — "DCS: A-10C Warthog" went in as

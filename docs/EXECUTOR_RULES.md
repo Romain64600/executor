@@ -279,6 +279,21 @@ collapse and the generic hint id. No match on the page → Standard(1) as
 before. The same mis-collapse had already mis-submitted an earlier offer of
 this exact product that morning; Romain deleted the bad AKS entry by hand.
 
+**Two P2 fixes on R23 (2026-07-13, Romain's review):** (1) **never
+page-verify a `Bundle` label** — "we never enter bundles, ever" is absolute,
+so there is no legitimate page-verified Bundle tier to resurrect. Without this
+guard, a title whose own AKS name happens to embed "Bundle"/"Pack"/"Trilogy"
+(e.g. a Trilogy-titled standalone product) could have its page's own
+Bundle-named entry picked up — either surfacing as a Candidate under a
+non-`8` page id (invisible to the `edition_id == "8"` skip in §6) or getting
+skipped where the offer used to pass through as Standard pre-R23; either way
+a silent behavior change. (2) **pick deterministically, never by page/dict
+order** — prefer an exact (case-insensitive) name match; a substring match is
+only accepted when it is the sole one. Multiple distinct non-Standard entries
+tied at the same specificity is a guess, not a page-verified pick — SKIP
+("ambiguous page-verified edition … (R23 P2)") instead of silently taking
+whichever entry the page happened to list first.
+
 ### 4.6 URL hygiene
 The merchant URL is kept **complete, exactly as the feed carries it** — never
 strip query params in artifacts or reports. G2A is not the only merchant with

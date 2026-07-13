@@ -761,15 +761,42 @@ def match_offer(
             # contains the detected label, trust that page-verified id/label
             # over the identity collapse. No match on the page → Standard(1)
             # as before.
-            page_edition = next(
-                (
+            #
+            # Two P2 fixes on the above (2026-07-13, Romain's review of R23):
+            #  - never page-verify a "Bundle" label: "we never enter bundles,
+            #    ever" is absolute, so there is no legitimate page-verified
+            #    Bundle tier to resurrect here. Without this guard, a page's
+            #    own Bundle-named entry could either surface as a Candidate
+            #    under a non-"8" page id (invisible to the `edition_id == "8"`
+            #    skip below) or get skipped where the offer used to pass
+            #    through as Standard pre-R23 — a silent behavior change
+            #    either way, on a title that just happens to carry
+            #    "Bundle"/"Pack"/"Trilogy" as part of its own product name.
+            #  - pick deterministically, not by page/dict order: prefer an
+            #    EXACT (case-insensitive) name match; if none, accept a
+            #    substring match only when it is the SOLE one. Multiple
+            #    distinct non-Standard entries tied at the same specificity
+            #    is a guess, not a page-verified pick — fail closed (doubt
+            #    goes to skip, G02) instead of silently taking whichever the
+            #    page happened to list first.
+            page_edition = None
+            if edition_label != "Bundle":
+                on_page = [
                     (eid, str(data.get("name", "")))
                     for eid, data in resolution.editions.items()
                     if str(data.get("name", "")).strip().upper() != "STANDARD"
                     and edition_label.upper() in str(data.get("name", "")).upper()
-                ),
-                None,
-            )
+                ]
+                exact = [c for c in on_page if c[1].strip().upper() == edition_label.upper()]
+                pool = exact or on_page
+                if len(pool) > 1:
+                    return SkippedOffer(
+                        offer,
+                        f"ambiguous page-verified edition for {edition_label!r}: "
+                        f"{[name for _, name in pool]} (R23 P2)",
+                    )
+                if pool:
+                    page_edition = pool[0]
             if page_edition:
                 edition_id, edition_label = page_edition
             else:

@@ -3,6 +3,31 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-13 — R23 P2 fixes: no bundle resurrection, no dict-order guessing
+
+Romain's review of R23 (the page-verified edition lookup) surfaced two P2s
+before they could bite live:
+
+1. **Bundle resurrection.** The lookup didn't exclude a `Bundle`-labeled
+   match. A title whose own AKS name embeds "Bundle"/"Pack"/"Trilogy" (e.g. a
+   Trilogy-titled standalone product) could have the page's own Bundle-named
+   entry picked up by R23 — either surfacing as a real Candidate under a
+   non-`8` page id (invisible to the existing `edition_id == "8"` skip) or
+   getting skipped where the offer used to pass through as Standard pre-R23.
+   Fix: `edition_label == "Bundle"` now skips the page-lookup entirely and
+   goes straight to Standard(1), same as pre-R23 — there is no such thing as
+   a legitimate page-verified Bundle tier given the absolute "never bundles"
+   rule.
+2. **Dict-order guessing.** When more than one non-Standard page entry
+   matched the detected label, `next(...)` silently took whichever the page
+   happened to list first — not a matching criterion. Fix: prefer an exact
+   (case-insensitive) name match; accept a substring match only when it is
+   the sole one; multiple entries tied at the same specificity now SKIP
+   ("ambiguous page-verified edition … (R23 P2)") instead of guessing.
+
+`src/matcher.py`, mirrored in `EXECUTOR_RULES.md` §4.5. 3 new tests (366
+total, all green).
+
 ## 2026-07-13 — R24 (submitter): data-entry modes drive the batch size
 
 Romain generalized R23b into a mode: once the normalized report is validated we
