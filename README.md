@@ -136,6 +136,82 @@ write stages. Override detection with `AKS_TARGET=vps` or `AKS_TARGET=dev`.
 
 ---
 
+## Manual launch
+
+For a terminal-only data-entry run, use the helper in
+`manual_launch/run_executor.sh`. It wraps the existing scripts without adding any
+LLM/agent call. It still preserves the hard validation gate: `prepare` stops
+before approval, and real writes require the explicit `submit` command.
+
+Start from the repo root:
+
+```bash
+cd /Users/romainlamarque/aks_code/executor
+```
+
+Prepare a run:
+
+```bash
+manual_launch/run_executor.sh prepare --merchant Driffle --store-id 127
+```
+
+This runs the audit, invariant gate, extraction, matcher, and validation-template
+generation. It prints the generated run directory, for example:
+
+```text
+Prepared run:
+  /Users/romainlamarque/aks_code/executor/runs/2026-07-13_101500_driffle
+```
+
+That directory is the `RUN_DIR` used by the next commands. You may pass it as an
+absolute path:
+
+```bash
+manual_launch/run_executor.sh check /Users/romainlamarque/aks_code/executor/runs/2026-07-13_101500_driffle
+```
+
+or, when already in the repo root, as a relative path:
+
+```bash
+manual_launch/run_executor.sh check runs/2026-07-13_101500_driffle
+```
+
+After `prepare`, edit `RUN_DIR/validation.template.json` manually: set
+`approve: true` only on the exact candidates you want, and fill
+`validated_by` / `validated_at`. Then verify the validation file:
+
+```bash
+manual_launch/run_executor.sh check runs/2026-07-13_101500_driffle
+```
+
+Rehearse the submitter without writing to AKS:
+
+```bash
+manual_launch/run_executor.sh dry-run runs/2026-07-13_101500_driffle --merchant Driffle --store-id 127
+```
+
+Submit the default canary of 1 approved offer:
+
+```bash
+manual_launch/run_executor.sh submit runs/2026-07-13_101500_driffle --merchant Driffle --store-id 127
+```
+
+Submit the whole approved batch:
+
+```bash
+manual_launch/run_executor.sh submit runs/2026-07-13_101500_driffle --merchant Driffle --store-id 127 --all
+```
+
+Optional extraction flags can be passed during `prepare`:
+
+```bash
+manual_launch/run_executor.sh prepare --merchant Driffle --store-id 127 --pages 3-5 --pace 2-5
+```
+
+`--pages` creates a partial page slice; do not treat it as full-feed coverage.
+
+---
+
 ## The StepGuard
 
 `src/step_guard.py` is the fail-closed backbone every stage runs through. It has
