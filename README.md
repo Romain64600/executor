@@ -10,6 +10,9 @@ reporting submissions that never actually landed in the database. The new design
 moves the risky work behind a scripted engine with a hard guardrail: the model
 **builds and supervises**, but never free-hands browser actions.
 
+> **New to the project?** Start with [`docs/NOOB.md`](docs/NOOB.md) — a
+> beginner-friendly, analogy-driven walkthrough of the whole system (in French).
+
 > **Status — full pipeline built; submitter live-proven.** Read-only foundations
 > (Sprints 1–3) complete, and the write stage created its **first real AKS offers on
 > 2026-07-06** (Driffle, `--submit --click-mode trusted`). All write stages stay
@@ -70,6 +73,7 @@ aks-controlled-executor/
 ├── AGENTS.md                   # builder rules (Codex)
 ├── CLAUDE.md                   # builder rules (Claude) — imports AGENTS.md
 ├── docs/
+│   ├── NOOB.md                 # beginner-friendly guide to the whole project (French)
 │   ├── ARCHITECTURE.md         # roles & target flow
 │   ├── INVARIANTS.md           # non-negotiable browser/network invariants
 │   ├── SPRINT_1_PLAN.md        # read-only foundation scope
@@ -249,6 +253,8 @@ starts, so a mid-task "retry past it" is impossible. See
 
 ## Rules & docs
 
+- [`docs/NOOB.md`](docs/NOOB.md) — beginner-friendly guide: what the project
+  is, why it exists, and how the pipeline works, explained with analogies (French).
 - [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) — the deterministic,
   per-stage specification derived from the `aks-data-entry` skill. The bridge
   from domain rules to code (extractor, matcher, submitter, post-save
