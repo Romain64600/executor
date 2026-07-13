@@ -184,6 +184,10 @@ After `prepare`, edit `RUN_DIR/validation.template.json` manually: set
 manual_launch/run_executor.sh check runs/2026-07-13_101500_driffle
 ```
 
+`check` writes `approved.json` and saves the validated template as
+`validation.json`. Both `candidates.json` and `validation.json` must sit next to
+`approved.json`; the submitter re-checks them before any dry-run or real submit.
+
 Rehearse the submitter without writing to AKS:
 
 ```bash

@@ -149,6 +149,9 @@ run_check() {
   python3 "$ROOT/scripts/04_validate.py" check \
     "$run_dir/candidates.json" \
     "$run_dir/validation.template.json"
+
+  cp "$run_dir/validation.template.json" "$run_dir/validation.json"
+  echo "Saved canonical validation file: $run_dir/validation.json"
 }
 
 parse_submit_args() {
