@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Stage 4 — submitter CLI.
 
-Modes:
+Run kinds:
   (default)  DRY-RUN — rehearse the flow, no writes.
   --submit   REAL — fill region/edition + click "Create offer" + verify post-save
              (offer gone from the refreshed feed, same available mode as the
-             run). Processes the **full validated batch** by default (R23b,
-             2026-07-13 — Romain: validation is already the safety gate, no
-             canary needed on top of it); pass --limit N to narrow it.
+             run).
+
+Data-entry mode (`--mode`, R24) decides how much of the validated batch a run
+processes — see DATA_ENTRY_MODES below.
 
 Gates (fail-closed): invariants green + authoritative, `approved.json` present
 AND re-verified at load time against its sibling `candidates.json` +
@@ -17,8 +18,8 @@ load), pre-flight WP login check. Reads the approved offers (Stage 3), writes
 
 Examples (on the VPS):
   python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127
-  python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127 --submit           # full approved batch
-  python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127 --submit --limit 1 # narrow to 1
+  python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127 --submit                    # safe: full approved batch
+  python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127 --submit --mode learning    # learning: canary of 1
 """
 
 from __future__ import annotations
@@ -47,6 +48,40 @@ from src.submitter import (  # noqa: E402
 )
 
 
+# R24 (2026-07-13, Romain) — data-entry modes. Once the normalized report is
+# validated we submit; the mode decides the batch size of that submit:
+#
+#   safe      the frozen matcher behaviour. Validation IS the safety gate, so
+#             the FULL approved batch goes in — no canary (R23b).
+#   learning  exploring one (category × merchant) unlock. It DOES write —
+#             Romain, 2026-07-13: "le learning n'est pas un mode d'observation,
+#             il ajoute les offres si le rapport normalisé est valide" — but it
+#             stays capped at a canary of 1 for now.
+#   advanced  validated unlocks; same canary cap for now.
+#
+# "Always a canary, for now" is Romain's word ("qui lance tjrs un canary pour le
+# moment"), so the cap is enforced, not merely a default: --limit may narrow a
+# canary mode, never widen it.
+#
+# LIMITATION (deliberate, documented): the matcher has no mode profiles yet, so
+# the mode is DECLARED on this CLI and cannot be cross-checked against the run.
+# When 03_match learns to stamp a mode into candidates.json, this stage MUST
+# re-verify it and fail closed on a mismatch — a run matched under an unlock
+# must never be able to submit as `safe` and take the full-batch path.
+CANARY_MODES = ("learning", "advanced")
+CANARY_LIMIT = 1
+
+
+def mode_limit(mode: str, requested: int | None) -> int | None:
+    """Batch size for a data-entry mode. None = full approved batch."""
+
+    if mode not in CANARY_MODES:
+        return requested
+    if requested is None:
+        return CANARY_LIMIT
+    return min(requested, CANARY_LIMIT)
+
+
 def _status(entry, write):
     if not entry.get("ready"):
         return f"SKIP ({entry.get('blocker')})"
@@ -66,8 +101,14 @@ def main() -> int:
     parser.add_argument("--available", default="all", choices=["all", "pending"])
     parser.add_argument("--max-pages", type=int, default=40)
     parser.add_argument("--submit", action="store_true", help="REAL write (default: dry-run).")
-    parser.add_argument("--all", action="store_true", help="With --inspect: full batch (default: canary of 1). No-op with --submit — full batch is already the default there.")
-    parser.add_argument("--limit", type=int, default=None, help="With --submit (default: full approved batch) / --inspect (default: canary of 1): max offers to process.")
+    parser.add_argument(
+        "--mode", default="safe", choices=["safe", "learning", "advanced"],
+        help="Data-entry mode (R24). 'safe' (DEFAULT) = frozen matcher, submits the FULL "
+             "validated batch, no canary. 'learning' / 'advanced' also write, but are capped "
+             "at a canary of 1 offer for now — --limit can narrow that cap, never widen it.",
+    )
+    parser.add_argument("--all", action="store_true", help="With --inspect: full batch (default: canary of 1). No-op with --submit — the batch size comes from --mode.")
+    parser.add_argument("--limit", type=int, default=None, help="Max offers to process. With --submit/dry-run it narrows what --mode allows; with --inspect (default: canary of 1).")
     parser.add_argument(
         "--click-mode", default=None, choices=["native", "dispatch", "trusted"],
         help="With --submit: 'trusted' = CDP Input.dispatchMouseEvent at the button's "
@@ -108,6 +149,21 @@ def main() -> int:
         return 2
     if args.click_mode is not None and not args.submit:
         print("--click-mode is only meaningful with --submit", file=sys.stderr)
+        return 2
+    # A canary mode is a cap, not a default: refuse a --limit that tries to widen
+    # it rather than silently clamping (the operator asked for a batch the mode
+    # forbids — say so).
+    if (
+        not args.inspect
+        and args.mode in CANARY_MODES
+        and args.limit is not None
+        and args.limit > CANARY_LIMIT
+    ):
+        print(
+            f"--mode {args.mode} is capped at a canary of {CANARY_LIMIT} offer "
+            f"(--limit {args.limit} would widen it). Use --mode safe for the full batch.",
+            file=sys.stderr,
+        )
         return 2
     try:
         page_pacer = Pacer.from_spec(args.pace_pages)
@@ -216,18 +272,15 @@ def main() -> int:
         return 0
 
     write = args.submit
-    # R23b (2026-07-13, Romain): the write path used to default to a canary of
-    # 1 offer even though it only ever runs on an already-validated
-    # approved.json — validation IS the safety gate, so a submit run now
-    # processes the full approved batch by default. --limit N still narrows
-    # it explicitly when wanted; --all is a no-op here (kept for --inspect,
-    # which retains its own canary-of-1 default below).
-    limit = args.limit
+    # R24: the batch size is the mode's call (safe = full validated batch, R23b;
+    # learning/advanced = canary of 1). --all is a no-op here — kept only for
+    # --inspect, which retains its own canary-of-1 default above.
+    limit = mode_limit(args.mode, args.limit)
     click_mode = args.click_mode if args.click_mode is not None else "trusted"
     if write:
         print(
-            f"REAL SUBMISSION — will create up to {limit if limit is not None else 'ALL'} offer(s)"
-            f" (click_mode={click_mode}).",
+            f"REAL SUBMISSION (mode={args.mode}) — will create up to "
+            f"{limit if limit is not None else 'ALL'} offer(s) (click_mode={click_mode}).",
             file=sys.stderr,
         )
 
@@ -240,6 +293,10 @@ def main() -> int:
             approved=approved, available=args.available, max_pages=args.max_pages, limit=limit,
         )
 
+    # R24: the mode + the batch size it produced are part of the run's record,
+    # so submit_plan.json says under which mode these offers were written.
+    result["data_entry_mode"] = args.mode
+    result["limit"] = limit
     (out_dir / "submit_plan.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
 
     done = [p for p in result["plan"] if (p.get("submitted") if write else p.get("ready"))]
@@ -252,9 +309,10 @@ def main() -> int:
         )
     else:
         counts = f"{len(done)}/{len(result['plan'])} ready"
+    batch = "full batch" if limit is None else f"canary {limit}" if limit == CANARY_LIMIT else f"limit {limit}"
     header = (
-        f"{'SUBMIT' if write else 'DRY-RUN'} — {args.merchant} — {counts}, "
-        f"{result.get('feed_offers')} offers in current feed, "
+        f"{'SUBMIT' if write else 'DRY-RUN'} — {args.merchant} — mode={args.mode} ({batch}) — "
+        f"{counts}, {result.get('feed_offers')} offers in current feed, "
         f"aborted={result['aborted']}, stopped={result['stopped']}"
     )
     lines = [header, ""]
@@ -310,6 +368,10 @@ def main() -> int:
 
     summary = {
         "mode": "submit" if write else "dry_run",
+        # R24 — `mode` above is the run KIND (dry_run/submit/inspect/catalog);
+        # this is the data-entry mode that set the batch size.
+        "data_entry_mode": args.mode,
+        "limit": limit,
         "aborted": result["aborted"],
         "stopped": result["stopped"],
         "feed_offers": result.get("feed_offers"),

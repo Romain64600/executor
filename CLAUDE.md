@@ -51,13 +51,19 @@ only adds Claude-specific notes on top of them.
     with their logs and JSON outputs collected;
   - **submit:** only on Romain's explicit go, and **never fire-and-forget**
     (AGENTS.md) — the process stays attached or harness-supervised. Once a
-    report is validated (`approved.json` generated), submit processes the
-    **full validated batch** by default — no canary-of-1 on top of an
-    already-validated batch (R23b, 2026-07-13, Romain: "on ne lance plus un
-    canary quand on est en mode safe"; `--limit N` still narrows it
-    explicitly). Its exit code + `submit_plan.json` are read and checked
-    before ANY continuation to a **new** run/page/stage — the in-run stop
-    condition (10 consecutive failures) is unchanged.
+    report is validated (`approved.json` generated), we submit, and the
+    **data-entry mode** (`--mode`, R24, 2026-07-13) decides the batch size:
+    - `safe` (**default**) — the **full validated batch**, no canary-of-1 on
+      top of an already-validated batch (Romain: "on ne lance plus un canary
+      quand on est en mode safe");
+    - `learning` / `advanced` — they **do write** (learning is NOT read-only:
+      "il ajoute les offres si le rapport normalisé est valide"), but are
+      **capped at a canary of 1** for now ("tjrs un canary pour le moment").
+      `--limit N` narrows a canary mode, never widens it.
+
+    Its exit code + `submit_plan.json` are read and checked before ANY
+    continuation to a **new** run/page/stage — the in-run stop condition (10
+    consecutive failures) is unchanged.
 
   Otherwise keep work scoped to local file diffs, refactoring, focused tests,
   documentation, and deterministic Python state evaluation.

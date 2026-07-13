@@ -230,7 +230,7 @@ class SubmitCliTests(unittest.TestCase):
         self.assertEqual(summary["mode"], "dry_run")
         self.assertEqual(summary["ready"], 1)
         report = (self.run_dir / "submit_report.txt").read_text(encoding="utf-8")
-        self.assertTrue(report.startswith("DRY-RUN — Driffle — 1/1 ready, "))
+        self.assertTrue(report.startswith("DRY-RUN — Driffle — mode=safe (full batch) — 1/1 ready, "))
         self.assertTrue((self.run_dir / "submit_plan.json").exists())
 
     def test_submit_report_header_shows_created_and_write_attempts(self):
@@ -255,14 +255,14 @@ class SubmitCliTests(unittest.TestCase):
             ),
         )
         self.assertEqual(code, 0)
-        # R23b (2026-07-13): no canary-of-1 default — full approved batch
-        # unless --limit is given explicitly.
+        # R23b (2026-07-13): no canary-of-1 default — the full approved batch,
+        # which R24 makes the `safe` mode's policy (the CLI default).
         self.assertEqual(fake_submitter.run_kwargs["limit"], None)
         report = (self.run_dir / "submit_report.txt").read_text(encoding="utf-8")
         header = report.splitlines()[0]
         self.assertEqual(
             header,
-            "SUBMIT — Driffle — created=1, write_attempts=2, plan=2, "
+            "SUBMIT — Driffle — mode=safe (full batch) — created=1, write_attempts=2, plan=2, "
             "7 offers in current feed, aborted=None, stopped=None",
         )
         self.assertIn("[CREATED (gone from feed (available=all))] 1 — Game 1", report)
@@ -270,6 +270,103 @@ class SubmitCliTests(unittest.TestCase):
         summary = json.loads(out)
         self.assertEqual(summary["created"], 1)
         self.assertEqual(summary["write_attempts"], 2)
+
+    # -- R24: data-entry modes drive the batch size ---------------------------
+
+    _PLAN = {
+        "aborted": None, "stopped": None, "feed_offers": 7,
+        "write_attempts": 1, "created": 1,
+        "plan": [{"offer_id": "1", "merchant_title": "Game 1", "ready": True,
+                  "submitted": True, "post_save": "gone from feed (available=all)",
+                  "would_submit": "region=2 edition=1"}],
+    }
+
+    def _run_submit(self, *extra):
+        approved = self._write_fixture()
+        fake = _fake_submitter_cls(self._PLAN)
+        code, out = self._run_cli(
+            self._base_argv(approved, "--submit", *extra),
+            patches=(
+                mock.patch.object(MOD, "WriteSubmitSession", _FakeSession),
+                mock.patch.object(MOD, "Submitter", fake),
+            ),
+        )
+        return code, out, fake
+
+    def test_mode_defaults_to_safe_and_submits_the_full_batch(self):
+        # R24 / R23b: safe is the default and carries no canary — the validated
+        # report IS the safety gate.
+        code, out, fake = self._run_submit()
+        self.assertEqual(code, 0)
+        self.assertIsNone(fake.run_kwargs["limit"])
+        summary = json.loads(out)
+        self.assertEqual(summary["data_entry_mode"], "safe")
+        self.assertIsNone(summary["limit"])
+        header = (self.run_dir / "submit_report.txt").read_text(encoding="utf-8").splitlines()[0]
+        self.assertIn("mode=safe (full batch)", header)
+
+    def test_learning_mode_writes_but_is_capped_at_a_canary(self):
+        # Romain (2026-07-13): learning is NOT read-only — "il ajoute les offres
+        # si le rapport normalisé est valide" — but it stays a canary for now.
+        code, out, fake = self._run_submit("--mode", "learning")
+        self.assertEqual(code, 0)
+        self.assertEqual(fake.run_kwargs["limit"], 1)
+        summary = json.loads(out)
+        self.assertEqual(summary["data_entry_mode"], "learning")
+        self.assertEqual(summary["limit"], 1)
+        header = (self.run_dir / "submit_report.txt").read_text(encoding="utf-8").splitlines()[0]
+        self.assertIn("mode=learning (canary 1)", header)
+
+    def test_advanced_mode_is_capped_at_a_canary_too(self):
+        code, _out, fake = self._run_submit("--mode", "advanced")
+        self.assertEqual(code, 0)
+        self.assertEqual(fake.run_kwargs["limit"], 1)
+
+    def test_limit_may_not_widen_a_canary_mode(self):
+        # "toujours un canary pour le moment" is a cap, not a default: a --limit
+        # that tries to widen it is refused, not silently clamped — and nothing
+        # opens a session.
+        code, _out, fake = self._run_submit("--mode", "learning", "--limit", "5")
+        self.assertEqual(code, 2)
+        self.assertEqual(_FakeSession.instantiated, 0)
+        self.assertEqual(fake.instantiated, 0)
+
+    def test_limit_may_narrow_the_safe_full_batch(self):
+        code, _out, fake = self._run_submit("--limit", "3")
+        self.assertEqual(code, 0)
+        self.assertEqual(fake.run_kwargs["limit"], 3)
+
+    def test_dry_run_rehearses_the_batch_the_mode_would_write(self):
+        approved = self._write_fixture()
+        fake = _fake_submitter_cls(self._PLAN)
+        code, out = self._run_cli(
+            self._base_argv(approved, "--mode", "learning"),
+            patches=(
+                mock.patch.object(MOD, "SubmitSession", _FakeSession),
+                mock.patch.object(MOD, "DryRunSubmitter", fake),
+            ),
+        )
+        self.assertEqual(code, 0)
+        self.assertEqual(fake.run_kwargs["limit"], 1)
+        self.assertEqual(json.loads(out)["data_entry_mode"], "learning")
+
+
+class ModeLimitTests(unittest.TestCase):
+    """R24 — the batch-size policy itself, independent of the CLI."""
+
+    def test_safe_passes_the_request_through(self):
+        self.assertIsNone(MOD.mode_limit("safe", None))       # full batch
+        self.assertEqual(MOD.mode_limit("safe", 3), 3)
+
+    def test_canary_modes_default_to_one(self):
+        self.assertEqual(MOD.mode_limit("learning", None), 1)
+        self.assertEqual(MOD.mode_limit("advanced", None), 1)
+
+    def test_canary_modes_clamp_a_wider_request(self):
+        # Defence in depth: the CLI refuses --limit > 1 outright, but the policy
+        # itself can never hand back a batch wider than the cap.
+        self.assertEqual(MOD.mode_limit("learning", 50), 1)
+        self.assertEqual(MOD.mode_limit("advanced", 2), 1)
 
 
 if __name__ == "__main__":

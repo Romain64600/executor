@@ -11,8 +11,11 @@ select names.
   S18; never `[data-success]`).
 
 Fail-closed per Romain's decisions (SUBMITTER_SPEC §6): one attempt per offer; on
-failure log + skip + continue; stop the run after 10 consecutive failures. The real
-submitter defaults to a **canary of 1 write** unless a larger limit is given.
+failure log + skip + continue; stop the run after 10 consecutive failures.
+
+``run(limit=None)`` means the full approved batch. The batch size is NOT decided
+here: it is the data-entry mode's call, applied by ``scripts/05_submit.py``
+(R24 — `safe` = full validated batch, `learning`/`advanced` = canary of 1).
 Depends only on a ``session`` object, so both are unit-testable with a fake.
 """
 

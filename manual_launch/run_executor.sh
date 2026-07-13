@@ -10,8 +10,8 @@ Manual launcher for AKS Controlled Executor.
 Usage:
   manual_launch/run_executor.sh prepare --merchant NAME --store-id ID [--pages N|A-B] [--pace MIN-MAX]
   manual_launch/run_executor.sh check RUN_DIR
-  manual_launch/run_executor.sh dry-run RUN_DIR --merchant NAME --store-id ID
-  manual_launch/run_executor.sh submit RUN_DIR --merchant NAME --store-id ID [--all]
+  manual_launch/run_executor.sh dry-run RUN_DIR --merchant NAME --store-id ID [--mode M] [--limit N]
+  manual_launch/run_executor.sh submit RUN_DIR --merchant NAME --store-id ID [--mode M] [--limit N]
 
 Flow:
   1. prepare  Runs audit, invariants, extraction, matcher, validation template.
@@ -21,11 +21,20 @@ Flow:
   4. dry-run  Rehearses the submitter. No AKS writes.
   5. submit   Real write. Requires approved.json and explicit command.
 
+Data-entry mode (--mode, default: safe) — decides the batch size of a submit:
+  safe      Frozen matcher. Submits the FULL validated batch (no canary): the
+            validated report IS the safety gate.
+  learning  Exploring one (category x merchant) unlock. It DOES write, but is
+            capped at a canary of 1 offer for now.
+  advanced  Validated unlocks. Same canary cap for now.
+  --limit N can narrow a canary mode, never widen it.
+
 Examples:
   manual_launch/run_executor.sh prepare --merchant Driffle --store-id 127
   manual_launch/run_executor.sh check runs/2026-07-13_101500_driffle
   manual_launch/run_executor.sh dry-run runs/2026-07-13_101500_driffle --merchant Driffle --store-id 127
   manual_launch/run_executor.sh submit runs/2026-07-13_101500_driffle --merchant Driffle --store-id 127
+  manual_launch/run_executor.sh submit runs/2026-07-13_101500_driffle --merchant Driffle --store-id 127 --mode learning
 USAGE
 }
 
@@ -157,7 +166,8 @@ run_check() {
 parse_submit_args() {
   merchant=""
   store_id=""
-  submit_all=""
+  mode=""
+  limit=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -171,8 +181,23 @@ parse_submit_args() {
         store_id="$2"
         shift 2
         ;;
+      --mode)
+        need_value "$1" "${2:-}"
+        case "$2" in
+          safe|learning|advanced) mode="$2" ;;
+          *) die "--mode must be safe, learning or advanced (got: $2)" ;;
+        esac
+        shift 2
+        ;;
+      --limit)
+        need_value "$1" "${2:-}"
+        limit="$2"
+        shift 2
+        ;;
       --all)
-        submit_all="--all"
+        # No-op since R23b: in safe mode the full validated batch is already the
+        # default. Kept so an old command line still runs instead of dying.
+        echo "WARNING: --all is a no-op since R23b — the batch size comes from --mode." >&2
         shift
         ;;
       *)
@@ -185,6 +210,14 @@ parse_submit_args() {
   [[ -n "$store_id" ]] || die "--store-id is required"
 }
 
+# Fills the global `submit_extra` array from the parsed --mode / --limit.
+build_submit_extra() {
+  submit_extra=()
+  [[ -n "$mode" ]] && submit_extra+=(--mode "$mode")
+  [[ -n "$limit" ]] && submit_extra+=(--limit "$limit")
+  return 0
+}
+
 run_dry_run() {
   [[ $# -ge 1 ]] || die "dry-run expects RUN_DIR"
   local run_dir="$1"
@@ -192,10 +225,12 @@ run_dry_run() {
   require_dir "$run_dir"
   require_file "$run_dir/approved.json"
   parse_submit_args "$@"
+  build_submit_extra
 
   python3 "$ROOT/scripts/05_submit.py" "$run_dir/approved.json" \
     --merchant "$merchant" \
-    --store-id "$store_id"
+    --store-id "$store_id" \
+    "${submit_extra[@]+"${submit_extra[@]}"}"
 }
 
 run_submit() {
@@ -205,6 +240,7 @@ run_submit() {
   require_dir "$run_dir"
   require_file "$run_dir/approved.json"
   parse_submit_args "$@"
+  build_submit_extra
 
   local args=(
     "$ROOT/scripts/05_submit.py"
@@ -213,9 +249,7 @@ run_submit() {
     --store-id "$store_id"
     --submit
   )
-  if [[ -n "$submit_all" ]]; then
-    args+=(--all)
-  fi
+  args+=("${submit_extra[@]+"${submit_extra[@]}"}")
   python3 "${args[@]}"
 }
 

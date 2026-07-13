@@ -216,8 +216,21 @@ Verrouillé de trois façons :
    autorité. Le soumetteur re-dérive la liste approuvée depuis
    `candidates.json` + `validation.json` et exige une correspondance exacte.
    Un `approved.json` bricolé à la main ou périmé → refus de démarrer.
-3. **Canari** : avec `--submit`, une **seule** offre est traitée par défaut.
-   Le lot complet demande `--all` (ou `--limit N`).
+3. **Le mode décide de la taille du lot** (`--mode`, défaut `safe`). Une fois le
+   rapport normalisé validé, on soumet — et le mode dit *combien* :
+   - `safe` : le **lot validé complet**, **sans canari**. Le rapport validé
+     *est* le garde-fou : il dit déjà quelles offres partent.
+   - `learning` : on explore un déblocage (catégorie × marchand). Ce mode
+     **écrit vraiment** (il ajoute les offres dès que le rapport est valide),
+     mais il est **bridé à 1 offre** pour le moment.
+   - `advanced` : déblocages validés ; même bridage à 1 pour le moment.
+
+   Dans `learning` / `advanced` le canari est un **plafond**, pas un défaut :
+   `--limit N` peut le **réduire**, jamais l'élargir (un `--limit` plus grand
+   est refusé).
+
+   ⚠️ Retiens bien : `submit` **sans option** écrit **tout le lot validé**, pas
+   une seule offre.
 
 Pour chaque offre, le soumetteur : recharge le flux, retrouve la ligne
 **actuelle** exacte (par identifiant *et* par URL marchande, car AKS
@@ -247,7 +260,8 @@ manual_launch/run_executor.sh prepare --merchant Driffle --store-id 127   # éta
 # ... éditer runs/<run>/validation.template.json à la main ...
 manual_launch/run_executor.sh check   runs/<run>                          # vérifie → approved.json
 manual_launch/run_executor.sh dry-run runs/<run> --merchant Driffle --store-id 127
-manual_launch/run_executor.sh submit  runs/<run> --merchant Driffle --store-id 127   # canari de 1
+manual_launch/run_executor.sh submit  runs/<run> --merchant Driffle --store-id 127   # mode safe : TOUT le lot validé
+manual_launch/run_executor.sh submit  runs/<run> --merchant Driffle --store-id 127 --mode learning   # canari de 1
 ```
 
 (`--store-id` est le numéro identifiant le magasin du marchand chez AKS —

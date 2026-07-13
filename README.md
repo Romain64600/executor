@@ -198,16 +198,19 @@ Rehearse the submitter without writing to AKS:
 manual_launch/run_executor.sh dry-run runs/2026-07-13_101500_driffle --merchant Driffle --store-id 127
 ```
 
-Submit the default canary of 1 approved offer:
+Submit — `--mode` (default `safe`) decides the batch size `[R24]`. In `safe`, the
+validated report **is** the safety gate, so the **whole approved batch** goes in
+(no canary):
 
 ```bash
 manual_launch/run_executor.sh submit runs/2026-07-13_101500_driffle --merchant Driffle --store-id 127
 ```
 
-Submit the whole approved batch:
+`learning` and `advanced` also write, but are capped at a **canary of 1** offer
+for now (`--limit N` can narrow that cap, never widen it):
 
 ```bash
-manual_launch/run_executor.sh submit runs/2026-07-13_101500_driffle --merchant Driffle --store-id 127 --all
+manual_launch/run_executor.sh submit runs/2026-07-13_101500_driffle --merchant Driffle --store-id 127 --mode learning
 ```
 
 Optional extraction flags can be passed during `prepare`:

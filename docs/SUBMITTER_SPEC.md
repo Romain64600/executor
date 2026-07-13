@@ -174,11 +174,19 @@ rafraîchi, même available que le run)" — never
   "10 in a row" rule stops the run, not a cumulative budget).
 - A new instruction / interruption cancels the run (new `task_id`); leftover
   approved offers are **not** auto-submitted `[S15]`.
-- **Batch size `[R23b]` (2026-07-13, Romain):** no separate canary-of-1 gate
-  before the full batch — validation (`approved.json`) already is the safety
-  gate, so `--submit` runs the whole approved batch by default. The per-offer
-  and 10-consecutive-failure stop conditions above are unchanged and remain
-  the actual safety net during a run.
+- **Batch size = the data-entry mode `[R23b]` → `[R24]` (2026-07-13, Romain):**
+  once the normalized report is validated we submit, and `--mode` sets the batch:
+  - `safe` (**default**) — the **full validated batch, no canary**: validation
+    (`approved.json`) already is the safety gate for which offers submit.
+  - `learning` — exploring one (category × merchant) unlock. It **does write**
+    ("il ajoute les offres si le rapport normalisé est valide"), but is capped
+    at a **canary of 1** for now.
+  - `advanced` — validated unlocks; same canary cap for now.
+
+  In the canary modes the cap is enforced, not merely defaulted: `--limit N`
+  narrows it, never widens it (a wider `--limit` exits 2). The per-offer and
+  10-consecutive-failure stop conditions above are unchanged and remain the
+  actual safety net during a run.
 
 ---
 

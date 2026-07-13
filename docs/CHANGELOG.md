@@ -3,6 +3,49 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-13 — R24 (submitter): data-entry modes drive the batch size
+
+Romain generalized R23b into a mode: once the normalized report is validated we
+submit, and **`--mode` decides how much of that validated batch goes in**.
+
+| `--mode` | Batch | Why |
+|---|---|---|
+| `safe` (default) | full validated batch, **no canary** (R23b) | frozen matcher; validation is already the safety gate |
+| `learning` | **canary of 1** | exploring one (category × merchant) unlock |
+| `advanced` | **canary of 1** | validated unlocks, same cap for now |
+
+**`learning` is NOT a read-only observation mode** — Romain, verbatim: *"le
+learning n'est pas un mode d'observation, il ajoute les offres si le rapport
+normalisé est valide"*. It writes, it is simply capped. (An earlier internal
+design note had it as read-only with its artefacts structurally rejected by
+`04_validate`/`05_submit`; that was an over-specification and is now corrected —
+no mode is rejected at validation.)
+
+In the canary modes the cap is **enforced, not defaulted** ("tjrs un canary pour
+le moment"): a `--limit` above the cap exits 2 rather than being silently
+clamped; a smaller `--limit` still narrows. The mode + resulting batch size are
+recorded in `submit_plan.json` (`data_entry_mode`, `limit`) and in the
+`submit_report.txt` header.
+
+**Known limitation, deliberately documented:** the matcher has no mode profiles
+yet, so the mode is *declared* on the CLI and cannot be cross-checked against the
+run's artefacts. When `03_match` learns to stamp a mode into `candidates.json`,
+`05_submit` MUST re-verify it and fail closed on a mismatch — otherwise a run
+matched under an unlock could submit as `safe` and take the full-batch path.
+
+`scripts/05_submit.py` (`--mode`, `mode_limit()`), `manual_launch/run_executor.sh`
+(now forwards `--mode` / `--limit`; `--all` kept as a warned no-op), mirrored in
+`CLAUDE.md`, `EXECUTOR_RULES.md` §6, `SUBMITTER_SPEC.md` §6, `README.md`,
+`NOOB.md`. 9 new tests (`test_submit_cli.py`).
+
+Same pass, from an audit of R23/R23b: `README.md`, `NOOB.md`,
+`manual_launch/run_executor.sh` and `src/submitter.py`'s docstring still promised
+a canary of 1 for a plain `submit` — i.e. a beginner following `NOOB.md` expected
+**1** write and would have got the **whole batch**. Corrected. The launcher also
+had no way to forward `--limit`, making R23b's documented escape hatch
+unreachable from the one entry point Romain actually uses; it now forwards
+`--mode` and `--limit`.
+
 ## 2026-07-13 — R23 (matcher) + R23b (submitter): Valve Complete Pack escape
 
 Live correction on a fresh Driffle run: "Valve Complete Pack (Global) (PC) -

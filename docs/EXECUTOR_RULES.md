@@ -428,10 +428,31 @@ wrong one.
 If any step fails → do not retry the same offer blindly, do not switch browser.
 Per [`SUBMITTER_SPEC.md`](SUBMITTER_SPEC.md) §6 (Romain's decision) the batch policy
 is: log + skip the failing offer + continue, and stop the whole run after 10
-consecutive failures. **No separate canary-of-1 gate on top `[R23b]`**
-(2026-07-13, Romain): validation (`approved.json`) is already the safety gate
-for which offers submit, so `--submit` processes the full approved batch by
-default; `--limit N` still narrows it explicitly. Both the DRY-RUN and the **real write path** are built in
+consecutive failures.
+
+**Batch size = the data-entry mode `[R24]`** (2026-07-13, Romain). Once the
+normalized report is validated, we submit; `--mode` decides how much of that
+validated batch goes in:
+
+| `--mode` | Batch | Rationale |
+|---|---|---|
+| `safe` (default) | **Full validated batch, no canary** `[R23b]` | Frozen matcher behaviour. Validation (`approved.json`) is already the safety gate for *which* offers submit, so no canary on top of it. |
+| `learning` | **Canary of 1** | Exploring one (category × merchant) unlock. It **does write** — Romain: *"le learning n'est pas un mode d'observation, il ajoute les offres si le rapport normalisé est valide"* — but stays capped for now. |
+| `advanced` | **Canary of 1** | Validated unlocks; same cap for now. |
+
+The canary is a **cap, not a default**, in `learning`/`advanced` ("tjrs un
+canary pour le moment"): `--limit N` can narrow it, never widen it — a `--limit`
+above the cap is refused (exit 2), not silently clamped. The per-offer and
+10-consecutive-failure stop conditions above are unchanged and remain the actual
+safety net *during* a run.
+
+**Open invariant (not yet enforceable):** the matcher has no mode profiles yet,
+so the mode is *declared* on `05_submit` and cannot be cross-checked against the
+run. When `03_match` stamps a mode into `candidates.json`, `05_submit` MUST
+re-verify it and fail closed on a mismatch — a run matched under an unlock must
+never be submittable as `safe` and take the full-batch path.
+
+Both the DRY-RUN and the **real write path** are built in
 `src/submitter.py` + `src/submit_session.py` + `scripts/05_submit.py`; the real path
 (steps 5–8, `--submit --click-mode trusted`) is **live-proven** (first confirmed
 Driffle creations 2026-07-06 — see [`SUBMITTER_SPEC.md`](SUBMITTER_SPEC.md) §4b).
