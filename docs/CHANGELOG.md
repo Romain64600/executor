@@ -3,6 +3,53 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-14 — Stage 0b: login/2FA (LOGIN_SPEC.md, Option A)
+
+A Kinguin extraction hit `NotLoggedInError`; Romain asked what it would take
+to authorize the assistant to log in itself. Two options were on the table —
+(A) a scripted login where the password stays in the environment and Romain
+still supplies the 2FA code live every time, or (B) a stored TOTP secret for
+fully autonomous login. **B was rejected**: it removes the human checkpoint on
+an account that can create live offers and directly contradicts "never store
+passwords or 2FA codes." Romain chose **A**.
+
+Built per a short design doc first (`docs/LOGIN_SPEC.md`, same "propose, then
+build" convention as `SUBMITTER_SPEC.md`):
+
+- `src/login_session.py` — `LoginSession(WriteSubmitSession)` reuses the
+  already-audited trusted-input primitives (`click_trusted_at_element`,
+  `_type_text_trusted`) pointed at the WP login form instead of the offer
+  modal; no new CDP mechanism. `run_login(...)` holds all the sequencing/
+  decision logic as pure control flow over a `session` object — the fully
+  unit-tested surface, mirroring `src/submitter.py`'s split.
+- `scripts/00b_login.py` — CLI: invariants gate, then `AKS_WP_USER`/
+  `AKS_WP_PASSWORD` from the environment only (never a CLI arg), then the
+  flow.
+- **2FA discipline unchanged from the skill's R0c / `SUBMITTER_SPEC.md` §8's
+  pre-agreed rule**: the code is requested only once the 2FA field is
+  confirmed visible and ready to submit immediately, never before.
+- **One attempt each** for the password and the 2FA code, ever — no retry
+  loop, anywhere, even across a second CLI invocation with the same run id
+  (`StepGuard(max_attempts_per_signature=1, ...)`; tested explicitly).
+- Deterministic success proof: current URL under `/wp-admin/` with no login/
+  reauth marker, **and** the admin toolbar DOM node present — either alone can
+  be fooled (redirect loop / cached partial page).
+- Idempotent: an already-authenticated session is a no-op success, never a
+  re-submit.
+- Never self-triggered — a `NotLoggedInError` from another stage stays a
+  fail-closed STOP + error report, exactly as before; this stage only runs on
+  Romain's explicit go.
+- Credentials/2FA code never logged: `RunLogger`'s existing key-name redaction
+  (`password`, `otp`, `googleotp`, `2fa`, ...) already covered this, no new
+  mechanism needed — and the module also never *constructs* a log record
+  containing one in the first place.
+
+`tests/test_login_session.py`, 12 new tests (378 total, all green) against a
+duck-typed fake session — no CDP, no network. Mirrored in `AGENTS.md`
+(refined the 2FA forbidden-list line, added a Stage 0b pointer),
+`SUBMITTER_SPEC.md` §8, `EXECUTOR_RULES.md` §9, `README.md` (Requirements,
+Roadmap, Safety, Rules & docs).
+
 ## 2026-07-13 — R23 P2 fixes: no bundle resurrection, no dict-order guessing
 
 Romain's review of R23 (the page-verified edition lookup) surfaced two P2s

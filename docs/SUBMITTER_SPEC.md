@@ -201,13 +201,16 @@ the whole mechanism against the live feed with no risk before enabling `--submit
 
 ---
 
-## 8. Login / 2FA — explicitly out of scope
+## 8. Login / 2FA — a separate stage, see `LOGIN_SPEC.md`
 
-The submitter assumes an already-authenticated WP session (like the extractor). It
-will **never** request a 2FA code or automate login in this sprint. When/if login
-is authorized later, the rule stands: ask for a code only when the `googleotp`
-field is visible and can be submitted immediately; stop after two failures; never
-pre-request `[I18]`.
+The submitter itself still assumes an already-authenticated WP session (like the
+extractor) and never requests a 2FA code or automates login inline — that stays
+out of scope *for this stage*. Login is now built as its own stage
+(`docs/LOGIN_SPEC.md`, `src/login_session.py`, `scripts/00b_login.py`,
+2026-07-14, Romain Option A): a code is requested only when the 2FA field is
+visible and ready to submit immediately, one attempt each for the password and
+the code, never a retry loop, never self-triggered by another stage's
+`NotLoggedInError`.
 
 ---
 

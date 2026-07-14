@@ -115,6 +115,10 @@ aks-controlled-executor/
 - **Python 3.10+** — standard library only, no production dependencies.
 - Production runtime target: a **Debian VPS** exposing the Hermes CDP proxy at
   `http://172.17.0.1:9223/json/version`.
+- For the login stage only (`scripts/00b_login.py`, see
+  [`docs/LOGIN_SPEC.md`](docs/LOGIN_SPEC.md)): `AKS_WP_USER` and
+  `AKS_WP_PASSWORD` in the environment (e.g. a `chmod 600` `.env` you
+  `source`, already gitignored) — never a CLI arg, never committed.
 
 ---
 
@@ -262,6 +266,9 @@ starts, so a mid-task "retry past it" is impossible. See
   per-stage specification derived from the `aks-data-entry` skill. The bridge
   from domain rules to code (extractor, matcher, submitter, post-save
   verification, reporting).
+- [`docs/LOGIN_SPEC.md`](docs/LOGIN_SPEC.md) — Stage 0b: the deterministic
+  login/2FA design (credentials from the environment only, 2FA requested only
+  once visible and ready, one attempt each).
 - [`docs/INVARIANTS.md`](docs/INVARIANTS.md) — the non-negotiable browser/network
   invariants.
 - [`AGENTS.md`](AGENTS.md) / [`CLAUDE.md`](CLAUDE.md) — builder rules for Codex
@@ -293,7 +300,8 @@ starts, so a mid-task "retry past it" is impossible. See
   passes a hard **HTML5 validity gate**, clicks "Create offer" with a trusted CDP
   event, and verifies post-save (`success = offer gone from the refreshed feed, same available mode`, never
   `[data-success]`). **First real AKS offers created 2026-07-06** (Demigod canary +
-  3 batch). **Canary default of 1**, `--all`/`--limit N` for the batch; gated +
+  3 batch). Batch size is the data-entry **`--mode`**'s call (`safe` = full
+  validated batch, no canary; `learning`/`advanced` = canary of 1) `[R24]`; gated +
   StepGuard (skip+continue, stop after 10). See
   [`docs/SUBMITTER_SPEC.md`](docs/SUBMITTER_SPEC.md) §4b.
 - [x] **Data contracts + JSONL run-log infrastructure** (`src/contracts.py`,
@@ -302,6 +310,11 @@ starts, so a mid-task "retry past it" is impossible. See
   after every click, the whole refreshed feed is re-scanned; `success = offer no
   longer present` (never `[data-success]`). Since 2026-07-07 the same scan also
   refreshes the batch row index (pagination reflow).
+- [x] **Login / 2FA — Stage 0b** (`src/login_session.py`, `scripts/00b_login.py`,
+  2026-07-14, Romain Option A): narrowly-scoped, deterministic login on
+  explicit go only. Password from the environment, never stored/logged; a 2FA
+  code is requested only once the field is confirmed visible and ready, one
+  attempt each, no retry loop. See [`docs/LOGIN_SPEC.md`](docs/LOGIN_SPEC.md).
 
 ---
 
@@ -312,5 +325,7 @@ starts, so a mid-task "retry past it" is impossible. See
   `admin-ajax` XHR (the modal auto-assigns the merchant id).
 - `[data-success]` is never proof of creation. An offer is "created" only after
   it disappears from the refreshed feed (same available mode as the run).
-- 2FA is never requested in advance; after two login/2FA/CDP failures, stop and
-  report.
+- 2FA is never requested before the field is visible and ready to submit
+  immediately (Stage 0b, `docs/LOGIN_SPEC.md`) — one attempt each for the
+  password and the code, no retry loop; after any login/2FA/CDP failure,
+  stop and report.

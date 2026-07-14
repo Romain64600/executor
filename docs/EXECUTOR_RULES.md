@@ -536,18 +536,27 @@ query, network payload inspection, XHR, admin-ajax, or curl backend probing.
 
 ---
 
-## 9. Login / 2FA policy
+## 9. Login / 2FA policy — Stage 0b, built (`LOGIN_SPEC.md`, 2026-07-14)
 
-Out of scope for early sprints, but the rules are fixed for when it lands:
+The rules below were fixed ahead of time and now govern the built stage
+(`src/login_session.py`, `scripts/00b_login.py`; design in
+[`LOGIN_SPEC.md`](LOGIN_SPEC.md)):
 
-- Never ask for a 2FA code in advance. Ask **only** when the `googleotp` field is
+- Never ask for a 2FA code in advance. Ask **only** when the 2FA field is
   visible **and** the code can be typed and submitted immediately `[I18][2FA
   override]`.
-- After **two** login/2FA/CDP failures → **STOP**, short diagnosis, wait for
-  Romain; never ask a 3rd code; never switch randomly between
-  `browser_navigate` / host CDP / new tab / VPN / temp scripts `[S15]`.
+- **One attempt each** for the password and the 2FA code, ever — a wrong one
+  is a hard STOP in the same run, not "two then stop" (repeated failed logins
+  can lock/flag the account; login is not a place to retry). Diagnose, wait
+  for Romain, a fresh run is a new attempt.
 - On connection loss, first check whether the existing Chrome session is still
-  logged in; only restart login if the feed redirects to `wp-login.php`.
+  logged in (`already_logged_in()`, idempotent no-op); only invoke this stage
+  if the feed redirects to `wp-login.php`, and only on Romain's explicit go —
+  a `NotLoggedInError` from another stage stays a fail-closed STOP + error
+  report, never an auto-trigger for this one `[S15]`.
+- Password/code never stored, logged, or committed — read from the
+  environment (`AKS_WP_USER`/`AKS_WP_PASSWORD`) and stdin only; redaction is
+  `src/run_log.py`'s existing `RunLogger` key-name mechanism.
 
 ---
 
