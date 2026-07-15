@@ -317,6 +317,20 @@ the embedded `"editions":{…}` JSON `[EDITIONS.md]`.
 SKIPPED with a distinct reason — never fall back to the offer title as the AKS
 name** (that turns the §4.1 identity check into a tautology; 2026-07-07 a
 Microsoft Store Key offer surfaced as a "Steam US" candidate this way) `[R15]`.
+**Duplicate guard `[R25]` (2026-07-15, Kinguin/Darkwood escape):** the same
+resolve pass also extracts the page's own `"prices":[…]` current-offers list
+— each entry carries `merchantName`, `edition`, `region`. A candidate whose
+merchant already has an entry matching the resolved region **and** edition is
+SKIPPED ("`<merchant>` already lists a price for this region/edition on AKS
+(R25)") — the offer is still live on the merchant's own feed (that's what got
+it this far), but AKS already has this exact price, from an earlier run, a
+human operator working the same feed in parallel, or any other source. This
+was caught live: candidate Darkwood (GOG GLOBAL(6), Standard(1)) had a
+Kinguin price at that exact region/edition already on the page when Romain
+flagged that a prior day's matched batch could be stale by submit time.
+Zero extra requests — the price list is already in hand at resolve time,
+same pattern as the editions/platforms checks below.
+
 The extracted editions map doubles as a product-nature check: DLC bucket
 present → the product is a DLC → edition DLC(16) per §4.5 `[R18]`. Systematic
 — the map is already in hand at resolve time (zero extra requests) — not "on

@@ -3,6 +3,37 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-15 — R25: duplicate guard against AKS's own price list
+
+A 43-candidate Kinguin batch, matched the day before, was about to be
+submitted when Romain flagged that offers matched a day earlier could already
+have been added by a human working the same feed in parallel. The running
+`--submit` was killed immediately (confirmed clean: zero submit-stage JSONL
+log lines, no `submit_plan.json` written — it was still in its initial feed
+index, no offer had been touched).
+
+Checking candidate #5 (Darkwood, GOG GLOBAL(6), Standard(1)) against the AKS
+page directly showed the real gap: the page's own price-comparison table
+already listed a Kinguin price at `edition:"1", region:"6"` — the exact same
+combo. This was not specific to "matched yesterday, stale by today" — the
+matcher has **never** checked whether the current merchant already has a
+price at the resolved region/edition, on any run, for any merchant. A
+candidate only ever proved the offer was still live on the *merchant's own
+feed*; it said nothing about whether AKS already had this exact price.
+
+Fix: the AKS page's own `"prices":[…]` array (each entry carries
+`merchantName`, `edition`, `region` — the same current-offers table a human
+sees on the page) is now extracted at resolve time, zero extra requests, same
+pattern as `editions`/`official_platforms`. A candidate whose merchant
+already has an entry at the resolved region **and** edition is SKIPPED
+("`<merchant>` already lists a price for this region/edition on AKS (R25)")
+instead of being proposed as new.
+
+`src/matcher.py` (`extract_prices`, `AksResolution.prices`, the R25 check in
+`match_offer`), mirrored in `EXECUTOR_RULES.md` §4.7. 7 new tests (385 total,
+all green). The stale Kinguin run (`20260714-180914-kinguin`) was discarded —
+re-extracted and re-matched fresh with R25 active before any validation.
+
 ## 2026-07-14 — Stage 0b: login/2FA (LOGIN_SPEC.md, Option A)
 
 A Kinguin extraction hit `NotLoggedInError`; Romain asked what it would take

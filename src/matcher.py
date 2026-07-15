@@ -485,6 +485,24 @@ def extract_editions(body: str) -> dict[str, Any]:
         return {}
 
 
+def extract_prices(body: str) -> tuple[dict[str, Any], ...]:
+    """The AKS page's own current-offers list (its price-comparison table) —
+    each entry carries ``merchantName``, ``edition``, ``region`` (R25,
+    2026-07-15). This is what lets a candidate be checked against what AKS
+    ALREADY shows for this exact merchant, not just against the merchant's own
+    feed. Balanced-bracket regex mirrors ``extract_editions``'s balanced-brace
+    one; entries are flat (no nested arrays observed), so this is safe."""
+
+    match = re.search(r'"prices"\s*:\s*(\[(?:[^\[\]]|\[[^\[\]]*\])*\])', body)
+    if not match:
+        return ()
+    try:
+        parsed = json.loads(match.group(1))
+    except ValueError:
+        return ()
+    return tuple(p for p in parsed if isinstance(p, dict))
+
+
 def extract_official_platforms(body: str) -> tuple[str, ...]:
     """The AKS page's "official platforms:" list, () when absent.
 
@@ -507,6 +525,7 @@ class AksResolution:
     aks_name: str
     editions: dict[str, Any] = field(default_factory=dict)
     official_platforms: tuple[str, ...] = ()
+    prices: tuple[dict[str, Any], ...] = ()
 
 
 class AksProbeUnreliable(Exception):
@@ -558,6 +577,7 @@ def resolve_aks(name: str, http_get_fn: Callable[..., Any] = http_get) -> AksRes
             aks_name=aks_name,
             editions=extract_editions(probe.body),
             official_platforms=extract_official_platforms(probe.body),
+            prices=extract_prices(probe.body),
         )
     if unreadable:
         raise AksNameUnreadable("; ".join(unreadable))
@@ -805,6 +825,29 @@ def match_offer(
         # resolves to the Bundle edition after E05 (Pack/Trilogy/…) is a bundle.
         if edition_id == "8":
             return SkippedOffer(offer, "bundle edition resolved — no bundles ever")
+
+    # R25 (2026-07-15, Romain — Kinguin/Darkwood escape): the AKS page's own
+    # price-comparison table already lists every merchant currently selling
+    # this exact region/edition. A candidate's own matcher run only proves
+    # the offer is still live on the MERCHANT's feed; it says nothing about
+    # whether AKS already has a price for it — from an earlier run, a human
+    # operator working the same feed in parallel, or any other source. Check
+    # the page's own current listing (already in hand, zero extra requests)
+    # before ever proposing a duplicate as a "new" candidate.
+    duplicate = next(
+        (
+            p for p in resolution.prices
+            if str(p.get("merchantName", "")).strip().upper() == offer.merchant.strip().upper()
+            and str(p.get("edition", "")) == edition_id
+            and str(p.get("region", "")) == region_id
+        ),
+        None,
+    )
+    if duplicate is not None:
+        return SkippedOffer(
+            offer,
+            f"{offer.merchant} already lists a price for this region/edition on AKS (R25)",
+        )
 
     return Candidate(
         offer=offer,

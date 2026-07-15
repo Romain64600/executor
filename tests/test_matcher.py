@@ -18,6 +18,7 @@ from src.matcher import (
     extract_aks_name,
     extract_editions,
     extract_official_platforms,
+    extract_prices,
     match_feed,
     match_offer,
     missing_aks_words,
@@ -361,6 +362,25 @@ class ExtractOfficialPlatformsTests(unittest.TestCase):
         self.assertEqual(extract_official_platforms("<html><body>nothing</body></html>"), ())
 
 
+class ExtractPricesTests(unittest.TestCase):
+    def test_populated_array(self):
+        body = (
+            '<script>var x={"prices":[{"merchant":47,"merchantName":"Kinguin",'
+            '"edition":"1","region":"6","price":3.91}]};</script>'
+        )
+        self.assertEqual(
+            extract_prices(body),
+            ({"merchant": 47, "merchantName": "Kinguin", "edition": "1", "region": "6", "price": 3.91},),
+        )
+
+    def test_stub_page_php_empty_array_artifact(self):
+        body = '<script>var x={"merchants":[],"editions":[],"prices":[],"regions":[]};</script>'
+        self.assertEqual(extract_prices(body), ())
+
+    def test_absent_blob(self):
+        self.assertEqual(extract_prices("<html><body>nothing</body></html>"), ())
+
+
 class ExplicitPlatformTests(unittest.TestCase):
     def test_steam_token_is_explicit(self):
         self.assertEqual(explicit_platform("Neon Beats - Steam Key - GLOBAL"), "STEAM")
@@ -372,7 +392,8 @@ class ExplicitPlatformTests(unittest.TestCase):
 
 
 class MatchOfferTests(unittest.TestCase):
-    def _resolver(self, aks_name="Neon Beats", editions=None, official_platforms=("Steam",)):
+    def _resolver(self, aks_name="Neon Beats", editions=None, official_platforms=("Steam",),
+                  prices=()):
         # {} must stay {} (R19 exercises a truly empty map) — only None
         # means "default Standard map". official_platforms passes through
         # untransformed for the same reason: () must stay () (R20).
@@ -381,6 +402,7 @@ class MatchOfferTests(unittest.TestCase):
             aks_name=aks_name,
             editions=editions if editions is not None else {"1": {"name": "Standard"}},
             official_platforms=official_platforms,
+            prices=prices,
         )
         return lambda name: res
 
@@ -391,6 +413,35 @@ class MatchOfferTests(unittest.TestCase):
         self.assertEqual(result.aks_product_id, "205027")
         self.assertEqual((result.region_label, result.region_id), ("GLOBAL", "2"))
         self.assertEqual((result.edition_label, result.edition_id), ("Standard", "1"))
+
+    def test_duplicate_price_on_page_skips(self):
+        # R25 (2026-07-15, Kinguin/Darkwood escape): the page already lists
+        # this exact merchant/region/edition combo — a duplicate, not a new
+        # candidate, regardless of when it was added or by whom.
+        offer = _offer("Neon Beats - Full Version (PC) - Steam Key - GLOBAL")
+        prices = ({"merchantName": "Test", "edition": "1", "region": "2"},)
+        result = match_offer(offer, self._resolver(prices=prices))
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("already lists a price", result.reason)
+        self.assertIn("R25", result.reason)
+
+    def test_different_merchant_price_does_not_skip(self):
+        offer = _offer("Neon Beats - Full Version (PC) - Steam Key - GLOBAL")
+        prices = ({"merchantName": "SomeOtherStore", "edition": "1", "region": "2"},)
+        result = match_offer(offer, self._resolver(prices=prices))
+        self.assertIsInstance(result, Candidate)
+
+    def test_same_merchant_different_region_does_not_skip(self):
+        offer = _offer("Neon Beats - Full Version (PC) - Steam Key - GLOBAL")
+        prices = ({"merchantName": "Test", "edition": "1", "region": "9"},)
+        result = match_offer(offer, self._resolver(prices=prices))
+        self.assertIsInstance(result, Candidate)
+
+    def test_same_merchant_different_edition_does_not_skip(self):
+        offer = _offer("Neon Beats - Full Version (PC) - Steam Key - GLOBAL")
+        prices = ({"merchantName": "Test", "edition": "7", "region": "2"},)
+        result = match_offer(offer, self._resolver(prices=prices))
+        self.assertIsInstance(result, Candidate)
 
     def test_precheck_skip_wins(self):
         self.assertIsInstance(match_offer(_offer("Halo Xbox"), self._resolver()), SkippedOffer)
