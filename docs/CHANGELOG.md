@@ -3,6 +3,33 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-15 — R27: R26 was too broad — Gameboost proved the opposite failure mode
+
+Same day as R26, a Gameboost data-entry run was cancelled live: Romain caught
+that Steam offers were being entered as Publisher. R26 (hours earlier) made
+any token-less title with *some* AKS page platform signal default to
+PUBLISHER — right for DCS P-51D Mustang / A-10C Warthog (Kinguin), wrong for
+Gameboost, whose actual platform truth lives on its own merchant page, which
+this pipeline can't fetch (Cloudflare blocks it — see the Gameboost
+merchant notes). Romain: *"il y a des offres steam qu'on détecte en
+publisher, ça c'est seulement renseigné sur la page marchand."*
+
+DCS and Gameboost turned out to be the **identical page-signal shape**
+(token-less title, AKS page says "official platforms: Steam." only) with
+**opposite ground truth** — proof that neither a Steam default nor a
+Publisher default is safe for that shape. Fix: only a page that **explicitly
+confirms `Direct Publisher`** resolves a token-less title anymore (unchanged
+from R20/R26 for that case — Su-27 still enters PUBLISHER). Everything
+short of that — Steam-only, any other non-Publisher-confirmed mix, or no
+platform info at all — now **SKIPs** instead of guessing. DCS itself reverts
+to skip; a human enters cases like it deliberately, matching the R19
+stub-page philosophy (absent a real signal, don't guess in either direction).
+
+`src/matcher.py`, mirrored in `EXECUTOR_RULES.md` §4.4 and the aks-data-entry
+skill's S31. 2 tests rewritten (skip instead of Publisher for the
+Steam-only/mixed cases), 470 total, all green. The Gameboost batch (33
+candidates) was cancelled before validation — nothing was submitted.
+
 ## 2026-07-15 — Admin page: human validation + supervised submit from a browser
 
 New operator page at `https://51.38.37.254.sslip.io/executor/` (nginx HTTPS +

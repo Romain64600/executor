@@ -732,19 +732,30 @@ def match_offer(
                 "no platform in title and AKS page lists no official platforms"
                 " — platform unverifiable (R20)",
             )
-        # R26 (2026-07-15, Romain — DCS P-51D Mustang / A-10C Warthog escape):
-        # a token-less title is no longer trusted as Steam even when the
-        # page's own official-platforms line is Steam-only. Both DCS pages
-        # say "official platforms: Steam." with no "Direct Publisher" entry
-        # — the R20-era branch below would have kept the Steam default — yet
-        # Kinguin's own title omission is the real signal (Eagle Dynamics
-        # modules are commonly sold as direct/publisher keys the page's
-        # metadata doesn't enumerate). A DCS P-51D Mustang offer had already
-        # been created as Steam GLOBAL(2) before this fired live; Romain:
-        # "Si Steam, EA ou autres n'est pas stipulé ça sera publisher pour
-        # ces offres." Revises R20's old "Steam-only page → trust Steam"
-        # branch: any token-less title with SOME page platform signal is now
-        # PUBLISHER, period — the "no signal at all" skip above is unchanged.
+        # R27 (2026-07-15, Romain — Gameboost escape, same day as R26):
+        # R26 made a token-less title default to PUBLISHER whenever the page
+        # had ANY platform signal, even a Steam-only one — based on the DCS
+        # P-51D Mustang / A-10C Warthog escape (Kinguin). Hours later,
+        # Gameboost proved the opposite failure mode: token-less titles that
+        # are genuinely Steam got defaulted to Publisher too. Romain: "il y a
+        # des offres steam qu'on détecte en publisher, ça c'est seulement
+        # renseigné sur la page marchand" — the merchant's own product page
+        # is the only place that states the truth, and it isn't fetchable
+        # (Gameboost sits behind Cloudflare — see the merchant's own notes).
+        # Neither a Steam default nor a Publisher default is safe for a
+        # Steam-only AKS page + a token-less title: DCS and Gameboost are the
+        # same page-signal shape with opposite ground truth. The only
+        # deterministic, non-guessing signal left is a page that explicitly
+        # confirms Direct Publisher — anything short of that now SKIPs,
+        # including the Steam-only case R26 defaulted to Publisher. DCS
+        # itself reverts to skip (no signal strong enough to auto-resolve
+        # it); a human enters cases like it deliberately.
+        if "DIRECT PUBLISHER" not in page_platforms:
+            return SkippedOffer(
+                offer,
+                "no platform in title and AKS page does not confirm Direct"
+                " Publisher — platform unverifiable, not defaulted (R27)",
+            )
         platform = "PUBLISHER"
         region_label, region_id, implicit = detect_region(offer, platform)
         if region_id is None:

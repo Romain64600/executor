@@ -644,27 +644,32 @@ class MatchOfferTests(unittest.TestCase):
         self.assertIsInstance(result, SkippedOffer)
         self.assertIn("no region id for PUBLISHER", result.reason)
 
-    def test_defaulted_platform_is_publisher_regardless_of_page_mix(self):
-        # R26 (2026-07-15, DCS P-51D Mustang / A-10C Warthog escape): a
-        # token-less title is never trusted as Steam anymore, whatever the
-        # page's official platforms say — Steam+GoG, same as Steam-only.
+    def test_defaulted_platform_skips_on_non_publisher_page_mix(self):
+        # R27 (2026-07-15, Gameboost escape, same day as R26): R26 defaulted
+        # ANY token-less title to Publisher whenever the page had some
+        # platform signal — Gameboost proved that wrong (genuinely-Steam
+        # token-less offers got defaulted to Publisher too). Without an
+        # explicit "Direct Publisher" confirmation, skip rather than guess —
+        # Steam+GoG, same as Steam-only.
         result = match_offer(
             _offer("Neon Beats Key GLOBAL"),
             self._resolver(official_platforms=("Steam", "GoG")),
         )
-        self.assertIsInstance(result, Candidate)
-        self.assertEqual(result.platform, "PUBLISHER")
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("R27", result.reason)
 
-    def test_defaulted_platform_is_publisher_on_steam_only_page(self):
-        # R26: both live DCS pages say "official platforms: Steam." only —
-        # no "Direct Publisher" entry — yet the token-less title still must
-        # not default to Steam (Eagle Dynamics modules are commonly sold as
-        # direct/publisher keys the page's metadata doesn't enumerate).
+    def test_defaulted_platform_skips_on_steam_only_page(self):
+        # R27: both live DCS pages say "official platforms: Steam." only —
+        # no "Direct Publisher" entry. R26 defaulted this to Publisher (right
+        # for DCS), but Gameboost has the identical page-signal shape with
+        # genuinely-Steam ground truth — neither default is safe without a
+        # positive Direct Publisher confirmation, so this now skips. DCS
+        # itself reverts to skip; a human enters cases like it deliberately.
         result = match_offer(
             _offer("Neon Beats Key GLOBAL"), self._resolver(official_platforms=("Steam",))
         )
-        self.assertIsInstance(result, Candidate)
-        self.assertEqual(result.platform, "PUBLISHER")
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("R27", result.reason)
 
     def test_defaulted_steam_skips_when_page_lists_no_platforms(self):
         result = match_offer(

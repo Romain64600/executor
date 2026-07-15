@@ -212,22 +212,32 @@ World Key GLOBAL" carries no platform token, was defaulted STEAM and entered
 Steam GLOBAL(2) when the product is publisher-direct (Eagle Dynamics); Romain
 had to fix the DB by hand. The only deterministic signal is the resolved AKS
 page's "official platforms:" line (extracted at resolve time, zero extra
-requests). **Revision `[R26]` (2026-07-15, DCS P-51D Mustang / A-10C Warthog
-escape):** a token-less title is no longer trusted as Steam **at all**, even
-when that list is exactly `Steam` — both DCS pages say "official platforms:
-Steam." with no `Direct Publisher` entry, yet Kinguin's own title omission was
-the real signal (Eagle Dynamics modules are commonly sold as direct/publisher
-keys the page's metadata doesn't enumerate). A DCS P-51D Mustang offer had
-already been created as Steam GLOBAL(2) before this fired live; Romain: *"Si
-Steam, EA ou autres n'est pas stipulé ça sera publisher pour ces offres."*
-Any token-less title with **some** page platform signal (Steam-only,
-Steam+GoG, whatever) is now platform PUBLISHER, region `Publisher (1)`
-(the dropdown's GLOBAL bucket; EU 12, US 13, UK 266 — ids read from the live
-session catalogs of 07-07/07-08, identical; no gift mapping → publisher gifts
-fail closed). Only a page with **no** official-platforms line at all still
-SKIPs (zero signal, not even a wrong one). This supersedes R20's original
-"Steam-only page → trust Steam" branch; Su-27 (page: Steam, Direct Publisher)
-was the first live case, unchanged in outcome.
+requests).
+**Revision `[R26]` (2026-07-15, DCS P-51D Mustang / A-10C Warthog escape):**
+a token-less title is no longer trusted as Steam even when that list is
+exactly `Steam` — both DCS pages say "official platforms: Steam." with no
+`Direct Publisher` entry, yet Kinguin's own title omission was the real
+signal. R26 made any token-less title with *some* page platform signal
+default to PUBLISHER.
+**Revision `[R27]` (same day, Gameboost escape):** R26 was too broad. Hours
+later, Gameboost proved the opposite failure mode — genuinely-Steam,
+token-less offers got defaulted to Publisher too, because Gameboost's own
+truth lives on its merchant page, which is unfetchable (Cloudflare blocks it
+— see the merchant's own notes). Romain: *"il y a des offres steam qu'on
+détecte en publisher, ça c'est seulement renseigné sur la page marchand."*
+DCS and Gameboost are the **identical page-signal shape** (token-less title,
+AKS page Steam-only) with **opposite ground truth** — neither a Steam default
+nor a Publisher default is safe there. The only signal strong enough to
+auto-resolve is a page that **explicitly confirms `Direct Publisher`**
+(region `Publisher (1)`, the dropdown's GLOBAL bucket; EU 12, US 13, UK 266 —
+ids read from the live session catalogs of 07-07/07-08, identical; no gift
+mapping → publisher gifts fail closed). Anything short of that —
+Steam-only, any other mix without Direct Publisher, or no platform info at
+all — now SKIPs ("platform unverifiable, not defaulted (R27)"). DCS itself
+reverts to skip; a human enters cases like it deliberately, same as the
+`R19` stub-page philosophy: absent a real signal, don't guess in either
+direction. Su-27 (page: Steam, Direct Publisher — a genuine positive signal)
+is unaffected, still PUBLISHER.
 An **explicit** title token is the merchant's declaration and is
 trusted — multi-platform pages are normal (an Osmos Steam+GoG page takes a
 Steam key) — **except** when the token has a known page vocabulary
