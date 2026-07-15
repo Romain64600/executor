@@ -59,6 +59,24 @@ function showNotice(message) {
   setTimeout(() => banner.classList.add('hidden'), 6000);
 }
 
+// ---------------------------------------------------------------- theme
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  $('#theme-toggle').textContent = theme === 'dark' ? '☀️ Clair' : '🌙 Sombre';
+  try { localStorage.setItem('aks-admin-theme', theme); } catch { /* stockage indisponible */ }
+}
+
+function initTheme() {
+  let theme = 'dark'; // sombre par défaut
+  try { theme = localStorage.getItem('aks-admin-theme') || 'dark'; } catch { /* idem */ }
+  applyTheme(theme);
+  $('#theme-toggle').addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-theme') || 'dark';
+    applyTheme(current === 'dark' ? 'light' : 'dark');
+  });
+}
+
 // ---------------------------------------------------------------- run list
 
 async function loadRuns() {
@@ -72,7 +90,8 @@ async function loadRuns() {
       const badges = [];
       if (stages.matched) badges.push(`${stages.candidates_count ?? '?'} cand.`);
       if (stages.validated) badges.push(`validé (${stages.approved_count ?? 0})`);
-      if (stages.submit) badges.push(stages.submit.dry_run ? 'dry-run' : `soumis: ${stages.submit.created}`);
+      if (run.created_count) badges.push(`✔ ${run.created_count} ajoutée(s)`);
+      else if (stages.submit && stages.submit.dry_run) badges.push('dry-run');
       const item = el('li', {}, [
         el('span', { class: 'run-id', text: run.run_id }),
         el('span', { class: 'run-info', text: [run.merchant || '?', ...badges].join(' · ') }),
@@ -99,7 +118,9 @@ async function openRun(runId) {
     $('#run-meta').textContent =
       `${detail.merchant ?? '?'} — store ${detail.store_id ?? '?'}` +
       (detail.store_id_error ? ` — ⚠ ${detail.store_id_error}` : '') +
-      ` — ${stages.candidates_count ?? 0} candidat(s), ${stages.approved_count ?? 0} approuvé(s)`;
+      ` — ${stages.candidates_count ?? 0} candidat(s), ${stages.approved_count ?? 0} approuvé(s)` +
+      (detail.created_count ? `, ✔ ${detail.created_count} déjà ajoutée(s)` : '') +
+      (detail.failed_count ? `, ✘ ${detail.failed_count} en échec` : '');
     await Promise.all([loadReport(runId), loadValidation(runId)]);
     renderSubmitPanel();
     await refreshStatus();
@@ -130,16 +151,57 @@ async function loadValidation(runId) {
   $('#validation-box').classList.remove('hidden');
   const approvedSet = new Set(payload.approved_fingerprints || []);
   const catalog = payload.catalog;
+  const history = payload.submit_history || {};
   if (payload.validation && payload.validation.validated_by) {
     $('#validated-by').value = payload.validation.validated_by;
   }
+  let createdCount = 0;
+  let failedCount = 0;
   payload.candidates.forEach((candidate, index) => {
     const fingerprint = fp(candidate);
+    const outcome = history[String(candidate.offer.offer_id)] || null;
+    const isCreated = Boolean(outcome && outcome.status === 'created');
+    const isFailed = Boolean(outcome && outcome.status === 'failed');
+    if (isCreated) createdCount += 1;
+    if (isFailed) failedCount += 1;
+
     const row = el('tr', { 'data-fingerprint': fingerprint });
+    if (isCreated) row.classList.add('created');
+    if (isFailed) row.classList.add('failed');
     row.appendChild(el('td', {}, [
-      el('input', { type: 'checkbox', class: 'approve', checked: approvedSet.has(fingerprint) }),
+      el('input', {
+        type: 'checkbox',
+        class: 'approve',
+        checked: !isCreated && approvedSet.has(fingerprint),
+        disabled: isCreated,
+        title: isCreated ? 'Déjà ajoutée sur AKS — ré-ajout bloqué' : '',
+      }),
     ]));
     row.appendChild(el('td', { text: String(index + 1) }));
+
+    const statusCell = el('td', { class: 'status-cell' });
+    if (isCreated) {
+      statusCell.appendChild(el('span', {
+        class: 'status status-created',
+        text: '✔ ajoutée',
+        title: `Créée sur AKS${outcome.at ? ' le ' + outcome.at : ''} — ${outcome.post_save || ''}`,
+      }));
+      if (outcome.at) statusCell.appendChild(el('div', { class: 'status-detail', text: outcome.at }));
+    } else if (isFailed) {
+      statusCell.appendChild(el('span', {
+        class: 'status status-failed',
+        text: '✘ échec',
+        title: outcome.blocker || 'échec précédent',
+      }));
+      statusCell.appendChild(el('div', {
+        class: 'status-detail',
+        text: (outcome.blocker || '').slice(0, 90),
+      }));
+    } else {
+      statusCell.appendChild(el('span', { class: 'status status-pending', text: '⏳ en attente' }));
+    }
+    row.appendChild(statusCell);
+
     const offerCell = el('td', {}, [
       el('div', { class: 'title', text: candidate.offer.name }),
       el('a', { href: candidate.offer.url, target: '_blank', rel: 'noreferrer', text: candidate.offer.url }),
@@ -157,18 +219,25 @@ async function loadValidation(runId) {
     ]));
     row.appendChild(el('td', {}, [
       select('platform', META.platforms.map((p) => ({ key: p, text: META.platform_labels[p] || p })),
-        candidate.platform, true),
+        candidate.platform, !isCreated),
     ]));
     row.appendChild(el('td', {}, [
-      select('region', catalog.regions, candidate.region.id, catalog.present,
+      select('region', catalog.regions, candidate.region.id, catalog.present && !isCreated,
         `${candidate.region.label} (${candidate.region.id})`),
     ]));
     row.appendChild(el('td', {}, [
-      select('edition', catalog.editions, candidate.edition.id, catalog.present,
+      select('edition', catalog.editions, candidate.edition.id, catalog.present && !isCreated,
         `${candidate.edition.label} (${candidate.edition.id})`),
     ]));
     tbody.appendChild(row);
   });
+
+  const pendingCount = payload.candidates.length - createdCount - failedCount;
+  const summary = $('#status-summary');
+  summary.classList.toggle('hidden', createdCount + failedCount === 0);
+  summary.textContent =
+    `✔ ${createdCount} déjà ajoutée(s) (verrouillées — ré-ajout bloqué côté serveur) · ` +
+    `✘ ${failedCount} en échec (ré-approuvables) · ⏳ ${pendingCount} en attente`;
 }
 
 function fp(candidate) {
@@ -488,6 +557,7 @@ function updateBusyBadge(busy) {
 // ---------------------------------------------------------------- init
 
 async function init() {
+  initTheme();
   try {
     META = await api('api/meta');
   } catch (err) {

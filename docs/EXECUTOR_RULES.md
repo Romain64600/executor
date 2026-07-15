@@ -398,6 +398,18 @@ unmodified `05_submit.py`, spawned supervised (exit code + `submit_plan.json`
 read back — never fire-and-forget), one browser-driving run at a time, R24
 modes with the canary cap enforced before the spawn.
 
+**No re-adding (2026-07-15):** the page derives a per-offer status from the
+append-only JSONL run log (`submit_offer` events; primary — it survives
+`submit_plan.json` being overwritten by a later dry-run) unioned with the
+current `submit_plan.json`: **ajoutée** (confirmed created — sticky, a later
+"not in feed" failure never demotes it), **échec** (attempted, blocker shown,
+re-approvable), **en attente** (never attempted). Created offers are locked in
+the UI (unchecked, disabled) and blocked server-side at BOTH gates: saving a
+validation that approves one is refused whole (`already_created`), and a
+submit whose approved batch intersects the created set is refused before the
+spawn (`already_created`) — re-submitting a partially-completed batch requires
+re-validating with the created offers excluded.
+
 ---
 
 ## 6. Stage 4 — Submitter (dry-run by default, locked behind validation)

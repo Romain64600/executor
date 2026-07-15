@@ -241,6 +241,58 @@ class ValidationFlowTests(AppTestCase):
         self.assertEqual(response.status, 409)
         self.assertEqual(body["error"]["code"], "not_validated")
 
+    def test_created_offers_visible_and_blocked(self):
+        # an earlier supervised submit confirmed offer "1" as created (JSONL log)
+        self.logs.mkdir(exist_ok=True)
+        (self.logs / "20260715-000000-test.jsonl").write_text(
+            json.dumps({"event": "submit_offer", "offer_id": "1", "success": True,
+                        "post_save": "gone from feed (available=all)",
+                        "ts": "2026-07-15T15:00:00Z", "run_id": "20260715-000000-test"}) + "\n",
+            encoding="utf-8",
+        )
+        _, payload = self._json("GET", "/api/runs/20260715-000000-test/validation")
+        self.assertEqual(payload["submit_history"]["1"]["status"], "created")
+        _, detail = self._json("GET", "/api/runs/20260715-000000-test")
+        self.assertEqual(detail["created_count"], 1)
+        self.assertEqual(detail["failed_count"], 0)
+        _, listing = self._json("GET", "/api/runs")
+        self.assertEqual(listing["runs"][0]["created_count"], 1)
+
+        # re-approving the created offer is refused whole
+        response, body = self._json(
+            "POST",
+            "/api/runs/20260715-000000-test/validation",
+            body={
+                "candidates_sha256": payload["candidates_sha256"],
+                "validated_by": "Romain",
+                "decisions": [{"fingerprint": payload["candidates"][0]["fingerprint"], "approve": True}],
+            },
+        )
+        self.assertEqual(response.status, 409)
+        self.assertEqual(body["error"]["code"], "already_created")
+
+    def test_failed_offer_reported_but_still_approvable(self):
+        self.logs.mkdir(exist_ok=True)
+        (self.logs / "20260715-000000-test.jsonl").write_text(
+            json.dumps({"event": "submit_offer", "offer_id": "1", "success": False,
+                        "blocker": "offer not in current feed",
+                        "ts": "2026-07-15T15:00:00Z", "run_id": "20260715-000000-test"}) + "\n",
+            encoding="utf-8",
+        )
+        _, payload = self._json("GET", "/api/runs/20260715-000000-test/validation")
+        self.assertEqual(payload["submit_history"]["1"]["status"], "failed")
+        response, result = self._json(
+            "POST",
+            "/api/runs/20260715-000000-test/validation",
+            body={
+                "candidates_sha256": payload["candidates_sha256"],
+                "validated_by": "Romain",
+                "decisions": [{"fingerprint": payload["candidates"][0]["fingerprint"], "approve": True}],
+            },
+        )
+        self.assertEqual(response.status, 200)
+        self.assertEqual(result["approved_count"], 1)
+
     def test_status_events_re_redacted(self):
         self.logs.mkdir(exist_ok=True)
         (self.logs / "20260715-000000-test.jsonl").write_text(

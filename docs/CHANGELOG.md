@@ -25,6 +25,15 @@ per-run filename whitelist, anti-traversal run ids, custom-header CSRF guard,
 log events re-passed through `redact()`. 69 new tests (454 total, green).
 Install/runbook: [`../ops/INSTALL_ADMIN.md`](../ops/INSTALL_ADMIN.md).
 
+Same-day additions (Romain): per-offer status **ajoutée / échec / en
+attente** derived from the append-only JSONL log (∪ current
+`submit_plan.json` — a later dry-run can't erase history; "created" is
+sticky over later "not in feed" failures). Already-created offers are locked
+in the UI and refused server-side at both gates (`already_created` on
+validation save AND on submit start — verified live: the GameSeal 19-offer
+batch with 12 created is unresubmittable as-is). Dark theme by default with
+a top-right toggle (persisted). 463 tests green.
+
 ## 2026-07-15 — R26: token-less titles never default to Steam anymore
 
 Live during a 100-candidate Kinguin `--submit` run (R25 already active): 6

@@ -113,6 +113,88 @@ def tail_log_events(
     return events, offset + end + 1
 
 
+def offer_submit_history(
+    log_path: Path, submit_plan_path: Path | None = None
+) -> dict[str, dict[str, Any]]:
+    """Last known submit outcome per offer_id of a run.
+
+    Distinguishes, per offer: ``created`` (confirmed added on AKS — sticky, a
+    later "not in feed" failure never demotes it), ``failed`` (attempted, last
+    blocker kept, still re-attemptable). Offers absent from the map were never
+    attempted (pending — the UI's third state).
+
+    Primary source: the append-only JSONL run log (``submit_offer`` events) —
+    it survives ``submit_plan.json`` being overwritten by a later dry-run.
+    Secondary: the current ``submit_plan.json`` (entries with ``submitted`` +
+    confirmed ``post_save``). Corrupt lines are skipped: missing proof only
+    means "not known created" — the submitter itself still fail-closes (a
+    created offer is gone from the feed, its row can never be found again).
+    """
+
+    history: dict[str, dict[str, Any]] = {}
+    if log_path.is_file():
+        for line in log_path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if record.get("event") != "submit_offer" or not record.get("offer_id"):
+                continue
+            offer_id = str(record["offer_id"])
+            attempts = history.get(offer_id, {}).get("attempts", 0) + 1
+            if record.get("success") is True:
+                history[offer_id] = {
+                    "status": "created",
+                    "at": record.get("ts"),
+                    "post_save": record.get("post_save"),
+                    "attempts": attempts,
+                    "source": "log",
+                }
+            elif history.get(offer_id, {}).get("status") == "created":
+                history[offer_id]["attempts"] = attempts
+            else:
+                history[offer_id] = {
+                    "status": "failed",
+                    "at": record.get("ts"),
+                    "blocker": record.get("blocker"),
+                    "attempts": attempts,
+                    "source": "log",
+                }
+    if submit_plan_path is not None and submit_plan_path.is_file():
+        try:
+            plan = json.loads(submit_plan_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            plan = None
+        entries = plan.get("plan") or [] if isinstance(plan, dict) else []
+        for entry in entries:
+            if entry.get("submitted") and entry.get("post_save") and entry.get("offer_id"):
+                offer_id = str(entry["offer_id"])
+                if history.get(offer_id, {}).get("status") != "created":
+                    history[offer_id] = {
+                        "status": "created",
+                        "at": None,
+                        "post_save": entry["post_save"],
+                        "attempts": history.get(offer_id, {}).get("attempts", 1),
+                        "source": "submit_plan",
+                    }
+    return history
+
+
+def created_offer_ids(
+    log_path: Path, submit_plan_path: Path | None = None
+) -> dict[str, dict[str, Any]]:
+    """Only the confirmed-created offers of :func:`offer_submit_history`."""
+
+    return {
+        offer_id: outcome
+        for offer_id, outcome in offer_submit_history(log_path, submit_plan_path).items()
+        if outcome["status"] == "created"
+    }
+
+
 class SubmitStartError(Exception):
     """A refused start. ``code`` is machine-readable, ``message`` verbatim."""
 
@@ -253,6 +335,16 @@ class SubmitManager:
             self._ensure_free()
             self._check_mode_limit(mode, limit)
             approved = self._verify_triple(run_dir)
+            already = sorted(
+                {str(c["offer"]["offer_id"]) for c in approved} & set(self.created_offers(run_dir))
+            )
+            if already:
+                raise SubmitStartError(
+                    "already_created",
+                    f"{len(already)} offre(s) du lot approuvé déjà ajoutée(s) sur AKS "
+                    f"({', '.join(already)}) — ré-ajout interdit : re-valider le run en "
+                    "excluant ces offres",
+                )
             try:
                 merchant, store_id = derive_merchant_store(run_dir)
             except (RunAccessError, json.JSONDecodeError) as exc:
@@ -359,6 +451,20 @@ class SubmitManager:
                 self._active = None
 
     # -- status --------------------------------------------------------------
+
+    def submit_history(self, run_dir: Path) -> dict[str, dict[str, Any]]:
+        """Per-offer submit outcome (created / failed; absent = pending)."""
+
+        return offer_submit_history(
+            self.log_dir / f"{run_dir.name}.jsonl", run_file(run_dir, "submit_plan.json")
+        )
+
+    def created_offers(self, run_dir: Path) -> dict[str, dict[str, Any]]:
+        """Offers of this run already created on AKS (never re-submittable)."""
+
+        return created_offer_ids(
+            self.log_dir / f"{run_dir.name}.jsonl", run_file(run_dir, "submit_plan.json")
+        )
 
     def busy(self) -> dict[str, Any] | None:
         with self._mutex:

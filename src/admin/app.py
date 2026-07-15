@@ -184,14 +184,33 @@ class AdminHandler(BaseHTTPRequestHandler):
                 },
             )
         if path == "/api/runs":
-            return self._send_json(200, {"runs": list_runs(self.state.runs_dir)})
+            runs = list_runs(self.state.runs_dir)
+            for run in runs:
+                try:
+                    history = self.state.manager.submit_history(
+                        safe_run_dir(self.state.runs_dir, run["run_id"])
+                    )
+                    run["created_count"] = sum(
+                        1 for o in history.values() if o["status"] == "created"
+                    )
+                except (RunAccessError, OSError):
+                    run["created_count"] = None
+            return self._send_json(200, {"runs": runs})
 
         match = RUN_ROUTE.match(path)
         if match:
             run_dir = self._run_dir(match.group(1))
             sub = match.group(2) or ""
             if sub == "":
-                return self._send_json(200, run_detail(run_dir))
+                detail = run_detail(run_dir)
+                history = self.state.manager.submit_history(run_dir)
+                detail["created_count"] = sum(
+                    1 for o in history.values() if o["status"] == "created"
+                )
+                detail["failed_count"] = sum(
+                    1 for o in history.values() if o["status"] == "failed"
+                )
+                return self._send_json(200, detail)
             if sub == "/report":
                 report = read_run_text(run_dir, "report.txt")
                 if report is None:
@@ -233,6 +252,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                     else []
                 ),
                 "candidates_sha256": sha256_file(run_file(run_dir, "candidates.json")),
+                "submit_history": self.state.manager.submit_history(run_dir),
                 "catalog": {
                     "present": catalog is not None,
                     "regions": catalog["regions"] if catalog else [],
@@ -293,7 +313,11 @@ class AdminHandler(BaseHTTPRequestHandler):
         body = self._json_body()
         with self.state.validation_lock:
             result = apply_overrides_and_validate(
-                run_dir, body, repo_root=self.state.repo_root, log_dir=self.state.log_dir
+                run_dir,
+                body,
+                repo_root=self.state.repo_root,
+                log_dir=self.state.log_dir,
+                created_offer_ids=self.state.manager.created_offers(run_dir),
             )
         self._send_json(200, result)
 

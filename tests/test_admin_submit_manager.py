@@ -8,6 +8,8 @@ from pathlib import Path
 from src.admin.submit_manager import (
     SubmitManager,
     SubmitStartError,
+    created_offer_ids,
+    offer_submit_history,
     tail_log_events,
 )
 
@@ -228,6 +230,82 @@ class RecoverOrphansTests(ManagerTestCase):
         finally:
             proc.terminate()
             proc.wait()
+        manager.start_submit(self.run, mode="safe", limit=None, dry_run=True, by="Romain")
+        self.assertTrue(manager.wait_idle(timeout=10))
+
+
+class SubmitHistoryTests(ManagerTestCase):
+    def _log(self, *records):
+        self.logs.mkdir(exist_ok=True)
+        path = self.logs / f"{self.run.name}.jsonl"
+        with open(path, "a", encoding="utf-8") as handle:
+            for record in records:
+                handle.write((record if isinstance(record, str) else json.dumps(record)) + "\n")
+        return path
+
+    def test_history_distinguishes_created_failed_pending(self):
+        log = self._log(
+            {"event": "submit_offer", "offer_id": "1", "success": True,
+             "post_save": "gone from feed (available=all)", "ts": "T1"},
+            {"event": "submit_offer", "offer_id": "2", "success": False,
+             "blocker": "offer not in current feed", "ts": "T2"},
+            "{broken json",
+            {"event": "skip", "offer_id": "3"},
+        )
+        history = offer_submit_history(log)
+        self.assertEqual(history["1"]["status"], "created")
+        self.assertEqual(history["1"]["at"], "T1")
+        self.assertEqual(history["2"]["status"], "failed")
+        self.assertEqual(history["2"]["blocker"], "offer not in current feed")
+        self.assertNotIn("3", history)  # pending: never attempted
+
+    def test_created_is_sticky_over_later_failure(self):
+        log = self._log(
+            {"event": "submit_offer", "offer_id": "1", "success": True, "post_save": "gone", "ts": "T1"},
+            {"event": "submit_offer", "offer_id": "1", "success": False,
+             "blocker": "offer not in current feed", "ts": "T2"},
+        )
+        history = offer_submit_history(log)
+        self.assertEqual(history["1"]["status"], "created")
+        self.assertEqual(history["1"]["attempts"], 2)
+
+    def test_submit_plan_unioned_as_secondary_source(self):
+        log = self._log(
+            {"event": "submit_offer", "offer_id": "1", "success": True, "post_save": "gone", "ts": "T1"},
+        )
+        plan_path = self.run / "submit_plan.json"
+        plan_path.write_text(
+            json.dumps({"created": 2, "plan": [
+                {"offer_id": "1", "submitted": True, "post_save": "gone"},
+                {"offer_id": "5", "submitted": True, "post_save": "gone"},
+                {"offer_id": "6", "ready": True, "would_submit": True},  # dry entry: not created
+                {"offer_id": "7", "ready": False, "blocker": "x"},
+            ]}),
+            encoding="utf-8",
+        )
+        created = created_offer_ids(log, plan_path)
+        self.assertEqual(sorted(created), ["1", "5"])
+        self.assertEqual(created["1"]["source"], "log")
+        self.assertEqual(created["5"]["source"], "submit_plan")
+
+    def test_resubmit_of_created_offer_refused(self):
+        self._write_triple()  # approves offer_id "1"
+        self._log(
+            {"event": "submit_offer", "offer_id": "1", "success": True, "post_save": "gone", "ts": "T1"},
+        )
+        manager = self._manager()
+        with self.assertRaises(SubmitStartError) as ctx:
+            manager.start_submit(self.run, mode="safe", limit=None, dry_run=False, by="Romain")
+        self.assertEqual(ctx.exception.code, "already_created")
+        self.assertIn("1", str(ctx.exception))
+        self.assertFalse((self.run / "admin_submit.json").exists())
+
+    def test_submit_allowed_when_created_disjoint(self):
+        self._write_triple()  # approves offer_id "1"
+        self._log(
+            {"event": "submit_offer", "offer_id": "999", "success": True, "post_save": "gone", "ts": "T1"},
+        )
+        manager = self._manager()
         manager.start_submit(self.run, mode="safe", limit=None, dry_run=True, by="Romain")
         self.assertTrue(manager.wait_idle(timeout=10))
 

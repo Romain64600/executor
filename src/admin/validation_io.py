@@ -161,8 +161,13 @@ def apply_overrides_and_validate(
     repo_root: Path,
     log_dir: Path | None = None,
     clock=_utc_now_iso,
+    created_offer_ids=None,
 ) -> dict[str, Any]:
     """Save operator decisions: rewrite candidates, validation, approved (triple).
+
+    ``created_offer_ids`` — offers of this run already created on AKS: any
+    decision that approves one is refused whole (``already_created``), re-adding
+    is impossible from the page.
 
     Raises :class:`ValidationIOError` (never partially honored — any refusal
     happens before the first write, and a failure between writes leaves a
@@ -197,6 +202,8 @@ def apply_overrides_and_validate(
     for candidate in candidates:
         by_fingerprint[candidate_fingerprint(candidate)] = candidate
 
+    created_set = frozenset(str(offer_id) for offer_id in (created_offer_ids or ()))
+    already_created: list[str] = []
     seen: set[str] = set()
     approve_by_fp: dict[str, bool] = {}
     overrides: dict[str, dict[str, Any]] = {}
@@ -216,6 +223,9 @@ def apply_overrides_and_validate(
             )
         seen.add(fingerprint)
         approve_by_fp[fingerprint] = bool(decision.get("approve"))
+        offer_id = str(by_fingerprint[fingerprint]["offer"]["offer_id"])
+        if approve_by_fp[fingerprint] and offer_id in created_set:
+            already_created.append(offer_id)
         override = decision.get("override")
         if override:
             if not isinstance(override, dict):
@@ -223,6 +233,13 @@ def apply_overrides_and_validate(
                     "bad_override", "override must be an object", http_status=400
                 )
             overrides[fingerprint] = override
+
+    if already_created:
+        raise ValidationIOError(
+            "already_created",
+            "offre(s) déjà ajoutée(s) sur AKS — ré-approbation refusée : "
+            + ", ".join(sorted(already_created)),
+        )
 
     catalog = load_catalog_options(run_dir)
     now = clock()

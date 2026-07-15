@@ -61,13 +61,14 @@ class ValidationIOTestCase(unittest.TestCase):
             (self.run / "session_catalog.json").write_text(json.dumps(_catalog()), encoding="utf-8")
         return sha256_file(self.run / "candidates.json")
 
-    def _save(self, decisions, sha, validated_by="Romain", repo_root=REPO_ROOT):
+    def _save(self, decisions, sha, validated_by="Romain", repo_root=REPO_ROOT, created=None):
         return apply_overrides_and_validate(
             self.run,
             {"candidates_sha256": sha, "validated_by": validated_by, "decisions": decisions},
             repo_root=repo_root,
             log_dir=self.logs,
             clock=CLOCK,
+            created_offer_ids=created,
         )
 
     def _triple(self):
@@ -132,6 +133,35 @@ class ApproveOnlyTests(ValidationIOTestCase):
         with self.assertRaises(ValidationIOError) as ctx:
             self._save([{"fingerprint": "9|9|9|9", "approve": True}], sha)
         self.assertEqual(ctx.exception.code, "unknown_fingerprint")
+
+    def test_approving_created_offer_rejected_before_any_write(self):
+        c1, c2 = _cand("1"), _cand("2")
+        sha = self._write([c1, c2])
+        with self.assertRaises(ValidationIOError) as ctx:
+            self._save(
+                [
+                    {"fingerprint": c1["fingerprint"], "approve": True},
+                    {"fingerprint": c2["fingerprint"], "approve": True},
+                ],
+                sha,
+                created={"1": {"status": "created"}},
+            )
+        self.assertEqual(ctx.exception.code, "already_created")
+        self.assertIn("1", ctx.exception.message)
+        self.assertFalse((self.run / "validation.json").exists())
+
+    def test_created_offer_acceptable_when_left_rejected(self):
+        c1, c2 = _cand("1"), _cand("2")
+        sha = self._write([c1, c2])
+        result = self._save(
+            [
+                {"fingerprint": c1["fingerprint"], "approve": False},
+                {"fingerprint": c2["fingerprint"], "approve": True},
+            ],
+            sha,
+            created={"1": {"status": "created"}},
+        )
+        self.assertEqual(result["approved_count"], 1)
 
     def test_duplicate_decision_rejected(self):
         c1 = _cand("1")
