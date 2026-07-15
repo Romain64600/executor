@@ -410,6 +410,17 @@ submit whose approved batch intersects the created set is refused before the
 spawn (`already_created`) — re-submitting a partially-completed batch requires
 re-validating with the created offers excluded.
 
+**Deleting erroneous entries (2026-07-15):** the operator can mark a candidate
+entry as a matcher error to delete it *instead of submitting it* (`delete:
+true` in the save payload). The entry is removed from `candidates.json` before
+the triple is regenerated — it can never reach `approved.json` or a submit.
+Refused in combination with approve/override (`bad_delete`) and for
+already-created offers (`delete_created` — the entry documents a real add).
+Every deletion is logged to the append-only JSONL (`candidate_deleted`, full
+candidate payload, who/when) — the matcher's output is never silently lost.
+`report.txt` stays untouched (it is the matcher's historical artifact); the
+page's table is the operational view.
+
 ---
 
 ## 6. Stage 4 — Submitter (dry-run by default, locked behind validation)

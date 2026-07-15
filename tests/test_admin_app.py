@@ -294,6 +294,44 @@ class ValidationFlowTests(AppTestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(result["approved_count"], 1)
 
+    def test_delete_entry_from_page(self):
+        _, payload = self._json("GET", "/api/runs/20260715-000000-test/validation")
+        response, result = self._json(
+            "POST",
+            "/api/runs/20260715-000000-test/validation",
+            body={
+                "candidates_sha256": payload["candidates_sha256"],
+                "validated_by": "Romain",
+                "decisions": [{"fingerprint": payload["candidates"][0]["fingerprint"], "delete": True}],
+            },
+        )
+        self.assertEqual(response.status, 200)
+        self.assertEqual(len(result["deleted"]), 1)
+        self.assertEqual(result["approved_count"], 0)
+        self.assertEqual(
+            json.loads((self.run / "candidates.json").read_text(encoding="utf-8")), []
+        )
+
+    def test_delete_created_entry_refused(self):
+        self.logs.mkdir(exist_ok=True)
+        (self.logs / "20260715-000000-test.jsonl").write_text(
+            json.dumps({"event": "submit_offer", "offer_id": "1", "success": True,
+                        "post_save": "gone", "ts": "T", "run_id": "20260715-000000-test"}) + "\n",
+            encoding="utf-8",
+        )
+        _, payload = self._json("GET", "/api/runs/20260715-000000-test/validation")
+        response, body = self._json(
+            "POST",
+            "/api/runs/20260715-000000-test/validation",
+            body={
+                "candidates_sha256": payload["candidates_sha256"],
+                "validated_by": "Romain",
+                "decisions": [{"fingerprint": payload["candidates"][0]["fingerprint"], "delete": True}],
+            },
+        )
+        self.assertEqual(response.status, 409)
+        self.assertEqual(body["error"]["code"], "delete_created")
+
     def test_status_events_re_redacted(self):
         self.logs.mkdir(exist_ok=True)
         (self.logs / "20260715-000000-test.jsonl").write_text(

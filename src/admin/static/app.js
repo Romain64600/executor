@@ -244,6 +244,33 @@ async function loadValidation(runId) {
       select('edition', catalog.editions, candidate.edition.id, catalog.present && !isCreated,
         `${candidate.edition.label} (${candidate.edition.id})`),
     ]));
+
+    const actionCell = el('td', { class: 'action-cell' });
+    if (!isCreated) {
+      const trash = el('button', {
+        type: 'button',
+        class: 'trash',
+        text: '🗑',
+        title: 'Marquer comme erreur — sera supprimée du run à l\'enregistrement (au lieu d\'être soumise)',
+      });
+      trash.addEventListener('click', () => {
+        const marked = row.classList.toggle('to-delete');
+        const approve = row.querySelector('.approve');
+        approve.checked = false;
+        approve.disabled = marked;
+        for (const kind of ['platform', 'region', 'edition']) {
+          const sel = row.querySelector(`select.${kind}`);
+          sel.disabled = marked || (kind !== 'platform' && !catalog.present);
+        }
+        trash.textContent = marked ? '↩' : '🗑';
+        trash.title = marked
+          ? 'Annuler la suppression'
+          : 'Marquer comme erreur — sera supprimée du run à l\'enregistrement (au lieu d\'être soumise)';
+        DIRTY = true;
+      });
+      actionCell.appendChild(trash);
+    }
+    row.appendChild(actionCell);
     tbody.appendChild(row);
   });
 
@@ -289,8 +316,13 @@ async function saveValidation() {
   if (!payload) return;
   const decisions = [];
   for (const row of document.querySelectorAll('#candidates tbody tr')) {
+    const fingerprint = row.getAttribute('data-fingerprint');
+    if (row.classList.contains('to-delete')) {
+      decisions.push({ fingerprint, delete: true });
+      continue;
+    }
     const decision = {
-      fingerprint: row.getAttribute('data-fingerprint'),
+      fingerprint,
       approve: row.querySelector('.approve').checked,
     };
     const override = {};
@@ -315,7 +347,8 @@ async function saveValidation() {
     });
     $('#validation-state').textContent =
       `✔ ${result.approved_count} approuvé(s)` +
-      (result.overrides.length ? `, ${result.overrides.length} override(s)` : '');
+      (result.overrides.length ? `, ${result.overrides.length} override(s)` : '') +
+      ((result.deleted || []).length ? `, 🗑 ${result.deleted.length} supprimée(s)` : '');
     showNotice('Validation enregistrée — triple candidates/validation/approved régénéré.');
     await openRun(CURRENT.runId);
   } catch (err) {

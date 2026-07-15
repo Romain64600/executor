@@ -323,6 +323,80 @@ class OverrideTests(ValidationIOTestCase):
         self.assertEqual(saved["overrides"], 1)
 
 
+class DeleteTests(ValidationIOTestCase):
+    def test_delete_removes_entry_regenerates_triple_and_logs(self):
+        c1, c2, c3 = _cand("1"), _cand("2"), _cand("3")
+        sha = self._write([c1, c2, c3])
+        result = self._save(
+            [
+                {"fingerprint": c1["fingerprint"], "approve": True},
+                {"fingerprint": c2["fingerprint"], "delete": True},
+            ],
+            sha,
+        )
+        self.assertEqual(result["deleted"], [c2["fingerprint"]])
+        self.assertEqual(result["approved_count"], 1)
+        candidates, validation, approved = self._triple()
+        self.assertEqual([c["offer"]["offer_id"] for c in candidates], ["1", "3"])
+        verify_approved_against_source(
+            approved, validation, candidates, expected_run_id="20260715-000000-test"
+        )
+        events = self._log_events()
+        deleted = next(e for e in events if e["event"] == "candidate_deleted")
+        self.assertEqual(deleted["offer_id"], "2")
+        self.assertEqual(deleted["candidate"]["aks_product_id"], "207861")
+        saved = next(e for e in events if e["event"] == "validation_saved")
+        self.assertEqual(saved["deleted"], 1)
+
+    def test_delete_combined_with_approve_rejected(self):
+        c1 = _cand("1")
+        sha = self._write([c1])
+        with self.assertRaises(ValidationIOError) as ctx:
+            self._save([{"fingerprint": c1["fingerprint"], "approve": True, "delete": True}], sha)
+        self.assertEqual(ctx.exception.code, "bad_delete")
+
+    def test_delete_created_offer_rejected(self):
+        c1 = _cand("1")
+        sha = self._write([c1])
+        with self.assertRaises(ValidationIOError) as ctx:
+            self._save(
+                [{"fingerprint": c1["fingerprint"], "delete": True}],
+                sha,
+                created={"1": {"status": "created"}},
+            )
+        self.assertEqual(ctx.exception.code, "delete_created")
+        self.assertFalse((self.run / "validation.json").exists())
+
+    def test_delete_all_leaves_valid_empty_triple(self):
+        c1 = _cand("1")
+        sha = self._write([c1])
+        result = self._save([{"fingerprint": c1["fingerprint"], "delete": True}], sha)
+        self.assertEqual(result["approved_count"], 0)
+        candidates, _, approved = self._triple()
+        self.assertEqual(candidates, [])
+        self.assertEqual(approved, [])
+
+    def test_override_moving_onto_deleted_fingerprint_survives(self):
+        # c1 (edition 1) is deleted; c2 (edition 16) is overridden TO edition 1,
+        # landing exactly on c1's old fingerprint — it must NOT be deleted too.
+        c1 = _cand("1", edition="1")
+        c2 = _cand("1", edition="16")
+        sha = self._write([c1, c2])
+        result = self._save(
+            [
+                {"fingerprint": c1["fingerprint"], "delete": True},
+                {"fingerprint": c2["fingerprint"], "approve": True, "override": {"edition_id": "1"}},
+            ],
+            sha,
+        )
+        self.assertEqual(result["approved_count"], 1)
+        candidates, _, approved = self._triple()
+        self.assertEqual(len(candidates), 1)
+        self.assertEqual(candidates[0]["fingerprint"], "1|207861|2|1")
+        self.assertEqual(candidates[0]["operator_override"]["original"]["edition"]["id"], "16")
+        self.assertEqual(len(approved), 1)
+
+
 class CheckSubprocessTests(ValidationIOTestCase):
     def test_check_failure_surfaced_and_no_stale_approved(self):
         c1 = _cand("1")

@@ -215,6 +215,12 @@ td a:hover { text-decoration: underline; }
   word-break: break-word;
 }
 
+tr.to-delete td { background: var(--failed-row); }
+tr.to-delete .title, tr.to-delete a { text-decoration: line-through; opacity: 0.55; }
+
+.action-cell { width: 2.2rem; text-align: center; }
+button.trash { padding: 0.15rem 0.4rem; font-size: 0.9rem; }
+
 select, input[type="text"], input[type="number"] {
   padding: 0.25rem 0.35rem;
   border: 1px solid var(--border);

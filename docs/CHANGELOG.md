@@ -32,7 +32,13 @@ sticky over later "not in feed" failures). Already-created offers are locked
 in the UI and refused server-side at both gates (`already_created` on
 validation save AND on submit start — verified live: the GameSeal 19-offer
 batch with 12 created is unresubmittable as-is). Dark theme by default with
-a top-right toggle (persisted). 463 tests green.
+a top-right toggle (persisted). Auto-refresh every 10 s (run list, open run
+via a server-state stamp, busy badge; unsaved edits are never clobbered — a
+"Recharger" banner appears instead; CLI-launched submits stream their JSONL
+events live). Deletion of erroneous entries (🗑 per row, "au lieu de les
+soumettre"): removed from `candidates.json` at save, triple regenerated,
+`candidate_deleted` JSONL event with the full payload; refused for created
+offers and combined with approve/override. 470 tests green.
 
 ## 2026-07-15 — R26: token-less titles never default to Steam anymore
 

@@ -169,6 +169,12 @@ def apply_overrides_and_validate(
     decision that approves one is refused whole (``already_created``), re-adding
     is impossible from the page.
 
+    A decision may carry ``delete: true`` (operator marks the entry as a matcher
+    error): the candidate is removed from ``candidates.json`` before the triple
+    is regenerated. Refused for created offers (the entry documents a real add)
+    and in combination with approve/override. Every deletion is logged to the
+    append-only JSONL with the full candidate payload — nothing is lost.
+
     Raises :class:`ValidationIOError` (never partially honored — any refusal
     happens before the first write, and a failure between writes leaves a
     triple the submitter refuses).
@@ -207,6 +213,7 @@ def apply_overrides_and_validate(
     seen: set[str] = set()
     approve_by_fp: dict[str, bool] = {}
     overrides: dict[str, dict[str, Any]] = {}
+    deletions: dict[str, dict[str, Any]] = {}  # fingerprint -> candidate dict
     for decision in decisions:
         fingerprint = decision.get("fingerprint")
         if fingerprint not in by_fingerprint:
@@ -222,8 +229,24 @@ def apply_overrides_and_validate(
                 http_status=400,
             )
         seen.add(fingerprint)
-        approve_by_fp[fingerprint] = bool(decision.get("approve"))
         offer_id = str(by_fingerprint[fingerprint]["offer"]["offer_id"])
+        if decision.get("delete"):
+            if decision.get("approve") or decision.get("override"):
+                raise ValidationIOError(
+                    "bad_delete",
+                    "une suppression ne peut pas être combinée avec approve/override "
+                    f"({fingerprint!r})",
+                    http_status=400,
+                )
+            if offer_id in created_set:
+                raise ValidationIOError(
+                    "delete_created",
+                    f"offre {offer_id} déjà ajoutée sur AKS — suppression de l'entrée "
+                    "refusée (elle documente un ajout réel)",
+                )
+            deletions[fingerprint] = by_fingerprint[fingerprint]
+            continue
+        approve_by_fp[fingerprint] = bool(decision.get("approve"))
         if approve_by_fp[fingerprint] and offer_id in created_set:
             already_created.append(offer_id)
         override = decision.get("override")
@@ -257,6 +280,12 @@ def apply_overrides_and_validate(
                 }
             )
             approve_by_fp[new_fingerprint] = approve_by_fp.pop(old_fingerprint)
+
+    if deletions:
+        # Identity-based filter: an override above may have moved another row
+        # onto a deleted fingerprint — never delete that one by accident.
+        delete_ids = {id(candidate) for candidate in deletions.values()}
+        candidates = [c for c in candidates if id(c) not in delete_ids]
 
     fingerprints = [candidate_fingerprint(c) for c in candidates]
     duplicates = {fp for fp in fingerprints if fingerprints.count(fp) > 1}
@@ -319,6 +348,17 @@ def apply_overrides_and_validate(
     logger = RunLogger(run_dir.name, log_dir=log_dir or (repo_root / "logs"), clock=clock)
     for change in changed:
         logger.log("operator_override", via="admin-page", by=validated_by, **change)
+    for fingerprint, candidate in deletions.items():
+        # Full payload frozen in the append-only log — the deletion is
+        # traceable and reversible by hand even though candidates.json moved on.
+        logger.log(
+            "candidate_deleted",
+            via="admin-page",
+            by=validated_by,
+            offer_id=candidate["offer"]["offer_id"],
+            fingerprint=fingerprint,
+            candidate=candidate,
+        )
     logger.log(
         "validation_saved",
         via="admin-page",
@@ -326,11 +366,13 @@ def apply_overrides_and_validate(
         approved=len(approved),
         total=len(candidates),
         overrides=len(changed),
+        deleted=len(deletions),
     )
 
     return {
         "approved_count": len(approved),
         "candidates_sha256": sha256_file(candidates_path),
         "overrides": changed,
+        "deleted": sorted(deletions),
         "check_output": check_output,
     }
