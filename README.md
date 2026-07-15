@@ -47,8 +47,11 @@ state and cannot be argued away by a language model.
   submits only against an explicit validation file.
 - **Hermes** — optional conversational supervisor. Reads reports, relays
   instructions. Never executes free-form AKS browser actions.
-- **N8N** — optional, later: orchestration, validation UI, notifications, log
-  archive.
+- **Admin page** — the operator's validation UI on the VPS
+  (`https://51.38.37.254.sslip.io/executor/`, nginx HTTPS + basic auth):
+  read the normalized report, approve/reject/override candidates, launch a
+  supervised dry-run/submit. See [`ops/INSTALL_ADMIN.md`](ops/INSTALL_ADMIN.md).
+- **N8N** — optional, later: orchestration, notifications, log archive.
 
 **Principles**
 
@@ -89,8 +92,11 @@ aks-controlled-executor/
 │   ├── 02_extract_feed.py      # read-only feed extractor CLI (gated on green invariants)
 │   ├── 03_match.py             # read-only matcher CLI → candidates/skipped/report
 │   ├── 04_validate.py          # validation CLI (template + check, fail-closed gate)
-│   └── 05_submit.py            # submitter CLI — dry-run default; --submit = real write (trusted)
+│   ├── 05_submit.py            # submitter CLI — dry-run default; --submit = real write (trusted)
+│   └── 07_admin_server.py      # admin page server (loopback only, behind nginx basic auth)
+├── ops/                        # admin page install: systemd unit, nginx vhost, runbook
 ├── src/
+│   ├── admin/                  # admin page: HTTP app, safe run access, triple regen, submit supervisor
 │   ├── aks_env.py              # constants, pure validators, env classification, HTTP probes
 │   ├── cdp_client.py           # read-only CDP /json/version client (no browser actions)
 │   ├── cdp_session.py          # read-only CDP WebSocket session (navigate + evaluate)
@@ -103,7 +109,7 @@ aks-controlled-executor/
 │   ├── submitter.py            # Stage 4 submitter — dry-run + real write path
 │   ├── run_log.py              # append-only JSONL run logger (redacting)
 │   └── step_guard.py           # deterministic, fail-closed StepGuard
-├── tests/                      # unit tests (190)
+├── tests/                      # unit tests (454)
 ├── config/  runs/  logs/  state/   # runtime dirs (runs/logs/state are gitignored)
 └── .gitignore
 ```

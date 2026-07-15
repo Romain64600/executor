@@ -3,6 +3,28 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-15 — Admin page: human validation + supervised submit from a browser
+
+New operator page at `https://51.38.37.254.sslip.io/executor/` (nginx HTTPS +
+basic auth → loopback-only stdlib Python server, `scripts/07_admin_server.py` +
+`src/admin/`). Per run: read the normalized report verbatim, approve/reject
+each candidate, override platform/region/edition (choices restricted to the
+run's own `session_catalog.json` — no catalog, no override), and launch
+dry-run / catalog / real submit.
+
+Invariants preserved by construction: every save regenerates the
+`candidates.json` + `validation.json` + `approved.json` triple through the
+real `04_validate.py check` (never a patched `approved.json`); overrides
+rewrite the candidate with an `operator_override` audit field (original pick
+frozen) + `operator_override`/`validation_saved` JSONL events; a real submit
+spawns the unmodified `05_submit.py`, supervised to its exit code (never
+fire-and-forget), one browser-driving run at a time, R24 modes with the
+canary cap enforced pre-spawn, and the confirmation modal requires typing
+`GO` — the operator's explicit go. Server hardening: loopback bind refusal,
+per-run filename whitelist, anti-traversal run ids, custom-header CSRF guard,
+log events re-passed through `redact()`. 69 new tests (454 total, green).
+Install/runbook: [`../ops/INSTALL_ADMIN.md`](../ops/INSTALL_ADMIN.md).
+
 ## 2026-07-15 — R26: token-less titles never default to Steam anymore
 
 Live during a 100-candidate Kinguin `--submit` run (R25 already active): 6

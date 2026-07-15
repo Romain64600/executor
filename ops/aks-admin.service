@@ -1,0 +1,20 @@
+[Unit]
+Description=AKS Executor admin page (validation + submit)
+After=network.target
+
+[Service]
+User=debian
+Group=debian
+WorkingDirectory=/home/debian/executor
+ExecStart=/usr/bin/python3 /home/debian/executor/scripts/07_admin_server.py --host 127.0.0.1 --port 8650
+Restart=always
+RestartSec=3
+# KillMode=control-group (default): stopping/restarting the service also kills
+# a running 05_submit.py child, so supervision is never silently lost
+# (fail-closed). An in-flight submit is bounded to at most one unverified
+# offer, flagged "interrupted" for manual feed inspection at next startup.
+NoNewPrivileges=yes
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

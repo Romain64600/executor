@@ -380,6 +380,24 @@ sibling `candidates.json` + `validation.json`
 `validated_by` / `validated_at` / fingerprints are thus re-checked at the
 moment of submission, not only at 04_validate time.
 
+**Admin page (2026-07-15):** the operator can validate from the web page
+(`src/admin/`, `scripts/07_admin_server.py`, behind nginx HTTPS + basic auth)
+instead of hand-editing `validation.json`. Same gate, same artifacts: every
+save regenerates the full `candidates.json` + `validation.json` +
+`approved.json` triple through the real `04_validate.py check` — the page can
+never patch `approved.json` alone. Operator overrides (region/edition, from
+the run's own `session_catalog.json` only; platform, informational) rewrite
+the candidate entry with a recomputed fingerprint and an `operator_override`
+audit field that freezes the matcher's original pick, plus
+`operator_override` / `validation_saved` JSONL events. A save is refused when
+`candidates.json` changed since page load (sha256), when an override id is
+not in the session catalog, or when the resulting fingerprints collide. The
+page's "Soumettre" click (authenticated, confirmation modal requiring the
+literal `GO`) is the operator's explicit go; the submit itself is the
+unmodified `05_submit.py`, spawned supervised (exit code + `submit_plan.json`
+read back — never fire-and-forget), one browser-driving run at a time, R24
+modes with the canary cap enforced before the spawn.
+
 ---
 
 ## 6. Stage 4 — Submitter (dry-run by default, locked behind validation)

@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AKS Executor — Validation &amp; Submit</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>AKS Executor — Validation &amp; Submit</h1>
+    <span id="busy" class="badge hidden"></span>
+  </header>
+
+  <div id="error" class="banner hidden"></div>
+  <div id="notice" class="banner notice hidden"></div>
+
+  <main>
+    <aside>
+      <div class="aside-head">
+        <h2>Runs</h2>
+        <button id="refresh-runs" type="button">Rafraîchir</button>
+      </div>
+      <ul id="runs"></ul>
+    </aside>
+
+    <section id="run-panel" class="hidden">
+      <h2 id="run-title"></h2>
+      <div id="run-meta" class="meta"></div>
+
+      <details id="report-box" open>
+        <summary>Rapport normalisé</summary>
+        <pre id="report"></pre>
+      </details>
+
+      <section id="validation-box">
+        <h3>Validation</h3>
+        <div id="catalog-hint" class="hint hidden">
+          Catalogue de session absent — les overrides région/édition sont désactivés.
+          <button id="fetch-catalog" type="button">Récupérer le catalogue</button>
+        </div>
+        <table id="candidates">
+          <thead>
+            <tr>
+              <th>OK</th>
+              <th>#</th>
+              <th>Offre marchand</th>
+              <th>Produit AKS</th>
+              <th>Plateforme</th>
+              <th>Région</th>
+              <th>Édition</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="row">
+          <label for="validated-by">Validé par</label>
+          <input id="validated-by" type="text" placeholder="Romain">
+          <button id="save-validation" type="button" class="primary">Enregistrer la validation</button>
+          <span id="validation-state" class="state"></span>
+        </div>
+      </section>
+
+      <section id="submit-box">
+        <h3>Soumission</h3>
+        <div class="row">
+          <span id="submit-target" class="meta"></span>
+        </div>
+        <div class="row" id="mode-row">
+          <fieldset id="modes">
+            <legend>Mode (R24)</legend>
+            <label><input type="radio" name="mode" value="safe" checked>
+              sécurisé — lot complet validé</label>
+            <label><input type="radio" name="mode" value="learning">
+              apprentissage — canary de 1 (écrit)</label>
+            <label><input type="radio" name="mode" value="advanced">
+              avancé — canary de 1 (écrit)</label>
+          </fieldset>
+          <label for="limit">Limite (optionnelle, ne peut que réduire)</label>
+          <input id="limit" type="number" min="1" step="1">
+        </div>
+        <div class="row">
+          <button id="check-invariants" type="button">Vérifier les invariants</button>
+          <span id="invariants-state" class="state"></span>
+        </div>
+        <div class="row">
+          <button id="dry-run" type="button">Dry-run</button>
+          <button id="real-submit" type="button" class="danger" disabled>Soumettre…</button>
+          <span id="submit-hint" class="hint"></span>
+        </div>
+        <div id="progress" class="hidden">
+          <h4 id="progress-title"></h4>
+          <pre id="events"></pre>
+          <div id="plan-summary"></div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="confirm-dialog">
+    <h3>Confirmation du submit réel</h3>
+    <p>La commande exacte qui sera lancée :</p>
+    <pre id="confirm-argv"></pre>
+    <p id="confirm-count"></p>
+    <p>Taper <strong>GO</strong> pour confirmer (le go explicite de l'opérateur) :</p>
+    <input id="confirm-input" type="text" autocomplete="off">
+    <div class="row">
+      <button id="confirm-cancel" type="button">Annuler</button>
+      <button id="confirm-go" type="button" class="danger" disabled>Soumettre</button>
+    </div>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>
