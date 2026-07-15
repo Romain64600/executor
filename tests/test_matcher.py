@@ -644,23 +644,27 @@ class MatchOfferTests(unittest.TestCase):
         self.assertIsInstance(result, SkippedOffer)
         self.assertIn("no region id for PUBLISHER", result.reason)
 
-    def test_defaulted_steam_requires_steam_only_or_publisher_page(self):
-        # Neither Steam-only nor publisher-direct (e.g. Steam+GoG): the
-        # defaulted Steam is still unverifiable → skip stays.
+    def test_defaulted_platform_is_publisher_regardless_of_page_mix(self):
+        # R26 (2026-07-15, DCS P-51D Mustang / A-10C Warthog escape): a
+        # token-less title is never trusted as Steam anymore, whatever the
+        # page's official platforms say — Steam+GoG, same as Steam-only.
         result = match_offer(
             _offer("Neon Beats Key GLOBAL"),
             self._resolver(official_platforms=("Steam", "GoG")),
         )
-        self.assertIsInstance(result, SkippedOffer)
-        self.assertIn("R20", result.reason)
-        self.assertIn("neither Steam-only nor publisher-direct", result.reason)
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual(result.platform, "PUBLISHER")
 
-    def test_defaulted_steam_passes_on_steam_only_page(self):
+    def test_defaulted_platform_is_publisher_on_steam_only_page(self):
+        # R26: both live DCS pages say "official platforms: Steam." only —
+        # no "Direct Publisher" entry — yet the token-less title still must
+        # not default to Steam (Eagle Dynamics modules are commonly sold as
+        # direct/publisher keys the page's metadata doesn't enumerate).
         result = match_offer(
             _offer("Neon Beats Key GLOBAL"), self._resolver(official_platforms=("Steam",))
         )
         self.assertIsInstance(result, Candidate)
-        self.assertEqual(result.platform, "STEAM")
+        self.assertEqual(result.platform, "PUBLISHER")
 
     def test_defaulted_steam_skips_when_page_lists_no_platforms(self):
         result = match_offer(

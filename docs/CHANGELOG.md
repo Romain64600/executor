@@ -3,6 +3,39 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-15 — R26: token-less titles never default to Steam anymore
+
+Live during a 100-candidate Kinguin `--submit` run (R25 already active): 6
+offers in, candidate #4 (DCS: P-51D Mustang Digital Download CD Key — no
+platform token in the title) had been created as Steam GLOBAL(2). Romain
+flagged it live. The run was killed immediately (confirmed: exactly 6
+`submit_offer` log entries, all successful, nothing further in flight).
+
+The AKS page for DCS P-51D Mustang says "official platforms: Steam." only —
+under the R20-era rule ("a defaulted Steam is trusted only when the page is
+Steam-only"), that's exactly the case that keeps the Steam default. Sibling
+DCS A-10C Warthog (still pending in the same batch) has the identical page
+shape and would have hit the same bug. Romain: *"Si Steam, EA ou autres n'est
+pas stipulé ça sera publisher pour ces offres."* Eagle Dynamics modules are
+commonly sold as direct/publisher keys the page's own official-platforms
+metadata doesn't enumerate — the page being "Steam-only" isn't proof the
+merchant's token-less key is a Steam key.
+
+Fix: R20's "Steam-only page → trust Steam" branch is gone. A token-less title
+with *any* page platform signal now resolves PUBLISHER, unconditionally; only
+a page with *no* official-platforms line at all still SKIPs (zero signal, not
+a wrong default). `src/matcher.py`, mirrored in `EXECUTOR_RULES.md` §4.4. 2
+tests rewritten to match, 385 total, all green.
+
+Scanning the remaining 94 pending candidates found exactly one more hit
+(DCS A-10C Warthog) — re-resolved and corrected in place in `candidates.json`
+(Publisher GLOBAL(1), DLC(16)) rather than a full 3663-offer re-match. The 6
+already-submitted offers were removed from the pending set (already live, not
+re-submitted). Validation was regenerated and the batch resumed. The one
+already-created wrong offer (DCS P-51D Mustang, Steam GLOBAL(2)) needs a
+manual DB correction — same remediation pattern as the Valve Complete Pack
+escape (2026-07-13): Romain fixes the AKS entry by hand.
+
 ## 2026-07-15 — R25: duplicate guard against AKS's own price list
 
 A 43-candidate Kinguin batch, matched the day before, was about to be

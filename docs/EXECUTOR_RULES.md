@@ -212,15 +212,22 @@ World Key GLOBAL" carries no platform token, was defaulted STEAM and entered
 Steam GLOBAL(2) when the product is publisher-direct (Eagle Dynamics); Romain
 had to fix the DB by hand. The only deterministic signal is the resolved AKS
 page's "official platforms:" line (extracted at resolve time, zero extra
-requests). Rules: a **defaulted** STEAM is trusted only when that list is
-exactly `Steam`. **Revision same day (Romain: « Rentrons les en publisher »):**
-when the list instead contains `Direct Publisher`, the token-less key is a
-**publisher key** — enter it as platform PUBLISHER, region `Publisher (1)`
+requests). **Revision `[R26]` (2026-07-15, DCS P-51D Mustang / A-10C Warthog
+escape):** a token-less title is no longer trusted as Steam **at all**, even
+when that list is exactly `Steam` — both DCS pages say "official platforms:
+Steam." with no `Direct Publisher` entry, yet Kinguin's own title omission was
+the real signal (Eagle Dynamics modules are commonly sold as direct/publisher
+keys the page's metadata doesn't enumerate). A DCS P-51D Mustang offer had
+already been created as Steam GLOBAL(2) before this fired live; Romain: *"Si
+Steam, EA ou autres n'est pas stipulé ça sera publisher pour ces offres."*
+Any token-less title with **some** page platform signal (Steam-only,
+Steam+GoG, whatever) is now platform PUBLISHER, region `Publisher (1)`
 (the dropdown's GLOBAL bucket; EU 12, US 13, UK 266 — ids read from the live
 session catalogs of 07-07/07-08, identical; no gift mapping → publisher gifts
-fail closed). Su-27 is exactly this case: Romain corrected the DB to
-publisher, not dropped the offer. An empty/missing list, or a mix that is
-neither Steam-only nor publisher-direct → SKIP with a distinct reason.
+fail closed). Only a page with **no** official-platforms line at all still
+SKIPs (zero signal, not even a wrong one). This supersedes R20's original
+"Steam-only page → trust Steam" branch; Su-27 (page: Steam, Direct Publisher)
+was the first live case, unchanged in outcome.
 An **explicit** title token is the merchant's declaration and is
 trusted — multi-platform pages are normal (an Osmos Steam+GoG page takes a
 Steam key) — **except** when the token has a known page vocabulary

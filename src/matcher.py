@@ -730,19 +730,25 @@ def match_offer(
             return SkippedOffer(
                 offer,
                 "no platform in title and AKS page lists no official platforms"
-                " — Steam default unverifiable (R20)",
+                " — platform unverifiable (R20)",
             )
-        if page_platforms != {"STEAM"}:
-            if "DIRECT PUBLISHER" not in page_platforms:
-                return SkippedOffer(
-                    offer,
-                    "no platform in title and AKS page is neither Steam-only"
-                    " nor publisher-direct — Steam default unverified (R20)",
-                )
-            platform = "PUBLISHER"
-            region_label, region_id, implicit = detect_region(offer, platform)
-            if region_id is None:
-                return SkippedOffer(offer, f"no region id for {platform}/{region_label}")
+        # R26 (2026-07-15, Romain — DCS P-51D Mustang / A-10C Warthog escape):
+        # a token-less title is no longer trusted as Steam even when the
+        # page's own official-platforms line is Steam-only. Both DCS pages
+        # say "official platforms: Steam." with no "Direct Publisher" entry
+        # — the R20-era branch below would have kept the Steam default — yet
+        # Kinguin's own title omission is the real signal (Eagle Dynamics
+        # modules are commonly sold as direct/publisher keys the page's
+        # metadata doesn't enumerate). A DCS P-51D Mustang offer had already
+        # been created as Steam GLOBAL(2) before this fired live; Romain:
+        # "Si Steam, EA ou autres n'est pas stipulé ça sera publisher pour
+        # ces offres." Revises R20's old "Steam-only page → trust Steam"
+        # branch: any token-less title with SOME page platform signal is now
+        # PUBLISHER, period — the "no signal at all" skip above is unchanged.
+        platform = "PUBLISHER"
+        region_label, region_id, implicit = detect_region(offer, platform)
+        if region_id is None:
+            return SkippedOffer(offer, f"no region id for {platform}/{region_label}")
     else:
         page_name = PAGE_PLATFORM_NAMES.get(declared_platform)
         if page_name and page_platforms and page_name.upper() not in page_platforms:
