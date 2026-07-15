@@ -7,10 +7,14 @@
 const $ = (sel) => document.querySelector(sel);
 
 let META = null;
-let CURRENT = null; // { runId, detail, validation }
+let CURRENT = null; // { runId, detail, validation, stamp }
 let POLL_TIMER = null;
 let LOG_OFFSET = 0;
 let INVARIANTS_GREEN = false;
+let DIRTY = false;   // éditions non enregistrées dans le tableau de validation
+let TICKING = false; // garde de réentrance du rafraîchissement automatique
+
+const IDLE_REFRESH_MS = 10000;
 
 // ---------------------------------------------------------------- helpers
 
@@ -80,9 +84,9 @@ function initTheme() {
 // ---------------------------------------------------------------- run list
 
 async function loadRuns() {
-  clearError();
   try {
-    const { runs } = await api('api/runs');
+    const { runs, busy } = await api('api/runs');
+    updateBusyBadge(busy);
     const list = $('#runs');
     list.textContent = '';
     for (const run of runs) {
@@ -105,13 +109,24 @@ async function loadRuns() {
 
 // ---------------------------------------------------------------- run panel
 
+function detailStamp(detail) {
+  // Empreinte de l'état serveur d'un run : sha des candidats + mtime/taille de
+  // chaque artefact (dont admin_submit.json) + statuts — tout changement
+  // (re-match, validation, submit, catalog) la fait bouger.
+  return JSON.stringify([
+    detail.candidates_sha256, detail.files, detail.stages,
+    detail.created_count, detail.failed_count,
+  ]);
+}
+
 async function openRun(runId) {
   clearError();
   stopPolling();
+  $('#stale').classList.add('hidden');
   INVARIANTS_GREEN = false;
   try {
     const detail = await api(`api/runs/${encodeURIComponent(runId)}`);
-    CURRENT = { runId, detail, validation: null };
+    CURRENT = { runId, detail, validation: null, stamp: detailStamp(detail) };
     $('#run-panel').classList.remove('hidden');
     $('#run-title').textContent = runId;
     const stages = detail.stages || {};
@@ -238,6 +253,7 @@ async function loadValidation(runId) {
   summary.textContent =
     `✔ ${createdCount} déjà ajoutée(s) (verrouillées — ré-ajout bloqué côté serveur) · ` +
     `✘ ${failedCount} en échec (ré-approuvables) · ⏳ ${pendingCount} en attente`;
+  DIRTY = false; // le tableau vient d'être rendu depuis l'état serveur
 }
 
 function fp(candidate) {
@@ -554,6 +570,57 @@ function updateBusyBadge(busy) {
   }
 }
 
+// ------------------------------------------------- rafraîchissement auto
+
+/* Toutes les 10 s (onglet visible) : la liste des runs se recharge, et le run
+   ouvert est comparé à son empreinte serveur. S'il a changé : rechargement
+   silencieux — sauf éditions non enregistrées (bandeau "Recharger" à la place,
+   jamais d'écrasement). Un submit lancé hors page (CLI) est aussi visible :
+   ses événements JSONL s'affichent au fil de l'eau. */
+async function idleTick() {
+  if (TICKING || document.hidden) return;
+  TICKING = true;
+  try {
+    await loadRuns();
+    if (!CURRENT || POLL_TIMER || $('#confirm-dialog').open) return;
+    const detail = await api(`api/runs/${encodeURIComponent(CURRENT.runId)}`);
+    const stamp = detailStamp(detail);
+    if (stamp !== CURRENT.stamp) {
+      if (DIRTY) {
+        $('#stale').classList.remove('hidden');
+      } else {
+        await openRun(CURRENT.runId);
+      }
+      return;
+    }
+    // état inchangé sur disque : streamer l'éventuelle activité du log
+    // (ex. submit lancé en CLI — il n'écrit ses artefacts qu'à la fin)
+    const status = await api(
+      `api/runs/${encodeURIComponent(CURRENT.runId)}/submit/status?offset=${LOG_OFFSET}`
+    );
+    LOG_OFFSET = status.offset;
+    if (status.state === 'running' && !POLL_TIMER) {
+      $('#progress').classList.remove('hidden');
+      $('#progress-title').textContent = `${status.kind} en cours (pid ${status.pid})`;
+      startPolling();
+      return;
+    }
+    const lines = (status.events || [])
+      .map((event) => ({ ts: event.ts, line: eventLine(event) }))
+      .filter((entry) => entry.line);
+    if (lines.length) {
+      $('#progress').classList.remove('hidden');
+      if (!$('#progress-title').textContent) {
+        $('#progress-title').textContent = 'activité détectée (log du run)';
+      }
+      const box = $('#events');
+      for (const entry of lines) box.textContent += `${entry.ts}  ${entry.line}\n`;
+      box.scrollTop = box.scrollHeight;
+    }
+  } catch { /* réseau/serveur indisponible : nouvel essai au tick suivant */ }
+  finally { TICKING = false; }
+}
+
 // ---------------------------------------------------------------- init
 
 async function init() {
@@ -575,6 +642,12 @@ async function init() {
   $('#confirm-input').addEventListener('input', (event) => {
     $('#confirm-go').disabled = event.target.value.trim() !== 'GO';
   });
+  // suivi des éditions non enregistrées (protège contre l'auto-rechargement)
+  $('#candidates').addEventListener('change', () => { DIRTY = true; });
+  $('#validated-by').addEventListener('input', () => { DIRTY = true; });
+  $('#stale-reload').addEventListener('click', () => openRun(CURRENT.runId));
+  setInterval(idleTick, IDLE_REFRESH_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) idleTick(); });
   await loadRuns();
 }
 

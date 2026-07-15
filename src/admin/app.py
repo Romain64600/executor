@@ -195,7 +195,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                     )
                 except (RunAccessError, OSError):
                     run["created_count"] = None
-            return self._send_json(200, {"runs": runs})
+            return self._send_json(200, {"runs": runs, "busy": self.state.manager.busy()})
 
         match = RUN_ROUTE.match(path)
         if match:

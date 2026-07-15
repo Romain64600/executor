@@ -116,6 +116,7 @@ class ApiGetTests(AppTestCase):
         response, body = self._json("GET", "/api/runs")
         self.assertEqual(response.status, 200)
         self.assertEqual(body["runs"][0]["run_id"], "20260715-000000-test")
+        self.assertIsNone(body["busy"])  # rien en cours → badge éteint côté UI
         response, detail = self._json("GET", "/api/runs/20260715-000000-test")
         self.assertEqual(detail["merchant"], "GameSeal")
         self.assertEqual(detail["store_id"], "126")
