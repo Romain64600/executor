@@ -14,6 +14,7 @@ from src.matcher import (
     detect_platform,
     detect_region,
     explicit_platform,
+    explicit_platform_from_url,
     extra_significant_words,
     extract_aks_name,
     extract_editions,
@@ -416,6 +417,51 @@ class ExplicitPlatformTests(unittest.TestCase):
         # R20 root cause: the STEAM default is a guess, not a detection.
         self.assertIsNone(explicit_platform("Su-27 for DCS World Key GLOBAL"))
         self.assertEqual(detect_platform("Su-27 for DCS World Key GLOBAL"), "STEAM")
+
+
+class ExplicitPlatformFromUrlTests(unittest.TestCase):
+    def test_eneba_steam_prefix(self):
+        # Eneba escape (2026-07-16): "Apothecarium: The Renaissance of Evil -
+        # Premium Edition" carries no platform word in the title at all, but
+        # Eneba's URL convention (eneba.com/<platform>-<slug>) still declares
+        # it: eneba.com/steam-apothecarium-....
+        self.assertEqual(
+            explicit_platform_from_url(
+                "https://www.eneba.com/steam-apothecarium-the-renaissance-of-evil-premium-edition"
+            ),
+            "STEAM",
+        )
+
+    def test_eneba_other_recognized_prefixes(self):
+        cases = {
+            "https://www.eneba.com/gog-some-game-key-global": "GOG",
+            "https://www.eneba.com/epic-games-divine-knockout-epic-games-key-global": "EPIC",
+            "https://www.eneba.com/uplay-far-cry-new-dawn-ubisoft-connect-key-europe": "UBISOFT",
+            "https://www.eneba.com/origin-mysims-cozy-bundle-origin-key-global": "EA",
+            "https://www.eneba.com/blizzard-world-of-warcraft-mystic-runesaber-battle-net-key": "BATTLENET",
+            "https://www.eneba.com/windows-store-sid-meiers-civilization-vi-windows-store-key": "MICROSOFT",
+        }
+        for url, expected in cases.items():
+            self.assertEqual(explicit_platform_from_url(url), expected, url)
+
+    def test_eneba_unrecognized_prefix_is_none(self):
+        # Console/currency/software prefixes are left unmapped — already
+        # caught by other categorical skips before platform detection runs.
+        for url in (
+            "https://www.eneba.com/xbox-some-game-xbox-live-key-europe",
+            "https://www.eneba.com/psn-lets-sing-2025-psn-key-europe",
+            "https://www.eneba.com/top-up-hay-day-diamonds-philippines",
+            "https://www.eneba.com/other-glary-utilities-pro-5-windows-key-global",
+        ):
+            self.assertIsNone(explicit_platform_from_url(url), url)
+
+    def test_non_eneba_url_is_none(self):
+        # Scoped to eneba.com only — no other merchant uses this URL shape,
+        # and a coincidental "steam-"-prefixed game title elsewhere must not
+        # be misread as a platform declaration.
+        self.assertIsNone(
+            explicit_platform_from_url("https://www.kinguin.net/en/category/1/steam-punk-cd-key")
+        )
 
 
 class MatchOfferTests(unittest.TestCase):

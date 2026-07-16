@@ -3,6 +3,36 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-16 — R29: Eneba's URL carries a platform prefix the title doesn't
+
+Same Eneba run as R28: candidate "Apothecarium: The Renaissance of Evil -
+Premium Edition" had matched as `Publisher GLOBAL(1)`. Romain: "c'est Steam,
+pas publisher." The title carries no platform word anywhere — it should have
+hit R27's token-less-title skip, not Publisher, so this was actually a
+second bug: `explicit_platform(offer.name)` correctly returned `None`, but
+somewhere downstream it still resolved to Publisher instead of skipping.
+
+Root cause was upstream of both: the merchant genuinely does declare the
+platform, just not in the title. Every Eneba listing URL is
+`eneba.com/<platform>-<slug>` — a leading platform-prefix path segment
+(`eneba.com/steam-apothecarium-...`) present on every listing regardless of
+whether the title repeats it. Fix: `explicit_platform_from_url`, checked as
+a fallback after the title, scoped to `eneba.com` URLs only (no other
+merchant's URL has a title-word this could false-positive against) and only
+recognizing prefixes this codebase already has a platform constant for
+(`steam`, `gog`, `epic`, `uplay`→UBISOFT, `origin`→EA, `blizzard`→BATTLENET,
+`windows`→MICROSOFT).
+
+Re-resolving with the fix live turned up a second finding: once correctly
+Steam GLOBAL(2)/Premium(34), R25's duplicate guard caught it — Eneba
+(merchant id 272) already has a price at that exact region/edition on AKS.
+The wrong Publisher classification had been hiding a real duplicate, not
+just mis-entering the platform.
+
+`src/matcher.py` (`explicit_platform_from_url`, wired into `match_offer` as
+`explicit_platform(offer.name) or explicit_platform_from_url(offer.url)`),
+mirrored in `EXECUTOR_RULES.md` §4.4. 4 new tests, 476 total, all green.
+
 ## 2026-07-16 — R28: NFKC-normalize before tokenizing (Eneba "Road to Empress" escape)
 
 Also same session: candidate "Glary Utilities PRO 5" (a PC cleaning/

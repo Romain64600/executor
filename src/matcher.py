@@ -298,6 +298,39 @@ def explicit_platform(title: str) -> str | None:
     return None
 
 
+# Eneba escape (2026-07-16): "Apothecarium: The Renaissance of Evil - Premium
+# Edition" carries NO platform word anywhere in its title, so explicit_platform
+# returned None and it fell into R27's token-less-title branch (correctly
+# SKIPped there, since the AKS page never confirms Direct Publisher) — but
+# it's genuinely Steam, and the merchant says so, just not in the title:
+# Eneba's own URL convention is `eneba.com/<platform>-<slugified-name>`, a
+# leading platform-prefix path segment present on every listing regardless of
+# whether the title repeats it. Only prefixes this codebase already has a
+# platform constant + region mapping for are recognized; console/currency/
+# software prefixes (nintendo, xbox, psn, top, other, riot, …) are left
+# unmapped — they're already caught by the console/currency/software-app
+# categorical skips before platform detection runs.
+ENEBA_URL_PLATFORM_PREFIXES = {
+    "steam": "STEAM",
+    "gog": "GOG",
+    "epic": "EPIC",
+    "uplay": "UBISOFT",
+    "origin": "EA",
+    "blizzard": "BATTLENET",
+    "windows": "MICROSOFT",  # no REGION_IDS entry -> fail-closed skip, not Steam
+}
+
+
+def explicit_platform_from_url(url: str) -> str | None:
+    """Eneba-only: the URL's leading platform-prefix path segment, or None."""
+
+    if "eneba.com" not in url.lower():
+        return None
+    path = urlparse(url).path.strip("/").lower()
+    prefix = path.split("-", 1)[0]
+    return ENEBA_URL_PLATFORM_PREFIXES.get(prefix)
+
+
 def detect_platform(title: str) -> str:
     return explicit_platform(title) or "STEAM"  # default; most PC keys are Steam
 
@@ -687,7 +720,7 @@ def match_offer(
     if reason:
         return SkippedOffer(offer, reason)
 
-    declared_platform = explicit_platform(offer.name)
+    declared_platform = explicit_platform(offer.name) or explicit_platform_from_url(offer.url)
     platform = declared_platform or "STEAM"  # default — R20 verifies it below
     region_label, region_id, implicit = detect_region(offer, platform)
     if region_id is None:

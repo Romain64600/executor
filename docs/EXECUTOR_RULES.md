@@ -251,6 +251,25 @@ reverts to skip; a human enters cases like it deliberately, same as the
 `R19` stub-page philosophy: absent a real signal, don't guess in either
 direction. Su-27 (page: Steam, Direct Publisher — a genuine positive signal)
 is unaffected, still PUBLISHER.
+**Eneba URL prefix `[R29]` (2026-07-16):** "Apothecarium: The Renaissance of
+Evil - Premium Edition" carries no platform word anywhere in its title — it
+fell into R27's token-less branch and correctly SKIPped there — but it's
+genuinely Steam, and Eneba says so, just not in the title: every Eneba
+listing URL is `eneba.com/<platform>-<slug>`, a leading platform-prefix path
+segment present regardless of what the title repeats. `explicit_platform_from_url`
+checks this **only** for `eneba.com` URLs (no other merchant's URL has a
+title-word this could false-positive against) and only recognizes prefixes
+this codebase already has a platform constant for (`steam`, `gog`, `epic`,
+`uplay`→UBISOFT, `origin`→EA, `blizzard`→BATTLENET, `windows`→MICROSOFT);
+console/currency/software prefixes (`nintendo`, `xbox`, `psn`, `top`,
+`other`, `riot`, …) are left unmapped — already caught by the
+console/currency/software-app categorical skips before platform detection
+runs. Checked as a fallback after the title (`explicit_platform(offer.name)
+or explicit_platform_from_url(offer.url)`), so an explicit title token still
+wins when both are present. The same case also exposed an R25 interaction:
+once correctly resolved to Steam GLOBAL(2)/Premium(34), it turned out to
+already be a duplicate on AKS (Eneba merchant id 272) — the wrong Publisher
+classification had been hiding it from the duplicate check too.
 An **explicit** title token is the merchant's declaration and is
 trusted — multi-platform pages are normal (an Osmos Steam+GoG page takes a
 Steam key) — **except** when the token has a known page vocabulary
