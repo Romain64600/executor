@@ -605,8 +605,11 @@ async function pollStatus() {
   }
 }
 
-function renderFinal(status) {
-  stopPolling();
+// Rendu pur (pas de gestion du polling ni de re-fetch) — partagé par
+// renderFinal (fin naturelle d'un polling) et refreshStatus (ouverture d'un
+// run déjà terminé), pour que les deux affichent la même chose sans
+// dépendre l'un de l'autre.
+function renderStatusSummary(status) {
   const summary = $('#plan-summary');
   summary.textContent = '';
   $('#progress').classList.remove('hidden');
@@ -645,11 +648,25 @@ function renderFinal(status) {
     ok,
   };
   updateStatusFooter(null);
+}
+
+function renderFinal(status) {
+  stopPolling();
+  renderStatusSummary(status);
   // refresh everything after a terminal state (catalog file, approved, plan…)
   openRun(CURRENT.runId);
 }
 
 async function refreshStatus() {
+  // Toujours repartir d'un panneau vide : sans ça, un run dont la dernière
+  // action est déjà terminée (ex. une extraction fraîche, ou un submit fini
+  // il y a longtemps) hérite silencieusement du journal/plan du run
+  // précédemment ouvert — vécu en direct (2026-07-16, Romain) : ouvrir un
+  // run Kinguin flambant neuf affichait encore le plan de soumission d'Eneba.
+  stopPolling();
+  $('#progress').classList.add('hidden');
+  $('#events').textContent = '';
+  $('#plan-summary').textContent = '';
   const status = await api(
     `api/runs/${encodeURIComponent(CURRENT.runId)}/submit/status?offset=0`
   ).catch(() => null);
@@ -659,12 +676,9 @@ async function refreshStatus() {
   if (status.state === 'running') {
     $('#progress').classList.remove('hidden');
     $('#progress-title').textContent = `${status.kind} en cours (pid ${status.pid})`;
-    $('#events').textContent = '';
     startPolling();
   } else if (status.state && status.state !== 'idle') {
-    $('#progress').classList.remove('hidden');
-    $('#progress-title').textContent =
-      `dernier run : ${status.kind || '?'} — ${status.state} (exit ${status.exit_code})`;
+    renderStatusSummary(status);
     if (status.state === 'interrupted' || status.state === 'orphaned') {
       showError(new Error(status.note || 'run interrompu — inspecter le feed et submit_plan.json'));
     }
