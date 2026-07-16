@@ -25,6 +25,7 @@ from src.matcher import (
     missing_aks_words,
     precheck_skip,
     resolve_aks,
+    search_aks_slugs,
     tokenize,
 )
 
@@ -354,6 +355,80 @@ class SlugAndResolveTests(unittest.TestCase):
         resolve_aks("Neon Beats", fake_http)
         self.assertTrue(seen)
         self.assertTrue(all(ua == "AKS/Staff" for ua in seen))
+
+
+class SearchFallbackTests(unittest.TestCase):
+    """R30 (2026-07-16, Romain): AKS's own site search, tried only when
+    slug-guessing finds nothing — filtered by the SAME R01/R01b checks as a
+    guessed slug, never trusted on its own."""
+
+    SEARCH_PAGE = (
+        '<a href="https://www.allkeyshop.com/blog/buy-road-to-empress-cd-key-compare-prices/">x</a>'
+        '<a href="https://www.allkeyshop.com/blog/buy-gta-5-cd-key-compare-prices/">x</a>'
+        '<a href="https://www.allkeyshop.com/blog/buy-road-to-empress-cd-key-compare-prices/">dup</a>'
+        '<a href="https://www.allkeyshop.com/blog/buy-palworld-cd-key-compare-prices/">x</a>'
+        '<a href="https://www.allkeyshop.com/blog/buy-forza-horizon-6-cd-key-compare-prices/">x</a>'
+    )
+
+    def test_search_extracts_distinct_slugs_respecting_limit(self):
+        def fake_http(url, timeout=8, user_agent=None):
+            return HttpProbeResult(url=url, ok=True, status=200, body=self.SEARCH_PAGE)
+
+        slugs = search_aks_slugs("Road to Empress", fake_http, limit=3)
+        self.assertEqual(slugs, ["road-to-empress", "gta-5", "palworld"])
+
+    def test_search_empty_on_non_200(self):
+        def fake_http(url, timeout=8, user_agent=None):
+            return HttpProbeResult(url=url, ok=False, status=500, body="")
+
+        self.assertEqual(search_aks_slugs("Road to Empress", fake_http), [])
+
+    def test_resolve_falls_back_to_search_when_slugs_all_404(self):
+        calls = []
+
+        def fake_http(url, timeout=8, user_agent=None):
+            calls.append(url)
+            if "?s=" in url:
+                return HttpProbeResult(url=url, ok=True, status=200, body=self.SEARCH_PAGE)
+            if "road-to-empress" in url and "?s=" not in url:
+                return HttpProbeResult(url=url, ok=True, status=200, body=AKS_PAGE)
+            return HttpProbeResult(url=url, ok=False, status=404, body="")
+
+        res = resolve_aks("Some Title Slug-Guessing Cannot Build", fake_http)
+        self.assertIsNotNone(res)
+        self.assertEqual(res.slug, "road-to-empress")
+        self.assertTrue(any("?s=" in c for c in calls), "search was never queried")
+
+    def test_resolve_skips_search_after_transient_failure(self):
+        # A transient signal from a GUESSED slug still fails closed
+        # immediately — the fallback never runs, search is never queried.
+        calls = []
+
+        def fake_http(url, timeout=8, user_agent=None):
+            calls.append(url)
+            return HttpProbeResult(url=url, ok=False, status=403, body="", error="403")
+
+        with self.assertRaises(AksProbeUnreliable):
+            resolve_aks("Neon Beats", fake_http)
+        self.assertFalse(any("?s=" in c for c in calls), "search must not run after a transient failure")
+
+    def test_resolve_skips_search_after_unreadable_name(self):
+        calls = []
+        page = '<html><body><div data-product-id="207"></div></body></html>'
+
+        def fake_http(url, timeout=8, user_agent=None):
+            calls.append(url)
+            return HttpProbeResult(url=url, ok=True, status=200, body=page)
+
+        with self.assertRaises(AksNameUnreadable):
+            resolve_aks("Call of Duty: Modern Warfare 3 (2011)", fake_http)
+        self.assertFalse(any("?s=" in c for c in calls), "search must not run after an unreadable name")
+
+    def test_resolve_none_when_search_also_finds_nothing(self):
+        def fake_http(url, timeout=8, user_agent=None):
+            return HttpProbeResult(url=url, ok=False, status=404, body="")
+
+        self.assertIsNone(resolve_aks("Nope", fake_http))
 
 
 class ExtractEditionsTests(unittest.TestCase):

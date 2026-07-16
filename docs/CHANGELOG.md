@@ -3,6 +3,31 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-16 — R30: AKS site-search fallback when every guessed slug 404s
+
+Romain asked why the matcher only guesses a slug and never queries an LLM or
+AKS's APIv2 to resolve the product page — and separately flagged a concrete
+failure mode of a naive search fallback: a weak/no-match query gets padded by
+AKS with unrelated "top games" filler, so a search hit can't be trusted on
+its own. Decision: still no LLM (non-deterministic, would sit upstream of
+every other check in this stage) and no APIv2, but add AKS's own WordPress
+search (`/blog/?s=`) as a **fallback** — only after every guessed slug 404s
+cleanly (a transient probe failure or unreadable page name still fails
+closed and never reaches search) — with a **20s timeout** (the endpoint is
+slow; the default 5s used everywhere else starves it) and each of up to 3
+result slugs probed and identity-checked exactly like a guessed slug: same
+R01 (every AKS word present in the title) / R01b (no dangerous qualifier)
+gate, no shortcut.
+
+Live-verified the filler risk is real but harmless: Eneba "Worms Collection
+2014 Steam Key (PC) EUROPE" (no guessable AKS page) search-resolved to an
+unrelated page ("Assassin's Creed Black Flag Resynced") — R01 correctly
+SKIPped it (`missing AKS words: ASSASSIN'S, CREED, BLACK, FLAG, RESYNCED`).
+Spot-checked against real skips from the same Eneba run: most token-less/
+unusual titles still correctly resolve to nothing even with search enabled
+— yield is low, as expected for the batch's failure modes, but the
+mechanism never bypasses the identity gate.
+
 ## 2026-07-16 — R29: Eneba's URL carries a platform prefix the title doesn't
 
 Same Eneba run as R28: candidate "Apothecarium: The Renaissance of Evil -

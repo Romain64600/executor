@@ -24,7 +24,7 @@ import time
 import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Callable
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from src.aks_env import AKS_STAFF_UA, http_get
 from src.contracts import NormalizedFeed, NormalizedOffer
@@ -36,6 +36,19 @@ AKS_BUY_URL = "https://www.allkeyshop.com/blog/buy-{slug}-cd-key-compare-prices/
 # allkeyshop.com — http_get refuses it for any other host (audit #4, 2026-07-08).
 AKS_PROBE_UA = AKS_STAFF_UA
 AKS_PROBE_DELAY_S = 0.3
+
+# R30 (2026-07-16, Romain) — AKS's own site search, tried only when
+# slug-guessing finds nothing. A WordPress `?s=` search is far heavier than a
+# single product-page probe (confirmed live: ~15-20s, not the ~1s of a normal
+# slug probe) — this is deliberately a last-resort fallback, not a first try.
+AKS_SEARCH_URL = "https://www.allkeyshop.com/blog/"
+AKS_SEARCH_TIMEOUT_S = 20
+# Confirmed live (Romain, 2026-07-16): when the query has no good match, AKS
+# pads the results with unrelated "top games" filler instead of an empty
+# list — the search alone cannot tell a real hit from filler. Bounded to a
+# handful of candidates (cost, not trust): trust comes from the SAME R01/R01b
+# checks every guessed slug already goes through downstream, unchanged.
+AKS_SEARCH_CANDIDATE_LIMIT = 3
 
 # -- classification tables --------------------------------------------------
 CONSOLE_TOKENS = ("XBOX", "PLAYSTATION", "PS4", "PS5", "PSN", "NINTENDO", "SWITCH")
@@ -460,6 +473,20 @@ def _strip_trailing_phrases(text: str, phrases: tuple[str, ...]) -> str:
     return text
 
 
+def cleaned_title(name: str) -> str:
+    """Parens + trailing market noise stripped, apostrophes normalized.
+
+    The shared first step for both slug-guessing (build_slug_candidates) and
+    the AKS site-search fallback (search_aks_slugs, R30) — human-readable
+    text, not yet hyphenated into a slug. "Endless Space - Disharmony"-style
+    dashed subtitles are kept; only trailing platform/region/format noise is
+    stripped ("PC", "Steam Key", "GLOBAL", …).
+    """
+
+    without_parens = re.sub(r"\([^)]*\)", " ", normalize_apostrophes(name)).strip()
+    return _strip_trailing_phrases(without_parens, _TRAILING_NOISE_PHRASES)
+
+
 def build_slug_candidates(name: str) -> list[str]:
     """Ordered AKS slug guesses, most specific first.
 
@@ -472,7 +499,7 @@ def build_slug_candidates(name: str) -> list[str]:
     """
 
     without_parens = re.sub(r"\([^)]*\)", " ", normalize_apostrophes(name)).strip()
-    full = _strip_trailing_phrases(without_parens, _TRAILING_NOISE_PHRASES)
+    full = cleaned_title(name)
     head = re.split(r"\s[-–—]\s", without_parens)[0]
     head = _strip_trailing_phrases(head, _TRAILING_NOISE_PHRASES)
     bases = [
@@ -598,8 +625,63 @@ class AksNameUnreadable(Exception):
     """
 
 
+def _resolution_from_body(slug: str, url: str, body: str) -> AksResolution | None:
+    """Shared extraction step for a 200 response — used by both the
+    slug-guess loop and the search-fallback loop below."""
+
+    product_id = extract_product_id(body)
+    if not product_id:
+        return None
+    aks_name = extract_aks_name(body)
+    if not aks_name:
+        return None
+    return AksResolution(
+        slug=slug,
+        url=url,
+        product_id=product_id,
+        aks_name=aks_name,
+        editions=extract_editions(body),
+        official_platforms=extract_official_platforms(body),
+        prices=extract_prices(body),
+    )
+
+
+def search_aks_slugs(
+    name: str, http_get_fn: Callable[..., Any] = http_get, limit: int = AKS_SEARCH_CANDIDATE_LIMIT
+) -> list[str]:
+    """AKS's own WP site search (`?s=`), as a candidate source of last resort.
+
+    Read-only, returns SLUGS ONLY — unverified. The caller (resolve_aks) runs
+    the exact same extraction as a guessed slug, and match_offer's R01/R01b
+    checks are what actually decide, exactly like a guessed slug: search can
+    return unrelated "top games" filler when it has no good match (confirmed
+    live, Romain 2026-07-16), so a search hit is never trusted on its own.
+    """
+
+    query = cleaned_title(name)
+    if not query:
+        return []
+    url = f"{AKS_SEARCH_URL}?s={quote(query)}"
+    probe = http_get_fn(url, timeout=AKS_SEARCH_TIMEOUT_S, user_agent=AKS_PROBE_UA)
+    if not (probe.ok and probe.status == 200 and probe.body):
+        return []
+    slugs: list[str] = []
+    for slug in re.findall(r"/blog/buy-([a-z0-9-]+)-cd-key-compare-prices/", probe.body):
+        if slug not in slugs:
+            slugs.append(slug)
+        if len(slugs) >= limit:
+            break
+    return slugs
+
+
 def resolve_aks(name: str, http_get_fn: Callable[..., Any] = http_get) -> AksResolution | None:
-    """Try each candidate slug read-only; return the first real product page."""
+    """Try each candidate slug read-only; return the first real product page.
+
+    Falls back to search_aks_slugs (R30) only when every guessed slug comes
+    back cleanly 404/410 — a transient or unreadable signal from a *guessed*
+    slug still fails closed immediately, same as before; the fallback is
+    "try harder before giving up", not a new correctness gate.
+    """
 
     transient: list[str] = []
     unreadable: list[str] = []
@@ -612,28 +694,30 @@ def resolve_aks(name: str, http_get_fn: Callable[..., Any] = http_get) -> AksRes
             if probe.status not in (404, 410):
                 transient.append(f"{slug} -> {probe.status or probe.error}")
             continue
-        product_id = extract_product_id(probe.body)
-        if not product_id:
-            continue
-        aks_name = extract_aks_name(probe.body)
-        if not aks_name:
+        resolution = _resolution_from_body(slug, url, probe.body)
+        if resolution is None:
+            if not extract_product_id(probe.body):
+                continue
             # Never fall back to the offer title: name checks would compare
             # the title to itself and pass anything (fail-open).
             unreadable.append(slug)
             continue
-        return AksResolution(
-            slug=slug,
-            url=url,
-            product_id=product_id,
-            aks_name=aks_name,
-            editions=extract_editions(probe.body),
-            official_platforms=extract_official_platforms(probe.body),
-            prices=extract_prices(probe.body),
-        )
+        return resolution
     if unreadable:
         raise AksNameUnreadable("; ".join(unreadable))
     if transient:
         raise AksProbeUnreliable("; ".join(transient))
+
+    for slug in search_aks_slugs(name, http_get_fn):
+        url = aks_url(slug)
+        if http_get_fn is http_get:
+            time.sleep(AKS_PROBE_DELAY_S)
+        probe = http_get_fn(url, timeout=8, user_agent=AKS_PROBE_UA)
+        if not (probe.ok and probe.status == 200 and probe.body):
+            continue
+        resolution = _resolution_from_body(slug, url, probe.body)
+        if resolution is not None:
+            return resolution
     return None
 
 

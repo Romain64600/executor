@@ -389,6 +389,29 @@ yields `{}` there by design). The same resolve pass extracts the page's
 "official platforms:" list (`extract_official_platforms`) that feeds the §4.4
 platform gate `[R20]`.
 
+**Site-search fallback `[R30]` (2026-07-16):** when every guessed slug 404s
+(deliberately no LLM/APIv2 resolution step — a model call is not
+deterministic and would sit upstream of every other check in this stage;
+resolution stays plain HTTP + regex, arbitrated by the same R01/R01b identity
+gate as everything else), fall back to AKS's own WordPress search
+(`/blog/?s={cleaned title}`, 20s timeout — the endpoint is slow, 5s starves
+it) before giving up. Extracts up to 3 product-page slugs from the results
+HTML and probes each exactly like a guessed slug — same `_resolution_from_body`
+path, same downstream §4.1/§4.1b checks. Only runs after slug-guessing is
+**cleanly exhausted** (every candidate 404/empty) — a transient probe failure
+(`AksProbeUnreliable`) or an unreadable page name (`AksNameUnreadable`) still
+fails closed and never reaches search, same as before. Romain flagged the
+real risk directly: AKS pads a weak/no-match search with unrelated "top
+games" filler, so a search hit is **not** trusted on its own — it is just
+another candidate page, subject to the exact same R01/R01b identity checks as
+a guessed slug. Verified live: Eneba "Worms Collection 2014 Steam Key (PC)
+EUROPE" (no guessable AKS page) search-resolved to an unrelated page
+("Assassin's Creed Black Flag Resynced") — R01 correctly SKIPped it
+("missing AKS words: ASSASSIN'S, CREED, BLACK, FLAG, RESYNCED"). Real-world
+yield on the same Eneba skip batch was low (most token-less/unusual titles
+still correctly resolve to nothing) but the mechanism is safe: search only
+ever *proposes* a page, it never bypasses the identity gate.
+
 ### 4.8 Limits & doubt
 Max **100** candidates by default unless Romain asks otherwise `[S26]`. Doubt
 after investigation → **SKIP**, do not ask `[G02]`. The live WP-admin dropdown is
