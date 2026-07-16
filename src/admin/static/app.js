@@ -372,6 +372,13 @@ function select(kind, options, currentKey, enabled, currentLabel) {
 
 // ---------------------------------------------------------------- validation save
 
+function checkAll() {
+  for (const box of document.querySelectorAll('#candidates tbody .approve')) {
+    if (!box.disabled) box.checked = true;
+  }
+  DIRTY = true;
+}
+
 async function saveValidation() {
   clearError();
   const payload = CURRENT.validation;
@@ -759,6 +766,7 @@ async function init() {
   initMerchantSelect();
   $('#start-extract').addEventListener('click', startExtract);
   $('#refresh-runs').addEventListener('click', loadRuns);
+  $('#check-all').addEventListener('click', checkAll);
   $('#save-validation').addEventListener('click', saveValidation);
   $('#check-invariants').addEventListener('click', checkInvariants);
   $('#dry-run').addEventListener('click', dryRun);
