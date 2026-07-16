@@ -24,6 +24,20 @@
   <main>
     <aside>
       <div class="aside-head">
+        <h2>Nouveau run</h2>
+      </div>
+      <div id="new-extract" class="row">
+        <select id="new-merchant">
+          <option value="">Marchand…</option>
+          <option value="custom">Autre (saisir)…</option>
+        </select>
+        <input id="new-merchant-custom" type="text" placeholder="Nom du marchand" class="hidden">
+        <input id="new-store-id" type="text" placeholder="Store ID" inputmode="numeric">
+        <button id="start-extract" type="button" class="primary">Lancer l'extraction</button>
+      </div>
+      <div id="new-extract-hint" class="hint"></div>
+
+      <div class="aside-head">
         <h2>Runs</h2>
         <button id="refresh-runs" type="button">Rafraîchir</button>
       </div>

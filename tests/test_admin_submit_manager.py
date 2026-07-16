@@ -44,6 +44,27 @@ print(json.dumps({{"argv": sys.argv[1:], "ok": True}}))
 sys.exit({exit_code})
 """
 
+# Mirrors scripts/02_extract_feed.py's relevant CLI shape. Runs with
+# cwd=repo_root (same as the real _spawn), so "runs/<run-id>/" resolves the
+# same way a real extraction's default --out-dir would.
+FAKE_EXTRACT_SCRIPT = """\
+import argparse, json, sys, time
+from pathlib import Path
+p = argparse.ArgumentParser()
+p.add_argument("--merchant", required=True)
+p.add_argument("--store-id", required=True)
+p.add_argument("--run-id", required=True)
+args = p.parse_args()
+time.sleep({sleep})
+out = Path("runs") / args.run_id
+out.mkdir(parents=True, exist_ok=True)
+out.joinpath("offers.json").write_text(
+    json.dumps({{"merchant": args.merchant, "offers": []}}), encoding="utf-8"
+)
+print(json.dumps({{"run_id": args.run_id, "merchant": args.merchant, "ok": True}}))
+sys.exit({exit_code})
+"""
+
 
 class ManagerTestCase(unittest.TestCase):
     def setUp(self):
@@ -84,6 +105,15 @@ class ManagerTestCase(unittest.TestCase):
         script.write_text(FAKE_SCRIPT.format(sleep=sleep, exit_code=exit_code), encoding="utf-8")
         return SubmitManager(
             self.root, log_dir=self.logs, submit_script=script, clock=CLOCK
+        )
+
+    def _extract_manager(self, sleep=0.0, exit_code=0):
+        script = self.root / f"fake_extract_{sleep}_{exit_code}.py"
+        script.write_text(
+            FAKE_EXTRACT_SCRIPT.format(sleep=sleep, exit_code=exit_code), encoding="utf-8"
+        )
+        return SubmitManager(
+            self.root, log_dir=self.logs, extract_script=script, clock=CLOCK
         )
 
 
@@ -197,6 +227,64 @@ class RunLifecycleTests(ManagerTestCase):
         self.assertTrue(manager.wait_idle(timeout=10))
         # released after completion
         manager.start_catalog(self.run, by="Romain")
+        self.assertTrue(manager.wait_idle(timeout=10))
+
+
+class StartExtractTests(ManagerTestCase):
+    """Stage 1, launched from the admin page: merchant + store_id, no existing run_dir."""
+
+    def test_run_id_and_argv(self):
+        manager = self._extract_manager()
+        result = manager.start_extract("GameSeal", "126", by="Romain")
+        self.assertTrue(result["started"])
+        self.assertEqual(result["run_id"], "20260715-120000-gameseal")
+        self.assertIn("--merchant", result["argv"])
+        self.assertIn("GameSeal", result["argv"])
+        self.assertIn("--store-id", result["argv"])
+        self.assertIn("126", result["argv"])
+        self.assertIn("--run-id", result["argv"])
+        self.assertTrue(manager.wait_idle(timeout=10))
+        self.assertTrue((self.runs / result["run_id"]).is_dir())
+
+    def test_merchant_with_spaces_gets_a_safe_run_id_slug(self):
+        # "Instant Gaming" (a real merchant in this catalog) must not produce
+        # a run_id containing a space — RUN_ID_RE (admin/runs.py) rejects it.
+        manager = self._extract_manager()
+        result = manager.start_extract("Instant Gaming", "28", by="Romain")
+        self.assertEqual(result["run_id"], "20260715-120000-instant-gaming")
+        self.assertTrue(manager.wait_idle(timeout=10))
+
+    def test_bad_store_id_refused_before_spawn(self):
+        manager = self._extract_manager()
+        with self.assertRaises(SubmitStartError) as ctx:
+            manager.start_extract("GameSeal", "not-a-number", by="Romain")
+        self.assertEqual(ctx.exception.code, "bad_store_id")
+        self.assertIsNone(manager.busy())
+
+    def test_empty_merchant_refused(self):
+        manager = self._extract_manager()
+        with self.assertRaises(SubmitStartError) as ctx:
+            manager.start_extract("   ", "126", by="Romain")
+        self.assertEqual(ctx.exception.code, "bad_merchant")
+
+    def test_extract_supervised_to_completion(self):
+        manager = self._extract_manager()
+        result = manager.start_extract("GameSeal", "126", by="Romain")
+        self.assertTrue(manager.wait_idle(timeout=10))
+        run_dir = self.runs / result["run_id"]
+        state = json.loads((run_dir / "admin_submit.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["state"], "done")
+        self.assertEqual(state["kind"], "extract")
+        self.assertTrue((run_dir / "offers.json").is_file())
+        events = [e["event"] for e in tail_log_events(self.logs / f"{run_dir.name}.jsonl", 0)[0]]
+        self.assertEqual(events, ["admin_submit_started", "admin_submit_finished"])
+
+    def test_second_start_refused_while_extract_running(self):
+        manager = self._extract_manager(sleep=2.0)
+        manager.start_extract("GameSeal", "126", by="Romain")
+        with self.assertRaises(SubmitStartError) as ctx:
+            manager.start_extract("Kinguin", "58", by="Romain")
+        self.assertEqual(ctx.exception.code, "submit_in_progress")
         self.assertTrue(manager.wait_idle(timeout=10))
 
 

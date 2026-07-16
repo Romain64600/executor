@@ -281,6 +281,8 @@ class AdminHandler(BaseHTTPRequestHandler):
 
         if path == "/api/invariants/check":
             return self._post_invariants()
+        if path == "/api/extract":
+            return self._post_extract()
 
         match = RUN_ROUTE.match(path)
         if match:
@@ -325,6 +327,14 @@ class AdminHandler(BaseHTTPRequestHandler):
         body = self._json_body()
         by = str(body.get("by") or self._basic_user() or "operateur")
         result = self.state.manager.start_catalog(run_dir, by=by)
+        self._send_json(200, result)
+
+    def _post_extract(self) -> None:
+        body = self._json_body()
+        by = str(body.get("by") or self._basic_user() or "operateur")
+        result = self.state.manager.start_extract(
+            str(body.get("merchant", "")), str(body.get("store_id", "")), by=by,
+        )
         self._send_json(200, result)
 
     def _post_submit(self, run_dir: Path) -> None:

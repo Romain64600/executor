@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -43,9 +44,11 @@ UI_EVENTS = frozenset(
         "feed_page",
         "feed_sweep",
         "feed_indexed",
+        "feed_extracted",
         "submit_offer",
         "skip",
         "run_stopped",
+        "aborted",
         "pacing",
         "operator_override",
         "validation_saved",
@@ -217,12 +220,14 @@ class SubmitManager:
         *,
         log_dir: Path | None = None,
         submit_script: Path | None = None,
+        extract_script: Path | None = None,
         python: str = sys.executable,
         clock=_utc_now_iso,
     ) -> None:
         self.repo_root = repo_root
         self.log_dir = log_dir or (repo_root / "logs")
         self.submit_script = submit_script or (repo_root / "scripts" / "05_submit.py")
+        self.extract_script = extract_script or (repo_root / "scripts" / "02_extract_feed.py")
         self.python = python
         self.clock = clock
         self._mutex = threading.Lock()
@@ -395,6 +400,48 @@ class SubmitManager:
             ]
             return self._spawn(run_dir, kind="catalog", argv=argv, meta={"by": by})
 
+    def start_extract(self, merchant: str, store_id: str, *, by: str) -> dict[str, Any]:
+        """Stage 1 (read-only): create a fresh run and launch the extractor.
+
+        Unlike submit/catalog, there is no existing run_dir yet — the operator
+        types merchant + store_id (never derived, there is nothing to derive
+        from) and this mints a new run_id the same way the CLI's own default
+        does (``<timestamp>-<merchant slug>``), pre-creates the directory so
+        `_spawn`'s state file has somewhere to land, then hands off to the
+        unmodified `02_extract_feed.py` exactly like a manual CLI run would.
+        """
+
+        merchant = merchant.strip()
+        store_id = store_id.strip()
+        if not merchant:
+            raise SubmitStartError("bad_merchant", "merchant requis", http_status=400)
+        if not store_id.isdigit():
+            raise SubmitStartError(
+                "bad_store_id", f"store_id doit être numérique, reçu {store_id!r}",
+                http_status=400,
+            )
+        with self._mutex:
+            self._ensure_free()
+            stamp = datetime.strptime(self.clock(), "%Y-%m-%dT%H:%M:%SZ").strftime("%Y%m%d-%H%M%S")
+            slug = re.sub(r"[^a-z0-9]+", "-", merchant.lower()).strip("-") or "merchant"
+            run_id = f"{stamp}-{slug}"
+            run_dir = self.repo_root / "runs" / run_id
+            run_dir.mkdir(parents=True, exist_ok=False)
+            argv = [
+                self.python,
+                str(self.extract_script),
+                "--merchant",
+                merchant,
+                "--store-id",
+                store_id,
+                "--run-id",
+                run_id,
+            ]
+            return self._spawn(
+                run_dir, kind="extract", argv=argv,
+                meta={"merchant": merchant, "store_id": store_id, "by": by},
+            )
+
     def _spawn(
         self, run_dir: Path, *, kind: str, argv: list[str], meta: dict[str, Any]
     ) -> dict[str, Any]:
@@ -422,7 +469,7 @@ class SubmitManager:
         )
         self._active = {"run_id": run_dir.name, "kind": kind, "pid": proc.pid, "thread": thread}
         thread.start()
-        return {"started": True, "kind": kind, "pid": proc.pid, "argv": argv}
+        return {"started": True, "kind": kind, "pid": proc.pid, "argv": argv, "run_id": run_dir.name}
 
     # -- supervision ---------------------------------------------------------
 

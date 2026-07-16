@@ -17,6 +17,22 @@ let LAST_TERMINAL = null; // { text, ok } — dernier run terminé, affiché en 
 
 const IDLE_REFRESH_MS = 10000;
 
+// Marchands connus (storeId AKS) — juste un raccourci de saisie, "Autre" reste
+// disponible pour un marchand qui n'y figure pas encore.
+const MERCHANTS = [
+  { name: 'Kinguin', storeId: '58' },
+  { name: 'G2A', storeId: '38' },
+  { name: 'Driffle', storeId: '127' },
+  { name: 'Eneba', storeId: '19' },
+  { name: 'GameSeal', storeId: '126' },
+  { name: 'K4G', storeId: '92' },
+  { name: 'Gameboost', storeId: '157' },
+  { name: 'CJS-CDKeys', storeId: '30' },
+  { name: 'Instant Gaming', storeId: '28' },
+  { name: 'Gamivo', storeId: '51' },
+  { name: 'Allyouplay', storeId: '17' },
+];
+
 // ---------------------------------------------------------------- helpers
 
 function el(tag, attrs = {}, children = []) {
@@ -80,6 +96,51 @@ function initTheme() {
     const current = document.documentElement.getAttribute('data-theme') || 'dark';
     applyTheme(current === 'dark' ? 'light' : 'dark');
   });
+}
+
+// ------------------------------------------------------ nouveau run (stage 1)
+
+function initMerchantSelect() {
+  const select = $('#new-merchant');
+  for (const m of MERCHANTS) {
+    select.appendChild(el('option', { value: m.name, text: `${m.name} (store ${m.storeId})` }));
+  }
+  select.addEventListener('change', () => {
+    const custom = select.value === 'custom';
+    $('#new-merchant-custom').classList.toggle('hidden', !custom);
+    const known = MERCHANTS.find((m) => m.name === select.value);
+    if (known) $('#new-store-id').value = known.storeId;
+    else if (!custom) $('#new-store-id').value = '';
+  });
+}
+
+async function startExtract() {
+  clearError();
+  const select = $('#new-merchant');
+  const merchant = select.value === 'custom'
+    ? $('#new-merchant-custom').value.trim()
+    : select.value;
+  const storeId = $('#new-store-id').value.trim();
+  const hint = $('#new-extract-hint');
+  if (!merchant || !storeId) {
+    hint.textContent = 'Marchand et store ID requis.';
+    return;
+  }
+  hint.textContent = '';
+  $('#start-extract').disabled = true;
+  try {
+    const result = await api('api/extract', {
+      method: 'POST',
+      body: JSON.stringify({ merchant, store_id: storeId }),
+    });
+    hint.textContent = `Extraction lancée : ${result.run_id}`;
+    await loadRuns();
+    await openRun(result.run_id);
+  } catch (err) {
+    showError(err);
+  } finally {
+    $('#start-extract').disabled = false;
+  }
 }
 
 // ---------------------------------------------------------------- run list
@@ -695,6 +756,8 @@ async function init() {
     showError(err);
     return;
   }
+  initMerchantSelect();
+  $('#start-extract').addEventListener('click', startExtract);
   $('#refresh-runs').addEventListener('click', loadRuns);
   $('#save-validation').addEventListener('click', saveValidation);
   $('#check-invariants').addEventListener('click', checkInvariants);
