@@ -121,6 +121,10 @@ class PrecheckSkipTests(unittest.TestCase):
             "Windows 11 Pro OEM CD Key",
             "Avast Premium Security 2024 Key",
             "Express VPN 12 Months Key",
+            # Eneba escape (2026-07-16): "Glary Utilities PRO 5" reached the
+            # candidate list — a PC cleaning/optimization utility, same
+            # category as CCleaner/IObit, missing from the brand list.
+            "Glary Utilities PRO 5 (Windows) Key GLOBAL",
         ):
             self.assertIn("software/app", precheck_skip(_offer(title)), title)
 
