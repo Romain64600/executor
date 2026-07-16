@@ -13,6 +13,7 @@ let LOG_OFFSET = 0;
 let INVARIANTS_GREEN = false;
 let DIRTY = false;   // éditions non enregistrées dans le tableau de validation
 let TICKING = false; // garde de réentrance du rafraîchissement automatique
+let LAST_TERMINAL = null; // { text, ok } — dernier run terminé, affiché en pied de page
 
 const IDLE_REFRESH_MS = 10000;
 
@@ -544,12 +545,14 @@ function renderFinal(status) {
   $('#progress-title').textContent =
     `${status.kind || 'run'} — ${status.state} (exit ${status.exit_code})`;
   const plan = status.submit_plan;
+  let footerHeader = null;
   if (plan && !plan.error) {
     const header = plan.created === null
       ? `DRY-RUN — ${(plan.plan || []).length} offre(s) planifiée(s)`
       : `créées : ${plan.created} / tentatives : ${plan.write_attempts}` +
         (plan.aborted ? ` — ABORTED: ${plan.aborted}` : '') +
         (plan.stopped ? ` — STOPPED: ${plan.stopped}` : '');
+    footerHeader = header;
     summary.appendChild(el('p', { class: 'plan-header', text: header }));
     const list = el('ul', { class: 'plan-list' });
     for (const entry of plan.plan || []) {
@@ -567,6 +570,13 @@ function renderFinal(status) {
   if (status.state === 'failed' && status.stdout_tail) {
     summary.appendChild(el('pre', { class: 'stdout', text: status.stdout_tail.slice(-4000) }));
   }
+  const ok = status.state === 'done' && !(plan && (plan.aborted || plan.error));
+  LAST_TERMINAL = {
+    text: `${ok ? '✔' : '✘'} ${status.kind || 'run'} sur ${CURRENT.runId} — ${status.state}` +
+      (footerHeader ? ` — ${footerHeader}` : ''),
+    ok,
+  };
+  updateStatusFooter(null);
   // refresh everything after a terminal state (catalog file, approved, plan…)
   openRun(CURRENT.runId);
 }
@@ -601,6 +611,27 @@ function updateBusyBadge(busy) {
   } else {
     badge.classList.add('hidden');
   }
+  updateStatusFooter(busy);
+}
+
+/* Pied de page persistant (visible en scrollant, contrairement au badge de
+   l'en-tête) : priorité au run actif, sinon le résumé du dernier run terminé
+   (posé par renderFinal), sinon "Inactif". Répond directement au besoin de
+   voir la fin d'un ajout d'offres validées sans rester les yeux sur la page. */
+function updateStatusFooter(busy) {
+  const footer = $('#status-footer');
+  if (busy) {
+    footer.textContent = `⏳ ${busy.kind} en cours sur ${busy.run_id}`;
+    footer.className = 'busy';
+    return;
+  }
+  if (LAST_TERMINAL) {
+    footer.textContent = LAST_TERMINAL.text;
+    footer.className = LAST_TERMINAL.ok ? 'done-ok' : 'done-bad';
+    return;
+  }
+  footer.textContent = 'Inactif';
+  footer.className = 'idle';
 }
 
 // ------------------------------------------------- rafraîchissement auto

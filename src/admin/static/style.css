@@ -74,7 +74,28 @@ body {
   font-size: 14px;
   color: var(--text);
   background: var(--bg);
+  padding-bottom: 2.4rem; /* reserve space so #status-footer never overlaps content */
 }
+
+#status-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  padding: 0.5rem 1rem;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  font-size: 0.85rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#status-footer.idle { color: var(--muted); }
+#status-footer.busy { color: var(--warn-text); background: var(--badge-bg); }
+#status-footer.done-ok { color: var(--status-created-fg); background: var(--status-created-bg); }
+#status-footer.done-bad { color: var(--status-failed-fg); background: var(--status-failed-bg); }
 
 header {
   display: flex;
