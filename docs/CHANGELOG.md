@@ -3,6 +3,35 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-16 — R28: NFKC-normalize before tokenizing (Eneba "Road to Empress" escape)
+
+Also same session: candidate "Glary Utilities PRO 5" (a PC cleaning/
+optimization utility, same category as CCleaner/IObit) reached the Eneba
+candidate list — added `GLARY` to `SOFTWARE_APP_TOKENS` (R22 gap), 1 test,
+no design change.
+
+Romain flagged a live mismatch: candidate "Road to Empress Ⅱ Steam Key (PC)
+EUROPE" had matched AKS product "Road To Empress" — a different, unrelated
+game (AKS has no page for the sequel — 404 on `road-to-empress-ii`). Root
+cause: the merchant title used U+2161 ("Ⅱ", a single Unicode Roman numeral
+codepoint), not two ASCII `I`s. `tokenize`'s `[A-Z0-9']+` regex silently
+drops any character outside that class, so the sequel indicator vanished —
+"Road to Empress Ⅱ" tokenized identically to "Road To Empress". The same
+text feeds `build_slug_candidates`, so the wrong page was being *probed* in
+the first place, not just wrongly approved by the R01/R01b word checks after.
+
+Fix: NFKC-normalize before both (folded into the existing
+`normalize_apostrophes` choke-point both call). NFKC is standard library,
+zero new dependency, and is specifically designed to decompose compatibility
+characters like Roman numerals into plain ASCII ("Ⅱ" → "II") — the real
+distinguishing word now survives into slug-building and the identity checks.
+Curly quotes stay a separate explicit replace (not an NFKC compatibility
+decomposition of `'`).
+
+`src/matcher.py`, mirrored in `EXECUTOR_RULES.md` §4.1. 3 new tests, 472
+total, all green. The Eneba run was re-matched with both fixes before
+validation — nothing wrong reached `approved.json`.
+
 ## 2026-07-15 — R27: R26 was too broad — Gameboost proved the opposite failure mode
 
 Same day as R26, a Gameboost data-entry run was cancelled live: Romain caught

@@ -150,9 +150,22 @@ Consumes the normalized offers JSON; emits candidates JSON + skipped JSON. No
 network side effects except read-only AKS slug `200` checks.
 
 ### 4.1 Name match — necessary condition `[R01]`
-Tokenize the AKS product name (normalize apostrophes `U+2019/U+2018 → '`).
-**Every meaningful word of the AKS name must be present in the merchant title.**
-One word missing → **SKIP**. (Necessary, not sufficient.)
+Tokenize the AKS product name (NFKC-normalize, then apostrophes
+`U+2019/U+2018 → '`). **Every meaningful word of the AKS name must be present
+in the merchant title.** One word missing → **SKIP**. (Necessary, not
+sufficient.)
+**NFKC first `[R28]` (2026-07-16, Eneba "Road to Empress" escape):** "Road to
+Empress Ⅱ" (U+2161, a single Unicode Roman numeral codepoint, not two ASCII
+`I`s) tokenized to just ROAD/TO/EMPRESS — `tokenize`'s `[A-Z0-9']+` regex
+silently drops any character outside that class, so the sequel indicator
+vanished and the offer matched the unrelated base game "Road To Empress"
+(AKS has no page for the sequel — 404). The same text feeds
+`build_slug_candidates`, so the wrong page was being *probed* in the first
+place, not just wrongly approved after tokenizing. Fix: NFKC-normalize
+before both — standard-library, zero-dependency, and specifically designed
+to decompose compatibility characters like Roman numerals into plain ASCII
+("Ⅱ" → "II"). Curly quotes stay a separate explicit replace (not an NFKC
+compatibility decomposition of `'`).
 
 ### 4.2 Different-product guard — `[R01b]`
 Even if all words match, **SKIP** when the merchant title carries a dangerous

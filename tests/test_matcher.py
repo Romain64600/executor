@@ -45,6 +45,29 @@ class TokenizeTests(unittest.TestCase):
     def test_normalizes_apostrophes(self):
         self.assertEqual(tokenize("Dragon’s Dogma"), ["DRAGON'S", "DOGMA"])
 
+    def test_unicode_roman_numeral_survives_tokenization(self):
+        # Eneba escape (2026-07-16): "Road to Empress Ⅱ" (U+2161, a single
+        # Unicode Roman numeral codepoint) used to tokenize to just
+        # ROAD/TO/EMPRESS — the sequel indicator silently vanished and the
+        # offer matched the unrelated base game "Road To Empress". NFKC
+        # decomposes it to plain ASCII "II" before tokenizing.
+        self.assertEqual(
+            tokenize("Road to Empress Ⅱ Steam Key"),
+            ["ROAD", "TO", "EMPRESS", "II", "STEAM", "KEY"],
+        )
+        self.assertEqual(
+            extra_significant_words("Road To Empress", "Road to Empress Ⅱ Steam Key"),
+            ["II"],
+        )
+
+    def test_unicode_roman_numeral_survives_slug_building(self):
+        # Same escape: build_slug_candidates feeds the AKS resolve URL from
+        # the same text, so the wrong page was being probed in the first
+        # place, not just wrongly approved after tokenizing.
+        self.assertIn(
+            "road-to-empress-ii", build_slug_candidates("Road to Empress Ⅱ Steam Key")
+        )
+
     def test_r01_all_words_present(self):
         self.assertEqual(
             missing_aks_words("Neon Beats", "Neon Beats - Full Version (PC) - Steam Key - GLOBAL"),

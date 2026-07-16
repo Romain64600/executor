@@ -21,6 +21,7 @@ import html
 import json
 import re
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from typing import Any, Callable
 from urllib.parse import urlparse
@@ -156,7 +157,24 @@ EDITION_HINTS = (
 
 # -- pure helpers -----------------------------------------------------------
 def normalize_apostrophes(text: str) -> str:
-    return text.replace("’", "'").replace("‘", "'")
+    """NFKC-normalize, then fold curly quotes to ASCII `'`.
+
+    NFKC first (Eneba escape, 2026-07-16): "Road to Empress Ⅱ" (U+2161, the
+    single-codepoint Unicode Roman numeral "II") tokenized to just ROAD/TO/
+    EMPRESS downstream — `tokenize`'s `[A-Z0-9']+` regex silently drops any
+    character outside that class, so the sequel indicator vanished and the
+    offer matched the unrelated base game "Road To Empress" instead (both in
+    the R01/R01b identity checks AND in `build_slug_candidates`, which builds
+    the AKS resolve URL from the same text — the wrong page was probed in
+    the first place, not just wrongly approved after). NFKC is the
+    standard-library, zero-dependency fix: it's specifically designed to
+    decompose compatibility characters like Roman numerals into their plain
+    ASCII form ("Ⅱ" → "II"). Curly quotes are NOT NFKC compatibility
+    decompositions of `'` (they're canonically distinct punctuation), so the
+    explicit replace stays after it.
+    """
+
+    return unicodedata.normalize("NFKC", text).replace("’", "'").replace("‘", "'")
 
 
 def tokenize(name: str) -> list[str]:
