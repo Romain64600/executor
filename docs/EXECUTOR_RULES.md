@@ -850,29 +850,45 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167.
     through that dropdown would have been silently wrong (id 1 = "Europe"
     there, but the real per-offer attribute for that same example was
     `region: Global`).
-  - **Account-vs-key escape (Romain 2026-07-17, caught from the normalized
-    report): "je vois que pour Difmark, au lieu de Steam account, tu as
-    lancé des Steam dans ton rapport normalisé."** The pre-existing `STEAM
-    ACCOUNT` categorical skip (`CATEGORY_SKIP`, checks `offer.name`) NEVER
-    actually fires for Difmark — its AKS-feed titles never carry the word
-    "Account" at all ("Rogue Loops Standard Edition"), and the URL's
-    "steam-account" segment is boilerplate present on every listing
-    regardless of delivery type. The **only** place the distinction shows
-    up is the merchant's own per-offer `offer_name`
-    (`"Rogue Loops (Steam Account) / Region GLOBAL / Edition Standard"` vs
-    a hypothetical non-"Account" name for a genuine key) — confirmed live:
-    every one of batch 1's first 100 "candidates" was, on inspection, a
-    genuine full-credential account sale ("Account Delivery: you will
-    receive all the necessary login credentials…"), reported as plain
-    "Steam" with no account/key distinction at all. Fix: the merchant page
-    is now fetched **unconditionally** for every Difmark offer that reaches
-    this point (not only when platform/region are ambiguous — the account
-    check needs it regardless), and any `offer_name` containing "ACCOUNT"
-    is skipped as `"skip category: STEAM ACCOUNT (Difmark page: ...)"`,
-    same category as the pre-existing rule, now actually reachable for this
-    merchant. Whether Difmark also lists genuine CD keys under a
-    distinguishable `offer_name` is still unconfirmed pending a batch that
-    contains one — batch 1 was 100% accounts.
+  - **Account-vs-key escape, two rounds (Romain 2026-07-17, both caught from
+    the normalized report).** Round 1: "je vois que pour Difmark, au lieu de
+    Steam account, tu as lancé des Steam dans ton rapport normalisé." The
+    pre-existing `STEAM ACCOUNT` categorical skip (`CATEGORY_SKIP`, checks
+    `offer.name`) NEVER actually fires for Difmark — its AKS-feed titles
+    never carry the word "Account" at all ("Rogue Loops Standard Edition"),
+    and the URL's "steam-account" segment is boilerplate present on every
+    listing regardless of delivery type. The **only** place the distinction
+    shows up is the merchant's own per-offer `offer_name`
+    (`"Rogue Loops (Steam Account) / Region GLOBAL / Edition Standard"` vs a
+    genuine key's differently-shaped name, e.g. `"Sekiro: Shadows Die
+    Twice GOTY"` or `"RIMWORLD [STEAM/GLOBAL] [OFFLINE]"` — confirmed live
+    on real batch-1 offers) — so the merchant page is fetched
+    **unconditionally** for every Difmark offer, not only when
+    platform/region are ambiguous.
+    **Round 2, immediate correction: "je voulais que tu renseignes la région
+    Steam Account quand tu vois Steam Account. Pourquoi... tu les mets en
+    Steam normal, alors que c'est des Steam Account aussi?"** The round-1 fix
+    treated an "ACCOUNT" `offer_name` as a skip (reusing `CATEGORY_SKIP`'s
+    STEAM ACCOUNT reasoning, which really does mean "un-enterable" for other
+    merchants like G2A). Wrong for Difmark: AKS's own region dropdown
+    (`offer[region]` select) carries a **parallel "Account" bucket for many
+    platforms** — `Steam Account (412)`, `Steam EU Account (480)`, `Steam
+    Row Account (577)`, `steam account us (578)`, and equivalents for Epic/
+    Nintendo/PlayStation/Xbox/Windows/Ubisoft/Origin/Publisher/Subscription
+    — a legitimate, distinct region for account-delivery listings, not a
+    dead end. Confirmed via a cached live dropdown snapshot
+    (`runs/20260708-081329-k4g/session_catalog.json`, `probe_select_options`
+    on `offer[region]`, 867 rendered options). Fix: an `offer_name`
+    containing "ACCOUNT" no longer skips — it redirects the region lookup to
+    `DIFMARK_STEAM_ACCOUNT_REGION_IDS` (base key → id, Steam platform only,
+    no UK entry exists) instead of the normal `REGION_IDS["STEAM"]`; the
+    reported `region_label` becomes e.g. `"GLOBAL ACCOUNT"` /
+    `"EU ACCOUNT"` so the report visibly distinguishes them from plain
+    Steam. A platform other than Steam, or a region with no confirmed
+    Account variant (UK), still fails closed — SKIP, never a guessed id
+    (G02). **Ids came from a 9-day-old catalog snapshot — re-verify against
+    a fresh dropdown fetch (P06, "dropdown is truth") before Difmark's first
+    real submit.**
 
 ---
 

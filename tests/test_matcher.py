@@ -783,12 +783,12 @@ class MatchOfferTests(unittest.TestCase):
         self.assertEqual((result.region_label, result.region_id), ("GLOBAL", "2"))
         self.assertEqual((result.edition_label, result.edition_id), ("Standard", "1"))
 
-    def test_difmark_steam_account_offer_name_skips_regardless_of_title(self):
-        # Romain (2026-07-17, live escape): batch 1's 100 "candidates" were
-        # ALL genuine STEAM ACCOUNT sales reported as plain "Steam" — the
-        # AKS-feed title never carries "Account" for Difmark, so the
-        # pre-existing STEAM ACCOUNT categorical skip never actually catches
-        # it; only the merchant's own per-offer `offer_name` does.
+    def test_difmark_steam_account_global_enters_under_account_region(self):
+        # Romain (2026-07-17): "je voulais que tu renseignes la région Steam
+        # Account quand tu vois Steam Account" — AKS's region dropdown has a
+        # genuine parallel "Steam Account (412)" bucket; these offers are
+        # entered under it, never skipped. (Earlier same-day attempt treated
+        # this as a skip category — corrected here.)
         offer = NormalizedOffer(
             offer_id="1", name="Rogue Loops Standard Edition",
             url="https://difmark.com/en/buy-console-account-rogue-loops-166307",
@@ -801,11 +801,44 @@ class MatchOfferTests(unittest.TestCase):
                 offer_name="Rogue Loops (Steam Account) / Region GLOBAL / Edition Standard",
             ),
         )
-        self.assertIsInstance(result, SkippedOffer)
-        self.assertIn("skip category: STEAM ACCOUNT", result.reason)
-        self.assertIn("Difmark page", result.reason)
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual((result.region_label, result.region_id), ("GLOBAL ACCOUNT", "412"))
 
-    def test_difmark_genuine_steam_offer_name_is_not_skipped(self):
+    def test_difmark_steam_account_europe_enters_under_eu_account_region(self):
+        offer = NormalizedOffer(
+            offer_id="1", name="Rogue Loops Standard Edition",
+            url="https://difmark.com/en/buy-console-account-rogue-loops-166307",
+            merchant="Difmark",
+        )
+        result = match_offer(
+            offer, self._resolver(aks_name="Rogue Loops"),
+            difmark_offer_resolver=lambda url: DifmarkOfferAttributes(
+                raw_platform="STEAM", raw_region="EUROPE",
+                offer_name="Rogue Loops (Steam Account) / Region EU / Edition Standard",
+            ),
+        )
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual((result.region_label, result.region_id), ("EU ACCOUNT", "480"))
+
+    def test_difmark_steam_account_uk_has_no_confirmed_account_region_skips(self):
+        # No "Steam UK Account" entry exists in the live dropdown snapshot —
+        # doubt goes to skip (G02), never a guessed id.
+        offer = NormalizedOffer(
+            offer_id="1", name="Rogue Loops (United Kingdom) (Steam Key)",
+            url="https://difmark.com/en/buy-console-account-rogue-loops-uk-166307",
+            merchant="Difmark",
+        )
+        result = match_offer(
+            offer, self._resolver(aks_name="Rogue Loops"),
+            difmark_offer_resolver=lambda url: DifmarkOfferAttributes(
+                raw_platform="STEAM", raw_region="UNITED KINGDOM",
+                offer_name="Rogue Loops (Steam Account) / Region UK / Edition Standard",
+            ),
+        )
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("Difmark Account region unconfirmed", result.reason)
+
+    def test_difmark_genuine_steam_offer_name_uses_normal_region(self):
         offer = NormalizedOffer(
             offer_id="1", name="Rogue Loops Standard Edition",
             url="https://difmark.com/en/buy-console-account-rogue-loops-166307",
@@ -819,6 +852,7 @@ class MatchOfferTests(unittest.TestCase):
             ),
         )
         self.assertIsInstance(result, Candidate)
+        self.assertEqual((result.region_label, result.region_id), ("GLOBAL", "2"))
 
     def test_difmark_implicit_region_resolved_via_merchant_page(self):
         # Title/URL give no region for this offer — the page-verified

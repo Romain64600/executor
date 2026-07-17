@@ -505,6 +505,32 @@ DIFMARK_REGION_TEXT_MAP = {
 # platform token — Difmark titles are typically bare "<Name> Standard
 # Edition"). Anything else fails closed rather than being guessed.
 DIFMARK_PLATFORM_TEXT_MAP = {"STEAM": "STEAM"}
+# AKS's own region dropdown carries a PARALLEL "Account" bucket for many
+# platforms (Steam Account, Epic Account, Nintendo Account, PS4 Account,
+# Xbox …, Windows account, …) — a legitimate, distinct region for
+# account-delivery listings, NOT an un-enterable category (Romain
+# 2026-07-17, correcting an initial assumption that a Difmark offer whose
+# own `offer_name` says "Steam Account" should be skipped like an ordinary
+# shared-credential resale: "je voulais que tu renseignes la région Steam
+# Account quand tu vois Steam Account" — those offers ARE meant to be
+# entered, just under this region instead of plain Steam).
+# base region key -> AKS region id, Steam platform only (the only platform
+# confirmed for Difmark so far via DIFMARK_PLATFORM_TEXT_MAP). No UK entry
+# exists in the dropdown. Ids captured from a live dropdown snapshot
+# 2026-07-08 (runs/20260708-081329-k4g/session_catalog.json, offer[region]
+# select: "Steam Account (412)", "Steam EU Account (480)", "Steam Row
+# Account (577)", "steam account us (578)") — per P06 "dropdown is truth",
+# re-verify against a FRESH catalog fetch before Difmark's first real
+# submit; ids drift over time like every other REGION_IDS entry.
+DIFMARK_STEAM_ACCOUNT_REGION_IDS = {
+    "global": "412",
+    "eu": "480",
+    "us": "578",
+}
+# detect_region/DIFMARK_REGION_TEXT_MAP produce a display label (GLOBAL/EU/
+# US/UK); the Account-region lookup above is keyed by the same base region
+# key used everywhere else — this reverses label back to that key.
+_DIFMARK_REGION_LABEL_TO_BASE = {"GLOBAL": "global", "EU": "eu", "US": "us", "UK": "uk"}
 
 
 class DifmarkPageUnreadable(RuntimeError):
@@ -1048,33 +1074,29 @@ def match_offer(
     declared_platform = explicit_platform(offer.name) or explicit_platform_from_url(offer.url)
     difmark_attrs: DifmarkOfferAttributes | None = None
     difmark_platform_verified = False
+    difmark_is_account = False
 
     if is_difmark:
         # Romain (2026-07-17, live escape): batch 1's "candidates" were ALL
         # genuine STEAM ACCOUNT sales (full login credentials — "Account
         # Delivery: you will receive all the necessary login credentials",
         # confirmed on every sampled offer's own page) despite reporting as
-        # plain "Steam". The pre-existing STEAM ACCOUNT categorical skip
-        # never catches this for Difmark: the AKS-feed title never carries
-        # the word ("Numina Standard Edition") and the URL's
-        # "steam-account" segment is boilerplate on every listing regardless
-        # of type — the ONLY place the distinction shows up is the
-        # merchant's own per-offer `offer_name` ("Numina (Steam Account) /
-        # Region GLOBAL / Edition Standard"). So the page is fetched
-        # unconditionally for every Difmark offer, not just when title/URL
-        # are ambiguous — it also still doubles as the platform/region
-        # source in that case (same rationale as before: batch 1 showed 77%
-        # of the feed skipped on R27 for lacking any title platform token at
-        # all, and some Steam EUROPE offers carry no region signal either).
+        # plain "Steam". The AKS-feed title never carries the word ("Numina
+        # Standard Edition") and the URL's "steam-account" segment is
+        # boilerplate on every listing regardless of type — the ONLY place
+        # the distinction shows up is the merchant's own per-offer
+        # `offer_name` ("Numina (Steam Account) / Region GLOBAL / Edition
+        # Standard"). So the page is fetched unconditionally for every
+        # Difmark offer, not just when title/URL are ambiguous — it also
+        # still doubles as the platform/region source in that case (batch 1
+        # showed 77% of the feed skipped on R27 for lacking any title
+        # platform token at all, and some Steam EUROPE offers carry no
+        # region signal either).
         try:
             difmark_attrs = difmark_offer_resolver(offer.url)
         except DifmarkPageUnreadable as exc:
             return SkippedOffer(offer, f"Difmark merchant page unverifiable: {exc}")
-        if "ACCOUNT" in difmark_attrs.offer_name.upper():
-            return SkippedOffer(
-                offer,
-                f"skip category: STEAM ACCOUNT (Difmark page: {difmark_attrs.offer_name!r})",
-            )
+        difmark_is_account = "ACCOUNT" in difmark_attrs.offer_name.upper()
         if declared_platform is None:
             mapped_platform = DIFMARK_PLATFORM_TEXT_MAP.get(difmark_attrs.raw_platform)
             if mapped_platform is None:
@@ -1087,9 +1109,9 @@ def match_offer(
     platform = declared_platform or "STEAM"  # default — R20 verifies it below
     region_label, region_id, implicit = detect_region(offer, platform)
     if implicit and is_difmark:
-        # Same rationale, region side: some Steam EUROPE offers carry no
-        # region signal in the URL or title at all. Doubt still goes to skip
-        # (G02): a page/API that can't be read is NOT treated as GLOBAL.
+        # Some Steam EUROPE offers carry no region signal in the URL or
+        # title at all. Doubt still goes to skip (G02): a page/API that
+        # can't be read is NOT treated as GLOBAL.
         mapped_region = DIFMARK_REGION_TEXT_MAP.get(difmark_attrs.raw_region)
         if mapped_region is None:
             return SkippedOffer(
@@ -1097,6 +1119,23 @@ def match_offer(
             )
         region_label, base = mapped_region
         region_id = _region_id(platform, base)
+    if is_difmark and difmark_is_account:
+        # AKS's region dropdown carries a PARALLEL "Account" bucket
+        # (Romain 2026-07-17: "je voulais que tu renseignes la région Steam
+        # Account quand tu vois Steam Account" — enter it under THAT region,
+        # never skip). Only confirmed for Steam so far, and no UK variant
+        # exists in the dropdown — anything else fails closed (G02).
+        base = _DIFMARK_REGION_LABEL_TO_BASE.get(region_label)
+        account_region_id = (
+            DIFMARK_STEAM_ACCOUNT_REGION_IDS.get(base) if platform == "STEAM" and base else None
+        )
+        if account_region_id is None:
+            return SkippedOffer(
+                offer,
+                f"Difmark Account region unconfirmed for {platform}/{region_label}"
+                f" (offer_name: {difmark_attrs.offer_name!r})",
+            )
+        region_label, region_id = f"{region_label} ACCOUNT", account_region_id
     if region_id is None:
         return SkippedOffer(offer, f"no region id for {platform}/{region_label}")
 
