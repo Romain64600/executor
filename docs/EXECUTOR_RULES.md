@@ -850,15 +850,29 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167.
     through that dropdown would have been silently wrong (id 1 = "Europe"
     there, but the real per-offer attribute for that same example was
     `region: Global`).
-  - **`STEAM ACCOUNT` still applies to Difmark.** The Rogue Loops example
-    above is a genuine full-credential account sale ("you will receive all
-    the necessary login credentials…", confirmed on the merchant page) —
-    correctly rejected by the pre-existing `CATEGORY_SKIP` entry, unrelated
-    to the URL/region/platform fixes. In batch 1, none of the 658 sampled
-    titles actually contained "Steam Account" (that wording lives in
-    Difmark's own page `<title>`/URL slug, not the AKS-feed title field) —
-    whether Difmark also lists genuine CD keys under a distinguishable title
-    is still unconfirmed pending further batches.
+  - **Account-vs-key escape (Romain 2026-07-17, caught from the normalized
+    report): "je vois que pour Difmark, au lieu de Steam account, tu as
+    lancé des Steam dans ton rapport normalisé."** The pre-existing `STEAM
+    ACCOUNT` categorical skip (`CATEGORY_SKIP`, checks `offer.name`) NEVER
+    actually fires for Difmark — its AKS-feed titles never carry the word
+    "Account" at all ("Rogue Loops Standard Edition"), and the URL's
+    "steam-account" segment is boilerplate present on every listing
+    regardless of delivery type. The **only** place the distinction shows
+    up is the merchant's own per-offer `offer_name`
+    (`"Rogue Loops (Steam Account) / Region GLOBAL / Edition Standard"` vs
+    a hypothetical non-"Account" name for a genuine key) — confirmed live:
+    every one of batch 1's first 100 "candidates" was, on inspection, a
+    genuine full-credential account sale ("Account Delivery: you will
+    receive all the necessary login credentials…"), reported as plain
+    "Steam" with no account/key distinction at all. Fix: the merchant page
+    is now fetched **unconditionally** for every Difmark offer that reaches
+    this point (not only when platform/region are ambiguous — the account
+    check needs it regardless), and any `offer_name` containing "ACCOUNT"
+    is skipped as `"skip category: STEAM ACCOUNT (Difmark page: ...)"`,
+    same category as the pre-existing rule, now actually reachable for this
+    merchant. Whether Difmark also lists genuine CD keys under a
+    distinguishable `offer_name` is still unconfirmed pending a batch that
+    contains one — batch 1 was 100% accounts.
 
 ---
 
