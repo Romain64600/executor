@@ -524,6 +524,12 @@ For each validated candidate, in order, fail-closed:
    and price is never part of what the modal enters. The drift stays visible —
    it is surfaced as `id_mismatches` in the plan entry and the `row_relocated`
    log line. A **store_id** contradiction, by contrast, blocks on both paths.
+2b. **Re-verify the row on the FRESH render** (audit 2026-07-17, SC5): the
+   modal-opening navigate produces a NEW page load, minutes after the index
+   scan — the row must still be there under that id AND still match the
+   candidate (name + URL path, `check_price=False`) on the fresh DOM. A
+   vanished row, or an id a mid-run re-import handed to a different product,
+   → blocker; never open a modal on an unverified row.
 3. Open the modal from that row's `[data-create-offer]` button (`#TB_window`).
 4. **Verify the select names before filling** — they vary per feed:
    `offer[region]`/`offer[edition]` on some, `offer[region_id]`/`offer[edition_id]`
@@ -539,6 +545,14 @@ For each validated candidate, in order, fail-closed:
    2026-07-06 that exact force created 3 wrong-edition offers. **Not**
    `selectize.setValue(...)` either — that is `isTrusted:false` and leaves
    Selectize's own `required` text input empty (S18, 2026-07-06).
+   **The post-pick readback is compared to the target id** (audit 2026-07-17,
+   SC3): both channels (`select.value` + `selectize.getValue()`) must equal
+   the wanted id — a trusted click can land on a neighbouring option with
+   every later gate still passing (the form is valid with ANY option). A
+   mismatch fails `WRONG_VALUE`; an unreadable readback fails
+   `READBACK_UNREADABLE`. Just before the Create click, BOTH selects are read
+   back one last time (`VALUE_DRIFTED_BEFORE_CLICK` on any change since the
+   picks — last gate before the pipeline's one write).
 6. Fill **`offer[targets][]`** (`add_target_trusted`) with the candidate's
    `aks_product_id` — trusted focus click, `Input.insertText`, commit via the
    adjacent add-button (trusted-Enter fallback). This is the last empty `required`
@@ -628,6 +642,28 @@ run)`. This boolean is what the submitter passes to
 `StepGuard.record_result`. The mode matters: on Kinguin `available=pending` is
 empty even with 1197 rows in `available=all` (2026-07-08), so "gone from
 pending" would be trivially — and falsely — true.
+
+**"Gone" requires a POSITIVELY complete, readable walk** (audit 2026-07-17,
+FC1/SC1/SC2/SC4/SC6 — absence of data is not absence of the offer). The
+verify scan (and the batch-start index) prove their own coverage:
+
+- a CDP timeout or protocol error **raises** (`CdpCommandError`,
+  `src/cdp_session.py`) instead of flowing through as "0 rows";
+  `Page.navigate`'s `errorText` is checked;
+- a blank page is re-fetched once, then only two blank states are accepted —
+  past-the-end (feed UI + nav advertising fewer pages) or empty queue on
+  page 1 — anything else raises `FeedScanError` (the extractor's §3
+  discipline, via `SubmitSession.feed_page_state()`);
+- a login bounce mid-scan raises `NotLoggedInError`;
+- the browser's `location.href` must match the page navigated to (a wedged
+  tab re-serving the previous DOM is detected, never re-read as fresh pages);
+- exhausting `max_pages` while the feed's nav advertises MORE pages raises
+  instead of silently truncating coverage.
+
+Mid-batch, any of these marks the current offer `post_save = "… offer state
+UNKNOWN, verify it by hand …"` (attempt counted, creation NOT), stops the run
+with `stopped="feed_unreadable"`, and still writes `submit_plan.json` + logs.
+At batch start they abort with `aborted="feed_unreadable"` before any write.
 
 **Verification method is UI/feed only** `[S12]` — do **not** verify by direct DB
 query, network payload inspection, XHR, admin-ajax, or curl backend probing.
