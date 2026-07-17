@@ -41,6 +41,7 @@ from src.run_log import RunLogger  # noqa: E402
 from src.submit_session import SubmitSession, WriteSubmitSession  # noqa: E402
 from src.validation import ValidationError, verify_approved_against_source  # noqa: E402
 from src.submitter import (  # noqa: E402
+    FEED_UNREADABLE_EXCS,
     DryRunSubmitter,
     InspectSubmitter,
     Submitter,
@@ -197,10 +198,17 @@ def main() -> int:
 
     if args.catalog:
         print("CATALOG MODE — fetching full Édition + Région lists once (read-only).", file=sys.stderr)
-        with SubmitSession(args.endpoint) as session:
-            catalog = fetch_session_catalog(
-                session, store_id=args.store_id, available=args.available, max_pages=args.max_pages,
-            )
+        try:
+            with SubmitSession(args.endpoint) as session:
+                catalog = fetch_session_catalog(
+                    session, store_id=args.store_id, available=args.available, max_pages=args.max_pages,
+                )
+        except FEED_UNREADABLE_EXCS as exc:
+            print(json.dumps({
+                "aborted": True,
+                "reason": f"fail-closed abort (feed/CDP unreadable): {exc}",
+            }, indent=2))
+            return 2
         (out_dir / "session_catalog.json").write_text(json.dumps(catalog, indent=2), encoding="utf-8")
         summary = {"mode": "catalog", "ok": catalog.get("ok"), "out_dir": str(out_dir),
                    "artifact": "session_catalog.json"}
@@ -252,11 +260,18 @@ def main() -> int:
             f"{limit if limit is not None else 'ALL'} offer(s) (no writes, no clicks on Create).",
             file=sys.stderr,
         )
-        with SubmitSession(args.endpoint) as session:
-            result = InspectSubmitter(session, logger=logger, **pacer_kw).run(
-                run_id=run_id, merchant=args.merchant, store_id=args.store_id,
-                approved=approved_slice, available=args.available, max_pages=args.max_pages,
-            )
+        try:
+            with SubmitSession(args.endpoint) as session:
+                result = InspectSubmitter(session, logger=logger, **pacer_kw).run(
+                    run_id=run_id, merchant=args.merchant, store_id=args.store_id,
+                    approved=approved_slice, available=args.available, max_pages=args.max_pages,
+                )
+        except FEED_UNREADABLE_EXCS as exc:
+            print(json.dumps({
+                "aborted": True,
+                "reason": f"fail-closed abort (feed/CDP unreadable): {exc}",
+            }, indent=2))
+            return 2
         (out_dir / "modal_inspection.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
         inspected = sum(1 for p in result["plan"] if p.get("inspection") is not None)
         print(json.dumps({
@@ -287,11 +302,21 @@ def main() -> int:
     session_cls = WriteSubmitSession if write else SubmitSession
     submitter_cls = Submitter if write else DryRunSubmitter
     submitter_kw = {"click_mode": click_mode} if write else {}
-    with session_cls(args.endpoint) as session:
-        result = submitter_cls(session, logger=logger, **pacer_kw, **submitter_kw).run(
-            run_id=run_id, merchant=args.merchant, store_id=args.store_id,
-            approved=approved, available=args.available, max_pages=args.max_pages, limit=limit,
-        )
+    # Mid-batch feed/CDP failures are handled INSIDE run() (offer marked
+    # UNKNOWN, stopped="feed_unreadable", plan preserved); this wrapper only
+    # catches failures outside the batch loop (pre-flight navigate, catalog).
+    try:
+        with session_cls(args.endpoint) as session:
+            result = submitter_cls(session, logger=logger, **pacer_kw, **submitter_kw).run(
+                run_id=run_id, merchant=args.merchant, store_id=args.store_id,
+                approved=approved, available=args.available, max_pages=args.max_pages, limit=limit,
+            )
+    except FEED_UNREADABLE_EXCS as exc:
+        print(json.dumps({
+            "aborted": True,
+            "reason": f"fail-closed abort (feed/CDP unreadable): {exc}",
+        }, indent=2))
+        return 2
 
     # R24: the mode + the batch size it produced are part of the run's record,
     # so submit_plan.json says under which mode these offers were written.

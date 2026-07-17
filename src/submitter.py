@@ -22,12 +22,42 @@ Depends only on a ``session`` object, so both are unit-testable with a fake.
 from __future__ import annotations
 
 import re
+import time
 from typing import Any
 
-from src.extractor import DEFAULT_FEED_PAGE, feed_url
+from src.cdp_session import CdpCommandError
+from src.extractor import (
+    DEFAULT_FEED_PAGE,
+    EMPTY_RETRY_WAIT_S,
+    NotLoggedInError,
+    feed_url,
+)
 from src.pacing import Pacer
 from src.run_log import RunLogger
 from src.step_guard import StepGuard
+
+
+class FeedScanError(RuntimeError):
+    """The feed walk could not prove complete, faithful coverage of the live
+    feed: a blank in-range page that survived one re-fetch, a page whose
+    browser URL does not match the one navigated to (wedged navigation
+    re-serving the previous DOM), unreadable markers, or a feed advertising
+    more pages than the walk covered (``max_pages`` hit). The batch index and
+    the post-save 'gone' proof are both built on this walk — an unproven walk
+    must abort loudly, never stand in for "the offer disappeared" (audit
+    2026-07-17: FC1/SC2/SC4/FC6)."""
+
+
+# Exceptions that mean "the feed/browser is unreadable — the run must stop
+# fail-closed, the current offer's state is UNKNOWN, nothing may be inferred".
+FEED_UNREADABLE_EXCS = (NotLoggedInError, FeedScanError, CdpCommandError)
+
+
+def _page_param(url: str) -> int:
+    """The ``&p=N`` pagination param of a feed URL (1 when absent)."""
+
+    match = re.search(r"[?&]p=(\d+)", url or "")
+    return int(match.group(1)) if match else 1
 
 
 def _url_key(url: str) -> str:
@@ -208,6 +238,7 @@ class _SubmitterBase:
         # spaces successive offers. Never a correctness mechanism.
         self.page_pacer = page_pacer
         self.offer_pacer = offer_pacer
+        self.empty_retry_wait_s = EMPTY_RETRY_WAIT_S
         self.catalog: dict[str, Any] | None = None
         self._region_master: list[dict[str, Any]] = []
         self._edition_master: list[dict[str, Any]] = []
@@ -243,6 +274,52 @@ class _SubmitterBase:
         if self.logger is not None:
             self.logger.log(event, **fields)
 
+    def _read_feed_page(self, url: str, page: int
+                        ) -> tuple[list[dict[str, str]], dict[str, Any]]:
+        """Navigate to one feed page and read its rows + deterministic markers,
+        retrying a blank or contradictory render ONCE (the extractor's blank-page
+        discipline, EXECUTOR_RULES §3, carried over to the scans that back the
+        post-save proof — audit 2026-07-17, SC2/FC1).
+
+        Returns ``(rows, state)``. Empty ``rows`` is only ever returned as a
+        PROVEN end-of-feed: past-the-end page (feed UI rendered, nav advertises
+        fewer pages) or an empty queue on page 1 (feed UI, no pagination).
+        A login bounce raises :class:`NotLoggedInError`; anything else that
+        cannot be classified after the retry raises :class:`FeedScanError` —
+        including a browser URL whose ``&p=`` does not match the page we
+        navigated to (wedged navigation re-serving the previous DOM, SC6).
+        """
+
+        reason = ""
+        for attempt in (1, 2):
+            if attempt == 2:
+                time.sleep(self.empty_retry_wait_s)
+            self.session.navigate(url)
+            rows = self.session.page_offer_rows()
+            state = self.session.feed_page_state()
+            if state.get("is_login"):
+                raise NotLoggedInError("feed bounced to wp-login mid-scan")
+            href = str(state.get("href") or "")
+            if _page_param(href) != page:
+                reason = (
+                    f"browser is on {href!r} (p={_page_param(href)}) "
+                    f"after navigating to page {page}"
+                )
+                continue
+            if rows:
+                return rows, state
+            nav_max = int(state.get("nav_max") or 0)
+            feed_ui = bool(state.get("feed_ui"))
+            if page == 1 and feed_ui and nav_max == 0:
+                return [], state  # empty queue — proven
+            if page > 1 and feed_ui and nav_max < page:
+                return [], state  # past-the-end — proven
+            reason = (
+                f"blank page {page} with feed_ui={feed_ui} nav_max={nav_max}"
+                if feed_ui else f"page {page} rendered without the feed UI"
+            )
+        raise FeedScanError(f"feed page unreadable after retry: {reason}")
+
     def _scan_feed(self, store_id, feed_page, available, max_pages,
                    stop_on: str | None = None, stop_on_url: str | None = None,
                    ) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]], bool]:
@@ -263,23 +340,28 @@ class _SubmitterBase:
         unusable as a feed snapshot) — a disappearance proof must fail when
         the row survived a mid-run re-import under a fresh id. Without them
         (plain indexing), two consecutive pages with no NEW ids end the walk
-        (G2A reflow renders duplicate pages); with them, only a truly empty
-        page does — a verify scan must reach the end of the feed before
-        concluding the offer is gone.
+        (G2A reflow renders duplicate pages); with them, only a PROVEN
+        end-of-feed does — a verify scan must reach the end of the feed
+        before concluding the offer is gone, and every ending is now
+        positively classified (audit 2026-07-17, FC1/SC2/SC4): a blank page
+        must carry the past-the-end/empty-queue markers, and exhausting
+        ``max_pages`` with the nav advertising MORE pages raises
+        :class:`FeedScanError` instead of silently truncating coverage.
         """
         index: dict[str, dict[str, str]] = {}
         by_url: dict[str, dict[str, str]] = {}
         stop_on_url = _url_key(stop_on_url) if stop_on_url else None
         found = False
         empty = 0
+        nav_max_seen = 0
         for page in range(1, max_pages + 1):
             url = feed_url(store_id, page=page, feed_page=feed_page, available=available)
             if page > 1 and self.page_pacer is not None:
                 self.page_pacer.wait()
-            self.session.navigate(url)
-            rows = self.session.page_offer_rows()
+            rows, state = self._read_feed_page(url, page)
+            nav_max_seen = max(nav_max_seen, int(state.get("nav_max") or 0))
             if not rows:
-                break
+                break  # proven end-of-feed (_read_feed_page classified it)
             new = 0
             for row in rows:
                 offer_id = str(row.get("id") or "")
@@ -311,6 +393,19 @@ class _SubmitterBase:
                         break
                 else:
                     empty = 0
+        else:
+            # Loop exhausted at max_pages with rows still present on the last
+            # page. Coverage is proven ONLY when the feed's own nav never
+            # advertised more pages than we walked; otherwise the tail was
+            # never scanned and a verify built on this walk would prove a
+            # false disappearance (audit 2026-07-17, SC4/FC6).
+            if not (0 < nav_max_seen <= max_pages):
+                raise FeedScanError(
+                    f"feed scan hit max_pages={max_pages} without reaching the "
+                    f"feed's end (nav advertises "
+                    f"{nav_max_seen if nav_max_seen else 'an unreadable number of'} "
+                    "page(s)) — coverage unproven"
+                )
         return index, by_url, found
 
     def _index_feed(self, store_id, feed_page, available, max_pages
@@ -490,7 +585,15 @@ class _SubmitterBase:
             self._load_catalog(catalog)
 
         self.guard.start_task(run_id)
-        index, by_url = self._index_feed(store_id, feed_page, available, max_pages)
+        try:
+            index, by_url = self._index_feed(store_id, feed_page, available, max_pages)
+        except FEED_UNREADABLE_EXCS as exc:
+            # Nothing has been attempted yet — abort before the first offer
+            # rather than working from an unproven feed snapshot (audit
+            # 2026-07-17, FC1/SC2).
+            self._log("aborted", reason=f"feed index scan failed closed: {exc}")
+            return {"aborted": "feed_unreadable", "stopped": None, "feed_offers": 0,
+                    "write_attempts": 0, "created": 0, "plan": []}
         self._log("feed_indexed", offers=len(index))
         ctx = {"store_id": store_id, "feed_page": feed_page, "available": available,
                "max_pages": max_pages, "index": index, "by_url": by_url}
@@ -526,8 +629,30 @@ class _SubmitterBase:
                     page_url=located["page_url"],
                     id_mismatches=located.get("id_mismatches"),
                 )
-            entry = self._prepare(candidate, located)
-            success = self._process(entry, candidate, ctx)
+            # A feed/CDP-unreadable exception here means the current offer's
+            # state is UNKNOWN (on the write path, Create may already have
+            # been clicked when the verify scan died). Fail closed: record the
+            # attempt, mark the entry for a manual check, stop the run — the
+            # plan/logs keep everything known so far (audit 2026-07-17, FC1).
+            entry: dict[str, Any] | None = None
+            feed_unreadable: str | None = None
+            try:
+                entry = self._prepare(candidate, located)
+                success = self._process(entry, candidate, ctx)
+            except FEED_UNREADABLE_EXCS as exc:
+                if entry is None:
+                    entry = {
+                        "offer_id": offer_id,
+                        "merchant_title": candidate["offer"]["name"],
+                        "aks_url": candidate.get("aks_url"),
+                        "ready": False,
+                    }
+                success = False
+                feed_unreadable = f"{type(exc).__name__}: {exc}"
+                entry["post_save"] = (
+                    "feed/CDP unreadable — offer state UNKNOWN, verify it by "
+                    f"hand on AKS before any retry: {feed_unreadable}"
+                )
             if self.write_mode and entry.get("ready"):
                 write_attempts += 1
                 if entry.get("submitted"):
@@ -544,6 +669,10 @@ class _SubmitterBase:
                 self._log("skip", offer_id=offer_id, reason=entry.get("blocker") or entry.get("post_save"))
             plan.append(entry)
 
+            if feed_unreadable is not None:
+                stopped = "feed_unreadable"
+                self._log("run_stopped", reason=stopped, detail=feed_unreadable)
+                break
             if self.guard.blocked:
                 stopped = "ten_consecutive_failures"
                 self._log("run_stopped", reason=stopped)

@@ -69,6 +69,24 @@ _MODAL_CTX_JS = (
     ".map(function(s){return s.name;})};})())"
 )
 
+# Deterministic feed-page markers — the same probes the extractor trusts
+# (EXECUTOR_RULES §3): the pagination nav is the only element exposing the
+# feed's real page count, and past-the-end pages render the same chrome with
+# 0 rows. `href` lets the scanner verify the browser actually landed on the
+# page it navigated to (a wedged navigation re-serves the previous DOM —
+# audit 2026-07-17, SC6). Read-only.
+_FEED_STATE_JS = (
+    "JSON.stringify({"
+    "feed_ui: !!document.querySelector('table.wp-list-table'),"
+    "nav_max: (function(){var m=0;var links=document.querySelectorAll('.tablenav a');"
+    "for(var i=0;i<links.length;i++){var h=links[i].getAttribute('href')||'';"
+    "var mm=h.match(/[?&]p=(\\d+)/);if(mm){var n=parseInt(mm[1],10);if(n>m){m=n;}}}"
+    "return m;})(),"
+    "is_login: !!document.querySelector('#loginform') || /wp-login/.test(location.href),"
+    "href: String(location.href)"
+    "})"
+)
+
 # Read-only DOM probe of the currently-open modal (S02). Passes the
 # ReadOnlyCdpSession's mutation guard (no click/submit/fetch/dispatchEvent/
 # setValue/.value=/createElement etc.). Returns a structured diag of the button
@@ -310,6 +328,19 @@ class SubmitSession(ReadOnlyCdpSession):
         if not raw:
             return []
         return list(json.loads(raw))
+
+    def feed_page_state(self) -> dict[str, Any]:
+        """Deterministic feed-page markers ``{feed_ui, nav_max, is_login, href}``.
+
+        The submitter's feed scans use these to PROVE a blank page is a real
+        end-of-feed (past-the-end / empty queue) instead of accepting any
+        0-row render at face value — the extractor's discipline, carried over
+        to the post-save disappearance proof (audit 2026-07-17, SC2/FC1).
+        An unreadable result returns ``{}``, which the scanner treats as an
+        anomaly, never as an empty feed."""
+
+        raw = self.evaluate_readonly(_FEED_STATE_JS)
+        return json.loads(raw) if raw else {}
 
     def open_offer_modal(self, offer_id: str) -> str:
         # Uses the raw evaluator: this is the one explicitly-allowed interaction.

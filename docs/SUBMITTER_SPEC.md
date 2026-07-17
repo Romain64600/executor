@@ -161,6 +161,30 @@ STOP that candidate, do **not** re-loop, write an error report. Reporting wordin
 rafraîchi, même available que le run)" — never
 "créé en base".
 
+**"Gone" requires a POSITIVELY complete, readable walk (audit 2026-07-17,
+FC1/SC1/SC2/SC4/SC6).** Absence of data is not absence of the offer. The
+verify scan (and the batch-start index) now prove their own coverage:
+
+- a **CDP timeout or protocol error raises** (`CdpCommandError`) instead of
+  flowing through as "0 rows" (`src/cdp_session.py`); `Page.navigate`'s
+  `errorText` is checked;
+- a **blank page** is re-fetched once, then only two blank states are
+  accepted — past-the-end (feed UI + nav advertising fewer pages) or an empty
+  queue on page 1 (feed UI, no pagination) — anything else raises
+  `FeedScanError` (the extractor's `EmptyPageAnomaly` discipline, carried
+  over via `SubmitSession.feed_page_state()`);
+- a **login bounce mid-scan** raises `NotLoggedInError`;
+- the browser's `location.href` must match the page navigated to (a wedged
+  tab re-serving the previous DOM is detected, not re-read as fresh pages);
+- exhausting `max_pages` while the feed's own nav advertises **more** pages
+  raises instead of silently truncating coverage.
+
+Mid-batch, any of these marks the current offer
+`post_save = "… offer state UNKNOWN, verify it by hand …"` (the attempt is
+counted, the creation is NOT), stops the run with
+`stopped="feed_unreadable"`, and still writes `submit_plan.json` + logs. At
+batch start they abort with `aborted="feed_unreadable"` before any write.
+
 ---
 
 ## 6. StepGuard, anti-loop, stop conditions

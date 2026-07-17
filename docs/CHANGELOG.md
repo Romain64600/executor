@@ -3,6 +3,46 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-17 — Audit P0.2 : la preuve post-save exige un scan positivement complet (FC1/SC1/SC2/SC4/SC6/TE1)
+
+L'audit multi-agents du 2026-07-17 (`AUDIT_2026-07-17.md`) a confirmé un
+angle mort systématique : le submitter inférait « offre disparue = créée »
+de l'ABSENCE de données, sans jamais prouver que le scan avait réellement lu
+le feed en entier. Quatre chemins produisaient un faux CREATED : un timeout
+CDP silencieusement converti en `None` (lu « 0 lignes »), une page blanche
+transitoire (déjà vue live le 2026-07-07 — l'extracteur s'en défendait, le
+submitter non), une navigation échouée jamais vérifiée (le tab re-sert le
+DOM précédent), et le plafond `max_pages` absorbé sans trace.
+
+Corrections, en miroir de la discipline de l'extracteur :
+
+- `src/cdp_session.py` : `_cmd` lève `CdpCommandError` sur timeout ou erreur
+  protocole (fini le sentinel silencieux) ; `navigate` vérifie l'`errorText`
+  de `Page.navigate`.
+- `src/submit_session.py` : nouvelle sonde read-only `feed_page_state()`
+  (`feed_ui`, `nav_max`, `is_login`, `href`) — les mêmes marqueurs
+  déterministes que l'extracteur.
+- `src/submitter.py` : `_read_feed_page` re-fetch une page blanche UNE fois
+  puis classifie (fin de feed prouvée par les marqueurs, sinon
+  `FeedScanError`) ; bounce login → `NotLoggedInError` ; `href` comparé à la
+  page demandée (navigation coincée détectée) ; épuisement de `max_pages`
+  avec un nav qui annonce plus de pages → `FeedScanError` au lieu d'une
+  troncature silencieuse. Mid-batch : l'offre courante passe
+  `post_save = "offer state UNKNOWN, verify it by hand"` (tentative comptée,
+  création NON comptée), le run s'arrête `stopped="feed_unreadable"` en
+  écrivant plan + logs. En début de batch : `aborted="feed_unreadable"`.
+- `scripts/05_submit.py` : ces exceptions hors boucle → abort JSON propre,
+  exit 2 (l'admin affiche l'échec).
+- Tests : `tests/test_cdp_session.py` (nouveau, transport fail-closed) +
+  `FeedScanFailClosedTests` (8 scénarios : blanche transitoire re-tentée,
+  blanche persistante, bounce login, navigation coincée, cap dépassé, feed
+  finissant exactement au cap, mort du tab après le clic Create → UNKNOWN,
+  mort CDP avant modale). 520 tests verts.
+
+Doc : `SUBMITTER_SPEC.md` §5 mis à jour. Le miroir `EXECUTOR_RULES.md` §7
+suivra le commit du chantier Difmark en cours (session parallèle, fichier
+partagé).
+
 ## 2026-07-16 — R30: AKS site-search fallback when every guessed slug 404s
 
 Romain asked why the matcher only guesses a slug and never queries an LLM or

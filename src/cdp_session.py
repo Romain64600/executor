@@ -50,6 +50,16 @@ class ReadOnlyEvalError(RuntimeError):
     """Raised when an expression is not obviously read-only."""
 
 
+class CdpCommandError(RuntimeError):
+    """A CDP command timed out or Chrome answered with a protocol error.
+
+    Loud by design: the old sentinel dict flowed through ``_evaluate`` as a
+    silent ``None``, which feed scans read as "0 rows" — the exact shape of a
+    false post-save disappearance proof (audit 2026-07-17, SC1/FC1). A dead
+    socket or a wedged tab must abort the run, never impersonate an empty
+    page."""
+
+
 def _derive_base(endpoint: str) -> tuple[str, int, str]:
     """From ``http://host:port/json/version`` → ``(host, port, 'http://host:port')``."""
 
@@ -100,7 +110,14 @@ class ReadOnlyCdpSession:
 
     # -- read-only operations -------------------------------------------
     def navigate(self, url: str, settle: float = 3.0) -> None:
-        self._cmd("Page.navigate", {"url": url})
+        response = self._cmd("Page.navigate", {"url": url})
+        # Page.navigate reports net-level failures (net::ERR_*) inside its
+        # result, not as a protocol error — unchecked, a dead proxy mid-run
+        # left every later scan re-reading the previous page's DOM (audit
+        # 2026-07-17, SC6).
+        error_text = (response.get("result") or {}).get("errorText")
+        if error_text:
+            raise CdpCommandError(f"Page.navigate to {url} failed: {error_text}")
         if settle:
             time.sleep(settle)
 
@@ -213,5 +230,9 @@ class ReadOnlyCdpSession:
             except ValueError:
                 continue
             if data.get("id") == mid:
+                if "error" in data:
+                    raise CdpCommandError(f"CDP {method} failed: {data['error']}")
                 return data
-        return {"error": "timeout", "method": method}
+        raise CdpCommandError(
+            f"CDP {method}: no response within {self._cmd_timeout}s"
+        )

@@ -2,6 +2,7 @@ import json
 import re
 import unittest
 
+from src.cdp_session import CdpCommandError
 from src.pacing import Pacer
 from src.submitter import DryRunSubmitter, InspectSubmitter, Submitter
 
@@ -54,6 +55,27 @@ class FakeSubmitSession:
         # Derives from page_offer_ids so subclass behaviors (created-row
         # filtering, pagination reflow) apply to both views of the feed.
         return [self._row(i) for i in self.page_offer_ids()]
+
+    def _live_page_ids(self, page_index):
+        # A page's CURRENT ids through the subclass view (created-row
+        # filtering, re-import remap) — what the real feed would render.
+        saved = self._page
+        self._page = page_index
+        try:
+            return self.page_offer_ids()
+        finally:
+            self._page = saved
+
+    def feed_page_state(self):
+        # Deterministic markers matching the real feed's shape: nav_max is the
+        # highest page that still renders rows (0 = empty queue), href echoes
+        # the last navigated URL (a well-behaved browser).
+        nav_max = max(
+            (i + 1 for i in range(len(self.pages)) if self._live_page_ids(i)),
+            default=0,
+        )
+        return {"feed_ui": True, "nav_max": nav_max,
+                "is_login": self.login, "href": self.nav[-1] if self.nav else ""}
 
     def open_offer_modal(self, offer_id):
         return "ROW_NOT_FOUND" if offer_id in self.fail_ids else self.modal_status
@@ -197,6 +219,12 @@ class ReflowWriteSession(FakeWriteSession):
         live = [i for i in self.ids if i not in self.created]
         start = self._page * self.per_page
         return live[start:start + self.per_page]
+
+    def feed_page_state(self):
+        live = [i for i in self.ids if i not in self.created]
+        nav_max = (len(live) + self.per_page - 1) // self.per_page
+        return {"feed_ui": True, "nav_max": nav_max,
+                "is_login": self.login, "href": self.nav[-1] if self.nav else ""}
 
     def open_offer_modal(self, offer_id):
         self._last_opened = offer_id
@@ -1482,6 +1510,152 @@ class PacingTests(unittest.TestCase):
         )
         # offer 1 is ready (paced after); offer 9 not in the feed (skip, no pace)
         self.assertEqual(pacer.waits, 1)
+
+
+class BlankPagesSession(FakeSubmitSession):
+    """Feed whose first N row reads come back blank (transient blank render,
+    seen live 2026-07-07) while the markers still advertise content."""
+
+    def __init__(self, pages, blank_reads=1, **kw):
+        super().__init__(pages, **kw)
+        self.blank_reads = blank_reads
+
+    def page_offer_rows(self):
+        if self.blank_reads > 0:
+            self.blank_reads -= 1
+            return []
+        return super().page_offer_rows()
+
+
+class LoginMidScanSession(FakeSubmitSession):
+    """Session whose WP login expires between the pre-flight check and the
+    feed scan (is_login_page() False, then the scanned page IS wp-login)."""
+
+    def page_offer_rows(self):
+        return []
+
+    def feed_page_state(self):
+        state = super().feed_page_state()
+        state["is_login"] = True
+        return state
+
+
+class WedgedNavigationSession(FakeSubmitSession):
+    """Browser stuck on page 1: every navigation 'succeeds' but the DOM (and
+    location.href) never changes — the SC6 stale-DOM re-read shape."""
+
+    def navigate(self, url, settle=0):
+        self.nav.append(url)
+        self._page = 0  # the tab never actually moves
+
+    def feed_page_state(self):
+        state = super().feed_page_state()
+        state["href"] = "https://www.allkeyshop.com/wp-admin/admin.php?available=all&store=127&page=aks-merchant-feeds-9"
+        return state
+
+
+class BrokenAfterClickSession(FakeWriteSession):
+    """The CDP tab dies right after the Create click: the post-save verify
+    scan can no longer read the feed. The old code counted that as 'offer
+    gone' — it must now be an UNKNOWN + fail-closed stop (FC1)."""
+
+    def __init__(self, pages, **kw):
+        super().__init__(pages, **kw)
+        self.broken = False
+
+    def fill_and_create(self, *a, **kw):
+        diag = super().fill_and_create(*a, **kw)
+        self.broken = True
+        return diag
+
+    def page_offer_rows(self):
+        return [] if self.broken else super().page_offer_rows()
+
+    def feed_page_state(self):
+        state = super().feed_page_state()
+        if self.broken:
+            state["feed_ui"] = False
+            state["nav_max"] = 0
+        return state
+
+
+class ModalRaisesSession(FakeSubmitSession):
+    def open_offer_modal(self, offer_id):
+        raise CdpCommandError("CDP Runtime.evaluate: no response within 20s")
+
+
+def _dry(session, approved, **kw):
+    submitter = DryRunSubmitter(session)
+    submitter.empty_retry_wait_s = 0
+    return submitter.run(
+        run_id="r", merchant="Driffle", store_id="127", approved=approved, **kw
+    )
+
+
+class FeedScanFailClosedTests(unittest.TestCase):
+    """Audit 2026-07-17 (FC1/SC1/SC2/SC4/SC6): the batch index and the
+    post-save disappearance proof must be built on a POSITIVELY complete,
+    readable feed walk — anything else aborts, never impersonates 'gone'."""
+
+    def test_transient_blank_page_is_retried_and_scan_completes(self):
+        session = BlankPagesSession([["1"]], blank_reads=1)
+        result = _dry(session, [_cand("1")])
+        self.assertIsNone(result["aborted"])
+        self.assertTrue(result["plan"][0]["ready"])
+
+    def test_persistent_blank_in_range_page_aborts(self):
+        # Markers keep advertising 1 page of content but rows never render.
+        session = BlankPagesSession([["1"]], blank_reads=99)
+        result = _dry(session, [_cand("1")])
+        self.assertEqual(result["aborted"], "feed_unreadable")
+        self.assertEqual(result["plan"], [])
+
+    def test_login_bounce_mid_scan_aborts(self):
+        session = LoginMidScanSession([["1"]])
+        result = _dry(session, [_cand("1")])
+        self.assertEqual(result["aborted"], "feed_unreadable")
+
+    def test_wedged_navigation_aborts_instead_of_rereading_stale_dom(self):
+        session = WedgedNavigationSession([["1"], ["2"]])
+        result = _dry(session, [_cand("1"), _cand("2")])
+        self.assertEqual(result["aborted"], "feed_unreadable")
+
+    def test_max_pages_hit_with_more_pages_advertised_aborts(self):
+        # 5 pages of distinct rows, walk capped at 3: coverage unproven.
+        session = FakeSubmitSession([["1"], ["2"], ["3"], ["4"], ["5"]])
+        result = _dry(session, [_cand("1")], max_pages=3)
+        self.assertEqual(result["aborted"], "feed_unreadable")
+
+    def test_feed_ending_exactly_at_max_pages_is_covered(self):
+        session = FakeSubmitSession([["1"], ["2"], ["3"]])
+        result = _dry(session, [_cand("1")], max_pages=3)
+        self.assertIsNone(result["aborted"])
+        self.assertEqual(result["feed_offers"], 3)
+
+    def test_verify_scan_death_after_click_is_unknown_not_created(self):
+        session = BrokenAfterClickSession([["1", "2"]])
+        submitter = Submitter(session, click_mode="native")
+        submitter.empty_retry_wait_s = 0
+        result = submitter.run(
+            run_id="r", merchant="Driffle", store_id="127",
+            approved=[_cand("1"), _cand("2")], limit=None,
+        )
+        self.assertEqual(result["stopped"], "feed_unreadable")
+        self.assertEqual(result["created"], 0)          # UNKNOWN is not a creation
+        self.assertEqual(result["write_attempts"], 1)   # but the attempt is counted
+        entry = result["plan"][0]
+        self.assertFalse(entry.get("submitted"))
+        self.assertIn("UNKNOWN", entry["post_save"])
+        self.assertIn("verify it by hand", entry["post_save"])
+        self.assertEqual(len(result["plan"]), 1)        # offer 2 never attempted
+
+    def test_cdp_death_before_modal_is_unknown_and_stops(self):
+        session = ModalRaisesSession([["1", "2"]])
+        result = _dry(session, [_cand("1"), _cand("2")])
+        self.assertEqual(result["stopped"], "feed_unreadable")
+        entry = result["plan"][0]
+        self.assertIn("UNKNOWN", entry["post_save"])
+        self.assertIn("CdpCommandError", entry["post_save"])
 
 
 if __name__ == "__main__":
