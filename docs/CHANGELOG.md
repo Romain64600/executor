@@ -3,6 +3,36 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-17 — Audit P2.c : docs remises au niveau du code + skips §4.3 enfin codés (DO1-DO6)
+
+Rafraîchissement produit par un workflow multi-agents (5 rédacteurs ancrés
+sur le code + 5 vérificateurs factuels indépendants, leurs erreurs corrigées
+avant écriture) :
+
+- **NOOB.md** (DO1) — la contradiction canary/§4c est résolue en faveur de
+  R24 ; ajout de l'Étape 0b, de la page opérateur, du verrou navigateur, du
+  statut UNKNOWN, et d'une idée reçue n°10 retirant l'ancienne règle canary.
+- **ARCHITECTURE.md** (DO2) — réécrit sur l'état réel (fini le N8N de jour 1) :
+  stages 0b-5, layering des modules, admin, tab CDP unique, triple validé +
+  liaison sha (AS1), match_meta (FC5), marqueur root (FC2).
+- **README.md** (DO3) — arborescence réelle, compte de tests, page admin,
+  registre d'audit ; le quick start ne mentionne plus AKS_TARGET=vps.
+- **DATA_CONTRACTS.md** (DO4) — contrats des artefacts stages 4+ :
+  submit_plan.json (dont post_save UNKNOWN et matched_mode),
+  session_catalog.json, admin_submit.json, match_meta.json,
+  guard_ledger.json, modal_inspection.json.
+- **ops/BROWSER_RUNBOOK.md** (DO5, NOUVEAU) — le substrat navigateur enfin
+  documenté, vérifié live : hold apt Chromium 149 (et pourquoi : le 150
+  Debian SIGTRAP) couplé à l'UA épinglé, unités systemd, proxy socat 9223,
+  politique UA-Switcher, procédures de récupération et checklist de
+  reconstruction VM complète (marqueur FC2 inclus).
+- **DO6** — les skips que §4.3 promettait depuis v1 existent enfin dans le
+  matcher : « EU-NA » (FORBIDDEN_REGIONS, la normalisation de ponctuation
+  fait matcher « EU NA ») et les country gifts (CZ/RU/TR/BR/AR/IN/CN
+  ADJACENTS au mot GIFT — « Alice in Wonderland Steam Gift » ne skip pas).
+
+Tests : +4 (630 verts).
+
 ## 2026-07-17 — Audit P2.b : transport CDP désync-proof, contrats de fakes, primitives login testées (SC7/SC8/TE2/TE4/TE5)
 
 - **SC7** — `_page_ws_path` ne retient que les vrais onglets http(s)

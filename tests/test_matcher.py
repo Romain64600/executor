@@ -1681,6 +1681,33 @@ class AuditMa7GamivoEnMarkerTests(unittest.TestCase):
         self.assertIsNone(precheck_skip(offer))
 
 
+class AuditDo6PromisedSkipsTests(unittest.TestCase):
+    """DO6 (audit 2026-07-17): EXECUTOR_RULES §4.3 promised EU-NA and
+    country-gift skips since v1 — never coded until now."""
+
+    def test_eu_na_is_a_forbidden_region(self):
+        self.assertEqual(
+            precheck_skip(_offer("Game (PC) Steam Key EU-NA")),
+            "forbidden region: EU NA",
+        )
+
+    def test_country_gift_prefix_and_suffix_skip(self):
+        for name in ("Game RU Gift Steam", "Game Steam Gift CZ",
+                     "Game TR Gift (PC)", "Game Steam Gift IN"):
+            self.assertEqual(
+                precheck_skip(_offer(name)),
+                "country gift (region-locked gift, §4.3)",
+                name,
+            )
+
+    def test_english_word_in_before_gift_is_not_a_country_code(self):
+        # "IN" must be adjacent to GIFT to count — bare English survives.
+        self.assertIsNone(precheck_skip(_offer("Alice in Wonderland Steam Gift (PC)")))
+
+    def test_plain_global_gift_still_passes(self):
+        self.assertIsNone(precheck_skip(_offer("Neon Beats Steam GIFT (Global)")))
+
+
 class AuditMa8RegionTitleDefenseTests(unittest.TestCase):
     """MA8 (audit 2026-07-17): title-side region defense in depth — bare
     'EUROPE' mid-title (K4G grammar) and regions hidden in a non-first

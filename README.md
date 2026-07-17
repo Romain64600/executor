@@ -16,8 +16,9 @@ moves the risky work behind a scripted engine with a hard guardrail: the model
 > **Status — full pipeline built; submitter live-proven.** Read-only foundations
 > (Sprints 1–3) complete, and the write stage created its **first real AKS offers on
 > 2026-07-06** (Driffle, `--submit --click-mode trusted`). All write stages stay
-> gated behind green + authoritative invariants on the Debian VPS target. See
-> [Roadmap](#roadmap).
+> gated behind green + authoritative invariants on the Debian VPS target. A full
+> multi-agent audit ran on **2026-07-17**; its findings are tracked in
+> [`docs/AUDIT_2026-07-17.md`](docs/AUDIT_2026-07-17.md). See [Roadmap](#roadmap).
 
 ---
 
@@ -71,33 +72,43 @@ See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full decision record.
 ## Repository layout
 
 ```
-aks-controlled-executor/
+executor/
 ├── README.md
 ├── AGENTS.md                   # builder rules (Codex)
 ├── CLAUDE.md                   # builder rules (Claude) — imports AGENTS.md
+├── .github/workflows/ci.yml    # CI: unittest suite + secret scan (push / PR)
 ├── docs/
 │   ├── NOOB.md                 # beginner-friendly guide to the whole project (French)
 │   ├── ARCHITECTURE.md         # roles & target flow
 │   ├── INVARIANTS.md           # non-negotiable browser/network invariants
 │   ├── SPRINT_1_PLAN.md        # read-only foundation scope
 │   ├── EXECUTOR_RULES.md       # deterministic per-stage spec (from the skill)
+│   ├── SUBMITTER_SPEC.md       # Stage 4 submitter spec (dry-run + trusted write path)
+│   ├── LOGIN_SPEC.md           # Stage 0b login/2FA spec
 │   ├── DATA_CONTRACTS.md       # stage I/O JSON schemas + run-log format
-│   ├── AUDIT.md                # audit findings + resolution status
+│   ├── AUDIT.md                # Sprint 1 audit (2026-07-02) — fully resolved
+│   ├── AUDIT_2026-07-17.md     # audit register 2026-07-17 — findings tracked OPEN → FIXED
 │   ├── CONTRIBUTING.md         # developer guide
-│   └── CHANGELOG.md            # notable changes
-├── .github/workflows/ci.yml    # CI: unittest suite + secret scan (push / PR)
+│   ├── CHANGELOG.md            # notable changes
+│   └── ua-switcher-aks-staff.json  # UA-Switcher policy config (AKS/Staff UA)
 ├── scripts/
 │   ├── 00_audit_env.sh         # read-only env audit, tags PASS/FAIL/N-A
+│   ├── 00b_login.py            # Stage 0b login/2FA CLI — explicit go only, one attempt each
 │   ├── 01_check_invariants.py  # thin CLI over src/invariants.py (fail-closed JSON)
 │   ├── 02_extract_feed.py      # read-only feed extractor CLI (gated on green invariants)
 │   ├── 03_match.py             # read-only matcher CLI → candidates/skipped/report
 │   ├── 04_validate.py          # validation CLI (template + check, fail-closed gate)
 │   ├── 05_submit.py            # submitter CLI — dry-run default; --submit = real write (trusted)
 │   └── 07_admin_server.py      # admin page server (loopback only, behind nginx basic auth)
+├── manual_launch/
+│   └── run_executor.sh         # terminal-only launcher: prepare / check / dry-run / submit
 ├── ops/                        # admin page install: systemd unit, nginx vhost, runbook
 ├── src/
-│   ├── admin/                  # admin page: HTTP app, safe run access, triple regen, submit supervisor
+│   ├── admin/                  # admin page: HTTP app (app.py), safe run access (runs.py),
+│   │                           #   validation triple regen (validation_io.py), supervised
+│   │                           #   submit (submit_manager.py), static/ UI
 │   ├── aks_env.py              # constants, pure validators, env classification, HTTP probes
+│   ├── browser_lock.py         # advisory flock on state/browser.lock — one tab, one navigator (OP1)
 │   ├── cdp_client.py           # read-only CDP /json/version client (no browser actions)
 │   ├── cdp_session.py          # read-only CDP WebSocket session (navigate + evaluate)
 │   ├── invariants.py           # invariant report builder — probes run through the StepGuard
@@ -107,10 +118,12 @@ aks-controlled-executor/
 │   ├── validation.py           # Stage 3 validation gate (approve exact candidates)
 │   ├── submit_session.py       # read-only + narrow WriteSubmitSession (trusted picks/target/click)
 │   ├── submitter.py            # Stage 4 submitter — dry-run + real write path
+│   ├── login_session.py        # Stage 0b login/2FA session (reuses the trusted-input primitives)
+│   ├── pacing.py               # bounded-random pacing between page loads / submissions
 │   ├── run_log.py              # append-only JSONL run logger (redacting)
 │   └── step_guard.py           # deterministic, fail-closed StepGuard
-├── tests/                      # unit tests (454)
-├── config/  runs/  logs/  state/   # runtime dirs (runs/logs/state are gitignored)
+├── tests/                      # unit tests (626)
+├── runs/  logs/  state/        # runtime dirs (gitignored)
 └── .gitignore
 ```
 
@@ -139,14 +152,17 @@ aks-controlled-executor/
 # 2. Invariant gate (read-only). Must be authoritative:true AND ok:true on the VPS:
 python3 scripts/01_check_invariants.py
 
-# 3. Unit tests (pure — run anywhere):
-python3 -m unittest discover -s tests -v
+# 3. Unit tests (626, pure — run anywhere):
+python3 -m unittest discover -s tests
 ```
 
 **Environment classification.** The audit and the invariant checker detect where
 they run. Only the real Debian VPS target is `authoritative`; a red result on
 macOS, a dev box, or a sandbox is **not** a production failure and never unlocks
-write stages. Override detection with `AKS_TARGET=vps` or `AKS_TARGET=dev`.
+write stages. Authority comes ONLY from the root-installed marker
+`/etc/aks-executor.target` (content = hostname; FC2, audit 2026-07-17) —
+`AKS_TARGET=dev` can force NON-authoritative for local work, and there is
+deliberately no override in the other direction.
 
 ---
 
@@ -157,10 +173,13 @@ For a terminal-only data-entry run, use the helper in
 LLM/agent call. It still preserves the hard validation gate: `prepare` stops
 before approval, and real writes require the explicit `submit` command.
 
+(The admin page on the VPS drives these same scripts from the browser — this
+section is the terminal equivalent.)
+
 Start from the repo root:
 
 ```bash
-cd /Users/romainlamarque/aks_code/executor
+cd /home/debian/executor
 ```
 
 Prepare a run:
@@ -174,14 +193,14 @@ generation. It prints the generated run directory, for example:
 
 ```text
 Prepared run:
-  /Users/romainlamarque/aks_code/executor/runs/2026-07-13_101500_driffle
+  /home/debian/executor/runs/2026-07-13_101500_driffle
 ```
 
 That directory is the `RUN_DIR` used by the next commands. You may pass it as an
 absolute path:
 
 ```bash
-manual_launch/run_executor.sh check /Users/romainlamarque/aks_code/executor/runs/2026-07-13_101500_driffle
+manual_launch/run_executor.sh check /home/debian/executor/runs/2026-07-13_101500_driffle
 ```
 
 or, when already in the repo root, as a relative path:
@@ -277,6 +296,10 @@ starts, so a mid-task "retry past it" is impossible. See
   once visible and ready, one attempt each).
 - [`docs/INVARIANTS.md`](docs/INVARIANTS.md) — the non-negotiable browser/network
   invariants.
+- [`docs/AUDIT_2026-07-17.md`](docs/AUDIT_2026-07-17.md) — the audit register:
+  findings from the 2026-07-17 multi-agent audit, each tracked `OPEN` → `FIXED`
+  with date and commit. Complements [`docs/AUDIT.md`](docs/AUDIT.md) (Sprint 1
+  audit, 2026-07-02, fully resolved).
 - [`AGENTS.md`](AGENTS.md) / [`CLAUDE.md`](CLAUDE.md) — builder rules for Codex
   and Claude.
 
@@ -321,6 +344,18 @@ starts, so a mid-task "retry past it" is impossible. See
   explicit go only. Password from the environment, never stored/logged; a 2FA
   code is requested only once the field is confirmed visible and ready, one
   attempt each, no retry loop. See [`docs/LOGIN_SPEC.md`](docs/LOGIN_SPEC.md).
+- [x] **Admin operator page** (`src/admin/`, `scripts/07_admin_server.py`,
+  `ops/`) — live on the VPS at `/executor/`: loopback-only stdlib HTTP app
+  behind nginx HTTPS + basic auth, systemd-supervised (`aks-admin.service`).
+  Serves the normalized report, lets the operator approve/reject/override
+  candidates (validation triple regenerated server-side), and launches
+  supervised extract/dry-run/submit runs — never fire-and-forget. See
+  [`ops/INSTALL_ADMIN.md`](ops/INSTALL_ADMIN.md).
+- [x] **Runtime hardening** (`src/browser_lock.py`, `src/pacing.py`) —
+  advisory `flock` on `state/browser.lock` so only one process drives the
+  single CDP tab at a time (fail-closed: busy lock = refuse to start; OP1,
+  audit 2026-07-17), and bounded-random pacing (`--pace MIN-MAX`) between page
+  loads/submissions with counters recorded in the run log.
 
 ---
 

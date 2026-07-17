@@ -88,23 +88,35 @@ d'avoir marché ».
 ### c) Un humain valide, la machine exécute
 
 Aucune offre n'est soumise sans qu'un humain (Romain) ait approuvé **cette
-offre précise** dans un fichier de validation. Et même après approbation, le
-robot commence par **une seule** offre (le « canari ») avant de traiter le
-reste du lot.
+offre précise** dans un fichier de validation. Une fois le lot approuvé, c'est
+le **mode de saisie** qui dit combien d'offres partent (règle R24, 2026-07-13,
+détaillée en section 5) :
+
+- en mode `safe` — le mode par défaut, comportement éprouvé — le robot soumet
+  **tout le lot validé** d'un coup : la validation humaine est déjà le
+  garde-fou, on n'empile pas un « canari » par-dessus ;
+- dans les modes d'exploration (`learning`, `advanced`), où l'on teste une
+  nouveauté, il est bridé à **une seule** offre (le « canari »), le temps de
+  vérifier que la nouveauté se passe bien.
 
 ---
 
-## 5. La chaîne de montage : le pipeline en 6 étapes
+## 5. La chaîne de montage : le pipeline
 
 Le projet est une suite de scripts numérotés, comme les postes d'une chaîne de
 montage. Les étapes 00 à 04 sont en **lecture seule** (elles ne peuvent rien
-modifier sur le site). Seule l'étape 05 sait écrire — et elle est verrouillée.
+modifier sur le site). Seules deux étapes « écrivent » quelque chose : l'étape
+0b (la connexion, qui saisit les identifiants — uniquement sur ordre
+explicite) et l'étape 05 (la soumission — verrouillée).
 
 ```
 00 audit ──► 01 invariants ──► 02 extraction ──► 03 matching ──► 04 validation ──► 05 soumission
 (état des     (feu vert          (lire le flux      (trier &        (approbation      (écrire, enfin —
  lieux)        obligatoire)       marchand)          associer)       HUMAINE)          avec preuve)
 ```
+
+(À côté de la chaîne : l'étape **0b** — la connexion — remet la session en
+état quand elle a expiré, uniquement à la demande. Voir plus bas.)
 
 ### Étape 00 — `scripts/00_audit_env.sh` : l'état des lieux
 
@@ -127,6 +139,23 @@ Vérifie trois **invariants** (des conditions non négociables) :
 Il imprime un JSON avec deux booléens : `ok` (tout est vert ?) et
 `authoritative` (suis-je sur la vraie machine de production ?). **Aucune étape
 d'écriture ne se déverrouille tant que les deux ne sont pas vrais.**
+
+### Étape 0b — `scripts/00b_login.py` : la connexion (la seule étape qui touche aux identifiants)
+
+Toutes les autres étapes supposent une session déjà connectée à
+l'administration WordPress d'AKS. Quand la session a expiré, cette étape se
+reconnecte — **uniquement sur ordre explicite de Romain**, jamais toute seule
+(une étape qui découvre qu'elle est déconnectée s'arrête avec un rapport
+d'erreur ; elle ne relance jamais le login elle-même). Elle exige d'abord,
+elle aussi, le feu vert des invariants.
+
+Ses règles sont volontairement rigides : le mot de passe vient de
+l'environnement (jamais d'un fichier, d'un journal ou d'un commit) ; le code
+2FA n'est demandé que lorsque le champ est **visible et prêt** à être soumis
+immédiatement — jamais en avance ; et chacun n'a droit qu'à **une seule
+tentative** : un échec = arrêt, jamais de boucle de réessai (des connexions
+ratées en rafale peuvent faire bloquer le compte). Si la session est déjà
+connectée, l'étape ne fait rien et le dit.
 
 ### Étape 02 — `scripts/02_extract_feed.py` : l'extracteur (lecture seule)
 
@@ -187,7 +216,9 @@ Le script génère `validation.template.json`, où chaque candidat a
 `approve: false`. **Un humain** édite ce fichier à la main : il passe
 `approve: true` sur les offres choisies et remplit `validated_by` et
 `validated_at`. Puis le script vérifie le fichier rempli et produit
-`approved.json` : la liste exacte des offres autorisées.
+`approved.json` : la liste exacte des offres autorisées. (Aujourd'hui, la
+**page opérateur** — voir plus bas — fait cette édition à ta place, en cochant
+des cases ; le mécanisme derrière est exactement le même.)
 
 Chaque candidat est identifié par une **empreinte** (*fingerprint*) :
 `offer_id|aks_product_id|region_id|edition_id`. Si l'un de ces éléments change
@@ -250,10 +281,33 @@ s'arrête. Les résultats sont écrits dans `submit_plan.json` (machine) et
 `submit_report.txt` (humain) — qui distinguent volontairement les
 **tentatives** d'écriture des créations **vérifiées**.
 
-### Le lanceur pratique : `manual_launch/run_executor.sh`
+### La page opérateur : `/executor/` (le chemin normal aujourd'hui)
 
-Pour dérouler tout ça sans mémoriser cinq scripts, un enchaîneur à quatre
-commandes :
+Depuis juillet 2026, plus besoin d'éditer les fichiers JSON à la main : une
+page web servie par le VPS (adresse en `/executor/`, protégée par HTTPS et un
+mot de passe) est le poste de travail normal de l'opérateur. Elle permet de :
+
+- vérifier les invariants et lancer une extraction pour un marchand ;
+- lire le rapport et cocher/décocher chaque candidat — avec, si besoin,
+  correction de la région ou de l'édition (uniquement parmi les valeurs du
+  catalogue du run), ou suppression d'une erreur du matcheur (toujours
+  journalisée, jamais perdue en silence) ;
+- enregistrer : la page repasse par le **vrai** script de validation et
+  régénère le trio `candidates.json` + `validation.json` + `approved.json`
+  — elle ne peut jamais retoucher `approved.json` tout seul ;
+- lancer la répétition générale (*dry-run*) puis, sur décision, la vraie
+  soumission : le bouton « Soumettre » ouvre une confirmation qui exige de
+  taper `GO`, et c'est le **même** `05_submit.py` qui tourne, surveillé de
+  bout en bout (jamais lancé-puis-oublié).
+
+La page affiche aussi l'état de chaque offre (**ajoutée** / **échec** / **en
+attente**) et **verrouille** les offres déjà créées : impossible de les
+réapprouver ou de les resoumettre par accident.
+
+### Le lanceur en ligne de commande : `manual_launch/run_executor.sh`
+
+L'alternative à la page, pour dérouler la chaîne au terminal sans mémoriser
+cinq scripts — un enchaîneur à quatre commandes :
 
 ```bash
 manual_launch/run_executor.sh prepare --merchant Driffle --store-id 127   # étapes 00→04 (template)
@@ -304,6 +358,16 @@ survécu 74 minutes chez K4G).
 > de chambre pendant la nuit, donc une chambre 214 vide ne prouve pas un
 > départ — le client est peut-être simplement passé en 312.
 
+**Et si le flux est illisible au moment de vérifier ?** L'absence de preuve
+n'est **pas** une preuve d'absence (règle durcie à l'audit du 2026-07-17). Si
+le balayage de vérification ne peut pas prouver qu'il a **tout** lu — page qui
+ne répond pas, page blanche inexpliquée, déconnexion en cours de route,
+parcours interrompu avant la fin — l'offre est marquée **UNKNOWN** : « état
+inconnu, à vérifier **à la main** sur AKS avant tout réessai ». La tentative
+est comptée, la création **non**, et tout le run s'arrête
+(`stopped: "feed_unreadable"`). Jamais un flux illisible n'est compté comme
+« l'offre a disparu ».
+
 ---
 
 ## 7. « Authoritative » : seul le vrai serveur compte
@@ -317,10 +381,14 @@ le code et le Chrome de la machine) et refuse tous les autres avant même
 d'ouvrir une connexion.
 
 L'audit et le vérificateur d'invariants détectent **où** ils s'exécutent.
-Seul le vrai VPS obtient `authoritative: true` (critère par défaut : Linux +
-le fichier marqueur `/home/debian/.hermes/config.yaml` ; la variable
-`AKS_TARGET` peut forcer ce classement pour les tests, mais s'en servir pour
-se faire passer pour le VPS est interdit par les règles du projet).
+Seul le vrai VPS obtient `authoritative: true` : il faut être sur Linux ET
+que le fichier marqueur `/etc/aks-executor.target` existe — un fichier
+installé une fois par l'administrateur (root), que personne d'autre ne peut
+modifier, et dont le contenu doit être exactement le nom de la machine
+(audit FC2, 2026-07-17 : avant, une simple variable d'environnement
+`AKS_TARGET=vps` suffisait à se faire passer pour le VPS — c'est corrigé).
+La variable `AKS_TARGET` ne sert plus qu'à forcer le sens INOFFENSIF
+(`dev`/`sandbox`/`local` = « je ne suis pas le VPS », toujours sans risque).
 
 > **Analogie.** Un thermomètre posé sur le vrai patient (le VPS) donne un
 > diagnostic. Le même thermomètre posé sur un mannequin (ton portable, un
@@ -365,22 +433,43 @@ par la boucle de contrôle, jamais par le modèle).
 
 ---
 
-## 9. La trace de tout : les journaux
+## 9. Un seul conducteur : le verrou du navigateur
 
-Les étapes qui pilotent le navigateur (extraction, soumission) consignent
-chacune de leurs actions dans un journal **JSONL** (*JSON Lines* : un objet
-JSON par ligne, fichier `logs/<run_id>.jsonl`) : une boîte noire d'avion. On
-n'efface jamais, on n'écrase jamais, et les secrets (cookies, mots de passe,
-codes 2FA, URL de contrôle du navigateur…) sont **caviardés** avant écriture.
-Le matcheur et la validation, eux, laissent leurs traces dans les fichiers
-JSON du run (`candidates.json`, `skipped.json`, `approved.json`).
+Tout le projet pilote **un seul onglet** Chrome. Si deux programmes le
+pilotaient en même temps — par exemple la page opérateur en pleine extraction
+*et* un script lancé à la main dans un terminal — chacun casserait la
+navigation de l'autre (et, côté écriture, la fenêtre de saisie de l'autre).
+
+D'où un **verrou** (ajouté à l'audit du 2026-07-17) : toute étape qui touche
+au navigateur (connexion, extraction, soumission — y compris en dry-run) le
+prend avant de démarrer. Si le verrou est déjà occupé, l'étape **refuse de
+démarrer** et affiche **qui** tient l'onglet — elle n'attend pas son tour,
+elle ne partage jamais. Le verrou est relâché automatiquement par le système
+si le programme qui le tenait meurt : pas de « verrou fantôme » à nettoyer à
+la main.
+
+> **Analogie.** Une voiture n'a qu'un volant. Le deuxième conducteur ne
+> s'assoit pas sur les genoux du premier : il attend sur le parking que la
+> voiture revienne.
+
+---
+
+## 10. La trace de tout : les journaux
+
+Les étapes qui pilotent le navigateur (connexion, extraction, soumission)
+consignent chacune de leurs actions dans un journal **JSONL** (*JSON Lines* :
+un objet JSON par ligne, fichier `logs/<run_id>.jsonl`) : une boîte noire
+d'avion. On n'efface jamais, on n'écrase jamais, et les secrets (cookies, mots
+de passe, codes 2FA, URL de contrôle du navigateur…) sont **caviardés** avant
+écriture. Le matcheur et la validation, eux, laissent leurs traces dans les
+fichiers JSON du run (`candidates.json`, `skipped.json`, `approved.json`).
 
 Les répertoires `runs/`, `logs/`, `state/` et le fichier `.env` ne sont
 **jamais** committés dans git.
 
 ---
 
-## 10. Petit lexique
+## 11. Petit lexique
 
 - **AKS** — AllKeyShop, le comparateur de prix de clés de jeux.
 - **Flux marchand** (*merchant feed*) — la liste d'offres qu'un vendeur
@@ -398,15 +487,24 @@ Les répertoires `runs/`, `logs/`, `state/` et le fichier `.env` ne sont
   sur « Create offer ».
 - **Slug** — la partie lisible d'une URL (ex. `buy-elden-ring-cd-key-...`) ;
   chez certains marchands, elle porte l'édition et la région.
-- **Canari** — la première (et seule, par défaut) offre réellement soumise,
-  pour limiter les dégâts si quelque chose cloche.
+- **Mode de saisie** (`--mode`) — `safe` (défaut), `learning` ou `advanced` ;
+  décide la taille du lot soumis (règle R24, voir section 5).
+- **Canari** — l'unique offre réellement soumise dans les modes d'exploration
+  (`learning`/`advanced`) : un plafond de sécurité, le temps de valider une
+  nouveauté. Le mode `safe` n'a **pas** de canari : il soumet le lot validé
+  complet.
+- **UNKNOWN / `feed_unreadable`** — le flux n'a pas pu être relu entièrement
+  au moment de vérifier une soumission : l'état de l'offre est inconnu, il
+  faut la **vérifier à la main** sur AKS ; le run s'arrête.
+- **Verrou navigateur** — l'exclusivité sur l'onglet Chrome : un seul
+  programme le pilote à la fois, le second refuse de démarrer.
 - **StepGuard** — le disjoncteur qui compte tentatives et échecs.
 - **Run** — une exécution complète du pipeline ; ses fichiers vivent dans
   `runs/<date>_<heure>_<marchand>/`.
 
 ---
 
-## 11. Les idées fausses classiques
+## 12. Les idées fausses classiques
 
 1. **« Le script s'est arrêté, c'est un bug. »** Non : s'arrêter au moindre
    doute est le comportement conçu. Le bug, c'était Hermès qui continuait.
@@ -416,7 +514,8 @@ Les répertoires `runs/`, `logs/`, `state/` et le fichier `.env` ne sont
    résultat est non-authoritative ; c'est l'état local normal.
 4. **« J'édite `approved.json` pour ajouter une offre. »** Inutile : le
    soumetteur re-dérive l'approbation depuis la source et refusera le
-   fichier. Le seul fichier édité à la main est `validation.template.json`.
+   fichier. Le seul fichier édité à la main est `validation.template.json` —
+   et avec la page opérateur, même lui se remplit en cochant des cases.
 5. **« Le prix a changé, c'est bloquant. »** Non : le prix n'est qu'un signal
    d'aiguillage ; une fois nom + URL (+ magasin) confirmés, l'écart de prix
    ne bloque jamais.
@@ -432,6 +531,10 @@ Les répertoires `runs/`, `logs/`, `state/` et le fichier `.env` ne sont
 9. **« Beaucoup d'offres écartées = le matcheur est cassé. »** Non : ~2-3 %
    de rendement (constaté sur G2A, le flux le plus bruité) est normal ; le
    doute part toujours en skip, et tout skip est motivé dans `skipped.json`.
+10. **« Toute soumission commence par un canari d'une offre. »** Plus depuis
+    la règle R24 (2026-07-13) : en mode `safe` (le défaut), le lot validé
+    part **en entier** — la validation humaine est le garde-fou. Le canari
+    de 1 ne s'applique qu'aux modes `learning` et `advanced`.
 
 ---
 
@@ -439,8 +542,9 @@ Les répertoires `runs/`, `logs/`, `state/` et le fichier `.env` ne sont
 
 - [`../README.md`](../README.md) — vue d'ensemble, démarrage rapide, feuille de route.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — les rôles et le flux cible (la décision de conception).
-- [`EXECUTOR_RULES.md`](EXECUTOR_RULES.md) — la spécification déterministe de chaque étape (les règles R01, R22…).
+- [`EXECUTOR_RULES.md`](EXECUTOR_RULES.md) — la spécification déterministe de chaque étape (les règles R01, R22, R24…).
 - [`INVARIANTS.md`](INVARIANTS.md) — les invariants navigateur/réseau non négociables.
+- [`LOGIN_SPEC.md`](LOGIN_SPEC.md) — l'étape 0b (connexion / 2FA), la seule qui touche aux identifiants.
 - [`DATA_CONTRACTS.md`](DATA_CONTRACTS.md) — les schémas JSON de chaque étape et le format des journaux.
 - [`SUBMITTER_SPEC.md`](SUBMITTER_SPEC.md) — la spécification détaillée du soumetteur.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — le guide du développeur.

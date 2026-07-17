@@ -63,6 +63,18 @@ FORBIDDEN_REGIONS = (
     "CIS", "TURKEY", "GERMANY", "EASTERN EUROPE", "MIDDLE EAST", "MENA",
     "LATAM", "SOUTH AMERICA", "RU ONLY", "CHINA", "JAPAN", "KOREA", "BRAZIL",
     "INDIA", "ARGENTINA", "RUSSIA", "AUSTRALIA",
+    # §4.3 promised this since v1; never coded until DO6 (audit 2026-07-17).
+    # The precheck normalizes punctuation to spaces, so "EU-NA" matches here.
+    "EU NA",
+)
+
+# Country-restricted gifts (§4.3 "Country Gift (CZ/RU/TR/BR/AR/IN/CN)" —
+# promised since v1, never coded until DO6, audit 2026-07-17). The code must
+# be ADJACENT to the GIFT word: a bare word check would false-hit English
+# ("Alice IN Wonderland Steam Gift"). Runs on the padded, punctuation-
+# normalized title.
+_COUNTRY_GIFT_RE = re.compile(
+    r" (?:CZ|RU|TR|BR|AR|IN|CN) GIFT | GIFT (?:CZ|RU|TR|BR|AR|IN|CN) "
 )
 # "OFFICE" and "VPN" moved to SOFTWARE_APP_TOKENS (R22, word-boundary): as
 # substrings here they false-hit game titles ("The Office Quest", "…Officer…").
@@ -280,6 +292,8 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
     for region in FORBIDDEN_REGIONS:
         if f" {region} " in padded:
             return f"forbidden region: {region}"
+    if _COUNTRY_GIFT_RE.search(padded):
+        return "country gift (region-locked gift, §4.3)"
     upper = offer.name.upper()
     for cat in CATEGORY_SKIP:
         if cat in upper:
