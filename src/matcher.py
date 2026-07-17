@@ -36,6 +36,10 @@ AKS_BUY_URL = "https://www.allkeyshop.com/blog/buy-{slug}-cd-key-compare-prices/
 # allkeyshop.com — http_get refuses it for any other host (audit #4, 2026-07-08).
 AKS_PROBE_UA = AKS_STAFF_UA
 AKS_PROBE_DELAY_S = 0.3
+# Politeness budget for the two plain GETs to difmark.com per page-verified
+# offer (product page + its own top-offer API) — no staff UA bypass exists
+# for third-party merchants, same courtesy as AKS_PROBE_DELAY_S.
+DIFMARK_PROBE_DELAY_S = 0.3
 
 # R30 (2026-07-16, Romain) — AKS's own site search, tried only when
 # slug-guessing finds nothing. A WordPress `?s=` search is far heavier than a
@@ -115,6 +119,16 @@ SOFTWARE_APP_TOKENS = (
 # must contain kinguin.net). Only merchants with a written §11 domain rule are
 # listed; a mapped merchant whose row URL sits on another host fails closed.
 MERCHANT_DOMAINS = {"KINGUIN": "kinguin.net"}
+# Merchant → URL substring(s) that are boilerplate noise, not a product
+# signal — stripped before any text is derived from the URL (edition-from-
+# slug, etc.). Difmark's product URLs all carry a literal "buy-console-
+# account-" path segment regardless of what's actually sold; it is NOT a
+# marker to skip the offer (Romain 2026-07-17, correcting an earlier attempt
+# to treat it as a skip signal: "faut pas skip l'offre, juste pas prendre en
+# compte cette partie de l'URL"). The stored/reported offer URL itself is
+# never touched (EXECUTOR_RULES §4.6 URL hygiene) — only the local text used
+# for signal derivation.
+MERCHANT_URL_IGNORE_SUBSTRINGS = {"DIFMARK": ("buy-console-account-", "buy-console-account")}
 
 # platform -> region key -> AKS region id (EXECUTOR_RULES §10; dropdown is truth)
 REGION_IDS = {
@@ -363,7 +377,7 @@ def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | Non
 
     # Query strings carry campaign junk (COM_GLOBAL_PB, ___currency=EUR…) that
     # would false-hit region tokens — only the path speaks for the product.
-    url = offer.url.lower().split("?", 1)[0]
+    url = strip_merchant_url_noise(offer.url, offer.merchant).lower().split("?", 1)[0]
     padded = " " + offer.name.upper() + " "
     is_gift = "gift-" in url or "-gift" in url or " GIFT " in padded or "GIFT)" in padded
     tail = offer.name.rsplit(" - ", 1)[-1].strip().upper() if " - " in offer.name else ""
@@ -403,6 +417,104 @@ def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | Non
     return (label, _region_id(platform, base), implicit)
 
 
+# Difmark region-lock vocabulary — confirmed live 2026-07-17 against the
+# merchant's own per-offer "top-offer" API (offer_attributes[code=region]).
+# Deliberately NOT the site-wide "regions" dropdown embedded on every Difmark
+# page ({"value":1,"text":"Europe"}, ...): that is a residence/currency
+# continent picker, a different vocabulary — a live check on the Rogue Loops
+# example (product 166307, region_product_id=1) showed the dropdown mapping
+# "1 -> Europe" while the actual per-offer attribute was "region": "Global".
+# Decoding region_product_id through the dropdown would have silently been
+# wrong. Any region text outside this map fails closed (G02, doubt → skip)
+# instead of being guessed.
+DIFMARK_REGION_TEXT_MAP = {
+    "GLOBAL": ("GLOBAL", "global"),
+    "EUROPE": ("EU", "eu"),
+    "UNITED STATES": ("US", "us"),
+    "UNITED KINGDOM": ("UK", "uk"),
+}
+
+
+class DifmarkPageUnreadable(RuntimeError):
+    """The Difmark product page or its own 'top offer' API could not be read
+    (network error, unexpected shape, or a region string outside
+    DIFMARK_REGION_TEXT_MAP). Region is unverifiable — fail closed, no
+    fallback to the URL/title heuristic that was already ambiguous."""
+
+
+def extract_difmark_top_offer_url(page_html: str) -> str | None:
+    """Pull the 'top offer' API link Difmark itself embeds in the product
+    page's SSR JSON blob, unescaped. None if the page shape is unrecognized."""
+
+    match = re.search(r'"url_top_offer_with_get_params":"((?:[^"\\]|\\.)*)"', page_html)
+    if not match:
+        return None
+    try:
+        return json.loads('"' + match.group(1) + '"')
+    except ValueError:
+        return None
+
+
+def parse_difmark_offer_attributes(body: str) -> dict[str, Any] | None:
+    """{code: value} from a Difmark top-offer API JSON response, or None if
+    the response isn't the expected shape."""
+
+    try:
+        data = json.loads(body)
+    except ValueError:
+        return None
+    offer = data.get("offer") if isinstance(data, dict) else None
+    attrs = offer.get("offer_attributes") if isinstance(offer, dict) else None
+    if not isinstance(attrs, list):
+        return None
+    return {a["code"]: a["value"] for a in attrs if isinstance(a, dict) and "code" in a}
+
+
+def resolve_difmark_region(
+    url: str, platform: str, http_get_fn: Callable[..., Any] = http_get
+) -> tuple[str, str | None]:
+    """Page-verified (label, region_id) for a Difmark offer whose URL/title
+    gave no explicit region (Romain, 2026-07-17: "il y a des offres Steam
+    EUROPE qui ne sont pas indiquées dans l'URL" — some Steam EUROPE offers
+    aren't shown in the URL at all, so an implicit-GLOBAL default would be
+    wrong). Plain GETs only (curl-equivalent, no CDP/browser) — the account
+    URL itself, then the 'top offer' API link it points to."""
+
+    if http_get_fn is http_get:
+        time.sleep(DIFMARK_PROBE_DELAY_S)  # politeness budget for bulk runs
+    page = http_get_fn(url, timeout=15)
+    if not (page.ok and page.status == 200 and page.body):
+        raise DifmarkPageUnreadable(f"product page unreadable: {page.status or page.error}")
+    top_offer_url = extract_difmark_top_offer_url(page.body)
+    if not top_offer_url:
+        raise DifmarkPageUnreadable("no top-offer API link found on product page")
+    if http_get_fn is http_get:
+        time.sleep(DIFMARK_PROBE_DELAY_S)
+    probe = http_get_fn(top_offer_url, timeout=15)
+    if not (probe.ok and probe.status == 200 and probe.body):
+        raise DifmarkPageUnreadable(f"top-offer API unreadable: {probe.status or probe.error}")
+    attrs = parse_difmark_offer_attributes(probe.body)
+    if not attrs or "region" not in attrs:
+        raise DifmarkPageUnreadable("top-offer API response has no region attribute")
+    raw_region = str(attrs["region"]).strip().upper()
+    mapped = DIFMARK_REGION_TEXT_MAP.get(raw_region)
+    if mapped is None:
+        raise DifmarkPageUnreadable(f"unrecognized region text on merchant page: {raw_region!r}")
+    label, base = mapped
+    return (label, _region_id(platform, base))
+
+
+def strip_merchant_url_noise(url: str, merchant: str) -> str:
+    """Remove merchant-specific URL boilerplate before deriving ANY matching
+    signal (region, edition) from the URL. Case-insensitive — never touches
+    the stored/reported offer URL itself (EXECUTOR_RULES §4.6)."""
+
+    cleaned = url
+    for noise in MERCHANT_URL_IGNORE_SUBSTRINGS.get(merchant.upper(), ()):
+        cleaned = re.sub(re.escape(noise), "", cleaned, flags=re.IGNORECASE)
+    return cleaned
+
+
 def slug_edition_text(url: str) -> str:
     """The Driffle URL slug as searchable text (rule: edition lives in the URL).
 
@@ -415,10 +527,11 @@ def slug_edition_text(url: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", path.lower()).upper()
 
 
-def detect_edition(title: str, url: str = "") -> tuple[str, str]:
+def detect_edition(title: str, url: str = "", merchant: str = "") -> tuple[str, str]:
     # Driffle carries the edition in the URL slug (Romain, 2026-07-07); it is the
     # canonical merchant identity, so it wins over the AKS-normalized feed title.
-    for source in (slug_edition_text(url), title.upper()):
+    cleaned_url = strip_merchant_url_noise(url, merchant)
+    for source in (slug_edition_text(cleaned_url), title.upper()):
         if not source:
             continue
         for pattern, label, edition_id in EDITION_HINTS:
@@ -799,6 +912,7 @@ class SkippedOffer:
 def match_offer(
     offer: NormalizedOffer,
     resolver: Callable[[str], AksResolution | None] = resolve_aks,
+    difmark_region_resolver: Callable[[str, str], tuple[str, str | None]] = resolve_difmark_region,
 ) -> Candidate | SkippedOffer:
     reason = precheck_skip(offer)
     if reason:
@@ -807,6 +921,15 @@ def match_offer(
     declared_platform = explicit_platform(offer.name) or explicit_platform_from_url(offer.url)
     platform = declared_platform or "STEAM"  # default — R20 verifies it below
     region_label, region_id, implicit = detect_region(offer, platform)
+    if implicit and offer.merchant.strip().upper() == "DIFMARK":
+        # Romain (2026-07-17): some Difmark Steam EUROPE offers carry no
+        # region signal in the URL or title at all — the merchant's own page
+        # is the only deterministic source left. Doubt still goes to skip
+        # (G02): a page/API that can't be read is NOT treated as GLOBAL.
+        try:
+            region_label, region_id = difmark_region_resolver(offer.url, platform)
+        except DifmarkPageUnreadable as exc:
+            return SkippedOffer(offer, f"Difmark region unverifiable: {exc}")
     if region_id is None:
         return SkippedOffer(offer, f"no region id for {platform}/{region_label}")
 
@@ -913,7 +1036,7 @@ def match_offer(
     if _dlc_edition_on_page(resolution.editions):
         edition_label, edition_id = "DLC", "16"
     else:
-        edition_label, edition_id = detect_edition(offer.name, offer.url)
+        edition_label, edition_id = detect_edition(offer.name, offer.url, offer.merchant)
         # CORE rule 4 / E05: an edition word that is part of the AKS game name is not
         # an edition — fall back to Standard. Label match alone misses hint synonyms
         # ("Trilogy" resolves to label "Bundle"), so also compare via re-detection on
@@ -1018,13 +1141,14 @@ def match_offer(
 def match_feed(
     feed: NormalizedFeed,
     resolver: Callable[[str], AksResolution | None] = resolve_aks,
+    difmark_region_resolver: Callable[[str, str], tuple[str, str | None]] = resolve_difmark_region,
     *,
     max_candidates: int = 100,
 ) -> tuple[list[Candidate], list[SkippedOffer]]:
     candidates: list[Candidate] = []
     skipped: list[SkippedOffer] = []
     for offer in feed.offers:
-        result = match_offer(offer, resolver)
+        result = match_offer(offer, resolver, difmark_region_resolver)
         if isinstance(result, Candidate):
             if len(candidates) < max_candidates:
                 candidates.append(result)

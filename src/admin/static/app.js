@@ -31,6 +31,7 @@ const MERCHANTS = [
   { name: 'Instant Gaming', storeId: '28' },
   { name: 'Gamivo', storeId: '51' },
   { name: 'Allyouplay', storeId: '17' },
+  { name: 'Difmark', storeId: '167' },
 ];
 
 // ---------------------------------------------------------------- helpers

@@ -709,7 +709,7 @@ Collection 348.
 
 **Merchant store ids** (verify against feed): Kinguin 58, G2A 38, Driffle 127,
 Eneba 19, GameSeal 126, K4G 92, CJS 30, Instant Gaming 28, Gameboost 157,
-Gamivo 51, Allyouplay 17, GOG 34.
+Gamivo 51, Allyouplay 17, GOG 34, Difmark 167.
 
 ---
 
@@ -730,6 +730,42 @@ Gamivo 51, Allyouplay 17, GOG 34.
   platform/region phrases (matcher `_TRAILING_NOISE_PHRASES`), and dashes
   inside product names are real ("Endless Space - Disharmony"); heavy
   console share (~25%); pagination `&p=N`, sweep until 0 new offers.
+- **Difmark**: store id 167. Every product URL carries a literal
+  `buy-console-account-` path segment regardless of what's actually sold —
+  boilerplate, not a signal. **Never a skip reason**; it is stripped
+  (case-insensitively) before any URL-derived matching signal — both region
+  (Ga01, URL wins over title) and edition-from-slug — is computed (matcher
+  `strip_merchant_url_noise` / `MERCHANT_URL_IGNORE_SUBSTRINGS`, Romain
+  2026-07-17). The stored/reported offer URL itself is left untouched (§4.6).
+  Real example: `https://difmark.com/en/buy-console-account-rogue-loops-steam-account-166307?referal=allkeyshop&marketplace_id=2&edition_id=780&region_product_id=1&seller_id[]=275327&seller_id[]=2300110`
+  is read as `https://difmark.com/en/rogue-loops-steam-account-166307?...` —
+  the `edition_id=780`/`region_product_id=1` query params are Difmark's own
+  internal ids (no known mapping to AKS ids) and are not used as a signal;
+  region/edition still come from the (cleaned) path text and the title.
+  - **Page-verified region (Romain 2026-07-17):** some Steam EUROPE Difmark
+    offers carry no region signal in the URL or title at all — an
+    implicit-GLOBAL default would silently under-license them. When
+    `detect_region` would otherwise fall back to implicit GLOBAL for a
+    Difmark offer, the matcher instead fetches the merchant's own product
+    page (plain GET, no CDP/browser — "les pages marchand, tu peux les curl")
+    and follows the `url_top_offer_with_get_params` link the page itself
+    embeds, to a small JSON API returning `offer_attributes` incl. an
+    authoritative `region` text (`resolve_difmark_region` /
+    `DIFMARK_REGION_TEXT_MAP`, `src/matcher.py`). A region text outside the
+    known vocabulary (`Global`, `Europe`, `United States`, `United Kingdom`)
+    fails closed — SKIP, never a guess (G02). Confirmed live: this is a
+    *different* vocabulary from the site-wide "regions" dropdown embedded on
+    every Difmark page (a residence/currency continent picker) — decoding
+    the URL's `region_product_id` through that dropdown would have been
+    silently wrong (id 1 = "Europe" there, but the real per-offer attribute
+    for that same example was `region: Global`).
+  - **`STEAM ACCOUNT` still applies to Difmark.** The Rogue Loops example
+    above is a genuine full-credential account sale ("you will receive all
+    the necessary login credentials…", confirmed on the merchant page) —
+    correctly rejected by the pre-existing `CATEGORY_SKIP` entry, unrelated
+    to the URL/region fixes. Whether Difmark also lists genuine CD keys
+    (title without "Account") is still unconfirmed pending the first full
+    extraction.
 
 ---
 

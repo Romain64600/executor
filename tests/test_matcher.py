@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from src.aks_env import HttpProbeResult
@@ -7,6 +8,7 @@ from src.matcher import (
     AksProbeUnreliable,
     AksResolution,
     Candidate,
+    DifmarkPageUnreadable,
     SkippedOffer,
     build_slug_candidates,
     dangerous_qualifier,
@@ -17,15 +19,19 @@ from src.matcher import (
     explicit_platform_from_url,
     extra_significant_words,
     extract_aks_name,
+    extract_difmark_top_offer_url,
     extract_editions,
     extract_official_platforms,
     extract_prices,
     match_feed,
     match_offer,
     missing_aks_words,
+    parse_difmark_offer_attributes,
     precheck_skip,
     resolve_aks,
+    resolve_difmark_region,
     search_aks_slugs,
+    strip_merchant_url_noise,
     tokenize,
 )
 
@@ -88,6 +94,126 @@ class QualifierTests(unittest.TestCase):
         self.assertIsNone(dangerous_qualifier("Dead Space Remake", "Dead Space Remake"))
 
 
+class MerchantUrlNoiseTests(unittest.TestCase):
+    def test_strips_difmark_boilerplate_case_insensitively(self):
+        self.assertEqual(
+            strip_merchant_url_noise(
+                "https://difmark.com/en/Buy-Console-Account-rogue-loops-166307",
+                "Difmark",
+            ),
+            "https://difmark.com/en/rogue-loops-166307",
+        )
+
+    def test_unmapped_merchant_is_untouched(self):
+        url = "https://difmark.com/en/buy-console-account-rogue-loops-166307"
+        self.assertEqual(strip_merchant_url_noise(url, "SomeOtherMerchant"), url)
+
+
+# Trimmed real fixtures (Romain, 2026-07-17): captured live from
+# https://difmark.com/en/buy-console-account-rogue-loops-steam-account-166307
+# and its embedded top-offer API link.
+DIFMARK_PAGE_HTML = (
+    '<link rel="canonical" href="https://difmark.com/en/x">'
+    '"tabs":[{"name":"Steam Account","product_id":166307,"offer_type_id":9,'
+    '"url_top_offer":"https:\\/\\/difmark.com\\/en\\/products\\/166307\\/top-offer?offer_type=9",'
+    '"url_top_offer_with_get_params":"https:\\/\\/difmark.com\\/en\\/products\\/166307\\/top-offer'
+    '?offer_type=9&referal=allkeyshop&marketplace_id=2&edition_id=780&region_product_id=1'
+    '&seller_id%5B0%5D=275327&seller_id%5B1%5D=2300110",'
+    '"url_offers_by_type":"https:\\/\\/difmark.com\\/en\\/products\\/166307\\/offers-by-type\\/9"}]'
+)
+DIFMARK_TOP_OFFER_URL = (
+    "https://difmark.com/en/products/166307/top-offer?offer_type=9&referal=allkeyshop"
+    "&marketplace_id=2&edition_id=780&region_product_id=1&seller_id%5B0%5D=275327"
+    "&seller_id%5B1%5D=2300110"
+)
+
+
+def _difmark_top_offer_body(region="Global", edition="Standard"):
+    return json.dumps({
+        "offer": {
+            "id": 12273300,
+            "offer_attributes": [
+                {"code": "id", "name": "ID", "value": 12273300},
+                {"code": "marketplace", "name": "Platform", "value": "Steam"},
+                {"code": "edition", "name": "Edition", "value": edition},
+                {"code": "region", "name": "Region", "value": region},
+                {"code": "delivery_time", "name": "Delivery", "value": "15 minutes"},
+                {"code": "warranty", "name": "Warranty", "value": "180 days"},
+                {"code": "stock", "name": "Stock", "value": 100},
+            ],
+        }
+    })
+
+
+class DifmarkRegionResolverTests(unittest.TestCase):
+    def test_extract_top_offer_url_from_real_page_fixture(self):
+        self.assertEqual(extract_difmark_top_offer_url(DIFMARK_PAGE_HTML), DIFMARK_TOP_OFFER_URL)
+
+    def test_extract_top_offer_url_missing_is_none(self):
+        self.assertIsNone(extract_difmark_top_offer_url("<html>no such field</html>"))
+
+    def test_parse_offer_attributes_real_shape(self):
+        attrs = parse_difmark_offer_attributes(_difmark_top_offer_body())
+        self.assertEqual(attrs["region"], "Global")
+        self.assertEqual(attrs["edition"], "Standard")
+        self.assertEqual(attrs["marketplace"], "Steam")
+
+    def test_parse_offer_attributes_bad_json_is_none(self):
+        self.assertIsNone(parse_difmark_offer_attributes("not json"))
+
+    def test_parse_offer_attributes_unexpected_shape_is_none(self):
+        self.assertIsNone(parse_difmark_offer_attributes(json.dumps({"offer": {}})))
+
+    def test_resolve_region_global_end_to_end(self):
+        product_url = "https://difmark.com/en/buy-console-account-rogue-loops-steam-account-166307"
+
+        def fake_http(url, timeout=15, user_agent=None):
+            if url == product_url:
+                return HttpProbeResult(url=url, ok=True, status=200, body=DIFMARK_PAGE_HTML)
+            if url == DIFMARK_TOP_OFFER_URL:
+                return HttpProbeResult(
+                    url=url, ok=True, status=200, body=_difmark_top_offer_body(region="Global")
+                )
+            return HttpProbeResult(url=url, ok=False, status=404, body="")
+
+        self.assertEqual(resolve_difmark_region(product_url, "STEAM", fake_http), ("GLOBAL", "2"))
+
+    def test_resolve_region_europe_end_to_end(self):
+        product_url = "https://difmark.com/en/buy-console-account-some-game-1"
+
+        def fake_http(url, timeout=15, user_agent=None):
+            if url == product_url:
+                return HttpProbeResult(url=url, ok=True, status=200, body=DIFMARK_PAGE_HTML)
+            if url == DIFMARK_TOP_OFFER_URL:
+                return HttpProbeResult(
+                    url=url, ok=True, status=200, body=_difmark_top_offer_body(region="Europe")
+                )
+            return HttpProbeResult(url=url, ok=False, status=404, body="")
+
+        self.assertEqual(resolve_difmark_region(product_url, "STEAM", fake_http), ("EU", "9"))
+
+    def test_resolve_region_product_page_unreadable_raises(self):
+        def fake_http(url, timeout=15, user_agent=None):
+            return HttpProbeResult(url=url, ok=False, status=500, body="", error="boom")
+
+        with self.assertRaises(DifmarkPageUnreadable):
+            resolve_difmark_region("https://difmark.com/en/x", "STEAM", fake_http)
+
+    def test_resolve_region_unrecognized_text_raises_not_guessed(self):
+        # G02 — doubt goes to skip, never a guessed bucket.
+        product_url = "https://difmark.com/en/buy-console-account-x"
+
+        def fake_http(url, timeout=15, user_agent=None):
+            if url == product_url:
+                return HttpProbeResult(url=url, ok=True, status=200, body=DIFMARK_PAGE_HTML)
+            return HttpProbeResult(
+                url=url, ok=True, status=200, body=_difmark_top_offer_body(region="North America")
+            )
+
+        with self.assertRaises(DifmarkPageUnreadable):
+            resolve_difmark_region(product_url, "STEAM", fake_http)
+
+
 class PrecheckSkipTests(unittest.TestCase):
     def test_console(self):
         self.assertEqual(precheck_skip(_offer("Halo Xbox Series X")), "console")
@@ -110,6 +236,17 @@ class PrecheckSkipTests(unittest.TestCase):
     def test_unmapped_merchant_has_no_domain_rule(self):
         # _offer uses merchant="Test" — no §11 domain rule, any host passes.
         self.assertIsNone(precheck_skip(_offer("Elden Ring Steam Key GLOBAL")))
+
+    def test_difmark_buy_console_account_url_is_not_skipped(self):
+        # EXECUTOR_RULES §11 (Romain 2026-07-17): "buy-console-account-" is
+        # boilerplate on every Difmark URL, not a marker of an actual
+        # account sale — it must never cause a skip.
+        offer = NormalizedOffer(
+            offer_id="1", name="Elden Ring Steam Key GLOBAL",
+            url="https://www.difmark.com/buy-console-account-elden-ring-steam-key",
+            merchant="Difmark",
+        )
+        self.assertIsNone(precheck_skip(offer))
 
     def test_forbidden_region(self):
         self.assertIn("forbidden region", precheck_skip(_offer("Game Steam Key TURKEY")))
@@ -213,6 +350,60 @@ class DetectTests(unittest.TestCase):
             detect_edition(
                 "Gambonanza (Europe) (PC / Mac / Linux) - Steam - Digital Key",
                 "https://www.driffle.com/gambonanza-europe-pc-mac-linux-steam-digital-key-p9988321",
+            ),
+            ("Standard", "1"),
+        )
+
+    def test_region_ignores_difmark_url_boilerplate(self):
+        # Real Difmark URL (Romain, 2026-07-17): region/edition are read from
+        # the link, but "buy-console-account-" is boilerplate on every
+        # listing and must be stripped first (rule Ga01 — URL wins over
+        # title for region).
+        offer = NormalizedOffer(
+            offer_id="1", name="Rogue Loops Steam Account",
+            url=(
+                "https://difmark.com/en/buy-console-account-rogue-loops-steam-account-166307"
+                "?referal=allkeyshop&marketplace_id=2&edition_id=780&region_product_id=1"
+                "&seller_id[]=275327&seller_id[]=2300110"
+            ),
+            merchant="Difmark",
+        )
+        label, region_id, implicit = detect_region(offer, "STEAM")
+        self.assertEqual((label, region_id), ("GLOBAL", "2"))
+        self.assertTrue(implicit)
+
+    def test_edition_ignores_difmark_url_boilerplate(self):
+        # Romain 2026-07-17: "buy-console-account-" sits on every Difmark URL
+        # regardless of what's sold — it must be stripped before edition
+        # detection, not treated as a signal (and never as a skip, tested in
+        # PrecheckSkipTests). A real edition token elsewhere in the slug still
+        # has to be found once the boilerplate is out of the way.
+        self.assertEqual(
+            detect_edition(
+                "Elden Ring Deluxe Edition Steam Key GLOBAL",
+                "https://www.difmark.com/buy-console-account-elden-ring-deluxe-edition",
+                "Difmark",
+            ),
+            ("Deluxe", "7"),
+        )
+        # No edition token at all → Standard, boilerplate alone must not
+        # falsely resolve to any EDITION_HINTS entry.
+        self.assertEqual(
+            detect_edition(
+                "Elden Ring Steam Key GLOBAL",
+                "https://www.difmark.com/buy-console-account-elden-ring",
+                "Difmark",
+            ),
+            ("Standard", "1"),
+        )
+        # Same URL shape, but merchant not marked for cleanup: boilerplate
+        # stays in the derived text (still no accidental EDITION_HINTS hit,
+        # so behavior is unchanged for merchants without a §11 entry).
+        self.assertEqual(
+            detect_edition(
+                "Elden Ring Steam Key GLOBAL",
+                "https://www.difmark.com/buy-console-account-elden-ring",
+                "SomeOtherMerchant",
             ),
             ("Standard", "1"),
         )
@@ -561,6 +752,61 @@ class MatchOfferTests(unittest.TestCase):
         self.assertEqual(result.aks_product_id, "205027")
         self.assertEqual((result.region_label, result.region_id), ("GLOBAL", "2"))
         self.assertEqual((result.edition_label, result.edition_id), ("Standard", "1"))
+
+    def test_difmark_implicit_region_resolved_via_merchant_page(self):
+        # Romain (2026-07-17): title/URL give no region for this offer — the
+        # page-verified result must win over the implicit-GLOBAL default.
+        # Title uses "(Steam Key)", not "(Steam Account)": the real Rogue
+        # Loops example is a full-credential account sale, which the
+        # pre-existing STEAM ACCOUNT categorical skip correctly rejects on
+        # its own merits — unrelated to region resolution, tested in
+        # isolation here with a plausible key-type title instead.
+        offer = NormalizedOffer(
+            offer_id="1", name="Rogue Loops (Steam Key)",
+            url="https://difmark.com/en/buy-console-account-rogue-loops-steam-account-166307",
+            merchant="Difmark",
+        )
+        result = match_offer(
+            offer, self._resolver(aks_name="Rogue Loops"),
+            difmark_region_resolver=lambda url, platform: ("EU", "9"),
+        )
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual((result.region_label, result.region_id), ("EU", "9"))
+
+    def test_difmark_explicit_url_region_skips_page_lookup(self):
+        # detect_region already found EUROPE from the (cleaned) URL/title —
+        # not implicit, so the page resolver must not even be called.
+        offer = NormalizedOffer(
+            offer_id="1", name="Rogue Loops (Europe) (Steam Key)",
+            url="https://difmark.com/en/buy-console-account-rogue-loops-europe-steam-account-166307",
+            merchant="Difmark",
+        )
+
+        def boom(url, platform):
+            raise AssertionError("page resolver should not be called when region is explicit")
+
+        result = match_offer(
+            offer, self._resolver(aks_name="Rogue Loops"), difmark_region_resolver=boom
+        )
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual(result.region_label, "EU")
+
+    def test_difmark_unverifiable_region_skips_offer(self):
+        offer = NormalizedOffer(
+            offer_id="1", name="Rogue Loops (Steam Key)",
+            url="https://difmark.com/en/buy-console-account-rogue-loops-steam-account-166307",
+            merchant="Difmark",
+        )
+
+        def failing_resolver(url, platform):
+            raise DifmarkPageUnreadable("top-offer API unreadable: 500")
+
+        result = match_offer(
+            offer, self._resolver(aks_name="Rogue Loops"),
+            difmark_region_resolver=failing_resolver,
+        )
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("Difmark region unverifiable", result.reason)
 
     def test_duplicate_price_on_page_skips(self):
         # R25 (2026-07-15, Kinguin/Darkwood escape): the page already lists
