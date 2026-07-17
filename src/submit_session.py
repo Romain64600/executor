@@ -921,6 +921,13 @@ class WriteSubmitSession(SubmitSession):
         time.sleep(0.5)
         return {"scrolled": True, "scroll_y_distance": y_distance}
 
+    def _readback_select(self, select_name: str) -> dict[str, Any]:
+        """Read-only readback of a select's current value through both
+        channels (``select.value`` + ``selectize.getValue()``) + open state."""
+
+        raw = self.evaluate_readonly(_SELECTIZE_READBACK_JS % json.dumps(select_name))
+        return json.loads(raw) if raw else {"ok": False}
+
     def select_via_trusted(
         self, select_name: str, value_id: str, query: str | None = None,
     ) -> dict[str, Any]:
@@ -1033,10 +1040,7 @@ class WriteSubmitSession(SubmitSession):
         diag["option_click"] = self._trusted_click_at_rect(option_rect)
         time.sleep(0.2)  # dropdown close + state settle
 
-        readback_raw = self.evaluate_readonly(
-            _SELECTIZE_READBACK_JS % json.dumps(select_name)
-        )
-        readback = json.loads(readback_raw) if readback_raw else {"ok": False}
+        readback = self._readback_select(select_name)
         diag["readback"] = readback
         # Fail-closed: a dropdown still open after the pick can cover elements
         # below (body-parented) and swallow a later trusted click's mousedown,
@@ -1046,6 +1050,25 @@ class WriteSubmitSession(SubmitSession):
         # dropdown via onOptionSelect, so open-here means the pick didn't land.
         if readback.get("is_open"):
             diag["status"] = "DROPDOWN_STILL_OPEN"
+            return diag
+        # Fail-closed: the pick must have landed on the WANTED option. A
+        # trusted click can land on a neighbour (layout shift between the rect
+        # read and the mousedown, sub-pixel rounding) and every downstream
+        # gate would still pass — the form is valid with ANY selected option.
+        # Compare both readback channels to the target id; anything else is a
+        # mis-pick, not a success (audit 2026-07-17, SC3).
+        if not readback.get("ok"):
+            diag["status"] = "READBACK_UNREADABLE"
+            return diag
+        got = {str(readback.get("select_value") or "")}
+        if readback.get("selectize_value") is not None:
+            got.add(str(readback.get("selectize_value")))
+        if got != {str(value_id)}:
+            diag["status"] = "WRONG_VALUE"
+            diag["reason"] = (
+                f"readback {sorted(got)!r} != target {str(value_id)!r} "
+                "after the option click"
+            )
             return diag
         diag["status"] = "SELECTED"
         return diag
@@ -1257,6 +1280,30 @@ class WriteSubmitSession(SubmitSession):
             self._evaluate(_TRUSTED_CLEANUP_JS)
             prep["status"] = "CLICK_PATH_OBSTRUCTED"
             return prep
+
+        # Last gate before the ONE write of the whole pipeline: both selects
+        # must STILL hold the wanted ids at click time. The picks were
+        # verified when they landed (select_via_trusted readback, SC3), but
+        # everything between then and now — target typing, scrolls, a stray
+        # dropdown — could have changed a value; the form stays valid with
+        # ANY option so no other gate would notice (audit 2026-07-17, SC3).
+        drift: dict[str, Any] = {}
+        for kind, name, target in (
+            ("region", region_select, str(region_id)),
+            ("edition", edition_select, str(edition_id)),
+        ):
+            final = self._readback_select(name)
+            drift[kind] = final
+            if not final.get("ok") or str(final.get("select_value") or "") != target:
+                self._evaluate(_TRUSTED_CLEANUP_JS)
+                prep["pre_click_readback"] = drift
+                prep["status"] = "VALUE_DRIFTED_BEFORE_CLICK"
+                prep["reason"] = (
+                    f"{kind} reads {final.get('select_value')!r} "
+                    f"(target {target!r}) at click time"
+                )
+                return prep
+        prep["pre_click_readback"] = drift
 
         click = self.click_trusted_at_element("#TB_ajaxContent .button-primary")
         prep["click"] = click

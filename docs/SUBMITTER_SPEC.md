@@ -84,6 +84,12 @@ For each offer in `approved.json`, wrapped in `StepGuard.run_step` with signatur
    a routing signal, never a blocker, and page is recomputed by the current
    scan (EXECUTOR_RULES §6). No row by either key, or a store contradiction →
    STOP.
+2b. **Re-verify the row on the FRESH render** (audit 2026-07-17, SC5): the
+   modal-opening navigate produces a NEW page load, minutes after the index
+   scan — the row must still be there under that id AND still match the
+   candidate (name, URL path; `check_price=False`). A vanished row or an id
+   reused by a mid-run re-import → STOP that candidate (blocker), never open
+   a modal on an unverified row.
 3. Open the modal from that row's `[data-create-offer]` button → `#TB_window`.
 4. **Verify modal context** (`#TB_ajaxContent` present).
 5. **Verify the select names** before filling — they vary per feed
@@ -112,6 +118,11 @@ fill_then_click_trusted`, `--click-mode trusted` which is now the default) is:
    reads the generic master catalog; forcing it created 3 wrong-edition offers
    on 2026-07-06). `setValue()` is **not** used — it produces `isTrusted:false`
    and leaves Selectize's own `required` text input empty.
+   **The post-pick readback is COMPARED to the target id** (audit 2026-07-17,
+   SC3): both channels (`select.value` + `selectize.getValue()`) must equal the
+   wanted id, else the pick fails `WRONG_VALUE` (a trusted click can land on a
+   neighbouring option and every later gate would still pass — the form is
+   valid with ANY option). An unreadable readback fails `READBACK_UNREADABLE`.
 2. **Fill `offer[targets][]`** (`add_target_trusted`) — the missing piece.
    `offer[targets][]` is a bare `<input type="text" required
    pattern="(\d+)|(https?://.+)">` with a sibling add-button (chip/array field).
@@ -126,6 +137,12 @@ fill_then_click_trusted`, `--click-mode trusted` which is now the default) is:
    old path silently fired zero admin-ajax: three `required` fields
    (`offer[targets][]` + the two Selectize text inputs) were empty, so the browser
    refused to dispatch the `submit` event.
+3b. **Pre-click value-drift gate** (audit 2026-07-17, SC3): immediately before
+   the Create click, BOTH selects are read back one last time and must still
+   hold their target ids — anything between the verified picks and the click
+   (target typing, scrolls, a stray dropdown) could have changed a value with
+   the form staying valid. A mismatch fails `VALUE_DRIFTED_BEFORE_CLICK`, no
+   click.
 4. **Trusted click on "Create offer"** — drives the modal's **own**
    `admin-ajax …do=create_offer`. We never issue a direct XHR (the merchant id is
    auto-assigned by the modal — a direct XHR would use the wrong one `[S09]`); the

@@ -932,6 +932,14 @@ class FillThenClickTrustedTests(unittest.TestCase):
             form_validity if form_validity is not None
             else {"ok": True, "form_valid": True, "checked": 3, "invalid_required": []}
         )
+        # Pre-click drift gate (SC3): both selects still hold their targets
+        # at click time in the nominal flow ("9" region / "1" edition).
+        picked_values = {"offer[region]": "9", "offer[edition]": "1"}
+        sess._readback_select = lambda name: {
+            "ok": True, "select_value": picked_values.get(name, ""),
+            "selectize_value": picked_values.get(name, ""),
+            "is_open": False, "validity_valid": True,
+        }
         sess._cleanup_called = cleanup_called
         mock.patch("src.submit_session.time.sleep").start()
         self.addCleanup(mock.patch.stopall)
@@ -971,6 +979,28 @@ class FillThenClickTrustedTests(unittest.TestCase):
                           {"status": "CLICKED"}, {"status": "SUCCESS"})
         result = sess.fill_then_click_trusted("offer[region]", "9", "offer[edition]", "1")
         self.assertEqual(result["status"], "NO_SELECTS")
+
+    def test_value_drift_before_click_fails_closed(self):
+        # SC3 (audit 2026-07-17): both picks landed and were verified, but a
+        # select changed between the picks and the Create click (stray
+        # dropdown, target typing side-effect). The last-gate readback must
+        # block the click — the form stays valid with ANY option, so nothing
+        # else would notice.
+        prep = {"status": "PREPARED",
+                "region_options": ["9"], "edition_options": ["1"],
+                "button": {"disabled": False, "visible": True, "text": "Create offer"},
+                "pre_existing": {"success": 0, "error": 0}}
+        sess = self._sess(prep, self._pick("9"), self._pick("1"),
+                          {"status": "CLICKED"}, {"status": "SUCCESS"})
+        sess._readback_select = lambda name: {
+            "ok": True, "select_value": "14106", "selectize_value": "14106",
+            "is_open": False, "validity_valid": True,
+        }
+        result = sess.fill_then_click_trusted("offer[region]", "9", "offer[edition]", "1")
+        self.assertEqual(result["status"], "VALUE_DRIFTED_BEFORE_CLICK")
+        self.assertNotIn("click", result)          # Create was NOT clicked
+        self.assertTrue(sess._cleanup_called)      # taps removed
+        self.assertIn("14106", result["reason"])
 
     def test_no_region_pick_triggers_cleanup(self):
         prep = {"status": "PREPARED", "region_options": ["9"], "edition_options": ["1"],
@@ -1179,6 +1209,34 @@ class SelectViaTrustedTests(unittest.TestCase):
         typed = "".join(k["text"] for k in keys if k["type"] == "keyDown")
         self.assertEqual(typed, "Standard")
         self.assertTrue(all("text" not in k for k in keys if k["type"] == "keyUp"))
+
+    def test_wrong_value_readback_fails_closed(self):
+        # SC3 (audit 2026-07-17): the option click landed, the dropdown
+        # closed — but on a NEIGHBOURING option. The readback disagrees with
+        # the target id and the pick must fail, not report SELECTED.
+        input_rect = json.dumps({"ok": True, "x": 100, "y": 200, "width": 240, "height": 32,
+                                 "top": 200, "left": 100, "bottom": 232, "right": 340,
+                                 "viewport": {"w": 1280, "h": 720}})
+        option_rect = json.dumps({"ok": True, "x": 100, "y": 240, "width": 240, "height": 24,
+                                  "top": 240, "left": 100, "bottom": 264, "right": 340,
+                                  "viewport": {"w": 1280, "h": 720}})
+        readback = json.dumps({"ok": True, "select_value": "14106",
+                               "selectize_value": "14106", "validity_valid": True})
+        sess = self._sess([input_rect, option_rect, readback])
+        result = sess.select_via_trusted("offer[edition]", "1")
+        self.assertEqual(result["status"], "WRONG_VALUE")
+        self.assertIn("14106", result["reason"])
+
+    def test_unreadable_readback_fails_closed(self):
+        input_rect = json.dumps({"ok": True, "x": 100, "y": 200, "width": 240, "height": 32,
+                                 "top": 200, "left": 100, "bottom": 232, "right": 340,
+                                 "viewport": {"w": 1280, "h": 720}})
+        option_rect = json.dumps({"ok": True, "x": 100, "y": 240, "width": 240, "height": 24,
+                                  "top": 240, "left": 100, "bottom": 264, "right": 340,
+                                  "viewport": {"w": 1280, "h": 720}})
+        sess = self._sess([input_rect, option_rect])  # readback read returns ""
+        result = sess.select_via_trusted("offer[region]", "9")
+        self.assertEqual(result["status"], "READBACK_UNREADABLE")
 
     def test_type_text_trusted_key_codes(self):
         sess = self._sess([])
@@ -1656,6 +1714,68 @@ class FeedScanFailClosedTests(unittest.TestCase):
         entry = result["plan"][0]
         self.assertIn("UNKNOWN", entry["post_save"])
         self.assertIn("CdpCommandError", entry["post_save"])
+
+
+class VanishingRowSession(FakeSubmitSession):
+    """The row exists during the index scan but is gone from the fresh render
+    _prepare does before opening the modal (mid-run re-import window, SC5)."""
+
+    def __init__(self, pages, vanish_from_call=3, **kw):
+        super().__init__(pages, **kw)
+        self.rows_calls = 0
+        self.vanish_from_call = vanish_from_call
+
+    def page_offer_rows(self):
+        self.rows_calls += 1
+        if self.rows_calls >= self.vanish_from_call:
+            return []
+        return super().page_offer_rows()
+
+
+class ReusedIdSession(FakeSubmitSession):
+    """Same id, DIFFERENT product on the fresh render (a re-import reused the
+    id in the window between the index scan and the modal open, SC5)."""
+
+    def __init__(self, pages, mutate_from_call=3, **kw):
+        super().__init__(pages, **kw)
+        self.rows_calls = 0
+        self.mutate_from_call = mutate_from_call
+
+    def page_offer_rows(self):
+        self.rows_calls += 1
+        rows = super().page_offer_rows()
+        if self.rows_calls >= self.mutate_from_call:
+            return [dict(r, name="A Different Product", url="https://m/other")
+                    for r in rows]
+        return rows
+
+
+class FreshRowRecheckTests(unittest.TestCase):
+    """Audit 2026-07-17 (SC5): _prepare re-verifies the row on the FRESH DOM
+    its own navigate just produced, before opening the modal by id."""
+
+    def test_row_vanished_before_modal_is_blocked(self):
+        # pages=[["1"]]: scan reads rows twice (page 1 + past-end), the
+        # 3rd read is _prepare's fresh check.
+        session = VanishingRowSession([["1"]], vanish_from_call=3)
+        result = _dry(session, [_cand("1")])
+        entry = result["plan"][0]
+        self.assertFalse(entry["ready"])
+        self.assertIn("vanished", entry["blocker"])
+
+    def test_reused_id_on_fresh_page_is_blocked(self):
+        session = ReusedIdSession([["1"]], mutate_from_call=3)
+        result = _dry(session, [_cand("1")])
+        entry = result["plan"][0]
+        self.assertFalse(entry["ready"])
+        self.assertIn("contradicts the candidate", entry["blocker"])
+
+    def test_matching_fresh_row_proceeds_to_modal(self):
+        session = FakeSubmitSession([["1"]])
+        result = _dry(session, [_cand("1")])
+        entry = result["plan"][0]
+        self.assertTrue(entry["ready"])
+        self.assertEqual(entry["fresh_row_checked"], ["name", "url"])
 
 
 if __name__ == "__main__":

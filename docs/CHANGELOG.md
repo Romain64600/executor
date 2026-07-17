@@ -3,6 +3,30 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-17 — Audit P1.b : le pick Selectize est vérifié, la ligne re-vérifiée sur le DOM frais (SC3/SC5)
+
+Deux trous du chemin d'écriture confirmés par l'audit :
+
+- **SC3** — le readback post-pick (`select.value` + `selectize.getValue()`)
+  était lu mais jamais COMPARÉ à l'id cible : un clic trusted atterrissant
+  sur l'option voisine passait `SELECTED`, et tous les gates suivants
+  passaient aussi (le formulaire est valide avec n'importe quelle option).
+  `select_via_trusted` exige maintenant l'égalité des deux canaux avec l'id
+  visé (`WRONG_VALUE` sinon, `READBACK_UNREADABLE` si illisible), et
+  `fill_then_click_trusted` re-lit les DEUX selects juste avant le clic
+  Create (`VALUE_DRIFTED_BEFORE_CLICK` — dernière porte avant la seule
+  écriture du pipeline).
+- **SC5** — `_prepare` naviguait vers la page de la ligne (nouveau render)
+  puis ouvrait la modale par id sans re-vérifier la ligne sur ce DOM frais ;
+  un ré-import dans la fenêtre peut réattribuer l'id à un autre produit.
+  La ligne est maintenant relue et re-vérifiée (`_row_check`, nom + chemin
+  URL, prix non bloquant) avant `open_offer_modal` — ligne disparue ou id
+  réutilisé → blocker, jamais de modale sur une ligne non vérifiée.
+
+Tests : WRONG_VALUE, READBACK_UNREADABLE, VALUE_DRIFTED_BEFORE_CLICK,
+FreshRowRecheckTests (3 scénarios). 526 tests verts. `SUBMITTER_SPEC.md`
+§4/§4b mis à jour.
+
 ## 2026-07-17 — Audit P0.2 : la preuve post-save exige un scan positivement complet (FC1/SC1/SC2/SC4/SC6/TE1)
 
 L'audit multi-agents du 2026-07-17 (`AUDIT_2026-07-17.md`) a confirmé un

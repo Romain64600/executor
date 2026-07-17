@@ -496,6 +496,38 @@ class _SubmitterBase:
             return entry
         entry["page_url"] = located["page_url"]
         self.session.navigate(located["page_url"])  # refresh the row's page
+        # The index scan's row check is now minutes old and this navigate just
+        # produced a NEW render — re-verify the row on the FRESH DOM before
+        # opening its modal by id (audit 2026-07-17, SC5): a re-import in the
+        # window can hand this id to a different product, and the modal would
+        # open on it without any identity check.
+        fresh = next(
+            (r for r in self.session.page_offer_rows()
+             if str(r.get("id") or "") == offer_id),
+            None,
+        )
+        if fresh is None:
+            entry["blocker"] = (
+                "row vanished from its page between the index scan and the "
+                "modal open (re-import/reflow mid-run)"
+            )
+            return entry
+        fresh_details = {
+            "offer_id": offer_id,
+            "page_url": located["page_url"],
+            "name": str(fresh.get("name") or ""),
+            "url": str(fresh.get("url") or ""),
+            "price": str(fresh.get("price") or ""),
+            "store_id": str(fresh.get("store_id") or ""),
+        }
+        mismatches, fresh_checked = _row_check(fresh_details, candidate, check_price=False)
+        if mismatches:
+            entry["blocker"] = (
+                "fresh page row at the located id contradicts the candidate "
+                f"({', '.join(mismatches)}) — id reused by a mid-run re-import?"
+            )
+            return entry
+        entry["fresh_row_checked"] = fresh_checked
         status = self.session.open_offer_modal(offer_id)
         entry["modal"] = status
         if status != "OPENED":
