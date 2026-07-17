@@ -171,8 +171,14 @@ compatibility decomposition of `'`).
 Even if all words match, **SKIP** when the merchant title carries a dangerous
 qualifier absent from the AKS name: `Remaster(ed)`, `HD`, `Reboot`, `Remake`,
 `Redux`, `Season Pass`, `DLC`, `Upgrade`, `Skin`, `Soundtrack`,
-`Digital Book/Artbook`. Never add a remaster to a base-game page unless the AKS
-page explicitly matches the remaster `[critical learned rule]`.
+`Digital Book/Artbook`, and since the 2026-07-17 audit (`MA3`) `Anniversary` /
+`Definitive` — they were noise-whitelisted with no backstop, so "Skyrim
+Anniversary Edition" entered the base-game page as Standard(1); the live
+master catalog has no stable plain numeric id for either, so there is no safe
+EDITION_HINTS entry — doubt goes to skip, and dedicated "… Anniversary/
+Definitive Edition" AKS pages (name carries the word) are unaffected. Never
+add a remaster to a base-game page unless the AKS page explicitly matches the
+remaster `[critical learned rule]`.
 
 ### 4.3 Immediate SKIP list `[CORE_RULES][P04]`
 Console (Xbox/PS/Nintendo); forbidden regions
@@ -218,6 +224,22 @@ Derive region from the offer URL when the merchant encodes it there
 (e.g. Gamivo `…-steam-global` / `-eu` / `-gift-eu`; look for `-en-` and
 `-gift-`) `[GAMIVO]`. Kinguin Steam titles often omit the region → accept as
 **GLOBAL implicit** unless a forbidden region is present `[KINGUIN]`.
+Audit 2026-07-17 hardenings: the Gamivo `-en-` marker is now CODED as a
+language-restriction skip (`MA7`, scoped to gamivo.com — elsewhere `en` can
+be a real title word); `gift` must be its own URL segment (`MA4` —
+`the-gifted-rabbit` no longer proposes GIFT(25)); title-side defense in
+depth for regions (`MA8`): bare `EUROPE` mid-title (K4G grammar) and a
+region in ANY parenthesised group (not only the first) now map to EU/…
+instead of implicit GLOBAL.
+**Platform declaration is word-boundary + collocation (`MA2`):** the old raw
+substring, fixed-order checks let a game-name word override the merchant's
+declaration ("Epic Chef … Steam Key" → EPIC, "Gogol's Quest" → GOG).
+Single-word tokens (STEAM/GOG/EPIC/UBISOFT/UPLAY/ROCKSTAR) are word-boundary;
+when several appear, the one collocated with the key-type marker
+(`<PLATFORM> [CD ]KEY/GIFT/ALTERGIFT`) is the declaration; still ambiguous →
+None and the token-less path (URL prefix R29, page-verified R20/R27) decides
+fail-closed. Multi-word declarations (EA APP, MICROSOFT STORE/KEY,
+BATTLE.NET) are unchanged collocations.
 
 **Platform is page-verified, fail-closed `[R20]` (2026-07-08, Su-27 escape):**
 `detect_platform`'s STEAM is a **default**, not a detection — "Su-27 for DCS
@@ -362,6 +384,19 @@ Build the slug from the AKS name (lowercase, `[^a-z0-9] → -`), verify
 `/blog/buy-{slug}-cd-key-compare-prices/` returns **200**, then extract
 `data-product-id` (the AKS_ID) and `<title>`. Extract available editions from
 the embedded `"editions":{…}` JSON `[EDITIONS.md]`.
+**A transient (403/429/5xx/timeout) or name-unreadable answer on ANY guessed
+slug raises IMMEDIATELY (`MA1`, audit 2026-07-17):** slug tiers go from most
+to least specific, so collecting the failure and letting a less-specific
+tier's 200 win silently resolved the wrong product tier (a deluxe title
+landing on the base page). The docstring always promised the immediate
+fail-closed; now the code does it.
+**Markup drift is loud (`MA6`):** a `"prices"` block that is PRESENT but no
+longer parses raises `AksPageUnparseable` → distinct skip ("AKS page markup
+drifted"), never a silent empty tuple that would turn the R25 duplicate
+guard off. Absence stays soft — stub pages legitimately serialize
+`"prices":[]`, and absent editions/platform lines are already covered
+fail-closed by R19 (empty map → skip) and R20/R27 (no platform info →
+token-less skip).
 **If the AKS product name cannot be read from the resolved page, the offer is
 SKIPPED with a distinct reason — never fall back to the offer title as the AKS
 name** (that turns the §4.1 identity check into a tautology; 2026-07-07 a

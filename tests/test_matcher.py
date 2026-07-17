@@ -1413,5 +1413,209 @@ class G2ARulesTests(unittest.TestCase):
         self.assertEqual((result.region_label, result.region_id), ("US", "8"))
 
 
+class AuditMa1TransientShadowingTests(unittest.TestCase):
+    """MA1 (audit 2026-07-17): a transient/unreadable answer on a MORE
+    specific slug tier must raise immediately — a 200 on a less specific tier
+    can be the wrong product (deluxe title landing on the base page)."""
+
+    def test_transient_on_specific_tier_raises_despite_base_200(self):
+        def fake_http(url, timeout=8, user_agent=None):
+            if "deluxe" in url:
+                return HttpProbeResult(url=url, ok=False, status=429, body="")
+            return HttpProbeResult(url=url, ok=True, status=200, body=AKS_PAGE)
+
+        with self.assertRaises(AksProbeUnreliable):
+            resolve_aks("Neon Beats Deluxe Edition", fake_http)
+
+    def test_unreadable_name_on_specific_tier_raises_despite_base_200(self):
+        unreadable_page = '<div data-product-id="99"></div>'  # id but no name
+
+        def fake_http(url, timeout=8, user_agent=None):
+            if "deluxe" in url:
+                return HttpProbeResult(url=url, ok=True, status=200, body=unreadable_page)
+            return HttpProbeResult(url=url, ok=True, status=200, body=AKS_PAGE)
+
+        with self.assertRaises(AksNameUnreadable):
+            resolve_aks("Neon Beats Deluxe Edition", fake_http)
+
+    def test_clean_404_on_specific_tier_still_falls_through(self):
+        def fake_http(url, timeout=8, user_agent=None):
+            if "deluxe" in url:
+                return HttpProbeResult(url=url, ok=False, status=404, body="")
+            return HttpProbeResult(url=url, ok=True, status=200, body=AKS_PAGE)
+
+        res = resolve_aks("Neon Beats Deluxe Edition", fake_http)
+        self.assertIsNotNone(res)
+        self.assertEqual(res.aks_name, "Neon Beats")
+
+
+class AuditMa2PlatformWordBoundaryTests(unittest.TestCase):
+    """MA2 (audit 2026-07-17): word-boundary platform tokens + the KEY/GIFT
+    collocation as tie-breaker — a game-name word must not override the
+    merchant's declaration."""
+
+    def test_epic_chef_steam_key_is_steam(self):
+        self.assertEqual(explicit_platform("Epic Chef (PC) - Steam Key - GLOBAL"), "STEAM")
+
+    def test_gogol_word_boundary_not_gog(self):
+        self.assertEqual(explicit_platform("Gogol's Quest Steam Key"), "STEAM")
+
+    def test_single_platform_word_wins_without_collocation(self):
+        self.assertEqual(explicit_platform("Epic Chef (PC) GLOBAL"), "EPIC")
+
+    def test_ambiguous_without_key_collocation_is_none(self):
+        self.assertIsNone(explicit_platform("Epic Steam Machine (PC)"))
+
+    def test_gog_com_key_is_gog(self):
+        self.assertEqual(explicit_platform("Neon Beats GOG.COM Key"), "GOG")
+
+    def test_steam_gift_collocation_disambiguates(self):
+        self.assertEqual(explicit_platform("Epic Chef Steam Gift (PC)"), "STEAM")
+
+
+class AuditMa3AnniversaryDefinitiveTests(unittest.TestCase):
+    """MA3 (audit 2026-07-17): ANNIVERSARY/DEFINITIVE are dangerous
+    qualifiers — no stable plain catalog id exists, so a base-page entry as
+    Standard(1) (the Skyrim Anniversary repro) must skip instead."""
+
+    def test_anniversary_absent_from_aks_name_is_dangerous(self):
+        self.assertEqual(
+            dangerous_qualifier(
+                "The Elder Scrolls V Skyrim Anniversary Edition",
+                "The Elder Scrolls V: Skyrim",
+            ),
+            "ANNIVERSARY",
+        )
+
+    def test_definitive_absent_from_aks_name_is_dangerous(self):
+        self.assertEqual(
+            dangerous_qualifier("Tomb Raider Definitive Edition Key", "Tomb Raider"),
+            "DEFINITIVE",
+        )
+
+    def test_dedicated_anniversary_page_is_not_flagged(self):
+        self.assertIsNone(
+            dangerous_qualifier("Halo Anniversary Steam Key", "Halo Anniversary")
+        )
+
+
+class AuditMa4GiftSegmentTests(unittest.TestCase):
+    """MA4 (audit 2026-07-17): 'gift' must be its own URL segment — the bare
+    substring proposed GIFT(25) for 'the-gifted-rabbit'."""
+
+    def test_gifted_in_slug_is_not_a_gift(self):
+        offer = _offer("The Gifted Rabbit (PC) Steam Key",
+                       url="https://driffle.com/the-gifted-rabbit-p123")
+        label, region_id, implicit = detect_region(offer, "STEAM")
+        self.assertNotIn("GIFT", label)
+
+    def test_gift_segment_still_detected(self):
+        offer = _offer("Neon Beats (PC)",
+                       url="https://driffle.com/neon-beats-steam-gift-eu-p1")
+        label, region_id, implicit = detect_region(offer, "STEAM")
+        self.assertEqual((label, region_id), ("GIFT EU", "259"))
+
+    def test_gift_word_in_title_still_detected(self):
+        offer = _offer("Neon Beats Steam GIFT (PC)", url="https://m.test/x")
+        label, region_id, implicit = detect_region(offer, "STEAM")
+        self.assertEqual((label, region_id), ("GIFT", "25"))
+
+
+class AuditMa5StringEditionEntriesTests(unittest.TestCase):
+    """MA5 (audit 2026-07-17): the R23 page-verify pool crashed with
+    AttributeError on string-valued editions entries — one such page aborted
+    the whole match run."""
+
+    def _resolver(self, editions):
+        def resolver(name):
+            return AksResolution(
+                slug="valve-complete-pack", url="https://aks/x", product_id="831",
+                aks_name="Valve Complete Pack", editions=editions,
+                official_platforms=("Steam",), prices=(),
+            )
+        return resolver
+
+    def test_string_valued_editions_do_not_crash(self):
+        offer = _offer("Valve Complete Pack (Global) (PC) - Steam Gift",
+                       url="https://driffle.com/valve-complete-pack-p1")
+        result = match_offer(offer, self._resolver({"1": "Standard", "92": "Complete Pack"}))
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual((result.edition_label, result.edition_id), ("Complete Pack", "92"))
+
+
+class AuditMa6MarkupDriftTests(unittest.TestCase):
+    """MA6 (audit 2026-07-17): a prices block that IS present but no longer
+    parses means AKS drifted its markup — loud skip, never a silent () that
+    turns the R25 duplicate guard off. Absence stays a soft ()."""
+
+    def test_present_but_unshaped_prices_raises(self):
+        from src.matcher import AksPageUnparseable
+        with self.assertRaises(AksPageUnparseable):
+            extract_prices('<script>var x={"prices": {"not": "an array"}};</script>')
+
+    def test_absent_prices_stays_soft(self):
+        self.assertEqual(extract_prices("<html><body>nothing</body></html>"), ())
+
+    def test_match_offer_skips_with_distinct_reason(self):
+        from src.matcher import AksPageUnparseable
+
+        def resolver(name):
+            raise AksPageUnparseable("prices block unparseable: boom")
+
+        result = match_offer(_offer("Neon Beats Steam Key"), resolver)
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("markup drifted", result.reason)
+
+
+class AuditMa7GamivoEnMarkerTests(unittest.TestCase):
+    """MA7 (audit 2026-07-17): Gamivo's '-en-' URL segment is an EN-only
+    language lock — documented in §4.3/§4.4, never coded."""
+
+    def test_gamivo_en_marker_skips(self):
+        offer = _offer("Neon Beats (PC) Steam Key",
+                       url="https://www.gamivo.com/product/neon-beats-steam-en-global")
+        self.assertEqual(
+            precheck_skip(offer),
+            "language restriction (Gamivo '-en-' URL marker — EN-only key)",
+        )
+
+    def test_gamivo_without_marker_passes(self):
+        offer = _offer("Neon Beats (PC) Steam Key",
+                       url="https://www.gamivo.com/product/neon-beats-steam-global")
+        self.assertIsNone(precheck_skip(offer))
+
+    def test_other_merchants_are_not_scoped(self):
+        # French title word "en" on a non-Gamivo host must not skip.
+        offer = NormalizedOffer(
+            offer_id="1", name="Alice en Wonderland Steam Key",
+            url="https://www.kinguin.net/category/1/alice-en-wonderland",
+            merchant="Kinguin",
+        )
+        self.assertIsNone(precheck_skip(offer))
+
+
+class AuditMa8RegionTitleDefenseTests(unittest.TestCase):
+    """MA8 (audit 2026-07-17): title-side region defense in depth — bare
+    'EUROPE' mid-title (K4G grammar) and regions hidden in a non-first
+    parenthesis."""
+
+    def test_bare_europe_mid_title(self):
+        offer = _offer("Kingdom Two Crowns EUROPE Steam CD Key",
+                       url="https://www.k4g.com/product/kingdom-two-crowns")
+        label, region_id, implicit = detect_region(offer, "STEAM")
+        self.assertEqual((label, region_id, implicit), ("EU", "9", False))
+
+    def test_region_in_second_parenthesis(self):
+        offer = _offer("Neon Beats (PC) (Europe) - Steam Key",
+                       url="https://m.test/neon-beats")
+        label, region_id, implicit = detect_region(offer, "STEAM")
+        self.assertEqual((label, region_id, implicit), ("EU", "9", False))
+
+    def test_no_region_anywhere_stays_implicit_global(self):
+        offer = _offer("Neon Beats (PC) - Steam Key", url="https://m.test/neon-beats")
+        label, region_id, implicit = detect_region(offer, "STEAM")
+        self.assertEqual((label, region_id, implicit), ("GLOBAL", "2", True))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -81,6 +81,15 @@ CURRENCY_TOKENS = ("ORB", "ORBS", "VC", "VP", "GEM")
 DANGEROUS_QUALIFIERS = (
     "REMASTERED", "REMASTER", "REBOOT", "REMAKE", "REDUX", "SEASON PASS", "DLC",
     "UPGRADE", "SKIN", "SOUNDTRACK", "ARTBOOK", "DIGITAL BOOK", " HD",
+    # Audit 2026-07-17 (MA3): ANNIVERSARY/DEFINITIVE were NOISE-whitelisted
+    # with no backstop, so "Skyrim Anniversary Edition" entered the base-game
+    # page as Standard(1). Same mechanism as REMASTERED: a title carrying the
+    # word on an AKS page whose name doesn't = a different product tier. The
+    # live master catalog has no stable plain numeric id for either (only the
+    # per-product dropdown knows), so there is no safe EDITION_HINTS entry —
+    # doubt goes to skip (G02); dedicated "… Anniversary/Definitive Edition"
+    # AKS pages carry the word in their name and are unaffected.
+    "ANNIVERSARY", "DEFINITIVE",
 )
 # Romain (2026-07-07, live correction): we NEVER enter bundles — not even
 # single-game / cosmetic ones with their own AKS page — and never skins. This is
@@ -256,6 +265,15 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
         host = urlparse(offer.url).netloc.lower()
         if host != domain and not host.endswith("." + domain):
             return f"offer URL not on {domain} (merchant-domain mismatch)"
+    # Gamivo encodes an English-only language lock as an '-en-' URL segment
+    # ("…-steam-en-global") — a language restriction, documented in
+    # EXECUTOR_RULES §4.3/§4.4 but never coded (audit 2026-07-17, MA7).
+    # Scoped to gamivo.com like R29 is to Eneba: on other merchants '-en-'
+    # can be a real title word (French "en").
+    if "gamivo.com" in urlparse(offer.url).netloc.lower() and re.search(
+        r"(?:^|-)en(?:-|$)", urlparse(offer.url).path.strip("/").lower()
+    ):
+        return "language restriction (Gamivo '-en-' URL marker — EN-only key)"
     padded = " " + re.sub(r"[^A-Z0-9]+", " ", offer.name.upper()) + " "
     if any(f" {t} " in padded for t in CONSOLE_TOKENS):
         return "console"
@@ -295,34 +313,63 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
     return None
 
 
+# Single-word platform declarations, matched word-boundary only (audit
+# 2026-07-17, MA2: bare substring turned "Gogol's Quest" into GOG). Multi-word
+# declarations (EA APP, MICROSOFT STORE, …) stay separate collocations below.
+_PLATFORM_WORDS = {
+    "GOG": "GOG",
+    "EPIC": "EPIC",
+    "UBISOFT": "UBISOFT",
+    "UPLAY": "UBISOFT",
+    "ROCKSTAR": "ROCKSTAR",  # no REGION_IDS entry -> fail-closed skip, not Steam
+    "STEAM": "STEAM",
+}
+
+
 def explicit_platform(title: str) -> str | None:
     """The platform the merchant DECLARES in the title, or None.
 
     None means detect_platform will default to STEAM — a guess, not a
     detection. R20 only trusts that guess when the AKS page's "official
     platforms" list is Steam-only.
+
+    Audit 2026-07-17 (MA2): the old raw-substring, fixed-order checks let a
+    game-name word override the merchant's declaration — "Epic Chef … Steam
+    Key" returned EPIC (checked before STEAM), "Gogol's Quest Steam Key"
+    returned GOG ("GOG" inside "GOGOL"). Single-word tokens are now
+    word-boundary; when SEVERAL platform words appear, the one collocated
+    with the key-type marker ("<PLATFORM> [CD ]KEY/GIFT/ALTERGIFT") is the
+    declaration; still ambiguous → None, and the token-less path (URL prefix
+    R29, page-verified R20/R27) decides fail-closed instead of a guess.
     """
 
-    t = title.upper()
-    if "GOG" in t:
-        return "GOG"
-    if "EPIC" in t:
-        return "EPIC"
-    if "UBISOFT" in t or "UPLAY" in t:
-        return "UBISOFT"
+    t = " " + normalize_apostrophes(title).upper() + " "
+    # Multi-word declarations first — already collocational, unambiguous.
     if "EA APP" in t or "ORIGIN KEY" in t or "EA ORIGIN" in t or "ORIGIN CD KEY" in t:
         return "EA"  # R14: bare "Origin" in a game name is NOT the EA platform
     if "BATTLE.NET" in t or "BATTLENET" in t:
         return "BATTLENET"
-    if "ROCKSTAR" in t:
-        return "ROCKSTAR"  # no REGION_IDS entry -> fail-closed skip, not Steam
     if "MICROSOFT STORE" in t or "MICROSOFT KEY" in t:
         # Key-type markers only: "Microsoft Flight Simulator … Steam Key" is a
         # Steam product. No REGION_IDS entry -> fail-closed skip (G2A.md).
         return "MICROSOFT"
-    if "STEAM" in t:
-        return "STEAM"
-    return None
+    hits: dict[str, set[str]] = {}
+    for word, platform in _PLATFORM_WORDS.items():
+        if re.search(r"\b" + word + r"\b", t):
+            hits.setdefault(platform, set()).add(word)
+    if not hits:
+        return None
+    if len(hits) == 1:
+        return next(iter(hits))
+    keyed = {
+        platform
+        for platform, words in hits.items()
+        for word in words
+        if re.search(r"\b" + word + r"\b\s*(?:CD\s+)?(?:KEY|GIFT|ALTERGIFT)", t)
+    }
+    if len(keyed) == 1:
+        return next(iter(keyed))
+    return None  # ambiguous declaration — fail closed to the token-less path
 
 
 # Eneba escape (2026-07-16): "Apothecarium: The Renaissance of Evil - Premium
@@ -379,7 +426,14 @@ def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | Non
     # would false-hit region tokens — only the path speaks for the product.
     url = strip_merchant_url_noise(offer.url, offer.merchant).lower().split("?", 1)[0]
     padded = " " + offer.name.upper() + " "
-    is_gift = "gift-" in url or "-gift" in url or " GIFT " in padded or "GIFT)" in padded
+    # 'gift' must be its own URL segment (audit 2026-07-17, MA4): the bare
+    # substring matched slug words like "the-gifted-rabbit" and proposed
+    # GIFT(25) for a regular key.
+    is_gift = (
+        re.search(r"(?:^|[-/])gift(?:[-/]|$)", url) is not None
+        or " GIFT " in padded
+        or "GIFT)" in padded
+    )
     tail = offer.name.rsplit(" - ", 1)[-1].strip().upper() if " - " in offer.name else ""
 
     base, label, implicit = "global", "GLOBAL", False
@@ -389,6 +443,10 @@ def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | Non
         or re.search(r"-europe(?:[-/]|$)", url)
         or " EU " in padded
         or "(EU)" in padded
+        # bare "EUROPE" mid-title (K4G grammar: "X EUROPE Steam CD Key") —
+        # audit 2026-07-17, MA8: title-side defense in depth, the URL carried
+        # it in every recorded feed but the title check missed it.
+        or " EUROPE " in padded
         or tail in ("EU", "EUROPE")
     ):
         base, label = "eu", "EU"
@@ -399,13 +457,21 @@ def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | Non
     elif " UK " in padded or "(UK)" in padded or tail in ("UK", "UNITED KINGDOM"):
         base, label = "uk", "UK"
     else:
-        match = re.match(r"^[^(]*\(([^)]+)\)", offer.name)
-        reg = match.group(1).strip().upper() if match else ""
-        if reg in ("EU", "EUROPE"):
+        # Scan ALL parenthesised groups, not only the first (audit
+        # 2026-07-17, MA8): "X (PC) (Europe) - …" hid the region in the
+        # second parens. First recognized region token wins.
+        reg_found = ""
+        for group in re.findall(r"\(([^)]+)\)", offer.name):
+            reg = group.strip().upper()
+            if reg in ("EU", "EUROPE", "GLOBAL", "WORLDWIDE", "WW",
+                       "US", "USA", "UNITED STATES"):
+                reg_found = reg
+                break
+        if reg_found in ("EU", "EUROPE"):
             base, label = "eu", "EU"
-        elif reg in ("GLOBAL", "WORLDWIDE", "WW"):
+        elif reg_found in ("GLOBAL", "WORLDWIDE", "WW"):
             base, label = "global", "GLOBAL"
-        elif reg in ("US", "USA", "UNITED STATES"):
+        elif reg_found in ("US", "USA", "UNITED STATES"):
             base, label = "us", "US"
         else:
             implicit = True  # Kinguin-style implicit GLOBAL
@@ -692,21 +758,38 @@ def extract_editions(body: str) -> dict[str, Any]:
         return {}
 
 
+class AksPageUnparseable(Exception):
+    """A structure the page DOES carry failed to parse (markup drift).
+
+    Distinct from absence: an absent block stays a soft () so page variants
+    don't mass-abort, but a present-yet-unparseable one means AKS changed its
+    serialization and every guard reading it (R25 duplicate check) would
+    silently disable itself — fail closed, distinctly (audit 2026-07-17,
+    MA6)."""
+
+
 def extract_prices(body: str) -> tuple[dict[str, Any], ...]:
     """The AKS page's own current-offers list (its price-comparison table) —
     each entry carries ``merchantName``, ``edition``, ``region`` (R25,
     2026-07-15). This is what lets a candidate be checked against what AKS
     ALREADY shows for this exact merchant, not just against the merchant's own
     feed. Balanced-bracket regex mirrors ``extract_editions``'s balanced-brace
-    one; entries are flat (no nested arrays observed), so this is safe."""
+    one; entries are flat (no nested arrays observed) — if AKS ever nests
+    them, the capture truncates and json.loads fails: that now raises
+    :class:`AksPageUnparseable` instead of silently returning () and turning
+    the R25 duplicate guard off (audit 2026-07-17, MA6)."""
 
     match = re.search(r'"prices"\s*:\s*(\[(?:[^\[\]]|\[[^\[\]]*\])*\])', body)
     if not match:
+        if '"prices"' in body:
+            raise AksPageUnparseable(
+                "prices block present but did not match the extraction shape"
+            )
         return ()
     try:
         parsed = json.loads(match.group(1))
-    except ValueError:
-        return ()
+    except ValueError as exc:
+        raise AksPageUnparseable(f"prices block unparseable: {exc}") from exc
     return tuple(p for p in parsed if isinstance(p, dict))
 
 
@@ -812,8 +895,12 @@ def resolve_aks(name: str, http_get_fn: Callable[..., Any] = http_get) -> AksRes
     "try harder before giving up", not a new correctness gate.
     """
 
-    transient: list[str] = []
-    unreadable: list[str] = []
+    # Audit 2026-07-17 (MA1): the raise must be IMMEDIATE, not collected for
+    # an end-of-loop check — slug tiers go from most to least specific, so a
+    # throttled/unreadable answer on "some-game-deluxe-edition" shadowed by a
+    # 200 on "some-game" silently resolves the wrong product tier. That is
+    # exactly what the docstring always promised ("fails closed immediately")
+    # and what the old collect-then-maybe-raise code did not do.
     for slug in build_slug_candidates(name):
         url = aks_url(slug)
         if http_get_fn is http_get:
@@ -821,7 +908,7 @@ def resolve_aks(name: str, http_get_fn: Callable[..., Any] = http_get) -> AksRes
         probe = http_get_fn(url, timeout=8, user_agent=AKS_PROBE_UA)
         if not (probe.ok and probe.status == 200 and probe.body):
             if probe.status not in (404, 410):
-                transient.append(f"{slug} -> {probe.status or probe.error}")
+                raise AksProbeUnreliable(f"{slug} -> {probe.status or probe.error}")
             continue
         resolution = _resolution_from_body(slug, url, probe.body)
         if resolution is None:
@@ -829,13 +916,8 @@ def resolve_aks(name: str, http_get_fn: Callable[..., Any] = http_get) -> AksRes
                 continue
             # Never fall back to the offer title: name checks would compare
             # the title to itself and pass anything (fail-open).
-            unreadable.append(slug)
-            continue
+            raise AksNameUnreadable(slug)
         return resolution
-    if unreadable:
-        raise AksNameUnreadable("; ".join(unreadable))
-    if transient:
-        raise AksProbeUnreliable("; ".join(transient))
 
     for slug in search_aks_slugs(name, http_get_fn):
         url = aks_url(slug)
@@ -902,6 +984,13 @@ class Candidate:
             f"{platform} {self.region_label}({self.region_id}), "
             f"{self.edition_label}({self.edition_id}){implicit}"
         )
+
+
+def _edition_entry_name(value: Any) -> str:
+    """An editions-map entry's display name — tolerates both observed shapes
+    ({"name": "Deluxe", …} and a bare string)."""
+
+    return str(value.get("name", "")) if isinstance(value, dict) else str(value)
 
 
 def _dlc_edition_on_page(editions: dict[str, Any]) -> str:
@@ -985,6 +1074,10 @@ def match_offer(
         return SkippedOffer(offer, f"AKS probe unreliable (throttled?): {exc}")
     except AksNameUnreadable as exc:
         return SkippedOffer(offer, f"AKS page name unreadable — cannot verify product (R01): {exc}")
+    except AksPageUnparseable as exc:
+        return SkippedOffer(
+            offer, f"AKS page markup drifted — guard input unreadable (MA6): {exc}"
+        )
     if resolution is None:
         return SkippedOffer(offer, "no AKS product page found (slug not 200)")
 
@@ -1123,11 +1216,16 @@ def match_offer(
             #    page happened to list first.
             page_edition = None
             if edition_label != "Bundle":
+                # _edition_entry_name tolerates string-valued entries the same
+                # way _dlc_edition_on_page always did — a page serializing
+                # {"1": "Standard"} used to crash this comprehension with
+                # AttributeError and abort the whole match run (audit
+                # 2026-07-17, MA5).
                 on_page = [
-                    (eid, str(data.get("name", "")))
+                    (eid, _edition_entry_name(data))
                     for eid, data in resolution.editions.items()
-                    if str(data.get("name", "")).strip().upper() != "STANDARD"
-                    and edition_label.upper() in str(data.get("name", "")).upper()
+                    if _edition_entry_name(data).strip().upper() != "STANDARD"
+                    and edition_label.upper() in _edition_entry_name(data).upper()
                 ]
                 exact = [c for c in on_page if c[1].strip().upper() == edition_label.upper()]
                 pool = exact or on_page

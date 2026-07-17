@@ -3,6 +3,41 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-17 — Audit P1.a : huit correctifs matcher (MA1-MA8)
+
+Tous confirmés par repro live pendant l'audit contre-vérifié du 2026-07-17 :
+
+- **MA1** — `resolve_aks` : une erreur transitoire (429/5xx/timeout) ou un
+  nom illisible sur un slug PLUS spécifique lève immédiatement au lieu
+  d'être masqué par le 200 d'un tier moins spécifique (un titre deluxe
+  atterrissait sur la page du jeu de base). C'est ce que la docstring
+  promettait déjà.
+- **MA2** — `explicit_platform` : word-boundary + départage par collocation
+  `<PLATEFORME> [CD ]KEY/GIFT` — "Epic Chef … Steam Key" n'est plus EPIC,
+  "Gogol's Quest" n'est plus GOG ; ambiguïté résiduelle → None (chemin
+  token-less R27/R29, fail-closed).
+- **MA3** — ANNIVERSARY/DEFINITIVE deviennent des qualifieurs dangereux
+  (modèle REMASTERED) : "Skyrim Anniversary Edition" n'entre plus sur la
+  page du jeu de base en Standard(1). Pas d'EDITION_HINTS possible : le
+  catalogue maître n'a pas d'id numérique stable pour ces éditions.
+- **MA4** — `gift` doit être un segment d'URL entier : "the-gifted-rabbit"
+  ne propose plus GIFT(25).
+- **MA5** — le pool R23 ne crashe plus (`AttributeError`) sur une map
+  d'éditions à valeurs chaînes — un tel crash abortait tout le run de match.
+- **MA6** — dérive de markup AKS bruyante : un bloc `"prices"` présent mais
+  imparsable lève `AksPageUnparseable` → skip distinct, au lieu d'un ()
+  silencieux qui désactivait le garde-fou anti-doublon R25. L'absence reste
+  souple (les stubs sérialisent `"prices":[]` ; éditions/plateformes
+  absentes déjà couvertes par R19/R20/R27).
+- **MA7** — le marqueur Gamivo `-en-` (clé EN-only) est enfin codé — skip
+  "language restriction", scopé gamivo.com.
+- **MA8** — défense titre pour les régions : "EUROPE" nu en milieu de titre
+  (grammaire K4G) et région dans une parenthèse non-première → EU au lieu
+  de GLOBAL implicite.
+
+Tests : +25 (8 classes AuditMaX). 555 verts. EXECUTOR_RULES §4.2/§4.4/§4.7
+mis à jour.
+
 ## 2026-07-17 — Audit P1.b : le pick Selectize est vérifié, la ligne re-vérifiée sur le DOM frais (SC3/SC5)
 
 Deux trous du chemin d'écriture confirmés par l'audit :
