@@ -15,6 +15,12 @@ the kernel when the holder dies — no stale-lock cleanup, no daemon.
 
 Fail-closed: if the lock is busy, the stage refuses to start (exit 2 at the
 CLI), never queues, never shares the tab. Standard library only.
+
+Reading the lock FILE by hand: a label with a dead pid is residue from a hard
+kill (SIGKILL skips the label cleanup) — the flock itself was released by the
+kernel the moment the holder died, so the lock is FREE despite the text.
+``browser_lock()`` itself is never fooled: it trusts only the flock, and a
+successful acquisition overwrites the stale label.
 """
 
 from __future__ import annotations
