@@ -142,13 +142,35 @@ class ReadOnlyCdpSession:
 
     # -- internals (adapted from the skill's proven raw-socket client) ---
     def _page_ws_path(self) -> str:
+        """Pick the ONE tab this session drives.
+
+        SC7 (audit 2026-07-17): only real http(s) tabs qualify — the old
+        substring filter ("chrome://" not in url) let ``chrome-error://`` and
+        ``devtools://`` targets through, and a crashed tab got driven blind.
+        When several http(s) tabs exist (the VPS browser is shared
+        infrastructure), the one already on allkeyshop.com is preferred over
+        whichever Chrome lists first. There is deliberately NO mid-run
+        reconnect: a dead socket raises :class:`CdpCommandError` and the run
+        aborts fail-closed — resuming on a fresh socket mid-scan would hide a
+        browser restart from the disappearance proof.
+        """
+
         targets = json.loads(urlopen(f"{self._base}/json", timeout=self._connect_timeout).read())
         pages = [
             t for t in targets
-            if t.get("type") == "page" and "chrome://" not in t.get("url", "")
+            if t.get("type") == "page"
+            and str(t.get("url", "")).startswith(("http://", "https://"))
         ]
-        if pages:
-            ws_url = pages[0]["webSocketDebuggerUrl"]
+        def _is_aks(url: str) -> bool:
+            host = urlparse(url).hostname or ""
+            # suffix-spoof safe, same pattern as aks_env's host check:
+            # "evilallkeyshop.com" must NOT qualify.
+            return host == "allkeyshop.com" or host.endswith(".allkeyshop.com")
+
+        aks = [t for t in pages if _is_aks(str(t.get("url", "")))]
+        pick = aks or pages
+        if pick:
+            ws_url = pick[0]["webSocketDebuggerUrl"]
         else:
             request = Request(f"{self._base}/json/new", method="PUT")
             ws_url = json.loads(urlopen(request, timeout=self._connect_timeout).read())[
@@ -176,11 +198,14 @@ class ReadOnlyCdpSession:
             raise RuntimeError(f"WS handshake failed: {resp[:200]!r}")
         return sock
 
-    def _ws_send(self, msg: str) -> None:
+    def _ws_send_frame(self, opcode: int, data: bytes) -> None:
+        """Send one masked client frame (RFC 6455 §5.1: client→server frames
+        MUST be masked). ``sendall`` — a partial ``send`` on a large command
+        silently truncated the frame and desynced the whole stream (SC8)."""
+
         assert self._sock is not None
-        data = msg.encode()
         mask = os.urandom(4)
-        frame = bytearray([0x81])  # FIN + text
+        frame = bytearray([0x80 | opcode])  # FIN + opcode
         n = len(data)
         if n < 126:
             frame.append(0x80 | n)
@@ -192,26 +217,70 @@ class ReadOnlyCdpSession:
             frame.extend(n.to_bytes(8, "big"))
         frame.extend(mask)
         frame.extend(byte ^ mask[i % 4] for i, byte in enumerate(data))
-        self._sock.send(bytes(frame))
+        self._sock.sendall(bytes(frame))
+
+    def _ws_send(self, msg: str) -> None:
+        self._ws_send_frame(0x1, msg.encode())
+
+    def _recv_exact(self, n: int) -> bytes:
+        """Read exactly ``n`` bytes. A timeout or EOF MID-FRAME means the
+        stream can never be re-synchronized (the old 2-byte short read
+        permanently desynced frame parsing, SC8) — raise, never return a
+        partial read."""
+
+        assert self._sock is not None
+        buffer = bytearray()
+        while len(buffer) < n:
+            try:
+                chunk = self._sock.recv(n - len(buffer))
+            except socket.timeout:
+                raise CdpCommandError(
+                    "WebSocket stalled mid-frame — stream unrecoverable"
+                ) from None
+            if not chunk:
+                raise CdpCommandError("WebSocket closed mid-frame (EOF)")
+            buffer.extend(chunk)
+        return bytes(buffer)
 
     def _ws_recv(self, timeout: float = 5.0) -> str | None:
+        """Receive one complete (possibly fragmented) message.
+
+        SC8 (audit 2026-07-17): the old reader ignored opcodes — a server
+        Close parsed as garbage text and Pings starved the stream — and a
+        short header read desynced parsing forever. Now: ``None`` only when
+        NOTHING arrived within ``timeout`` (benign poll); Close raises;
+        Ping is answered with Pong; continuation frames are accumulated
+        until FIN; any mid-frame stall raises via :meth:`_recv_exact`.
+        """
+
         assert self._sock is not None
         self._sock.settimeout(timeout)
-        header = self._sock.recv(2)
-        if len(header) < 2:
-            return None
-        length = header[1] & 0x7F
-        if length == 126:
-            length = int.from_bytes(self._sock.recv(2), "big")
-        elif length == 127:
-            length = int.from_bytes(self._sock.recv(8), "big")
-        buffer = bytearray()
-        while len(buffer) < length:
-            chunk = self._sock.recv(length - len(buffer))
-            if not chunk:
-                break
-            buffer.extend(chunk)
-        return buffer.decode("utf-8", errors="replace")
+        try:
+            first = self._sock.recv(1)
+        except socket.timeout:
+            return None  # nothing arrived — benign poll timeout
+        if not first:
+            raise CdpCommandError("WebSocket closed (EOF)")
+        message = bytearray()
+        while True:
+            header = first + self._recv_exact(1)
+            fin = bool(header[0] & 0x80)
+            opcode = header[0] & 0x0F
+            length = header[1] & 0x7F
+            if length == 126:
+                length = int.from_bytes(self._recv_exact(2), "big")
+            elif length == 127:
+                length = int.from_bytes(self._recv_exact(8), "big")
+            payload = self._recv_exact(length) if length else b""
+            if opcode == 0x8:  # close
+                raise CdpCommandError("WebSocket closed by the browser (close frame)")
+            if opcode == 0x9:  # ping — answer and keep waiting for data
+                self._ws_send_frame(0xA, payload)
+            elif opcode != 0xA:  # data/continuation (pong is ignored)
+                message.extend(payload)
+                if fin:
+                    return message.decode("utf-8", errors="replace")
+            first = self._recv_exact(1)
 
     def _cmd(self, method: str, params: dict | None = None) -> dict:
         self._mid += 1
@@ -219,10 +288,10 @@ class ReadOnlyCdpSession:
         self._ws_send(json.dumps({"id": mid, "method": method, "params": params or {}}))
         deadline = time.time() + self._cmd_timeout
         while time.time() < deadline:
-            try:
-                raw = self._ws_recv(3)
-            except socket.timeout:
-                continue
+            # _ws_recv returns None on a benign poll timeout and RAISES
+            # CdpCommandError on any broken-stream state (SC8) — no
+            # socket.timeout escapes it.
+            raw = self._ws_recv(3)
             if not raw:
                 continue
             try:

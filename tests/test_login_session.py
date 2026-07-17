@@ -7,6 +7,7 @@ FakeSubmitSession style). The CDP mechanics ``LoginSession`` reuses
 click/type tests, so they are not re-tested here.
 """
 
+import json
 import unittest
 
 from src.login_session import run_login
@@ -214,3 +215,114 @@ class RunLoginTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LoginPrimitivesTests(unittest.TestCase):
+    """TE4 (audit 2026-07-17): the REAL LoginSession primitives — previously
+    only the run_login sequencing was tested, against a duck-typed fake; the
+    primitives themselves (JS payloads, statuses, the verify_dashboard proof)
+    were never executed."""
+
+    def _session(self, eval_results=None, click_status="CLICKED"):
+        from src.login_session import LoginSession
+
+        session = LoginSession.__new__(LoginSession)
+        results = dict(eval_results or {})
+        session._eval_calls = []
+        session._typed = []
+        session._clicked = []
+
+        def evaluate(js):
+            session._eval_calls.append(js)
+            for needle, value in results.items():
+                if needle in js:
+                    return value
+            return None
+
+        session._evaluate = evaluate
+        session.click_trusted_at_element = lambda selector=None: (
+            session._clicked.append(selector) or {"status": click_status}
+        )
+        session._type_text_trusted = lambda text: (
+            session._typed.append(text) or {"chars": len(text)}
+        )
+        return session
+
+    def test_login_form_ready_parses_field_presence(self):
+        session = self._session({"user_login": json.dumps(
+            {"user": True, "pass": True, "submit": False})})
+        self.assertEqual(session.login_form_ready(),
+                         {"user": True, "pass": True, "submit": False})
+
+    def test_login_form_ready_unreadable_is_all_false(self):
+        session = self._session({})
+        self.assertEqual(session.login_form_ready(),
+                         {"user": False, "pass": False, "submit": False})
+
+    def test_fill_username_types_only_after_focus_click(self):
+        session = self._session()
+        result = session.fill_username("romain")
+        self.assertEqual(result, {"status": "FILLED"})
+        self.assertEqual(session._clicked, ["#user_login"])
+        self.assertEqual(session._typed, ["romain"])
+
+    def test_fill_password_no_field_types_nothing(self):
+        # The credential must NEVER be typed into whatever holds focus when
+        # the field's own focus click failed.
+        session = self._session(click_status="NO_ELEMENT")
+        result = session.fill_password("secret")
+        self.assertEqual(result, {"status": "NO_PASSWORD_FIELD"})
+        self.assertEqual(session._typed, [])
+
+    def test_fill_2fa_no_field_types_nothing(self):
+        session = self._session(click_status="NO_ELEMENT")
+        result = session.fill_2fa_code("123456")
+        self.assertEqual(result, {"status": "NO_2FA_FIELD"})
+        self.assertEqual(session._typed, [])
+
+    def test_verify_dashboard_needs_url_and_dom(self):
+        # Both proofs, not one (LOGIN_SPEC §5).
+        session = self._session({
+            "location.href": "https://www.allkeyshop.com/blog/wp-admin/index.php",
+            "wpadminbar": True,
+        })
+        self.assertTrue(session.verify_dashboard()["ok"])
+
+    def test_verify_dashboard_reauth_url_fails_despite_dom(self):
+        session = self._session({
+            "location.href": "https://www.allkeyshop.com/blog/wp-login.php?reauth=1",
+            "wpadminbar": True,
+        })
+        result = session.verify_dashboard()
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["url_ok"])
+        self.assertTrue(result["dom_ok"])
+
+    def test_verify_dashboard_dom_missing_fails_despite_url(self):
+        session = self._session({
+            "location.href": "https://www.allkeyshop.com/blog/wp-admin/",
+            "wpadminbar": False,
+        })
+        result = session.verify_dashboard()
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["url_ok"])
+        self.assertFalse(result["dom_ok"])
+
+    def test_2fa_probe_covers_both_plugin_field_names(self):
+        from src.login_session import _TWOFA_FIELD_JS
+
+        self.assertIn("authcode", _TWOFA_FIELD_JS)
+        self.assertIn("googleotp", _TWOFA_FIELD_JS)
+
+    def test_primitive_js_payloads_are_readonly(self):
+        from src.cdp_session import is_readonly_expression
+        from src.login_session import (
+            _DASHBOARD_MARKER_JS,
+            _LOGIN_ERROR_JS,
+            _LOGIN_FORM_FIELDS_JS,
+            _TWOFA_FIELD_JS,
+        )
+
+        for js in (_DASHBOARD_MARKER_JS, _LOGIN_ERROR_JS,
+                   _LOGIN_FORM_FIELDS_JS, _TWOFA_FIELD_JS):
+            self.assertTrue(is_readonly_expression(js), js)

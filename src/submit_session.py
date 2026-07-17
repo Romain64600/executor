@@ -855,26 +855,14 @@ class WriteSubmitSession(SubmitSession):
             "scrolled": False,
         }
 
-        needs_scroll = rect["top"] < 0 or rect["bottom"] > vp["h"]
-        if needs_scroll:
-            target_y = vp["h"] * 0.4
-            current_y = (rect["top"] + rect["bottom"]) / 2
-            y_distance = int(current_y - target_y)
-            self._cmd(
-                "Input.synthesizeScrollGesture",
-                {
-                    "x": vp["w"] // 2,
-                    "y": vp["h"] // 2,
-                    "xDistance": 0,
-                    "yDistance": y_distance,
-                    "gestureSourceType": "mouse",
-                    "speed": 800,
-                },
-            )
-            time.sleep(0.5)
-            rect = self._read_rect(selector)
+        # TE5 (audit 2026-07-17): one scroll implementation — this used to be
+        # an inline copy of _scroll_rect_into_viewport (same 40 % target, same
+        # gesture, same settle) that could silently drift from the tested one.
+        scroll = self._scroll_rect_into_viewport(rect)
+        if scroll["scrolled"]:
             diag["scrolled"] = True
-            diag["scroll_y_distance"] = y_distance
+            diag["scroll_y_distance"] = scroll["scroll_y_distance"]
+            rect = self._read_rect(selector)
             if rect.get("ok"):
                 diag["rect_after_scroll"] = {
                     "x": rect["x"], "y": rect["y"], "w": rect["width"], "h": rect["height"],

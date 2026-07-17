@@ -3,6 +3,33 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-17 — Audit P2.b : transport CDP désync-proof, contrats de fakes, primitives login testées (SC7/SC8/TE2/TE4/TE5)
+
+- **SC7** — `_page_ws_path` ne retient que les vrais onglets http(s)
+  (`chrome-error://`, `devtools://`, `chrome://` exclus — l'ancien filtre par
+  sous-chaîne laissait passer un onglet crashé) et préfère l'onglet déjà sur
+  allkeyshop.com (suffix-spoof safe) quand le navigateur partagé en porte
+  plusieurs. Décision documentée : PAS de reconnexion mid-run — un socket
+  mort lève `CdpCommandError` et le run s'arrête fail-closed (reprendre sur
+  un socket frais cacherait un restart navigateur à la preuve de
+  disparition).
+- **SC8** — framing WebSocket réécrit : opcodes gérés (Close → raise au lieu
+  d'être parsé comme du texte, Ping → Pong répondu, Pong ignoré),
+  fragmentation assemblée jusqu'à FIN, lecture EXACTE des en-têtes (un
+  timeout/EOF mid-frame lève — l'ancien short-read de 2 octets désynchronisait
+  le parsing pour toujours), `sendall` au lieu de `send`.
+- **TE2** — `tests/test_fake_contracts.py` : chaque fake duck-typé de la
+  suite est vérifié mécaniquement contre sa classe réelle — méthode fantôme
+  ou paramètre renommé d'un côté = test rouge, fini la dérive silencieuse
+  d'interface.
+- **TE4** — les primitives réelles de `LoginSession` sont exécutées par les
+  tests (les credentials ne sont JAMAIS tapés si le clic de focus du champ a
+  échoué ; `verify_dashboard` exige URL ET DOM ; payloads JS read-only).
+- **TE5** — `click_trusted_at_element` délègue son scroll à
+  `_scroll_rect_into_viewport` : une seule implémentation, celle testée.
+
+Tests : +27 (624 verts).
+
 ## 2026-07-17 — Audit P2.a : les gates déclaratifs deviennent mécaniques (FC2/FC3/FC4/FC5)
 
 - **FC2** — `AKS_TARGET=vps` ne force plus `authoritative:true` : une seule
