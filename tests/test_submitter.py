@@ -664,6 +664,22 @@ class ResolveCatalogIdTests(unittest.TestCase):
 
         self.assertIsNone(resolve_catalog_id("Nonesuch", "424242", self.EDITIONS))
 
+    def test_drifted_id_meaning_mismatch_is_fail_closed(self):
+        from src.submitter import resolve_catalog_id
+
+        # FC4 (audit 2026-07-17): the id EXISTS but now denotes a different
+        # option ("EU" vs "BTC 1500 PLN") — id existence must never override
+        # meaning; fail closed instead of adopting the drifted text.
+        drifted = [{"key": "2", "text": "GLOBAL"}, {"key": "9", "text": "BTC 1500 PLN"}]
+        self.assertIsNone(resolve_catalog_id("EU", "9", drifted))
+
+    def test_id_path_word_boundary_not_substring(self):
+        from src.submitter import resolve_catalog_id
+
+        # "EU" must match as a whole word — not inside "Deluxe".
+        options = [{"key": "9", "text": "Deluxe"}]
+        self.assertIsNone(resolve_catalog_id("EU", "9", options))
+
 
 class CatalogResolutionInWritePathTests(unittest.TestCase):
     def test_write_path_fetches_catalog_and_threads_labels_as_queries(self):

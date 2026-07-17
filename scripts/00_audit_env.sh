@@ -6,9 +6,12 @@
 # completion even when individual checks fail. Each check is tagged PASS / FAIL /
 # N/A / INFO, and a summary plus a RESULT line are emitted at the end.
 #
-# Debian-VPS-only checks are reported N/A unless we are on the real target. The
-# target is detected by a runtime marker (AGENTS.md config) or AKS_TARGET=vps,
-# NOT by /etc/debian_version (Debian-derived sandboxes carry that too).
+# Debian-VPS-only checks are reported N/A unless we are on the real target.
+# The target is detected by the ROOT-installed marker /etc/aks-executor.target
+# whose content must equal this hostname (FC2, audit 2026-07-17 — the old
+# AKS_TARGET=vps env force and the user-writable ~/.hermes marker are gone:
+# one env var must never unlock write stages), NOT by /etc/debian_version
+# (Debian-derived sandboxes carry that too).
 set -uo pipefail
 
 OUT_DIR="${1:-runs/audit_$(date +%Y%m%d_%H%M%S)}"
@@ -16,9 +19,11 @@ mkdir -p "$OUT_DIR"
 REPORT="$OUT_DIR/audit.md"
 
 UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36"
-TARGET_MARKER="/home/debian/.hermes/config.yaml"
+TARGET_MARKER="/etc/aks-executor.target"
 
-if [ "$(uname -s)" = "Linux" ] && { [ "${AKS_TARGET:-}" = "vps" ] || [ -f "$TARGET_MARKER" ]; }; then
+# FC2: authoritative iff the root marker exists AND names THIS host.
+if [ "$(uname -s)" = "Linux" ] && [ -f "$TARGET_MARKER" ] \
+    && [ "$(cat "$TARGET_MARKER" 2>/dev/null)" = "$(hostname)" ]; then
   IS_TARGET=1
 else
   IS_TARGET=0
@@ -56,7 +61,7 @@ status_line() {
     echo "- Target: Debian VPS — Debian-specific checks are AUTHORITATIVE"
   else
     echo "- Target: NOT the Debian VPS — Debian-specific checks are reported N/A"
-    echo "  (run on the VPS, or set AKS_TARGET=vps there, to gate write stages)"
+    echo "  (write stages unlock only on the VPS: root marker /etc/aks-executor.target)"
   fi
   echo
   echo "## Checks"

@@ -35,6 +35,7 @@ RUN_FILES = frozenset(
         "submit_report.txt",
         "session_catalog.json",
         "admin_submit.json",
+        "match_meta.json",  # FC5 — R24 mode stamped by 03_match
     }
 )
 

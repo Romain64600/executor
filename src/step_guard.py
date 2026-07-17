@@ -24,6 +24,7 @@ when repeats on different targets are legitimate.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
@@ -348,3 +349,74 @@ class StepGuard:
             },
             "history": [attempt.to_dict() for attempt in self._history],
         }
+
+
+class BlockLedger:
+    """Cross-process memory of a task's blocked runs (FC3, audit 2026-07-17).
+
+    An in-memory guard block dies with its process: re-running the same script
+    with the same run_id used to start from a blank guard, so nothing enforced
+    the skill's own anti-loop rule ACROSS processes. This ledger applies G03
+    ("the same approach failing twice → STOP, do not try a third time")
+    at run granularity:
+
+    - run 1 blocks → recorded; a SECOND pass on the same run stays free — the
+      documented standard recovery (idempotent re-pass on the same
+      approved.json, Romain 2026-07-07);
+    - the second pass blocks TOO → the third needs an explicit human
+      acknowledgment (``--acknowledge-block``), which resets the counter.
+
+    The ledger never re-arms a live in-process guard; it only refuses to START
+    a new blocked-history run. JSON on disk, stdlib only, fail-open on a
+    corrupt file (a broken ledger must not brick the pipeline — the in-run
+    guard is still fully armed either way).
+    """
+
+    def __init__(self, path: Any, clock: Callable[[], str] | None = None) -> None:
+        from pathlib import Path
+
+        self.path = Path(path)
+        self._clock = clock or (
+            lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        )
+
+    def load(self) -> dict[str, Any]:
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {"consecutive_blocked_runs": 0}
+        if not isinstance(data, dict):
+            return {"consecutive_blocked_runs": 0}
+        data.setdefault("consecutive_blocked_runs", 0)
+        return data
+
+    def requires_ack(self) -> bool:
+        return int(self.load().get("consecutive_blocked_runs") or 0) >= 2
+
+    def acknowledge(self, note: str) -> None:
+        data = self.load()
+        data["consecutive_blocked_runs"] = 0
+        data["acknowledged"] = {"note": note, "at": self._clock()}
+        self._write(data)
+
+    def record(self, *, task_id: str, blocked: bool,
+               rule: str | None = None, reason: str | None = None) -> dict[str, Any]:
+        data = self.load()
+        if blocked:
+            data["consecutive_blocked_runs"] = (
+                int(data.get("consecutive_blocked_runs") or 0) + 1
+            )
+            data["last_block"] = {
+                "task_id": task_id, "rule": rule, "reason": reason,
+                "at": self._clock(),
+            }
+        else:
+            data["consecutive_blocked_runs"] = 0
+        data["task_id"] = task_id
+        data["updated_at"] = self._clock()
+        self._write(data)
+        return data
+
+    def _write(self, data: dict[str, Any]) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text(json.dumps(data, indent=2), encoding="utf-8")

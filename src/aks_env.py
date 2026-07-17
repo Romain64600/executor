@@ -179,10 +179,39 @@ def checks_to_dict(checks: list[CheckResult]) -> dict[str, Any]:
     }
 
 
-# A runtime marker that only exists on the real Debian VPS target. We do NOT
+# The runtime marker that only exists on the real Debian VPS target. We do NOT
 # use /etc/debian_version because Debian-derived sandboxes (e.g. Ubuntu CI)
 # also carry it and would be misclassified as the production target.
-TARGET_MARKER_PATH = "/home/debian/.hermes/config.yaml"
+#
+# FC2 (audit 2026-07-17): the marker moved from the user-writable
+# ~/.hermes/config.yaml to a ROOT-installed /etc file whose CONTENT must equal
+# this machine's hostname, and the ``AKS_TARGET=vps`` force was removed —
+# "read-only until green on the VPS" must not be unlockable by one env var or
+# a user-level file. Installed once on the VPS (2026-07-17):
+#   sudo sh -c 'hostname > /etc/aks-executor.target'; chmod 644.
+TARGET_MARKER_PATH = "/etc/aks-executor.target"
+
+
+def marker_authorizes(
+    path: str = TARGET_MARKER_PATH, hostname: str | None = None
+) -> bool:
+    """True iff the root-installed target marker vouches for THIS machine.
+
+    Three independent requirements, all fail-closed: the file exists AND is
+    root-owned with no group/world write (a user or container escapee cannot
+    just drop it) AND its content equals the current hostname (a copied
+    marker on another box does not transfer authority)."""
+
+    try:
+        stat_result = os.stat(path)
+        with open(path, "r", encoding="utf-8") as handle:
+            content = handle.read().strip()
+    except OSError:
+        return False
+    if stat_result.st_uid != 0 or (stat_result.st_mode & 0o022):
+        return False
+    host = hostname if hostname is not None else socket.gethostname()
+    return bool(content) and content == host
 
 
 def classify_environment(
@@ -214,18 +243,20 @@ def classify_environment(
 def current_environment() -> dict[str, Any]:
     """Classify the current runtime using stdlib probes only.
 
-    ``AKS_TARGET=vps`` forces the target marker on; ``AKS_TARGET=dev`` (or
-    ``sandbox``/``local``) forces it off; otherwise the runtime marker file is
-    probed.
+    ``AKS_TARGET=dev`` (or ``sandbox``/``local``) forces NON-authoritative —
+    forcing OFF is always safe. There is deliberately NO force in the other
+    direction (FC2, audit 2026-07-17): ``AKS_TARGET=vps`` used to flip
+    ``authoritative`` on from any Linux box, making the whole
+    read-only-until-green gate spoofable by one env var. Authority now comes
+    only from :func:`marker_authorizes` (root-installed /etc marker pinned to
+    this hostname).
     """
 
     override = os.environ.get("AKS_TARGET", "").strip().lower()
-    if override == "vps":
-        marker = True
-    elif override in {"dev", "sandbox", "local"}:
+    if override in {"dev", "sandbox", "local"}:
         marker = False
     else:
-        marker = os.path.exists(TARGET_MARKER_PATH)
+        marker = marker_authorizes()
 
     return classify_environment(
         system=platform.system(),

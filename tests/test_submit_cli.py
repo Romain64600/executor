@@ -150,6 +150,117 @@ class SubmitCliTests(unittest.TestCase):
             code = MOD.main()
         return code, out.getvalue()
 
+    def test_learning_matched_run_refuses_safe_submit(self):
+        # FC5 (audit 2026-07-17): a run matched under an unlock (canary) must
+        # never take the full-batch safe path.
+        approved = self._write_fixture()
+        (self.run_dir / "match_meta.json").write_text(
+            json.dumps({"run_id": self.run_id, "data_entry_mode": "learning"}),
+            encoding="utf-8",
+        )
+        fake_submitter = _fake_submitter_cls({
+            "aborted": None, "stopped": None, "feed_offers": 1,
+            "write_attempts": 0, "created": 0, "plan": [],
+        })
+        code, out = self._run_cli(
+            self._base_argv(approved, "--submit"),
+            patches=(
+                mock.patch.object(MOD, "WriteSubmitSession", _FakeSession),
+                mock.patch.object(MOD, "Submitter", fake_submitter),
+            ),
+        )
+        self.assertEqual(code, 2)
+        payload = json.loads(out)
+        self.assertIn("cannot submit as 'safe'", payload["reason"])
+        self.assertEqual(fake_submitter.instantiated, 0)  # never spawned a session
+
+    def test_safe_matched_run_submits_as_canary_narrower_is_fine(self):
+        approved = self._write_fixture()
+        (self.run_dir / "match_meta.json").write_text(
+            json.dumps({"run_id": self.run_id, "data_entry_mode": "safe"}),
+            encoding="utf-8",
+        )
+        fake_submitter = _fake_submitter_cls({
+            "aborted": None, "stopped": None, "feed_offers": 1,
+            "write_attempts": 1, "created": 1, "plan": [],
+        })
+        code, out = self._run_cli(
+            self._base_argv(approved, "--submit", "--mode", "learning"),
+            patches=(
+                mock.patch.object(MOD, "WriteSubmitSession", _FakeSession),
+                mock.patch.object(MOD, "Submitter", fake_submitter),
+            ),
+        )
+        self.assertEqual(code, 0)
+        summary = json.loads(out)
+        self.assertEqual(summary["data_entry_mode"], "learning")
+
+    def test_legacy_run_without_meta_still_submits(self):
+        approved = self._write_fixture()
+        fake_submitter = _fake_submitter_cls({
+            "aborted": None, "stopped": None, "feed_offers": 1,
+            "write_attempts": 1, "created": 1, "plan": [],
+        })
+        code, out = self._run_cli(
+            self._base_argv(approved, "--submit"),
+            patches=(
+                mock.patch.object(MOD, "WriteSubmitSession", _FakeSession),
+                mock.patch.object(MOD, "Submitter", fake_submitter),
+            ),
+        )
+        self.assertEqual(code, 0)
+
+    def test_third_pass_after_two_blocked_requires_ack(self):
+        # FC3: two prior real passes ended guard-blocked → the third refuses
+        # without --acknowledge-block; with the flag it runs and resets.
+        approved = self._write_fixture()
+        (self.run_dir / "guard_ledger.json").write_text(json.dumps({
+            "consecutive_blocked_runs": 2,
+            "last_block": {"task_id": self.run_id, "rule": "consecutive_failures",
+                           "reason": "10 consecutive failures", "at": "T"},
+        }), encoding="utf-8")
+        fake_submitter = _fake_submitter_cls({
+            "aborted": None, "stopped": None, "feed_offers": 1,
+            "write_attempts": 0, "created": 0, "plan": [],
+        })
+        patches = (
+            mock.patch.object(MOD, "WriteSubmitSession", _FakeSession),
+            mock.patch.object(MOD, "Submitter", fake_submitter),
+        )
+        code, out = self._run_cli(self._base_argv(approved, "--submit"), patches=patches)
+        self.assertEqual(code, 2)
+        payload = json.loads(out)
+        self.assertIn("--acknowledge-block", payload["reason"])
+        self.assertEqual(payload["last_block"]["reason"], "10 consecutive failures")
+
+        code, out = self._run_cli(
+            self._base_argv(approved, "--submit", "--acknowledge-block"), patches=patches
+        )
+        self.assertEqual(code, 0)
+        ledger = json.loads((self.run_dir / "guard_ledger.json").read_text(encoding="utf-8"))
+        self.assertEqual(ledger["consecutive_blocked_runs"], 0)
+
+    def test_single_blocked_pass_allows_free_recovery(self):
+        approved = self._write_fixture()
+        (self.run_dir / "guard_ledger.json").write_text(json.dumps({
+            "consecutive_blocked_runs": 1,
+        }), encoding="utf-8")
+        fake_submitter = _fake_submitter_cls({
+            "aborted": None, "stopped": None, "feed_offers": 1,
+            "write_attempts": 1, "created": 1, "plan": [],
+        })
+        code, out = self._run_cli(
+            self._base_argv(approved, "--submit"),
+            patches=(
+                mock.patch.object(MOD, "WriteSubmitSession", _FakeSession),
+                mock.patch.object(MOD, "Submitter", fake_submitter),
+            ),
+        )
+        self.assertEqual(code, 0)
+        # clean pass reset the streak
+        ledger = json.loads((self.run_dir / "guard_ledger.json").read_text(encoding="utf-8"))
+        self.assertEqual(ledger["consecutive_blocked_runs"], 0)
+
     def test_browser_lock_busy_refuses_before_anything(self):
         from src.browser_lock import BrowserBusyError
 

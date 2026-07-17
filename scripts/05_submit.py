@@ -37,6 +37,7 @@ if str(ROOT) not in sys.path:
 from src.aks_env import OFFICIAL_CDP_ENDPOINT  # noqa: E402
 from src.browser_lock import BrowserBusyError, browser_lock  # noqa: E402
 from src.invariants import build_report  # noqa: E402
+from src.step_guard import BlockLedger, StepGuard  # noqa: E402
 from src.pacing import Pacer  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
 from src.submit_session import SubmitSession, WriteSubmitSession  # noqa: E402
@@ -155,6 +156,13 @@ def _main() -> int:
         "--pace-offers", default="5-15",
         help="Seconds between successive offers, 'N' or 'MIN-MAX' (bounded-random). "
              "0 disables. Default: 5-15.",
+    )
+    parser.add_argument(
+        "--acknowledge-block", action="store_true",
+        help="FC3: this run's TWO previous real passes both ended guard-blocked "
+             "(G03 across processes: same approach failed twice). After inspecting "
+             "the feed and submit_plan.json by hand, this flag acknowledges the "
+             "blocks and re-arms the run. Never pass it blind.",
     )
     args = parser.parse_args()
 
@@ -301,6 +309,36 @@ def _main() -> int:
         return 0
 
     write = args.submit
+    # FC5 (audit 2026-07-17): the R24 mode used to be purely declared at this
+    # CLI. 03_match now stamps the mode it ran under into match_meta.json;
+    # a REAL submit whose declared mode implies a WIDER batch than the matched
+    # mode refuses — a run matched under an unlock (canary of 1) must never
+    # take the full-batch `safe` path. Absent meta = legacy run (pre-FC5),
+    # accepted; narrower-or-equal submits (safe-matched run submitted as a
+    # canary) stay allowed.
+    matched_mode = None
+    meta_path = out_dir / "match_meta.json"
+    if meta_path.is_file():
+        try:
+            matched_mode = str(
+                json.loads(meta_path.read_text(encoding="utf-8")).get("data_entry_mode") or ""
+            ) or None
+        except (json.JSONDecodeError, OSError) as exc:
+            print(json.dumps({
+                "aborted": True,
+                "reason": f"match_meta.json unreadable — cannot verify the matched mode (FC5): {exc}",
+            }, indent=2))
+            return 2
+    if write and matched_mode in CANARY_MODES and args.mode == "safe":
+        print(json.dumps({
+            "aborted": True,
+            "reason": (
+                f"run matched under mode {matched_mode!r} (canary) cannot submit as "
+                "'safe' (full batch) — re-match under safe or submit in the matched mode (FC5)"
+            ),
+        }, indent=2))
+        return 2
+
     # R24: the batch size is the mode's call (safe = full validated batch, R23b;
     # learning/advanced = canary of 1). --all is a no-op here — kept only for
     # --inspect, which retains its own canary-of-1 default above.
@@ -313,9 +351,41 @@ def _main() -> int:
             file=sys.stderr,
         )
 
+    # FC3 (audit 2026-07-17): cross-process G03. The in-memory guard dies with
+    # its process, so nothing stopped a third identical pass after two blocked
+    # ones. One recovery pass on the same run stays free (standard idempotent
+    # recovery); two consecutive blocked passes require an explicit human
+    # --acknowledge-block. Write mode only — dry-runs stake nothing.
+    # The ledger lives IN the run dir: the streak it counts is per-run (same
+    # approved.json re-passes), and runs/ is already un-committed state.
+    ledger = BlockLedger(out_dir / "guard_ledger.json")
+    if write:
+        if args.acknowledge_block:
+            ledger.acknowledge("operator --acknowledge-block on the CLI")
+        elif ledger.requires_ack():
+            previous = ledger.load().get("last_block") or {}
+            print(json.dumps({
+                "aborted": True,
+                "reason": (
+                    "the previous TWO real passes of this run both ended "
+                    "guard-blocked (G03 across processes) — inspect the feed and "
+                    "submit_plan.json, then re-run with --acknowledge-block (FC3)"
+                ),
+                "last_block": previous,
+            }, indent=2))
+            return 2
+
     session_cls = WriteSubmitSession if write else SubmitSession
     submitter_cls = Submitter if write else DryRunSubmitter
     submitter_kw = {"click_mode": click_mode} if write else {}
+    # The guard is built HERE (same config as the submitter's default) so its
+    # end-of-run state can be recorded into the cross-process ledger.
+    submitter_kw["guard"] = StepGuard(
+        max_attempts_per_signature=1,
+        max_failures_per_signature=2,
+        max_consecutive_failures=10,
+        max_failures_per_task=10 ** 9,
+    )
     # Mid-batch feed/CDP failures are handled INSIDE run() (offer marked
     # UNKNOWN, stopped="feed_unreadable", plan preserved); this wrapper only
     # catches failures outside the batch loop (pre-flight navigate, catalog).
@@ -332,9 +402,21 @@ def _main() -> int:
         }, indent=2))
         return 2
 
+    # FC3: record this pass's guard outcome in the cross-process ledger (a
+    # clean pass resets the blocked-run streak).
+    if write:
+        snapshot = submitter_kw["guard"].snapshot()
+        ledger.record(
+            task_id=run_id,
+            blocked=bool(snapshot.get("blocked")),
+            rule=snapshot.get("blocked_rule"),
+            reason=snapshot.get("blocked_reason"),
+        )
+
     # R24: the mode + the batch size it produced are part of the run's record,
     # so submit_plan.json says under which mode these offers were written.
     result["data_entry_mode"] = args.mode
+    result["matched_mode"] = matched_mode  # FC5 — None on pre-FC5 runs
     result["limit"] = limit
     (out_dir / "submit_plan.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
 

@@ -53,6 +53,15 @@ def main() -> int:
     parser.add_argument("offers", help="Path to offers.json (a NormalizedFeed).")
     parser.add_argument("--max-candidates", type=int, default=100)
     parser.add_argument("--out-dir", default=None)
+    parser.add_argument(
+        "--mode", default="safe", choices=["safe", "learning", "advanced"],
+        help="Data-entry mode this match runs under (R24). Stamped into "
+             "match_meta.json so 05_submit can refuse a WIDER submit mode "
+             "(FC5, audit 2026-07-17: a run matched under an unlock must "
+             "never take the full-batch safe path). The matcher has no mode "
+             "profiles yet — behaviour is identical for all three, only the "
+             "stamp differs.",
+    )
     args = parser.parse_args()
 
     # Fail-closed: never mass-skip because AKS itself is unreachable.
@@ -71,6 +80,18 @@ def main() -> int:
     )
     (out_dir / "skipped.json").write_text(
         json.dumps([s.to_dict() for s in skipped], indent=2), encoding="utf-8"
+    )
+    # FC5 (audit 2026-07-17): record which R24 mode produced this batch, in a
+    # SEPARATE sidecar (candidates.json stays a plain list — the validation
+    # triple's shape is load-bearing). 05_submit + the admin refuse a submit
+    # mode with a WIDER batch than the matched mode.
+    (out_dir / "match_meta.json").write_text(
+        json.dumps({
+            "run_id": feed.run_id,
+            "data_entry_mode": args.mode,
+            "matched_at": feed.fetched_at,
+        }, indent=2),
+        encoding="utf-8",
     )
 
     lines = [

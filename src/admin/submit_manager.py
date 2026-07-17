@@ -378,6 +378,27 @@ class SubmitManager:
                         "concurrente ?) — recharger, re-vérifier le lot, retaper GO",
                         http_status=409,
                     )
+                # FC5 mirror (le 05_submit spawné re-vérifie) : un run matché
+                # en mode canary ne soumet jamais en safe (lot complet).
+                meta_path = run_file(run_dir, "match_meta.json")
+                if meta_path.is_file():
+                    try:
+                        matched_mode = str(
+                            json.loads(meta_path.read_text(encoding="utf-8"))
+                            .get("data_entry_mode") or ""
+                        )
+                    except (json.JSONDecodeError, OSError) as exc:
+                        raise SubmitStartError(
+                            "match_meta_unreadable",
+                            f"match_meta.json illisible — mode de match invérifiable (FC5): {exc}",
+                        ) from exc
+                    if matched_mode in CANARY_MODES and mode == "safe":
+                        raise SubmitStartError(
+                            "mode_widens_match",
+                            f"run matché en mode {matched_mode!r} (canary) — un submit "
+                            "'safe' (lot complet) est refusé : re-matcher en safe ou "
+                            "soumettre dans le mode matché (FC5)",
+                        )
             already = sorted(
                 {str(c["offer"]["offer_id"]) for c in approved} & set(self.created_offers(run_dir))
             )

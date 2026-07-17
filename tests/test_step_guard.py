@@ -258,3 +258,59 @@ class P2CoverageTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BlockLedgerTests(unittest.TestCase):
+    """FC3 (audit 2026-07-17): cross-process G03 — two consecutive blocked
+    runs of the same task require an explicit acknowledgment; one recovery
+    pass stays free (standard idempotent recovery)."""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        from src.step_guard import BlockLedger
+
+        self.ledger = BlockLedger(
+            Path(self.tmp.name) / "guard_ledger.json", clock=lambda: "T"
+        )
+
+    def test_fresh_ledger_never_requires_ack(self):
+        self.assertFalse(self.ledger.requires_ack())
+
+    def test_one_blocked_run_allows_the_recovery_pass(self):
+        self.ledger.record(task_id="r", blocked=True,
+                           rule="consecutive_failures", reason="10 in a row")
+        self.assertFalse(self.ledger.requires_ack())
+
+    def test_two_blocked_runs_require_ack(self):
+        self.ledger.record(task_id="r", blocked=True, rule="x", reason="a")
+        self.ledger.record(task_id="r", blocked=True, rule="x", reason="b")
+        self.assertTrue(self.ledger.requires_ack())
+        last = self.ledger.load()["last_block"]
+        self.assertEqual(last["reason"], "b")
+
+    def test_clean_run_resets_the_streak(self):
+        self.ledger.record(task_id="r", blocked=True, rule="x", reason="a")
+        self.ledger.record(task_id="r", blocked=False)
+        self.ledger.record(task_id="r", blocked=True, rule="x", reason="c")
+        self.assertFalse(self.ledger.requires_ack())
+
+    def test_acknowledge_resets_and_records_the_note(self):
+        self.ledger.record(task_id="r", blocked=True, rule="x", reason="a")
+        self.ledger.record(task_id="r", blocked=True, rule="x", reason="b")
+        self.ledger.acknowledge("operator checked the feed")
+        self.assertFalse(self.ledger.requires_ack())
+        self.assertEqual(self.ledger.load()["acknowledged"]["note"],
+                         "operator checked the feed")
+
+    def test_corrupt_ledger_fails_open_for_the_ledger_only(self):
+        # A broken ledger must not brick the pipeline — the in-run guard is
+        # still fully armed either way.
+        self.ledger.path.parent.mkdir(parents=True, exist_ok=True)
+        self.ledger.path.write_text("{broken", encoding="utf-8")
+        self.assertFalse(self.ledger.requires_ack())
+        self.ledger.record(task_id="r", blocked=True, rule="x", reason="a")
+        self.assertEqual(self.ledger.load()["consecutive_blocked_runs"], 1)

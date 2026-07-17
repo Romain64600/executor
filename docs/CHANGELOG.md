@@ -3,6 +3,39 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-17 — Audit P2.a : les gates déclaratifs deviennent mécaniques (FC2/FC3/FC4/FC5)
+
+- **FC2** — `AKS_TARGET=vps` ne force plus `authoritative:true` : une seule
+  variable d'env ne doit jamais déverrouiller les stages d'écriture. La seule
+  autorité est désormais le **marqueur root** `/etc/aks-executor.target`
+  (installé sur le VPS le 2026-07-17), qui doit être possédé par root, non
+  modifiable par le groupe/autres, ET contenir le hostname de la machine (un
+  marqueur copié ailleurs ne transfère rien). La direction inverse
+  (`AKS_TARGET=dev` → force OFF) reste — forcer non-autoritaire est toujours
+  sûr. Le shell audit (`00_audit_env.sh`) suit le même ancrage. Vérifié live :
+  le gate reste vert+authoritative sur le VPS, zéro fenêtre rouge.
+- **FC3** — G03 inter-processus (`BlockLedger`, `runs/<id>/guard_ledger.json`) :
+  un blocage StepGuard mourait avec son process, rien n'empêchait une 3e passe
+  identique après deux passes bloquées. Une passe de récupération sur le même
+  run reste LIBRE (récupération idempotente standard, Romain 2026-07-07) ;
+  deux passes réelles consécutives bloquées → la 3e exige
+  `--acknowledge-block` (acquittement humain explicite, qui remet le compteur
+  à zéro). Une passe propre remet aussi le compteur à zéro. Dry-runs exclus.
+- **FC4** — `resolve_catalog_id` chemin id : l'existence de l'id ne vaut plus
+  validation — le label du candidat doit apparaître comme mot entier dans le
+  texte du catalogue live ("EU" ⊆ "Steam EU (9)") ; un id qui a dérivé vers
+  une autre option ("BTC 1500 PLN") → None → blocker, jamais d'adoption
+  aveugle du texte dérivé.
+- **FC5** — le mode R24 est enfin traçable : `03_match --mode` (défaut safe,
+  comportement identique tant que le matcher n'a pas de profils) tamponne
+  `match_meta.json` ; `05_submit` ET l'admin refusent un submit réel dont le
+  mode déclaré implique un lot PLUS LARGE que le mode matché (run matché en
+  canary → jamais le chemin lot-complet `safe`). Runs pré-FC5 sans meta :
+  acceptés. `submit_plan.json` enregistre `matched_mode`.
+
+Tests : +20. 597 verts. Miroir EXECUTOR_RULES différé (chantier Difmark
+parallèle sur le fichier).
+
 ## 2026-07-17 — Audit P1.c : GO lié au lot, plus d'orphelin, keep-alive sain, verrou navigateur (AS1/AS2/AS3/OP1)
 
 - **AS1** — le « GO » tapé est désormais lié au CONTENU exact du lot affiché :

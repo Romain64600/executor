@@ -546,5 +546,48 @@ class ApprovedShaBindingTests(ManagerTestCase):
         self.assertTrue(manager.wait_idle(timeout=10))
 
 
+class MatchedModeBindingTests(ManagerTestCase):
+    """FC5 mirror: a canary-matched run must never submit as safe."""
+
+    def _write_meta(self, mode):
+        (self.run / "match_meta.json").write_text(
+            json.dumps({"run_id": self.run.name, "data_entry_mode": mode}),
+            encoding="utf-8",
+        )
+
+    def test_learning_matched_refuses_safe_submit(self):
+        self._write_triple()
+        self._write_meta("learning")
+        manager = self._manager()
+        with self.assertRaises(SubmitStartError) as ctx:
+            manager.start_submit(
+                self.run, mode="safe", limit=None, dry_run=False, by="Romain",
+                expected_approved_sha=self._approved_sha(),
+            )
+        self.assertEqual(ctx.exception.code, "mode_widens_match")
+
+    def test_safe_matched_allows_canary_submit(self):
+        self._write_triple()
+        self._write_meta("safe")
+        manager = self._manager()
+        result = manager.start_submit(
+            self.run, mode="learning", limit=None, dry_run=False, by="Romain",
+            expected_approved_sha=self._approved_sha(),
+        )
+        self.assertTrue(result["started"])
+        self.assertTrue(manager.wait_idle(timeout=10))
+
+    def test_unreadable_meta_refuses(self):
+        self._write_triple()
+        (self.run / "match_meta.json").write_text("{broken", encoding="utf-8")
+        manager = self._manager()
+        with self.assertRaises(SubmitStartError) as ctx:
+            manager.start_submit(
+                self.run, mode="safe", limit=None, dry_run=False, by="Romain",
+                expected_approved_sha=self._approved_sha(),
+            )
+        self.assertEqual(ctx.exception.code, "match_meta_unreadable")
+
+
 if __name__ == "__main__":
     unittest.main()

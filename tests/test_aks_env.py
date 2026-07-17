@@ -1,6 +1,8 @@
 import io
 import json
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 from urllib.error import HTTPError, URLError
 
@@ -290,23 +292,88 @@ class CurrentEnvironmentTests(unittest.TestCase):
         environ = {} if aks_target is None else {"AKS_TARGET": aks_target}
         with mock.patch.dict("src.aks_env.os.environ", environ, clear=True), mock.patch(
             "src.aks_env.platform.system", return_value=system
-        ), mock.patch("src.aks_env.os.path.exists", return_value=marker), mock.patch(
+        ), mock.patch("src.aks_env.marker_authorizes", return_value=marker), mock.patch(
             "src.aks_env.socket.gethostname", return_value="host"
         ):
             return current_environment()
 
-    def test_aks_target_vps_forces_authoritative(self):
-        self.assertTrue(self._env(aks_target="vps")["authoritative"])
+    def test_aks_target_vps_no_longer_forces_authoritative(self):
+        # FC2 (audit 2026-07-17): one env var must never unlock write stages.
+        self.assertFalse(self._env(aks_target="vps")["authoritative"])
+        self.assertFalse(self._env(aks_target="vps", marker=False)["authoritative"])
 
     def test_aks_target_dev_overrides_even_if_marker_present(self):
         self.assertFalse(self._env(aks_target="dev", marker=True)["authoritative"])
 
-    def test_marker_file_fallback_when_no_override(self):
+    def test_root_marker_is_the_only_authority(self):
         self.assertTrue(self._env(marker=True)["authoritative"])
         self.assertFalse(self._env(marker=False)["authoritative"])
 
-    def test_vps_override_still_requires_linux(self):
-        self.assertFalse(self._env(system="Darwin", aks_target="vps")["authoritative"])
+    def test_marker_still_requires_linux(self):
+        self.assertFalse(self._env(system="Darwin", marker=True)["authoritative"])
+
+
+class MarkerAuthorizesTests(unittest.TestCase):
+    """FC2: the marker vouches only when root-owned, unwritable by others,
+    and pinned to THIS hostname."""
+
+    def _marker(self, tmp, content="host-a", uid=0, mode=0o644):
+        import os as real_os
+
+        path = Path(tmp) / "aks-executor.target"
+        path.write_text(content + "\n", encoding="utf-8")
+        real_stat = real_os.stat(path)
+
+        class FakeStat:
+            st_uid = uid
+            st_mode = (real_stat.st_mode & ~0o777) | mode
+
+        return str(path), FakeStat()
+
+    def test_valid_marker_authorizes(self):
+        from src.aks_env import marker_authorizes
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path, fake_stat = self._marker(tmp)
+            with mock.patch("src.aks_env.os.stat", return_value=fake_stat):
+                self.assertTrue(marker_authorizes(path, hostname="host-a"))
+
+    def test_wrong_hostname_refused(self):
+        from src.aks_env import marker_authorizes
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path, fake_stat = self._marker(tmp, content="host-a")
+            with mock.patch("src.aks_env.os.stat", return_value=fake_stat):
+                self.assertFalse(marker_authorizes(path, hostname="host-b"))
+
+    def test_non_root_owner_refused(self):
+        from src.aks_env import marker_authorizes
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path, fake_stat = self._marker(tmp, uid=1000)
+            with mock.patch("src.aks_env.os.stat", return_value=fake_stat):
+                self.assertFalse(marker_authorizes(path, hostname="host-a"))
+
+    def test_world_writable_refused(self):
+        from src.aks_env import marker_authorizes
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path, fake_stat = self._marker(tmp, mode=0o666)
+            with mock.patch("src.aks_env.os.stat", return_value=fake_stat):
+                self.assertFalse(marker_authorizes(path, hostname="host-a"))
+
+    def test_missing_file_refused(self):
+        from src.aks_env import marker_authorizes
+
+        self.assertFalse(marker_authorizes("/nonexistent/marker", hostname="host-a"))
+
+    def test_empty_marker_refused(self):
+        from src.aks_env import marker_authorizes
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path, fake_stat = self._marker(tmp, content="")
+            with mock.patch("src.aks_env.os.stat", return_value=fake_stat):
+                self.assertFalse(marker_authorizes(path, hostname="host-a"))
 
 
 if __name__ == "__main__":
