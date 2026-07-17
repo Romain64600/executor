@@ -471,9 +471,18 @@ async function checkInvariants() {
   updateSubmitButton();
 }
 
+function maxPagesValue() {
+  // Shared by submit/dry-run/catalog — defaults (empty) to the script's own
+  // 40. Raise it for a large feed (Difmark, 382 pages, 2026-07-17): the
+  // default cap made the feed-index scan abort "coverage unproven" even
+  // though the feed itself was healthy.
+  return $('#max-pages').value.trim();
+}
+
 function argvPreview(dryRun) {
   const detail = CURRENT.detail;
   const limit = $('#limit').value.trim();
+  const maxPages = maxPagesValue();
   const parts = [
     'python3', 'scripts/05_submit.py',
     `runs/${CURRENT.runId}/approved.json`,
@@ -483,6 +492,7 @@ function argvPreview(dryRun) {
   ];
   if (!dryRun) parts.push('--submit');
   if (limit) parts.push('--limit', limit);
+  if (maxPages) parts.push('--max-pages', maxPages);
   return parts.join(' ');
 }
 
@@ -503,11 +513,13 @@ async function startRun(body) {
 async function dryRun() {
   clearError();
   const limit = $('#limit').value.trim();
+  const maxPages = maxPagesValue();
   try {
     await startRun({
       mode: selectedMode(),
       limit: limit ? Number(limit) : null,
       dry_run: true,
+      max_pages: maxPages ? Number(maxPages) : null,
     });
   } catch (err) { showError(err); }
 }
@@ -534,6 +546,7 @@ async function confirmedSubmit() {
   $('#confirm-dialog').close();
   clearError();
   const limit = $('#limit').value.trim();
+  const maxPages = maxPagesValue();
   try {
     await startRun({
       mode: selectedMode(),
@@ -542,16 +555,18 @@ async function confirmedSubmit() {
       confirm: 'GO',
       approved_sha256: CONFIRM_SHA,
       by: $('#validated-by').value.trim() || undefined,
+      max_pages: maxPages ? Number(maxPages) : null,
     });
   } catch (err) { showError(err); }
 }
 
 async function fetchCatalog() {
   clearError();
+  const maxPages = maxPagesValue();
   try {
     const result = await api(`api/runs/${encodeURIComponent(CURRENT.runId)}/catalog`, {
       method: 'POST',
-      body: '{}',
+      body: JSON.stringify({ max_pages: maxPages ? Number(maxPages) : null }),
     });
     $('#progress').classList.remove('hidden');
     $('#progress-title').textContent = `Récupération du catalogue (pid ${result.pid})`;

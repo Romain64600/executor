@@ -245,6 +245,37 @@ class ValidationFlowTests(AppTestCase):
         self.assertIn("admin_submit_started", events)
         self.assertIn("admin_submit_finished", events)
 
+    def test_max_pages_threaded_through_dry_run(self):
+        # Difmark (2026-07-17): a 382-page feed needs a higher --max-pages
+        # than the script's default 40 — the admin page's field must reach
+        # the spawned argv, string-or-number JSON bodies both accepted.
+        _, payload = self._json("GET", "/api/runs/20260715-000000-test/validation")
+        fingerprint = payload["candidates"][0]["fingerprint"]
+        self._json(
+            "POST", "/api/runs/20260715-000000-test/validation",
+            body={
+                "candidates_sha256": payload["candidates_sha256"],
+                "validated_by": "Romain",
+                "decisions": [{"fingerprint": fingerprint, "approve": True}],
+            },
+        )
+        response, body = self._json(
+            "POST", "/api/runs/20260715-000000-test/submit",
+            body={"mode": "safe", "dry_run": True, "max_pages": 400},
+        )
+        self.assertEqual(response.status, 200)
+        self.assertIn("--max-pages", body["argv"])
+        self.assertEqual(body["argv"][body["argv"].index("--max-pages") + 1], "400")
+        self.assertTrue(self.manager.wait_idle(timeout=10))
+
+        response, body = self._json(
+            "POST", "/api/runs/20260715-000000-test/submit",
+            body={"mode": "safe", "dry_run": True, "max_pages": "400"},
+        )
+        self.assertEqual(response.status, 200)
+        self.assertIn("--max-pages", body["argv"])
+        self.assertTrue(self.manager.wait_idle(timeout=10))
+
     def test_stale_sha_conflict(self):
         response, body = self._json(
             "POST",

@@ -204,6 +204,39 @@ class RunLifecycleTests(ManagerTestCase):
         self.assertIn("--limit", result["argv"])
         self.assertTrue(manager.wait_idle(timeout=10))
 
+    def test_max_pages_omitted_by_default(self):
+        # No --max-pages in argv when unset — the script keeps its own
+        # default (40), unchanged behavior for every merchant that doesn't
+        # need it.
+        self._write_triple()
+        manager = self._manager()
+        result = manager.start_submit(self.run, mode="safe", limit=None, dry_run=True, by="Romain")
+        self.assertNotIn("--max-pages", result["argv"])
+        self.assertTrue(manager.wait_idle(timeout=10))
+
+    def test_max_pages_threaded_into_submit_argv(self):
+        # Difmark (2026-07-17): 382-page feed, the default 40-page cap made
+        # the feed-index scan abort "coverage unproven" — the operator needs
+        # to raise this from the admin page, not just the CLI.
+        self._write_triple()
+        manager = self._manager()
+        result = manager.start_submit(
+            self.run, mode="safe", limit=None, dry_run=True, by="Romain", max_pages=400,
+        )
+        self.assertIn("--max-pages", result["argv"])
+        self.assertEqual(result["argv"][result["argv"].index("--max-pages") + 1], "400")
+        self.assertTrue(manager.wait_idle(timeout=10))
+
+    def test_bad_max_pages_refused_before_spawn(self):
+        self._write_triple()
+        manager = self._manager()
+        with self.assertRaises(SubmitStartError) as ctx:
+            manager.start_submit(
+                self.run, mode="safe", limit=None, dry_run=True, by="Romain", max_pages=0,
+            )
+        self.assertEqual(ctx.exception.code, "bad_max_pages")
+        self.assertIsNone(manager.busy())
+
     def test_catalog_argv_and_no_validation_needed(self):
         manager = self._manager()
         result = manager.start_catalog(self.run, by="Romain")
@@ -212,6 +245,13 @@ class RunLifecycleTests(ManagerTestCase):
         state = json.loads((self.run / "admin_submit.json").read_text(encoding="utf-8"))
         self.assertEqual(state["kind"], "catalog")
         self.assertEqual(state["state"], "done")
+
+    def test_catalog_accepts_max_pages(self):
+        manager = self._manager()
+        result = manager.start_catalog(self.run, by="Romain", max_pages=200)
+        self.assertIn("--max-pages", result["argv"])
+        self.assertEqual(result["argv"][result["argv"].index("--max-pages") + 1], "200")
+        self.assertTrue(manager.wait_idle(timeout=10))
 
     def test_failed_exit_code_recorded(self):
         self._write_triple()

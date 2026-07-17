@@ -285,6 +285,18 @@ class SubmitManager:
             )
 
     @staticmethod
+    def _check_max_pages(max_pages: int | None) -> None:
+        # Same default (40) as scripts/05_submit.py — the operator only needs
+        # to raise it for a large feed (e.g. Difmark, 382 pages: the default
+        # cap made the feed-index scan abort "coverage unproven" even though
+        # the feed itself was healthy, 2026-07-17).
+        if max_pages is not None and (not isinstance(max_pages, int) or max_pages < 1):
+            raise SubmitStartError(
+                "bad_max_pages", f"max_pages must be a positive integer, got {max_pages!r}",
+                http_status=400,
+            )
+
+    @staticmethod
     def _check_mode_limit(mode: str, limit: int | None) -> None:
         if mode not in MODES:
             raise SubmitStartError("bad_mode", f"unknown mode: {mode!r}", http_status=400)
@@ -336,10 +348,12 @@ class SubmitManager:
         dry_run: bool,
         by: str,
         expected_approved_sha: str | None = None,
+        max_pages: int | None = None,
     ) -> dict[str, Any]:
         with self._mutex:
             self._ensure_free()
             self._check_mode_limit(mode, limit)
+            self._check_max_pages(max_pages)
             approved = self._verify_triple(run_dir)
             if not dry_run:
                 # AS1 (audit 2026-07-17): the typed GO must be bound to the
@@ -393,19 +407,22 @@ class SubmitManager:
                 argv.append("--submit")
             if limit is not None:
                 argv += ["--limit", str(limit)]
+            if max_pages is not None:
+                argv += ["--max-pages", str(max_pages)]
             return self._spawn(
                 run_dir,
                 kind="submit" if not dry_run else "dry_run",
                 argv=argv,
                 meta={"mode": mode, "limit": limit, "dry_run": dry_run, "by": by,
-                      "approved_count": len(approved)},
+                      "approved_count": len(approved), "max_pages": max_pages},
             )
 
-    def start_catalog(self, run_dir: Path, *, by: str) -> dict[str, Any]:
+    def start_catalog(self, run_dir: Path, *, by: str, max_pages: int | None = None) -> dict[str, Any]:
         """Fetch session_catalog.json (read-only stage, but it drives the browser)."""
 
         with self._mutex:
             self._ensure_free()
+            self._check_max_pages(max_pages)
             try:
                 merchant, store_id = derive_merchant_store(run_dir)
             except (RunAccessError, json.JSONDecodeError) as exc:
@@ -422,7 +439,11 @@ class SubmitManager:
                 store_id,
                 "--catalog",
             ]
-            return self._spawn(run_dir, kind="catalog", argv=argv, meta={"by": by})
+            if max_pages is not None:
+                argv += ["--max-pages", str(max_pages)]
+            return self._spawn(
+                run_dir, kind="catalog", argv=argv, meta={"by": by, "max_pages": max_pages}
+            )
 
     def start_extract(self, merchant: str, store_id: str, *, by: str) -> dict[str, Any]:
         """Stage 1 (read-only): create a fresh run and launch the extractor.

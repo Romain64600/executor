@@ -19,6 +19,7 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from src.admin.runs import (
@@ -50,6 +51,18 @@ STATIC_FILES = {
 }
 MAX_BODY_BYTES = 2 * 1024 * 1024
 RUN_ROUTE = re.compile(r"^/api/runs/([^/]+)(/.*)?$")
+
+
+def _parse_int(value: Any) -> int | None:
+    """Accept an int, a numeric string, or an integer-valued float from a
+    JSON body — anything else (incl. None) passes through unchanged so the
+    manager's own validation reports it, rather than swallowing a typo."""
+
+    if isinstance(value, str):
+        return int(value) if value.strip().isdigit() else value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    return value
 
 
 class ApiError(Exception):
@@ -350,7 +363,7 @@ class AdminHandler(BaseHTTPRequestHandler):
     def _post_catalog(self, run_dir: Path) -> None:
         body = self._json_body()
         by = str(body.get("by") or self._basic_user() or "operateur")
-        result = self.state.manager.start_catalog(run_dir, by=by)
+        result = self.state.manager.start_catalog(run_dir, by=by, max_pages=_parse_int(body.get("max_pages")))
         self._send_json(200, result)
 
     def _post_extract(self) -> None:
@@ -370,11 +383,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                 "confirm_required",
                 'un submit réel exige confirm: "GO" (le go explicite de l\'opérateur)',
             )
-        limit = body.get("limit")
-        if isinstance(limit, str):
-            limit = int(limit) if limit.strip().isdigit() else limit
-        if isinstance(limit, float) and limit.is_integer():
-            limit = int(limit)
+        limit = _parse_int(body.get("limit"))
         by = str(body.get("by") or self._basic_user() or "operateur")
         approved_sha = body.get("approved_sha256")
         result = self.state.manager.start_submit(
@@ -384,6 +393,7 @@ class AdminHandler(BaseHTTPRequestHandler):
             dry_run=dry_run,
             by=by,
             expected_approved_sha=str(approved_sha) if approved_sha else None,
+            max_pages=_parse_int(body.get("max_pages")),
         )
         self._send_json(200, result)
 
