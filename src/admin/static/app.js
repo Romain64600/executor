@@ -512,6 +512,11 @@ async function dryRun() {
   } catch (err) { showError(err); }
 }
 
+// AS1 (audit 2026-07-17) : le sha du lot affiché au moment où le dialogue GO
+// s'ouvre — renvoyé avec le submit réel pour que le serveur refuse si une
+// validation concurrente a régénéré approved.json entre-temps.
+let CONFIRM_SHA = null;
+
 function openConfirmDialog() {
   $('#confirm-argv').textContent = argvPreview(false);
   const approved = CURRENT.detail.stages.approved_count || 0;
@@ -519,6 +524,7 @@ function openConfirmDialog() {
   const batch = mode === 'safe' ? approved : Math.min(approved, META.canary_limit);
   $('#confirm-count').textContent =
     `Mode ${mode} : jusqu'à ${batch} offre(s) sur ${approved} approuvée(s).`;
+  CONFIRM_SHA = CURRENT.validation ? CURRENT.validation.approved_sha256 : null;
   $('#confirm-input').value = '';
   $('#confirm-go').disabled = true;
   $('#confirm-dialog').showModal();
@@ -534,6 +540,7 @@ async function confirmedSubmit() {
       limit: limit ? Number(limit) : null,
       dry_run: false,
       confirm: 'GO',
+      approved_sha256: CONFIRM_SHA,
       by: $('#validated-by').value.trim() || undefined,
     });
   } catch (err) { showError(err); }

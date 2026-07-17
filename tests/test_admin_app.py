@@ -197,19 +197,39 @@ class ValidationFlowTests(AppTestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(result["approved_count"], 1)
         self.assertTrue((self.run / "approved.json").exists())
+        approved_sha = result["approved_sha256"]
+        self.assertTrue(approved_sha)
 
         # real submit without GO refused
         response, body = self._json(
             "POST", "/api/runs/20260715-000000-test/submit",
-            body={"mode": "safe", "dry_run": False},
+            body={"mode": "safe", "dry_run": False, "approved_sha256": approved_sha},
         )
         self.assertEqual(response.status, 400)
         self.assertEqual(body["error"]["code"], "confirm_required")
 
-        # with GO: started, then status reaches done with the parsed plan
+        # AS1: GO without the displayed batch's sha refused
         response, body = self._json(
             "POST", "/api/runs/20260715-000000-test/submit",
-            body={"mode": "safe", "dry_run": False, "confirm": "GO", "by": "Romain"},
+            body={"mode": "safe", "dry_run": False, "confirm": "GO"},
+        )
+        self.assertEqual(response.status, 400)
+        self.assertEqual(body["error"]["code"], "approved_sha_required")
+
+        # AS1: GO bound to a DIFFERENT batch than the current one refused
+        response, body = self._json(
+            "POST", "/api/runs/20260715-000000-test/submit",
+            body={"mode": "safe", "dry_run": False, "confirm": "GO",
+                  "approved_sha256": "0" * 64},
+        )
+        self.assertEqual(response.status, 409)
+        self.assertEqual(body["error"]["code"], "approved_changed")
+
+        # with GO + the displayed sha: started, then status reaches done
+        response, body = self._json(
+            "POST", "/api/runs/20260715-000000-test/submit",
+            body={"mode": "safe", "dry_run": False, "confirm": "GO", "by": "Romain",
+                  "approved_sha256": approved_sha},
         )
         self.assertEqual(response.status, 200)
         self.assertTrue(body["started"])
@@ -233,6 +253,25 @@ class ValidationFlowTests(AppTestCase):
         )
         self.assertEqual(response.status, 409)
         self.assertEqual(body["error"]["code"], "stale_candidates")
+
+    def test_keepalive_not_desynced_by_error_before_body_read(self):
+        # AS3 (audit 2026-07-17): a 403 (CSRF) used to be sent WITHOUT reading
+        # the request body — the unread bytes then desynced the next request
+        # on the same HTTP/1.1 keep-alive connection.
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        self.addCleanup(conn.close)
+        payload = json.dumps({"padding": "x" * 2048})
+        conn.request("POST", "/api/extract", body=payload,
+                     headers={"Content-Type": "application/json"})  # no X-AKS-Admin
+        first = conn.getresponse()
+        first_body = first.read()
+        self.assertEqual(first.status, 403)
+        self.assertIn(b"csrf", first_body)
+        conn.request("GET", "/api/meta")
+        second = conn.getresponse()
+        data = second.read()
+        self.assertEqual(second.status, 200)
+        self.assertIn("platforms", json.loads(data))
 
     def test_submit_without_validation_conflict(self):
         response, body = self._json(

@@ -35,6 +35,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.aks_env import OFFICIAL_CDP_ENDPOINT  # noqa: E402
+from src.browser_lock import BrowserBusyError, browser_lock  # noqa: E402
 from src.invariants import build_report  # noqa: E402
 from src.pacing import Pacer  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
@@ -94,6 +95,19 @@ def _status(entry, write):
 
 
 def main() -> int:
+    # OP1 (audit 2026-07-17): one tab, one driver — every mode of this script
+    # (catalog/inspect/dry-run/submit) navigates the single CDP tab, so the
+    # whole run holds the cross-process browser lock. A busy lock means the
+    # admin (or another CLI) is mid-run: refuse, never share the tab.
+    try:
+        with browser_lock(ROOT, label="05_submit " + " ".join(sys.argv[1:])[:160]):
+            return _main()
+    except BrowserBusyError as exc:
+        print(json.dumps({"aborted": True, "reason": str(exc)}, indent=2))
+        return 2
+
+
+def _main() -> int:
     parser = argparse.ArgumentParser(description="AKS submitter.")
     parser.add_argument("approved", help="Path to approved.json (from Stage 3 validation).")
     parser.add_argument("--merchant", required=True)

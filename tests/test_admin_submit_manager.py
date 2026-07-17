@@ -100,6 +100,10 @@ class ManagerTestCase(unittest.TestCase):
             approved = [dict(candidate, aks_product_id="999")]
         (self.run / "approved.json").write_text(json.dumps(approved), encoding="utf-8")
 
+    def _approved_sha(self):
+        import hashlib
+        return hashlib.sha256((self.run / "approved.json").read_bytes()).hexdigest()
+
     def _manager(self, sleep=0.0, exit_code=0):
         script = self.root / f"fake_submit_{sleep}_{exit_code}.py"
         script.write_text(FAKE_SCRIPT.format(sleep=sleep, exit_code=exit_code), encoding="utf-8")
@@ -166,7 +170,8 @@ class StartGateTests(ManagerTestCase):
         )
         manager = self._manager()
         with self.assertRaises(SubmitStartError) as ctx:
-            manager.start_submit(self.run, mode="safe", limit=None, dry_run=False, by="Romain")
+            manager.start_submit(self.run, mode="safe", limit=None, dry_run=False, by="Romain",
+                             expected_approved_sha=self._approved_sha())
         self.assertEqual(ctx.exception.code, "store_ambiguous")
 
 
@@ -174,7 +179,8 @@ class RunLifecycleTests(ManagerTestCase):
     def test_submit_supervised_to_completion(self):
         self._write_triple()
         manager = self._manager()
-        result = manager.start_submit(self.run, mode="safe", limit=None, dry_run=False, by="Romain")
+        result = manager.start_submit(self.run, mode="safe", limit=None, dry_run=False, by="Romain",
+                             expected_approved_sha=self._approved_sha())
         self.assertTrue(result["started"])
         self.assertIn("--submit", result["argv"])
         self.assertTrue(manager.wait_idle(timeout=10))
@@ -210,7 +216,8 @@ class RunLifecycleTests(ManagerTestCase):
     def test_failed_exit_code_recorded(self):
         self._write_triple()
         manager = self._manager(exit_code=2)
-        manager.start_submit(self.run, mode="safe", limit=None, dry_run=False, by="Romain")
+        manager.start_submit(self.run, mode="safe", limit=None, dry_run=False, by="Romain",
+                             expected_approved_sha=self._approved_sha())
         self.assertTrue(manager.wait_idle(timeout=10))
         state = json.loads((self.run / "admin_submit.json").read_text(encoding="utf-8"))
         self.assertEqual(state["state"], "failed")
@@ -219,7 +226,8 @@ class RunLifecycleTests(ManagerTestCase):
     def test_second_start_refused_while_running(self):
         self._write_triple()
         manager = self._manager(sleep=2.0)
-        manager.start_submit(self.run, mode="safe", limit=None, dry_run=False, by="Romain")
+        manager.start_submit(self.run, mode="safe", limit=None, dry_run=False, by="Romain",
+                             expected_approved_sha=self._approved_sha())
         with self.assertRaises(SubmitStartError) as ctx:
             manager.start_catalog(self.run, by="Romain")
         self.assertEqual(ctx.exception.code, "submit_in_progress")
@@ -383,7 +391,8 @@ class SubmitHistoryTests(ManagerTestCase):
         )
         manager = self._manager()
         with self.assertRaises(SubmitStartError) as ctx:
-            manager.start_submit(self.run, mode="safe", limit=None, dry_run=False, by="Romain")
+            manager.start_submit(self.run, mode="safe", limit=None, dry_run=False, by="Romain",
+                             expected_approved_sha=self._approved_sha())
         self.assertEqual(ctx.exception.code, "already_created")
         self.assertIn("1", str(ctx.exception))
         self.assertFalse((self.run / "admin_submit.json").exists())
@@ -434,6 +443,67 @@ class TailLogEventsTests(unittest.TestCase):
 
     def test_missing_file_is_empty(self):
         self.assertEqual(tail_log_events(self.log, 0), ([], 0))
+
+
+class SpawnFailClosedTests(ManagerTestCase):
+    def test_failure_after_popen_kills_child_and_frees_manager(self):
+        # AS2 (audit 2026-07-17): an OSError between Popen and the start of
+        # supervision (state-file write) used to leave a LIVE child running
+        # with no supervisor — fire-and-forget, the one thing AGENTS.md
+        # forbids. The child must be killed and the manager freed.
+        from unittest import mock
+
+        import src.admin.submit_manager as sm
+
+        self._write_triple()
+        manager = self._manager(sleep=30)  # child would run 30 s if leaked
+        spawned = []
+        real_popen = sm.subprocess.Popen
+
+        def tracking_popen(*args, **kwargs):
+            proc = real_popen(*args, **kwargs)
+            spawned.append(proc)
+            return proc
+
+        with mock.patch.object(sm.subprocess, "Popen", tracking_popen), \
+                mock.patch.object(sm, "_write_atomic", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                manager.start_submit(
+                    self.run, mode="safe", limit=None, dry_run=True, by="Romain"
+                )
+        self.assertEqual(len(spawned), 1)
+        spawned[0].wait(timeout=5)  # would TimeoutExpired if left running
+        self.assertIsNotNone(spawned[0].poll())
+        self.assertIsNone(manager.busy())  # a new run can start
+
+
+class ApprovedShaBindingTests(ManagerTestCase):
+    def test_real_submit_without_sha_refused(self):
+        self._write_triple()
+        manager = self._manager()
+        with self.assertRaises(SubmitStartError) as ctx:
+            manager.start_submit(self.run, mode="safe", limit=None, dry_run=False, by="Romain")
+        self.assertEqual(ctx.exception.code, "approved_sha_required")
+
+    def test_real_submit_with_stale_sha_refused(self):
+        self._write_triple()
+        manager = self._manager()
+        with self.assertRaises(SubmitStartError) as ctx:
+            manager.start_submit(
+                self.run, mode="safe", limit=None, dry_run=False, by="Romain",
+                expected_approved_sha="0" * 64,
+            )
+        self.assertEqual(ctx.exception.code, "approved_changed")
+        self.assertEqual(ctx.exception.http_status, 409)
+
+    def test_dry_run_does_not_require_sha(self):
+        self._write_triple()
+        manager = self._manager()
+        result = manager.start_submit(
+            self.run, mode="safe", limit=None, dry_run=True, by="Romain"
+        )
+        self.assertTrue(result["started"])
+        self.assertTrue(manager.wait_idle(timeout=10))
 
 
 if __name__ == "__main__":

@@ -137,6 +137,11 @@ class SubmitCliTests(unittest.TestCase):
             stack.enter_context(mock.patch.object(MOD, "build_report", return_value=report))
             stack.enter_context(mock.patch.object(MOD, "RunLogger", _FakeLogger))
             stack.enter_context(mock.patch.object(MOD.time, "sleep", lambda s: None))
+            # OP1: keep the tests off the repo's REAL state/browser.lock — a
+            # live admin run must never be refused because the suite is running.
+            stack.enter_context(mock.patch.object(
+                MOD, "browser_lock", lambda root, label: contextlib.nullcontext()
+            ))
             stack.enter_context(mock.patch.object(sys, "argv", ["05_submit.py"] + argv))
             stack.enter_context(contextlib.redirect_stdout(out))
             stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
@@ -144,6 +149,27 @@ class SubmitCliTests(unittest.TestCase):
                 stack.enter_context(patch)
             code = MOD.main()
         return code, out.getvalue()
+
+    def test_browser_lock_busy_refuses_before_anything(self):
+        from src.browser_lock import BrowserBusyError
+
+        def busy_lock(root, label):
+            raise BrowserBusyError("browser tab busy — held by test pid=1")
+
+        approved = self._write_fixture()
+        out = io.StringIO()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(MOD, "browser_lock", busy_lock))
+            stack.enter_context(mock.patch.object(
+                sys, "argv", ["05_submit.py"] + self._base_argv(approved)
+            ))
+            stack.enter_context(contextlib.redirect_stdout(out))
+            stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
+            code = MOD.main()
+        self.assertEqual(code, 2)
+        payload = json.loads(out.getvalue())
+        self.assertTrue(payload["aborted"])
+        self.assertIn("browser tab busy", payload["reason"])
 
     def _base_argv(self, approved_path, *extra):
         return [approved_path, "--merchant", "Driffle", "--store-id", "127", *extra]

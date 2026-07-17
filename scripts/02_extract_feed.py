@@ -23,6 +23,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.aks_env import OFFICIAL_CDP_ENDPOINT  # noqa: E402
+from src.browser_lock import BrowserBusyError, browser_lock  # noqa: E402
 from src.cdp_session import ReadOnlyCdpSession  # noqa: E402
 from src.extractor import (  # noqa: E402
     EmptyPageAnomaly,
@@ -99,7 +100,10 @@ def main() -> int:
     guard = StepGuard(max_attempts_per_signature=2)
 
     try:
-        with ReadOnlyCdpSession(args.endpoint) as session:
+        # OP1 (audit 2026-07-17): one tab, one driver — refuse to start while
+        # any other stage (CLI or admin-spawned) holds the browser.
+        with browser_lock(ROOT, label=f"02_extract {args.merchant}"), \
+                ReadOnlyCdpSession(args.endpoint) as session:
             extractor = FeedExtractor(session, guard=guard, logger=logger, pacer=pacer)
             if page_range is not None:
                 snapshot, feed = extractor.extract_pages(
@@ -119,6 +123,9 @@ def main() -> int:
                     max_pages=args.max_pages,
                     max_sweeps=args.max_sweeps,
                 )
+    except BrowserBusyError as exc:
+        print(json.dumps({"aborted": True, "reason": str(exc), "run_id": run_id}, indent=2))
+        return 2
     except (NotLoggedInError, EmptyPageAnomaly, FeedUnstableError, StepGuardError) as exc:
         print(
             json.dumps(

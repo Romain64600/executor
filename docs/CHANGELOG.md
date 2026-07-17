@@ -3,6 +3,36 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-17 — Audit P1.c : GO lié au lot, plus d'orphelin, keep-alive sain, verrou navigateur (AS1/AS2/AS3/OP1)
+
+- **AS1** — le « GO » tapé est désormais lié au CONTENU exact du lot affiché :
+  la page capture le sha256 d'`approved.json` à l'ouverture du dialogue et le
+  renvoie avec le submit réel ; le serveur refuse (`409 approved_changed`) si
+  une validation concurrente (second opérateur, autre onglet) a régénéré le
+  lot entre l'affichage et le GO. Sha absent → `400 approved_sha_required`
+  (recharger la page). Exposé dans GET/POST validation.
+- **AS2** — un échec (OSError) entre `Popen` et le démarrage de la
+  supervision laissait un enfant VIVANT non supervisé — le seul chemin
+  fire-and-forget du projet. L'enfant est maintenant tué (terminate→kill)
+  avant de propager l'erreur, et le manager se libère.
+- **AS3** — le corps de chaque POST est intégralement lu AVANT toute réponse
+  (`_drain_body`) : les handlers sans corps (`/api/invariants/check`) et tous
+  les chemins d'erreur précoces (CSRF 403…) laissaient les octets non lus
+  désynchroniser la connexion keep-alive HTTP/1.1 — la requête suivante se
+  parsait au milieu du corps précédent. Un corps > 2 Mo est refusé sans
+  lecture avec fermeture de connexion (seul moyen de rester en phase).
+- **OP1** — `src/browser_lock.py` : verrou `flock` inter-processus sur
+  `state/browser.lock`, pris non-bloquant par chaque stage qui ouvre une
+  session CDP (02 extract, 05 submit tous modes, 00b login). Un seul pilote
+  pour l'unique onglet Chrome : une CLI lancée pendant un run admin (ou
+  l'inverse) refuse de démarrer en nommant le détenteur, au lieu de corrompre
+  les scans/modales de l'autre. L'admin est couvert sans changement : il
+  spawn ces mêmes scripts. Libération par le noyau à la mort du process —
+  pas de verrou fantôme.
+
+Tests : +9 (SpawnFailClosedTests, ApprovedShaBindingTests, keep-alive,
+BrowserLockTests, refus busy CLI). 565 verts.
+
 ## 2026-07-17 — Audit P1.a : huit correctifs matcher (MA1-MA8)
 
 Tous confirmés par repro live pendant l'audit contre-vérifié du 2026-07-17 :

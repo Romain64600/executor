@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from src.admin.runs import RunAccessError, derive_merchant_store, run_file
+from src.admin.runs import RunAccessError, derive_merchant_store, run_file, sha256_file
 from src.run_log import RunLogger, redact
 from src.validation import ValidationError, verify_approved_against_source
 
@@ -335,11 +335,35 @@ class SubmitManager:
         limit: int | None,
         dry_run: bool,
         by: str,
+        expected_approved_sha: str | None = None,
     ) -> dict[str, Any]:
         with self._mutex:
             self._ensure_free()
             self._check_mode_limit(mode, limit)
             approved = self._verify_triple(run_dir)
+            if not dry_run:
+                # AS1 (audit 2026-07-17): the typed GO must be bound to the
+                # exact batch the operator SAW when typing it. Between the
+                # dialog render and this request, a concurrent validation
+                # save (second operator, other tab) can regenerate
+                # approved.json — the triple still verifies, but it is a
+                # DIFFERENT batch. The client echoes the sha it displayed;
+                # anything else refuses, never silently submits the new lot.
+                current_sha = sha256_file(run_file(run_dir, "approved.json"))
+                if not expected_approved_sha:
+                    raise SubmitStartError(
+                        "approved_sha_required",
+                        "un submit réel exige approved_sha256 (l'identité du lot "
+                        "affiché) — recharger la page",
+                        http_status=400,
+                    )
+                if expected_approved_sha != current_sha:
+                    raise SubmitStartError(
+                        "approved_changed",
+                        "approved.json a changé depuis l'affichage (validation "
+                        "concurrente ?) — recharger, re-vérifier le lot, retaper GO",
+                        http_status=409,
+                    )
             already = sorted(
                 {str(c["offer"]["offer_id"]) for c in approved} & set(self.created_offers(run_dir))
             )
@@ -452,23 +476,44 @@ class SubmitManager:
             stderr=subprocess.STDOUT,
             text=True,
         )
-        state = {
-            "state": "running",
-            "kind": kind,
-            "pid": proc.pid,
-            "argv": argv,
-            "started_at": self.clock(),
-            "finished_at": None,
-            "exit_code": None,
-            **meta,
-        }
-        _write_atomic(run_file(run_dir, "admin_submit.json"), json.dumps(state, indent=2))
-        self._logger(run_dir).log("admin_submit_started", kind=kind, pid=proc.pid, argv=argv, **meta)
-        thread = threading.Thread(
-            target=self._supervise, args=(proc, run_dir, dict(state)), daemon=True
-        )
-        self._active = {"run_id": run_dir.name, "kind": kind, "pid": proc.pid, "thread": thread}
-        thread.start()
+        try:
+            state = {
+                "state": "running",
+                "kind": kind,
+                "pid": proc.pid,
+                "argv": argv,
+                "started_at": self.clock(),
+                "finished_at": None,
+                "exit_code": None,
+                **meta,
+            }
+            _write_atomic(run_file(run_dir, "admin_submit.json"), json.dumps(state, indent=2))
+            self._logger(run_dir).log(
+                "admin_submit_started", kind=kind, pid=proc.pid, argv=argv, **meta
+            )
+            thread = threading.Thread(
+                target=self._supervise, args=(proc, run_dir, dict(state)), daemon=True
+            )
+            self._active = {"run_id": run_dir.name, "kind": kind, "pid": proc.pid, "thread": thread}
+            thread.start()
+        except BaseException:
+            # AS2 (audit 2026-07-17): an OSError between Popen and the start of
+            # supervision (state file write, log append, thread creation) used
+            # to leave a LIVE child — possibly a real submit — running with no
+            # supervisor: the one thing AGENTS.md forbids (fire-and-forget).
+            # Kill it before propagating; it dies in its pre-flight (invariant
+            # gate), long before any write.
+            self._active = None
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                try:
+                    proc.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+            raise
         return {"started": True, "kind": kind, "pid": proc.pid, "argv": argv, "run_id": run_dir.name}
 
     # -- supervision ---------------------------------------------------------

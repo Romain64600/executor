@@ -110,16 +110,31 @@ class AdminHandler(BaseHTTPRequestHandler):
             error["detail"] = detail
         self._send_json(status, {"error": error})
 
-    def _json_body(self) -> dict:
+    def _drain_body(self) -> None:
+        """Read the FULL request body up front, before any routing/response.
+
+        AS3 (audit 2026-07-17): handlers that never touched the body
+        (`/api/invariants/check`) and every error path that responded before
+        reading it left the unread bytes on the HTTP/1.1 keep-alive stream —
+        the next request on that connection then parsed from mid-body. An
+        over-limit body is refused WITHOUT reading it, and the connection is
+        closed after the 413 (the only way to stay in sync)."""
+
+        self._raw_body = None
         length = self.headers.get("Content-Length")
         if length is None or not length.isdigit():
-            raise ApiError(400, "bad_request", "Content-Length requis")
+            return  # no body bytes on the wire — nothing to drain
         size = int(length)
         if size > MAX_BODY_BYTES:
+            self.close_connection = True
             raise ApiError(413, "too_large", "corps de requête trop grand")
-        raw = self.rfile.read(size)
+        self._raw_body = self.rfile.read(size)
+
+    def _json_body(self) -> dict:
+        if self._raw_body is None:
+            raise ApiError(400, "bad_request", "Content-Length requis")
         try:
-            body = json.loads(raw.decode("utf-8"))
+            body = json.loads(self._raw_body.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise ApiError(400, "bad_json", f"JSON invalide: {exc}") from exc
         if not isinstance(body, dict):
@@ -252,6 +267,11 @@ class AdminHandler(BaseHTTPRequestHandler):
                     else []
                 ),
                 "candidates_sha256": sha256_file(run_file(run_dir, "candidates.json")),
+                # AS1 (audit 2026-07-17): the client echoes this sha with a
+                # REAL submit so the typed GO is bound to the exact batch the
+                # operator saw — a concurrent validation save changes the sha
+                # and the submit refuses instead of sending the new batch.
+                "approved_sha256": sha256_file(run_file(run_dir, "approved.json")),
                 "submit_history": self.state.manager.submit_history(run_dir),
                 "catalog": {
                     "present": catalog is not None,
@@ -264,7 +284,9 @@ class AdminHandler(BaseHTTPRequestHandler):
     # -- POST --------------------------------------------------------------------
 
     def do_POST(self) -> None:  # noqa: N802 (http.server API)
+        self._raw_body: bytes | None = None
         try:
+            self._drain_body()  # AS3: body fully read before ANY response
             self._check_csrf()
             self._route_post()
         except ApiError as exc:
@@ -321,6 +343,8 @@ class AdminHandler(BaseHTTPRequestHandler):
                 log_dir=self.state.log_dir,
                 created_offer_ids=self.state.manager.created_offers(run_dir),
             )
+        # AS1: the freshly (re)generated batch's identity, for the GO binding.
+        result["approved_sha256"] = sha256_file(run_file(run_dir, "approved.json"))
         self._send_json(200, result)
 
     def _post_catalog(self, run_dir: Path) -> None:
@@ -352,12 +376,14 @@ class AdminHandler(BaseHTTPRequestHandler):
         if isinstance(limit, float) and limit.is_integer():
             limit = int(limit)
         by = str(body.get("by") or self._basic_user() or "operateur")
+        approved_sha = body.get("approved_sha256")
         result = self.state.manager.start_submit(
             run_dir,
             mode=str(body.get("mode", "safe")),
             limit=limit,
             dry_run=dry_run,
             by=by,
+            expected_approved_sha=str(approved_sha) if approved_sha else None,
         )
         self._send_json(200, result)
 

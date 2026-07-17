@@ -30,6 +30,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.aks_env import OFFICIAL_CDP_ENDPOINT  # noqa: E402
+from src.browser_lock import BrowserBusyError, browser_lock  # noqa: E402
 from src.invariants import build_report  # noqa: E402
 from src.login_session import LoginSession, run_login  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
@@ -74,16 +75,22 @@ def main() -> int:
         print("2FA field visible and ready.", file=sys.stderr)
         return getpass.getpass("Enter the 2FA code: ").strip()
 
-    with LoginSession(OFFICIAL_CDP_ENDPOINT) as session:
-        result = run_login(
-            session,
-            username=username,
-            password=password,
-            get_2fa_code=get_2fa_code,
-            guard=guard,
-            run_id=run_id,
-            logger=logger,
-        )
+    try:
+        # OP1 (audit 2026-07-17): the login drives the same single tab.
+        with browser_lock(ROOT, label="00b_login"), \
+                LoginSession(OFFICIAL_CDP_ENDPOINT) as session:
+            result = run_login(
+                session,
+                username=username,
+                password=password,
+                get_2fa_code=get_2fa_code,
+                guard=guard,
+                run_id=run_id,
+                logger=logger,
+            )
+    except BrowserBusyError as exc:
+        print(json.dumps({"aborted": True, "reason": str(exc)}, indent=2))
+        return 2
 
     print(json.dumps(result, indent=2))
     return 0 if result.get("status") in ("already_logged_in", "logged_in") else 2
