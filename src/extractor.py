@@ -58,16 +58,24 @@ DEFAULT_FEED_PAGE = "aks-merchant-feeds-9"
 # page-state markers (probed live on G2A 2026-07-07: past-the-end pages render
 # the same chrome with 0 rows, and the pagination nav is the only element that
 # exposes the feed's real page count — there is no WP ".no-items" marker here).
-PAGE_STATE_JS = (
-    "JSON.stringify({"
-    "offers: Array.from(document.querySelectorAll('[data-offer]'))"
-    ".map(function(e){return e.getAttribute('data-offer');}),"
+# The deterministic feed-page markers, shared VERBATIM with the submitter's
+# feed_page_state() probe (AR3 partial, audit 2026-07-17: the two copies had
+# already been retyped once and could drift — the marker semantics MUST stay
+# identical because the submitter's blank-page classification mirrors §3's).
+FEED_MARKER_JS_FIELDS = (
     "feed_ui: !!document.querySelector('table.wp-list-table'),"
     "nav_max: (function(){var m=0;var links=document.querySelectorAll('.tablenav a');"
     "for(var i=0;i<links.length;i++){var h=links[i].getAttribute('href')||'';"
     "var mm=h.match(/[?&]p=(\\d+)/);if(mm){var n=parseInt(mm[1],10);if(n>m){m=n;}}}"
     "return m;})(),"
     "is_login: !!document.querySelector('#loginform') || /wp-login/.test(location.href)"
+)
+
+PAGE_STATE_JS = (
+    "JSON.stringify({"
+    "offers: Array.from(document.querySelectorAll('[data-offer]'))"
+    ".map(function(e){return e.getAttribute('data-offer');}),"
+    + FEED_MARKER_JS_FIELDS +
     "})"
 )
 

@@ -25,6 +25,7 @@ import time
 from typing import Any
 
 from src.cdp_session import ReadOnlyCdpSession
+from src.extractor import FEED_MARKER_JS_FIELDS
 
 # JS to open the create-offer modal for a given offer id (opens ThickBox; no write).
 _OPEN_MODAL_JS = """
@@ -69,21 +70,17 @@ _MODAL_CTX_JS = (
     ".map(function(s){return s.name;})};})())"
 )
 
-# Deterministic feed-page markers — the same probes the extractor trusts
-# (EXECUTOR_RULES §3): the pagination nav is the only element exposing the
-# feed's real page count, and past-the-end pages render the same chrome with
-# 0 rows. `href` lets the scanner verify the browser actually landed on the
-# page it navigated to (a wedged navigation re-serves the previous DOM —
-# audit 2026-07-17, SC6). Read-only.
+# Deterministic feed-page markers — the SAME probe fields the extractor
+# trusts, imported verbatim (AR3 partial, audit 2026-07-17) so the two
+# blank-page classifications can never drift apart: the pagination nav is the
+# only element exposing the feed's real page count, and past-the-end pages
+# render the same chrome with 0 rows. `href` (submitter-only) lets the
+# scanner verify the browser actually landed on the page it navigated to
+# (a wedged navigation re-serves the previous DOM — SC6). Read-only.
 _FEED_STATE_JS = (
     "JSON.stringify({"
-    "feed_ui: !!document.querySelector('table.wp-list-table'),"
-    "nav_max: (function(){var m=0;var links=document.querySelectorAll('.tablenav a');"
-    "for(var i=0;i<links.length;i++){var h=links[i].getAttribute('href')||'';"
-    "var mm=h.match(/[?&]p=(\\d+)/);if(mm){var n=parseInt(mm[1],10);if(n>m){m=n;}}}"
-    "return m;})(),"
-    "is_login: !!document.querySelector('#loginform') || /wp-login/.test(location.href),"
-    "href: String(location.href)"
+    + FEED_MARKER_JS_FIELDS +
+    ",href: String(location.href)"
     "})"
 )
 
