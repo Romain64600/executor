@@ -10,6 +10,11 @@ __pycache__/
 .env
 .env.*
 config/*.local.*
+# Local Claude Code settings can accumulate secrets via approved commands
+# (seen live: admin basic-auth password in an allowlisted curl, audit OP3).
+# The global ~/.config/git/ignore also covers it, but that protection does
+# not travel with the repo — this line does.
+.claude/settings.local.json
 
 # Secrets / credentials — never commit (see docs/AUDIT.md S1)
 # Specific patterns only, so source files are never accidentally ignored.
