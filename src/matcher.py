@@ -433,13 +433,19 @@ DIFMARK_REGION_TEXT_MAP = {
     "UNITED STATES": ("US", "us"),
     "UNITED KINGDOM": ("UK", "uk"),
 }
+# Difmark platform vocabulary — same source, same policy: only "Steam" is
+# confirmed live so far (Romain 2026-07-17: "étends au platform aussi",
+# after batch 1 showed 77% of the feed skipped on R27 for lacking a title
+# platform token — Difmark titles are typically bare "<Name> Standard
+# Edition"). Anything else fails closed rather than being guessed.
+DIFMARK_PLATFORM_TEXT_MAP = {"STEAM": "STEAM"}
 
 
 class DifmarkPageUnreadable(RuntimeError):
     """The Difmark product page or its own 'top offer' API could not be read
-    (network error, unexpected shape, or a region string outside
-    DIFMARK_REGION_TEXT_MAP). Region is unverifiable — fail closed, no
-    fallback to the URL/title heuristic that was already ambiguous."""
+    (network error or unexpected shape). Platform/region are unverifiable —
+    fail closed, no fallback to the URL/title heuristic that was already
+    ambiguous."""
 
 
 def extract_difmark_top_offer_url(page_html: str) -> str | None:
@@ -470,15 +476,27 @@ def parse_difmark_offer_attributes(body: str) -> dict[str, Any] | None:
     return {a["code"]: a["value"] for a in attrs if isinstance(a, dict) and "code" in a}
 
 
-def resolve_difmark_region(
-    url: str, platform: str, http_get_fn: Callable[..., Any] = http_get
-) -> tuple[str, str | None]:
-    """Page-verified (label, region_id) for a Difmark offer whose URL/title
-    gave no explicit region (Romain, 2026-07-17: "il y a des offres Steam
-    EUROPE qui ne sont pas indiquées dans l'URL" — some Steam EUROPE offers
-    aren't shown in the URL at all, so an implicit-GLOBAL default would be
-    wrong). Plain GETs only (curl-equivalent, no CDP/browser) — the account
-    URL itself, then the 'top offer' API link it points to."""
+@dataclass(frozen=True)
+class DifmarkOfferAttributes:
+    """Raw (upper-stripped) text off a Difmark offer's own top-offer API —
+    "" when the API didn't carry that field. Mapping to our internal
+    platform/region vocabulary (and the fail-closed decision on an
+    unrecognized value) is the caller's job, so a recognized platform can
+    still be used even when region text is unrecognized, and vice versa."""
+
+    raw_platform: str
+    raw_region: str
+
+
+def resolve_difmark_offer(
+    url: str, http_get_fn: Callable[..., Any] = http_get
+) -> DifmarkOfferAttributes:
+    """Fetch a Difmark offer's page-verified platform/region in ONE round-trip
+    pair (Romain, 2026-07-17: "tu vas devoir ouvrir les pages marchands" /
+    "les pages marchand, tu peux les curl" — plain GETs, no CDP/browser): the
+    product URL itself, then the 'top offer' API link that page embeds.
+    Raises DifmarkPageUnreadable if either fetch fails or the shape is
+    unrecognized — never silently falls back to a guess."""
 
     if http_get_fn is http_get:
         time.sleep(DIFMARK_PROBE_DELAY_S)  # politeness budget for bulk runs
@@ -494,14 +512,12 @@ def resolve_difmark_region(
     if not (probe.ok and probe.status == 200 and probe.body):
         raise DifmarkPageUnreadable(f"top-offer API unreadable: {probe.status or probe.error}")
     attrs = parse_difmark_offer_attributes(probe.body)
-    if not attrs or "region" not in attrs:
-        raise DifmarkPageUnreadable("top-offer API response has no region attribute")
-    raw_region = str(attrs["region"]).strip().upper()
-    mapped = DIFMARK_REGION_TEXT_MAP.get(raw_region)
-    if mapped is None:
-        raise DifmarkPageUnreadable(f"unrecognized region text on merchant page: {raw_region!r}")
-    label, base = mapped
-    return (label, _region_id(platform, base))
+    if not attrs:
+        raise DifmarkPageUnreadable("top-offer API response has an unexpected shape")
+    return DifmarkOfferAttributes(
+        raw_platform=str(attrs.get("marketplace", "")).strip().upper(),
+        raw_region=str(attrs.get("region", "")).strip().upper(),
+    )
 
 
 def strip_merchant_url_noise(url: str, merchant: str) -> str:
@@ -912,24 +928,54 @@ class SkippedOffer:
 def match_offer(
     offer: NormalizedOffer,
     resolver: Callable[[str], AksResolution | None] = resolve_aks,
-    difmark_region_resolver: Callable[[str, str], tuple[str, str | None]] = resolve_difmark_region,
+    difmark_offer_resolver: Callable[[str], DifmarkOfferAttributes] = resolve_difmark_offer,
 ) -> Candidate | SkippedOffer:
     reason = precheck_skip(offer)
     if reason:
         return SkippedOffer(offer, reason)
 
+    is_difmark = offer.merchant.strip().upper() == "DIFMARK"
     declared_platform = explicit_platform(offer.name) or explicit_platform_from_url(offer.url)
+    difmark_attrs: DifmarkOfferAttributes | None = None
+    difmark_platform_verified = False
+
+    if declared_platform is None and is_difmark:
+        # Romain (2026-07-17): batch 1 showed 77% of the Difmark feed
+        # skipped on R27 for lacking any title platform token at all
+        # ("Afterlife VR Standard Edition" — no "Steam", nothing). The
+        # merchant's own page is a strictly better signal here than AKS's
+        # official-platforms inference, so it's used directly rather than
+        # falling through to R20/R27 below.
+        try:
+            difmark_attrs = difmark_offer_resolver(offer.url)
+        except DifmarkPageUnreadable as exc:
+            return SkippedOffer(offer, f"Difmark platform unverifiable: {exc}")
+        mapped_platform = DIFMARK_PLATFORM_TEXT_MAP.get(difmark_attrs.raw_platform)
+        if mapped_platform is None:
+            return SkippedOffer(
+                offer, f"Difmark page platform unrecognized: {difmark_attrs.raw_platform!r}"
+            )
+        declared_platform = mapped_platform
+        difmark_platform_verified = True
+
     platform = declared_platform or "STEAM"  # default — R20 verifies it below
     region_label, region_id, implicit = detect_region(offer, platform)
-    if implicit and offer.merchant.strip().upper() == "DIFMARK":
-        # Romain (2026-07-17): some Difmark Steam EUROPE offers carry no
-        # region signal in the URL or title at all — the merchant's own page
-        # is the only deterministic source left. Doubt still goes to skip
+    if implicit and is_difmark:
+        # Same rationale, region side: some Steam EUROPE offers carry no
+        # region signal in the URL or title at all. Doubt still goes to skip
         # (G02): a page/API that can't be read is NOT treated as GLOBAL.
-        try:
-            region_label, region_id = difmark_region_resolver(offer.url, platform)
-        except DifmarkPageUnreadable as exc:
-            return SkippedOffer(offer, f"Difmark region unverifiable: {exc}")
+        if difmark_attrs is None:  # not already fetched above for platform
+            try:
+                difmark_attrs = difmark_offer_resolver(offer.url)
+            except DifmarkPageUnreadable as exc:
+                return SkippedOffer(offer, f"Difmark region unverifiable: {exc}")
+        mapped_region = DIFMARK_REGION_TEXT_MAP.get(difmark_attrs.raw_region)
+        if mapped_region is None:
+            return SkippedOffer(
+                offer, f"Difmark page region unrecognized: {difmark_attrs.raw_region!r}"
+            )
+        region_label, base = mapped_region
+        region_id = _region_id(platform, base)
     if region_id is None:
         return SkippedOffer(offer, f"no region id for {platform}/{region_label}")
 
@@ -1021,9 +1067,10 @@ def match_offer(
     else:
         page_name = PAGE_PLATFORM_NAMES.get(declared_platform)
         if page_name and page_platforms and page_name.upper() not in page_platforms:
+            source = "Difmark merchant page" if difmark_platform_verified else "title"
             return SkippedOffer(
                 offer,
-                f"title says {page_name} but AKS official platforms exclude it (R20)",
+                f"{source} says {page_name} but AKS official platforms exclude it (R20)",
             )
 
     # R18 as revised by Romain (2026-07-08, replacing the 07-07 skip): a title
@@ -1141,14 +1188,14 @@ def match_offer(
 def match_feed(
     feed: NormalizedFeed,
     resolver: Callable[[str], AksResolution | None] = resolve_aks,
-    difmark_region_resolver: Callable[[str, str], tuple[str, str | None]] = resolve_difmark_region,
+    difmark_offer_resolver: Callable[[str], DifmarkOfferAttributes] = resolve_difmark_offer,
     *,
     max_candidates: int = 100,
 ) -> tuple[list[Candidate], list[SkippedOffer]]:
     candidates: list[Candidate] = []
     skipped: list[SkippedOffer] = []
     for offer in feed.offers:
-        result = match_offer(offer, resolver, difmark_region_resolver)
+        result = match_offer(offer, resolver, difmark_offer_resolver)
         if isinstance(result, Candidate):
             if len(candidates) < max_candidates:
                 candidates.append(result)

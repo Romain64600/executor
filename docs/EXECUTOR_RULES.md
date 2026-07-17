@@ -742,30 +742,52 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167.
   the `edition_id=780`/`region_product_id=1` query params are Difmark's own
   internal ids (no known mapping to AKS ids) and are not used as a signal;
   region/edition still come from the (cleaned) path text and the title.
-  - **Page-verified region (Romain 2026-07-17):** some Steam EUROPE Difmark
-    offers carry no region signal in the URL or title at all — an
-    implicit-GLOBAL default would silently under-license them. When
-    `detect_region` would otherwise fall back to implicit GLOBAL for a
-    Difmark offer, the matcher instead fetches the merchant's own product
-    page (plain GET, no CDP/browser — "les pages marchand, tu peux les curl")
-    and follows the `url_top_offer_with_get_params` link the page itself
-    embeds, to a small JSON API returning `offer_attributes` incl. an
-    authoritative `region` text (`resolve_difmark_region` /
-    `DIFMARK_REGION_TEXT_MAP`, `src/matcher.py`). A region text outside the
-    known vocabulary (`Global`, `Europe`, `United States`, `United Kingdom`)
-    fails closed — SKIP, never a guess (G02). Confirmed live: this is a
-    *different* vocabulary from the site-wide "regions" dropdown embedded on
-    every Difmark page (a residence/currency continent picker) — decoding
-    the URL's `region_product_id` through that dropdown would have been
-    silently wrong (id 1 = "Europe" there, but the real per-offer attribute
-    for that same example was `region: Global`).
+  - **Page-verified platform + region (Romain 2026-07-17).** Batch 1 (pages
+    1-10, 658 offers) showed the dominant Difmark failure mode: 501/652
+    skips (77%) were R27 ("no platform in title and AKS page does not
+    confirm Direct Publisher") because Difmark's AKS-feed titles are
+    typically bare `<Name> [Edition] Standard Edition` — no platform word at
+    all — on top of the region gap ("il y a des offres Steam EUROPE qui ne
+    sont pas indiquées dans l'URL"). For both signals, the merchant's own
+    page is strictly more reliable than inferring from AKS's page, so
+    `match_offer` fetches it directly for Difmark instead of falling through
+    to the generic R20/R27 title/AKS-page logic: plain GETs only (no
+    CDP/browser — "les pages marchand, tu peux les curl") to the product URL,
+    then the `url_top_offer_with_get_params` link that page embeds, landing
+    on a small JSON API whose `offer_attributes` carry authoritative
+    `marketplace` and `region` text (`resolve_difmark_offer` →
+    `DifmarkOfferAttributes`, `src/matcher.py`). One fetch pair serves BOTH
+    signals when both are missing — not fetched twice. Known vocabulary:
+    platform `Steam` only so far (`DIFMARK_PLATFORM_TEXT_MAP`); region
+    `Global`/`Europe`/`United States`/`United Kingdom`
+    (`DIFMARK_REGION_TEXT_MAP`). Anything outside either map, or a
+    page/API that can't be read, fails closed — SKIP, never a guess (G02).
+    Live example: Afterlife VR (title has no platform word) used to default
+    to PUBLISHER via R27's AKS-page inference; the merchant's own page
+    confirms `marketplace: Steam` — now entered as STEAM instead, the exact
+    kind of silent mis-platforming R20/R26/R27 were written to catch for
+    other merchants (DCS/Su-27, Gameboost). The R20 cross-check against the
+    AKS page's own official-platforms list still applies on top (a
+    page-verified Steam that the AKS page doesn't list under "official
+    platforms" still fails closed) — its skip message says "Difmark
+    merchant page says X", not "title says X", when the source was the
+    merchant page.
+  - Confirmed live: the site-wide "regions" dropdown embedded on every
+    Difmark page (a residence/currency continent picker: `{"value":1,
+    "text":"Europe"}`, ...) is a *different* vocabulary from the per-offer
+    `region` attribute above — decoding the URL's `region_product_id`
+    through that dropdown would have been silently wrong (id 1 = "Europe"
+    there, but the real per-offer attribute for that same example was
+    `region: Global`).
   - **`STEAM ACCOUNT` still applies to Difmark.** The Rogue Loops example
     above is a genuine full-credential account sale ("you will receive all
     the necessary login credentials…", confirmed on the merchant page) —
     correctly rejected by the pre-existing `CATEGORY_SKIP` entry, unrelated
-    to the URL/region fixes. Whether Difmark also lists genuine CD keys
-    (title without "Account") is still unconfirmed pending the first full
-    extraction.
+    to the URL/region/platform fixes. In batch 1, none of the 658 sampled
+    titles actually contained "Steam Account" (that wording lives in
+    Difmark's own page `<title>`/URL slug, not the AKS-feed title field) —
+    whether Difmark also lists genuine CD keys under a distinguishable title
+    is still unconfirmed pending further batches.
 
 ---
 
