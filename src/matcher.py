@@ -1452,16 +1452,28 @@ def match_feed(
     difmark_offer_resolver: Callable[[str], DifmarkOfferAttributes] = resolve_difmark_offer,
     *,
     max_candidates: int = 100,
+    on_progress: Callable[[dict[str, int]], None] | None = None,
+    progress_every: int = 5,
 ) -> tuple[list[Candidate], list[SkippedOffer]]:
+    """Match every offer. ``on_progress`` (2026-07-20), when given, is called
+    every ``progress_every`` offers and once at the end with
+    ``{done, total, candidates, skipped}`` — the admin logs these as
+    ``match_progress`` events so the operator sees live progression instead of
+    a silent panel (the stage does no per-offer logging of its own)."""
+
     candidates: list[Candidate] = []
     skipped: list[SkippedOffer] = []
-    for offer in feed.offers:
+    total = len(feed.offers)
+    for i, offer in enumerate(feed.offers, 1):
         result = match_offer(offer, resolver, difmark_offer_resolver)
         if isinstance(result, Candidate):
             if len(candidates) < max_candidates:
                 candidates.append(result)
             else:
-                skipped.append(SkippedOffer(offer, "candidate cap reached (max 100)"))
+                skipped.append(SkippedOffer(offer, f"candidate cap reached (max {max_candidates})"))
         else:
             skipped.append(result)
+        if on_progress is not None and (i % progress_every == 0 or i == total):
+            on_progress({"done": i, "total": total,
+                         "candidates": len(candidates), "skipped": len(skipped)})
     return candidates, skipped

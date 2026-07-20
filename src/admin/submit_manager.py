@@ -45,6 +45,7 @@ UI_EVENTS = frozenset(
         "feed_sweep",
         "feed_indexed",
         "feed_extracted",
+        "match_progress",
         "submit_offer",
         "skip",
         "run_stopped",

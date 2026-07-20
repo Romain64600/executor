@@ -644,6 +644,13 @@ async function pollStatus() {
     updateBusyBadge(status.busy);
     const box = $('#events');
     for (const event of status.events || []) {
+      // Matching progression: a single live counter in the title, not 45
+      // appended lines (2026-07-20).
+      if (event.event === 'match_progress') {
+        $('#progress-title').textContent =
+          `Matching : ${event.done}/${event.total} — ${event.candidates} candidat(s), ${event.skipped} écarté(s)`;
+        continue;
+      }
       const line = eventLine(event);
       if (line) {
         box.textContent += `${event.ts}  ${line}\n`;

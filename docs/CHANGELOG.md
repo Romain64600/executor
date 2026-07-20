@@ -23,6 +23,17 @@ candidates field) on the run panel.
 Tests: +9 (`StartMatchTests`, `MatchEndpointTests`). 651 green. Follow-up
 offered but not built: auto-chain matching at the end of extraction.
 
+**Live progression (same day, Romain: "on aurait voulu voir la progression
+depuis l'admin").** The match button reused the submit progress panel, but
+`03_match` emitted nothing, so the panel stayed silent until completion.
+`match_feed` now takes an `on_progress` callback (called every 5 offers + at
+the end with `{done, total, candidates, skipped}`); `03_match` logs these as
+`match_progress` events to the run's JSONL, added to the admin's `UI_EVENTS`.
+The UI shows a single live counter in the panel title —
+"Matching : 150/226 — 5 candidat(s), 145 écarté(s)". Also fixed the
+candidate-cap skip message (was hardcoded "max 100", now the actual cap).
+Tests: +2. 653 green.
+
 ## 2026-07-20 — Submit auto-defaults --max-pages from the feed's own page count (Romain)
 
 The P0.2 coverage check (SC4) aborts fail-closed if the batch-start feed index

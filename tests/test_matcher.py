@@ -1448,6 +1448,30 @@ class MatchFeedTests(unittest.TestCase):
         self.assertEqual(len(skipped), 2)
         self.assertTrue(any("cap" in s.reason for s in skipped))
 
+    def test_cap_message_uses_actual_max(self):
+        res = AksResolution("neon-beats", "https://aks/x", "205027", "Neon Beats", {"1": {"name": "Standard"}})
+        feed = self._feed(*[_offer("Neon Beats - Steam GLOBAL", oid=str(i)) for i in range(3)])
+        _, skipped = match_feed(feed, lambda name: res, max_candidates=2)
+        self.assertTrue(any("max 2" in s.reason for s in skipped))
+
+    def test_on_progress_reports_done_total_and_counts(self):
+        # 2026-07-20: live progression for the admin. Called every
+        # progress_every offers and once at the end.
+        res = AksResolution("neon-beats", "https://aks/x", "205027", "Neon Beats", {"1": {"name": "Standard"}})
+        feed = self._feed(
+            _offer("Neon Beats - Steam GLOBAL", oid="1"),
+            _offer("Halo Xbox", oid="2"),               # console skip
+            _offer("Neon Beats - Steam GLOBAL", oid="3"),
+        )
+        seen = []
+        match_feed(feed, lambda name: res, on_progress=seen.append, progress_every=2)
+        # every 2 (after #2) + final (after #3)
+        self.assertEqual([p["done"] for p in seen], [2, 3])
+        last = seen[-1]
+        self.assertEqual(last["total"], 3)
+        self.assertEqual(last["candidates"], 2)
+        self.assertEqual(last["skipped"], 1)
+
 
 class G2ARulesTests(unittest.TestCase):
     """G2A format: 'Game (PC) - Steam Key - REGION' — region is a bare suffix,

@@ -24,6 +24,7 @@ if str(ROOT) not in sys.path:
 from src.aks_env import AKS_DIRECT_URL, http_get, validate_aks_direct_status  # noqa: E402
 from src.contracts import NormalizedFeed, NormalizedOffer  # noqa: E402
 from src.matcher import match_feed, resolve_aks  # noqa: E402
+from src.run_log import RunLogger  # noqa: E402
 
 
 def load_feed(path: str) -> NormalizedFeed:
@@ -71,7 +72,13 @@ def main() -> int:
         return 2
 
     feed = load_feed(args.offers)
-    candidates, skipped = match_feed(feed, resolve_aks, max_candidates=args.max_candidates)
+    # Live progression: log match_progress events to the run's JSONL so the
+    # admin streams them (2026-07-20). Harmless for a plain CLI run too.
+    logger = RunLogger(feed.run_id, log_dir=str(ROOT / "logs"))
+    candidates, skipped = match_feed(
+        feed, resolve_aks, max_candidates=args.max_candidates,
+        on_progress=lambda d: logger.log("match_progress", **d),
+    )
 
     out_dir = Path(args.out_dir) if args.out_dir else Path(args.offers).resolve().parent
     out_dir.mkdir(parents=True, exist_ok=True)
