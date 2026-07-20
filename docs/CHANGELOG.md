@@ -3,24 +3,21 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
-## 2026-07-20 — Submit/scan speedup (~3×): tighter pacing + shorter navigate settle (Romain)
+## 2026-07-20 — Submit speedup via tighter pacing (Romain); navigate settle stays 3 s
 
 Romain: "vu que tu peux faire deux requêtes par seconde", the submit was far
-too slow. The time went into over-conservative pacing and a fixed 3 s
-post-navigate wait:
+too slow. The fix is the pacing (burst mitigation, never correctness):
 
 - `--pace-offers` default `5-15` s → `0.5-1.5`, `--pace-pages` `1-3` s →
-  `0.4-0.6` (≈ 2 req/s, AKS's tolerance per Romain). Pacing is burst
-  mitigation only, never correctness.
-- `ReadOnlyCdpSession.navigate` settle `3.0` s → `1.0` s. AKS feed pages are
-  server-rendered and load fast; both the extractor (`EmptyPageAnomaly`) and
-  the submitter (`_read_feed_page`, SC2) already re-fetch a blank/under-read
-  page once, so a shorter settle trades a fixed 3 s for a rare single
-  re-fetch. Benefits extraction too.
+  `0.4-0.6` (≈ 2 req/s, AKS's tolerance per Romain).
 
-A successful offer's cost drops from ~30 s (index/create/post-save re-scan +
-pacers) to ~10 s. If a twitchy merchant ever blanks pages, raise `--pace-*`
-or the settle.
+A shorter `navigate` settle (3 s → 1 s) was also tried but **reverted the same
+day**: reading feed rows works fast (SSR HTML), but the page's interactive JS
+(jQuery/ThickBox that the create-offer click drives) is not initialized at 1 s,
+so `open_offer_modal` clicked yet `#TB_ajaxContent` never loaded —
+"modal context missing" on every offer (live Driffle). The settle is a real
+in-page timing dependency, unlike the pacers. A successful offer's cost still
+drops from ~30 s to ~18 s from the pacers alone.
 
 ## 2026-07-20 — REVERT FC4: it blocked every GLOBAL submit + admin panel shows only the current stage
 

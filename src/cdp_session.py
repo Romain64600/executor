@@ -109,12 +109,14 @@ class ReadOnlyCdpSession:
         return False
 
     # -- read-only operations -------------------------------------------
-    # settle: fixed post-navigate render wait. 1.0 s (was 3.0, Romain
-    # 2026-07-20 — the AKS feed pages are server-rendered and load fast, and
-    # both the extractor (EmptyPageAnomaly) and the submitter (_read_feed_page,
-    # SC2) already re-fetch a blank/under-read page once, so a shorter settle
-    # trades a fixed 3 s for an occasional single re-fetch — much faster overall).
-    def navigate(self, url: str, settle: float = 1.0) -> None:
+    # settle: fixed post-navigate wait. Kept at 3.0 s — a 1.0 s try (2026-07-20)
+    # broke the submit modal: reading rows works fast (SSR HTML), but the page's
+    # interactive JS (jQuery/ThickBox that the create-offer click drives) is not
+    # initialized at 1 s, so open_offer_modal clicked yet #TB_ajaxContent never
+    # loaded ("modal context missing" on every offer). The submit speedup lives
+    # in the pacers instead (--pace-offers/--pace-pages), pure between-request
+    # waits that never touch this in-page timing.
+    def navigate(self, url: str, settle: float = 3.0) -> None:
         response = self._cmd("Page.navigate", {"url": url})
         # Page.navigate reports net-level failures (net::ERR_*) inside its
         # result, not as a protocol error — unchecked, a dead proxy mid-run
