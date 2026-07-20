@@ -11,6 +11,8 @@ from src.matcher import (
     DifmarkOfferAttributes,
     DifmarkPageUnreadable,
     SkippedOffer,
+    account_identity,
+    aks_url,
     build_slug_candidates,
     dangerous_qualifier,
     detect_edition,
@@ -783,26 +785,45 @@ class MatchOfferTests(unittest.TestCase):
         self.assertEqual((result.region_label, result.region_id), ("GLOBAL", "2"))
         self.assertEqual((result.edition_label, result.edition_id), ("Standard", "1"))
 
-    def test_difmark_steam_account_global_enters_under_account_region(self):
-        # Romain (2026-07-17): "je voulais que tu renseignes la région Steam
-        # Account quand tu vois Steam Account" — AKS's region dropdown has a
-        # genuine parallel "Steam Account (412)" bucket; these offers are
-        # entered under it, never skipped. (Earlier same-day attempt treated
-        # this as a skip category — corrected here.)
+    def _account_resolver(self, aks_name="Rogue Loops Steam Account",
+                          product_id="187974", editions=None):
+        # AKS's dedicated account PAGE — a distinct product whose name ends
+        # with the page-kind words. `page_kind` is threaded through by
+        # match_offer's account branch.
+        res = AksResolution(
+            slug="rogue-loops-steam-account",
+            url="https://aks/buy-rogue-loops-steam-account-compare-prices/",
+            product_id=product_id, aks_name=aks_name,
+            editions=editions if editions is not None else {"1": {"name": "Standard"}},
+            official_platforms=(), prices=(),
+        )
+        return lambda name, page_kind="steam-account": res
+
+    def test_difmark_steam_account_global_resolves_account_page_and_region(self):
+        # Romain (2026-07-18): an account offer proposes AKS's dedicated
+        # account PAGE (not the game key page), entered under the "Steam
+        # Account (412)" region. R01 passes despite the "Steam Account"
+        # suffix on the AKS page name (page-type metadata, stripped for the
+        # identity check).
         offer = NormalizedOffer(
             offer_id="1", name="Rogue Loops Standard Edition",
             url="https://difmark.com/en/buy-console-account-rogue-loops-166307",
             merchant="Difmark",
         )
         result = match_offer(
-            offer, self._resolver(aks_name="Rogue Loops"),
+            offer, self._resolver(aks_name="SHOULD NOT BE USED"),
             difmark_offer_resolver=lambda url: DifmarkOfferAttributes(
                 raw_platform="STEAM", raw_region="GLOBAL",
                 offer_name="Rogue Loops (Steam Account) / Region GLOBAL / Edition Standard",
             ),
+            account_resolver=self._account_resolver(),
         )
         self.assertIsInstance(result, Candidate)
         self.assertEqual((result.region_label, result.region_id), ("GLOBAL ACCOUNT", "412"))
+        # the candidate points at the ACCOUNT page, not the key page
+        self.assertEqual(result.aks_product_id, "187974")
+        self.assertIn("steam-account", result.aks_url)
+        self.assertEqual(result.aks_name, "Rogue Loops Steam Account")
 
     def test_difmark_steam_account_europe_enters_under_eu_account_region(self):
         offer = NormalizedOffer(
@@ -816,9 +837,49 @@ class MatchOfferTests(unittest.TestCase):
                 raw_platform="STEAM", raw_region="EUROPE",
                 offer_name="Rogue Loops (Steam Account) / Region EU / Edition Standard",
             ),
+            account_resolver=self._account_resolver(),
         )
         self.assertIsInstance(result, Candidate)
         self.assertEqual((result.region_label, result.region_id), ("EU ACCOUNT", "480"))
+
+    def test_difmark_account_page_without_suffix_fails_closed(self):
+        # An account-URL 200 whose name is NOT "<game> steam account" is not
+        # the page we think it is → skip (fail-closed), never a key-page match
+        # sneaking through the account branch.
+        offer = NormalizedOffer(
+            offer_id="1", name="Rogue Loops Standard Edition",
+            url="https://difmark.com/en/buy-console-account-rogue-loops-166307",
+            merchant="Difmark",
+        )
+        result = match_offer(
+            offer, self._resolver(),
+            difmark_offer_resolver=lambda url: DifmarkOfferAttributes(
+                raw_platform="STEAM", raw_region="GLOBAL",
+                offer_name="Rogue Loops (Steam Account) / Region GLOBAL / Edition Standard",
+            ),
+            account_resolver=self._account_resolver(aks_name="Rogue Loops"),  # no suffix
+        )
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("is not an account page", result.reason)
+
+    def test_difmark_account_offer_name_mismatch_still_fails_r01(self):
+        # Stripping the account suffix must not defeat R01: a genuinely
+        # different game on the account page is still rejected.
+        offer = NormalizedOffer(
+            offer_id="1", name="Rogue Loops Standard Edition",
+            url="https://difmark.com/en/buy-console-account-rogue-loops-166307",
+            merchant="Difmark",
+        )
+        result = match_offer(
+            offer, self._resolver(),
+            difmark_offer_resolver=lambda url: DifmarkOfferAttributes(
+                raw_platform="STEAM", raw_region="GLOBAL",
+                offer_name="Rogue Loops (Steam Account) / Region GLOBAL / Edition Standard",
+            ),
+            account_resolver=self._account_resolver(aks_name="Totally Different Game Steam Account"),
+        )
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("missing AKS words", result.reason)
 
     def test_difmark_steam_account_uk_has_no_confirmed_account_region_skips(self):
         # No "Steam UK Account" entry exists in the live dropdown snapshot —
@@ -1679,6 +1740,52 @@ class AuditMa7GamivoEnMarkerTests(unittest.TestCase):
             merchant="Kinguin",
         )
         self.assertIsNone(precheck_skip(offer))
+
+
+class AccountPageResolutionTests(unittest.TestCase):
+    """Romain 2026-07-18: account offers resolve AKS's dedicated account
+    PAGE (`buy-<slug>-<kind>-compare-prices/`), a distinct product."""
+
+    def test_aks_url_kind_default_is_cd_key(self):
+        self.assertEqual(
+            aks_url("neon-beats"),
+            "https://www.allkeyshop.com/blog/buy-neon-beats-cd-key-compare-prices/",
+        )
+
+    def test_aks_url_account_kind(self):
+        self.assertEqual(
+            aks_url("final-knight", "steam-account"),
+            "https://www.allkeyshop.com/blog/buy-final-knight-steam-account-compare-prices/",
+        )
+
+    def test_account_identity_strips_platform_account_suffix(self):
+        self.assertEqual(account_identity("Final Knight Steam Account", "steam-account"),
+                         "Final Knight")
+        self.assertEqual(account_identity("007 First Light PS5 Account", "ps5-account"),
+                         "007 First Light")
+
+    def test_account_identity_none_when_suffix_absent(self):
+        self.assertIsNone(account_identity("Final Knight", "steam-account"))
+        self.assertIsNone(account_identity("Final Knight Steam Account", "ps5-account"))
+
+    def test_resolve_aks_account_kind_probes_account_url_no_search_fallback(self):
+        seen = []
+
+        def fake_http(url, timeout=8, user_agent=None):
+            seen.append(url)
+            if url.endswith("buy-final-knight-steam-account-compare-prices/"):
+                body = ('<div data-product-id="187974"></div>'
+                        '<meta property="og:title" content="Buy Final Knight Steam Account Compare Prices">'
+                        '<script>var x={"editions":{"5":{"name":"Early Access"}}};</script>')
+                return HttpProbeResult(url=url, ok=True, status=200, body=body)
+            return HttpProbeResult(url=url, ok=False, status=404, body="")
+
+        res = resolve_aks("Final Knight", fake_http, page_kind="steam-account")
+        self.assertIsNotNone(res)
+        self.assertEqual(res.product_id, "187974")
+        self.assertEqual(res.aks_name, "Final Knight Steam Account")
+        self.assertTrue(all("steam-account-compare-prices" in u for u in seen))
+        self.assertFalse(any("?s=" in u for u in seen), "no site-search fallback for account pages")
 
 
 class AuditDo6PromisedSkipsTests(unittest.TestCase):

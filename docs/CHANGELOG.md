@@ -3,6 +3,37 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-18 — Difmark Account offers resolve the AKS account PAGE (Romain)
+
+Rounds 1-2 (2026-07-17) got the account *region* right (Steam Account 412/…)
+but still matched the game's `…-cd-key-…` page. Romain 2026-07-18: "pour les
+offres Account, tu dois proposer la page Account, pas la page du jeu." AKS
+carries a SEPARATE product page per account platform,
+`buy-<slug>-<platform>-account-compare-prices/` — a distinct product (own
+id/editions/prices). Verified live: `Final Knight Steam Account` = 187974
+(vs the key page `Final Knight` = 171000), and every existing listing on the
+account page (G2A included) uses region 412 — so account-page + account-region
+is internally consistent.
+
+- `aks_url(slug, page_kind)` + `resolve_aks(page_kind=…)` build the
+  `…-<kind>-compare-prices/` URL; `DIFMARK_ACCOUNT_PAGE_KINDS = {"STEAM":
+  "steam-account"}` (Steam-only confirmed for Difmark). No R30 site-search
+  fallback for account pages (the result regex only knows `-cd-key-` slugs).
+- `match_offer` gains an injectable `account_resolver`; account offers route
+  through it. R01 compares against the game **identity** — `account_identity()`
+  strips the "<platform> Account" page-type suffix from the AKS name
+  ("Final Knight Steam Account" → "Final Knight"), which the feed title
+  ("Final Knight Standard Edition") never carries. A resolved account-URL 200
+  whose name lacks the suffix fails closed ("not an account page").
+- Live end-to-end confirmed: a Difmark Steam-Account offer for Final Knight
+  now resolves product 187974, region GLOBAL ACCOUNT(412); games with no AKS
+  account page (key page also 404) correctly skip.
+- Caveat (pre-existing): the generic "Standard Edition" title yields
+  Standard(1) even when the account page's only edition is Early Access(5) —
+  fail-closes at submit (product-scoped dropdown); surfaced for validation.
+
+Tests: +7 (`AccountPageResolutionTests` + updated Difmark account tests). 637 green.
+
 ## 2026-07-17 — Audit P2.c : docs remises au niveau du code + skips §4.3 enfin codés (DO1-DO6)
 
 Rafraîchissement produit par un workflow multi-agents (5 rédacteurs ancrés

@@ -30,6 +30,14 @@ from src.aks_env import AKS_STAFF_UA, http_get
 from src.contracts import NormalizedFeed, NormalizedOffer
 
 AKS_BUY_URL = "https://www.allkeyshop.com/blog/buy-{slug}-cd-key-compare-prices/"
+# AKS product pages come in "kinds": the ordinary key page (`…-cd-key-…`) and,
+# for account-delivery listings, a SEPARATE dedicated page per platform
+# (`…-steam-account-…`, `…-ps5-account-…`, …) — a distinct AKS product with its
+# own id, editions and price list (Romain 2026-07-18: "pour les offres Account,
+# tu dois proposer la page Account, pas la page du jeu"; verified live —
+# "Final Knight Steam Account" is product 187974, "Final Knight" the key page
+# is 171000). `{kind}` is the segment between the slug and `compare-prices`.
+AKS_COMPARE_URL = "https://www.allkeyshop.com/blog/buy-{slug}-{kind}-compare-prices/"
 # Staff anti-bot bypass UA for the resolve probes (2026-07-07): bulk runs with
 # the plain browser UA get intermittently throttled, which silently flipped
 # real product pages into "no AKS page" between two matcher runs. Restricted to
@@ -546,6 +554,34 @@ DIFMARK_STEAM_ACCOUNT_REGION_IDS = {
 # key used everywhere else — this reverses label back to that key.
 _DIFMARK_REGION_LABEL_TO_BASE = {"GLOBAL": "global", "EU": "eu", "US": "us", "UK": "uk"}
 
+# platform -> the AKS account-PAGE kind (Romain 2026-07-18): an account offer
+# must resolve to AKS's dedicated account page (`buy-<slug>-<kind>-compare-
+# prices/`), NOT the game key page. Only STEAM is confirmed for Difmark today
+# (DIFMARK_PLATFORM_TEXT_MAP); anything else fails closed rather than guessing
+# a page kind (e.g. a future ps5-account would need its own confirmed entry).
+DIFMARK_ACCOUNT_PAGE_KINDS = {"STEAM": "steam-account"}
+
+
+def account_identity(aks_name: str, page_kind: str) -> str | None:
+    """The game-identity portion of an AKS account page's name, or None when
+    the page is not actually an account page for ``page_kind``.
+
+    An account page's name ends with the page-kind words — "Final Knight
+    **Steam Account**", "007 First Light **PS5 Account**". Those words are
+    page-TYPE metadata, not product identity, and the merchant feed title
+    never carries them ("Final Knight Standard Edition"), so R01 must compare
+    against the stripped identity ("Final Knight") — otherwise every account
+    match false-fails on the missing "Account"/platform words. Returning None
+    when the suffix is absent is a fail-closed guard: an account-URL 200 whose
+    name is not "<game> <platform> account" is not the page we think it is."""
+
+    words = page_kind.upper().split("-")  # "steam-account" -> ["STEAM", "ACCOUNT"]
+    pattern = r"\s+" + r"\s+".join(re.escape(w) for w in words) + r"\s*$"
+    stripped = re.sub(pattern, "", aks_name, flags=re.IGNORECASE).strip()
+    if stripped == aks_name.strip() or not stripped:
+        return None
+    return stripped
+
 
 class DifmarkPageUnreadable(RuntimeError):
     """The Difmark product page or its own 'top offer' API could not be read
@@ -777,8 +813,8 @@ def build_slug_candidates(name: str) -> list[str]:
     return out
 
 
-def aks_url(slug: str) -> str:
-    return AKS_BUY_URL.format(slug=slug)
+def aks_url(slug: str, page_kind: str = "cd-key") -> str:
+    return AKS_COMPARE_URL.format(slug=slug, kind=page_kind)
 
 
 # -- AKS page extraction ----------------------------------------------------
@@ -947,13 +983,20 @@ def search_aks_slugs(
     return slugs
 
 
-def resolve_aks(name: str, http_get_fn: Callable[..., Any] = http_get) -> AksResolution | None:
+def resolve_aks(
+    name: str, http_get_fn: Callable[..., Any] = http_get, *, page_kind: str = "cd-key"
+) -> AksResolution | None:
     """Try each candidate slug read-only; return the first real product page.
 
-    Falls back to search_aks_slugs (R30) only when every guessed slug comes
-    back cleanly 404/410 — a transient or unreadable signal from a *guessed*
-    slug still fails closed immediately, same as before; the fallback is
-    "try harder before giving up", not a new correctness gate.
+    ``page_kind`` selects the AKS page family (``cd-key`` default, or an
+    account kind like ``steam-account`` — Romain 2026-07-18). Falls back to
+    search_aks_slugs (R30) only when every guessed slug comes back cleanly
+    404/410 AND ``page_kind`` is ``cd-key`` — the site-search result regex
+    only recognizes `-cd-key-` slugs, so there is no search fallback for
+    account pages; they rely on slug-guessing alone. A transient or unreadable
+    signal from a *guessed* slug still fails closed immediately, same as
+    before; the fallback is "try harder before giving up", not a new
+    correctness gate.
     """
 
     # Audit 2026-07-17 (MA1): the raise must be IMMEDIATE, not collected for
@@ -963,7 +1006,7 @@ def resolve_aks(name: str, http_get_fn: Callable[..., Any] = http_get) -> AksRes
     # exactly what the docstring always promised ("fails closed immediately")
     # and what the old collect-then-maybe-raise code did not do.
     for slug in build_slug_candidates(name):
-        url = aks_url(slug)
+        url = aks_url(slug, page_kind)
         if http_get_fn is http_get:
             time.sleep(AKS_PROBE_DELAY_S)  # politeness budget for bulk AKS runs
         probe = http_get_fn(url, timeout=8, user_agent=AKS_PROBE_UA)
@@ -980,6 +1023,8 @@ def resolve_aks(name: str, http_get_fn: Callable[..., Any] = http_get) -> AksRes
             raise AksNameUnreadable(slug)
         return resolution
 
+    if page_kind != "cd-key":
+        return None  # no site-search fallback for account pages (see docstring)
     for slug in search_aks_slugs(name, http_get_fn):
         url = aks_url(slug)
         if http_get_fn is http_get:
@@ -1079,6 +1124,7 @@ def match_offer(
     offer: NormalizedOffer,
     resolver: Callable[[str], AksResolution | None] = resolve_aks,
     difmark_offer_resolver: Callable[[str], DifmarkOfferAttributes] = resolve_difmark_offer,
+    account_resolver: Callable[..., AksResolution | None] = resolve_aks,
 ) -> Candidate | SkippedOffer:
     reason = precheck_skip(offer)
     if reason:
@@ -1153,8 +1199,24 @@ def match_offer(
     if region_id is None:
         return SkippedOffer(offer, f"no region id for {platform}/{region_label}")
 
+    # Account offers resolve AKS's dedicated account PAGE, not the game key
+    # page (Romain 2026-07-18). The account page is a distinct product (own id
+    # / editions / prices), and its name ends with the page-kind words
+    # ("<game> Steam Account") — page-type metadata the merchant feed title
+    # never carries, so R01 compares against the stripped identity below.
+    account_page_kind: str | None = None
+    if is_difmark and difmark_is_account:
+        account_page_kind = DIFMARK_ACCOUNT_PAGE_KINDS.get(platform)
+        if account_page_kind is None:
+            return SkippedOffer(
+                offer, f"Difmark account page kind unknown for platform {platform!r}"
+            )
+
     try:
-        resolution = resolver(offer.name)
+        if account_page_kind is not None:
+            resolution = account_resolver(offer.name, page_kind=account_page_kind)
+        else:
+            resolution = resolver(offer.name)
     except AksProbeUnreliable as exc:
         return SkippedOffer(offer, f"AKS probe unreliable (throttled?): {exc}")
     except AksNameUnreadable as exc:
@@ -1164,13 +1226,29 @@ def match_offer(
             offer, f"AKS page markup drifted — guard input unreadable (MA6): {exc}"
         )
     if resolution is None:
-        return SkippedOffer(offer, "no AKS product page found (slug not 200)")
+        kind_note = f" {account_page_kind}" if account_page_kind else ""
+        return SkippedOffer(offer, f"no AKS{kind_note} product page found (slug not 200)")
 
-    missing = missing_aks_words(resolution.aks_name, offer.name)
+    # R01 / different-product guards compare against the game-identity name.
+    # For an account page that means stripping the "<platform> Account" suffix;
+    # a suffix-less account page (None) is a fail-closed "not really an account
+    # page" skip.
+    if account_page_kind is not None:
+        identity_name = account_identity(resolution.aks_name, account_page_kind)
+        if identity_name is None:
+            return SkippedOffer(
+                offer,
+                f"resolved {account_page_kind} page name {resolution.aks_name!r} "
+                "is not an account page (suffix absent) — fail closed",
+            )
+    else:
+        identity_name = resolution.aks_name
+
+    missing = missing_aks_words(identity_name, offer.name)
     if missing:
         return SkippedOffer(offer, f"name mismatch, missing AKS words: {missing}")
 
-    extras = extra_significant_words(resolution.aks_name, offer.name)
+    extras = extra_significant_words(identity_name, offer.name)
     if extras:
         return SkippedOffer(offer, f"different/expanded product — extra words: {extras}")
 

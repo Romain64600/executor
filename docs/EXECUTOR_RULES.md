@@ -889,6 +889,50 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167.
     (G02). **Ids came from a 9-day-old catalog snapshot — re-verify against
     a fresh dropdown fetch (P06, "dropdown is truth") before Difmark's first
     real submit.**
+    **Round 3 (Romain 2026-07-18): the account offer must resolve AKS's
+    dedicated account PAGE, not the game key page.** Rounds 1-2 got the
+    *region* right (Account bucket 412/…) but still matched the game's
+    `…-cd-key-…` page. AKS actually carries a SEPARATE product page per
+    account platform — `buy-<slug>-<platform>-account-compare-prices/` — a
+    distinct product with its own id/editions/prices (verified live:
+    `Final Knight Steam Account` = 187974, editions `{5:"Early Access"}`,
+    while the key page `Final Knight` = 171000; and every existing listing on
+    187974, G2A included, uses region 412 — so page-account + region-account
+    is internally consistent). Implementation: `aks_url(slug, page_kind)` +
+    `resolve_aks(page_kind=…)` build `…-<kind>-compare-prices/`
+    (`DIFMARK_ACCOUNT_PAGE_KINDS={"STEAM":"steam-account"}`, Steam-only
+    confirmed); `match_offer` routes account offers through the injectable
+    `account_resolver`. **No R30 site-search fallback for account pages** (the
+    result regex only knows `-cd-key-` slugs) — they rely on slug-guessing.
+    The account page's name ends with the page-kind words
+    ("Final Knight **Steam Account**"), page-TYPE metadata the feed title
+    ("Final Knight Standard Edition") never carries, so R01 compares against
+    the stripped **identity** (`account_identity()` → "Final Knight"); a
+    resolved account-URL 200 whose name lacks the suffix fails closed ("not an
+    account page"). Caveat (pre-existing, unchanged): the generic Difmark
+    "Standard Edition" title yields Standard(1) even when the account page's
+    only edition is Early Access(5) — safe (product-scoped dropdown
+    fail-closes at submit), but surfaced in the report for human validation.
+  - **Operating cadence — one page at a time (Romain 2026-07-17).** "Faut se
+    rappeler que la prochaine fois, on fait page par page. On prend les 100
+    offres de la page et on regarde. On envoie un rapport sur ce qu'on peut
+    entrer et on le rentre." Difmark's feed is large (382 pages) and
+    refreshes multiple times a day, deleting and recreating every offer id
+    on each refresh (confirmed live 2026-07-17: an `approved.json` built
+    from one page fetch was already unusable by submit time, hitting first
+    `catalog_unavailable`/`no_openable_offer` — feed mid-reimport — then
+    `feed_unreadable` — coverage unproven at the default 40-page cap — then,
+    once repopulated, 10 consecutive failures because every approved id had
+    rotated out from under it). The fix isn't only a bigger `--max-pages`;
+    it's cadence: **extract exactly ONE page (100 offers) → match → send the
+    report → Romain validates what's enterable → submit that page's
+    validated batch → only then move to the next page.** Never extract/match
+    several pages ahead of what's about to be validated+submitted — a batch
+    sitting unsubmitted while the feed refreshes again is dead on arrival.
+    This supersedes the earlier "batches of ~10 pages" guidance from the
+    same day (that was already a correction on "don't sweep all 382 pages at
+    once" — this narrows it further, to one page, once the id-rotation
+    frequency became clear).
 
 ---
 
