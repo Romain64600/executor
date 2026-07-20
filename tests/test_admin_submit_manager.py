@@ -65,6 +65,22 @@ print(json.dumps({{"run_id": args.run_id, "merchant": args.merchant, "ok": True}
 sys.exit({exit_code})
 """
 
+# Mirrors scripts/03_match.py's CLI: offers.json positional + --max-candidates.
+# Writes candidates.json next to offers.json (what fills the validation table).
+FAKE_MATCH_SCRIPT = """\
+import argparse, json, sys, time
+from pathlib import Path
+p = argparse.ArgumentParser()
+p.add_argument("offers")
+p.add_argument("--max-candidates", type=int, default=100)
+args = p.parse_args()
+time.sleep({sleep})
+out = Path(args.offers).resolve().parent
+out.joinpath("candidates.json").write_text(json.dumps([]), encoding="utf-8")
+print(json.dumps({{"candidates": 0, "max_candidates": args.max_candidates}}))
+sys.exit({exit_code})
+"""
+
 
 class ManagerTestCase(unittest.TestCase):
     def setUp(self):
@@ -118,6 +134,15 @@ class ManagerTestCase(unittest.TestCase):
         )
         return SubmitManager(
             self.root, log_dir=self.logs, extract_script=script, clock=CLOCK
+        )
+
+    def _match_manager(self, sleep=0.0, exit_code=0):
+        script = self.root / f"fake_match_{sleep}_{exit_code}.py"
+        script.write_text(
+            FAKE_MATCH_SCRIPT.format(sleep=sleep, exit_code=exit_code), encoding="utf-8"
+        )
+        return SubmitManager(
+            self.root, log_dir=self.logs, match_script=script, clock=CLOCK
         )
 
 
@@ -332,6 +357,55 @@ class StartExtractTests(ManagerTestCase):
         manager.start_extract("GameSeal", "126", by="Romain")
         with self.assertRaises(SubmitStartError) as ctx:
             manager.start_extract("Kinguin", "58", by="Romain")
+        self.assertEqual(ctx.exception.code, "submit_in_progress")
+        self.assertTrue(manager.wait_idle(timeout=10))
+
+
+class StartMatchTests(ManagerTestCase):
+    """Stage 3, launched from the admin page (Romain 2026-07-20): matches an
+    already-extracted run to fill the validation table."""
+
+    def test_argv_and_lifecycle(self):
+        manager = self._match_manager()
+        result = manager.start_match(self.run, by="Romain", max_candidates=3)
+        self.assertTrue(result["started"])
+        self.assertEqual(result["kind"], "match")
+        self.assertIn(str(self.run / "offers.json"), result["argv"])
+        self.assertIn("--max-candidates", result["argv"])
+        self.assertIn("3", result["argv"])
+        self.assertTrue(manager.wait_idle(timeout=10))
+        state = json.loads((self.run / "admin_submit.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["state"], "done")
+        self.assertEqual(state["kind"], "match")
+        self.assertTrue((self.run / "candidates.json").is_file())
+
+    def test_no_max_candidates_omits_the_flag(self):
+        manager = self._match_manager()
+        result = manager.start_match(self.run, by="Romain")
+        self.assertNotIn("--max-candidates", result["argv"])
+        self.assertTrue(manager.wait_idle(timeout=10))
+
+    def test_not_extracted_refused(self):
+        # A run dir with no offers.json (never extracted) refuses before spawn.
+        empty = self.runs / "20260720-000000-empty"
+        empty.mkdir(parents=True)
+        manager = self._match_manager()
+        with self.assertRaises(SubmitStartError) as ctx:
+            manager.start_match(empty, by="Romain")
+        self.assertEqual(ctx.exception.code, "not_extracted")
+        self.assertIsNone(manager.busy())
+
+    def test_bad_max_candidates_refused(self):
+        manager = self._match_manager()
+        with self.assertRaises(SubmitStartError) as ctx:
+            manager.start_match(self.run, by="Romain", max_candidates=0)
+        self.assertEqual(ctx.exception.code, "bad_max_candidates")
+
+    def test_refused_while_another_run_active(self):
+        manager = self._match_manager(sleep=2.0)
+        manager.start_match(self.run, by="Romain")
+        with self.assertRaises(SubmitStartError) as ctx:
+            manager.start_match(self.run, by="Romain")
         self.assertEqual(ctx.exception.code, "submit_in_progress")
         self.assertTrue(manager.wait_idle(timeout=10))
 

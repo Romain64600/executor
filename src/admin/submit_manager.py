@@ -221,6 +221,7 @@ class SubmitManager:
         log_dir: Path | None = None,
         submit_script: Path | None = None,
         extract_script: Path | None = None,
+        match_script: Path | None = None,
         python: str = sys.executable,
         clock=_utc_now_iso,
     ) -> None:
@@ -228,6 +229,7 @@ class SubmitManager:
         self.log_dir = log_dir or (repo_root / "logs")
         self.submit_script = submit_script or (repo_root / "scripts" / "05_submit.py")
         self.extract_script = extract_script or (repo_root / "scripts" / "02_extract_feed.py")
+        self.match_script = match_script or (repo_root / "scripts" / "03_match.py")
         self.python = python
         self.clock = clock
         self._mutex = threading.Lock()
@@ -506,6 +508,46 @@ class SubmitManager:
             return self._spawn(
                 run_dir, kind="extract", argv=argv,
                 meta={"merchant": merchant, "store_id": store_id, "by": by},
+            )
+
+    def start_match(
+        self, run_dir: Path, *, by: str, max_candidates: int | None = None
+    ) -> dict[str, Any]:
+        """Stage 3 (read-only): match an already-extracted run against AKS.
+
+        Produces candidates.json / skipped.json / report.txt / match_meta.json —
+        what fills the admin's validation table (Romain 2026-07-20: "un bouton
+        pour cette étape"). Read-only HTTP (no browser/CDP, no browser lock),
+        but serialized under the same one-run-at-a-time gate as everything else.
+        Requires offers.json (the run must have been extracted first).
+        """
+
+        if not run_file(run_dir, "offers.json").is_file():
+            raise SubmitStartError(
+                "not_extracted",
+                "offers.json absent — lancer d'abord l'extraction (stage 1)",
+                http_status=409,
+            )
+        if max_candidates is not None and (
+            not isinstance(max_candidates, int) or max_candidates < 1
+        ):
+            raise SubmitStartError(
+                "bad_max_candidates",
+                f"max_candidates doit être un entier positif, reçu {max_candidates!r}",
+                http_status=400,
+            )
+        with self._mutex:
+            self._ensure_free()
+            argv = [
+                self.python,
+                str(self.match_script),
+                str(run_file(run_dir, "offers.json")),
+            ]
+            if max_candidates is not None:
+                argv += ["--max-candidates", str(max_candidates)]
+            return self._spawn(
+                run_dir, kind="match", argv=argv,
+                meta={"by": by, "max_candidates": max_candidates},
             )
 
     def _spawn(

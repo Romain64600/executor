@@ -24,6 +24,20 @@ print(json.dumps({"ok": True}))
 sys.exit(0)
 """
 
+FAKE_MATCH = """\
+import argparse, json, sys
+from pathlib import Path
+p = argparse.ArgumentParser()
+p.add_argument("offers")
+p.add_argument("--max-candidates", type=int, default=100)
+args = p.parse_args()
+Path(args.offers).resolve().parent.joinpath("candidates.json").write_text(
+    json.dumps([]), encoding="utf-8"
+)
+print(json.dumps({"candidates": 0}))
+sys.exit(0)
+"""
+
 
 def _cand(offer_id="1", pid="207861", region="2", edition="1"):
     return {
@@ -57,7 +71,11 @@ class AppTestCase(unittest.TestCase):
 
         fake_script = root / "fake_submit.py"
         fake_script.write_text(FAKE_SCRIPT, encoding="utf-8")
-        manager = SubmitManager(REPO_ROOT, log_dir=self.logs, submit_script=fake_script)
+        fake_match = root / "fake_match.py"
+        fake_match.write_text(FAKE_MATCH, encoding="utf-8")
+        manager = SubmitManager(
+            REPO_ROOT, log_dir=self.logs, submit_script=fake_script, match_script=fake_match
+        )
         self.manager = manager
         state = AppState(REPO_ROOT, runs_dir=self.runs, log_dir=self.logs, manager=manager)
         self.server = make_server(state, host="127.0.0.1", port=0)
@@ -411,6 +429,29 @@ class ValidationFlowTests(AppTestCase):
         _, status = self._json("GET", "/api/runs/20260715-000000-test/submit/status?offset=0")
         self.assertEqual(status["events"][0]["token"], "***REDACTED***")
         self.assertNotIn("SECRET", json.dumps(status))
+
+
+class MatchEndpointTests(AppTestCase):
+    """Romain 2026-07-20: launch the matching step (stage 3) from the admin."""
+
+    def test_match_launches_and_produces_candidates(self):
+        response, body = self._json(
+            "POST", "/api/runs/20260715-000000-test/match",
+            body={"max_candidates": 3, "by": "Romain"},
+        )
+        self.assertEqual(response.status, 200)
+        self.assertTrue(body["started"])
+        self.assertEqual(body["kind"], "match")
+        self.assertIn("--max-candidates", body["argv"])
+        self.assertTrue(self.manager.wait_idle(timeout=10))
+        self.assertTrue((self.run / "candidates.json").is_file())
+
+    def test_match_requires_csrf(self):
+        response, _ = self._json(
+            "POST", "/api/runs/20260715-000000-test/match",
+            body={}, csrf=False, headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 403)
 
 
 if __name__ == "__main__":

@@ -325,6 +325,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             sub = match.group(2) or ""
             if sub == "/validation":
                 return self._post_validation(run_dir)
+            if sub == "/match":
+                return self._post_match(run_dir)
             if sub == "/catalog":
                 return self._post_catalog(run_dir)
             if sub == "/submit":
@@ -371,6 +373,14 @@ class AdminHandler(BaseHTTPRequestHandler):
         by = str(body.get("by") or self._basic_user() or "operateur")
         result = self.state.manager.start_extract(
             str(body.get("merchant", "")), str(body.get("store_id", "")), by=by,
+        )
+        self._send_json(200, result)
+
+    def _post_match(self, run_dir: Path) -> None:
+        body = self._json_body()
+        by = str(body.get("by") or self._basic_user() or "operateur")
+        result = self.state.manager.start_match(
+            run_dir, by=by, max_candidates=_parse_int(body.get("max_candidates")),
         )
         self._send_json(200, result)
 

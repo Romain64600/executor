@@ -144,6 +144,38 @@ async function startExtract() {
   }
 }
 
+// ------------------------------------------------------ matching (stage 3)
+
+async function startMatch() {
+  if (!CURRENT) return;
+  clearError();
+  const maxRaw = $('#match-max').value.trim();
+  const body = {};
+  if (maxRaw) body.max_candidates = Number(maxRaw);
+  $('#start-match').disabled = true;
+  $('#match-state').textContent = '…';
+  try {
+    const result = await api(`api/runs/${encodeURIComponent(CURRENT.runId)}/match`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    $('#match-state').textContent = `matching lancé (pid ${result.pid}) — la table de validation se remplira à la fin`;
+    // Reuse the run progress/poll machinery; renderFinal re-opens the run so
+    // the report + candidates appear when the match completes.
+    $('#progress').classList.remove('hidden');
+    $('#progress-title').textContent = `Matching lancé (pid ${result.pid})`;
+    $('#events').textContent = result.argv.join(' ') + '\n';
+    $('#plan-summary').textContent = '';
+    LOG_OFFSET = 0;
+    startPolling();
+  } catch (err) {
+    showError(err);
+    $('#match-state').textContent = '✘';
+  } finally {
+    $('#start-match').disabled = false;
+  }
+}
+
 // ---------------------------------------------------------------- run list
 
 async function loadRuns() {
@@ -802,6 +834,7 @@ async function init() {
   }
   initMerchantSelect();
   $('#start-extract').addEventListener('click', startExtract);
+  $('#start-match').addEventListener('click', startMatch);
   $('#refresh-runs').addEventListener('click', loadRuns);
   $('#check-all').addEventListener('click', checkAll);
   $('#save-validation').addEventListener('click', saveValidation);

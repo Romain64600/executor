@@ -53,6 +53,19 @@
         <pre id="report"></pre>
       </details>
 
+      <section id="match-box">
+        <h3>Matching (stage 3)</h3>
+        <div class="row">
+          <span id="match-hint" class="hint">Produit les candidats à partir de l'extraction (offers.json) — remplit la table de validation.</span>
+        </div>
+        <div class="row">
+          <label for="match-max">Max candidats (optionnel)</label>
+          <input id="match-max" type="number" min="1" step="1" placeholder="100">
+          <button id="start-match" type="button" class="primary">Lancer le matching</button>
+          <span id="match-state" class="state"></span>
+        </div>
+      </section>
+
       <section id="validation-box">
         <h3>Validation</h3>
         <div id="catalog-hint" class="hint hidden">

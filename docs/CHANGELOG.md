@@ -3,6 +3,26 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-20 — Admin: launch the matching step (stage 3) from the page (Romain)
+
+The admin could launch extraction (stage 1) but not matching (stage 3), so an
+extracted run showed "0 candidat / non matché" until someone ran
+`03_match.py` by hand. Romain: "il faudrait ajouter un bouton pour cette étape
+de validation." Added a **"Lancer le matching"** button (with an optional max-
+candidates field) on the run panel.
+
+- `SubmitManager.start_match(run_dir, by, max_candidates)` spawns
+  `03_match.py offers.json [--max-candidates N]` (kind `match`), supervised
+  like every other run. Read-only HTTP (no browser/CDP, no browser lock) but
+  serialized under the same one-run-at-a-time gate. Requires `offers.json`
+  (refuses `not_extracted` otherwise); rejects a non-positive max-candidates.
+- `POST /api/runs/<id>/match` (`app.py::_post_match`). The UI reuses the run
+  progress/poll machinery; when the match completes it re-opens the run, so
+  the report + validation table populate automatically.
+
+Tests: +9 (`StartMatchTests`, `MatchEndpointTests`). 651 green. Follow-up
+offered but not built: auto-chain matching at the end of extraction.
+
 ## 2026-07-20 — Submit auto-defaults --max-pages from the feed's own page count (Romain)
 
 The P0.2 coverage check (SC4) aborts fail-closed if the batch-start feed index
