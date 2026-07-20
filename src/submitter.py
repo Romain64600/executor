@@ -154,18 +154,19 @@ def resolve_catalog_id(
     by_id = {str(o.get("key")): o for o in master_options}
     if str(candidate_id) in by_id:
         o = by_id[str(candidate_id)]
-        # FC4 (audit 2026-07-17): id existence alone verified nothing — ids
-        # drift across catalog re-imports, so the matcher's id can now denote
-        # a COMPLETELY different option and the old code adopted its text
-        # blindly (the exact mechanism the 2026-07-06 wrong-edition incident
-        # taught us to distrust). The candidate's label must appear as a
-        # whole word inside the catalog text ("EU" ⊆ "Steam EU (9)"): the id
-        # disambiguates a composite text, it never overrides meaning.
-        text_n = _norm_option_text(o.get("text", ""))
-        if label_n and not re.search(
-            r"(?:^| )" + re.escape(label_n) + r"(?: |$)", text_n
-        ):
-            return None
+        # FC4 (audit 2026-07-17) REVERTED 2026-07-20 — it wrongly required the
+        # matcher label to appear as a word in the catalog text, but the two
+        # are legitimately synonyms with the SAME id: the AKS dropdown labels
+        # Steam's global/worldwide region "Steam (2)" while the matcher calls
+        # it "GLOBAL". "global" is not in "steam (2)", so FC4 blocked GLOBAL —
+        # the most common region — on every live submit (Driffle 2026-07-20:
+        # all offers `region not in session catalog (label='GLOBAL' id='2')`).
+        # The id-path validates EXISTENCE only, as it did for the project's
+        # whole history; the label-path above already remaps a drifted id when
+        # the label DOES match a unique option, and the human validates the
+        # region label in the report. FC4's "id drifted to a different region"
+        # was a PLAUSIBLE (unconfirmed) finding — a synonym-aware guard would
+        # need the dropdown's own region vocabulary, out of scope here.
         return {
             "id": str(candidate_id), "text": o.get("text"), "source": "id",
             "matcher_id": str(candidate_id), "changed": False,

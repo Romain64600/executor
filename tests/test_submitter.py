@@ -88,7 +88,9 @@ class FakeSubmitSession:
         # (resolve_catalog_id) can map the _cand labels/ids: region GLOBAL→2,
         # Steam EU→9; edition Standard→1, Deluxe→7.
         if "region" in select_name:
-            master = [{"key": "2", "text": "GLOBAL"}, {"key": "9", "text": "Steam EU (9)"}]
+            # Realistic dropdown text: GLOBAL is "Steam (2)" (resolved by id,
+            # not label) — see ResolveCatalogIdTests / the 2026-07-20 FC4 revert.
+            master = [{"key": "2", "text": "Steam (2)"}, {"key": "9", "text": "Steam EU (9)"}]
         else:
             master = [{"key": "1", "text": "Standard"}, {"key": "7", "text": "Deluxe"}]
         return {"ok": True, "select_name": select_name, "rendered_count": 2,
@@ -618,7 +620,11 @@ class FetchSessionCatalogTests(unittest.TestCase):
 
 
 class ResolveCatalogIdTests(unittest.TestCase):
-    REGIONS = [{"key": "2", "text": "GLOBAL"}, {"key": "9", "text": "Steam EU (9)"}]
+    # Realistic live dropdown: the Steam global/worldwide region is labelled
+    # "Steam (2)" (NOT "GLOBAL") — the matcher calls the same region "GLOBAL".
+    # (An earlier fixture used "GLOBAL" here, which hid the FC4 regression that
+    # blocked every GLOBAL submit on 2026-07-20.)
+    REGIONS = [{"key": "2", "text": "Steam (2)"}, {"key": "9", "text": "Steam EU (9)"}]
     EDITIONS = [{"key": "1", "text": "Standard"}, {"key": "7", "text": "Deluxe"}]
 
     def test_unambiguous_label_match_wins_over_stale_id(self):
@@ -664,21 +670,19 @@ class ResolveCatalogIdTests(unittest.TestCase):
 
         self.assertIsNone(resolve_catalog_id("Nonesuch", "424242", self.EDITIONS))
 
-    def test_drifted_id_meaning_mismatch_is_fail_closed(self):
+    def test_global_resolves_via_steam_labelled_option_by_id(self):
         from src.submitter import resolve_catalog_id
 
-        # FC4 (audit 2026-07-17): the id EXISTS but now denotes a different
-        # option ("EU" vs "BTC 1500 PLN") — id existence must never override
-        # meaning; fail closed instead of adopting the drifted text.
-        drifted = [{"key": "2", "text": "GLOBAL"}, {"key": "9", "text": "BTC 1500 PLN"}]
-        self.assertIsNone(resolve_catalog_id("EU", "9", drifted))
-
-    def test_id_path_word_boundary_not_substring(self):
-        from src.submitter import resolve_catalog_id
-
-        # "EU" must match as a whole word — not inside "Deluxe".
-        options = [{"key": "9", "text": "Deluxe"}]
-        self.assertIsNone(resolve_catalog_id("EU", "9", options))
+        # Regression (2026-07-20): the matcher label "GLOBAL" does NOT appear in
+        # the dropdown text "Steam (2)"; resolution must still succeed by id
+        # (this is the exact case FC4 wrongly blocked, breaking every GLOBAL
+        # submit). The resolved text is the dropdown's own — used verbatim as
+        # the Selectize type-to-filter query, so it must be "Steam (2)".
+        r = resolve_catalog_id("GLOBAL", "2", self.REGIONS)
+        self.assertIsNotNone(r)
+        self.assertEqual(r["id"], "2")
+        self.assertEqual(r["text"], "Steam (2)")
+        self.assertEqual(r["source"], "id")
 
 
 class CatalogResolutionInWritePathTests(unittest.TestCase):
@@ -688,8 +692,10 @@ class CatalogResolutionInWritePathTests(unittest.TestCase):
         # Catalog was fetched once and summarized in the result.
         self.assertEqual(result["catalog"]["regions_count"], 2)
         self.assertEqual(result["catalog"]["editions_count"], 2)
-        # The canonical catalog text is threaded down as the type-to-filter query.
-        self.assertEqual(session.last_region_query, "GLOBAL")
+        # The canonical catalog text is threaded down as the type-to-filter
+        # query — for GLOBAL that is the dropdown's own "Steam (2)" (resolved
+        # by id), NOT the matcher label, so the Selectize filter actually hits.
+        self.assertEqual(session.last_region_query, "Steam (2)")
         self.assertEqual(session.last_edition_query, "Standard")
         entry = result["plan"][0]
         self.assertEqual(entry["edition_resolution"]["source"], "label")

@@ -3,6 +3,30 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-20 — REVERT FC4: it blocked every GLOBAL submit + admin panel shows only the current stage
+
+**FC4 regression (urgent, live).** The 2026-07-17 audit fix FC4 made
+`resolve_catalog_id`'s id-path require the matcher's region label to appear as
+a word in the live dropdown text. But the AKS dropdown labels Steam's global/
+worldwide region **`"Steam (2)"`**, while the matcher calls it **`GLOBAL`** —
+synonyms for the same id 2, and "global" is not in "steam (2)". So FC4 blocked
+GLOBAL — the most common region — on every real submit (Driffle 2026-07-20: all
+offers `region not in session catalog (label='GLOBAL' id='2')`, 0 created).
+Reverted: the id-path validates EXISTENCE only, as it did for the project's
+whole history; the label-path still remaps a drifted id when the label uniquely
+matches, and the human validates the region label in the report. The test
+fixtures that hid this (region key 2 texted `"GLOBAL"` instead of `"Steam (2)"`)
+are now realistic, with an explicit regression test. FC4's "id drifted to a
+different region" concern was PLAUSIBLE-not-confirmed and stays open.
+
+**Admin panel (Romain).** A run's log now accumulates extraction + matching +
+submit events, so the progress panel replayed the whole history on each stage
+launch (the confusing "sweep / terminé exit 0" lines under a fresh submit).
+`startRun`/`startMatch` now seek the log tail to its current end, so the panel
+shows only the stage just launched.
+
+Tests: 652 green (FC4 tests replaced by the realistic-fixture regression test).
+
 ## 2026-07-20 — Admin: launch the matching step (stage 3) from the page (Romain)
 
 The admin could launch extraction (stage 1) but not matching (stage 3), so an

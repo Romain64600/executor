@@ -155,6 +155,7 @@ async function startMatch() {
   $('#start-match').disabled = true;
   $('#match-state').textContent = '…';
   try {
+    const seek = await seekLogEnd();
     const result = await api(`api/runs/${encodeURIComponent(CURRENT.runId)}/match`, {
       method: 'POST',
       body: JSON.stringify(body),
@@ -166,7 +167,7 @@ async function startMatch() {
     $('#progress-title').textContent = `Matching lancé (pid ${result.pid})`;
     $('#events').textContent = result.argv.join(' ') + '\n';
     $('#plan-summary').textContent = '';
-    LOG_OFFSET = 0;
+    LOG_OFFSET = seek;
     startPolling();
   } catch (err) {
     showError(err);
@@ -528,7 +529,22 @@ function argvPreview(dryRun) {
   return parts.join(' ');
 }
 
+// Only show THIS stage's events: a run's log now accumulates extraction +
+// matching + submit(s), so start the tail at the current end of the log
+// (2026-07-20, Romain) instead of replaying the whole history.
+async function seekLogEnd() {
+  try {
+    const status = await api(
+      `api/runs/${encodeURIComponent(CURRENT.runId)}/submit/status?offset=0`
+    );
+    return status.offset || 0;
+  } catch {
+    return 0;
+  }
+}
+
 async function startRun(body) {
+  const seek = await seekLogEnd();
   const result = await api(`api/runs/${encodeURIComponent(CURRENT.runId)}/submit`, {
     method: 'POST',
     body: JSON.stringify(body),
@@ -538,7 +554,7 @@ async function startRun(body) {
     `${body.dry_run ? 'Dry-run' : 'Submit'} lancé (pid ${result.pid})`;
   $('#events').textContent = result.argv.join(' ') + '\n';
   $('#plan-summary').textContent = '';
-  LOG_OFFSET = 0;
+  LOG_OFFSET = seek;
   startPolling();
 }
 
