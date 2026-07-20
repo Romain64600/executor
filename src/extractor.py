@@ -389,6 +389,7 @@ class FeedExtractor:
             source_url=source_url,
             raw_offers=raw_offers,
             pages_scanned=max_page_reached,
+            feed_last_page=last_page,
         )
         feed = NormalizedFeed.from_snapshot(snapshot)
         self._log(
@@ -516,6 +517,7 @@ class FeedExtractor:
             source_url=source_url,
             raw_offers=raw_offers,
             pages_scanned=pages_fetched,
+            feed_last_page=feed_last_page,
         )
         feed = NormalizedFeed.from_snapshot(snapshot)
         self._log(

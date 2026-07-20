@@ -506,5 +506,49 @@ class ModeLimitTests(unittest.TestCase):
         self.assertEqual(MOD.mode_limit("advanced", 2), 1)
 
 
+class DeriveMaxPagesTests(unittest.TestCase):
+    """2026-07-20: max-pages auto-defaults from the feed's own page count so a
+    big feed (Difmark ~357 pages) does not abort the coverage scan at the
+    40-page floor. An explicit value always wins."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = Path(self.tmp.name)
+
+    def _write_feed(self, feed_last_page):
+        payload = {"run_id": "r", "merchant": "Difmark", "offers": []}
+        if feed_last_page is not None:
+            payload["feed_last_page"] = feed_last_page
+        (self.dir / "offers.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    def test_explicit_wins(self):
+        self._write_feed(357)
+        pages, note = MOD.derive_max_pages(50, self.dir)
+        self.assertEqual(pages, 50)
+        self.assertIn("explicit", note)
+
+    def test_auto_from_feed_page_count_with_headroom(self):
+        self._write_feed(357)
+        pages, note = MOD.derive_max_pages(None, self.dir)
+        self.assertEqual(pages, 465)  # ceil(357 * 1.3)
+        self.assertIn("357", note)
+
+    def test_small_feed_floored_at_default(self):
+        self._write_feed(5)
+        pages, _ = MOD.derive_max_pages(None, self.dir)
+        self.assertEqual(pages, MOD.DEFAULT_MAX_PAGES)  # 40 floor
+
+    def test_unknown_feed_page_count_falls_back_to_default(self):
+        self._write_feed(None)  # offers.json without feed_last_page (legacy run)
+        pages, note = MOD.derive_max_pages(None, self.dir)
+        self.assertEqual(pages, MOD.DEFAULT_MAX_PAGES)
+        self.assertIn("unknown", note)
+
+    def test_missing_offers_json_falls_back_to_default(self):
+        pages, _ = MOD.derive_max_pages(None, self.dir)  # no offers.json at all
+        self.assertEqual(pages, MOD.DEFAULT_MAX_PAGES)
+
+
 if __name__ == "__main__":
     unittest.main()

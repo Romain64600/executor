@@ -26,9 +26,41 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 from pathlib import Path
+
+# Feed-scan page ceiling defaults (2026-07-20). The coverage scan aborts
+# fail-closed if it hits this ceiling while the feed advertises MORE pages
+# (audit P0.2 SC4). For a big feed (Difmark ~357 pages) the historical 40-page
+# floor always aborted, so max-pages is now AUTO-derived from the extraction's
+# own feed page count + headroom; an explicit --max-pages still overrides.
+DEFAULT_MAX_PAGES = 40
+AUTO_MAX_PAGES_HEADROOM = 1.3  # absorb feed churn between extract and submit
+
+
+def derive_max_pages(explicit: int | None, out_dir: Path) -> tuple[int, str]:
+    """(effective_max_pages, human note). Explicit --max-pages wins; otherwise
+    read the extraction's feed_last_page (offers.json) and add headroom,
+    floored at DEFAULT_MAX_PAGES; fall back to the floor when unknown."""
+
+    if explicit is not None:
+        return explicit, f"explicit --max-pages {explicit}"
+    feed_pages = 0
+    try:
+        feed = json.loads((out_dir / "offers.json").read_text(encoding="utf-8"))
+        feed_pages = int(feed.get("feed_last_page") or 0)
+    except (OSError, ValueError, TypeError):
+        feed_pages = 0
+    if feed_pages <= 0:
+        return DEFAULT_MAX_PAGES, (
+            f"auto: feed page count unknown (offers.json) → default {DEFAULT_MAX_PAGES}"
+        )
+    derived = max(DEFAULT_MAX_PAGES, math.ceil(feed_pages * AUTO_MAX_PAGES_HEADROOM))
+    return derived, (
+        f"auto: feed advertises {feed_pages} page(s) at extraction → max_pages {derived}"
+    )
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -115,7 +147,13 @@ def _main() -> int:
     parser.add_argument("--store-id", required=True)
     parser.add_argument("--endpoint", default=OFFICIAL_CDP_ENDPOINT)
     parser.add_argument("--available", default="all", choices=["all", "pending"])
-    parser.add_argument("--max-pages", type=int, default=40)
+    parser.add_argument(
+        "--max-pages", type=int, default=None,
+        help="Feed-scan page ceiling for the coverage scan. Default: AUTO — "
+             "derived from the extraction's own feed page count (offers.json "
+             "feed_last_page) + headroom, so a big feed (Difmark ~357 pages) "
+             "does not abort at the 40-page floor. Pass an explicit value to override.",
+    )
     parser.add_argument("--submit", action="store_true", help="REAL write (default: dry-run).")
     parser.add_argument(
         "--mode", default="safe", choices=["safe", "learning", "advanced"],
@@ -218,12 +256,17 @@ def _main() -> int:
     out_dir = Path(args.approved).resolve().parent
     run_id = out_dir.name
 
+    # Effective feed-scan ceiling — AUTO from the feed's own page count unless
+    # --max-pages is explicit (2026-07-20). Reported so the operator sees why.
+    max_pages, max_pages_note = derive_max_pages(args.max_pages, out_dir)
+    print(f"max-pages: {max_pages_note}", file=sys.stderr)
+
     if args.catalog:
         print("CATALOG MODE — fetching full Édition + Région lists once (read-only).", file=sys.stderr)
         try:
             with SubmitSession(args.endpoint) as session:
                 catalog = fetch_session_catalog(
-                    session, store_id=args.store_id, available=args.available, max_pages=args.max_pages,
+                    session, store_id=args.store_id, available=args.available, max_pages=max_pages,
                 )
         except FEED_UNREADABLE_EXCS as exc:
             print(json.dumps({
@@ -286,7 +329,7 @@ def _main() -> int:
             with SubmitSession(args.endpoint) as session:
                 result = InspectSubmitter(session, logger=logger, **pacer_kw).run(
                     run_id=run_id, merchant=args.merchant, store_id=args.store_id,
-                    approved=approved_slice, available=args.available, max_pages=args.max_pages,
+                    approved=approved_slice, available=args.available, max_pages=max_pages,
                 )
         except FEED_UNREADABLE_EXCS as exc:
             print(json.dumps({
@@ -393,7 +436,7 @@ def _main() -> int:
         with session_cls(args.endpoint) as session:
             result = submitter_cls(session, logger=logger, **pacer_kw, **submitter_kw).run(
                 run_id=run_id, merchant=args.merchant, store_id=args.store_id,
-                approved=approved, available=args.available, max_pages=args.max_pages, limit=limit,
+                approved=approved, available=args.available, max_pages=max_pages, limit=limit,
             )
     except FEED_UNREADABLE_EXCS as exc:
         print(json.dumps({

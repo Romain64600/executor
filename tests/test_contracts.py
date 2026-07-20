@@ -94,6 +94,16 @@ class RawSnapshotTests(unittest.TestCase):
     def test_to_dict_is_json_serializable(self):
         json.dumps(self._create().to_dict())
 
+    def test_feed_last_page_defaults_zero_and_round_trips(self):
+        # 2026-07-20: the feed's own page count, used by the submit to
+        # auto-default --max-pages.
+        self.assertEqual(self._create().to_dict()["feed_last_page"], 0)
+        snap = self._create(feed_last_page=357)
+        self.assertEqual(snap.feed_last_page, 357)
+        self.assertEqual(snap.to_dict()["feed_last_page"], 357)
+        # negative is clamped to 0 (unknown), never trusted as a page count
+        self.assertEqual(self._create(feed_last_page=-5).feed_last_page, 0)
+
 
 class NormalizedFeedTests(unittest.TestCase):
     def _snap(self, offers):
@@ -121,6 +131,17 @@ class NormalizedFeedTests(unittest.TestCase):
         feed = NormalizedFeed.from_snapshot(self._snap([_raw(id="1")]))
         payload = json.dumps(feed.to_dict())
         self.assertIn('"offer_count": 1', payload)
+
+    def test_feed_last_page_propagates_from_snapshot(self):
+        snap = RawSnapshot.create(
+            run_id="run-1", merchant="Difmark", store_id=167,
+            source_url="https://www.allkeyshop.com/blog/wp-admin/admin.php?store=167",
+            raw_offers=[_raw(id="1")], pages_scanned=1, feed_last_page=357,
+            clock=lambda: "2026-07-02T00:00:00Z",
+        )
+        feed = NormalizedFeed.from_snapshot(snap)
+        self.assertEqual(feed.feed_last_page, 357)
+        self.assertEqual(feed.to_dict()["feed_last_page"], 357)
 
 
 if __name__ == "__main__":

@@ -42,6 +42,7 @@ skill rule `[F05]` as hardened 2026-07-08), plus run metadata.
   "source_url": "https://www.allkeyshop.com/blog/wp-admin/admin.php?available=all&store=127&page=aks-merchant-feeds-9",
   "fetched_at": "2026-07-02T09:15:00Z",
   "pages_scanned": 4,
+  "feed_last_page": 4,
   "offer_count": 300,
   "raw_offers": [ { "id": "92015031", "name": "...", "url": "https://...", "storeId": "127", "price": "12.34", "stock": "y" } ]
 }
@@ -49,6 +50,10 @@ skill rule `[F05]` as hardened 2026-07-08), plus run metadata.
 
 Validation (`RawSnapshot.create`): `run_id`, `merchant` non-empty; `source_url`
 must be http(s); `pages_scanned >= 1`; every `raw_offers` entry must be a dict.
+`pages_scanned` is how many pages this run FETCHED (a slice fetches 1);
+`feed_last_page` is the feed's OWN advertised page count (`nav_max`), used by
+the submit to auto-default `--max-pages` (2026-07-20). `0` = not recorded
+(runs extracted before 2026-07-20). Same two fields propagate to `offers.json`.
 
 ## NormalizedOffer / NormalizedFeed
 
@@ -62,6 +67,7 @@ strings (empty → `null`). Dedupe is by `offer_id` across pages (skill rule `[F
   "run_id": "2026-07-02-driffle-01",
   "merchant": "Driffle",
   "fetched_at": "2026-07-02T09:15:00Z",
+  "feed_last_page": 4,
   "offer_count": 297,
   "offers": [
     {

@@ -104,8 +104,8 @@
           </fieldset>
           <label for="limit">Limite (optionnelle, ne peut que réduire)</label>
           <input id="limit" type="number" min="1" step="1">
-          <label for="max-pages" title="Pages de feed à scanner avant d'écrire (défaut 40) — augmenter pour un gros feed (ex. Difmark, 382 pages), sinon le scan de couverture avorte">Max pages (défaut 40)</label>
-          <input id="max-pages" type="number" min="1" step="1" placeholder="40">
+          <label for="max-pages" title="Pages de feed à scanner avant d'écrire. Vide = AUTO : dérivé du nombre de pages du feed à l'extraction (+ marge), donc un gros feed (Difmark ~357 pages) ne fait plus avorter le scan de couverture. Renseigner une valeur pour forcer.">Max pages (vide = auto)</label>
+          <input id="max-pages" type="number" min="1" step="1" placeholder="auto">
         </div>
         <div class="row">
           <button id="check-invariants" type="button">Vérifier les invariants</button>

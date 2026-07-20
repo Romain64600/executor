@@ -933,6 +933,18 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167.
     same day (that was already a correction on "don't sweep all 382 pages at
     once" — this narrows it further, to one page, once the id-rotation
     frequency became clear).
+  - **`--max-pages` auto-defaults from the feed's own page count (2026-07-20).**
+    The submit's batch-start coverage scan aborts (`feed_unreadable`) if it hits
+    the `--max-pages` ceiling while the feed advertises more pages (§7/SC4);
+    the old 40-page floor always aborted on Difmark's ~357-page feed unless the
+    operator raised it by hand. The extractor now persists the feed's advertised
+    page count (`feed_last_page` in `raw.json`/`offers.json`), and `05_submit`
+    defaults `--max-pages` to `max(40, ceil(feed_last_page × 1.3))` (30% churn
+    headroom) — an explicit `--max-pages` still overrides, and the effective
+    value + reason is printed. This removes the manual-ceiling footgun; it does
+    NOT change the cadence rule above (still one page at a time). NB: only runs
+    extracted with this change carry `feed_last_page` — a pre-2026-07-20 run's
+    `offers.json` lacks it and falls back to the 40 floor (re-extract to benefit).
 
 ---
 

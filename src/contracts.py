@@ -107,6 +107,11 @@ class RawSnapshot:
     fetched_at: str
     pages_scanned: int
     raw_offers: tuple[dict[str, Any], ...]
+    # The feed's OWN advertised page count (pagination nav / nav_max), distinct
+    # from pages_scanned (a slice fetches 1 page of a 357-page feed). 0 = not
+    # recorded. The submitter uses it to auto-default --max-pages so a big feed
+    # (Difmark) doesn't abort the coverage scan at the 40-page floor (2026-07-20).
+    feed_last_page: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -116,6 +121,7 @@ class RawSnapshot:
             "source_url": self.source_url,
             "fetched_at": self.fetched_at,
             "pages_scanned": self.pages_scanned,
+            "feed_last_page": self.feed_last_page,
             "offer_count": len(self.raw_offers),
             "raw_offers": list(self.raw_offers),
         }
@@ -130,6 +136,7 @@ class RawSnapshot:
         source_url: str,
         raw_offers: Iterable[dict[str, Any]],
         pages_scanned: int,
+        feed_last_page: int = 0,
         clock: Callable[[], str] = _utc_now_iso,
     ) -> "RawSnapshot":
         _require(bool(_clean_str(run_id)), "run_id is required")
@@ -149,6 +156,7 @@ class RawSnapshot:
             fetched_at=clock(),
             pages_scanned=int(pages_scanned),
             raw_offers=offers,
+            feed_last_page=max(0, int(feed_last_page)),
         )
 
 
@@ -160,12 +168,14 @@ class NormalizedFeed:
     merchant: str
     fetched_at: str
     offers: tuple[NormalizedOffer, ...]
+    feed_last_page: int = 0  # the feed's own advertised page count (see RawSnapshot)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "run_id": self.run_id,
             "merchant": self.merchant,
             "fetched_at": self.fetched_at,
+            "feed_last_page": self.feed_last_page,
             "offer_count": len(self.offers),
             "offers": [o.to_dict() for o in self.offers],
         }
@@ -191,4 +201,5 @@ class NormalizedFeed:
             merchant=snapshot.merchant,
             fetched_at=snapshot.fetched_at,
             offers=tuple(offers),
+            feed_last_page=snapshot.feed_last_page,
         )

@@ -3,6 +3,27 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-20 — Submit auto-defaults --max-pages from the feed's own page count (Romain)
+
+The P0.2 coverage check (SC4) aborts fail-closed if the batch-start feed index
+hits the `--max-pages` ceiling while the feed advertises MORE pages. Difmark's
+feed is ~357 pages, so the historical 40-page floor always aborted
+(`feed_unreadable`, 0 attempts) unless the operator remembered to raise
+`--max-pages` by hand. Now the extractor persists the feed's own advertised
+page count and the submit derives the ceiling from it.
+
+- `RawSnapshot` / `NormalizedFeed` gain `feed_last_page` (the pagination nav's
+  `nav_max`, distinct from `pages_scanned` which a slice under-counts). Written
+  to `raw.json` and `offers.json`; `0` when not recorded (legacy runs).
+- `scripts/05_submit.py`: `--max-pages` now defaults to AUTO — reads
+  `offers.json` `feed_last_page` and uses `max(40, ceil(pages × 1.3))` (30%
+  churn headroom), floored at 40, falling back to 40 when unknown. An explicit
+  `--max-pages` still overrides. The chosen value + reason is printed. The
+  admin passes nothing when its (now "vide = auto") field is empty, so it
+  auto-derives too — no admin backend change.
+
+Tests: +7 (`DeriveMaxPagesTests` + contract round-trips). 644 green.
+
 ## 2026-07-18 — Difmark Account offers resolve the AKS account PAGE (Romain)
 
 Rounds 1-2 (2026-07-17) got the account *region* right (Steam Account 412/…)
