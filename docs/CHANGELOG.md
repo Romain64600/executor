@@ -3,6 +3,25 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-20 — Submit/scan speedup (~3×): tighter pacing + shorter navigate settle (Romain)
+
+Romain: "vu que tu peux faire deux requêtes par seconde", the submit was far
+too slow. The time went into over-conservative pacing and a fixed 3 s
+post-navigate wait:
+
+- `--pace-offers` default `5-15` s → `0.5-1.5`, `--pace-pages` `1-3` s →
+  `0.4-0.6` (≈ 2 req/s, AKS's tolerance per Romain). Pacing is burst
+  mitigation only, never correctness.
+- `ReadOnlyCdpSession.navigate` settle `3.0` s → `1.0` s. AKS feed pages are
+  server-rendered and load fast; both the extractor (`EmptyPageAnomaly`) and
+  the submitter (`_read_feed_page`, SC2) already re-fetch a blank/under-read
+  page once, so a shorter settle trades a fixed 3 s for a rare single
+  re-fetch. Benefits extraction too.
+
+A successful offer's cost drops from ~30 s (index/create/post-save re-scan +
+pacers) to ~10 s. If a twitchy merchant ever blanks pages, raise `--pace-*`
+or the settle.
+
 ## 2026-07-20 — REVERT FC4: it blocked every GLOBAL submit + admin panel shows only the current stage
 
 **FC4 regression (urgent, live).** The 2026-07-17 audit fix FC4 made

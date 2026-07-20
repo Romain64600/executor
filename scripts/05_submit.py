@@ -185,15 +185,17 @@ def _main() -> int:
              "data-entry session to pick up new regions/editions.",
     )
     parser.add_argument(
-        "--pace-pages", default="1-3",
+        "--pace-pages", default="0.4-0.6",
         help="Seconds between feed-scan page loads (index + every post-save verify "
              "re-walk the feed), 'N' or 'MIN-MAX' (bounded-random, burst mitigation). "
-             "0 disables. Default: 1-3.",
+             "0 disables. Default: 0.4-0.6 (~2 req/s, Romain 2026-07-20 — AKS "
+             "tolerates it; raise for a twitchy merchant).",
     )
     parser.add_argument(
-        "--pace-offers", default="5-15",
+        "--pace-offers", default="0.5-1.5",
         help="Seconds between successive offers, 'N' or 'MIN-MAX' (bounded-random). "
-             "0 disables. Default: 5-15.",
+             "0 disables. Default: 0.5-1.5 (was 5-15 — far too conservative given "
+             "AKS's ~2 req/s tolerance, Romain 2026-07-20).",
     )
     parser.add_argument(
         "--acknowledge-block", action="store_true",
