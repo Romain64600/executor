@@ -19,6 +19,14 @@ so `open_offer_modal` clicked yet `#TB_ajaxContent` never loaded —
 in-page timing dependency, unlike the pacers. A successful offer's cost still
 drops from ~30 s to ~18 s from the pacers alone.
 
+**Settle split (the correct version).** The blanket cut was wrong, but the
+FEED-SCAN navigates (`_read_feed_page`: index + the full post-save re-walk
+after every creation — the bulk of a submit's time) open no modal and only
+read SSR rows, so they now use a short `FEED_SCAN_SETTLE = 1.0 s`; the navigate
+BEFORE a modal open (`_prepare`'s row page, the catalog fetch) keeps the 3 s
+default. Extraction already proved 1 s reads rows fine. This reclaims the
+post-save re-scan time without touching the modal timing that broke before.
+
 ## 2026-07-20 — REVERT FC4: it blocked every GLOBAL submit + admin panel shows only the current stage
 
 **FC4 regression (urgent, live).** The 2026-07-17 audit fix FC4 made

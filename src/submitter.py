@@ -52,6 +52,17 @@ class FeedScanError(RuntimeError):
 # fail-closed, the current offer's state is UNKNOWN, nothing may be inferred".
 FEED_UNREADABLE_EXCS = (NotLoggedInError, FeedScanError, CdpCommandError)
 
+# Post-navigate settle for FEED-SCAN reads only (index + post-save re-walk).
+# These just read data-offer rows from the server-rendered HTML, so a short
+# wait is enough (proven live: extraction reads the same rows fine at 1 s).
+# The navigate BEFORE a modal open (row page in _prepare, catalog fetch) keeps
+# the 3 s default, because the page's interactive JS (ThickBox) must be
+# initialised before the create-offer click — 1 s there broke every modal
+# ("modal context missing", 2026-07-20). Splitting the two is the correct
+# speedup: the full-feed post-save re-scan after each creation is the bulk of a
+# submit's time and needs no modal.
+FEED_SCAN_SETTLE = 1.0
+
 
 def _page_param(url: str) -> int:
     """The ``&p=N`` pagination param of a feed URL (1 when absent)."""
@@ -252,6 +263,7 @@ class _SubmitterBase:
         self.page_pacer = page_pacer
         self.offer_pacer = offer_pacer
         self.empty_retry_wait_s = EMPTY_RETRY_WAIT_S
+        self.feed_scan_settle = FEED_SCAN_SETTLE
         self.catalog: dict[str, Any] | None = None
         self._region_master: list[dict[str, Any]] = []
         self._edition_master: list[dict[str, Any]] = []
@@ -307,7 +319,9 @@ class _SubmitterBase:
         for attempt in (1, 2):
             if attempt == 2:
                 time.sleep(self.empty_retry_wait_s)
-            self.session.navigate(url)
+            # Feed-scan settle (no modal follows) — short by design; see
+            # FEED_SCAN_SETTLE. _prepare's pre-modal navigate keeps the 3 s.
+            self.session.navigate(url, settle=self.feed_scan_settle)
             rows = self.session.page_offer_rows()
             state = self.session.feed_page_state()
             if state.get("is_login"):

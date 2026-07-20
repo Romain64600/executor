@@ -33,10 +33,12 @@ class FakeSubmitSession:
         self.fail_ids = set(fail_ids)
         self.rows = dict(rows or {})  # per-id {url, name} overrides
         self.nav = []
+        self.nav_settles = []
         self._page = 0
 
-    def navigate(self, url, settle=0):
+    def navigate(self, url, settle=3.0):  # mirror ReadOnlyCdpSession's default
         self.nav.append(url)
+        self.nav_settles.append(settle)
         m = re.search(r"[&?]p=(\d+)", url)
         self._page = (int(m.group(1)) - 1) if m else 0
 
@@ -1670,6 +1672,33 @@ def _dry(session, approved, **kw):
     return submitter.run(
         run_id="r", merchant="Driffle", store_id="127", approved=approved, **kw
     )
+
+
+class FeedScanSettleTests(unittest.TestCase):
+    """2026-07-20: feed-scan navigates (index + post-save re-walk, no modal)
+    use a short settle; the navigate BEFORE a modal open keeps the 3 s default
+    (the page's interactive JS must be ready for the create-offer click — 1 s
+    there broke every modal, "modal context missing")."""
+
+    def test_feed_scan_short_settle_but_pre_modal_navigate_keeps_default(self):
+        from src.submitter import FEED_SCAN_SETTLE
+
+        session = FakeSubmitSession([["1"]])
+        result = _run(session, [_cand("1")])  # dry-run: index scan + _prepare
+        self.assertTrue(result["plan"][0]["ready"])  # modal opened, selects found
+        settles = session.nav_settles
+        self.assertIn(FEED_SCAN_SETTLE, settles)  # feed-scan reads: short
+        self.assertIn(3.0, settles)               # pre-modal row nav: full
+        self.assertNotEqual(FEED_SCAN_SETTLE, 3.0)
+
+    def test_post_save_rescan_uses_short_settle(self):
+        from src.submitter import FEED_SCAN_SETTLE
+
+        session = FakeWriteSession([["1"]])
+        _real(session, [_cand("1")], click_mode="trusted", limit=1)
+        # the created offer triggers a full-feed post-save re-walk; every one
+        # of its page loads used the short feed-scan settle.
+        self.assertIn(FEED_SCAN_SETTLE, session.nav_settles)
 
 
 class FeedScanFailClosedTests(unittest.TestCase):
