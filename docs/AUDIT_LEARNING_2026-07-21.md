@@ -30,7 +30,7 @@ régressions.
 
 ## P0 — critique
 
-### L1. Annotations en cours de saisie détruites par l'auto-refresh — OPEN
+### L1. Annotations en cours de saisie détruites par l'auto-refresh — FIXED (2026-07-21, commit 7524f93)
 - **Où** : `app.js` (`DIRTY` posé uniquement par la table Validation, l.1032-1033 ;
   `idleTick` recharge silencieusement au changement d'empreinte, l.966-971 ;
   `detailStamp` inclut les mtimes de tous les fichiers du run, dont `learning.json`).
@@ -41,7 +41,7 @@ régressions.
   l'empreinte (`CURRENT.stamp`/`detail`) après un save Learning réussi.
 - **Statut** : OPEN
 
-### L2. Save = remplacement intégral : pertes silencieuses croisées — OPEN
+### L2. Save = remplacement intégral : pertes silencieuses croisées — FIXED (2026-07-21, commit 7524f93)
 - **Où** : `learning_io.py:133-161` (`stored` reconstruit du POST, pas de merge),
   `app.py:407-411` (pas de lock, pas de précondition — contrairement à
   `_post_validation` : lock + pattern sha AS1).
@@ -57,7 +57,7 @@ régressions.
 
 ## P1 — important
 
-### L3. `learnSelect` efface une région/édition sauvegardée dont l'id a dérivé — OPEN
+### L3. `learnSelect` efface une région/édition sauvegardée dont l'id a dérivé — FIXED (2026-07-21, commit 7524f93)
 - **Où** : `app.js:452-462`. Si `ann.region_id` n'est plus dans le catalogue de
   session courant (ids qui driftent — fait documenté) ou si le catalogue est
   absent, aucune option n'est `selected` → le save suivant écrit `''` et efface
@@ -80,7 +80,7 @@ régressions.
   manipulée, le mover ne consommant que les dispositions confirmées.
 - **Statut** : OPEN
 
-### L5. Aucune validation serveur des champs — OPEN
+### L5. Aucune validation serveur des champs — FIXED (2026-07-21, commit 7524f93)
 - **Où** : `learning_io.py:142-147`. `target_list_id='delete'`, `'999'`, couple
   id/label incohérent, `region_id` hors catalogue de session, `aks_url`
   arbitraire (`javascript:`…) sont stockés tels quels. La docstring promet des
@@ -92,7 +92,7 @@ régressions.
   taille par champ. Refus `LearningError` sinon.
 - **Statut** : OPEN
 
-### L6. Aucun log JSONL du save Learning — OPEN
+### L6. Aucun log JSONL du save Learning — FIXED (2026-07-21, commit 7524f93)
 - **Où** : `_post_learning` (`app.py:407-411`) n'écrit aucun événement.
   L'architecture requise (AGENTS.md, « JSONL logs for every action ») et la
   pratique du projet (submit/match loggés) ne sont pas suivies ; combiné à
@@ -101,7 +101,7 @@ régressions.
   touchés, sha avant/après) dans le log du run.
 - **Statut** : OPEN
 
-### L7. Collision de nommage « learning » (mode submit R24) vs « Learning » (annotations) — OPEN
+### L7. Collision de nommage « learning » (mode submit R24) vs « Learning » (annotations) — FIXED docs (2026-07-21, commit 7524f93) ; renommage UI = D5 OUVERTE
 - **Où** : `--mode learning` = mode d'ÉCRITURE canary de 1 (05_submit, R24) ;
   « Learning » = la vue d'annotations. Le CHANGELOG et EXECUTOR_RULES ne
   définissent que le premier ; la fonctionnalité auditée n'est documentée nulle
@@ -115,24 +115,24 @@ régressions.
 
 ## P2 — améliorations
 
-### L8. `suggest_target_list` matche par sous-chaîne sur la raison entière — OPEN
+### L8. `suggest_target_list` matche par sous-chaîne sur la raison entière — FIXED (2026-07-21, commit 7524f93)
 `aks_lists.py:88-99` : `"account" in r` avant le préfixe `forbidden region` ;
 une raison contenant « steam-account » (page account) suggérerait la liste 30 à
 tort. **V2.** Fix : ancrer sur la catégorie (`skip category: X` exacte,
 préfixes délimités), pas la sous-chaîne libre.
 
-### L9. Run jamais matché : message faux — OPEN
+### L9. Run jamais matché : message faux — FIXED (2026-07-21, commit 7524f93)
 `app.js:436` : sans `skipped.json`, la vue dit « Aucune offre non-matchée pour ce
 run » (faux : le run n'est pas matché). **V2.** Fix : distinguer « pas encore
 matché » (via stages) de « 0 skips ».
 
-### L10. offer_id dupliqué/vide, entrée non-dict dans skipped.json — OPEN
+### L10. offer_id dupliqué/vide, entrée non-dict dans skipped.json — FIXED (2026-07-21, commit 7524f93)
 `learning_io.py` : offer_id dupliqué → dernière row gagne en silence ; offer_id
 vide whitelisté si présent dans skipped.json ; entrée non-dict → 500 au save.
 **V2.** Fix : ignorer les entrées malformées/ids vides à la constitution de
 `valid_ids`, dernier-gagne documenté + testé.
 
-### L11. Divers (groupés) — OPEN
+### L11. Divers (groupés) — FIXED (2026-07-21, commit 7524f93) (sauf ids de listes build-time : mitigé + documenté, probe optionnel non planifié)
 - `openRun` : une erreur ≠ `no_candidates` de `loadValidation` saute
   `loadLearning` (panneau vide sans explication). Fix : charger le Learning
   même en cas d'échec de la validation + hint d'erreur.
@@ -205,3 +205,6 @@ vide whitelisté si présent dans skipped.json ; entrée non-dict → 500 au sav
 - 2026-07-21 : audit initial (6 critiques + vérification adversariale,
   interrompue par la limite de session — 10 findings V2, le reste vérifié
   manuellement ligne-à-ligne). Registre créé, tout OPEN.
+- 2026-07-21 : L1, L2, L3, L5, L6, L8, L9, L10, L11 FIXED + L7 (volet docs :
+  CHANGELOG, EXECUTOR_RULES §13) — commit `7524f93`, suite 696 verts.
+  Restent OUVERTS : L4 (bloqué par D1) et les décisions D1-D5.
