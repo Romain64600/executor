@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import hashlib
 import json
 import re
 import subprocess
@@ -283,7 +284,24 @@ class AdminHandler(BaseHTTPRequestHandler):
         path = STATIC_DIR / name
         if not path.is_file():
             raise ApiError(404, "not_found", f"asset absent: {name}")
-        self._send_bytes(200, STATIC_FILES[name], path.read_bytes())
+        body = path.read_bytes()
+        # Cache-bust: stamp app.js/style.css in index.html with the sha8 of
+        # their current bytes. Even a tab open across a redeploy pulls the new
+        # JS/CSS on its next reload (index.html itself is no-store). Deterministic
+        # (content hash, no timestamps).
+        if name == "index.html":
+            body = self._version_assets(body)
+        self._send_bytes(200, STATIC_FILES[name], body)
+
+    def _version_assets(self, html: bytes) -> bytes:
+        text = html.decode("utf-8")
+        for asset in ("app.js", "style.css"):
+            asset_path = STATIC_DIR / asset
+            if not asset_path.is_file():
+                continue
+            tag = hashlib.sha256(asset_path.read_bytes()).hexdigest()[:8]
+            text = text.replace(f'"{asset}"', f'"{asset}?v={tag}"')
+        return text.encode("utf-8")
 
     def _get_validation(self, run_dir: Path) -> None:
         candidates = read_run_json(run_dir, "candidates.json")

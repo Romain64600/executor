@@ -120,6 +120,21 @@ class StaticAndHeadersTests(AppTestCase):
             response, data = self._request("GET", path)
             self.assertEqual(response.status, 404, path)
 
+    def test_index_cache_busts_assets(self):
+        # index.html stamps app.js/style.css with a content hash so a redeploy
+        # is never masked by a stale browser copy.
+        _, data = self._request("GET", "/")
+        html = data.decode("utf-8")
+        self.assertRegex(html, r'app\.js\?v=[0-9a-f]{8}')
+        self.assertRegex(html, r'style\.css\?v=[0-9a-f]{8}')
+        self.assertNotIn('"app.js"', html)  # no un-versioned reference left
+
+    def test_versioned_asset_is_served(self):
+        # the ?v= query must not break the static lookup
+        response, data = self._request("GET", "/app.js?v=deadbeef")
+        self.assertEqual(response.status, 200)
+        self.assertIn(b"loadLearning", data)
+
 
 class ApiGetTests(AppTestCase):
     def test_meta(self):

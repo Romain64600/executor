@@ -514,6 +514,9 @@ function learningRow(offer, ann, catalog, lists, vocab) {
     'data-had': had ? '1' : '',
   }, [
     el('div', { class: 'learning-name', text: offer.name }),
+    el('div', { class: 'learning-merchant-url' }, offer.url
+      ? [el('a', { href: offer.url, target: '_blank', rel: 'noreferrer', text: offer.url })]
+      : [el('span', { class: 'hint', text: '(pas d\'URL marchand)' })]),
     el('div', { class: 'learning-reason hint', text: offer.reason }),
   ]);
   const comment = el('input', {

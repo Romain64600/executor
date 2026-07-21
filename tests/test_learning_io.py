@@ -61,6 +61,9 @@ class LearningIoTests(unittest.TestCase):
         self.assertEqual(groups[0]["count"], 2)
         self.assertEqual({o["offer_id"] for o in groups[0]["offers"]}, {"1", "3"})
         self.assertEqual(groups[1]["reason"], "console")
+        # the merchant offer URL is carried per offer (shown as a link in the UI)
+        one = next(o for o in groups[1]["offers"] if o["offer_id"] == "2")
+        self.assertEqual(one["url"], "https://g2a/2")
 
     def test_group_carries_suggestion_and_year(self):
         self._write_skipped([
