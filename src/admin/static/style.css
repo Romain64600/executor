@@ -338,3 +338,4 @@ dialog::backdrop { background: var(--backdrop); }
   font-size: 0.75rem; padding: 0.05rem 0.4rem; border-radius: 0.6rem;
   background: #2b6cb0; color: #fff; align-self: center;
 }
+.learning-offer .learn-platform, .learning-offer .learn-scope { min-width: 10rem; }

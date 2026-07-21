@@ -123,4 +123,6 @@ inject the hidden `bulk[item][]`) → set `bulk[list]` → **trusted-click Apply
 (a real gesture — a scripted change is ignored, isTrusted) → **post-verify: the
 offer left the source list** at refresh (the analogue of the submit's "gone from
 feed" success) → JSONL log. No fire-and-forget. "Don't change the list"
-dispositions are **no-ops** (never written).
+dispositions are **no-ops** (never written), and so are dispositions still
+flagged `suggested: true` in learning.json (D1 option b, Romain 2026-07-21 —
+never confirmed by the operator).

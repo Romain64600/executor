@@ -40,6 +40,8 @@ from src.admin.submit_manager import (
     SubmitStartError,
 )
 from src.admin.learning_io import (
+    ANNOTATION_PLATFORMS,
+    ANNOTATION_SCOPES,
     LearningError,
     group_skipped,
     learning_sha,
@@ -260,6 +262,9 @@ class AdminHandler(BaseHTTPRequestHandler):
                     "groups": group_skipped(run_dir),
                     "annotations": load_annotations(run_dir),
                     "lists": list_catalog(),
+                    # D3/D4: single source of truth for the UI dropdowns.
+                    "scopes": list(ANNOTATION_SCOPES),
+                    "platforms": list(ANNOTATION_PLATFORMS),
                     # L2 (AS1 pattern): the client echoes this with its save so a
                     # concurrent write 409s instead of being silently clobbered.
                     "learning_sha256": learning_sha(run_dir),

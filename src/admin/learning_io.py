@@ -115,8 +115,28 @@ _MAX_FIELD_CHARS = 2000
 _AKS_PAGE_PREFIX = "https://www.allkeyshop.com/blog/"
 _LIST_IDS = frozenset(x["id"] for x in LISTS)
 
+# D3 (Romain 2026-07-21): the SCOPE of a human correction is explicit, never
+# inferred from a free comment. Only regle_marchand / regle_globale authorize
+# the builder to generalize into a matcher rule; everything else (including
+# the unset default) is treated as a non-generalizable observation.
+ANNOTATION_SCOPES = (
+    "exception_offre",   # this exact offer only
+    "regle_marchand",    # generalizable within this merchant
+    "regle_globale",     # generalizable across merchants
+    "observation",       # not enough evidence — no rule
+)
+
+# D4 (Romain 2026-07-21): platform-correction vocabulary. PC tokens are the
+# matcher's PLATFORM_LABEL keys (+ ROCKSTAR, a detected-then-skipped token);
+# console tokens come from the AKS account-page slugs (buy-…-ps5-account-…).
+ANNOTATION_PLATFORMS = (
+    "STEAM", "GOG", "EPIC", "EA", "UBISOFT", "BATTLENET", "ROCKSTAR",
+    "PUBLISHER", "PS4", "PS5", "XBOX", "NINTENDO",
+)
+
 _ANNOTATION_FIELDS = ("region_id", "region_text", "edition_id", "edition_text",
-                      "comment", "aks_url", "target_list_id", "target_list_label")
+                      "comment", "aks_url", "target_list_id", "target_list_label",
+                      "platform", "scope")
 
 
 def learning_sha(run_dir: Path) -> str | None:
@@ -185,6 +205,14 @@ def _validate_fields(
     url = fields.get("aks_url")
     if url and not url.startswith(_AKS_PAGE_PREFIX):
         raise LearningError("bad_url", f"aks_url doit commencer par {_AKS_PAGE_PREFIX}")
+    scope = fields.get("scope")
+    if scope and scope not in ANNOTATION_SCOPES:
+        raise LearningError("bad_scope", f"scope {scope!r} inconnu ({', '.join(ANNOTATION_SCOPES)})")
+    platform = fields.get("platform")
+    if platform and platform not in ANNOTATION_PLATFORMS:
+        raise LearningError(
+            "bad_platform", f"platform {platform!r} inconnue ({', '.join(ANNOTATION_PLATFORMS)})"
+        )
 
 
 def _append_log(run_dir: Path, event: dict[str, Any]) -> None:
@@ -202,8 +230,13 @@ def save_annotations(
 
     ``annotations`` is a list of ``{offer_id, region_id, region_text,
     edition_id, edition_text, comment, aks_url, target_list_id,
-    target_list_label}`` rows, plus ``{offer_id, cleared: true}`` to delete a
-    stored row explicitly. Audit Learning 2026-07-21:
+    target_list_label, platform, scope, suggested}`` rows, plus
+    ``{offer_id, cleared: true}`` to delete a stored row explicitly.
+    ``platform`` (D4) ∈ ANNOTATION_PLATFORMS ; ``scope`` (D3) ∈
+    ANNOTATION_SCOPES ; ``suggested: true`` (D1 option b) marks a Move-to-list
+    disposition the operator never manipulated — the future mover only
+    consumes dispositions with ``suggested != true``. Audit Learning
+    2026-07-21:
 
     - **L2** — MERGE, never replace: offer_ids absent from the POST keep their
       stored annotation; deletion only via the explicit ``cleared`` signal.
@@ -246,11 +279,17 @@ def save_annotations(
             if str(item.get(k) or "").strip()
         }
         # keep only rows the operator actually filled (any of
-        # region/edition/comment/aks_url/target_list present).
-        if not any(fields.get(k) for k in ("region_id", "edition_id", "comment",
-                                           "aks_url", "target_list_id")):
+        # region/edition/platform/comment/aks_url/target_list present —
+        # scope alone qualifies nothing and does not make a row non-empty).
+        if not any(fields.get(k) for k in ("region_id", "edition_id", "platform",
+                                           "comment", "aks_url", "target_list_id")):
             continue
         _validate_fields(fields, oid, stored, catalog)
+        # D1 option (b): a pre-selected suggestion the operator never touched is
+        # persisted but MARKED — the future mover only consumes dispositions
+        # with suggested != true (a default must never become the decision).
+        if item.get("suggested") is True and fields.get("target_list_id"):
+            fields["suggested"] = True
         now = clock()
         prior = stored.get(oid) or {}
         fields["by"] = by

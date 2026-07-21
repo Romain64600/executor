@@ -459,6 +459,9 @@ class LearningEndpointTests(AppTestCase):
         # the Move-to-List catalog is served for the per-offer dropdown
         self.assertTrue(any(l["id"] == "16" for l in body["lists"]))
         self.assertIsNone(body["learning_sha256"])  # no learning.json yet
+        # D3/D4 vocab served (single source of truth for the UI)
+        self.assertIn("regle_marchand", body["scopes"])
+        self.assertIn("STEAM", body["platforms"])
 
     def test_post_saves_annotations_and_get_returns_them(self):
         response, body = self._json(
@@ -468,7 +471,8 @@ class LearningEndpointTests(AppTestCase):
                  "edition_id": "1", "edition_text": "Standard",
                  "comment": "le « / » casse le slug — éàç",
                  "aks_url": "https://www.allkeyshop.com/blog/buy-re2-cd-key-compare-prices/"},
-                {"offer_id": "11", "target_list_id": "16", "target_list_label": "Softwares"},
+                {"offer_id": "11", "target_list_id": "16", "target_list_label": "Softwares",
+                 "platform": "PS5", "scope": "exception_offre", "suggested": True},
             ], "by": "Romain", "base_sha": None},
         )
         self.assertEqual(response.status, 200)
@@ -483,6 +487,9 @@ class LearningEndpointTests(AppTestCase):
                          "https://www.allkeyshop.com/blog/buy-re2-cd-key-compare-prices/")
         self.assertEqual(got["annotations"]["11"]["target_list_id"], "16")
         self.assertEqual(got["annotations"]["11"]["target_list_label"], "Softwares")
+        self.assertEqual(got["annotations"]["11"]["platform"], "PS5")
+        self.assertEqual(got["annotations"]["11"]["scope"], "exception_offre")
+        self.assertIs(got["annotations"]["11"]["suggested"], True)  # D1 (b)
         self.assertEqual(got["learning_sha256"], body["learning_sha256"])
 
     def test_post_stale_sha_conflict(self):

@@ -37,10 +37,23 @@ Durcissement issu de l'audit `AUDIT_LEARNING_2026-07-21.md` (L1-L11) :
   si la validation échoue ; `by` = identité basic-auth d'abord ; `first_by`/
   `first_at` conservés à l'édition ; bannière stale mentionne les annotations.
 
-Reste OPEN : L4/D1 (préselection de la suggestion = décision ?) et D2-D5 —
-décisions métier de Romain (voir le registre).
+Décisions de Romain (2026-07-21, même jour) :
 
-Tests : 696 verts (+28 sur le périmètre Learning).
+- **D1 = (b)** → L4 FIXED : la préselection Move-to-list est persistée avec
+  `suggested: true` tant que non manipulée (badge « suggéré — à confirmer ») ;
+  toute manipulation du select la confirme. Le futur mover ne consommera que
+  les dispositions confirmées.
+- **D3 = oui** : champ `scope` par annotation (`exception_offre` /
+  `regle_marchand` / `regle_globale` / `observation`) — seules les deux
+  « règle » autorisent une généralisation par le builder.
+- **D4 = oui** : champ `platform` (vocabulaire canonique, 12 tokens) — le
+  cas 8 (correction de plateforme) est couvert ; une plateforme seule est une
+  annotation valable.
+
+Restent OUVERTES : D2 (moteur de règles dans le repo vs processus
+builder-offline officialisé) et D5 (renommage UI).
+
+Tests : 703 verts.
 
 ## 2026-07-21 — Admin extraction: two modes, full shop vs par page (Romain)
 

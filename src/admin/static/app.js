@@ -446,18 +446,27 @@ async function loadLearning(runId) {
       : 'Run pas encore matché — lance le matching (stage 3) pour voir les offres à annoter.';
     return;
   }
+  const vocab = { scopes: data.scopes || [], platforms: data.platforms || [] };
   for (const group of groups) {
     const details = el('details', {}, [
       el('summary', { text: `${group.reason} (${group.count})` }),
     ]);
     const wrap = el('div', { class: 'learning-group' });
     for (const offer of group.offers) {
-      wrap.appendChild(learningRow(offer, annotations[offer.offer_id], catalog, lists));
+      wrap.appendChild(learningRow(offer, annotations[offer.offer_id], catalog, lists, vocab));
     }
     details.appendChild(wrap);
     box.appendChild(details);
   }
 }
+
+// Libellés français des portées (D3) — les valeurs stockées restent canoniques.
+const SCOPE_LABELS = {
+  exception_offre: 'exception (cette offre seule)',
+  regle_marchand: 'règle marchand',
+  regle_globale: 'règle globale',
+  observation: 'observation (pas de règle)',
+};
 
 function learnSelect(kind, options, currentId, enabled, currentText) {
   const node = el('select', { class: `learn-${kind}`, disabled: !enabled });
@@ -495,10 +504,11 @@ function moveSelect(lists, currentId) {
   return node;
 }
 
-function learningRow(offer, ann, catalog, lists) {
+function learningRow(offer, ann, catalog, lists, vocab) {
   const had = Boolean(ann);  // une annotation stockée existe → un vidage devient un `cleared` explicite (L2)
   ann = ann || {};
   lists = lists || [];
+  vocab = vocab || { scopes: [], platforms: [] };
   const row = el('div', {
     class: 'learning-offer', 'data-offer-id': offer.offer_id,
     'data-had': had ? '1' : '',
@@ -510,11 +520,21 @@ function learningRow(offer, ann, catalog, lists) {
     class: 'learn-comment', type: 'text', value: ann.comment || '',
     placeholder: 'commentaire (ex: le « / » casse le slug)',
   });
+  // D4 : correction de plateforme (vocabulaire servi par le serveur).
+  const platformSel = el('select', { class: 'learn-platform' });
+  platformSel.appendChild(el('option', { value: '', text: '—' }));
+  for (const p of vocab.platforms) {
+    platformSel.appendChild(el('option', {
+      value: p, text: p, selected: (ann.platform || '') === p,
+    }));
+  }
   row.appendChild(el('div', { class: 'row' }, [
     el('label', { text: 'Région' }),
     learnSelect('region', catalog.regions || [], ann.region_id, catalog.present, ann.region_text),
     el('label', { text: 'Édition' }),
     learnSelect('edition', catalog.editions || [], ann.edition_id, catalog.present, ann.edition_text),
+    el('label', { text: 'Plateforme', title: 'Correction de plateforme (D4) — la vraie plateforme de cette offre.' }),
+    platformSel,
     comment,
   ]));
   const aksUrl = el('input', {
@@ -527,16 +547,39 @@ function learningRow(offer, ann, catalog, lists) {
   ]));
   // Move-to-list disposition. Default = the deterministic suggestion (garder if
   // none); the operator confirms or overrides. docs/AKS_LISTS.md.
+  // D1 option (b) : une préselection jamais manipulée reste marquée
+  // `suggested` — le futur mover ne consomme que les dispositions confirmées.
   const suggestedId = ann.target_list_id || offer.suggested_list_id || '';
+  const stillSuggested = Boolean(suggestedId)
+    && (ann.target_list_id ? ann.suggested === true : true);
+  row.setAttribute('data-suggested', stillSuggested ? '1' : '');
+  const mSel = moveSelect(lists, suggestedId);
+  // D3 : portée explicite de la correction — jamais déduite du commentaire.
+  const scopeSel = el('select', { class: 'learn-scope' });
+  scopeSel.appendChild(el('option', { value: '', text: 'portée : non renseignée' }));
+  for (const s of vocab.scopes) {
+    scopeSel.appendChild(el('option', {
+      value: s, text: SCOPE_LABELS[s] || s, selected: (ann.scope || '') === s,
+    }));
+  }
   const moveRow = el('div', { class: 'row' }, [
     el('label', { text: 'Move to list', title: 'Déplace l\'offre hors du pending vers cette liste (écriture, gate submit). « garder » = aucune action.' }),
-    moveSelect(lists, suggestedId),
+    mSel,
+    el('label', { text: 'Portée', title: 'D3 — seules « règle marchand » et « règle globale » autorisent une généralisation en règle matcher.' }),
+    scopeSel,
   ]);
   if (offer.year) {
     moveRow.appendChild(el('span', { class: 'hint', text: `année vue: ${offer.year}` }));
   }
-  if (!ann.target_list_id && offer.suggested_list_id) {
-    moveRow.appendChild(el('span', { class: 'hint learn-suggested', text: 'suggéré' }));
+  if (stillSuggested) {
+    const badge = el('span', { class: 'hint learn-suggested', text: 'suggéré — à confirmer' });
+    moveRow.appendChild(badge);
+    // Toute manipulation du select = confirmation humaine (même revenir à la
+    // valeur suggérée) : le flag tombe et le badge disparaît.
+    mSel.addEventListener('change', () => {
+      row.setAttribute('data-suggested', '');
+      badge.remove();
+    });
   }
   row.appendChild(moveRow);
   return row;
@@ -553,9 +596,13 @@ async function saveLearning() {
     const aksUrl = row.querySelector('.learn-aks-url').value.trim();
     const mSel = row.querySelector('.learn-move');
     const targetListId = mSel ? mSel.value : '';
+    const pSel = row.querySelector('.learn-platform');
+    const platform = pSel ? pSel.value : '';
+    const sSel = row.querySelector('.learn-scope');
+    const scope = sSel ? sSel.value : '';
     const regionId = rSel.value;
     const editionId = eSel.value;
-    if (!regionId && !editionId && !comment && !aksUrl && !targetListId) {
+    if (!regionId && !editionId && !platform && !comment && !aksUrl && !targetListId) {
       // L2 : une row VIDÉE par l'opérateur alors qu'une annotation existait
       // devient une suppression explicite — le merge serveur ne supprime
       // jamais implicitement.
@@ -570,12 +617,16 @@ async function saveLearning() {
       region_text: regionId ? rSel.selectedOptions[0].text : '',
       edition_id: editionId,
       edition_text: editionId ? eSel.selectedOptions[0].text : '',
+      platform,
+      scope,
       comment,
       aks_url: aksUrl,
       target_list_id: targetListId,
       target_list_label: targetListId
         ? mSel.selectedOptions[0].text.replace(/ \(hors catalogue\)$/, '')
         : '',
+      // D1 (b) : préselection jamais manipulée → persistée mais marquée.
+      suggested: row.getAttribute('data-suggested') === '1' && Boolean(targetListId),
     });
   }
   $('#learning-state').textContent = 'enregistrement…';

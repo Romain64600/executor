@@ -980,7 +980,21 @@ Règles de la vue Learning (audit `AUDIT_LEARNING_2026-07-21.md`) :
   (`by`/`at`/`first_by`/`first_at`). Une correction spécifique à une offre ne
   devient une règle générale que par le processus builder (règle explicable,
   testée, documentée, révocable par revert).
+- **Portée explicite (D3, Romain 2026-07-21)** : chaque annotation porte un
+  champ `scope` ∈ {`exception_offre`, `regle_marchand`, `regle_globale`,
+  `observation`}. Seules `regle_marchand` et `regle_globale` autorisent le
+  builder à généraliser en règle matcher ; non renseigné = observation, pas de
+  règle. La généralisation ne se déduit JAMAIS d'un commentaire libre.
+- **Plateforme (D4, Romain 2026-07-21)** : champ `platform` ∈ vocabulaire
+  canonique (`ANNOTATION_PLATFORMS`, learning_io) — la correction de
+  plateforme est une annotation à part entière (une plateforme seule suffit).
+- **Suggestion ≠ décision (D1 option b, Romain 2026-07-21)** : la disposition
+  Move-to-list pré-suggérée est persistée avec `suggested: true` tant que
+  l'opérateur n'a pas manipulé le select (toute manipulation = confirmation,
+  le flag tombe). **Le mover ne consomme QUE les dispositions avec
+  `suggested != true`.**
 - **Le futur mover Move-to-List** est un writer frère du submitter : validation
   + go explicite + vérif post-action (« l'offre a quitté la liste source ») +
-  logs JSONL. Les dispositions *garder* sont des no-ops. Il re-résout la liste
-  cible par LABEL live (les ids driftent — `docs/AKS_LISTS.md`).
+  logs JSONL. Les dispositions *garder* sont des no-ops, les dispositions
+  `suggested: true` aussi (non confirmées). Il re-résout la liste cible par
+  LABEL live (les ids driftent — `docs/AKS_LISTS.md`).

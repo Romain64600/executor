@@ -169,6 +169,43 @@ class LearningIoTests(unittest.TestCase):
             self._save([{"offer_id": "1", "comment": "x" * 2001}])
         self.assertEqual(ctx.exception.code, "too_long")
 
+    # ------------------------------- D1(b) / D3 / D4 (Romain 2026-07-21)
+    def test_suggested_disposition_is_marked(self):
+        # D1 (b): a never-touched pre-selection is persisted but flagged —
+        # the future mover only consumes dispositions with suggested != true.
+        self._save([{"offer_id": "1", "target_list_id": "16", "suggested": True}])
+        self.assertIs(load_annotations(self.run)["1"]["suggested"], True)
+
+    def test_confirmed_disposition_drops_the_flag(self):
+        self._save([{"offer_id": "1", "target_list_id": "16", "suggested": True}])
+        self._save([{"offer_id": "1", "target_list_id": "16", "suggested": False}])
+        self.assertNotIn("suggested", load_annotations(self.run)["1"])
+
+    def test_suggested_without_target_list_ignored(self):
+        self._save([{"offer_id": "1", "comment": "x", "suggested": True}])
+        self.assertNotIn("suggested", load_annotations(self.run)["1"])
+
+    def test_scope_round_trips_and_bad_scope_refused(self):
+        self._save([{"offer_id": "1", "comment": "slug", "scope": "regle_globale"}])
+        self.assertEqual(load_annotations(self.run)["1"]["scope"], "regle_globale")
+        with self.assertRaises(LearningError) as ctx:
+            self._save([{"offer_id": "3", "comment": "x", "scope": "regle_cosmique"}])
+        self.assertEqual(ctx.exception.code, "bad_scope")
+
+    def test_scope_alone_does_not_make_a_row(self):
+        self.assertEqual(self._save([{"offer_id": "1", "scope": "observation"}])["saved"], 0)
+
+    def test_platform_correction_round_trips(self):
+        # cas 8: a platform correction alone IS a meaningful annotation.
+        r = self._save([{"offer_id": "2", "platform": "PS5"}])
+        self.assertEqual(r["saved"], 1)
+        self.assertEqual(load_annotations(self.run)["2"]["platform"], "PS5")
+
+    def test_unknown_platform_refused(self):
+        with self.assertRaises(LearningError) as ctx:
+            self._save([{"offer_id": "2", "platform": "AMIGA"}])
+        self.assertEqual(ctx.exception.code, "bad_platform")
+
     # ------------------------------------------------- merge + sha (L2)
     def test_merge_preserves_absent_offers(self):
         self._save([{"offer_id": "1", "comment": "gardée"}])
