@@ -39,7 +39,7 @@ régressions.
   silencieux → tout ce qui a été tapé depuis est effacé sans trace.
 - **Fix** : marquer `DIRTY` sur toute édition dans `#learning-groups` + rafraîchir
   l'empreinte (`CURRENT.stamp`/`detail`) après un save Learning réussi.
-- **Statut** : OPEN
+- **Statut** : FIXED (commit 7524f93) — DIRTY sur #learning-groups + re-stamp après save
 
 ### L2. Save = remplacement intégral : pertes silencieuses croisées — FIXED (2026-07-21, commit 7524f93)
 - **Où** : `learning_io.py:133-161` (`stored` reconstruit du POST, pas de merge),
@@ -53,7 +53,7 @@ régressions.
 - **Fix** : merge côté serveur (les offer_ids absents du POST sont conservés),
   suppression uniquement sur signal explicite `cleared`, précondition
   `learning_sha256` (409 en conflit, pattern AS1), lock.
-- **Statut** : OPEN
+- **Statut** : FIXED (commit 7524f93) — merge + cleared + base_sha/409 + verrou
 
 ## P1 — important
 
@@ -65,7 +65,7 @@ régressions.
   garde manquant (option fantôme préfixée, l.397-404).
 - **Fix** : répliquer le garde (option `{value: currentId, text: region_text}`
   quand l'id sauvegardé n'est pas dans les options). **Vérifié V2.**
-- **Statut** : OPEN
+- **Statut** : FIXED (commit 7524f93) — option fantôme + grandfather serveur
 
 ### L4. La suggestion Move-to-list pré-sélectionnée devient une décision humaine au 1er save — OPEN (attente décision D1)
 - **Où** : `app.js:506-509` (préselection `suggested_list_id`) + `531-534` (toute
@@ -90,7 +90,7 @@ régressions.
   region/edition ∈ catalogue de session quand `catalog.json` présent, `aks_url`
   au format page produit AKS (`https://www.allkeyshop.com/blog/…`), limites de
   taille par champ. Refus `LearningError` sinon.
-- **Statut** : OPEN
+- **Statut** : FIXED (commit 7524f93) — bad_list/bad_list_label/bad_region/bad_edition/bad_url/too_long
 
 ### L6. Aucun log JSONL du save Learning — FIXED (2026-07-21, commit 7524f93)
 - **Où** : `_post_learning` (`app.py:407-411`) n'écrit aucun événement.
@@ -99,7 +99,7 @@ régressions.
   L2, un écrasement était irrécupérable (aucune trace de l'état précédent).
 - **Fix** : événement JSONL par save (run, by, at, n avant/après, offer_ids
   touchés, sha avant/après) dans le log du run.
-- **Statut** : OPEN
+- **Statut** : FIXED (commit 7524f93) — learning_log.jsonl append-only
 
 ### L7. Collision de nommage « learning » (mode submit R24) vs « Learning » (annotations) — FIXED docs (2026-07-21, commit 7524f93) ; renommage UI = D5 OUVERTE
 - **Où** : `--mode learning` = mode d'ÉCRITURE canary de 1 (05_submit, R24) ;
@@ -111,7 +111,7 @@ régressions.
 - **Fix** : documenter la fonctionnalité (CHANGELOG + EXECUTOR_RULES §Learning),
   distinguer explicitement les deux sens, envisager un renommage UI
   (« Annotations » ?) — décision Romain pour le renommage.
-- **Statut** : OPEN
+- **Statut** : FIXED docs (commit 7524f93) ; renommage UI = D5 OUVERTE
 
 ## P2 — améliorations
 
