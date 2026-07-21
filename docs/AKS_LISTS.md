@@ -113,7 +113,7 @@ offers observed; names rarely carry a year). No deterministic source without a
 new external lookup (out of scope). So the operator picks 22 vs 27 per offer;
 a 4-digit year in the name may be shown as a weak hint, never a default.
 
-## Fail-closed writer sketch (sibling to the submitter)
+## Fail-closed writer (built 2026-07-21 — `scripts/06_move.py`, `src/mover.py`)
 
 Same discipline as submit (Romain 2026-07-21): validation file
 (`{offer_id, current_list, target_list_label}`) → explicit go → locate the row

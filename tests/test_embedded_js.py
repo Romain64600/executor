@@ -38,6 +38,10 @@ TEMPLATES = {
         submit_session._SELECT_OPTIONS_PROBE_JS, (json.dumps("offer[region]"),)
     ),
     "submit._IS_LOGIN_JS": (submit_session._IS_LOGIN_JS, None),
+    "submit._LIST_OPTIONS_JS": (submit_session._LIST_OPTIONS_JS, None),
+    "submit._BULK_ROW_PRESENT_JS": (submit_session._BULK_ROW_PRESENT_JS, (json.dumps("123"),)),
+    "submit._BULK_REGISTERED_JS": (submit_session._BULK_REGISTERED_JS, (json.dumps("123"),)),
+    "submit._SET_BULK_LIST_JS": (submit_session._SET_BULK_LIST_JS, (json.dumps("16"),)),
     "submit._RECT_JS": (submit_session._RECT_JS, (json.dumps("#x"),)),
     "submit._FILL_CREATE_JS": (
         submit_session._FILL_CREATE_JS,

@@ -993,8 +993,14 @@ Règles de la vue Learning (audit `AUDIT_LEARNING_2026-07-21.md`) :
   l'opérateur n'a pas manipulé le select (toute manipulation = confirmation,
   le flag tombe). **Le mover ne consomme QUE les dispositions avec
   `suggested != true`.**
-- **Le futur mover Move-to-List** est un writer frère du submitter : validation
-  + go explicite + vérif post-action (« l'offre a quitté la liste source ») +
-  logs JSONL. Les dispositions *garder* sont des no-ops, les dispositions
-  `suggested: true` aussi (non confirmées). Il re-résout la liste cible par
-  LABEL live (les ids driftent — `docs/AKS_LISTS.md`).
+- **Le mover Move-to-List** (Stage 6, `scripts/06_move.py` + `src/mover.py`,
+  construit 2026-07-21) est un writer frère du submitter : plan de validation
+  construit depuis les dispositions CONFIRMÉES de `learning.json`
+  (`src/move_plan.py`) → invariants verts + authoritative → **dry-run par
+  défaut** (`--execute` pour écrire) → go explicite → locate row (id→URL) →
+  résolution liste cible par LABEL live → register (clic trusted case) → set
+  bulk[list] → clic trusted Apply → **vérif post-action : l'offre a quitté la
+  liste source** (seul signal de succès) → logs JSONL + BlockLedger. Mode R24
+  (safe = plan complet ; learning/advanced = canary de 1). Jamais
+  fire-and-forget. Les dispositions *garder* et `suggested: true` ne sont
+  JAMAIS dans un plan (filtrées par le builder).

@@ -292,6 +292,45 @@ _SELECT_OPTIONS_PROBE_JS = (
 
 _IS_LOGIN_JS = "!!document.querySelector('#loginform') || /wp-login/.test(location.href)"
 
+# Read-only: the bulk "Move to list" <select> options (value = target listId,
+# text = "Move to <label>"). The mover resolves target_list_label -> id LIVE
+# from these (ids drift — docs/AKS_LISTS.md). No mutation.
+_LIST_OPTIONS_JS = (
+    "JSON.stringify(Array.from(document.querySelectorAll("
+    "'select[name=\"bulk[list]\"] option')).map(function(o){"
+    "return {value:String(o.value||''),text:(o.textContent||'').trim().slice(0,80)};}))"
+)
+
+# Read-only: is <offer_id>'s row selectable on THIS page? (its bulk checkbox +
+# the bulk form both present). The move only ever acts on a row it can see.
+_BULK_ROW_PRESENT_JS = (
+    "JSON.stringify((function(){var id=%s;"
+    "var cb=document.querySelector('input[name=\"bulk[item][]\"][value=\"'+id+'\"]');"
+    "var form=document.querySelector('form[data-bulk-form]');"
+    "return {checkbox:!!cb,bulk_form:!!form};})())"
+)
+
+# Read-only: after the trusted checkbox click, is the offer registered in the
+# bulk form (the hidden bulk[item][] the handler injects) and what is bulk[list]?
+_BULK_REGISTERED_JS = (
+    "JSON.stringify((function(){var id=%s;"
+    "var form=document.querySelector('form[data-bulk-form]');"
+    "if(!form)return {registered:false,reason:'no_form'};"
+    "var hid=form.querySelector('input[name=\"bulk[item][]\"][value=\"'+id+'\"]');"
+    "var sel=form.querySelector('select[name=\"bulk[list]\"]');"
+    "return {registered:!!hid,bulk_list_value:sel?String(sel.value||''):null};})())"
+)
+
+# Write (via _evaluate, unguarded): set bulk[list] to <target_list_id>. The
+# native Apply submit reads it at click time.
+_SET_BULK_LIST_JS = (
+    "(function(){var t=%s;"
+    "var sel=document.querySelector('form[data-bulk-form] select[name=\"bulk[list]\"]');"
+    "if(!sel)return 'no_select';"
+    "for(var i=0;i<sel.options.length;i++){if(sel.options[i].value===t){sel.selectedIndex=i;}}"
+    "sel.value=t;return String(sel.value);})()"
+)
+
 # Read-only rect probe (S02-safe): returns the target's getBoundingClientRect
 # and the viewport dims. Used by the trusted click to compute the mouse
 # coordinates. No mutation of any kind.
@@ -325,6 +364,21 @@ class SubmitSession(ReadOnlyCdpSession):
         if not raw:
             return []
         return list(json.loads(raw))
+
+    def list_options(self) -> list[dict[str, str]]:
+        """The bulk "Move to list" <select> options ``[{value, text}]`` (read-only).
+
+        The mover resolves a target list LABEL -> id from these at write time —
+        the ids drift, so this is never read from a stored table (AKS_LISTS.md)."""
+
+        raw = self.evaluate_readonly(_LIST_OPTIONS_JS)
+        return list(json.loads(raw)) if raw else []
+
+    def bulk_row_present(self, offer_id: str) -> dict[str, bool]:
+        """Is ``offer_id``'s bulk checkbox (and the bulk form) on THIS page?"""
+
+        raw = self.evaluate_readonly(_BULK_ROW_PRESENT_JS % json.dumps(str(offer_id)))
+        return json.loads(raw) if raw else {"checkbox": False, "bulk_form": False}
 
     def feed_page_state(self) -> dict[str, Any]:
         """Deterministic feed-page markers ``{feed_ui, nav_max, is_login, href}``.
@@ -1301,3 +1355,32 @@ class WriteSubmitSession(SubmitSession):
         if isinstance(poll, dict):
             prep.update(poll)
         return prep
+
+    # ------------------------------------------------------------------
+    # Move to List (brique B) — the second mutating op. The mechanic is a
+    # native bulk form POST (docs/AKS_LISTS.md, confirmed read-only 2026-07-21):
+    # a TRUSTED checkbox change registers the offer (a scripted .checked is
+    # ignored — same isTrusted wall as Create), then a TRUSTED Apply submits.
+    # ------------------------------------------------------------------
+    def register_row(self, offer_id: str) -> dict[str, Any]:
+        """Trusted-click ``offer_id``'s bulk checkbox and confirm registration.
+
+        Returns ``{click, registered, bulk_list_value}``. ``registered`` is the
+        DOM proof that the handler injected the hidden ``bulk[item][]`` — the
+        move's precondition, checked deterministically (never assumed)."""
+
+        selector = 'input[name="bulk[item][]"][value="%s"]' % str(offer_id)
+        click = self.click_trusted_at_element(selector)
+        raw = self.evaluate_readonly(_BULK_REGISTERED_JS % json.dumps(str(offer_id)))
+        state = json.loads(raw) if raw else {"registered": False, "reason": "no_result"}
+        return {"click": click, **state}
+
+    def set_bulk_list(self, target_list_id: str) -> str:
+        """Set the bulk ``bulk[list]`` select to ``target_list_id`` (read back)."""
+
+        return str(self._evaluate(_SET_BULK_LIST_JS % json.dumps(str(target_list_id))))
+
+    def click_apply(self) -> dict[str, Any]:
+        """Trusted-click the bulk-form Apply <button> — fires the native POST."""
+
+        return self.click_trusted_at_element("form[data-bulk-form] button")

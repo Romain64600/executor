@@ -3,6 +3,30 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-21 — Stage 6 : writer Move-to-List (brique B, dry-run par défaut)
+
+Le mover — frère du submitter — déplace les offres non-matchées hors de leur
+liste source vers la liste annotée. Mécanique confirmée read-only
+(`docs/AKS_LISTS.md`) : POST natif du bulk form, register trusted-only.
+
+- `src/move_plan.py` : construit le plan depuis les dispositions CONFIRMÉES de
+  `learning.json` (target_list_id présent ET `suggested != true`, D1-b),
+  jointes à `skipped.json` pour name+url ; orphelines/suggestions exclues
+  (jamais silencieusement), source list dérivée de raw.json.
+- `src/mover.py` : `resolve_list_id` (par LABEL live, les ids driftent),
+  `DryRunMover` (locate + selectable, aucune écriture) et `Mover` (register
+  trusted → set bulk[list] → Apply trusted → **vérif « gone from source »**).
+  Réutilise les scans audités du submitter (`_scan_feed`/`_locate_row`/
+  `_verify_gone`/`_url_key`).
+- `src/submit_session.py` : `list_options` (read-only), `register_row`/
+  `set_bulk_list`/`click_apply` (WriteSubmitSession).
+- `scripts/06_move.py` : mêmes gates que Stage 5 — invariants verts+authoritative,
+  browser_lock, dry-run par défaut (`--execute`), mode R24 (safe = plan complet ;
+  learning/advanced = canary de 1), BlockLedger, JSONL. Jamais fire-and-forget.
+
+Aucun move réel lancé — le 1er canary attend le go explicite de Romain.
+Tests : +35 (mover 16, move_plan 3, + JS inventory). Suite 724 verte.
+
 ## 2026-07-21 — Learning (annotations) : vue admin + durcissement post-audit
 
 **Attention au nom** : « Learning » (cette fonctionnalité, la vue d'annotations
