@@ -13,6 +13,7 @@ Read-only grouping + a fail-closed atomic save. Standard library only.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
@@ -20,8 +21,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from src.admin.runs import read_run_json, run_file
-from src.aks_lists import LISTS, suggest_target_list, year_in_name
+from src.admin.runs import load_catalog_options, read_run_json, run_file
+from src.aks_lists import LISTS, label_for, suggest_target_list, year_in_name
 
 
 class LearningError(Exception):
@@ -109,28 +110,124 @@ def load_annotations(run_dir: Path) -> dict[str, Any]:
     return {}
 
 
+# Audit Learning 2026-07-21, L5: server-side field caps + AKS page format.
+_MAX_FIELD_CHARS = 2000
+_AKS_PAGE_PREFIX = "https://www.allkeyshop.com/blog/"
+_LIST_IDS = frozenset(x["id"] for x in LISTS)
+
+_ANNOTATION_FIELDS = ("region_id", "region_text", "edition_id", "edition_text",
+                      "comment", "aks_url", "target_list_id", "target_list_label")
+
+
+def learning_sha(run_dir: Path) -> str | None:
+    """sha256 of learning.json, or None when absent — the save precondition."""
+
+    path = run_file(run_dir, "learning.json")
+    if not path.is_file():
+        return None
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _skipped_offer_ids(run_dir: Path) -> set[str]:
+    """Whitelist of annotatable offer_ids (L10: malformed entries / empty ids
+    are ignored here exactly as group_skipped never renders them)."""
+
+    skipped = read_run_json(run_dir, "skipped.json")
+    ids: set[str] = set()
+    for entry in skipped if isinstance(skipped, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        oid = str((entry.get("offer") or {}).get("offer_id", "")).strip()
+        if oid:
+            ids.add(oid)
+    return ids
+
+
+def _validate_fields(
+    fields: dict[str, str], oid: str, existing: dict[str, Any],
+    catalog: dict[str, list[dict[str, str]]] | None,
+) -> None:
+    """L5 — the server is the fail-closed boundary, not the dropdowns.
+
+    A region/edition id must belong to the run's session catalog (or already be
+    stored for this offer — the grandfather case of a catalog re-fetched with
+    drifted ids, L3); a target list must exist in the catalog with a coherent
+    label; an AKS page must look like an AKS blog page."""
+
+    for key, value in fields.items():
+        if len(value) > _MAX_FIELD_CHARS:
+            raise LearningError("too_long", f"{key} dépasse {_MAX_FIELD_CHARS} caractères")
+    target = fields.get("target_list_id")
+    if target:
+        if target not in _LIST_IDS:
+            raise LearningError("bad_list", f"target_list_id {target!r} inconnu du catalogue de listes")
+        expected = label_for(target)
+        label = fields.get("target_list_label")
+        if label and label != expected:
+            raise LearningError(
+                "bad_list_label",
+                f"target_list_label {label!r} incohérent avec l'id {target!r} ({expected!r})",
+            )
+        fields["target_list_label"] = expected
+    prior = existing.get(oid) or {}
+    for id_key, options_key, code in (
+        ("region_id", "regions", "bad_region"), ("edition_id", "editions", "bad_edition"),
+    ):
+        value = fields.get(id_key)
+        if not value:
+            continue
+        if value == str(prior.get(id_key, "")):
+            continue  # unchanged stored value survives a catalog drift (L3)
+        if catalog is None:
+            raise LearningError(code, f"{id_key} fourni mais catalogue de session absent")
+        if value not in {o["key"] for o in catalog[options_key]}:
+            raise LearningError(code, f"{id_key} {value!r} absent du catalogue de session")
+    url = fields.get("aks_url")
+    if url and not url.startswith(_AKS_PAGE_PREFIX):
+        raise LearningError("bad_url", f"aks_url doit commencer par {_AKS_PAGE_PREFIX}")
+
+
+def _append_log(run_dir: Path, event: dict[str, Any]) -> None:
+    """L6 — one JSONL event per save (AGENTS.md: JSONL logs for every action)."""
+
+    with run_file(run_dir, "learning_log.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+
+
 def save_annotations(
-    run_dir: Path, annotations: Any, *, by: str, clock=_utc_now_iso
+    run_dir: Path, annotations: Any, *, by: str, base_sha: str | None = None,
+    clock=_utc_now_iso,
 ) -> dict[str, Any]:
-    """Persist Learning annotations to ``learning.json`` (fail-closed).
+    """Merge Learning annotations into ``learning.json`` (fail-closed).
 
     ``annotations`` is a list of ``{offer_id, region_id, region_text,
     edition_id, edition_text, comment, aks_url, target_list_id,
-    target_list_label}`` — each offer_id MUST be a real non-matched offer of
-    this run (else the annotation is meaningless). ``aks_url`` is the AKS product
-    page the matcher failed to find (assisted manual entry of the "no AKS page"
-    bucket); ``target_list_id`` is a Move-to-List disposition (garder = empty =
-    dropped). An entry with no region/edition/comment/aks_url/target_list is
-    dropped (a cleared row)."""
+    target_list_label}`` rows, plus ``{offer_id, cleared: true}`` to delete a
+    stored row explicitly. Audit Learning 2026-07-21:
+
+    - **L2** — MERGE, never replace: offer_ids absent from the POST keep their
+      stored annotation; deletion only via the explicit ``cleared`` signal.
+      ``base_sha`` must match the current learning.json sha (None = absent) or
+      the save is refused 409 — the AS1 anti-clobber pattern.
+    - **L5** — fields are validated server-side (_validate_fields).
+    - **L6** — every save appends a JSONL event to learning_log.jsonl.
+    - **L11** — the first author/timestamp of a row survives edits
+      (``first_at``); ``at`` is the last edit."""
 
     if not isinstance(annotations, list):
         raise LearningError("bad_body", "annotations doit être une liste")
-    skipped = read_run_json(run_dir, "skipped.json")
-    valid_ids = {
-        str((s.get("offer") or {}).get("offer_id", ""))
-        for s in (skipped if isinstance(skipped, list) else [])
-    }
-    stored: dict[str, Any] = {}
+    current_sha = learning_sha(run_dir)
+    if base_sha != current_sha:
+        raise LearningError(
+            "conflict",
+            "learning.json a changé depuis le chargement — recharge avant d'enregistrer",
+            http_status=409,
+        )
+    valid_ids = _skipped_offer_ids(run_dir)
+    stored = dict(load_annotations(run_dir))
+    catalog = load_catalog_options(run_dir)
+    touched: list[str] = []
+    cleared: list[str] = []
     for item in annotations:
         if not isinstance(item, dict):
             raise LearningError("bad_body", "chaque annotation doit être un objet")
@@ -139,23 +236,42 @@ def save_annotations(
             raise LearningError(
                 "bad_offer", f"offer_id {oid!r} absent de skipped.json de ce run"
             )
+        if item.get("cleared") is True:
+            if stored.pop(oid, None) is not None:
+                cleared.append(oid)
+            continue
         fields = {
             k: str(item.get(k)).strip()
-            for k in ("region_id", "region_text", "edition_id", "edition_text",
-                      "comment", "aks_url", "target_list_id", "target_list_label")
+            for k in _ANNOTATION_FIELDS
             if str(item.get(k) or "").strip()
         }
-        # a region/edition id must carry meaning: keep only rows the operator
-        # actually filled (any of region/edition/comment/aks_url/target_list present).
-        if any(fields.get(k) for k in ("region_id", "edition_id", "comment",
-                                       "aks_url", "target_list_id")):
-            fields["by"] = by
-            fields["at"] = clock()
-            stored[oid] = fields
+        # keep only rows the operator actually filled (any of
+        # region/edition/comment/aks_url/target_list present).
+        if not any(fields.get(k) for k in ("region_id", "edition_id", "comment",
+                                           "aks_url", "target_list_id")):
+            continue
+        _validate_fields(fields, oid, stored, catalog)
+        now = clock()
+        prior = stored.get(oid) or {}
+        fields["by"] = by
+        fields["at"] = now
+        fields["first_at"] = prior.get("first_at", prior.get("at", now))
+        fields["first_by"] = prior.get("first_by", prior.get("by", by))
+        stored[oid] = fields
+        touched.append(oid)
     payload = {
         "run_id": run_dir.name,
         "updated_at": clock(),
         "annotations": stored,
     }
     _write_json_atomic(run_file(run_dir, "learning.json"), payload)
-    return {"saved": len(stored), "annotations": stored}
+    new_sha = learning_sha(run_dir)
+    _append_log(run_dir, {
+        "at": clock(), "by": by, "event": "learning_save",
+        "before_sha": current_sha, "after_sha": new_sha,
+        "touched": touched, "cleared": cleared, "total": len(stored),
+    })
+    return {
+        "saved": len(touched), "cleared": len(cleared),
+        "annotations": stored, "learning_sha256": new_sha,
+    }

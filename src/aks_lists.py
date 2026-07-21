@@ -80,21 +80,30 @@ def suggest_target_list(reason: str) -> str | None:
     subscriptions, regions without a list) returns None so the UI defaults to
     "garder" and the operator decides. See ``docs/AKS_LISTS.md``."""
 
-    r = (reason or "").lower()
+    r = (reason or "").strip().lower()
     if not r:
         return None
-    # software / app (e.g. "skip category: SOFTWARE", "... IOBIT (software/app...)")
-    if "software" in r:
-        return "16"
-    if "gift card" in r or "giftcard" in r:
-        return "21"
-    if "account" in r:
-        return "30"
+    # Audit L8: anchor on the reason CATEGORY, never a free substring of the
+    # whole reason — "no AKS steam-account product page found" must NOT suggest
+    # the account list. Slug-hyphenated tokens ("steam-account") don't count.
     if r.startswith("forbidden region"):
         region = r.split(":", 1)[1].strip() if ":" in r else ""
         return _REGION_LIST.get(region)  # None for NA / ROW / CIS / KOREA / …
+    if r.startswith("no aks"):
+        return None  # 22-vs-27 is the operator's 5-year call (docs/AKS_LISTS.md)
+    haystack = r.split(":", 1)[1] if r.startswith("skip category") and ":" in r else r
+    # software / app (e.g. "skip category: SOFTWARE", "... IOBIT (software/app...)")
+    if "software" in haystack:
+        return "16"
+    if "gift card" in haystack or "giftcard" in haystack:
+        return "21"
+    if _ACCOUNT_WORD_RE.search(haystack):
+        return "30"
     return None
 
+
+# "account" as a standalone word — excludes slug forms like "steam-account".
+_ACCOUNT_WORD_RE = re.compile(r"(?<![\w-])account(?![\w-])")
 
 _YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
 

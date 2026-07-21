@@ -953,3 +953,34 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167.
 - Merchant id inconsistencies in the skill (e.g. Gamivo merchant `—` vs `218`) —
   resolve from the live dropdown at runtime, not from tables.
 - Full `references/*.md` may add merchant rules; fold them into §11 as they land.
+
+---
+
+## 13. « Learning » — deux sens, ne jamais les confondre
+
+1. **`--mode learning`** (R24, §submit) : un mode de SOUMISSION. Il ÉCRIT
+   (canary de 1). Rien à voir avec les annotations.
+2. **La vue Learning de l'admin** (2026-07-21) : capture d'annotations humaines
+   par offre NON-matchée d'un run — région/édition (ids réels du catalogue de
+   session), commentaire, page AKS, disposition « Move to list » (défaut
+   *garder* = aucune action). Stockée dans `runs/<id>/learning.json`
+   (+ `learning_log.jsonl`, un événement JSONL par save).
+
+Règles de la vue Learning (audit `AUDIT_LEARNING_2026-07-21.md`) :
+
+- **Capture seulement.** Aucun code pipeline ne lit `learning.json`. La
+  généralisation en règles matcher est un processus builder-offline : le LLM
+  propose, la règle finale est du code déterministe testé + documenté + commité.
+  Jamais de LLM runtime dans le pipeline.
+- **Save = merge fail-closed** : jamais de remplacement intégral ; suppression
+  uniquement par `cleared` explicite ; précondition `base_sha` (409 en conflit) ;
+  champs validés côté serveur (liste ∈ catalogue, région/édition ∈ catalogue de
+  session, `aks_url` = page AKS, ≤ 2000 caractères).
+- **Une annotation n'est PAS une règle.** C'est une donnée source, tracée
+  (`by`/`at`/`first_by`/`first_at`). Une correction spécifique à une offre ne
+  devient une règle générale que par le processus builder (règle explicable,
+  testée, documentée, révocable par revert).
+- **Le futur mover Move-to-List** est un writer frère du submitter : validation
+  + go explicite + vérif post-action (« l'offre a quitté la liste source ») +
+  logs JSONL. Les dispositions *garder* sont des no-ops. Il re-résout la liste
+  cible par LABEL live (les ids driftent — `docs/AKS_LISTS.md`).

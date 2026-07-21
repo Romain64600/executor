@@ -3,6 +3,45 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-21 — Learning (annotations) : vue admin + durcissement post-audit
+
+**Attention au nom** : « Learning » (cette fonctionnalité, la vue d'annotations
+admin) ≠ `--mode learning` (le mode de submit R24, un canary de 1 qui ÉCRIT).
+Deux concepts sans rapport — voir EXECUTOR_RULES §13.
+
+La vue Learning (commits `b7e930d`→`ec35712`) : par run, les offres non-matchées
+groupées par raison de skip, annotables par offre — région/édition (vrais ids du
+catalogue de session), commentaire, page AKS, disposition « Move to list »
+(suggestion déterministe, défaut *garder*) — stockées dans
+`runs/<id>/learning.json`. Aucun code pipeline ne consomme ce fichier : la
+généralisation en règles matcher reste un processus builder-offline (jamais de
+LLM runtime). Taxonomie des listes + mécanique du move : `docs/AKS_LISTS.md`.
+
+Durcissement issu de l'audit `AUDIT_LEARNING_2026-07-21.md` (L1-L11) :
+
+- **L1** — les éditions Learning posent `DIRTY` et le save resynchronise
+  l'empreinte : l'auto-refresh 10 s n'efface plus une saisie en cours.
+- **L2** — le save est un **merge** (jamais un remplacement) : suppression
+  uniquement par signal `cleared` explicite ; précondition `base_sha`
+  (409 `conflict` en écriture concurrente, pattern AS1) ; verrou serveur.
+- **L3** — option fantôme « (hors catalogue) » : un id région/édition sauvegardé
+  qui a dérivé du catalogue survit au rechargement et au re-save.
+- **L5** — validation serveur fail-closed : liste cible ∈ catalogue + label
+  cohérent, région/édition ∈ catalogue de session (grandfather sur valeur déjà
+  stockée), `aks_url` au format page AKS, champs ≤ 2000 caractères.
+- **L6** — `learning_log.jsonl` par run : un événement JSONL par save
+  (sha avant/après, ids touchés/supprimés, auteur).
+- **L8** — suggestions ancrées sur la catégorie de raison (plus de sous-chaîne
+  libre : « steam-account » ne suggère plus la liste account).
+- **L9-L11** — message correct sur run non matché ; panneau Learning chargé même
+  si la validation échoue ; `by` = identité basic-auth d'abord ; `first_by`/
+  `first_at` conservés à l'édition ; bannière stale mentionne les annotations.
+
+Reste OPEN : L4/D1 (préselection de la suggestion = décision ?) et D2-D5 —
+décisions métier de Romain (voir le registre).
+
+Tests : 696 verts (+28 sur le périmètre Learning).
+
 ## 2026-07-21 — Admin extraction: two modes, full shop vs par page (Romain)
 
 The admin's "Lancer l'extraction" only did a full sweep, so runs went out at

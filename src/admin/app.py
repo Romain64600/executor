@@ -42,6 +42,7 @@ from src.admin.submit_manager import (
 from src.admin.learning_io import (
     LearningError,
     group_skipped,
+    learning_sha,
     list_catalog,
     load_annotations,
     save_annotations,
@@ -259,6 +260,9 @@ class AdminHandler(BaseHTTPRequestHandler):
                     "groups": group_skipped(run_dir),
                     "annotations": load_annotations(run_dir),
                     "lists": list_catalog(),
+                    # L2 (AS1 pattern): the client echoes this with its save so a
+                    # concurrent write 409s instead of being silently clobbered.
+                    "learning_sha256": learning_sha(run_dir),
                 })
             if sub == "/submit/status":
                 query = parse_qs(parsed.query)
@@ -406,8 +410,17 @@ class AdminHandler(BaseHTTPRequestHandler):
 
     def _post_learning(self, run_dir: Path) -> None:
         body = self._json_body()
-        by = str(body.get("by") or self._basic_user() or "operateur")
-        result = save_annotations(run_dir, body.get("annotations"), by=by)
+        # L11: the authenticated identity wins over the free-text field.
+        by = str(self._basic_user() or body.get("by") or "operateur")
+        base_sha = body.get("base_sha")
+        if base_sha is not None and not isinstance(base_sha, str):
+            raise ApiError(400, "bad_request", "base_sha doit être une chaîne ou null")
+        # L2: same coarse lock as the validation writes — one run-artifact
+        # writer at a time, the sha precondition handles cross-session races.
+        with self.state.validation_lock:
+            result = save_annotations(
+                run_dir, body.get("annotations"), by=by, base_sha=base_sha
+            )
         self._send_json(200, result)
 
     def _post_submit(self, run_dir: Path) -> None:

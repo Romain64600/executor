@@ -37,6 +37,7 @@ RUN_FILES = frozenset(
         "admin_submit.json",
         "match_meta.json",  # FC5 — R24 mode stamped by 03_match
         "learning.json",    # Learning annotations (region/edition/comment per non-matched offer)
+        "learning_log.jsonl",  # append-only JSONL: one event per Learning save (audit L6)
     }
 )
 

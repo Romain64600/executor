@@ -33,6 +33,14 @@ class AksListsTests(unittest.TestCase):
                        "DLC in title", ""):
             self.assertIsNone(suggest_target_list(reason), reason)
 
+    def test_slug_tokens_never_suggest(self):
+        # audit L8: category anchoring — free tokens of the reason (slugs,
+        # hyphenated forms) must not trigger a list.
+        for reason in ("no AKS steam-account product page found",
+                       "no AKS software-inc product page found",
+                       "skip category: STEAM PLAYER TRADE (account-bound)"):
+            self.assertIsNone(suggest_target_list(reason), reason)
+
     def test_year_hint(self):
         self.assertEqual(year_in_name("Bus-Simulator 2012 Steam Gift GLOBAL"), "2012")
         self.assertEqual(year_in_name("Some Game 1998"), "1998")

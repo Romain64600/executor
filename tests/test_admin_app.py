@@ -443,6 +443,11 @@ class LearningEndpointTests(AppTestCase):
             {"offer": {"offer_id": "11", "name": "Halo Xbox", "url": "https://g2a/11"},
              "reason": "console"},
         ]), encoding="utf-8")
+        (self.run / "session_catalog.json").write_text(json.dumps({
+            "ok": True,
+            "regions": {"master_options": [{"key": "2", "text": "Steam (2)"}]},
+            "editions": {"master_options": [{"key": "1", "text": "Standard"}]},
+        }), encoding="utf-8")
 
     def test_get_groups_non_matched_by_reason(self):
         response, body = self._json("GET", "/api/runs/20260715-000000-test/learning")
@@ -453,6 +458,7 @@ class LearningEndpointTests(AppTestCase):
         self.assertEqual(body["annotations"], {})
         # the Move-to-List catalog is served for the per-offer dropdown
         self.assertTrue(any(l["id"] == "16" for l in body["lists"]))
+        self.assertIsNone(body["learning_sha256"])  # no learning.json yet
 
     def test_post_saves_annotations_and_get_returns_them(self):
         response, body = self._json(
@@ -460,29 +466,60 @@ class LearningEndpointTests(AppTestCase):
             body={"annotations": [
                 {"offer_id": "10", "region_id": "2", "region_text": "Steam (2)",
                  "edition_id": "1", "edition_text": "Standard",
-                 "comment": "le / casse le slug",
+                 "comment": "le « / » casse le slug — éàç",
                  "aks_url": "https://www.allkeyshop.com/blog/buy-re2-cd-key-compare-prices/"},
                 {"offer_id": "11", "target_list_id": "16", "target_list_label": "Softwares"},
-            ], "by": "Romain"},
+            ], "by": "Romain", "base_sha": None},
         )
         self.assertEqual(response.status, 200)
         self.assertEqual(body["saved"], 2)
         self.assertTrue((self.run / "learning.json").is_file())
+        self.assertTrue(body["learning_sha256"])
         _, got = self._json("GET", "/api/runs/20260715-000000-test/learning")
         self.assertEqual(got["annotations"]["10"]["region_id"], "2")
-        self.assertEqual(got["annotations"]["10"]["comment"], "le / casse le slug")
+        # unicode round-trips through HTTP (ensure_ascii=False)
+        self.assertEqual(got["annotations"]["10"]["comment"], "le « / » casse le slug — éàç")
         self.assertEqual(got["annotations"]["10"]["aks_url"],
                          "https://www.allkeyshop.com/blog/buy-re2-cd-key-compare-prices/")
         self.assertEqual(got["annotations"]["11"]["target_list_id"], "16")
         self.assertEqual(got["annotations"]["11"]["target_list_label"], "Softwares")
+        self.assertEqual(got["learning_sha256"], body["learning_sha256"])
+
+    def test_post_stale_sha_conflict(self):
+        first, body = self._json(
+            "POST", "/api/runs/20260715-000000-test/learning",
+            body={"annotations": [{"offer_id": "10", "comment": "v1"}], "base_sha": None},
+        )
+        self.assertEqual(first.status, 200)
+        # a second save that did NOT reload (base_sha still None) must 409,
+        # and the stored annotation must be untouched
+        response, err = self._json(
+            "POST", "/api/runs/20260715-000000-test/learning",
+            body={"annotations": [{"offer_id": "11", "comment": "v2"}], "base_sha": None},
+        )
+        self.assertEqual(response.status, 409)
+        self.assertEqual(err["error"]["code"], "conflict")
+        _, got = self._json("GET", "/api/runs/20260715-000000-test/learning")
+        self.assertEqual(got["annotations"]["10"]["comment"], "v1")
+        self.assertNotIn("11", got["annotations"])
 
     def test_post_bad_offer_id_refused(self):
         response, body = self._json(
             "POST", "/api/runs/20260715-000000-test/learning",
-            body={"annotations": [{"offer_id": "999", "comment": "x"}]},
+            body={"annotations": [{"offer_id": "999", "comment": "x"}], "base_sha": None},
         )
         self.assertEqual(response.status, 400)
         self.assertEqual(body["error"]["code"], "bad_offer")
+
+    def test_post_without_csrf_header_refused(self):
+        response, body = self._json(
+            "POST", "/api/runs/20260715-000000-test/learning",
+            body={"annotations": []}, csrf=False,
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(response.status, 403)
+        self.assertEqual(body["error"]["code"], "csrf")
+        self.assertFalse((self.run / "learning.json").is_file())
 
 
 class MatchEndpointTests(AppTestCase):

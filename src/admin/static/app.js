@@ -240,7 +240,12 @@ async function openRun(runId) {
       ` — ${stages.candidates_count ?? 0} candidat(s), ${stages.approved_count ?? 0} approuvé(s)` +
       (detail.created_count ? `, ✔ ${detail.created_count} déjà ajoutée(s)` : '') +
       (detail.failed_count ? `, ✘ ${detail.failed_count} en échec` : '');
-    await Promise.all([loadReport(runId), loadValidation(runId)]);
+    // L11 : une erreur de la validation (≠ no_candidates, géré en interne) ne
+    // doit pas priver le panneau Learning — on la montre mais on continue.
+    await Promise.all([
+      loadReport(runId),
+      loadValidation(runId).catch((err) => { showError(err); }),
+    ]);
     await loadLearning(runId);  // after loadValidation — reuses its session catalog
     renderSubmitPanel();
     await refreshStatus();
@@ -428,12 +433,17 @@ async function loadLearning(runId) {
   const groups = data.groups || [];
   const annotations = data.annotations || {};
   const lists = data.lists || [];
+  CURRENT.learningSha = data.learning_sha256 || null;  // précondition anti-écrasement (L2)
   $('#learning-actions').classList.toggle('hidden', groups.length === 0);
   // A run with non-matched offers (the whole point of Learning) must not hide
   // them behind a collapsed <details> — Romain saw "just a log, no table".
   $('#learning-box').open = groups.length > 0;
   if (!groups.length) {
-    box.textContent = 'Aucune offre non-matchée pour ce run.';
+    // L9 : sans skipped.json le run n'est simplement pas matché — le dire.
+    const files = (CURRENT.detail && CURRENT.detail.files) || {};
+    box.textContent = files['skipped.json']
+      ? 'Aucune offre non-matchée pour ce run.'
+      : 'Run pas encore matché — lance le matching (stage 3) pour voir les offres à annoter.';
     return;
   }
   for (const group of groups) {
@@ -449,13 +459,23 @@ async function loadLearning(runId) {
   }
 }
 
-function learnSelect(kind, options, currentId, enabled) {
+function learnSelect(kind, options, currentId, enabled, currentText) {
   const node = el('select', { class: `learn-${kind}`, disabled: !enabled });
   node.appendChild(el('option', { value: '', text: '—' }));
+  // L3 : un id sauvegardé absent des options (catalogue re-fetché, ids qui
+  // driftent, ou catalogue absent) doit survivre — option fantôme, comme le
+  // select() du panneau Validation. Sans elle, le save suivant efface l'id.
+  const current = String(currentId || '');
+  if (current && !options.some((o) => String(o.key) === current)) {
+    node.appendChild(el('option', {
+      value: current, selected: true,
+      text: `${currentText || current} (hors catalogue)`,
+    }));
+  }
   for (const option of options) {
     node.appendChild(el('option', {
       value: option.key, text: option.text,
-      selected: String(currentId || '') === String(option.key),
+      selected: current === String(option.key),
     }));
   }
   return node;
@@ -476,9 +496,13 @@ function moveSelect(lists, currentId) {
 }
 
 function learningRow(offer, ann, catalog, lists) {
+  const had = Boolean(ann);  // une annotation stockée existe → un vidage devient un `cleared` explicite (L2)
   ann = ann || {};
   lists = lists || [];
-  const row = el('div', { class: 'learning-offer', 'data-offer-id': offer.offer_id }, [
+  const row = el('div', {
+    class: 'learning-offer', 'data-offer-id': offer.offer_id,
+    'data-had': had ? '1' : '',
+  }, [
     el('div', { class: 'learning-name', text: offer.name }),
     el('div', { class: 'learning-reason hint', text: offer.reason }),
   ]);
@@ -488,9 +512,9 @@ function learningRow(offer, ann, catalog, lists) {
   });
   row.appendChild(el('div', { class: 'row' }, [
     el('label', { text: 'Région' }),
-    learnSelect('region', catalog.regions || [], ann.region_id, catalog.present),
+    learnSelect('region', catalog.regions || [], ann.region_id, catalog.present, ann.region_text),
     el('label', { text: 'Édition' }),
-    learnSelect('edition', catalog.editions || [], ann.edition_id, catalog.present),
+    learnSelect('edition', catalog.editions || [], ann.edition_id, catalog.present, ann.edition_text),
     comment,
   ]));
   const aksUrl = el('input', {
@@ -531,7 +555,15 @@ async function saveLearning() {
     const targetListId = mSel ? mSel.value : '';
     const regionId = rSel.value;
     const editionId = eSel.value;
-    if (!regionId && !editionId && !comment && !aksUrl && !targetListId) continue;  // untouched
+    if (!regionId && !editionId && !comment && !aksUrl && !targetListId) {
+      // L2 : une row VIDÉE par l'opérateur alors qu'une annotation existait
+      // devient une suppression explicite — le merge serveur ne supprime
+      // jamais implicitement.
+      if (row.getAttribute('data-had') === '1') {
+        annotations.push({ offer_id: row.getAttribute('data-offer-id'), cleared: true });
+      }
+      continue;  // untouched
+    }
     annotations.push({
       offer_id: row.getAttribute('data-offer-id'),
       region_id: regionId,
@@ -541,19 +573,34 @@ async function saveLearning() {
       comment,
       aks_url: aksUrl,
       target_list_id: targetListId,
-      target_list_label: targetListId ? mSel.selectedOptions[0].text : '',
+      target_list_label: targetListId
+        ? mSel.selectedOptions[0].text.replace(/ \(hors catalogue\)$/, '')
+        : '',
     });
   }
   $('#learning-state').textContent = 'enregistrement…';
   try {
     const result = await api(`api/runs/${encodeURIComponent(CURRENT.runId)}/learning`, {
       method: 'POST',
-      body: JSON.stringify({ annotations, by: $('#validated-by').value.trim() || undefined }),
+      body: JSON.stringify({
+        annotations,
+        by: $('#validated-by').value.trim() || undefined,
+        base_sha: CURRENT.learningSha || null,  // 409 si une autre session a écrit (L2)
+      }),
     });
-    $('#learning-state').textContent = `✔ ${result.saved} annotation(s) enregistrée(s)`;
+    CURRENT.learningSha = result.learning_sha256 || null;
+    // L1 : notre propre écriture change l'empreinte du run — la resynchroniser
+    // pour que l'auto-refresh 10 s ne recharge pas (et n'efface pas) le panneau.
+    try {
+      const detail = await api(`api/runs/${encodeURIComponent(CURRENT.runId)}`);
+      CURRENT.detail = detail;
+      CURRENT.stamp = detailStamp(detail);
+    } catch (err) { /* l'empreinte se resynchronisera au prochain rechargement */ }
+    const clearedMsg = result.cleared ? `, ${result.cleared} supprimée(s)` : '';
+    $('#learning-state').textContent = `✔ ${result.saved} annotation(s) enregistrée(s)${clearedMsg}`;
     showNotice('Annotations Learning enregistrées (learning.json) — je les lirai pour apprendre / saisir.');
   } catch (err) {
-    $('#learning-state').textContent = '✘ refusé';
+    $('#learning-state').textContent = err.code === 'conflict' ? '✘ conflit — recharge le run' : '✘ refusé';
     showError(err);
   }
 }
@@ -1031,6 +1078,10 @@ async function init() {
   // suivi des éditions non enregistrées (protège contre l'auto-rechargement)
   $('#candidates').addEventListener('change', () => { DIRTY = true; });
   $('#validated-by').addEventListener('input', () => { DIRTY = true; });
+  // L1 (audit Learning) : les éditions Learning comptent comme éditions non
+  // enregistrées — sans quoi l'auto-refresh 10 s les efface silencieusement.
+  $('#learning-groups').addEventListener('input', () => { DIRTY = true; });
+  $('#learning-groups').addEventListener('change', () => { DIRTY = true; });
   $('#stale-reload').addEventListener('click', () => openRun(CURRENT.runId));
   setInterval(idleTick, IDLE_REFRESH_MS);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) idleTick(); });
