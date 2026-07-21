@@ -431,6 +431,52 @@ class ValidationFlowTests(AppTestCase):
         self.assertNotIn("SECRET", json.dumps(status))
 
 
+class LearningEndpointTests(AppTestCase):
+    """Romain 2026-07-21: annotate non-matched offers (region/edition/comment)."""
+
+    def setUp(self):
+        super().setUp()
+        (self.run / "skipped.json").write_text(json.dumps([
+            {"offer": {"offer_id": "10", "name": "Resident Evil 2 / Biohazard",
+                       "url": "https://g2a/10"},
+             "reason": "no AKS product page found (slug not 200)"},
+            {"offer": {"offer_id": "11", "name": "Halo Xbox", "url": "https://g2a/11"},
+             "reason": "console"},
+        ]), encoding="utf-8")
+
+    def test_get_groups_non_matched_by_reason(self):
+        response, body = self._json("GET", "/api/runs/20260715-000000-test/learning")
+        self.assertEqual(response.status, 200)
+        reasons = {g["reason"]: g["count"] for g in body["groups"]}
+        self.assertEqual(reasons["no AKS product page found (slug not 200)"], 1)
+        self.assertEqual(reasons["console"], 1)
+        self.assertEqual(body["annotations"], {})
+
+    def test_post_saves_annotations_and_get_returns_them(self):
+        response, body = self._json(
+            "POST", "/api/runs/20260715-000000-test/learning",
+            body={"annotations": [
+                {"offer_id": "10", "region_id": "2", "region_text": "Steam (2)",
+                 "edition_id": "1", "edition_text": "Standard",
+                 "comment": "le / casse le slug"},
+            ], "by": "Romain"},
+        )
+        self.assertEqual(response.status, 200)
+        self.assertEqual(body["saved"], 1)
+        self.assertTrue((self.run / "learning.json").is_file())
+        _, got = self._json("GET", "/api/runs/20260715-000000-test/learning")
+        self.assertEqual(got["annotations"]["10"]["region_id"], "2")
+        self.assertEqual(got["annotations"]["10"]["comment"], "le / casse le slug")
+
+    def test_post_bad_offer_id_refused(self):
+        response, body = self._json(
+            "POST", "/api/runs/20260715-000000-test/learning",
+            body={"annotations": [{"offer_id": "999", "comment": "x"}]},
+        )
+        self.assertEqual(response.status, 400)
+        self.assertEqual(body["error"]["code"], "bad_offer")
+
+
 class MatchEndpointTests(AppTestCase):
     """Romain 2026-07-20: launch the matching step (stage 3) from the admin."""
 

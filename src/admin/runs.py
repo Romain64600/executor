@@ -36,6 +36,7 @@ RUN_FILES = frozenset(
         "session_catalog.json",
         "admin_submit.json",
         "match_meta.json",  # FC5 — R24 mode stamped by 03_match
+        "learning.json",    # Learning annotations (region/edition/comment per non-matched offer)
     }
 )
 

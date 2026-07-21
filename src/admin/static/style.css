@@ -321,3 +321,14 @@ dialog::backdrop { background: var(--backdrop); }
 @media (max-width: 900px) {
   main { grid-template-columns: 1fr; }
 }
+
+/* Learning — non-matched offers */
+#learning-box { margin-top: 1rem; }
+.learning-group { padding: 0.25rem 0 0.5rem 0.75rem; }
+.learning-offer {
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--border, #333);
+}
+.learning-offer .learning-name { font-weight: 600; }
+.learning-offer .learning-reason { margin: 0.1rem 0 0.3rem; }
+.learning-offer .learn-comment { flex: 1 1 12rem; min-width: 8rem; }

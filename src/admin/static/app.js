@@ -241,6 +241,7 @@ async function openRun(runId) {
       (detail.created_count ? `, ✔ ${detail.created_count} déjà ajoutée(s)` : '') +
       (detail.failed_count ? `, ✘ ${detail.failed_count} en échec` : '');
     await Promise.all([loadReport(runId), loadValidation(runId)]);
+    await loadLearning(runId);  // after loadValidation — reuses its session catalog
     renderSubmitPanel();
     await refreshStatus();
     await loadRuns();
@@ -410,6 +411,104 @@ function select(kind, options, currentKey, enabled, currentLabel) {
   }
   node.setAttribute('data-original', String(currentKey));
   return node;
+}
+
+// ---------------------------------------------------------------- learning
+
+async function loadLearning(runId) {
+  const box = $('#learning-groups');
+  box.textContent = '';
+  const catalog = (CURRENT.validation && CURRENT.validation.catalog)
+    || { present: false, regions: [], editions: [] };
+  $('#learning-catalog-hint').classList.toggle('hidden', catalog.present);
+  let data;
+  try {
+    data = await api(`api/runs/${encodeURIComponent(runId)}/learning`);
+  } catch (err) { showError(err); return; }
+  const groups = data.groups || [];
+  const annotations = data.annotations || {};
+  $('#learning-actions').classList.toggle('hidden', groups.length === 0);
+  if (!groups.length) {
+    box.textContent = 'Aucune offre non-matchée pour ce run.';
+    return;
+  }
+  for (const group of groups) {
+    const details = el('details', {}, [
+      el('summary', { text: `${group.reason} (${group.count})` }),
+    ]);
+    const wrap = el('div', { class: 'learning-group' });
+    for (const offer of group.offers) {
+      wrap.appendChild(learningRow(offer, annotations[offer.offer_id], catalog));
+    }
+    details.appendChild(wrap);
+    box.appendChild(details);
+  }
+}
+
+function learnSelect(kind, options, currentId, enabled) {
+  const node = el('select', { class: `learn-${kind}`, disabled: !enabled });
+  node.appendChild(el('option', { value: '', text: '—' }));
+  for (const option of options) {
+    node.appendChild(el('option', {
+      value: option.key, text: option.text,
+      selected: String(currentId || '') === String(option.key),
+    }));
+  }
+  return node;
+}
+
+function learningRow(offer, ann, catalog) {
+  ann = ann || {};
+  const row = el('div', { class: 'learning-offer', 'data-offer-id': offer.offer_id }, [
+    el('div', { class: 'learning-name', text: offer.name }),
+    el('div', { class: 'learning-reason hint', text: offer.reason }),
+  ]);
+  const comment = el('input', {
+    class: 'learn-comment', type: 'text', value: ann.comment || '',
+    placeholder: 'commentaire (ex: le « / » casse le slug)',
+  });
+  row.appendChild(el('div', { class: 'row' }, [
+    el('label', { text: 'Région' }),
+    learnSelect('region', catalog.regions || [], ann.region_id, catalog.present),
+    el('label', { text: 'Édition' }),
+    learnSelect('edition', catalog.editions || [], ann.edition_id, catalog.present),
+    comment,
+  ]));
+  return row;
+}
+
+async function saveLearning() {
+  if (!CURRENT) return;
+  clearError();
+  const annotations = [];
+  for (const row of document.querySelectorAll('#learning-groups .learning-offer')) {
+    const rSel = row.querySelector('.learn-region');
+    const eSel = row.querySelector('.learn-edition');
+    const comment = row.querySelector('.learn-comment').value.trim();
+    const regionId = rSel.value;
+    const editionId = eSel.value;
+    if (!regionId && !editionId && !comment) continue;  // untouched row
+    annotations.push({
+      offer_id: row.getAttribute('data-offer-id'),
+      region_id: regionId,
+      region_text: regionId ? rSel.selectedOptions[0].text : '',
+      edition_id: editionId,
+      edition_text: editionId ? eSel.selectedOptions[0].text : '',
+      comment,
+    });
+  }
+  $('#learning-state').textContent = 'enregistrement…';
+  try {
+    const result = await api(`api/runs/${encodeURIComponent(CURRENT.runId)}/learning`, {
+      method: 'POST',
+      body: JSON.stringify({ annotations, by: $('#validated-by').value.trim() || undefined }),
+    });
+    $('#learning-state').textContent = `✔ ${result.saved} annotation(s) enregistrée(s)`;
+    showNotice('Annotations Learning enregistrées (learning.json) — je les lirai pour apprendre / saisir.');
+  } catch (err) {
+    $('#learning-state').textContent = '✘ refusé';
+    showError(err);
+  }
 }
 
 // ---------------------------------------------------------------- validation save
@@ -872,6 +971,7 @@ async function init() {
   $('#refresh-runs').addEventListener('click', loadRuns);
   $('#check-all').addEventListener('click', checkAll);
   $('#save-validation').addEventListener('click', saveValidation);
+  $('#save-learning').addEventListener('click', saveLearning);
   $('#check-invariants').addEventListener('click', checkInvariants);
   $('#dry-run').addEventListener('click', dryRun);
   $('#real-submit').addEventListener('click', openConfirmDialog);

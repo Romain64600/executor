@@ -140,6 +140,24 @@
           <div id="plan-summary"></div>
         </div>
       </section>
+
+      <details id="learning-box">
+        <summary>Learning — offres non-matchées</summary>
+        <div id="learning-hint" class="hint">
+          Les offres de la page qui n'ont pas matché, groupées par raison.
+          Indique région/édition (vrais ids du catalogue) + un commentaire sur
+          celles à apprendre, puis enregistre.
+        </div>
+        <div id="learning-catalog-hint" class="hint hidden">
+          Catalogue de session absent — récupère-le (section Validation) pour
+          activer les listes région/édition.
+        </div>
+        <div id="learning-groups"></div>
+        <div class="row hidden" id="learning-actions">
+          <button id="save-learning" type="button" class="primary">Enregistrer les annotations</button>
+          <span id="learning-state" class="state"></span>
+        </div>
+      </details>
     </section>
   </main>
 

@@ -39,6 +39,12 @@ from src.admin.submit_manager import (
     SubmitManager,
     SubmitStartError,
 )
+from src.admin.learning_io import (
+    LearningError,
+    group_skipped,
+    load_annotations,
+    save_annotations,
+)
 from src.admin.validation_io import ValidationIOError, apply_overrides_and_validate
 from src.matcher import PLATFORM_LABEL, REGION_IDS
 from src.validation import candidate_fingerprint
@@ -246,6 +252,12 @@ class AdminHandler(BaseHTTPRequestHandler):
                 return self._send_bytes(200, "text/plain; charset=utf-8", report.encode("utf-8"))
             if sub == "/validation":
                 return self._get_validation(run_dir)
+            if sub == "/learning":
+                return self._send_json(200, {
+                    "run_id": run_dir.name,
+                    "groups": group_skipped(run_dir),
+                    "annotations": load_annotations(run_dir),
+                })
             if sub == "/submit/status":
                 query = parse_qs(parsed.query)
                 try:
@@ -306,6 +318,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             self._send_error_json(exc.http_status, exc.code, exc.message, exc.detail)
         except ValidationIOError as exc:
             self._send_error_json(exc.http_status, exc.code, exc.message, exc.detail)
+        except LearningError as exc:
+            self._send_error_json(exc.http_status, exc.code, exc.message, exc.detail)
         except SubmitStartError as exc:
             self._send_error_json(exc.http_status, exc.code, exc.message, exc.detail)
         except Exception as exc:  # fail-closed: surfaced verbatim, never swallowed
@@ -325,6 +339,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             sub = match.group(2) or ""
             if sub == "/validation":
                 return self._post_validation(run_dir)
+            if sub == "/learning":
+                return self._post_learning(run_dir)
             if sub == "/match":
                 return self._post_match(run_dir)
             if sub == "/catalog":
@@ -384,6 +400,12 @@ class AdminHandler(BaseHTTPRequestHandler):
         result = self.state.manager.start_match(
             run_dir, by=by, max_candidates=_parse_int(body.get("max_candidates")),
         )
+        self._send_json(200, result)
+
+    def _post_learning(self, run_dir: Path) -> None:
+        body = self._json_body()
+        by = str(body.get("by") or self._basic_user() or "operateur")
+        result = save_annotations(run_dir, body.get("annotations"), by=by)
         self._send_json(200, result)
 
     def _post_submit(self, run_dir: Path) -> None:
