@@ -333,3 +333,8 @@ dialog::backdrop { background: var(--backdrop); }
 .learning-offer .learning-reason { margin: 0.1rem 0 0.3rem; }
 .learning-offer .learn-comment { flex: 1 1 12rem; min-width: 8rem; }
 .learning-offer .learn-aks-url { flex: 1 1 100%; min-width: 20rem; }
+.learning-offer .learn-move { min-width: 16rem; }
+.learning-offer .learn-suggested {
+  font-size: 0.75rem; padding: 0.05rem 0.4rem; border-radius: 0.6rem;
+  background: #2b6cb0; color: #fff; align-self: center;
+}

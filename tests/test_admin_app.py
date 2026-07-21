@@ -451,6 +451,8 @@ class LearningEndpointTests(AppTestCase):
         self.assertEqual(reasons["no AKS product page found (slug not 200)"], 1)
         self.assertEqual(reasons["console"], 1)
         self.assertEqual(body["annotations"], {})
+        # the Move-to-List catalog is served for the per-offer dropdown
+        self.assertTrue(any(l["id"] == "16" for l in body["lists"]))
 
     def test_post_saves_annotations_and_get_returns_them(self):
         response, body = self._json(
@@ -460,16 +462,19 @@ class LearningEndpointTests(AppTestCase):
                  "edition_id": "1", "edition_text": "Standard",
                  "comment": "le / casse le slug",
                  "aks_url": "https://www.allkeyshop.com/blog/buy-re2-cd-key-compare-prices/"},
+                {"offer_id": "11", "target_list_id": "16", "target_list_label": "Softwares"},
             ], "by": "Romain"},
         )
         self.assertEqual(response.status, 200)
-        self.assertEqual(body["saved"], 1)
+        self.assertEqual(body["saved"], 2)
         self.assertTrue((self.run / "learning.json").is_file())
         _, got = self._json("GET", "/api/runs/20260715-000000-test/learning")
         self.assertEqual(got["annotations"]["10"]["region_id"], "2")
         self.assertEqual(got["annotations"]["10"]["comment"], "le / casse le slug")
         self.assertEqual(got["annotations"]["10"]["aks_url"],
                          "https://www.allkeyshop.com/blog/buy-re2-cd-key-compare-prices/")
+        self.assertEqual(got["annotations"]["11"]["target_list_id"], "16")
+        self.assertEqual(got["annotations"]["11"]["target_list_label"], "Softwares")
 
     def test_post_bad_offer_id_refused(self):
         response, body = self._json(

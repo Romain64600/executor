@@ -427,6 +427,7 @@ async function loadLearning(runId) {
   } catch (err) { showError(err); return; }
   const groups = data.groups || [];
   const annotations = data.annotations || {};
+  const lists = data.lists || [];
   $('#learning-actions').classList.toggle('hidden', groups.length === 0);
   if (!groups.length) {
     box.textContent = 'Aucune offre non-matchée pour ce run.';
@@ -438,7 +439,7 @@ async function loadLearning(runId) {
     ]);
     const wrap = el('div', { class: 'learning-group' });
     for (const offer of group.offers) {
-      wrap.appendChild(learningRow(offer, annotations[offer.offer_id], catalog));
+      wrap.appendChild(learningRow(offer, annotations[offer.offer_id], catalog, lists));
     }
     details.appendChild(wrap);
     box.appendChild(details);
@@ -457,8 +458,23 @@ function learnSelect(kind, options, currentId, enabled) {
   return node;
 }
 
-function learningRow(offer, ann, catalog) {
+function moveSelect(lists, currentId) {
+  const node = el('select', { class: 'learn-move' });
+  node.appendChild(el('option', {
+    value: '', text: '— garder (ne pas changer)', selected: !currentId,
+  }));
+  for (const l of lists) {
+    node.appendChild(el('option', {
+      value: l.id, text: l.label,
+      selected: String(currentId || '') === String(l.id),
+    }));
+  }
+  return node;
+}
+
+function learningRow(offer, ann, catalog, lists) {
   ann = ann || {};
+  lists = lists || [];
   const row = el('div', { class: 'learning-offer', 'data-offer-id': offer.offer_id }, [
     el('div', { class: 'learning-name', text: offer.name }),
     el('div', { class: 'learning-reason hint', text: offer.reason }),
@@ -482,6 +498,20 @@ function learningRow(offer, ann, catalog) {
     el('label', { text: 'Page AKS', title: "La page produit que le matcher n'a pas trouvée — nécessaire pour la saisie manuelle assistée." }),
     aksUrl,
   ]));
+  // Move-to-list disposition. Default = the deterministic suggestion (garder if
+  // none); the operator confirms or overrides. docs/AKS_LISTS.md.
+  const suggestedId = ann.target_list_id || offer.suggested_list_id || '';
+  const moveRow = el('div', { class: 'row' }, [
+    el('label', { text: 'Move to list', title: 'Déplace l\'offre hors du pending vers cette liste (écriture, gate submit). « garder » = aucune action.' }),
+    moveSelect(lists, suggestedId),
+  ]);
+  if (offer.year) {
+    moveRow.appendChild(el('span', { class: 'hint', text: `année vue: ${offer.year}` }));
+  }
+  if (!ann.target_list_id && offer.suggested_list_id) {
+    moveRow.appendChild(el('span', { class: 'hint learn-suggested', text: 'suggéré' }));
+  }
+  row.appendChild(moveRow);
   return row;
 }
 
@@ -494,9 +524,11 @@ async function saveLearning() {
     const eSel = row.querySelector('.learn-edition');
     const comment = row.querySelector('.learn-comment').value.trim();
     const aksUrl = row.querySelector('.learn-aks-url').value.trim();
+    const mSel = row.querySelector('.learn-move');
+    const targetListId = mSel ? mSel.value : '';
     const regionId = rSel.value;
     const editionId = eSel.value;
-    if (!regionId && !editionId && !comment && !aksUrl) continue;  // untouched row
+    if (!regionId && !editionId && !comment && !aksUrl && !targetListId) continue;  // untouched
     annotations.push({
       offer_id: row.getAttribute('data-offer-id'),
       region_id: regionId,
@@ -505,6 +537,8 @@ async function saveLearning() {
       edition_text: editionId ? eSel.selectedOptions[0].text : '',
       comment,
       aks_url: aksUrl,
+      target_list_id: targetListId,
+      target_list_label: targetListId ? mSel.selectedOptions[0].text : '',
     });
   }
   $('#learning-state').textContent = 'enregistrement…';

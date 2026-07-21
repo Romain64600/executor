@@ -39,6 +39,19 @@ class LearningIoTests(unittest.TestCase):
         self.assertEqual({o["offer_id"] for o in groups[0]["offers"]}, {"1", "3"})
         self.assertEqual(groups[1]["reason"], "console")
 
+    def test_group_carries_suggestion_and_year(self):
+        # add a software skip + a dated name to exercise the suggestion/year hints
+        self._write_skipped([
+            ("5", "PdfGrabber 9 Software - GLOBAL", "https://g2a/5",
+             "skip category: SOFTWARE"),
+            ("6", "Bus-Simulator 2012 Steam Gift", "https://g2a/6",
+             "no AKS product page found (slug not 200)"),
+        ])
+        offers = {o["offer_id"]: o for g in group_skipped(self.run) for o in g["offers"]}
+        self.assertEqual(offers["5"]["suggested_list_id"], "16")   # software -> Softwares
+        self.assertIsNone(offers["6"]["suggested_list_id"])        # no-AKS -> human pick
+        self.assertEqual(offers["6"]["year"], "2012")              # weak hint surfaced
+
     def test_save_and_load_annotations(self):
         save_annotations(self.run, [
             {"offer_id": "1", "region_id": "9", "region_text": "Steam EU (9)",
@@ -59,6 +72,20 @@ class LearningIoTests(unittest.TestCase):
 
     def test_comment_only_annotation_is_kept(self):
         r = save_annotations(self.run, [{"offer_id": "3", "comment": "x"}],
+                             by="R", clock=lambda: "T")
+        self.assertEqual(r["saved"], 1)
+
+    def test_target_list_disposition_round_trips(self):
+        save_annotations(self.run, [
+            {"offer_id": "1", "target_list_id": "16", "target_list_label": "Softwares"},
+        ], by="Romain", clock=lambda: "T")
+        ann = load_annotations(self.run)
+        self.assertEqual(ann["1"]["target_list_id"], "16")
+        self.assertEqual(ann["1"]["target_list_label"], "Softwares")
+
+    def test_target_list_only_row_is_kept(self):
+        # a Move-to-List disposition alone (no region/edition/comment) is meaningful.
+        r = save_annotations(self.run, [{"offer_id": "2", "target_list_id": "21"}],
                              by="R", clock=lambda: "T")
         self.assertEqual(r["saved"], 1)
 

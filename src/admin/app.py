@@ -42,6 +42,7 @@ from src.admin.submit_manager import (
 from src.admin.learning_io import (
     LearningError,
     group_skipped,
+    list_catalog,
     load_annotations,
     save_annotations,
 )
@@ -257,6 +258,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                     "run_id": run_dir.name,
                     "groups": group_skipped(run_dir),
                     "annotations": load_annotations(run_dir),
+                    "lists": list_catalog(),
                 })
             if sub == "/submit/status":
                 query = parse_qs(parsed.query)

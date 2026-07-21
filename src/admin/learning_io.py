@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from src.admin.runs import read_run_json, run_file
+from src.aks_lists import LISTS, suggest_target_list, year_in_name
 
 
 class LearningError(Exception):
@@ -69,19 +70,34 @@ def group_skipped(run_dir: Path) -> list[dict[str, Any]]:
         if not isinstance(entry, dict):
             continue
         offer = entry.get("offer") or {}
-        cat = _category(str(entry.get("reason", "")))
+        reason = str(entry.get("reason", ""))
+        name = str(offer.get("name", ""))
+        cat = _category(reason)
         groups.setdefault(cat, []).append(
             {
                 "offer_id": str(offer.get("offer_id", "")),
-                "name": str(offer.get("name", "")),
+                "name": name,
                 "url": str(offer.get("url", "")),
-                "reason": str(entry.get("reason", "")),
+                "reason": reason,
+                # deterministic triage suggestion (docs/AKS_LISTS.md); None = garder.
+                "suggested_list_id": suggest_target_list(reason),
+                # weak hint for the 22-vs-27 human call on "no AKS page" offers.
+                "year": year_in_name(name),
             }
         )
     return [
         {"reason": cat, "count": len(offers), "offers": offers}
         for cat, offers in sorted(groups.items(), key=lambda kv: -len(kv[1]))
     ]
+
+
+def list_catalog() -> list[dict[str, str]]:
+    """The movable target lists (id -> label) for the Learning dropdown.
+
+    The UI adds its own "garder (ne pas changer)" default; the writer re-resolves
+    the chosen label -> id live at write time (ids may drift — docs/AKS_LISTS.md)."""
+
+    return [dict(x) for x in LISTS]
 
 
 def load_annotations(run_dir: Path) -> dict[str, Any]:
@@ -99,11 +115,13 @@ def save_annotations(
     """Persist Learning annotations to ``learning.json`` (fail-closed).
 
     ``annotations`` is a list of ``{offer_id, region_id, region_text,
-    edition_id, edition_text, comment, aks_url}`` — each offer_id MUST be a
-    real non-matched offer of this run (else the annotation is meaningless).
-    ``aks_url`` is the AKS product page the matcher failed to find (the missing
-    piece for assisted manual entry of the "no AKS page" bucket). An entry with
-    no region/edition/comment/aks_url is dropped (a cleared row)."""
+    edition_id, edition_text, comment, aks_url, target_list_id,
+    target_list_label}`` — each offer_id MUST be a real non-matched offer of
+    this run (else the annotation is meaningless). ``aks_url`` is the AKS product
+    page the matcher failed to find (assisted manual entry of the "no AKS page"
+    bucket); ``target_list_id`` is a Move-to-List disposition (garder = empty =
+    dropped). An entry with no region/edition/comment/aks_url/target_list is
+    dropped (a cleared row)."""
 
     if not isinstance(annotations, list):
         raise LearningError("bad_body", "annotations doit être une liste")
@@ -124,12 +142,13 @@ def save_annotations(
         fields = {
             k: str(item.get(k)).strip()
             for k in ("region_id", "region_text", "edition_id", "edition_text",
-                      "comment", "aks_url")
+                      "comment", "aks_url", "target_list_id", "target_list_label")
             if str(item.get(k) or "").strip()
         }
         # a region/edition id must carry meaning: keep only rows the operator
-        # actually filled (any of region/edition/comment/aks_url present).
-        if any(fields.get(k) for k in ("region_id", "edition_id", "comment", "aks_url")):
+        # actually filled (any of region/edition/comment/aks_url/target_list present).
+        if any(fields.get(k) for k in ("region_id", "edition_id", "comment",
+                                       "aks_url", "target_list_id")):
             fields["by"] = by
             fields["at"] = clock()
             stored[oid] = fields
