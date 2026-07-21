@@ -3,6 +3,21 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-21 — Admin extraction: two modes, full shop vs par page (Romain)
+
+The admin's "Lancer l'extraction" only did a full sweep, so runs went out at
+1142 offers (Kinguin) — against the one-page-at-a-time cadence
+(EXECUTOR_RULES §11), which is what keeps a batch from going stale while the
+feed re-imports. Added a mode selector:
+
+- **Par page (100 offres)** — `start_extract(..., page="N")` passes
+  `--pages N` (the extractor's slice mode, `partial: true`). The cadence norm:
+  one page → match → report → validate → submit → next page.
+- **Full shop** — `page=None`, the whole-feed sweep (unchanged).
+
+`page` accepts `"N"` or `"N-M"` (validated `bad_page` otherwise). Tests +5.
+658 green.
+
 ## 2026-07-20 — Submit speedup via tighter pacing (Romain); navigate settle stays 3 s
 
 Romain: "vu que tu peux faire deux requêtes par seconde", the submit was far

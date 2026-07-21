@@ -33,6 +33,11 @@
         </select>
         <input id="new-merchant-custom" type="text" placeholder="Nom du marchand" class="hidden">
         <input id="new-store-id" type="text" placeholder="Store ID" inputmode="numeric">
+        <select id="extract-mode" title="Par page = une page de 100 offres (cadence normale : une page → match → valide → submit → page suivante). Full shop = tout le feed d'un coup.">
+          <option value="page">Par page (100 offres)</option>
+          <option value="full">Full shop (tout le feed)</option>
+        </select>
+        <input id="extract-page" type="number" min="1" step="1" value="1" title="Numéro de page à extraire">
         <button id="start-extract" type="button" class="primary">Lancer l'extraction</button>
       </div>
       <div id="new-extract-hint" class="hint"></div>

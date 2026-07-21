@@ -371,8 +371,10 @@ class AdminHandler(BaseHTTPRequestHandler):
     def _post_extract(self) -> None:
         body = self._json_body()
         by = str(body.get("by") or self._basic_user() or "operateur")
+        raw_page = body.get("page")
+        page = str(raw_page).strip() if raw_page not in (None, "") else None
         result = self.state.manager.start_extract(
-            str(body.get("merchant", "")), str(body.get("store_id", "")), by=by,
+            str(body.get("merchant", "")), str(body.get("store_id", "")), by=by, page=page,
         )
         self._send_json(200, result)
 

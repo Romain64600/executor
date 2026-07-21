@@ -54,6 +54,7 @@ p = argparse.ArgumentParser()
 p.add_argument("--merchant", required=True)
 p.add_argument("--store-id", required=True)
 p.add_argument("--run-id", required=True)
+p.add_argument("--pages", default=None)
 args = p.parse_args()
 time.sleep({sleep})
 out = Path("runs") / args.run_id
@@ -359,6 +360,32 @@ class StartExtractTests(ManagerTestCase):
             manager.start_extract("Kinguin", "58", by="Romain")
         self.assertEqual(ctx.exception.code, "submit_in_progress")
         self.assertTrue(manager.wait_idle(timeout=10))
+
+    def test_full_shop_mode_omits_pages_flag(self):
+        manager = self._extract_manager()
+        result = manager.start_extract("GameSeal", "126", by="Romain")  # page=None
+        self.assertNotIn("--pages", result["argv"])
+        self.assertTrue(manager.wait_idle(timeout=10))
+
+    def test_par_page_mode_adds_pages_flag(self):
+        manager = self._extract_manager()
+        result = manager.start_extract("GameSeal", "126", by="Romain", page="3")
+        self.assertIn("--pages", result["argv"])
+        self.assertEqual(result["argv"][result["argv"].index("--pages") + 1], "3")
+        self.assertTrue(manager.wait_idle(timeout=10))
+
+    def test_page_range_accepted(self):
+        manager = self._extract_manager()
+        result = manager.start_extract("GameSeal", "126", by="Romain", page="2-4")
+        self.assertIn("2-4", result["argv"])
+        self.assertTrue(manager.wait_idle(timeout=10))
+
+    def test_bad_page_refused_before_spawn(self):
+        manager = self._extract_manager()
+        with self.assertRaises(SubmitStartError) as ctx:
+            manager.start_extract("GameSeal", "126", by="Romain", page="abc")
+        self.assertEqual(ctx.exception.code, "bad_page")
+        self.assertIsNone(manager.busy())
 
 
 class StartMatchTests(ManagerTestCase):

@@ -128,13 +128,21 @@ async function startExtract() {
     return;
   }
   hint.textContent = '';
+  const body = { merchant, store_id: storeId };
+  // Par page = extract one 100-offer page (the cadence norm); full shop omits
+  // the page and sweeps the whole feed.
+  if ($('#extract-mode').value === 'page') {
+    body.page = $('#extract-page').value.trim() || '1';
+  }
   $('#start-extract').disabled = true;
   try {
     const result = await api('api/extract', {
       method: 'POST',
-      body: JSON.stringify({ merchant, store_id: storeId }),
+      body: JSON.stringify(body),
     });
-    hint.textContent = `Extraction lancée : ${result.run_id}`;
+    hint.textContent = body.page
+      ? `Extraction page ${body.page} lancée : ${result.run_id}`
+      : `Extraction (full shop) lancée : ${result.run_id}`;
     await loadRuns();
     await openRun(result.run_id);
   } catch (err) {
@@ -857,6 +865,9 @@ async function init() {
   }
   initMerchantSelect();
   $('#start-extract').addEventListener('click', startExtract);
+  $('#extract-mode').addEventListener('change', (event) => {
+    $('#extract-page').classList.toggle('hidden', event.target.value !== 'page');
+  });
   $('#start-match').addEventListener('click', startMatch);
   $('#refresh-runs').addEventListener('click', loadRuns);
   $('#check-all').addEventListener('click', checkAll);

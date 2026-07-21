@@ -469,15 +469,22 @@ class SubmitManager:
                 run_dir, kind="catalog", argv=argv, meta={"by": by, "max_pages": max_pages}
             )
 
-    def start_extract(self, merchant: str, store_id: str, *, by: str) -> dict[str, Any]:
+    def start_extract(
+        self, merchant: str, store_id: str, *, by: str, page: str | None = None
+    ) -> dict[str, Any]:
         """Stage 1 (read-only): create a fresh run and launch the extractor.
 
-        Unlike submit/catalog, there is no existing run_dir yet — the operator
-        types merchant + store_id (never derived, there is nothing to derive
-        from) and this mints a new run_id the same way the CLI's own default
-        does (``<timestamp>-<merchant slug>``), pre-creates the directory so
-        `_spawn`'s state file has somewhere to land, then hands off to the
-        unmodified `02_extract_feed.py` exactly like a manual CLI run would.
+        Two modes (Romain 2026-07-21): ``page=None`` = **full shop** (sweep the
+        whole feed, the extractor's default); ``page="N"`` (or ``"N-M"``) =
+        **par page** (`--pages N`, one 100-offer page). The page-by-page cadence
+        is the norm for a big feed — extract ONE page → match → report →
+        validate → submit → next page — so a batch never sits stale while the
+        feed re-imports (EXECUTOR_RULES §11).
+
+        There is no existing run_dir yet — the operator types merchant +
+        store_id and this mints a new run_id (``<timestamp>-<merchant slug>``),
+        pre-creates the directory, then hands off to the unmodified
+        `02_extract_feed.py` exactly like a manual CLI run would.
         """
 
         merchant = merchant.strip()
@@ -489,6 +496,13 @@ class SubmitManager:
                 "bad_store_id", f"store_id doit être numérique, reçu {store_id!r}",
                 http_status=400,
             )
+        if page is not None:
+            page = str(page).strip()
+            if not re.fullmatch(r"\d+(-\d+)?", page):
+                raise SubmitStartError(
+                    "bad_page", f"page invalide: {page!r} — attendu 'N' ou 'N-M'",
+                    http_status=400,
+                )
         with self._mutex:
             self._ensure_free()
             stamp = datetime.strptime(self.clock(), "%Y-%m-%dT%H:%M:%SZ").strftime("%Y%m%d-%H%M%S")
@@ -506,9 +520,11 @@ class SubmitManager:
                 "--run-id",
                 run_id,
             ]
+            if page is not None:
+                argv += ["--pages", page]
             return self._spawn(
                 run_dir, kind="extract", argv=argv,
-                meta={"merchant": merchant, "store_id": store_id, "by": by},
+                meta={"merchant": merchant, "store_id": store_id, "by": by, "page": page},
             )
 
     def start_match(
