@@ -67,7 +67,7 @@ régressions.
   quand l'id sauvegardé n'est pas dans les options). **Vérifié V2.**
 - **Statut** : FIXED (commit 7524f93) — option fantôme + grandfather serveur
 
-### L4. La suggestion Move-to-list pré-sélectionnée devient une décision humaine au 1er save — OPEN (attente décision D1)
+### L4. La suggestion Move-to-list pré-sélectionnée devient une décision humaine au 1er save — FIXED (2026-07-21, commit 2828640, D1 = b)
 - **Où** : `app.js:506-509` (préselection `suggested_list_id`) + `531-534` (toute
   row avec `target_list_id` non vide est envoyée) + `learning_io.py` (stampée
   `by/at`, indistinguable d'un choix explicite).
@@ -75,10 +75,10 @@ régressions.
   disposition suggérée de TOUTES les offres à suggestion comme décision
   opérateur — le futur mover les traiterait comme un go humain. Viole « le
   défaut ne doit pas devenir la décision ». **Vérifié V2 (2 critiques).**
-- **Décision Romain requise** : (a) suggestion en hint seul (pas de préselection),
-  ou (b) préselection conservée mais flag `suggested: true` tant que non
-  manipulée, le mover ne consommant que les dispositions confirmées.
-- **Statut** : OPEN
+- **Décision Romain** : option (b) — GO « D1 b » 2026-07-21.
+- **Statut** : FIXED (commit 2828640) — `suggested: true` persisté tant que le
+  select n'est pas manipulé (badge « suggéré — à confirmer ») ; le mover ne
+  consommera que `suggested != true`.
 
 ### L5. Aucune validation serveur des champs — FIXED (2026-07-21, commit 7524f93)
 - **Où** : `learning_io.py:142-147`. `target_list_id='delete'`, `'999'`, couple
@@ -165,14 +165,14 @@ vide whitelisté si présent dans skipped.json ; entrée non-dict → 500 au sav
 
 | # | Cas | État |
 |---|-----|------|
-| 1 | Correction exacte une-offre | Capture couverte (round-trip testé) ; pas de marqueur « exception vs généralisable » → décision D3 |
+| 1 | Correction exacte une-offre | COUVERT : capture + `scope=exception_offre` (D3, commit `2828640`) |
 | 2 | Règle mono-marchand | N/A moteur absent ; le marchand est implicite via le run |
 | 3 | Règle multi-marchands | N/A moteur absent |
 | 4 | Offre → blacklist | Capture couverte (listes 8/14/26/31/37) ; test dédié à ajouter |
 | 5 | Offre → page for creation | Capture couverte (liste 22) ; test dédié à ajouter |
 | 6 | Offre → South America | Capture + suggestion auto testées (36) |
 | 7 | Correction région | Capture + test |
-| 8 | Correction plateforme | **NON COUVERT — aucun champ plateforme** → décision D4 |
+| 8 | Correction plateforme | COUVERT (D4, commit `2828640`) : champ `platform` + tests |
 | 9 | Correction édition | Capture + test |
 | 10 | Règles contradictoires | N/A moteur absent |
 | 11 | Règle trop générale | Partiel : ambigus → garder testé ; L8 corrige le substring |
@@ -186,18 +186,18 @@ vide whitelisté si présent dans skipped.json ; entrée non-dict → 500 au sav
 
 ## Décisions métier requises (Romain)
 
-- **D1 (= L4)** : suggestion Move-to-list — (a) hint seul (pas de préselection),
-  ou (b) préselection conservée + flag `suggested: true` tant que non manipulée,
-  le futur mover ne consommant que les dispositions confirmées ? → OUVERTE
+- **D1 (= L4)** : → **TRANCHÉE (b)** par Romain 2026-07-21 (« D1 b »),
+  implémentée commit `2828640`.
 - **D2** : construire le moteur de règles apprises dans le repo (schéma règle :
   id, scope, conditions, action, source humaine, confiance, statut
   proposé/validé/actif/désactivé, date, exemples, rollback — comme spécifié),
   ou entériner le processus builder-offline actuel en le documentant comme
   officiel ? Les cas 2,3,10,12,13,16,17,18 en dépendent. → OUVERTE
-- **D3** : ajouter à l'annotation un champ **scope** explicite
-  (`exception_offre | regle_marchand | regle_globale | observation`) pour que la
-  généralisation ne repose plus sur l'interprétation d'un commentaire libre ? → OUVERTE
-- **D4** : ajouter un champ **plateforme** à l'annotation (cas 8) ? → OUVERTE
+- **D3** : → **TRANCHÉE (oui)** par Romain 2026-07-21, implémentée commit
+  `2828640` (champ `scope`, validation `bad_scope`, seules les deux « règle »
+  autorisent la généralisation).
+- **D4** : → **TRANCHÉE (oui)** par Romain 2026-07-21, implémentée commit
+  `2828640` (champ `platform`, vocabulaire canonique 12 tokens, `bad_platform`).
 - **D5** : renommage UI de « Learning » (collision avec `--mode learning` R24) ? → OUVERTE
 
 ## Journal
@@ -208,3 +208,7 @@ vide whitelisté si présent dans skipped.json ; entrée non-dict → 500 au sav
 - 2026-07-21 : L1, L2, L3, L5, L6, L8, L9, L10, L11 FIXED + L7 (volet docs :
   CHANGELOG, EXECUTOR_RULES §13) — commit `7524f93`, suite 696 verts.
   Restent OUVERTS : L4 (bloqué par D1) et les décisions D1-D5.
+- 2026-07-21 : GO Romain « D1 b, D3 oui, D4 oui » → L4 FIXED (suggested flag),
+  scope + platform implémentés — commit `2828640`, suite 703 verts.
+  Restent OUVERTES : D2 (moteur de règles vs builder-offline) et D5
+  (renommage UI).
