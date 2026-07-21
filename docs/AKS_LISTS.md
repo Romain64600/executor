@@ -72,6 +72,27 @@ current list's feed URL. **Open item before building the writer:** confirm the
 *exact* fired request (plain GET vs a JS-added POST/nonce) by observing ONE real
 move on a throwaway (list 29 "TEST"), on Romain's explicit go — never guessed.
 
+## Triage rules (skip reason → target list)
+
+Romain's policy, captured 2026-07-21. The Learning UI pre-suggests where it can
+and leaves the rest a per-offer pick (default = *garder*).
+
+| skip reason | target | auto-suggestable? |
+|---|---|---|
+| software (`skip category` = app/antivirus/…) | 16 Softwares | yes (reason is deterministic) |
+| **no AKS page found** | released **≤ 5 years → 22 Pages for creation**; else **27 Old games / No pages** | **NO — human pick** |
+| forbidden region | 32-36 by region (AU/CA/ME/AF/SA) | yes (region is known) |
+| gift card | 21 Gift cards | yes |
+| account offer | 30 account | yes |
+| uncertain | 13 I have a doubt | — |
+| console / bundle / DLC | per-offer / often *garder* (no clean target) | no |
+
+**Why "no AKS page" can't be auto-split (22 vs 27):** the 5-year rule needs a
+release date, and **the feed gives none** (`releaseDate` = null on 100/100
+offers observed; names rarely carry a year). No deterministic source without a
+new external lookup (out of scope). So the operator picks 22 vs 27 per offer;
+a 4-digit year in the name may be shown as a weak hint, never a default.
+
 ## Fail-closed writer sketch (sibling to the submitter)
 
 Same discipline as submit (Romain 2026-07-21): validation file
