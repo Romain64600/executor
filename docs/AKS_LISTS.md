@@ -67,10 +67,30 @@ The offers table sits in a **GET** form whose hidden context is
   - `'delete'` → Delete.
 - **Trigger:** the **"Move to list…"** button submits the form.
 
-So a move is, in essence, the checked offer ids + `bulk[list]=<targetId>` on the
-current list's feed URL. **Open item before building the writer:** confirm the
-*exact* fired request (plain GET vs a JS-added POST/nonce) by observing ONE real
-move on a throwaway (list 29 "TEST"), on Romain's explicit go — never guessed.
+### Confirmed request (captured read-only 2026-07-21, zero mutation)
+
+Captured by trusted-clicking a row checkbox then Apply, with the outgoing request
+recorded **and blocked** (`scripts`-style probe in the session tmp; nothing was
+sent — `page_navigated:false`). The move is a **native form POST** to the current
+list's feed URL:
+
+```
+POST https://www.allkeyshop.com/blog/wp-admin/admin.php?available=all&store=<store>&page=aks-merchant-feeds-<currentListId>&p=<n>
+Content-Type: application/x-www-form-urlencoded
+Body:  bulk[item][]=<offer_id>     (repeatable — one per offer to move)
+       bulk[list]=<targetListId>
+       bulk[priority]=             (empty unless changing priority)
+       bulk[productId]=            (empty)
+```
+
+- **No nonce / CSRF token** — authorization is the logged-in admin **session
+  cookie** only. So the writer can reproduce the operator action in-page (carries
+  cookies) without scraping a token.
+- **Selection registration is trusted-only:** a real (isTrusted) change on a row
+  checkbox injects a hidden `<input name="bulk[item][]" value="<offer_id>">` into
+  the `data-bulk-form`; a scripted `.checked=true` does **not** (so the writer
+  must either trusted-click each checkbox or inject the hidden inputs itself).
+- **Apply** is a native submit `<button>` inside `data-bulk-form`.
 
 ## Triage rules (skip reason → target list)
 
@@ -97,7 +117,10 @@ a 4-digit year in the name may be shown as a weak hint, never a default.
 
 Same discipline as submit (Romain 2026-07-21): validation file
 (`{offer_id, current_list, target_list_label}`) → explicit go → locate the row
-(id→URL fallback, `_locate_row`) → resolve `target_list_label`→id live → replay
-the move → **post-verify: the offer left list 9** at refresh (the analogue of
-the submit's "gone from feed" success) → JSONL log. No fire-and-forget.
-"Don't change the list" dispositions are **no-ops** (never written).
+(id→URL fallback, `_locate_row`) → resolve `target_list_label`→id live from the
+`bulk[list]` options → **register the offer(s)** (trusted checkbox click, or
+inject the hidden `bulk[item][]`) → set `bulk[list]` → **trusted-click Apply**
+(a real gesture — a scripted change is ignored, isTrusted) → **post-verify: the
+offer left the source list** at refresh (the analogue of the submit's "gone from
+feed" success) → JSONL log. No fire-and-forget. "Don't change the list"
+dispositions are **no-ops** (never written).
