@@ -332,3 +332,4 @@ dialog::backdrop { background: var(--backdrop); }
 .learning-offer .learning-name { font-weight: 600; }
 .learning-offer .learning-reason { margin: 0.1rem 0 0.3rem; }
 .learning-offer .learn-comment { flex: 1 1 12rem; min-width: 8rem; }
+.learning-offer .learn-aks-url { flex: 1 1 100%; min-width: 20rem; }

@@ -99,9 +99,11 @@ def save_annotations(
     """Persist Learning annotations to ``learning.json`` (fail-closed).
 
     ``annotations`` is a list of ``{offer_id, region_id, region_text,
-    edition_id, edition_text, comment}`` — each offer_id MUST be a real
-    non-matched offer of this run (else the annotation is meaningless). An
-    entry with no region/edition/comment is dropped (a cleared row)."""
+    edition_id, edition_text, comment, aks_url}`` — each offer_id MUST be a
+    real non-matched offer of this run (else the annotation is meaningless).
+    ``aks_url`` is the AKS product page the matcher failed to find (the missing
+    piece for assisted manual entry of the "no AKS page" bucket). An entry with
+    no region/edition/comment/aks_url is dropped (a cleared row)."""
 
     if not isinstance(annotations, list):
         raise LearningError("bad_body", "annotations doit être une liste")
@@ -121,12 +123,13 @@ def save_annotations(
             )
         fields = {
             k: str(item.get(k)).strip()
-            for k in ("region_id", "region_text", "edition_id", "edition_text", "comment")
+            for k in ("region_id", "region_text", "edition_id", "edition_text",
+                      "comment", "aks_url")
             if str(item.get(k) or "").strip()
         }
         # a region/edition id must carry meaning: keep only rows the operator
-        # actually filled (any of region/edition/comment present).
-        if any(fields.get(k) for k in ("region_id", "edition_id", "comment")):
+        # actually filled (any of region/edition/comment/aks_url present).
+        if any(fields.get(k) for k in ("region_id", "edition_id", "comment", "aks_url")):
             fields["by"] = by
             fields["at"] = clock()
             stored[oid] = fields

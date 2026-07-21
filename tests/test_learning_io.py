@@ -43,13 +43,16 @@ class LearningIoTests(unittest.TestCase):
         save_annotations(self.run, [
             {"offer_id": "1", "region_id": "9", "region_text": "Steam EU (9)",
              "edition_id": "1", "edition_text": "Standard",
-             "comment": "le / double-titre casse le slug"},
+             "comment": "le / double-titre casse le slug",
+             "aks_url": "https://www.allkeyshop.com/blog/buy-re2-cd-key-compare-prices/"},
             {"offer_id": "3", "comment": "jeu de niche, pas sur AKS"},
         ], by="Romain", clock=lambda: "T")
         ann = load_annotations(self.run)
         self.assertEqual(ann["1"]["region_id"], "9")
         self.assertEqual(ann["1"]["region_text"], "Steam EU (9)")
         self.assertEqual(ann["1"]["edition_id"], "1")
+        self.assertEqual(ann["1"]["aks_url"],
+                         "https://www.allkeyshop.com/blog/buy-re2-cd-key-compare-prices/")
         self.assertEqual(ann["1"]["by"], "Romain")
         self.assertEqual(ann["3"]["comment"], "jeu de niche, pas sur AKS")
         self.assertNotIn("2", ann)  # untouched offer not stored
@@ -58,6 +61,18 @@ class LearningIoTests(unittest.TestCase):
         r = save_annotations(self.run, [{"offer_id": "3", "comment": "x"}],
                              by="R", clock=lambda: "T")
         self.assertEqual(r["saved"], 1)
+
+    def test_aks_url_only_annotation_is_kept(self):
+        # the "no AKS page" bucket: the page URL alone is the missing piece.
+        r = save_annotations(
+            self.run,
+            [{"offer_id": "1",
+              "aks_url": "https://www.allkeyshop.com/blog/buy-x-cd-key-compare-prices/"}],
+            by="R", clock=lambda: "T")
+        self.assertEqual(r["saved"], 1)
+        self.assertEqual(
+            load_annotations(self.run)["1"]["aks_url"],
+            "https://www.allkeyshop.com/blog/buy-x-cd-key-compare-prices/")
 
     def test_empty_row_dropped(self):
         r = save_annotations(self.run, [{"offer_id": "1"}], by="R", clock=lambda: "T")

@@ -474,6 +474,14 @@ function learningRow(offer, ann, catalog) {
     learnSelect('edition', catalog.editions || [], ann.edition_id, catalog.present),
     comment,
   ]));
+  const aksUrl = el('input', {
+    class: 'learn-aks-url', type: 'text', value: ann.aks_url || '',
+    placeholder: 'page AKS (ex: https://www.allkeyshop.com/blog/buy-...-compare-prices/)',
+  });
+  row.appendChild(el('div', { class: 'row' }, [
+    el('label', { text: 'Page AKS', title: "La page produit que le matcher n'a pas trouvée — nécessaire pour la saisie manuelle assistée." }),
+    aksUrl,
+  ]));
   return row;
 }
 
@@ -485,9 +493,10 @@ async function saveLearning() {
     const rSel = row.querySelector('.learn-region');
     const eSel = row.querySelector('.learn-edition');
     const comment = row.querySelector('.learn-comment').value.trim();
+    const aksUrl = row.querySelector('.learn-aks-url').value.trim();
     const regionId = rSel.value;
     const editionId = eSel.value;
-    if (!regionId && !editionId && !comment) continue;  // untouched row
+    if (!regionId && !editionId && !comment && !aksUrl) continue;  // untouched row
     annotations.push({
       offer_id: row.getAttribute('data-offer-id'),
       region_id: regionId,
@@ -495,6 +504,7 @@ async function saveLearning() {
       edition_id: editionId,
       edition_text: editionId ? eSel.selectedOptions[0].text : '',
       comment,
+      aks_url: aksUrl,
     });
   }
   $('#learning-state').textContent = 'enregistrement…';

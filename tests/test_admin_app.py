@@ -458,7 +458,8 @@ class LearningEndpointTests(AppTestCase):
             body={"annotations": [
                 {"offer_id": "10", "region_id": "2", "region_text": "Steam (2)",
                  "edition_id": "1", "edition_text": "Standard",
-                 "comment": "le / casse le slug"},
+                 "comment": "le / casse le slug",
+                 "aks_url": "https://www.allkeyshop.com/blog/buy-re2-cd-key-compare-prices/"},
             ], "by": "Romain"},
         )
         self.assertEqual(response.status, 200)
@@ -467,6 +468,8 @@ class LearningEndpointTests(AppTestCase):
         _, got = self._json("GET", "/api/runs/20260715-000000-test/learning")
         self.assertEqual(got["annotations"]["10"]["region_id"], "2")
         self.assertEqual(got["annotations"]["10"]["comment"], "le / casse le slug")
+        self.assertEqual(got["annotations"]["10"]["aks_url"],
+                         "https://www.allkeyshop.com/blog/buy-re2-cd-key-compare-prices/")
 
     def test_post_bad_offer_id_refused(self):
         response, body = self._json(
