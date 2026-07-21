@@ -429,6 +429,9 @@ async function loadLearning(runId) {
   const annotations = data.annotations || {};
   const lists = data.lists || [];
   $('#learning-actions').classList.toggle('hidden', groups.length === 0);
+  // A run with non-matched offers (the whole point of Learning) must not hide
+  // them behind a collapsed <details> — Romain saw "just a log, no table".
+  $('#learning-box').open = groups.length > 0;
   if (!groups.length) {
     box.textContent = 'Aucune offre non-matchée pour ce run.';
     return;
