@@ -54,6 +54,19 @@ def mode_limit(mode: str, requested: int | None) -> int | None:
     return CANARY_LIMIT if requested is None else min(requested, CANARY_LIMIT)
 
 
+def prior_move_succeeded(run_dir: Path) -> bool:
+    """MV6: has a real move of this run ever verified (moved > 0)? The full-plan
+    ``safe`` mode is refused until a canary has proven the writer works live."""
+
+    mp = run_dir / "move_plan.json"
+    if not mp.is_file():
+        return False
+    try:
+        return int(json.loads(mp.read_text(encoding="utf-8")).get("moved") or 0) > 0
+    except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        return False
+
+
 def derive_max_pages(explicit: int | None, run_dir: Path) -> tuple[int, str]:
     if explicit is not None:
         return explicit, f"explicit --max-pages {explicit}"
@@ -128,8 +141,21 @@ def _main() -> int:
     (run_dir / "move_plan_source.json").write_text(json.dumps(plan_doc, indent=2, ensure_ascii=False),
                                                    encoding="utf-8")
     entries = plan_doc["entries"]
-    store_id = args.store_id or plan_doc.get("store_id")
-    source_list = args.source_list or plan_doc.get("source_feed_page")
+    # MV10: a CLI override that contradicts the run's own raw.json is a
+    # run/CLI inconsistency — fail-closed rather than degrade to a false
+    # "already moved" no-op against the wrong store/list.
+    plan_store = str(plan_doc.get("store_id") or "")
+    if args.store_id and plan_store and str(args.store_id) != plan_store:
+        print(json.dumps({"aborted": True, "reason": (
+            f"--store-id {args.store_id} ≠ store du run ({plan_store}) — incohérence refusée (MV10)")}, indent=2))
+        return 2
+    plan_source = str(plan_doc.get("source_feed_page") or "")
+    if args.source_list and plan_source and args.source_list != plan_source:
+        print(json.dumps({"aborted": True, "reason": (
+            f"--source-list {args.source_list} ≠ source du run ({plan_source}) — incohérence refusée (MV10)")}, indent=2))
+        return 2
+    store_id = args.store_id or plan_store
+    source_list = args.source_list or plan_source
     if not store_id:
         print(json.dumps({"aborted": True, "reason": "store id inconnu (ni --store-id ni raw.json)"}, indent=2))
         return 2
@@ -139,6 +165,15 @@ def _main() -> int:
         return 0
 
     write = args.execute
+    # MV6 (Romain 2026-07-21): the first real move of a run must be a canary.
+    # Until a move has verified (moved > 0), --mode safe (full plan) is refused —
+    # run a --mode learning canary of 1 first, exactly like a never-live writer.
+    if write and args.mode == "safe" and not prior_move_succeeded(run_dir):
+        print(json.dumps({"aborted": True, "reason": (
+            "1er move réel de ce run : --mode safe (plan complet) refusé tant qu'aucun move "
+            "n'a été vérifié. Lance d'abord un canary : --mode learning (MV6).")}, indent=2))
+        return 2
+
     # Fail-closed gate: invariants green AND authoritative (on the VPS target).
     report = None
     for attempt in range(3):

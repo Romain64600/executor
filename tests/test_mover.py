@@ -15,8 +15,9 @@ class FakeMoveSession:
     """Minimal feed + bulk-move surface for the mover. Configurable failures."""
 
     def __init__(self, pages, *, login=False, options=None, register_ok=True,
-                 bulk_set_ok=True, apply_ok=True, move_removes=True):
+                 bulk_set_ok=True, apply_ok=True, move_removes=True, rows=None):
         self.pages = [list(p) for p in pages]
+        self.rows = dict(rows or {})  # per-id {url, name} overrides (re-id sim)
         self.login = login
         self.options = options if options is not None else LIST_OPTIONS
         self.register_ok = register_ok
@@ -40,8 +41,10 @@ class FakeMoveSession:
         return self.login
 
     def _row(self, oid):
-        return {"id": oid, "url": f"https://m/{oid}", "name": f"Game {oid}",
-                "price": "", "store_id": "38"}
+        row = {"id": oid, "url": f"https://m/{oid}", "name": f"Game {oid}",
+               "price": "", "store_id": "38"}
+        row.update(self.rows.get(oid, {}))
+        return row
 
     def page_offer_rows(self):
         if 0 <= self._page < len(self.pages):
@@ -89,22 +92,27 @@ def _plan(*offer_ids, label="Softwares", list_id="16"):
 
 
 def _run(mover_cls, session, plan, **kw):
-    return mover_cls(session).run(run_id="r", store_id="38", plan=plan,
-                                  source_feed_page="aks-merchant-feeds-9",
-                                  max_pages=5, **kw)
+    m = mover_cls(session)
+    m.post_apply_settle = 0  # no real POST wait in tests (Mover only)
+    return m.run(run_id="r", store_id="38", plan=plan,
+                 source_feed_page="aks-merchant-feeds-9", max_pages=5, **kw)
 
 
 class ResolveListIdTests(unittest.TestCase):
-    def test_label_match_authoritative(self):
-        r = resolve_list_id("Softwares", "999", LIST_OPTIONS)
-        self.assertEqual(r["id"], "16")  # label wins over the stale hint id
+    def test_label_match(self):
+        self.assertEqual(resolve_list_id("Softwares", LIST_OPTIONS)["id"], "16")
 
     def test_move_to_prefix_tolerated(self):
-        self.assertEqual(resolve_list_id("Move to Gift cards", "", LIST_OPTIONS)["id"], "21")
+        self.assertEqual(resolve_list_id("Move to Gift cards", LIST_OPTIONS)["id"], "21")
 
     def test_unknown_label_is_none(self):
-        self.assertIsNone(resolve_list_id("Nonexistent List", "16", LIST_OPTIONS))
-        self.assertIsNone(resolve_list_id("", "16", LIST_OPTIONS))
+        self.assertIsNone(resolve_list_id("Nonexistent List", LIST_OPTIONS))
+        self.assertIsNone(resolve_list_id("", LIST_OPTIONS))
+
+    def test_ambiguous_label_fail_closed(self):
+        # MV5: two options with the same label must NOT silently pick the first.
+        dup = LIST_OPTIONS + [{"value": "77", "text": "Move to Softwares"}]
+        self.assertIsNone(resolve_list_id("Softwares", dup))
 
 
 class SourceFeedPageTests(unittest.TestCase):
@@ -184,7 +192,7 @@ class MoverWriteTests(unittest.TestCase):
         result = _run(Mover, session, _plan("100"))
         self.assertEqual(result["moved"], 0)
         self.assertEqual(result["move_attempts"], 0)
-        self.assertIn("offer not in current feed", result["plan"][0]["skipped"])
+        self.assertIn("proven by full scan", result["plan"][0]["skipped"])
         self.assertEqual(session.applied, [])
 
     def test_canary_limit_stops_after_one(self):
@@ -202,6 +210,86 @@ class MoverWriteTests(unittest.TestCase):
         self.assertEqual(result["moved"], 1)
         self.assertEqual(result["plan"][0]["current_offer_id"], "900")
         self.assertEqual(session.applied, [("900", "16")])
+
+
+class ReverifyRowTests(unittest.TestCase):
+    """MV1/SC5 — never write against a row that no longer matches the plan."""
+
+    def _mover(self, session):
+        m = Mover(session)
+        m.post_apply_settle = 0
+        return m
+
+    def test_reverify_blocks_reided_row(self):
+        # id 100 on the page is now a DIFFERENT product than the plan's
+        session = FakeMoveSession([["100"]])
+        entry = {"current_offer_id": "100", "name": "Different Game",
+                 "url": "https://m/other", "store_id": "38"}
+        ok, reason = self._mover(session)._reverify_row(entry)
+        self.assertFalse(ok)
+        self.assertIn("mismatch", reason)
+
+    def test_reverify_relocates_by_url_when_id_vanished(self):
+        session = FakeMoveSession([["900"]])  # id 100 gone; URL m/900 now id 900
+        entry = {"current_offer_id": "100", "name": "Game 900",
+                 "url": "https://m/900", "store_id": "38"}
+        ok, reason = self._mover(session)._reverify_row(entry)
+        self.assertTrue(ok)
+        self.assertEqual(entry["current_offer_id"], "900")
+
+    def test_reid_between_locate_and_move_is_never_moved(self):
+        # id 100 is the plan's offer at index time (url m/100), but on the fresh
+        # page its checkbox value 100 belongs to product m/hijack → block, no write
+        session = FakeMoveSession([["100"]], rows={"100": {"url": "https://m/hijack",
+                                                           "name": "Hijacked Product"}})
+        # plan trusts the START identity (locate uses the same rows here, so this
+        # actually surfaces as a locate contradiction → block, not a silent skip)
+        result = _run(Mover, session, _plan("100"))
+        self.assertEqual(result["moved"], 0)
+        self.assertEqual(session.applied, [])
+        self.assertFalse(result["plan"][0].get("skipped"))  # NOT a benign skip
+        self.assertTrue(result["plan"][0].get("blocker"))
+
+
+class FailClosedLocateTests(unittest.TestCase):
+    def test_identity_contradiction_blocks_and_feeds_guard(self):
+        # id 100 present but its row contradicts the plan (different url) and the
+        # plan url is not in the feed → a real doubt, fail-closed (guard failure)
+        session = FakeMoveSession([["100"]], rows={"100": {"url": "https://m/wrong"}})
+        result = _run(Mover, session, _plan("100"))  # plan url = https://m/100
+        self.assertEqual(result["moved"], 0)
+        self.assertTrue(result["plan"][0].get("blocker"))
+        self.assertFalse(result["plan"][0].get("skipped"))
+        self.assertEqual(session.applied, [])
+
+    def test_absent_reconfirmed_by_full_scan_then_relocated(self):
+        # MV8: id 999 sits on page 4, but the start index early-terminates
+        # (pages 2-3 add no new ids) → locate-miss; the targeted scan finds it.
+        pages = [["999", "1"], ["1"], ["1"], ["1"]]  # 999 only on p1 here — see below
+        # Reframe: 999 is on a LATER page the early-terminate never reached.
+        pages = [["1"], ["1"], ["1"], ["999"]]
+        session = FakeMoveSession(pages)
+        result = _run(Mover, session, _plan("999"))
+        self.assertEqual(result["moved"], 1)
+        self.assertEqual(result["plan"][0]["current_offer_id"], "999")
+
+    def test_absent_offer_skipped_after_proven_full_scan(self):
+        session = FakeMoveSession([["1"], ["2"], ["3"]])  # 999 nowhere
+        result = _run(Mover, session, _plan("999"))
+        self.assertEqual(result["moved"], 0)
+        self.assertEqual(result["move_attempts"], 0)
+        self.assertIn("proven by full scan", result["plan"][0]["skipped"])
+
+
+class DryRunGuardTests(unittest.TestCase):
+    def test_dry_run_over_ten_offers_does_not_self_block(self):
+        # MV4: 12 selectable offers must ALL appear, no guard_blocked truncation.
+        ids = [str(100 + i) for i in range(12)]
+        session = FakeMoveSession([ids])
+        result = _run(DryRunMover, session, _plan(*ids))
+        self.assertEqual(len(result["plan"]), 12)
+        self.assertIsNone(result["stopped"])
+        self.assertTrue(all(e["selectable"] for e in result["plan"]))
 
 
 if __name__ == "__main__":

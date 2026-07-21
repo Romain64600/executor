@@ -19,14 +19,20 @@ disposition is never in a plan (filtered by the builder, `move_plan.py`).
 from __future__ import annotations
 
 import re
+import time
 from typing import Any
 
 from src.extractor import DEFAULT_FEED_PAGE, feed_url
 from src.submitter import (  # reuse the proven, audited feed machinery
     FEED_UNREADABLE_EXCS,
     _SubmitterBase,
+    _row_check,
     _url_key,
 )
+
+# MV7 (review 2026-07-21): the native Apply POST reloads the source page; let it
+# commit before the verify re-scan navigates away, or the in-flight move is raced.
+POST_APPLY_SETTLE_S = 2.0
 
 # The source list a run scanned — parsed from raw.json's source_url
 # (…&page=aks-merchant-feeds-<id>). Default 9 = "AKS Feeds" (pending queue).
@@ -51,24 +57,22 @@ def _norm_label(text: str) -> str:
 
 
 def resolve_list_id(
-    label: str, target_id_hint: str, options: list[dict[str, str]]
+    label: str, options: list[dict[str, str]]
 ) -> dict[str, Any] | None:
-    """Resolve a target list to its LIVE id, by LABEL first (ids drift).
+    """Resolve a target list to its LIVE id, by LABEL only (ids drift).
 
-    Returns ``{"id", "text"}`` or None (fail-closed — the caller blocks). The
-    stored ``target_id_hint`` is only a tie-break/confirmation: a label match is
-    authoritative, and if the hinted id no longer carries the expected label the
-    label wins (exactly the region/edition catalog lesson)."""
+    Returns ``{"id", "text"}`` for a UNIQUE label match, else None (fail-closed —
+    the caller blocks). MV5 (review 2026-07-21): a non-unique match is ambiguous
+    and must NOT silently pick the first (the region/edition ``resolve_catalog_id``
+    requires uniqueness too). The stored id is deliberately not consulted — a
+    drifted stored id would resolve to the wrong live list (AKS_LISTS.md)."""
 
     want = _norm_label(label)
     if not want:
         return None
-    for opt in options:
-        if _norm_label(opt.get("text", "")) == want:
-            return {"id": str(opt.get("value", "")), "text": opt.get("text", "")}
-    # No label match: only trust the hinted id if it is actually present AND its
-    # label is empty/unknown — never override a real label mismatch.
-    return None
+    matches = [{"id": str(o.get("value", "")), "text": o.get("text", "")}
+               for o in options if _norm_label(o.get("text", "")) == want]
+    return matches[0] if len(matches) == 1 else None
 
 
 class _MoverBase(_SubmitterBase):
@@ -110,7 +114,7 @@ class _MoverBase(_SubmitterBase):
         options = self.session.list_options()
         result["list_options_count"] = len(options)
         for e in plan:
-            resolved = resolve_list_id(e.get("target_list_label", ""), e.get("target_list_id", ""), options)
+            resolved = resolve_list_id(e.get("target_list_label", ""), options)
             if resolved is None:
                 self._log("aborted", reason="target list not in live bulk[list] options",
                           offer_id=e.get("offer_id"), label=e.get("target_list_label"))
@@ -150,6 +154,7 @@ class _MoverBase(_SubmitterBase):
                 "offer_id": offer_id,
                 "name": spec.get("name", ""),
                 "url": spec.get("url", ""),
+                "store_id": str(store_id),
                 "target_list_label": spec.get("target_list_label", ""),
                 "target_list_id": spec.get("resolved_list_id", ""),
                 "ready": False,
@@ -159,15 +164,28 @@ class _MoverBase(_SubmitterBase):
                 "offer_id": offer_id, "name": spec.get("name", ""),
                 "url": spec.get("url", ""), "store_id": str(store_id),
             }}
-            located = self._locate_row(candidate, offer_id, ctx["index"], ctx["by_url"])
-            if located.get("blocker"):
-                # The offer is not on the source list. Most likely already moved
-                # (idempotent re-run) — a SKIP, never a guard failure. Recorded
-                # so a genuine "vanished before we moved it" is visible.
-                entry["skipped"] = located["blocker"]
-                self._log("move_skipped", offer_id=offer_id, reason=located["blocker"])
+            # MV2/MV8: "absent" (idempotent already-moved — a legitimate SKIP)
+            # vs "present-but-contradicts" (a real doubt → fail-closed via the
+            # guard), and absence is PROVEN by a targeted full scan (the
+            # start-of-run index can early-terminate, so a locate-miss alone is
+            # not proof the offer left the source list).
+            status, payload = self._resolve_location(candidate, offer_id, ctx)
+            if status == "skip":
+                entry["skipped"] = payload
+                self._log("move_skipped", offer_id=offer_id, reason=payload)
                 result["plan"].append(entry)
                 continue
+            if status == "block":
+                entry["blocker"] = payload
+                self._log("move_blocked", offer_id=offer_id, reason=payload)
+                self.guard.record_result("move", signature, False, detail=payload)
+                result["plan"].append(entry)
+                if self.guard.snapshot().get("blocked"):
+                    result["stopped"] = "ten_consecutive_failures"
+                    self._log("run_stopped", reason=result["stopped"])
+                    break
+                continue
+            located = payload
             entry["current_offer_id"] = located["offer_id"]
             entry["page_url"] = located["page_url"]
             if located.get("located_by") == "url":
@@ -176,17 +194,20 @@ class _MoverBase(_SubmitterBase):
                           page_url=located["page_url"])
 
             success = False
-            feed_unreadable: str | None = None
+            unreadable: str | None = None
             try:
                 entry["ready"] = True
                 success = self._move(entry, ctx)
             except FEED_UNREADABLE_EXCS as exc:
+                unreadable = f"{type(exc).__name__}: {exc}"
+            except Exception as exc:  # MV11: any unexpected write-step error is
+                # fail-closed — offer state UNKNOWN, keep the artefact, stop.
+                unreadable = f"unexpected {type(exc).__name__}: {exc}"
+            if unreadable is not None:
                 success = False
-                feed_unreadable = f"{type(exc).__name__}: {exc}"
                 entry["post_verify"] = (
-                    "feed/CDP unreadable — offer state UNKNOWN, verify the move by "
-                    f"hand on AKS before any retry: {feed_unreadable}"
-                )
+                    "feed/CDP/write error — offer state UNKNOWN, verify the move by "
+                    f"hand on AKS before any retry: {unreadable}")
 
             if self.write_mode and entry.get("ready"):
                 result["move_attempts"] += 1
@@ -197,9 +218,15 @@ class _MoverBase(_SubmitterBase):
                 detail=entry.get("blocker", "") or entry.get("post_verify", ""))
             result["plan"].append(entry)
 
-            if feed_unreadable is not None:
+            if unreadable is not None:
                 result["aborted"] = "feed_unreadable_mid_run"
-                self._log("run_stopped", reason=result["aborted"], detail=feed_unreadable)
+                self._log("run_stopped", reason=result["aborted"], detail=unreadable)
+                break
+            # MV9: honour the 10-consecutive-failure breaker even when the 10th
+            # failure is the last plan entry (no next check() to catch it).
+            if self.guard.snapshot().get("blocked"):
+                result["stopped"] = "ten_consecutive_failures"
+                self._log("run_stopped", reason=result["stopped"])
                 break
             if self.offer_pacer is not None:
                 self.offer_pacer.wait()
@@ -212,6 +239,58 @@ class _MoverBase(_SubmitterBase):
             self.logger.log_guard(self.guard.snapshot())
         return result
 
+    def _resolve_location(
+        self, candidate: dict[str, Any], offer_id: str, ctx: dict[str, Any]
+    ) -> tuple[str, Any]:
+        """('proceed', located) | ('skip', reason) | ('block', reason).
+
+        MV8: an "absent per the start index" miss is re-proven by a targeted scan
+        (``stop_on`` disables the early-terminate and runs to a proven feed end,
+        raising FeedScanError if coverage is unprovable) before it is trusted as
+        "already moved". A present-but-contradicting row is never a skip."""
+
+        located = self._locate_row(candidate, offer_id, ctx["index"], ctx["by_url"])
+        if not located.get("blocker"):
+            return "proceed", located
+        if "not in current feed" not in located["blocker"]:
+            return "block", located["blocker"]  # identity contradiction
+        url = _url_key(str(candidate["offer"].get("url") or ""))
+        index, by_url, found = self._scan_feed(
+            ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"],
+            stop_on=offer_id, stop_on_url=url or None)
+        if not found:
+            return "skip", "not on source list (already moved?) — proven by full scan"
+        ctx["index"], ctx["by_url"] = index, by_url
+        relocated = self._locate_row(candidate, offer_id, index, by_url)
+        if relocated.get("blocker"):
+            return "block", relocated["blocker"]
+        return "proceed", relocated
+
+    def _reverify_row(self, entry: dict[str, Any]) -> tuple[bool, str]:
+        """MV1 (SC5): on the FRESH page, confirm the row at current_offer_id is
+        still the plan's offer (name+URL) before any write — a mid-run re-import
+        can reassign that id to a DIFFERENT product. Relocates by URL on this page
+        if the id vanished; returns (ok, reason). ``check_price=False``: a live
+        feed reprices between extract and move (the submitter's rule)."""
+
+        current_id = entry["current_offer_id"]
+        candidate = {"offer": {"offer_id": current_id, "name": entry["name"],
+                               "url": entry["url"], "store_id": entry.get("store_id", "")}}
+        rows = {str(r.get("id")): r for r in self.session.page_offer_rows()}
+        row = rows.get(current_id)
+        if row is None:
+            url = _url_key(str(entry.get("url") or ""))
+            match = next((r for r in rows.values()
+                          if url and _url_key(str(r.get("url", ""))) == url), None)
+            if match is None:
+                return False, "row id vanished from the page (re-import?) — URL not here either"
+            entry["current_offer_id"] = str(match.get("id"))
+            row = match
+        mismatches, _ = _row_check(row, candidate, check_price=False)
+        if mismatches:
+            return False, f"fresh-page identity mismatch ({', '.join(mismatches)}) — NOT moving"
+        return True, ""
+
 
 class DryRunMover(_MoverBase):
     """Plan the move: locate the row + confirm it is selectable. No write."""
@@ -220,8 +299,15 @@ class DryRunMover(_MoverBase):
     event_name = "dry_run_move"
 
     def _move(self, entry: dict[str, Any], ctx: dict[str, Any]) -> bool:
-        current_id = entry["current_offer_id"]
         self.session.navigate(entry["page_url"])  # default 3.0 s — bulk form interactive
+        ok, reason = self._reverify_row(entry)  # MV1/SC5 even in dry-run
+        if not ok:
+            entry["ready"] = False
+            entry["selectable"] = False
+            entry["blocker"] = reason
+            self._log(self.event_name, offer_id=entry["offer_id"], selectable=False, blocker=reason)
+            return False
+        current_id = entry["current_offer_id"]
         present = self.session.bulk_row_present(current_id)
         entry["selectable"] = bool(present.get("checkbox") and present.get("bulk_form"))
         if not entry["selectable"]:
@@ -235,7 +321,9 @@ class DryRunMover(_MoverBase):
         self._log(self.event_name, offer_id=entry["offer_id"],
                   current_offer_id=current_id, selectable=entry["selectable"],
                   target_list_id=entry["target_list_id"])
-        return False  # a dry-run never proves a move
+        # MV4: success = located + selectable, so a >10-offer dry-run does not
+        # self-block the guard (the submitter's DryRunSubmitter records success too).
+        return bool(entry.get("selectable"))
 
 
 class Mover(_MoverBase):
@@ -244,11 +332,21 @@ class Mover(_MoverBase):
 
     write_mode = True
     event_name = "move_offer"
+    post_apply_settle = POST_APPLY_SETTLE_S  # tests patch to 0
 
     def _move(self, entry: dict[str, Any], ctx: dict[str, Any]) -> bool:
-        current_id = entry["current_offer_id"]
         target_id = entry["target_list_id"]
         self.session.navigate(entry["page_url"])  # 3.0 s: bulk form must be interactive
+
+        # MV1/SC5: re-confirm this is still the plan's offer on the fresh page
+        # before touching anything — a re-import can have re-ided the row.
+        ok, reason = self._reverify_row(entry)
+        if not ok:
+            entry["ready"] = False
+            entry["blocker"] = reason
+            self._log("move_blocked", offer_id=entry["offer_id"], reason=reason)
+            return False
+        current_id = entry["current_offer_id"]  # may have been relocated by URL
 
         present = self.session.bulk_row_present(current_id)
         if not (present.get("checkbox") and present.get("bulk_form")):
@@ -281,7 +379,17 @@ class Mover(_MoverBase):
         self._log("move_submitted", offer_id=entry["offer_id"],
                   current_offer_id=current_id, target_list_id=target_id)
 
-        # Post-verify: the ONLY success signal — the offer left the source list.
+        # MV7: let the native Apply POST commit (it reloads the source page)
+        # before the verify re-scan navigates, so we never race the in-flight move.
+        if self.post_apply_settle:
+            time.sleep(self.post_apply_settle)
+
+        # Post-verify: the ONLY success signal — the offer left the SOURCE list
+        # (MV12, Romain 2026-07-21: "gone from source" is the proof; we do NOT
+        # confirm arrival on the target list, so `moved` means exactly "left the
+        # source", nothing about the destination). Same discipline as the submit's
+        # "gone from feed"; a re-import that re-ids the still-present offer is
+        # caught because _verify_gone checks BOTH the id AND the merchant URL.
         gone, fresh_index, fresh_by_url = self._verify_gone(
             current_id, entry.get("url"), ctx["store_id"], ctx["feed_page"],
             ctx["available"], ctx["max_pages"])

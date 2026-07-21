@@ -46,6 +46,19 @@ class BuildMovePlanTests(unittest.TestCase):
         # the suggested one is surfaced as excluded, never silently dropped
         self.assertTrue(any(x["offer_id"] == "4" and "D1-b" in x["reason"] for x in plan["excluded"]))
 
+    def test_empty_url_excluded_not_dropped(self):
+        # MV3: an offer whose skipped.json URL is empty would make the move's
+        # disappearance proof id-only (falsifiable) → exclude, never admit.
+        (self.run / "skipped.json").write_text(json.dumps([
+            {"offer": {"offer_id": "8", "name": "No URL Game", "url": ""},
+             "reason": "skip category: SOFTWARE"},
+        ]), encoding="utf-8")
+        self._write_learning({"8": {"target_list_id": "16", "target_list_label": "Softwares"}})
+        plan = build_move_plan(self.run)
+        self.assertEqual(plan["entries"], [])
+        self.assertTrue(any(x["offer_id"] == "8" and "URL marchande vide" in x["reason"]
+                            for x in plan["excluded"]))
+
     def test_orphan_annotation_excluded_not_dropped(self):
         # offer_id 99 has a disposition but is no longer in skipped.json
         self._write_learning({"99": {"target_list_id": "16", "target_list_label": "Softwares"}})

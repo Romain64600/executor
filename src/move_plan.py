@@ -1,7 +1,11 @@
 """Build a Move-to-List plan from a run's Learning annotations.
 
-The plan is the move writer's validation file (the submit-grade gate,
-EXECUTOR_RULES §13). It contains ONLY confirmed dispositions:
+The plan is the move writer's validation file. It is the operator's confirmed
+human intent (learning.json is the trusted authority — MV13, review 2026-07-21:
+there is deliberately no cryptographic freeze/fingerprint gate like the submit's
+``verify_approved_against_source``; the writer's own fresh-page identity re-check
+(mover ``_reverify_row``, SC5) is what guards against a stale/wrong pairing at
+move time). It contains ONLY confirmed dispositions:
 
   * ``target_list_id`` set (a *garder* / "don't change" row has none), AND
   * NOT ``suggested`` — D1 option (b), Romain 2026-07-21: a pre-selected
@@ -75,6 +79,14 @@ def build_move_plan(run_dir: Path) -> dict[str, Any]:
         if info is None:
             excluded.append({"offer_id": offer_id,
                              "reason": "offer_id absent de skipped.json (orphelin) — pas d'URL pour relocaliser",
+                             "target_list_label": ann.get("target_list_label", "")})
+            continue
+        if not info["url"].strip():
+            # MV3 (review 2026-07-21): without a merchant URL the writer's
+            # disappearance proof degrades to id-only, which a re-import falsifies
+            # (false "gone"). Exclude — the exact guarantee this join promised.
+            excluded.append({"offer_id": offer_id,
+                             "reason": "URL marchande vide dans skipped.json — preuve de disparition non fiable",
                              "target_list_label": ann.get("target_list_label", "")})
             continue
         entries.append({
