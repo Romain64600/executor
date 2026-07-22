@@ -3,6 +3,17 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-22 — Move-to-List : mover v3 (reflow-résilient) + canary RV2/RV3 validé
+
+Un canary supervisé a révélé un blocage fail-closed : un re-import faisait
+refluer la pagination entre l'index de départ et le move (`row id vanished`).
+Fix `mover._relocate_before_move` : re-localisation par URL JUSTE AVANT le move
+(résilient au reflow), MOVER_VERSION 2->3. Puis, sur données FRAÎCHES, un canary
+supervisé a **réussi de bout en bout** : AWZ PC Cleaner déplacé liste 9 ->
+Softwares, vérifié **parti de la source ET présent sur la cible** (RV2), et une
+autorisation RV3 v1 (mover v3 × store × source × Softwares × extraction) générée.
+Le batch reste verrouillé — réactivation = décision explicite distincte.
+
 ## 2026-07-22 — Move-to-List : preuve d'arrivée cible (RV2) + autorisation versionnée (RV3)
 
 Revue post-canary (`docs/REVIEW_2026-07-22.md`). Le batch reste VERROUILLÉ
