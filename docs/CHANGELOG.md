@@ -592,7 +592,7 @@ candidates) was cancelled before validation — nothing was submitted.
 
 ## 2026-07-15 — Admin page: human validation + supervised submit from a browser
 
-New operator page at `https://51.38.37.254.sslip.io/executor/` (nginx HTTPS +
+New operator page at `https://<VPS_HOST>/executor/` (nginx HTTPS +
 basic auth → loopback-only stdlib Python server, `scripts/07_admin_server.py` +
 `src/admin/`). Per run: read the normalized report verbatim, approve/reject
 each candidate, override platform/region/edition (choices restricted to the

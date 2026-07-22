@@ -20,7 +20,7 @@ To rotate the password, re-run the same commands.
 ## 2. nginx vhost
 
 ```sh
-sudo cp ops/nginx-51.38.37.254.sslip.io.conf /etc/nginx/sites-available/51.38.37.254.sslip.io.conf
+sudo cp ops/nginx-executor.conf /etc/nginx/sites-available/<VPS_HOST>.conf
 # (already symlinked in sites-enabled on this VPS)
 sudo nginx -t && sudo systemctl reload nginx
 ```
@@ -28,7 +28,7 @@ sudo nginx -t && sudo systemctl reload nginx
 ## 3. HTTPS (Let's Encrypt, certbot already installed)
 
 ```sh
-sudo certbot --nginx -d 51.38.37.254.sslip.io --redirect --agree-tos --no-eff-email -m rl64600@gmail.com
+sudo certbot --nginx -d <VPS_HOST> --redirect --agree-tos --no-eff-email -m <ADMIN_EMAIL>
 ```
 
 `--redirect` rewrites the vhost so port 80 forwards to HTTPS — basic auth
@@ -54,7 +54,7 @@ Notes:
 
 ## 5. End-to-end check
 
-1. `https://51.38.37.254.sslip.io/executor/` → basic auth prompt → page loads.
+1. `https://<VPS_HOST>/executor/` → basic auth prompt → page loads.
 2. Pick a matched run → the normalized report renders verbatim.
 3. Toggle one approve + save → `candidates.json` / `validation.json` /
    `approved.json` regenerated in the run dir, `operator_override` /

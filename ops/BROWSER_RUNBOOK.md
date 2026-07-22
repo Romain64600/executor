@@ -186,10 +186,10 @@ WantedBy=multi-user.target
 
 Copie de référence dans le dépôt : `ops/aks-admin.service`.
 
-Devant, nginx (`/etc/nginx/sites-enabled/51.38.37.254.sslip.io.conf`, copie
-dépôt : `ops/nginx-51.38.37.254.sslip.io.conf`) :
+Devant, nginx (`/etc/nginx/sites-enabled/<VPS_HOST>.conf`, copie
+dépôt : `ops/nginx-executor.conf`) :
 
-- vhost `51.38.37.254.sslip.io`, TLS Let's Encrypt géré par certbot
+- vhost `<VPS_HOST>`, TLS Let's Encrypt géré par certbot
   (renouvellement automatique via `certbot.timer`), port 80 → 301 HTTPS ;
 - `location /executor/` : basic auth (« AKS Executor »,
   `auth_basic_user_file /etc/nginx/.htpasswd_executor` — vérifié :
@@ -324,6 +324,32 @@ Revenir à 149 (`apt-cache policy chromium` pour voir les versions
 disponibles ; sinon https://snapshot.debian.org), puis remettre le hold
 (§3, étape 2).
 
+### 2.5 Écriture arrêtée en état UNKNOWN (feed/CDP illisible en plein run)
+
+Si un **submit** (`src/submitter.py`) ou un **move** (`src/mover.py`) rencontre
+un feed/CDP illisible (`NotLoggedInError`, `FeedScanError`, `CdpCommandError` —
+`FEED_UNREADABLE_EXCS`) APRÈS avoir pu cliquer « Create offer » / « Apply »,
+l'offre courante passe en état **UNKNOWN** : l'écriture a peut-être abouti,
+peut-être pas. Le code échoue-fermé proprement — il inscrit dans le plan
+`post_save = "feed/CDP unreadable — offer state UNKNOWN, verify it by hand on
+AKS before any retry: …"` (côté move : « verify the move by hand »), compte la
+tentative mais **PAS** la création, puis arrête le run
+(`stopped="feed_unreadable"`), plan + logs JSONL intacts (audit 2026-07-17,
+FC1 — `src/submitter.py:701`, `src/mover.py:204`).
+
+Procédure — au plus **UNE** offre en état UNKNOWN par run :
+
+1. Ne **jamais** relancer le run aveuglément : rejouer recréerait peut-être une
+   offre déjà écrite (doublon), à l'opposé du fail-closed.
+2. Identifier l'offre : la dernière entrée de `submit_plan.json` (ou du plan de
+   move) porte le `post_save` UNKNOWN ; recouper avec le log JSONL du run.
+3. Vérifier l'état **RÉEL à la main** sur AKS — c'est la seule source de vérité :
+   l'offre est-elle présente dans le feed rafraîchi (submit) / dans la liste
+   cible (move) ?
+4. Si elle y est → l'écriture a abouti : la retirer du lot avant toute reprise.
+   Si elle n'y est pas → reprise idempotente standard sur le même
+   `approved.json` / plan (l'offre est retentée normalement).
+
 ---
 
 ## 3. Checklist reconstruction VM (de zéro)
@@ -378,7 +404,7 @@ requise par le pont socat, §1.3).
    Ne rien ouvrir pour 9222 ni 8650.
 7. **nginx + basic auth + TLS + aks-admin** : suivre `ops/INSTALL_ADMIN.md`
    dans l'ordre (htpasswd → vhost depuis
-   `ops/nginx-51.38.37.254.sslip.io.conf` → certbot → unité depuis
+   `ops/nginx-executor.conf` → certbot → unité depuis
    `ops/aks-admin.service`).
 8. **Marqueur FC2** (root, sur la machine cible uniquement) :
    ```sh

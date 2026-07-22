@@ -209,7 +209,7 @@ pick invalidates a stale approval (S15).
 `scripts/07_admin_server.py` serves the page from loopback `:8650`
 (non-loopback bind refused without `--allow-external`); nginx terminates TLS
 and enforces basic auth in front, proxying `/executor/`
-(`ops/nginx-51.38.37.254.sslip.io.conf`). It runs under systemd as
+(`ops/nginx-executor.conf`). It runs under systemd as
 `aks-admin.service`: default cgroup kill mode means restarting the service
 also kills an in-flight submit child — supervision is never silently lost.
 

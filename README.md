@@ -47,9 +47,12 @@ state and cannot be argued away by a language model.
 - **Controlled Executor** — the deterministic engine. Dry-run by default;
   submits only against an explicit validation file.
 - **Hermes** — optional conversational supervisor. Reads reports, relays
-  instructions. Never executes free-form AKS browser actions.
+  instructions. Never executes free-form AKS browser actions. "Optional" refers
+  only to this conversational layer — **not** to the CDP proxy that shares the
+  Hermes name (see [Requirements](#requirements)): that socat bridge is
+  **required** for every browser-driving stage.
 - **Admin page** — the operator's validation UI on the VPS
-  (`https://51.38.37.254.sslip.io/executor/`, nginx HTTPS + basic auth):
+  (`https://<VPS_HOST>/executor/`, nginx HTTPS + basic auth):
   read the normalized report, approve/reject/override candidates, launch a
   supervised dry-run/submit. See [`ops/INSTALL_ADMIN.md`](ops/INSTALL_ADMIN.md).
 - **N8N** — optional, later: orchestration, notifications, log archive.
@@ -58,9 +61,19 @@ state and cannot be argued away by a language model.
 
 - **Fail-closed.** If anything is uncertain, stop. No fallback browser, no
   Playwright, no Browserbase, no VPN when AKS direct works, no degraded submit.
-- **Deterministic success.** Every recorded success comes from code — an HTTP
-  status, a parsed error field, or *the offer disappearing from the refreshed
-  feed (same available mode as the run)* — never from a model self-assessment.
+  A **fail-closed STOP** and a **deterministic skip** are not the same mechanism:
+  a STOP fires on doubt or anomaly (feed unreadable, modal context missing, an
+  unresolvable pick), halts the whole run, and writes an error report; a skip is
+  a rule firing on a known shape (a bundle, a console key, a gift card) that
+  drops that one offer and lets the run continue.
+- **Deterministic success.** Every recorded success comes from code, never a
+  model self-assessment. A **write** never counts a bare HTTP 200 as success —
+  a 200 proves only that a request was served, not that the data landed. Success
+  is a deterministic **business** signal: a submit succeeds when *the offer
+  disappears from the refreshed feed* (same available mode as the run), a Stage 6
+  move when *the offer leaves its source list*. Only read-only steps (the
+  invariant gate, resolve probes) legitimately read an HTTP status or a parsed
+  error field as their outcome.
 - **Guarded execution.** Every stage runs through the StepGuard.
 - **Read-only until green.** No write stage runs until the invariant checker is
   `authoritative: true` **and** `ok: true` on the Debian VPS target.
@@ -129,7 +142,7 @@ executor/
 │   ├── pacing.py               # bounded-random pacing between page loads / submissions
 │   ├── run_log.py              # append-only JSONL run logger (redacting)
 │   └── step_guard.py           # deterministic, fail-closed StepGuard
-├── tests/                      # unit tests (743)
+├── tests/                      # unit tests
 ├── runs/  logs/  state/        # runtime dirs (gitignored)
 └── .gitignore
 ```
@@ -139,8 +152,11 @@ executor/
 ## Requirements
 
 - **Python 3.10+** — standard library only, no production dependencies.
-- Production runtime target: a **Debian VPS** exposing the Hermes CDP proxy at
-  `http://172.17.0.1:9223/json/version`.
+- Production runtime target: a **Debian VPS** whose **CDP proxy is required** for
+  every browser-driving stage — a socat bridge exposing the headless Chromium on
+  the Docker bridge at `http://172.17.0.1:9223/json/version` (the official
+  endpoint; `ops/BROWSER_RUNBOOK.md` §1.3). This bridge is mandatory even though
+  the Hermes conversational supervisor is optional; the two only share a name.
 - For the login stage only (`scripts/00b_login.py`, see
   [`docs/LOGIN_SPEC.md`](docs/LOGIN_SPEC.md)): `AKS_WP_USER` and
   `AKS_WP_PASSWORD` in the environment (e.g. a `chmod 600` `.env` you
@@ -159,7 +175,7 @@ executor/
 # 2. Invariant gate (read-only). Must be authoritative:true AND ok:true on the VPS:
 python3 scripts/01_check_invariants.py
 
-# 3. Unit tests (743, pure — run anywhere):
+# 3. Unit tests (pure — run anywhere):
 python3 -m unittest discover -s tests
 ```
 
@@ -318,9 +334,11 @@ operator annotated. The move plan is built from the run's **confirmed**
 Move-to-list dispositions (`src/move_plan.py`, from `learning.json`) — *garder*
 and still-`suggested` dispositions are never in a plan. Same fail-closed
 discipline as the submitter: invariants green + authoritative, one CDP tab under
-the browser lock, **dry-run by default** (`--execute` writes), a **mandatory
-canary on the first real move** (`--mode learning`; `--mode safe`, the full plan,
-is refused until a canary has verified), explicit go, never fire-and-forget.
+the browser lock, **dry-run by default** (`--execute` writes), writes only as a
+**supervised unit canary** (`--mode learning`). The batch path (`--execute
+--mode safe`) is **refused unconditionally** for now — a successful canary does
+not unlock it (two open conditions, see [Roadmap](#roadmap)); a `--mode safe`
+*dry-run* is still allowed as a preview. Explicit go, never fire-and-forget.
 Success = **the offer left the source list** on the refreshed feed (the analogue
 of the submit's "gone from feed").
 
@@ -328,11 +346,12 @@ of the submit's "gone from feed").
 # Plan only — dry-run (default). No write:
 python3 scripts/06_move.py runs/<id> --store-id 38
 
-# First real move must be a canary of 1 (--mode learning), on explicit go:
+# A real move is a supervised canary of 1 (--mode learning), on explicit go:
 python3 scripts/06_move.py runs/<id> --store-id 38 --execute --mode learning
 
-# Once a canary has verified, the full confirmed plan (--mode safe):
-python3 scripts/06_move.py runs/<id> --store-id 38 --execute --mode safe
+# The batch path is refused unconditionally for now (see Roadmap):
+#   python3 scripts/06_move.py runs/<id> --store-id 38 --execute --mode safe
+# → BLOQUÉ until the two batch conditions (RV2/RV3) are built.
 ```
 
 See [`docs/AKS_LISTS.md`](docs/AKS_LISTS.md) for the list taxonomy and the move
@@ -365,9 +384,22 @@ guard.run_step(
 Guarantees: the same action can't be hammered (repeated-signature failure blocks
 at the 2nd failure); thrashing across actions is capped (consecutive-failure and
 per-task budget blocks); a block clears **only** when a genuinely new `task_id`
-starts, so a mid-task "retry past it" is impossible. See
-[`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) §2 for how each rule from the
-`aks-data-entry` skill maps onto a guard signal.
+starts, so a mid-task "retry past it" is impossible.
+
+**StepGuard vs. BlockLedger — what survives a process.** The StepGuard is
+**in-memory and per-process**: its block lives in Python state and dies when the
+process exits, so simply re-running a script starts from a blank guard. To carry
+the skill's anti-loop rule (G03) *across* processes, each write stage also keeps
+a **persisted, cross-process `BlockLedger`** in the run directory
+(`runs/<id>/guard_ledger.json` for submit, `move_guard_ledger.json` for Stage 6).
+It counts a run's consecutive *blocked* passes on disk — one free recovery pass
+after a block (the standard idempotent re-pass), a third consecutive blocked pass
+needs an explicit `--acknowledge-block`. The in-run StepGuard is always fully
+armed either way; the ledger only refuses to *start* a fresh blocked-history run
+(FC3, `src/step_guard.py`).
+
+See [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) §2 for how each rule from
+the `aks-data-entry` skill maps onto a guard signal.
 
 ---
 
@@ -413,8 +445,12 @@ starts, so a mid-task "retry past it" is impossible. See
   unit-tested; **first live run happens on the VPS**.
 - [x] **Sprint 3 — read-only matcher** (`src/matcher.py`, `scripts/03_match.py`):
   strict name match (R01/R01b), SKIP lists, region-from-URL, edition detection,
-  AKS slug resolve (`data-product-id` + editions), ≤100 candidates, normalized-text
-  report. Pure core unit-tested; live AKS resolve runs on the VPS.
+  AKS slug resolve (`data-product-id` + editions), a default **100-candidate cap**
+  (`match_feed(max_candidates=100)`, override with `03_match --max-candidates`),
+  normalized-text report. The cap mirrors the one-page-at-a-time cadence — a feed
+  page is ~100 offers (EXECUTOR_RULES §4.8/§11), so one page's worth is the
+  natural ceiling and a guard-rail against an over-broad match flooding a batch.
+  Pure core unit-tested; live AKS resolve runs on the VPS.
 - [x] **Validation** (`src/validation.py`, `scripts/04_validate.py`) — fail-closed
   gate: approve exact candidates by fingerprint; no submission without it.
 - [x] **Submitter — built & live-proven** (`src/submitter.py`,
@@ -454,14 +490,26 @@ starts, so a mid-task "retry past it" is impossible. See
   stage reads it at runtime; generalization runs through the builder-offline
   process (D2, 2026-07-22). See
   [`docs/LEARNING_PROCESS.md`](docs/LEARNING_PROCESS.md).
-- [x] **Stage 6 — Move-to-List writer** (`src/mover.py`, `src/move_plan.py`,
-  `scripts/06_move.py`, 2026-07-21) — the submitter's sibling: moves a
-  non-matched offer out of its source list into the annotated target list; plan
-  built from the confirmed `learning.json` dispositions. Dry-run by default
-  (`--execute` writes), canary-of-1 on the first real move (`--mode learning`),
-  explicit go, never fire-and-forget; success = the offer left the source list.
-  **No real move has run yet** — the first canary awaits Romain's explicit go.
-  See [`docs/AKS_LISTS.md`](docs/AKS_LISTS.md).
+- [x] **Stage 6 — Move-to-List writer — unit canary only; batch is open**
+  (`src/mover.py`, `src/move_plan.py`, `scripts/06_move.py`, 2026-07-21) — the
+  submitter's sibling: moves a non-matched offer out of its source list into the
+  annotated target list; plan built from the confirmed `learning.json`
+  dispositions. Dry-run by default (`--execute` writes), canary-of-1 on a real
+  move (`--mode learning`), explicit go, never fire-and-forget; success = the
+  offer left the source list. **First unit canary succeeded 2026-07-22** (IObit
+  Advanced SystemCare, G2A run, list 9 → Softwares 16). The **batch path
+  (`--execute --mode safe`) stays blocked** — a successful unit canary does not
+  unlock it (see the open item below). See [`docs/AKS_LISTS.md`](docs/AKS_LISTS.md).
+- [ ] **Move-to-List batch** — blocked. `--execute --mode safe` is refused
+  unconditionally today (`scripts/06_move.py`); a successful unit canary does
+  **not** unlock it. Two conditions must be built first
+  (`docs/REVIEW_2026-07-22.md` RV2/RV3): (1) confirm the offer's **presence in
+  the target list** after it leaves the source (a bounded `feed_page=<target
+  list>` scan — today's signal only proves it left the source, which a parallel
+  operator's move/delete would also satisfy); (2) encode a **scoped, versioned
+  authorization** from the canary (which canary unlocks which merchant × list ×
+  extraction identity, and until when). Until both exist, only supervised unit
+  canaries (`--mode learning`) may write.
 - [x] **Runtime hardening** (`src/browser_lock.py`, `src/pacing.py`) —
   advisory `flock` on `state/browser.lock` so only one process drives the
   single CDP tab at a time (fail-closed: busy lock = refuse to start; OP1,
@@ -477,6 +525,10 @@ starts, so a mid-task "retry past it" is impossible. See
   `admin-ajax` XHR (the modal auto-assigns the merchant id).
 - `[data-success]` is never proof of creation. An offer is "created" only after
   it disappears from the refreshed feed (same available mode as the run).
+- If a write stops in **UNKNOWN** state (feed/CDP unreadable mid-run — the offer
+  may or may not have been written), verify the real state **by hand on AKS
+  before any retry**; never replay blindly (a blind retry can double-create).
+  Runbook: [`ops/BROWSER_RUNBOOK.md`](ops/BROWSER_RUNBOOK.md) §2.5.
 - 2FA is never requested before the field is visible and ready to submit
   immediately (Stage 0b, `docs/LOGIN_SPEC.md`) — one attempt each for the
   password and the code, no retry loop; after any login/2FA/CDP failure,
