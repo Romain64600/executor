@@ -15,8 +15,9 @@ class FakeMoveSession:
     """Minimal feed + bulk-move surface for the mover. Configurable failures."""
 
     def __init__(self, pages, *, login=False, options=None, register_ok=True,
-                 bulk_set_ok=True, apply_ok=True, move_removes=True, rows=None):
-        self.pages = [list(p) for p in pages]
+                 bulk_set_ok=True, apply_ok=True, move_removes=True, rows=None,
+                 source_id="9", on_target=True):
+        self.pages = [list(p) for p in pages]        # the SOURCE list, paginated
         self.rows = dict(rows or {})  # per-id {url, name} overrides (re-id sim)
         self.login = login
         self.options = options if options is not None else LIST_OPTIONS
@@ -24,8 +25,12 @@ class FakeMoveSession:
         self.bulk_set_ok = bulk_set_ok
         self.apply_ok = apply_ok
         self.move_removes = move_removes
+        self.source_id = source_id
+        self.on_target = on_target  # does a moved offer appear on its target list?
+        self.moved_to = {}          # target_list_id -> [offer_ids] (RV2 verify)
         self.nav = []
         self._page = 0
+        self._list = source_id
         self._registered = None
         self._bulk_list = None
         self.applied = []
@@ -34,8 +39,10 @@ class FakeMoveSession:
     def navigate(self, url, settle=3.0):
         import re
         self.nav.append(url)
-        m = re.search(r"[&?]p=(\d+)", url)
-        self._page = (int(m.group(1)) - 1) if m else 0
+        m = re.search(r"page=aks-merchant-feeds-(\d+)", url)
+        self._list = m.group(1) if m else self.source_id
+        mp = re.search(r"[&?]p=(\d+)", url)
+        self._page = (int(mp.group(1)) - 1) if mp else 0
 
     def is_login_page(self):
         return self.login
@@ -46,13 +53,20 @@ class FakeMoveSession:
         row.update(self.rows.get(oid, {}))
         return row
 
+    def _pages_for_current(self):
+        if self._list == self.source_id:
+            return self.pages
+        return [self.moved_to.get(self._list, [])]  # a target list: single page
+
     def page_offer_rows(self):
-        if 0 <= self._page < len(self.pages):
-            return [self._row(i) for i in self.pages[self._page]]
+        pages = self._pages_for_current()
+        if 0 <= self._page < len(pages):
+            return [self._row(i) for i in pages[self._page]]
         return []
 
     def feed_page_state(self):
-        nav_max = max((i + 1 for i, p in enumerate(self.pages) if p), default=0)
+        pages = self._pages_for_current()
+        nav_max = max((i + 1 for i, p in enumerate(pages) if p), default=0)
         return {"feed_ui": True, "nav_max": nav_max, "is_login": self.login,
                 "href": self.nav[-1] if self.nav else ""}
 
@@ -77,11 +91,15 @@ class FakeMoveSession:
     def click_apply(self):
         if not self.apply_ok:
             return {"status": "NO_ELEMENT"}
-        # a real Apply POSTs and the offer leaves the source list
+        # a real Apply POSTs: the offer leaves the source list and (RV2) appears
+        # on its target list — unless on_target=False (simulates a parallel
+        # operator's move/delete: gone from source but NOT on our target).
         if self.move_removes and self._registered is not None:
             for p in self.pages:
                 if self._registered in p:
                     p.remove(self._registered)
+            if self.on_target and self._bulk_list:
+                self.moved_to.setdefault(self._bulk_list, []).append(self._registered)
         self.applied.append((self._registered, self._bulk_list))
         return {"status": "CLICKED"}
 
@@ -149,15 +167,28 @@ class DryRunMoverTests(unittest.TestCase):
 
 
 class MoverWriteTests(unittest.TestCase):
-    def test_move_confirmed_by_disappearance(self):
+    def test_move_confirmed_by_departure_and_arrival(self):
         session = FakeMoveSession([["100", "200"]])
         result = _run(Mover, session, _plan("100"))
         self.assertEqual(result["moved"], 1)
         self.assertEqual(result["move_attempts"], 1)
         entry = result["plan"][0]
         self.assertTrue(entry["moved"])
-        self.assertEqual(entry["post_verify"], "gone from source list")
+        self.assertTrue(entry["gone_from_source"])
+        self.assertTrue(entry["on_target"])  # RV2
+        self.assertEqual(entry["post_verify"], "gone from source + present on target list")
         self.assertEqual(session.applied, [("100", "16")])
+
+    def test_left_source_but_not_on_target_is_failure(self):
+        # RV2: gone from source but NOT present on the target (a parallel
+        # operator's move/delete) must NOT count as our success.
+        session = FakeMoveSession([["100"]], on_target=False)
+        result = _run(Mover, session, _plan("100"))
+        self.assertEqual(result["moved"], 0)
+        entry = result["plan"][0]
+        self.assertTrue(entry["gone_from_source"])
+        self.assertFalse(entry["on_target"])
+        self.assertIn("NOT found on target", entry["post_verify"])
 
     def test_still_present_after_apply_is_failure(self):
         # move_removes=False: the offer stays on the source → NOT confirmed

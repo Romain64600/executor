@@ -25,6 +25,7 @@ import json
 import math
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -35,6 +36,7 @@ from src.aks_env import OFFICIAL_CDP_ENDPOINT  # noqa: E402
 from src.browser_lock import BrowserBusyError, browser_lock  # noqa: E402
 from src.invariants import build_report  # noqa: E402
 from src.mover import DryRunMover, Mover, FEED_UNREADABLE_EXCS  # noqa: E402
+from src.move_auth import batch_authorized, grant_from_canary  # noqa: E402
 from src.move_plan import build_move_plan  # noqa: E402
 from src.pacing import Pacer  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
@@ -173,10 +175,18 @@ def _main() -> int:
     # dry-run --mode safe (write=False) is still allowed — it just previews the
     # full plan.
     if write and args.mode == "safe":
+        # RV2 (target-presence proof) and RV3 (scoped/versioned authorization)
+        # are now BUILT — but re-enabling the batch stays a SEPARATE explicit
+        # decision (Romain 2026-07-22). safe --execute is refused unconditionally;
+        # we surface whether the current authorization WOULD cover this plan.
+        covered, why = batch_authorized(run_dir, entries, store_id=store_id,
+                                        source_feed_page=source_list)
         print(json.dumps({"aborted": True, "reason": (
-            "batch (--execute --mode safe) BLOQUÉ — conditions non remplies : "
-            + BATCH_CONDITIONS + ". Utilise --mode learning (canary unitaire "
-            "supervisé). Voir docs/REVIEW_2026-07-22.md.")}, indent=2))
+            "batch (--execute --mode safe) BLOQUÉ — la réactivation du batch est une "
+            "décision explicite distincte (RV1). Mécanisme prêt : RV2 (preuve présence "
+            "cible) + RV3 (autorisation). Utilise --mode learning (canary unitaire "
+            "supervisé). Voir docs/REVIEW_2026-07-22.md."),
+            "batch_would_be_covered": covered, "authorization": why}, indent=2))
         return 2
 
     # Fail-closed gate: invariants green AND authoritative (on the VPS target).
@@ -243,6 +253,21 @@ def _main() -> int:
         snap = guard.snapshot()
         ledger.record(task_id=run_id, blocked=bool(snap.get("blocked")),
                       rule=snap.get("blocked_rule"), reason=snap.get("blocked_reason"))
+
+    # RV3: a verified canary (moved = gone from source AND present on target)
+    # grants/extends a scoped, versioned authorization. This does NOT unlock the
+    # batch — re-enabling --mode safe is a separate explicit decision.
+    if write and args.mode in CANARY_MODES and result.get("moved", 0) > 0:
+        moved_entries = [e for e in result["plan"] if e.get("moved")]
+        auth = grant_from_canary(
+            run_dir, store_id=store_id, source_feed_page=source_list,
+            moved_entries=moved_entries,
+            clock=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        result["authorization"] = {
+            "version": auth["version"],
+            "authorized_target_lists": auth["authorized_target_lists"],
+            "note": "canary authorization recorded — batch stays a separate explicit decision",
+        }
 
     result["data_entry_mode"] = args.mode
     result["limit"] = limit

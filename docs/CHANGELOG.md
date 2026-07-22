@@ -3,6 +3,24 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-22 — Move-to-List : preuve d'arrivée cible (RV2) + autorisation versionnée (RV3)
+
+Revue post-canary (`docs/REVIEW_2026-07-22.md`). Le batch reste VERROUILLÉ
+(RV1, `--execute --mode safe` refusé) ; ces deux briques préparent une future
+réactivation qui restera une **décision explicite distincte**.
+
+- **RV2** — le succès d'un move est désormais « parti de la source ET **présent
+  sur la liste cible** » (`mover._verify_on_target`, scan `feed_page=aks-merchant-
+  feeds-<cible>` par URL). Un move/delete d'un opérateur parallèle ne compte plus
+  comme succès. Cible non intégralement vérifiable → **UNKNOWN**, arrêt fail-closed.
+- **RV3** — `src/move_auth.py` : un canary vérifié **génère** une autorisation
+  (`move_authorization.json`) liée à la **version du mover**, au store, à la
+  source, aux **listes cibles validées** (label stable) et au **contexte
+  d'extraction** (hash de skipped.json). `batch_authorized()` vérifie la
+  couverture ; tout drift → hors périmètre. Ne réactive PAS le batch.
+
+Tests: +12 (RV2 arrivée/absence cible, RV3 grant/scope/drift). Suite verte.
+
 ## 2026-07-22 — Learning : confirmation explicite des suggestions (SF2, option B)
 
 Romain 2026-07-22 : la confirmation d'une disposition Move-to-list suggérée est

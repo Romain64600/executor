@@ -34,6 +34,13 @@ from src.submitter import (  # reuse the proven, audited feed machinery
 # commit before the verify re-scan navigates away, or the in-flight move is raced.
 POST_APPLY_SETTLE_S = 2.0
 
+# RV3 (review 2026-07-22): the move/proof mechanics version. A batch authorization
+# granted by a canary is bound to this — bump it whenever the move or its proof
+# changes, so an authorization from an older mechanism no longer covers a batch.
+#   1  initial writer (trusted checkbox click — proved fragile, superseded)
+#   2  registration by hidden injection + RV2 target-presence proof
+MOVER_VERSION = "2"
+
 # The source list a run scanned — parsed from raw.json's source_url
 # (…&page=aks-merchant-feeds-<id>). Default 9 = "AKS Feeds" (pending queue).
 _FEED_PAGE_RE = re.compile(r"aks-merchant-feeds-\d+")
@@ -384,20 +391,47 @@ class Mover(_MoverBase):
         if self.post_apply_settle:
             time.sleep(self.post_apply_settle)
 
-        # Post-verify: the ONLY success signal — the offer left the SOURCE list
-        # (MV12, Romain 2026-07-21: "gone from source" is the proof; we do NOT
-        # confirm arrival on the target list, so `moved` means exactly "left the
-        # source", nothing about the destination). Same discipline as the submit's
-        # "gone from feed"; a re-import that re-ids the still-present offer is
-        # caught because _verify_gone checks BOTH the id AND the merchant URL.
+        # Post-verify part 1: the offer left the SOURCE list. _verify_gone checks
+        # BOTH the id AND the merchant URL, so a re-import that re-ids the still-
+        # present offer is caught (no false "gone").
         gone, fresh_index, fresh_by_url = self._verify_gone(
             current_id, entry.get("url"), ctx["store_id"], ctx["feed_page"],
             ctx["available"], ctx["max_pages"])
-        entry["moved"] = bool(gone)
-        entry["post_verify"] = "gone from source list" if gone else (
-            "STILL on source list after Apply — move NOT confirmed")
+        entry["gone_from_source"] = bool(gone)
         if gone and fresh_index is not None:
-            # reuse the proven fresh scan to locate the next offer (reflow-safe)
-            ctx["index"], ctx["by_url"] = fresh_index, fresh_by_url
-        self._log("move_verified", offer_id=entry["offer_id"], moved=entry["moved"])
-        return bool(gone)
+            ctx["index"], ctx["by_url"] = fresh_index, fresh_by_url  # reflow-safe next locate
+        if not gone:
+            entry["moved"] = False
+            entry["post_verify"] = "STILL on source list after Apply — move NOT confirmed"
+            self._log("move_verified", offer_id=entry["offer_id"], moved=False)
+            return False
+
+        # Post-verify part 2 (RV2, review 2026-07-22): confirm the offer ARRIVED
+        # on the TARGET list. Gone-from-source alone would let a parallel
+        # operator's move/delete register as our success — insufficient for a
+        # batch. Present = found by merchant URL on feed_page=<target list>.
+        on_target = self._verify_on_target(
+            entry.get("url"), ctx["store_id"], target_id, ctx["available"], ctx["max_pages"])
+        entry["on_target"] = bool(on_target)
+        entry["moved"] = bool(on_target)
+        entry["post_verify"] = ("gone from source + present on target list" if on_target
+                                else "left source but NOT found on target list — verify by hand")
+        self._log("move_verified", offer_id=entry["offer_id"],
+                  moved=entry["moved"], on_target=on_target)
+        return bool(on_target)
+
+    def _verify_on_target(self, url: str, store_id: str | int, target_list_id: str,
+                          available: str, max_pages: int) -> bool:
+        """RV2: is the offer present on the target list (by stable merchant URL)?
+
+        A scan of ``feed_page=aks-merchant-feeds-<target>`` stopping on the URL —
+        an unprovable scan (max_pages hit) raises FeedScanError (fail-closed,
+        the caller marks the offer UNKNOWN), never a silent "not present"."""
+
+        key = _url_key(str(url or ""))
+        if not key:
+            return False
+        target_page = "aks-merchant-feeds-%s" % str(target_list_id)
+        _, _, found = self._scan_feed(store_id, target_page, available, max_pages,
+                                      stop_on_url=key)
+        return bool(found)
