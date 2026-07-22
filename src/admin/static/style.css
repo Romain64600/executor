@@ -344,3 +344,5 @@ dialog::backdrop { background: var(--backdrop); }
   color: var(--accent); font-size: 0.75rem; word-break: break-all; text-decoration: none;
 }
 .learning-offer .learning-merchant-url a:hover { text-decoration: underline; }
+.learning-offer .learn-confirm { font-size: 0.78rem; padding: 0.1rem 0.5rem; }
+.learning-offer .learn-suggested.confirmed { background: #2f855a; }

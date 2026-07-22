@@ -17,15 +17,16 @@ faire confiance à l'amont. **Fix** : exclusion sur toute valeur *truthy*
 (`if ann.get("suggested"):`) — défense en profondeur. Une clé absente reste
 « confirmé » (contrat inchangé).
 
-### SF2. Impossible de confirmer une suggestion « telle quelle » — FIXED (décision UX)
-Le seul signal de confirmation était l'événement `change` du select. Or un
-`<select>` natif ne déclenche `change` que si la valeur CHANGE : re-sélectionner
-la liste déjà suggérée ne confirmait rien → `data-suggested` restait `1` →
-l'offre était EXCLUE du plan (fail-closed, mais un move voulu n'arrivait jamais,
-sans feedback). Le commentaire du code était trompeur. **Fix** : la confirmation
-se déclenche dès que l'opérateur INTERAGIT avec le select (`focus`/`pointerdown`),
-pas seulement sur `change`. **Décision Romain** : suffisant, ou préfères-tu un
-bouton « confirmer » explicite par offre ?
+### SF2. Impossible de confirmer une suggestion « telle quelle » — FIXED (option B, 2026-07-22)
+Le seul signal de confirmation était l'événement `change` du select, qui ne se
+déclenche que si la valeur CHANGE : re-sélectionner la liste déjà suggérée ne
+confirmait rien → l'offre restait exclue du plan, sans feedback. **Décision
+Romain : option B** (confirmation EXPLICITE, la plus fidèle à D1-b — un défaut ne
+devient jamais une décision par accident). **Fix** : un bouton **« ✓ confirmer »**
+par offre suggérée (+ un bouton global **« confirmer toutes les suggestions »**) ;
+changer la valeur du select reste une confirmation (décision explicite) ; regarder
+le menu ne confirme plus rien. Feedback visuel « ✔ confirmé ».
+
 
 ### SF3. Une disposition confirmée devient orpheline après un re-match — FIXED
 `build_move_plan` joignait par `offer_id` contre `skipped.json`. Les ids tournent
@@ -57,6 +58,6 @@ AVANT de traiter `cleared`. Une annotation périmée (id tourné) ne pouvait don
 
 ## Journal
 - 2026-07-21 : audit coutures (workflow interrompu, findings vérifiés à la main).
-  SF1-SF4 FIXED + tests (suite 743 verte). SF2 = décision UX ouverte ; D2 ouvert.
-- 2026-07-22 : D2 tranché — processus builder-offline officialisé
-  (`docs/LEARNING_PROCESS.md`).
+  SF1-SF4 FIXED + tests. SF2 : décision UX ouverte à l'époque ; D2 ouvert.
+- 2026-07-22 : D2 tranché (builder-offline, `docs/LEARNING_PROCESS.md`) ;
+  SF2 tranché → option B (bouton « confirmer » explicite + « tout confirmer »).

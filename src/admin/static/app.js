@@ -504,6 +504,24 @@ function moveSelect(lists, currentId) {
   return node;
 }
 
+// SF2 option B : marque une disposition suggérée comme confirmée (le mover ne
+// consomme que les non-suggérées). Idempotent, avec feedback visuel.
+function confirmSuggestion(row) {
+  if (row.getAttribute('data-suggested') !== '1') return;
+  row.setAttribute('data-suggested', '');
+  const badge = row.querySelector('.learn-suggested');
+  if (badge) { badge.textContent = '✔ confirmé'; badge.classList.add('confirmed'); }
+  const btn = row.querySelector('.learn-confirm');
+  if (btn) btn.remove();
+  DIRTY = true;
+}
+
+function confirmAllSuggestions() {
+  const rows = document.querySelectorAll('#learning-groups .learning-offer[data-suggested="1"]');
+  rows.forEach(confirmSuggestion);
+  showNotice(`${rows.length} suggestion(s) confirmée(s) — enregistre pour les inclure au plan.`);
+}
+
 function learningRow(offer, ann, catalog, lists, vocab) {
   const had = Boolean(ann);  // une annotation stockée existe → un vidage devient un `cleared` explicite (L2)
   ann = ann || {};
@@ -575,21 +593,20 @@ function learningRow(offer, ann, catalog, lists, vocab) {
     moveRow.appendChild(el('span', { class: 'hint', text: `année vue: ${offer.year}` }));
   }
   if (stillSuggested) {
+    // SF2, option B (Romain 2026-07-22) : la confirmation d'une suggestion est
+    // EXPLICITE — un défaut ne devient jamais une décision par accident (D1-b).
+    // Regarder le menu ne confirme rien ; seuls (a) le bouton « ✓ confirmer » ou
+    // (b) CHANGER la valeur (une décision explicite) confirment la disposition.
     const badge = el('span', { class: 'hint learn-suggested', text: 'suggéré — à confirmer' });
+    const confirmBtn = el('button', {
+      type: 'button', class: 'learn-confirm',
+      title: 'Confirmer cette suggestion telle quelle (sinon elle ne sera pas déplacée).',
+      text: '✓ confirmer',
+    });
     moveRow.appendChild(badge);
-    // F2 (audit couture) : `change` ne se déclenche PAS si l'opérateur
-    // re-sélectionne la liste déjà suggérée → la confirmation « telle quelle »
-    // était impossible et l'offre restait exclue du plan. On confirme donc dès
-    // que l'opérateur INTERAGIT avec le select (focus/pointerdown), pas
-    // seulement quand la valeur change : ouvrir ce contrôle pour cette offre EST
-    // le geste délibéré de confirmation.
-    const confirm = () => {
-      row.setAttribute('data-suggested', '');
-      badge.remove();
-    };
-    mSel.addEventListener('change', confirm);
-    mSel.addEventListener('focus', confirm);
-    mSel.addEventListener('pointerdown', confirm);
+    moveRow.appendChild(confirmBtn);
+    confirmBtn.addEventListener('click', () => confirmSuggestion(row));
+    mSel.addEventListener('change', () => confirmSuggestion(row));  // changer = décision explicite
   }
   row.appendChild(moveRow);
   return row;
@@ -1127,6 +1144,7 @@ async function init() {
   $('#check-all').addEventListener('click', checkAll);
   $('#save-validation').addEventListener('click', saveValidation);
   $('#save-learning').addEventListener('click', saveLearning);
+  $('#confirm-all-suggested').addEventListener('click', confirmAllSuggestions);
   $('#check-invariants').addEventListener('click', checkInvariants);
   $('#dry-run').addEventListener('click', dryRun);
   $('#real-submit').addEventListener('click', openConfirmDialog);

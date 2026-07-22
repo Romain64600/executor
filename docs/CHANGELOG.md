@@ -3,6 +3,14 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-22 — Learning : confirmation explicite des suggestions (SF2, option B)
+
+Romain 2026-07-22 : la confirmation d'une disposition Move-to-list suggérée est
+EXPLICITE (option B, la plus fidèle à D1-b). Bouton **« ✓ confirmer »** par offre
++ bouton global **« confirmer toutes les suggestions »** ; changer la valeur du
+select confirme aussi (décision explicite) ; regarder le menu ne confirme plus
+rien. Le mover ne consomme toujours que les dispositions `suggested != true`.
+
 ## 2026-07-22 — Stage 6 : 1er canary Move-to-List RÉUSSI + registration déterministe
 
 Premier vrai move end-to-end, sur go de Romain : l'offre logicielle « IObit
