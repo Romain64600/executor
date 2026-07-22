@@ -39,7 +39,8 @@ POST_APPLY_SETTLE_S = 2.0
 # changes, so an authorization from an older mechanism no longer covers a batch.
 #   1  initial writer (trusted checkbox click — proved fragile, superseded)
 #   2  registration by hidden injection + RV2 target-presence proof
-MOVER_VERSION = "2"
+#   3  reflow-resilient fresh-locate right before the move (canary 2026-07-22)
+MOVER_VERSION = "3"
 
 # The source list a run scanned — parsed from raw.json's source_url
 # (…&page=aks-merchant-feeds-<id>). Default 9 = "AKS Feeds" (pending queue).
@@ -273,6 +274,35 @@ class _MoverBase(_SubmitterBase):
             return "block", relocated["blocker"]
         return "proceed", relocated
 
+    def _relocate_before_move(self, entry: dict[str, Any], ctx: dict[str, Any]) -> bool:
+        """Fresh-locate the offer on the SOURCE feed right before the move, then
+        confirm identity on that page. A re-import/reflow can move the row to
+        another page/id between the start-of-run index and now (canary 2026-07-22:
+        TurboTax reflowed off its indexed page → MV1 blocked). Scanning by URL
+        (stable) here makes the move resilient to that. Updates
+        entry.page_url/current_offer_id; returns False (entry.blocker set) if the
+        offer is gone from the source feed or its identity contradicts."""
+
+        url = _url_key(str(entry.get("url") or ""))
+        if not url:
+            entry["blocker"] = "no merchant URL to relocate before move"
+            return False
+        _, by_url, found = self._scan_feed(
+            ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"],
+            stop_on_url=url)
+        row = by_url.get(url) if found else None
+        if row is None:
+            entry["blocker"] = "offer not on source feed at move time (moved / re-imported away)"
+            return False
+        entry["current_offer_id"] = row["offer_id"]
+        entry["page_url"] = row["page_url"]
+        self.session.navigate(entry["page_url"])  # settle 3.0 for the interactive bulk form
+        ok, reason = self._reverify_row(entry)
+        if not ok:
+            entry["blocker"] = reason
+            return False
+        return True
+
     def _reverify_row(self, entry: dict[str, Any]) -> tuple[bool, str]:
         """MV1 (SC5): on the FRESH page, confirm the row at current_offer_id is
         still the plan's offer (name+URL) before any write — a mid-run re-import
@@ -306,13 +336,12 @@ class DryRunMover(_MoverBase):
     event_name = "dry_run_move"
 
     def _move(self, entry: dict[str, Any], ctx: dict[str, Any]) -> bool:
-        self.session.navigate(entry["page_url"])  # default 3.0 s — bulk form interactive
-        ok, reason = self._reverify_row(entry)  # MV1/SC5 even in dry-run
-        if not ok:
+        # Same fresh-locate + identity re-check as the real move (reflow-resilient).
+        if not self._relocate_before_move(entry, ctx):
             entry["ready"] = False
             entry["selectable"] = False
-            entry["blocker"] = reason
-            self._log(self.event_name, offer_id=entry["offer_id"], selectable=False, blocker=reason)
+            self._log(self.event_name, offer_id=entry["offer_id"], selectable=False,
+                      blocker=entry.get("blocker"))
             return False
         current_id = entry["current_offer_id"]
         present = self.session.bulk_row_present(current_id)
@@ -343,17 +372,14 @@ class Mover(_MoverBase):
 
     def _move(self, entry: dict[str, Any], ctx: dict[str, Any]) -> bool:
         target_id = entry["target_list_id"]
-        self.session.navigate(entry["page_url"])  # 3.0 s: bulk form must be interactive
-
-        # MV1/SC5: re-confirm this is still the plan's offer on the fresh page
-        # before touching anything — a re-import can have re-ided the row.
-        ok, reason = self._reverify_row(entry)
-        if not ok:
+        # Fresh-locate + identity re-check on the source feed right before the
+        # move (MV1/SC5 + reflow-resilience) — never trust a page/id fixed at the
+        # start-of-run index.
+        if not self._relocate_before_move(entry, ctx):
             entry["ready"] = False
-            entry["blocker"] = reason
-            self._log("move_blocked", offer_id=entry["offer_id"], reason=reason)
+            self._log("move_blocked", offer_id=entry["offer_id"], reason=entry.get("blocker"))
             return False
-        current_id = entry["current_offer_id"]  # may have been relocated by URL
+        current_id = entry["current_offer_id"]
 
         present = self.session.bulk_row_present(current_id)
         if not (present.get("checkbox") and present.get("bulk_form")):

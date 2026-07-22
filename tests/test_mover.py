@@ -232,6 +232,15 @@ class MoverWriteTests(unittest.TestCase):
         self.assertEqual(result["move_attempts"], 1)
         self.assertEqual(result["stopped"], "limit_reached")
 
+    def test_move_relocates_offer_that_reflowed_to_another_page(self):
+        # canary 2026-07-22: an offer can reflow to another page between the
+        # start-of-run index and the move. _relocate_before_move re-finds it by
+        # URL instead of trusting a fixed page.
+        session = FakeMoveSession([["1"], ["100"]])  # target offer sits on page 2
+        result = _run(Mover, session, _plan("100"))
+        self.assertEqual(result["moved"], 1)
+        self.assertEqual(session.applied, [("100", "16")])
+
     def test_relocated_by_url_when_id_rotated(self):
         # the plan's id 100 no longer exists; the same URL now has id 900
         session = FakeMoveSession([["900"]])
