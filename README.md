@@ -84,6 +84,8 @@ executor/
 │   ├── SPRINT_1_PLAN.md        # read-only foundation scope
 │   ├── EXECUTOR_RULES.md       # deterministic per-stage spec (from the skill)
 │   ├── SUBMITTER_SPEC.md       # Stage 4 submitter spec (dry-run + trusted write path)
+│   ├── AKS_LISTS.md            # Stage 6 Move-to-List: list taxonomy + move mechanic
+│   ├── LEARNING_PROCESS.md     # learning → pipeline: the builder-offline process (D2)
 │   ├── LOGIN_SPEC.md           # Stage 0b login/2FA spec
 │   ├── DATA_CONTRACTS.md       # stage I/O JSON schemas + run-log format
 │   ├── AUDIT.md                # Sprint 1 audit (2026-07-02) — fully resolved
@@ -99,6 +101,7 @@ executor/
 │   ├── 03_match.py             # read-only matcher CLI → candidates/skipped/report
 │   ├── 04_validate.py          # validation CLI (template + check, fail-closed gate)
 │   ├── 05_submit.py            # submitter CLI — dry-run default; --submit = real write (trusted)
+│   ├── 06_move.py              # Stage 6 Move-to-List writer — dry-run default; --execute = real move
 │   └── 07_admin_server.py      # admin page server (loopback only, behind nginx basic auth)
 ├── manual_launch/
 │   └── run_executor.sh         # terminal-only launcher: prepare / check / dry-run / submit
@@ -106,7 +109,8 @@ executor/
 ├── src/
 │   ├── admin/                  # admin page: HTTP app (app.py), safe run access (runs.py),
 │   │                           #   validation triple regen (validation_io.py), supervised
-│   │                           #   submit (submit_manager.py), static/ UI
+│   │                           #   submit (submit_manager.py), Learning annotations
+│   │                           #   (learning_io.py), static/ UI
 │   ├── aks_env.py              # constants, pure validators, env classification, HTTP probes
 │   ├── browser_lock.py         # advisory flock on state/browser.lock — one tab, one navigator (OP1)
 │   ├── cdp_client.py           # read-only CDP /json/version client (no browser actions)
@@ -118,11 +122,14 @@ executor/
 │   ├── validation.py           # Stage 3 validation gate (approve exact candidates)
 │   ├── submit_session.py       # read-only + narrow WriteSubmitSession (trusted picks/target/click)
 │   ├── submitter.py            # Stage 4 submitter — dry-run + real write path
+│   ├── mover.py                # Stage 6 Move-to-List writer (the submitter's sibling)
+│   ├── move_plan.py            # Stage 6 plan builder — confirmed learning.json dispositions
+│   ├── aks_lists.py            # merchant-feed list catalog + deterministic triage suggestions
 │   ├── login_session.py        # Stage 0b login/2FA session (reuses the trusted-input primitives)
 │   ├── pacing.py               # bounded-random pacing between page loads / submissions
 │   ├── run_log.py              # append-only JSONL run logger (redacting)
 │   └── step_guard.py           # deterministic, fail-closed StepGuard
-├── tests/                      # unit tests (626)
+├── tests/                      # unit tests (743)
 ├── runs/  logs/  state/        # runtime dirs (gitignored)
 └── .gitignore
 ```
@@ -152,7 +159,7 @@ executor/
 # 2. Invariant gate (read-only). Must be authoritative:true AND ok:true on the VPS:
 python3 scripts/01_check_invariants.py
 
-# 3. Unit tests (626, pure — run anywhere):
+# 3. Unit tests (743, pure — run anywhere):
 python3 -m unittest discover -s tests
 ```
 
@@ -252,6 +259,87 @@ manual_launch/run_executor.sh prepare --merchant Driffle --store-id 127 --pages 
 
 ---
 
+## Learning (annotations)
+
+The read-only matcher writes `skipped.json` for every feed offer it did **not**
+turn into a candidate, each with its skip reason. The **Learning view** of the
+admin page (`Learning — offres non-matchées`) groups those offers by reason and
+lets the operator annotate them **per offer**:
+
+- **region / edition** — real ids from the run's live session catalog (never
+  hardcoded — catalog ids drift between sessions);
+- **platform** — a canonical token (`STEAM`, `PS5`, `PUBLISHER`, …);
+- **comment** — why the matcher missed, or any signal for the builder;
+- **AKS page** (`aks_url`) — the product page the matcher failed to find;
+- **scope** — `exception_offre` / `regle_marchand` / `regle_globale` /
+  `observation` (see below);
+- **Move to list** — a triage disposition (default *garder* = no action).
+
+Annotations are stored in `runs/<id>/learning.json`, with a `learning_log.jsonl`
+audit trail (one JSONL event per save). The save is a **fail-closed merge**:
+never a full replace, deletion only via an explicit `cleared` signal, a
+`base_sha` precondition (409 on a concurrent write), and every field validated
+server-side (target list ∈ catalog, region/edition ∈ the session catalog,
+`aks_url` an AKS blog page, each field ≤ 2000 chars).
+
+> **Name collision — read this.** The *Learning view* (annotations, above) is
+> **not** the submit `--mode learning` (R24, a canary-of-1 that **writes**, see
+> [Manual launch](#manual-launch)). They share a word and nothing else — one
+> captures human intent for the builder, the other decides a submit batch size.
+
+**No pipeline stage reads `learning.json` at runtime.** There is deliberately
+**no learned-rule engine in the repo** — no runtime LLM, no rule auto-applied to
+a run. Generalizing an annotation into pipeline behaviour goes through the
+**builder-offline process** (decision D2, 2026-07-22): `learning.json` is the
+authority of *human intent*, the **code** is the authority of *execution*. An
+annotation becomes exactly one of three things:
+
+1. a **Move to list** → **Stage 6** (the one tooled path, below);
+2. an **assisted manual entry** — for an exact offer the matcher couldn't route
+   but which has an AKS page, the builder reads the annotated region / edition /
+   `aks_url` and constructs the candidate **by hand**, then submits it through
+   Stage 5. This path is **deliberately not automated** — it is a one-off
+   builder task (typically `scope = exception_offre`), not a tool;
+3. a **deterministic matcher rule** — **only** when `scope ∈ {regle_marchand,
+   regle_globale}`: the builder codes the rule, unit-tests it, documents it
+   (EXECUTOR_RULES / CHANGELOG), adds a numbered `LEARNED_RULE` to the
+   `aks-data-entry` skill, and commits it (so it is **revocable by revert**). An
+   `exception_offre` or `observation` never becomes a general rule — the `scope`
+   is the contract.
+
+See [`docs/LEARNING_PROCESS.md`](docs/LEARNING_PROCESS.md) for the full process
+and its guard-rails.
+
+### Stage 6 — Move to List
+
+`scripts/06_move.py` + `src/mover.py` is the **submitter's sibling**: a writer
+that moves a non-matched offer **out of its source list** into the list the
+operator annotated. The move plan is built from the run's **confirmed**
+Move-to-list dispositions (`src/move_plan.py`, from `learning.json`) — *garder*
+and still-`suggested` dispositions are never in a plan. Same fail-closed
+discipline as the submitter: invariants green + authoritative, one CDP tab under
+the browser lock, **dry-run by default** (`--execute` writes), a **mandatory
+canary on the first real move** (`--mode learning`; `--mode safe`, the full plan,
+is refused until a canary has verified), explicit go, never fire-and-forget.
+Success = **the offer left the source list** on the refreshed feed (the analogue
+of the submit's "gone from feed").
+
+```bash
+# Plan only — dry-run (default). No write:
+python3 scripts/06_move.py runs/<id> --store-id 38
+
+# First real move must be a canary of 1 (--mode learning), on explicit go:
+python3 scripts/06_move.py runs/<id> --store-id 38 --execute --mode learning
+
+# Once a canary has verified, the full confirmed plan (--mode safe):
+python3 scripts/06_move.py runs/<id> --store-id 38 --execute --mode safe
+```
+
+See [`docs/AKS_LISTS.md`](docs/AKS_LISTS.md) for the list taxonomy and the move
+mechanic.
+
+---
+
 ## The StepGuard
 
 `src/step_guard.py` is the fail-closed backbone every stage runs through. It has
@@ -291,6 +379,13 @@ starts, so a mid-task "retry past it" is impossible. See
   per-stage specification derived from the `aks-data-entry` skill. The bridge
   from domain rules to code (extractor, matcher, submitter, post-save
   verification, reporting).
+- [`docs/LEARNING_PROCESS.md`](docs/LEARNING_PROCESS.md) — how a Learning
+  annotation becomes pipeline behaviour: the builder-offline process (decision
+  D2) — a move, an assisted manual entry, or a tested/documented/committed
+  matcher rule; never a rule auto-applied at runtime, no rule engine in the repo.
+- [`docs/AKS_LISTS.md`](docs/AKS_LISTS.md) — Stage 6 Move-to-List: the
+  merchant-feed list taxonomy and the deterministic (read-only-captured) move
+  mechanic.
 - [`docs/LOGIN_SPEC.md`](docs/LOGIN_SPEC.md) — Stage 0b: the deterministic
   login/2FA design (credentials from the environment only, 2FA requested only
   once visible and ready, one attempt each).
@@ -351,6 +446,22 @@ starts, so a mid-task "retry past it" is impossible. See
   candidates (validation triple regenerated server-side), and launches
   supervised extract/dry-run/submit runs — never fire-and-forget. See
   [`ops/INSTALL_ADMIN.md`](ops/INSTALL_ADMIN.md).
+- [x] **Learning (annotations)** (`src/admin/learning_io.py`, `src/aks_lists.py`,
+  Learning view in the admin page, 2026-07-21) — for a matched run, the
+  non-matched offers (`skipped.json`) grouped by reason and annotated per offer
+  (region/edition ids, platform, comment, AKS page, scope, Move-to-list
+  disposition) into `runs/<id>/learning.json`. **Capture only** — no pipeline
+  stage reads it at runtime; generalization runs through the builder-offline
+  process (D2, 2026-07-22). See
+  [`docs/LEARNING_PROCESS.md`](docs/LEARNING_PROCESS.md).
+- [x] **Stage 6 — Move-to-List writer** (`src/mover.py`, `src/move_plan.py`,
+  `scripts/06_move.py`, 2026-07-21) — the submitter's sibling: moves a
+  non-matched offer out of its source list into the annotated target list; plan
+  built from the confirmed `learning.json` dispositions. Dry-run by default
+  (`--execute` writes), canary-of-1 on the first real move (`--mode learning`),
+  explicit go, never fire-and-forget; success = the offer left the source list.
+  **No real move has run yet** — the first canary awaits Romain's explicit go.
+  See [`docs/AKS_LISTS.md`](docs/AKS_LISTS.md).
 - [x] **Runtime hardening** (`src/browser_lock.py`, `src/pacing.py`) —
   advisory `flock` on `state/browser.lock` so only one process drives the
   single CDP tab at a time (fail-closed: busy lock = refuse to start; OP1,
