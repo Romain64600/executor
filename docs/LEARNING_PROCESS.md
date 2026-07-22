@@ -36,7 +36,7 @@ Par offre non-matchée, l'opérateur annote depuis l'admin (panneau Learning) :
 | `suggested` | disposition Move non encore confirmée (D1-b) | filtrée par `move_plan` |
 | `by` / `at` / `first_by` / `first_at` | traçabilité | audit |
 
-## Les trois sorties, selon la disposition
+## Les quatre sorties, selon la disposition
 
 **1. `target_list` → Stage 6 (outillé).** Le seul chemin automatisé. `move_plan.py`
 construit le plan des dispositions confirmées, `06_move.py` déplace (dry-run par
@@ -54,7 +54,16 @@ si `scope ∈ {regle_marchand, regle_globale}` : le builder lit le pattern
 récurrent et écrit une **règle matcher en code** — reproduite, **testée**,
 **documentée**, ajoutée aux `LEARNED_RULES` du skill `aks-data-entry`, et
 **committée** (donc **révocable par revert**). `scope = exception_offre` ou
-`observation` → **PAS** de règle générale (le scope l'interdit explicitement).
+`observation` → **PAS** de règle générale (une exception/observation n'est jamais
+généralisée).
+
+**4. Observation retenue → aucune action (encore).** Une annotation peut aussi
+n'être qu'une **observation conservée** : elle documente un cas (commentaire,
+`scope = observation`) mais ne déclenche **rien** — ni move, ni saisie, ni règle
+— parce que la preuve est insuffisante ou la décision pas encore prise. C'est un
+état **légitime et explicite**, pas un oubli : l'annotation reste dans
+`learning.json` comme mémoire pour le builder, en attente de plus de preuves
+concordantes (qui la feront basculer vers la sortie 1/2/3) ou d'une décision.
 
 ## Le cycle (checklist officielle)
 
@@ -77,9 +86,14 @@ récurrent et écrit une **règle matcher en code** — reproduite, **testée**,
 
 ## Garde-fous (invariants du processus)
 
-- **Une exception ne devient jamais une règle générale.** Le `scope` est le
-  contrat : seuls `regle_marchand`/`regle_globale` autorisent une généralisation.
-  `scope` non renseigné = observation = **pas de règle**.
+- **Le `scope` est une portée maximale *proposée*, pas un contrat de validité.**
+  Il exprime une **intention** (« je pense que ça se généralise à ce marchand /
+  à tous »), jamais une preuve. `regle_marchand`/`regle_globale` *autorisent* le
+  builder à **envisager** une généralisation — qu'il doit toujours **valider**
+  (reproduire, tester sur des cas réels) avant de coder la règle et d'en fixer la
+  portée effective, qui peut être **plus étroite** que proposée. `exception_offre`
+  / `observation` / non renseigné → jamais de règle générale. Une exception ne
+  devient jamais une règle générale par le seul choix du scope.
 - **Force de preuve.** Une seule correction (`exception_offre`) reste locale.
   Plusieurs annotations concordantes justifient une règle marchand ; ne
   généraliser `regle_globale` (multi-marchands) qu'avec des preuves suffisantes.

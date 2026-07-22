@@ -986,9 +986,14 @@ Règles de la vue Learning (audit `AUDIT_LEARNING_2026-07-21.md`) :
   testée, documentée, révocable par revert).
 - **Portée explicite (D3, Romain 2026-07-21)** : chaque annotation porte un
   champ `scope` ∈ {`exception_offre`, `regle_marchand`, `regle_globale`,
-  `observation`}. Seules `regle_marchand` et `regle_globale` autorisent le
-  builder à généraliser en règle matcher ; non renseigné = observation, pas de
-  règle. La généralisation ne se déduit JAMAIS d'un commentaire libre.
+  `observation`}. Le `scope` est une **portée maximale *proposée* (une
+  intention), pas une preuve de validité** (RV5, 2026-07-22) : `regle_marchand`/
+  `regle_globale` *autorisent* le builder à **envisager** une généralisation
+  qu'il doit **valider** (reproduire, tester) avant de coder — la portée
+  effective peut être plus étroite. Non renseigné = observation = pas de règle.
+  La généralisation ne se déduit JAMAIS d'un commentaire libre. Une 4ᵉ
+  disposition possible : **observation retenue** (aucune action encore — preuve
+  insuffisante), voir `docs/LEARNING_PROCESS.md`.
 - **Plateforme (D4, Romain 2026-07-21)** : champ `platform` ∈ vocabulaire
   canonique (`ANNOTATION_PLATFORMS`, learning_io) — la correction de
   plateforme est une annotation à part entière (une plateforme seule suffit).

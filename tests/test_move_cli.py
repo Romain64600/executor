@@ -61,13 +61,22 @@ class MoveCliGateTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("aucune disposition", out)
 
-    def test_first_real_move_refuses_safe_full_plan(self):
-        # MV6: a confirmed disposition + --execute --mode safe on a run with no
-        # prior verified move → refused before the invariants gate
+    def test_batch_safe_execute_refused(self):
+        # REVIEW 2026-07-22: --execute --mode safe is refused unconditionally
+        # (the batch is not unlocked by a canary) — before the invariants gate.
         self._learning({"1": {"target_list_id": "16", "target_list_label": "Softwares"}})
         code, out = self._run_cli("--store-id", "38", "--execute", "--mode", "safe")
         self.assertEqual(code, 2)
-        self.assertIn("1er move", out)
+        self.assertIn("batch", out)
+        self.assertIn("learning", out)
+
+    def test_batch_safe_refused_even_after_a_successful_move(self):
+        # a prior verified move (moved>0) still does NOT unlock the batch
+        self._learning({"1": {"target_list_id": "16", "target_list_label": "Softwares"}})
+        (self.run / "move_plan.json").write_text(json.dumps({"moved": 1}), encoding="utf-8")
+        code, out = self._run_cli("--store-id", "38", "--execute", "--mode", "safe")
+        self.assertEqual(code, 2)
+        self.assertIn("batch", out)
 
     def test_learning_mode_passes_mv6_then_hits_invariants(self):
         # --mode learning is NOT blocked by MV6; it proceeds to the (mocked RED)

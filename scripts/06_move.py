@@ -54,17 +54,19 @@ def mode_limit(mode: str, requested: int | None) -> int | None:
     return CANARY_LIMIT if requested is None else min(requested, CANARY_LIMIT)
 
 
-def prior_move_succeeded(run_dir: Path) -> bool:
-    """MV6: has a real move of this run ever verified (moved > 0)? The full-plan
-    ``safe`` mode is refused until a canary has proven the writer works live."""
-
-    mp = run_dir / "move_plan.json"
-    if not mp.is_file():
-        return False
-    try:
-        return int(json.loads(mp.read_text(encoding="utf-8")).get("moved") or 0) > 0
-    except (json.JSONDecodeError, OSError, TypeError, ValueError):
-        return False
+# REVIEW 2026-07-22 (batch gate): a successful unit canary does NOT unlock the
+# batch. Two conditions must be built and satisfied before --execute --mode safe
+# is ever allowed:
+#   (1) verify the offer's exact PRESENCE in the TARGET list (not only its
+#       departure from the source — a parallel operator's delete/move would
+#       otherwise register as our success);
+#   (2) a scope/version authorization encoded from the canary (which canary
+#       authorizes which merchant × list × extraction, and until when).
+# Until both exist, only supervised unit canaries (--mode learning) may write.
+BATCH_CONDITIONS = (
+    "(1) vérif présence exacte dans la liste CIBLE, "
+    "(2) autorisation de portée/version encodée depuis le canary"
+)
 
 
 def derive_max_pages(explicit: int | None, run_dir: Path) -> tuple[int, str]:
@@ -165,13 +167,16 @@ def _main() -> int:
         return 0
 
     write = args.execute
-    # MV6 (Romain 2026-07-21): the first real move of a run must be a canary.
-    # Until a move has verified (moved > 0), --mode safe (full plan) is refused —
-    # run a --mode learning canary of 1 first, exactly like a never-live writer.
-    if write and args.mode == "safe" and not prior_move_succeeded(run_dir):
+    # Batch gate (REVIEW 2026-07-22): the batch is NOT unlocked by a successful
+    # canary. --execute --mode safe stays refused until the two conditions above
+    # are built. Only supervised unit canaries (--mode learning) may write. A
+    # dry-run --mode safe (write=False) is still allowed — it just previews the
+    # full plan.
+    if write and args.mode == "safe":
         print(json.dumps({"aborted": True, "reason": (
-            "1er move réel de ce run : --mode safe (plan complet) refusé tant qu'aucun move "
-            "n'a été vérifié. Lance d'abord un canary : --mode learning (MV6).")}, indent=2))
+            "batch (--execute --mode safe) BLOQUÉ — conditions non remplies : "
+            + BATCH_CONDITIONS + ". Utilise --mode learning (canary unitaire "
+            "supervisé). Voir docs/REVIEW_2026-07-22.md.")}, indent=2))
         return 2
 
     # Fail-closed gate: invariants green AND authoritative (on the VPS target).
