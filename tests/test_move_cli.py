@@ -61,22 +61,50 @@ class MoveCliGateTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertIn("aucune disposition", out)
 
-    def test_batch_safe_execute_refused(self):
-        # REVIEW 2026-07-22: --execute --mode safe is refused unconditionally
-        # (the batch is not unlocked by a canary) — before the invariants gate.
+    def test_batch_safe_refused_without_flag(self):
+        # Romain 2026-07-22: --execute --mode safe requires the explicit
+        # --i-authorize-batch flag (in addition to a valid authorization).
         self._learning({"1": {"target_list_id": "16", "target_list_label": "Softwares"}})
         code, out = self._run_cli("--store-id", "38", "--execute", "--mode", "safe")
         self.assertEqual(code, 2)
-        self.assertIn("batch", out)
-        self.assertIn("learning", out)
+        self.assertIn("i-authorize-batch", out)
 
-    def test_batch_safe_refused_even_after_a_successful_move(self):
-        # a prior verified move (moved>0) still does NOT unlock the batch
+    def test_batch_safe_refused_with_flag_but_no_authorization(self):
+        # flag present but no canary authorization covers the plan → refused
         self._learning({"1": {"target_list_id": "16", "target_list_label": "Softwares"}})
-        (self.run / "move_plan.json").write_text(json.dumps({"moved": 1}), encoding="utf-8")
-        code, out = self._run_cli("--store-id", "38", "--execute", "--mode", "safe")
+        code, out = self._run_cli("--store-id", "38", "--execute", "--mode", "safe",
+                                  "--i-authorize-batch")
         self.assertEqual(code, 2)
-        self.assertIn("batch", out)
+        self.assertIn("autorisation", out)
+        self.assertIn("aucune autorisation", out)
+
+    def test_batch_safe_passes_gate_with_flag_and_authorization(self):
+        # flag + a valid authorization covering the plan → the batch gate passes;
+        # the run then stops at the mocked RED invariants, NOT at the batch gate.
+        from src.move_auth import grant_from_canary
+        self._learning({"1": {"target_list_id": "16", "target_list_label": "Softwares"}})
+        grant_from_canary(self.run, store_id="38", source_feed_page="aks-merchant-feeds-9",
+                          moved_entries=[{"target_list_label": "Softwares",
+                                          "current_offer_id": "1", "url": "https://g2a/1"}],
+                          clock=lambda: "T")
+        code, out = self._run_cli("--store-id", "38", "--execute", "--mode", "safe",
+                                  "--i-authorize-batch")
+        self.assertEqual(code, 2)                 # stops at mocked RED invariants
+        self.assertNotIn("i-authorize-batch", out)  # NOT blocked by the batch gate
+        self.assertIn("invariants", out)
+
+    def test_batch_safe_refused_for_unvalidated_target_list(self):
+        # authorization covers "Softwares" only; a plan targeting another list is refused
+        self._learning({"1": {"target_list_id": "8", "target_list_label": "Blacklist"}})
+        from src.move_auth import grant_from_canary
+        grant_from_canary(self.run, store_id="38", source_feed_page="aks-merchant-feeds-9",
+                          moved_entries=[{"target_list_label": "Softwares",
+                                          "current_offer_id": "1", "url": "https://g2a/1"}],
+                          clock=lambda: "T")
+        code, out = self._run_cli("--store-id", "38", "--execute", "--mode", "safe",
+                                  "--i-authorize-batch")
+        self.assertEqual(code, 2)
+        self.assertIn("Blacklist", out)
 
     def test_learning_mode_passes_mv6_then_hits_invariants(self):
         # --mode learning is NOT blocked by MV6; it proceeds to the (mocked RED)

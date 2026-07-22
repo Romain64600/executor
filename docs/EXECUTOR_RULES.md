@@ -1013,3 +1013,4 @@ Règles de la vue Learning (audit `AUDIT_LEARNING_2026-07-21.md`) :
   (safe = plan complet ; learning/advanced = canary de 1). Jamais
   fire-and-forget. Les dispositions *garder* et `suggested: true` ne sont
   JAMAIS dans un plan (filtrées par le builder).
+- **Batch (`--mode safe`)** : réactivé (2026-07-22) derrière une **double garde** — le flag `--i-authorize-batch` ET une **autorisation** issue d'un canary vérifié (`src/move_auth.py`, liée à mover version × store × source × extraction × listes cibles validées). Chaque move du lot prouve source **ET** cible (RV2). Le canary unitaire (`--mode learning`) reste la seule voie pour VALIDER une nouvelle liste cible / de nouvelles données avant qu'un batch puisse les couvrir.

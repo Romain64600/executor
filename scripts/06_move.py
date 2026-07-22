@@ -125,6 +125,10 @@ def _main() -> int:
     parser.add_argument("--pace-offers", default="0.5-1.5")
     parser.add_argument("--acknowledge-block", action="store_true",
                         help="Acknowledge two consecutive guard-blocked passes (FC3).")
+    parser.add_argument("--i-authorize-batch", action="store_true",
+                        help="Explicit second intention to run --mode safe (the full batch). "
+                             "Required IN ADDITION to a valid canary authorization covering the "
+                             "plan (RV3). Without it, --execute --mode safe is refused.")
     args = parser.parse_args()
 
     run_dir = Path(args.run_dir).resolve()
@@ -175,19 +179,30 @@ def _main() -> int:
     # dry-run --mode safe (write=False) is still allowed — it just previews the
     # full plan.
     if write and args.mode == "safe":
-        # RV2 (target-presence proof) and RV3 (scoped/versioned authorization)
-        # are now BUILT — but re-enabling the batch stays a SEPARATE explicit
-        # decision (Romain 2026-07-22). safe --execute is refused unconditionally;
-        # we surface whether the current authorization WOULD cover this plan.
+        # Batch gate (Romain 2026-07-22): --execute --mode safe requires BOTH an
+        # explicit second intention (--i-authorize-batch) AND a valid canary
+        # authorization (RV3) covering the plan (mover version × store × source ×
+        # extraction × every target list already validated by a canary). RV2
+        # guarantees each move in the batch still proves gone-from-source AND
+        # present-on-target. Either condition missing → fail-closed refuse.
         covered, why = batch_authorized(run_dir, entries, store_id=store_id,
                                         source_feed_page=source_list)
-        print(json.dumps({"aborted": True, "reason": (
-            "batch (--execute --mode safe) BLOQUÉ — la réactivation du batch est une "
-            "décision explicite distincte (RV1). Mécanisme prêt : RV2 (preuve présence "
-            "cible) + RV3 (autorisation). Utilise --mode learning (canary unitaire "
-            "supervisé). Voir docs/REVIEW_2026-07-22.md."),
-            "batch_would_be_covered": covered, "authorization": why}, indent=2))
-        return 2
+        if not args.i_authorize_batch:
+            print(json.dumps({"aborted": True, "reason": (
+                "batch (--execute --mode safe) requiert le flag explicite "
+                "--i-authorize-batch (double intention). "
+                + ("L'autorisation couvrirait ce plan."
+                   if covered else "De plus, l'autorisation ne couvre pas ce plan.")),
+                "batch_would_be_covered": covered, "authorization": why}, indent=2))
+            return 2
+        if not covered:
+            print(json.dumps({"aborted": True, "reason": (
+                "batch (--execute --mode safe) refusé — l'autorisation ne couvre pas ce "
+                "plan : " + why + ". Valide les listes/données manquantes par un canary "
+                "--mode learning.")}, indent=2))
+            return 2
+        print(f"BATCH AUTORISÉ (--i-authorize-batch + {why}) — {len(entries)} offre(s) "
+              "au débit complet ; chaque move prouve source+cible (RV2).", file=sys.stderr)
 
     # Fail-closed gate: invariants green AND authoritative (on the VPS target).
     report = None

@@ -3,6 +3,17 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-22 — Move-to-List : batch réactivé derrière flag + autorisation (étape 6)
+
+Décision Romain, après le canary RV2/RV3 validé. `--execute --mode safe` (le
+batch) n'est plus refusé inconditionnellement : il exige désormais une **double
+garde** — le flag explicite `--i-authorize-batch` **ET** une autorisation RV3
+(`move_authorization.json`) couvrant le plan (mover version × store × source ×
+contexte d'extraction × listes cibles déjà validées par un canary). Sans l'un ou
+l'autre → refus fail-closed. Chaque move du lot prouve toujours source+cible (RV2)
+et une liste cible non validée par canary est refusée. Tests: gate à double garde
+(sans flag / sans auth / auth non couvrante / autorisé). Suite verte.
+
 ## 2026-07-22 — Move-to-List : mover v3 (reflow-résilient) + canary RV2/RV3 validé
 
 Un canary supervisé a révélé un blocage fail-closed : un re-import faisait

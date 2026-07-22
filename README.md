@@ -500,16 +500,17 @@ the `aks-data-entry` skill maps onto a guard signal.
   Advanced SystemCare, G2A run, list 9 → Softwares 16). The **batch path
   (`--execute --mode safe`) stays blocked** — a successful unit canary does not
   unlock it (see the open item below). See [`docs/AKS_LISTS.md`](docs/AKS_LISTS.md).
-- [ ] **Move-to-List batch** — blocked. `--execute --mode safe` is refused
-  unconditionally today (`scripts/06_move.py`); a successful unit canary does
-  **not** unlock it. Two conditions must be built first
-  (`docs/REVIEW_2026-07-22.md` RV2/RV3): (1) confirm the offer's **presence in
-  the target list** after it leaves the source (a bounded `feed_page=<target
-  list>` scan — today's signal only proves it left the source, which a parallel
-  operator's move/delete would also satisfy); (2) encode a **scoped, versioned
-  authorization** from the canary (which canary unlocks which merchant × list ×
-  extraction identity, and until when). Until both exist, only supervised unit
-  canaries (`--mode learning`) may write.
+- [x] **Move-to-List batch — behind a double gate** (2026-07-22). Both
+  conditions are built (`docs/REVIEW_2026-07-22.md` RV2/RV3): a move now proves
+  the offer is **gone from the source AND present on the target list** (RV2,
+  `mover._verify_on_target`; a target that can't be fully scanned → UNKNOWN,
+  fail-closed), and a verified unit canary **grants a scoped, versioned
+  authorization** (`src/move_auth.py`: mover version × store × source × target
+  lists × extraction hash). `--execute --mode safe` now requires **both** the
+  explicit `--i-authorize-batch` flag **and** an authorization covering the plan;
+  either missing → refused. A canary (`--mode learning`) stays the only way to
+  validate a new target list / fresh data before a batch can cover it. Validated
+  live 2026-07-22 (unit canary AWZ PC Cleaner → Softwares, gone+present proven).
 - [x] **Runtime hardening** (`src/browser_lock.py`, `src/pacing.py`) —
   advisory `flock` on `state/browser.lock` so only one process drives the
   single CDP tab at a time (fail-closed: busy lock = refuse to start; OP1,
