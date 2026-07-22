@@ -188,11 +188,10 @@ vide whitelisté si présent dans skipped.json ; entrée non-dict → 500 au sav
 
 - **D1 (= L4)** : → **TRANCHÉE (b)** par Romain 2026-07-21 (« D1 b »),
   implémentée commit `2828640`.
-- **D2** : construire le moteur de règles apprises dans le repo (schéma règle :
-  id, scope, conditions, action, source humaine, confiance, statut
-  proposé/validé/actif/désactivé, date, exemples, rollback — comme spécifié),
-  ou entériner le processus builder-offline actuel en le documentant comme
-  officiel ? Les cas 2,3,10,12,13,16,17,18 en dépendent. → OUVERTE
+- **D2** : → **TRANCHÉE (Romain 2026-07-22) : officialiser le processus
+  builder-offline** (pas de moteur de règles dans le repo). Documenté dans
+  `docs/LEARNING_PROCESS.md`. Les cas 2,3,10,12,13,16,17,18 sont N/A par
+  design (pas de moteur → pas de conflit/priorité/rollback à coder).
 - **D3** : → **TRANCHÉE (oui)** par Romain 2026-07-21, implémentée commit
   `2828640` (champ `scope`, validation `bad_scope`, seules les deux « règle »
   autorisent la généralisation).

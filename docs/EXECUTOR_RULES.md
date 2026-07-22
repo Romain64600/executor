@@ -968,6 +968,10 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167.
 
 Règles de la vue Learning (audit `AUDIT_LEARNING_2026-07-21.md`) :
 
+- **Processus officiel (D2, Romain 2026-07-22)** : la généralisation des
+  annotations passe par le **processus builder-offline** — voir
+  `docs/LEARNING_PROCESS.md`. Il n'y a **pas** de moteur de règles apprises
+  dans le repo (pas de règle appliquée automatiquement au runtime).
 - **Capture seulement.** Aucun code pipeline ne lit `learning.json`. La
   généralisation en règles matcher est un processus builder-offline : le LLM
   propose, la règle finale est du code déterministe testé + documenté + commité.

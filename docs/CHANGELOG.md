@@ -3,6 +3,19 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-22 — D2 tranché : processus builder-offline officialisé
+
+Romain 2026-07-22 : pas de moteur de règles apprises dans le repo. La
+généralisation des annotations Learning en comportement du pipeline passe par
+le **processus builder-offline** — `docs/LEARNING_PROCESS.md` (nouveau) :
+learning.json est l'autorité d'intention humaine, le code l'autorité
+d'exécution ; une annotation devient soit un move (Stage 6), soit une saisie
+manuelle assistée, soit une règle matcher déterministe (testée/documentée/
+committée/révocable) — jamais une règle appliquée automatiquement au runtime.
+Le `scope` (exception/marchand/global/observation) porte la généralisation ;
+une exception ne devient jamais une règle générale. EXECUTOR_RULES §13 pointe
+le processus ; D2 fermé dans AUDIT_LEARNING.
+
 ## 2026-07-21 — Stage 6 : writer Move-to-List (brique B, dry-run par défaut)
 
 Le mover — frère du submitter — déplace les offres non-matchées hors de leur

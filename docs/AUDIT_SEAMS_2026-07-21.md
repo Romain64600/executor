@@ -52,8 +52,11 @@ AVANT de traiter `cleared`. Une annotation périmée (id tourné) ne pouvait don
 - **dead-end-fields** : `region/edition/platform/scope/comment/aks_url` ne sont
   consommés par AUCUN code (pas de saisie assistée construite). C'est le **gap
   connu D2** (moteur de règles vs builder-offline) — capture délibérée pour le
-  processus builder, documenté en EXECUTOR_RULES §13. À trancher avec Romain.
+  processus builder — **D2 TRANCHÉ (Romain 2026-07-22)** : on officialise le
+  processus builder-offline, documenté dans `docs/LEARNING_PROCESS.md`.
 
 ## Journal
 - 2026-07-21 : audit coutures (workflow interrompu, findings vérifiés à la main).
   SF1-SF4 FIXED + tests (suite 743 verte). SF2 = décision UX ouverte ; D2 ouvert.
+- 2026-07-22 : D2 tranché — processus builder-offline officialisé
+  (`docs/LEARNING_PROCESS.md`).
