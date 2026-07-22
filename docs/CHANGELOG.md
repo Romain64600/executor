@@ -3,6 +3,20 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-22 — Stage 6 : 1er canary Move-to-List RÉUSSI + registration déterministe
+
+Premier vrai move end-to-end, sur go de Romain : l'offre logicielle « IObit
+Advanced SystemCare » (run G2A) déplacée de la liste 9 (pending) vers Softwares
+(16), vérifiée **partie de la liste source** (le seul signal de succès).
+
+Fix validé par le canary : la registration d'une offre dans le bulk form se fait
+désormais par **injection déterministe** du hidden `bulk[item][]` (submit_session
+`register_row`), et non plus par un clic trusted sur la case — ce dernier s'est
+révélé fragile sur les pages paginées du feed (`click=CLICKED` mais le handler
+async n'injectait pas le hidden ; fail-closed : rien n'était soumis). Le POST
+natif de l'Apply (trusted) sérialise le hidden injecté à l'identique. Le 1er move
+raté avait laissé l'offre intacte (aucune écriture partielle). Suite 743 verte.
+
 ## 2026-07-22 — D2 tranché : processus builder-offline officialisé
 
 Romain 2026-07-22 : pas de moteur de règles apprises dans le repo. La

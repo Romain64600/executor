@@ -122,6 +122,9 @@ override incohérent (MV10).
 - **MV12** : → **TRANCHÉE : « gone from source » seul + doc** (Romain 2026-07-21), commit 9b479d0.
 
 ## Journal
+- 2026-07-22 : **1er canary RÉUSSI** (IObit → Softwares, gone-from-source vérifié).
+  Registration passée du clic trusted (fragile sur pages paginées) à l'injection
+  déterministe du hidden `bulk[item][]`.
 - 2026-07-21 : review adversariale (commit `3465cb6`), registre créé, tout OPEN.
 - 2026-07-21 : GO Romain (MV6=canary obligatoire, MV12=gone-from-source seul). MV1-MV15 tous FIXED — commit 9b479d0, suite 738 verte. Le writer est prêt pour un 1er
   canary (`--execute --mode learning`) sur go explicite de Romain.

@@ -118,8 +118,9 @@ a 4-digit year in the name may be shown as a weak hint, never a default.
 Same discipline as submit (Romain 2026-07-21): validation file
 (`{offer_id, current_list, target_list_label}`) → explicit go → locate the row
 (id→URL fallback, `_locate_row`) → resolve `target_list_label`→id live from the
-`bulk[list]` options → **register the offer(s)** (trusted checkbox click, or
-inject the hidden `bulk[item][]`) → set `bulk[list]` → **trusted-click Apply**
+`bulk[list]` options → **register the offer(s)** by injecting the hidden `bulk[item][]` (a trusted
+checkbox click proved fragile on paginated feed pages — canary 2026-07-22; the
+injected hidden is serialized by the native Apply POST identically) → set `bulk[list]` → **trusted-click Apply**
 (a real gesture — a scripted change is ignored, isTrusted) → **post-verify: the
 offer left the source list** at refresh (the analogue of the submit's "gone from
 feed" success) → JSONL log. No fire-and-forget. "Don't change the list"

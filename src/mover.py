@@ -356,10 +356,10 @@ class Mover(_MoverBase):
             return False
 
         reg = self.session.register_row(current_id)
-        entry["register"] = {"click": reg.get("click", {}).get("status"),
+        entry["register"] = {"method": reg.get("method"),
                              "registered": reg.get("registered")}
         if not reg.get("registered"):
-            entry["blocker"] = "checkbox registration failed (isTrusted?) — nothing submitted"
+            entry["blocker"] = "bulk[item][] registration failed — nothing submitted"
             self._log("move_blocked", offer_id=entry["offer_id"], reason=entry["blocker"])
             return False
 

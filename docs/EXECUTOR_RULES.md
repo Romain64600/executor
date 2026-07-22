@@ -1002,7 +1002,7 @@ Règles de la vue Learning (audit `AUDIT_LEARNING_2026-07-21.md`) :
   construit depuis les dispositions CONFIRMÉES de `learning.json`
   (`src/move_plan.py`) → invariants verts + authoritative → **dry-run par
   défaut** (`--execute` pour écrire) → go explicite → locate row (id→URL) →
-  résolution liste cible par LABEL live → register (clic trusted case) → set
+  résolution liste cible par LABEL live → register (injection du hidden bulk[item][]) → set
   bulk[list] → clic trusted Apply → **vérif post-action : l'offre a quitté la
   liste source** (seul signal de succès) → logs JSONL + BlockLedger. Mode R24
   (safe = plan complet ; learning/advanced = canary de 1). Jamais

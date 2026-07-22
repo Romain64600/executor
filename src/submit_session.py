@@ -321,6 +321,25 @@ _BULK_REGISTERED_JS = (
     "return {registered:!!hid,bulk_list_value:sel?String(sel.value||''):null};})())"
 )
 
+# Write (via _evaluate, unguarded): register the offer by injecting the hidden
+# bulk[item][] the checkbox change handler would add. Deterministic — a trusted
+# checkbox click proved fragile on paginated feed pages (canary 2026-07-22:
+# click=CLICKED but the async handler never injected the hidden). The native
+# Apply POST serializes the form, so this injected hidden is sent exactly like a
+# real tick. Idempotent (never duplicates the input).
+_INJECT_BULK_ITEM_JS = (
+    "(function(){var id=%s;"
+    "var form=document.querySelector('form[data-bulk-form]');"
+    "if(!form)return JSON.stringify({registered:false,reason:'no_form'});"
+    "if(!form.querySelector('input[name=\"bulk[item][]\"][value=\"'+id+'\"]')){"
+    "var inp=document.createElement('input');inp.type='hidden';"
+    "inp.name='bulk[item][]';inp.value=id;form.appendChild(inp);}"
+    "var sel=form.querySelector('select[name=\"bulk[list]\"]');"
+    "return JSON.stringify({registered:!!form.querySelector("
+    "'input[name=\"bulk[item][]\"][value=\"'+id+'\"]'),"
+    "bulk_list_value:sel?String(sel.value||''):null});})()"
+)
+
 # Write (via _evaluate, unguarded): set bulk[list] to <target_list_id>. The
 # native Apply submit reads it at click time.
 _SET_BULK_LIST_JS = (
@@ -1363,17 +1382,17 @@ class WriteSubmitSession(SubmitSession):
     # ignored — same isTrusted wall as Create), then a TRUSTED Apply submits.
     # ------------------------------------------------------------------
     def register_row(self, offer_id: str) -> dict[str, Any]:
-        """Trusted-click ``offer_id``'s bulk checkbox and confirm registration.
+        """Register ``offer_id`` in the bulk form (inject its hidden bulk[item][]).
 
-        Returns ``{click, registered, bulk_list_value}``. ``registered`` is the
-        DOM proof that the handler injected the hidden ``bulk[item][]`` — the
-        move's precondition, checked deterministically (never assumed)."""
+        Deterministic: a trusted checkbox click proved fragile on paginated feed
+        pages (the async change handler did not inject the hidden). Injecting the
+        hidden directly produces the same DOM the tick would, and the native Apply
+        POST serializes it identically. Returns ``{registered, bulk_list_value,
+        method}`` — ``registered`` confirms the input is present in the form."""
 
-        selector = 'input[name="bulk[item][]"][value="%s"]' % str(offer_id)
-        click = self.click_trusted_at_element(selector)
-        raw = self.evaluate_readonly(_BULK_REGISTERED_JS % json.dumps(str(offer_id)))
+        raw = self._evaluate(_INJECT_BULK_ITEM_JS % json.dumps(str(offer_id)))
         state = json.loads(raw) if raw else {"registered": False, "reason": "no_result"}
-        return {"click": click, **state}
+        return {"method": "inject", **state}
 
     def set_bulk_list(self, target_list_id: str) -> str:
         """Set the bulk ``bulk[list]`` select to ``target_list_id`` (read back)."""
