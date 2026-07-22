@@ -223,6 +223,22 @@ class LearningIoTests(unittest.TestCase):
         self.assertEqual(r["cleared"], 1)
         self.assertNotIn("1", load_annotations(self.run))
 
+    def test_clear_works_for_orphaned_annotation_after_reimport(self):
+        # F4: annotate offer 1, then a re-match rotates ids (skipped.json no
+        # longer has offer 1) — the stale annotation must still be clearable.
+        self._save([{"offer_id": "1", "comment": "old"}])
+        self._write_skipped([("900", "Resident Evil 2", "https://g2a/1",
+                              "no AKS product page found (slug not 200)")])
+        r = save_annotations(self.run, [{"offer_id": "1", "cleared": True}],
+                             by="R", base_sha=learning_sha(self.run), clock=lambda: "T")
+        self.assertEqual(r["cleared"], 1)
+        self.assertNotIn("1", load_annotations(self.run))
+
+    def test_merchant_url_frozen_into_annotation(self):
+        # F3: the stable merchant URL is stored so a later re-import can relocate
+        self._save([{"offer_id": "1", "comment": "x"}])
+        self.assertEqual(load_annotations(self.run)["1"]["merchant_url"], "https://g2a/1")
+
     def test_stale_base_sha_conflict(self):
         self._save([{"offer_id": "1", "comment": "v1"}])
         with self.assertRaises(LearningError) as ctx:

@@ -148,19 +148,27 @@ def learning_sha(run_dir: Path) -> str | None:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _skipped_offer_ids(run_dir: Path) -> set[str]:
-    """Whitelist of annotatable offer_ids (L10: malformed entries / empty ids
-    are ignored here exactly as group_skipped never renders them)."""
+def _skipped_index(run_dir: Path) -> dict[str, str]:
+    """Annotatable offer_id -> merchant URL (L10: malformed entries / empty ids
+    are ignored exactly as group_skipped never renders them). The URL is frozen
+    into the annotation at save time (F3, seam audit 2026-07-21) so a confirmed
+    disposition survives a re-import that rotates the offer_id — the writer, and
+    the plan builder's fallback join, relocate by the stable merchant URL."""
 
     skipped = read_run_json(run_dir, "skipped.json")
-    ids: set[str] = set()
+    index: dict[str, str] = {}
     for entry in skipped if isinstance(skipped, list) else []:
         if not isinstance(entry, dict):
             continue
-        oid = str((entry.get("offer") or {}).get("offer_id", "")).strip()
+        offer = entry.get("offer") or {}
+        oid = str(offer.get("offer_id", "")).strip()
         if oid:
-            ids.add(oid)
-    return ids
+            index[oid] = str(offer.get("url", ""))
+    return index
+
+
+def _skipped_offer_ids(run_dir: Path) -> set[str]:
+    return set(_skipped_index(run_dir))
 
 
 def _validate_fields(
@@ -256,7 +264,8 @@ def save_annotations(
             "learning.json a changé depuis le chargement — recharge avant d'enregistrer",
             http_status=409,
         )
-    valid_ids = _skipped_offer_ids(run_dir)
+    url_map = _skipped_index(run_dir)
+    valid_ids = set(url_map)
     stored = dict(load_annotations(run_dir))
     catalog = load_catalog_options(run_dir)
     touched: list[str] = []
@@ -265,14 +274,17 @@ def save_annotations(
         if not isinstance(item, dict):
             raise LearningError("bad_body", "chaque annotation doit être un objet")
         oid = str(item.get("offer_id", ""))
-        if oid not in valid_ids:
-            raise LearningError(
-                "bad_offer", f"offer_id {oid!r} absent de skipped.json de ce run"
-            )
+        # F4 (seam audit 2026-07-21): a clear must work even for a now-orphaned
+        # annotation (ids rotate on re-import) — deletion is NEVER gated on the
+        # offer still being in skipped.json, else a stale annotation is stuck.
         if item.get("cleared") is True:
             if stored.pop(oid, None) is not None:
                 cleared.append(oid)
             continue
+        if oid not in valid_ids:
+            raise LearningError(
+                "bad_offer", f"offer_id {oid!r} absent de skipped.json de ce run"
+            )
         fields = {
             k: str(item.get(k)).strip()
             for k in _ANNOTATION_FIELDS
@@ -296,6 +308,12 @@ def save_annotations(
         fields["at"] = now
         fields["first_at"] = prior.get("first_at", prior.get("at", now))
         fields["first_by"] = prior.get("first_by", prior.get("by", by))
+        # F3: freeze the merchant URL (stable identity) so a re-import that
+        # rotates offer_id does not orphan a confirmed disposition.
+        if url_map.get(oid):
+            fields["merchant_url"] = url_map[oid]
+        elif prior.get("merchant_url"):
+            fields["merchant_url"] = prior["merchant_url"]
         stored[oid] = fields
         touched.append(oid)
     payload = {

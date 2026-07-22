@@ -577,12 +577,19 @@ function learningRow(offer, ann, catalog, lists, vocab) {
   if (stillSuggested) {
     const badge = el('span', { class: 'hint learn-suggested', text: 'suggéré — à confirmer' });
     moveRow.appendChild(badge);
-    // Toute manipulation du select = confirmation humaine (même revenir à la
-    // valeur suggérée) : le flag tombe et le badge disparaît.
-    mSel.addEventListener('change', () => {
+    // F2 (audit couture) : `change` ne se déclenche PAS si l'opérateur
+    // re-sélectionne la liste déjà suggérée → la confirmation « telle quelle »
+    // était impossible et l'offre restait exclue du plan. On confirme donc dès
+    // que l'opérateur INTERAGIT avec le select (focus/pointerdown), pas
+    // seulement quand la valeur change : ouvrir ce contrôle pour cette offre EST
+    // le geste délibéré de confirmation.
+    const confirm = () => {
       row.setAttribute('data-suggested', '');
       badge.remove();
-    });
+    };
+    mSel.addEventListener('change', confirm);
+    mSel.addEventListener('focus', confirm);
+    mSel.addEventListener('pointerdown', confirm);
   }
   row.appendChild(moveRow);
   return row;

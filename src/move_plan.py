@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from src.mover import source_feed_page
+from src.submitter import _url_key
 
 
 def _load(run_dir: Path, name: str) -> Any:
@@ -50,14 +51,19 @@ def build_move_plan(run_dir: Path) -> dict[str, Any]:
 
     skipped = _load(run_dir, "skipped.json")
     skipped_map: dict[str, dict[str, str]] = {}
+    by_url: dict[str, dict[str, str]] = {}  # F3: stable-identity fallback index
     for entry in skipped if isinstance(skipped, list) else []:
         if not isinstance(entry, dict):
             continue
         offer = entry.get("offer") or {}
         oid = str(offer.get("offer_id", "")).strip()
         if oid:
-            skipped_map[oid] = {"name": str(offer.get("name", "")),
-                                "url": str(offer.get("url", ""))}
+            info = {"offer_id": oid, "name": str(offer.get("name", "")),
+                    "url": str(offer.get("url", ""))}
+            skipped_map[oid] = info
+            key = _url_key(info["url"])
+            if key:
+                by_url.setdefault(key, info)
 
     raw = _load(run_dir, "raw.json") or {}
     store_id = str(raw.get("store_id", "")) if isinstance(raw, dict) else ""
@@ -71,16 +77,24 @@ def build_move_plan(run_dir: Path) -> dict[str, Any]:
         target = str(ann.get("target_list_id", "")).strip()
         if not target:
             continue  # *garder* / no disposition — never a move
-        if ann.get("suggested") is True:
+        # F1 (seam audit 2026-07-21): fail-CLOSED on the truthiness contract —
+        # exclude on ANY truthy `suggested` (a non-canonical JSON 1/"true" must
+        # never slip through as a confirmed move), not only strict `is True`.
+        if ann.get("suggested"):
             excluded.append({"offer_id": offer_id, "reason": "suggestion non confirmée (D1-b)",
                              "target_list_label": ann.get("target_list_label", "")})
             continue
         info = skipped_map.get(str(offer_id))
         if info is None:
-            excluded.append({"offer_id": offer_id,
-                             "reason": "offer_id absent de skipped.json (orphelin) — pas d'URL pour relocaliser",
-                             "target_list_label": ann.get("target_list_label", "")})
-            continue
+            # F3: the offer_id rotated (re-import); relocate the confirmed
+            # disposition by the frozen merchant URL against the current feed.
+            frozen = _url_key(str(ann.get("merchant_url", "")))
+            info = by_url.get(frozen) if frozen else None
+            if info is None:
+                excluded.append({"offer_id": offer_id,
+                                 "reason": "offer_id absent de skipped.json (orphelin) — URL non retrouvée dans le feed courant",
+                                 "target_list_label": ann.get("target_list_label", "")})
+                continue
         if not info["url"].strip():
             # MV3 (review 2026-07-21): without a merchant URL the writer's
             # disappearance proof degrades to id-only, which a re-import falsifies
@@ -90,7 +104,8 @@ def build_move_plan(run_dir: Path) -> dict[str, Any]:
                              "target_list_label": ann.get("target_list_label", "")})
             continue
         entries.append({
-            "offer_id": str(offer_id),
+            "offer_id": info["offer_id"],  # current feed id (may differ after re-import)
+            "annotated_offer_id": str(offer_id),
             "name": info["name"],
             "url": info["url"],
             "target_list_id": target,

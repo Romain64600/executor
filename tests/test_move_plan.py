@@ -67,6 +67,43 @@ class BuildMovePlanTests(unittest.TestCase):
         self.assertTrue(any(x["offer_id"] == "99" and "orphelin" in x["reason"]
                             for x in plan["excluded"]))
 
+    def test_suggested_truthy_variants_all_excluded(self):
+        # F1: fail-closed on truthiness — 1 / "true" / True all excluded, an
+        # absent flag (a genuinely confirmed disposition) is included.
+        self._write_learning({
+            "1": {"target_list_id": "16", "target_list_label": "Softwares", "suggested": True},
+            "2": {"target_list_id": "21", "target_list_label": "Gift cards", "suggested": 1},
+            "3": {"target_list_id": "16", "target_list_label": "Softwares", "suggested": "true"},
+            "4": {"target_list_id": "16", "target_list_label": "Softwares"},  # confirmed
+        })
+        plan = build_move_plan(self.run)
+        self.assertEqual({e["offer_id"] for e in plan["entries"]}, {"4"})
+        self.assertEqual({x["offer_id"] for x in plan["excluded"]}, {"1", "2", "3"})
+
+    def test_reimport_relocates_confirmed_disposition_by_frozen_url(self):
+        # F3: the annotation's offer_id (1) rotated to 900 on re-import, but the
+        # frozen merchant URL still identifies it → confirmed, with the NEW id.
+        (self.run / "skipped.json").write_text(json.dumps([
+            {"offer": {"offer_id": "900", "name": "PdfGrabber 9", "url": "https://g2a/1"},
+             "reason": "skip category: SOFTWARE"},
+        ]), encoding="utf-8")
+        self._write_learning({
+            "1": {"target_list_id": "16", "target_list_label": "Softwares",
+                  "merchant_url": "https://g2a/1"},
+        })
+        plan = build_move_plan(self.run)
+        self.assertEqual(len(plan["entries"]), 1)
+        entry = plan["entries"][0]
+        self.assertEqual(entry["offer_id"], "900")           # current feed id
+        self.assertEqual(entry["annotated_offer_id"], "1")   # original
+        self.assertEqual(entry["url"], "https://g2a/1")
+
+    def test_orphan_without_frozen_url_still_excluded(self):
+        self._write_learning({"77": {"target_list_id": "16", "target_list_label": "Softwares"}})
+        plan = build_move_plan(self.run)
+        self.assertEqual(plan["entries"], [])
+        self.assertTrue(any(x["offer_id"] == "77" for x in plan["excluded"]))
+
     def test_no_learning_file_empty_plan(self):
         plan = build_move_plan(self.run)
         self.assertEqual(plan["entries"], [])
