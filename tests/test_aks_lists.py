@@ -19,6 +19,21 @@ class AksListsTests(unittest.TestCase):
         self.assertEqual(suggest_target_list("skip category: GIFT CARD"), "21")
         self.assertEqual(suggest_target_list("difmark account offer"), "30")
 
+    def test_skins_soundtracks_artbooks_to_blacklist(self):
+        # Romain 2026-07-23: these categories route to Blacklist (8)
+        for reason in ("skip category: SKIN (no bundles/skins)",
+                       "skip category: MINIMAL WEAR (no bundles/skins)",
+                       "skip category: SOUNDTRACK (non-game content)",
+                       "skip category: ARTBOOK (non-game content)",
+                       "skip category: DIGITAL BOOK (non-game content)",
+                       "skip category: RANDOM (random/lootbox, not a game)"):
+            self.assertEqual(suggest_target_list(reason), "8", reason)
+
+    def test_bundle_not_blacklisted(self):
+        # a bundle shares the "(no bundles/skins)" suffix but is NOT auto-blacklisted
+        self.assertIsNone(suggest_target_list("skip category: BUNDLE (no bundles/skins)"))
+        self.assertIsNone(suggest_target_list("possible multi-game bundle"))
+
     def test_forbidden_region_only_the_five_with_a_list(self):
         self.assertEqual(suggest_target_list("forbidden region: AUSTRALIA"), "32")
         self.assertEqual(suggest_target_list("forbidden region: SOUTH AMERICA"), "36")

@@ -191,7 +191,29 @@ restrictions (EN/FR/ES "… Languages Only", EN/CS);
 token-perfect AKS product page (Romain, direct rule 2026-07-07, after the
 Overwatch "Genji Mythic Weapon Skin Bundle" candidate was wrongly proposed;
 generalizes the G2A "skip skins" note in §11 and the Layer-5 server-side bundle
-rejects in §6); multi-game bundles/collections;
+rejects in §6); multi-game bundles/collections. `Skin(s)` is guarded
+(`_SKIN_TITLE_PHRASE_RE`, Romain 2026-07-23): a cosmetic reads "`<weapon/hero>
+Skin`", so `Skin` preceded by an article/possessive ("Blacksad: Under **the**
+Skin", "**Second** Skin", "Save **Your** Skin") or **leading** the title ("Skin
+Deep") is an ordinary title word, NOT a cosmetic — not a skip;
+**non-game content** — soundtracks (`Soundtrack`/`OST`), artbooks
+(`Artbook`/`Art Book`/`Digital Artbook`), digital books
+(`NON_GAME_CONTENT_TOKENS`, word-boundary; `OST` is word-boundary so "Ghost"/
+"Frost" do not fire), Romain 2026-07-23 → **Blacklist (8)**;
+**random / lootbox keys & items** (`_RANDOM_LOOT_RE`, Romain 2026-07-23,
+examples): the tell is **grammatical** — a lootbox uses `RANDOM` as an *adjective
+on a generic delivery noun* (a word naming "a thing dispensed", never a game's
+identity); a real game uses "Random" as a *proper noun* ("**Lost in** Random",
+"Random **Heroes**"). Two tiers: **common** delivery nouns (`GAME/KEY/ITEM`, also
+seen on ordinary offers) count only **directly** after `RANDOM` ("Random Key") —
+which keeps "Random Heroes Steam Key" / "Lost in Random Steam Key" out (a platform
+word sits between); **strong** delivery nouns (`CASE/CRATE/DROP/SPINNER/LOOT/
+BUNDLE/MYSTERY/BOX/GACHA`, rare in normal offers) may span a couple of adjectives
+("RANDOM INDIE STEAM CASE"). Also fires on a **quantified draw** ("1x Random…",
+"10 x Random…"). Checked **before** the category loops so it primes over an
+incidental `GIFT CARD` token ("…RANDOM CASE GIFT CARD…") and over `BUNDLE` (so
+"Random Bundle" reaches Blacklist, not the bundle-excluded route). "Random … Skin"
+lootboxes route via the `Skin` cosmetic rule → **Blacklist (8)**;
 **ANY software/application — games only** — categorical, word-boundary
 brand + category tokens (`SOFTWARE_APP_TOKENS`: EaseUS/Avast/…/Adobe, VPN
 brands, Internet/Total Security, Todo Backup/Data Recovery/…, Microsoft

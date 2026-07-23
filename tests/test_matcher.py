@@ -2,8 +2,10 @@ import json
 import unittest
 
 from src.aks_env import HttpProbeResult
+from src.aks_lists import suggest_target_list
 from src.contracts import NormalizedFeed, NormalizedOffer
 from src.matcher import (
+    _SKIN_NOUN_DETERMINERS,
     AksNameUnreadable,
     AksProbeUnreliable,
     AksResolution,
@@ -51,6 +53,29 @@ AKS_PAGE = (
 
 def _offer(name, url="https://m.test/x", oid="1"):
     return NormalizedOffer(offer_id=oid, name=name, url=url, merchant="Test")
+
+
+# The 16 real random/lootbox titles Romain provided 2026-07-23. Kept only as
+# regression anchors — the behavioural contract is asserted generatively over the
+# grammatical pattern (delivery noun / quantity / determiner), not this list.
+RANDOM_LOOTBOX_EXAMPLES = (
+    "GAMIVO Epic Random Game Global",
+    "GAMIVO Random Bundle Spinner Global",
+    "Roblox - Random Item DLC x1 Edition EN Global",
+    "Random Game Key WORLDWIDE",
+    "Tom Clancy's The Division - Random Weapon Skin",
+    "Counter-Strike: Global Offensive RANDOM CASE GIFT CARD BY FORCE-DROP.COM 25 USD Key GLOBAL",
+    "DOTA 2 RANDOM CASE DROP BY FORCE-DOTA.COM - Golden Trove SKIN - Key GLOBAL",
+    "RANDOM INDIE STEAM CASE - BY GABE-STORE.COM - Key GLOBAL",
+    "Sid Meier's Civilization: RANDOM KEY (PC) - BY GABE-STORE.COM Key - GLOBAL",
+    "OVERWATCH VS BATTLEBORN : RANDOM KEY (PC) - BY GABE-STORE.COM Key - GLOBAL",
+    "RANDOM VIP STEAM CASE - BY GABE-STORE.COM - Key GLOBAL",
+    "1x Random Mafia Trilogy or Grand Theft Auto 3 Key Gabe-Store.com",
+    "Steam Random Key (PC)",
+    "10 x Random Steam",
+    "10 x Premium Random Steam CD Key",
+    "Counter-Strike: Global Offensive RANDOM AK47 SKIN BY DROPLAND.NET",
+)
 
 
 class TokenizeTests(unittest.TestCase):
@@ -285,6 +310,89 @@ class PrecheckSkipTests(unittest.TestCase):
 
     def test_currency_category(self):
         self.assertIn("POINTS", precheck_skip(_offer("500 FIFA Points")))
+
+    def test_non_game_content_soundtrack_artbook(self):
+        # Romain 2026-07-23: soundtracks / artbooks -> non-game content (Blacklist)
+        self.assertIn("SOUNDTRACK", precheck_skip(_offer("Celeste Original Soundtrack")))
+        self.assertIn("OST", precheck_skip(_offer("Hades OST")))
+        self.assertIn("ARTBOOK", precheck_skip(_offer("Hollow Knight Artbook")))
+        self.assertIn("ARTBOOK", precheck_skip(_offer("Cyberpunk 2077 Digital Artbook")))
+        self.assertIn("DIGITAL BOOK", precheck_skip(_offer("Some Game Digital Book")))
+        for r in ("SOUNDTRACK", "OST", "ARTBOOK", "DIGITAL BOOK"):
+            self.assertIn("non-game content",
+                          precheck_skip(_offer(f"X {r.title()}")) or "")
+
+    def test_non_game_content_no_false_positive(self):
+        # word-boundary: OST must not fire on Ghost/Frost; a real game whose title
+        # merely contains "Mystery" is untouched.
+        for name in ("Ghost of Tsushima", "Frostpunk", "Cost of Freedom",
+                     "Kao the Kangaroo: Mystery of the Volcano"):
+            self.assertIsNone(precheck_skip(_offer(name)), name)
+
+    # --- Random / lootbox: the contract is the grammatical PATTERN, asserted
+    # generatively over each linguistic category. The 16 literal titles Romain
+    # gave live in RANDOM_LOOTBOX_EXAMPLES purely as regression anchors.
+    _RANDOM_REASON = "skip category: RANDOM (random/lootbox, not a game)"
+
+    def test_random_fires_on_common_delivery_noun_adjacent(self):
+        # PATTERN: RANDOM directly modifying a generic delivery noun = lootbox
+        for noun in ("Game", "Games", "Key", "Keys", "Item", "Items"):
+            r = precheck_skip(_offer(f"GAMIVO Epic Random {noun} Global"))
+            self.assertEqual(r, self._RANDOM_REASON, noun)
+
+    def test_random_fires_on_strong_loot_noun_at_a_distance(self):
+        # PATTERN: rare loot nouns may sit a couple of adjectives after RANDOM
+        for noun in ("Case", "Crate", "Drop", "Spinner", "Loot", "Bundle",
+                     "Mystery", "Box"):
+            r = precheck_skip(_offer(f"RANDOM INDIE STEAM {noun} Key GLOBAL"))
+            self.assertEqual(r, self._RANDOM_REASON, noun)
+
+    def test_random_fires_when_quantity_prefixed(self):
+        # PATTERN: "<N>x Random …" is a quantified draw, even before a game name
+        for qty in ("1x", "10 x", "3X", "5 x Premium"):
+            r = precheck_skip(_offer(f"{qty} Random Mafia Trilogy or GTA 3 Key"))
+            self.assertEqual(r, self._RANDOM_REASON, qty)
+
+    def test_random_common_noun_not_matched_at_a_distance(self):
+        # PATTERN boundary: a COMMON delivery noun only counts *adjacent* to
+        # RANDOM, so a platform word between them keeps a real game safe.
+        self.assertIsNone(precheck_skip(_offer("Random Heroes Steam Key GLOBAL")))
+        self.assertIsNone(precheck_skip(_offer("Lost in Random Steam Key GLOBAL")))
+
+    def test_random_proper_noun_is_a_real_game(self):
+        # PATTERN: RANDOM as a proper noun (modifies no delivery noun) = real game
+        for name in ("Lost in Random", "Lost in Random: The Eternal Die",
+                     "Random Heroes", "Random Access Memories", "Mafia Trilogy"):
+            self.assertIsNone(precheck_skip(_offer(name)), name)
+
+    def test_random_primes_over_incidental_gift_card(self):
+        # a "RANDOM CASE" is a lootbox even though the title also says GIFT CARD
+        self.assertIn("RANDOM", precheck_skip(
+            _offer("CS:GO RANDOM CASE GIFT CARD BY FORCE-DROP.COM 25 USD GLOBAL")))
+
+    def test_random_romain_examples_all_reach_blacklist(self):
+        # regression anchors: each of the 16 real titles must end up on Blacklist
+        for name in RANDOM_LOOTBOX_EXAMPLES:
+            r = precheck_skip(_offer(name))
+            self.assertIsNotNone(r, name)
+            self.assertEqual(suggest_target_list(r), "8", name)
+
+    # --- Skin: cosmetic ("<weapon/hero> Skin") vs ordinary title noun ---------
+    def test_cosmetic_skin_pattern_is_skipped(self):
+        # PATTERN: a decorated-noun cosmetic is a skip (→ Blacklist)
+        for name in ("CS2 Dragon Lore Skin", "Rust Weapon Skins", "AK47 Skin",
+                     "Karambit Skin"):
+            self.assertIn("no bundles/skins", precheck_skip(_offer(name)) or "", name)
+
+    def test_skin_governed_by_a_determiner_is_a_real_game(self):
+        # PATTERN: any determiner/possessive before SKIN makes it a noun phrase
+        for det in _SKIN_NOUN_DETERMINERS:
+            self.assertIsNone(precheck_skip(_offer(f"Deep Under {det.title()} Skin")), det)
+
+    def test_skin_leading_the_title_is_a_real_game(self):
+        # PATTERN: a cosmetic never leads the title; a game can ("Skin Deep")
+        for name in ("Skin Deep", "Skinwalker Hunt", "Blacksad Under the Skin"):
+            self.assertIsNone(precheck_skip(_offer(name)), name)
 
     def test_multi_game_bundle(self):
         self.assertIn("bundle", precheck_skip(_offer("Game A + Game B")))

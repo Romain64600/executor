@@ -65,6 +65,17 @@ _REGION_LIST = {
     "south america": "36",
 }
 
+# Romain 2026-07-23: these exact skip-category tokens are routed to Blacklist (8)
+# — skins (+ CS wear grades), non-game content (soundtracks / artbooks / digital
+# books) and random/lootbox keys & items. NOT "bundle" (shares the
+# "(no bundles/skins)" suffix but a bundle is a different call).
+_BLACKLIST_CATEGORY_TOKENS = frozenset({
+    "skin", "skins", "field tested", "minimal wear", "factory new",
+    "battle scarred", "well worn",
+    "soundtrack", "ost", "artbook", "art book", "digital artbook", "digital book",
+    "random",  # random/lootbox keys & items (2026-07-23)
+})
+
 
 def label_for(list_id: str) -> str:
     """The catalog label for a list id (or '' if unknown — ids may drift)."""
@@ -92,6 +103,13 @@ def suggest_target_list(reason: str) -> str | None:
     if r.startswith("no aks"):
         return None  # 22-vs-27 is the operator's 5-year call (docs/AKS_LISTS.md)
     haystack = r.split(":", 1)[1] if r.startswith("skip category") and ":" in r else r
+    # Blacklist (Romain 2026-07-23): skins, soundtracks, artbooks -> Blacklist (8).
+    # NOT bundles (which share the "(no bundles/skins)" suffix) — match the exact
+    # category token before the parenthetical, so "BUNDLE" is excluded.
+    if r.startswith("skip category"):
+        token = haystack.split("(")[0].strip()
+        if token in _BLACKLIST_CATEGORY_TOKENS:
+            return "8"
     # software / app (e.g. "skip category: SOFTWARE", "... IOBIT (software/app...)")
     if "software" in haystack:
         return "16"

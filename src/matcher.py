@@ -120,8 +120,48 @@ DANGEROUS_QUALIFIERS = (
 # CS-item wear levels (G2A.md) count as skins even when "skin" is absent from
 # the title ("AK-47 | Redline (Field-Tested)").
 BUNDLE_SKIN_TOKENS = (
-    "BUNDLE", "BUNDLES", "SKIN", "SKINS",
+    "BUNDLE", "BUNDLES",
     "FIELD TESTED", "MINIMAL WEAR", "FACTORY NEW", "BATTLE SCARRED", "WELL WORN",
+)
+# A CS/Dota cosmetic reads "<weapon/hero> Skin(s)" — SKIN as a *noun modified by
+# what it decorates*. The same word is an ordinary noun in a real game's title,
+# recognisable structurally (Romain 2026-07-23, "Blacksad: Under the Skin"): SKIN
+# governed by a determiner/possessive ("Under the Skin", "Second Skin", "Save
+# Your Skin") or LEADING the title ("Skin Deep") is a noun phrase, not a cosmetic.
+# ("Skinwalker" is already excluded by the word boundary.)
+_SKIN_NOUN_DETERMINERS = ("THE", "YOUR", "MY", "HIS", "HER", "OUR", "ITS", "OWN", "SECOND")
+_SKIN_TOKEN_RE = re.compile(r"\bSKINS?\b")
+_SKIN_TITLE_PHRASE_RE = re.compile(
+    r"\b(?:" + "|".join(_SKIN_NOUN_DETERMINERS) + r")\s+SKINS?\b|^\s*SKINS?\b"
+)
+# Romain (2026-07-23): soundtracks / artbooks / digital books are non-game add-on
+# content — never a game, routed to Blacklist. Word-boundary (same mechanism as
+# BUNDLE_SKIN_TOKENS): "OST" only as a standalone word (never "Ghost"/"Frost");
+# "SOUNDTRACK"/"ARTBOOK" don't collide with game words. A game bundling a
+# soundtrack is already caught upstream as a bundle.
+NON_GAME_CONTENT_TOKENS = (
+    "SOUNDTRACK", "OST", "ARTBOOK", "ART BOOK", "DIGITAL ARTBOOK", "DIGITAL BOOK",
+)
+# Random/lootbox keys & items (Romain 2026-07-23, examples). The tell is
+# grammatical: a lootbox uses RANDOM as an *adjective on a generic delivery noun*
+# — a word that names "a thing dispensed", never a specific game's identity —
+# whereas a real game uses "Random" as a *proper noun* ("Lost in Random", "Random
+# Heroes"). So we fire only when RANDOM modifies a delivery noun, or is a
+# quantified draw ("1x Random …"):
+#   - COMMON delivery nouns (GAME/KEY/ITEM) also occur on ordinary offers, so they
+#     count only *directly* after RANDOM ("Random Key"), never at a distance —
+#     this is what keeps "Random Heroes Steam Key" and "Lost in Random Steam Key"
+#     out (a platform word sits between Random and Key there).
+#   - STRONG delivery nouns (CASE/CRATE/DROP/SPINNER/LOOT/BUNDLE/MYSTERY/BOX/GACHA)
+#     are rare in normal offers, so RANDOM…<strong noun> may span a couple of
+#     adjectives ("RANDOM INDIE STEAM CASE", "RANDOM VIP STEAM CASE").
+# "Random … Skin" lootboxes are caught downstream by the SKIN cosmetic rule.
+_LOOT_NOUN_COMMON = r"GAMES?|KEYS?|ITEMS?"
+_LOOT_NOUN_STRONG = r"CASES?|CRATES?|DROPS?|SPINNERS?|LOOT|BUNDLES?|GACHA|MYSTERY|BOX(?:ES)?"
+_RANDOM_LOOT_RE = re.compile(
+    rf"\bRANDOM\s+(?:{_LOOT_NOUN_COMMON})\b"                         # Random <common noun>
+    rf"|\bRANDOM\b(?:\s+\w+){{0,2}}\s+(?:{_LOOT_NOUN_STRONG})\b"     # Random [adj adj] <strong noun>
+    rf"|\b\d+\s*[xX]\s*(?:PREMIUM\s+)?RANDOM\b"                      # <N>x Random …
 )
 # Romain (2026-07-08, live correction on "EaseUS Todo Backup Workstation"):
 # software/applications are never candidates — games only. Same categorical
@@ -302,6 +342,11 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
             return f"forbidden region: {region}"
     if _COUNTRY_GIFT_RE.search(padded):
         return "country gift (region-locked gift, §4.3)"
+    # Random/lootbox keys & items (_RANDOM_LOOT_RE, see its definition). Checked
+    # BEFORE the category loops so it primes over an incidental GIFT CARD / SKIN /
+    # BUNDLE token in the same title ("…RANDOM CASE GIFT CARD…", "Random Bundle").
+    if _RANDOM_LOOT_RE.search(padded):
+        return "skip category: RANDOM (random/lootbox, not a game)"
     upper = offer.name.upper()
     for cat in CATEGORY_SKIP:
         if cat in upper:
@@ -309,6 +354,11 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
     for token in BUNDLE_SKIN_TOKENS:
         if f" {token} " in padded:
             return f"skip category: {token} (no bundles/skins)"
+    if _SKIN_TOKEN_RE.search(padded) and not _SKIN_TITLE_PHRASE_RE.search(padded):
+        return "skip category: SKIN (no bundles/skins)"
+    for token in NON_GAME_CONTENT_TOKENS:
+        if f" {token} " in padded:
+            return f"skip category: {token} (non-game content)"
     for token in SOFTWARE_APP_TOKENS:
         if f" {token} " in padded:
             return f"skip category: {token} (software/app, not a game)"

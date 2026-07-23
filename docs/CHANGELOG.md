@@ -3,6 +3,45 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-23 — Matcher : random/lootbox + contenu non-jeu → Blacklist (8)
+
+Romain 2026-07-23 : router vers **Blacklist (8)** les skins (déjà détectés), les
+**soundtracks/artbooks/digital books** et les **random/lootbox**. Deux faux
+positifs signalés par Romain et corrigés : "Lost in Random" (jeu) et "Blacksad:
+Under the Skin" (jeu).
+
+- `src/matcher.py` (`precheck_skip`) :
+  - `NON_GAME_CONTENT_TOKENS` (Soundtrack/OST/Artbook/Art Book/Digital Artbook/
+    Digital Book), word-boundary — `OST` en frontière de mot ne déclenche pas sur
+    "Ghost"/"Frost".
+  - **Random/lootbox** (`_RANDOM_LOOT_RE`) : discriminant **grammatical** — la
+    lootbox utilise `RANDOM` comme *adjectif sur un nom de livraison générique*
+    (un mot désignant « une chose distribuée », jamais l'identité d'un jeu) ; un
+    vrai jeu utilise « Random » comme *nom propre* (« Lost **in** Random », «
+    Random **Heroes** »). Deux tiers : noms **communs** (`GAME/KEY/ITEM`, présents
+    aussi sur des offres normales) → uniquement **collés** à RANDOM (« Random Key
+    ») ce qui exclut « Random Heroes Steam Key » / « Lost in Random Steam Key » (un
+    mot de plateforme s'intercale) ; noms **forts** (`CASE/CRATE/DROP/SPINNER/LOOT/
+    BUNDLE/MYSTERY/BOX/GACHA`, rares sur offres normales) → tolèrent quelques
+    adjectifs (« RANDOM INDIE STEAM CASE »). Plus un **tirage quantifié** (« 1x
+    Random… »). Testé **avant** les catégories → prime sur un `GIFT CARD` incident
+    et sur `BUNDLE` (« Random Bundle » va bien en Blacklist).
+  - **Skin guard** (`_SKIN_TITLE_PHRASE_RE`) : `Skin` sorti de la boucle brute.
+    Un cosmétique se lit "`<arme/héros> Skin`" ; `Skin` précédé d'un article/
+    possessif ("Under **the** Skin", "**Second** Skin") ou en **tête** de titre
+    ("Skin Deep") est un mot de titre ordinaire → PAS un skip. Les vrais
+    cosmétiques (Dragon Lore Skin, Rust Weapon Skins) restent skippés.
+  - Vérifié : 16 exemples lootbox de Romain → tous Blacklist ; faux positifs
+    inertes (Lost in Random ×3, Blacksad Under the Skin ×2, Skin Deep, Second
+    Skin, Skinwalker, Ghost/Frost).
+- `src/aks_lists.py` (`suggest_target_list`) : ces tokens de catégorie
+  (`_BLACKLIST_CATEGORY_TOKENS` : skins + wear CS + soundtrack/artbook/digital
+  book + random) → **`"8"`** (Blacklist). Les **bundles** partagent le suffixe
+  "(no bundles/skins)" mais restent **exclus** (ils ne sont pas auto-blacklistés).
+- Docs : `EXECUTOR_RULES.md` §5, skill `aks-data-entry` (SKILL.md, CORE_RULES,
+  LEARNED_RULES S27). Disposition finale toujours via le gate Move-to-List
+  (confirmation opérateur + canary + autorisation), inchangé.
+
 ## 2026-07-22 — Move-to-List : batch réactivé derrière flag + autorisation (étape 6)
 
 Décision Romain, après le canary RV2/RV3 validé. `--execute --mode safe` (le
