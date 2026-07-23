@@ -218,6 +218,13 @@ async function runAction(id, action, goInput) {
   const body = { list_id: id, action };
   if (action !== "dry_run") body.confirm = "GO";
   $("#modal-actions").querySelectorAll("button,input").forEach((n) => (n.disabled = true));
+  // The run's event log is shared across every action on this run — start
+  // reading from its CURRENT end so the pane shows only THIS action's events,
+  // not replayed history from earlier canaries/dry-runs.
+  try {
+    const base = await getJSON(`api/runs/${encodeURIComponent(RUN_ID)}/submit/status?offset=0`);
+    OFFSET = base.offset ?? 0;
+  } catch (e) { OFFSET = 0; }
   showStatusPane(`▶ ${action.replace("_", "-")} — liste ${id} — lancement…`);
   setStatus(`Lancement ${action}…`, true);
   try {
@@ -236,8 +243,7 @@ function showStatusPane(msg) {
   const p = $("#modal-status");
   p.classList.remove("hidden");
   p.replaceChildren();
-  OFFSET = 0;
-  appendStatus(msg);
+  appendStatus(msg);   // OFFSET is set by the caller to the log's current end
 }
 function appendStatus(line, cls) {
   const p = $("#modal-status");
