@@ -224,6 +224,33 @@ def list_runs(runs_dir: Path) -> list[dict[str, Any]]:
     return runs
 
 
+def list_sort_runs(runs_dir: Path) -> list[dict[str, Any]]:
+    """Runs that carry a ``sort_plan.json`` (Stage 8 list-sorting scans), newest
+    first, each with a compact summary for the triage console's run picker."""
+
+    runs: list[dict[str, Any]] = []
+    if not runs_dir.is_dir():
+        return runs
+    for entry in runs_dir.iterdir():
+        if not entry.is_dir() or not RUN_ID_RE.match(entry.name):
+            continue
+        plan_path = entry / "sort_plan.json"
+        if not plan_path.is_file():
+            continue
+        record: dict[str, Any] = {"run_id": entry.name, "mtime": _iso(entry.stat().st_mtime)}
+        try:
+            plan = json.loads(plan_path.read_text(encoding="utf-8"))
+            record["counts"] = plan.get("counts", {})
+            record["coverage"] = plan.get("coverage", {})
+            record["lists"] = {lid: {"label": g.get("label"), "count": g.get("count")}
+                               for lid, g in (plan.get("by_list") or {}).items()}
+        except (json.JSONDecodeError, OSError):
+            record["counts"] = None
+        runs.append(record)
+    runs.sort(key=lambda r: r["mtime"], reverse=True)
+    return runs
+
+
 def run_detail(run_dir: Path) -> dict[str, Any]:
     """Everything the UI needs to render one run's header and panels."""
 

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AKS Executor — Tri des listes</title>
+  <link rel="stylesheet" href="sort.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <h1>Tri des listes<span class="sub">— console</span></h1>
+    </div>
+    <nav class="tabs">
+      <a href="/" class="tab">Validation &amp; Submit</a>
+      <a href="/tri" class="tab active" aria-current="page">Tri des listes</a>
+    </nav>
+    <div class="topbar-right">
+      <select id="run-picker" title="Choisir un scan de tri"></select>
+      <button id="refresh" type="button" title="Rafraîchir">↻</button>
+      <button id="theme" type="button" title="Basculer le thème">◐</button>
+    </div>
+  </header>
+
+  <div id="banner" class="banner hidden"></div>
+
+  <main id="app">
+    <div id="empty" class="empty">Chargement…</div>
+    <section id="console" class="hidden">
+      <div id="summary" class="summary"></div>
+      <div id="board" class="board"></div>
+      <div id="secondary" class="secondary"></div>
+    </section>
+  </main>
+
+  <dialog id="offers-modal">
+    <div class="modal-head">
+      <h3 id="modal-title"></h3>
+      <button id="modal-close" type="button">✕</button>
+    </div>
+    <div id="modal-cmds" class="cmds"></div>
+    <div class="tablewrap"><table id="modal-table"><thead><tr>
+      <th class="c-store">Store</th><th>Offre marchand</th><th>Raison</th>
+    </tr></thead><tbody></tbody></table></div>
+  </dialog>
+
+  <footer id="status" class="idle">Prêt</footer>
+  <script src="sort.js"></script>
+</body>
+</html>

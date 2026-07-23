@@ -26,6 +26,7 @@ from urllib.parse import parse_qs, urlparse
 from src.admin.runs import (
     RunAccessError,
     list_runs,
+    list_sort_runs,
     load_catalog_options,
     read_run_json,
     read_run_text,
@@ -59,6 +60,10 @@ STATIC_FILES = {
     "index.html": "text/html; charset=utf-8",
     "app.js": "application/javascript; charset=utf-8",
     "style.css": "text/css; charset=utf-8",
+    # Stage 8/9 — the dedicated "list sorting" triage console (its own tool).
+    "sort.html": "text/html; charset=utf-8",
+    "sort.js": "application/javascript; charset=utf-8",
+    "sort.css": "text/css; charset=utf-8",
 }
 MAX_BODY_BYTES = 2 * 1024 * 1024
 RUN_ROUTE = re.compile(r"^/api/runs/([^/]+)(/.*)?$")
@@ -208,9 +213,15 @@ class AdminHandler(BaseHTTPRequestHandler):
 
         if path in ("/", "/index.html"):
             return self._serve_static("index.html")
+        if path in ("/tri", "/sort"):
+            return self._serve_static("sort.html")
         name = path.lstrip("/")
         if name in STATIC_FILES:
             return self._serve_static(name)
+
+        if path == "/api/sort/runs":
+            return self._send_json(200, {"runs": list_sort_runs(self.state.runs_dir),
+                                         "busy": self.state.manager.busy()})
 
         if path == "/api/meta":
             return self._send_json(
@@ -270,6 +281,11 @@ class AdminHandler(BaseHTTPRequestHandler):
                     # concurrent write 409s instead of being silently clobbered.
                     "learning_sha256": learning_sha(run_dir),
                 })
+            if sub == "/sort":
+                plan = read_run_json(run_dir, "sort_plan.json")
+                if plan is None:
+                    raise ApiError(404, "no_sort_plan", "sort_plan.json absent")
+                return self._send_json(200, plan)
             if sub == "/submit/status":
                 query = parse_qs(parsed.query)
                 try:
