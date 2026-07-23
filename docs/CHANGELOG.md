@@ -3,6 +3,26 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-23 — Stage 9 : writer sort-move (déplacement par liste, multi-store)
+
+Romain 2026-07-23 : « le writer d'abord ». Exécute UNE liste cible du
+`sort_plan.json` à la fois (validation par liste), en réutilisant le `Mover`
+prouvé (RV2 : parti-de-la-source ET présent-sur-la-cible).
+
+- `src/sort_move.py` (pur) : `build_sort_move_plan(run_dir, list_id)` → plan
+  **par store** pour une liste (le mover est mono-store ; une liste couvre
+  plusieurs stores → un plan mono-store par store). Exclut fail-closed les offres
+  sans store_id / sans URL. Label cible résolu LIVE par le mover (ids drift).
+- `src/move_auth.py` : autorisation de tri **séparée** (`sort_move_authorization.json`)
+  — portée **par liste, cross-store** (drop store_id : le mécanisme de move est
+  store-agnostique), liée au hash de `sort_plan.json`. Un canary prouvant une
+  liste sur un store autorise ce **label** pour le batch, tous stores.
+- `scripts/09_sort_move.py` : itère les stores d'une liste, dry-run par défaut,
+  R24 (`learning` = canary de 1 ; `safe` = liste complète derrière
+  `--i-authorize-batch` + autorisation de tri). Gate invariants + browser_lock +
+  BlockLedger, jamais fire-and-forget. Résolution live du label vérifiée
+  (Blacklist→8, Softwares→16, Gift cards→21, account→30).
+
 ## 2026-07-23 — Tri : corrections issues de l'audit adversarial du plan
 
 Audit multi-agents du plan de tri (16 agents : FP sur les routées, FN sur les

@@ -1,0 +1,138 @@
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+from src.move_auth import (
+    grant_from_sort_canary,
+    load_sort_authorization,
+    sort_batch_authorized,
+    sort_extraction_id,
+)
+from src.sort_move import build_sort_move_plan
+
+
+def _write(run: Path, name: str, obj) -> None:
+    (run / name).write_text(json.dumps(obj), encoding="utf-8")
+
+
+SORT_PLAN = {
+    "run_id": "20260723-sort",
+    "by_list": {
+        "8": {"list_id": "8", "label": "Blacklist", "count": 3, "offers": [
+            {"offer_id": "a1", "store_id": "38", "name": "Random Game Key", "url": "https://g2a/a1"},
+            {"offer_id": "a2", "store_id": "51", "name": "GAMIVO Epic Random Game", "url": "https://gamivo/a2"},
+            {"offer_id": "a3", "store_id": "38", "name": "Some OST", "url": "https://g2a/a3"},
+        ]},
+        "21": {"list_id": "21", "label": "Gift cards", "count": 1, "offers": [
+            {"offer_id": "g1", "store_id": "162", "name": "Steam Gift Card", "url": "https://x/g1"},
+        ]},
+    },
+}
+RAW = {"store_id": "", "source_url": "https://x/admin.php?available=all&page=aks-merchant-feeds-9"}
+
+
+class BuildSortMovePlanTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.run = Path(self.tmp.name)
+        _write(self.run, "sort_plan.json", SORT_PLAN)
+        _write(self.run, "raw.json", RAW)
+
+    def test_groups_one_list_by_store(self):
+        plan = build_sort_move_plan(self.run, "8")
+        self.assertEqual(plan["target_list_label"], "Blacklist")
+        self.assertEqual(plan["source_feed_page"], "aks-merchant-feeds-9")
+        self.assertEqual(set(plan["by_store"]), {"38", "51"})
+        self.assertEqual(len(plan["by_store"]["38"]), 2)
+        self.assertEqual(len(plan["by_store"]["51"]), 1)
+        self.assertEqual(plan["counts"], {"stores": 2, "offers": 3, "excluded": 0})
+
+    def test_entries_carry_label_and_url_for_the_mover(self):
+        e = build_sort_move_plan(self.run, "8")["by_store"]["38"][0]
+        self.assertEqual(e["target_list_label"], "Blacklist")
+        self.assertEqual(e["target_list_id"], "8")
+        self.assertTrue(e["url"])
+
+    def test_offer_without_store_or_url_is_excluded_not_dropped(self):
+        bad = json.loads(json.dumps(SORT_PLAN))
+        bad["by_list"]["8"]["offers"].append(
+            {"offer_id": "x", "store_id": "", "name": "no store", "url": "https://x/x"})
+        bad["by_list"]["8"]["offers"].append(
+            {"offer_id": "y", "store_id": "38", "name": "no url", "url": ""})
+        _write(self.run, "sort_plan.json", bad)
+        plan = build_sort_move_plan(self.run, "8")
+        self.assertEqual(plan["counts"]["excluded"], 2)
+        self.assertEqual(plan["counts"]["offers"], 3)  # the 3 good ones only
+
+    def test_unknown_list_is_empty(self):
+        plan = build_sort_move_plan(self.run, "999")
+        self.assertEqual(plan["by_store"], {})
+        self.assertEqual(plan["counts"]["offers"], 0)
+
+
+class SortAuthorizationTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.run = Path(self.tmp.name)
+        _write(self.run, "sort_plan.json", SORT_PLAN)
+
+    def _entries(self, *labels):
+        return [{"target_list_label": lbl} for lbl in labels]
+
+    def test_no_authorization_refuses_batch(self):
+        ok, why = sort_batch_authorized(self.run, self._entries("Blacklist"),
+                                        source_feed_page="aks-merchant-feeds-9")
+        self.assertFalse(ok)
+        self.assertIn("aucune autorisation", why)
+
+    def test_canary_authorizes_that_label_across_stores(self):
+        grant_from_sort_canary(
+            self.run, source_feed_page="aks-merchant-feeds-9",
+            moved_entries=[{"target_list_label": "Blacklist", "current_offer_id": "a1",
+                            "url": "https://g2a/a1", "store_id": "38"}],
+            clock=lambda: "T")
+        # a batch of Blacklist offers on ANOTHER store is now covered (no store in scope)
+        ok, why = sort_batch_authorized(
+            self.run, self._entries("Blacklist", "Blacklist"),
+            source_feed_page="aks-merchant-feeds-9")
+        self.assertTrue(ok, why)
+
+    def test_unvalidated_label_refused(self):
+        grant_from_sort_canary(
+            self.run, source_feed_page="aks-merchant-feeds-9",
+            moved_entries=[{"target_list_label": "Blacklist", "current_offer_id": "a1",
+                            "url": "https://g2a/a1", "store_id": "38"}],
+            clock=lambda: "T")
+        ok, why = sort_batch_authorized(self.run, self._entries("Gift cards"),
+                                        source_feed_page="aks-merchant-feeds-9")
+        self.assertFalse(ok)
+        self.assertIn("Gift cards", why)
+
+    def test_authorization_resets_when_sort_plan_changes(self):
+        grant_from_sort_canary(
+            self.run, source_feed_page="aks-merchant-feeds-9",
+            moved_entries=[{"target_list_label": "Blacklist", "url": "u", "store_id": "38"}],
+            clock=lambda: "T")
+        before = sort_extraction_id(self.run)
+        _write(self.run, "sort_plan.json", {"run_id": "changed", "by_list": {}})
+        self.assertNotEqual(sort_extraction_id(self.run), before)
+        ok, why = sort_batch_authorized(self.run, self._entries("Blacklist"),
+                                        source_feed_page="aks-merchant-feeds-9")
+        self.assertFalse(ok)
+        self.assertIn("hors périmètre", why)
+
+    def test_sort_auth_uses_a_separate_file(self):
+        grant_from_sort_canary(
+            self.run, source_feed_page="aks-merchant-feeds-9",
+            moved_entries=[{"target_list_label": "Blacklist", "url": "u", "store_id": "38"}],
+            clock=lambda: "T")
+        self.assertIsNotNone(load_sort_authorization(self.run))
+        self.assertTrue((self.run / "sort_move_authorization.json").is_file())
+        self.assertFalse((self.run / "move_authorization.json").is_file())
+
+
+if __name__ == "__main__":
+    unittest.main()
