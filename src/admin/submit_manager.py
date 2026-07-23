@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -701,6 +702,24 @@ class SubmitManager:
             if self._active is None:
                 return None
             return {"run_id": self._active["run_id"], "kind": self._active["kind"]}
+
+    def stop_active(self) -> dict[str, Any]:
+        """Ask the active run to stop cooperatively (SIGTERM → the spawned script
+        stops at a safe point; the supervisor then frees the slot and the kernel
+        releases the browser flock). Idempotent; no-op when idle."""
+
+        with self._mutex:
+            active = self._active
+            if active is None:
+                return {"stopped": None, "reason": "aucun run en cours"}
+            info = {"run_id": active["run_id"], "kind": active["kind"], "pid": active.get("pid")}
+        pid = info.get("pid")
+        if pid:
+            try:
+                os.kill(int(pid), signal.SIGTERM)
+            except (ProcessLookupError, ValueError, PermissionError):
+                pass
+        return {"stopped": True, **info}
 
     def status(self, run_dir: Path, *, offset: int = 0) -> dict[str, Any]:
         """Current state for one run: state file + live log tail + submit plan."""

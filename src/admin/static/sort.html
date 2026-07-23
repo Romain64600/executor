@@ -16,6 +16,10 @@
       <a href="." class="tab">Validation &amp; Submit</a>
       <a href="tri" class="tab active" aria-current="page">Tri des listes</a>
     </nav>
+    <span id="busy-ind" class="busy-ind hidden">
+      <span class="spin"></span><span id="busy-text"></span>
+      <button id="stop-btn" type="button" title="Arrêter le run en cours (proprement)">Arrêter</button>
+    </span>
     <div class="topbar-right">
       <select id="run-picker" title="Choisir un scan de tri"></select>
       <button id="refresh" type="button" title="Rafraîchir">↻</button>

@@ -51,9 +51,29 @@ async function postJSON(url, body) {
   return data;
 }
 
+let BUSY = null;
+
+function setBusy(busy) {
+  BUSY = busy;
+  const ind = $("#busy-ind");
+  if (busy) {
+    $("#busy-text").textContent =
+      `${String(busy.kind || "run").replace("sort_", "").replace("_", "-")} en cours…`;
+    ind.classList.remove("hidden");
+  } else {
+    ind.classList.add("hidden");
+  }
+  document.body.classList.toggle("is-busy", !!busy);
+}
+
+async function refreshBusy() {
+  try { const d = await getJSON("api/sort/runs"); setBusy(d.busy || null); } catch (e) { /* ignore */ }
+}
+
 async function loadRuns() {
   setStatus("Chargement des scans…", true);
-  const { runs } = await getJSON("api/sort/runs");
+  const { runs, busy } = await getJSON("api/sort/runs");
+  setBusy(busy || null);
   const picker = $("#run-picker");
   picker.innerHTML = "";
   if (!runs.length) {
@@ -248,6 +268,7 @@ function startPoll() {
     OFFSET = s.offset ?? OFFSET;
     for (const ev of (s.events || [])) { const line = fmtEvent(ev); if (line) appendStatus(line); }
     const running = s.state === "running";
+    setBusy(s.busy || null);
     setStatus(running ? "Déplacement en cours…" : `Terminé (${s.state})`, running);
     if (!running) { stopPoll(); finishStatus(s); }
   };
@@ -276,6 +297,20 @@ function finishStatus(s) {
 })();
 $("#run-picker").addEventListener("change", (e) => { RUN_ID = e.target.value; loadPlan(); });
 $("#refresh").addEventListener("click", loadRuns);
+$("#stop-btn").addEventListener("click", async () => {
+  const b = $("#stop-btn");
+  b.disabled = true;
+  b.textContent = "Arrêt…";
+  try {
+    await postJSON("api/sort/stop", {});
+    appendStatus("■ arrêt demandé — le run s'arrête au prochain point sûr (fin de page/offre)…");
+    setStatus("Arrêt demandé…", true);
+  } catch (e) {
+    setStatus("Arrêt : " + e.message);
+  }
+  setTimeout(() => { b.disabled = false; b.textContent = "Arrêter"; refreshBusy(); }, 1500);
+});
+setInterval(refreshBusy, 4000);   // keep the busy indicator live across tabs/runs
 $("#modal-close").addEventListener("click", () => { stopPoll(); $("#offers-modal").close(); });
 $("#offers-modal").addEventListener("click", (e) => { if (e.target.id === "offers-modal") { stopPoll(); e.target.close(); } });
 

@@ -25,6 +25,7 @@ from typing import Any
 from src.extractor import DEFAULT_FEED_PAGE, feed_url
 from src.submitter import (  # reuse the proven, audited feed machinery
     FEED_UNREADABLE_EXCS,
+    StopRequested,
     _SubmitterBase,
     _row_check,
     _url_key,
@@ -102,6 +103,7 @@ class _MoverBase(_SubmitterBase):
         available: str = "all",
         max_pages: int = 40,
         limit: int | None = None,
+        should_stop=None,
     ) -> dict[str, Any]:
         result: dict[str, Any] = {
             "aborted": None, "stopped": None, "feed_offers": 0,
@@ -134,12 +136,22 @@ class _MoverBase(_SubmitterBase):
             e["resolved_list_text"] = resolved["text"]
 
         self.guard.start_task(run_id)
+        # Arm the cooperative stop ONLY for the initial index (a slow, read-only
+        # scan — the phase a full-list dry-run spends minutes in). It is cleared
+        # before any offer is touched, so a move is never interrupted mid-flight.
+        self._should_stop = should_stop
         try:
             index, by_url = self._index_feed(store_id, source_feed_page, available, max_pages)
+        except StopRequested as exc:
+            self._log("run_stopped", reason="operator_stop", detail=str(exc))
+            result["stopped"] = "operator_stop"
+            return result
         except FEED_UNREADABLE_EXCS as exc:
             self._log("aborted", reason=f"source feed index scan failed closed: {exc}")
             result["aborted"] = "feed_unreadable"
             return result
+        finally:
+            self._should_stop = None  # per-offer scans are never interruptible
         result["feed_offers"] = len(index)
         self._log("feed_indexed", offers=len(index))
         ctx = {"store_id": store_id, "feed_page": source_feed_page,
@@ -147,6 +159,11 @@ class _MoverBase(_SubmitterBase):
                "index": index, "by_url": by_url}
 
         for spec in plan:
+            # Cooperative stop BETWEEN offers — a safe point (no move in flight).
+            if should_stop is not None and should_stop():
+                result["stopped"] = "operator_stop"
+                self._log("run_stopped", reason=result["stopped"])
+                break
             if self.write_mode and limit is not None and result["move_attempts"] >= limit:
                 result["stopped"] = "limit_reached"
                 self._log("run_stopped", reason=result["stopped"])

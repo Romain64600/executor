@@ -332,5 +332,63 @@ class DryRunGuardTests(unittest.TestCase):
         self.assertTrue(all(e["selectable"] for e in result["plan"]))
 
 
+class OperatorStopTests(unittest.TestCase):
+    def test_stop_during_index_is_clean_no_moves(self):
+        # should_stop True from the start → the initial index stops at a page
+        # boundary: a clean operator_stop, zero moves, no Apply ever fired.
+        session = FakeMoveSession([["100", "200"]])
+        result = _run(Mover, session, _plan("100"), should_stop=lambda: True)
+        self.assertEqual(result["stopped"], "operator_stop")
+        self.assertEqual(result["moved"], 0)
+        self.assertEqual(result["plan"], [])
+        self.assertEqual(session.applied, [])
+
+    def test_stop_between_offers_after_a_completed_move(self):
+        # stop requested only AFTER offer 1's move completes: offer 1 moves fully,
+        # offer 2 is never started (checked between offers, never mid-Apply).
+        session = FakeMoveSession([["100", "200"]])
+        flag = {"stop": False}
+
+        class _M(Mover):
+            def _move(self, entry, ctx):
+                r = super()._move(entry, ctx)
+                flag["stop"] = True
+                return r
+
+        m = _M(session)
+        m.post_apply_settle = 0
+        result = m.run(run_id="r", store_id="38", plan=_plan("100", "200"),
+                       source_feed_page="aks-merchant-feeds-9", max_pages=5,
+                       should_stop=lambda: flag["stop"])
+        self.assertEqual(result["moved"], 1)
+        self.assertEqual(result["stopped"], "operator_stop")
+        self.assertEqual(len(result["plan"]), 1)
+        self.assertEqual(session.applied, [("100", "16")])
+
+    def test_stop_hook_is_disarmed_during_a_move(self):
+        # SAFETY: while an offer's move runs, _should_stop is None, so a move's
+        # own scans can never raise StopRequested and cut it mid-Apply.
+        session = FakeMoveSession([["100"]])
+        seen = {}
+
+        class _M(Mover):
+            def _move(self, entry, ctx):
+                seen["during_move"] = self._should_stop
+                return super()._move(entry, ctx)
+
+        m = _M(session)
+        m.post_apply_settle = 0
+        m.run(run_id="r", store_id="38", plan=_plan("100"),
+              source_feed_page="aks-merchant-feeds-9", max_pages=5,
+              should_stop=lambda: False)
+        self.assertIsNone(seen["during_move"])
+
+    def test_default_no_should_stop_is_unaffected(self):
+        session = FakeMoveSession([["100"]])
+        result = _run(Mover, session, _plan("100"))
+        self.assertIsNone(result["stopped"])
+        self.assertEqual(result["moved"], 1)
+
+
 if __name__ == "__main__":
     unittest.main()

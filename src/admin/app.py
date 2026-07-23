@@ -380,6 +380,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._post_invariants()
         if path == "/api/extract":
             return self._post_extract()
+        if path == "/api/sort/stop":
+            return self._send_json(200, self.state.manager.stop_active())
 
         match = RUN_ROUTE.match(path)
         if match:

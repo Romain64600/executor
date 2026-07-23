@@ -604,6 +604,11 @@ class SortMoveRouteTests(AppTestCase):
         self.assertEqual(response.status, 400)
         self.assertEqual(data["error"]["code"], "list_required")
 
+    def test_sort_stop_when_idle(self):
+        response, data = self._json("POST", "/api/sort/stop", body={})
+        self.assertEqual(response.status, 200)
+        self.assertIsNone(data["stopped"])
+
 
 if __name__ == "__main__":
     unittest.main()

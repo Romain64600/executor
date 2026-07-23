@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import signal
 import sys
 import time
 from datetime import datetime, timezone
@@ -47,6 +48,17 @@ DEFAULT_MAX_PAGES = 40
 AUTO_MAX_PAGES_HEADROOM = 1.3
 CANARY_MODES = ("learning", "advanced")
 CANARY_LIMIT = 1
+
+# Cooperative stop: SIGTERM (from the admin "Arrêter" button, or the CLI) sets
+# this flag; the mover checks it at safe points (page boundary / between offers)
+# and stops without cutting a move mid-Apply. A plain kill still works, but this
+# is the clean path.
+_STOP = False
+
+
+def _on_term(_signum, _frame):
+    global _STOP
+    _STOP = True
 
 
 def mode_limit(mode: str, requested: int | None) -> int | None:
@@ -83,6 +95,7 @@ def _status(entry: dict, write: bool) -> str:
 
 
 def main() -> int:
+    signal.signal(signal.SIGTERM, _on_term)  # clean cooperative stop on SIGTERM
     try:
         with browser_lock(ROOT, label="09_sort_move " + " ".join(sys.argv[1:])[:160]):
             return _main()
@@ -217,6 +230,9 @@ def _main() -> int:
     try:
         with session_cls(args.endpoint) as session:
             for store, entries in by_store.items():
+                if _STOP:
+                    agg["stopped"] = "operator_stop"
+                    break
                 if remaining is not None and remaining <= 0:
                     agg["stopped"] = "limit_reached"
                     break
@@ -228,7 +244,7 @@ def _main() -> int:
                     result = mover.run(run_id=f"{run_id}:{args.list_id}:store{store}",
                                        store_id=store, plan=entries, source_feed_page=source_list,
                                        available=args.available, max_pages=max_pages,
-                                       limit=remaining)
+                                       limit=remaining, should_stop=lambda: _STOP)
                 except FEED_UNREADABLE_EXCS as exc:
                     agg["aborted"] = f"feed_unreadable (store {store}): {exc}"
                     break
@@ -253,7 +269,7 @@ def _main() -> int:
                     agg["aborted"] = agg["aborted"] or result.get("aborted")
                     agg["stopped"] = agg["stopped"] or result.get("stopped")
                     if result.get("aborted") or result.get("stopped") in (
-                            "ten_consecutive_failures", "guard_blocked"):
+                            "ten_consecutive_failures", "guard_blocked", "operator_stop"):
                         break
     except FEED_UNREADABLE_EXCS as exc:
         print(json.dumps({"aborted": True,

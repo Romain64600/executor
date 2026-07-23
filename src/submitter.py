@@ -52,6 +52,12 @@ class FeedScanError(RuntimeError):
 # fail-closed, the current offer's state is UNKNOWN, nothing may be inferred".
 FEED_UNREADABLE_EXCS = (NotLoggedInError, FeedScanError, CdpCommandError)
 
+
+class StopRequested(RuntimeError):
+    """The operator asked to stop the run. Raised only at a SAFE point (a
+    read-only page-scan boundary while the stop hook is armed) — never mid-write.
+    A clean, expected stop, not a failure."""
+
 # Post-navigate settle for FEED-SCAN reads only (index + post-save re-walk).
 # These just read data-offer rows from the server-rendered HTML, so a short
 # wait is enough (proven live: extraction reads the same rows fine at 1 s).
@@ -266,6 +272,13 @@ class _SubmitterBase:
         self.feed_scan_settle = FEED_SCAN_SETTLE
         self.catalog: dict[str, Any] | None = None
         self._region_master: list[dict[str, Any]] = []
+        # Cooperative stop hook (default: never checked → submit pipeline
+        # unaffected). When set to a callable, the feed-scan page loop raises
+        # StopRequested at the next page boundary — a SAFE stop point (a scan is
+        # read-only). Callers that also write (the mover) additionally check it
+        # between offers and DISABLE it during a single offer's move, so a move
+        # is never interrupted mid-Apply.
+        self._should_stop = None
         self._edition_master: list[dict[str, Any]] = []
 
     def _load_catalog(self, catalog: dict[str, Any]) -> None:
@@ -382,6 +395,11 @@ class _SubmitterBase:
         empty = 0
         nav_max_seen = 0
         for page in range(1, max_pages + 1):
+            # Cooperative stop at a page boundary (read-only, always safe). The
+            # mover only leaves this hook armed during the initial index and
+            # clears it during a move, so no write is ever cut mid-flight.
+            if self._should_stop is not None and self._should_stop():
+                raise StopRequested(f"scan interrompu par l'opérateur (page {page})")
             url = feed_url(store_id, page=page, feed_page=feed_page, available=available)
             if page > 1 and self.page_pacer is not None:
                 self.page_pacer.wait()

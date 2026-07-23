@@ -774,6 +774,19 @@ class SortMoveTests(ManagerTestCase):
             m.start_sort_move(self.run, list_id="8", action="dry_run", by="Romain")
         m.wait_idle(timeout=10)
 
+    def test_stop_active_signals_and_frees_the_slot(self):
+        m = self._sm(sleep=5.0)  # would run 5s; the stop ends it early
+        m.start_sort_move(self.run, list_id="8", action="dry_run", by="Romain")
+        info = m.stop_active()
+        self.assertTrue(info["stopped"])
+        self.assertEqual(info["kind"], "sort_dry_run")
+        self.assertTrue(m.wait_idle(timeout=10))
+        self.assertIsNone(m.busy())
+
+    def test_stop_active_when_idle_is_noop(self):
+        m = self._sm()
+        self.assertIsNone(m.stop_active()["stopped"])
+
 
 if __name__ == "__main__":
     unittest.main()
