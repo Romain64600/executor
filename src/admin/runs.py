@@ -38,6 +38,7 @@ RUN_FILES = frozenset(
         "match_meta.json",  # FC5 — R24 mode stamped by 03_match
         "learning.json",    # Learning annotations (region/edition/comment per non-matched offer)
         "learning_log.jsonl",  # append-only JSONL: one event per Learning save (audit L6)
+        "sort_plan.json",   # Stage 8 — the all-stores list-sorting plan (triage console)
     }
 )
 
