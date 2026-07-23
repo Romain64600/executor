@@ -132,7 +132,7 @@ class RawSnapshot:
         *,
         run_id: str,
         merchant: str,
-        store_id: str | int,
+        store_id: str | int | None,
         source_url: str,
         raw_offers: Iterable[dict[str, Any]],
         pages_scanned: int,
@@ -151,7 +151,9 @@ class RawSnapshot:
         return cls(
             run_id=run_id.strip(),
             merchant=merchant.strip(),
-            store_id=str(store_id),
+            # None = the all-stores "list sorting" scan (no store filter); keep
+            # it as "" rather than the string "None".
+            store_id="" if store_id is None else str(store_id),
             source_url=source_url,
             fetched_at=clock(),
             pages_scanned=int(pages_scanned),

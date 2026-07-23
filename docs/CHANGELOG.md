@@ -3,6 +3,34 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-23 — Stage 8 : scan « list sorting » tous stores (read-only, plan)
+
+Romain 2026-07-23 : un mode qui passe sur **toutes** les Pending Offers, tous
+stores confondus, et propose un **routage complet** vers les listes cibles.
+
+Fait pivot (probé live) : `page=aks-merchant-feeds-9` **sans** paramètre `store=`
+renvoie la list 9 **tous stores** (~30 pages ≈ 3 000 offres) — `store=` vide ou
+`store=0` NE font PAS ça (ils retombent sur un store arbitraire). Chaque offre
+porte son `storeId`/`listId`. ⚠️ Deux espaces d'ID distincts : *store* 38 = G2A,
+*list* 38 = « binance ».
+
+- `src/extractor.py` : `feed_url(store_id=None)` omet le filtre `store=` (vue
+  tous-stores). `extract_pages`/`extract` acceptent `store_id=None`.
+- `src/contracts.py` : `RawSnapshot.create(store_id=None)` → `""` (jamais
+  « None »).
+- `src/sort_plan.py` (nouveau, pur/déterministe) : `build_sort_plan` groupe les
+  offres par liste cible via `precheck_skip` + `suggest_target_list` ; chaque
+  offre est classée une seule fois (routée / non-routée « garder » / candidat
+  création) ; `render_report` rend un rapport par liste. Aucune écriture.
+- `scripts/08_sort_plan.py` (nouveau) : scan read-only tous-stores derrière le
+  gate invariants + browser_lock ; écrit `sort_plan.json` + `report.txt`. Marque
+  la couverture `truncated` si le feed annonce plus de pages que `--max-pages`
+  (pas de cap silencieux).
+
+Côté **write** (déplacements) : inchangé, toujours derrière le gate Stage 6 —
+prochaine étape = writer avec **validation en bloc par liste** (Romain) + preuve
+RV2 par move + autorisation versionnée + go explicite. Le scan ne déplace RIEN.
+
 ## 2026-07-23 — Matcher : random/lootbox + contenu non-jeu → Blacklist (8)
 
 Romain 2026-07-23 : router vers **Blacklist (8)** les skins (déjà détectés), les

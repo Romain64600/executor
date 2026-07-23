@@ -102,16 +102,24 @@ class FeedUnstableError(RuntimeError):
 
 
 def feed_url(
-    store_id: str | int,
+    store_id: str | int | None,
     *,
     page: int | None = None,
     feed_page: str = DEFAULT_FEED_PAGE,
     available: str = "all",
     admin_url: str = AKS_ADMIN_URL,
 ) -> str:
-    """Build a merchant-feed URL. Pagination is ``&p=N`` (never ``paged=N``)."""
+    """Build a merchant-feed URL. Pagination is ``&p=N`` (never ``paged=N``).
 
-    query = f"?available={available}&store={store_id}&page={feed_page}"
+    ``store_id=None`` omits the ``store=`` filter entirely — that queries the
+    list across ALL stores (the "list sorting" all-stores view, probed live
+    2026-07-23: ``…&page=aks-merchant-feeds-9`` with no store param returns
+    list 9 for every store). ``store=`` empty or ``store=0`` do NOT do this —
+    they silently default to one arbitrary store — so None must drop the key.
+    """
+
+    store_clause = "" if store_id is None else f"&store={store_id}"
+    query = f"?available={available}{store_clause}&page={feed_page}"
     if page is not None and int(page) > 1:
         query += f"&p={int(page)}"
     return admin_url + query
@@ -250,7 +258,7 @@ class FeedExtractor:
         *,
         run_id: str,
         merchant: str,
-        store_id: str | int,
+        store_id: str | int | None,
         feed_page: str = DEFAULT_FEED_PAGE,
         available: str = "all",
         max_pages: int = 40,
@@ -412,7 +420,7 @@ class FeedExtractor:
         *,
         run_id: str,
         merchant: str,
-        store_id: str | int,
+        store_id: str | int | None,
         first_page: int,
         last_page: int,
         feed_page: str = DEFAULT_FEED_PAGE,
