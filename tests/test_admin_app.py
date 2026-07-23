@@ -567,5 +567,43 @@ class MatchEndpointTests(AppTestCase):
         self.assertEqual(response.status, 403)
 
 
+class SortMoveRouteTests(AppTestCase):
+    def _sort_run(self):
+        # a run carrying a sort_plan.json, readable by the console + sort routes
+        self.run.joinpath("sort_plan.json").write_text(json.dumps({
+            "run_id": self.run.name, "counts": {"routed": 2, "target_lists": 1},
+            "by_list": {"8": {"list_id": "8", "label": "Blacklist", "count": 2, "offers": [
+                {"offer_id": "a1", "store_id": "38", "name": "Random Game Key", "url": "https://g2a/a1"},
+            ]}},
+        }), encoding="utf-8")
+
+    def test_sort_plan_route_returns_plan(self):
+        self._sort_run()
+        response, data = self._json("GET", f"/api/runs/{self.run.name}/sort")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(data["counts"]["routed"], 2)
+
+    def test_sort_runs_lists_the_run(self):
+        self._sort_run()
+        response, data = self._json("GET", "/api/sort/runs")
+        self.assertEqual(response.status, 200)
+        self.assertIn(self.run.name, [r["run_id"] for r in data["runs"]])
+
+    def test_real_move_requires_typed_go(self):
+        # a canary WITHOUT confirm=GO is refused BEFORE anything is spawned
+        self._sort_run()
+        response, data = self._json("POST", f"/api/runs/{self.run.name}/sort/move",
+                                    body={"list_id": "8", "action": "canary"})
+        self.assertEqual(response.status, 400)
+        self.assertEqual(data["error"]["code"], "go_required")
+
+    def test_move_requires_list_id(self):
+        self._sort_run()
+        response, data = self._json("POST", f"/api/runs/{self.run.name}/sort/move",
+                                    body={"action": "canary", "confirm": "GO"})
+        self.assertEqual(response.status, 400)
+        self.assertEqual(data["error"]["code"], "list_required")
+
+
 if __name__ == "__main__":
     unittest.main()

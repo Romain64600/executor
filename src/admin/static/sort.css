@@ -113,7 +113,21 @@ dialog::backdrop{background:rgba(0,0,0,.62);}
 .modal-head{display:flex;align-items:center;gap:.6rem;padding:.7rem .9rem;border-bottom:1px solid var(--line);}
 .modal-head h3{margin:0;font-size:.95rem;}
 .modal-head button{margin-left:auto;}
-.cmds{padding:.7rem .9rem;display:flex;flex-direction:column;gap:.4rem;border-bottom:1px solid var(--line);}
+/* action bar: dry-run / GO / canary / batch */
+.actions{padding:.7rem .9rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;border-bottom:1px solid var(--line);}
+.actions .aspacer{width:1px;height:1.3rem;background:var(--line-2);margin:0 .2rem;}
+.actions .golabel{color:var(--dim);font-size:.8rem;}
+.actions .go-in{width:5rem;font-family:var(--mono);text-align:center;text-transform:uppercase;}
+.actions button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600;}
+.actions button.danger{background:var(--bad);border-color:var(--bad);color:#fff;font-weight:600;}
+.actions .gatehint{flex-basis:100%;color:var(--dim);font-size:.74rem;line-height:1.4;margin-top:.1rem;}
+.status-pane{padding:.6rem .9rem;border-bottom:1px solid var(--line);max-height:34vh;overflow-y:auto;
+  font-family:var(--mono);font-size:.76rem;background:var(--panel-2);}
+.status-pane .logline{padding:.08rem 0;color:var(--dim);white-space:pre-wrap;word-break:break-word;}
+.status-pane .logline.ok{color:var(--good);} .status-pane .logline.bad{color:var(--bad);}
+.cmds-wrap{border-bottom:1px solid var(--line);}
+.cmds-wrap>summary{padding:.5rem .9rem;cursor:pointer;color:var(--dim);font-size:.8rem;}
+.cmds{padding:.2rem .9rem .7rem;display:flex;flex-direction:column;gap:.4rem;}
 .cmd{display:flex;align-items:center;gap:.5rem;}
 .cmd .tag{font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;color:var(--dim);width:4.2rem;flex:none;}
 .cmd code{flex:1;font-family:var(--mono);font-size:.76rem;background:var(--panel-2);border:1px solid var(--line);

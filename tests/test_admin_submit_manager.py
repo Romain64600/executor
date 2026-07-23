@@ -82,6 +82,23 @@ print(json.dumps({{"candidates": 0, "max_candidates": args.max_candidates}}))
 sys.exit({exit_code})
 """
 
+# Mirrors scripts/09_sort_move.py's CLI: run_dir positional + --list + R24 flags.
+FAKE_SORT_MOVE_SCRIPT = """\
+import argparse, json, sys, time
+p = argparse.ArgumentParser()
+p.add_argument("run_dir")
+p.add_argument("--list", dest="list_id", required=True)
+p.add_argument("--mode", default="safe")
+p.add_argument("--execute", action="store_true")
+p.add_argument("--i-authorize-batch", action="store_true")
+p.add_argument("--store", default=None)
+p.add_argument("--limit", type=int, default=None)
+args = p.parse_args()
+time.sleep({sleep})
+print(json.dumps({{"list_id": args.list_id, "mode": args.mode, "execute": args.execute}}))
+sys.exit({exit_code})
+"""
+
 
 class ManagerTestCase(unittest.TestCase):
     def setUp(self):
@@ -688,6 +705,74 @@ class MatchedModeBindingTests(ManagerTestCase):
                 expected_approved_sha=self._approved_sha(),
             )
         self.assertEqual(ctx.exception.code, "match_meta_unreadable")
+
+
+class SortMoveTests(ManagerTestCase):
+    def _sm(self, sleep=0.0, exit_code=0):
+        script = self.root / f"fake_sortmove_{sleep}_{exit_code}.py"
+        script.write_text(FAKE_SORT_MOVE_SCRIPT.format(sleep=sleep, exit_code=exit_code),
+                          encoding="utf-8")
+        return SubmitManager(self.root, log_dir=self.logs, sort_move_script=script, clock=CLOCK)
+
+    def _mode_of(self, argv):
+        return argv[argv.index("--mode") + 1]
+
+    def test_dry_run_argv_writes_nothing(self):
+        m = self._sm()
+        r = m.start_sort_move(self.run, list_id="8", action="dry_run", by="Romain")
+        self.assertIn("8", r["argv"])
+        self.assertNotIn("--execute", r["argv"])
+        self.assertNotIn("--i-authorize-batch", r["argv"])
+        self.assertTrue(m.wait_idle(timeout=10))
+
+    def test_canary_argv_learning_no_batch_flag(self):
+        m = self._sm()
+        r = m.start_sort_move(self.run, list_id="8", action="canary", by="Romain")
+        self.assertIn("--execute", r["argv"])
+        self.assertEqual(self._mode_of(r["argv"]), "learning")
+        self.assertNotIn("--i-authorize-batch", r["argv"])
+        self.assertTrue(m.wait_idle(timeout=10))
+
+    def test_batch_argv_safe_with_authorize_flag(self):
+        m = self._sm()
+        r = m.start_sort_move(self.run, list_id="8", action="batch", by="Romain")
+        self.assertIn("--execute", r["argv"])
+        self.assertEqual(self._mode_of(r["argv"]), "safe")
+        self.assertIn("--i-authorize-batch", r["argv"])
+        self.assertTrue(m.wait_idle(timeout=10))
+
+    def test_store_scoping_passed_through(self):
+        m = self._sm()
+        r = m.start_sort_move(self.run, list_id="8", action="dry_run", store="51", by="Romain")
+        self.assertEqual(r["argv"][r["argv"].index("--store") + 1], "51")
+        self.assertTrue(m.wait_idle(timeout=10))
+
+    def test_bad_action_refused_before_spawn(self):
+        m = self._sm()
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_sort_move(self.run, list_id="8", action="delete", by="Romain")
+        self.assertEqual(ctx.exception.code, "bad_action")
+
+    def test_canary_limit_widening_refused(self):
+        m = self._sm()
+        with self.assertRaises(SubmitStartError):
+            m.start_sort_move(self.run, list_id="8", action="canary", limit=5, by="Romain")
+
+    def test_supervised_to_completion(self):
+        m = self._sm()
+        m.start_sort_move(self.run, list_id="8", action="dry_run", by="Romain")
+        self.assertTrue(m.wait_idle(timeout=10))
+        state = json.loads((self.run / "admin_submit.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["state"], "done")
+        self.assertEqual(state["kind"], "sort_dry_run")
+        self.assertEqual(state["list_id"], "8")
+
+    def test_second_start_refused_while_running(self):
+        m = self._sm(sleep=1.0)
+        m.start_sort_move(self.run, list_id="8", action="dry_run", by="Romain")
+        with self.assertRaises(SubmitStartError):
+            m.start_sort_move(self.run, list_id="8", action="dry_run", by="Romain")
+        m.wait_idle(timeout=10)
 
 
 if __name__ == "__main__":

@@ -223,6 +223,7 @@ class SubmitManager:
         submit_script: Path | None = None,
         extract_script: Path | None = None,
         match_script: Path | None = None,
+        sort_move_script: Path | None = None,
         python: str = sys.executable,
         clock=_utc_now_iso,
     ) -> None:
@@ -231,6 +232,7 @@ class SubmitManager:
         self.submit_script = submit_script or (repo_root / "scripts" / "05_submit.py")
         self.extract_script = extract_script or (repo_root / "scripts" / "02_extract_feed.py")
         self.match_script = match_script or (repo_root / "scripts" / "03_match.py")
+        self.sort_move_script = sort_move_script or (repo_root / "scripts" / "09_sort_move.py")
         self.python = python
         self.clock = clock
         self._mutex = threading.Lock()
@@ -467,6 +469,41 @@ class SubmitManager:
                 argv += ["--max-pages", str(max_pages)]
             return self._spawn(
                 run_dir, kind="catalog", argv=argv, meta={"by": by, "max_pages": max_pages}
+            )
+
+    def start_sort_move(
+        self, run_dir: Path, *, list_id: str, action: str, by: str,
+        store: str | None = None, limit: int | None = None,
+    ) -> dict[str, Any]:
+        """Launch the Stage-9 sort-move writer for ONE target list, supervised.
+
+        ``action`` sets the R24 gate: ``dry_run`` (no writes), ``canary`` (mode
+        learning, 1 move), ``batch`` (mode safe + ``--i-authorize-batch``, the full
+        list). The spawned script still enforces every gate itself (invariants,
+        browser lock, and — for batch — a canary-granted authorization); this only
+        assembles the argv and supervises the process (never fire-and-forget)."""
+
+        with self._mutex:
+            self._ensure_free()
+            if action not in ("dry_run", "canary", "batch"):
+                raise SubmitStartError("bad_action", f"action inconnue: {action!r}", http_status=400)
+            mode = "learning" if action == "canary" else "safe"
+            dry_run = action == "dry_run"
+            self._check_mode_limit(mode, limit)
+            argv = [self.python, str(self.sort_move_script), str(run_dir),
+                    "--list", str(list_id), "--mode", mode]
+            if not dry_run:
+                argv.append("--execute")
+            if action == "batch":
+                argv.append("--i-authorize-batch")
+            if store:
+                argv += ["--store", str(store)]
+            if limit is not None:
+                argv += ["--limit", str(limit)]
+            return self._spawn(
+                run_dir, kind=f"sort_{action}", argv=argv,
+                meta={"list_id": str(list_id), "action": action, "mode": mode,
+                      "dry_run": dry_run, "store": store, "by": by},
             )
 
     def start_extract(

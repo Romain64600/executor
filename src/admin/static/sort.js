@@ -40,6 +40,17 @@ async function getJSON(url) {
   return r.json();
 }
 
+async function postJSON(url, body) {
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "X-AKS-Admin": "1", "Content-Type": "application/json", "Accept": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error?.message || `HTTP ${r.status}`);
+  return data;
+}
+
 async function loadRuns() {
   setStatus("Chargement des scans…", true);
   const { runs } = await getJSON("api/sort/runs");
@@ -139,9 +150,12 @@ function cmdRow(tag, cmd) {
   ]);
 }
 
+let POLL = null, OFFSET = 0;
+
 function openList(id, g) {
   const [, family] = fam(id);
   $("#modal-title").textContent = `${g.label || family} — liste ${id} · ${fmt(g.count)} offres`;
+  buildActions(id, g);
   const base = `python3 scripts/09_sort_move.py runs/${RUN_ID} --list ${id}`;
   $("#modal-cmds").replaceChildren(
     cmdRow("dry-run", base),
@@ -154,7 +168,99 @@ function openList(id, g) {
     el("td", {}, [el("div", {}, o.name || ""), o.url ? el("a", { href: o.url, target: "_blank", rel: "noopener" }, o.url) : null]),
     el("td", { class: "rz" }, (o.reason || "").replace(/^skip category:\s*/, "")),
   ])));
+  stopPoll();
+  $("#modal-status").classList.add("hidden");
+  $("#modal-status").replaceChildren();
   $("#offers-modal").showModal();
+}
+
+function buildActions(id, g) {
+  const go = el("input", { type: "text", placeholder: "GO", class: "go-in", autocomplete: "off" });
+  const canary = el("button", { class: "primary", disabled: "" }, "Canary (1 move)");
+  const batch = el("button", { class: "danger", disabled: "" }, `Batch (${fmt(g.count)})`);
+  const sync = () => { const ok = go.value.trim().toUpperCase() === "GO"; canary.disabled = batch.disabled = !ok; };
+  go.addEventListener("input", sync);
+  canary.addEventListener("click", () => runAction(id, "canary", go));
+  batch.addEventListener("click", () => runAction(id, "batch", go));
+  $("#modal-actions").replaceChildren(
+    el("button", { onclick: () => runAction(id, "dry_run", null) }, "Dry-run"),
+    el("span", { class: "aspacer" }),
+    el("span", { class: "golabel" }, "GO :"), go, canary, batch,
+    el("div", { class: "gatehint" },
+      "Dry-run = aperçu (aucune écriture). Canary = 1 déplacement prouvé (autorise la liste). "
+      + "Batch = liste complète, exige un canary validé. Chaque move prouve source+cible (RV2)."),
+  );
+}
+
+async function runAction(id, action, goInput) {
+  if ((action === "canary" || action === "batch")
+      && (!goInput || goInput.value.trim().toUpperCase() !== "GO")) return;
+  const body = { list_id: id, action };
+  if (action !== "dry_run") body.confirm = "GO";
+  $("#modal-actions").querySelectorAll("button,input").forEach((n) => (n.disabled = true));
+  showStatusPane(`▶ ${action.replace("_", "-")} — liste ${id} — lancement…`);
+  setStatus(`Lancement ${action}…`, true);
+  try {
+    await postJSON(`api/runs/${encodeURIComponent(RUN_ID)}/sort/move`, body);
+  } catch (e) {
+    appendStatus("✖ refusé : " + e.message);
+    setStatus("Refusé — " + e.message);
+    $("#modal-actions").querySelectorAll("button,input").forEach((n) => (n.disabled = false));
+    return;
+  }
+  if (goInput) goInput.value = "";
+  startPoll();
+}
+
+function showStatusPane(msg) {
+  const p = $("#modal-status");
+  p.classList.remove("hidden");
+  p.replaceChildren();
+  OFFSET = 0;
+  appendStatus(msg);
+}
+function appendStatus(line, cls) {
+  const p = $("#modal-status");
+  p.append(el("div", { class: "logline" + (cls ? " " + cls : "") }, line));
+  p.scrollTop = p.scrollHeight;
+}
+function stopPoll() { if (POLL) { clearInterval(POLL); POLL = null; } }
+
+function fmtEvent(ev) {
+  const n = ev.event || "";
+  if (n === "feed_indexed") return `· feed indexé (${fmt(ev.offers)} offres)`;
+  if (n === "row_relocated") return `· offre relocalisée (${ev.current_offer_id})`;
+  if (n === "move_submitted") return `→ Apply envoyé (offre ${ev.current_offer_id} → liste ${ev.target_list_id})`;
+  if (n === "move_verified") return ev.moved ? `✔ MOVED — prouvé source+cible` : `✖ non confirmé (${ev.on_target ? "" : "absent cible"})`;
+  if (n === "move_blocked") return `⛔ bloqué : ${ev.reason || ""}`;
+  if (n === "move_skipped") return `↷ ignoré : ${ev.reason || ""}`;
+  if (n === "run_stopped") return `■ stop : ${ev.reason || ""}`;
+  if (n === "aborted") return `■ abandon : ${ev.reason || ""}`;
+  return null;
+}
+
+function startPoll() {
+  stopPoll();
+  const tick = async () => {
+    let s;
+    try { s = await getJSON(`api/runs/${encodeURIComponent(RUN_ID)}/submit/status?offset=${OFFSET}`); }
+    catch (e) { return; }
+    OFFSET = s.offset ?? OFFSET;
+    for (const ev of (s.events || [])) { const line = fmtEvent(ev); if (line) appendStatus(line); }
+    const running = s.state === "running";
+    setStatus(running ? "Déplacement en cours…" : `Terminé (${s.state})`, running);
+    if (!running) { stopPoll(); finishStatus(s); }
+  };
+  POLL = setInterval(tick, 1500);
+  tick();
+}
+
+function finishStatus(s) {
+  const tail = (s.stdout_tail || "").trim().split("\n").filter(Boolean).slice(-3);
+  for (const line of tail) appendStatus(line, /moved=|MOVED/.test(line) ? "ok" : (/refus|abort|FAILED|BLOCK/i.test(line) ? "bad" : ""));
+  appendStatus(s.exit_code === 0 ? "— terminé (exit 0)" : `— terminé (exit ${s.exit_code})`, s.exit_code === 0 ? "ok" : "bad");
+  $("#modal-actions").querySelectorAll("button,input").forEach((n) => (n.disabled = false));
+  loadRuns().catch(() => {});   // refresh busy state + any new run
 }
 
 // theme, wiring
@@ -170,7 +276,7 @@ function openList(id, g) {
 })();
 $("#run-picker").addEventListener("change", (e) => { RUN_ID = e.target.value; loadPlan(); });
 $("#refresh").addEventListener("click", loadRuns);
-$("#modal-close").addEventListener("click", () => $("#offers-modal").close());
-$("#offers-modal").addEventListener("click", (e) => { if (e.target.id === "offers-modal") e.target.close(); });
+$("#modal-close").addEventListener("click", () => { stopPoll(); $("#offers-modal").close(); });
+$("#offers-modal").addEventListener("click", (e) => { if (e.target.id === "offers-modal") { stopPoll(); e.target.close(); } });
 
 loadRuns().catch((e) => { banner("Erreur de chargement : " + e.message); setStatus("Erreur"); });

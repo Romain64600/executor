@@ -395,8 +395,29 @@ class AdminHandler(BaseHTTPRequestHandler):
                 return self._post_catalog(run_dir)
             if sub == "/submit":
                 return self._post_submit(run_dir)
+            if sub == "/sort/move":
+                return self._post_sort_move(run_dir)
 
         raise ApiError(404, "not_found", f"route inconnue: {path}")
+
+    def _post_sort_move(self, run_dir: Path) -> None:
+        body = self._json_body()
+        list_id = str(body.get("list_id") or "").strip()
+        action = str(body.get("action") or "").strip()
+        store = str(body.get("store") or "").strip() or None
+        by = str(body.get("by") or self._basic_user() or "operateur")
+        if not list_id:
+            raise ApiError(400, "list_required", "list_id requis")
+        # A REAL move (canary/batch) needs the operator's explicit typed GO at the
+        # API layer too (the console types it in the dialog) — a dry-run does not.
+        if action in ("canary", "batch") and \
+                str(body.get("confirm") or "").strip().upper() != "GO":
+            raise ApiError(400, "go_required",
+                           "un déplacement réel exige confirm=GO (le go explicite de l'opérateur)")
+        result = self.state.manager.start_sort_move(
+            run_dir, list_id=list_id, action=action, store=store, by=by,
+            limit=_parse_int(body.get("limit")))
+        self._send_json(200, result)
 
     def _post_invariants(self) -> None:
         proc = subprocess.run(
