@@ -108,6 +108,12 @@ header {
 
 #theme-toggle { margin-left: auto; }
 
+.tablink {
+  color: var(--accent); text-decoration: none; font-size: 0.85rem;
+  padding: 0.2rem 0.55rem; border: 1px solid var(--border); border-radius: 4px;
+}
+.tablink:hover { background: var(--hover); border-color: var(--accent); }
+
 h1 { font-size: 1.05rem; margin: 0; }
 h2 { font-size: 1rem; margin: 0.2rem 0; }
 h3 { font-size: 0.95rem; margin: 0.8rem 0 0.4rem; }

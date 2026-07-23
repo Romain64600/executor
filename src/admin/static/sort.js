@@ -42,7 +42,7 @@ async function getJSON(url) {
 
 async function loadRuns() {
   setStatus("Chargement des scans…", true);
-  const { runs } = await getJSON("/api/sort/runs");
+  const { runs } = await getJSON("api/sort/runs");
   const picker = $("#run-picker");
   picker.innerHTML = "";
   if (!runs.length) {
@@ -63,7 +63,7 @@ async function loadPlan() {
   setStatus("Chargement du plan…", true);
   banner("");
   try {
-    PLAN = await getJSON(`/api/runs/${encodeURIComponent(RUN_ID)}/sort`);
+    PLAN = await getJSON(`api/runs/${encodeURIComponent(RUN_ID)}/sort`);
   } catch (e) {
     $("#empty").textContent = "Plan illisible : " + e.message;
     $("#empty").classList.remove("hidden"); $("#console").classList.add("hidden");

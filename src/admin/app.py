@@ -305,13 +305,16 @@ class AdminHandler(BaseHTTPRequestHandler):
         # their current bytes. Even a tab open across a redeploy pulls the new
         # JS/CSS on its next reload (index.html itself is no-store). Deterministic
         # (content hash, no timestamps).
-        if name == "index.html":
+        if name in ("index.html", "sort.html"):
             body = self._version_assets(body)
         self._send_bytes(200, STATIC_FILES[name], body)
 
     def _version_assets(self, html: bytes) -> bytes:
         text = html.decode("utf-8")
-        for asset in ("app.js", "style.css"):
+        # Stamp any referenced JS/CSS asset with the sha8 of its bytes, so a tab
+        # open across a redeploy pulls the new asset on its next reload (the HTML
+        # itself is no-store). Covers both pages' assets; a no-op for those absent.
+        for asset in ("app.js", "style.css", "sort.js", "sort.css"):
             asset_path = STATIC_DIR / asset
             if not asset_path.is_file():
                 continue
