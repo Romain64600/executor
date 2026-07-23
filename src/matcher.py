@@ -182,8 +182,32 @@ SOFTWARE_APP_TOKENS = (
     "DRIVER BOOSTER", "DRIVER UPDATER",
     "MICROSOFT OFFICE", "OFFICE HOME", "OFFICE 365", "OFFICE 2016",
     "OFFICE 2019", "OFFICE 2021", "OFFICE 2024",
-    "WINDOWS 10", "WINDOWS 11", "WINDOWS SERVER",
+    "WINDOWS SERVER",
 )
+# "Windows 10/11" is software only as an OS LICENCE ("Windows 11 Pro OEM Key",
+# "Windows 10 Home"); on a game key it is just a platform/compat marker and must
+# NOT be filed as software (audit 2026-07-23: "Destiny 2 … Windows 10 Store Key",
+# "Fallout 76 … Windows 10/11 CD Key", "Mahjong 3 … Windows 10 Store" were wrongly
+# routed to Softwares). So require an OS edition/licence word directly after the
+# version — never fire on the "10/11" both-versions compat form (normalises to
+# "10 11") or the "… Store" Microsoft-Store delivery form.
+_WINDOWS_OS_RE = re.compile(
+    r"\bWINDOWS (?:10|11)\s+(?:PRO|HOME|ENTERPRISE|EDUCATION|PROFESSIONAL|OEM|N|KEY|LICEN[CS]E)\b"
+)
+# The account-delivery marker ("… (Account) …") — an account-type offer. NOT a
+# precheck skip (the submit pipeline still resolves account offers to their
+# dedicated AKS account page); the sort routes them to the account list instead
+# (Romain 2026-07-23). "Steam Account" listings are already caught upstream by
+# CATEGORY_SKIP, so this only adds the bare "(Account)" marker.
+_ACCOUNT_MARKER_RE = re.compile(r"(?<![\w-])ACCOUNT(?![\w-])")
+
+
+def is_account_offer(name: str) -> bool:
+    """True if the merchant title carries the ``(Account)`` account-delivery
+    marker — used by the list-sorting scan to route account offers out of the
+    creation queue into the account list (Romain 2026-07-23)."""
+
+    return bool(_ACCOUNT_MARKER_RE.search(name.upper()))
 # Merchant → required URL domain (EXECUTOR_RULES §11: a Kinguin candidate URL
 # must contain kinguin.net). Only merchants with a written §11 domain rule are
 # listed; a mapped merchant whose row URL sits on another host fails closed.
@@ -358,10 +382,18 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
         return "skip category: SKIN (no bundles/skins)"
     for token in NON_GAME_CONTENT_TOKENS:
         if f" {token} " in padded:
+            # A game bundled with its OST/artbook is a sellable game, not
+            # standalone non-game content: "<game> + OST", "… Soundtrack Edition"
+            # (audit 2026-07-23: "Sinless + OST", "Lost Records … Soundtrack
+            # Edition" were wrongly Blacklisted). Those keep the base game.
+            if " + " in offer.name or f" {token} EDITION " in padded:
+                continue
             return f"skip category: {token} (non-game content)"
     for token in SOFTWARE_APP_TOKENS:
         if f" {token} " in padded:
             return f"skip category: {token} (software/app, not a game)"
+    if _WINDOWS_OS_RE.search(upper):
+        return "skip category: WINDOWS OS (software/app, not a game)"
     for token in CURRENCY_TOKENS:
         if f" {token} " in padded:
             return f"skip category: {token} (in-game currency)"

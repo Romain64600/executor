@@ -435,6 +435,29 @@ class PrecheckSkipTests(unittest.TestCase):
         self.assertIsNone(precheck_skip(_offer("The Office Quest Steam GLOBAL")))
         self.assertIsNone(precheck_skip(_offer("Backup Crew Steam GLOBAL")))
 
+    def test_windows_version_is_platform_marker_not_software(self):
+        # audit 2026-07-23: games sold as Windows-Store keys were wrongly filed as
+        # software. "Windows 10/11" on a game key is a platform/compat marker.
+        for name in ("Destiny 2: Year of Prophecy Ultimate Edition - Windows 10 Store Key EUROPE",
+                     "Mahjong 3 - Windows 10 Store Key EUROPE"):
+            self.assertIsNone(precheck_skip(_offer(name)), name)
+
+    def test_windows_os_licence_still_software(self):
+        for name in ("Windows 11 Pro OEM CD Key", "Windows 10 Home Key",
+                     "Windows Server 2025 Standard"):
+            self.assertIn("software/app", precheck_skip(_offer(name)) or "", name)
+
+    def test_soundtrack_bundle_with_base_game_is_not_blacklisted(self):
+        # audit 2026-07-23: "<game> + OST" / "… Soundtrack Edition" keep the base
+        # game — sellable, must NOT be Blacklisted as standalone soundtrack.
+        self.assertNotIn("non-game content", precheck_skip(_offer("Sinless + OST")) or "")
+        self.assertNotIn("non-game content",
+                         precheck_skip(_offer("Chants of Sennaar - Game + OST")) or "")
+        self.assertIsNone(precheck_skip(_offer("The Lonesome Guild: Soundtrack Edition")))
+        self.assertIsNone(precheck_skip(_offer("Lost Records: Bloom & Rage - Soundtrack Edition")))
+        # a standalone soundtrack/artbook is still non-game content
+        self.assertIn("non-game content", precheck_skip(_offer("Celeste Original Soundtrack")))
+
     def test_language_restriction(self):
         self.assertIn("language", precheck_skip(_offer("Game (EN/FR) Steam")))
 

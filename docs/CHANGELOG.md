@@ -3,6 +3,28 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-23 — Tri : corrections issues de l'audit adversarial du plan
+
+Audit multi-agents du plan de tri (16 agents : FP sur les routées, FN sur les
+candidats). 3 défauts corrigés + tests :
+
+- **FP — jeux Windows Store mal classés Software** : `WINDOWS 10/11` retiré de
+  `SOFTWARE_APP_TOKENS` (il matchait « Destiny 2 … Windows 10 Store Key »,
+  « Fallout 76 … Windows 10/11 CD Key »). Remplacé par `_WINDOWS_OS_RE` qui
+  n'attrape que la **licence OS** (`Windows 11 Pro/Home/OEM/Key…`), jamais le
+  marqueur de plateforme (`… Store`, forme « 10/11 »).
+- **FP — bundles jeu+OST mal Blacklistés** : la règle soundtrack/artbook ne se
+  déclenche plus quand le **jeu de base est inclus** (`<jeu> + OST`,
+  `… Soundtrack Edition`). Les soundtracks/artbooks standalone restent Blacklist.
+- **FN — offres `(Account)` non routées** (Romain 2026-07-23 : « router vers
+  account (30) ») : `matcher.is_account_offer` + routage **au niveau du tri**
+  (`build_sort_plan`), délibérément PAS un skip precheck (le pipeline submit
+  continue de résoudre les offres compte vers leur page account dédiée).
+
+Plan re-dérivé hors-ligne sur `offers.json` (sans re-scan) : account 12 → **16 255**
+(≈34 % du feed, Difmark), Softwares 326 → 310, Blacklist 75 → 61 ; routables
+1 147 → **17 360**.
+
 ## 2026-07-23 — Stage 8 : scan « list sorting » tous stores (read-only, plan)
 
 Romain 2026-07-23 : un mode qui passe sur **toutes** les Pending Offers, tous

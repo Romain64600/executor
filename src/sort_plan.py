@@ -21,7 +21,13 @@ from collections.abc import Iterable
 
 from src.aks_lists import label_for, suggest_target_list
 from src.contracts import NormalizedOffer
-from src.matcher import precheck_skip
+from src.matcher import is_account_offer, precheck_skip
+
+# Account offers pass precheck (the submit pipeline resolves them to their
+# dedicated AKS account page) — but the sort routes them out of the creation
+# queue into the account list (Romain 2026-07-23). This is a sort-layer policy,
+# deliberately NOT a precheck skip, so the submit pipeline is unchanged.
+_ACCOUNT_LIST_ID = "30"
 
 
 def _entry(offer: NormalizedOffer, reason: str) -> dict:
@@ -50,7 +56,13 @@ def build_sort_plan(
     for offer in offers:
         reason = precheck_skip(offer)
         if reason is None:
-            candidates += 1
+            # Passes precheck → a creation candidate, UNLESS it carries the
+            # account-delivery marker, which the sort routes to the account list.
+            if is_account_offer(offer.name):
+                by_list.setdefault(_ACCOUNT_LIST_ID, []).append(
+                    _entry(offer, "account offer (marqueur (Account))"))
+            else:
+                candidates += 1
             continue
         target = suggest_target_list(reason)
         if target is None:

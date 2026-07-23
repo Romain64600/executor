@@ -43,6 +43,18 @@ class BuildSortPlanTests(unittest.TestCase):
         self.assertEqual(plan["counts"]["routed"], 4)
         self.assertEqual(plan["counts"]["total"], 5)
 
+    def test_account_offers_routed_to_account_list(self):
+        # Romain 2026-07-23: "(Account)" offers (pass precheck) are routed to the
+        # account list (30) by the sort, not left as creation candidates.
+        offers = [
+            _offer("Velocity Rider (Account) Standard Edition", oid="1"),
+            _offer("Cthuloot (Account) Standard Edition", oid="2"),
+            _offer("Elden Ring Steam Key GLOBAL", oid="3"),   # normal game → candidate
+        ]
+        plan = build_sort_plan(offers)
+        self.assertEqual(plan["by_list"]["30"]["count"], 2)
+        self.assertEqual(plan["counts"]["candidates"], 1)
+
     def test_unrouted_skip_is_not_dropped(self):
         # a currency skip has no target list → unrouted (garder), never lost
         plan = build_sort_plan([_offer("500 FIFA Points")], run_id="r")
