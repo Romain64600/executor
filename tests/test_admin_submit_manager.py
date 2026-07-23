@@ -99,6 +99,15 @@ print(json.dumps({{"list_id": args.list_id, "mode": args.mode, "execute": args.e
 sys.exit({exit_code})
 """
 
+# Ignores SIGTERM (simulates a run stuck in a per-offer scan that never reaches a
+# cooperative stop point) — stop_active must escalate to SIGKILL.
+FAKE_IGNORES_SIGTERM = """\
+import signal, sys, time
+signal.signal(signal.SIGTERM, lambda *_a: None)
+time.sleep({sleep})
+sys.exit(0)
+"""
+
 
 class ManagerTestCase(unittest.TestCase):
     def setUp(self):
@@ -786,6 +795,16 @@ class SortMoveTests(ManagerTestCase):
     def test_stop_active_when_idle_is_noop(self):
         m = self._sm()
         self.assertIsNone(m.stop_active()["stopped"])
+
+    def test_stop_active_escalates_to_sigkill(self):
+        # a run that ignores SIGTERM (stuck in a scan) must still be terminated
+        script = self.root / "fake_ignoreterm.py"
+        script.write_text(FAKE_IGNORES_SIGTERM.format(sleep=30), encoding="utf-8")
+        m = SubmitManager(self.root, log_dir=self.logs, sort_move_script=script, clock=CLOCK)
+        m.start_sort_move(self.run, list_id="8", action="dry_run", by="Romain")
+        m.stop_active(grace=0.5)  # short grace → escalate
+        self.assertTrue(m.wait_idle(timeout=10))
+        self.assertIsNone(m.busy())
 
 
 if __name__ == "__main__":

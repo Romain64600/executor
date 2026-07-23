@@ -23,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -703,10 +704,13 @@ class SubmitManager:
                 return None
             return {"run_id": self._active["run_id"], "kind": self._active["kind"]}
 
-    def stop_active(self) -> dict[str, Any]:
-        """Ask the active run to stop cooperatively (SIGTERM → the spawned script
-        stops at a safe point; the supervisor then frees the slot and the kernel
-        releases the browser flock). Idempotent; no-op when idle."""
+    def stop_active(self, *, grace: float = 12.0) -> dict[str, Any]:
+        """Stop the active run. SIGTERM first (the spawned script stops at a safe
+        point — never mid-Apply), then ESCALATE to SIGKILL if it is still alive
+        after ``grace`` seconds (a run stuck in a long per-offer scan ignores the
+        cooperative flag, so the button must still guarantee termination). The
+        supervisor then frees the slot; the kernel releases the browser flock.
+        Idempotent; no-op when idle."""
 
         with self._mutex:
             active = self._active
@@ -714,11 +718,27 @@ class SubmitManager:
                 return {"stopped": None, "reason": "aucun run en cours"}
             info = {"run_id": active["run_id"], "kind": active["kind"], "pid": active.get("pid")}
         pid = info.get("pid")
-        if pid:
+        if not pid:
+            return {"stopped": True, **info}
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+        except (ProcessLookupError, ValueError, PermissionError):
+            return {"stopped": True, **info}
+
+        def _escalate(target_pid: int) -> None:
+            time.sleep(grace)
+            # Only force-kill if it is STILL our active run on that pid (avoid
+            # signalling a since-recycled pid).
+            with self._mutex:
+                active_now = self._active
+                if not active_now or active_now.get("pid") != target_pid:
+                    return
             try:
-                os.kill(int(pid), signal.SIGTERM)
-            except (ProcessLookupError, ValueError, PermissionError):
+                os.kill(target_pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
                 pass
+
+        threading.Thread(target=_escalate, args=(int(pid),), daemon=True).start()
         return {"stopped": True, **info}
 
     def status(self, run_dir: Path, *, offset: int = 0) -> dict[str, Any]:
