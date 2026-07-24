@@ -103,6 +103,7 @@ main{padding:.9rem;}
 .pill.todo{background:var(--c-grey-bg);color:var(--dim);}
 .pill.gate{background:var(--c-amber-bg);color:var(--warn);}
 .pill.ready{background:var(--c-teal-bg);color:var(--accent);}
+.pill.moved{background:var(--c-teal-bg);color:var(--good);border:1px solid var(--good);}
 .card-actions{margin-top:auto;padding:.5rem .75rem;border-top:1px solid var(--line);display:flex;gap:.4rem;flex-wrap:wrap;}
 .card-actions .grow{margin-left:auto;}
 .linkbtn{background:none;border:none;color:var(--accent);padding:.2rem 0;font-size:.82rem;}

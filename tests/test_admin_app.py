@@ -589,6 +589,19 @@ class SortMoveRouteTests(AppTestCase):
         self.assertEqual(response.status, 200)
         self.assertIn(self.run.name, [r["run_id"] for r in data["runs"]])
 
+    def test_sort_plan_route_attaches_moved_tally(self):
+        self._sort_run()
+        self.run.joinpath("sort_move_tally.json").write_text(
+            json.dumps({"8": {"moved_total": 30, "label": "Blacklist"}}), encoding="utf-8")
+        response, data = self._json("GET", f"/api/runs/{self.run.name}/sort")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(data["moved_tally"]["8"]["moved_total"], 30)
+
+    def test_sort_plan_route_tally_defaults_empty(self):
+        self._sort_run()   # no tally file
+        response, data = self._json("GET", f"/api/runs/{self.run.name}/sort")
+        self.assertEqual(data["moved_tally"], {})
+
     def test_real_move_requires_typed_go(self):
         # a canary WITHOUT confirm=GO is refused BEFORE anything is spawned
         self._sort_run()

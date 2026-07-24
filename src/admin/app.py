@@ -285,6 +285,9 @@ class AdminHandler(BaseHTTPRequestHandler):
                 plan = read_run_json(run_dir, "sort_plan.json")
                 if plan is None:
                     raise ApiError(404, "no_sort_plan", "sort_plan.json absent")
+                # Attach the cumulative moved tally so the console shows what each
+                # list actually received (the plan counts are a frozen snapshot).
+                plan = dict(plan, moved_tally=read_run_json(run_dir, "sort_move_tally.json") or {})
                 return self._send_json(200, plan)
             if sub == "/submit/status":
                 query = parse_qs(parsed.query)

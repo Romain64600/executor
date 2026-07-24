@@ -137,17 +137,22 @@ function render() {
 function card(id, g) {
   const [color, family] = fam(id);
   const stores = new Set((g.offers || []).map((o) => o.store_id)).size;
+  const moved = ((PLAN.moved_tally || {})[id] || {}).moved_total || 0;
+  const meta = [
+    el("span", { class: "pill todo" }, "au plan"),
+    el("span", {}, `${stores} store${stores > 1 ? "s" : ""}`),
+  ];
+  meta.push(moved > 0
+    ? el("span", { class: "pill moved", title: "réellement déplacées (cumul, prouvé RV2)" }, `✔ ${fmt(moved)} déplacées`)
+    : el("span", { class: "pill gate" }, "canary requis"));
   const c = el("div", { class: "card" }, [
     el("div", { class: "card-head" }, [
       el("span", { class: "label" }, g.label || family),
       el("span", { class: "chip mono", style: `background:var(${CVAR[color]}-bg);color:var(${CVAR[color]})` }, "liste " + id),
     ]),
-    el("div", { class: "big tnum" }, [String(g.count), el("span", { class: "u" }, "offres")]),
-    el("div", { class: "card-meta" }, [
-      el("span", { class: "pill todo" }, "À valider"),
-      el("span", {}, `${stores} store${stores > 1 ? "s" : ""}`),
-      el("span", { class: "pill gate" }, "canary requis"),
-    ]),
+    el("div", { class: "big tnum", title: "compteur du plan (instantané figé du scan)" },
+      [String(g.count), el("span", { class: "u" }, "au plan")]),
+    el("div", { class: "card-meta" }, meta),
     el("div", { class: "card-actions" }, [
       el("button", { class: "linkbtn", onclick: () => openList(id, g) }, "Voir les offres →"),
       el("span", { class: "grow" }),
@@ -287,7 +292,8 @@ function finishStatus(s) {
   for (const line of tail) appendStatus(line, /moved=|MOVED/.test(line) ? "ok" : (/refus|abort|FAILED|BLOCK/i.test(line) ? "bad" : ""));
   appendStatus(s.exit_code === 0 ? "— terminé (exit 0)" : `— terminé (exit ${s.exit_code})`, s.exit_code === 0 ? "ok" : "bad");
   $("#modal-actions").querySelectorAll("button,input").forEach((n) => (n.disabled = false));
-  loadRuns().catch(() => {});   // refresh busy state + any new run
+  refreshBusy().catch(() => {});          // clear the busy indicator
+  loadPlan().catch(() => {});             // refresh the cards' moved tally
 }
 
 // theme, wiring

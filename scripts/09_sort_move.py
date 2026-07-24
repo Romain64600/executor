@@ -294,6 +294,28 @@ def _main() -> int:
     (run_dir / f"sort_move_result_{args.list_id}.json").write_text(
         json.dumps(agg, indent=2, ensure_ascii=False), encoding="utf-8")
 
+    # Cumulative moved tally per target list. The per-run result file is
+    # overwritten by the next run on the same list, but this tally ACCUMULATES so
+    # the console can show what a list has actually received. Real moves only
+    # (write runs); idempotent re-runs add 0 (they skip already-moved offers), so
+    # it never double-counts. Runs are serialized by the browser flock → no race.
+    if write:
+        tally_path = run_dir / "sort_move_tally.json"
+        try:
+            tally = json.loads(tally_path.read_text(encoding="utf-8")) if tally_path.is_file() else {}
+        except (json.JSONDecodeError, OSError):
+            tally = {}
+        cur = tally.get(args.list_id) or {"moved_total": 0, "attempts_total": 0, "runs": 0}
+        cur["label"] = label
+        cur["moved_total"] = int(cur.get("moved_total", 0)) + int(agg["moved"])
+        cur["attempts_total"] = int(cur.get("attempts_total", 0)) + int(agg["move_attempts"])
+        cur["runs"] = int(cur.get("runs", 0)) + 1
+        cur["last_at"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        cur["last_mode"] = args.mode
+        tally[args.list_id] = cur
+        tally_path.write_text(json.dumps(tally, indent=2, ensure_ascii=False), encoding="utf-8")
+        agg["moved_total_for_list"] = cur["moved_total"]
+
     print(f"\n{'MOVE' if write else 'DRY-RUN'} — liste {args.list_id} ({label}), mode={args.mode} — "
           f"moved={agg['moved']}, attempts={agg['move_attempts']}, stores={len(agg['stores'])}, "
           f"aborted={agg['aborted']}, stopped={agg['stopped']}")
