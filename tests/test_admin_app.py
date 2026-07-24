@@ -602,6 +602,14 @@ class SortMoveRouteTests(AppTestCase):
         response, data = self._json("GET", f"/api/runs/{self.run.name}/sort")
         self.assertEqual(data["moved_tally"], {})
 
+    def test_sort_plan_route_attaches_fetched_at(self):
+        self._sort_run()
+        self.run.joinpath("offers.json").write_text(
+            json.dumps({"merchant": "X", "fetched_at": "2026-07-24T10:00:00Z", "offers": []}),
+            encoding="utf-8")
+        response, data = self._json("GET", f"/api/runs/{self.run.name}/sort")
+        self.assertEqual(data["fetched_at"], "2026-07-24T10:00:00Z")
+
     def test_real_move_requires_typed_go(self):
         # a canary WITHOUT confirm=GO is refused BEFORE anything is spawned
         self._sort_run()

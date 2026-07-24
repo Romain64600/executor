@@ -104,10 +104,32 @@ async function loadPlan() {
   setStatus(`Plan chargé — ${fmt(PLAN.counts?.total)} offres`);
 }
 
+function fmtAge(ms) {
+  const h = ms / 3.6e6;
+  if (h < 1) return `${Math.round(ms / 6e4)} min`;
+  if (h < 48) return `${h.toFixed(1)} h`;
+  return `${Math.round(h / 24)} j`;
+}
+
+function planAgeBanner() {
+  const b = $("#banner");
+  const at = PLAN.fetched_at;
+  if (!at) { b.className = "banner hidden"; return; }
+  const age = Date.now() - Date.parse(at);
+  if (age >= 2 * 3.6e6) {   // >2h → stale, mostly phantoms
+    b.textContent = `⚠ Plan scanné il y a ${fmtAge(age)} — churn / dérive d'identité depuis. `
+      + `Re-scanne avant de batcher, sinon la plupart seront des phantoms (déjà parties / identité changée).`;
+    b.className = "banner";
+  } else {
+    b.className = "banner hidden";
+  }
+}
+
 function render() {
   $("#empty").classList.add("hidden");
   $("#console").classList.remove("hidden");
   const c = PLAN.counts || {}, cov = PLAN.coverage || {};
+  planAgeBanner();
 
   const kpi = (n, l, cls) => el("div", { class: "kpi " + (cls || "") },
     [el("div", { class: "n tnum" }, fmt(n)), el("div", { class: "l" }, l)]);

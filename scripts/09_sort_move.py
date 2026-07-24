@@ -316,6 +316,21 @@ def _main() -> int:
         tally_path.write_text(json.dumps(tally, indent=2, ensure_ascii=False), encoding="utf-8")
         agg["moved_total_for_list"] = cur["moved_total"]
 
+    # Coherent, append-only history: one line PER RUN (never clobbered, unlike the
+    # per-run result file). Reasons are broken out so a re-run on a stale plan is
+    # legible (few moves + many "already gone" / "identity contradicted").
+    hist = {
+        "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "list_id": args.list_id, "label": label, "mode": args.mode, "write": write,
+        "moved": agg["moved"], "attempts": agg["move_attempts"], "stores": len(agg["stores"]),
+        "already_gone": sum(1 for e in agg["plan"] if e.get("skipped")),
+        "identity_blocked": sum(1 for e in agg["plan"] if e.get("blocker") and not e.get("ready")),
+        "apply_not_confirmed": sum(1 for e in agg["plan"] if e.get("ready") and not e.get("moved")),
+        "stopped": agg["stopped"], "aborted": agg["aborted"],
+    }
+    with (run_dir / "sort_move_history.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(hist, ensure_ascii=False) + "\n")
+
     print(f"\n{'MOVE' if write else 'DRY-RUN'} — liste {args.list_id} ({label}), mode={args.mode} — "
           f"moved={agg['moved']}, attempts={agg['move_attempts']}, stores={len(agg['stores'])}, "
           f"aborted={agg['aborted']}, stopped={agg['stopped']}")
