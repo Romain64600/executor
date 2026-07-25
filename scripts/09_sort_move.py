@@ -48,6 +48,11 @@ DEFAULT_MAX_PAGES = 40
 AUTO_MAX_PAGES_HEADROOM = 1.3
 CANARY_MODES = ("learning", "advanced")
 CANARY_LIMIT = 1
+# How many stores may trip the per-store 10-failure breaker before the whole
+# list batch is deemed systemically broken and stops. Below this, a breaker-
+# tripped store is skipped and the batch continues to the next store (one stale
+# store must not kill the list).
+BREAKER_STORE_LIMIT = 3
 
 # Cooperative stop: SIGTERM (from the admin "Arrêter" button, or the CLI) sets
 # this flag; the mover checks it at safe points (page boundary / between offers)
@@ -264,13 +269,24 @@ def _main() -> int:
                     remaining -= result.get("move_attempts", 0)
                 if store_guard.snapshot().get("blocked"):
                     blocked_any = True
-                # Fail-closed: any store run that aborted/stopped halts the whole list.
-                if result.get("aborted") or result.get("stopped"):
+                # A hard abort or an operator stop halts the whole list immediately.
+                if result.get("aborted"):
                     agg["aborted"] = agg["aborted"] or result.get("aborted")
-                    agg["stopped"] = agg["stopped"] or result.get("stopped")
-                    if result.get("aborted") or result.get("stopped") in (
-                            "ten_consecutive_failures", "guard_blocked", "operator_stop"):
+                    break
+                if result.get("stopped") == "operator_stop":
+                    agg["stopped"] = "operator_stop"
+                    break
+                # A per-store breaker (10 consecutive failures / guard-blocked)
+                # means THAT store's plan data is stale (identity churn) — skip it
+                # and continue to the next store, so one churned store no longer
+                # kills the whole list. Stop only if TOO MANY stores trip (that IS
+                # a systemic problem, not one stale store).
+                if result.get("stopped") in ("ten_consecutive_failures", "guard_blocked"):
+                    agg.setdefault("breaker_stores", []).append(str(store))
+                    if len(agg["breaker_stores"]) >= BREAKER_STORE_LIMIT:
+                        agg["stopped"] = "too_many_breaker_stores"
                         break
+                    continue
     except FEED_UNREADABLE_EXCS as exc:
         print(json.dumps({"aborted": True,
                           "reason": f"fail-closed abort (feed/CDP unreadable): {exc}"}, indent=2))
