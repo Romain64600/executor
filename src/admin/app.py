@@ -389,6 +389,12 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._post_extract()
         if path == "/api/sort/stop":
             return self._send_json(200, self.state.manager.stop_active())
+        if path == "/api/sort/scan":
+            body = self._json_body()
+            by = str(body.get("by") or self._basic_user() or "operateur")
+            mp = _parse_int(body.get("max_pages"))
+            result = self.state.manager.start_sort_scan(by=by, max_pages=mp if mp is not None else 800)
+            return self._send_json(200, result)
 
         match = RUN_ROUTE.match(path)
         if match:

@@ -99,6 +99,22 @@ print(json.dumps({{"list_id": args.list_id, "mode": args.mode, "execute": args.e
 sys.exit({exit_code})
 """
 
+# Mirrors scripts/08_sort_plan.py's CLI surface for the "Nouveau scan" button.
+FAKE_SORT_SCAN_SCRIPT = """\
+import argparse, json, sys, time
+from pathlib import Path
+p = argparse.ArgumentParser()
+p.add_argument("--run-id", required=True)
+p.add_argument("--max-pages", type=int, default=60)
+args = p.parse_args()
+time.sleep({sleep})
+out = Path("runs") / args.run_id
+out.mkdir(parents=True, exist_ok=True)
+out.joinpath("sort_plan.json").write_text(
+    json.dumps({{"run_id": args.run_id, "by_list": {{}}}}), encoding="utf-8")
+sys.exit({exit_code})
+"""
+
 # Ignores SIGTERM (simulates a run stuck in a per-offer scan that never reaches a
 # cooperative stop point) — stop_active must escalate to SIGKILL.
 FAKE_IGNORES_SIGTERM = """\
@@ -795,6 +811,37 @@ class SortMoveTests(ManagerTestCase):
     def test_stop_active_when_idle_is_noop(self):
         m = self._sm()
         self.assertIsNone(m.stop_active()["stopped"])
+
+    def _scanner(self, sleep=0.0, exit_code=0):
+        script = self.root / f"fake_sortscan_{sleep}_{exit_code}.py"
+        script.write_text(FAKE_SORT_SCAN_SCRIPT.format(sleep=sleep, exit_code=exit_code),
+                          encoding="utf-8")
+        return SubmitManager(self.root, log_dir=self.logs, sort_scan_script=script, clock=CLOCK)
+
+    def test_scan_mints_a_run_and_is_supervised(self):
+        m = self._scanner()
+        r = m.start_sort_scan(by="Romain")
+        self.assertTrue(r["run_id"].endswith("-sort"))
+        self.assertIn("--run-id", r["argv"])
+        self.assertTrue(m.wait_idle(timeout=10))
+        run_dir = self.runs / r["run_id"]
+        state = json.loads((run_dir / "admin_submit.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["state"], "done")
+        self.assertEqual(state["kind"], "sort_scan")
+        self.assertTrue((run_dir / "sort_plan.json").is_file())
+
+    def test_scan_defaults_to_full_max_pages(self):
+        m = self._scanner()
+        r = m.start_sort_scan(by="Romain")
+        self.assertEqual(r["argv"][r["argv"].index("--max-pages") + 1], "800")
+        m.wait_idle(timeout=10)
+
+    def test_scan_refused_while_busy(self):
+        m = self._scanner(sleep=1.0)
+        m.start_sort_scan(by="Romain")
+        with self.assertRaises(SubmitStartError):
+            m.start_sort_scan(by="Romain")
+        m.wait_idle(timeout=10)
 
     def test_stop_active_escalates_to_sigkill(self):
         # a run that ignores SIGTERM (stuck in a scan) must still be terminated

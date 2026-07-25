@@ -630,6 +630,15 @@ class SortMoveRouteTests(AppTestCase):
         self.assertEqual(response.status, 200)
         self.assertIsNone(data["stopped"])
 
+    def test_sort_scan_route_starts_a_run(self):
+        from unittest import mock
+        with mock.patch.object(self.manager, "start_sort_scan",
+                               return_value={"started": True, "run_id": "20260101-000000-sort"}) as m:
+            response, data = self._json("POST", "/api/sort/scan", body={})
+        self.assertEqual(response.status, 200)
+        self.assertTrue(data["started"])
+        m.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

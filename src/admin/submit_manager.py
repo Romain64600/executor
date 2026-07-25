@@ -226,6 +226,7 @@ class SubmitManager:
         extract_script: Path | None = None,
         match_script: Path | None = None,
         sort_move_script: Path | None = None,
+        sort_scan_script: Path | None = None,
         python: str = sys.executable,
         clock=_utc_now_iso,
     ) -> None:
@@ -235,6 +236,7 @@ class SubmitManager:
         self.extract_script = extract_script or (repo_root / "scripts" / "02_extract_feed.py")
         self.match_script = match_script or (repo_root / "scripts" / "03_match.py")
         self.sort_move_script = sort_move_script or (repo_root / "scripts" / "09_sort_move.py")
+        self.sort_scan_script = sort_scan_script or (repo_root / "scripts" / "08_sort_plan.py")
         self.python = python
         self.clock = clock
         self._mutex = threading.Lock()
@@ -472,6 +474,25 @@ class SubmitManager:
             return self._spawn(
                 run_dir, kind="catalog", argv=argv, meta={"by": by, "max_pages": max_pages}
             )
+
+    def start_sort_scan(self, *, by: str, max_pages: int | None = 800) -> dict[str, Any]:
+        """Launch a fresh all-stores list-sorting scan (Stage 8, read-only) as a
+        NEW run — the console's 'Nouveau scan' button. A stale plan is mostly
+        phantoms, so the operator must be able to refresh it from the UI without
+        the CLI. Default max_pages=800 covers the full feed (~639 pages)."""
+
+        self._check_max_pages(max_pages)
+        with self._mutex:
+            self._ensure_free()
+            stamp = datetime.strptime(self.clock(), "%Y-%m-%dT%H:%M:%SZ").strftime("%Y%m%d-%H%M%S")
+            run_id = f"{stamp}-sort"
+            run_dir = self.repo_root / "runs" / run_id
+            run_dir.mkdir(parents=True, exist_ok=False)
+            argv = [self.python, str(self.sort_scan_script), "--run-id", run_id]
+            if max_pages is not None:
+                argv += ["--max-pages", str(max_pages)]
+            return self._spawn(run_dir, kind="sort_scan", argv=argv,
+                               meta={"by": by, "max_pages": max_pages, "run_id": run_id})
 
     def start_sort_move(
         self, run_dir: Path, *, list_id: str, action: str, by: str,

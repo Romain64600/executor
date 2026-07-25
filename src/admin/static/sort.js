@@ -331,6 +331,50 @@ function finishStatus(s) {
 })();
 $("#run-picker").addEventListener("change", (e) => { RUN_ID = e.target.value; loadPlan(); });
 $("#refresh").addEventListener("click", loadRuns);
+
+let SCAN_RUN = null, SCAN_POLL = null;
+$("#new-scan").addEventListener("click", async () => {
+  const b = $("#new-scan");
+  if (BUSY) { setStatus(`Un run est déjà en cours (${BUSY.kind}).`); return; }
+  if (!confirm("Lancer un scan frais tous-stores ?\nRead-only, plusieurs minutes. Il tourne côté serveur même si tu fermes l'onglet.")) return;
+  b.disabled = true;
+  setStatus("Scan frais — lancement…", true);
+  try {
+    const r = await postJSON("api/sort/scan", {});
+    SCAN_RUN = r.run_id || (r.meta && r.meta.run_id);
+    pollScan();
+  } catch (e) {
+    setStatus("Scan refusé : " + e.message);
+    b.disabled = false;
+  }
+});
+
+function pollScan() {
+  if (SCAN_POLL) clearInterval(SCAN_POLL);
+  const b = $("#new-scan");
+  const tick = async () => {
+    let s;
+    try { s = await getJSON(`api/runs/${encodeURIComponent(SCAN_RUN)}/submit/status`); }
+    catch (e) { return; }
+    setBusy(s.busy || null);
+    const pages = (s.events || []).filter((e) => e.event === "feed_page").length;
+    if (s.state === "running") {
+      setStatus(`Scan frais en cours…${pages ? " " + pages + " pages" : ""}`, true);
+      return;
+    }
+    clearInterval(SCAN_POLL); SCAN_POLL = null;
+    b.disabled = false;
+    setStatus(`Scan terminé (${s.state}) — chargement du plan frais…`);
+    await loadRuns();
+    if (SCAN_RUN && [...$("#run-picker").options].some((o) => o.value === SCAN_RUN)) {
+      $("#run-picker").value = SCAN_RUN;
+      RUN_ID = SCAN_RUN;
+      loadPlan();
+    }
+  };
+  SCAN_POLL = setInterval(tick, 5000);
+  tick();
+}
 $("#stop-btn").addEventListener("click", async () => {
   const b = $("#stop-btn");
   b.disabled = true;
