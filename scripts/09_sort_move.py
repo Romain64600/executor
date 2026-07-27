@@ -40,6 +40,7 @@ from src.mover import DryRunMover, Mover, FEED_UNREADABLE_EXCS  # noqa: E402
 from src.move_auth import grant_from_sort_canary, sort_batch_authorized  # noqa: E402
 from src.pacing import Pacer  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
+from src import sort_ledger  # noqa: E402
 from src.sort_move import build_sort_move_plan  # noqa: E402
 from src.step_guard import BlockLedger, StepGuard  # noqa: E402
 from src.submit_session import SubmitSession, WriteSubmitSession  # noqa: E402
@@ -130,6 +131,11 @@ def _main() -> int:
     parser.add_argument("--i-authorize-batch", action="store_true",
                         help="Explicit second intention for --mode safe (the full list). Required "
                              "IN ADDITION to a canary-granted sort authorization covering the list.")
+    parser.add_argument("--full", action="store_true",
+                        help="OLD mode: process EVERY plan offer, ignoring the resolved-offers "
+                             "ledger. Use when delete-then-reimport is re-enabled (ids rotate, "
+                             "offers are genuinely fresh). Default = INCREMENTAL: skip offers "
+                             "already resolved in a prior run (stable-id workflow, 2026-07-27).")
     args = parser.parse_args()
 
     run_dir = Path(args.run_dir).resolve()
@@ -142,7 +148,10 @@ def _main() -> int:
             f"(--limit {args.limit} would widen it). Use --mode safe for the full list.")}, indent=2))
         return 2
 
-    plan_doc = build_sort_move_plan(run_dir, args.list_id)
+    # Incremental (default): skip offers already resolved in a prior run, keyed by
+    # stable merchant URL. --full ignores the ledger (old delete/reimport mode).
+    resolved = None if args.full else sort_ledger.resolved_keys(sort_ledger.load(ROOT))
+    plan_doc = build_sort_move_plan(run_dir, args.list_id, resolved=resolved)
     (run_dir / f"sort_move_plan_{args.list_id}_source.json").write_text(
         json.dumps(plan_doc, indent=2, ensure_ascii=False), encoding="utf-8")
     source_list = plan_doc["source_feed_page"]
@@ -151,10 +160,15 @@ def _main() -> int:
     if args.store:
         by_store = {args.store: by_store[args.store]} if args.store in by_store else {}
     all_entries = [e for entries in by_store.values() for e in entries]
+    resolved_note = plan_doc["counts"].get("already_resolved", 0)
     if not all_entries:
-        print(json.dumps({"aborted": False,
-                          "reason": f"aucune offre à déplacer pour la liste {args.list_id}"
-                          + (f" sur le store {args.store}" if args.store else ""),
+        reason = f"aucune offre à déplacer pour la liste {args.list_id}"
+        if args.store:
+            reason += f" sur le store {args.store}"
+        if resolved_note and not args.full:
+            reason += (f" — {resolved_note} déjà résolue(s) dans un run précédent "
+                       "(incrémental) ; --full pour tout re-traiter")
+        print(json.dumps({"aborted": False, "reason": reason,
                           "excluded": plan_doc["excluded"], "counts": plan_doc["counts"]}, indent=2))
         return 0
 
@@ -346,6 +360,32 @@ def _main() -> int:
     }
     with (run_dir / "sort_move_history.jsonl").open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(hist, ensure_ascii=False) + "\n")
+
+    # Update the resolved-offers ledger (write runs only): every offer we actually
+    # touched — moved, found already gone, identity-blocked, or Apply-not-confirmed
+    # — is recorded by URL so the NEXT incremental run skips it (no re-attempting
+    # duds every cycle). --full ignores the ledger but still records outcomes.
+    if write:
+        def _status(e):
+            if e.get("moved"):
+                return "moved"
+            if e.get("skipped"):
+                return "already_gone"
+            if e.get("blocker") and not e.get("ready"):
+                return "identity_blocked"
+            if e.get("ready") and not e.get("moved"):
+                return "apply_not_confirmed"
+            return None
+        ledger_entries = [
+            {"url": e.get("url"), "offer_id": e.get("current_offer_id") or e.get("offer_id"),
+             "list_id": args.list_id, "status": _status(e)}
+            for e in agg["plan"] if _status(e) and e.get("url")
+        ]
+        if ledger_entries:
+            sort_ledger.record(
+                ROOT, ledger_entries,
+                clock=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
+        agg["ledger_recorded"] = len(ledger_entries)
 
     print(f"\n{'MOVE' if write else 'DRY-RUN'} — liste {args.list_id} ({label}), mode={args.mode} — "
           f"moved={agg['moved']}, attempts={agg['move_attempts']}, stores={len(agg['stores'])}, "

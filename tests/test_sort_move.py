@@ -47,7 +47,8 @@ class BuildSortMovePlanTests(unittest.TestCase):
         self.assertEqual(set(plan["by_store"]), {"38", "51"})
         self.assertEqual(len(plan["by_store"]["38"]), 2)
         self.assertEqual(len(plan["by_store"]["51"]), 1)
-        self.assertEqual(plan["counts"], {"stores": 2, "offers": 3, "excluded": 0})
+        self.assertEqual(plan["counts"],
+                         {"stores": 2, "offers": 3, "excluded": 0, "already_resolved": 0})
 
     def test_entries_carry_label_and_url_for_the_mover(self):
         e = build_sort_move_plan(self.run, "8")["by_store"]["38"][0]
@@ -70,6 +71,23 @@ class BuildSortMovePlanTests(unittest.TestCase):
         plan = build_sort_move_plan(self.run, "999")
         self.assertEqual(plan["by_store"], {})
         self.assertEqual(plan["counts"]["offers"], 0)
+
+    def test_incremental_skips_resolved_urls(self):
+        from src.submitter import _url_key
+        # mark a1's URL as already resolved → incremental drops it, keeps the rest
+        resolved = {_url_key("https://g2a/a1")}
+        plan = build_sort_move_plan(self.run, "8", resolved=resolved)
+        self.assertTrue(plan["incremental"])
+        self.assertEqual(plan["counts"]["already_resolved"], 1)
+        self.assertEqual(plan["counts"]["offers"], 2)          # a2, a3 remain
+        urls = [e["url"] for v in plan["by_store"].values() for e in v]
+        self.assertNotIn("https://g2a/a1", urls)
+
+    def test_full_mode_processes_everything(self):
+        plan = build_sort_move_plan(self.run, "8", resolved=None)   # None = full
+        self.assertFalse(plan["incremental"])
+        self.assertEqual(plan["counts"]["already_resolved"], 0)
+        self.assertEqual(plan["counts"]["offers"], 3)
 
 
 class SortAuthorizationTests(unittest.TestCase):

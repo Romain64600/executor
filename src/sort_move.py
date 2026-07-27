@@ -21,6 +21,7 @@ from typing import Any
 
 from src.aks_lists import label_for
 from src.mover import source_feed_page
+from src.submitter import _url_key
 
 
 def _load(run_dir: Path, name: str) -> Any:
@@ -33,13 +34,20 @@ def _load(run_dir: Path, name: str) -> Any:
         return None
 
 
-def build_sort_move_plan(run_dir: Path, target_list_id: str) -> dict[str, Any]:
+def build_sort_move_plan(
+    run_dir: Path, target_list_id: str, *, resolved: set[str] | None = None,
+) -> dict[str, Any]:
     """Return ``{run_id, target_list_id, target_list_label, source_feed_page,
     by_store, excluded, counts}`` for one target list of the sort plan.
 
     ``by_store`` maps each ``store_id`` to its list of confirmed move entries.
     Offers with no ``store_id`` or no merchant URL are EXCLUDED (surfaced, never
-    silently dropped) — the mover could not fail-closed relocate them."""
+    silently dropped) — the mover could not fail-closed relocate them.
+
+    ``resolved`` (INCREMENTAL mode): a set of ``_url_key``s already handled in a
+    prior run. Offers whose URL is in it are skipped here (counted
+    ``already_resolved``) so a re-batch only processes the DELTA. ``None`` = the
+    FULL, old behaviour (process everything)."""
 
     run_dir = Path(run_dir)
     target_list_id = str(target_list_id)
@@ -54,6 +62,7 @@ def build_sort_move_plan(run_dir: Path, target_list_id: str) -> dict[str, Any]:
 
     by_store: dict[str, list[dict[str, Any]]] = {}
     excluded: list[dict[str, Any]] = []
+    already_resolved = 0
     for offer in group.get("offers", []):
         store = str(offer.get("store_id") or "").strip()
         url = str(offer.get("url") or "").strip()
@@ -64,6 +73,9 @@ def build_sort_move_plan(run_dir: Path, target_list_id: str) -> dict[str, Any]:
         if not url:
             excluded.append({"offer_id": offer.get("offer_id"), "name": offer.get("name"),
                              "reason": "URL marchande vide — preuve de disparition non fiable"})
+            continue
+        if resolved is not None and _url_key(url) in resolved:
+            already_resolved += 1  # incremental: handled in a prior run, skip
             continue
         by_store.setdefault(store, []).append({
             "offer_id": str(offer.get("offer_id") or ""),
@@ -79,7 +91,9 @@ def build_sort_move_plan(run_dir: Path, target_list_id: str) -> dict[str, Any]:
         "target_list_id": target_list_id,
         "target_list_label": label,
         "source_feed_page": source,
+        "incremental": resolved is not None,
         "by_store": by_store,
         "excluded": excluded,
-        "counts": {"stores": len(by_store), "offers": total, "excluded": len(excluded)},
+        "counts": {"stores": len(by_store), "offers": total,
+                   "excluded": len(excluded), "already_resolved": already_resolved},
     }
