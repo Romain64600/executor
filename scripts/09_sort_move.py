@@ -266,7 +266,7 @@ def _main() -> int:
                     if e.get("moved"):
                         moved_entries.append(e)
                 if remaining is not None:
-                    remaining -= result.get("move_attempts", 0)
+                    remaining -= result.get("moved", 0)   # count MOVES, not attempts
                 if store_guard.snapshot().get("blocked"):
                     blocked_any = True
                 # A hard abort or an operator stop halts the whole list immediately.

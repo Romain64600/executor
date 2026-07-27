@@ -164,7 +164,11 @@ class _MoverBase(_SubmitterBase):
                 result["stopped"] = "operator_stop"
                 self._log("run_stopped", reason=result["stopped"])
                 break
-            if self.write_mode and limit is not None and result["move_attempts"] >= limit:
+            # The limit counts SUCCESSFUL moves, not attempts: a canary must keep
+            # trying until it actually MOVES one (a dud first offer — e.g. one
+            # whose Apply doesn't take — must not consume the canary). Flailing is
+            # still bounded by the 10-consecutive-failure breaker below.
+            if self.write_mode and limit is not None and result["moved"] >= limit:
                 result["stopped"] = "limit_reached"
                 self._log("run_stopped", reason=result["stopped"])
                 break
@@ -251,6 +255,13 @@ class _MoverBase(_SubmitterBase):
             # failure is the last plan entry (no next check() to catch it).
             if self.guard.snapshot().get("blocked"):
                 result["stopped"] = "ten_consecutive_failures"
+                self._log("run_stopped", reason=result["stopped"])
+                break
+            # Stop as soon as the target number of MOVES is reached (deterministic
+            # even when the winning move is the last plan entry) — the canary
+            # stops right after it actually moves one.
+            if self.write_mode and limit is not None and result["moved"] >= limit:
+                result["stopped"] = "limit_reached"
                 self._log("run_stopped", reason=result["stopped"])
                 break
             if self.offer_pacer is not None:

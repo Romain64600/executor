@@ -16,9 +16,10 @@ class FakeMoveSession:
 
     def __init__(self, pages, *, login=False, options=None, register_ok=True,
                  bulk_set_ok=True, apply_ok=True, move_removes=True, rows=None,
-                 source_id="9", on_target=True):
+                 source_id="9", on_target=True, no_remove_ids=None):
         self.pages = [list(p) for p in pages]        # the SOURCE list, paginated
         self.rows = dict(rows or {})  # per-id {url, name} overrides (re-id sim)
+        self.no_remove_ids = set(no_remove_ids or [])  # ids whose Apply doesn't take
         self.login = login
         self.options = options if options is not None else LIST_OPTIONS
         self.register_ok = register_ok
@@ -94,7 +95,8 @@ class FakeMoveSession:
         # a real Apply POSTs: the offer leaves the source list and (RV2) appears
         # on its target list — unless on_target=False (simulates a parallel
         # operator's move/delete: gone from source but NOT on our target).
-        if self.move_removes and self._registered is not None:
+        if (self.move_removes and self._registered is not None
+                and self._registered not in self.no_remove_ids):
             for p in self.pages:
                 if self._registered in p:
                     p.remove(self._registered)
@@ -231,6 +233,18 @@ class MoverWriteTests(unittest.TestCase):
         result = _run(Mover, session, _plan("100", "200"), limit=1)
         self.assertEqual(result["move_attempts"], 1)
         self.assertEqual(result["stopped"], "limit_reached")
+
+    def test_canary_retries_past_a_dud_offer(self):
+        # offer 100's Apply doesn't take (STILL on source, like ExitLag on a
+        # fresh plan); the canary must NOT be consumed by it — it retries offer
+        # 200 and moves that. limit counts SUCCESSES, not attempts.
+        session = FakeMoveSession([["100", "200"]], no_remove_ids={"100"})
+        result = _run(Mover, session, _plan("100", "200"), limit=1)
+        self.assertEqual(result["moved"], 1)          # one real move
+        self.assertEqual(result["move_attempts"], 2)  # it tried 100 (dud) then 200
+        self.assertEqual(result["stopped"], "limit_reached")
+        self.assertTrue(result["plan"][1]["moved"])   # 200 is the one that moved
+        self.assertFalse(result["plan"][0]["moved"])  # 100 failed
 
     def test_move_relocates_offer_that_reflowed_to_another_page(self):
         # canary 2026-07-22: an offer can reflow to another page between the
