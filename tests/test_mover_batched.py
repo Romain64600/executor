@@ -64,6 +64,7 @@ class FakeFeed:
         self._broken = False
         self._applied = False
         self.apply_count = 0
+        self.target_scan_starts = 0   # navigations to (target list, page 1) = # target scans
 
     def _read_broken(self):
         return self._broken or (self.break_target_scan and self._applied and self._fp == TGT)
@@ -75,6 +76,8 @@ class FakeFeed:
         self._fp = m.group(1) if m else None
         pm = _P_RE.search(url)
         self._page = int(pm.group(1)) if pm else 1
+        if self._fp == TGT and self._page == 1:
+            self.target_scan_starts += 1   # each target scan restarts at page 1
         self._registered = []
         self._bulk_list = ""
 
@@ -140,7 +143,7 @@ class FakeFeed:
         return {"status": "CLICKED"}
 
 
-def _run(feed, specs, *, limit=None, page_size=None):
+def _run(feed, specs, *, limit=None, page_size=None, max_pages=20):
     if page_size is not None:
         feed.page_size = page_size
     guard = StepGuard(max_attempts_per_signature=1, max_failures_per_signature=2,
@@ -151,7 +154,7 @@ def _run(feed, specs, *, limit=None, page_size=None):
     mover.feed_scan_settle = 0
     return mover.run(run_id="t", store_id="38", plan=specs,
                      source_feed_page="aks-merchant-feeds-%s" % SRC,
-                     max_pages=20, limit=limit, batch=True)
+                     max_pages=max_pages, limit=limit, batch=True)
 
 
 class BatchedMoverTests(unittest.TestCase):
@@ -258,6 +261,43 @@ class BatchedMoverTests(unittest.TestCase):
         res = _run(feed, [_spec(1)])
         self.assertEqual(res["max_apply_items"], 1)
 
+    def test_group_target_verify_is_one_scan_not_per_offer(self):
+        # P1.5: 3 offers in ONE group → the RV2 target-presence check is ONE
+        # target-list scan for all 3, not 3 per-offer scans (the account fix).
+        feed = FakeFeed({SRC: [_offer(i) for i in range(1, 4)]}, page_size=10)
+        res = _run(feed, [_spec(i) for i in range(1, 4)])
+        self.assertEqual(res["moved"], 3)
+        self.assertEqual(feed.target_scan_starts, 1)      # ONE target scan for the whole group
+
+    def test_group_target_verify_mixed_presence(self):
+        # One group, o2 swallowed by the target → the single group scan marks
+        # o1/o3 moved and o2 not, from one target walk.
+        feed = FakeFeed({SRC: [_offer(i) for i in range(1, 4)]}, page_size=10,
+                        swallow_target={"o2"})
+        res = _run(feed, [_spec(i) for i in range(1, 4)])
+        by_id = {e["offer_id"]: e for e in res["plan"]}
+        self.assertTrue(by_id["o1"]["moved"])
+        self.assertTrue(by_id["o3"]["moved"])
+        self.assertFalse(by_id["o2"]["moved"])
+        self.assertIn("NOT found on target", by_id["o2"]["post_verify"])
+        self.assertEqual(res["moved"], 2)
+        self.assertEqual(feed.target_scan_starts, 1)      # still ONE scan even with a miss
+
+    def test_target_verify_uses_decoupled_cap_for_deep_target(self):
+        # P1.5's whole point: the source cap is SMALL (max_pages=3) but the target
+        # list spans more pages and the moved offers land DEEP (page 5). The
+        # decoupled TARGET_SCAN_MAX_PAGES must let the group scan reach them →
+        # moved=True. A revert to ctx['max_pages'] would FeedScanError here (target
+        # nav_max=5 > cap 3) → whole group UNKNOWN: the account regression.
+        decoys = [_offer(100 + i) for i in range(8)]      # 8 decoys on TGT → 4 pages (page_size 2)
+        feed = FakeFeed({SRC: [_offer(1), _offer(2)], TGT: decoys}, page_size=2)
+        res = _run(feed, [_spec(1), _spec(2)], max_pages=3)
+        self.assertEqual(res["max_apply_items"], 2)        # both moved in ONE Apply
+        self.assertEqual(res["moved"], 2)                  # found DEEP in the target (page 5)
+        self.assertTrue(all(e["moved"] for e in res["plan"]))
+        self.assertIsNone(res["aborted"])
+        self.assertEqual(feed.target_scan_starts, 1)
+
     def test_target_scan_error_marks_whole_group_unknown_not_just_current(self):
         # Regression (review 2026-07-28): the ONE Apply writes all 3 offers; the
         # source verify succeeds (all gone) but the TARGET-list scan is
@@ -360,6 +400,41 @@ class FullCoverageScanTests(unittest.TestCase):
         from src.submitter import FeedScanError
         with self.assertRaises(FeedScanError):
             sub._scan_feed("38", "aks-merchant-feeds-9", "all", 3, full_coverage=True)
+
+    def test_stop_on_urls_stops_early_when_all_seen(self):
+        # P1.5 group target scan: the two wanted URLs are on page 1; the scan
+        # stops there (found) without walking further (page 3 would even error) —
+        # so a group of K near the front costs ~one page, not a full walk.
+        pages = {1: [_offer(1), _offer(2)], 2: [_offer(3)]}
+        sub = self._sub(pages, nav_max=9)          # nav says 9 pages: it COULD keep going
+        want = {_url_key("https://m/1"), _url_key("https://m/2")}
+        index, by_url, found = sub._scan_feed("38", "aks-merchant-feeds-8", "all", 20,
+                                              stop_on_urls=want)
+        self.assertTrue(found)                                     # all wanted seen
+        self.assertNotIn(_url_key("https://m/3"), by_url)          # stopped at page 1
+
+    def test_stop_on_urls_walks_to_proven_end_when_one_missing(self):
+        # If a wanted URL never appears, the scan cannot stop early — it walks to
+        # a proven end and reports found=False (the missing offer → not on target).
+        pages = {1: [_offer(1)], 2: [_offer(2)]}                   # o9 is absent
+        sub = self._sub(pages, nav_max=2)
+        want = {_url_key("https://m/1"), _url_key("https://m/9")}
+        _, by_url, found = sub._scan_feed("38", "aks-merchant-feeds-8", "all", 20,
+                                          stop_on_urls=want)
+        self.assertFalse(found)
+        self.assertIn(_url_key("https://m/1"), by_url)
+        self.assertNotIn(_url_key("https://m/9"), by_url)
+
+    def test_stop_on_urls_raises_when_coverage_unprovable(self):
+        # Fail-closed for the group verify: a wanted URL never appears, every page
+        # is full, and nav advertises MORE than max_pages → FeedScanError (the
+        # caller marks the whole in-flight group UNKNOWN), never a false absent.
+        from src.submitter import FeedScanError
+        pages = {p: [_offer(p)] for p in range(1, 10)}             # 9 full pages, o99 absent
+        sub = self._sub(pages, nav_max=9)
+        want = {_url_key("https://m/99")}
+        with self.assertRaises(FeedScanError):
+            sub._scan_feed("38", "aks-merchant-feeds-8", "all", 3, stop_on_urls=want)
 
 
 if __name__ == "__main__":

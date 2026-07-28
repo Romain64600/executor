@@ -35,6 +35,13 @@ from src.submitter import (  # reuse the proven, audited feed machinery
 # commit before the verify re-scan navigates away, or the in-flight move is raced.
 POST_APPLY_SETTLE_S = 2.0
 
+# P1.5 (2026-07-28): the group RV2 scan walks the TARGET list, which GROWS as
+# offers move into it (account can reach thousands of pages), and must reach a
+# proven end when an offer is genuinely missing — so its max_pages is decoupled
+# from the (smaller) source feed's. The scan stops early once every group URL is
+# seen, so this generous cap only bites on the missing-offer / not-arrived path.
+TARGET_SCAN_MAX_PAGES = 2000
+
 # RV3 (review 2026-07-22): the move/proof mechanics version. A batch authorization
 # granted by a canary is bound to this — bump it whenever the move or its proof
 # changes, so an authorization from an older mechanism no longer covers a batch.
@@ -542,6 +549,30 @@ class Mover(_MoverBase):
                                       stop_on_url=key)
         return bool(found)
 
+    def _verify_group_on_target(self, urls, target_id, ctx: dict[str, Any]) -> "set[str]":
+        """RV2 for a whole group in ONE target-list scan (P1.5, 2026-07-28):
+        scan ``feed_page=aks-merchant-feeds-<target>`` collecting which of the
+        group's merchant URLs are present, stopping as soon as EVERY one is seen
+        (or a proven end). Returns the set of ``_url_key``s actually on the target
+        list. This replaces K per-offer ``_verify_on_target`` stop_on scans with
+        ONE scan per group — decisive when the target list is large (account's
+        list is ~15k rows, so a per-offer scan cost K× a ~150-page walk).
+
+        Fail-closed: an unprovable scan (max_pages hit with the nav advertising
+        more) raises FeedScanError, exactly like the per-offer proof — the caller
+        marks the whole in-flight group UNKNOWN. ``max_pages`` is decoupled from
+        the source feed's (the growing target list can be far longer); the
+        early-stop means the generous cap only bites when an offer never arrived."""
+
+        want = {_url_key(str(u)) for u in urls if u}
+        if not want:
+            return set()
+        target_page = "aks-merchant-feeds-%s" % str(target_id)
+        max_pages = max(int(ctx["max_pages"]), TARGET_SCAN_MAX_PAGES)
+        _, by_url, _ = self._scan_feed(
+            ctx["store_id"], target_page, ctx["available"], max_pages, stop_on_urls=want)
+        return want & by_url.keys()
+
     # ------------------------------------------------------------------ batched
     def _drive_batched(self, plan, ctx, result, limit, should_stop) -> None:
         """Batched Move-to-List (P1, 2026-07-28): register MANY offers on one
@@ -766,24 +797,28 @@ class Mover(_MoverBase):
             else:
                 to_target.append((entry, current_id))
 
-        # RV2 per gone offer. A target-list scan error is fail-closed for the
-        # WHOLE remaining in-flight group: the current offer AND every gone offer
-        # after it are forced to UNKNOWN + recorded (the Apply already wrote them
-        # — none may silently vanish from the plan/guard/ledger), then abort.
-        for i, (entry, current_id) in enumerate(to_target):
-            try:
-                on_target = self._verify_on_target(
-                    entry["url"], ctx["store_id"], target_id, ctx["available"], ctx["max_pages"])
-            except FEED_UNREADABLE_EXCS as exc:
-                detail = ("target-list scan error after Apply — offer state UNKNOWN, verify by "
-                          f"hand: {type(exc).__name__}: {exc}")
-                for e2, _c2 in to_target[i:]:
-                    e2["moved"] = False
-                    e2["post_verify"] = detail
-                    _done(e2, False, detail)
-                result["aborted"] = "feed_unreadable_mid_run"
-                self._log("run_stopped", reason=result["aborted"], detail=str(exc))
-                return
+        # RV2 for the whole group in ONE target-list scan (P1.5): which gone
+        # offers' URLs are present on the target list, stopping as soon as all are
+        # seen. A target-scan error is fail-closed for the WHOLE in-flight group
+        # (the Apply already wrote them — none may silently vanish from the
+        # plan/guard/ledger), then abort.
+        if not to_target:
+            return
+        try:
+            present = self._verify_group_on_target(
+                [entry["url"] for entry, _cid in to_target], target_id, ctx)
+        except FEED_UNREADABLE_EXCS as exc:
+            detail = ("target-list scan error after Apply — offer state UNKNOWN, verify by "
+                      f"hand: {type(exc).__name__}: {exc}")
+            for entry, _cid in to_target:
+                entry["moved"] = False
+                entry["post_verify"] = detail
+                _done(entry, False, detail)
+            result["aborted"] = "feed_unreadable_mid_run"
+            self._log("run_stopped", reason=result["aborted"], detail=str(exc))
+            return
+        for entry, current_id in to_target:
+            on_target = _url_key(str(entry["url"])) in present
             entry["on_target"] = on_target
             entry["moved"] = bool(on_target)
             entry["post_verify"] = ("gone from source + present on target list" if on_target

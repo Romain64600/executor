@@ -362,7 +362,7 @@ class _SubmitterBase:
 
     def _scan_feed(self, store_id, feed_page, available, max_pages,
                    stop_on: str | None = None, stop_on_url: str | None = None,
-                   full_coverage: bool = False,
+                   full_coverage: bool = False, stop_on_urls: "set[str] | None" = None,
                    ) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]], bool]:
         """Walk the feed pages building offer_id → row details AND
         merchant-url-path (`_url_key`) → current row. Both maps carry the full
@@ -395,10 +395,18 @@ class _SubmitterBase:
         snapshot (a batched move's set-wise "gone from source" proof needs this;
         the plain early terminate could call an offer on an unscanned tail page
         absent — audit 2026-07-28). ``found`` is always False in this mode.
+
+        ``stop_on_urls`` (a SET of merchant URLs): stop as soon as EVERY url in
+        the set has been seen (``found=True``), else walk to a proven end. The
+        set-wise analogue of ``stop_on_url`` for a whole GROUP — one target-list
+        scan proves RV2 presence for K offers at once instead of K stop_on scans
+        (decisive when the target list is large, e.g. account ~15k — P1.5
+        2026-07-28). The caller reads membership from the returned ``by_url``.
         """
         index: dict[str, dict[str, str]] = {}
         by_url: dict[str, dict[str, str]] = {}
         stop_on_url = _url_key(stop_on_url) if stop_on_url else None
+        stop_on_urls = {_url_key(u) for u in stop_on_urls if u} if stop_on_urls else None
         found = False
         empty = 0
         nav_max_seen = 0
@@ -436,10 +444,13 @@ class _SubmitterBase:
                     by_url[row_url] = details
             if (stop_on is not None and stop_on in index) or (
                 stop_on_url is not None and stop_on_url in by_url
+            ) or (
+                stop_on_urls is not None and stop_on_urls <= by_url.keys()
             ):
                 found = True
                 break
-            if stop_on is None and stop_on_url is None and not full_coverage:
+            if (stop_on is None and stop_on_url is None and stop_on_urls is None
+                    and not full_coverage):
                 if new == 0:
                     empty += 1
                     if empty >= 2:
