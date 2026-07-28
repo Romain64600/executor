@@ -366,7 +366,7 @@ def _main() -> int:
     # — is recorded by URL so the NEXT incremental run skips it (no re-attempting
     # duds every cycle). --full ignores the ledger but still records outcomes.
     if write:
-        def _status(e):
+        def _ledger_status(e):
             if e.get("moved"):
                 return "moved"
             if e.get("skipped"):
@@ -378,8 +378,8 @@ def _main() -> int:
             return None
         ledger_entries = [
             {"url": e.get("url"), "offer_id": e.get("current_offer_id") or e.get("offer_id"),
-             "list_id": args.list_id, "status": _status(e)}
-            for e in agg["plan"] if _status(e) and e.get("url")
+             "list_id": args.list_id, "status": _ledger_status(e)}
+            for e in agg["plan"] if _ledger_status(e) and e.get("url")
         ]
         if ledger_entries:
             sort_ledger.record(

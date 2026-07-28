@@ -26,6 +26,33 @@ def _load_cli():
 
 MOD = _load_cli()
 RED = {"ok": False, "authoritative": False, "checks": []}
+GREEN = {"ok": True, "authoritative": True, "checks": []}
+
+
+class _FakeMover:
+    def __init__(self, *a, **k):
+        pass
+
+    def run(self, **k):
+        return {
+            "aborted": None, "stopped": "limit_reached", "moved": 1, "move_attempts": 1,
+            "feed_offers": 1,
+            "plan": [{"offer_id": "a1", "current_offer_id": "a1", "name": "Random Game Key",
+                      "url": "https://g2a/a1", "store_id": "38", "moved": True, "ready": True,
+                      "post_verify": "gone from source + present on target list",
+                      "target_list_id": "8", "target_list_label": "Blacklist"}],
+        }
+
+
+class _FakeSession:
+    def __init__(self, *a, **k):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
 
 SORT_PLAN = {
     "run_id": "20260723-sort",
@@ -105,6 +132,24 @@ class SortMoveCliGateTests(unittest.TestCase):
         code, out = self._run_cli("--list", "8")        # dry-run default
         self.assertEqual(code, 2)
         self.assertIn("invariants", out)
+
+    def test_execute_finishes_without_crash_after_a_move(self):
+        # regression (2026-07-28): _main's final display + ledger block must not
+        # crash after a real move — a local `_status` once shadowed the module
+        # `_status(entry, write)` and TypeError'd on exit.
+        out = io.StringIO()
+        with mock.patch.object(MOD, "build_report", return_value=GREEN), \
+                mock.patch.object(MOD, "Mover", _FakeMover), \
+                mock.patch.object(MOD, "WriteSubmitSession", _FakeSession), \
+                mock.patch.object(MOD.sort_ledger, "record", lambda *a, **k: {}), \
+                mock.patch.object(MOD.sort_ledger, "load", lambda r: {}), \
+                mock.patch.object(MOD.sort_ledger, "resolved_keys", lambda led: set()), \
+                mock.patch("sys.argv", ["09_sort_move.py", str(self.run), "--list", "8",
+                                        "--execute", "--mode", "learning"]), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = MOD._main()
+        self.assertEqual(code, 0)                 # ran to completion, no crash
+        self.assertIn("MOVED", out.getvalue())    # the display path executed
 
 
 if __name__ == "__main__":
