@@ -772,6 +772,39 @@ class SortMoveTests(ManagerTestCase):
         self.assertEqual(r["argv"][r["argv"].index("--store") + 1], "51")
         self.assertTrue(m.wait_idle(timeout=10))
 
+    def test_batched_canary_argv_adds_batch_and_default_multi_item_limit(self):
+        m = self._sm()
+        r = m.start_sort_move(self.run, list_id="8", action="canary", batched=True, by="Romain")
+        self.assertEqual(self._mode_of(r["argv"]), "learning")
+        self.assertIn("--batch", r["argv"])
+        self.assertEqual(r["argv"][r["argv"].index("--limit") + 1], "2")   # default multi-item proof
+        self.assertTrue(m.wait_idle(timeout=10))
+
+    def test_batched_full_argv_adds_batch_and_authorize(self):
+        m = self._sm()
+        r = m.start_sort_move(self.run, list_id="8", action="batch", batched=True, by="Romain")
+        self.assertEqual(self._mode_of(r["argv"]), "safe")
+        self.assertIn("--batch", r["argv"])
+        self.assertIn("--i-authorize-batch", r["argv"])
+        self.assertTrue(m.wait_idle(timeout=10))
+
+    def test_dry_run_ignores_batched(self):
+        m = self._sm()
+        r = m.start_sort_move(self.run, list_id="8", action="dry_run", batched=True, by="Romain")
+        self.assertNotIn("--batch", r["argv"])            # batching is write-only
+        self.assertTrue(m.wait_idle(timeout=10))
+
+    def test_batched_canary_below_two_refused(self):
+        m = self._sm()
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_sort_move(self.run, list_id="8", action="canary", batched=True, limit=1, by="Romain")
+        self.assertEqual(ctx.exception.code, "multi_item_canary")
+
+    def test_batched_canary_above_cap_refused(self):
+        m = self._sm()
+        with self.assertRaises(SubmitStartError):
+            m.start_sort_move(self.run, list_id="8", action="canary", batched=True, limit=9, by="Romain")
+
     def test_bad_action_refused_before_spawn(self):
         m = self._sm()
         with self.assertRaises(SubmitStartError) as ctx:

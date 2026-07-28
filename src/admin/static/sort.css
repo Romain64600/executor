@@ -128,6 +128,9 @@ dialog::backdrop{background:rgba(0,0,0,.62);}
 .actions .go-in{width:5rem;font-family:var(--mono);text-align:center;text-transform:uppercase;}
 .actions button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600;}
 .actions button.danger{background:var(--bad);border-color:var(--bad);color:#fff;font-weight:600;}
+.actions .batched-toggle{display:inline-flex;align-items:center;gap:.3rem;color:var(--dim);
+  font-size:.8rem;cursor:pointer;user-select:none;}
+.actions .batched-toggle input{cursor:pointer;}
 .actions .gatehint{flex-basis:100%;color:var(--dim);font-size:.74rem;line-height:1.4;margin-top:.1rem;}
 .status-pane{padding:.6rem .9rem;border-bottom:1px solid var(--line);max-height:34vh;overflow-y:auto;
   font-family:var(--mono);font-size:.76rem;background:var(--panel-2);}

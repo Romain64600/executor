@@ -37,6 +37,10 @@ from src.validation import ValidationError, verify_approved_against_source
 MODES = ("safe", "learning", "advanced")
 CANARY_MODES = ("learning", "advanced")
 CANARY_LIMIT = 1
+# Batched (P2) canary: proves the many-item Apply, so it moves >=2 in ONE Apply
+# but stays small + supervised. Mirrors scripts/09_sort_move.py.
+CANARY_BATCH_LIMIT = 5
+MULTI_ITEM_CANARY_DEFAULT = 2
 
 STDOUT_TAIL_BYTES = 65536
 
@@ -306,7 +310,7 @@ class SubmitManager:
             )
 
     @staticmethod
-    def _check_mode_limit(mode: str, limit: int | None) -> None:
+    def _check_mode_limit(mode: str, limit: int | None, batched: bool = False) -> None:
         if mode not in MODES:
             raise SubmitStartError("bad_mode", f"unknown mode: {mode!r}", http_status=400)
         if limit is not None:
@@ -314,13 +318,31 @@ class SubmitManager:
                 raise SubmitStartError(
                     "bad_limit", f"limit must be a positive integer, got {limit!r}", http_status=400
                 )
-            if mode in CANARY_MODES and limit > CANARY_LIMIT:
-                raise SubmitStartError(
-                    "limit_widens_canary",
-                    f"--mode {mode} est plafonné à un canary de {CANARY_LIMIT} offre "
-                    f"(--limit {limit} l'élargirait). Utiliser --mode safe pour le lot complet.",
-                    http_status=400,
-                )
+            if mode in CANARY_MODES:
+                if batched:
+                    # A batched canary must fire a MULTI-item Apply (>=2) to prove
+                    # the mechanism, capped small (09_sort_move mirrors this).
+                    if limit < 2:
+                        raise SubmitStartError(
+                            "multi_item_canary",
+                            "un canary batché doit déplacer ≥2 offres en un seul Apply "
+                            f"(preuve multi-item) — --limit {limit} trop petit.",
+                            http_status=400,
+                        )
+                    if limit > CANARY_BATCH_LIMIT:
+                        raise SubmitStartError(
+                            "limit_widens_canary",
+                            f"canary batché plafonné à {CANARY_BATCH_LIMIT} "
+                            f"(--limit {limit} l'élargirait). Utiliser --mode safe --batch pour le lot.",
+                            http_status=400,
+                        )
+                elif limit > CANARY_LIMIT:
+                    raise SubmitStartError(
+                        "limit_widens_canary",
+                        f"--mode {mode} est plafonné à un canary de {CANARY_LIMIT} offre "
+                        f"(--limit {limit} l'élargirait). Utiliser --mode safe pour le lot complet.",
+                        http_status=400,
+                    )
 
     def _verify_triple(self, run_dir: Path) -> list[dict[str, Any]]:
         approved_path = run_file(run_dir, "approved.json")
@@ -496,15 +518,19 @@ class SubmitManager:
 
     def start_sort_move(
         self, run_dir: Path, *, list_id: str, action: str, by: str,
-        store: str | None = None, limit: int | None = None,
+        store: str | None = None, limit: int | None = None, batched: bool = False,
     ) -> dict[str, Any]:
         """Launch the Stage-9 sort-move writer for ONE target list, supervised.
 
         ``action`` sets the R24 gate: ``dry_run`` (no writes), ``canary`` (mode
         learning, 1 move), ``batch`` (mode safe + ``--i-authorize-batch``, the full
-        list). The spawned script still enforces every gate itself (invariants,
-        browser lock, and — for batch — a canary-granted authorization); this only
-        assembles the argv and supervises the process (never fire-and-forget)."""
+        list). ``batched`` (P2) uses the fast many-offers-per-Apply mechanism
+        (``--batch``): a batched canary fires a MULTI-item Apply (defaults to
+        ``--limit 2``) to earn the proof, and a batched full list additionally
+        needs that proof (the script enforces it). The spawned script still
+        enforces every gate itself (invariants, browser lock, canary-granted +
+        multi-item authorization); this only assembles the argv and supervises the
+        process (never fire-and-forget)."""
 
         with self._mutex:
             self._ensure_free()
@@ -512,11 +538,18 @@ class SubmitManager:
                 raise SubmitStartError("bad_action", f"action inconnue: {action!r}", http_status=400)
             mode = "learning" if action == "canary" else "safe"
             dry_run = action == "dry_run"
-            self._check_mode_limit(mode, limit)
+            # Batching is a WRITE mechanism — a dry-run plans per-offer. A batched
+            # canary defaults to the smallest multi-item proof (2) when unset.
+            batched = bool(batched) and not dry_run
+            if batched and action == "canary" and limit is None:
+                limit = MULTI_ITEM_CANARY_DEFAULT
+            self._check_mode_limit(mode, limit, batched=batched)
             argv = [self.python, str(self.sort_move_script), str(run_dir),
                     "--list", str(list_id), "--mode", mode]
             if not dry_run:
                 argv.append("--execute")
+            if batched:
+                argv.append("--batch")
             if action == "batch":
                 argv.append("--i-authorize-batch")
             if store:
@@ -526,7 +559,7 @@ class SubmitManager:
             return self._spawn(
                 run_dir, kind=f"sort_{action}", argv=argv,
                 meta={"list_id": str(list_id), "action": action, "mode": mode,
-                      "dry_run": dry_run, "store": store, "by": by},
+                      "batched": batched, "dry_run": dry_run, "store": store, "by": by},
             )
 
     def start_extract(
