@@ -177,17 +177,23 @@ def load_sort_authorization(run_dir: Path) -> dict[str, Any] | None:
 
 def grant_from_sort_canary(
     run_dir: Path, *, source_feed_page: str,
-    moved_entries: list[dict[str, Any]], clock,
+    moved_entries: list[dict[str, Any]], clock, multi_item: bool = False,
 ) -> dict[str, Any]:
     """Record/extend the sort authorization from the TARGET LISTS a canary proved
     (each ``moved_entries`` item is a ``result['plan']`` entry with moved=True).
-    Keyed by the sort scope; a scope change (mover / source / sort data) resets."""
+    Keyed by the sort scope; a scope change (mover / source / sort data) resets.
+
+    ``multi_item`` = this canary proved a MULTI-item Apply (>=2 bulk[item][]
+    serialized into one Apply). A ``--mode safe`` BATCH requires it: a cap-1
+    (single-item) canary cannot prove the batched mechanism, so it never unlocks
+    a batch (2026-07-28, P2). Once proven for a scope it STICKS (accumulated)."""
 
     run_dir = Path(run_dir)
     scope = _sort_scope(run_dir, source_feed_page)
     auth = load_sort_authorization(run_dir)
     if not auth or any(auth.get(k) != v for k, v in scope.items()):
-        auth = dict(scope, authorized_target_lists=[], canaries=[], version=0)
+        auth = dict(scope, authorized_target_lists=[], canaries=[], version=0,
+                    multi_item_proven=False)
 
     targets = set(auth.get("authorized_target_lists", []))
     canaries = list(auth.get("canaries", []))
@@ -204,6 +210,7 @@ def grant_from_sort_canary(
         })
     auth["authorized_target_lists"] = sorted(targets)
     auth["canaries"] = canaries[-50:]
+    auth["multi_item_proven"] = bool(auth.get("multi_item_proven", False)) or bool(multi_item)
     auth["version"] = int(auth.get("version", 0)) + 1
     auth["granted_at"] = clock()
     _write_atomic(run_dir / SORT_AUTH_FILE, auth)
@@ -212,9 +219,14 @@ def grant_from_sort_canary(
 
 def sort_batch_authorized(
     run_dir: Path, plan_entries: list[dict[str, Any]], *, source_feed_page: str,
+    require_multi_item: bool = False,
 ) -> tuple[bool, str]:
     """``(ok, reason)`` — is a sort batch of ``plan_entries`` (all for ONE target
-    list, across stores) covered by a canary-granted sort authorization?"""
+    list, across stores) covered by a canary-granted sort authorization?
+
+    ``require_multi_item`` (a ``--batch`` run): the authorization must ALSO carry
+    ``multi_item_proven`` — a canary that fired a >=2-item Apply. A single-item
+    canary authorization does NOT unlock the batched mechanism (2026-07-28, P2)."""
 
     run_dir = Path(run_dir)
     auth = load_sort_authorization(run_dir)
@@ -232,5 +244,10 @@ def sort_batch_authorized(
     if unvalidated:
         return False, (f"liste(s) cible(s) non validée(s) par un canary: {sorted(unvalidated)} "
                        f"(autorisées: {sorted(authorized)})")
+    if require_multi_item and not auth.get("multi_item_proven"):
+        return False, ("le mécanisme batché (--batch) exige un canary multi-item (un Apply "
+                       ">=2 offres) — l'autorisation actuelle ne prouve qu'un move unitaire ; "
+                       "relance un canary --batch --mode learning --limit 2 d'abord")
     return True, (f"couvert par l'autorisation de tri v{auth.get('version')} "
-                  f"(listes {sorted(authorized)}, mover {MOVER_VERSION})")
+                  f"(listes {sorted(authorized)}, mover {MOVER_VERSION}"
+                  f"{', multi-item' if auth.get('multi_item_proven') else ''})")

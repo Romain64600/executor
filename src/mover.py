@@ -41,12 +41,12 @@ POST_APPLY_SETTLE_S = 2.0
 #   1  initial writer (trusted checkbox click — proved fragile, superseded)
 #   2  registration by hidden injection + RV2 target-presence proof
 #   3  reflow-resilient fresh-locate right before the move (canary 2026-07-22)
-# The per-offer mechanism ("3") is UNCHANGED by the P1 batched path (2026-07-28),
-# which is off by default (run(batch=True), write-only). Enabling batching in
-# production is P2: it is a distinct many-item Apply that a cap-1 canary cannot
-# prove, so it MUST bump this to "4" and re-earn the sort authorization from a
-# supervised multi-item canary before any --mode safe batch relies on it.
-MOVER_VERSION = "3"
+#   4  batched Move-to-List: MANY bulk[item][] serialized into ONE Apply, group-
+#      verified (P2, 2026-07-28). A distinct many-item mechanism a cap-1 canary
+#      cannot prove, so the version bumps: a v3 authorization no longer covers a
+#      run, and a --mode safe BATCH additionally requires a multi-item canary
+#      (an Apply that actually carried >=2 items — move_auth `multi_item_proven`).
+MOVER_VERSION = "4"
 
 # The source list a run scanned — parsed from raw.json's source_url
 # (…&page=aks-merchant-feeds-<id>). Default 9 = "AKS Feeds" (pending queue).
@@ -115,6 +115,10 @@ class _MoverBase(_SubmitterBase):
             "aborted": None, "stopped": None, "feed_offers": 0,
             "move_attempts": 0, "moved": 0, "plan": [],
             "source_feed_page": source_feed_page,
+            # Largest single-Apply item count of this run (batched path only) — the
+            # multi-item proof a --mode safe batch authorization requires. 0 = no
+            # batched Apply fired (per-offer path, or nothing moved).
+            "max_apply_items": 0,
         }
 
         # Pre-flight login check on the SOURCE list.
@@ -722,6 +726,7 @@ class Mover(_MoverBase):
 
         # The Apply fired: every registered id is now IN FLIGHT (written).
         result["move_attempts"] += len(registered)
+        result["max_apply_items"] = max(result.get("max_apply_items", 0), len(registered))
         self._log("move_group_submitted", page_url=page_url, count=len(registered),
                   target_list_id=target_id)
         if self.post_apply_settle:

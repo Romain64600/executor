@@ -83,12 +83,12 @@ class SortMoveCliGateTests(unittest.TestCase):
             code = MOD._main()
         return code, out.getvalue()
 
-    def _grant(self, *labels):
+    def _grant(self, *labels, multi_item=False):
         from src.move_auth import grant_from_sort_canary
         grant_from_sort_canary(
             self.run, source_feed_page="aks-merchant-feeds-9",
             moved_entries=[{"target_list_label": lbl, "url": "u", "store_id": "38"} for lbl in labels],
-            clock=lambda: "T")
+            multi_item=multi_item, clock=lambda: "T")
 
     def test_empty_list_exits_clean(self):
         code, out = self._run_cli("--list", "999")   # no offers for this list
@@ -122,6 +122,93 @@ class SortMoveCliGateTests(unittest.TestCase):
         code, out = self._run_cli("--list", "8", "--execute", "--mode", "learning")
         self.assertEqual(code, 2)
         self.assertIn("invariants", out)
+
+    def test_batch_refused_without_multi_item_authorization(self):
+        self._grant("Blacklist")  # unitary canary only
+        code, out = self._run_cli("--list", "8", "--execute", "--mode", "safe",
+                                  "--batch", "--i-authorize-batch")
+        self.assertEqual(code, 2)
+        self.assertIn("multi-item", out)                # blocked by the batch-auth gate
+
+    def test_batch_passes_gate_with_multi_item_authorization(self):
+        self._grant("Blacklist", multi_item=True)
+        code, out = self._run_cli("--list", "8", "--execute", "--mode", "safe",
+                                  "--batch", "--i-authorize-batch")
+        self.assertEqual(code, 2)                        # stops at mocked RED invariants
+        self.assertNotIn("multi-item", out)             # NOT blocked by the multi-item gate
+        self.assertIn("invariants", out)
+
+    def test_batched_canary_needs_at_least_two(self):
+        code, out = self._run_cli("--list", "8", "--execute", "--mode", "learning",
+                                  "--batch", "--limit", "1")
+        self.assertEqual(code, 2)
+        self.assertIn("multi-item", out)
+
+    def test_batched_canary_needs_explicit_limit(self):
+        code, out = self._run_cli("--list", "8", "--execute", "--mode", "learning", "--batch")
+        self.assertEqual(code, 2)
+        self.assertIn("multi-item", out)
+
+    def test_batched_canary_limit_capped(self):
+        code, out = self._run_cli("--list", "8", "--execute", "--mode", "learning",
+                                  "--batch", "--limit", "9")
+        self.assertEqual(code, 2)
+        self.assertIn("trop large", out)      # ASCII substring (json.dumps escapes accents)
+
+    def _run_batched_canary(self, max_apply_items):
+        """Run a --batch canary through a fake Mover reporting max_apply_items,
+        so the REAL 09 seam (max_apply_items → grant → multi_item_proven) runs."""
+
+        class _FakeMoverMI:
+            def __init__(self, *a, **k):
+                pass
+
+            def run(self, **k):
+                return {
+                    "aborted": None, "stopped": "limit_reached", "moved": 1, "move_attempts": 1,
+                    "feed_offers": 1, "max_apply_items": max_apply_items,
+                    "plan": [{"offer_id": "a1", "current_offer_id": "a1", "name": "Random Game Key",
+                              "url": "https://g2a/a1", "store_id": "38", "moved": True, "ready": True,
+                              "post_verify": "gone from source + present on target list",
+                              "target_list_id": "8", "target_list_label": "Blacklist"}],
+                }
+
+        out = io.StringIO()
+        with mock.patch.object(MOD, "build_report", return_value=GREEN), \
+                mock.patch.object(MOD, "Mover", _FakeMoverMI), \
+                mock.patch.object(MOD, "WriteSubmitSession", _FakeSession), \
+                mock.patch.object(MOD.sort_ledger, "record", lambda *a, **k: {}), \
+                mock.patch.object(MOD.sort_ledger, "load", lambda r: {}), \
+                mock.patch.object(MOD.sort_ledger, "resolved_keys", lambda led: set()), \
+                mock.patch("sys.argv", ["09_sort_move.py", str(self.run), "--list", "8",
+                                        "--execute", "--mode", "learning", "--batch", "--limit", "2"]), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            code = MOD._main()
+        return code, out.getvalue()
+
+    def test_seam_multiitem_apply_writes_proof_and_unlocks_batch(self):
+        # End-to-end: a >=2-item Apply flows through 09's max_apply_items→grant
+        # seam → multi_item_proven=True → a later --mode safe --batch passes.
+        code, _ = self._run_batched_canary(max_apply_items=2)
+        self.assertEqual(code, 0)
+        auth = json.loads((self.run / "sort_move_authorization.json").read_text(encoding="utf-8"))
+        self.assertTrue(auth["multi_item_proven"])
+        code2, out2 = self._run_cli("--list", "8", "--execute", "--mode", "safe",
+                                    "--batch", "--i-authorize-batch")
+        self.assertEqual(code2, 2)                    # stops at mocked RED invariants
+        self.assertNotIn("multi-item", out2)          # NOT blocked by the multi-item gate
+
+    def test_seam_single_item_apply_never_unlocks_batch(self):
+        # A --batch canary whose Apply carried only 1 item (max_apply_items=1)
+        # must NOT forge the proof, and the safe batch stays refused.
+        code, _ = self._run_batched_canary(max_apply_items=1)
+        self.assertEqual(code, 0)
+        auth = json.loads((self.run / "sort_move_authorization.json").read_text(encoding="utf-8"))
+        self.assertFalse(auth["multi_item_proven"])
+        code2, out2 = self._run_cli("--list", "8", "--execute", "--mode", "safe",
+                                    "--batch", "--i-authorize-batch")
+        self.assertEqual(code2, 2)
+        self.assertIn("multi-item", out2)             # STILL blocked (no real proof)
 
     def test_canary_limit_cannot_be_widened(self):
         code, out = self._run_cli("--list", "8", "--execute", "--mode", "learning", "--limit", "5")

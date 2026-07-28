@@ -129,6 +129,64 @@ class SortAuthorizationTests(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("Gift cards", why)
 
+    def test_unitary_canary_does_not_unlock_batch(self):
+        grant_from_sort_canary(
+            self.run, source_feed_page="aks-merchant-feeds-9",
+            moved_entries=[{"target_list_label": "Blacklist", "url": "u", "store_id": "38"}],
+            clock=lambda: "T")  # multi_item defaults False
+        ok, why = sort_batch_authorized(self.run, self._entries("Blacklist"),
+                                        source_feed_page="aks-merchant-feeds-9",
+                                        require_multi_item=True)
+        self.assertFalse(ok)
+        self.assertIn("multi-item", why)
+        # ...but a UNITARY (non-batch) safe run is still covered by the same auth.
+        ok2, _ = sort_batch_authorized(self.run, self._entries("Blacklist"),
+                                       source_feed_page="aks-merchant-feeds-9")
+        self.assertTrue(ok2)
+
+    def test_multi_item_canary_unlocks_batch(self):
+        grant_from_sort_canary(
+            self.run, source_feed_page="aks-merchant-feeds-9",
+            moved_entries=[{"target_list_label": "Blacklist", "url": "u", "store_id": "38"}],
+            multi_item=True, clock=lambda: "T")
+        ok, why = sort_batch_authorized(self.run, self._entries("Blacklist"),
+                                        source_feed_page="aks-merchant-feeds-9",
+                                        require_multi_item=True)
+        self.assertTrue(ok, why)
+        self.assertIn("multi-item", why)
+
+    def test_multi_item_proof_sticks_across_later_unitary_grant(self):
+        grant_from_sort_canary(
+            self.run, source_feed_page="aks-merchant-feeds-9",
+            moved_entries=[{"target_list_label": "Blacklist", "url": "u", "store_id": "38"}],
+            multi_item=True, clock=lambda: "T")
+        grant_from_sort_canary(  # a later unitary grant must NOT un-prove multi-item
+            self.run, source_feed_page="aks-merchant-feeds-9",
+            moved_entries=[{"target_list_label": "Gift cards", "url": "u2", "store_id": "38"}],
+            multi_item=False, clock=lambda: "T")
+        ok, _ = sort_batch_authorized(self.run, self._entries("Blacklist"),
+                                      source_feed_page="aks-merchant-feeds-9",
+                                      require_multi_item=True)
+        self.assertTrue(ok)
+
+    def test_stale_mover_version_invalidates_sort_batch(self):
+        # The 3->4 bump must reject any authorization granted by an older mover,
+        # on the SORT path (a v3 canary must not cover a v4 batch).
+        from src.move_auth import SORT_AUTH_FILE
+        grant_from_sort_canary(
+            self.run, source_feed_page="aks-merchant-feeds-9",
+            moved_entries=[{"target_list_label": "Blacklist", "url": "u", "store_id": "38"}],
+            multi_item=True, clock=lambda: "T")
+        path = self.run / SORT_AUTH_FILE
+        auth = json.loads(path.read_text(encoding="utf-8"))
+        auth["mover_version"] = "3"                       # pretend an older mover granted it
+        path.write_text(json.dumps(auth), encoding="utf-8")
+        ok, why = sort_batch_authorized(self.run, self._entries("Blacklist"),
+                                        source_feed_page="aks-merchant-feeds-9",
+                                        require_multi_item=True)
+        self.assertFalse(ok)
+        self.assertIn("mover_version", why)
+
     def test_authorization_resets_when_sort_plan_changes(self):
         grant_from_sort_canary(
             self.run, source_feed_page="aks-merchant-feeds-9",

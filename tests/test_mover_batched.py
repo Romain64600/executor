@@ -244,6 +244,20 @@ class BatchedMoverTests(unittest.TestCase):
         res = _run(feed, [_spec(1), _spec(2)])
         self.assertEqual(res["move_attempts"], 2)
 
+    def test_max_apply_items_reports_largest_apply(self):
+        # 3 offers on ONE page → ONE Apply of 3 → the multi-item proof (>=2) that a
+        # --mode safe --batch authorization requires (P2).
+        feed = FakeFeed({SRC: [_offer(i) for i in range(1, 4)]}, page_size=10)
+        res = _run(feed, [_spec(i) for i in range(1, 4)])
+        self.assertEqual(res["max_apply_items"], 3)
+
+    def test_single_item_apply_is_not_multi_item(self):
+        # One offer alone on its page → a 1-item Apply → max_apply_items=1, which
+        # does NOT satisfy the >=2 multi-item proof.
+        feed = FakeFeed({SRC: [_offer(1)]}, page_size=10)
+        res = _run(feed, [_spec(1)])
+        self.assertEqual(res["max_apply_items"], 1)
+
     def test_target_scan_error_marks_whole_group_unknown_not_just_current(self):
         # Regression (review 2026-07-28): the ONE Apply writes all 3 offers; the
         # source verify succeeds (all gone) but the TARGET-list scan is

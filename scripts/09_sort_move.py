@@ -15,7 +15,11 @@ authorizes that list's LABEL for the batch, across stores. NEVER fire-and-forget
 Examples (on the VPS):
   python3 scripts/09_sort_move.py runs/<sort-id> --list 8                       # dry-run (plan only)
   python3 scripts/09_sort_move.py runs/<sort-id> --list 8 --execute --mode learning         # canary of 1 (REAL)
-  python3 scripts/09_sort_move.py runs/<sort-id> --list 8 --execute --mode safe --i-authorize-batch  # full list (REAL)
+  python3 scripts/09_sort_move.py runs/<sort-id> --list 8 --execute --mode safe --i-authorize-batch  # full list, unitary (REAL)
+
+Batched mechanism (P2, ~50-100x faster — many offers per Apply):
+  python3 scripts/09_sort_move.py runs/<sort-id> --list 8 --execute --mode learning --batch --limit 2   # MULTI-item canary (REAL)
+  python3 scripts/09_sort_move.py runs/<sort-id> --list 8 --execute --mode safe --batch --i-authorize-batch  # full batched list (REAL)
 """
 
 from __future__ import annotations
@@ -49,6 +53,9 @@ DEFAULT_MAX_PAGES = 40
 AUTO_MAX_PAGES_HEADROOM = 1.3
 CANARY_MODES = ("learning", "advanced")
 CANARY_LIMIT = 1
+# A --batch canary must fire a MULTI-item Apply (>=2) to prove the batched
+# mechanism, but stays small + supervised: capped here (2026-07-28, P2).
+CANARY_BATCH_LIMIT = 5
 # How many stores may trip the per-store 10-failure breaker before the whole
 # list batch is deemed systemically broken and stops. Below this, a breaker-
 # tripped store is skipped and the batch continues to the next store (one stale
@@ -67,10 +74,11 @@ def _on_term(_signum, _frame):
     _STOP = True
 
 
-def mode_limit(mode: str, requested: int | None) -> int | None:
+def mode_limit(mode: str, requested: int | None, batch: bool = False) -> int | None:
     if mode not in CANARY_MODES:
         return requested
-    return CANARY_LIMIT if requested is None else min(requested, CANARY_LIMIT)
+    cap = CANARY_BATCH_LIMIT if batch else CANARY_LIMIT
+    return cap if requested is None else min(requested, cap)
 
 
 def derive_max_pages(explicit: int | None, run_dir: Path) -> tuple[int, str]:
@@ -131,6 +139,12 @@ def _main() -> int:
     parser.add_argument("--i-authorize-batch", action="store_true",
                         help="Explicit second intention for --mode safe (the full list). Required "
                              "IN ADDITION to a canary-granted sort authorization covering the list.")
+    parser.add_argument("--batch", action="store_true",
+                        help="Use the BATCHED Move-to-List mechanism (P2, 2026-07-28): register "
+                             "many offers on one source page → ONE Apply → group-verify (~50-100x "
+                             "faster). --mode safe --batch needs a MULTI-ITEM canary authorization "
+                             "(run --mode learning --batch --limit 2 first, which fires a >=2-item "
+                             f"Apply, capped at {CANARY_BATCH_LIMIT}).")
     parser.add_argument("--full", action="store_true",
                         help="OLD mode: process EVERY plan offer, ignoring the resolved-offers "
                              "ledger. Use when delete-then-reimport is re-enabled (ids rotate, "
@@ -142,11 +156,26 @@ def _main() -> int:
     if not run_dir.is_dir():
         print(json.dumps({"aborted": True, "reason": f"run dir absent: {run_dir}"}, indent=2))
         return 2
-    if args.mode in CANARY_MODES and args.limit is not None and args.limit > CANARY_LIMIT:
-        print(json.dumps({"aborted": True, "reason": (
-            f"--mode {args.mode} is capped at a canary of {CANARY_LIMIT} "
-            f"(--limit {args.limit} would widen it). Use --mode safe for the full list.")}, indent=2))
-        return 2
+    if args.mode in CANARY_MODES:
+        if args.batch:
+            # Multi-item canary: MUST move >=2 in one Apply to prove the batched
+            # mechanism, capped small (supervised). Never a full-page canary.
+            if args.limit is None or args.limit < 2:
+                print(json.dumps({"aborted": True, "reason": (
+                    f"un canary --batch doit déplacer >=2 offres en un seul Apply (preuve "
+                    f"multi-item) : passe --limit 2..{CANARY_BATCH_LIMIT}")}, indent=2))
+                return 2
+            if args.limit > CANARY_BATCH_LIMIT:
+                print(json.dumps({"aborted": True, "reason": (
+                    f"canary --batch plafonné à {CANARY_BATCH_LIMIT} "
+                    f"(--limit {args.limit} trop large). Utilise --mode safe --batch pour la liste "
+                    "complète, une fois le multi-item prouvé.")}, indent=2))
+                return 2
+        elif args.limit is not None and args.limit > CANARY_LIMIT:
+            print(json.dumps({"aborted": True, "reason": (
+                f"--mode {args.mode} is capped at a canary of {CANARY_LIMIT} "
+                f"(--limit {args.limit} would widen it). Use --mode safe for the full list.")}, indent=2))
+            return 2
 
     # Incremental (default): skip offers already resolved in a prior run, keyed by
     # stable merchant URL. --full ignores the ledger (old delete/reimport mode).
@@ -177,7 +206,8 @@ def _main() -> int:
     # canary-granted sort authorization covering THIS list's label (RV3), across
     # stores. RV2 still proves each individual move (gone-from-source + on-target).
     if write and args.mode == "safe":
-        covered, why = sort_batch_authorized(run_dir, all_entries, source_feed_page=source_list)
+        covered, why = sort_batch_authorized(run_dir, all_entries, source_feed_page=source_list,
+                                             require_multi_item=args.batch)
         if not args.i_authorize_batch:
             print(json.dumps({"aborted": True, "reason": (
                 "batch (--execute --mode safe) requiert le flag --i-authorize-batch "
@@ -190,7 +220,9 @@ def _main() -> int:
                 "batch (--execute --mode safe) refusé — autorisation insuffisante : " + why
                 + ". Valide la liste par un canary --mode learning d'abord.")}, indent=2))
             return 2
-        print(f"BATCH AUTORISÉ (--i-authorize-batch + {why}) — {len(all_entries)} offre(s) "
+        mech = ("batché — 1 Apply par page source (P2)" if args.batch
+                else "unitaire — 1 Apply par offre")
+        print(f"BATCH AUTORISÉ [{mech}] (--i-authorize-batch + {why}) — {len(all_entries)} offre(s) "
               f"→ {label} sur {len(by_store)} store(s) ; chaque move prouve source+cible (RV2).",
               file=sys.stderr)
 
@@ -207,7 +239,7 @@ def _main() -> int:
         return 2
 
     max_pages, max_pages_note = derive_max_pages(args.max_pages, run_dir)
-    limit = mode_limit(args.mode, args.limit)
+    limit = mode_limit(args.mode, args.limit, batch=args.batch)
     run_id = plan_doc.get("run_id") or run_dir.name
     logger = RunLogger(run_id, log_dir=str(ROOT / "logs"))
 
@@ -240,8 +272,8 @@ def _main() -> int:
     session_cls = WriteSubmitSession if write else SubmitSession
     mover_cls = Mover if write else DryRunMover
     agg = {"list_id": args.list_id, "target_list_label": label, "source_feed_page": source_list,
-           "mode": args.mode, "write": write, "stores": {}, "moved": 0, "move_attempts": 0,
-           "plan": [], "aborted": None, "stopped": None}
+           "mode": args.mode, "batch": args.batch, "write": write, "stores": {}, "moved": 0,
+           "move_attempts": 0, "max_apply_items": 0, "plan": [], "aborted": None, "stopped": None}
     moved_entries: list[dict] = []
     remaining = limit
     blocked_any = False
@@ -263,7 +295,8 @@ def _main() -> int:
                     result = mover.run(run_id=f"{run_id}:{args.list_id}:store{store}",
                                        store_id=store, plan=entries, source_feed_page=source_list,
                                        available=args.available, max_pages=max_pages,
-                                       limit=remaining, should_stop=lambda: _STOP)
+                                       limit=remaining, should_stop=lambda: _STOP,
+                                       batch=args.batch)
                 except FEED_UNREADABLE_EXCS as exc:
                     agg["aborted"] = f"feed_unreadable (store {store}): {exc}"
                     break
@@ -274,6 +307,7 @@ def _main() -> int:
                                         "offers": len(entries)}
                 agg["moved"] += result.get("moved", 0)
                 agg["move_attempts"] += result.get("move_attempts", 0)
+                agg["max_apply_items"] = max(agg["max_apply_items"], result.get("max_apply_items", 0))
                 for e in result["plan"]:
                     e["store_id"] = str(store)
                     agg["plan"].append(e)
@@ -310,14 +344,22 @@ def _main() -> int:
         ledger.record(task_id=f"{run_id}:{args.list_id}", blocked=blocked_any,
                       rule="sort-move", reason=agg.get("aborted") or agg.get("stopped"))
 
-    # RV3: a verified canary grants/extends the sort authorization for this label.
+    # RV3/RV4: a verified canary grants/extends the sort authorization for this
+    # label. A --batch canary that fired a >=2-item Apply additionally proves the
+    # MULTI-item mechanism (unlocks a --mode safe --batch run); a unitary canary
+    # does not.
     if write and args.mode in CANARY_MODES and agg["moved"] > 0:
+        multi_item = agg.get("max_apply_items", 0) >= 2
         auth = grant_from_sort_canary(
             run_dir, source_feed_page=source_list, moved_entries=moved_entries,
+            multi_item=multi_item,
             clock=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
         agg["authorization"] = {"version": auth["version"],
                                 "authorized_target_lists": auth["authorized_target_lists"],
-                                "note": "canary sort authorization recorded — batch stays a separate go"}
+                                "multi_item_proven": auth.get("multi_item_proven", False),
+                                "note": ("canary sort authorization recorded — batch stays a "
+                                         "separate go" + ("; MULTI-item proven" if multi_item else
+                                                          "; unitary only (no batch unlock)"))}
 
     agg["excluded"] = plan_doc["excluded"]
     agg["limit"] = limit
