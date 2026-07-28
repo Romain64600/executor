@@ -41,6 +41,11 @@ POST_APPLY_SETTLE_S = 2.0
 #   1  initial writer (trusted checkbox click — proved fragile, superseded)
 #   2  registration by hidden injection + RV2 target-presence proof
 #   3  reflow-resilient fresh-locate right before the move (canary 2026-07-22)
+# The per-offer mechanism ("3") is UNCHANGED by the P1 batched path (2026-07-28),
+# which is off by default (run(batch=True), write-only). Enabling batching in
+# production is P2: it is a distinct many-item Apply that a cap-1 canary cannot
+# prove, so it MUST bump this to "4" and re-earn the sort authorization from a
+# supervised multi-item canary before any --mode safe batch relies on it.
 MOVER_VERSION = "3"
 
 # The source list a run scanned — parsed from raw.json's source_url
@@ -104,6 +109,7 @@ class _MoverBase(_SubmitterBase):
         max_pages: int = 40,
         limit: int | None = None,
         should_stop=None,
+        batch: bool = False,
     ) -> dict[str, Any]:
         result: dict[str, Any] = {
             "aborted": None, "stopped": None, "feed_offers": 0,
@@ -158,6 +164,27 @@ class _MoverBase(_SubmitterBase):
                "available": available, "max_pages": max_pages,
                "index": index, "by_url": by_url}
 
+        # P1 (2026-07-28): ``batch`` groups the plan by source page and moves a
+        # whole page in ONE Apply, verifying the group at once — the ~50-100x
+        # speedup. Gated to the real write path; the per-offer path (dry-run,
+        # canary, and any non-batched run) is unchanged.
+        if batch and self.write_mode:
+            self._drive_batched(plan, ctx, result, limit, should_stop)
+        else:
+            self._drive_per_offer(plan, ctx, result, limit, should_stop)
+
+        if self.logger is not None:
+            if self.page_pacer is not None or self.offer_pacer is not None:
+                self._log("pacing",
+                          pages=self.page_pacer.snapshot() if self.page_pacer else None,
+                          offers=self.offer_pacer.snapshot() if self.offer_pacer else None)
+            self.logger.log_guard(self.guard.snapshot())
+        return result
+
+    def _drive_per_offer(self, plan, ctx, result, limit, should_stop):
+        """The proven one-offer-per-Apply loop (dry-run, canary, non-batched)."""
+
+        store_id = ctx["store_id"]
         for spec in plan:
             # Cooperative stop BETWEEN offers — a safe point (no move in flight).
             if should_stop is not None and should_stop():
@@ -267,14 +294,6 @@ class _MoverBase(_SubmitterBase):
             if self.offer_pacer is not None:
                 self.offer_pacer.wait()
 
-        if self.logger is not None:
-            if self.page_pacer is not None or self.offer_pacer is not None:
-                self._log("pacing",
-                          pages=self.page_pacer.snapshot() if self.page_pacer else None,
-                          offers=self.offer_pacer.snapshot() if self.offer_pacer else None)
-            self.logger.log_guard(self.guard.snapshot())
-        return result
-
     def _resolve_location(
         self, candidate: dict[str, Any], offer_id: str, ctx: dict[str, Any]
     ) -> tuple[str, Any]:
@@ -355,6 +374,35 @@ class _MoverBase(_SubmitterBase):
         if mismatches:
             return False, f"fresh-page identity mismatch ({', '.join(mismatches)}) — NOT moving"
         return True, ""
+
+    def _new_entry(self, spec: dict[str, Any], store_id: str | int) -> dict[str, Any]:
+        """A fresh plan-entry dict (the batched path's analogue of the inline one
+        the per-offer loop builds) — same shape, so the writer/ledger read it the
+        same way."""
+
+        return {
+            "offer_id": str(spec["offer_id"]),
+            "name": spec.get("name", ""),
+            "url": spec.get("url", ""),
+            "store_id": str(store_id),
+            "target_list_label": spec.get("target_list_label", ""),
+            "target_list_id": spec.get("resolved_list_id", ""),
+            "ready": False,
+            "moved": False,
+        }
+
+    def _full_source_scan(self, ctx: dict[str, Any]
+                          ) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]]]:
+        """A source-feed scan walked to a PROVEN end-of-feed (``full_coverage`` —
+        no 2-empty early terminate), so an id/URL ABSENT from the returned maps
+        genuinely left the feed: the set-wise analogue of ``_verify_gone``'s
+        stop_on proof, for a whole group at once. Raises FeedScanError
+        (fail-closed) when coverage cannot be proven."""
+
+        index, by_url, _ = self._scan_feed(
+            ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"],
+            full_coverage=True)
+        return index, by_url
 
 
 class DryRunMover(_MoverBase):
@@ -489,3 +537,254 @@ class Mover(_MoverBase):
         _, _, found = self._scan_feed(store_id, target_page, available, max_pages,
                                       stop_on_url=key)
         return bool(found)
+
+    # ------------------------------------------------------------------ batched
+    def _drive_batched(self, plan, ctx, result, limit, should_stop) -> None:
+        """Batched Move-to-List (P1, 2026-07-28): register MANY offers on one
+        source page, fire ONE Apply, verify the whole GROUP at once — the
+        ~50-100x speedup (``bulk[item][]`` is repeatable; the native Apply
+        serializes the whole form). Safe by construction, per the 2026-07-28
+        simplification safety review:
+
+          * group by each offer's CURRENT source page and RE-SCAN the source feed
+            fresh before every group — each Apply empties the source list and
+            reflows later pages forward (the mover causes its own reflow), so a
+            page fixed at index time goes stale;
+          * per-offer fresh-page identity re-check (name+URL) BEFORE registering
+            each id (EXECUTOR_RULES §6 / MV1) — never trust the start-of-run row;
+          * ``moved`` = (WE registered it into THIS Apply) AND gone-from-source
+            (proven full scan, dual key) AND present-on-target (RV2). The group
+            verifies right after ITS OWN Apply, so the parallel-operator
+            attribution window stays seconds, not the whole batch. Residual
+            (identical to the per-offer path in production): if OUR Apply
+            silently no-ops for an offer while a parallel operator moves that
+            SAME offer to the SAME target within the group's ~seconds window, it
+            is credited as ours — bounded by the per-group window, tightening it
+            needs a server-side per-POST receipt (out of P1 scope);
+          * fail-closed: the source verify walks to a PROVEN end-of-feed, and any
+            feed/CDP error after the Apply marks the whole in-flight group
+            UNKNOWN (never a silent success);
+          * per-offer ``guard.record_result`` feeds the 10-consecutive breaker,
+            which bites BEFORE the next group's Apply; ``limit`` bounds moves.
+
+        The cooperative stop is honoured only BETWEEN groups (a safe point) — a
+        group's navigate→register→Apply→verify is never cut mid-flight.
+        """
+
+        store_id = ctx["store_id"]
+        # Working set keyed by stable merchant URL (ids can rotate on re-import;
+        # the URL path is the always-safe identity). An offer with no URL cannot
+        # be batch-verified set-wise → fail-closed skip, surfaced.
+        pending: dict[str, dict[str, Any]] = {}
+        for spec in plan:
+            entry = self._new_entry(spec, store_id)
+            key = _url_key(str(entry["url"]))
+            if not key:
+                entry["blocker"] = "no merchant URL — cannot batch-verify"
+                self._log("move_blocked", offer_id=entry["offer_id"], reason=entry["blocker"])
+                result["plan"].append(entry)
+                continue
+            pending[key] = entry
+
+        while pending:
+            if should_stop is not None and should_stop():
+                result["stopped"] = "operator_stop"
+                self._log("run_stopped", reason=result["stopped"])
+                break
+            if limit is not None and result["moved"] >= limit:
+                result["stopped"] = "limit_reached"
+                self._log("run_stopped", reason=result["stopped"])
+                break
+            if self.guard.snapshot().get("blocked"):
+                result["stopped"] = "ten_consecutive_failures"
+                self._log("run_stopped", reason=result["stopped"])
+                break
+
+            # Fresh PROVEN scan → locate every remaining offer (reflow-safe). A
+            # feed/CDP error here is before any write this round → clean abort.
+            try:
+                index, by_url = self._full_source_scan(ctx)
+            except FEED_UNREADABLE_EXCS as exc:
+                result["aborted"] = "feed_unreadable"
+                self._log("aborted", reason=f"source feed scan failed closed: {exc}")
+                break
+            ctx["index"], ctx["by_url"] = index, by_url
+
+            # Group remaining offers by (current page, target list). An offer gone
+            # from the source is an idempotent skip (already moved) — proven by
+            # this full scan, so it is not an unscanned-tail false absence.
+            groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
+            for key in list(pending):
+                entry = pending[key]
+                row = by_url.get(key)
+                if row is None:
+                    entry["skipped"] = "not on source list (already moved?) — proven by full scan"
+                    self._log("move_skipped", offer_id=entry["offer_id"], reason=entry["skipped"])
+                    result["plan"].append(entry)
+                    del pending[key]
+                    continue
+                entry["current_offer_id"] = row["offer_id"]
+                entry["page_url"] = row["page_url"]
+                groups.setdefault((row["page_url"], entry["target_list_id"]), []).append(entry)
+            if not groups:
+                break  # everything remaining is gone from the source
+
+            # Process ONE group per iteration; the loop re-scans before the next
+            # (each Apply reflows the feed, so later groups must be re-located).
+            (page_url, target_id), group = next(iter(groups.items()))
+            if limit is not None:
+                room = max(0, limit - result["moved"])
+                group = group[:room]
+                if not group:
+                    result["stopped"] = "limit_reached"
+                    self._log("run_stopped", reason=result["stopped"])
+                    break
+            self._move_group(page_url, target_id, group, ctx, result, pending)
+            if result.get("aborted"):
+                break
+            if self.offer_pacer is not None:
+                self.offer_pacer.wait()
+
+    def _move_group(self, page_url, target_id, group, ctx, result, pending) -> None:
+        """Register every offer of ONE source page, fire ONE Apply, verify the
+        group. Each handled offer is removed from ``pending``, appended to
+        ``result['plan']``, and its per-offer guard result recorded."""
+
+        def _done(entry, success, detail):
+            self.guard.record_result("move", f"move:{entry['offer_id']}", success, detail=detail)
+            result["plan"].append(entry)
+            pending.pop(_url_key(str(entry["url"])), None)
+
+        self.session.navigate(page_url)  # settle 3.0 for the interactive bulk form
+
+        # 1) Per-offer fresh-page identity re-check + register. ONLY cleanly
+        #    identity-checked, registered ids enter the Apply (never inject an id
+        #    that was not re-verified on THIS rendered page).
+        registered: list[tuple[dict[str, Any], str]] = []
+        for entry in group:
+            signature = f"move:{entry['offer_id']}"
+            if not self.guard.check("move", signature).allowed:
+                result["stopped"] = "guard_blocked"
+                self._log("run_stopped", reason=result["stopped"])
+                break  # leftover offers stay in pending, unattempted
+            present = self.session.bulk_row_present(entry["current_offer_id"])
+            if not (present.get("checkbox") and present.get("bulk_form")):
+                entry["ready"] = False
+                entry["blocker"] = "row/bulk-form not present at move time"
+                self._log("move_blocked", offer_id=entry["offer_id"], reason=entry["blocker"])
+                _done(entry, False, entry["blocker"])
+                continue
+            ok, reason = self._reverify_row(entry)
+            if not ok:
+                entry["ready"] = False
+                entry["blocker"] = reason
+                self._log("move_blocked", offer_id=entry["offer_id"], reason=reason)
+                _done(entry, False, reason)
+                continue
+            current_id = entry["current_offer_id"]  # _reverify_row may relocate by URL
+            reg = self.session.register_row(current_id)
+            entry["register"] = {"method": reg.get("method"), "registered": reg.get("registered")}
+            if not reg.get("registered"):
+                entry["ready"] = False
+                entry["blocker"] = "bulk[item][] registration failed — nothing submitted"
+                self._log("move_blocked", offer_id=entry["offer_id"], reason=entry["blocker"])
+                _done(entry, False, entry["blocker"])
+                continue
+            entry["ready"] = True
+            registered.append((entry, current_id))
+
+        if not registered:
+            return  # all handled/blocked, or the guard stopped the group
+
+        # 2) ONE set_bulk_list + ONE Apply for the whole registered group. A
+        #    read-back mismatch or an un-clicked Apply means NOTHING was written
+        #    → block the whole group before any verify (bounds a systemic
+        #    misroute: no Apply fires if bulk[list] didn't take).
+        set_value = self.session.set_bulk_list(target_id)
+        if set_value != str(target_id):
+            for entry, _cid in registered:
+                entry["ready"] = False
+                entry["blocker"] = f"bulk[list] reads {set_value!r} (target {target_id!r})"
+                self._log("move_blocked", offer_id=entry["offer_id"], reason=entry["blocker"])
+                _done(entry, False, entry["blocker"])
+            return
+
+        self._log("move_group_submitting", page_url=page_url, count=len(registered),
+                  offer_ids=[e["offer_id"] for e, _ in registered], target_list_id=target_id)
+        apply_click = self.session.click_apply()
+        if apply_click.get("status") != "CLICKED":
+            for entry, _cid in registered:
+                entry["ready"] = False
+                entry["blocker"] = "Apply not clicked — move not submitted"
+                self._log("move_blocked", offer_id=entry["offer_id"], reason=entry["blocker"])
+                _done(entry, False, entry["blocker"])
+            return
+
+        # The Apply fired: every registered id is now IN FLIGHT (written).
+        result["move_attempts"] += len(registered)
+        self._log("move_group_submitted", page_url=page_url, count=len(registered),
+                  target_list_id=target_id)
+        if self.post_apply_settle:
+            time.sleep(self.post_apply_settle)
+
+        # 3) Verify the GROUP. Source: ONE proven full scan — an id/URL absent
+        #    from it genuinely left the feed (dual key). A feed/CDP error now
+        #    leaves the N written offers UNKNOWN (fail-closed), never "moved".
+        try:
+            index, by_url = self._full_source_scan(ctx)
+        except FEED_UNREADABLE_EXCS as exc:
+            detail = ("feed/CDP error after Apply — offer state UNKNOWN, verify the move by "
+                      f"hand on AKS before any retry: {type(exc).__name__}: {exc}")
+            for entry, _cid in registered:
+                entry["moved"] = False
+                entry["post_verify"] = detail
+                _done(entry, False, detail)
+            result["aborted"] = "feed_unreadable_mid_run"
+            self._log("run_stopped", reason=result["aborted"], detail=str(exc))
+            return
+        ctx["index"], ctx["by_url"] = index, by_url
+
+        # The source scan SUCCEEDED, so gone/still-on-source is deterministic for
+        # every registered offer — classify all of them in one pass. A still-on-
+        # source offer is a confirmed NOT-moved (never UNKNOWN); the gone ones go
+        # to the RV2 target proof.
+        to_target: list[tuple[dict[str, Any], str]] = []
+        for entry, current_id in registered:
+            key = _url_key(str(entry["url"]))
+            gone = (key not in by_url) and (current_id not in index)  # dual-key absence
+            entry["gone_from_source"] = gone
+            if not gone:
+                entry["moved"] = False
+                entry["post_verify"] = "STILL on source list after Apply — move NOT confirmed"
+                self._log("move_verified", offer_id=entry["offer_id"], moved=False)
+                _done(entry, False, entry["post_verify"])
+            else:
+                to_target.append((entry, current_id))
+
+        # RV2 per gone offer. A target-list scan error is fail-closed for the
+        # WHOLE remaining in-flight group: the current offer AND every gone offer
+        # after it are forced to UNKNOWN + recorded (the Apply already wrote them
+        # — none may silently vanish from the plan/guard/ledger), then abort.
+        for i, (entry, current_id) in enumerate(to_target):
+            try:
+                on_target = self._verify_on_target(
+                    entry["url"], ctx["store_id"], target_id, ctx["available"], ctx["max_pages"])
+            except FEED_UNREADABLE_EXCS as exc:
+                detail = ("target-list scan error after Apply — offer state UNKNOWN, verify by "
+                          f"hand: {type(exc).__name__}: {exc}")
+                for e2, _c2 in to_target[i:]:
+                    e2["moved"] = False
+                    e2["post_verify"] = detail
+                    _done(e2, False, detail)
+                result["aborted"] = "feed_unreadable_mid_run"
+                self._log("run_stopped", reason=result["aborted"], detail=str(exc))
+                return
+            entry["on_target"] = on_target
+            entry["moved"] = bool(on_target)
+            entry["post_verify"] = ("gone from source + present on target list" if on_target
+                                    else "left source but NOT found on target list — verify by hand")
+            if on_target:
+                result["moved"] += 1
+            self._log("move_verified", offer_id=entry["offer_id"],
+                      moved=entry["moved"], on_target=on_target)
+            _done(entry, entry["moved"], entry["post_verify"])

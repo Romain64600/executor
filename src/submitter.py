@@ -362,6 +362,7 @@ class _SubmitterBase:
 
     def _scan_feed(self, store_id, feed_page, available, max_pages,
                    stop_on: str | None = None, stop_on_url: str | None = None,
+                   full_coverage: bool = False,
                    ) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]], bool]:
         """Walk the feed pages building offer_id → row details AND
         merchant-url-path (`_url_key`) → current row. Both maps carry the full
@@ -387,6 +388,13 @@ class _SubmitterBase:
         must carry the past-the-end/empty-queue markers, and exhausting
         ``max_pages`` with the nav advertising MORE pages raises
         :class:`FeedScanError` instead of silently truncating coverage.
+
+        ``full_coverage`` (no ``stop_on``): index the WHOLE feed with the same
+        proven-end discipline as the stop_on path — the 2-empty-new-id early
+        terminate is disabled, so the returned maps are a COMPLETE membership
+        snapshot (a batched move's set-wise "gone from source" proof needs this;
+        the plain early terminate could call an offer on an unscanned tail page
+        absent — audit 2026-07-28). ``found`` is always False in this mode.
         """
         index: dict[str, dict[str, str]] = {}
         by_url: dict[str, dict[str, str]] = {}
@@ -431,7 +439,7 @@ class _SubmitterBase:
             ):
                 found = True
                 break
-            if stop_on is None and stop_on_url is None:
+            if stop_on is None and stop_on_url is None and not full_coverage:
                 if new == 0:
                     empty += 1
                     if empty >= 2:
