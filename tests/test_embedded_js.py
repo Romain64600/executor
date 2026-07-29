@@ -70,9 +70,6 @@ TEMPLATES = {
     "submit._TRUSTED_CLEANUP_JS": (submit_session._TRUSTED_CLEANUP_JS, None),
     "submit._TARGETS_READBACK_JS": (submit_session._TARGETS_READBACK_JS, None),
     "login._DASHBOARD_MARKER_JS": (login_session._DASHBOARD_MARKER_JS, None),
-    "login._LOGIN_FORM_FIELDS_JS": (login_session._LOGIN_FORM_FIELDS_JS, None),
-    "login._TWOFA_FIELD_JS": (login_session._TWOFA_FIELD_JS, None),
-    "login._LOGIN_ERROR_JS": (login_session._LOGIN_ERROR_JS, None),
 }
 
 

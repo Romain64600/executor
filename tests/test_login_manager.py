@@ -195,6 +195,30 @@ class ApplyCookiesTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "login_busy")
 
 
+class VerifyDashboardTests(unittest.TestCase):
+    """The kept LoginSession.verify_dashboard — session proof needs BOTH the
+    wp-admin URL and the admin toolbar node (post-cookie-injection check)."""
+
+    def _session(self, href, has_bar):
+        from src.login_session import LoginSession
+        s = LoginSession.__new__(LoginSession)   # no CDP __init__
+        s.evaluate_readonly = lambda js: (href if "location.href" in js else has_bar)
+        return s
+
+    def test_logged_in_needs_url_and_dom(self):
+        v = self._session("https://www.allkeyshop.com/blog/wp-admin/index.php", "1").verify_dashboard()
+        self.assertTrue(v["ok"] and v["url_ok"] and v["dom_ok"])
+
+    def test_login_page_url_not_ok(self):
+        self.assertFalse(self._session("https://www.allkeyshop.com/blog/wp-login.php", "1").verify_dashboard()["ok"])
+
+    def test_no_toolbar_not_ok(self):
+        v = self._session("https://www.allkeyshop.com/blog/wp-admin/", "").verify_dashboard()
+        self.assertFalse(v["ok"])
+        self.assertTrue(v["url_ok"])
+        self.assertFalse(v["dom_ok"])
+
+
 class ScrubTests(unittest.TestCase):
     def test_scrub_drops_secret_keys(self):
         out = _scrub({"status": "logged_in", "value": "x", "cookies": [1],

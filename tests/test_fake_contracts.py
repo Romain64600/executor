@@ -15,7 +15,6 @@ These tests pin the contract mechanically:
 import inspect
 import unittest
 
-from src.login_session import LoginSession
 from src.submit_session import SubmitSession, WriteSubmitSession
 
 from tests.test_submitter import (
@@ -24,7 +23,6 @@ from tests.test_submitter import (
     ReflowWriteSession,
     ReimportingWriteSession,
 )
-from tests.test_login_session import FakeLoginSession
 
 
 # Transport/lifecycle plumbing the fakes deliberately do not model.
@@ -84,11 +82,6 @@ class SubmitSessionContractTests(unittest.TestCase):
 
     def test_reimporting_session_matches_real(self):
         _check_contract(self, ReimportingWriteSession, WriteSubmitSession)
-
-
-class LoginSessionContractTests(unittest.TestCase):
-    def test_fake_login_session_matches_real(self):
-        _check_contract(self, FakeLoginSession, LoginSession)
 
 
 if __name__ == "__main__":

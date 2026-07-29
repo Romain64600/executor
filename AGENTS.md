@@ -21,11 +21,11 @@ You must not:
 - use Browserbase;
 - use Playwright fallback;
 - launch VPN;
-- ask for a 2FA code before it is visible and ready to submit immediately
-  (Stage 0b login, `docs/LOGIN_SPEC.md` — the one narrow, deterministic
-  exception to "no ad-hoc browser actions"; it is still forbidden to
-  pre-request a code, retry a wrong one, or run this stage without Romain's
-  explicit go).
+- self-trigger or automate the session re-auth (AKS is social-login only now,
+  so re-auth is COOKIE TRANSFER — `docs/LOGIN_SPEC.md`,
+  `src/admin/login_manager.py` — driven only by Romain's explicit submit in
+  the console; a `NotLoggedInError` from another stage stays a fail-closed STOP,
+  never a re-auth trigger).
 
 ## Known infrastructure
 
@@ -57,8 +57,8 @@ https://www.allkeyshop.com/blog/
 - fire-and-forget submission
 - using old candidates from memory
 - using previous feed state
-- asking for a 2FA code before the field is visible and ready (see
-  `docs/LOGIN_SPEC.md` for the one authorized, deterministic login stage)
+- self-triggering the session re-auth (cookie transfer, `docs/LOGIN_SPEC.md` —
+  Romain's explicit submit in the console only)
 - changing process after Romain says "go"
 
 ## Required architecture
@@ -80,12 +80,14 @@ Build in stages:
 8. JSONL logs for every action.
 9. Dry-run mode by default.
 
-Stage 0b — Login/2FA (`docs/LOGIN_SPEC.md`, `scripts/00b_login.py`): the one
-stage that touches credentials. Narrowly scoped, deterministic (official CDP
-only, no ad-hoc browser action), Romain's explicit go only, one attempt each
-for the password and the 2FA code — never a retry loop. Never
-self-triggered: a `NotLoggedInError` from another stage stays a fail-closed
-STOP + error report.
+Session re-auth (`docs/LOGIN_SPEC.md`, `src/admin/login_manager.py`): AKS
+disabled password login (social/OAuth only), so re-auth is COOKIE TRANSFER —
+Romain completes the social login in his own browser and pastes the WP session
+cookies into the console, which injects them (official CDP only) and proves the
+session. The one flow that touches session secrets: cookie VALUES are never
+logged/echoed/stored, injection is restricted to `allkeyshop.com`, Romain's
+explicit submit only. Never self-triggered: a `NotLoggedInError` from another
+stage stays a fail-closed STOP + error report.
 
 ## Fail-closed behavior
 
@@ -124,5 +126,5 @@ No degraded mode.
 - Scripts must be CLI-friendly.
 - Outputs should be JSON or JSONL where practical.
 - Human reports go in Markdown.
-- Never store passwords or 2FA codes.
+- Never store passwords, 2FA codes, or session cookies.
 - Never commit secrets.
