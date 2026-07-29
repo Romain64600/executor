@@ -26,10 +26,16 @@ from src.submitter import _url_key
 
 LEDGER_FILE = "sort_ledger.json"
 # Outcomes that mean "we've dealt with this offer — don't re-attempt it in
-# incremental mode". A move succeeded, the offer already left the list, or it is
-# a dud at this URL (identity contradicted / Apply didn't take). ``--full`` (or
-# the operator clearing the ledger) is the way to retry them.
-RESOLVED_STATUSES = ("moved", "already_gone", "identity_blocked", "apply_not_confirmed")
+# incremental mode": the move succeeded, the offer already left the list, or its
+# URL now resolves to a DIFFERENT product (identity contradicted — never self-
+# heals). Everything else is TRANSIENT and stays out of the ledger so the next
+# incremental run retries it — a not-present/vanished row (a parallel operator
+# reflowing the feed), a bulk/register/Apply glitch, a feed-error UNKNOWN, or an
+# Apply-not-confirmed still-on-source offer. ``apply_not_confirmed`` is kept
+# recognised (older ledgers may carry it) but is NO LONGER resolved: it always
+# meant "retry" (see test_persists_and_counts_tries), and treating it as resolved
+# was the transient-miss-skipped-forever bug the deferred window exposed.
+RESOLVED_STATUSES = ("moved", "already_gone", "identity_blocked")
 
 
 def ledger_path(root: Path | str) -> Path:

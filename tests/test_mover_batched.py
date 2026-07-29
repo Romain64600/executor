@@ -19,6 +19,7 @@ properties the simplification safety review required:
 import re
 import unittest
 
+from src.cdp_session import CdpCommandError
 from src.mover import Mover
 from src.step_guard import StepGuard
 from src.submitter import _SubmitterBase, _url_key
@@ -47,7 +48,7 @@ class FakeFeed:
 
     def __init__(self, lists, page_size=2, *, fail_register=(), swallow_target=(),
                  bulk_list_lies=False, break_after_apply=False, break_target_scan=False,
-                 rename_on_page=None):
+                 rename_on_page=None, raise_reads_after_apply=None, raise_on_apply=False):
         self.lists = {k: [dict(o) for o in v] for k, v in lists.items()}
         self.page_size = page_size
         self.fail_register = set(fail_register)
@@ -56,6 +57,10 @@ class FakeFeed:
         self.break_after_apply = break_after_apply
         self.break_target_scan = break_target_scan   # target-list reads unreadable after an Apply
         self.rename_on_page = rename_on_page or {}   # id -> new name (identity churn)
+        # Once apply_count reaches this, per-offer page reads RAISE (a transient CDP
+        # blip mid-pass) — distinct from break_after_apply, which returns empty reads.
+        self.raise_reads_after_apply = raise_reads_after_apply
+        self.raise_on_apply = raise_on_apply   # click_apply itself raises (Apply outcome UNKNOWN)
         self._fp = None
         self._page = 1
         self._url = ""
@@ -102,7 +107,13 @@ class FakeFeed:
             out.append(r)
         return out
 
+    def _maybe_raise_reads(self):
+        if (self.raise_reads_after_apply is not None
+                and self.apply_count >= self.raise_reads_after_apply):
+            raise CdpCommandError("transient CDP read failure mid-pass")
+
     def page_offer_rows(self):
+        self._maybe_raise_reads()
         return [] if self._read_broken() else self._rows()
 
     def feed_page_state(self):
@@ -114,6 +125,7 @@ class FakeFeed:
 
     # -- bulk form --
     def bulk_row_present(self, offer_id):
+        self._maybe_raise_reads()
         return {"checkbox": offer_id in {o["id"] for o in self._rows()}, "bulk_form": True}
 
     def register_row(self, offer_id):
@@ -128,6 +140,10 @@ class FakeFeed:
         return "WRONG" if self.bulk_list_lies else str(v)
 
     def click_apply(self):
+        if self.raise_on_apply:
+            # The Apply request failed mid-flight — it MAY have committed server-side,
+            # so the outcome of every registered id is genuinely UNKNOWN.
+            raise CdpCommandError("apply request failed mid-flight")
         self.apply_count += 1
         src = self.lists.get(self._fp, [])
         tgt = self.lists.setdefault(self._bulk_list, [])
@@ -143,9 +159,7 @@ class FakeFeed:
         return {"status": "CLICKED"}
 
 
-def _run(feed, specs, *, limit=None, page_size=None, max_pages=20):
-    if page_size is not None:
-        feed.page_size = page_size
+def _new_mover(feed):
     guard = StepGuard(max_attempts_per_signature=1, max_failures_per_signature=2,
                       max_consecutive_failures=10, max_failures_per_task=10 ** 9)
     mover = Mover(feed, guard=guard)
@@ -153,9 +167,15 @@ def _run(feed, specs, *, limit=None, page_size=None, max_pages=20):
     mover.empty_retry_wait_s = 0
     mover.feed_scan_settle = 0
     mover.feed_retry_pause = 0      # keep the transient-error retries instant in tests
-    return mover.run(run_id="t", store_id="38", plan=specs,
-                     source_feed_page="aks-merchant-feeds-%s" % SRC,
-                     max_pages=max_pages, limit=limit, batch=True)
+    return mover
+
+
+def _run(feed, specs, *, limit=None, page_size=None, max_pages=20, deferred=False):
+    if page_size is not None:
+        feed.page_size = page_size
+    return _new_mover(feed).run(run_id="t", store_id="38", plan=specs,
+                                source_feed_page="aks-merchant-feeds-%s" % SRC,
+                                max_pages=max_pages, limit=limit, batch=True, deferred=deferred)
 
 
 class BatchedMoverTests(unittest.TestCase):
@@ -209,6 +229,36 @@ class BatchedMoverTests(unittest.TestCase):
         for e in res["plan"]:
             self.assertFalse(e["moved"])
             self.assertIn("UNKNOWN", e["post_verify"])       # written but unverifiable
+
+    def test_batched_drive_error_is_caught_not_propagated(self):
+        # A feed/CDP raise ESCAPING a batched drive must be caught by run() and the
+        # partial result returned with aborted set — never propagated, or 09 breaks
+        # without capturing result and the in-flight plan is lost.
+        feed = FakeFeed({SRC: [_offer(1), _offer(2)]}, page_size=10)
+        mover = _new_mover(feed)
+
+        def boom(*a, **k):
+            raise CdpCommandError("drive blew up past every inner guard")
+
+        mover._register_apply_page = boom
+        res = mover.run(run_id="t", store_id="38", plan=[_spec(1), _spec(2)],
+                        source_feed_page="aks-merchant-feeds-%s" % SRC, max_pages=20,
+                        limit=None, batch=True)              # per-group path
+        self.assertEqual(res["aborted"], "feed_unreadable_mid_run")
+        self.assertEqual(res["moved"], 0)
+
+    def test_apply_call_raise_records_group_unknown(self):
+        # click_apply itself raises → the Apply MAY have committed, so every
+        # registered offer is recorded UNKNOWN (Fix B in _register_apply_page)
+        # before the error unwinds — not silently dropped.
+        feed = FakeFeed({SRC: [_offer(1), _offer(2)]}, page_size=10, raise_on_apply=True)
+        res = _run(feed, [_spec(1), _spec(2)])               # per-group path
+        self.assertEqual(res["aborted"], "feed_unreadable_mid_run")
+        self.assertEqual(res["moved"], 0)
+        self.assertEqual({e["offer_id"] for e in res["plan"]}, {"o1", "o2"})
+        for e in res["plan"]:
+            self.assertFalse(e["moved"])
+            self.assertIn("UNKNOWN", e["post_verify"])
 
     def test_bulk_list_mismatch_blocks_group_before_any_apply(self):
         feed = FakeFeed({SRC: [_offer(1), _offer(2)]}, page_size=10, bulk_list_lies=True)
@@ -466,6 +516,203 @@ class FullCoverageScanTests(unittest.TestCase):
         want = {_url_key("https://m/99")}
         with self.assertRaises(FeedScanError):
             sub._scan_feed("38", "aks-merchant-feeds-8", "all", 3, stop_on_urls=want)
+
+
+class DeferredBatchedTests(unittest.TestCase):
+    """P1.6: process a store's pages highest-first from ONE scan, verify the whole
+    store ONCE (deferred), reflow-safe."""
+
+    def _tgt_ids(self, feed):
+        return {o["id"] for o in feed.lists.get(TGT, [])}
+
+    def _run_deferred(self, feed, specs):
+        return _new_mover(feed).run(run_id="t", store_id="38", plan=specs,
+                                    source_feed_page="aks-merchant-feeds-%s" % SRC,
+                                    max_pages=20, limit=None, batch=True, deferred=True)
+
+    def test_moves_all_across_pages_with_two_source_scans_and_one_target_scan(self):
+        # 4 offers on 2 pages → highest-first, reflow-safe → all moved with ONE
+        # initial locate scan + ONE deferred verify scan (not ~2 per group), and
+        # ONE target scan for the whole store (vs one per group).
+        feed = FakeFeed({SRC: [_offer(i) for i in range(1, 5)]}, page_size=2)
+        mover = _new_mover(feed)
+        real = mover._full_source_scan
+        state = {"n": 0}
+        mover._full_source_scan = lambda ctx: (state.__setitem__("n", state["n"] + 1) or real(ctx))
+        res = mover.run(run_id="t", store_id="38", plan=[_spec(i) for i in range(1, 5)],
+                        source_feed_page="aks-merchant-feeds-%s" % SRC, max_pages=20,
+                        limit=None, batch=True, deferred=True)
+        self.assertEqual(res["moved"], 4)
+        self.assertEqual(self._tgt_ids(feed), {"o1", "o2", "o3", "o4"})
+        self.assertEqual(feed.lists[SRC], [])
+        self.assertEqual(state["n"], 2)            # ONE locate + ONE deferred verify
+        self.assertEqual(feed.target_scan_starts, 1)
+
+    def test_reflow_safe_highest_first(self):
+        # 6 offers over 3 pages — the real reflow (each Apply shrinks the source)
+        # must not drop any: highest-first keeps lower pages valid.
+        feed = FakeFeed({SRC: [_offer(i) for i in range(1, 7)]}, page_size=2)
+        res = self._run_deferred(feed, [_spec(i) for i in range(1, 7)])
+        self.assertEqual(res["moved"], 6)
+        self.assertEqual(self._tgt_ids(feed), {f"o{i}" for i in range(1, 7)})
+
+    def test_identity_mismatch_blocks_only_that_offer(self):
+        feed = FakeFeed({SRC: [_offer(1), _offer(2)]}, page_size=10,
+                        rename_on_page={"o1": "A DIFFERENT GAME"})
+        res = self._run_deferred(feed, [_spec(1), _spec(2)])
+        by_id = {e["offer_id"]: e for e in res["plan"]}
+        self.assertFalse(by_id["o1"]["moved"])
+        self.assertIn("identity mismatch", by_id["o1"]["blocker"])
+        self.assertTrue(by_id["o2"]["moved"])
+        self.assertEqual(res["moved"], 1)
+
+    def test_already_gone_skipped(self):
+        feed = FakeFeed({SRC: [_offer(1)]}, page_size=10)
+        res = self._run_deferred(feed, [_spec(1), _spec(3)])
+        by_id = {e["offer_id"]: e for e in res["plan"]}
+        self.assertTrue(by_id["o1"]["moved"])
+        self.assertIn("already moved", by_id["o3"]["skipped"])
+
+    def test_deferred_verify_error_marks_whole_store_unknown(self):
+        from src.submitter import FeedScanError
+        feed = FakeFeed({SRC: [_offer(1), _offer(2)]}, page_size=10)
+        mover = _new_mover(feed)
+        real = mover._full_source_scan
+        state = {"n": 0}
+
+        def flaky(ctx):
+            state["n"] += 1
+            if state["n"] >= 2:          # 1=locate ok; the deferred verify keeps failing
+                raise FeedScanError("verify blip that never clears")
+            return real(ctx)
+
+        mover._full_source_scan = flaky
+        res = mover.run(run_id="t", store_id="38", plan=[_spec(1), _spec(2)],
+                        source_feed_page="aks-merchant-feeds-%s" % SRC, max_pages=20,
+                        limit=None, batch=True, deferred=True)
+        self.assertEqual(res["aborted"], "feed_unreadable_mid_run")
+        self.assertEqual(res["moved"], 0)
+        for e in res["plan"]:
+            self.assertFalse(e["moved"])
+            self.assertIn("UNKNOWN", e["post_verify"])   # the whole in-flight store set
+
+    def test_deferred_verify_source_error_marks_MULTIPAGE_store_unknown(self):
+        # The scenario deferred exists for: offers Applied across SEVERAL pages
+        # accumulate into registered_all, then the ONE deferred source scan fails →
+        # every offer from every page must be UNKNOWN (none silently dropped).
+        from src.submitter import FeedScanError
+        feed = FakeFeed({SRC: [_offer(i) for i in range(1, 5)]}, page_size=2)   # 2 pages
+        mover = _new_mover(feed)
+        real = mover._full_source_scan
+        state = {"n": 0}
+
+        def flaky(ctx):
+            state["n"] += 1
+            if state["n"] >= 2:            # 1=locate ok; the Applies don't scan; verify fails
+                raise FeedScanError("deferred verify blip that never clears")
+            return real(ctx)
+
+        mover._full_source_scan = flaky
+        res = mover.run(run_id="t", store_id="38", plan=[_spec(i) for i in range(1, 5)],
+                        source_feed_page="aks-merchant-feeds-%s" % SRC, max_pages=20,
+                        limit=None, batch=True, deferred=True)
+        self.assertEqual(res["aborted"], "feed_unreadable_mid_run")
+        self.assertEqual(res["moved"], 0)
+        self.assertEqual(feed.apply_count, 2)              # both pages really Applied
+        self.assertEqual(res["move_attempts"], 4)          # all 4 in flight
+        self.assertEqual({e["offer_id"] for e in res["plan"]}, {"o1", "o2", "o3", "o4"})
+        for e in res["plan"]:
+            self.assertFalse(e["moved"])
+            self.assertIn("UNKNOWN", e["post_verify"])
+
+    def test_deferred_target_scan_error_marks_MULTIPAGE_store_unknown(self):
+        # After multi-page Applies the deferred source scan proves everything gone,
+        # but the ONE target (RV2) scan is unreadable → the whole in-flight set is
+        # UNKNOWN (left source, on-target unprovable), not falsely scored moved.
+        feed = FakeFeed({SRC: [_offer(i) for i in range(1, 5)]}, page_size=2,
+                        break_target_scan=True)
+        res = self._run_deferred(feed, [_spec(i) for i in range(1, 5)])
+        self.assertEqual(res["aborted"], "feed_unreadable_mid_run")
+        self.assertEqual(res["moved"], 0)
+        self.assertEqual(feed.apply_count, 2)
+        self.assertEqual({e["offer_id"] for e in res["plan"]}, {"o1", "o2", "o3", "o4"})
+        for e in res["plan"]:
+            self.assertFalse(e["moved"])
+            self.assertTrue(e["gone_from_source"])         # source proof succeeded
+            self.assertIn("UNKNOWN", e["post_verify"])     # but target unprovable
+
+    def test_mid_pass_error_marks_all_already_applied_offers_unknown(self):
+        # Bug 2 (review): pages fire highest-first; after an EARLIER page's Apply
+        # lands offers, a later page's read blips (CdpCommandError). Those already-
+        # Applied offers accumulate un-verified — they must be forced UNKNOWN +
+        # recorded + abort, NEVER silently dropped when the error unwinds run().
+        feed = FakeFeed({SRC: [_offer(i) for i in range(1, 5)]}, page_size=2,
+                        raise_reads_after_apply=1)   # 1st page applies, 2nd page's read raises
+        res = self._run_deferred(feed, [_spec(i) for i in range(1, 5)])
+        self.assertEqual(res["aborted"], "feed_unreadable_mid_run")
+        self.assertEqual(res["moved"], 0)
+        # The highest page (o3,o4) Applied before the blip → recorded UNKNOWN, not lost.
+        applied = [e for e in res["plan"] if e["offer_id"] in {"o3", "o4"}]
+        self.assertEqual(len(applied), 2)
+        for e in applied:
+            self.assertFalse(e["moved"])
+            self.assertIn("UNKNOWN", e["post_verify"])
+        # o1,o2 were never reached (the blip aborted the pass before their page) —
+        # so they are NOT recorded at all: still on source, un-ledgered, a re-run
+        # retries them. The invariant is that no APPLIED offer is silently dropped,
+        # not that un-attempted offers get a phantom record.
+        self.assertEqual({e["offer_id"] for e in res["plan"]}, {"o3", "o4"})
+
+    def test_true_identity_mismatch_is_terminal_transient_miss_is_not(self):
+        # The ledger's terminal/transient split hinges on this flag: a real
+        # URL→different-product contradiction sets identity_mismatch (→ permanent
+        # skip); a row merely gone from the page this pass does NOT (→ retried).
+        feed = FakeFeed({SRC: [_offer(1)]}, page_size=10, rename_on_page={"o1": "OTHER GAME"})
+        mover = _new_mover(feed)
+        entry = {"offer_id": "o1", "current_offer_id": "o1", "name": "Game o1",
+                 "url": "https://g2a/o1"}
+        mover.session.navigate("aks-merchant-feeds-%s" % SRC)
+        ok, reason = mover._reverify_row(entry)
+        self.assertFalse(ok)
+        self.assertIn("identity mismatch", reason)
+        self.assertTrue(entry.get("identity_mismatch"))          # terminal
+
+        gone = {"offer_id": "z9", "current_offer_id": "z9", "name": "Vanished",
+                "url": "https://g2a/z9"}                          # not on the page at all
+        ok2, reason2 = mover._reverify_row(gone)
+        self.assertFalse(ok2)
+        self.assertIn("vanished", reason2)
+        self.assertFalse(gone.get("identity_mismatch"))          # transient → retriable
+
+    def test_deferred_partitions_verify_by_target_list(self):
+        # Defensive parity: a deferred set spanning TWO target lists must RV2 each
+        # offer against ITS OWN target (the per-group path does). Before the fix a
+        # single last-seen target_id was used → the other list's offer scored a
+        # false NOT-moved. list_options maps Blacklist→8, "Gift cards"→21.
+        feed = FakeFeed({SRC: [_offer(1), _offer(2)]}, page_size=10)
+        specs = [
+            {"offer_id": "o1", "name": "Game 1", "url": "https://m/1",
+             "target_list_label": "Blacklist"},
+            {"offer_id": "o2", "name": "Game 2", "url": "https://m/2",
+             "target_list_label": "Gift cards"},
+        ]
+        res = self._run_deferred(feed, specs)
+        by_id = {e["offer_id"]: e for e in res["plan"]}
+        self.assertTrue(by_id["o1"]["moved"])
+        self.assertTrue(by_id["o2"]["moved"])
+        self.assertEqual(res["moved"], 2)
+        self.assertEqual({o["id"] for o in feed.lists["8"]}, {"o1"})    # its own list
+        self.assertEqual({o["id"] for o in feed.lists["21"]}, {"o2"})
+
+    def test_deferred_falls_back_to_per_group_when_limit_set(self):
+        # deferred + a canary limit must NOT use the deferred path (tight verify
+        # stays for canaries) — the run still moves within the limit.
+        feed = FakeFeed({SRC: [_offer(1), _offer(2)]}, page_size=10)
+        res = _new_mover(feed).run(run_id="t", store_id="38", plan=[_spec(1), _spec(2)],
+                                   source_feed_page="aks-merchant-feeds-%s" % SRC, max_pages=20,
+                                   limit=1, batch=True, deferred=True)
+        self.assertEqual(res["moved"], 1)
+        self.assertEqual(res["stopped"], "limit_reached")
 
 
 class ScanRetryTests(unittest.TestCase):

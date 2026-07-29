@@ -215,6 +215,20 @@ class SortMoveCliGateTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("canary", out)
 
+    def test_deferred_requires_batch_safe(self):
+        code, out = self._run_cli("--list", "8", "--execute", "--mode", "learning",
+                                  "--batch", "--limit", "2", "--deferred")
+        self.assertEqual(code, 2)
+        self.assertIn("--deferred", out)
+
+    def test_deferred_rejects_limit(self):
+        # --deferred + --limit is contradictory (deferred = whole batch); the gate
+        # must reject it, not silently ignore --deferred and fall back to per-group.
+        code, out = self._run_cli("--list", "8", "--execute", "--mode", "safe",
+                                  "--batch", "--i-authorize-batch", "--limit", "3", "--deferred")
+        self.assertEqual(code, 2)
+        self.assertIn("--limit", out)
+
     def test_dry_run_reaches_invariants_gate(self):
         code, out = self._run_cli("--list", "8")        # dry-run default
         self.assertEqual(code, 2)
@@ -237,6 +251,37 @@ class SortMoveCliGateTests(unittest.TestCase):
             code = MOD._main()
         self.assertEqual(code, 0)                 # ran to completion, no crash
         self.assertIn("MOVED", out.getvalue())    # the display path executed
+
+
+class LedgerStatusTests(unittest.TestCase):
+    """The resolved-offers ledger must record ONLY terminal outcomes — a transient
+    miss left in would permanently skip a legitimate offer (the P1.6 deferred
+    reflow regression)."""
+
+    def test_terminal_outcomes_are_recorded(self):
+        self.assertEqual(MOD._ledger_status({"moved": True}), "moved")
+        self.assertEqual(MOD._ledger_status({"skipped": "already moved"}), "already_gone")
+        # A true URL→different-product contradiction never self-heals → resolved.
+        self.assertEqual(
+            MOD._ledger_status({"identity_mismatch": True, "ready": False,
+                                "blocker": "fresh-page identity mismatch (name) — NOT moving"}),
+            "identity_blocked")
+
+    def test_transient_misses_are_left_out_so_they_retry(self):
+        # Each of these is recoverable on a later run — must NOT enter the ledger.
+        for entry in (
+            {"blocker": "row/bulk-form not present at move time", "ready": False},   # reflow churn
+            {"blocker": "row id vanished from the page (re-import?) — URL not here either",
+             "ready": False},                                                        # vanished this pass
+            {"blocker": "bulk[item][] registration failed — nothing submitted", "ready": False},
+            {"blocker": "Apply not clicked — move not submitted", "ready": False},
+            {"moved": False, "ready": True, "post_verify": "feed/CDP error after Apply — "
+             "offer state UNKNOWN, verify the move by hand"},                        # Bug 2 UNKNOWN
+            {"moved": False, "ready": True,
+             "post_verify": "STILL on source list after Apply — move NOT confirmed"},
+        ):
+            self.assertIsNone(MOD._ledger_status(entry),
+                              f"{entry.get('blocker') or entry.get('post_verify')!r} must retry")
 
 
 if __name__ == "__main__":

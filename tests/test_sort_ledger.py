@@ -28,9 +28,11 @@ class SortLedgerTests(unittest.TestCase):
             {"url": "https://m/other", "offer_id": "5", "list_id": "8", "status": "weird"},
         )
         rk = sort_ledger.resolved_keys(sort_ledger.load(self.root))
-        for slug in ("moved", "gone", "blocked", "dud"):
+        for slug in ("moved", "gone", "blocked"):          # terminal → skipped
             self.assertIn(_url_key(f"https://m/{slug}"), rk)
-        self.assertNotIn(_url_key("https://m/other"), rk)  # non-resolved status
+        # apply_not_confirmed + any unknown status are TRANSIENT → retried, not skipped.
+        self.assertNotIn(_url_key("https://m/dud"), rk)
+        self.assertNotIn(_url_key("https://m/other"), rk)
 
     def test_keyed_by_url_ignores_id_and_no_url(self):
         self._rec({"url": "https://m/x", "offer_id": "99", "status": "moved"},

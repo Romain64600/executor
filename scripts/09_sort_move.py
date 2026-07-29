@@ -96,6 +96,26 @@ def derive_max_pages(explicit: int | None, run_dir: Path) -> tuple[int, str]:
     return derived, f"auto: feed advertises {feed_pages} page(s) → max_pages {derived}"
 
 
+def _ledger_status(e: dict) -> str | None:
+    """The resolved-offers ledger status for a plan entry, or None to leave it OUT
+    (the next incremental run SKIPS ledgered URLs, so only TERMINAL outcomes may
+    enter). Terminal = moved, proven-gone, or an identity contradiction (the fresh
+    row fails the (name, url) identity check — the id/slug now resolves to a
+    different product). Every transient miss — row not present / id vanished at
+    move time (a parallel operator reflowing the feed), a bulk/register/Apply
+    glitch, a feed-error UNKNOWN, still-on-source — is left out so the next run
+    RE-checks it. Regression guard: the P1.6 deferred per-store window turned
+    benign reflow into a permanent "identity_blocked" skip that lost a legit offer
+    for good."""
+    if e.get("moved"):
+        return "moved"
+    if e.get("skipped"):
+        return "already_gone"
+    if e.get("identity_mismatch"):
+        return "identity_blocked"
+    return None
+
+
 def _status(entry: dict, write: bool) -> str:
     if entry.get("skipped"):
         return f"SKIP ({entry['skipped']})"
@@ -145,6 +165,11 @@ def _main() -> int:
                              "faster). --mode safe --batch needs a MULTI-ITEM canary authorization "
                              "(run --mode learning --batch --limit 2 first, which fires a >=2-item "
                              f"Apply, capped at {CANARY_BATCH_LIMIT}).")
+    parser.add_argument("--deferred", action="store_true",
+                        help="P1.6: with --batch --mode safe, verify a store's moves ONCE (pages "
+                             "processed highest-first) instead of per group — ~G× fewer feed scans "
+                             "on big multi-page stores. Widens the parallel-operator attribution "
+                             "window to per-store (still identity- + RV2-gated). Full batch only.")
     parser.add_argument("--full", action="store_true",
                         help="OLD mode: process EVERY plan offer, ignoring the resolved-offers "
                              "ledger. Use when delete-then-reimport is re-enabled (ids rotate, "
@@ -176,6 +201,21 @@ def _main() -> int:
                 f"--mode {args.mode} is capped at a canary of {CANARY_LIMIT} "
                 f"(--limit {args.limit} would widen it). Use --mode safe for the full list.")}, indent=2))
             return 2
+
+    if args.deferred and not (args.batch and args.mode == "safe"):
+        print(json.dumps({"aborted": True, "reason": (
+            "--deferred requiert --batch --mode safe (optimisation du lot complet batché ; "
+            "un canary garde la vérif par groupe)")}, indent=2))
+        return 2
+    if args.deferred and args.limit is not None:
+        # --deferred defers the source+target verify to ONCE PER STORE; that only
+        # holds for the WHOLE batch. With a --limit it would silently fall back to
+        # per-group (run() only takes the deferred path when limit is None) — reject
+        # the contradiction instead of ignoring the flag.
+        print(json.dumps({"aborted": True, "reason": (
+            "--deferred est incompatible avec --limit (vérif différée = lot complet ; "
+            "un lot borné garde la vérif par groupe — retire --limit ou --deferred)")}, indent=2))
+        return 2
 
     # Incremental (default): skip offers already resolved in a prior run, keyed by
     # stable merchant URL. --full ignores the ledger (old delete/reimport mode).
@@ -296,7 +336,7 @@ def _main() -> int:
                                        store_id=store, plan=entries, source_feed_page=source_list,
                                        available=args.available, max_pages=max_pages,
                                        limit=remaining, should_stop=lambda: _STOP,
-                                       batch=args.batch)
+                                       batch=args.batch, deferred=args.deferred)
                 except FEED_UNREADABLE_EXCS as exc:
                     agg["aborted"] = f"feed_unreadable (store {store}): {exc}"
                     break
@@ -396,28 +436,21 @@ def _main() -> int:
         "list_id": args.list_id, "label": label, "mode": args.mode, "write": write,
         "moved": agg["moved"], "attempts": agg["move_attempts"], "stores": len(agg["stores"]),
         "already_gone": sum(1 for e in agg["plan"] if e.get("skipped")),
-        "identity_blocked": sum(1 for e in agg["plan"] if e.get("blocker") and not e.get("ready")),
+        "identity_blocked": sum(1 for e in agg["plan"] if e.get("identity_mismatch")),
+        "blocked_retriable": sum(1 for e in agg["plan"]
+                                 if e.get("blocker") and not e.get("ready")
+                                 and not e.get("identity_mismatch")),
         "apply_not_confirmed": sum(1 for e in agg["plan"] if e.get("ready") and not e.get("moved")),
         "stopped": agg["stopped"], "aborted": agg["aborted"],
     }
     with (run_dir / "sort_move_history.jsonl").open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(hist, ensure_ascii=False) + "\n")
 
-    # Update the resolved-offers ledger (write runs only): every offer we actually
-    # touched — moved, found already gone, identity-blocked, or Apply-not-confirmed
-    # — is recorded by URL so the NEXT incremental run skips it (no re-attempting
-    # duds every cycle). --full ignores the ledger but still records outcomes.
+    # Update the resolved-offers ledger (write runs only): only TERMINAL outcomes
+    # (moved, proven-gone, true identity contradiction — see _ledger_status) are
+    # recorded by URL so the NEXT incremental run skips them; transient misses stay
+    # out and get retried. --full ignores the ledger but still records outcomes.
     if write:
-        def _ledger_status(e):
-            if e.get("moved"):
-                return "moved"
-            if e.get("skipped"):
-                return "already_gone"
-            if e.get("blocker") and not e.get("ready"):
-                return "identity_blocked"
-            if e.get("ready") and not e.get("moved"):
-                return "apply_not_confirmed"
-            return None
         ledger_entries = [
             {"url": e.get("url"), "offer_id": e.get("current_offer_id") or e.get("offer_id"),
              "list_id": args.list_id, "status": _ledger_status(e)}
