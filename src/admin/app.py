@@ -52,6 +52,7 @@ from src.admin.learning_io import (
     save_annotations,
 )
 from src.admin.validation_io import ValidationIOError, apply_overrides_and_validate
+from src.admin.login_manager import LoginError, LoginManager
 from src.matcher import PLATFORM_LABEL, REGION_IDS
 from src.validation import candidate_fingerprint
 
@@ -105,6 +106,7 @@ class AppState:
         self.runs_dir = runs_dir or (repo_root / "runs")
         self.log_dir = log_dir or (repo_root / "logs")
         self.manager = manager or SubmitManager(repo_root, log_dir=self.log_dir)
+        self.login = LoginManager(repo_root)
         self.validation_lock = threading.Lock()
 
 
@@ -222,6 +224,9 @@ class AdminHandler(BaseHTTPRequestHandler):
         if path == "/api/sort/runs":
             return self._send_json(200, {"runs": list_sort_runs(self.state.runs_dir),
                                          "busy": self.state.manager.busy()})
+
+        if path == "/api/login/status":
+            return self._send_json(200, self.state.login.status())
 
         if path == "/api/meta":
             return self._send_json(
@@ -377,6 +382,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             self._send_error_json(exc.http_status, exc.code, exc.message, exc.detail)
         except SubmitStartError as exc:
             self._send_error_json(exc.http_status, exc.code, exc.message, exc.detail)
+        except LoginError as exc:
+            self._send_error_json(exc.http_status, exc.code, exc.message)
         except Exception as exc:  # fail-closed: surfaced verbatim, never swallowed
             self._send_error_json(500, "internal", f"{type(exc).__name__}: {exc}")
 
@@ -395,6 +402,16 @@ class AdminHandler(BaseHTTPRequestHandler):
             mp = _parse_int(body.get("max_pages"))
             result = self.state.manager.start_sort_scan(by=by, max_pages=mp if mp is not None else 800)
             return self._send_json(200, result)
+        if path == "/api/login/start":
+            # Stage 0b on the operator's explicit click — password from the server
+            # env, never the request. Runs in the background; poll /api/login/status.
+            self._json_body()  # enforce JSON body (CSRF shape), content ignored
+            return self._send_json(200, self.state.login.start(by=str(self._basic_user() or "operateur")))
+        if path == "/api/login/2fa":
+            # The 2FA code is passed STRAIGHT to the login thread — never logged,
+            # never echoed back, never stored (LOGIN_SPEC.md).
+            code = str(self._json_body().get("code") or "")
+            return self._send_json(200, self.state.login.submit_2fa(code))
 
         match = RUN_ROUTE.match(path)
         if match:

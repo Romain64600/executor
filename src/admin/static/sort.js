@@ -421,4 +421,58 @@ setInterval(refreshBusy, 4000);   // keep the busy indicator live across tabs/ru
 $("#modal-close").addEventListener("click", () => { stopPoll(); $("#offers-modal").close(); });
 $("#offers-modal").addEventListener("click", (e) => { if (e.target.id === "offers-modal") { stopPoll(); e.target.close(); } });
 
+// ---- Reconnexion (Stage 0b) : mot de passe côté serveur, 2FA saisi ici ------
+let LOGIN_POLL = null;
+function loginMsg(txt, cls) { const m = $("#login-msg"); m.textContent = txt; m.className = "login-msg" + (cls ? " " + cls : ""); }
+function stopLoginPoll() { if (LOGIN_POLL) { clearInterval(LOGIN_POLL); LOGIN_POLL = null; } }
+function show2fa(on) { $("#login-2fa-row").classList.toggle("hidden", !on); if (on) { const i = $("#login-2fa"); i.value = ""; i.focus(); } }
+function setLoginStart(enabled, label) { const b = $("#login-start"); b.disabled = !enabled; if (label) b.textContent = label; }
+
+async function pollLogin() {
+  let s;
+  try { s = await getJSON("api/login/status"); } catch (e) { return; }
+  if (s.state === "awaiting_2fa") {
+    show2fa(true);
+    loginMsg("Champ 2FA prêt — entre le code de ton authentificateur (une seule tentative).");
+  } else if (s.state === "running") {
+    show2fa(false);
+    loginMsg("Connexion en cours (identifiants du serveur)…");
+  } else if (s.state === "done") {
+    stopLoginPoll(); show2fa(false);
+    const r = s.result || {};
+    const ok = r.status === "logged_in" || r.status === "already_logged_in";
+    loginMsg((ok ? "✓ Reconnecté (" : "✖ Échec : ") + (ok ? r.status + ")" : (r.reason || r.status || "inconnu")), ok ? "ok" : "err");
+    setLoginStart(true, "Relancer la reconnexion");
+  }
+}
+
+$("#login-btn").addEventListener("click", () => {
+  loginMsg("Le mot de passe vient de l'environnement du serveur. Tu ne saisis que le code 2FA, quand il est demandé.");
+  show2fa(false); setLoginStart(true, "Lancer la reconnexion");
+  $("#login-modal").showModal();
+  pollLogin();   // reflect a login already in progress
+});
+$("#login-close").addEventListener("click", () => { $("#login-modal").close(); });
+$("#login-start").addEventListener("click", async () => {
+  setLoginStart(false, "Lancement…");
+  loginMsg("Connexion en cours (identifiants du serveur)…");
+  try {
+    await postJSON("api/login/start", {});
+  } catch (e) {
+    loginMsg("✖ " + e.message, "err"); setLoginStart(true, "Lancer la reconnexion"); return;
+  }
+  stopLoginPoll(); LOGIN_POLL = setInterval(pollLogin, 1500); pollLogin();
+});
+$("#login-2fa-submit").addEventListener("click", async () => {
+  const input = $("#login-2fa");
+  const code = input.value.trim();
+  input.value = "";               // never keep the code in the DOM
+  if (!code) { input.focus(); return; }
+  const btn = $("#login-2fa-submit"); btn.disabled = true;
+  try { await postJSON("api/login/2fa", { code }); loginMsg("Code envoyé — vérification…"); show2fa(false); }
+  catch (e) { loginMsg("✖ " + e.message, "err"); }
+  btn.disabled = false;
+});
+$("#login-2fa").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#login-2fa-submit").click(); } });
+
 loadRuns().catch((e) => { banner("Erreur de chargement : " + e.message); setStatus("Erreur"); });

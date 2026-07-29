@@ -21,6 +21,8 @@
       <button id="stop-btn" type="button" title="Arrêter le run en cours (proprement)">Arrêter</button>
     </span>
     <div class="topbar-right">
+      <button id="login-btn" type="button"
+        title="Reconnecter la session AKS (Stage 0b) — te demandera le code 2FA">🔑 Se reconnecter</button>
       <button id="new-scan" type="button" class="primary"
         title="Lancer un scan frais tous-stores (read-only) — pour remplacer un plan périmé">⟳ Nouveau scan</button>
       <select id="run-picker" title="Choisir un scan de tri"></select>
@@ -28,6 +30,23 @@
       <button id="theme" type="button" title="Basculer le thème">◐</button>
     </div>
   </header>
+
+  <dialog id="login-modal">
+    <form method="dialog" class="login-box">
+      <h3>Reconnexion AKS</h3>
+      <p id="login-msg" class="login-msg">Le mot de passe vient de l'environnement du serveur. Tu ne saisis que le code 2FA, quand il est demandé.</p>
+      <div id="login-2fa-row" class="login-2fa hidden">
+        <label for="login-2fa">Code 2FA</label>
+        <input id="login-2fa" type="text" inputmode="numeric" autocomplete="one-time-code"
+          placeholder="123456" autofocus />
+        <button id="login-2fa-submit" type="button" class="primary">Valider</button>
+      </div>
+      <div class="login-actions">
+        <button id="login-start" type="button" class="primary">Lancer la reconnexion</button>
+        <button id="login-close" type="button" value="cancel">Fermer</button>
+      </div>
+    </form>
+  </dialog>
 
   <div id="banner" class="banner hidden"></div>
 
