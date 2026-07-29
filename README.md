@@ -326,36 +326,52 @@ annotation becomes exactly one of three things:
 See [`docs/LEARNING_PROCESS.md`](docs/LEARNING_PROCESS.md) for the full process
 and its guard-rails.
 
-### Stage 6 — Move to List
+### Stage 6 / Stage 9 — Move to List
 
-`scripts/06_move.py` + `src/mover.py` is the **submitter's sibling**: a writer
-that moves a non-matched offer **out of its source list** into the list the
-operator annotated. The move plan is built from the run's **confirmed**
-Move-to-list dispositions (`src/move_plan.py`, from `learning.json`) — *garder*
-and still-`suggested` dispositions are never in a plan. Same fail-closed
-discipline as the submitter: invariants green + authoritative, one CDP tab under
-the browser lock, **dry-run by default** (`--execute` writes), writes only as a
-**supervised unit canary** (`--mode learning`). The batch path (`--execute
---mode safe`) is **refused unconditionally** for now — a successful canary does
-not unlock it (two open conditions, see [Roadmap](#roadmap)); a `--mode safe`
-*dry-run* is still allowed as a preview. Explicit go, never fire-and-forget.
-Success = **the offer left the source list** on the refreshed feed (the analogue
-of the submit's "gone from feed").
+`src/mover.py` is the **submitter's sibling**: a writer that moves an offer **out
+of its source list** into a target list. Two front-ends drive it, same fail-closed
+discipline as the submitter (invariants green + authoritative, one CDP tab under
+the browser lock, **dry-run by default**, explicit go, never fire-and-forget).
+Success is proven **RV2**: the offer left the source list (proven dual-key, id+URL)
+**and** landed on the target list — never from an HTTP 200 / a click.
+
+- **Stage 6 — `scripts/06_move.py`** (learning-driven, per offer): moves a
+  non-matched offer into the list the operator annotated. Plan from the run's
+  **confirmed** Move-to-list dispositions (`src/move_plan.py`, from
+  `learning.json`) — *garder* / still-`suggested` are never in a plan.
+- **Stage 9 — `scripts/09_sort_move.py`** (classifier-driven, per target list,
+  multi-store): moves every offer the sort classifier routes to a list. `--mode`
+  R24 gate: `learning` = supervised canary, `safe` = full list behind
+  `--i-authorize-batch` + a canary-granted **sort authorization** (per label,
+  cross-store, bound to the scan hash).
+
+The **batched** mechanism (`--batch`, P1→P1.6) registers many offers on one source
+page → **one native Apply** → verifies the group at once (`bulk[item][]` is
+repeatable) — the ~50-100× speedup, proven in prod (a single 53-item Apply). It is
+gated on a **multi-item canary** (`--mode learning --batch --limit 2`, an Apply of
+≥2). `--deferred` (P1.6) further defers the source+target verify to **once per
+store** (pages highest-first, reflow-safe) — ~G× fewer scans on a big feed, at a
+per-store (vs per-group) attribution window. Incremental by default (a resolved
+`sort_ledger` skips done URLs; `--full` ignores it). Runs supervised from the
+console (`/executor/tri`: **Batché** + **Différé** toggles) or the CLI.
 
 ```bash
-# Plan only — dry-run (default). No write:
-python3 scripts/06_move.py runs/<id> --store-id 38
+# Dry-run (default) — plan only, no write:
+python3 scripts/09_sort_move.py runs/<id> --list 16
 
-# A real move is a supervised canary of 1 (--mode learning), on explicit go:
-python3 scripts/06_move.py runs/<id> --store-id 38 --execute --mode learning
+# Multi-item canary (earns the batched authorization), on explicit go:
+python3 scripts/09_sort_move.py runs/<id> --list 16 --execute --mode learning --batch --limit 2
 
-# The batch path is refused unconditionally for now (see Roadmap):
-#   python3 scripts/06_move.py runs/<id> --store-id 38 --execute --mode safe
-# → BLOQUÉ until the two batch conditions (RV2/RV3) are built.
+# Full batched list (needs the canary-granted authorization):
+python3 scripts/09_sort_move.py runs/<id> --list 16 --execute --mode safe --batch --i-authorize-batch
+
+# …with the per-store deferred verify (P1.6, full batch only — no --limit):
+python3 scripts/09_sort_move.py runs/<id> --list 16 --execute --mode safe --batch --i-authorize-batch --deferred
 ```
 
 See [`docs/AKS_LISTS.md`](docs/AKS_LISTS.md) for the list taxonomy and the move
-mechanic.
+mechanic, and [`docs/CHANGELOG.md`](docs/CHANGELOG.md) (2026-07-28/29) for the
+batched P1→P1.6 progression.
 
 ---
 
@@ -516,6 +532,20 @@ the `aks-data-entry` skill maps onto a guard signal.
   single CDP tab at a time (fail-closed: busy lock = refuse to start; OP1,
   audit 2026-07-17), and bounded-random pacing (`--pace MIN-MAX`) between page
   loads/submissions with counters recorded in the run log.
+- [x] **Stage 9 — sort-move + batched mechanism (P1→P1.6)** (`src/sort_move.py`,
+  `src/move_auth.py`, `src/sort_ledger.py`, `scripts/09_sort_move.py`,
+  2026-07-23→29) — moves every offer the sort classifier routes to a target list,
+  per list, across stores. The **batched** path (`--batch`) registers many offers
+  on one source page → one native Apply → group-verified RV2 (P1), one target scan
+  per group (P1.5), gated on a **multi-item canary** authorization (P2). **P1.6
+  `--deferred`** defers the source+target verify to once per store (pages
+  highest-first, reflow-safe) — ~G× fewer scans on a big feed, at a per-store
+  attribution window. Incremental (`sort_ledger`; only terminal outcomes —
+  moved / gone / true identity contradiction — are skipped, transient misses
+  retry). Bounded retry on a transient feed/CDP blip. **Proven in prod
+  2026-07-29** (a single 53-item Apply moved a page at once). Console toggles
+  **Batché** / **Différé** on `/executor/tri`. See
+  [`docs/CHANGELOG.md`](docs/CHANGELOG.md) (2026-07-28/29).
 
 ---
 

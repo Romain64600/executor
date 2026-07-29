@@ -3,6 +3,91 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-29 — Tri batché : robustesse + P1.6 (vérif différée par store) + fixes revue
+
+Suite du tri batché. Deux temps.
+
+**Robustesse (commit `0a789c4`).** `Mover._scan_retry` réessaie un blip
+feed/CDP TRANSITOIRE (`FeedScanError`/`CdpCommandError`) jusqu'à 3× sur les scans
+**read-only** du chemin batché (locate du drive, vérif source post-Apply, vérif
+cible). Un batch Softwares avait avorté en perdant ~8 stores sur un blip après 2 h ;
+il survit maintenant. `NotLoggedInError` n'est JAMAIS réessayé ; l'Apply non plus.
+
+**P1.6 — vérif différée PAR STORE (commit `0e39e57`).** Option `--deferred`
+(gate `--batch --mode safe`, sans `--limit`). `Mover._drive_batched_deferred` : UN
+scan initial → groupe par page → tire les Applies pages **plus-haute-d'abord**
+(reflow-safe : déplacer une page haute ne décale que les offres APRÈS elle, jamais
+une page basse non traitée → pas de re-scan entre les Applies) → vérifie le store
+ENTIER **une seule fois** (`_verify_registered_set`, partitionné par liste cible).
+~G× moins de scans sur un store à G pages. **Compromis** : la fenêtre
+d'attribution parallèle passe de ~secondes (par groupe) à par-store (~min), bornée
+et gardée par le re-check d'identité + la preuve « coché-par-nous ». Refactor :
+`_register_apply_page` + `_verify_registered_set` extraits, partagés avec le chemin
+par-groupe (comportement inchangé).
+
+Revue adversariale (11 agents) → 6 défauts confirmés (2 HIGH), tous corrigés :
+
+- **HIGH — reflow → skip permanent.** Un opérateur parallèle retirant une offre
+  d'une page BASSE pendant la fenêtre par-store faisait remonter les autres ;
+  l'offre légitime, plus sur sa page attendue, était bloquée « not present » puis
+  ledgerée `identity_blocked` (statut **résolu**) → **exclue à jamais** des runs
+  incrémentaux. Fix : `_reverify_row` ne pose `identity_mismatch` que sur une vraie
+  contradiction d'identité (name,url) ; `_ledger_status` (hissé au niveau module,
+  testable) ne rend TERMINAL que moved / already_gone / identity_mismatch. Toute
+  absence transitoire (not-present, vanished, glitch bulk/register/Apply, UNKNOWN,
+  still-on-source, `apply_not_confirmed`) reste **hors ledger** → réessayée.
+  `apply_not_confirmed` retiré de `sort_ledger.RESOLVED_STATUSES` (il a toujours
+  voulu dire « retry »).
+- **HIGH — levée mid-passe → drop silencieux.** Une erreur feed/CDP levée par
+  `_register_apply_page` sur une page tardive perdait les offres déjà Applied des
+  pages précédentes (accumulées, non encore vérifiées). Fix : la boucle différée +
+  `_register_apply_page` (région Apply) + le dispatch batché de `run()` forcent
+  toute offre in-flight en UNKNOWN + enregistrée + abort, sans jamais dérouler
+  `run()` en perdant le plan (09 `break`ait sans capturer `result`).
+- **LOW** : vérif différée partitionnée par liste cible ; 09 rejette
+  `--deferred --limit` ; couverture UNKNOWN multi-pages (source + cible) ajoutée.
+
++18 tests (drive différé, reflow-safety, chemins UNKNOWN fail-closed, split
+ledger terminal/transitoire, gates CLI). Suite complète verte.
+
+**Console (commit `5811c4a`).** `/executor/tri` : case **« Différé (par store) »**
+à côté de « Batché (rapide) », sous-option grisée tant que Batché est off, n'agit
+que sur le **Batch complet** (jamais le canary) → ajoute `--deferred`.
+`submit_manager.start_sort_move(deferred=…)` assemble l'argv et rejette
+fail-closed (`bad_deferred`) les combos que le gate CLI refuse. **Pas encore
+tourné en prod** au moment du commit (1er run réel du mode différé à surveiller).
+
+## 2026-07-28 — Tri batché : P1 (Move-to-List groupé) + P1.5 (RV2 groupé) + P2 (gate multi-item) + console
+
+`docs/SIMPLIFICATION_PLAN.md` : la lenteur du tri = le mover à 1 offre/Apply +
+~3 scans plein-feed/offre (>1 h pour 213). Fix = batcher le `bulk[item][]`
+répétable : enregistrer N offres sur une page source → UN Apply → vérifier le
+groupe d'un coup. O(N)→O(pages).
+
+- **P1 — mécanisme (commit `36cffd3`).** `Mover.run(batch=True)` (write-only, OFF
+  par défaut — chemins per-offre/dry-run/canary INCHANGÉS). `_drive_batched` /
+  `_move_group` ; nouveau `_scan_feed(full_coverage=True)` marche jusqu'à une fin
+  de feed PROUVÉE (pas l'heuristique 2-vides) → le « parti » set-wise d'un groupe
+  est fail-closed. Garde-fous : re-scan entre les Applies (reflow que le mover
+  cause lui-même), re-check d'identité fraîche avant register, moved =
+  coché-par-nous ET parti(dual-key) ET sur-cible(RV2), groupe vérifié juste après
+  SON Apply (fenêtre parallèle en secondes), erreur feed après Apply → tout le
+  groupe UNKNOWN, bulk[list] mismatch → pas d'Apply.
+- **P1.5 — vérif cible groupée (commit `bce2687`).** P1 batchait le scan SOURCE
+  mais laissait la preuve RV2 « présent sur cible » par offre. Fix :
+  `_scan_feed(stop_on_urls={…})` + `_verify_group_on_target` → UN scan cible par
+  groupe. `max_pages` cible découplé (`TARGET_SCAN_MAX_PAGES=2000`).
+- **P2 — gate d'autorisation (commit `0dcf717`).** `MOVER_VERSION` 3→4. Résultat
+  du mover expose `max_apply_items` ; un `--mode safe --batch` refuse une preuve
+  faite d'un canary 1-item — exige un canary MULTI-item (`--mode learning --batch
+  --limit 2..5`, un Apply ≥2 en une fois).
+- **Incrémental (commit `4cd7070`).** Le tri saute les URLs déjà résolues au run
+  précédent (ledger `sort_ledger`) ; `--full` ignore le ledger.
+- **Console (commit `fdfd41c`).** Case **« Batché (rapide) »** sur `/executor/tri`
+  → canary = `--batch --limit 2`, full = `--batch`.
+- **PROUVÉ EN PROD (2026-07-29)** : un batch Softwares a déplacé **98 offres avec
+  un unique Apply de 53 items** (`max_apply_items=53`) — le gain ~50× réalisé.
+
 ## 2026-07-23 — Stage 9 : writer sort-move (déplacement par liste, multi-store)
 
 Romain 2026-07-23 : « le writer d'abord ». Exécute UNE liste cible du

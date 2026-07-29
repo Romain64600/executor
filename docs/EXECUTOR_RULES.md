@@ -1036,3 +1036,25 @@ Règles de la vue Learning (audit `AUDIT_LEARNING_2026-07-21.md`) :
   fire-and-forget. Les dispositions *garder* et `suggested: true` ne sont
   JAMAIS dans un plan (filtrées par le builder).
 - **Batch (`--mode safe`)** : réactivé (2026-07-22) derrière une **double garde** — le flag `--i-authorize-batch` ET une **autorisation** issue d'un canary vérifié (`src/move_auth.py`, liée à mover version × store × source × extraction × listes cibles validées). Chaque move du lot prouve source **ET** cible (RV2). Le canary unitaire (`--mode learning`) reste la seule voie pour VALIDER une nouvelle liste cible / de nouvelles données avant qu'un batch puisse les couvrir.
+- **Tri batché — Stage 9** (`scripts/09_sort_move.py` + `src/sort_move.py`,
+  2026-07-23→29) : même `Mover`/RV2, mais piloté par le **classifieur de tri** (une
+  liste cible à la fois, multi-store) et non les annotations. Le mécanisme
+  **batché** (`--batch`, P1→P1.6) enregistre N offres sur une page source → **UN
+  Apply natif** (`bulk[item][]` répétable) → vérifie le groupe d'un coup (~50-100×).
+  Gardes déterministes : re-check d'identité fraîche avant chaque register ;
+  `moved = coché-par-nous ET parti-source (scan PROUVÉ, dual-key id+URL) ET
+  présent-cible (RV2)` ; une erreur feed/CDP après un Apply → tout l'in-flight
+  **UNKNOWN** (jamais « moved »), fail-closed + abort. **P1.6 `--deferred`** (lot
+  complet `safe` uniquement, sans `--limit`) diffère la vérif source+cible à **une
+  fois par store** — pages **plus-haute-d'abord** (reflow-safe : déplacer une page
+  haute ne décale que les offres après elle) ; fenêtre d'attribution par-store.
+- **Ledger de tri — seul le TERMINAL est skippé (`src/sort_ledger.py`,
+  `_ledger_status`)** : le mode incrémental saute les URLs déjà **résolues**. Est
+  terminal (skip définitif) UNIQUEMENT : `moved`, `already_gone` (parti prouvé), ou
+  `identity_mismatch` (la ligne échoue le contrôle d'identité (name,url) — id/slug
+  réattribué à un AUTRE produit). Toute absence **transitoire** — row not-present /
+  vanished au moment du move (un opérateur parallèle qui reflow le feed), glitch
+  bulk/register/Apply, feed-error UNKNOWN, still-on-source, `apply_not_confirmed` —
+  reste **hors ledger** et est **réessayée** au run suivant. Règle née d'une revue
+  P1.6 (2026-07-29) : la fenêtre différée par-store transformait un reflow bénin en
+  `identity_blocked` permanent → une offre légitime perdue à jamais.
