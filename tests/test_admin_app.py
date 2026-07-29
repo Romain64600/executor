@@ -626,6 +626,19 @@ class SortMoveRouteTests(AppTestCase):
         self.assertEqual(response.status, 400)
         self.assertEqual(data["error"]["code"], "list_required")
 
+    def test_move_passes_batched_and_deferred_through(self):
+        from unittest import mock
+        self._sort_run()
+        with mock.patch.object(self.manager, "start_sort_move",
+                               return_value={"started": True, "run_id": self.run.name}) as m:
+            response, data = self._json("POST", f"/api/runs/{self.run.name}/sort/move",
+                                        body={"list_id": "8", "action": "batch", "confirm": "GO",
+                                              "batched": True, "deferred": True})
+        self.assertEqual(response.status, 200)
+        m.assert_called_once()
+        self.assertTrue(m.call_args.kwargs["batched"])
+        self.assertTrue(m.call_args.kwargs["deferred"])
+
     def test_sort_stop_when_idle(self):
         response, data = self._json("POST", "/api/sort/stop", body={})
         self.assertEqual(response.status, 200)

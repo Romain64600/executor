@@ -519,6 +519,7 @@ class SubmitManager:
     def start_sort_move(
         self, run_dir: Path, *, list_id: str, action: str, by: str,
         store: str | None = None, limit: int | None = None, batched: bool = False,
+        deferred: bool = False,
     ) -> dict[str, Any]:
         """Launch the Stage-9 sort-move writer for ONE target list, supervised.
 
@@ -527,9 +528,14 @@ class SubmitManager:
         list). ``batched`` (P2) uses the fast many-offers-per-Apply mechanism
         (``--batch``): a batched canary fires a MULTI-item Apply (defaults to
         ``--limit 2``) to earn the proof, and a batched full list additionally
-        needs that proof (the script enforces it). The spawned script still
-        enforces every gate itself (invariants, browser lock, canary-granted +
-        multi-item authorization); this only assembles the argv and supervises the
+        needs that proof (the script enforces it). ``deferred`` (P1.6) is a full
+        batched-list option only: it defers the source+target verify to ONCE PER
+        STORE (``--deferred``) — ~G× fewer feed scans on a big multi-page store, at
+        a per-store (vs per-group) attribution window. It requires the batched full
+        list (``action == "batch"``, mode safe, no ``--limit``) — the exact combo
+        the script's gate accepts. The spawned script still enforces every gate
+        itself (invariants, browser lock, canary-granted + multi-item authorization,
+        the --deferred combo); this only assembles the argv and supervises the
         process (never fire-and-forget)."""
 
         with self._mutex:
@@ -541,8 +547,21 @@ class SubmitManager:
             # Batching is a WRITE mechanism — a dry-run plans per-offer. A batched
             # canary defaults to the smallest multi-item proof (2) when unset.
             batched = bool(batched) and not dry_run
+            deferred = bool(deferred)
+            # Deferred is ONLY the batched full-list optimisation (mode safe, no
+            # limit). Reject the contradictory combos here with a clear error
+            # instead of letting the script abort — fail-closed, matches its gate.
+            if deferred and not (batched and action == "batch"):
+                raise SubmitStartError(
+                    "bad_deferred",
+                    "le mode différé (par store) exige le lot complet batché (Batché + Batch)",
+                    http_status=400)
             if batched and action == "canary" and limit is None:
                 limit = MULTI_ITEM_CANARY_DEFAULT
+            if deferred and limit is not None:
+                raise SubmitStartError(
+                    "bad_deferred", "le mode différé est incompatible avec une limite",
+                    http_status=400)
             self._check_mode_limit(mode, limit, batched=batched)
             argv = [self.python, str(self.sort_move_script), str(run_dir),
                     "--list", str(list_id), "--mode", mode]
@@ -552,6 +571,8 @@ class SubmitManager:
                 argv.append("--batch")
             if action == "batch":
                 argv.append("--i-authorize-batch")
+            if deferred:
+                argv.append("--deferred")
             if store:
                 argv += ["--store", str(store)]
             if limit is not None:
@@ -559,7 +580,8 @@ class SubmitManager:
             return self._spawn(
                 run_dir, kind=f"sort_{action}", argv=argv,
                 meta={"list_id": str(list_id), "action": action, "mode": mode,
-                      "batched": batched, "dry_run": dry_run, "store": store, "by": by},
+                      "batched": batched, "deferred": deferred, "dry_run": dry_run,
+                      "store": store, "by": by},
             )
 
     def start_extract(

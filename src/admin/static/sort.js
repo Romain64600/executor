@@ -197,18 +197,19 @@ function cmdRow(tag, cmd) {
   ]);
 }
 
-let POLL = null, OFFSET = 0, BATCHED = false;
+let POLL = null, OFFSET = 0, BATCHED = false, DEFERRED = false;
 
 function renderCmds(id) {
   // The exact copyable CLI, tracking the "Batché" toggle. Batched = the fast
   // many-offers-per-Apply path; its canary must fire a >=2-item Apply (--limit 2)
-  // and its full list needs that multi-item proof.
+  // and its full list needs that multi-item proof. "Différé" (P1.6) only rides on
+  // the batched FULL list — one verify per store — never the canary.
   const base = `python3 scripts/09_sort_move.py runs/${RUN_ID} --list ${id}`;
   const canaryCmd = BATCHED
     ? `${base} --execute --mode learning --batch --limit 2`
     : `${base} --execute --mode learning`;
   const batchCmd = BATCHED
-    ? `${base} --execute --mode safe --batch --i-authorize-batch`
+    ? `${base} --execute --mode safe --batch --i-authorize-batch${DEFERRED ? " --deferred" : ""}`
     : `${base} --execute --mode safe --i-authorize-batch`;
   $("#modal-cmds").replaceChildren(
     cmdRow("dry-run", base),
@@ -221,6 +222,7 @@ function openList(id, g) {
   const [, family] = fam(id);
   $("#modal-title").textContent = `${g.label || family} — liste ${id} · ${fmt(g.count)} offres`;
   BATCHED = false;
+  DEFERRED = false;
   buildActions(id, g);
   renderCmds(id);
   const tb = $("#modal-table tbody");
@@ -240,38 +242,59 @@ function buildActions(id, g) {
   const canary = el("button", { class: "primary", disabled: "" }, "Canary (1 move)");
   const batch = el("button", { class: "danger", disabled: "" }, `Batch (${fmt(g.count)})`);
   const toggle = el("input", { type: "checkbox" });
+  // "Différé (par store)" is a sub-option of Batché that rides ONLY on the full
+  // Batch (not the canary) — disabled until Batché is on.
+  const dtoggle = el("input", { type: "checkbox", disabled: "" });
   const relabel = () => {
     canary.textContent = BATCHED ? "Canary multi-item (2)" : "Canary (1 move)";
-    batch.textContent = BATCHED ? `Batch groupé (${fmt(g.count)})` : `Batch (${fmt(g.count)})`;
+    batch.textContent = BATCHED
+      ? `Batch groupé${DEFERRED ? " différé" : ""} (${fmt(g.count)})`
+      : `Batch (${fmt(g.count)})`;
   };
-  toggle.addEventListener("change", () => { BATCHED = toggle.checked; relabel(); renderCmds(id); });
+  toggle.addEventListener("change", () => {
+    BATCHED = toggle.checked;
+    // Deferred only makes sense batched — clear + disable it when Batché is off.
+    dtoggle.disabled = !BATCHED;
+    if (!BATCHED) { DEFERRED = false; dtoggle.checked = false; }
+    relabel();
+    renderCmds(id);
+  });
+  dtoggle.addEventListener("change", () => { DEFERRED = dtoggle.checked; relabel(); renderCmds(id); });
   const sync = () => { const ok = go.value.trim().toUpperCase() === "GO"; canary.disabled = batch.disabled = !ok; };
   go.addEventListener("input", sync);
-  canary.addEventListener("click", () => runAction(id, "canary", go, BATCHED));
-  batch.addEventListener("click", () => runAction(id, "batch", go, BATCHED));
+  canary.addEventListener("click", () => runAction(id, "canary", go, BATCHED, false));
+  batch.addEventListener("click", () => runAction(id, "batch", go, BATCHED, DEFERRED));
   relabel();
   $("#modal-actions").replaceChildren(
-    el("button", { onclick: () => runAction(id, "dry_run", null, false) }, "Dry-run"),
+    el("button", { onclick: () => runAction(id, "dry_run", null, false, false) }, "Dry-run"),
     el("span", { class: "aspacer" }),
     el("label", { class: "batched-toggle",
       title: "Moves groupés : N offres par Apply (~50-100× plus rapide). Le canary batché "
            + "fait un Apply de 2 (preuve multi-item) ; le lot complet exige cette preuve." },
       [toggle, " Batché (rapide)"]),
+    el("label", { class: "batched-toggle deferred-toggle",
+      title: "Vérif différée PAR STORE : le lot complet ne re-scanne qu'UNE fois par store "
+           + "(au lieu d'une fois par groupe/page) → ~G× moins de scans sur un gros feed. "
+           + "Exige « Batché ». Élargit la fenêtre d'attribution aux minutes (bornée au store)." },
+      [dtoggle, " Différé (par store)"]),
     el("span", { class: "aspacer" }),
     el("span", { class: "golabel" }, "GO :"), go, canary, batch,
     el("div", { class: "gatehint" },
       "Dry-run = aperçu (aucune écriture). Canary = déplacement prouvé (autorise la liste). "
       + "Batch = liste complète, exige un canary validé. « Batché » groupe N offres/Apply "
-      + "(rapide) et exige un canary multi-item. Chaque move prouve source+cible (RV2)."),
+      + "(rapide) et exige un canary multi-item. « Différé » = une vérif par store sur le lot "
+      + "complet (plus rapide, fenêtre par store). Chaque move prouve source+cible (RV2)."),
   );
 }
 
-async function runAction(id, action, goInput, batched) {
+async function runAction(id, action, goInput, batched, deferred) {
   if ((action === "canary" || action === "batch")
       && (!goInput || goInput.value.trim().toUpperCase() !== "GO")) return;
   const body = { list_id: id, action };
   if (action !== "dry_run") body.confirm = "GO";
   if (batched) body.batched = true;
+  // Deferred is a batched FULL-list option only — never on the canary/dry-run.
+  if (deferred && batched && action === "batch") body.deferred = true;
   $("#modal-actions").querySelectorAll("button,input").forEach((n) => (n.disabled = true));
   // The run's event log is shared across every action on this run — start
   // reading from its CURRENT end so the pane shows only THIS action's events,
@@ -280,7 +303,8 @@ async function runAction(id, action, goInput, batched) {
     const base = await getJSON(`api/runs/${encodeURIComponent(RUN_ID)}/submit/status?offset=0`);
     OFFSET = base.offset ?? 0;
   } catch (e) { OFFSET = 0; }
-  const tag = action.replace("_", "-") + (batched ? " (batché)" : "");
+  const tag = action.replace("_", "-")
+    + (batched ? (body.deferred ? " (batché · différé)" : " (batché)") : "");
   showStatusPane(`▶ ${tag} — liste ${id} — lancement…`);
   setStatus(`Lancement ${tag}…`, true);
   try {

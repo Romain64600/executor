@@ -445,7 +445,8 @@ class AdminHandler(BaseHTTPRequestHandler):
                            "un déplacement réel exige confirm=GO (le go explicite de l'opérateur)")
         result = self.state.manager.start_sort_move(
             run_dir, list_id=list_id, action=action, store=store, by=by,
-            limit=_parse_int(body.get("limit")), batched=bool(body.get("batched")))
+            limit=_parse_int(body.get("limit")), batched=bool(body.get("batched")),
+            deferred=bool(body.get("deferred")))
         self._send_json(200, result)
 
     def _post_invariants(self) -> None:

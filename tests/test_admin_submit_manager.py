@@ -794,6 +794,38 @@ class SortMoveTests(ManagerTestCase):
         self.assertNotIn("--batch", r["argv"])            # batching is write-only
         self.assertTrue(m.wait_idle(timeout=10))
 
+    def test_deferred_batched_full_argv_adds_deferred(self):
+        m = self._sm()
+        r = m.start_sort_move(self.run, list_id="8", action="batch", batched=True,
+                              deferred=True, by="Romain")
+        self.assertEqual(self._mode_of(r["argv"]), "safe")
+        self.assertIn("--batch", r["argv"])
+        self.assertIn("--i-authorize-batch", r["argv"])
+        self.assertIn("--deferred", r["argv"])
+        self.assertNotIn("--limit", r["argv"])            # deferred = whole batch
+        self.assertTrue(m.wait_idle(timeout=10))
+
+    def test_deferred_without_batched_refused(self):
+        m = self._sm()
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_sort_move(self.run, list_id="8", action="batch", deferred=True, by="Romain")
+        self.assertEqual(ctx.exception.code, "bad_deferred")
+
+    def test_deferred_on_canary_refused(self):
+        # Deferred is a full-list-only optimisation — never a canary.
+        m = self._sm()
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_sort_move(self.run, list_id="8", action="canary", batched=True,
+                              deferred=True, by="Romain")
+        self.assertEqual(ctx.exception.code, "bad_deferred")
+
+    def test_deferred_with_limit_refused(self):
+        m = self._sm()
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_sort_move(self.run, list_id="8", action="batch", batched=True,
+                              deferred=True, limit=3, by="Romain")
+        self.assertEqual(ctx.exception.code, "bad_deferred")
+
     def test_batched_canary_below_two_refused(self):
         m = self._sm()
         with self.assertRaises(SubmitStartError) as ctx:
