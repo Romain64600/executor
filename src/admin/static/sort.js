@@ -384,6 +384,8 @@ function finishStatus(s) {
 })();
 $("#run-picker").addEventListener("change", (e) => { RUN_ID = e.target.value; loadPlan(); });
 $("#refresh").addEventListener("click", loadRuns);
+$("#doc-btn").addEventListener("click", () => $("#doc-modal").showModal());  // close = native form method="dialog"
+$("#doc-modal").addEventListener("click", (e) => { if (e.target.id === "doc-modal") e.target.close(); });
 
 let SCAN_RUN = null, SCAN_POLL = null;
 $("#new-scan").addEventListener("click", async () => {

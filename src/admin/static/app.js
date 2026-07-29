@@ -1135,6 +1135,8 @@ async function init() {
     return;
   }
   initMerchantSelect();
+  $('#doc-btn').addEventListener('click', () => $('#doc-modal').showModal());  // close = native form method="dialog"
+  $('#doc-modal').addEventListener('click', (e) => { if (e.target.id === 'doc-modal') e.target.close(); });
   $('#start-extract').addEventListener('click', startExtract);
   $('#extract-mode').addEventListener('change', (event) => {
     $('#extract-page').classList.toggle('hidden', event.target.value !== 'page');

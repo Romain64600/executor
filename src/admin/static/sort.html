@@ -21,6 +21,7 @@
       <button id="stop-btn" type="button" title="Arrêter le run en cours (proprement)">Arrêter</button>
     </span>
     <div class="topbar-right">
+      <button id="doc-btn" type="button" title="Aide / Help">📖 Doc</button>
       <button id="login-btn" type="button"
         title="Reconnecter la session AKS (Stage 0b) — te demandera le code 2FA">🔑 Se reconnecter</button>
       <button id="new-scan" type="button" class="primary"
@@ -30,6 +31,46 @@
       <button id="theme" type="button" title="Basculer le thème">◐</button>
     </div>
   </header>
+
+  <dialog id="doc-modal" class="doc-modal">
+    <div class="doc-box">
+      <header class="doc-head">
+        <h3>📖 Guide — Aide / Help</h3>
+        <form method="dialog"><button class="doc-x" aria-label="Fermer / Close">✕</button></form>
+      </header>
+      <div class="doc-body">
+        <section>
+          <h4>Les deux pages · The two pages</h4>
+          <p><b>Validation &amp; Submit</b> — <span lang="fr">la page principale (« ajout des prix ») :
+            extraire un feed marchand, matcher les jeux, valider le rapport, puis soumettre les offres.</span></p>
+          <p class="en" lang="en">The main page (“price entry”): extract a merchant feed, match games,
+            validate the report, then submit the offers.</p>
+          <p><b>Tri des listes · Sort lists</b> — <span lang="fr">déplacer les offres non-jeu vers leurs
+            listes cibles (Softwares, Gift cards, Blacklist…), en lot rapide (Batché) ou différé par store.</span></p>
+          <p class="en" lang="en">Move non-game offers into their target lists (Softwares, Gift cards,
+            Blacklist…), as a fast batch (Batché) or a per-store deferred run.</p>
+        </section>
+        <section>
+          <h4>Naviguer · Navigate</h4>
+          <p lang="fr">En haut à gauche, les onglets <b>Validation &amp; Submit</b> ↔ <b>Tri des listes</b>
+            passent d'une page à l'autre. L'onglet surligné = page actuelle ; l'autre est cliquable.</p>
+          <p class="en" lang="en">Top-left, the <b>Validation &amp; Submit</b> ↔ <b>Tri des listes</b> tabs
+            switch pages. The highlighted tab is the current page; the other one is clickable.</p>
+        </section>
+        <section>
+          <h4>Le déroulé · The workflow</h4>
+          <p lang="fr">1. Extraire une page du feed → 2. Matcher → 3. Valider → 4. Soumettre (canary
+            d'abord, puis le lot). Tri : Nouveau scan → Canary → Batch. Option <b>Différé</b> = une seule
+            vérif par store (plus rapide sur un gros feed).</p>
+          <p class="en" lang="en">1. Extract a feed page → 2. Match → 3. Validate → 4. Submit (canary first,
+            then the batch). Sort: New scan → Canary → Batch. <b>Deferred</b> = one verify per store
+            (faster on a big feed).</p>
+        </section>
+        <p class="doc-more"><span lang="fr">Docs complètes dans le dépôt · Full docs in the repo :</span>
+          <code>README.md</code> · <code>docs/NOOB.md</code> · <code>docs/CHANGELOG.md</code></p>
+      </div>
+    </div>
+  </dialog>
 
   <dialog id="login-modal">
     <form method="dialog" class="login-box">

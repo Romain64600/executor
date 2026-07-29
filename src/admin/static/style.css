@@ -112,7 +112,38 @@ header {
   color: var(--accent); text-decoration: none; font-size: 0.85rem;
   padding: 0.2rem 0.55rem; border: 1px solid var(--border); border-radius: 4px;
 }
+button.tablink { background: none; cursor: pointer; font-family: inherit; }
 .tablink:hover { background: var(--hover); border-color: var(--accent); }
+
+/* Doc / Help modal (bilingual FR/EN). Uses style.css vars. */
+.doc-modal {
+  border: none; border-radius: 12px; padding: 0; max-width: 640px;
+  width: calc(100% - 2rem); background: var(--panel); color: var(--text);
+  box-shadow: 0 12px 44px rgba(0, 0, 0, 0.45);
+}
+.doc-modal::backdrop { background: rgba(0, 0, 0, 0.5); }
+.doc-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.7rem 1rem; border-bottom: 1px solid var(--border);
+}
+.doc-head h3 { margin: 0; font-size: 1rem; }
+.doc-x {
+  background: none; border: none; color: var(--muted); font-size: 1rem;
+  cursor: pointer; padding: 0.2rem 0.45rem; border-radius: 6px;
+}
+.doc-x:hover { color: var(--text); background: var(--hover); }
+.doc-body { padding: 0.8rem 1rem 1rem; max-height: 70vh; overflow-y: auto; }
+.doc-body section { margin-bottom: 0.9rem; }
+.doc-body h4 { margin: 0.2rem 0 0.35rem; font-size: 0.9rem; color: var(--accent); }
+.doc-body p { margin: 0.15rem 0; font-size: 0.85rem; line-height: 1.5; }
+.doc-body p.en { color: var(--muted); }
+.doc-body code {
+  font-size: 0.8rem; background: var(--code-bg); padding: 0.05rem 0.3rem; border-radius: 4px;
+}
+.doc-more {
+  margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid var(--border);
+  font-size: 0.8rem; color: var(--muted);
+}
 
 h1 { font-size: 1.05rem; margin: 0; }
 h2 { font-size: 1rem; margin: 0.2rem 0; }
