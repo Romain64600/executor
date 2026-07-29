@@ -109,7 +109,11 @@ def normalize_cookies(raw: Any) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         if not name or value is None:
             skipped.append("cookie sans name/value")
             continue
-        if _AKS_DOMAIN not in domain.lstrip("."):
+        host = domain.lstrip(".").lower()
+        # EXACT host or a true subdomain — NOT a substring (a substring test
+        # would let 'allkeyshop.com.evil.com' / 'evilallkeyshop.com' through and
+        # inject a cookie for an attacker domain — security review 2026-07-29).
+        if not (host == _AKS_DOMAIN or host.endswith("." + _AKS_DOMAIN)):
             skipped.append(f"{name}: domaine {domain or '?'} hors AKS")
             continue
         cdp: dict[str, Any] = {

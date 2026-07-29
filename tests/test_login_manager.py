@@ -101,6 +101,21 @@ class NormalizeCookiesTests(unittest.TestCase):
         self.assertEqual(cookies, [])
         self.assertEqual(stats["accepted"], 0)
 
+    def test_lookalike_domains_are_dropped(self):
+        # A substring filter would let these through and inject a cookie for an
+        # attacker domain (security review 2026-07-29) — must be host/suffix match.
+        for bad in ("allkeyshop.com.evil.com", "evilallkeyshop.com", "myallkeyshop.com",
+                    "notallkeyshop.com.attacker.net", ".allkeyshop.com.evil.com"):
+            cookies, _ = normalize_cookies(
+                [{"name": "wordpress_logged_in_x", "value": "ATTACKER", "domain": bad}])
+            self.assertEqual(cookies, [], f"lookalike {bad!r} must be dropped")
+
+    def test_real_aks_domains_accepted(self):
+        for good in ("allkeyshop.com", ".allkeyshop.com", "www.allkeyshop.com"):
+            cookies, _ = normalize_cookies(
+                [{"name": "wordpress_sec_x", "value": "v", "domain": good}])
+            self.assertEqual(len(cookies), 1, f"{good!r} must be accepted")
+
     def test_accepts_list_of_dicts_from_form_fields(self):
         # The field-based UI sends a LIST directly (name+value+domain per row).
         cookies, stats = normalize_cookies([
