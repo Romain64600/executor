@@ -1,23 +1,22 @@
-"""Admin-driven Stage 0b login (LoginManager). Drives the SAME audited
-``run_login`` in a background thread with the 2FA code supplied via the web UI.
-These tests inject fakes for every side effect (no CDP, no browser, no network)
-and lock the security-critical properties:
+"""Cookie-transfer re-auth (LoginManager) — AKS is social-login only, so the
+authenticated session is injected as cookies exported from the operator's
+browser. These tests inject fakes for every side effect (no CDP, no browser) and
+lock the security-critical properties:
 
-  * the password comes from the environment, and NEITHER the password NOR the
-    2FA code ever appears in the operator-facing status/result;
-  * ``get_2fa_code`` is invoked only by the runner (i.e. only after the 2FA
-    field is ready) and blocks until the UI posts the code;
-  * ONE attempt — a 2FA-wait timeout returns "" (→ the runner's hard STOP), not
-    a re-prompt;
-  * missing creds / a busy login / a 2FA submit out of turn all fail closed.
+  * cookie VALUES are never surfaced in status/result (only names/counts/flags);
+  * only allkeyshop.com cookies are injected (a foreign-domain cookie dropped);
+  * both a Cookie-Editor JSON export and a DevTools tab-table copy parse;
+  * fail-closed: no valid cookies / red invariants / browser busy → clean abort
+    (nothing injected), and a concurrent re-auth is refused.
 """
 
 import contextlib
-import time
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
-from src.admin.login_manager import LoginError, LoginManager, _scrub
+from src.admin.login_manager import LoginError, LoginManager, normalize_cookies, _scrub
 
 
 @contextlib.contextmanager
@@ -26,8 +25,9 @@ def _noop_lock(*a, **k):
 
 
 class _FakeSession:
-    def __init__(self, *a, **k):
-        pass
+    def __init__(self, verdict, captured=None):
+        self._verdict = verdict
+        self._captured = captured
 
     def __enter__(self):
         return self
@@ -35,170 +35,155 @@ class _FakeSession:
     def __exit__(self, *a):
         return False
 
+    def set_cookies(self, cookies):
+        if self._captured is not None:
+            self._captured.append(cookies)
+        return {"ack": True}
+
+    def navigate(self, url, settle=None):
+        pass
+
+    def verify_dashboard(self):
+        return self._verdict
+
 
 GREEN = {"ok": True, "authoritative": True}
-# Distinctive multi-char values so a leak into status/logs is detectable as a raw
-# substring (a 1-char secret like "p" is undetectable — review 2026-07-29).
-CREDS = {"AKS_WP_USER": "aks-user-xyz", "AKS_WP_PASSWORD": "hunter2-super-secret"}
+JSON_COOKIES = (
+    '[{"name":"wordpress_logged_in_abc","value":"SECRET-COOKIE-VALUE-XYZ",'
+    '"domain":".allkeyshop.com","path":"/","secure":true,"httpOnly":true,'
+    '"sameSite":"no_restriction","expirationDate":1900000000},'
+    '{"name":"_ga","value":"analytics","domain":".google.com","path":"/"}]'
+)
+TABLE_COOKIES = (
+    "wordpress_logged_in_abc\tSECRET-COOKIE-VALUE-XYZ\t.allkeyshop.com\t/\tSession\t80\t\t\t✓\tNone\tMedium\n"
+    "_ga\tGA1.1\t.google.com\t/\t2027-01-01\t20\tMedium"
+)
 
 
-def _mgr(tmp, runner, *, report=GREEN):
-    return LoginManager(tmp, login_runner=runner, session_factory=_FakeSession,
-                        report_fn=lambda **k: report)
+def _mgr(root, *, verdict=None, report=GREEN, captured=None):
+    factory = lambda endpoint: _FakeSession(verdict or {"ok": True, "url_ok": True, "dom_ok": True}, captured)
+    return LoginManager(root, session_factory=factory, report_fn=lambda **k: report,
+                        clock=lambda: 1.0)
 
 
-def _wait(mgr, state, timeout=5.0):
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        if mgr.status()["state"] == state:
-            return True
-        time.sleep(0.01)
-    return False
+class NormalizeCookiesTests(unittest.TestCase):
+    def test_json_export_maps_to_cdp_and_filters_domain(self):
+        cookies, stats = normalize_cookies(JSON_COOKIES)
+        self.assertEqual(len(cookies), 1)                      # google cookie dropped
+        c = cookies[0]
+        self.assertEqual(c["name"], "wordpress_logged_in_abc")
+        self.assertEqual(c["value"], "SECRET-COOKIE-VALUE-XYZ")
+        self.assertEqual(c["domain"], ".allkeyshop.com")
+        self.assertTrue(c["httpOnly"] and c["secure"])
+        self.assertEqual(c["sameSite"], "None")               # no_restriction → None
+        self.assertEqual(c["expires"], 1900000000.0)
+        self.assertEqual(stats["accepted"], 1)
+        self.assertEqual(stats["skipped"], 1)
+
+    def test_devtools_table_copy_parses(self):
+        cookies, stats = normalize_cookies(TABLE_COOKIES)
+        self.assertEqual([c["name"] for c in cookies], ["wordpress_logged_in_abc"])
+        c = cookies[0]
+        self.assertEqual(c["value"], "SECRET-COOKIE-VALUE-XYZ")
+        self.assertEqual(c["domain"], ".allkeyshop.com")
+        self.assertTrue(c["httpOnly"])                        # ✓ detected
+
+    def test_empty_and_bad_json_raise(self):
+        with self.assertRaises(LoginError) as e1:
+            normalize_cookies("   ")
+        self.assertEqual(e1.exception.code, "no_cookies")
+        with self.assertRaises(LoginError) as e2:
+            normalize_cookies("[ not json ")
+        self.assertEqual(e2.exception.code, "bad_cookies_json")
+
+    def test_no_aks_cookies_returns_empty(self):
+        cookies, stats = normalize_cookies('[{"name":"x","value":"y","domain":".google.com"}]')
+        self.assertEqual(cookies, [])
+        self.assertEqual(stats["accepted"], 0)
+
+    def test_accepts_list_of_dicts_from_form_fields(self):
+        # The field-based UI sends a LIST directly (name+value+domain per row).
+        cookies, stats = normalize_cookies([
+            {"name": "wordpress_sec_x", "value": "v1", "domain": ".allkeyshop.com",
+             "path": "/", "secure": True, "httpOnly": True},
+            {"name": "junk", "value": "v2", "domain": ".google.com"},
+        ])
+        self.assertEqual([c["name"] for c in cookies], ["wordpress_sec_x"])
+        self.assertEqual(cookies[0]["value"], "v1")
+        self.assertEqual(stats["accepted"], 1)
 
 
-class LoginManagerTests(unittest.TestCase):
+class ApplyCookiesTests(unittest.TestCase):
     def setUp(self):
-        import tempfile
-        from pathlib import Path
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        # browser_lock + RunLogger are the two real side effects in _run — stub them.
-        p1 = mock.patch("src.admin.login_manager.browser_lock", _noop_lock)
-        p2 = mock.patch("src.admin.login_manager.RunLogger", lambda *a, **k: mock.Mock())
-        p1.start(); p2.start()
-        self.addCleanup(p1.stop); self.addCleanup(p2.stop)
+        p = mock.patch("src.admin.login_manager.browser_lock", _noop_lock)
+        p.start(); self.addCleanup(p.stop)
 
-    def _runner_2fa(self, capture):
-        def runner(session, *, username, password, get_2fa_code, guard, run_id, logger, **kw):
-            capture["user"] = username
-            capture["pass"] = password
-            code = get_2fa_code()               # sets awaiting_2fa, blocks for the UI
-            capture["code"] = code
-            if code == "GOOD":
-                return {"status": "logged_in", "run_id": run_id}
-            if not code:
-                return {"status": "2FA_EMPTY_CODE", "run_id": run_id, "aborted": "2FA_EMPTY_CODE"}
-            return {"status": "2FA_REJECTED", "run_id": run_id, "aborted": "2FA_REJECTED"}
-        return runner
+    def test_success_injects_and_verifies(self):
+        captured = []
+        mgr = _mgr(self.root, verdict={"ok": True, "url_ok": True, "dom_ok": True}, captured=captured)
+        res = mgr.apply_cookies(JSON_COOKIES, by="Romain")
+        self.assertEqual(res["status"], "logged_in")
+        self.assertEqual(res["cookies_injected"], 1)
+        self.assertEqual(captured[0][0]["name"], "wordpress_logged_in_abc")   # actually injected
 
-    def test_full_success_with_2fa_from_ui(self):
-        cap = {}
-        mgr = _mgr(self.root, self._runner_2fa(cap))
-        with mock.patch.dict("os.environ", CREDS):
-            mgr.start(by="Romain")
-        self.assertTrue(_wait(mgr, "awaiting_2fa"))
-        self.assertTrue(mgr.status()["awaiting_2fa"])
-        mgr.submit_2fa("GOOD")
-        self.assertTrue(_wait(mgr, "done"))
-        self.assertEqual(mgr.status()["result"]["status"], "logged_in")
-        self.assertEqual(cap["user"], "aks-user-xyz")   # runner got the env creds
-        self.assertEqual(cap["code"], "GOOD")
-
-    def test_password_and_code_never_in_status(self):
-        cap = {}
-        mgr = _mgr(self.root, self._runner_2fa(cap))
-        with mock.patch.dict("os.environ", CREDS):
-            mgr.start(by="Romain")
-        self.assertTrue(_wait(mgr, "awaiting_2fa"))
-        mgr.submit_2fa("SECRET-CODE-123")
-        self.assertTrue(_wait(mgr, "done"))
+    def test_cookie_values_never_in_status(self):
+        mgr = _mgr(self.root, captured=[])
+        mgr.apply_cookies(JSON_COOKIES, by="Romain")
         blob = repr(mgr.status())
-        self.assertNotIn("SECRET-CODE-123", blob)       # the 2FA code never surfaces
-        self.assertNotIn("hunter2-super-secret", blob)  # nor the password value (raw substring)
+        self.assertNotIn("SECRET-COOKIE-VALUE-XYZ", blob)     # the cookie value never surfaces
 
-    def test_missing_creds_fails_closed_before_any_browser_action(self):
-        called = {"ran": False}
+    def test_not_logged_in_when_dashboard_unverified(self):
+        mgr = _mgr(self.root, verdict={"ok": False, "url_ok": True, "dom_ok": False})
+        res = mgr.apply_cookies(JSON_COOKIES, by="Romain")
+        self.assertEqual(res["status"], "not_logged_in")
 
-        def runner(*a, **k):
-            called["ran"] = True
-            return {"status": "logged_in"}
+    def test_no_valid_cookies_aborts_without_browser(self):
+        captured = []
+        mgr = _mgr(self.root, captured=captured)
+        res = mgr.apply_cookies('[{"name":"_ga","value":"z","domain":".google.com"}]', by="Romain")
+        self.assertEqual(res["status"], "aborted")
+        self.assertEqual(captured, [])                        # nothing injected
+        self.assertIn("aucun cookie", res["reason"])
 
-        mgr = _mgr(self.root, runner)
-        with mock.patch.dict("os.environ", {"AKS_WP_USER": "", "AKS_WP_PASSWORD": ""}):
-            with self.assertRaises(LoginError) as ctx:
-                mgr.start(by="Romain")
-        self.assertEqual(ctx.exception.code, "no_creds")
-        self.assertFalse(called["ran"])             # the runner (browser) never started
-        self.assertEqual(mgr.status()["state"], "done")
-
-    def test_invariants_red_aborts_before_any_browser_action(self):
-        # LOGIN_SPEC §5: invariants not green/authoritative → login refused BEFORE
-        # the browser is touched (the runner never runs).
-        called = {"ran": False}
-
-        def runner(*a, **k):
-            called["ran"] = True
-            return {"status": "logged_in"}
-
-        mgr = _mgr(self.root, runner, report={"ok": False, "authoritative": False})
-        with mock.patch.dict("os.environ", CREDS):
-            mgr.start(by="Romain")
-        self.assertTrue(_wait(mgr, "done"))
-        self.assertEqual(mgr.status()["result"]["status"], "aborted")
-        self.assertIn("invariants", mgr.status()["result"]["reason"])
-        self.assertFalse(called["ran"])                 # browser/login never started
-
-    def test_already_logged_in_skips_2fa(self):
-        def runner(session, *, get_2fa_code, run_id, **kw):
-            return {"status": "already_logged_in", "run_id": run_id}   # never asks for 2FA
-
-        mgr = _mgr(self.root, runner)
-        with mock.patch.dict("os.environ", CREDS):
-            mgr.start(by="Romain")
-        self.assertTrue(_wait(mgr, "done"))
-        self.assertEqual(mgr.status()["result"]["status"], "already_logged_in")
-
-    def test_2fa_timeout_is_one_attempt_stop(self):
-        cap = {}
-        mgr = _mgr(self.root, self._runner_2fa(cap))
-        mgr.TWOFA_WAIT_S = 0.2                       # don't wait 3 min in a test
-        with mock.patch.dict("os.environ", CREDS):
-            mgr.start(by="Romain")
-        self.assertTrue(_wait(mgr, "awaiting_2fa"))
-        # never submit a code → the wait times out → "" → runner hard-STOPs
-        self.assertTrue(_wait(mgr, "done", timeout=3.0))
-        self.assertEqual(cap["code"], "")
-        self.assertEqual(mgr.status()["result"]["status"], "2FA_EMPTY_CODE")
-
-    def test_submit_2fa_out_of_turn_refused(self):
-        mgr = _mgr(self.root, self._runner_2fa({}))
-        with self.assertRaises(LoginError) as ctx:
-            mgr.submit_2fa("123456")                # nothing running
-        self.assertEqual(ctx.exception.code, "no_2fa_wait")
-
-    def test_start_while_running_refused(self):
-        cap = {}
-        mgr = _mgr(self.root, self._runner_2fa(cap))
-        with mock.patch.dict("os.environ", CREDS):
-            mgr.start(by="Romain")
-            self.assertTrue(_wait(mgr, "awaiting_2fa"))
-            with self.assertRaises(LoginError) as ctx:
-                mgr.start(by="Romain")
-            self.assertEqual(ctx.exception.code, "login_busy")
-        mgr.submit_2fa("GOOD")                       # let the thread finish cleanly
-        _wait(mgr, "done")
+    def test_invariants_red_aborts_without_injection(self):
+        captured = []
+        mgr = _mgr(self.root, report={"ok": False, "authoritative": False}, captured=captured)
+        res = mgr.apply_cookies(JSON_COOKIES, by="Romain")
+        self.assertEqual(res["status"], "aborted")
+        self.assertIn("invariants", res["reason"])
+        self.assertEqual(captured, [])
 
     def test_browser_busy_aborts_cleanly(self):
         from src.browser_lock import BrowserBusyError
-
-        def runner(*a, **k):
-            return {"status": "logged_in"}
-
-        mgr = _mgr(self.root, runner)
+        mgr = _mgr(self.root)
         with mock.patch("src.admin.login_manager.browser_lock",
                         side_effect=BrowserBusyError("submit en cours")):
-            with mock.patch.dict("os.environ", CREDS):
-                mgr.start(by="Romain")
-            self.assertTrue(_wait(mgr, "done"))
-        self.assertEqual(mgr.status()["result"]["status"], "aborted")
-        self.assertIn("occupé", mgr.status()["result"]["reason"])
+            res = mgr.apply_cookies(JSON_COOKIES, by="Romain")
+        self.assertEqual(res["status"], "aborted")
+        self.assertIn("occupé", res["reason"])
+
+    def test_bad_json_raises_login_error(self):
+        mgr = _mgr(self.root)
+        with self.assertRaises(LoginError) as ctx:
+            mgr.apply_cookies("[ not json", by="Romain")
+        self.assertEqual(ctx.exception.code, "bad_cookies_json")
+        self.assertFalse(mgr.status()["busy"])                # busy released on the raise
+
+    def test_concurrent_reauth_refused(self):
+        mgr = _mgr(self.root)
+        mgr._busy = True
+        with self.assertRaises(LoginError) as ctx:
+            mgr.apply_cookies(JSON_COOKIES, by="Romain")
+        self.assertEqual(ctx.exception.code, "login_busy")
 
 
 class ScrubTests(unittest.TestCase):
     def test_scrub_drops_secret_keys(self):
-        out = _scrub({"status": "logged_in", "password": "x", "code": "123",
-                      "otp": "y", "nested": {"authcode": "z", "ok": True}})
+        out = _scrub({"status": "logged_in", "value": "x", "cookies": [1],
+                      "nested": {"value": "y", "ok": True}})
         self.assertEqual(out, {"status": "logged_in", "nested": {"ok": True}})
 
 

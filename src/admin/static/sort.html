@@ -33,16 +33,19 @@
 
   <dialog id="login-modal">
     <form method="dialog" class="login-box">
-      <h3>Reconnexion AKS</h3>
-      <p id="login-msg" class="login-msg">Le mot de passe vient de l'environnement du serveur. Tu ne saisis que le code 2FA, quand il est demandé.</p>
-      <div id="login-2fa-row" class="login-2fa hidden">
-        <label for="login-2fa">Code 2FA</label>
-        <input id="login-2fa" type="text" inputmode="numeric" autocomplete="one-time-code"
-          placeholder="123456" autofocus />
-        <button id="login-2fa-submit" type="button" class="primary">Valider</button>
-      </div>
+      <h3>Reconnexion AKS — cookies de session</h3>
+      <ol class="login-help">
+        <li>Connecte-toi à <code>allkeyshop.com/blog/wp-admin/</code> dans <b>ton</b> navigateur (tu vois le dashboard).</li>
+        <li>F12 → <b>Application → Cookies → <code>www.allkeyshop.com</code></b>.</li>
+        <li>Recopie le <b>Nom</b> (complet, avec le hash) et la <b>Valeur</b> des cookies <code>wordpress_logged_in_</code> et <code>wordpress_sec_</code> dans les lignes prévues.</li>
+      </ol>
+      <div class="login-cols"><span>Nom du cookie</span><span>Valeur</span><span></span></div>
+      <div id="login-rows" class="login-rows"></div>
+      <button id="login-addrow" type="button" class="login-addrow">+ ajouter un cookie</button>
+      <p id="login-preview" class="login-preview"></p>
+      <p id="login-msg" class="login-msg"></p>
       <div class="login-actions">
-        <button id="login-start" type="button" class="primary">Lancer la reconnexion</button>
+        <button id="login-inject" type="button" class="primary" disabled>Injecter les cookies</button>
         <button id="login-close" type="button" value="cancel">Fermer</button>
       </div>
     </form>

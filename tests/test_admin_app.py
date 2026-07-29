@@ -642,46 +642,42 @@ class SortMoveRouteTests(AppTestCase):
 
 
 class LoginRouteTests(AppTestCase):
-    def test_status_idle(self):
+    def test_status(self):
         resp, data = self._json("GET", "/api/login/status")
         self.assertEqual(resp.status, 200)
-        self.assertEqual(data["state"], "idle")
         self.assertFalse(data["busy"])
 
-    def test_start_without_creds_fails_closed(self):
-        from unittest import mock
-        # no AKS_WP_* in the env → clean 400, and NO browser/login thread starts
-        with mock.patch.dict("os.environ", {"AKS_WP_USER": "", "AKS_WP_PASSWORD": ""}):
-            resp, data = self._json("POST", "/api/login/start", body={})
+    def test_cookies_bad_json_400(self):
+        resp, data = self._json("POST", "/api/login/cookies", body={"cookies": "[ not json"})
         self.assertEqual(resp.status, 400)
-        self.assertEqual(data["error"]["code"], "no_creds")
+        self.assertEqual(data["error"]["code"], "bad_cookies_json")
 
-    def test_2fa_out_of_turn_refused(self):
-        resp, data = self._json("POST", "/api/login/2fa", body={"code": "123456"})
-        self.assertEqual(resp.status, 409)
-        self.assertEqual(data["error"]["code"], "no_2fa_wait")
+    def test_cookies_no_aks_aborts_without_browser(self):
+        # foreign-domain cookies normalize to empty → aborted BEFORE any browser
+        # action (no CDP touched — safe against the real LoginManager). The field
+        # UI sends a LIST of cookie objects.
+        body = {"cookies": [{"name": "_ga", "value": "z", "domain": ".google.com"}]}
+        resp, data = self._json("POST", "/api/login/cookies", body=body)
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(data["status"], "aborted")
 
-    def test_start_requires_csrf(self):
-        resp, _ = self._request("POST", "/api/login/start", body={}, csrf=False)
+    def test_cookies_requires_csrf(self):
+        resp, _ = self._request("POST", "/api/login/cookies", body={"cookies": "[]"}, csrf=False)
         self.assertEqual(resp.status, 403)
 
-    def test_2fa_code_never_echoed_in_response(self):
-        resp, data = self._request("POST", "/api/login/2fa", body={"code": "SECRET999"})
-        self.assertNotIn(b"SECRET999", data)   # the code is never reflected back
-
-    def test_2fa_accept_path_passes_code_through_without_echo(self):
-        # The out-of-turn 409 above can't echo the code (error body). Cover the
-        # ACCEPT path: a regression returning {"accepted": True, "code": code}
-        # would pass the 409 test but must fail here.
+    def test_cookie_value_never_echoed_in_response(self):
+        # inject a fake manager; POST a distinctive cookie value; the response
+        # must never reflect it (a regression echoing the input would fail here).
         from unittest import mock
         fake = mock.Mock()
-        fake.submit_2fa.return_value = {"accepted": True}
+        fake.apply_cookies.return_value = {"status": "logged_in", "cookies_injected": 1}
         self.state.login = fake
-        resp, raw = self._request("POST", "/api/login/2fa", body={"code": "DISTINCT-CODE-42"})
+        body = {"cookies": [{"name": "wordpress_logged_in_x", "value": "SECRETVAL-9", "domain": ".allkeyshop.com"}]}
+        resp, raw = self._request("POST", "/api/login/cookies", body=body)
         self.assertEqual(resp.status, 200)
-        self.assertTrue(json.loads(raw)["accepted"])
-        fake.submit_2fa.assert_called_once_with("DISTINCT-CODE-42")   # passed straight through
-        self.assertNotIn(b"DISTINCT-CODE-42", raw)                    # never echoed back
+        self.assertEqual(json.loads(raw)["status"], "logged_in")
+        fake.apply_cookies.assert_called_once()
+        self.assertNotIn(b"SECRETVAL-9", raw)
 
 
 if __name__ == "__main__":

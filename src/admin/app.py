@@ -402,16 +402,13 @@ class AdminHandler(BaseHTTPRequestHandler):
             mp = _parse_int(body.get("max_pages"))
             result = self.state.manager.start_sort_scan(by=by, max_pages=mp if mp is not None else 800)
             return self._send_json(200, result)
-        if path == "/api/login/start":
-            # Stage 0b on the operator's explicit click — password from the server
-            # env, never the request. Runs in the background; poll /api/login/status.
-            self._json_body()  # enforce JSON body (CSRF shape), content ignored
-            return self._send_json(200, self.state.login.start(by=str(self._basic_user() or "operateur")))
-        if path == "/api/login/2fa":
-            # The 2FA code is passed STRAIGHT to the login thread — never logged,
-            # never echoed back, never stored (LOGIN_SPEC.md).
-            code = str(self._json_body().get("code") or "")
-            return self._send_json(200, self.state.login.submit_2fa(code))
+        if path == "/api/login/cookies":
+            # Re-auth by cookie transfer (AKS is social-login only). The cookie
+            # VALUES are session secrets — passed STRAIGHT to the injector, never
+            # logged/echoed/stored. Explicit operator submit only.
+            cookies = self._json_body().get("cookies")
+            by = str(self._basic_user() or "operateur")
+            return self._send_json(200, self.state.login.apply_cookies(cookies, by=by))
 
         match = RUN_ROUTE.match(path)
         if match:

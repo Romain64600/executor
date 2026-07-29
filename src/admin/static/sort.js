@@ -421,58 +421,81 @@ setInterval(refreshBusy, 4000);   // keep the busy indicator live across tabs/ru
 $("#modal-close").addEventListener("click", () => { stopPoll(); $("#offers-modal").close(); });
 $("#offers-modal").addEventListener("click", (e) => { if (e.target.id === "offers-modal") { stopPoll(); e.target.close(); } });
 
-// ---- Reconnexion (Stage 0b) : mot de passe côté serveur, 2FA saisi ici ------
-let LOGIN_POLL = null;
+// ---- Reconnexion par transfert de cookies (AKS = social login only) ---------
+// L'opérateur remplit Nom + Valeur par cookie WP ; le JS assemble l'objet cookie
+// (domaine .allkeyshop.com, path /, secure+httpOnly) et l'envoie. Le serveur
+// filtre/vérifie et prouve la session (dashboard). Aucune valeur n'est loggée.
 function loginMsg(txt, cls) { const m = $("#login-msg"); m.textContent = txt; m.className = "login-msg" + (cls ? " " + cls : ""); }
-function stopLoginPoll() { if (LOGIN_POLL) { clearInterval(LOGIN_POLL); LOGIN_POLL = null; } }
-function show2fa(on) { $("#login-2fa-row").classList.toggle("hidden", !on); if (on) { const i = $("#login-2fa"); i.value = ""; i.focus(); } }
-function setLoginStart(enabled, label) { const b = $("#login-start"); b.disabled = !enabled; if (label) b.textContent = label; }
 
-async function pollLogin() {
-  let s;
-  try { s = await getJSON("api/login/status"); } catch (e) { return; }
-  if (s.state === "awaiting_2fa") {
-    show2fa(true);
-    loginMsg("Champ 2FA prêt — entre le code de ton authentificateur (une seule tentative).");
-  } else if (s.state === "running") {
-    show2fa(false);
-    loginMsg("Connexion en cours (identifiants du serveur)…");
-  } else if (s.state === "done") {
-    stopLoginPoll(); show2fa(false);
-    const r = s.result || {};
-    const ok = r.status === "logged_in" || r.status === "already_logged_in";
-    loginMsg((ok ? "✓ Reconnecté (" : "✖ Échec : ") + (ok ? r.status + ")" : (r.reason || r.status || "inconnu")), ok ? "ok" : "err");
-    setLoginStart(true, "Relancer la reconnexion");
-  }
+// The WP cookies wp-admin needs over HTTPS, each with its OWN placeholder so the
+// operator knows exactly which cookie goes on which row.
+const LOGIN_COOKIE_HINTS = ["wordpress_logged_in_…", "wordpress_sec_…"];
+
+function addLoginRow(placeholder) {
+  const nameIn = el("input", { type: "text", class: "lr-name", placeholder: placeholder || "wordpress_… (autre cookie)", autocomplete: "off", spellcheck: "false" });
+  const valIn = el("input", { type: "text", class: "lr-val", placeholder: "valeur du cookie", autocomplete: "off", spellcheck: "false" });
+  const rm = el("button", { type: "button", class: "lr-rm", title: "Retirer cette ligne" }, "✕");
+  const row = el("div", { class: "login-row" }, [nameIn, valIn, rm]);
+  nameIn.addEventListener("input", updatePreview);
+  valIn.addEventListener("input", updatePreview);
+  rm.addEventListener("click", () => { row.remove(); updatePreview(); });
+  $("#login-rows").append(row);
+  return nameIn;
 }
 
-$("#login-btn").addEventListener("click", () => {
-  loginMsg("Le mot de passe vient de l'environnement du serveur. Tu ne saisis que le code 2FA, quand il est demandé.");
-  show2fa(false); setLoginStart(true, "Lancer la reconnexion");
-  $("#login-modal").showModal();
-  pollLogin();   // reflect a login already in progress
-});
-$("#login-close").addEventListener("click", () => { $("#login-modal").close(); });
-$("#login-start").addEventListener("click", async () => {
-  setLoginStart(false, "Lancement…");
-  loginMsg("Connexion en cours (identifiants du serveur)…");
-  try {
-    await postJSON("api/login/start", {});
-  } catch (e) {
-    loginMsg("✖ " + e.message, "err"); setLoginStart(true, "Lancer la reconnexion"); return;
+function collectLoginCookies() {
+  const out = [];
+  $("#login-rows").querySelectorAll(".login-row").forEach((row) => {
+    const name = $(".lr-name", row).value.trim();
+    const value = $(".lr-val", row).value.trim();
+    if (name && value) out.push({ name, value, domain: ".allkeyshop.com", path: "/", secure: true, httpOnly: true });
+  });
+  return out;
+}
+
+function updatePreview() {
+  const cookies = collectLoginCookies();
+  const pv = $("#login-preview");
+  const n = cookies.length;
+  const sec = cookies.some((c) => c.name.startsWith("wordpress_sec_"));
+  const logged = cookies.some((c) => c.name.startsWith("wordpress_logged_in_"));
+  if (n === 0) { pv.textContent = ""; pv.className = "login-preview"; }
+  else {
+    pv.textContent = `${n} cookie(s) · wordpress_sec_ ${sec ? "✓" : "✗"} · wordpress_logged_in_ ${logged ? "✓" : "✗"}`
+      + ((!sec && !logged) ? " — aucun cookie WP d'auth, la session ne s'ouvrira pas" : "");
+    pv.className = "login-preview " + ((sec || logged) ? "ok" : "warn");
   }
-  stopLoginPoll(); LOGIN_POLL = setInterval(pollLogin, 1500); pollLogin();
+  $("#login-inject").disabled = n === 0;
+}
+
+function resetLoginRows() {
+  $("#login-rows").replaceChildren();
+  LOGIN_COOKIE_HINTS.forEach((hint) => addLoginRow(hint));   // one row per needed cookie, own hint
+  updatePreview();
+}
+
+$("#login-addrow").addEventListener("click", () => addLoginRow().focus());
+$("#login-btn").addEventListener("click", () => {
+  loginMsg(""); resetLoginRows();
+  $("#login-modal").showModal();
+  const first = $("#login-rows .lr-name"); if (first) first.focus();
 });
-$("#login-2fa-submit").addEventListener("click", async () => {
-  const input = $("#login-2fa");
-  const code = input.value.trim();
-  input.value = "";               // never keep the code in the DOM
-  if (!code) { input.focus(); return; }
-  const btn = $("#login-2fa-submit"); btn.disabled = true;
-  try { await postJSON("api/login/2fa", { code }); loginMsg("Code envoyé — vérification…"); show2fa(false); }
-  catch (e) { loginMsg("✖ " + e.message, "err"); }
-  btn.disabled = false;
+$("#login-close").addEventListener("click", () => { resetLoginRows(); $("#login-modal").close(); });
+$("#login-inject").addEventListener("click", async () => {
+  const cookies = collectLoginCookies();
+  if (!cookies.length) { loginMsg("Remplis au moins un cookie (nom + valeur).", "err"); return; }
+  $("#login-inject").disabled = true;
+  loginMsg("Injection + vérification de la session…");
+  try {
+    const r = await postJSON("api/login/cookies", { cookies });
+    resetLoginRows();               // drop the session cookie values from the DOM
+    if (r.status === "logged_in") loginMsg(`✓ Session rétablie (${r.cookies_injected} cookie(s) injecté(s), dashboard vérifié).`, "ok");
+    else if (r.status === "not_logged_in") loginMsg("✖ Cookies injectés mais session NON authentifiée — vérifie que tu as bien wordpress_sec_ et/ou wordpress_logged_in_.", "err");
+    else loginMsg("✖ " + (r.reason || r.status || "échec"), "err");
+  } catch (e) {
+    resetLoginRows();
+    loginMsg("✖ " + e.message, "err");
+  }
 });
-$("#login-2fa").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#login-2fa-submit").click(); } });
 
 loadRuns().catch((e) => { banner("Erreur de chargement : " + e.message); setStatus("Erreur"); });

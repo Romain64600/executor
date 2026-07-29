@@ -54,6 +54,21 @@ class LoginSession(WriteSubmitSession):
     """WP-admin login form primitives. No sequencing logic — see ``run_login``."""
 
     LOGIN_URL = "https://www.allkeyshop.com/blog/wp-login.php"
+    ADMIN_URL = "https://www.allkeyshop.com/blog/wp-admin/"
+
+    def set_cookies(self, cookies: list[dict[str, Any]]) -> dict[str, Any]:
+        """Inject session cookies into the tab (CDP ``Network.setCookies``).
+
+        The path AKS now requires: password login is disabled (social/OAuth
+        only), so the authenticated session is transferred as cookies exported
+        from a browser where the operator completed the social login. The cookie
+        VALUES are session secrets — passed straight to CDP, never logged. The
+        caller (``LoginManager.apply_cookies``) then navigates wp-admin and
+        proves the session with the SAME deterministic ``verify_dashboard`` used
+        by the password path (URL under /wp-admin/ + admin toolbar node)."""
+
+        self._cmd("Network.enable", {})
+        return self._cmd("Network.setCookies", {"cookies": cookies})
 
     def already_logged_in(self) -> bool:
         """Read-only: current page already a dashboard, not a login form."""

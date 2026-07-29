@@ -118,17 +118,27 @@ main{padding:.9rem;}
 dialog{border:1px solid var(--line-2);border-radius:12px;max-width:min(860px,94vw);width:860px;
   padding:0;background:var(--panel);color:var(--ink);}
 dialog::backdrop{background:rgba(0,0,0,.62);}
-#login-modal{width:min(440px,94vw);}
+#login-modal{width:min(560px,94vw);}
 .login-box{padding:1rem 1.1rem;display:flex;flex-direction:column;gap:.7rem;}
 .login-box h3{margin:0;font-size:1rem;}
-.login-msg{margin:0;color:var(--dim);font-size:.82rem;line-height:1.45;}
+.login-help{margin:0;padding-left:1.2rem;color:var(--dim);font-size:.8rem;line-height:1.55;}
+.login-help li{margin:.1rem 0;}
+.login-help code{font-family:var(--mono);font-size:.92em;background:var(--panel-2);padding:0 .25em;border-radius:4px;}
+.login-preview{margin:0;font-family:var(--mono);font-size:.76rem;min-height:1rem;color:var(--dim);}
+.login-preview.ok{color:var(--accent);}
+.login-preview.warn{color:var(--warn,#c98a00);}
+.login-preview.err{color:var(--bad);}
+.login-cols{display:grid;grid-template-columns:1fr 1.3fr 1.6rem;gap:.4rem;
+  color:var(--dim);font-size:.72rem;padding:0 .1rem;}
+.login-rows{display:flex;flex-direction:column;gap:.35rem;}
+.login-row{display:grid;grid-template-columns:1fr 1.3fr 1.6rem;gap:.4rem;align-items:center;}
+.login-row input{width:100%;box-sizing:border-box;font-family:var(--mono);font-size:.76rem;
+  padding:.35rem .5rem;background:var(--panel-2);color:var(--ink);border:1px solid var(--line-2);border-radius:7px;}
+.login-row .lr-rm{padding:.3rem;border-color:var(--line-2);color:var(--dim);line-height:1;}
+.login-addrow{align-self:flex-start;font-size:.78rem;border-color:var(--line-2);color:var(--dim);padding:.25rem .6rem;}
+.login-msg{margin:0;color:var(--dim);font-size:.82rem;line-height:1.45;min-height:1.1rem;}
 .login-msg.ok{color:var(--accent);}
 .login-msg.err{color:var(--bad);}
-.login-2fa{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;}
-.login-2fa label{color:var(--dim);font-size:.82rem;}
-.login-2fa input{flex:1;min-width:8rem;font-family:var(--mono);font-size:1rem;letter-spacing:.15em;
-  text-align:center;padding:.4rem .5rem;background:var(--panel-2);color:var(--ink);
-  border:1px solid var(--line-2);border-radius:8px;}
 .login-actions{display:flex;gap:.5rem;justify-content:flex-end;margin-top:.2rem;}
 #login-btn{border-color:var(--line-2);}
 .modal-head{display:flex;align-items:center;gap:.6rem;padding:.7rem .9rem;border-bottom:1px solid var(--line);}
