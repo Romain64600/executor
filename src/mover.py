@@ -24,12 +24,23 @@ from typing import Any
 
 from src.extractor import DEFAULT_FEED_PAGE, feed_url
 from src.submitter import (  # reuse the proven, audited feed machinery
+    CdpCommandError,
     FEED_UNREADABLE_EXCS,
+    FeedScanError,
+    NotLoggedInError,
     StopRequested,
     _SubmitterBase,
     _row_check,
     _url_key,
 )
+
+# Robustness (2026-07-29): a batch spanning many stores runs for a long time and
+# AKS can hiccup / rate-limit a scan mid-run. A read-only feed scan is safe to
+# RETRY (even after an Apply — the Apply already committed), so a bounded retry
+# on a TRANSIENT feed/CDP error keeps one blip from aborting the whole batch. A
+# NotLoggedInError is NOT retried (the session is gone — hammering is pointless).
+FEED_RETRY_ATTEMPTS = 3
+FEED_RETRY_PAUSE_S = 10.0
 
 # MV7 (review 2026-07-21): the native Apply POST reloads the source page; let it
 # commit before the verify re-scan navigates away, or the in-flight move is raced.
@@ -456,6 +467,30 @@ class Mover(_MoverBase):
     write_mode = True
     event_name = "move_offer"
     post_apply_settle = POST_APPLY_SETTLE_S  # tests patch to 0
+    feed_retry_attempts = FEED_RETRY_ATTEMPTS
+    feed_retry_pause = FEED_RETRY_PAUSE_S     # tests patch to 0
+
+    def _scan_retry(self, fn, *, what: str):
+        """Run a read-only scan ``fn`` (source or target), retrying a TRANSIENT
+        feed/CDP error a bounded number of times before giving up — so one AKS
+        blip / rate-limit hiccup does not abort a long multi-store batch. A
+        NotLoggedInError is re-raised immediately (session gone). Read-only, so
+        safe to retry even when called after an Apply has fired."""
+
+        last: Exception | None = None
+        for attempt in range(1, self.feed_retry_attempts + 1):
+            try:
+                return fn()
+            except NotLoggedInError:
+                raise
+            except (FeedScanError, CdpCommandError) as exc:
+                last = exc
+                if attempt < self.feed_retry_attempts:
+                    self._log("feed_scan_retry", what=what, attempt=attempt,
+                              error=f"{type(exc).__name__}: {exc}")
+                    if self.feed_retry_pause:
+                        time.sleep(self.feed_retry_pause)
+        raise last  # type: ignore[misc]
 
     def _move(self, entry: dict[str, Any], ctx: dict[str, Any]) -> bool:
         target_id = entry["target_list_id"]
@@ -636,9 +671,11 @@ class Mover(_MoverBase):
                 break
 
             # Fresh PROVEN scan → locate every remaining offer (reflow-safe). A
-            # feed/CDP error here is before any write this round → clean abort.
+            # feed/CDP error here is before any write this round; retry a
+            # transient blip, else clean abort.
             try:
-                index, by_url = self._full_source_scan(ctx)
+                index, by_url = self._scan_retry(lambda: self._full_source_scan(ctx),
+                                                 what="drive_source")
             except FEED_UNREADABLE_EXCS as exc:
                 result["aborted"] = "feed_unreadable"
                 self._log("aborted", reason=f"source feed scan failed closed: {exc}")
@@ -767,7 +804,8 @@ class Mover(_MoverBase):
         #    from it genuinely left the feed (dual key). A feed/CDP error now
         #    leaves the N written offers UNKNOWN (fail-closed), never "moved".
         try:
-            index, by_url = self._full_source_scan(ctx)
+            index, by_url = self._scan_retry(lambda: self._full_source_scan(ctx),
+                                             what="verify_source")
         except FEED_UNREADABLE_EXCS as exc:
             detail = ("feed/CDP error after Apply — offer state UNKNOWN, verify the move by "
                       f"hand on AKS before any retry: {type(exc).__name__}: {exc}")
@@ -805,8 +843,10 @@ class Mover(_MoverBase):
         if not to_target:
             return
         try:
-            present = self._verify_group_on_target(
-                [entry["url"] for entry, _cid in to_target], target_id, ctx)
+            present = self._scan_retry(
+                lambda: self._verify_group_on_target(
+                    [entry["url"] for entry, _cid in to_target], target_id, ctx),
+                what="verify_target")
         except FEED_UNREADABLE_EXCS as exc:
             detail = ("target-list scan error after Apply — offer state UNKNOWN, verify by "
                       f"hand: {type(exc).__name__}: {exc}")

@@ -152,6 +152,7 @@ def _run(feed, specs, *, limit=None, page_size=None, max_pages=20):
     mover.post_apply_settle = 0
     mover.empty_retry_wait_s = 0
     mover.feed_scan_settle = 0
+    mover.feed_retry_pause = 0      # keep the transient-error retries instant in tests
     return mover.run(run_id="t", store_id="38", plan=specs,
                      source_feed_page="aks-merchant-feeds-%s" % SRC,
                      max_pages=max_pages, limit=limit, batch=True)
@@ -315,6 +316,36 @@ class BatchedMoverTests(unittest.TestCase):
             self.assertIn("UNKNOWN", e["post_verify"])
         self.assertEqual(res["move_attempts"], 3)                 # all 3 were written
 
+    def test_batch_recovers_from_transient_scan_error_and_continues(self):
+        # The core of the 2026-07-29 robustness change: a transient feed/CDP error
+        # on the post-Apply source scan is RETRIED (not fatal), and the batch
+        # keeps moving — with NO double-Apply on the recovery.
+        from src.submitter import FeedScanError
+        feed = FakeFeed({SRC: [_offer(1), _offer(2)]}, page_size=10)
+        guard = StepGuard(max_attempts_per_signature=1, max_failures_per_signature=2,
+                          max_consecutive_failures=10, max_failures_per_task=10 ** 9)
+        mover = Mover(feed, guard=guard)
+        mover.post_apply_settle = 0
+        mover.empty_retry_wait_s = 0
+        mover.feed_scan_settle = 0
+        mover.feed_retry_pause = 0
+        real = mover._full_source_scan
+        state = {"calls": 0}
+
+        def flaky(ctx):
+            state["calls"] += 1
+            if state["calls"] == 2:      # 1=drive locate, 2=post-Apply verify → one blip
+                raise FeedScanError("transient blip")
+            return real(ctx)
+
+        mover._full_source_scan = flaky
+        res = mover.run(run_id="t", store_id="38", plan=[_spec(1), _spec(2)],
+                        source_feed_page="aks-merchant-feeds-%s" % SRC, max_pages=20, batch=True)
+        self.assertIsNone(res["aborted"])        # recovered — did NOT abort
+        self.assertEqual(res["moved"], 2)         # both still moved
+        self.assertEqual(feed.apply_count, 1)     # ONE Apply — the retry did not re-fire it
+        self.assertEqual(self._tgt_ids(feed), {"o1", "o2"})
+
     def test_breaker_trips_after_ten_consecutive_failures_before_next_group(self):
         # 10 swallowed offers on page 1 → 10 consecutive post-Apply failures →
         # the 10-consecutive breaker blocks BEFORE page 2's Apply ever fires.
@@ -435,6 +466,66 @@ class FullCoverageScanTests(unittest.TestCase):
         want = {_url_key("https://m/99")}
         with self.assertRaises(FeedScanError):
             sub._scan_feed("38", "aks-merchant-feeds-8", "all", 3, stop_on_urls=want)
+
+
+class ScanRetryTests(unittest.TestCase):
+    """The bounded retry that keeps one transient feed/CDP blip from aborting a
+    long multi-store batch (2026-07-29)."""
+
+    def _mover(self):
+        m = Mover(object())
+        m.feed_retry_pause = 0
+        m.feed_retry_attempts = 3
+        return m
+
+    def test_recovers_after_transient_error(self):
+        from src.submitter import FeedScanError
+        calls = {"n": 0}
+
+        def fn():
+            calls["n"] += 1
+            if calls["n"] < 3:
+                raise FeedScanError("blip")
+            return "OK"
+
+        self.assertEqual(self._mover()._scan_retry(fn, what="t"), "OK")
+        self.assertEqual(calls["n"], 3)
+
+    def test_aborts_after_max_attempts(self):
+        from src.submitter import FeedScanError
+        calls = {"n": 0}
+
+        def fn():
+            calls["n"] += 1
+            raise FeedScanError("persistent")
+
+        with self.assertRaises(FeedScanError):
+            self._mover()._scan_retry(fn, what="t")
+        self.assertEqual(calls["n"], 3)          # tried exactly feed_retry_attempts
+
+    def test_not_logged_in_is_not_retried(self):
+        from src.submitter import NotLoggedInError
+        calls = {"n": 0}
+
+        def fn():
+            calls["n"] += 1
+            raise NotLoggedInError("session gone")
+
+        with self.assertRaises(NotLoggedInError):
+            self._mover()._scan_retry(fn, what="t")
+        self.assertEqual(calls["n"], 1)          # session gone → NO retry
+
+    def test_non_feed_exception_propagates_without_retry(self):
+        # An unexpected (non-feed) error must NOT be caught/retried/swallowed.
+        calls = {"n": 0}
+
+        def fn():
+            calls["n"] += 1
+            raise ValueError("a bug, not a feed blip")
+
+        with self.assertRaises(ValueError):
+            self._mover()._scan_retry(fn, what="t")
+        self.assertEqual(calls["n"], 1)          # propagated immediately, no retry
 
 
 if __name__ == "__main__":
