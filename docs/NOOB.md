@@ -105,9 +105,9 @@ détaillée en section 5) :
 
 Le projet est une suite de scripts numérotés, comme les postes d'une chaîne de
 montage. Les étapes 00 à 04 sont en **lecture seule** (elles ne peuvent rien
-modifier sur le site). Seules deux étapes « écrivent » quelque chose : l'étape
-0b (la connexion, qui saisit les identifiants — uniquement sur ordre
-explicite) et l'étape 05 (la soumission — verrouillée).
+modifier sur le site). Seule l'étape 05 « écrit » des offres (verrouillée
+derrière validation + go explicite). La reconnexion de session (transfert de
+cookies via la console) est un chemin à part, hors de cette chaîne.
 
 ```
 00 audit ──► 01 invariants ──► 02 extraction ──► 03 matching ──► 04 validation ──► 05 soumission
@@ -115,8 +115,9 @@ explicite) et l'étape 05 (la soumission — verrouillée).
  lieux)        obligatoire)       marchand)          associer)       HUMAINE)          avec preuve)
 ```
 
-(À côté de la chaîne : l'étape **0b** — la connexion — remet la session en
-état quand elle a expiré, uniquement à la demande. Voir plus bas.)
+(À côté de la chaîne : la **reconnexion par cookies** — `/executor/tri` →
+Se reconnecter — remet la session en état quand elle a expiré, uniquement à
+la demande. Voir plus bas.)
 
 ### Étape 00 — `scripts/00_audit_env.sh` : l'état des lieux
 
@@ -140,22 +141,23 @@ Il imprime un JSON avec deux booléens : `ok` (tout est vert ?) et
 `authoritative` (suis-je sur la vraie machine de production ?). **Aucune étape
 d'écriture ne se déverrouille tant que les deux ne sont pas vrais.**
 
-### Étape 0b — `scripts/00b_login.py` : la connexion (la seule étape qui touche aux identifiants)
+### Étape re-auth — cookie transfer (la seule qui touche aux secrets de session)
 
 Toutes les autres étapes supposent une session déjà connectée à
-l'administration WordPress d'AKS. Quand la session a expiré, cette étape se
-reconnecte — **uniquement sur ordre explicite de Romain**, jamais toute seule
-(une étape qui découvre qu'elle est déconnectée s'arrête avec un rapport
-d'erreur ; elle ne relance jamais le login elle-même). Elle exige d'abord,
-elle aussi, le feu vert des invariants.
+l'administration WordPress d'AKS. Quand la session a expiré, on ne tape plus
+de mot de passe ni de 2FA dans l'onglet VPS : AKS n'accepte plus que le login
+social/OAuth. La reconnexion se fait par **transfert de cookies** depuis la
+console admin (`/executor/tri` → 🔑 Se reconnecter) — **uniquement sur ordre
+explicite de Romain**, jamais toute seule (une étape qui découvre qu'elle est
+déconnectée s'arrête avec un rapport d'erreur ; elle ne relance jamais le
+login elle-même). Elle exige d'abord, elle aussi, le feu vert des invariants.
 
-Ses règles sont volontairement rigides : le mot de passe vient de
-l'environnement (jamais d'un fichier, d'un journal ou d'un commit) ; le code
-2FA n'est demandé que lorsque le champ est **visible et prêt** à être soumis
-immédiatement — jamais en avance ; et chacun n'a droit qu'à **une seule
-tentative** : un échec = arrêt, jamais de boucle de réessai (des connexions
-ratées en rafale peuvent faire bloquer le compte). Si la session est déjà
-connectée, l'étape ne fait rien et le dit.
+Procédure : Romain se connecte via le login social dans **son** navigateur,
+recopie le Nom + la Valeur des cookies `wordpress_logged_in_*` et
+`wordpress_sec_*`, et le serveur les injecte dans l'onglet CDP du VPS puis
+prouve la session (`verify_dashboard`). Les **valeurs** des cookies sont des
+secrets de session — jamais journalisées, stockées, ni commitées ; seuls les
+noms / compteurs et le booléen de preuve remontent.
 
 ### Étape 02 — `scripts/02_extract_feed.py` : l'extracteur (lecture seule)
 
@@ -298,7 +300,10 @@ mot de passe) est le poste de travail normal de l'opérateur. Elle permet de :
 - lancer la répétition générale (*dry-run*) puis, sur décision, la vraie
   soumission : le bouton « Soumettre » ouvre une confirmation qui exige de
   taper `GO`, et c'est le **même** `05_submit.py` qui tourne, surveillé de
-  bout en bout (jamais lancé-puis-oublié).
+  bout en bout (jamais lancé-puis-oublié) ;
+- reconnecter la session AKS par **transfert de cookies**
+  (`/executor/tri` → 🔑 Se reconnecter) quand la session WP a expiré —
+  jamais auto-déclenché.
 
 La page affiche aussi l'état de chaque offre (**ajoutée** / **échec** / **en
 attente**) et **verrouille** les offres déjà créées : impossible de les
@@ -544,7 +549,8 @@ Les répertoires `runs/`, `logs/`, `state/` et le fichier `.env` ne sont
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — les rôles et le flux cible (la décision de conception).
 - [`EXECUTOR_RULES.md`](EXECUTOR_RULES.md) — la spécification déterministe de chaque étape (les règles R01, R22, R24…).
 - [`INVARIANTS.md`](INVARIANTS.md) — les invariants navigateur/réseau non négociables.
-- [`LOGIN_SPEC.md`](LOGIN_SPEC.md) — l'étape 0b (connexion / 2FA), la seule qui touche aux identifiants.
+- [`LOGIN_SPEC.md`](LOGIN_SPEC.md) — reconnexion par transfert de cookies
+  (password+2FA retiré) ; la seule étape qui touche aux secrets de session.
 - [`DATA_CONTRACTS.md`](DATA_CONTRACTS.md) — les schémas JSON de chaque étape et le format des journaux.
 - [`SUBMITTER_SPEC.md`](SUBMITTER_SPEC.md) — la spécification détaillée du soumetteur.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — le guide du développeur.

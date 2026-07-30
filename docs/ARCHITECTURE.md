@@ -5,6 +5,8 @@ A map of the system as it runs today. The per-stage behavioural rules live in
 skill to this code); this file describes how the pieces fit together.
 Rewritten 2026-07-17 (audit DO2: the previous version predated Stage 0b and
 the admin page, and still attributed the validation UI to a hypothetical N8N).
+Re-auth updated 2026-07-30: password+2FA Stage 0b retired; cookie transfer
+via `/executor/tri` → Se reconnecter.
 
 ## Roles
 
@@ -26,7 +28,7 @@ every event in the append-only `logs/<run_id>.jsonl`.
 | Stage | Script | What it does | Artifacts |
 |---|---|---|---|
 | gate | `scripts/01_check_invariants.py` | Read-only invariant report (AKS reachable, no OpenVPN, official CDP endpoint + UA), `authoritative` flag | JSON on stdout |
-| 0b login | `scripts/00b_login.py` | WP-admin login + 2FA in the CDP tab. Explicit go only, one attempt each for password and code, credentials from env only, 2FA asked only once the field is visible | log only |
+| re-auth | admin `/executor/tri` → Se reconnecter | Cookie transfer into the VPS CDP tab (AKS is social-login only). Explicit operator submit only; proves session with `verify_dashboard`. Never self-triggered | log only |
 | 1 extract | `scripts/02_extract_feed.py` | Read-only feed walk over CDP; repeated full sweeps until one adds zero new ids (coverage proof); blank in-range pages retried once then classified or aborted (`EmptyPageAnomaly`, seen live 2026-07-07) | `raw.json`, `offers.json` |
 | 2 match | `scripts/03_match.py` | Pure rules + read-only AKS GETs: skip tables, platform/region/edition detection, slug guessing + R30 site-search fallback, R01/R01b name checks. Doubt → skip | `candidates.json`, `skipped.json`, `report.txt`, `match_meta.json` |
 | 3 validate | `scripts/04_validate.py` | `template` writes the fill-in file; `check` verifies it against the current candidates and writes `approved.json` — the only writer of that file, CLI and admin flows alike | `validation.template.json`, `validation.json`, `approved.json` |
@@ -112,9 +114,12 @@ Stage logic:
   `Submitter` (the only writer) on top; `fetch_session_catalog`.
 - `src/submit_session.py` — the CDP session split (see next section) plus all
   embedded page-probe JS.
-- `src/login_session.py` — `LoginSession` + `run_login`: Stage 0b, reusing
-  the already-audited trusted-input primitives; one attempt each, never a
-  retry loop, credentials never in a log record.
+- `src/login_session.py` — `LoginSession`: cookie-transfer primitives
+  (`set_cookies`, `verify_dashboard`) for the admin re-auth path; reuses the
+  audited CDP session plumbing. Cookie VALUES never appear in a log record.
+- `src/admin/login_manager.py` — supervises ONE cookie-transfer re-auth at a
+  time (explicit operator submit only, behind the browser lock + invariant
+  gate); never self-triggered by another stage's `NotLoggedInError`.
 
 Scripts under `scripts/` are thin CLIs: argument parsing, the invariant gate,
 the browser lock, artifact writing. The logic lives in `src/` and is
@@ -149,8 +154,10 @@ endpoint** (`OFFICIAL_CDP_ENDPOINT`); nothing else is ever probed.
   the only mode proven to fire Driffle's handler — Chantier n°1,
   2026-07-03). No `form.submit()`, no direct XHR (S09).
   `scripts/05_submit.py` instantiates the write class only under `--submit`.
-- `LoginSession` extends `WriteSubmitSession` to point the same trusted-input
-  primitives at the WP login form (Option A, 2026-07-14).
+- `LoginSession` extends `WriteSubmitSession` only to reuse the audited CDP
+  session plumbing for cookie transfer (`set_cookies` + `verify_dashboard`).
+  The password+2FA login form path was retired 2026-07-29 (AKS is social-login
+  only).
 
 ## Fail-closed philosophy
 

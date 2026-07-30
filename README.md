@@ -99,7 +99,7 @@ executor/
 │   ├── SUBMITTER_SPEC.md       # Stage 4 submitter spec (dry-run + trusted write path)
 │   ├── AKS_LISTS.md            # Stage 6 Move-to-List: list taxonomy + move mechanic
 │   ├── LEARNING_PROCESS.md     # learning → pipeline: the builder-offline process (D2)
-│   ├── LOGIN_SPEC.md           # Stage 0b login/2FA spec
+│   ├── LOGIN_SPEC.md           # session re-auth: cookie transfer (password+2FA retired)
 │   ├── DATA_CONTRACTS.md       # stage I/O JSON schemas + run-log format
 │   ├── AUDIT.md                # Sprint 1 audit (2026-07-02) — fully resolved
 │   ├── AUDIT_2026-07-17.md     # audit register 2026-07-17 — findings tracked OPEN → FIXED
@@ -108,22 +108,24 @@ executor/
 │   └── ua-switcher-aks-staff.json  # UA-Switcher policy config (AKS/Staff UA)
 ├── scripts/
 │   ├── 00_audit_env.sh         # read-only env audit, tags PASS/FAIL/N-A
-│   ├── 00b_login.py            # Stage 0b login/2FA CLI — explicit go only, one attempt each
 │   ├── 01_check_invariants.py  # thin CLI over src/invariants.py (fail-closed JSON)
 │   ├── 02_extract_feed.py      # read-only feed extractor CLI (gated on green invariants)
 │   ├── 03_match.py             # read-only matcher CLI → candidates/skipped/report
 │   ├── 04_validate.py          # validation CLI (template + check, fail-closed gate)
 │   ├── 05_submit.py            # submitter CLI — dry-run default; --submit = real write (trusted)
 │   ├── 06_move.py              # Stage 6 Move-to-List writer — dry-run default; --execute = real move
-│   └── 07_admin_server.py      # admin page server (loopback only, behind nginx basic auth)
+│   ├── 07_admin_server.py      # admin page server (loopback only, behind nginx basic auth)
+│   ├── 08_sort_plan.py         # Stage 9 sort classifier → move plan
+│   └── 09_sort_move.py         # Stage 9 sort-move writer (batched / deferred)
 ├── manual_launch/
 │   └── run_executor.sh         # terminal-only launcher: prepare / check / dry-run / submit
 ├── ops/                        # admin page install: systemd unit, nginx vhost, runbook
 ├── src/
 │   ├── admin/                  # admin page: HTTP app (app.py), safe run access (runs.py),
 │   │                           #   validation triple regen (validation_io.py), supervised
-│   │                           #   submit (submit_manager.py), Learning annotations
-│   │                           #   (learning_io.py), static/ UI
+│   │                           #   submit (submit_manager.py), cookie-transfer re-auth
+│   │                           #   (login_manager.py), Learning annotations (learning_io.py),
+│   │                           #   static/ UI
 │   ├── aks_env.py              # constants, pure validators, env classification, HTTP probes
 │   ├── browser_lock.py         # advisory flock on state/browser.lock — one tab, one navigator (OP1)
 │   ├── cdp_client.py           # read-only CDP /json/version client (no browser actions)
@@ -138,7 +140,7 @@ executor/
 │   ├── mover.py                # Stage 6 Move-to-List writer (the submitter's sibling)
 │   ├── move_plan.py            # Stage 6 plan builder — confirmed learning.json dispositions
 │   ├── aks_lists.py            # merchant-feed list catalog + deterministic triage suggestions
-│   ├── login_session.py        # Stage 0b login/2FA session (reuses the trusted-input primitives)
+│   ├── login_session.py        # cookie-transfer primitives (set_cookies + verify_dashboard)
 │   ├── pacing.py               # bounded-random pacing between page loads / submissions
 │   ├── run_log.py              # append-only JSONL run logger (redacting)
 │   └── step_guard.py           # deterministic, fail-closed StepGuard
@@ -157,10 +159,11 @@ executor/
   the Docker bridge at `http://172.17.0.1:9223/json/version` (the official
   endpoint; `ops/BROWSER_RUNBOOK.md` §1.3). This bridge is mandatory even though
   the Hermes conversational supervisor is optional; the two only share a name.
-- For the login stage only (`scripts/00b_login.py`, see
-  [`docs/LOGIN_SPEC.md`](docs/LOGIN_SPEC.md)): `AKS_WP_USER` and
-  `AKS_WP_PASSWORD` in the environment (e.g. a `chmod 600` `.env` you
-  `source`, already gitignored) — never a CLI arg, never committed.
+- Session re-auth is **cookie transfer** only (AKS is social-login only;
+  password+2FA Stage 0b is retired). From `/executor/tri` → 🔑 Se reconnecter,
+  paste the WP session cookies after completing social login in your own
+  browser. Cookie VALUES are session secrets — never logged, stored, or
+  committed. See [`docs/LOGIN_SPEC.md`](docs/LOGIN_SPEC.md).
 
 ---
 
@@ -434,9 +437,9 @@ the `aks-data-entry` skill maps onto a guard signal.
 - [`docs/AKS_LISTS.md`](docs/AKS_LISTS.md) — Stage 6 Move-to-List: the
   merchant-feed list taxonomy and the deterministic (read-only-captured) move
   mechanic.
-- [`docs/LOGIN_SPEC.md`](docs/LOGIN_SPEC.md) — Stage 0b: the deterministic
-  login/2FA design (credentials from the environment only, 2FA requested only
-  once visible and ready, one attempt each).
+- [`docs/LOGIN_SPEC.md`](docs/LOGIN_SPEC.md) — session re-auth by cookie
+  transfer (password+2FA Stage 0b retired): operator social-login, paste WP
+  cookies into `/executor/tri` → Se reconnecter; values never logged/stored.
 - [`docs/INVARIANTS.md`](docs/INVARIANTS.md) — the non-negotiable browser/network
   invariants.
 - [`docs/AUDIT_2026-07-17.md`](docs/AUDIT_2026-07-17.md) — the audit register:
@@ -486,11 +489,14 @@ the `aks-data-entry` skill maps onto a guard signal.
   after every click, the whole refreshed feed is re-scanned; `success = offer no
   longer present` (never `[data-success]`). Since 2026-07-07 the same scan also
   refreshes the batch row index (pagination reflow).
-- [x] **Login / 2FA — Stage 0b** (`src/login_session.py`, `scripts/00b_login.py`,
-  2026-07-14, Romain Option A): narrowly-scoped, deterministic login on
-  explicit go only. Password from the environment, never stored/logged; a 2FA
-  code is requested only once the field is confirmed visible and ready, one
-  attempt each, no retry loop. See [`docs/LOGIN_SPEC.md`](docs/LOGIN_SPEC.md).
+- [x] **Session re-auth — cookie transfer** (`src/admin/login_manager.py`,
+  `src/login_session.py`, 2026-07-29): AKS is social-login only, so the old
+  password+2FA Stage 0b (`scripts/00b_login.py`) was retired. The operator
+  completes social login in their own browser, pastes the WP session cookies
+  into `/executor/tri` → 🔑 Se reconnecter; the server injects them (official
+  CDP only) and proves the session with `verify_dashboard`. Explicit go only,
+  never self-triggered by a `NotLoggedInError`. Cookie VALUES are never
+  logged/echoed/stored. See [`docs/LOGIN_SPEC.md`](docs/LOGIN_SPEC.md).
 - [x] **Admin operator page** (`src/admin/`, `scripts/07_admin_server.py`,
   `ops/`) — live on the VPS at `/executor/`: loopback-only stdlib HTTP app
   behind nginx HTTPS + basic auth, systemd-supervised (`aks-admin.service`).
@@ -560,7 +566,7 @@ the `aks-data-entry` skill maps onto a guard signal.
   may or may not have been written), verify the real state **by hand on AKS
   before any retry**; never replay blindly (a blind retry can double-create).
   Runbook: [`ops/BROWSER_RUNBOOK.md`](ops/BROWSER_RUNBOOK.md) §2.5.
-- 2FA is never requested before the field is visible and ready to submit
-  immediately (Stage 0b, `docs/LOGIN_SPEC.md`) — one attempt each for the
-  password and the code, no retry loop; after any login/2FA/CDP failure,
-  stop and report.
+- Session re-auth is **cookie transfer** only (`docs/LOGIN_SPEC.md`): never
+  self-triggered; cookie VALUES never logged/stored; a `NotLoggedInError` from
+  any other stage is a fail-closed STOP + error report — wait for Romain's
+  explicit go on `/executor/tri` → Se reconnecter.

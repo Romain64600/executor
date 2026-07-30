@@ -74,7 +74,7 @@ actions through the guard.
 | Skill rule | StepGuard mechanism |
 |---|---|
 | Same approach fails 2× → STOP, diagnose, don't retry a 3rd time `[G03][anti-boucle]` | `max_attempts_per_signature = 2` → `repeated_signature_failure` block |
-| Login / 2FA / CDP fails 2× → STOP `[S15][I18b]` | login/2FA/CDP steps sized with `max_attempts_per_signature = 2`; second failure hard-blocks |
+| Re-auth / CDP fails 2× → STOP `[S15][I18b]` | cookie-transfer / CDP steps sized with `max_attempts_per_signature = 2`; second failure hard-blocks |
 | Don't thrash between browsers/VPN/scripts `[S15]` | consecutive-failure and per-task failure-budget blocks |
 | A block cannot be argued away by the model | block lives in `StepGuard` state, cleared only by a genuinely new `task_id` (`start_task`) |
 | New instruction / interruption cancels the old task `[S15]` | the loop assigns a new `task_id` per user intent; leftover work cannot pass `check()` |
@@ -756,27 +756,27 @@ query, network payload inspection, XHR, admin-ajax, or curl backend probing.
 
 ---
 
-## 9. Login / 2FA policy — Stage 0b, built (`LOGIN_SPEC.md`, 2026-07-14)
+## 9. Session re-auth — cookie transfer (`LOGIN_SPEC.md`, 2026-07-29)
 
-The rules below were fixed ahead of time and now govern the built stage
-(`src/login_session.py`, `scripts/00b_login.py`; design in
-[`LOGIN_SPEC.md`](LOGIN_SPEC.md)):
+AKS disabled username/password login (social/OAuth only). The old password+2FA
+Stage 0b (`scripts/00b_login.py`, `run_login`) is **retired**. Re-auth is
+**cookie transfer** only (`src/admin/login_manager.py`, `src/login_session.py`;
+design in [`LOGIN_SPEC.md`](LOGIN_SPEC.md)):
 
-- Never ask for a 2FA code in advance. Ask **only** when the 2FA field is
-  visible **and** the code can be typed and submitted immediately `[I18][2FA
-  override]`.
-- **One attempt each** for the password and the 2FA code, ever — a wrong one
-  is a hard STOP in the same run, not "two then stop" (repeated failed logins
-  can lock/flag the account; login is not a place to retry). Diagnose, wait
-  for Romain, a fresh run is a new attempt.
+- The operator completes the social login in their **own** browser, then pastes
+  the WP session cookies (`wordpress_logged_in_*`, `wordpress_sec_*`) into the
+  admin console (`/executor/tri` → 🔑 Se reconnecter). The server injects them
+  via CDP `Network.setCookies` (official endpoint only) and proves the session
+  with `verify_dashboard` (URL under `/wp-admin/` AND `#wpadminbar` present).
+- **Explicit operator submit only** — never self-triggered. A
+  `NotLoggedInError` from another stage stays a fail-closed STOP + error
+  report; wait for Romain's go on the console `[S15]`.
+- Cookie VALUES are session secrets — never logged, echoed, stored, or
+  committed. Injection is restricted to `allkeyshop.com` by exact host/suffix
+  match. Fail-closed on missing cookies / red invariants / browser busy.
 - On connection loss, first check whether the existing Chrome session is still
-  logged in (`already_logged_in()`, idempotent no-op); only invoke this stage
-  if the feed redirects to `wp-login.php`, and only on Romain's explicit go —
-  a `NotLoggedInError` from another stage stays a fail-closed STOP + error
-  report, never an auto-trigger for this one `[S15]`.
-- Password/code never stored, logged, or committed — read from the
-  environment (`AKS_WP_USER`/`AKS_WP_PASSWORD`) and stdin only; redaction is
-  `src/run_log.py`'s existing `RunLogger` key-name mechanism.
+  logged in; only invoke re-auth if the feed redirects to `wp-login.php`, and
+  only on Romain's explicit go.
 
 ---
 

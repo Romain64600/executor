@@ -242,16 +242,15 @@ the whole mechanism against the live feed with no risk before enabling `--submit
 
 ---
 
-## 8. Login / 2FA — a separate stage, see `LOGIN_SPEC.md`
+## 8. Session re-auth — a separate path, see `LOGIN_SPEC.md`
 
 The submitter itself still assumes an already-authenticated WP session (like the
-extractor) and never requests a 2FA code or automates login inline — that stays
-out of scope *for this stage*. Login is now built as its own stage
-(`docs/LOGIN_SPEC.md`, `src/login_session.py`, `scripts/00b_login.py`,
-2026-07-14, Romain Option A): a code is requested only when the 2FA field is
-visible and ready to submit immediately, one attempt each for the password and
-the code, never a retry loop, never self-triggered by another stage's
-`NotLoggedInError`.
+extractor) and never automates login inline — that stays out of scope *for this
+stage*. Re-auth is **cookie transfer** only (`docs/LOGIN_SPEC.md`,
+`src/admin/login_manager.py`, `src/login_session.py`, 2026-07-29): AKS is
+social-login only, so the old password+2FA Stage 0b was retired. The operator
+pastes WP session cookies into `/executor/tri` → Se reconnecter; never
+self-triggered by another stage's `NotLoggedInError`.
 
 ---
 

@@ -222,21 +222,21 @@ sudo sh -c 'hostname > /etc/aks-executor.target'
 sudo chmod 644 /etc/aks-executor.target
 ```
 
-### 1.7 La session WordPress AKS (login)
+### 1.7 La session WordPress AKS (re-auth)
 
 - Les cookies de session WP vivent **dans le profil Chromium**
   (`/home/debian/.hermes/chromium-profile`, cf. `--user-data-dir` §1.2).
   Ils sont sur disque : un restart de `aks-chromium` **ne déconnecte pas**.
 - Perdre le profil (VM reconstruite, répertoire effacé) = session perdue →
-  Stage 0b login (`scripts/00b_login.py`, `docs/LOGIN_SPEC.md`),
-  **uniquement sur go explicite de Romain**, une seule tentative
-  mot de passe et une seule tentative 2FA.
-- Les identifiants viennent de l'environnement seulement :
-  `AKS_WP_USER` / `AKS_WP_PASSWORD`, typiquement via un `.env` à la racine
-  du dépôt, `chmod 600`, gitignoré, jamais commité. Vérifié 2026-07-17 :
-  **aucun `.env` présent sur le disque** — c'est l'état normal hors
-  fenêtre de login ; on le crée au moment du login et on peut le supprimer
-  après.
+  reconnexion par **transfert de cookies** depuis la console
+  (`/executor/tri` → 🔑 Se reconnecter, `docs/LOGIN_SPEC.md`),
+  **uniquement sur go explicite de Romain**. AKS est social-login only :
+  l'ancien Stage 0b password+2FA (`scripts/00b_login.py`) est retiré.
+- Procédure : se connecter via le login social dans **son** navigateur,
+  recopier Nom + Valeur des cookies `wordpress_logged_in_*` et
+  `wordpress_sec_*` dans la console ; le serveur les injecte (CDP officiel)
+  et prouve la session (`verify_dashboard`). Les **valeurs** sont des
+  secrets de session — jamais journalisées, stockées, ni commitées.
 - Un `NotLoggedInError` dans n'importe quel autre stage = STOP échec-fermé +
   rapport d'erreur. Jamais de re-login auto-déclenché.
 
@@ -296,7 +296,8 @@ Après restart, vérifier :
 2. `curl -s http://172.17.0.1:9223/json/version` → même réponse via le pont ;
 3. la session WP est intacte (cookies sur disque, §1.7) — un
    `NotLoggedInError` au prochain stage signalerait le contraire : STOP,
-   rapport, attendre le go de Romain pour le Stage 0b.
+   rapport, attendre le go de Romain pour le transfert de cookies
+   (`/executor/tri` → Se reconnecter).
 
 ### 2.2 Pont socat mort (9222 répond mais pas 9223)
 
@@ -417,13 +418,11 @@ requise par le pont socat, §1.3).
    ```
    Attendu : `ok: true` **et** `authoritative: true`. Tant que ce n'est pas
    vert sur le VPS, tout reste en lecture seule (CLAUDE.md).
-10. **Login Stage 0b** — profil vierge = pas de session WP. Sur go explicite
-    de Romain uniquement : créer `.env` (`chmod 600`, gitignoré) avec
-    `AKS_WP_USER` / `AKS_WP_PASSWORD`, puis :
-    ```sh
-    set -a; source .env; set +a; python3 scripts/00b_login.py
-    ```
-    Une tentative mot de passe, une tentative 2FA, jamais de boucle
-    (`docs/LOGIN_SPEC.md`).
+10. **Re-auth (cookie transfer)** — profil vierge = pas de session WP. Sur go
+    explicite de Romain uniquement : `/executor/tri` → 🔑 Se reconnecter,
+    coller Nom + Valeur des cookies `wordpress_logged_in_*` et
+    `wordpress_sec_*` (login social fait dans le navigateur de l'opérateur).
+    Jamais auto-déclenché (`docs/LOGIN_SPEC.md`). L'ancien
+    `scripts/00b_login.py` / `AKS_WP_*` est retiré.
 11. **Tests** : `python3 -m unittest discover -s tests` — la suite doit être verte avant de
     reprendre l'exploitation.

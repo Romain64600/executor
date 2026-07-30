@@ -3,6 +3,18 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-30 — Docs: align living docs on cookie-transfer re-auth
+
+Password+2FA Stage 0b was already retired in code (2026-07-29: commits
+`b42d878`, `2d8d859`). Living docs still pointed operators at
+`scripts/00b_login.py` / `AKS_WP_*`. Aligned:
+
+- `README.md`, `docs/ARCHITECTURE.md`, `docs/EXECUTOR_RULES.md` §9,
+  `docs/NOOB.md`, `docs/SUBMITTER_SPEC.md` §8, `ops/BROWSER_RUNBOOK.md` §1.7
+  / §3 step 10 — cookie transfer via `/executor/tri` → Se reconnecter.
+- `src/admin/static/sort.html` — button title no longer promises a 2FA prompt.
+- Historical audit / changelog entries for the old Stage 0b are left as-is.
+
 ## 2026-07-29 — Tri batché : robustesse + P1.6 (vérif différée par store) + fixes revue
 
 Suite du tri batché. Deux temps.
