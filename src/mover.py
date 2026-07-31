@@ -598,13 +598,21 @@ class Mover(_MoverBase):
 
         A scan of ``feed_page=aks-merchant-feeds-<target>`` stopping on the URL —
         an unprovable scan (max_pages hit) raises FeedScanError (fail-closed,
-        the caller marks the offer UNKNOWN), never a silent "not present"."""
+        the caller marks the offer UNKNOWN), never a silent "not present".
+
+        The target list is scanned GLOBALLY (``store_id=None``), NOT under the
+        offer's source store: a target list is cross-store, and a just-moved
+        offer can be ABSENT from its store-scoped list view (feed re-imports
+        rotate the store/id association — see feed-reimport-id-rotation) while it
+        IS on the list. The merchant URL is store-specific, so a global match is
+        unambiguous. Store-scoping here produced false "not on target" negatives
+        that undercounted moves and tripped the guard/FC3 (2026-07-31)."""
 
         key = _url_key(str(url or ""))
         if not key:
             return False
         target_page = "aks-merchant-feeds-%s" % str(target_list_id)
-        _, _, found = self._scan_feed(store_id, target_page, available, max_pages,
+        _, _, found = self._scan_feed(None, target_page, available, max_pages,
                                       stop_on_url=key)
         return bool(found)
 
@@ -621,7 +629,13 @@ class Mover(_MoverBase):
         more) raises FeedScanError, exactly like the per-offer proof — the caller
         marks the whole in-flight group UNKNOWN. ``max_pages`` is decoupled from
         the source feed's (the growing target list can be far longer); the
-        early-stop means the generous cap only bites when an offer never arrived."""
+        early-stop means the generous cap only bites when an offer never arrived.
+
+        Scanned GLOBALLY (``store_id=None``), never store-scoped: a target list is
+        cross-store and a just-moved offer can be missing from its store's list
+        view (re-import store/id rotation) yet present on the list — store-scoping
+        gave false "not on target" negatives (undercount + guard/FC3 blocks,
+        2026-07-31). The merchant URL is store-specific → a global match is ours."""
 
         want = {_url_key(str(u)) for u in urls if u}
         if not want:
@@ -629,7 +643,7 @@ class Mover(_MoverBase):
         target_page = "aks-merchant-feeds-%s" % str(target_id)
         max_pages = max(int(ctx["max_pages"]), TARGET_SCAN_MAX_PAGES)
         _, by_url, _ = self._scan_feed(
-            ctx["store_id"], target_page, ctx["available"], max_pages, stop_on_urls=want)
+            None, target_page, ctx["available"], max_pages, stop_on_urls=want)
         return want & by_url.keys()
 
     # ------------------------------------------------------------------ batched

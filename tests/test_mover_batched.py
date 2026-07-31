@@ -48,7 +48,8 @@ class FakeFeed:
 
     def __init__(self, lists, page_size=2, *, fail_register=(), swallow_target=(),
                  bulk_list_lies=False, break_after_apply=False, break_target_scan=False,
-                 rename_on_page=None, raise_reads_after_apply=None, raise_on_apply=False):
+                 rename_on_page=None, raise_reads_after_apply=None, raise_on_apply=False,
+                 hide_on_target_when_store_scoped=None):
         self.lists = {k: [dict(o) for o in v] for k, v in lists.items()}
         self.page_size = page_size
         self.fail_register = set(fail_register)
@@ -61,6 +62,11 @@ class FakeFeed:
         # blip mid-pass) — distinct from break_after_apply, which returns empty reads.
         self.raise_reads_after_apply = raise_reads_after_apply
         self.raise_on_apply = raise_on_apply   # click_apply itself raises (Apply outcome UNKNOWN)
+        # ids that are on the TARGET list globally but HIDDEN under a store-scoped
+        # (?store=…) target view — models the re-import store/id rotation that made
+        # a moved offer invisible to a store-filtered RV2 scan (2026-07-31 fix).
+        self.hide_on_target_when_store_scoped = set(hide_on_target_when_store_scoped or ())
+        self._store_scoped = False
         self._fp = None
         self._page = 1
         self._url = ""
@@ -81,6 +87,7 @@ class FakeFeed:
         self._fp = m.group(1) if m else None
         pm = _P_RE.search(url)
         self._page = int(pm.group(1)) if pm else 1
+        self._store_scoped = "store=" in url   # a ?store=… filter vs the global list view
         if self._fp == TGT and self._page == 1:
             self.target_scan_starts += 1   # each target scan restarts at page 1
         self._registered = []
@@ -94,7 +101,12 @@ class FakeFeed:
 
     # -- page reads --
     def _cur(self):
-        return self.lists.get(self._fp, [])
+        lst = self.lists.get(self._fp, [])
+        # A store-scoped view of the TARGET list hides the re-import-rotated ids —
+        # the global (store=None) view shows them. Source scans are unaffected.
+        if self._fp == TGT and self._store_scoped and self.hide_on_target_when_store_scoped:
+            lst = [o for o in lst if o["id"] not in self.hide_on_target_when_store_scoped]
+        return lst
 
     def _rows(self):
         s = self.page_size
@@ -220,6 +232,21 @@ class BatchedMoverTests(unittest.TestCase):
         self.assertIn("NOT found on target", by_id["o1"]["post_verify"])
         self.assertTrue(by_id["o2"]["moved"])                # o2 unaffected
         self.assertEqual(res["moved"], 1)
+
+    def test_target_verify_is_global_not_store_scoped(self):
+        # Regression (2026-07-31): a moved offer that a re-import hides from its
+        # STORE-scoped target view but that IS on the list globally must still
+        # verify as moved — the RV2 target scan runs global (store=None). A
+        # store-scoped scan gave false "left source but NOT on target" negatives
+        # (undercount + guard/FC3 blocks). o1 is hidden under ?store=…, visible
+        # globally; it must score moved.
+        feed = FakeFeed({SRC: [_offer(1), _offer(2)]}, page_size=10,
+                        hide_on_target_when_store_scoped={"o1"})
+        res = _run(feed, [_spec(1), _spec(2)])
+        by_id = {e["offer_id"]: e for e in res["plan"]}
+        self.assertTrue(by_id["o1"]["moved"], "o1 must verify on the GLOBAL target list")
+        self.assertTrue(by_id["o2"]["moved"])
+        self.assertEqual(res["moved"], 2)
 
     def test_feed_error_after_apply_marks_group_unknown_and_aborts(self):
         feed = FakeFeed({SRC: [_offer(1), _offer(2)]}, page_size=10, break_after_apply=True)
@@ -703,6 +730,19 @@ class DeferredBatchedTests(unittest.TestCase):
         self.assertEqual(res["moved"], 2)
         self.assertEqual({o["id"] for o in feed.lists["8"]}, {"o1"})    # its own list
         self.assertEqual({o["id"] for o in feed.lists["21"]}, {"o2"})
+
+    def test_deferred_target_verify_is_global_not_store_scoped(self):
+        # The deferred per-store verify shares _verify_group_on_target — same fix:
+        # an offer hidden from the store-scoped target view but on the list
+        # globally must score moved (this is the exact prod false-negative that
+        # tripped FC3 on Gift cards, 2026-07-31).
+        feed = FakeFeed({SRC: [_offer(1), _offer(2)]}, page_size=10,
+                        hide_on_target_when_store_scoped={"o2"})
+        res = self._run_deferred(feed, [_spec(1), _spec(2)])
+        by_id = {e["offer_id"]: e for e in res["plan"]}
+        self.assertTrue(by_id["o1"]["moved"])
+        self.assertTrue(by_id["o2"]["moved"], "o2 must verify on the GLOBAL target list")
+        self.assertEqual(res["moved"], 2)
 
     def test_deferred_falls_back_to_per_group_when_limit_set(self):
         # deferred + a canary limit must NOT use the deferred path (tight verify
