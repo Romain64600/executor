@@ -3,6 +3,30 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-07-31 — Tri : RV2 target-verify GLOBAL + mega-stores hors-scope (Gift cards)
+
+Opération de tri Gift cards (liste 21) sur le scan frais `20260730-134546-sort`.
+
+**Bug RV2 trouvé + corrigé (commit `d3faec0`).** Store 70 a compté 8 gift cards
+« left source but NOT on target » ; un scan tous-stores read-only les a toutes
+trouvées SUR la liste Gift cards. `_verify_on_target` / `_verify_group_on_target`
+scannaient la liste cible sous le store SOURCE de l'offre (`?store=70`) ; une
+liste cible est inter-stores et une offre juste déplacée peut être absente de sa
+vue filtrée par store (rotation store/id au ré-import) tout en étant sur la liste.
+Fix : scan cible GLOBAL (`store_id=None`) — l'URL marchande est propre au store,
+un match global est sans ambiguïté. Ces faux négatifs sous-comptaient les moves ET
+gonflaient les échecs → breaker guard + FC3 (refus du store suivant, en partie une
+fausse alerte). +2 tests (par-groupe + différé), garde-fou vérifié (échoue sur le
+code pré-fix). Actif au prochain run via le spawn sous-processus, sans restart.
+
+**Mega-stores 126 & 162 hors-scope (décision Romain 2026-08-03).** Le feed source
+de store 126 fait **920 pages** (~92k offres ; 1783 Gift cards dedans), 162 est
+plus gros. La preuve fail-closed « parti de la source » exige un scan
+full-coverage — infaisable par-groupe (K× 920 pages), rate-limit-risqué en différé
+(plafond account `ERR_CONNECTION_REFUSED`). Même classe que account : un store à
+feed source account-scale attend un mécanisme dédié. Petits/moyens stores GC
+(92/19/38/127/58/70) faits (~260 déplacées). FC3 acquitté (`--acknowledge-block`).
+
 ## 2026-07-30 — Docs: align living docs on cookie-transfer re-auth
 
 Password+2FA Stage 0b was already retired in code (2026-07-29: commits

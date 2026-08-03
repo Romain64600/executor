@@ -1058,3 +1058,21 @@ Règles de la vue Learning (audit `AUDIT_LEARNING_2026-07-21.md`) :
   reste **hors ledger** et est **réessayée** au run suivant. Règle née d'une revue
   P1.6 (2026-07-29) : la fenêtre différée par-store transformait un reflow bénin en
   `identity_blocked` permanent → une offre légitime perdue à jamais.
+- **RV2 = scan cible GLOBAL, jamais par store (`_verify_on_target` /
+  `_verify_group_on_target`, fix 2026-07-31)** : la présence sur la liste cible se
+  prouve sur la vue **tous-stores** (`store_id=None`), pas sous le store source de
+  l'offre. Une liste cible est inter-stores et une offre juste déplacée peut être
+  ABSENTE de sa vue filtrée par store (rotation store/id au ré-import,
+  [[feed-reimport-id-rotation]]) tout en étant sur la liste. L'URL marchande est
+  propre au store → un match global est sans ambiguïté (pas de faux positif). Le
+  scoping par store donnait des faux « pas sur la cible » qui sous-comptaient les
+  moves ET gonflaient les échecs → breaker guard / FC3 à tort (Gift cards 2026-07-31).
+- **Store à feed source account-scale = HORS-SCOPE du pipeline batché (décision
+  Romain 2026-08-03)** : la preuve fail-closed « parti de la source » exige un scan
+  source full-coverage ; sur un feed de plusieurs **centaines de pages** (account
+  ~290 ; Gift cards store 162 6494 offres dans un feed de **920 pages** ; store 126
+  1783 dans 920 pages) ce scan est soit infaisable en par-groupe (K× le walk
+  complet), soit rate-limité en différé (`net::ERR_CONNECTION_REFUSED`, plafond
+  account). Le gain batché n'est réel que pour un store dont le **feed source est
+  parcourable**. Les mega-stores attendent un mécanisme dédié (preuve « parti »
+  ciblée sans full-coverage, ou ops natives AKS) — chantier séparé.
