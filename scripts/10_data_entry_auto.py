@@ -31,9 +31,9 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.data_entry_auto import (  # noqa: E402
-    ExtractOutcome, MatchOutcome, Stages, SubmitOutcome, SweepConfig, run_sweep,
+    ExtractOutcome, MatchOutcome, Stages, StageError, SubmitOutcome, SweepConfig, run_sweep,
 )
-from src.admin.validation_io import apply_overrides_and_validate  # noqa: E402
+from src.admin.validation_io import apply_overrides_and_validate, ValidationIOError  # noqa: E402
 from src.admin.runs import sha256_file  # noqa: E402
 from src.validation import candidate_fingerprint  # noqa: E402
 
@@ -42,19 +42,35 @@ _CHILD: subprocess.Popen | None = None
 
 
 def _on_term(_signum, _frame):
+    # Cooperative stop: set the flag AND forward SIGTERM to the current child.
+    # 05_submit/02/03 each stop at their OWN safe boundary (05 at an offer
+    # boundary — never mid-Create), then exit; run_sweep then halts between
+    # pages. We never SIGKILL the child here (that is what caused mid-write
+    # kills); the manager's own escalation guarantees eventual termination.
     global _STOP
     _STOP = True
-    if _CHILD is not None and _CHILD.poll() is None:
+    child = _CHILD
+    if child is not None and child.poll() is None:
         try:
-            _CHILD.terminate()   # the child (02/03/05) stops at its own safe point
+            child.terminate()
         except Exception:
             pass
 
 
 def _run_child(argv: list[str]) -> int:
-    """Run a stage script as a child, tracked for cooperative SIGTERM."""
+    """Run a stage script as a child for cooperative SIGTERM. ``start_new_session``
+    puts it in its own process group (a SIGKILL of THIS sweep never cascades to a
+    child mid-write), and its stdout/stderr are detached so a lingering child can
+    never pin the manager supervisor's pipe."""
     global _CHILD
-    _CHILD = subprocess.Popen(argv, cwd=str(ROOT))
+    _CHILD = subprocess.Popen(argv, cwd=str(ROOT), start_new_session=True,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # If a stop arrived during the fork window, terminate immediately.
+    if _STOP and _CHILD.poll() is None:
+        try:
+            _CHILD.terminate()
+        except Exception:
+            pass
     try:
         return _CHILD.wait()
     finally:
@@ -83,10 +99,12 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None)
             argv += ["--pace", pace]
         rc = _run_child(argv)
         offers = _load_json(ROOT / "runs" / run_id / "offers.json") or {}
-        n = offers.get("count") if isinstance(offers, dict) else None
+        n = offers.get("offer_count") if isinstance(offers, dict) else None
         if n is None and isinstance(offers, dict):
-            n = len(offers.get("offers", []))
+            n = offers.get("count") or len(offers.get("offers", []))
+        flp = offers.get("feed_last_page") if isinstance(offers, dict) else None
         return ExtractOutcome(ok=(rc == 0), offers=int(n or 0),
+                              feed_last_page=int(flp) if flp else None,
                               detail="" if rc == 0 else f"exit {rc}")
 
     def match(run_id: str) -> MatchOutcome:
@@ -105,7 +123,13 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None)
             "candidates_sha256": sha256_file(cpath),
             "decisions": [{"fingerprint": candidate_fingerprint(c), "approve": True} for c in cands],
         }
-        res = apply_overrides_and_validate(run_dir, payload, repo_root=ROOT, created_offer_ids=None)
+        try:
+            res = apply_overrides_and_validate(run_dir, payload, repo_root=ROOT, created_offer_ids=None)
+        except ValidationIOError as exc:
+            # A stale candidates.json (feed re-import between match and approve) or
+            # any validation refusal is a fail-closed halt, recorded in the recap
+            # — never a bare crash that drops the page silently.
+            raise StageError(f"{getattr(exc, 'code', 'validation')}: {exc}")
         return int(res.get("approved_count") or 0)
 
     def submit(run_id: str) -> SubmitOutcome:
@@ -128,6 +152,7 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None)
                            "region_id": e.get("region_id"), "edition_id": e.get("edition_id"),
                            "created": ok, "post_save": ps})
         return SubmitOutcome(ok=(rc == 0), aborted=plan.get("aborted"),
+                             stopped=plan.get("stopped"),
                              created=created, offers=offers, detail="" if rc == 0 else f"exit {rc}")
 
     return Stages(extract=extract, match=match, approve=approve, submit=submit)
@@ -197,7 +222,8 @@ def main() -> int:
         def on_page(_e, _t=target_entry):
             persist()
 
-        sweep = run_sweep(cfg, stages, page_run_id=lambda p, sl=slug: f"{run_id}-{sl}-p{p}",
+        sweep = run_sweep(cfg, stages,
+                          page_run_id=lambda p, sl=slug, sid=store_id: f"{run_id}-{sl}-s{sid}-p{p}",
                           should_stop=lambda: _STOP, on_page=on_page)
         target_entry["recap"] = sweep
         persist()

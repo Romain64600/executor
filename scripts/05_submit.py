@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import signal
 import sys
 import time
 from pathlib import Path
@@ -140,7 +141,19 @@ def main() -> int:
         return 2
 
 
+_STOP = False
+
+
+def _on_term(_signum, _frame):
+    # Cooperative stop: the submitter checks this at an OFFER BOUNDARY (never
+    # mid-Create), finishing the in-flight offer and writing submit_plan.json.
+    global _STOP
+    _STOP = True
+
+
 def _main() -> int:
+    signal.signal(signal.SIGTERM, _on_term)
+    signal.signal(signal.SIGINT, _on_term)
     parser = argparse.ArgumentParser(description="AKS submitter.")
     parser.add_argument("approved", help="Path to approved.json (from Stage 3 validation).")
     parser.add_argument("--merchant", required=True)
@@ -436,7 +449,9 @@ def _main() -> int:
     # catches failures outside the batch loop (pre-flight navigate, catalog).
     try:
         with session_cls(args.endpoint) as session:
-            result = submitter_cls(session, logger=logger, **pacer_kw, **submitter_kw).run(
+            submitter = submitter_cls(session, logger=logger, **pacer_kw, **submitter_kw)
+            submitter._should_stop = lambda: _STOP   # cooperative stop at offer boundaries
+            result = submitter.run(
                 run_id=run_id, merchant=args.merchant, store_id=args.store_id,
                 approved=approved, available=args.available, max_pages=max_pages, limit=limit,
             )

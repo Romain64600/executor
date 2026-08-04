@@ -683,6 +683,12 @@ class _SubmitterBase:
         self.guard.start_task(run_id)
         try:
             index, by_url = self._index_feed(store_id, feed_page, available, max_pages)
+        except StopRequested as exc:
+            # Operator stop DURING the read-only index scan — before any offer is
+            # touched. A clean stop (no writes), not a crash.
+            self._log("run_stopped", reason="operator_stop", detail=str(exc))
+            return {"aborted": None, "stopped": "operator_stop", "feed_offers": 0,
+                    "write_attempts": 0, "created": 0, "plan": []}
         except FEED_UNREADABLE_EXCS as exc:
             # Nothing has been attempted yet — abort before the first offer
             # rather than working from an unproven feed snapshot (audit
@@ -694,6 +700,15 @@ class _SubmitterBase:
         ctx = {"store_id": store_id, "feed_page": feed_page, "available": available,
                "max_pages": max_pages, "index": index, "by_url": by_url}
 
+        # Disarm the scan-level stop hook now that the index is done: each offer's
+        # post-save verify / reflow re-scan MUST complete (a stop mid-verify would
+        # leave the just-created offer in an UNKNOWN state). The operator stop is
+        # honored instead at the OFFER BOUNDARY below, via this captured hook —
+        # exactly the mover's discipline (arm for the read-only index, clear
+        # before any write, check cooperatively between units).
+        offer_boundary_stop = self._should_stop
+        self._should_stop = None
+
         plan: list[dict[str, Any]] = []
         stopped: str | None = None
         # --limit counts ATTEMPTS (every ready offer we tried to write) —
@@ -704,6 +719,14 @@ class _SubmitterBase:
         write_attempts = 0
         created = 0
         for candidate in approved:
+            # Cooperative stop at an OFFER BOUNDARY only (before locating/opening
+            # the next offer) — never mid-Create/post-save. A SIGTERM (console
+            # "Arrêter") sets this via 05_submit.py, so a stop finishes the
+            # in-flight offer cleanly instead of hard-killing it mid-write.
+            if offer_boundary_stop is not None and offer_boundary_stop():
+                stopped = "operator_stop"
+                self._log("run_stopped", reason=stopped)
+                break
             if self.write_mode and limit is not None and write_attempts >= limit:
                 stopped = "limit_reached"
                 self._log("run_stopped", reason=stopped)

@@ -830,19 +830,28 @@ class SubmitManager:
                 return None
             return {"run_id": self._active["run_id"], "kind": self._active["kind"]}
 
-    def stop_active(self, *, grace: float = 12.0) -> dict[str, Any]:
+    # Write runs stop cooperatively at an OFFER BOUNDARY (submit) or a PAGE
+    # boundary (data-entry auto). One offer's Create + post-save feed re-scan can
+    # take tens of seconds on a slow feed, so these kinds get a longer SIGKILL
+    # grace — a premature SIGKILL would hard-kill a Create mid-flight (the very
+    # thing the cooperative stop avoids). Read-only runs keep the short grace.
+    _STOP_GRACE_BY_KIND = {"submit": 90.0, "data_entry_auto": 120.0}
+
+    def stop_active(self, *, grace: float | None = None) -> dict[str, Any]:
         """Stop the active run. SIGTERM first (the spawned script stops at a safe
-        point — never mid-Apply), then ESCALATE to SIGKILL if it is still alive
-        after ``grace`` seconds (a run stuck in a long per-offer scan ignores the
-        cooperative flag, so the button must still guarantee termination). The
-        supervisor then frees the slot; the kernel releases the browser flock.
-        Idempotent; no-op when idle."""
+        boundary — never mid-Apply/Create), then ESCALATE to SIGKILL if it is
+        still alive after the grace (a run truly stuck ignores the cooperative
+        flag, so the button must still guarantee termination). The grace is
+        kind-aware (write runs need a whole offer to finish). The supervisor then
+        frees the slot; the kernel releases the browser flock. Idempotent."""
 
         with self._mutex:
             active = self._active
             if active is None:
                 return {"stopped": None, "reason": "aucun run en cours"}
             info = {"run_id": active["run_id"], "kind": active["kind"], "pid": active.get("pid")}
+        if grace is None:
+            grace = self._STOP_GRACE_BY_KIND.get(info.get("kind", ""), 12.0)
         pid = info.get("pid")
         if not pid:
             return {"stopped": True, **info}

@@ -774,6 +774,13 @@ class DataEntryAutoTests(ManagerTestCase):
             m.start_data_entry_auto([("  ", "58")], by="Romain")
         self.assertEqual(ctx.exception.code, "bad_merchant")
 
+    def test_stop_grace_is_longer_for_write_kinds(self):
+        # A write run (submit / data_entry_auto) needs a whole offer to finish
+        # before SIGKILL; read-only runs keep the short grace.
+        g = SubmitManager._STOP_GRACE_BY_KIND
+        self.assertGreaterEqual(g.get("data_entry_auto", 0), 60)
+        self.assertGreaterEqual(g.get("submit", 0), 60)
+
 
 class SortMoveTests(ManagerTestCase):
     def _sm(self, sleep=0.0, exit_code=0):

@@ -130,7 +130,8 @@ function renderRecap(d) {
     for (const p of (sr.pages || [])) {
       const tags = [];
       if (p.end_of_feed) tags.push("fin du feed");
-      if (p.last_page) tags.push("dernière page");
+      if (p.empty) tags.push("page vide (feed rétréci)");
+      if (p.stopped_before_submit) tags.push("stop avant écriture");
       if (p.error) tags.push("⚠ " + p.error);
       const head = el("div", { class: "pg-head" }, [
         el("span", { class: "pg-n", text: "page " + p.page }),

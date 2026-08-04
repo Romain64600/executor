@@ -432,6 +432,22 @@ class RealSubmitTests(unittest.TestCase):
         self.assertEqual((result["write_attempts"], result["created"]), (2, 2))
         self.assertTrue(all(p["submitted"] for p in result["plan"]))
 
+    def test_cooperative_stop_at_offer_boundary(self):
+        # A stop (SIGTERM via 05) is honored at an OFFER BOUNDARY: offer 1 is
+        # fully created, offer 2 is never started (no mid-write kill), and the
+        # run stops with stopped="operator_stop".
+        session = FakeWriteSession([["1", "2"]])
+        sub = Submitter(session, click_mode="native")
+        # Drive the stop off real progress (robust vs the index scan's own
+        # should_stop polling): trip once offer 1 has actually been created.
+        sub._should_stop = lambda: len(session.created) >= 1
+        result = sub.run(run_id="r", merchant="Driffle", store_id="127",
+                         approved=[_cand("1"), _cand("2")], limit=None)
+        self.assertEqual(result["stopped"], "operator_stop")
+        self.assertEqual(result["created"], 1)
+        self.assertEqual(len(result["plan"]), 1)          # offer 2 never entered the loop body
+        self.assertTrue(result["plan"][0]["submitted"])   # offer 1 completed cleanly
+
     def test_still_present_after_create_is_failure(self):
         session = FakeWriteSession([["1"]], create_removes=False)
         result = _real(session, [_cand("1")], limit=1)
