@@ -732,6 +732,49 @@ class MatchedModeBindingTests(ManagerTestCase):
         self.assertEqual(ctx.exception.code, "match_meta_unreadable")
 
 
+class DataEntryAutoTests(ManagerTestCase):
+    def _m(self):
+        script = self.root / "fake_auto.py"
+        script.write_text("import sys; sys.exit(0)\n", encoding="utf-8")
+        m = SubmitManager(self.root, log_dir=self.logs, clock=CLOCK)
+        m.data_entry_auto_script = script
+        return m
+
+    def test_argv_single_target(self):
+        m = self._m()
+        r = m.start_data_entry_auto([("Kinguin", "58")], by="Romain", max_pages=5)
+        a = r["argv"]
+        self.assertIn("--targets", a)
+        self.assertEqual(a[a.index("--targets") + 1], "Kinguin:58")
+        self.assertEqual(a[a.index("--max-pages") + 1], "5")
+        self.assertIn("--run-id", a)
+        self.assertTrue(m.wait_idle(timeout=10))
+
+    def test_argv_multi_target(self):
+        m = self._m()
+        r = m.start_data_entry_auto([("Kinguin", "58"), ("Eneba", "70")], by="Romain")
+        self.assertEqual(r["argv"][r["argv"].index("--targets") + 1], "Kinguin:58,Eneba:70")
+        self.assertTrue(m.wait_idle(timeout=10))
+
+    def test_non_numeric_store_refused(self):
+        m = self._m()
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_data_entry_auto([("Kinguin", "abc")], by="Romain")
+        self.assertEqual(ctx.exception.code, "bad_store_id")
+
+    def test_empty_targets_refused(self):
+        m = self._m()
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_data_entry_auto([], by="Romain")
+        self.assertEqual(ctx.exception.code, "bad_targets")
+
+    def test_blank_merchant_refused(self):
+        m = self._m()
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_data_entry_auto([("  ", "58")], by="Romain")
+        self.assertEqual(ctx.exception.code, "bad_merchant")
+
+
 class SortMoveTests(ManagerTestCase):
     def _sm(self, sleep=0.0, exit_code=0):
         script = self.root / f"fake_sortmove_{sleep}_{exit_code}.py"

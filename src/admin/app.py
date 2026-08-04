@@ -65,6 +65,10 @@ STATIC_FILES = {
     "sort.html": "text/html; charset=utf-8",
     "sort.js": "application/javascript; charset=utf-8",
     "sort.css": "text/css; charset=utf-8",
+    # Safe-auto data entry — its own console (sweep a merchant, auto-add, recap).
+    "auto.html": "text/html; charset=utf-8",
+    "auto.js": "application/javascript; charset=utf-8",
+    "auto.css": "text/css; charset=utf-8",
 }
 MAX_BODY_BYTES = 2 * 1024 * 1024
 RUN_ROUTE = re.compile(r"^/api/runs/([^/]+)(/.*)?$")
@@ -217,6 +221,11 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._serve_static("index.html")
         if path in ("/tri", "/sort"):
             return self._serve_static("sort.html")
+        if path in ("/auto", "/data-entry"):
+            return self._serve_static("auto.html")
+        if path == "/api/data-entry/recap":
+            run = parse_qs(parsed.query).get("run", [""])[0]
+            return self._get_data_entry_recap(run)
         name = path.lstrip("/")
         if name in STATIC_FILES:
             return self._serve_static(name)
@@ -317,7 +326,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         # their current bytes. Even a tab open across a redeploy pulls the new
         # JS/CSS on its next reload (index.html itself is no-store). Deterministic
         # (content hash, no timestamps).
-        if name in ("index.html", "sort.html"):
+        if name in ("index.html", "sort.html", "auto.html"):
             body = self._version_assets(body)
         self._send_bytes(200, STATIC_FILES[name], body)
 
@@ -326,7 +335,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         # Stamp any referenced JS/CSS asset with the sha8 of its bytes, so a tab
         # open across a redeploy pulls the new asset on its next reload (the HTML
         # itself is no-store). Covers both pages' assets; a no-op for those absent.
-        for asset in ("app.js", "style.css", "sort.js", "sort.css"):
+        for asset in ("app.js", "style.css", "sort.js", "sort.css", "auto.js", "auto.css"):
             asset_path = STATIC_DIR / asset
             if not asset_path.is_file():
                 continue
@@ -394,6 +403,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._post_invariants()
         if path == "/api/extract":
             return self._post_extract()
+        if path == "/api/data-entry/auto":
+            return self._post_data_entry_auto()
         if path == "/api/sort/stop":
             return self._send_json(200, self.state.manager.stop_active())
         if path == "/api/sort/scan":
@@ -476,6 +487,37 @@ class AdminHandler(BaseHTTPRequestHandler):
         # AS1: the freshly (re)generated batch's identity, for the GO binding.
         result["approved_sha256"] = sha256_file(run_file(run_dir, "approved.json"))
         self._send_json(200, result)
+
+    def _post_data_entry_auto(self) -> None:
+        body = self._json_body()
+        by = str(body.get("by") or self._basic_user() or "operateur")
+        raw = body.get("targets")
+        targets: list[tuple[str, str]] = []
+        if isinstance(raw, list):
+            for t in raw:
+                if isinstance(t, dict):
+                    targets.append((str(t.get("merchant", "")), str(t.get("store_id", ""))))
+        if not targets:
+            raise ApiError(400, "targets_required",
+                           "au moins un marchand (targets: [{merchant, store_id}]) requis")
+        result = self.state.manager.start_data_entry_auto(
+            targets, by=by, max_pages=_parse_int(body.get("max_pages")),
+            start_page=_parse_int(body.get("start_page")))
+        self._send_json(200, result)
+
+    def _get_data_entry_recap(self, run_id: str) -> None:
+        # Read-only: the live recap.json of a sweep run (no run_id → the newest
+        # *-auto run). Safe run-dir access via runs.py (path traversal guarded).
+        if not run_id:
+            autos = sorted(
+                (p.name for p in self.state.runs_dir.glob("*-auto") if p.is_dir()),
+                reverse=True)
+            if not autos:
+                return self._send_json(200, {"recap": None})
+            run_id = autos[0]
+        run_dir = self._run_dir(run_id)
+        recap = read_run_json(run_dir, "recap.json")
+        self._send_json(200, {"run_id": run_id, "recap": recap})
 
     def _post_catalog(self, run_dir: Path) -> None:
         body = self._json_body()

@@ -241,6 +241,7 @@ class SubmitManager:
         self.match_script = match_script or (repo_root / "scripts" / "03_match.py")
         self.sort_move_script = sort_move_script or (repo_root / "scripts" / "09_sort_move.py")
         self.sort_scan_script = sort_scan_script or (repo_root / "scripts" / "08_sort_plan.py")
+        self.data_entry_auto_script = repo_root / "scripts" / "10_data_entry_auto.py"
         self.python = python
         self.clock = clock
         self._mutex = threading.Lock()
@@ -640,6 +641,55 @@ class SubmitManager:
             return self._spawn(
                 run_dir, kind="extract", argv=argv,
                 meta={"merchant": merchant, "store_id": store_id, "by": by, "page": page},
+            )
+
+    def start_data_entry_auto(
+        self, targets: list[tuple[str, str]], *, by: str,
+        max_pages: int | None = None, start_page: int | None = None,
+    ) -> dict[str, Any]:
+        """Launch the safe-auto data-entry sweep (Romain's explicit go, 2026-08-04):
+        for each ``(merchant, store_id)`` target, sweep the feed page by page —
+        extract → match → AUTO-approve every matcher candidate → submit (safe) —
+        with no per-page human validation, writing a recap. ONE supervised run
+        (`scripts/10_data_entry_auto.py`); the console "Arrêter" SIGTERMs it and it
+        stops cooperatively between pages. Every write still goes through the
+        unmodified 02/03/05 chain, so all fail-closed gates re-enforce themselves;
+        this only assembles the sweep and supervises it (never fire-and-forget).
+
+        The AUTO-approve trades human validation for the matcher's own safety
+        filtering (it skips console / no-AKS-page / ambiguous offers) plus post-hoc
+        audit of the recap — the operator opts into this per launch."""
+
+        if not targets:
+            raise SubmitStartError("bad_targets", "au moins un marchand requis", http_status=400)
+        clean: list[tuple[str, str]] = []
+        for merchant, store_id in targets:
+            merchant = str(merchant).strip()
+            store_id = str(store_id).strip()
+            if not merchant:
+                raise SubmitStartError("bad_merchant", "merchant requis", http_status=400)
+            if not store_id.isdigit():
+                raise SubmitStartError(
+                    "bad_store_id", f"store_id doit être numérique pour {merchant!r}, reçu {store_id!r}",
+                    http_status=400)
+            clean.append((merchant, store_id))
+        with self._mutex:
+            self._ensure_free()
+            stamp = datetime.strptime(self.clock(), "%Y-%m-%dT%H:%M:%SZ").strftime("%Y%m%d-%H%M%S")
+            run_id = f"{stamp}-auto"
+            run_dir = self.repo_root / "runs" / run_id
+            run_dir.mkdir(parents=True, exist_ok=False)
+            spec = ",".join(f"{m}:{s}" for m, s in clean)
+            argv = [self.python, str(self.data_entry_auto_script),
+                    "--targets", spec, "--run-id", run_id]
+            if max_pages is not None:
+                argv += ["--max-pages", str(int(max_pages))]
+            if start_page is not None:
+                argv += ["--start-page", str(int(start_page))]
+            return self._spawn(
+                run_dir, kind="data_entry_auto", argv=argv,
+                meta={"targets": [{"merchant": m, "store_id": s} for m, s in clean],
+                      "by": by, "run_id": run_id, "max_pages": max_pages},
             )
 
     def start_match(

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AKS Executor — Data Entry Auto</title>
+  <link rel="stylesheet" href="auto.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <h1>Data Entry <span class="sub">— safe auto</span></h1>
+    </div>
+    <nav class="tabs">
+      <a href="." class="tab">Validation &amp; Submit</a>
+      <a href="tri" class="tab">Tri des listes</a>
+      <a href="auto" class="tab active" aria-current="page">Data Entry Auto</a>
+    </nav>
+    <span id="busy-ind" class="busy-ind hidden">
+      <span class="spin"></span><span id="busy-text"></span>
+      <button id="stop-btn" type="button" title="Arrêter le sweep en cours (proprement, entre pages)">Arrêter</button>
+    </span>
+    <div class="topbar-right">
+      <button id="doc-btn" type="button" title="Aide / Help">📖 Doc</button>
+      <button id="theme" type="button" title="Basculer le thème">◐</button>
+    </div>
+  </header>
+
+  <dialog id="doc-modal" class="doc-modal">
+    <div class="doc-box">
+      <header class="doc-head">
+        <h3>📖 Data Entry Auto — Aide / Help</h3>
+        <form method="dialog"><button class="doc-x" aria-label="Fermer / Close">✕</button></form>
+      </header>
+      <div class="doc-body">
+        <section>
+          <h4>Ce que fait ce mode · What it does</h4>
+          <p lang="fr">Pour chaque marchand, il balaie le feed <b>page par page</b> : extraire → matcher →
+            <b>ajouter automatiquement TOUTES les offres candidates</b> (sans validation humaine) → page suivante,
+            jusqu'à la fin du feed. Il tient un <b>recap</b> détaillé.</p>
+          <p class="en" lang="en">For each merchant it sweeps the feed page by page: extract → match → auto-add
+            EVERY candidate (no human validation) → next page, to the end of the feed, keeping a detailed recap.</p>
+        </section>
+        <section>
+          <h4>Sécurité · Safety</h4>
+          <p lang="fr">Le <b>matcher</b> est le filtre : il écarte déjà console / sans page AKS / ambigu. Tu
+            audites le recap et supprimes les erreurs après. Un blocage (feed illisible, session tombée) <b>arrête
+            tout</b> (fail-closed) — jamais de reconnexion automatique.</p>
+          <p class="en" lang="en">The matcher is the gate (it drops console / no-AKS-page / ambiguous). You audit
+            the recap and delete mistakes afterwards. Any block (feed unreadable, dropped session) HALTS everything
+            (fail-closed) — never an auto re-login.</p>
+        </section>
+      </div>
+    </div>
+  </dialog>
+
+  <div id="banner" class="banner hidden"></div>
+
+  <main id="app">
+    <section class="launch card">
+      <h2>Lancer un sweep</h2>
+      <p class="warn">⚠️ Ce mode <b>ajoute les offres sans validation</b>. Le matcher fait le tri ; tu audites le
+        recap et supprimes les erreurs. Fail-closed sur blocage.</p>
+      <div class="cols"><span>Marchand</span><span>Store id</span><span></span></div>
+      <div id="targets" class="targets"></div>
+      <button id="add-target" type="button" class="addrow">+ ajouter un marchand</button>
+      <div class="opts">
+        <label>Max pages <input id="max-pages" type="number" min="1" placeholder="(tout le feed)" class="num"></label>
+        <label>Page de départ <input id="start-page" type="number" min="1" placeholder="1" class="num"></label>
+      </div>
+      <div class="golaunch">
+        <span class="golabel">Tape <b>GO</b> pour confirmer l'ajout auto :</span>
+        <input id="go" type="text" placeholder="GO" class="go-in" autocomplete="off">
+        <button id="launch" type="button" class="danger" disabled>Lancer le sweep auto</button>
+      </div>
+      <p id="launch-msg" class="msg"></p>
+    </section>
+
+    <section id="recap-card" class="card hidden">
+      <div class="recap-head">
+        <h2>Recap <span id="recap-run" class="dim"></span></h2>
+        <span id="recap-status" class="pill"></span>
+      </div>
+      <div id="recap-summary" class="summary"></div>
+      <div id="recap-pages" class="pages"></div>
+    </section>
+  </main>
+
+  <footer id="status" class="idle">Prêt</footer>
+  <script src="auto.js"></script>
+</body>
+</html>

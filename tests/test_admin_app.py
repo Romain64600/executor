@@ -644,6 +644,28 @@ class SortMoveRouteTests(AppTestCase):
         self.assertEqual(response.status, 200)
         self.assertIsNone(data["stopped"])
 
+    def test_data_entry_auto_passes_targets(self):
+        from unittest import mock
+        with mock.patch.object(self.manager, "start_data_entry_auto",
+                               return_value={"started": True, "run_id": "20260804-000000-auto"}) as m:
+            response, data = self._json("POST", "/api/data-entry/auto",
+                                        body={"targets": [{"merchant": "Kinguin", "store_id": "58"}],
+                                              "max_pages": 5})
+        self.assertEqual(response.status, 200)
+        m.assert_called_once()
+        self.assertEqual(m.call_args.kwargs["max_pages"], 5)
+        self.assertEqual(m.call_args.args[0], [("Kinguin", "58")])
+
+    def test_data_entry_auto_requires_targets(self):
+        response, data = self._json("POST", "/api/data-entry/auto", body={"targets": []})
+        self.assertEqual(response.status, 400)
+        self.assertEqual(data["error"]["code"], "targets_required")
+
+    def test_data_entry_recap_empty_when_none(self):
+        response, data = self._json("GET", "/api/data-entry/recap")
+        self.assertEqual(response.status, 200)
+        self.assertIsNone(data["recap"])
+
     def test_sort_scan_route_starts_a_run(self):
         from unittest import mock
         with mock.patch.object(self.manager, "start_sort_scan",
