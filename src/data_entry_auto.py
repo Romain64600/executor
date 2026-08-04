@@ -153,6 +153,7 @@ def run_sweep(
 
     top = min(feed_last, cfg.start_page + cfg.max_pages - 1)
     capped = feed_last > top
+    max_seen = feed_last   # largest feed_last_page any extract advertised (feed growth)
 
     # Highest page first (reflow-safe): a higher page's removals never shift a
     # lower, not-yet-processed page.
@@ -165,6 +166,8 @@ def run_sweep(
 
         ex = stages.extract(page, run_id)
         entry["offers"] = ex.offers
+        if ex.feed_last_page and ex.feed_last_page > max_seen:
+            max_seen = ex.feed_last_page   # a re-import grew the feed mid-sweep
         if not ex.ok:
             entry["error"] = "extract: " + (ex.detail or "failed")
             recap["halted"] = f"extract_failed_p{page}"
@@ -212,8 +215,14 @@ def run_sweep(
 
         finish_page(entry)
 
-    # Coverage honesty: a max_pages cap over a longer feed is NOT a clean end.
-    if recap["halted"] is None and capped:
-        recap["halted"] = f"coverage_incomplete_max_pages (feed has {feed_last} pages)"
+    # Coverage honesty: a max_pages cap over a longer feed, OR a feed that GREW
+    # past the probed last page mid-sweep (a re-import), is NOT a clean full sweep.
+    # The tail pages beyond ``top`` were never processed — flag it, never a silent
+    # clean end (the operator re-runs on the fresh feed to catch the new tail).
+    if recap["halted"] is None:
+        if capped:
+            recap["halted"] = f"coverage_incomplete_max_pages (feed has {feed_last} pages)"
+        elif max_seen > feed_last:
+            recap["halted"] = f"coverage_incomplete_feed_grew ({feed_last}→{max_seen} pages)"
 
     return recap

@@ -189,6 +189,20 @@ class SweepEngineTests(unittest.TestCase):
         self.assertEqual(r["halted"], "operator_stop")
         self.assertNotIn(("submit", 2), fs.calls)
 
+    def test_feed_growth_mid_sweep_flags_incomplete(self):
+        # Probe says 2 pages; while processing, an extract advertises 4 (a
+        # re-import grew the feed). The new tail (3,4) was never swept → flag it.
+        class GrowFakeStages(FakeStages):
+            def extract(self, page, run_id):
+                out = super().extract(page, run_id)
+                if page == 2:              # feed grew when we hit page 2
+                    out.feed_last_page = 4
+                return out
+        fs = GrowFakeStages(2, {1: {"candidates": 1}, 2: {"candidates": 1}})
+        r = _run(fs)
+        self.assertIsNotNone(r["halted"])
+        self.assertIn("coverage_incomplete_feed_grew", r["halted"])
+
     def test_operator_stop_upfront(self):
         fs = FakeStages(3, {3: {"candidates": 1}})
         r = _run(fs, should_stop=lambda: True)
