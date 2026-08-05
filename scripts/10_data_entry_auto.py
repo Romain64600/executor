@@ -166,7 +166,6 @@ def main() -> int:
     ap.add_argument("--run-id", default=None, help="Sweep run id (holds recap.json).")
     ap.add_argument("--start-page", type=int, default=1)
     ap.add_argument("--max-pages", type=int, default=200)
-    ap.add_argument("--page-size", type=int, default=100)
     ap.add_argument("--available", default="all", choices=["all", "pending"])
     ap.add_argument("--pace", default=None)
     args = ap.parse_args()
@@ -214,7 +213,7 @@ def main() -> int:
             break
         slug = re.sub(r"[^a-z0-9]+", "-", merchant.lower()).strip("-") or "merchant"
         cfg = SweepConfig(merchant=merchant, store_id=store_id, start_page=args.start_page,
-                          max_pages=args.max_pages, page_size=args.page_size)
+                          max_pages=args.max_pages)
         stages = _make_stages(merchant, store_id, args.available, args.pace)
         target_entry = {"merchant": merchant, "store_id": store_id, "recap": None}
         recap["targets"].append(target_entry)
