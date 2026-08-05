@@ -203,6 +203,18 @@ class SweepEngineTests(unittest.TestCase):
         self.assertIsNotNone(r["halted"])
         self.assertIn("coverage_incomplete_feed_grew", r["halted"])
 
+    def test_on_page_receives_live_recap_each_page(self):
+        # The console's live panel needs per-page progress BEFORE the sweep
+        # returns: on_page is called with the running recap (accumulating pages).
+        fs = FakeStages(3, {1: {"candidates": 1}, 2: {"candidates": 1}, 3: {"candidates": 1}})
+        seen = []
+        cfg = SweepConfig(merchant="Kinguin", store_id="58", start_page=1, max_pages=400)
+        run_sweep(cfg, Stages(fs.extract, fs.match, fs.approve, fs.submit),
+                  page_run_id=lambda p: f"sweep-p{p}",
+                  on_page=lambda rec: seen.append((len(rec["pages"]), rec["total_created"])))
+        # called once per finished page, each time with the growing recap
+        self.assertEqual(seen, [(1, 1), (2, 2), (3, 3)])
+
     def test_operator_stop_upfront(self):
         fs = FakeStages(3, {3: {"candidates": 1}})
         r = _run(fs, should_stop=lambda: True)

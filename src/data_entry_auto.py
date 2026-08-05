@@ -120,7 +120,8 @@ def run_sweep(
     """Sweep a merchant's feed reflow-safe (highest page first), halting fail-closed.
 
     Returns ``{merchant, store_id, pages:[…], total_created, halted, feed_last_page}``.
-    ``on_page`` is called after each page entry is finalized (persist incrementally).
+    ``on_page`` is called after each page with the LIVE recap dict (mutated in
+    place) so the caller can persist per-page progress before the sweep returns.
     """
 
     recap: dict[str, Any] = {
@@ -131,7 +132,9 @@ def run_sweep(
     def finish_page(entry: dict[str, Any]) -> None:
         recap["pages"].append(entry)
         recap["total_created"] = sum(p.get("created", 0) for p in recap["pages"])
-        on_page(entry)
+        on_page(recap)   # the LIVE recap (this dict, mutated in place) — so a
+                         # caller can persist per-page progress before the sweep
+                         # returns (the console's live recap panel).
 
     if should_stop():
         recap["halted"] = "operator_stop"

@@ -218,7 +218,10 @@ def main() -> int:
         target_entry = {"merchant": merchant, "store_id": store_id, "recap": None}
         recap["targets"].append(target_entry)
 
-        def on_page(_e, _t=target_entry):
+        def on_page(live_recap, _t=target_entry):
+            # Attach the LIVE sweep recap so the console sees per-page progress
+            # BEFORE run_sweep returns (the reference is mutated in place).
+            _t["recap"] = live_recap
             persist()
 
         sweep = run_sweep(cfg, stages,
