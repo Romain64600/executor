@@ -203,7 +203,11 @@ def main() -> int:
 
     def persist():
         recap["updated_at"] = _clock()
-        recap["total_created"] = sum(t.get("recap", {}).get("total_created", 0) for t in recap["targets"])
+        # (t.get("recap") or {}) — a target's recap is None until its sweep starts
+        # producing pages; `.get("recap", {})` would return that None (key exists)
+        # and crash on None.get().
+        recap["total_created"] = sum((t.get("recap") or {}).get("total_created", 0)
+                                     for t in recap["targets"])
         recap_path.write_text(json.dumps(recap, ensure_ascii=False, indent=2), encoding="utf-8")
 
     persist()

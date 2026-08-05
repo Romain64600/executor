@@ -32,10 +32,14 @@ class CliSeamTests(unittest.TestCase):
     def _run(self, argv, sweep_recap):
         captured = {}
 
-        def fake_run_sweep(cfg, stages, **kw):
+        def fake_run_sweep(cfg, stages, *, on_page=lambda r: None, **kw):
             # This only runs if main() built a valid SweepConfig — the exact seam
-            # that regressed. Capture it for assertions.
+            # that regressed. Also drive on_page with the LIVE recap so main()'s
+            # persist() is exercised per page (a target whose recap is still None
+            # must not crash persist — the 2026-08-05 None.get() regression).
             captured["cfg"] = cfg
+            on_page(sweep_recap)          # live per-page persist
+            on_page(sweep_recap)
             return sweep_recap
 
         with mock.patch.object(self.MOD, "run_sweep", side_effect=fake_run_sweep), \
