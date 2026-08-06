@@ -432,6 +432,69 @@ class RealSubmitTests(unittest.TestCase):
         self.assertEqual((result["write_attempts"], result["created"]), (2, 2))
         self.assertTrue(all(p["submitted"] for p in result["plan"]))
 
+    def _deep_feed(self, npages=6):
+        # page p (1-based) holds ids p0..p9 → e.g. page 5 = ["50".."59"].
+        return [[str(p * 10 + i) for i in range(10)] for p in range(1, npages + 1)]
+
+    def _pages_navigated(self, session):
+        import re as _re
+        seen = []
+        for u in session.nav:
+            m = _re.search(r"[&?]p=(\d+)", u)
+            if m:
+                seen.append(int(m.group(1)))
+        return set(seen)
+
+    def test_page_hint_locates_deep_offer_window_local(self):
+        # Offer "54" sits on page 5 (a deep page the sequential scan can't reach on
+        # a reflow feed). page_hint=5, window=1 → index ONLY pages 4,5,6, create,
+        # verify gone by re-reading that window. Never touches pages 1-3 for the
+        # index/verify (the whole point — no deep sequential scan).
+        session = FakeWriteSession(self._deep_feed(6))
+        result = Submitter(session, click_mode="native").run(
+            run_id="r", merchant="Kinguin", store_id="58",
+            approved=[_cand("54")], page_hint=5, page_window=1)
+        self.assertEqual((result["write_attempts"], result["created"]), (1, 1))
+        self.assertTrue(result["plan"][0]["submitted"])
+        self.assertIn("gone from feed", result["plan"][0]["post_save"])
+        nav = self._pages_navigated(session)
+        self.assertTrue({4, 5, 6}.issuperset(nav) or nav <= {4, 5, 6},
+                        f"index/verify must stay in the window, navigated pages={nav}")
+        self.assertNotIn(2, nav)   # deep pages 2,3 never scanned
+        self.assertNotIn(3, nav)
+
+    def test_page_hint_offer_outside_window_fails_closed(self):
+        # The offer is on page 5 but the hint says page 2 (window 1,2,3) — it is
+        # NOT in the window → located as not-in-feed, no create (fail-closed).
+        session = FakeWriteSession(self._deep_feed(6))
+        result = Submitter(session, click_mode="native").run(
+            run_id="r", merchant="Kinguin", store_id="58",
+            approved=[_cand("54")], page_hint=2, page_window=1)
+        self.assertEqual(result["created"], 0)
+        self.assertFalse(result["plan"][0].get("submitted"))
+        self.assertIn("not in current feed", result["plan"][0].get("blocker", ""))
+
+    def test_page_hint_window_covers_reflow_shift(self):
+        # The offer drifted from page 5 to page 4 (reflow). Window 1 around hint 5
+        # (pages 4,5,6) still covers it → located + created.
+        feed = self._deep_feed(6)
+        feed[3].append("54")            # "54" now also on page 4 (index 3)
+        session = FakeWriteSession(feed)
+        result = Submitter(session, click_mode="native").run(
+            run_id="r", merchant="Kinguin", store_id="58",
+            approved=[_cand("54")], page_hint=5, page_window=1)
+        self.assertEqual(result["created"], 1)
+        self.assertTrue(result["plan"][0]["submitted"])
+
+    def test_page_hint_verify_gone_reads_window_not_full_feed(self):
+        # After the create removes "54" from page 5, the gone-proof re-reads only
+        # the window (4,5,6) and confirms absent — no full-feed rescan.
+        session = FakeWriteSession(self._deep_feed(6))
+        Submitter(session, click_mode="native").run(
+            run_id="r", merchant="Kinguin", store_id="58",
+            approved=[_cand("54")], page_hint=5, page_window=1)
+        self.assertIn("54", session.created)   # created + verified gone via the window
+
     def test_cooperative_stop_at_offer_boundary(self):
         # A stop (SIGTERM via 05) is honored at an OFFER BOUNDARY: offer 1 is
         # fully created, offer 2 is never started (no mid-write kill), and the

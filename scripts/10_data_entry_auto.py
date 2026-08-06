@@ -134,9 +134,17 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None)
 
     def submit(run_id: str) -> SubmitOutcome:
         run_dir = ROOT / "runs" / run_id
+        # The offers were all extracted from ONE feed page (the run id ends
+        # -p<N>); pass it as --page-hint so the submit locates + verifies them in
+        # a small window around that page instead of a sequential scan that can't
+        # reach deep pages (submit-index-shallow-feed).
         argv = [py, str(ROOT / "scripts" / "05_submit.py"),
                 str(run_dir / "approved.json"), "--merchant", merchant,
                 "--store-id", store_id, "--mode", "safe", "--submit", "--available", available]
+        try:
+            argv += ["--page-hint", run_id.rsplit("-p", 1)[1]]
+        except IndexError:
+            pass
         if pace:
             argv += ["--pace", pace]
         rc = _run_child(argv)

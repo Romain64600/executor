@@ -477,6 +477,53 @@ class _SubmitterBase:
         index, by_url, _ = self._scan_feed(store_id, feed_page, available, max_pages)
         return index, by_url
 
+    def _scan_page_window(self, store_id, feed_page, available, pages,
+                          *, stop_on: str | None = None, stop_on_url: str | None = None
+                          ) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]], bool]:
+        """Build index/by_url from ONLY the given feed pages, navigating DIRECTLY
+        to each (``&p=N``) — a targeted alternative to the sequential
+        ``_index_feed`` for a feed too deep/reflow-heavy to reach from page 1
+        (submit-index-shallow-feed, 2026-08-05: the sequential scan terminates
+        ~28 pages so deep offers are never located). The caller knows the offer's
+        page from the extract, so we read that page + a small neighbourhood.
+
+        Every page is read with ``_read_feed_page`` (same blank-page discipline,
+        fail-closed): a proven past-the-end page yields no rows and is skipped; an
+        unreadable page raises. ``found`` is True iff ``stop_on`` (id) or
+        ``stop_on_url`` (merchant URL) is seen — the post-save membership check.
+        The whole window is always read (≤ a few pages) so the maps are complete
+        for the next candidate; there is no early stop."""
+
+        index: dict[str, dict[str, str]] = {}
+        by_url: dict[str, dict[str, str]] = {}
+        stop_key = _url_key(stop_on_url) if stop_on_url else None
+        found = False
+        for page in pages:
+            if page < 1:
+                continue
+            url = feed_url(store_id, page=page, feed_page=feed_page, available=available)
+            rows, _state = self._read_feed_page(url, page)  # raises fail-closed; [] = proven end
+            for row in rows:
+                offer_id = str(row.get("id") or "")
+                if not offer_id:
+                    continue
+                details = {
+                    "offer_id": offer_id,
+                    "page_url": url,
+                    "name": str(row.get("name") or ""),
+                    "url": str(row.get("url") or ""),
+                    "price": str(row.get("price") or ""),
+                    "store_id": str(row.get("store_id") or ""),
+                }
+                if offer_id not in index:
+                    index[offer_id] = details
+                key = _url_key(details["url"])
+                if key and key not in by_url:
+                    by_url[key] = details
+                if (stop_on and offer_id == stop_on) or (stop_key and key == stop_key):
+                    found = True
+        return index, by_url, found
+
     def _locate_row(self, candidate: dict[str, Any], offer_id: str,
                     index: dict[str, dict[str, str]], by_url: dict[str, dict[str, str]]
                     ) -> dict[str, Any]:
@@ -619,7 +666,8 @@ class _SubmitterBase:
         return entry
 
     def _verify_gone(self, offer_id, merchant_url, store_id, feed_page, available,
-                     max_pages) -> tuple[bool, dict[str, dict[str, str]] | None, dict[str, dict[str, str]] | None]:
+                     max_pages, pages: "list[int] | None" = None
+                     ) -> tuple[bool, dict[str, dict[str, str]] | None, dict[str, dict[str, str]] | None]:
         """Post-save: re-scan the feed. Returns (gone, fresh_index, fresh_by_url).
 
         gone is True iff the offer is absent under BOTH keys — the row id we
@@ -634,9 +682,20 @@ class _SubmitterBase:
         Both maps are None when the offer was found (partial scan, unusable).
         """
 
-        index, by_url, found = self._scan_feed(
-            store_id, feed_page, available, max_pages,
-            stop_on=offer_id, stop_on_url=merchant_url or None)
+        # ``pages`` set (page-hinted mode): the offer was located in a small page
+        # window, so prove it GONE from that same window (re-read those pages),
+        # not the whole feed — the deep feed cannot be scanned end-to-end. The
+        # window is wide enough that a create-induced reflow cannot push the offer
+        # out of it (see run()'s note), so an absence across the window is a sound
+        # gone-proof for a page-scoped run.
+        if pages is not None:
+            index, by_url, found = self._scan_page_window(
+                store_id, feed_page, available, pages,
+                stop_on=offer_id, stop_on_url=merchant_url or None)
+        else:
+            index, by_url, found = self._scan_feed(
+                store_id, feed_page, available, max_pages,
+                stop_on=offer_id, stop_on_url=merchant_url or None)
         if found:
             return False, None, None
         return True, index, by_url
@@ -656,6 +715,8 @@ class _SubmitterBase:
         max_pages: int = 40,
         limit: int | None = None,
         catalog: dict[str, Any] | None = None,
+        page_hint: int | None = None,
+        page_window: int = 1,
     ) -> dict[str, Any]:
         # Pre-flight login check.
         self.session.navigate(feed_url(store_id, feed_page=feed_page, available=available))
@@ -680,9 +741,23 @@ class _SubmitterBase:
                         "write_attempts": 0, "created": 0, "plan": [], "catalog": catalog}
             self._load_catalog(catalog)
 
+        # ``page_hint`` (submit-index-shallow-feed fix, 2026-08-06): the caller
+        # (the safe-auto sweep) knows the offers' feed page from the extract, so we
+        # index only a small WINDOW of pages around it (navigating directly) instead
+        # of the sequential scan that can't reach deep pages. locate + post-save
+        # verify then stay page-local. Reflow shifts an uncreated offer toward
+        # page 1 by at most (#offers on the page) < 1 page, so the window covers it.
+        window_pages: list[int] | None = None
+        if page_hint is not None:
+            window_pages = [p for p in range(page_hint - page_window, page_hint + page_window + 1)
+                            if p >= 1]
+
         self.guard.start_task(run_id)
         try:
-            index, by_url = self._index_feed(store_id, feed_page, available, max_pages)
+            if window_pages is not None:
+                index, by_url, _ = self._scan_page_window(store_id, feed_page, available, window_pages)
+            else:
+                index, by_url = self._index_feed(store_id, feed_page, available, max_pages)
         except StopRequested as exc:
             # Operator stop DURING the read-only index scan — before any offer is
             # touched. A clean stop (no writes), not a crash.
@@ -696,9 +771,10 @@ class _SubmitterBase:
             self._log("aborted", reason=f"feed index scan failed closed: {exc}")
             return {"aborted": "feed_unreadable", "stopped": None, "feed_offers": 0,
                     "write_attempts": 0, "created": 0, "plan": []}
-        self._log("feed_indexed", offers=len(index))
+        self._log("feed_indexed", offers=len(index), window=window_pages)
         ctx = {"store_id": store_id, "feed_page": feed_page, "available": available,
-               "max_pages": max_pages, "index": index, "by_url": by_url}
+               "max_pages": max_pages, "index": index, "by_url": by_url,
+               "window_pages": window_pages}
 
         # Disarm the scan-level stop hook now that the index is done: each offer's
         # post-save verify / reflow re-scan MUST complete (a stop mid-verify would
@@ -927,7 +1003,8 @@ class Submitter(_SubmitterBase):
             return False
         gone, fresh_index, fresh_by_url = self._verify_gone(
             entry["offer_id"], str(candidate["offer"].get("url") or ""),
-            ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"]
+            ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"],
+            pages=ctx.get("window_pages"),
         )
         if fresh_index is not None:
             ctx["index"].clear()

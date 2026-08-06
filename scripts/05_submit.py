@@ -167,6 +167,16 @@ def _main() -> int:
              "feed_last_page) + headroom, so a big feed (Difmark ~357 pages) "
              "does not abort at the 40-page floor. Pass an explicit value to override.",
     )
+    parser.add_argument(
+        "--page-hint", type=int, default=None,
+        help="Feed page the approved offers were extracted from. When set, locate "
+             "+ post-save verify use ONLY a small window around it (navigating "
+             "directly) instead of the sequential feed scan — the only way to "
+             "reach a DEEP page a reflow feed's sequential scan can't (submit-"
+             "index-shallow-feed). All approved offers must be from that one page.",
+    )
+    parser.add_argument("--page-window", type=int, default=1,
+                        help="Half-width of the page-hint window (default 1 = N-1..N+1).")
     parser.add_argument("--submit", action="store_true", help="REAL write (default: dry-run).")
     parser.add_argument(
         "--mode", default="safe", choices=["safe", "learning", "advanced"],
@@ -454,6 +464,7 @@ def _main() -> int:
             result = submitter.run(
                 run_id=run_id, merchant=args.merchant, store_id=args.store_id,
                 approved=approved, available=args.available, max_pages=max_pages, limit=limit,
+                page_hint=args.page_hint, page_window=args.page_window,
             )
     except FEED_UNREADABLE_EXCS as exc:
         print(json.dumps({
