@@ -24,6 +24,7 @@ from src.matcher import (
     explicit_platform_from_url,
     extra_significant_words,
     extract_aks_name,
+    difmark_product_id,
     extract_difmark_top_offer_url,
     extract_editions,
     extract_official_platforms,
@@ -202,6 +203,30 @@ class DifmarkOfferResolverTests(unittest.TestCase):
     def test_extract_top_offer_url_missing_is_none(self):
         self.assertIsNone(extract_difmark_top_offer_url("<html>no such field</html>"))
 
+    def test_difmark_product_id_from_url(self):
+        self.assertEqual(
+            difmark_product_id("https://difmark.com/en/buy-console-account-ifsunsets-pc-epic-games-account-148678?referal=allkeyshop&marketplace_id=10"),
+            "148678")
+        self.assertIsNone(difmark_product_id("https://difmark.com/en/no-trailing-id/"))
+
+    def test_extract_top_offer_url_picks_the_feed_offers_tab(self):
+        # A page has one tab per marketplace, each a distinct product id; the feed
+        # offer's id must select its OWN tab (Steam 148677 vs Epic 148678) — taking
+        # the first mislabelled an Epic offer as Steam (2026-08-06 bug).
+        two_tab = (
+            '"url_top_offer":"https:\\/\\/difmark.com\\/en\\/products\\/148677\\/top-offer?offer_type=9",'
+            '"url_top_offer":"https:\\/\\/difmark.com\\/en\\/products\\/148678\\/top-offer?offer_type=9"'
+        )
+        self.assertEqual(extract_difmark_top_offer_url(two_tab, "148678"),
+                         "https://difmark.com/en/products/148678/top-offer?offer_type=9")
+        self.assertEqual(extract_difmark_top_offer_url(two_tab, "148677"),
+                         "https://difmark.com/en/products/148677/top-offer?offer_type=9")
+
+    def test_extract_top_offer_url_unknown_product_id_fails_closed(self):
+        # A product id with no matching tab must NOT read a sibling tab's
+        # (wrong-marketplace) offer — fail closed.
+        self.assertIsNone(extract_difmark_top_offer_url(DIFMARK_PAGE_HTML, "999999"))
+
     def test_parse_offer_attributes_real_shape(self):
         attrs = parse_difmark_offer_attributes(_difmark_top_offer_body())
         self.assertEqual(attrs["region"], "Global")
@@ -246,7 +271,8 @@ class DifmarkOfferResolverTests(unittest.TestCase):
         )
 
     def test_resolve_offer_europe_end_to_end(self):
-        product_url = "https://difmark.com/en/buy-console-account-some-game-1"
+        # product id must match the fixture's tab (166307) — it selects the tab.
+        product_url = "https://difmark.com/en/buy-console-account-some-game-166307"
 
         def fake_http(url, timeout=15, user_agent=None):
             if url == product_url:

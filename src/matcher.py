@@ -672,25 +672,51 @@ class DifmarkPageUnreadable(RuntimeError):
     ambiguous."""
 
 
-def extract_difmark_top_offer_url(page_html: str) -> str | None:
-    """Pull the 'top offer' API link Difmark embeds in the product page's SSR
-    JSON blob, unescaped. Prefer the CLEAN ``url_top_offer`` over
-    ``url_top_offer_with_get_params``: since 2026-08-06 Difmark's top-offer API
-    returns 404 when the feed URL's AKS tracking params (referal / coupon /
-    edition_id / region_product_id / seller_id) are propagated into the link, so
-    the params variant is now dead for AKS-referred feed URLs. The clean link
-    (``…/products/<id>/top-offer?offer_type=N``) returns the SAME offer
-    attributes. None if neither link is on the page (unrecognized shape)."""
+def difmark_product_id(url: str) -> str | None:
+    """The trailing numeric product id of a Difmark offer URL
+    (``…/buy-<slug>-<id>?<params>``), or None if absent. A Difmark page carries
+    one tab PER marketplace (Steam Account, Epic Games Account, …), each a
+    DISTINCT product id, so the feed URL's id is what selects the right tab."""
 
-    for key in ("url_top_offer", "url_top_offer_with_get_params"):
-        # The clean key ends at ``":`` — the params variant has
-        # ``_with_get_params`` before it, so this never mismatches the two.
-        match = re.search('"' + key + r'":"((?:[^"\\]|\\.)*)"', page_html)
-        if match:
-            try:
-                return json.loads('"' + match.group(1) + '"')
-            except ValueError:
-                continue
+    path = url.split("?", 1)[0].rstrip("/")
+    match = re.search(r"(\d+)$", path)
+    return match.group(1) if match else None
+
+
+def extract_difmark_top_offer_url(page_html: str, product_id: str | None = None) -> str | None:
+    """Pull the 'top offer' API link Difmark embeds in the product page's SSR
+    JSON blob, unescaped.
+
+    Uses the CLEAN ``url_top_offer`` (not ``url_top_offer_with_get_params``):
+    since 2026-08-06 Difmark's top-offer API returns 404 when the feed URL's AKS
+    tracking params (referal / coupon / edition_id / region_product_id /
+    seller_id) are propagated into the link. The clean link
+    (``…/products/<id>/top-offer?offer_type=N``) returns the SAME attributes.
+
+    A page has one clean link PER marketplace tab (Steam Account, Epic Games
+    Account, …), each a distinct product id. When ``product_id`` is given (the
+    feed offer's own id), pick the link for THAT tab — taking the first would
+    read the wrong marketplace (2026-08-06: an Epic feed offer, product 148678,
+    was read as the Steam tab 148677 → mislabelled Steam). If a product id is
+    given but no tab matches it, fail closed (None) rather than read a sibling
+    tab's wrong-marketplace offer. With no product id, fall back to the first
+    clean link, then the params variant."""
+
+    clean = [json.loads('"' + m + '"')
+             for m in re.findall(r'"url_top_offer":"((?:[^"\\]|\\.)*)"', page_html)]
+    if product_id is not None:
+        for u in clean:
+            if f"/products/{product_id}/" in u:
+                return u
+        return None
+    if clean:
+        return clean[0]
+    match = re.search(r'"url_top_offer_with_get_params":"((?:[^"\\]|\\.)*)"', page_html)
+    if match:
+        try:
+            return json.loads('"' + match.group(1) + '"')
+        except ValueError:
+            pass
     return None
 
 
@@ -756,7 +782,9 @@ def resolve_difmark_offer(
     page = http_get_fn(url, timeout=15)
     if not (page.ok and page.status == 200 and page.body):
         raise DifmarkPageUnreadable(f"product page unreadable: {page.status or page.error}")
-    top_offer_url = extract_difmark_top_offer_url(page.body)
+    # The feed URL's product id selects the offer's OWN marketplace tab (Steam vs
+    # Epic account, etc.) — never the page's first tab (2026-08-06 mislabel bug).
+    top_offer_url = extract_difmark_top_offer_url(page.body, difmark_product_id(url))
     if not top_offer_url:
         raise DifmarkPageUnreadable("no top-offer API link found on product page")
     if http_get_fn is http_get:
