@@ -673,16 +673,25 @@ class DifmarkPageUnreadable(RuntimeError):
 
 
 def extract_difmark_top_offer_url(page_html: str) -> str | None:
-    """Pull the 'top offer' API link Difmark itself embeds in the product
-    page's SSR JSON blob, unescaped. None if the page shape is unrecognized."""
+    """Pull the 'top offer' API link Difmark embeds in the product page's SSR
+    JSON blob, unescaped. Prefer the CLEAN ``url_top_offer`` over
+    ``url_top_offer_with_get_params``: since 2026-08-06 Difmark's top-offer API
+    returns 404 when the feed URL's AKS tracking params (referal / coupon /
+    edition_id / region_product_id / seller_id) are propagated into the link, so
+    the params variant is now dead for AKS-referred feed URLs. The clean link
+    (``…/products/<id>/top-offer?offer_type=N``) returns the SAME offer
+    attributes. None if neither link is on the page (unrecognized shape)."""
 
-    match = re.search(r'"url_top_offer_with_get_params":"((?:[^"\\]|\\.)*)"', page_html)
-    if not match:
-        return None
-    try:
-        return json.loads('"' + match.group(1) + '"')
-    except ValueError:
-        return None
+    for key in ("url_top_offer", "url_top_offer_with_get_params"):
+        # The clean key ends at ``":`` — the params variant has
+        # ``_with_get_params`` before it, so this never mismatches the two.
+        match = re.search('"' + key + r'":"((?:[^"\\]|\\.)*)"', page_html)
+        if match:
+            try:
+                return json.loads('"' + match.group(1) + '"')
+            except ValueError:
+                continue
+    return None
 
 
 def parse_difmark_offer_attributes(body: str) -> dict[str, Any] | None:

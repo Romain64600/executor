@@ -150,7 +150,12 @@ DIFMARK_PAGE_HTML = (
     '&seller_id%5B0%5D=275327&seller_id%5B1%5D=2300110",'
     '"url_offers_by_type":"https:\\/\\/difmark.com\\/en\\/products\\/166307\\/offers-by-type\\/9"}]'
 )
-DIFMARK_TOP_OFFER_URL = (
+# The CLEAN top-offer link (no AKS get-params). Difmark's top-offer API now 404s
+# when the referal/coupon/edition_id/region_product_id/seller_id params are
+# propagated (2026-08-06), so the resolver must use this clean variant.
+DIFMARK_TOP_OFFER_URL = "https://difmark.com/en/products/166307/top-offer?offer_type=9"
+# The old params-carrying variant (kept as a fallback when no clean link exists).
+DIFMARK_TOP_OFFER_URL_WITH_PARAMS = (
     "https://difmark.com/en/products/166307/top-offer?offer_type=9&referal=allkeyshop"
     "&marketplace_id=2&edition_id=780&region_product_id=1&seller_id%5B0%5D=275327"
     "&seller_id%5B1%5D=2300110"
@@ -179,8 +184,20 @@ def _difmark_top_offer_body(
 
 
 class DifmarkOfferResolverTests(unittest.TestCase):
-    def test_extract_top_offer_url_from_real_page_fixture(self):
+    def test_extract_top_offer_url_prefers_clean_link(self):
+        # The clean url_top_offer (no AKS params) is chosen over the params
+        # variant that now 404s on Difmark's API (2026-08-06).
         self.assertEqual(extract_difmark_top_offer_url(DIFMARK_PAGE_HTML), DIFMARK_TOP_OFFER_URL)
+
+    def test_extract_top_offer_url_falls_back_to_params_variant(self):
+        # A page carrying ONLY the params variant (no clean link) still resolves.
+        only_params = (
+            '"url_top_offer_with_get_params":"https:\\/\\/difmark.com\\/en\\/products'
+            '\\/166307\\/top-offer?offer_type=9&referal=allkeyshop"'
+        )
+        self.assertEqual(
+            extract_difmark_top_offer_url(only_params),
+            "https://difmark.com/en/products/166307/top-offer?offer_type=9&referal=allkeyshop")
 
     def test_extract_top_offer_url_missing_is_none(self):
         self.assertIsNone(extract_difmark_top_offer_url("<html>no such field</html>"))
