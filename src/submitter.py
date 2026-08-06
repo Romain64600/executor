@@ -666,8 +666,7 @@ class _SubmitterBase:
         return entry
 
     def _verify_gone(self, offer_id, merchant_url, store_id, feed_page, available,
-                     max_pages, pages: "list[int] | None" = None
-                     ) -> tuple[bool, dict[str, dict[str, str]] | None, dict[str, dict[str, str]] | None]:
+                     max_pages) -> tuple[bool, dict[str, dict[str, str]] | None, dict[str, dict[str, str]] | None]:
         """Post-save: re-scan the feed. Returns (gone, fresh_index, fresh_by_url).
 
         gone is True iff the offer is absent under BOTH keys — the row id we
@@ -682,20 +681,9 @@ class _SubmitterBase:
         Both maps are None when the offer was found (partial scan, unusable).
         """
 
-        # ``pages`` set (page-hinted mode): the offer was located in a small page
-        # window, so prove it GONE from that same window (re-read those pages),
-        # not the whole feed — the deep feed cannot be scanned end-to-end. The
-        # window is wide enough that a create-induced reflow cannot push the offer
-        # out of it (see run()'s note), so an absence across the window is a sound
-        # gone-proof for a page-scoped run.
-        if pages is not None:
-            index, by_url, found = self._scan_page_window(
-                store_id, feed_page, available, pages,
-                stop_on=offer_id, stop_on_url=merchant_url or None)
-        else:
-            index, by_url, found = self._scan_feed(
-                store_id, feed_page, available, max_pages,
-                stop_on=offer_id, stop_on_url=merchant_url or None)
+        index, by_url, found = self._scan_feed(
+            store_id, feed_page, available, max_pages,
+            stop_on=offer_id, stop_on_url=merchant_url or None)
         if found:
             return False, None, None
         return True, index, by_url
@@ -742,11 +730,16 @@ class _SubmitterBase:
             self._load_catalog(catalog)
 
         # ``page_hint`` (submit-index-shallow-feed fix, 2026-08-06): the caller
-        # (the safe-auto sweep) knows the offers' feed page from the extract, so we
-        # index only a small WINDOW of pages around it (navigating directly) instead
-        # of the sequential scan that can't reach deep pages. locate + post-save
-        # verify then stay page-local. Reflow shifts an uncreated offer toward
-        # page 1 by at most (#offers on the page) < 1 page, so the window covers it.
+        # (the safe-auto sweep) knows the offers' feed page from the extract, so
+        # index only a small WINDOW of pages around it (navigating directly)
+        # instead of the sequential scan that terminates ~28 pages and can't reach
+        # deep pages. This is a LOCATE optimisation ONLY — it finds the row cheaply.
+        # The post-save gone-proof stays a WHOLE-FEED scan (see _process): a bounded
+        # window cannot prove global disappearance (a parallel operator / re-import
+        # can shift a live offer out of the window → false gone, 2026-08-06 review).
+        # A window > 0 tolerates the modest reflow between extract and this run so
+        # the row is still found; being wrong here only fails the locate closed
+        # (offer not found → skipped), never a false create.
         window_pages: list[int] | None = None
         if page_hint is not None:
             window_pages = [p for p in range(page_hint - page_window, page_hint + page_window + 1)
@@ -1001,10 +994,18 @@ class Submitter(_SubmitterBase):
                 reason = "invalid required fields: " + ", ".join(str(f) for f in fields)
             entry["post_save"] = f"create not confirmed: {status}" + (f" — {reason}" if reason else "")
             return False
+        # The post-save gone-proof is ALWAYS a whole-feed scan to a PROVEN end —
+        # NEVER the page window, even under page_hint. A bounded-window absence is
+        # not a disappearance proof: a parallel operator or a mid-run re-import
+        # (both routine on these feeds — parallel-human-operators,
+        # feed-reimport-id-rotation) can shift a STILL-LIVE offer outside the
+        # window, and the window scan would falsely conclude "gone" → a phantom
+        # creation (2026-08-06 review, CRITICAL). page_hint only makes the LOCATE
+        # cheap (find the row without a deep sequential scan); proving it left the
+        # feed still requires covering the whole feed under both id and URL keys.
         gone, fresh_index, fresh_by_url = self._verify_gone(
             entry["offer_id"], str(candidate["offer"].get("url") or ""),
             ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"],
-            pages=ctx.get("window_pages"),
         )
         if fresh_index is not None:
             ctx["index"].clear()

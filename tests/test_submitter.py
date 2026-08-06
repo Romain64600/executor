@@ -445,11 +445,10 @@ class RealSubmitTests(unittest.TestCase):
                 seen.append(int(m.group(1)))
         return set(seen)
 
-    def test_page_hint_locates_deep_offer_window_local(self):
+    def test_page_hint_locates_and_creates_deep_offer(self):
         # Offer "54" sits on page 5 (a deep page the sequential scan can't reach on
-        # a reflow feed). page_hint=5, window=1 → index ONLY pages 4,5,6, create,
-        # verify gone by re-reading that window. Never touches pages 1-3 for the
-        # index/verify (the whole point — no deep sequential scan).
+        # a reflow feed). page_hint=5 indexes the window [4,5,6] to LOCATE it
+        # cheaply, then creates; the post-save gone-proof is whole-feed.
         session = FakeWriteSession(self._deep_feed(6))
         result = Submitter(session, click_mode="native").run(
             run_id="r", merchant="Kinguin", store_id="58",
@@ -457,11 +456,30 @@ class RealSubmitTests(unittest.TestCase):
         self.assertEqual((result["write_attempts"], result["created"]), (1, 1))
         self.assertTrue(result["plan"][0]["submitted"])
         self.assertIn("gone from feed", result["plan"][0]["post_save"])
+
+    def test_page_hint_gone_proof_scans_whole_feed_not_window(self):
+        # REGRESSION (2026-08-06 review, CRITICAL): the gone-proof must cover the
+        # WHOLE feed, not the page window — else a live offer shifted outside the
+        # window is falsely proven gone. After locating "54" via the window [4,5,6],
+        # the post-save verify must scan pages OUTSIDE the window too.
+        session = FakeWriteSession(self._deep_feed(6))
+        Submitter(session, click_mode="native").run(
+            run_id="r", merchant="Kinguin", store_id="58",
+            approved=[_cand("54")], page_hint=5, page_window=1)
         nav = self._pages_navigated(session)
-        self.assertTrue({4, 5, 6}.issuperset(nav) or nav <= {4, 5, 6},
-                        f"index/verify must stay in the window, navigated pages={nav}")
-        self.assertNotIn(2, nav)   # deep pages 2,3 never scanned
-        self.assertNotIn(3, nav)
+        self.assertTrue(nav & {1, 2, 3}, f"gone-proof must scan outside the window; navigated={nav}")
+
+    def test_page_hint_live_offer_outside_window_is_NOT_falsely_gone(self):
+        # The create does not remove the row (create_removes=False = the offer is
+        # still live). The whole-feed gone-proof finds it → submitted=False. A
+        # window-only proof would have missed it → phantom creation.
+        session = FakeWriteSession(self._deep_feed(6), create_removes=False)
+        result = Submitter(session, click_mode="native").run(
+            run_id="r", merchant="Kinguin", store_id="58",
+            approved=[_cand("54")], page_hint=5, page_window=1)
+        self.assertEqual(result["created"], 0)
+        self.assertFalse(result["plan"][0]["submitted"])
+        self.assertIn("STILL in feed", result["plan"][0]["post_save"])
 
     def test_page_hint_offer_outside_window_fails_closed(self):
         # The offer is on page 5 but the hint says page 2 (window 1,2,3) — it is
@@ -485,15 +503,6 @@ class RealSubmitTests(unittest.TestCase):
             approved=[_cand("54")], page_hint=5, page_window=1)
         self.assertEqual(result["created"], 1)
         self.assertTrue(result["plan"][0]["submitted"])
-
-    def test_page_hint_verify_gone_reads_window_not_full_feed(self):
-        # After the create removes "54" from page 5, the gone-proof re-reads only
-        # the window (4,5,6) and confirms absent — no full-feed rescan.
-        session = FakeWriteSession(self._deep_feed(6))
-        Submitter(session, click_mode="native").run(
-            run_id="r", merchant="Kinguin", store_id="58",
-            approved=[_cand("54")], page_hint=5, page_window=1)
-        self.assertIn("54", session.created)   # created + verified gone via the window
 
     def test_cooperative_stop_at_offer_boundary(self):
         # A stop (SIGTERM via 05) is honored at an OFFER BOUNDARY: offer 1 is
