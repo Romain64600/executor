@@ -568,6 +568,67 @@ class MatchEndpointTests(AppTestCase):
         self.assertEqual(response.status, 403)
 
 
+class DataEntryAutoAllowlistTests(AppTestCase):
+    """Safe-auto is gated to a server-vetted merchant allowlist (Romain
+    2026-08-07): the UI only offers these, and the route re-checks so a
+    hand-crafted request can't bypass the picker (fail-closed)."""
+
+    def test_merchants_list_served(self):
+        response, body = self._json("GET", "/api/data-entry/merchants")
+        self.assertEqual(response.status, 200)
+        names = {m["name"] for m in body["merchants"]}
+        self.assertIn("Kinguin", names)
+        self.assertNotIn("Difmark", names)
+        self.assertNotIn("Gameboost", names)
+
+    def test_non_suggested_merchant_refused_without_launching(self):
+        calls = []
+        self.manager.start_data_entry_auto = lambda *a, **k: calls.append((a, k)) or {}
+        response, body = self._json(
+            "POST", "/api/data-entry/auto",
+            body={"targets": [{"merchant": "Difmark", "store_id": "167"}], "by": "Romain"},
+        )
+        self.assertEqual(response.status, 403)
+        self.assertEqual(body["error"]["code"], "merchant_not_allowed")
+        self.assertEqual(calls, [])  # gate refused before the manager was touched
+
+    def test_store_mismatch_refused(self):
+        self.manager.start_data_entry_auto = lambda *a, **k: {}
+        response, body = self._json(
+            "POST", "/api/data-entry/auto",
+            body={"targets": [{"merchant": "Kinguin", "store_id": "999"}]},
+        )
+        self.assertEqual(response.status, 403)
+        self.assertEqual(body["error"]["code"], "merchant_not_allowed")
+
+    def test_mixed_batch_refused_if_any_not_allowed(self):
+        calls = []
+        self.manager.start_data_entry_auto = lambda *a, **k: calls.append((a, k)) or {}
+        response, _ = self._json(
+            "POST", "/api/data-entry/auto",
+            body={"targets": [
+                {"merchant": "Kinguin", "store_id": "58"},
+                {"merchant": "Gameboost", "store_id": "157"},
+            ]},
+        )
+        self.assertEqual(response.status, 403)
+        self.assertEqual(calls, [])  # whole batch rejected, nothing launched
+
+    def test_suggested_merchant_accepted(self):
+        seen = {}
+        def fake(targets, *, by, max_pages=None, start_page=None):
+            seen["targets"] = targets
+            return {"run_id": "20260807-000000-auto", "started": True}
+        self.manager.start_data_entry_auto = fake
+        response, body = self._json(
+            "POST", "/api/data-entry/auto",
+            body={"targets": [{"merchant": "Kinguin", "store_id": "58"}], "by": "Romain"},
+        )
+        self.assertEqual(response.status, 200)
+        self.assertEqual(body["run_id"], "20260807-000000-auto")
+        self.assertEqual(seen["targets"], [("Kinguin", "58")])
+
+
 class SortMoveRouteTests(AppTestCase):
     def _sort_run(self):
         # a run carrying a sort_plan.json, readable by the console + sort routes

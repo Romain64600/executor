@@ -34,14 +34,28 @@ const setStatus = (t, busy) => { const f = $("#status"); f.textContent = t; f.cl
 $("#doc-btn").addEventListener("click", () => $("#doc-modal").showModal());
 $("#doc-modal").addEventListener("click", (e) => { if (e.target.id === "doc-modal") e.target.close(); });
 
+// ---- suggested merchants (the authoritative allowlist) ----
+// Safe-auto writes without validation, so ONLY server-vetted merchants may run.
+// The picker offers exactly these; the store is derived, never typed; the
+// server re-checks on launch. Empty list (fetch failed) ⇒ launching stays off.
+let SUGGESTED = [];       // [{name, store_id}] from /api/data-entry/merchants
+let SUGGEST_READY = false;
+function merchantOptions() {
+  const opts = [el("option", { value: "", text: "Marchand…" })];
+  for (const m of SUGGESTED) opts.push(el("option", { value: m.name, text: m.name + " (store " + m.store_id + ")" }));
+  return opts;
+}
+const storeFor = (name) => { const m = SUGGESTED.find((x) => x.name === name); return m ? m.store_id : ""; };
+
 // ---- targets ----
-function addTarget(merchant, store) {
-  const m = el("input", { type: "text", placeholder: "Kinguin", class: "t-merchant", value: merchant || "" });
-  const s = el("input", { type: "text", placeholder: "58", class: "t-store", inputmode: "numeric", value: store || "" });
+function addTarget(merchant) {
+  const m = el("select", { class: "t-merchant" }, merchantOptions());
+  if (merchant) m.value = merchant;
+  const s = el("input", { type: "text", class: "t-store", readonly: "readonly", tabindex: "-1", placeholder: "—", value: storeFor(m.value) });
   const rm = el("button", { type: "button", class: "t-rm", title: "Retirer", text: "✕" });
   const row = el("div", { class: "t-row" }, [m, s, rm]);
   rm.addEventListener("click", () => { row.remove(); syncGo(); });
-  m.addEventListener("input", syncGo); s.addEventListener("input", syncGo);
+  m.addEventListener("change", () => { s.value = storeFor(m.value); syncGo(); });
   $("#targets").append(row);
   return m;
 }
@@ -49,16 +63,16 @@ function collectTargets() {
   const out = [];
   for (const row of $("#targets").querySelectorAll(".t-row")) {
     const merchant = row.querySelector(".t-merchant").value.trim();
-    const store_id = row.querySelector(".t-store").value.trim();
+    const store_id = storeFor(merchant);           // canonical store, never user-typed
     if (merchant && /^\d+$/.test(store_id)) out.push({ merchant, store_id });
   }
   return out;
 }
 function syncGo() {
-  const ok = collectTargets().length > 0 && $("#go").value.trim().toUpperCase() === "GO";
+  const ok = SUGGEST_READY && collectTargets().length > 0 && $("#go").value.trim().toUpperCase() === "GO";
   $("#launch").disabled = !ok;
 }
-$("#add-target").addEventListener("click", () => addTarget().focus());
+$("#add-target").addEventListener("click", () => { if (SUGGEST_READY) addTarget().focus(); });
 $("#go").addEventListener("input", syncGo);
 
 // ---- launch ----
@@ -152,6 +166,20 @@ function renderRecap(d) {
 }
 
 // ---- init ----
-addTarget("Kinguin", "58");
-syncGo();
-setStatus("Prêt");
+(async function init() {
+  setStatus("Prêt");
+  try {
+    const d = await api("/api/data-entry/merchants");
+    SUGGESTED = (d && d.merchants) || [];
+  } catch (e) { SUGGESTED = []; }
+  SUGGEST_READY = SUGGESTED.length > 0;
+  if (!SUGGEST_READY) {
+    $("#add-target").disabled = true;
+    $("#launch-msg").textContent = "✖ liste des marchands suggérés indisponible — lancement bloqué (fail-closed).";
+    syncGo();
+    return;
+  }
+  const first = SUGGESTED.some((m) => m.name === "Kinguin") ? "Kinguin" : SUGGESTED[0].name;
+  addTarget(first);
+  syncGo();
+})();

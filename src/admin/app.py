@@ -53,6 +53,7 @@ from src.admin.learning_io import (
 )
 from src.admin.validation_io import ValidationIOError, apply_overrides_and_validate
 from src.admin.login_manager import LoginError, LoginManager
+from src.admin.auto_merchants import allowed_list as auto_allowed_list, rejection_reason
 from src.matcher import PLATFORM_LABEL, REGION_IDS
 from src.validation import candidate_fingerprint
 
@@ -226,6 +227,10 @@ class AdminHandler(BaseHTTPRequestHandler):
         if path == "/api/data-entry/recap":
             run = parse_qs(parsed.query).get("run", [""])[0]
             return self._get_data_entry_recap(run)
+        if path == "/api/data-entry/merchants":
+            # The safe-auto allowlist — the only merchants the UI may offer and
+            # the server will accept for unvalidated auto entry.
+            return self._send_json(200, {"merchants": auto_allowed_list()})
         name = path.lstrip("/")
         if name in STATIC_FILES:
             return self._serve_static(name)
@@ -500,6 +505,13 @@ class AdminHandler(BaseHTTPRequestHandler):
         if not targets:
             raise ApiError(400, "targets_required",
                            "au moins un marchand (targets: [{merchant, store_id}]) requis")
+        # Authoritative allowlist gate: safe-auto writes without validation, so a
+        # merchant absent from the suggested list is refused server-side even if
+        # the UI is bypassed (fail-closed). Reject the whole batch on any miss.
+        for merchant, store_id in targets:
+            reason = rejection_reason(merchant, store_id)
+            if reason is not None:
+                raise ApiError(403, "merchant_not_allowed", reason)
         result = self.state.manager.start_data_entry_auto(
             targets, by=by, max_pages=_parse_int(body.get("max_pages")),
             start_page=_parse_int(body.get("start_page")))

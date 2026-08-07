@@ -50,6 +50,10 @@
           <p class="en" lang="en">The matcher is the gate (it drops console / no-AKS-page / ambiguous). You audit
             the recap and delete mistakes afterwards. Any block (feed unreadable, dropped session) HALTS everything
             (fail-closed) — never an auto re-login.</p>
+          <p lang="fr">Seuls les <b>marchands vettés</b> sont proposés ; le serveur refuse tout autre marchand
+            même par requête directe (allowlist autoritaire). Difmark (parké) et Gameboost sont exclus pour le moment.</p>
+          <p class="en" lang="en">Only <b>vetted merchants</b> are offered; the server refuses any other merchant
+            even via a hand-crafted request (authoritative allowlist). Difmark (parked) and Gameboost are excluded for now.</p>
         </section>
       </div>
     </div>
@@ -65,6 +69,9 @@
       <div class="cols"><span>Marchand</span><span>Store id</span><span></span></div>
       <div id="targets" class="targets"></div>
       <button id="add-target" type="button" class="addrow">+ ajouter un marchand</button>
+      <p class="restrict">Seuls les marchands <b>vettés</b> sont proposés — data-entry auto = écriture <b>sans validation</b>.
+        <span lang="en" class="en">Only vetted merchants are offered (auto = unvalidated writes).</span>
+        Difmark (parké) et Gameboost sont exclus pour le moment.</p>
       <div class="opts">
         <label>Max pages <input id="max-pages" type="number" min="1" placeholder="(tout le feed)" class="num"></label>
         <label>Page de départ <input id="start-page" type="number" min="1" placeholder="1" class="num"></label>

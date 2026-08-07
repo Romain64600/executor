@@ -52,7 +52,9 @@ main { max-width:900px; margin:1rem auto; padding:0 1rem; display:flex; flex-dir
 .cols { display:grid; grid-template-columns:1fr 8rem 2rem; gap:.5rem; color:var(--dim); font-size:.75rem; padding:0 .1rem .2rem; }
 .targets { display:flex; flex-direction:column; gap:.4rem; }
 .t-row { display:grid; grid-template-columns:1fr 8rem 2rem; gap:.5rem; }
-.t-row input { background:var(--panel-2); border:1px solid var(--line); border-radius:6px; padding:.35rem .5rem; color:var(--ink); font:inherit; }
+.t-row input, .t-row select { background:var(--panel-2); border:1px solid var(--line); border-radius:6px; padding:.35rem .5rem; color:var(--ink); font:inherit; }
+.t-store[readonly] { color:var(--dim); background:var(--panel); cursor:default; text-align:center; }
+.restrict { margin:.5rem .1rem 0; color:var(--dim); font-size:.78rem; line-height:1.4; }
 .t-rm { background:none; border:1px solid var(--line); border-radius:6px; color:var(--dim); cursor:pointer; }
 .t-rm:hover { color:var(--bad); border-color:var(--bad); }
 .addrow { margin-top:.5rem; background:var(--panel-2); border:1px dashed var(--line-2); border-radius:6px; padding:.35rem .7rem; color:var(--dim); cursor:pointer; }
