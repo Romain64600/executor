@@ -40,6 +40,7 @@ RUN_FILES = frozenset(
         "learning_log.jsonl",  # append-only JSONL: one event per Learning save (audit L6)
         "sort_plan.json",   # Stage 8 — the all-stores list-sorting plan (triage console)
         "sort_move_tally.json",  # Stage 9 — cumulative moved-per-list tally (console)
+        "recap.json",       # Safe-auto sweep recap (read by /api/data-entry/recap)
     }
 )
 

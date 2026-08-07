@@ -40,6 +40,7 @@ $("#doc-modal").addEventListener("click", (e) => { if (e.target.id === "doc-moda
 // server re-checks on launch. Empty list (fetch failed) ⇒ launching stays off.
 let SUGGESTED = [];       // [{name, store_id}] from /api/data-entry/merchants
 let SUGGEST_READY = false;
+let SWEEP_RUNNING = false; // a data-entry-auto sweep is active (launched here OR elsewhere)
 function merchantOptions() {
   const opts = [el("option", { value: "", text: "Marchand…" })];
   for (const m of SUGGESTED) opts.push(el("option", { value: m.name, text: m.name + " (store " + m.store_id + ")" }));
@@ -69,7 +70,7 @@ function collectTargets() {
   return out;
 }
 function syncGo() {
-  const ok = SUGGEST_READY && collectTargets().length > 0 && $("#go").value.trim().toUpperCase() === "GO";
+  const ok = SUGGEST_READY && !SWEEP_RUNNING && collectTargets().length > 0 && $("#go").value.trim().toUpperCase() === "GO";
   $("#launch").disabled = !ok;
 }
 $("#add-target").addEventListener("click", () => { if (SUGGEST_READY) addTarget().focus(); });
@@ -87,6 +88,7 @@ $("#launch").addEventListener("click", async () => {
   try {
     const r = await api("/api/data-entry/auto", { method: "POST", body: JSON.stringify(body) });
     $("#launch-msg").textContent = "▶ sweep lancé : " + (r.run_id || "");
+    SWEEP_RUNNING = true;
     setStatus("Sweep en cours…", true);
     $("#busy-ind").classList.remove("hidden");
     $("#busy-text").textContent = "sweep " + targets.map((t) => t.merchant).join(", ");
@@ -105,23 +107,56 @@ $("#stop-btn").addEventListener("click", async () => {
 
 // ---- live recap ----
 let POLL = null;
+// The manager is the authoritative "is a sweep running" signal — it works even
+// if the recap route is momentarily unavailable. undefined = transient error
+// (don't declare finished on a blip); null = idle; {kind,run_id} = active.
+async function fetchBusy() {
+  try { const d = await api("/api/sort/runs"); return d ? (d.busy || null) : null; }
+  catch (e) { return undefined; }
+}
+function endSweepUi(finalText) {
+  clearInterval(POLL); POLL = null;
+  SWEEP_RUNNING = false;
+  $("#busy-ind").classList.add("hidden");
+  setStatus(finalText);
+  $("#stop-btn").disabled = false;
+  syncGo();
+}
 function startPolling(runId) {
   $("#recap-card").classList.remove("hidden");
+  $("#busy-ind").classList.remove("hidden");
   if (POLL) clearInterval(POLL);
   const tick = async () => {
-    let d; try { d = await api("/api/data-entry/recap" + (runId ? "?run=" + encodeURIComponent(runId) : "")); }
-    catch (e) { return; }
-    renderRecap(d);
+    const busy = await fetchBusy();
+    let d = null;
+    try { d = await api("/api/data-entry/recap" + (runId ? "?run=" + encodeURIComponent(runId) : "")); }
+    catch (e) { d = null; }        // recap detail may be unavailable; busy still drives run state
+    if (d) renderRecap(d);
     const rec = d && d.recap;
-    const running = rec && !rec.finished_at;
-    if (!running) {
-      clearInterval(POLL); POLL = null;
-      $("#busy-ind").classList.add("hidden");
-      setStatus(rec && rec.halted ? ("Arrêté : " + rec.halted) : "Sweep terminé.");
-      $("#stop-btn").disabled = false; syncGo();
-    }
+    // Still running if the manager reports an auto sweep, or (busy unknown) on a
+    // transient error; finished only once the manager is idle for this kind.
+    let running;
+    if (busy === undefined) running = true;
+    else if (busy && busy.kind === "data_entry_auto") running = true;
+    else if (rec) running = !rec.finished_at;
+    else running = false;
+    if (!running) endSweepUi(rec && rec.halted ? ("Arrêté : " + rec.halted) : "Sweep terminé.");
   };
   tick(); POLL = setInterval(tick, 5000);
+}
+// On page load, adopt a sweep already running (launched here earlier, elsewhere,
+// or before a reload) so the page shows it instead of looking merely "blocked".
+async function resumeIfActive() {
+  const busy = await fetchBusy();
+  if (busy && busy.kind === "data_entry_auto") {
+    SWEEP_RUNNING = true;
+    $("#busy-text").textContent = "sweep en cours" + (busy.run_id ? " · " + busy.run_id : "");
+    $("#launch-msg").textContent = "Un sweep est déjà en cours — attends la fin ou clique Arrêter.";
+    setStatus("Sweep en cours…", true);
+    startPolling(busy.run_id);
+    return true;
+  }
+  return false;
 }
 function renderRecap(d) {
   const rec = d && d.recap;
@@ -181,5 +216,6 @@ function renderRecap(d) {
   }
   const first = SUGGESTED.some((m) => m.name === "Kinguin") ? "Kinguin" : SUGGESTED[0].name;
   addTarget(first);
+  await resumeIfActive();   // adopt an already-running sweep so the page reflects it
   syncGo();
 })();

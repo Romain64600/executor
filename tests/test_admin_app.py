@@ -629,6 +629,40 @@ class DataEntryAutoAllowlistTests(AppTestCase):
         self.assertEqual(seen["targets"], [("Kinguin", "58")])
 
 
+class DataEntryRecapRouteTests(AppTestCase):
+    """The safe-auto live recap is read through /api/data-entry/recap; recap.json
+    must be whitelisted (regression: it 500'd 'file not in run whitelist')."""
+
+    def _auto_run(self, name="20260807-115728-auto", created=3, finished=None):
+        d = self.runs / name
+        d.mkdir(parents=True, exist_ok=True)
+        d.joinpath("recap.json").write_text(json.dumps({
+            "run_id": name, "total_created": created, "finished_at": finished,
+            "halted": None, "targets": [{"merchant": "K4G", "store_id": "92", "recap": {}}],
+        }), encoding="utf-8")
+        return name
+
+    def test_recap_by_explicit_run(self):
+        name = self._auto_run()
+        response, body = self._json("GET", f"/api/data-entry/recap?run={name}")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(body["run_id"], name)
+        self.assertEqual(body["recap"]["total_created"], 3)
+
+    def test_recap_defaults_to_newest_auto_run(self):
+        self._auto_run("20260807-100000-auto", created=1)
+        newest = self._auto_run("20260807-115728-auto", created=9)
+        response, body = self._json("GET", "/api/data-entry/recap")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(body["run_id"], newest)
+        self.assertEqual(body["recap"]["total_created"], 9)
+
+    def test_recap_none_when_no_auto_runs(self):
+        response, body = self._json("GET", "/api/data-entry/recap")
+        self.assertEqual(response.status, 200)
+        self.assertIsNone(body["recap"])
+
+
 class SortMoveRouteTests(AppTestCase):
     def _sort_run(self):
         # a run carrying a sort_plan.json, readable by the console + sort routes
