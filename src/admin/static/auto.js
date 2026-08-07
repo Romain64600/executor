@@ -158,6 +158,12 @@ async function resumeIfActive() {
   }
   return false;
 }
+// No sweep running: still show the LAST sweep's recap so the operator can audit
+// it after the fact (the recap's whole purpose) instead of a bare launch form.
+async function showLastRecap() {
+  let d; try { d = await api("/api/data-entry/recap"); } catch (e) { return; }
+  if (d && d.recap) { $("#recap-card").classList.remove("hidden"); renderRecap(d); }
+}
 function renderRecap(d) {
   const rec = d && d.recap;
   $("#recap-run").textContent = d && d.run_id ? "· " + d.run_id : "";
@@ -216,6 +222,7 @@ function renderRecap(d) {
   }
   const first = SUGGESTED.some((m) => m.name === "Kinguin") ? "Kinguin" : SUGGESTED[0].name;
   addTarget(first);
-  await resumeIfActive();   // adopt an already-running sweep so the page reflects it
+  // Adopt an already-running sweep; else surface the last finished recap to audit.
+  if (!(await resumeIfActive())) await showLastRecap();
   syncGo();
 })();
