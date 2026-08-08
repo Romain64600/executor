@@ -86,7 +86,7 @@ $("#launch").addEventListener("click", async () => {
   $("#launch").disabled = true;
   $("#launch-msg").textContent = "Lancement…";
   try {
-    const r = await api("/api/data-entry/auto", { method: "POST", body: JSON.stringify(body) });
+    const r = await api("api/data-entry/auto", { method: "POST", body: JSON.stringify(body) });
     $("#launch-msg").textContent = "▶ sweep lancé : " + (r.run_id || "");
     SWEEP_RUNNING = true;
     setStatus("Sweep en cours…", true);
@@ -101,7 +101,7 @@ $("#launch").addEventListener("click", async () => {
 });
 $("#stop-btn").addEventListener("click", async () => {
   $("#stop-btn").disabled = true;
-  try { await api("/api/sort/stop", { method: "POST", body: "{}" }); setStatus("Arrêt demandé (entre pages)…", true); }
+  try { await api("api/sort/stop", { method: "POST", body: "{}" }); setStatus("Arrêt demandé (entre pages)…", true); }
   catch (e) { setStatus("Stop refusé — " + e.message); $("#stop-btn").disabled = false; }
 });
 
@@ -111,7 +111,7 @@ let POLL = null;
 // if the recap route is momentarily unavailable. undefined = transient error
 // (don't declare finished on a blip); null = idle; {kind,run_id} = active.
 async function fetchBusy() {
-  try { const d = await api("/api/sort/runs"); return d ? (d.busy || null) : null; }
+  try { const d = await api("api/sort/runs"); return d ? (d.busy || null) : null; }
   catch (e) { return undefined; }
 }
 function endSweepUi(finalText) {
@@ -129,7 +129,7 @@ function startPolling(runId) {
   const tick = async () => {
     const busy = await fetchBusy();
     let d = null;
-    try { d = await api("/api/data-entry/recap" + (runId ? "?run=" + encodeURIComponent(runId) : "")); }
+    try { d = await api("api/data-entry/recap" + (runId ? "?run=" + encodeURIComponent(runId) : "")); }
     catch (e) { d = null; }        // recap detail may be unavailable; busy still drives run state
     if (d) renderRecap(d);
     const rec = d && d.recap;
@@ -161,7 +161,7 @@ async function resumeIfActive() {
 // No sweep running: still show the LAST sweep's recap so the operator can audit
 // it after the fact (the recap's whole purpose) instead of a bare launch form.
 async function showLastRecap() {
-  let d; try { d = await api("/api/data-entry/recap"); } catch (e) { return; }
+  let d; try { d = await api("api/data-entry/recap"); } catch (e) { return; }
   if (d && d.recap) { $("#recap-card").classList.remove("hidden"); renderRecap(d); }
 }
 function renderRecap(d) {
@@ -210,7 +210,7 @@ function renderRecap(d) {
 (async function init() {
   setStatus("Prêt");
   try {
-    const d = await api("/api/data-entry/merchants");
+    const d = await api("api/data-entry/merchants");
     SUGGESTED = (d && d.merchants) || [];
   } catch (e) { SUGGESTED = []; }
   SUGGEST_READY = SUGGESTED.length > 0;
