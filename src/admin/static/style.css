@@ -111,14 +111,14 @@ header {
 
 .tablink {
   color: var(--accent); text-decoration: none; font-size: 0.85rem;
-  padding: 0.2rem 0.55rem; border: 1px solid var(--border); border-radius: 4px;
+  padding: 0.2rem 0.55rem; border: 1px solid var(--border); border-radius:5px;
 }
 button.tablink { background: none; cursor: pointer; font-family: inherit; }
 .tablink:hover { background: var(--hover); border-color: var(--accent); }
 
 /* Doc / Help modal (bilingual FR/EN). Uses style.css vars. */
 .doc-modal {
-  border: none; border-radius: 12px; padding: 0; max-width: 640px;
+  border: none; border-radius:5px; padding: 0; max-width: 640px;
   width: calc(100% - 2rem); background: var(--panel); color: var(--text);
   box-shadow: 0 12px 44px rgba(0, 0, 0, 0.45);
 }
@@ -130,7 +130,7 @@ button.tablink { background: none; cursor: pointer; font-family: inherit; }
 .doc-head h3 { margin: 0; font-size: 1rem; }
 .doc-x {
   background: none; border: none; color: var(--muted); font-size: 1rem;
-  cursor: pointer; padding: 0.2rem 0.45rem; border-radius: 6px;
+  cursor: pointer; padding: 0.2rem 0.45rem; border-radius:5px;
 }
 .doc-x:hover { color: var(--text); background: var(--hover); }
 .doc-body { padding: 0.8rem 1rem 1rem; max-height: 70vh; overflow-y: auto; }
@@ -139,7 +139,7 @@ button.tablink { background: none; cursor: pointer; font-family: inherit; }
 .doc-body p { margin: 0.15rem 0; font-size: 0.85rem; line-height: 1.5; }
 .doc-body p.en { color: var(--muted); }
 .doc-body code {
-  font-size: 0.8rem; background: var(--code-bg); padding: 0.05rem 0.3rem; border-radius: 4px;
+  font-size: 0.8rem; background: var(--code-bg); padding: 0.05rem 0.3rem; border-radius:5px;
 }
 .doc-more {
   margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid var(--border);
@@ -154,9 +154,17 @@ h4 { font-size: 0.9rem; margin: 0.6rem 0 0.3rem; }
 .badge {
   background: var(--badge-bg);
   border: 1px solid var(--badge-border);
-  border-radius: 4px;
+  border-radius:5px;
   padding: 0.15rem 0.5rem;
   font-size: 0.85rem;
+}
+
+/* Charte BEVEL — dog-ear accent pour taguer / mettre en avant un élément. */
+.bevel { position: relative; overflow: hidden; }
+.bevel::after {
+  content: ""; position: absolute; top: 0; right: 0; border-style: solid;
+  border-width: 0 16px 16px 0; border-color: transparent var(--accent) transparent transparent;
+  pointer-events: none;
 }
 
 .banner {
@@ -183,7 +191,7 @@ main {
 aside, #run-panel {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius:5px;
   padding: 0.8rem;
 }
 
@@ -211,7 +219,7 @@ aside, #run-panel {
 pre {
   background: var(--code-bg);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius:5px;
   padding: 0.6rem;
   overflow-x: auto;
   white-space: pre-wrap;
@@ -257,7 +265,7 @@ td a:hover { text-decoration: underline; }
 .status {
   display: inline-block;
   padding: 0.1rem 0.45rem;
-  border-radius: 10px;
+  border-radius:5px;
   font-size: 0.78rem;
   font-weight: 600;
   white-space: nowrap;
@@ -283,7 +291,7 @@ button.trash { padding: 0.15rem 0.4rem; font-size: 0.9rem; }
 select, input[type="text"], input[type="number"] {
   padding: 0.25rem 0.35rem;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius:5px;
   background: var(--btn-bg);
   color: var(--text);
   font-size: 0.85rem;
@@ -295,7 +303,7 @@ select:disabled { background: var(--disabled-bg); color: var(--muted); }
 button {
   padding: 0.35rem 0.8rem;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius:5px;
   background: var(--btn-bg);
   color: var(--text);
   cursor: pointer;
@@ -323,7 +331,7 @@ button.danger:hover:not(:disabled) { background: var(--bad); border-color: var(-
 
 fieldset {
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius:5px;
   display: flex;
   gap: 1rem;
   padding: 0.4rem 0.8rem;
@@ -349,7 +357,7 @@ fieldset label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.8
 
 dialog {
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius:5px;
   max-width: 640px;
   padding: 1rem;
   background: var(--panel);
@@ -375,7 +383,7 @@ dialog::backdrop { background: var(--backdrop); }
 .learning-offer .learn-aks-url { flex: 1 1 100%; min-width: 20rem; }
 .learning-offer .learn-move { min-width: 16rem; }
 .learning-offer .learn-suggested {
-  font-size: 0.75rem; padding: 0.05rem 0.4rem; border-radius: 0.6rem;
+  font-size: 0.75rem; padding: 0.05rem 0.4rem; border-radius:5px;
   background: var(--accent); color: var(--accent-ink); align-self: center;
 }
 .learning-offer .learn-platform, .learning-offer .learn-scope { min-width: 10rem; }
