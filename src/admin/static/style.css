@@ -22,9 +22,9 @@
   :root {
     --bg:#f4f6fa; --panel:#ffffff; --panel-2:#eef1f7;
     --border:#d5dce8; --text:#141720; --muted:#525F83; --faint:#8397C2;
-    --accent:#0184e6; --accent-hover:#0169c0; --accent-ink:#ffffff;
-    --ok:#00794f; --bad:#e0353f; --bad-hover:#bd2b34;
-    --warn-text:#c9760f; --warn-bg:#fbf1de; --notice-bg:#e2f4ec;
+    --accent:#0a68bd; --accent-hover:#085a9e; --accent-ink:#ffffff;
+    --ok:#00794f; --bad:#cc2630; --bad-hover:#bd2b34;
+    --warn-text:#9a6300; --warn-bg:#fbf1de; --notice-bg:#e2f4ec;
     --hover:#eef2f8; --selected:#e3eefb; --code-bg:#eef1f7;
     --th-bg:#eef1f7; --btn-bg:#ffffff; --disabled-bg:#eceef3;
     --badge-bg:#eef1f7; --badge-border:#b9c3d6;
@@ -53,9 +53,9 @@
 :root[data-theme="light"] {
   --bg:#f4f6fa; --panel:#ffffff; --panel-2:#eef1f7;
   --border:#d5dce8; --text:#141720; --muted:#525F83; --faint:#8397C2;
-  --accent:#0184e6; --accent-hover:#0169c0; --accent-ink:#ffffff;
-  --ok:#00794f; --bad:#e0353f; --bad-hover:#bd2b34;
-  --warn-text:#c9760f; --warn-bg:#fbf1de; --notice-bg:#e2f4ec;
+  --accent:#0a68bd; --accent-hover:#085a9e; --accent-ink:#ffffff;
+  --ok:#00794f; --bad:#cc2630; --bad-hover:#bd2b34;
+  --warn-text:#9a6300; --warn-bg:#fbf1de; --notice-bg:#e2f4ec;
   --hover:#eef2f8; --selected:#e3eefb; --code-bg:#eef1f7;
   --th-bg:#eef1f7; --btn-bg:#ffffff; --disabled-bg:#eceef3;
   --badge-bg:#eef1f7; --badge-border:#b9c3d6;
@@ -305,11 +305,13 @@ button {
 button:hover:not(:disabled) { background: var(--hover); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-button.primary:hover:not(:disabled) { background: var(--accent-hover); }
+/* Charte BOUTONS : repos = fond sombre + liseré/label accent (lisible, AA),
+   survol = rempli accent + texte blanc. Idem danger en rouge. */
+button.primary { background: var(--btn-bg); border-color: var(--accent); color: var(--accent); }
+button.primary:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); color: #fff; }
 
-button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
-button.danger:hover:not(:disabled) { background: var(--bad-hover); }
+button.danger { background: var(--btn-bg); border-color: var(--bad); color: var(--text); }
+button.danger:hover:not(:disabled) { background: var(--bad); border-color: var(--bad); color: #fff; }
 
 .row {
   display: flex;

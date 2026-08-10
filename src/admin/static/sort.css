@@ -18,10 +18,10 @@
   :root{
     --bg:#f4f6fa; --panel:#ffffff; --panel-2:#eef1f7; --line:#d5dce8;
     --line-2:#b9c3d6; --ink:#141720; --dim:#525F83; --faint:#8397C2;
-    --accent:#0184e6; --accent-2:#0169c0; --accent-ink:#ffffff;
-    --good:#00794f; --warn:#c9760f; --bad:#e0353f;
-    --c-red:#e0353f; --c-red-bg:#fce9ea; --c-blue:#0184e6; --c-blue-bg:#e3eefb;
-    --c-amber:#c9760f; --c-amber-bg:#fbf1de; --c-purple:#5a2fb8; --c-purple-bg:#efe8fb;
+    --accent:#0a68bd; --accent-2:#085a9e; --accent-ink:#ffffff;
+    --good:#00794f; --warn:#9a6300; --bad:#cc2630;
+    --c-red:#cc2630; --c-red-bg:#fce9ea; --c-blue:#0a68bd; --c-blue-bg:#e3eefb;
+    --c-amber:#9a6300; --c-amber-bg:#fbf1de; --c-purple:#5a2fb8; --c-purple-bg:#efe8fb;
     --c-teal:#00794f; --c-teal-bg:#e2f4ec; --c-grey:#525F83; --c-grey-bg:#eef1f7;
   }
 }
@@ -35,10 +35,10 @@
 }
 :root[data-theme="light"]{
   --bg:#f4f6fa; --panel:#ffffff; --panel-2:#eef1f7; --line:#d5dce8; --line-2:#b9c3d6;
-  --ink:#141720; --dim:#525F83; --faint:#8397C2; --accent:#0184e6; --accent-2:#0169c0;
-  --accent-ink:#ffffff; --good:#00794f; --warn:#c9760f; --bad:#e0353f;
-  --c-red:#e0353f; --c-red-bg:#fce9ea; --c-blue:#0184e6; --c-blue-bg:#e3eefb;
-  --c-amber:#c9760f; --c-amber-bg:#fbf1de; --c-purple:#5a2fb8; --c-purple-bg:#efe8fb;
+  --ink:#141720; --dim:#525F83; --faint:#8397C2; --accent:#0a68bd; --accent-2:#085a9e;
+  --accent-ink:#ffffff; --good:#00794f; --warn:#9a6300; --bad:#cc2630;
+  --c-red:#cc2630; --c-red-bg:#fce9ea; --c-blue:#0a68bd; --c-blue-bg:#e3eefb;
+  --c-amber:#9a6300; --c-amber-bg:#fbf1de; --c-purple:#5a2fb8; --c-purple-bg:#efe8fb;
   --c-teal:#00794f; --c-teal-bg:#e2f4ec; --c-grey:#525F83; --c-grey-bg:#eef1f7;
 }
 
@@ -93,7 +93,8 @@ a{color:var(--accent);text-decoration:none;}
   background:var(--c-amber-bg);color:var(--warn);font-size:.8rem;}
 .busy-ind .spin{width:.75rem;height:.75rem;border:2px solid currentColor;border-right-color:transparent;
   border-radius:50%;animation:spin .8s linear infinite;}
-.busy-ind #stop-btn{padding:.12rem .5rem;font-size:.76rem;background:var(--bad);border-color:var(--bad);color:#fff;}
+.busy-ind #stop-btn{padding:.12rem .5rem;font-size:.76rem;background:var(--panel-2);border-color:var(--bad);color:var(--ink);}
+.busy-ind #stop-btn:hover{background:var(--bad);color:#fff;}
 @keyframes spin{to{transform:rotate(360deg);}}
 @media (prefers-reduced-motion: reduce){.busy-ind .spin{animation:none;}}
 #run-picker{max-width:16rem;font-family:var(--mono);font-size:.8rem;}
@@ -171,8 +172,10 @@ dialog::backdrop{background:rgba(0,0,0,.62);}
 .actions .aspacer{width:1px;height:1.3rem;background:var(--line-2);margin:0 .2rem;}
 .actions .golabel{color:var(--dim);font-size:.8rem;}
 .actions .go-in{width:5rem;font-family:var(--mono);text-align:center;text-transform:uppercase;}
-.actions button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600;}
-.actions button.danger{background:var(--bad);border-color:var(--bad);color:#fff;font-weight:600;}
+.actions button.primary{background:var(--panel-2);border-color:var(--accent);color:var(--accent);font-weight:600;}
+.actions button.primary:hover:not(:disabled){background:var(--accent);border-color:var(--accent);color:#fff;}
+.actions button.danger{background:var(--panel-2);border-color:var(--bad);color:var(--ink);font-weight:600;}
+.actions button.danger:hover:not(:disabled){background:var(--bad);border-color:var(--bad);color:#fff;}
 .actions .batched-toggle{display:inline-flex;align-items:center;gap:.3rem;color:var(--dim);
   font-size:.8rem;cursor:pointer;user-select:none;}
 .actions .batched-toggle input{cursor:pointer;}

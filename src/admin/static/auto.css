@@ -9,7 +9,7 @@
   :root {
     --bg:#f4f6fa; --panel:#fff; --panel-2:#eef1f7; --line:#d5dce8; --line-2:#b9c3d6;
     --ink:#141720; --dim:#525F83; --faint:#8397C2;
-    --accent:#0184e6; --accent-2:#0169c0; --accent-ink:#fff; --good:#00794f; --warn:#c9760f; --bad:#e0353f;
+    --accent:#0a68bd; --accent-2:#085a9e; --accent-ink:#fff; --good:#00794f; --warn:#9a6300; --bad:#cc2630;
   }
 }
 :root[data-theme="dark"] {
@@ -19,8 +19,8 @@
 }
 :root[data-theme="light"] {
   --bg:#f4f6fa; --panel:#fff; --panel-2:#eef1f7; --line:#d5dce8; --line-2:#b9c3d6;
-  --ink:#141720; --dim:#525F83; --accent:#0184e6; --accent-2:#0169c0; --accent-ink:#fff;
-  --good:#00794f; --warn:#c9760f; --bad:#e0353f;
+  --ink:#141720; --dim:#525F83; --accent:#0a68bd; --accent-2:#085a9e; --accent-ink:#fff;
+  --good:#00794f; --warn:#9a6300; --bad:#cc2630;
 }
 * { box-sizing: border-box; }
 body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 "Futura","Futura PT","Century Gothic","Avenir Next",Avenir,Jost,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
@@ -42,7 +42,8 @@ body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 "Futura",
 .busy-ind { display:inline-flex; align-items:center; gap:.5rem; padding:.2rem .5rem; border-radius:20px; background:var(--panel-2); border:1px solid var(--line); color:var(--warn); font-size:.8rem; }
 .busy-ind .spin { width:.75rem; height:.75rem; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:spin .7s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg); } }
-.busy-ind #stop-btn { padding:.12rem .5rem; font-size:.76rem; background:var(--bad); border:1px solid var(--bad); color:#fff; border-radius:6px; cursor:pointer; }
+.busy-ind #stop-btn { padding:.12rem .5rem; font-size:.76rem; background:var(--panel-2); border:1px solid var(--bad); color:var(--ink); border-radius:6px; cursor:pointer; }
+.busy-ind #stop-btn:hover { background:var(--bad); color:#fff; }
 .hidden { display:none !important; }
 
 main { max-width:900px; margin:1rem auto; padding:0 1rem; display:flex; flex-direction:column; gap:1rem; }
@@ -65,7 +66,8 @@ main { max-width:900px; margin:1rem auto; padding:0 1rem; display:flex; flex-dir
 .golaunch { display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; margin-top:.4rem; }
 .golabel { color:var(--dim); font-size:.82rem; }
 .go-in { width:5rem; text-align:center; text-transform:uppercase; font-family:var(--mono); background:var(--panel-2); border:1px solid var(--line); border-radius:6px; padding:.35rem; color:var(--ink); }
-button.danger { background:var(--bad); border:1px solid var(--bad); color:#fff; font-weight:600; border-radius:6px; padding:.4rem .8rem; cursor:pointer; }
+button.danger { background:var(--panel-2); border:1px solid var(--bad); color:var(--ink); font-weight:600; border-radius:6px; padding:.4rem .8rem; cursor:pointer; }
+button.danger:hover:not(:disabled) { background:var(--bad); border-color:var(--bad); color:#fff; }
 button.danger:disabled { opacity:.45; cursor:not-allowed; }
 .msg { margin:.5rem 0 0; color:var(--dim); font-size:.82rem; min-height:1.1rem; }
 
