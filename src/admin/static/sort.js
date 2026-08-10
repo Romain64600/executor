@@ -373,13 +373,13 @@ function finishStatus(s) {
 
 // theme, wiring
 (function theme() {
-  const saved = localStorage.getItem("sort-theme");
+  const saved = localStorage.getItem("aks-theme");   // shared key across tabs
   if (saved) document.documentElement.setAttribute("data-theme", saved);
   $("#theme").addEventListener("click", () => {
     const r = document.documentElement;
     const cur = r.getAttribute("data-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
     const next = cur === "dark" ? "light" : "dark";
-    r.setAttribute("data-theme", next); localStorage.setItem("sort-theme", next);
+    r.setAttribute("data-theme", next); localStorage.setItem("aks-theme", next);
   });
 })();
 $("#run-picker").addEventListener("change", (e) => { RUN_ID = e.target.value; loadPlan(); });

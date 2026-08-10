@@ -24,7 +24,7 @@
       </header>
       <div class="doc-body">
         <section>
-          <h4>Les deux pages · The two pages</h4>
+          <h4>Les trois pages · The three pages</h4>
           <p><b>Validation &amp; Submit</b> — <span lang="fr">la page principale (« ajout des prix ») :
             extraire un feed marchand, matcher les jeux, valider le rapport, puis soumettre les offres.</span></p>
           <p class="en" lang="en">The main page (“price entry”): extract a merchant feed, match games,
@@ -33,22 +33,28 @@
             listes cibles (Softwares, Gift cards, Blacklist…), en lot rapide (Batché) ou différé par store.</span></p>
           <p class="en" lang="en">Move non-game offers into their target lists (Softwares, Gift cards,
             Blacklist…), as a fast batch (Batché) or a per-store deferred run.</p>
+          <p><b>Data Entry Auto</b> — <span lang="fr">balaie le feed d'un marchand <b>page par page</b> et
+            <b>ajoute automatiquement</b> chaque candidat du matcher, <b>sans validation</b> par page. Réservé aux
+            <b>marchands vettés</b> (menu déroulant) ; le matcher fait le tri ; tu audites le recap après coup.</span></p>
+          <p class="en" lang="en">Sweeps a merchant feed page by page and AUTO-ADDS every matcher candidate,
+            with no per-page validation. Restricted to vetted merchants (dropdown); the matcher is the gate;
+            you audit the recap afterwards.</p>
         </section>
         <section>
           <h4>Naviguer · Navigate</h4>
-          <p lang="fr">En haut, le lien <b>Tri des listes →</b> ouvre la console de tri ; depuis celle-ci,
-            l'onglet <b>Validation &amp; Submit</b> revient ici (la page principale).</p>
-          <p class="en" lang="en">Top bar, the <b>Tri des listes →</b> link opens the sort console; from there,
-            the <b>Validation &amp; Submit</b> tab comes back here (the main page).</p>
+          <p lang="fr">En haut : <b>Tri des listes →</b> ouvre la console de tri, <b>Data Entry Auto →</b>
+            le mode auto ; depuis chacune, l'onglet <b>Validation &amp; Submit</b> revient ici.</p>
+          <p class="en" lang="en">Top bar: <b>Tri des listes →</b> opens the sort console, <b>Data Entry Auto →</b>
+            the auto mode; from either, the <b>Validation &amp; Submit</b> tab returns here.</p>
         </section>
         <section>
           <h4>Le déroulé · The workflow</h4>
-          <p lang="fr">1. Extraire une page du feed → 2. Matcher → 3. Valider → 4. Soumettre (canary
-            d'abord, puis le lot). Tri : Nouveau scan → Canary → Batch. Option <b>Différé</b> = une seule
-            vérif par store (plus rapide sur un gros feed).</p>
-          <p class="en" lang="en">1. Extract a feed page → 2. Match → 3. Validate → 4. Submit (canary first,
-            then the batch). Sort: New scan → Canary → Batch. <b>Deferred</b> = one verify per store
-            (faster on a big feed).</p>
+          <p lang="fr">Manuel : 1. Extraire une page → 2. Matcher → 3. Valider → 4. Soumettre (canary puis lot).
+            Tri : Nouveau scan → Canary → Batch (<b>Différé</b> = une vérif par store, plus rapide sur un gros feed).
+            Auto : choisir le marchand → taper <b>GO</b> → tout part sans validation, <b>fail-closed</b> sur blocage.</p>
+          <p class="en" lang="en">Manual: 1. Extract a page → 2. Match → 3. Validate → 4. Submit (canary then batch).
+            Sort: New scan → Canary → Batch (<b>Deferred</b> = one verify per store). Auto: pick the merchant →
+            type <b>GO</b> → everything is added without validation, <b>fail-closed</b> on any block.</p>
         </section>
         <p class="doc-more"><span lang="fr">Docs complètes dans le dépôt · Full docs in the repo :</span>
           <code>README.md</code> · <code>docs/NOOB.md</code> · <code>docs/CHANGELOG.md</code></p>

@@ -1,28 +1,29 @@
+/* CHARTE GRAPHIQUE AllKeyShop — même palette que index (style.css) et sort.css. */
 :root {
-  --bg:#0c1016; --panel:#121a24; --panel-2:#0f151d; --line:#202b39; --line-2:#2c3a4d;
-  --ink:#dfe7f0; --dim:#7d8ba0; --faint:#566175;
-  --accent:#37c2b4; --accent-ink:#04120f; --good:#54c98a; --warn:#e0b64a; --bad:#e8695f;
+  --bg:#0B0E16; --panel:#141720; --panel-2:#202533; --line:#333B52; --line-2:#525F83;
+  --ink:#EEF2F9; --dim:#8397C2; --faint:#525F83;
+  --accent:#0195FF; --accent-2:#0179D6; --accent-ink:#FFFFFF; --good:#00B077; --warn:#FF9920; --bad:#FF404C;
   --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
 }
 @media (prefers-color-scheme: light) {
   :root {
-    --bg:#eef1f5; --panel:#fff; --panel-2:#f6f8fb; --line:#dbe1e9; --line-2:#c6d0dc;
-    --ink:#182230; --dim:#5a6678; --faint:#8592a4;
-    --accent:#12907f; --accent-ink:#fff; --good:#1c8a4c; --warn:#9a7714; --bad:#c0392b;
+    --bg:#f4f6fa; --panel:#fff; --panel-2:#eef1f7; --line:#d5dce8; --line-2:#b9c3d6;
+    --ink:#141720; --dim:#525F83; --faint:#8397C2;
+    --accent:#0184e6; --accent-2:#0169c0; --accent-ink:#fff; --good:#00794f; --warn:#c9760f; --bad:#e0353f;
   }
 }
 :root[data-theme="dark"] {
-  --bg:#0c1016; --panel:#121a24; --panel-2:#0f151d; --line:#202b39; --line-2:#2c3a4d;
-  --ink:#dfe7f0; --dim:#7d8ba0; --accent:#37c2b4; --accent-ink:#04120f;
-  --good:#54c98a; --warn:#e0b64a; --bad:#e8695f;
+  --bg:#0B0E16; --panel:#141720; --panel-2:#202533; --line:#333B52; --line-2:#525F83;
+  --ink:#EEF2F9; --dim:#8397C2; --accent:#0195FF; --accent-2:#0179D6; --accent-ink:#FFFFFF;
+  --good:#00B077; --warn:#FF9920; --bad:#FF404C;
 }
 :root[data-theme="light"] {
-  --bg:#eef1f5; --panel:#fff; --panel-2:#f6f8fb; --line:#dbe1e9; --line-2:#c6d0dc;
-  --ink:#182230; --dim:#5a6678; --accent:#12907f; --accent-ink:#fff;
-  --good:#1c8a4c; --warn:#9a7714; --bad:#c0392b;
+  --bg:#f4f6fa; --panel:#fff; --panel-2:#eef1f7; --line:#d5dce8; --line-2:#b9c3d6;
+  --ink:#141720; --dim:#525F83; --accent:#0184e6; --accent-2:#0169c0; --accent-ink:#fff;
+  --good:#00794f; --warn:#c9760f; --bad:#e0353f;
 }
 * { box-sizing: border-box; }
-body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+body { margin:0; background:var(--bg); color:var(--ink); font:14px/1.5 "Futura","Futura PT","Century Gothic","Avenir Next",Avenir,Jost,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
 
 .topbar { display:flex; align-items:center; gap:1rem; padding:.5rem .9rem; background:var(--panel);
   border-bottom:1px solid var(--line); position:sticky; top:0; z-index:10; flex-wrap:wrap; }

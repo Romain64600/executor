@@ -1,50 +1,50 @@
-/* Tri des listes — triage console. Deliberately a DIFFERENT tool from the
-   validation admin: denser, ops/terminal feel, teal signal accent, mono data.
-   Dark-first identity; light via prefers-color-scheme + the data-theme toggle. */
+/* Tri des listes — triage console. CHARTE GRAPHIQUE AllKeyShop (partagée avec
+   index/auto) : fonds #0B0E16→#8397C2, accent #0195FF, sémantiques officielles.
+   Dark-first ; light via prefers-color-scheme + l'interrupteur data-theme. */
 :root{
-  --bg:#0c1016; --panel:#121a24; --panel-2:#0f151d; --line:#202b39;
-  --line-2:#2c3a4d; --ink:#dfe7f0; --dim:#7d8ba0; --faint:#566175;
-  --accent:#37c2b4; --accent-2:#2aa79b; --accent-ink:#04120f;
-  --good:#54c98a; --warn:#e0b64a; --bad:#e8695f;
+  --bg:#0B0E16; --panel:#141720; --panel-2:#202533; --line:#333B52;
+  --line-2:#525F83; --ink:#EEF2F9; --dim:#8397C2; --faint:#525F83;
+  --accent:#0195FF; --accent-2:#0179D6; --accent-ink:#FFFFFF;
+  --good:#00B077; --warn:#FF9920; --bad:#FF404C;
   --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-  --c-red:#e8695f;   --c-red-bg:#2a1a1a;
-  --c-blue:#5aa6e6;  --c-blue-bg:#152331;
-  --c-amber:#e0b64a; --c-amber-bg:#2a2416;
-  --c-purple:#b18cf0;--c-purple-bg:#211b33;
-  --c-teal:#37c2b4;  --c-teal-bg:#12292a;
-  --c-grey:#8593a8;  --c-grey-bg:#1a2230;
+  --c-red:#FF404C;   --c-red-bg:#2A1620;
+  --c-blue:#0195FF;  --c-blue-bg:#0E2740;
+  --c-amber:#FF9920; --c-amber-bg:#2A1E10;
+  --c-purple:#6722D5;--c-purple-bg:#1C1330;
+  --c-teal:#00B077;  --c-teal-bg:#0E2A20;
+  --c-grey:#8397C2;  --c-grey-bg:#1A2030;
 }
 @media (prefers-color-scheme: light){
   :root{
-    --bg:#eef1f5; --panel:#ffffff; --panel-2:#f6f8fb; --line:#dbe1e9;
-    --line-2:#c6d0dc; --ink:#182230; --dim:#5a6678; --faint:#8592a4;
-    --accent:#12907f; --accent-2:#0d7568; --accent-ink:#ffffff;
-    --good:#1c8a4c; --warn:#9a7714; --bad:#c0392b;
-    --c-red:#c0392b; --c-red-bg:#fbe9e7; --c-blue:#1f6fb8; --c-blue-bg:#e7f0fa;
-    --c-amber:#9a7714; --c-amber-bg:#fbf3d9; --c-purple:#6f4bc0; --c-purple-bg:#efe8fb;
-    --c-teal:#12907f; --c-teal-bg:#daf1ee; --c-grey:#5a6678; --c-grey-bg:#eaeef3;
+    --bg:#f4f6fa; --panel:#ffffff; --panel-2:#eef1f7; --line:#d5dce8;
+    --line-2:#b9c3d6; --ink:#141720; --dim:#525F83; --faint:#8397C2;
+    --accent:#0184e6; --accent-2:#0169c0; --accent-ink:#ffffff;
+    --good:#00794f; --warn:#c9760f; --bad:#e0353f;
+    --c-red:#e0353f; --c-red-bg:#fce9ea; --c-blue:#0184e6; --c-blue-bg:#e3eefb;
+    --c-amber:#c9760f; --c-amber-bg:#fbf1de; --c-purple:#5a2fb8; --c-purple-bg:#efe8fb;
+    --c-teal:#00794f; --c-teal-bg:#e2f4ec; --c-grey:#525F83; --c-grey-bg:#eef1f7;
   }
 }
 :root[data-theme="dark"]{
-  --bg:#0c1016; --panel:#121a24; --panel-2:#0f151d; --line:#202b39; --line-2:#2c3a4d;
-  --ink:#dfe7f0; --dim:#7d8ba0; --faint:#566175; --accent:#37c2b4; --accent-2:#2aa79b;
-  --accent-ink:#04120f; --good:#54c98a; --warn:#e0b64a; --bad:#e8695f;
-  --c-red:#e8695f; --c-red-bg:#2a1a1a; --c-blue:#5aa6e6; --c-blue-bg:#152331;
-  --c-amber:#e0b64a; --c-amber-bg:#2a2416; --c-purple:#b18cf0; --c-purple-bg:#211b33;
-  --c-teal:#37c2b4; --c-teal-bg:#12292a; --c-grey:#8593a8; --c-grey-bg:#1a2230;
+  --bg:#0B0E16; --panel:#141720; --panel-2:#202533; --line:#333B52; --line-2:#525F83;
+  --ink:#EEF2F9; --dim:#8397C2; --faint:#525F83; --accent:#0195FF; --accent-2:#0179D6;
+  --accent-ink:#FFFFFF; --good:#00B077; --warn:#FF9920; --bad:#FF404C;
+  --c-red:#FF404C; --c-red-bg:#2A1620; --c-blue:#0195FF; --c-blue-bg:#0E2740;
+  --c-amber:#FF9920; --c-amber-bg:#2A1E10; --c-purple:#6722D5; --c-purple-bg:#1C1330;
+  --c-teal:#00B077; --c-teal-bg:#0E2A20; --c-grey:#8397C2; --c-grey-bg:#1A2030;
 }
 :root[data-theme="light"]{
-  --bg:#eef1f5; --panel:#ffffff; --panel-2:#f6f8fb; --line:#dbe1e9; --line-2:#c6d0dc;
-  --ink:#182230; --dim:#5a6678; --faint:#8592a4; --accent:#12907f; --accent-2:#0d7568;
-  --accent-ink:#ffffff; --good:#1c8a4c; --warn:#9a7714; --bad:#c0392b;
-  --c-red:#c0392b; --c-red-bg:#fbe9e7; --c-blue:#1f6fb8; --c-blue-bg:#e7f0fa;
-  --c-amber:#9a7714; --c-amber-bg:#fbf3d9; --c-purple:#6f4bc0; --c-purple-bg:#efe8fb;
-  --c-teal:#12907f; --c-teal-bg:#daf1ee; --c-grey:#5a6678; --c-grey-bg:#eaeef3;
+  --bg:#f4f6fa; --panel:#ffffff; --panel-2:#eef1f7; --line:#d5dce8; --line-2:#b9c3d6;
+  --ink:#141720; --dim:#525F83; --faint:#8397C2; --accent:#0184e6; --accent-2:#0169c0;
+  --accent-ink:#ffffff; --good:#00794f; --warn:#c9760f; --bad:#e0353f;
+  --c-red:#e0353f; --c-red-bg:#fce9ea; --c-blue:#0184e6; --c-blue-bg:#e3eefb;
+  --c-amber:#c9760f; --c-amber-bg:#fbf1de; --c-purple:#5a2fb8; --c-purple-bg:#efe8fb;
+  --c-teal:#00794f; --c-teal-bg:#e2f4ec; --c-grey:#525F83; --c-grey-bg:#eef1f7;
 }
 
 *{box-sizing:border-box;}
 body{margin:0;background:var(--bg);color:var(--ink);
-  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:13.5px;
+  font-family:"Futura","Futura PT","Century Gothic","Avenir Next",Avenir,Jost,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:13.5px;
   padding-bottom:2.4rem;-webkit-font-smoothing:antialiased;}
 .tnum{font-variant-numeric:tabular-nums;} .mono{font-family:var(--mono);}
 .hidden{display:none !important;}

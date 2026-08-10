@@ -86,16 +86,24 @@ function showNotice(message) {
 function applyTheme(theme) {
   document.documentElement.setAttribute('data-theme', theme);
   $('#theme-toggle').textContent = theme === 'dark' ? '☀️ Clair' : '🌙 Sombre';
-  try { localStorage.setItem('aks-admin-theme', theme); } catch { /* stockage indisponible */ }
+  // Shared 'aks-theme' key with the Tri/Auto tabs so the choice carries across.
+  try { localStorage.setItem('aks-theme', theme); } catch { /* stockage indisponible */ }
+}
+
+function effectiveTheme() {
+  return document.documentElement.getAttribute('data-theme')
+    || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
 }
 
 function initTheme() {
-  let theme = 'dark'; // sombre par défaut
-  try { theme = localStorage.getItem('aks-admin-theme') || 'dark'; } catch { /* idem */ }
-  applyTheme(theme);
+  // No saved pref → follow the OS (the CSS prefers-color-scheme block), like the
+  // other tabs; only sync the toggle label. A saved pref wins in both directions.
+  let saved = null;
+  try { saved = localStorage.getItem('aks-theme'); } catch { /* idem */ }
+  if (saved) applyTheme(saved);
+  else $('#theme-toggle').textContent = effectiveTheme() === 'dark' ? '☀️ Clair' : '🌙 Sombre';
   $('#theme-toggle').addEventListener('click', () => {
-    const current = document.documentElement.getAttribute('data-theme') || 'dark';
-    applyTheme(current === 'dark' ? 'light' : 'dark');
+    applyTheme(effectiveTheme() === 'dark' ? 'light' : 'dark');
   });
 }
 

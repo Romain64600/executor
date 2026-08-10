@@ -1,76 +1,77 @@
-/* Thème sombre par défaut ; le clair s'active via l'interrupteur en haut à
-   droite (data-theme="light" sur <html>, persisté en localStorage). */
+/* CHARTE GRAPHIQUE AllKeyShop — palette officielle, partagée par les 3 onglets
+   (index/tri/auto). Fonds #0B0E16→#8397C2 (sombre au fond, clair au 1er plan),
+   accent #0195FF, sémantiques vert #009662 / rouge #FF404C / orange #FF9920.
+   Theming 3-couches : dark par défaut, clair via prefers-color-scheme, override
+   explicite via data-theme (interrupteur). Garder sort.css/auto.css EN PHASE. */
 :root {
-  --bg: #14181f;
-  --panel: #1c222c;
-  --border: #333c4a;
-  --text: #e3e7ee;
-  --muted: #949eae;
-  --accent: #5b97d8;
-  --accent-hover: #3d7cc0;
-  --ok: #4fbf74;
-  --bad: #e06258;
-  --bad-hover: #c04a41;
-  --warn-text: #d8b04a;
-  --warn-bg: #392724;
-  --notice-bg: #1f3226;
-  --hover: #242c38;
-  --selected: #2a3648;
-  --code-bg: #10141a;
-  --th-bg: #232b37;
-  --btn-bg: #232b37;
-  --disabled-bg: #1a202a;
-  --badge-bg: #3a3420;
-  --badge-border: #6b5c2a;
-  --status-created-bg: #1d3a28;
-  --status-created-fg: #67d38c;
-  --status-failed-bg: #3f2523;
-  --status-failed-fg: #ef8b82;
-  --status-pending-bg: #252d3a;
-  --status-pending-fg: #9db0c7;
-  --created-row: #19241d;
-  --failed-row: #271d1c;
-  --backdrop: rgba(0, 0, 0, 0.65);
+  --bg:#0B0E16; --panel:#141720; --panel-2:#202533;
+  --border:#333B52; --text:#EEF2F9; --muted:#8397C2; --faint:#525F83;
+  --accent:#0195FF; --accent-hover:#0179D6; --accent-ink:#FFFFFF;
+  --ok:#00B077; --bad:#FF404C; --bad-hover:#D6343F;
+  --warn-text:#FF9920; --warn-bg:#2A1E10; --notice-bg:#0E2A20;
+  --hover:#1A2032; --selected:#202533; --code-bg:#0B0E16;
+  --th-bg:#202533; --btn-bg:#202533; --disabled-bg:#141720;
+  --badge-bg:#202533; --badge-border:#525F83;
+  --status-created-bg:#0E2A20; --status-created-fg:#22C58A;
+  --status-failed-bg:#2A1620; --status-failed-fg:#FF5B64;
+  --status-pending-bg:#1A2030; --status-pending-fg:#8397C2;
+  --created-row:#0C1C17; --failed-row:#221318;
+  --backdrop:rgba(0,0,0,0.66);
 }
-
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg:#f4f6fa; --panel:#ffffff; --panel-2:#eef1f7;
+    --border:#d5dce8; --text:#141720; --muted:#525F83; --faint:#8397C2;
+    --accent:#0184e6; --accent-hover:#0169c0; --accent-ink:#ffffff;
+    --ok:#00794f; --bad:#e0353f; --bad-hover:#bd2b34;
+    --warn-text:#c9760f; --warn-bg:#fbf1de; --notice-bg:#e2f4ec;
+    --hover:#eef2f8; --selected:#e3eefb; --code-bg:#eef1f7;
+    --th-bg:#eef1f7; --btn-bg:#ffffff; --disabled-bg:#eceef3;
+    --badge-bg:#eef1f7; --badge-border:#b9c3d6;
+    --status-created-bg:#e2f4ec; --status-created-fg:#00794f;
+    --status-failed-bg:#fce9ea; --status-failed-fg:#c0242e;
+    --status-pending-bg:#eef1f7; --status-pending-fg:#525F83;
+    --created-row:#f1f9f5; --failed-row:#fdf4f5;
+    --backdrop:rgba(0,0,0,0.45);
+  }
+}
+:root[data-theme="dark"] {
+  --bg:#0B0E16; --panel:#141720; --panel-2:#202533;
+  --border:#333B52; --text:#EEF2F9; --muted:#8397C2; --faint:#525F83;
+  --accent:#0195FF; --accent-hover:#0179D6; --accent-ink:#FFFFFF;
+  --ok:#00B077; --bad:#FF404C; --bad-hover:#D6343F;
+  --warn-text:#FF9920; --warn-bg:#2A1E10; --notice-bg:#0E2A20;
+  --hover:#1A2032; --selected:#202533; --code-bg:#0B0E16;
+  --th-bg:#202533; --btn-bg:#202533; --disabled-bg:#141720;
+  --badge-bg:#202533; --badge-border:#525F83;
+  --status-created-bg:#0E2A20; --status-created-fg:#22C58A;
+  --status-failed-bg:#2A1620; --status-failed-fg:#FF5B64;
+  --status-pending-bg:#1A2030; --status-pending-fg:#8397C2;
+  --created-row:#0C1C17; --failed-row:#221318;
+  --backdrop:rgba(0,0,0,0.66);
+}
 :root[data-theme="light"] {
-  --bg: #f5f6f8;
-  --panel: #ffffff;
-  --border: #d8dce2;
-  --text: #1d2430;
-  --muted: #5b6572;
-  --accent: #205a9e;
-  --accent-hover: #17497f;
-  --ok: #1c7c3c;
-  --bad: #a8322a;
-  --bad-hover: #8c2822;
-  --warn-text: #8a6d1a;
-  --warn-bg: #fdecea;
-  --notice-bg: #e8f3ea;
-  --hover: #eef2f7;
-  --selected: #e3ecf7;
-  --code-bg: #f0f2f5;
-  --th-bg: #eef1f5;
-  --btn-bg: #ffffff;
-  --disabled-bg: #eceef1;
-  --badge-bg: #fff3cd;
-  --badge-border: #e0c56b;
-  --status-created-bg: #e2f3e7;
-  --status-created-fg: #1c7c3c;
-  --status-failed-bg: #fdecea;
-  --status-failed-fg: #a8322a;
-  --status-pending-bg: #eef1f5;
-  --status-pending-fg: #5b6572;
-  --created-row: #f2f8f3;
-  --failed-row: #fdf5f4;
-  --backdrop: rgba(0, 0, 0, 0.45);
+  --bg:#f4f6fa; --panel:#ffffff; --panel-2:#eef1f7;
+  --border:#d5dce8; --text:#141720; --muted:#525F83; --faint:#8397C2;
+  --accent:#0184e6; --accent-hover:#0169c0; --accent-ink:#ffffff;
+  --ok:#00794f; --bad:#e0353f; --bad-hover:#bd2b34;
+  --warn-text:#c9760f; --warn-bg:#fbf1de; --notice-bg:#e2f4ec;
+  --hover:#eef2f8; --selected:#e3eefb; --code-bg:#eef1f7;
+  --th-bg:#eef1f7; --btn-bg:#ffffff; --disabled-bg:#eceef3;
+  --badge-bg:#eef1f7; --badge-border:#b9c3d6;
+  --status-created-bg:#e2f4ec; --status-created-fg:#00794f;
+  --status-failed-bg:#fce9ea; --status-failed-fg:#c0242e;
+  --status-pending-bg:#eef1f7; --status-pending-fg:#525F83;
+  --created-row:#f1f9f5; --failed-row:#fdf4f5;
+  --backdrop:rgba(0,0,0,0.45);
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* Charte : Futura partout ; fallback géométrique (Futura sous licence, non embarquée). */
+  font-family: "Futura", "Futura PT", "Century Gothic", "Avenir Next", Avenir, Jost, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-size: 14px;
   color: var(--text);
   background: var(--bg);
@@ -304,7 +305,7 @@ button {
 button:hover:not(:disabled) { background: var(--hover); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 button.primary:hover:not(:disabled) { background: var(--accent-hover); }
 
 button.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
@@ -373,7 +374,7 @@ dialog::backdrop { background: var(--backdrop); }
 .learning-offer .learn-move { min-width: 16rem; }
 .learning-offer .learn-suggested {
   font-size: 0.75rem; padding: 0.05rem 0.4rem; border-radius: 0.6rem;
-  background: #2b6cb0; color: #fff; align-self: center;
+  background: var(--accent); color: var(--accent-ink); align-self: center;
 }
 .learning-offer .learn-platform, .learning-offer .learn-scope { min-width: 10rem; }
 .learning-offer .learning-merchant-url { margin: 0.1rem 0; }
@@ -382,4 +383,4 @@ dialog::backdrop { background: var(--backdrop); }
 }
 .learning-offer .learning-merchant-url a:hover { text-decoration: underline; }
 .learning-offer .learn-confirm { font-size: 0.78rem; padding: 0.1rem 0.5rem; }
-.learning-offer .learn-suggested.confirmed { background: #2f855a; }
+.learning-offer .learn-suggested.confirmed { background: var(--ok); }
