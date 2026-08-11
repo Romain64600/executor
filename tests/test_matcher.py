@@ -29,8 +29,12 @@ from src.matcher import (
     extract_editions,
     extract_official_platforms,
     extract_prices,
+    extract_regions,
+    is_software,
     match_feed,
     match_offer,
+    resolve_software_edition,
+    resolve_software_region,
     missing_aks_words,
     parse_difmark_offer_attributes,
     parse_difmark_offer_name,
@@ -457,21 +461,20 @@ class PrecheckSkipTests(unittest.TestCase):
         # "Skinwalker Hunt" is a game, not a skin — must NOT be skipped.
         self.assertIsNone(precheck_skip(_offer("Skinwalker Hunt Steam GLOBAL")))
 
-    def test_software_apps_are_skipped(self):
-        # Romain (2026-07-08): "Skip c est une app" — EaseUS reached the human
-        # gate; software/applications are never candidates, games only.
+    def test_software_not_preskipped_R31(self):
+        # R31 (2026-08-11): software is NO LONGER pre-skipped by title. It falls
+        # through to the AKS lookup + software path (is_software + page-driven
+        # edition/region); the tokens are now CLASSIFIERS, not skips. Software AKS
+        # doesn't sell is still caught by the "no AKS product page found" gate.
         for title in (
             "EaseUS Todo Backup Workstation CD Key",
             "Microsoft Office 2021 Professional Plus CD Key",
             "Windows 11 Pro OEM CD Key",
             "Avast Premium Security 2024 Key",
             "Express VPN 12 Months Key",
-            # Eneba escape (2026-07-16): "Glary Utilities PRO 5" reached the
-            # candidate list — a PC cleaning/optimization utility, same
-            # category as CCleaner/IObit, missing from the brand list.
             "Glary Utilities PRO 5 (Windows) Key GLOBAL",
         ):
-            self.assertIn("software/app", precheck_skip(_offer(title)), title)
+            self.assertIsNone(precheck_skip(_offer(title)), title)
 
     def test_software_tokens_require_word_boundary(self):
         # Bare OFFICE / WINDOWS / BACKUP stay legal in game titles.
@@ -485,10 +488,12 @@ class PrecheckSkipTests(unittest.TestCase):
                      "Mahjong 3 - Windows 10 Store Key EUROPE"):
             self.assertIsNone(precheck_skip(_offer(name)), name)
 
-    def test_windows_os_licence_still_software(self):
+    def test_windows_os_licence_not_preskipped_R31(self):
+        # R31: Windows OS licences also fall through to the software path (they are
+        # software AKS sells). Still classified as software by is_software.
         for name in ("Windows 11 Pro OEM CD Key", "Windows 10 Home Key",
                      "Windows Server 2025 Standard"):
-            self.assertIn("software/app", precheck_skip(_offer(name)) or "", name)
+            self.assertIsNone(precheck_skip(_offer(name)), name)
 
     def test_soundtrack_bundle_with_base_game_is_not_blacklisted(self):
         # audit 2026-07-23: "<game> + OST" / "… Soundtrack Edition" keep the base
@@ -509,6 +514,109 @@ class PrecheckSkipTests(unittest.TestCase):
 
     def test_normal_offer_survives(self):
         self.assertIsNone(precheck_skip(_offer("Neon Beats Steam GLOBAL")))
+
+
+class SoftwareEntryR31Tests(unittest.TestCase):
+    """R31 (2026-08-11): software AKS sells is entered with the correct licence
+    edition read from the page, never a guessed Standard; skip when the edition /
+    region can't be pinned to the page. Fixtures mirror the real AKS pages Romain
+    gave (Windows 11 Pro, Adobe CC, Office 2021, Bigasoft)."""
+
+    WIN = AksResolution(
+        slug="s", url="https://aks/win", product_id="97238", aks_name="Windows 11 Pro",
+        editions={"1pc": "1 PC", "5pc": "5 PC", "11845": "Full OEM", "130": "Lifetime License",
+                  "284": "N Edition", "oem": "OEM", "retail": "Retail", "5264": "Retail 5 PC",
+                  "1": "Standard"},
+        regions={"532": "GLOBAL"})
+    ADOBE = AksResolution(
+        slug="s", url="https://aks/adobe", product_id="183921",
+        aks_name="Adobe Creative Cloud All Apps",
+        editions={"182": "1 Month", "425": "3 Months"}, regions={"1": "PUBLISHER GLOBAL"})
+    OFFICE = AksResolution(
+        slug="s", url="https://aks/office", product_id="100047",
+        aks_name="Microsoft Office 2021 Pro Plus",
+        editions={"1pc": "1 PC", "1pc1y": "1 PC 1 Year", "oem": "OEM", "1": "Standard"},
+        regions={"532": "GLOBAL", "byphone": "PHONE ACTIVATION"})
+    BIG = AksResolution(
+        slug="s", url="https://aks/big", product_id="184921",
+        aks_name="Bigasoft Total Video Converter",
+        editions={"639": "1 PC Lifetime", "1": "Standard"}, regions={"1": "PUBLISHER GLOBAL"})
+    GAME = AksResolution(
+        slug="s", url="https://aks/game", product_id="205027", aks_name="Neon Beats",
+        editions={"1": "Standard", "7": "Deluxe"}, regions={"2": "GLOBAL"},
+        official_platforms=("Steam",))
+
+    def _match(self, name, res):
+        return match_offer(_offer(name, url="https://gamivo.com/x"), resolver=lambda n: res)
+
+    # ---- classifier ----
+    def test_is_software_true_by_title_and_by_page(self):
+        self.assertTrue(is_software(_offer("Adobe Creative Cloud All Apps"), self.ADOBE))   # title
+        self.assertTrue(is_software(_offer("Bigasoft Total Video Converter"), self.BIG))     # title
+        self.assertTrue(is_software(_offer("Windows 11 Pro OEM"), self.WIN))                 # OS regex + page
+        self.assertTrue(is_software(_offer("Whatever Unknown Brand"), self.WIN))             # page markers only
+
+    def test_is_software_false_for_games(self):
+        self.assertFalse(is_software(_offer("Neon Beats Steam Key GLOBAL"), self.GAME))
+        self.assertFalse(is_software(_offer("Elden Ring Deluxe Edition Steam"), self.GAME))
+
+    # ---- page-driven edition ----
+    def test_edition_longest_match_and_licence_types(self):
+        self.assertEqual(resolve_software_edition(_offer("Windows 11 Pro OEM"), self.WIN.editions),
+                         ("oem", "OEM"))
+        self.assertEqual(resolve_software_edition(_offer("Windows 11 Pro Retail 5 PC"), self.WIN.editions),
+                         ("5264", "Retail 5 PC"))   # longest wins over "Retail"/"5 PC"
+        self.assertEqual(resolve_software_edition(_offer("Office 2021 1 PC 1 Year"), self.OFFICE.editions),
+                         ("1pc1y", "1 PC 1 Year"))
+        self.assertEqual(resolve_software_edition(_offer("Adobe CC All Apps 1 Month"), self.ADOBE.editions),
+                         ("182", "1 Month"))
+
+    def test_edition_skips_when_unresolvable(self):
+        # ≥2 editions and nothing in the title → never default to Standard
+        self.assertIsNone(resolve_software_edition(_offer("Adobe CC All Apps"), self.ADOBE.editions))
+        self.assertIsNone(resolve_software_edition(_offer("Bigasoft Total Video Converter"), self.BIG.editions))
+
+    def test_edition_single_edition_taken(self):
+        self.assertEqual(resolve_software_edition(_offer("Whatever"), {"9": "Lifetime License"}),
+                         ("9", "Lifetime License"))
+
+    # ---- page-driven region ----
+    def test_region_exact_then_substring_then_single(self):
+        self.assertEqual(resolve_software_region("GLOBAL", self.WIN.regions), ("532", "GLOBAL"))
+        self.assertEqual(resolve_software_region("GLOBAL", self.ADOBE.regions), ("1", "PUBLISHER GLOBAL"))
+        self.assertEqual(resolve_software_region("ANYTHING", {"1": "PUBLISHER GLOBAL"}),
+                         ("1", "PUBLISHER GLOBAL"))
+        self.assertIsNone(resolve_software_region("TURKEY", {"5": "EUROPE", "6": "UNITED STATES"}))
+
+    # ---- end to end ----
+    def test_match_enters_software_with_page_edition(self):
+        r = self._match("Microsoft Office 2021 Pro Plus 1 PC 1 Year Key GLOBAL", self.OFFICE)
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual(r.platform, "SOFTWARE")
+        self.assertEqual((r.edition_id, r.edition_label), ("1pc1y", "1 PC 1 Year"))
+        self.assertEqual((r.region_id, r.region_label), ("532", "GLOBAL"))
+
+    def test_match_skips_software_unresolvable_edition(self):
+        r = self._match("Adobe Creative Cloud All Apps Key GLOBAL", self.ADOBE)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("edition unresolved", r.reason)
+        self.assertIn("R31", r.reason)
+
+    def test_match_skips_wrong_product_by_missing_words(self):
+        r = self._match("Windows 11 Home Key GLOBAL", self.WIN)   # page is Pro
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("missing AKS words", r.reason)
+
+    def test_game_still_uses_game_path_unchanged(self):
+        r = self._match("Neon Beats Steam Key GLOBAL", self.GAME)
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual(r.platform, "STEAM")          # NOT the software path
+        self.assertEqual(r.edition_label, "Standard")  # game Standard default preserved
+
+    def test_extract_regions_parses_id_to_filter_name(self):
+        body = ('x={"regions":{"532":{"filter_name":"GLOBAL","region_name":"GLOBAL"},'
+                '"byphone":{"filter_name":"PHONE ACTIVATION"}},"editions":{"1":{"name":"Standard"}}}')
+        self.assertEqual(extract_regions(body), {"532": "GLOBAL", "byphone": "PHONE ACTIVATION"})
 
 
 class DetectTests(unittest.TestCase):

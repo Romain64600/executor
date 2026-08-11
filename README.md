@@ -77,6 +77,14 @@ state and cannot be argued away by a language model.
 - **Guarded execution.** Every stage runs through the StepGuard.
 - **Read-only until green.** No write stage runs until the invariant checker is
   `authoritative: true` **and** `ok: true` on the Debian VPS target.
+- **Games — and AKS-listed software** `[R31]`. The matcher enters games and,
+  since 2026-08-11, **software AKS actually sells** (Windows / Office / Adobe /
+  media tools). Software is entered only when its **region and licence edition**
+  (OEM / Retail / 1 PC / 1 Month …) are read **from the AKS page** — never a
+  guessed "Standard" (some software pages have no Standard at all). When the
+  edition or region can't be pinned to the page, the offer is **skipped**, not
+  guessed. Games are untouched. See
+  [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) **§4.9**.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full decision record.
 

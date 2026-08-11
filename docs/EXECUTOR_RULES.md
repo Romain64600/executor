@@ -214,15 +214,17 @@ BUNDLE/MYSTERY/BOX/GACHA`, rare in normal offers) may span a couple of adjective
 incidental `GIFT CARD` token ("…RANDOM CASE GIFT CARD…") and over `BUNDLE` (so
 "Random Bundle" reaches Blacklist, not the bundle-excluded route). "Random … Skin"
 lootboxes route via the `Skin` cosmetic rule → **Blacklist (8)**;
-**ANY software/application — games only** — categorical, word-boundary
-brand + category tokens (`SOFTWARE_APP_TOKENS`: EaseUS/Avast/…/Adobe, VPN
-brands, Internet/Total Security, Todo Backup/Data Recovery/…, Microsoft
-Office/Office 20xx/365/Home, Windows 10/11/Server), even with a real AKS page
-and clean platform/region (Romain, direct rule 2026-07-08, after "EaseUS Todo
-Backup Workstation" reached validation on Kinguin p.2). Deliberately NOT
-matched: `NERO` (the game N.E.R.O.), `AVG` (genre tag), bare
-OFFICE/WINDOWS/BACKUP — `OFFICE`/`VPN` moved out of the substring category
-list to word-boundary for this reason `[R22]`;
+**Software/application — NO LONGER an immediate skip** `[R31]` (Romain
+2026-08-11, revising the R22 games-only skip): software AKS actually sells IS
+entered, but only via the dedicated **software path** (§4.6) which reads the
+licence edition/region from the page and skips when it can't. `SOFTWARE_APP_TOKENS`
+(EaseUS/Avast/…/Adobe, VPN brands, Internet/Total Security, Microsoft Office,
+Windows 10/11/Server, Bigasoft, Video Converter/Screen Recorder) + `_WINDOWS_OS_RE`
+are now **classifiers** (`is_software_title` / `is_software`), not skips.
+Deliberately NOT matched as software: `NERO` (game N.E.R.O.), `AVG` (genre tag),
+bare OFFICE/WINDOWS/BACKUP. (The list-**sort** console still groups software under
+the Softwares list via `is_software_title` — that workflow is unchanged.)
+`[R22 superseded by R31]`;
 DLC/extension without base game; title with **≥1 significant word** absent from
 the AKS name (platform/format/region/edition noise excluded, incl. `COM` from
 "GOG.COM"; tightened from the CORE ≥2 floor on 2026-07-07 after the
@@ -478,6 +480,47 @@ the source of truth for region **and** edition; static tables are only a guide
 Implemented in `src/matcher.py` + `scripts/03_match.py` (read-only GET resolve).
 Candidates are for Romain's validation, never auto-submitted; short forbidden
 tokens (NA/OTHER/SEA) are excluded from the SKIP list to avoid title collisions.
+
+### 4.9 Software entry — page-driven licence edition `[R31]` (2026-08-11)
+
+Romain revised the R22 "software is games-only, always skip" rule: **software AKS
+actually sells IS entered**, provided we resolve its **region and — above all —
+its licence edition** from the AKS page itself, never a guessed default. Software
+editions are licence types (`OEM`, `Retail`, `1 PC`, `5 PC`, `Lifetime License`,
+`1 Month`, `LTSC …`, `N Edition`) and some pages carry **no Standard at all**
+(Adobe Creative Cloud = `1 Month` / `3 Months`), so the game "default to
+Standard(1)" would enter a **non-existent** edition — the exact bug this rule
+fixes.
+
+Flow in `match_offer` (after the AKS page resolves, **before** the game platform
+gate R20 — a software key has no Steam/Publisher token and software pages often
+list no `official_platforms`):
+
+1. **Classify** `is_software(offer, resolution)` = a software brand/category token
+   in the title (`is_software_title`) **or** the page carrying a software-only
+   label (`_SOFTWARE_PAGE_EDITION_MARKERS`: OEM/RETAIL/LTSC/N EDITION/LIFETIME
+   LICENSE/MICROSOFT ACCOUNT BIND/PHONE ACTIVATION). Both are precise — no game
+   carries a software brand or an OEM/RETAIL edition, so **games are untouched**.
+2. **Name gate** still applies: `missing_aks_words` must be empty (the offer
+   contains the product name → no wrong-product match, e.g. "Windows 11 **Home**"
+   ≠ the "Windows 11 **Pro**" page). The game-tuned `extra_significant_words` /
+   `dangerous_qualifier` gates are **skipped** for software (a licence title
+   legitimately adds version/edition words the concise AKS name omits).
+3. **Edition** `resolve_software_edition`: the page edition **label** appearing in
+   the merchant title, **longest wins** ("Retail 5 PC" over "Retail"/"5 PC");
+   exactly one longest → take it; a tie → **skip**; none in title → take it only
+   if the page has a **single** edition, else **skip** (Adobe with no duration,
+   Bigasoft with Standard + 1-PC-Lifetime → we do NOT guess).
+4. **Region** `resolve_software_region`: exact page filter-name match, else a
+   unique substring (offer `GLOBAL` inside page `PUBLISHER GLOBAL`), else a single
+   page region; anything ambiguous → **skip**. The page region **id** is used
+   (`GLOBAL` = 532 "Microsoft Software", `PUBLISHER GLOBAL` = 1), never the generic
+   per-platform id.
+5. R25 duplicate check + build `Candidate(platform="SOFTWARE", …)`.
+
+`extract_regions` (`AksResolution.regions`) exposes the page region dropdown. The
+list-**sort** console is unaffected — it still groups software under the Softwares
+list via `is_software_title` (no page fetch). Doubt still goes to skip `[G02]`.
 
 ---
 

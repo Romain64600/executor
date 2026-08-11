@@ -183,6 +183,18 @@ SOFTWARE_APP_TOKENS = (
     "MICROSOFT OFFICE", "OFFICE HOME", "OFFICE 365", "OFFICE 2016",
     "OFFICE 2019", "OFFICE 2021", "OFFICE 2024",
     "WINDOWS SERVER",
+    "BIGASOFT", "VIDEO CONVERTER", "SCREEN RECORDER",  # media tools (R31)
+)
+# R31 (2026-08-11): software is NO LONGER a hard skip. SOFTWARE_APP_TOKENS is now
+# a CLASSIFIER — a title match routes the offer to the SOFTWARE PATH (page-driven
+# edition/region resolution, skip when unresolvable), so software AKS actually
+# sells is entered with the CORRECT licence edition, never a guessed Standard.
+# Page-side markers below catch software whose brand isn't listed (Romain: "va
+# visiter la page AKS pour voir les régions/éditions"). Edition labels only ever
+# seen on software pages — a game page never lists these.
+_SOFTWARE_PAGE_EDITION_MARKERS = (
+    "OEM", "RETAIL", "LTSC", "LIFETIME LICENSE", "N EDITION",
+    "MICROSOFT ACCOUNT BIND", "PHONE ACTIVATION",
 )
 # "Windows 10/11" is software only as an OS LICENCE ("Windows 11 Pro OEM Key",
 # "Windows 10 Home"); on a game key it is just a platform/compat marker and must
@@ -389,11 +401,11 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
             if " + " in offer.name or f" {token} EDITION " in padded:
                 continue
             return f"skip category: {token} (non-game content)"
-    for token in SOFTWARE_APP_TOKENS:
-        if f" {token} " in padded:
-            return f"skip category: {token} (software/app, not a game)"
-    if _WINDOWS_OS_RE.search(upper):
-        return "skip category: WINDOWS OS (software/app, not a game)"
+    # R31 (2026-08-11): software is NO LONGER pre-skipped here. It falls through
+    # to the AKS lookup and the SOFTWARE PATH in match_offer (is_software +
+    # page-driven edition/region); software AKS doesn't sell still gets caught by
+    # the "no AKS product page found" gate. SOFTWARE_APP_TOKENS / _WINDOWS_OS_RE
+    # are now CLASSIFIERS (is_software), not skips.
     for token in CURRENCY_TOKENS:
         if f" {token} " in padded:
             return f"skip category: {token} (in-game currency)"
@@ -974,6 +986,25 @@ def extract_editions(body: str) -> dict[str, Any]:
         return {}
 
 
+def extract_regions(body: str) -> dict[str, str]:
+    """The AKS page's region dropdown as ``{region_id: filter_name}`` — the real
+    regions this product is sold under (R31, software entry 2026-08-11). Software
+    pages use software-specific regions (GLOBAL id 532 "Microsoft Software",
+    "PUBLISHER GLOBAL", "PHONE ACTIVATION") whose ids differ from the generic
+    per-platform region ids, so software must map its region against THIS map, not
+    guess. Pairs are pulled directly (id + filter_name) rather than full-JSON
+    parsed: the region entries embed long HTML descriptions with braces/quotes
+    that defeat a balanced-brace capture."""
+
+    block = re.search(r'"regions"\s*:\s*\{(.*?)\}\s*,\s*"(?:editions|prices|merchants)"',
+                      body, re.DOTALL)
+    scope = block.group(1) if block else body
+    out: dict[str, str] = {}
+    for rid, fname in re.findall(r'"([^"]+)"\s*:\s*\{[^{}]*?"filter_name"\s*:\s*"([^"]+)"', scope):
+        out.setdefault(rid, fname)
+    return out
+
+
 class AksPageUnparseable(Exception):
     """A structure the page DOES carry failed to parse (markup drift).
 
@@ -1030,6 +1061,7 @@ class AksResolution:
     product_id: str
     aks_name: str
     editions: dict[str, Any] = field(default_factory=dict)
+    regions: dict[str, str] = field(default_factory=dict)
     official_platforms: tuple[str, ...] = ()
     prices: tuple[dict[str, Any], ...] = ()
 
@@ -1069,6 +1101,7 @@ def _resolution_from_body(slug: str, url: str, body: str) -> AksResolution | Non
         product_id=product_id,
         aks_name=aks_name,
         editions=extract_editions(body),
+        regions=extract_regions(body),
         official_platforms=extract_official_platforms(body),
         prices=extract_prices(body),
     )
@@ -1239,6 +1272,108 @@ class SkippedOffer:
         return {"offer": self.offer.to_dict(), "reason": self.reason}
 
 
+def _norm_tokens(s: str) -> str:
+    """Uppercase, non-alphanumerics → single spaces, trimmed — the shared shape
+    for word-boundary substring matching (padded with spaces at the call site)."""
+    return re.sub(r"[^A-Z0-9]+", " ", (s or "").upper()).strip()
+
+
+def is_software_title(offer: NormalizedOffer) -> bool:
+    """Title-only software signal: a curated brand/category token
+    (SOFTWARE_APP_TOKENS) or the OS-licence regex. Used by the SORT to group
+    software under the Softwares list WITHOUT fetching the AKS page (R31); the
+    entry classifier :func:`is_software` layers the page markers on top."""
+
+    padded = " " + _norm_tokens(offer.name) + " "
+    if any(f" {t} " in padded for t in SOFTWARE_APP_TOKENS):
+        return True
+    return bool(_WINDOWS_OS_RE.search(offer.name.upper()))
+
+
+def is_software(offer: NormalizedOffer, resolution: AksResolution) -> bool:
+    """True when the offer is software/app (R31) → routed to the SOFTWARE PATH
+    (page-driven edition/region, skip-on-ambiguity) instead of the game path.
+    Two precise signals, either suffices:
+      - a curated software token in the merchant TITLE (see is_software_title), or
+      - the resolved AKS PAGE carrying an edition/region label only software ever
+        uses (OEM / RETAIL / LTSC / N EDITION / PHONE ACTIVATION …).
+    A game never carries a software brand name nor an OEM/RETAIL edition, so a
+    game is never misrouted — game behaviour is untouched (Romain: software-only,
+    zero game regression)."""
+
+    if is_software_title(offer):
+        return True
+    page_text = " ".join(
+        [_edition_entry_name(v).upper() for v in resolution.editions.values()]
+        + [r.upper() for r in resolution.regions.values()]
+    )
+    return any(m in page_text for m in _SOFTWARE_PAGE_EDITION_MARKERS)
+
+
+def resolve_software_edition(
+    offer: NormalizedOffer, editions: dict[str, Any]
+) -> tuple[str, str] | None:
+    """Map a software offer to ONE edition ON THE PAGE (R31), or None → skip.
+    Software editions are licence types (OEM / Retail / 1 PC / Lifetime / 1 Month)
+    taken from the page itself — never the game 'Standard' default (Adobe has no
+    Standard at all). Rule:
+      - a page edition LABEL that appears in the merchant title, longest wins;
+      - exactly one longest match → take it;
+      - a tie at the longest length → ambiguous → skip;
+      - no label in the title → take it ONLY if the page lists a single edition;
+        with ≥2 editions and no title signal we do NOT guess → skip."""
+
+    padded = " " + _norm_tokens(offer.name) + " "
+    matches: list[tuple[int, str, str]] = []  # (norm_len, edition_id, label)
+    for eid, value in editions.items():
+        label = _edition_entry_name(value)
+        norm = _norm_tokens(label)
+        if norm and f" {norm} " in padded:
+            matches.append((len(norm), eid, label))
+    if matches:
+        longest = max(m[0] for m in matches)
+        top = [m for m in matches if m[0] == longest]
+        if len(top) > 1:
+            return None
+        return (top[0][1], top[0][2])
+    if len(editions) == 1:
+        (eid, value), = editions.items()
+        return (eid, _edition_entry_name(value))
+    return None
+
+
+def resolve_software_region(
+    region_label: str, regions: dict[str, str]
+) -> tuple[str, str] | None:
+    """Map the offer's region to ONE region id ON THE PAGE (R31), or None → skip.
+    Software regions are page-specific (GLOBAL id 532 "Microsoft Software",
+    "PUBLISHER GLOBAL" id 1, "PHONE ACTIVATION") — the generic per-platform region
+    id never matches. Exact filter-name match wins; else a unique substring match
+    (offer GLOBAL inside page "PUBLISHER GLOBAL"); else a single page region is
+    taken unambiguously; anything ambiguous → skip."""
+
+    want = _norm_tokens(region_label)
+    if not regions:
+        return None
+    exact = [(rid, fname) for rid, fname in regions.items() if _norm_tokens(fname) == want]
+    if len(exact) == 1:
+        return exact[0]
+    if len(exact) > 1:
+        return None
+    sub = [
+        (rid, fname) for rid, fname in regions.items()
+        if want and f" {want} " in f" {_norm_tokens(fname)} "
+    ]
+    if len(sub) == 1:
+        return sub[0]
+    if len(sub) > 1:
+        return None
+    if len(regions) == 1:
+        (rid, fname), = regions.items()
+        return (rid, fname)
+    return None
+
+
 def match_offer(
     offer: NormalizedOffer,
     resolver: Callable[[str], AksResolution | None] = resolve_aks,
@@ -1363,17 +1498,26 @@ def match_offer(
     else:
         identity_name = resolution.aks_name
 
+    # R31: is this a software/app? (page + title classifier — see is_software).
+    # Software still gets the STRICT missing-words gate (the offer must contain the
+    # AKS product name → no wrong-product match), but NOT the game-tuned
+    # extra-words / dangerous-qualifier gates: a software title legitimately adds
+    # version + licence words the concise AKS name omits ("Windows 11 Pro OEM Key"
+    # vs page "Windows 11 Pro"), which those gates read as a "different product".
+    sw = is_software(offer, resolution)
+
     missing = missing_aks_words(identity_name, offer.name)
     if missing:
         return SkippedOffer(offer, f"name mismatch, missing AKS words: {missing}")
 
-    extras = extra_significant_words(identity_name, offer.name)
-    if extras:
-        return SkippedOffer(offer, f"different/expanded product — extra words: {extras}")
+    if not sw:
+        extras = extra_significant_words(identity_name, offer.name)
+        if extras:
+            return SkippedOffer(offer, f"different/expanded product — extra words: {extras}")
 
-    qualifier = dangerous_qualifier(offer.name, resolution.aks_name)
-    if qualifier:
-        return SkippedOffer(offer, f"dangerous qualifier absent from AKS name: {qualifier}")
+        qualifier = dangerous_qualifier(offer.name, resolution.aks_name)
+        if qualifier:
+            return SkippedOffer(offer, f"dangerous qualifier absent from AKS name: {qualifier}")
 
     # R19 (2026-07-08, DCS A-10C Warthog escape): an AKS page with an EMPTY
     # editions map is a stub record — "merchants":[],"editions":[],"prices":[],
@@ -1386,6 +1530,54 @@ def match_offer(
     if not resolution.editions:
         return SkippedOffer(
             offer, "AKS page carries no editions map — edition unverifiable (R19)"
+        )
+
+    # R31 (2026-08-11, Romain — software entry): software AKS actually sells is
+    # entered with the correct LICENCE edition read from the page (OEM / Retail /
+    # 1 PC / 1 Month …), never a guessed 'Standard' (Adobe has no Standard at
+    # all), and its region mapped to the page's own dropdown. It BYPASSES the
+    # game platform gate (R20/R27 below): a software key carries no Steam/Publisher
+    # token and software pages often list no official_platforms. Fail closed when
+    # the edition or region can't be pinned to THIS page — no guessing. Games are
+    # untouched (is_software is precise: brand tokens + software-only page labels).
+    if sw:
+        sw_edition = resolve_software_edition(offer, resolution.editions)
+        if sw_edition is None:
+            return SkippedOffer(
+                offer,
+                f"software edition unresolved on the AKS page "
+                f"({len(resolution.editions)} editions, none in title) — not guessed (R31)",
+            )
+        sw_region = resolve_software_region(region_label, resolution.regions)
+        if sw_region is None:
+            return SkippedOffer(
+                offer,
+                f"software region unresolved on the AKS page for {region_label!r}"
+                " — not guessed (R31)",
+            )
+        edition_id, edition_label = sw_edition
+        region_id, region_label = sw_region
+        if any(
+            str(p.get("merchantName", "")).strip().upper() == offer.merchant.strip().upper()
+            and str(p.get("edition", "")) == edition_id
+            and str(p.get("region", "")) == region_id
+            for p in resolution.prices
+        ):
+            return SkippedOffer(
+                offer,
+                f"{offer.merchant} already lists a price for this region/edition on AKS (R25)",
+            )
+        return Candidate(
+            offer=offer,
+            aks_product_id=resolution.product_id,
+            aks_url=resolution.url,
+            aks_name=resolution.aks_name,
+            platform="SOFTWARE",
+            region_label=region_label,
+            region_id=region_id,
+            edition_label=edition_label,
+            edition_id=edition_id,
+            region_implicit=implicit,
         )
 
     # R20 (2026-07-08, Su-27 for DCS World escape): detect_platform's STEAM is

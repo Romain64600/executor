@@ -21,7 +21,7 @@ from collections.abc import Iterable
 
 from src.aks_lists import label_for, suggest_target_list
 from src.contracts import NormalizedOffer
-from src.matcher import is_account_offer, precheck_skip
+from src.matcher import is_account_offer, is_software_title, precheck_skip
 
 # Account offers pass precheck (the submit pipeline resolves them to their
 # dedicated AKS account page) — but the sort routes them out of the creation
@@ -55,6 +55,12 @@ def build_sort_plan(
 
     for offer in offers:
         reason = precheck_skip(offer)
+        if reason is None and is_software_title(offer):
+            # R31: software is no longer pre-skipped for ENTRY (match_offer's
+            # software path enters it with the page licence edition), but the SORT
+            # still groups it under the Softwares list — a title classifier, no
+            # page fetch. Kept distinct so the two workflows don't fight.
+            reason = "skip category: SOFTWARE (software/app — sort routing)"
         if reason is None:
             # Passes precheck → a creation candidate, UNLESS it carries the
             # account-delivery marker, which the sort routes to the account list.
