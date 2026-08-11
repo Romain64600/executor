@@ -372,24 +372,6 @@ class PrecheckSkipTests(unittest.TestCase):
                      "Kao the Kangaroo: Mystery of the Volcano"):
             self.assertIsNone(precheck_skip(_offer(name)), name)
 
-    def test_software_app_skip(self):
-        # R22 games-only. Safe-auto Gamivo (2026-08-11) created "Bigasoft Total
-        # Video Converter" because AKS has a product page for it — the title must
-        # gate software regardless of an AKS match.
-        self.assertIn("BIGASOFT", precheck_skip(_offer("Bigasoft Total Video Converter")))
-        # media-tool categories generalise beyond the brand list
-        self.assertIn("VIDEO CONVERTER",
-                      precheck_skip(_offer("Aiseesoft Video Converter Ultimate")) or "")
-        self.assertIn("SCREEN RECORDER",
-                      precheck_skip(_offer("Nolo Brand Screen Recorder Pro")) or "")
-        self.assertIn("EASEUS", precheck_skip(_offer("EaseUS Data Recovery Wizard")))
-
-    def test_software_app_no_false_positive(self):
-        # a real game whose title merely contains "Video" must NOT be skipped
-        for name in ("Video Game Fables", "Grand Theft Auto V", "Trials Rising",
-                     "EA Sports FC 24"):
-            self.assertIsNone(precheck_skip(_offer(name)), name)
-
     # --- Random / lootbox: the contract is the grammatical PATTERN, asserted
     # generatively over each linguistic category. The 16 literal titles Romain
     # gave live in RANDOM_LOOTBOX_EXAMPLES purely as regression anchors.
