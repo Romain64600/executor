@@ -239,6 +239,13 @@ MERCHANT_DOMAINS = {"KINGUIN": "kinguin.net"}
 # for signal derivation.
 MERCHANT_URL_IGNORE_SUBSTRINGS = {"DIFMARK": ("buy-console-account-", "buy-console-account")}
 
+# Merchants whose real platform is NOT in the feed title/URL — it lives only on
+# the merchant's own offer page (Instant Gaming lists Steam keys under token-less
+# titles). Until a per-merchant page-resolver reads it, a token-less offer from
+# these merchants FAILS CLOSED rather than defaulting to Publisher (R27). Interim
+# — to be folded into the merchant config (Romain 2026-08-11, IG Publisher escape).
+_MERCHANTS_NEED_PAGE_PLATFORM = {"INSTANT GAMING"}
+
 # platform -> region key -> AKS region id (EXECUTOR_RULES §10; dropdown is truth)
 REGION_IDS = {
     "STEAM": {"global": "2", "eu": "9", "us": "8", "uk": "71", "gift": "25", "gift_eu": "259"},
@@ -1651,6 +1658,19 @@ def match_offer(
                 offer,
                 "no platform in title and AKS page does not confirm Direct"
                 " Publisher — platform unverifiable, not defaulted (R27)",
+            )
+        # Interim guard (2026-08-11): some merchants list e.g. a STEAM key under a
+        # token-less title on a multi-platform AKS page; R27 would default them to
+        # PUBLISHER, but the real platform lives only on the MERCHANT's own offer
+        # page (Instant Gaming — Romain: a whole IG sweep went in wrongly as
+        # Publisher). Until that merchant's page-resolver / config exists, fail
+        # closed instead of entering a guessed Publisher. Subsumed by the merchant
+        # config once built.
+        if offer.merchant.strip().upper() in _MERCHANTS_NEED_PAGE_PLATFORM:
+            return SkippedOffer(
+                offer,
+                f"{offer.merchant}: token-less title — platform is only on the "
+                "merchant offer page; not defaulted to Publisher (merchant config pending)",
             )
         platform = "PUBLISHER"
         region_label, region_id, implicit = detect_region(offer, platform)

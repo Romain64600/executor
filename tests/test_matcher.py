@@ -656,6 +656,32 @@ class SoftwareEntryR31Tests(unittest.TestCase):
         self.assertEqual(extract_regions(body), {"532": "GLOBAL", "byphone": "PHONE ACTIVATION"})
 
 
+class MerchantPagePlatformGuardTests(unittest.TestCase):
+    """Interim guard (2026-08-11): Instant Gaming's real platform lives only on its
+    offer page, so a token-less IG offer must NOT default to Publisher (R27) — it
+    fails closed until the merchant page-resolver / config exists. A whole IG sweep
+    had gone in wrongly as Publisher."""
+
+    PAGE = AksResolution(slug="s", url="u", product_id="84896",
+                         aks_name="Tiny Tinas Wonderlands", editions={"1": "Standard"},
+                         regions={"2": "GLOBAL"}, official_platforms=("Steam", "Direct Publisher"))
+
+    def _match(self, merchant):
+        o = NormalizedOffer(offer_id="1", name="Tiny Tinas Wonderlands",
+                            url="https://m/x", merchant=merchant)
+        return match_offer(o, resolver=lambda n: self.PAGE)
+
+    def test_instant_gaming_token_less_skips_not_publisher(self):
+        r = self._match("Instant Gaming")
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("merchant offer page", r.reason)
+
+    def test_other_merchant_token_less_still_defaults_publisher(self):
+        r = self._match("Gamivo")   # not in _MERCHANTS_NEED_PAGE_PLATFORM
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual(r.platform, "PUBLISHER")
+
+
 class DetectTests(unittest.TestCase):
     def test_platform(self):
         self.assertEqual(detect_platform("Game GOG Key"), "GOG")
