@@ -49,6 +49,7 @@ AKS_PROBE_DELAY_S = 0.3
 # offer (product page + its own top-offer API) — no staff UA bypass exists
 # for third-party merchants, same courtesy as AKS_PROBE_DELAY_S.
 DIFMARK_PROBE_DELAY_S = 0.3
+IG_PROBE_DELAY_S = 0.3  # Instant Gaming offer-page probe courtesy (R32), like Difmark
 
 # R30 (2026-07-16, Romain) — AKS's own site search, tried only when
 # slug-guessing finds nothing. A WordPress `?s=` search is far heavier than a
@@ -225,24 +226,15 @@ def is_account_offer(name: str) -> bool:
     creation queue into the account list (Romain 2026-07-23)."""
 
     return bool(_ACCOUNT_MARKER_RE.search(name.upper()))
-# Merchant → required URL domain (EXECUTOR_RULES §11: a Kinguin candidate URL
-# must contain kinguin.net). Only merchants with a written §11 domain rule are
-# listed; a mapped merchant whose row URL sits on another host fails closed.
-MERCHANT_DOMAINS = {"KINGUIN": "kinguin.net"}
-# Merchant → URL substring(s) that are boilerplate noise, not a product
-# signal — stripped before any text is derived from the URL (edition-from-
-# slug, etc.). Difmark's product URLs all carry a literal "buy-console-
-# account-" path segment regardless of what's actually sold; it is NOT a
-# marker to skip the offer (Romain 2026-07-17, correcting an earlier attempt
-# to treat it as a skip signal: "faut pas skip l'offre, juste pas prendre en
-# compte cette partie de l'URL"). The stored/reported offer URL itself is
-# never touched (EXECUTOR_RULES §4.6 URL hygiene) — only the local text used
-# for signal derivation.
-MERCHANT_URL_IGNORE_SUBSTRINGS = {"DIFMARK": ("buy-console-account-", "buy-console-account")}
-# NOTE (R32, 2026-08-11): MERCHANT_DOMAINS + MERCHANT_URL_IGNORE_SUBSTRINGS are now
-# also expressed in the per-merchant MerchantConfig registry below, which is what
-# the pipeline READS. These literals are kept as the documented source values; the
-# config is the single point the code consults.
+# Merchant-specific rules (required URL domain, URL boilerplate to ignore, offer-
+# page platform resolver, …) live in ONE place — the `MERCHANT_CONFIGS` registry
+# below, read via `merchant_config()` (R32, 2026-08-11). Notably:
+#   - Kinguin `domain=kinguin.net` (EXECUTOR_RULES §11): a candidate URL must be on
+#     that host; another host fails closed.
+#   - Difmark `url_ignore_substrings=("buy-console-account-",)`: the literal path
+#     segment every Difmark URL carries is boilerplate, stripped before deriving
+#     URL signals — NOT a skip marker (Romain 2026-07-17). The stored/reported URL
+#     itself is never touched (§4.6 URL hygiene); only the local derivation text is.
 
 # platform -> region key -> AKS region id (EXECUTOR_RULES §10; dropdown is truth)
 REGION_IDS = {
@@ -846,41 +838,37 @@ class IgPageUnreadable(RuntimeError):
 
 @dataclass(frozen=True)
 class IgOfferAttributes:
-    """Raw (upper-stripped) signals off an Instant Gaming offer page. Mapping to
-    our platform vocabulary and the fail-closed decision are the caller's job."""
+    """Raw (upper-stripped) platform off an Instant Gaming offer page. Mapping to
+    our vocabulary and the fail-closed decision are the caller's job. (Region is
+    left to the feed title/URL — IG keys are worldwide → GLOBAL; the page's region
+    copy is marketing-noisy and not a reliable per-offer signal, R32 audit.)"""
 
-    raw_platform: str   # e.g. "STEAM" (from data-platform)
-    raw_region: str     # "WORLDWIDE" | "" (region lock text, if any)
+    raw_platform: str   # e.g. "STEAM" (from the offer's data-platform), "" if ambiguous
 
 
 def extract_ig_platform(body: str) -> str:
-    """The offer's platform from the IG page's `data-platform` attribute."""
-    m = re.search(r'data-platform="([^"]+)"', body)
-    return m.group(1).strip().upper() if m else ""
-
-
-def extract_ig_region(body: str) -> str:
-    """A coarse region signal — "WORLDWIDE" (region-free) or "" when the page
-    carries no clear worldwide marker (caller falls back / fails closed)."""
-    if re.search(r"\b(worldwide|region[\s-]*free)\b", body, re.I):
-        return "WORLDWIDE"
-    return ""
+    """The offer's platform from the IG page's `data-platform` attributes. Returns
+    the value ONLY when every `data-platform` on the page AGREES — a page also
+    carries platform-filter sidebars / "you may also like" carousels, so a first
+    match could read a foreign platform. Not unanimous (or none) → "" → the caller
+    fails closed (mirrors the Difmark product-id tab lesson, 2026-08-06)."""
+    vals = {m.strip().upper() for m in re.findall(r'data-platform="([^"]+)"', body) if m.strip()}
+    return next(iter(vals)) if len(vals) == 1 else ""
 
 
 def resolve_ig_offer(url: str, http_get_fn: Callable[..., Any] = http_get) -> IgOfferAttributes:
     """Fetch an Instant Gaming offer page (a normal browser UA — NEVER the AKS
-    staff UA on a non-AKS host) and read its platform + region. Raises
+    staff UA on a non-AKS host) and read its platform. Raises
     :class:`IgPageUnreadable` on any fetch/parse failure so the caller skips."""
+    if http_get_fn is http_get:
+        time.sleep(IG_PROBE_DELAY_S)  # politeness for bulk IG sweeps, like Difmark
     try:
         page = http_get_fn(url, timeout=15, user_agent=REQUIRED_USER_AGENT)
     except Exception as exc:  # noqa: BLE001 — any transport failure → fail closed
         raise IgPageUnreadable(f"fetch failed: {exc}") from exc
     if not (page.ok and page.status == 200 and page.body):
         raise IgPageUnreadable(f"bad response: {page.status or page.error}")
-    return IgOfferAttributes(
-        raw_platform=extract_ig_platform(page.body),
-        raw_region=extract_ig_region(page.body),
-    )
+    return IgOfferAttributes(raw_platform=extract_ig_platform(page.body))
 
 
 def _ig_offer_platform(url: str) -> str | None:

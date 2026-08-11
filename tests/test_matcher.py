@@ -33,7 +33,6 @@ from src.matcher import (
     IG_PLATFORM_TEXT_MAP,
     IgPageUnreadable,
     extract_ig_platform,
-    extract_ig_region,
     is_software,
     is_software_title,
     match_feed,
@@ -719,14 +718,21 @@ class MerchantConfigR32Tests(unittest.TestCase):
         self.assertEqual(r.platform, "PUBLISHER")
 
     # ---- IG page parsing (fake http_get, no network) ----
-    def test_resolve_ig_offer_reads_platform_and_region(self):
+    def test_resolve_ig_offer_reads_platform(self):
         class _Resp:
             ok, status, error = True, 200, None
-            body = '<div data-platform="Steam"></div> ... worldwide edition'
+            body = '<div data-platform="Steam"></div>'
         a = resolve_ig_offer("https://ig/x", http_get_fn=lambda url, **k: _Resp())
         self.assertEqual(a.raw_platform, "STEAM")
-        self.assertEqual(a.raw_region, "WORLDWIDE")
         self.assertEqual(IG_PLATFORM_TEXT_MAP.get(a.raw_platform), "STEAM")
+
+    def test_extract_ig_platform_unanimous_only(self):
+        # every data-platform agrees → take it
+        self.assertEqual(extract_ig_platform('<a data-platform="Steam"><b data-platform="Steam">'), "STEAM")
+        # a sidebar/carousel foreign platform makes it ambiguous → "" (skip)
+        self.assertEqual(extract_ig_platform('<a data-platform="Steam"><b data-platform="Ubisoft">'), "")
+        # none → ""
+        self.assertEqual(extract_ig_platform("<div>no platform here</div>"), "")
 
     def test_resolve_ig_offer_bad_response_raises(self):
         class _Resp:

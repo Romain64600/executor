@@ -1,13 +1,17 @@
 """Per-merchant configuration — the merchant-specific instructions the pipeline
 starts from (Romain 2026-08-11: "on part avec la config marchand").
 
-Merchant-specific handling used to be scattered across the matcher (Kinguin's
-domain rule, Difmark's offer-page resolver + maps, Gamivo's language lock,
-Eneba's URL prefixes, Instant Gaming's page platform). A ``MerchantConfig`` is
-the single declarative place for a merchant's rules; ``match_offer`` reads
-``merchant_config(offer.merchant)`` and applies it. A merchant WITHOUT a config
-falls through to the generic behaviour (platform/region/edition from the feed
-title + URL), exactly as before.
+Merchant-specific handling used to be scattered across the matcher. A
+``MerchantConfig`` is the single declarative place for a merchant's rules;
+``match_offer`` reads ``merchant_config(offer.merchant)`` and applies it. A
+merchant WITHOUT a config falls through to the generic behaviour (platform/region/
+edition from the feed title + URL), exactly as before.
+
+Migrated so far (incremental, no regression): **Kinguin** domain, **Difmark**
+url-ignore, **Instant Gaming** offer-page platform resolver. Difmark's complex
+offer-page branch (accounts / region maps) and Gamivo's ``-en-`` language lock /
+Eneba's URL prefixes still live in ``src.matcher`` — fold them in when next
+touched.
 
 This module is pure data (no matcher import) to stay circular-import free — the
 registry that binds resolvers lives in ``src.matcher``.
