@@ -31,6 +31,7 @@ from src.matcher import (
     extract_prices,
     extract_regions,
     is_software,
+    is_software_title,
     match_feed,
     match_offer,
     resolve_software_edition,
@@ -587,6 +588,42 @@ class SoftwareEntryR31Tests(unittest.TestCase):
         self.assertEqual(resolve_software_region("ANYTHING", {"1": "PUBLISHER GLOBAL"}),
                          ("1", "PUBLISHER GLOBAL"))
         self.assertIsNone(resolve_software_region("TURKEY", {"5": "EUROPE", "6": "UNITED STATES"}))
+
+    # ---- R31 adversarial-audit regressions (2026-08-11) ----
+    def test_game_edition_ending_in_n_is_not_software(self):
+        # "N EDITION" marker must be word-boundary — a game page with "Champion
+        # Edition" / "Golden Edition" must NOT classify the game as software.
+        game = AksResolution(slug="s", url="u", product_id="1", aks_name="Street Fighter V",
+                             editions={"1": "Standard", "77": "Champion Edition", "9": "Deluxe Edition"},
+                             regions={"2": "GLOBAL"}, official_platforms=("Steam",))
+        self.assertFalse(is_software(_offer("Street Fighter V Champion Edition Steam Key GLOBAL"), game))
+        # but a real "N Edition" page label still classifies as software
+        win_n = AksResolution(slug="s", url="u", product_id="1", aks_name="Windows 11 Pro",
+                              editions={"284": "N Edition", "1": "Standard"}, regions={"5": "GLOBAL"})
+        self.assertTrue(is_software(_offer("Some Unknown Brand"), win_n))
+
+    def test_windows_store_game_key_is_not_software(self):
+        # bare "Windows 10 Key" is a game's Microsoft-Store delivery, not an OS
+        # licence — must not route to the software path.
+        self.assertFalse(is_software_title(_offer("Sea of Thieves Windows 10 Key GLOBAL")))
+        self.assertTrue(is_software_title(_offer("Windows 10 Pro Key GLOBAL")))
+
+    def test_edition_orthogonal_dimensions_skip(self):
+        # two independent licence axes both in the title, no combined SKU on the
+        # page → don't let string length guess → skip.
+        self.assertIsNone(resolve_software_edition(_offer("Windows 11 Pro Retail 1 PC Key"),
+                                                   self.WIN.editions))
+
+    def test_region_lone_country_is_not_forced(self):
+        # a GLOBAL offer must not be filed under a lone country region.
+        self.assertIsNone(resolve_software_region("GLOBAL", {"7": "TURKEY"}))
+        # a lone GLOBAL/PUBLISHER region is still taken for an unknown label
+        self.assertEqual(resolve_software_region("ANY", {"1": "PUBLISHER GLOBAL"}), ("1", "PUBLISHER GLOBAL"))
+
+    def test_edition_sole_standard_is_not_guessed(self):
+        # a page whose only edition is the generic "Standard" + no title signal is
+        # the guessed-Standard R31 forbids → skip.
+        self.assertIsNone(resolve_software_edition(_offer("Some App Key GLOBAL"), {"1": "Standard"}))
 
     # ---- end to end ----
     def test_match_enters_software_with_page_edition(self):

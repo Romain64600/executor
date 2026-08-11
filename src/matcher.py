@@ -204,7 +204,11 @@ _SOFTWARE_PAGE_EDITION_MARKERS = (
 # version — never fire on the "10/11" both-versions compat form (normalises to
 # "10 11") or the "… Store" Microsoft-Store delivery form.
 _WINDOWS_OS_RE = re.compile(
-    r"\bWINDOWS (?:10|11)\s+(?:PRO|HOME|ENTERPRISE|EDUCATION|PROFESSIONAL|OEM|N|KEY|LICEN[CS]E)\b"
+    # A real OS licence names an edition (Pro/Home/Enterprise/…/OEM/N). Bare
+    # "Windows 10 Key" is NOT an OS licence — it's a game's Microsoft-Store
+    # delivery form ("Sea of Thieves Windows 10 Key") — so KEY is deliberately
+    # absent from the alternation (R31 audit 2026-08-11, game-regression finding).
+    r"\bWINDOWS (?:10|11)\s+(?:PRO|HOME|ENTERPRISE|EDUCATION|PROFESSIONAL|OEM|N|LICEN[CS]E)\b"
 )
 # The account-delivery marker ("… (Account) …") — an account-type offer. NOT a
 # precheck skip (the submit pipeline still resolves account offers to their
@@ -1303,11 +1307,16 @@ def is_software(offer: NormalizedOffer, resolution: AksResolution) -> bool:
 
     if is_software_title(offer):
         return True
-    page_text = " ".join(
-        [_edition_entry_name(v).upper() for v in resolution.editions.values()]
-        + [r.upper() for r in resolution.regions.values()]
-    )
-    return any(m in page_text for m in _SOFTWARE_PAGE_EDITION_MARKERS)
+    # Word-boundary, PER LABEL: a marker must be a whole token/phrase in one
+    # edition/region label. Raw substring scanning of a concatenated blob wrongly
+    # fired "N EDITION" inside a game's "ChampioN EDITION" (R31 audit 2026-08-11).
+    labels = [_edition_entry_name(v) for v in resolution.editions.values()]
+    labels += list(resolution.regions.values())
+    for label in labels:
+        padded = " " + _norm_tokens(label) + " "
+        if any(f" {m} " in padded for m in _SOFTWARE_PAGE_EDITION_MARKERS):
+            return True
+    return False
 
 
 def resolve_software_edition(
@@ -1324,20 +1333,30 @@ def resolve_software_edition(
         with ≥2 editions and no title signal we do NOT guess → skip."""
 
     padded = " " + _norm_tokens(offer.name) + " "
-    matches: list[tuple[int, str, str]] = []  # (norm_len, edition_id, label)
+    matches: list[tuple[str, str, str]] = []  # (norm, edition_id, label)
     for eid, value in editions.items():
         label = _edition_entry_name(value)
         norm = _norm_tokens(label)
         if norm and f" {norm} " in padded:
-            matches.append((len(norm), eid, label))
+            matches.append((norm, eid, label))
     if matches:
-        longest = max(m[0] for m in matches)
-        top = [m for m in matches if m[0] == longest]
-        if len(top) > 1:
+        winner = max(matches, key=lambda m: len(m[0]))
+        # Every OTHER match must be NESTED in the winner (same licence dimension:
+        # "Retail 5 PC" contains "Retail"/"5 PC"). Two INDEPENDENT dimensions both
+        # in the title with no combined SKU ("Retail" + "1 PC", no "Retail 1 PC"
+        # edition) would be decided by raw string length — a guess → skip (R31
+        # audit 2026-08-11). This also subsumes the equal-length tie (not nested).
+        w = " " + winner[0] + " "
+        if any(m is not winner and f" {m[0]} " not in w for m in matches):
             return None
-        return (top[0][1], top[0][2])
+        return (winner[1], winner[2])
+    # Nothing in the title → take a SINGLE edition, but NEVER a lone generic
+    # "Standard": that is the guessed-Standard R31 forbids (Adobe has no Standard;
+    # software's real edition is a licence type). ≥2 editions with no signal → skip.
     if len(editions) == 1:
         (eid, value), = editions.items()
+        if _norm_tokens(_edition_entry_name(value)) == "STANDARD":
+            return None
         return (eid, _edition_entry_name(value))
     return None
 
@@ -1370,7 +1389,13 @@ def resolve_software_region(
         return None
     if len(regions) == 1:
         (rid, fname), = regions.items()
-        return (rid, fname)
+        norm = _norm_tokens(fname)
+        # Take the lone region only when it is a GLOBAL/PUBLISHER type, or the
+        # offer carries no concrete region — NEVER file a GLOBAL offer under a lone
+        # country region (R31 audit: {"7":"TURKEY"} + a GLOBAL offer must skip).
+        if not want or "GLOBAL" in norm or "PUBLISHER" in norm:
+            return (rid, fname)
+        return None
     return None
 
 
