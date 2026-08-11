@@ -176,6 +176,7 @@ SOFTWARE_APP_TOKENS = (
     "CCLEANER", "AIDA64", "WINRAR", "ASHAMPOO", "CYBERLINK", "COREL", "AUTOCAD",
     "MALWAREBYTES", "IOBIT", "WONDERSHARE", "MOVAVI", "ADOBE", "GLARY",
     "NORDVPN", "EXPRESSVPN", "SURFSHARK", "CYBERGHOST",
+    "BIGASOFT",   # media-tool brand (safe-auto Gamivo 2026-08-11)
     # product categories ("ANTIVIRUS" already in CATEGORY_SKIP as substring)
     "INTERNET SECURITY", "TOTAL SECURITY", "VPN",
     "TODO BACKUP", "DATA RECOVERY", "PARTITION MASTER",
@@ -183,6 +184,11 @@ SOFTWARE_APP_TOKENS = (
     "MICROSOFT OFFICE", "OFFICE HOME", "OFFICE 365", "OFFICE 2016",
     "OFFICE 2019", "OFFICE 2021", "OFFICE 2024",
     "WINDOWS SERVER",
+    # media tools — utility categories, never a game title (generalise beyond the
+    # brand list: catches any "… Video Converter" / "… Screen Recorder"). A safe-
+    # auto Gamivo sweep created "Bigasoft Total Video Converter" because AKS has a
+    # product page for it, but R22 is games-only — the title must gate it (2026-08-11).
+    "VIDEO CONVERTER", "SCREEN RECORDER",
 )
 # "Windows 10/11" is software only as an OS LICENCE ("Windows 11 Pro OEM Key",
 # "Windows 10 Home"); on a game key it is just a platform/compat marker and must
