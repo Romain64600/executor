@@ -30,9 +30,15 @@ from src.matcher import (
     extract_official_platforms,
     extract_prices,
     extract_regions,
+    IG_PLATFORM_TEXT_MAP,
+    IgPageUnreadable,
+    extract_ig_platform,
+    extract_ig_region,
     is_software,
     is_software_title,
     match_feed,
+    merchant_config,
+    resolve_ig_offer,
     match_offer,
     resolve_software_edition,
     resolve_software_region,
@@ -656,30 +662,77 @@ class SoftwareEntryR31Tests(unittest.TestCase):
         self.assertEqual(extract_regions(body), {"532": "GLOBAL", "byphone": "PHONE ACTIVATION"})
 
 
-class MerchantPagePlatformGuardTests(unittest.TestCase):
-    """Interim guard (2026-08-11): Instant Gaming's real platform lives only on its
-    offer page, so a token-less IG offer must NOT default to Publisher (R27) — it
-    fails closed until the merchant page-resolver / config exists. A whole IG sweep
-    had gone in wrongly as Publisher."""
+class MerchantConfigR32Tests(unittest.TestCase):
+    """R32 (2026-08-11): the pipeline starts from the per-merchant config. Instant
+    Gaming's real platform is only on its offer page (token-less feed titles), so a
+    whole IG sweep wrongly defaulted to Publisher. The config's offer_platform_
+    resolver reads it from the page (data-platform); fail closed if unreadable /
+    unrecognized — never guess. Games from merchants without a config are
+    unchanged."""
 
     PAGE = AksResolution(slug="s", url="u", product_id="84896",
                          aks_name="Tiny Tinas Wonderlands", editions={"1": "Standard"},
                          regions={"2": "GLOBAL"}, official_platforms=("Steam", "Direct Publisher"))
 
-    def _match(self, merchant):
+    def _match_ig(self, stub):
+        import src.matcher as M
+        from src.merchant_config import MerchantConfig
+        saved = M.MERCHANT_CONFIGS["INSTANT GAMING"]
+        M.MERCHANT_CONFIGS["INSTANT GAMING"] = MerchantConfig("Instant Gaming", offer_platform_resolver=stub)
+        self.addCleanup(lambda: M.MERCHANT_CONFIGS.__setitem__("INSTANT GAMING", saved))
         o = NormalizedOffer(offer_id="1", name="Tiny Tinas Wonderlands",
-                            url="https://m/x", merchant=merchant)
+                            url="https://ig/x", merchant="Instant Gaming")
         return match_offer(o, resolver=lambda n: self.PAGE)
 
-    def test_instant_gaming_token_less_skips_not_publisher(self):
-        r = self._match("Instant Gaming")
+    # ---- config registry ----
+    def test_config_reads_migrated_flags(self):
+        self.assertEqual(merchant_config("Kinguin").domain, "kinguin.net")
+        self.assertEqual(merchant_config("Difmark").url_ignore_substrings,
+                         ("buy-console-account-", "buy-console-account"))
+        self.assertIsNotNone(merchant_config("Instant Gaming").offer_platform_resolver)
+        self.assertIsNone(merchant_config("Kinguin").offer_platform_resolver)
+        self.assertIsNone(merchant_config("Some Random Merchant"))
+
+    # ---- IG platform from the offer page ----
+    def test_ig_enters_real_platform_from_page(self):
+        r = self._match_ig(lambda url: "STEAM")
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual(r.platform, "STEAM")          # NOT Publisher
+
+    def test_ig_unrecognized_platform_skips(self):
+        r = self._match_ig(lambda url: None)
         self.assertIsInstance(r, SkippedOffer)
-        self.assertIn("merchant offer page", r.reason)
+        self.assertIn("R32", r.reason)
+
+    def test_ig_page_unreadable_skips(self):
+        def boom(url):
+            raise IgPageUnreadable("nope")
+        r = self._match_ig(boom)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("unreadable", r.reason)
 
     def test_other_merchant_token_less_still_defaults_publisher(self):
-        r = self._match("Gamivo")   # not in _MERCHANTS_NEED_PAGE_PLATFORM
+        o = NormalizedOffer(offer_id="1", name="Tiny Tinas Wonderlands",
+                            url="https://m/x", merchant="Gamivo")   # no config
+        r = match_offer(o, resolver=lambda n: self.PAGE)
         self.assertIsInstance(r, Candidate)
         self.assertEqual(r.platform, "PUBLISHER")
+
+    # ---- IG page parsing (fake http_get, no network) ----
+    def test_resolve_ig_offer_reads_platform_and_region(self):
+        class _Resp:
+            ok, status, error = True, 200, None
+            body = '<div data-platform="Steam"></div> ... worldwide edition'
+        a = resolve_ig_offer("https://ig/x", http_get_fn=lambda url, **k: _Resp())
+        self.assertEqual(a.raw_platform, "STEAM")
+        self.assertEqual(a.raw_region, "WORLDWIDE")
+        self.assertEqual(IG_PLATFORM_TEXT_MAP.get(a.raw_platform), "STEAM")
+
+    def test_resolve_ig_offer_bad_response_raises(self):
+        class _Resp:
+            ok, status, error, body = False, 503, "err", ""
+        with self.assertRaises(IgPageUnreadable):
+            resolve_ig_offer("https://ig/x", http_get_fn=lambda url, **k: _Resp())
 
 
 class DetectTests(unittest.TestCase):

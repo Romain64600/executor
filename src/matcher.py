@@ -26,8 +26,9 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 from urllib.parse import quote, urlparse
 
-from src.aks_env import AKS_STAFF_UA, http_get
+from src.aks_env import AKS_STAFF_UA, REQUIRED_USER_AGENT, http_get
 from src.contracts import NormalizedFeed, NormalizedOffer
+from src.merchant_config import MerchantConfig
 
 AKS_BUY_URL = "https://www.allkeyshop.com/blog/buy-{slug}-cd-key-compare-prices/"
 # AKS product pages come in "kinds": the ordinary key page (`…-cd-key-…`) and,
@@ -238,13 +239,10 @@ MERCHANT_DOMAINS = {"KINGUIN": "kinguin.net"}
 # never touched (EXECUTOR_RULES §4.6 URL hygiene) — only the local text used
 # for signal derivation.
 MERCHANT_URL_IGNORE_SUBSTRINGS = {"DIFMARK": ("buy-console-account-", "buy-console-account")}
-
-# Merchants whose real platform is NOT in the feed title/URL — it lives only on
-# the merchant's own offer page (Instant Gaming lists Steam keys under token-less
-# titles). Until a per-merchant page-resolver reads it, a token-less offer from
-# these merchants FAILS CLOSED rather than defaulting to Publisher (R27). Interim
-# — to be folded into the merchant config (Romain 2026-08-11, IG Publisher escape).
-_MERCHANTS_NEED_PAGE_PLATFORM = {"INSTANT GAMING"}
+# NOTE (R32, 2026-08-11): MERCHANT_DOMAINS + MERCHANT_URL_IGNORE_SUBSTRINGS are now
+# also expressed in the per-merchant MerchantConfig registry below, which is what
+# the pipeline READS. These literals are kept as the documented source values; the
+# config is the single point the code consults.
 
 # platform -> region key -> AKS region id (EXECUTOR_RULES §10; dropdown is truth)
 REGION_IDS = {
@@ -367,7 +365,8 @@ def dangerous_qualifier(merchant_title: str, aks_name: str) -> str | None:
 def precheck_skip(offer: NormalizedOffer) -> str | None:
     """Categorical SKIPs from the merchant title/URL, before any AKS lookup."""
 
-    domain = MERCHANT_DOMAINS.get(offer.merchant.upper())
+    cfg = merchant_config(offer.merchant)
+    domain = cfg.domain if cfg else None
     if domain:
         host = urlparse(offer.url).netloc.lower()
         if host != domain and not host.endswith("." + domain):
@@ -825,13 +824,105 @@ def resolve_difmark_offer(
     )
 
 
+# ── Instant Gaming offer-page resolver (R32, 2026-08-11) ─────────────────────
+# IG lists e.g. STEAM keys under token-less feed titles, so the platform must be
+# read from the OFFER PAGE (a whole IG sweep wrongly defaulted to Publisher). The
+# page carries `data-platform="Steam"` (single) + a "worldwide" region marker;
+# the edition stays in the feed title (game path). Map IG's platform text to our
+# tokens; an unrecognized value fails closed at the caller (never a guess).
+IG_PLATFORM_TEXT_MAP = {
+    "STEAM": "STEAM",
+    "EPIC": "EPIC", "EPIC GAMES": "EPIC", "EPIC GAMES STORE": "EPIC",
+    "GOG": "GOG", "GOG.COM": "GOG",
+    "UBISOFT": "UBISOFT", "UBISOFT CONNECT": "UBISOFT", "UPLAY": "UBISOFT",
+    "ORIGIN": "EA", "EA": "EA", "EA APP": "EA", "EA PLAY": "EA",
+    "BATTLE.NET": "BATTLENET", "BATTLENET": "BATTLENET",
+}
+
+
+class IgPageUnreadable(RuntimeError):
+    """Instant Gaming offer page could not be fetched/parsed — fail closed."""
+
+
+@dataclass(frozen=True)
+class IgOfferAttributes:
+    """Raw (upper-stripped) signals off an Instant Gaming offer page. Mapping to
+    our platform vocabulary and the fail-closed decision are the caller's job."""
+
+    raw_platform: str   # e.g. "STEAM" (from data-platform)
+    raw_region: str     # "WORLDWIDE" | "" (region lock text, if any)
+
+
+def extract_ig_platform(body: str) -> str:
+    """The offer's platform from the IG page's `data-platform` attribute."""
+    m = re.search(r'data-platform="([^"]+)"', body)
+    return m.group(1).strip().upper() if m else ""
+
+
+def extract_ig_region(body: str) -> str:
+    """A coarse region signal — "WORLDWIDE" (region-free) or "" when the page
+    carries no clear worldwide marker (caller falls back / fails closed)."""
+    if re.search(r"\b(worldwide|region[\s-]*free)\b", body, re.I):
+        return "WORLDWIDE"
+    return ""
+
+
+def resolve_ig_offer(url: str, http_get_fn: Callable[..., Any] = http_get) -> IgOfferAttributes:
+    """Fetch an Instant Gaming offer page (a normal browser UA — NEVER the AKS
+    staff UA on a non-AKS host) and read its platform + region. Raises
+    :class:`IgPageUnreadable` on any fetch/parse failure so the caller skips."""
+    try:
+        page = http_get_fn(url, timeout=15, user_agent=REQUIRED_USER_AGENT)
+    except Exception as exc:  # noqa: BLE001 — any transport failure → fail closed
+        raise IgPageUnreadable(f"fetch failed: {exc}") from exc
+    if not (page.ok and page.status == 200 and page.body):
+        raise IgPageUnreadable(f"bad response: {page.status or page.error}")
+    return IgOfferAttributes(
+        raw_platform=extract_ig_platform(page.body),
+        raw_region=extract_ig_region(page.body),
+    )
+
+
+def _ig_offer_platform(url: str) -> str | None:
+    """Instant Gaming config hook: read the offer page, map its platform to our
+    token (None = page named an unrecognized platform → caller fails closed).
+    Raises IgPageUnreadable when the page is unreadable → caller fails closed."""
+    return IG_PLATFORM_TEXT_MAP.get(resolve_ig_offer(url).raw_platform)
+
+
+# ── Per-merchant configuration registry (R32, 2026-08-11) ────────────────────
+# The pipeline "starts from the merchant config": match_offer reads
+# merchant_config(offer.merchant) and applies its rules. A merchant with no
+# config keeps the generic behaviour. Simple flags migrated here from the old
+# scattered dicts; Difmark's complex offer-page branch stays as-is for now and is
+# just REPRESENTED here (its url-ignore already lives in the config).
+MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
+    "KINGUIN": MerchantConfig("Kinguin", domain="kinguin.net"),
+    "DIFMARK": MerchantConfig(
+        "Difmark",
+        url_ignore_substrings=("buy-console-account-", "buy-console-account"),
+        notes="offer-page resolver (resolve_difmark_offer) still handled in match_offer",
+    ),
+    "INSTANT GAMING": MerchantConfig(
+        "Instant Gaming",
+        offer_platform_resolver=_ig_offer_platform,
+        notes="token-less titles — real platform is on the offer page (data-platform)",
+    ),
+}
+
+
+def merchant_config(merchant: str) -> MerchantConfig | None:
+    return MERCHANT_CONFIGS.get((merchant or "").strip().upper())
+
+
 def strip_merchant_url_noise(url: str, merchant: str) -> str:
     """Remove merchant-specific URL boilerplate before deriving ANY matching
     signal (region, edition) from the URL. Case-insensitive — never touches
     the stored/reported offer URL itself (EXECUTOR_RULES §4.6)."""
 
     cleaned = url
-    for noise in MERCHANT_URL_IGNORE_SUBSTRINGS.get(merchant.upper(), ()):
+    cfg = merchant_config(merchant)
+    for noise in (cfg.url_ignore_substrings if cfg else ()):
         cleaned = re.sub(re.escape(noise), "", cleaned, flags=re.IGNORECASE)
     return cleaned
 
@@ -1418,6 +1509,22 @@ def match_offer(
 
     is_difmark = offer.merchant.strip().upper() == "DIFMARK"
     declared_platform = explicit_platform(offer.name) or explicit_platform_from_url(offer.url)
+    # R32 (2026-08-11): merchant config — when the platform is not in the title,
+    # read it from the merchant's OWN offer page (Instant Gaming: token-less titles
+    # hide a Steam key; a whole IG sweep wrongly defaulted to Publisher). Fail
+    # closed if the page is unreadable or names an unrecognized platform — never
+    # guess. Games from merchants without a config are unchanged.
+    _cfg = merchant_config(offer.merchant)
+    if declared_platform is None and _cfg is not None and _cfg.offer_platform_resolver is not None:
+        try:
+            _tok = _cfg.offer_platform_resolver(offer.url)
+        except Exception as exc:  # noqa: BLE001 — page unreadable → fail closed
+            return SkippedOffer(
+                offer, f"{offer.merchant} offer page unreadable — platform unverifiable (R32): {exc}")
+        if _tok is None:
+            return SkippedOffer(
+                offer, f"{offer.merchant} offer page names an unrecognized platform — not entered (R32)")
+        declared_platform = _tok
     difmark_attrs: DifmarkOfferAttributes | None = None
     difmark_platform_verified = False
     difmark_is_account = False
@@ -1659,19 +1766,9 @@ def match_offer(
                 "no platform in title and AKS page does not confirm Direct"
                 " Publisher — platform unverifiable, not defaulted (R27)",
             )
-        # Interim guard (2026-08-11): some merchants list e.g. a STEAM key under a
-        # token-less title on a multi-platform AKS page; R27 would default them to
-        # PUBLISHER, but the real platform lives only on the MERCHANT's own offer
-        # page (Instant Gaming — Romain: a whole IG sweep went in wrongly as
-        # Publisher). Until that merchant's page-resolver / config exists, fail
-        # closed instead of entering a guessed Publisher. Subsumed by the merchant
-        # config once built.
-        if offer.merchant.strip().upper() in _MERCHANTS_NEED_PAGE_PLATFORM:
-            return SkippedOffer(
-                offer,
-                f"{offer.merchant}: token-less title — platform is only on the "
-                "merchant offer page; not defaulted to Publisher (merchant config pending)",
-            )
+        # Merchants whose real platform is only on their offer page (Instant
+        # Gaming) never reach here token-less: their MerchantConfig resolver set
+        # `declared_platform` from the page above, or already failed closed (R32).
         platform = "PUBLISHER"
         region_label, region_id, implicit = detect_region(offer, platform)
         if region_id is None:

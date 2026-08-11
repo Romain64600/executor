@@ -85,6 +85,12 @@ state and cannot be argued away by a language model.
   edition or region can't be pinned to the page, the offer is **skipped**, not
   guessed. Games are untouched. See
   [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) **§4.9**.
+- **Start from the merchant config** `[R32]`. Merchant-specific rules live in one
+  place — `src/merchant_config.py` (`MerchantConfig`), read by the matcher via
+  `merchant_config(offer.merchant)`. A merchant's config carries e.g. its domain
+  (Kinguin) or an offer-page platform resolver (Instant Gaming lists Steam keys
+  under token-less titles → the real platform is read from the IG offer page, not
+  defaulted to Publisher). No config → generic behaviour. See **§4.10**.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full decision record.
 

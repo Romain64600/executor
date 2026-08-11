@@ -522,6 +522,37 @@ list no `official_platforms`):
 list-**sort** console is unaffected — it still groups software under the Softwares
 list via `is_software_title` (no page fetch). Doubt still goes to skip `[G02]`.
 
+### 4.10 Per-merchant config — "start from the merchant config" `[R32]` (2026-08-11)
+
+Merchant-specific handling was scattered (Kinguin's domain rule, Difmark's
+offer-page resolver + maps, Gamivo's `-en-` language lock, Eneba's URL prefixes).
+Romain: **each merchant should start from its own config** — its specific
+instructions. `src/merchant_config.py` `MerchantConfig` is the single declarative
+place; `match_offer` reads `merchant_config(offer.merchant)` and applies it. A
+merchant with **no** config keeps the generic behaviour (platform/region/edition
+from the feed title + URL).
+
+Trigger: a whole **Instant Gaming** safe-auto sweep entered every offer as
+**PUBLISHER** although they were **STEAM**. IG lists Steam keys under **token-less**
+feed titles on multi-platform AKS pages, so R27 defaulted them to Publisher — but
+the real platform lives only on **the IG offer page** (`data-platform="Steam"`).
+
+`MerchantConfig` fields (migrated incrementally, no regression on Difmark/Gamivo/
+Eneba which keep their existing code, now *represented* in the config):
+- `domain` — the offer URL must be on this host (Kinguin → kinguin.net);
+- `url_ignore_substrings` — URL boilerplate stripped before URL-derived signals
+  (Difmark → `buy-console-account-`);
+- `offer_platform_resolver(offer_url) -> platform token | None` — when the platform
+  is not in the title, read it from the merchant's **own offer page**. Instant
+  Gaming → `resolve_ig_offer` (reads `data-platform`, maps via `IG_PLATFORM_TEXT_MAP`;
+  an unrecognized value → **skip**; an unreadable page → **skip** `[R32]`). The
+  edition stays in the feed title (game path); the AKS page platform gate `[R20]`
+  then verifies the page-read platform normally.
+
+Fail-closed: a token-less IG offer never defaults to Publisher — it either enters
+with the page-read platform or skips. New merchants that need page-read
+platform/region get a config entry, not scattered `if merchant == …` branches.
+
 ---
 
 ## 5. Stage 3 — Validation
