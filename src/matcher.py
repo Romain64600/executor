@@ -868,6 +868,16 @@ IG_REGION_TEXT_MAP = {
     "UNITED STATES": "us", "US": "us", "USA": "us",
     "UK": "uk", "UNITED KINGDOM": "uk",
 }
+# Region policy (Romain 2026-08-13): "on est sur Global, Europe et US. Le reste, on
+# skippe et certaines régions qu'on va blacklist, comme les Latam, le Brésil et les
+# régions d'Asie" + "les régions russes aussi". This policy is MERCHANT-AGNOSTIC and
+# lives in ONE place — ``aks_lists.suggest_target_list`` decides, from a
+# ``forbidden region: <label>`` reason, whether the label is blacklisted (→ Blacklist
+# list) or merely skipped. A non-sellable IG region therefore just emits that reason
+# with its raw label; it does NOT re-implement the blacklist here (Romain: "si on
+# connaît déjà ta région, on peut te trier" — same routing whether the region came
+# from the feed title or the offer page).
+
 # region = the <title> segment AFTER the platform parens ("… (Steam) - <Region>").
 _IG_TITLE_REGION_RE = re.compile(r".*\([^)]*\)\s*-\s*(.+?)\s*$")
 
@@ -913,15 +923,21 @@ def resolve_ig_offer(url: str, http_get_fn: Callable[..., Any] = http_get) -> Ig
 
 def _ig_offer_signals(url: str) -> MerchantOfferSignals:
     """Instant Gaming config hook: read the offer page ONCE, map platform + region
-    to our vocabulary. platform None = unrecognized platform → skip; region base
-    None (a suffix we don't sell: Latin America / ROW / …) = region_forbidden →
-    skip; no suffix = worldwide = GLOBAL. Raises IgPageUnreadable → caller skips."""
+    to our vocabulary. The IG page ALWAYS yields a region signal, so
+    ``region_resolved=True`` and either:
+    - a sellable base (global/eu/us/uk) → ENTER with it; or
+    - ``region_base`` None + the raw region label → the caller emits a
+      ``forbidden region: <label>`` skip, whose blacklist-vs-park-vs-skip routing is
+      decided centrally (LATAM / Brazil / Asia / Russia → Blacklist).
+    platform None = unrecognized platform → the caller skips. Raises
+    IgPageUnreadable on an unreadable page → the caller skips."""
     attrs = resolve_ig_offer(url)
     base = IG_REGION_TEXT_MAP.get(attrs.raw_region)
     return MerchantOfferSignals(
         platform=IG_PLATFORM_TEXT_MAP.get(attrs.raw_platform),
+        region_resolved=True,
         region_base=base,
-        region_forbidden=(base is None),
+        region_label=(attrs.raw_region or "worldwide") if base is None else "",
     )
 
 
@@ -1562,8 +1578,9 @@ def match_offer(
     # closed if the page is unreadable or names an unrecognized platform — never
     # guess. Games from merchants without a config are unchanged.
     _cfg = merchant_config(offer.merchant)
-    _page_region_base: str | None = None      # R33: region read from the offer page
-    _page_region_forbidden = False
+    _page_region_resolved = False             # R33: the offer page gave a region
+    _page_region_base: str | None = None      #      → ENTER with this base, or
+    _page_region_label = ""                   #      → forbidden region: <label> skip
     if declared_platform is None and _cfg is not None and _cfg.offer_page_resolver is not None:
         try:
             _sig = _cfg.offer_page_resolver(offer.url)
@@ -1574,8 +1591,9 @@ def match_offer(
             return SkippedOffer(
                 offer, f"{offer.merchant} offer page names an unrecognized platform — not entered (R32)")
         declared_platform = _sig.platform
+        _page_region_resolved = _sig.region_resolved
         _page_region_base = _sig.region_base
-        _page_region_forbidden = _sig.region_forbidden
+        _page_region_label = _sig.region_label
     difmark_attrs: DifmarkOfferAttributes | None = None
     difmark_platform_verified = False
     difmark_is_account = False
@@ -1646,19 +1664,21 @@ def match_offer(
     # R33 (2026-08-13): the merchant offer page's REGION overrides the title/URL
     # default (Instant Gaming feed titles carry no region, so detect_region always
     # said implicit GLOBAL — a whole IG sweep entered 32/54 region-locked offers as
-    # GLOBAL). A region we don't sell (Latin America / ROW / …) → skip; a clean one
-    # (worldwide→GLOBAL, Europe→EU, US, UK) → use it.
-    if _page_region_forbidden:
-        return SkippedOffer(
-            offer,
-            f"{offer.merchant} offer page region is region-locked to a region we "
-            "don't sell (e.g. Latin America / ROW) — skipped (R33)")
-    if _page_region_base is not None:
-        _rid = _region_id(platform, _page_region_base)
-        if _rid is None:
-            return SkippedOffer(offer, f"region {_page_region_base!r} unavailable for {platform} (R33)")
-        region_label = {"global": "GLOBAL", "eu": "EU", "us": "US", "uk": "UK"}[_page_region_base]
-        region_id, implicit = _rid, False
+    # GLOBAL). Two outcomes (Romain's region policy 2026-08-13):
+    #   - a sellable base (worldwide→GLOBAL, Europe→EU, US, UK) → ENTER with it;
+    #   - otherwise → a ``forbidden region: <label>`` skip, using the SAME reason
+    #     format as the generic title/URL path so the ONE central router
+    #     (aks_lists.suggest_target_list) routes it: LATAM / Brazil / Asia / Russia →
+    #     Blacklist, everything else (ROW / North America / …) → garder.
+    if _page_region_resolved:
+        if _page_region_base is not None:
+            _rid = _region_id(platform, _page_region_base)
+            if _rid is None:
+                return SkippedOffer(offer, f"region {_page_region_base!r} unavailable for {platform} (R33)")
+            region_label = {"global": "GLOBAL", "eu": "EU", "us": "US", "uk": "UK"}[_page_region_base]
+            region_id, implicit = _rid, False
+        else:
+            return SkippedOffer(offer, f"forbidden region: {_page_region_label}")
 
     # Account offers resolve AKS's dedicated account PAGE, not the game key
     # page (Romain 2026-07-18). The account page is a distinct product (own id

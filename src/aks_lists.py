@@ -65,6 +65,33 @@ _REGION_LIST = {
     "south america": "36",
 }
 
+# Region blacklist (Romain 2026-08-13): "on est sur Global, Europe et US. Le reste,
+# on skippe et certaines régions qu'on va blacklist, comme les Latam, le Brésil et
+# les régions d'Asie" + "les régions russes aussi". MERCHANT-AGNOSTIC and the single
+# source of truth: any `forbidden region: <label>` whose label matches one of these
+# routes to Blacklist (8), whether the region came from the feed title (Kinguin
+# "Brazil") or an offer page (Instant Gaming). Checked BEFORE _REGION_LIST, so it
+# also captures "south america" (= LATAM). Keyword containment (+ bare "ru") absorbs
+# wording variants ("Russia & CIS", "Latin America (LATAM)"); it runs only on an
+# already-forbidden region, so it can never touch a sellable Global/EU/US/UK offer.
+# NB: bare "south america" is intentionally NOT here — it keeps its dedicated
+# regional list (36) via _REGION_LIST. LATAM / Brazil / Argentina / etc. still
+# blacklist. (Open Q to Romain 2026-08-13: blacklist the "South America" label too?)
+_BLACKLIST_REGION_KEYWORDS = (
+    "latam", "latin america", "brazil", "brasil", "argentina",
+    "mexico", "chile", "colombia", "peru",
+    "asia", "china", "japan", "korea", "india", "indonesia", "thailand",
+    "vietnam", "philippines", "malaysia",
+    "russia", "cis",
+)
+
+
+def _is_blacklisted_region(region: str) -> bool:
+    r = (region or "").strip().lower()
+    if " ru " in f" {r} ":  # bare RU code as a whole token ("RU", "RU ONLY")
+        return True
+    return any(kw in r for kw in _BLACKLIST_REGION_KEYWORDS)
+
 # Romain 2026-07-23: these exact skip-category tokens are routed to Blacklist (8)
 # — skins (+ CS wear grades), non-game content (soundtracks / artbooks / digital
 # books) and random/lootbox keys & items. NOT "bundle" (shares the
@@ -99,7 +126,9 @@ def suggest_target_list(reason: str) -> str | None:
     # the account list. Slug-hyphenated tokens ("steam-account") don't count.
     if r.startswith("forbidden region"):
         region = r.split(":", 1)[1].strip() if ":" in r else ""
-        return _REGION_LIST.get(region)  # None for NA / ROW / CIS / KOREA / …
+        if _is_blacklisted_region(region):
+            return "8"  # LATAM / Brazil / Asia / Russia → Blacklist (Romain 2026-08-13)
+        return _REGION_LIST.get(region)  # None for NA / ROW / TURKEY / EMEA / …
     if r.startswith("no aks"):
         return None  # 22-vs-27 is the operator's 5-year call (docs/AKS_LISTS.md)
     haystack = r.split(":", 1)[1] if r.startswith("skip category") and ":" in r else r

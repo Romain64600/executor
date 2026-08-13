@@ -27,17 +27,22 @@ from typing import Any, Callable, Optional
 @dataclass(frozen=True)
 class MerchantOfferSignals:
     """What a merchant's own offer page yields (R32/R33 — Instant Gaming).
-    - ``platform``: our platform token (STEAM/EPIC/…) or None (page named an
-      unrecognized platform → the caller skips).
-    - ``region_base``: region key (global/eu/us/uk) or None.
-    - ``region_forbidden``: the page named a region we don't sell (Latin America /
-      ROW / …) → the caller skips (never enters it as GLOBAL).
-    A platform-only merchant returns region_base=None + region_forbidden=False, so
-    the region stays title/URL-derived."""
+    - ``platform``: our platform token (STEAM/EPIC/…) or None (unrecognized → skip).
+    - ``region_resolved``: True when the page gave a region → it OVERRIDES the
+      title/URL default. False → keep the title-derived region (platform-only).
+    - When resolved, exactly one holds:
+        * ``region_base`` set (global/eu/us/uk) → ENTER with that region;
+        * ``region_base`` None → the offer is region-locked to a region we don't
+          enter; ``region_label`` carries the raw region text so the caller emits a
+          ``forbidden region: <label>`` skip. The blacklist-vs-park-vs-skip routing
+          of that label is decided in ONE merchant-agnostic place
+          (``aks_lists.suggest_target_list``) — LATAM / Brazil / Asia / Russia →
+          Blacklist (Romain 2026-08-13), the rest → garder."""
 
     platform: Optional[str] = None
+    region_resolved: bool = False
     region_base: Optional[str] = None
-    region_forbidden: bool = False
+    region_label: str = ""
 
 
 @dataclass(frozen=True)

@@ -699,22 +699,36 @@ class MerchantConfigR32Tests(unittest.TestCase):
 
     # ---- IG platform + region from the offer page ----
     def test_ig_enters_real_platform_from_page(self):
-        r = self._match_ig(lambda url: MerchantOfferSignals(platform="STEAM", region_base="global"))
+        r = self._match_ig(lambda url: MerchantOfferSignals(
+            platform="STEAM", region_resolved=True, region_base="global"))
         self.assertIsInstance(r, Candidate)
         self.assertEqual(r.platform, "STEAM")          # NOT Publisher
         self.assertEqual(r.region_label, "GLOBAL")
 
     def test_ig_region_europe_enters_as_eu(self):
-        r = self._match_ig(lambda url: MerchantOfferSignals(platform="STEAM", region_base="eu"))
+        r = self._match_ig(lambda url: MerchantOfferSignals(
+            platform="STEAM", region_resolved=True, region_base="eu"))
         self.assertIsInstance(r, Candidate)
         self.assertEqual((r.platform, r.region_label), ("STEAM", "EU"))
 
     def test_ig_region_locked_skips_R33(self):
-        # Latin America / ROW / … → region_forbidden → skip, never entered as GLOBAL
-        r = self._match_ig(lambda url: MerchantOfferSignals(platform="STEAM", region_forbidden=True))
+        # A non-sellable region → forbidden-region skip (same reason format as the
+        # generic path), never entered as GLOBAL. ROW has no list → garder.
+        r = self._match_ig(lambda url: MerchantOfferSignals(
+            platform="STEAM", region_resolved=True, region_base=None, region_label="ROW"))
         self.assertIsInstance(r, SkippedOffer)
-        self.assertIn("R33", r.reason)
-        self.assertIn("region-locked", r.reason)
+        self.assertIn("forbidden region", r.reason)
+        self.assertIsNone(suggest_target_list(r.reason))
+
+    def test_ig_blacklist_region_routes_to_blacklist_R33(self):
+        # LATAM / Brazil / Asia / Russia → forbidden-region skip whose label the ONE
+        # central router (suggest_target_list) sends to Blacklist (8).
+        for label in ("Latin America", "Brazil", "RU", "Russia & CIS", "Asia", "China"):
+            r = self._match_ig(lambda url, _l=label: MerchantOfferSignals(
+                platform="STEAM", region_resolved=True, region_base=None, region_label=_l))
+            self.assertIsInstance(r, SkippedOffer, label)
+            self.assertIn("forbidden region", r.reason)
+            self.assertEqual(suggest_target_list(r.reason), "8", label)
 
     def test_ig_unrecognized_platform_skips(self):
         r = self._match_ig(lambda url: MerchantOfferSignals(platform=None))
@@ -757,6 +771,48 @@ class MerchantConfigR32Tests(unittest.TestCase):
             ok, status, error, body = False, 503, "err", ""
         with self.assertRaises(IgPageUnreadable):
             resolve_ig_offer("https://ig/x", http_get_fn=lambda url, **k: _Resp())
+
+
+class RegionBlacklistRoutingTests(unittest.TestCase):
+    """Region blacklist (Romain 2026-08-13): "on est sur Global, Europe et US ...
+    les Latam, le Brésil et les régions d'Asie [on blacklist] ... les régions russes
+    aussi". MERCHANT-AGNOSTIC: the routing lives in the ONE central place
+    (suggest_target_list), keyed on the `forbidden region: <label>` reason — so a
+    region already known from the feed title (Kinguin "Brazil") is sorted WITHOUT any
+    offer-page fetch (Romain: "si on connaît déjà ta région, on peut te trier")."""
+
+    def test_blacklisted_regions_route_to_blacklist(self):
+        for label in ("LATAM", "Latin America", "BRAZIL", "Brasil",
+                      "ARGENTINA", "Mexico", "ASIA", "CHINA", "JAPAN", "KOREA",
+                      "INDIA", "RUSSIA", "RU ONLY", "RU", "CIS", "Russia & CIS"):
+            self.assertEqual(
+                suggest_target_list(f"forbidden region: {label}"), "8", label)
+
+    def test_non_blacklisted_forbidden_regions_are_unchanged(self):
+        # regional lists still win; NA / ROW / TURKEY / EMEA stay garder (None).
+        # "South America" keeps its dedicated list (36) — open Q to Romain.
+        self.assertEqual(suggest_target_list("forbidden region: SOUTH AMERICA"), "36")
+        self.assertEqual(suggest_target_list("forbidden region: MIDDLE EAST"), "34")
+        self.assertEqual(suggest_target_list("forbidden region: AFRICA"), "35")
+        self.assertEqual(suggest_target_list("forbidden region: AUSTRALIA"), "32")
+        for label in ("NORTH AMERICA", "ROW", "TURKEY", "EMEA", "GERMANY", "EU NA"):
+            self.assertIsNone(suggest_target_list(f"forbidden region: {label}"), label)
+
+    def test_sellable_regions_are_never_blacklisted(self):
+        # a substring can't steal a Global/EU/US/UK offer — those never produce a
+        # forbidden-region reason in the first place, and none contain a blacklist kw
+        for label in ("GLOBAL", "EUROPE", "EU", "US", "UK", "WORLDWIDE"):
+            self.assertIsNone(suggest_target_list(f"forbidden region: {label}"), label)
+
+    def test_kinguin_title_region_sorts_without_a_page_fetch(self):
+        # Kinguin has NO offer_page_resolver: a "Brazil" in the feed title is caught
+        # by precheck_skip and routed to Blacklist directly — no page opened.
+        o = NormalizedOffer(offer_id="1", name="Battlefield 1 Steam Key BRAZIL",
+                            url="https://www.kinguin.net/x", merchant="Kinguin")
+        r = match_offer(o, resolver=lambda n: None)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("forbidden region", r.reason)
+        self.assertEqual(suggest_target_list(r.reason), "8")
 
 
 class DetectTests(unittest.TestCase):

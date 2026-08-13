@@ -37,10 +37,12 @@ class AksListsTests(unittest.TestCase):
     def test_forbidden_region_only_the_five_with_a_list(self):
         self.assertEqual(suggest_target_list("forbidden region: AUSTRALIA"), "32")
         self.assertEqual(suggest_target_list("forbidden region: SOUTH AMERICA"), "36")
-        # regions without a list fall through to garder (None)
+        # regions without a list AND not blacklisted fall through to garder (None).
+        # NB: KOREA is now blacklisted (Romain 2026-08-13, Asia) → see the region-
+        # blacklist tests; use plain garder regions here.
         self.assertIsNone(suggest_target_list("forbidden region: NORTH AMERICA"))
         self.assertIsNone(suggest_target_list("forbidden region: ROW"))
-        self.assertIsNone(suggest_target_list("forbidden region: KOREA"))
+        self.assertIsNone(suggest_target_list("forbidden region: TURKEY"))
 
     def test_ambiguous_reasons_have_no_suggestion(self):
         for reason in ("console", "possible multi-game bundle",

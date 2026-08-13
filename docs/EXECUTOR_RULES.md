@@ -561,16 +561,45 @@ where an IG Ubisoft/EA/Battle.net offer entered on a Steam-only AKS page.
 `extract_official_platforms` also fixed (it truncated `Battle.net`→`Battle` at the
 first `.`, losing the rest of the list).
 
-**KNOWN LIMITATION — Instant Gaming REGION (open):** IG offers carry NO region in
-the feed title/URL, and the IG offer page's region (region-select dropdown) is
-**JavaScript-rendered** — not in the static HTML http_get sees, and there is no
-readable IG JSON API for it. The AKS feed row carries no region either. So IG
-region currently **defaults to GLOBAL** for every offer. IG DOES have region
-variants (same game at two URLs/prices = a region-locked cheap key + a worldwide
-one), so region-locked IG offers are entered as GLOBAL — a data-quality gap to
-audit (spot the duplicate-priced entries). A proper fix needs CDP/headless
-rendering of the IG page or IG's internal endpoint — a dedicated task, not a
-static-fetch parser.
+**Instant Gaming REGION `[R33]` (2026-08-13 — was a KNOWN LIMITATION, now solved).**
+IG feed titles/URLs carry no region, and the IG page's region *dropdown* is
+JavaScript-rendered (invisible to `http_get`). But the region IS in the page's
+static `<title>` / `og:title` **trailing segment** — `"… - PC (Steam) - Latin
+America"` (no suffix = worldwide). `extract_ig_region` reads that suffix, so **no
+CDP/headless is needed**. A whole IG sweep had entered 32/54 region-locked offers as
+GLOBAL before this; they now resolve their real region. The page is fetched ONCE per
+offer (same fetch that reads `data-platform`), with a normal browser UA (never the
+AKS staff UA off-AKS). Unreadable page → fail-closed skip.
+
+### 4.11 Region policy & blacklist — MERCHANT-AGNOSTIC `[R34]` (2026-08-13)
+
+Romain 2026-08-13: *"on est sur Global, Europe et US. Le reste, on skippe et
+certaines régions qu'on va blacklist, comme les Latam, le Brésil et les régions
+d'Asie"* + *"les régions russes aussi"*. Three dispositions for a resolved region:
+
+- **ENTER** — `Global` / `Europe` / `US` (and `UK`, pending final confirmation). A
+  sellable base region ⇒ candidate with that region id.
+- **BLACKLIST** — `LATAM` / `Latin America` / `Brazil` / `Argentina` / other Latin
+  countries, `Asia` (+ China / Japan / Korea / India / SEA countries), `Russia` /
+  `CIS` / `RU`. ⇒ routed to the **Blacklist** list (8) so it leaves the entry feed.
+- **SKIP (garder)** — any other non-sellable region (`ROW` / `North America` /
+  `Turkey` / `EMEA` …). Left in place; the operator decides. The five regions with a
+  dedicated list (`Australia`→32, `Canada`→33, `Middle East`→34, `Africa`→35,
+  `South America`→36) still route there.
+
+**One source of truth, no page fetch when the region is already known** (Romain:
+*"si on connaît déjà ta région, on peut te trier"*). The blacklist lives ONLY in
+`aks_lists.suggest_target_list`, keyed on the `forbidden region: <label>` skip
+reason. Whether the region came from the **feed title** (Kinguin `Brazil` → skip in
+`precheck_skip`, no page opened) or an **offer page** (Instant Gaming, `match_offer`
+emits the same `forbidden region: <label>` reason), routing is identical. Matching is
+keyword-containment (+ bare `RU` token) so wording variants (`Russia & CIS`) still
+route; it runs only on an already-non-sellable region, so it can never touch a
+`Global/EU/US/UK` offer. Open items: (a) does `UK` enter? (b) blacklist the bare
+`South America` label too, or keep its list 36? (c) merchants whose region is neither
+in the title nor page-resolved (e.g. a Kinguin bare 2-letter `BR`) are NOT detected
+today → they still default GLOBAL; such a merchant needs its own region source
+(config resolver) before a sweep, exactly like IG got one.
 
 ---
 
