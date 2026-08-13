@@ -735,6 +735,26 @@ class MerchantConfigR32Tests(unittest.TestCase):
         self.assertIsInstance(r, SkippedOffer)
         self.assertIn("R32", r.reason)
 
+    def test_ig_region_resolved_even_when_title_has_platform_token(self):
+        # AUDIT 2026-08-13: the region reader must NOT be gated on a token-less
+        # title. An IG title carrying "Steam" whose PAGE region is RU must still
+        # resolve the region and skip (→ Blacklist), never enter GLOBAL.
+        import src.matcher as M
+        from src.merchant_config import MerchantConfig
+        saved = M.MERCHANT_CONFIGS["INSTANT GAMING"]
+        M.MERCHANT_CONFIGS["INSTANT GAMING"] = MerchantConfig(
+            "Instant Gaming",
+            offer_page_resolver=lambda u: MerchantOfferSignals(
+                platform="STEAM", region_resolved=True, region_base=None, region_label="RU"))
+        self.addCleanup(lambda: M.MERCHANT_CONFIGS.__setitem__("INSTANT GAMING", saved))
+        o = NormalizedOffer(offer_id="1", name="Numina Steam",   # title HAS 'Steam'
+                            url="https://ig/x", merchant="Instant Gaming")
+        r = match_offer(o, resolver=lambda n: self.PAGE)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("forbidden region", r.reason)
+        from src.aks_lists import suggest_target_list
+        self.assertEqual(suggest_target_list(r.reason), "8")
+
     def test_ig_page_unreadable_skips(self):
         def boom(url):
             raise IgPageUnreadable("nope")

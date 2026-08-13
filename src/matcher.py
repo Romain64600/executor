@@ -1581,7 +1581,14 @@ def match_offer(
     _page_region_resolved = False             # R33: the offer page gave a region
     _page_region_base: str | None = None      #      → ENTER with this base, or
     _page_region_label = ""                   #      → forbidden region: <label> skip
-    if declared_platform is None and _cfg is not None and _cfg.offer_page_resolver is not None:
+    # A merchant whose signals live on its OWN offer page (Instant Gaming) is
+    # resolved EVEN when the feed title already carries a platform token: the region
+    # is NEVER in an IG title, so gating this on `declared_platform is None` would let
+    # a region-locked "…Steam…" title default to implicit GLOBAL — R33's exact bug
+    # class (region-safety must not depend on platform-resolution). The page platform
+    # only OVERRIDES when the title gave none. Fail closed: unreadable page or an
+    # unrecognized page platform → skip, never a guess.
+    if _cfg is not None and _cfg.offer_page_resolver is not None:
         try:
             _sig = _cfg.offer_page_resolver(offer.url)
         except Exception as exc:  # noqa: BLE001 — page unreadable → fail closed
@@ -1590,7 +1597,8 @@ def match_offer(
         if _sig.platform is None:
             return SkippedOffer(
                 offer, f"{offer.merchant} offer page names an unrecognized platform — not entered (R32)")
-        declared_platform = _sig.platform
+        if declared_platform is None:
+            declared_platform = _sig.platform
         _page_region_resolved = _sig.region_resolved
         _page_region_base = _sig.region_base
         _page_region_label = _sig.region_label

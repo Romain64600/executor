@@ -271,7 +271,7 @@ def main() -> int:
     sweep_dir = ROOT / "runs" / run_id
     sweep_dir.mkdir(parents=True, exist_ok=True)
     recap = {"run_id": run_id, "started_at": _clock(), "targets": [], "halted": None,
-             "total_created": 0}
+             "total_created": 0, "total_moved": 0}
     recap_path = sweep_dir / "recap.json"
 
     def persist():
@@ -281,6 +281,8 @@ def main() -> int:
         # and crash on None.get().
         recap["total_created"] = sum((t.get("recap") or {}).get("total_created", 0)
                                      for t in recap["targets"])
+        recap["total_moved"] = sum((t.get("recap") or {}).get("total_moved", 0)
+                                   for t in recap["targets"])
         recap_path.write_text(json.dumps(recap, ensure_ascii=False, indent=2), encoding="utf-8")
 
     persist()
@@ -319,6 +321,7 @@ def main() -> int:
     recap["finished_at"] = _clock()
     persist()
     print(json.dumps({"run_id": run_id, "total_created": recap["total_created"],
+                      "total_moved": recap["total_moved"],
                       "halted": recap["halted"], "targets": len(recap["targets"]),
                       "recap": str(recap_path)}, ensure_ascii=False, indent=2))
     return 0
