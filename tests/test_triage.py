@@ -5,7 +5,7 @@ import unittest
 from src.contracts import NormalizedOffer
 from src.matcher import Candidate, SkippedOffer
 from src.triage import (ADD, MOVE, SKIP, Triage, build_page_triage,
-                        triage_offer)
+                        plan_moves_from_skipped, triage_offer)
 
 
 def _offer(name="Game Steam Key GLOBAL", oid="1", store="10",
@@ -119,6 +119,47 @@ class BuildPageTriageTests(unittest.TestCase):
         skip = Triage(SKIP, _offer(), reason="forbidden region: ROW").to_dict()
         self.assertEqual(skip["reason"], "forbidden region: ROW")
         self.assertNotIn("candidate", skip)
+
+
+class PlanMovesFromSkippedTests(unittest.TestCase):
+    """The sweep's move-planning input: skipped.json reasons → target lists."""
+
+    @staticmethod
+    def _sk(reason, oid="1", store="10", name="Game", url="https://m/x"):
+        return {"offer": {"offer_id": oid, "store_id": store, "name": name, "url": url},
+                "reason": reason}
+
+    def test_groups_routable_skips_by_list(self):
+        skipped = [
+            self._sk("forbidden region: BRAZIL", oid="1"),
+            self._sk("forbidden region: RUSSIA", oid="2"),
+            self._sk("forbidden region: MIDDLE EAST", oid="3"),
+            self._sk("forbidden region: ROW", oid="4"),        # garder → excluded
+            self._sk("skip category: SOFTWARE (software/app)", oid="5"),
+        ]
+        plan = plan_moves_from_skipped(skipped)
+        self.assertEqual(plan["movable"], 4)                    # ROW excluded
+        self.assertEqual(sorted(plan["by_list"]), ["16", "34", "8"])
+        self.assertEqual(len(plan["by_list"]["8"]), 2)          # Brazil + Russia
+        self.assertEqual(plan["by_list"]["8"][0]["list_label"], "Blacklist")
+
+    def test_largest_group_first(self):
+        skipped = [self._sk("forbidden region: BRAZIL", oid=str(i)) for i in range(3)]
+        skipped.append(self._sk("forbidden region: MIDDLE EAST", oid="9"))
+        plan = plan_moves_from_skipped(skipped)
+        self.assertEqual(list(plan["by_list"]), ["8", "34"])
+
+    def test_empty_and_all_garder(self):
+        self.assertEqual(plan_moves_from_skipped([])["movable"], 0)
+        garder = [self._sk("forbidden region: ROW"), self._sk("console"),
+                  self._sk("no AKS product page found (slug not 200)")]
+        self.assertEqual(plan_moves_from_skipped(garder)["movable"], 0)
+
+    def test_row_shape_has_move_fields(self):
+        plan = plan_moves_from_skipped([self._sk("forbidden region: BRAZIL", oid="7", store="58")])
+        row = plan["by_list"]["8"][0]
+        self.assertEqual((row["offer_id"], row["store_id"], row["list_id"]), ("7", "58", "8"))
+        self.assertIn("BRAZIL", row["reason"])
 
 
 if __name__ == "__main__":

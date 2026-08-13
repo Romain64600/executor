@@ -3,7 +3,8 @@ halting (incl. mid-batch submitter STOP), coverage honesty. No browser."""
 import unittest
 
 from src.data_entry_auto import (
-    ExtractOutcome, MatchOutcome, Stages, StageError, SubmitOutcome, SweepConfig, run_sweep,
+    ExtractOutcome, MatchOutcome, MoveOutcome, Stages, StageError, SubmitOutcome,
+    SweepConfig, run_sweep,
 )
 
 
@@ -36,7 +37,8 @@ class FakeStages:
         spec = self.pages.get(p, {})
         if "match_fail" in spec:
             return MatchOutcome(ok=False, detail=spec["match_fail"])
-        return MatchOutcome(ok=True, candidates=spec.get("candidates", 0))
+        return MatchOutcome(ok=True, candidates=spec.get("candidates", 0),
+                            movable=spec.get("movable", 0))
 
     def approve(self, run_id):
         p = self._p(run_id)
@@ -61,10 +63,24 @@ class FakeStages:
                              offers=[{"name": f"o{p}-{i}", "created": True} for i in range(created)],
                              detail=spec.get("submit_detail", ""))
 
+    def move(self, run_id):
+        p = self._p(run_id)
+        self.calls.append(("move", p))
+        spec = self.pages.get(p, {})
+        n = spec.get("movable", 0)
+        moved = spec.get("moved", n)
+        return MoveOutcome(ok=not spec.get("move_exit_fail", False),
+                           aborted=spec.get("move_abort"),
+                           stopped=spec.get("move_stopped"),
+                           moved=moved,
+                           offers=[{"name": f"m{p}-{i}", "moved": True} for i in range(moved)],
+                           detail=spec.get("move_detail", ""))
 
-def _run(fs, *, start=1, max_pages=400, should_stop=lambda: False):
+
+def _run(fs, *, start=1, max_pages=400, should_stop=lambda: False, with_move=True):
     cfg = SweepConfig(merchant="Kinguin", store_id="58", start_page=start, max_pages=max_pages)
-    return run_sweep(cfg, Stages(fs.extract, fs.match, fs.approve, fs.submit),
+    move = fs.move if with_move else None
+    return run_sweep(cfg, Stages(fs.extract, fs.match, fs.approve, fs.submit, move=move),
                      page_run_id=lambda p: f"sweep-p{p}", should_stop=should_stop)
 
 
@@ -220,6 +236,73 @@ class SweepEngineTests(unittest.TestCase):
         r = _run(fs, should_stop=lambda: True)
         self.assertEqual(r["halted"], "operator_stop")
         self.assertEqual(r["pages"], [])
+
+
+class SweepMoveTests(unittest.TestCase):
+    """Unified per-page workflow (Romain 2026-08-13): after the ADDs are submitted,
+    the page's routable skips are moved to their lists — fail-closed like submit."""
+
+    def test_move_runs_after_submit_same_page(self):
+        fs = FakeStages(1, {1: {"candidates": 2, "movable": 3}})
+        r = _run(fs)
+        # submit before move, on the same page
+        order = [c for c in fs.calls if c[0] in ("submit", "move")]
+        self.assertEqual(order, [("submit", 1), ("move", 1)])
+        self.assertEqual(r["total_created"], 2)
+        self.assertEqual(r["total_moved"], 3)
+        self.assertIsNone(r["halted"])
+
+    def test_move_runs_on_zero_candidate_page(self):
+        # a page can be all skips (0 ADDs) but still have offers to move
+        fs = FakeStages(1, {1: {"candidates": 0, "movable": 4}})
+        r = _run(fs)
+        self.assertNotIn(("submit", 1), fs.calls)
+        self.assertIn(("move", 1), fs.calls)
+        self.assertEqual((r["total_created"], r["total_moved"]), (0, 4))
+
+    def test_no_movable_no_move_call(self):
+        fs = FakeStages(1, {1: {"candidates": 1, "movable": 0}})
+        _run(fs)
+        self.assertNotIn(("move", 1), fs.calls)
+
+    def test_move_absent_stage_is_add_only(self):
+        # legacy ADD-only sweep: move stage None → never called even with movable>0
+        fs = FakeStages(1, {1: {"candidates": 1, "movable": 5}})
+        r = _run(fs, with_move=False)
+        self.assertNotIn("move", [c[0] for c in fs.calls])
+        self.assertEqual(r["total_moved"], 0)
+
+    def test_move_not_clean_halts_fail_closed(self):
+        fs = FakeStages(3, {3: {"candidates": 1, "movable": 2, "move_abort": "guard_blocked"},
+                            2: {"candidates": 5}, 1: {"candidates": 5}})
+        r = _run(fs)
+        self.assertEqual(r["halted"], "move_not_clean_p3")
+        self.assertEqual([p["page"] for p in r["pages"]], [3])   # stopped after highest page
+        self.assertNotIn(("submit", 2), fs.calls)               # never reached page 2
+
+    def test_move_exit_fail_halts(self):
+        fs = FakeStages(1, {1: {"candidates": 0, "movable": 2, "move_exit_fail": True}})
+        r = _run(fs)
+        self.assertEqual(r["halted"], "move_not_clean_p1")
+
+    def test_move_stopped_broken_session_halts(self):
+        fs = FakeStages(1, {1: {"candidates": 0, "movable": 2, "move_stopped": "feed_unreadable"}})
+        r = _run(fs)
+        self.assertEqual(r["halted"], "move_not_clean_p1")
+
+    def test_operator_stop_before_move_no_write(self):
+        # stop lands right after submit, before the move → move never called, halted
+        fs = FakeStages(1, {1: {"candidates": 1, "movable": 2}})
+        stop_flag = {"v": False}
+        orig_submit = fs.submit
+        def submit_then_stop(run_id):
+            out = orig_submit(run_id)
+            stop_flag["v"] = True   # operator stops the sweep just after submit
+            return out
+        fs.submit = submit_then_stop
+        r = _run(fs, should_stop=lambda: stop_flag["v"])
+        self.assertEqual(r["halted"], "operator_stop")
+        self.assertNotIn(("move", 1), fs.calls)
 
 
 if __name__ == "__main__":

@@ -67,6 +67,7 @@ class ExtractOutcome:
 class MatchOutcome:
     ok: bool
     candidates: int = 0
+    movable: int = 0          # routable skips on this page (→ Move-to-List step)
     detail: str = ""
 
 
@@ -97,12 +98,44 @@ class SubmitOutcome:
 
 
 @dataclass
+class MoveOutcome:
+    """Result of a page's Move-to-List step (the routable skips → their target
+    lists). Same clean/halt discipline as :class:`SubmitOutcome` — a move that does
+    not finish clean halts the whole sweep fail-closed (a broken/blocked session
+    must not let later pages plow through)."""
+    ok: bool                              # process finished clean (exit 0)
+    aborted: str | None = None            # move plan aborted (pre-write abort / gate)
+    stopped: str | None = None            # mid-batch stop signal
+    moved: int = 0                        # offers proven relocated (RV2: gone-from-source)
+    offers: list[dict[str, Any]] = field(default_factory=list)
+    detail: str = ""
+
+    def clean(self) -> bool:
+        if not self.ok or self.aborted:
+            return False
+        return not (self.stopped and self.stopped not in _BENIGN_STOPPED)
+
+    def halt_reason(self) -> str | None:
+        if not self.ok:
+            return self.detail or "exit≠0"
+        if self.aborted:
+            return self.aborted
+        if self.stopped and self.stopped not in _BENIGN_STOPPED:
+            return self.stopped
+        return None
+
+
+@dataclass
 class Stages:
     """Injected side-effecting stages, each keyed by the page's run id."""
     extract: Callable[[int, str], ExtractOutcome]     # (page, run_id) -> ExtractOutcome
     match: Callable[[str], MatchOutcome]              # (run_id) -> MatchOutcome
     approve: Callable[[str], int]                     # (run_id) -> approved_count (raises on failure)
     submit: Callable[[str], SubmitOutcome]            # (run_id) -> SubmitOutcome
+    # Optional Move-to-List step: relocate the page's routable skips to their target
+    # lists AFTER the ADDs are submitted+verified (Romain 2026-08-13, unified
+    # per-page workflow). None = ADD-only sweep (unchanged legacy behaviour).
+    move: Callable[[str], MoveOutcome] | None = None
 
 
 class StageError(Exception):
@@ -126,12 +159,14 @@ def run_sweep(
 
     recap: dict[str, Any] = {
         "merchant": cfg.merchant, "store_id": cfg.store_id,
-        "pages": [], "total_created": 0, "halted": None, "feed_last_page": None,
+        "pages": [], "total_created": 0, "total_moved": 0,
+        "halted": None, "feed_last_page": None,
     }
 
     def finish_page(entry: dict[str, Any]) -> None:
         recap["pages"].append(entry)
         recap["total_created"] = sum(p.get("created", 0) for p in recap["pages"])
+        recap["total_moved"] = sum(p.get("moved", 0) for p in recap["pages"])
         on_page(recap)   # the LIVE recap (this dict, mutated in place) — so a
                          # caller can persist per-page progress before the sweep
                          # returns (the console's live recap panel).
@@ -215,6 +250,27 @@ def run_sweep(
         else:
             entry["created"] = 0
             entry["offers_created"] = []
+
+        # Move-to-List: after the ADDs are submitted+verified, relocate this page's
+        # routable skips (blacklist regions, softwares, gift cards, …) to their
+        # target lists. Runs even when the page had 0 ADDs — a page can be all
+        # skips. Fail-closed like submit: an unclean move halts the whole sweep.
+        if stages.move is not None and mt.movable > 0:
+            if should_stop():   # re-check right before any real write
+                entry["stopped_before_move"] = True
+                recap["halted"] = "operator_stop"
+                finish_page(entry)
+                break
+            mv = stages.move(run_id)
+            entry["moved"] = mv.moved
+            entry["offers_moved"] = mv.offers
+            entry["move_aborted"] = mv.aborted
+            entry["move_stopped"] = mv.stopped
+            if not mv.clean():
+                entry["error"] = "move: " + (mv.halt_reason() or "not clean")
+                recap["halted"] = f"move_not_clean_p{page}"
+                finish_page(entry)
+                break
 
         finish_page(entry)
 

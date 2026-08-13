@@ -86,6 +86,46 @@ def triage_offer(
     return Triage(SKIP, offer, reason=result.reason)
 
 
+def plan_moves_from_skipped(skipped: list[dict[str, Any]]) -> dict[str, Any]:
+    """Group a run's ``skipped.json`` (matcher SkippedOffer dicts:
+    ``{"offer": {...}, "reason": str}``) into Move-to-List targets, keyed on
+    :func:`suggest_target_list` of each reason. Non-routable skips (garder) are
+    excluded. Returns ``{by_list, movable, target_lists}`` (largest group first).
+
+    This is the sweep's move-planning input: the reasons already reflect the FULL
+    match decision, so an Instant Gaming region read from the offer PAGE (invisible
+    to ``precheck_skip``) still routes here — unlike :mod:`src.sort_plan`, which
+    re-derives reasons from the title only for the account-scale all-stores sort."""
+
+    by_list: dict[str, list[dict[str, Any]]] = {}
+    for entry in skipped or []:
+        if not isinstance(entry, dict):
+            continue
+        reason = str(entry.get("reason", ""))
+        target = suggest_target_list(reason)
+        if target is None:
+            continue
+        offer = entry.get("offer") or {}
+        by_list.setdefault(target, []).append({
+            "offer_id": str(offer.get("offer_id", "")),
+            "store_id": str(offer.get("store_id") or ""),
+            "name": offer.get("name", ""),
+            "url": offer.get("url", ""),
+            "reason": reason,
+            "list_id": target,
+            "list_label": label_for(target),
+        })
+    ordered = {
+        list_id: rows
+        for list_id, rows in sorted(by_list.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+    }
+    return {
+        "by_list": ordered,
+        "movable": sum(len(rows) for rows in ordered.values()),
+        "target_lists": len(ordered),
+    }
+
+
 def build_page_triage(
     offers: list[NormalizedOffer],
     matcher: Callable[..., Candidate | SkippedOffer] = match_offer,
