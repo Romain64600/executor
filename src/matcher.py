@@ -372,13 +372,13 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
         if host != domain and not host.endswith("." + domain):
             return f"offer URL not on {domain} (merchant-domain mismatch)"
     # Gamivo encodes an English-only language lock as an '-en-' URL segment
-    # ("…-steam-en-global") — a language restriction, documented in
-    # EXECUTOR_RULES §4.3/§4.4 but never coded (audit 2026-07-17, MA7).
-    # Scoped to gamivo.com like R29 is to Eneba: on other merchants '-en-'
-    # can be a real title word (French "en").
-    if "gamivo.com" in urlparse(offer.url).netloc.lower() and re.search(
-        r"(?:^|-)en(?:-|$)", urlparse(offer.url).path.strip("/").lower()
-    ):
+    # ("…-steam-en-global") — a language restriction (audit 2026-07-17, MA7). The
+    # lock regex lives in Gamivo's MerchantConfig (R32); scoped to gamivo.com like
+    # R29 is to Eneba (on other merchants '-en-' can be a real word, French "en").
+    _gam = merchant_config("Gamivo")
+    if (_gam and _gam.url_language_lock
+            and "gamivo.com" in urlparse(offer.url).netloc.lower()
+            and re.search(_gam.url_language_lock, urlparse(offer.url).path.strip("/").lower())):
         return "language restriction (Gamivo '-en-' URL marker — EN-only key)"
     padded = " " + re.sub(r"[^A-Z0-9]+", " ", offer.name.upper()) + " "
     if any(f" {t} " in padded for t in CONSOLE_TOKENS):
@@ -522,13 +522,16 @@ ENEBA_URL_PLATFORM_PREFIXES = {
 
 
 def explicit_platform_from_url(url: str) -> str | None:
-    """Eneba-only: the URL's leading platform-prefix path segment, or None."""
+    """Eneba-only: the URL's leading platform-prefix path segment, or None. The
+    prefix map lives in Eneba's MerchantConfig (R32, single source)."""
 
     if "eneba.com" not in url.lower():
         return None
+    cfg = merchant_config("Eneba")
+    prefixes = cfg.url_platform_prefixes if cfg else {}
     path = urlparse(url).path.strip("/").lower()
     prefix = path.split("-", 1)[0]
-    return ENEBA_URL_PLATFORM_PREFIXES.get(prefix)
+    return prefixes.get(prefix)
 
 
 def detect_platform(title: str) -> str:
@@ -903,6 +906,14 @@ MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
         "Instant Gaming",
         offer_platform_resolver=_ig_offer_platform,
         notes="token-less titles — real platform is on the offer page (data-platform)",
+    ),
+    "GAMIVO": MerchantConfig(
+        "Gamivo",
+        url_language_lock=r"(?:^|-)en(?:-|$)",  # "…-steam-en-global" = EN-only key → skip
+    ),
+    "ENEBA": MerchantConfig(
+        "Eneba",
+        url_platform_prefixes=ENEBA_URL_PLATFORM_PREFIXES,  # URL leading segment = platform (R29)
     ),
 }
 

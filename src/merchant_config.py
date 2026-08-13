@@ -7,11 +7,12 @@ Merchant-specific handling used to be scattered across the matcher. A
 merchant WITHOUT a config falls through to the generic behaviour (platform/region/
 edition from the feed title + URL), exactly as before.
 
-Migrated so far (incremental, no regression): **Kinguin** domain, **Difmark**
-url-ignore, **Instant Gaming** offer-page platform resolver. Difmark's complex
-offer-page branch (accounts / region maps) and Gamivo's ``-en-`` language lock /
-Eneba's URL prefixes still live in ``src.matcher`` — fold them in when next
-touched.
+Migrated (incremental, no regression): **Kinguin** domain, **Difmark** url-ignore,
+**Instant Gaming** offer-page platform resolver, **Gamivo** URL language lock,
+**Eneba** URL platform prefixes. Difmark's complex offer-page branch (accounts /
+region maps) still lives in ``src.matcher`` and is represented by its config
+entry — fold it in when next touched. The consuming code keeps each rule's scope
+(e.g. Eneba prefixes apply only on eneba.com) and reads the DATA from here.
 
 This module is pure data (no matcher import) to stay circular-import free — the
 registry that binds resolvers lives in ``src.matcher``.
@@ -36,6 +37,12 @@ class MerchantConfig:
     # "STEAM") or None when the page names an unrecognized platform. Raising means
     # the page was unreadable → the caller fails closed. (Instant Gaming.)
     offer_platform_resolver: Optional[Callable[[str], Optional[str]]] = None
+    # Eneba: the URL's leading path segment encodes the platform
+    # ("eneba.com/steam-…" → STEAM). {prefix: platform token}.
+    url_platform_prefixes: dict[str, str] = field(default_factory=dict)
+    # Gamivo: a URL path that matches this regex is a language-locked key
+    # ("…-steam-en-global" → EN-only) → skip. Applied within the merchant's scope.
+    url_language_lock: Optional[str] = None
     # Free-form notes / extension point for future per-merchant knobs.
     notes: str = ""
     extra: dict[str, Any] = field(default_factory=dict)

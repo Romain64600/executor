@@ -553,6 +553,25 @@ Fail-closed: a token-less IG offer never defaults to Publisher — it either ent
 with the page-read platform or skips. New merchants that need page-read
 platform/region get a config entry, not scattered `if merchant == …` branches.
 
+**Platform cross-check extended (R32, 2026-08-13):** the R20 page cross-check now
+covers **Ubisoft/EA/Battle.net** too (`PAGE_PLATFORM_NAMES` += `Ubisoft Connect` /
+`EA app` / `Battle.net`; AKS vocabulary verified live). A page-resolved platform
+enters ONLY when the AKS page lists it, else fail-closed skip — closes the gap
+where an IG Ubisoft/EA/Battle.net offer entered on a Steam-only AKS page.
+`extract_official_platforms` also fixed (it truncated `Battle.net`→`Battle` at the
+first `.`, losing the rest of the list).
+
+**KNOWN LIMITATION — Instant Gaming REGION (open):** IG offers carry NO region in
+the feed title/URL, and the IG offer page's region (region-select dropdown) is
+**JavaScript-rendered** — not in the static HTML http_get sees, and there is no
+readable IG JSON API for it. The AKS feed row carries no region either. So IG
+region currently **defaults to GLOBAL** for every offer. IG DOES have region
+variants (same game at two URLs/prices = a region-locked cheap key + a worldwide
+one), so region-locked IG offers are entered as GLOBAL — a data-quality gap to
+audit (spot the duplicate-priced entries). A proper fix needs CDP/headless
+rendering of the IG page or IG's internal endpoint — a dedicated task, not a
+static-fetch parser.
+
 ---
 
 ## 5. Stage 3 — Validation

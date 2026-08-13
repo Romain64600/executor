@@ -691,6 +691,10 @@ class MerchantConfigR32Tests(unittest.TestCase):
         self.assertIsNotNone(merchant_config("Instant Gaming").offer_platform_resolver)
         self.assertIsNone(merchant_config("Kinguin").offer_platform_resolver)
         self.assertIsNone(merchant_config("Some Random Merchant"))
+        # R32 migration of Gamivo / Eneba
+        self.assertEqual(merchant_config("Gamivo").url_language_lock, r"(?:^|-)en(?:-|$)")
+        self.assertEqual(merchant_config("Eneba").url_platform_prefixes.get("uplay"), "UBISOFT")
+        self.assertEqual(merchant_config("Eneba").url_platform_prefixes.get("blizzard"), "BATTLENET")
 
     # ---- IG platform from the offer page ----
     def test_ig_enters_real_platform_from_page(self):
