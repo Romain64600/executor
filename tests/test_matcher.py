@@ -4,6 +4,7 @@ import unittest
 from src.aks_env import HttpProbeResult
 from src.aks_lists import suggest_target_list
 from src.contracts import NormalizedFeed, NormalizedOffer
+from src.merchant_config import MerchantOfferSignals
 from src.matcher import (
     _SKIN_NOUN_DETERMINERS,
     AksNameUnreadable,
@@ -677,7 +678,7 @@ class MerchantConfigR32Tests(unittest.TestCase):
         import src.matcher as M
         from src.merchant_config import MerchantConfig
         saved = M.MERCHANT_CONFIGS["INSTANT GAMING"]
-        M.MERCHANT_CONFIGS["INSTANT GAMING"] = MerchantConfig("Instant Gaming", offer_platform_resolver=stub)
+        M.MERCHANT_CONFIGS["INSTANT GAMING"] = MerchantConfig("Instant Gaming", offer_page_resolver=stub)
         self.addCleanup(lambda: M.MERCHANT_CONFIGS.__setitem__("INSTANT GAMING", saved))
         o = NormalizedOffer(offer_id="1", name="Tiny Tinas Wonderlands",
                             url="https://ig/x", merchant="Instant Gaming")
@@ -688,22 +689,35 @@ class MerchantConfigR32Tests(unittest.TestCase):
         self.assertEqual(merchant_config("Kinguin").domain, "kinguin.net")
         self.assertEqual(merchant_config("Difmark").url_ignore_substrings,
                          ("buy-console-account-", "buy-console-account"))
-        self.assertIsNotNone(merchant_config("Instant Gaming").offer_platform_resolver)
-        self.assertIsNone(merchant_config("Kinguin").offer_platform_resolver)
+        self.assertIsNotNone(merchant_config("Instant Gaming").offer_page_resolver)
+        self.assertIsNone(merchant_config("Kinguin").offer_page_resolver)
         self.assertIsNone(merchant_config("Some Random Merchant"))
         # R32 migration of Gamivo / Eneba
         self.assertEqual(merchant_config("Gamivo").url_language_lock, r"(?:^|-)en(?:-|$)")
         self.assertEqual(merchant_config("Eneba").url_platform_prefixes.get("uplay"), "UBISOFT")
         self.assertEqual(merchant_config("Eneba").url_platform_prefixes.get("blizzard"), "BATTLENET")
 
-    # ---- IG platform from the offer page ----
+    # ---- IG platform + region from the offer page ----
     def test_ig_enters_real_platform_from_page(self):
-        r = self._match_ig(lambda url: "STEAM")
+        r = self._match_ig(lambda url: MerchantOfferSignals(platform="STEAM", region_base="global"))
         self.assertIsInstance(r, Candidate)
         self.assertEqual(r.platform, "STEAM")          # NOT Publisher
+        self.assertEqual(r.region_label, "GLOBAL")
+
+    def test_ig_region_europe_enters_as_eu(self):
+        r = self._match_ig(lambda url: MerchantOfferSignals(platform="STEAM", region_base="eu"))
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual((r.platform, r.region_label), ("STEAM", "EU"))
+
+    def test_ig_region_locked_skips_R33(self):
+        # Latin America / ROW / … → region_forbidden → skip, never entered as GLOBAL
+        r = self._match_ig(lambda url: MerchantOfferSignals(platform="STEAM", region_forbidden=True))
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("R33", r.reason)
+        self.assertIn("region-locked", r.reason)
 
     def test_ig_unrecognized_platform_skips(self):
-        r = self._match_ig(lambda url: None)
+        r = self._match_ig(lambda url: MerchantOfferSignals(platform=None))
         self.assertIsInstance(r, SkippedOffer)
         self.assertIn("R32", r.reason)
 

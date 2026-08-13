@@ -28,7 +28,7 @@ from urllib.parse import quote, urlparse
 
 from src.aks_env import AKS_STAFF_UA, REQUIRED_USER_AGENT, http_get
 from src.contracts import NormalizedFeed, NormalizedOffer
-from src.merchant_config import MerchantConfig
+from src.merchant_config import MerchantConfig, MerchantOfferSignals
 
 AKS_BUY_URL = "https://www.allkeyshop.com/blog/buy-{slug}-cd-key-compare-prices/"
 # AKS product pages come in "kinds": the ordinary key page (`…-cd-key-…`) and,
@@ -849,12 +849,38 @@ class IgPageUnreadable(RuntimeError):
 
 @dataclass(frozen=True)
 class IgOfferAttributes:
-    """Raw (upper-stripped) platform off an Instant Gaming offer page. Mapping to
-    our vocabulary and the fail-closed decision are the caller's job. (Region is
-    left to the feed title/URL — IG keys are worldwide → GLOBAL; the page's region
-    copy is marketing-noisy and not a reliable per-offer signal, R32 audit.)"""
+    """Raw (upper-stripped) signals off an Instant Gaming offer page. Mapping to
+    our vocabulary and the fail-closed decision are the caller's job."""
 
     raw_platform: str   # e.g. "STEAM" (from the offer's data-platform), "" if ambiguous
+    raw_region: str     # e.g. "LATIN AMERICA"/"EUROPE"/"ROW", "" = worldwide (from <title>)
+
+
+# R33 (2026-08-13): IG feed titles/URLs carry NO region, but the offer page's
+# <title>/og:title trailing segment does ("… - PC (Steam) - Latin America"; no
+# suffix = worldwide). Map the clean sellable regions; ANY other suffix (Latin
+# America / ROW / North America / Asia …) → None → the offer is region-locked to a
+# region we don't sell → SKIP (never enter it as GLOBAL). A whole IG sweep entered
+# 32/54 region-locked offers as GLOBAL before this.
+IG_REGION_TEXT_MAP = {
+    "": "global", "WORLDWIDE": "global", "WW": "global", "GLOBAL": "global",
+    "EUROPE": "eu", "EU": "eu",
+    "UNITED STATES": "us", "US": "us", "USA": "us",
+    "UK": "uk", "UNITED KINGDOM": "uk",
+}
+# region = the <title> segment AFTER the platform parens ("… (Steam) - <Region>").
+_IG_TITLE_REGION_RE = re.compile(r".*\([^)]*\)\s*-\s*(.+?)\s*$")
+
+
+def extract_ig_region(body: str) -> str:
+    """The offer's region from the IG page <title>/og:title trailing segment
+    (UPPERCASED), or "" when there is no suffix (= worldwide)."""
+    m = (re.search(r'og:title"\s+content="([^"]*)"', body)
+         or re.search(r"<title>([^<]*)</title>", body))
+    if not m:
+        return ""
+    rm = _IG_TITLE_REGION_RE.match(html.unescape(m.group(1)))
+    return rm.group(1).strip().upper() if rm else ""
 
 
 def extract_ig_platform(body: str) -> str:
@@ -869,7 +895,7 @@ def extract_ig_platform(body: str) -> str:
 
 def resolve_ig_offer(url: str, http_get_fn: Callable[..., Any] = http_get) -> IgOfferAttributes:
     """Fetch an Instant Gaming offer page (a normal browser UA — NEVER the AKS
-    staff UA on a non-AKS host) and read its platform. Raises
+    staff UA on a non-AKS host) and read its platform + region. Raises
     :class:`IgPageUnreadable` on any fetch/parse failure so the caller skips."""
     if http_get_fn is http_get:
         time.sleep(IG_PROBE_DELAY_S)  # politeness for bulk IG sweeps, like Difmark
@@ -879,14 +905,24 @@ def resolve_ig_offer(url: str, http_get_fn: Callable[..., Any] = http_get) -> Ig
         raise IgPageUnreadable(f"fetch failed: {exc}") from exc
     if not (page.ok and page.status == 200 and page.body):
         raise IgPageUnreadable(f"bad response: {page.status or page.error}")
-    return IgOfferAttributes(raw_platform=extract_ig_platform(page.body))
+    return IgOfferAttributes(
+        raw_platform=extract_ig_platform(page.body),
+        raw_region=extract_ig_region(page.body),
+    )
 
 
-def _ig_offer_platform(url: str) -> str | None:
-    """Instant Gaming config hook: read the offer page, map its platform to our
-    token (None = page named an unrecognized platform → caller fails closed).
-    Raises IgPageUnreadable when the page is unreadable → caller fails closed."""
-    return IG_PLATFORM_TEXT_MAP.get(resolve_ig_offer(url).raw_platform)
+def _ig_offer_signals(url: str) -> MerchantOfferSignals:
+    """Instant Gaming config hook: read the offer page ONCE, map platform + region
+    to our vocabulary. platform None = unrecognized platform → skip; region base
+    None (a suffix we don't sell: Latin America / ROW / …) = region_forbidden →
+    skip; no suffix = worldwide = GLOBAL. Raises IgPageUnreadable → caller skips."""
+    attrs = resolve_ig_offer(url)
+    base = IG_REGION_TEXT_MAP.get(attrs.raw_region)
+    return MerchantOfferSignals(
+        platform=IG_PLATFORM_TEXT_MAP.get(attrs.raw_platform),
+        region_base=base,
+        region_forbidden=(base is None),
+    )
 
 
 # ── Per-merchant configuration registry (R32, 2026-08-11) ────────────────────
@@ -904,8 +940,8 @@ MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
     ),
     "INSTANT GAMING": MerchantConfig(
         "Instant Gaming",
-        offer_platform_resolver=_ig_offer_platform,
-        notes="token-less titles — real platform is on the offer page (data-platform)",
+        offer_page_resolver=_ig_offer_signals,
+        notes="token-less titles — platform (data-platform) + region (<title> suffix) on the offer page",
     ),
     "GAMIVO": MerchantConfig(
         "Gamivo",
@@ -1526,16 +1562,20 @@ def match_offer(
     # closed if the page is unreadable or names an unrecognized platform — never
     # guess. Games from merchants without a config are unchanged.
     _cfg = merchant_config(offer.merchant)
-    if declared_platform is None and _cfg is not None and _cfg.offer_platform_resolver is not None:
+    _page_region_base: str | None = None      # R33: region read from the offer page
+    _page_region_forbidden = False
+    if declared_platform is None and _cfg is not None and _cfg.offer_page_resolver is not None:
         try:
-            _tok = _cfg.offer_platform_resolver(offer.url)
+            _sig = _cfg.offer_page_resolver(offer.url)
         except Exception as exc:  # noqa: BLE001 — page unreadable → fail closed
             return SkippedOffer(
-                offer, f"{offer.merchant} offer page unreadable — platform unverifiable (R32): {exc}")
-        if _tok is None:
+                offer, f"{offer.merchant} offer page unreadable — unverifiable (R32): {exc}")
+        if _sig.platform is None:
             return SkippedOffer(
                 offer, f"{offer.merchant} offer page names an unrecognized platform — not entered (R32)")
-        declared_platform = _tok
+        declared_platform = _sig.platform
+        _page_region_base = _sig.region_base
+        _page_region_forbidden = _sig.region_forbidden
     difmark_attrs: DifmarkOfferAttributes | None = None
     difmark_platform_verified = False
     difmark_is_account = False
@@ -1602,6 +1642,23 @@ def match_offer(
         region_label, region_id = f"{region_label} ACCOUNT", account_region_id
     if region_id is None:
         return SkippedOffer(offer, f"no region id for {platform}/{region_label}")
+
+    # R33 (2026-08-13): the merchant offer page's REGION overrides the title/URL
+    # default (Instant Gaming feed titles carry no region, so detect_region always
+    # said implicit GLOBAL — a whole IG sweep entered 32/54 region-locked offers as
+    # GLOBAL). A region we don't sell (Latin America / ROW / …) → skip; a clean one
+    # (worldwide→GLOBAL, Europe→EU, US, UK) → use it.
+    if _page_region_forbidden:
+        return SkippedOffer(
+            offer,
+            f"{offer.merchant} offer page region is region-locked to a region we "
+            "don't sell (e.g. Latin America / ROW) — skipped (R33)")
+    if _page_region_base is not None:
+        _rid = _region_id(platform, _page_region_base)
+        if _rid is None:
+            return SkippedOffer(offer, f"region {_page_region_base!r} unavailable for {platform} (R33)")
+        region_label = {"global": "GLOBAL", "eu": "EU", "us": "US", "uk": "UK"}[_page_region_base]
+        region_id, implicit = _rid, False
 
     # Account offers resolve AKS's dedicated account PAGE, not the game key
     # page (Romain 2026-07-18). The account page is a distinct product (own id

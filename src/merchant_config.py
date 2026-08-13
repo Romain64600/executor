@@ -25,6 +25,22 @@ from typing import Any, Callable, Optional
 
 
 @dataclass(frozen=True)
+class MerchantOfferSignals:
+    """What a merchant's own offer page yields (R32/R33 — Instant Gaming).
+    - ``platform``: our platform token (STEAM/EPIC/…) or None (page named an
+      unrecognized platform → the caller skips).
+    - ``region_base``: region key (global/eu/us/uk) or None.
+    - ``region_forbidden``: the page named a region we don't sell (Latin America /
+      ROW / …) → the caller skips (never enters it as GLOBAL).
+    A platform-only merchant returns region_base=None + region_forbidden=False, so
+    the region stays title/URL-derived."""
+
+    platform: Optional[str] = None
+    region_base: Optional[str] = None
+    region_forbidden: bool = False
+
+
+@dataclass(frozen=True)
 class MerchantConfig:
     name: str
     # The offer URL must be on this host (Kinguin → kinguin.net). None = no check.
@@ -32,11 +48,12 @@ class MerchantConfig:
     # Merchant-specific URL boilerplate stripped before deriving region/edition
     # from the URL (Difmark → "buy-console-account-").
     url_ignore_substrings: tuple[str, ...] = ()
-    # When the real PLATFORM is not in the feed title, read it from the merchant's
-    # own offer page: ``offer_platform_resolver(offer_url) -> platform token`` (e.g.
-    # "STEAM") or None when the page names an unrecognized platform. Raising means
-    # the page was unreadable → the caller fails closed. (Instant Gaming.)
-    offer_platform_resolver: Optional[Callable[[str], Optional[str]]] = None
+    # When platform/region are not in the feed title, read them from the
+    # merchant's own offer page: ``offer_page_resolver(offer_url) ->
+    # MerchantOfferSignals``. Raising means the page was unreadable → the caller
+    # fails closed. (Instant Gaming: platform from data-platform, region from the
+    # page <title> suffix.)
+    offer_page_resolver: Optional[Callable[[str], "MerchantOfferSignals"]] = None
     # Eneba: the URL's leading path segment encodes the platform
     # ("eneba.com/steam-…" → STEAM). {prefix: platform token}.
     url_platform_prefixes: dict[str, str] = field(default_factory=dict)
