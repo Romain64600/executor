@@ -577,8 +577,8 @@ Romain 2026-08-13: *"on est sur Global, Europe et US. Le reste, on skippe et
 certaines régions qu'on va blacklist, comme les Latam, le Brésil et les régions
 d'Asie"* + *"les régions russes aussi"*. Three dispositions for a resolved region:
 
-- **ENTER** — `Global` / `Europe` / `US` (and `UK`, pending final confirmation). A
-  sellable base region ⇒ candidate with that region id.
+- **ENTER** — `Global` / `Europe` / `US` / `UK` (Romain confirmed 2026-08-13: UK
+  enters like Europe). A sellable base region ⇒ candidate with that region id.
 - **BLACKLIST** — `LATAM` / `Latin America` / `Brazil` / `Argentina` / other Latin
   countries, `Asia` (+ China / Japan / Korea / India / SEA countries), `Russia` /
   `CIS` / `RU`. ⇒ routed to the **Blacklist** list (8) so it leaves the entry feed.
@@ -595,11 +595,12 @@ reason. Whether the region came from the **feed title** (Kinguin `Brazil` → sk
 emits the same `forbidden region: <label>` reason), routing is identical. Matching is
 keyword-containment (+ bare `RU` token) so wording variants (`Russia & CIS`) still
 route; it runs only on an already-non-sellable region, so it can never touch a
-`Global/EU/US/UK` offer. Open items: (a) does `UK` enter? (b) blacklist the bare
-`South America` label too, or keep its list 36? (c) merchants whose region is neither
-in the title nor page-resolved (e.g. a Kinguin bare 2-letter `BR`) are NOT detected
-today → they still default GLOBAL; such a merchant needs its own region source
-(config resolver) before a sweep, exactly like IG got one.
+`Global/EU/US/UK` offer. Decisions (Romain 2026-08-13): UK **enters** like Europe;
+the bare `South America` label **keeps its list 36** (LATAM/Brazil/Argentina still
+blacklist). Remaining open item: a merchant whose region is neither in the title nor
+page-resolved (e.g. a Kinguin bare 2-letter `BR`) is NOT detected today → it still
+defaults GLOBAL; such a merchant needs its own region source (config resolver) before
+a sweep, exactly like IG got one.
 
 ---
 
