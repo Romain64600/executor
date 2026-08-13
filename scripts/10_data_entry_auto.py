@@ -31,10 +31,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from src.data_entry_auto import (  # noqa: E402
-    ExtractOutcome, MatchOutcome, Stages, StageError, SubmitOutcome, SweepConfig, run_sweep,
+    ExtractOutcome, MatchOutcome, MoveOutcome, Stages, StageError, SubmitOutcome,
+    SweepConfig, run_sweep,
 )
 from src.admin.validation_io import apply_overrides_and_validate, ValidationIOError  # noqa: E402
 from src.admin.runs import sha256_file  # noqa: E402
+from src.triage import plan_moves_from_skipped  # noqa: E402
 from src.validation import candidate_fingerprint  # noqa: E402
 
 _STOP = False
@@ -88,7 +90,8 @@ def _clock() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _make_stages(merchant: str, store_id: str, available: str, pace: str | None) -> Stages:
+def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
+                 *, triage: bool = False, move_execute: bool = False) -> Stages:
     py = sys.executable
 
     def extract(page: int, run_id: str) -> ExtractOutcome:
@@ -112,7 +115,15 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None)
                          str(ROOT / "runs" / run_id / "offers.json")])
         cands = _load_json(ROOT / "runs" / run_id / "candidates.json")
         n = len(cands) if isinstance(cands, list) else 0
-        return MatchOutcome(ok=(rc == 0), candidates=n, detail="" if rc == 0 else f"exit {rc}")
+        movable = 0
+        if triage:
+            # Count this page's routable skips (→ Move-to-List). Pure read of the
+            # match's skipped.json — the reasons already reflect the FULL match
+            # decision (incl. Instant Gaming page-resolved regions).
+            skipped = _load_json(ROOT / "runs" / run_id / "skipped.json") or []
+            movable = int(plan_moves_from_skipped(skipped).get("movable", 0))
+        return MatchOutcome(ok=(rc == 0), candidates=n, movable=movable,
+                            detail="" if rc == 0 else f"exit {rc}")
 
     def approve(run_id: str) -> int:
         run_dir = ROOT / "runs" / run_id
@@ -163,7 +174,55 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None)
                              stopped=plan.get("stopped"),
                              created=created, offers=offers, detail="" if rc == 0 else f"exit {rc}")
 
-    return Stages(extract=extract, match=match, approve=approve, submit=submit)
+    def move(run_id: str) -> MoveOutcome:
+        # Move-to-List step of the unified per-page workflow. The plan comes from
+        # this page's skipped.json (FULL match reasons) — pure, no browser.
+        run_dir = ROOT / "runs" / run_id
+        skipped = _load_json(run_dir / "skipped.json") or []
+        plan = plan_moves_from_skipped(skipped)
+        (run_dir / "triage_moves.json").write_text(
+            json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
+        planned = [row for rows in plan["by_list"].values() for row in rows]
+
+        if not move_execute:
+            # DRY-RUN default (Romain 2026-08-13): plan only, NOTHING moved. The
+            # ADDs were submitted for real; the moves are previewed for the operator
+            # to execute via the canary→batch path once each target list is
+            # authorized. No browser, no 06_move, always clean.
+            return MoveOutcome(ok=True, moved=0, offers=planned,
+                               detail=f"dry-run (plan only): {plan['movable']} à déplacer "
+                                      f"vers {plan['target_lists']} liste(s)")
+
+        # --move-execute: real moves via the Stage-6 writer, synthesizing a
+        # learning.json from the deterministic routable dispositions. 06_move
+        # --mode safe stays fail-closed: a target list not covered by a canary
+        # authorization (RV3) aborts — which halts the sweep so the operator
+        # authorizes the list first (never a silent un-vetted bulk move).
+        annotations = {
+            row["offer_id"]: {
+                "target_list_id": row["list_id"],
+                "target_list_label": row["list_label"],
+                "merchant_url": row["url"],   # stable identity if the id rotated
+            }
+            for rows in plan["by_list"].values() for row in rows
+        }
+        (run_dir / "learning.json").write_text(
+            json.dumps({"run_id": run_id, "annotations": annotations},
+                       ensure_ascii=False, indent=2), encoding="utf-8")
+        argv = [py, str(ROOT / "scripts" / "06_move.py"), str(run_dir),
+                "--store-id", store_id, "--available", available,
+                "--execute", "--mode", "safe", "--i-authorize-batch"]
+        rc = _run_child(argv)
+        res = _load_json(run_dir / "move_plan.json") or {}
+        moved = int(res.get("moved") or 0)
+        offers = [{"name": e.get("name"), "list_id": e.get("target_list_id"),
+                   "moved": bool(e.get("moved"))} for e in res.get("plan", [])]
+        return MoveOutcome(ok=(rc == 0), aborted=res.get("aborted"),
+                           stopped=res.get("stopped"), moved=moved, offers=offers,
+                           detail="" if rc == 0 else f"exit {rc}")
+
+    return Stages(extract=extract, match=match, approve=approve, submit=submit,
+                  move=(move if triage else None))
 
 
 def main() -> int:
@@ -176,6 +235,12 @@ def main() -> int:
     ap.add_argument("--max-pages", type=int, default=200)
     ap.add_argument("--available", default="all", choices=["all", "pending"])
     ap.add_argument("--pace", default=None)
+    ap.add_argument("--triage", action="store_true",
+                    help="Unified per-page workflow: after the ADDs, also plan the "
+                         "routable skips' Move-to-List (dry-run plan by default).")
+    ap.add_argument("--move-execute", action="store_true",
+                    help="With --triage: REALLY move (06_move --mode safe, "
+                         "canary-authorized lists only). Default: dry-run plan only.")
     args = ap.parse_args()
 
     targets: list[tuple[str, str]] = []
@@ -226,7 +291,8 @@ def main() -> int:
         slug = re.sub(r"[^a-z0-9]+", "-", merchant.lower()).strip("-") or "merchant"
         cfg = SweepConfig(merchant=merchant, store_id=store_id, start_page=args.start_page,
                           max_pages=args.max_pages)
-        stages = _make_stages(merchant, store_id, args.available, args.pace)
+        stages = _make_stages(merchant, store_id, args.available, args.pace,
+                              triage=args.triage, move_execute=args.move_execute)
         target_entry = {"merchant": merchant, "store_id": store_id, "recap": None}
         recap["targets"].append(target_entry)
 

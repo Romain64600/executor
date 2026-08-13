@@ -218,6 +218,8 @@ def run_sweep(
 
         mt = stages.match(run_id)
         entry["candidates"] = mt.candidates
+        if mt.movable:
+            entry["movable"] = mt.movable
         if not mt.ok:
             entry["error"] = "match: " + (mt.detail or "failed")
             recap["halted"] = f"match_failed_p{page}"

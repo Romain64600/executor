@@ -1199,3 +1199,42 @@ Règles de la vue Learning (audit `AUDIT_LEARNING_2026-07-21.md`) :
   account). Le gain batché n'est réel que pour un store dont le **feed source est
   parcourable**. Les mega-stores attendent un mécanisme dédié (preuve « parti »
   ciblée sans full-coverage, ou ops natives AKS) — chantier séparé.
+
+---
+
+## 14. Workflow unifié par page — ADD / MOVE / SKIP `[R35]` (2026-08-13)
+
+Romain : *« vu qu'on passe page par page, on peut ajouter des offres safe. Par la
+même … envoyer certaines offres dans certaines listes … et on skippe ce qu'on a à
+skipper. Puis on passe à la suivante. »* Une seule passe sur une page du feed
+marchand classe **chaque** offre en exactement une action :
+
+- **ADD** — `match_offer` renvoie un Candidate → entrée (safe-auto submit) ;
+- **MOVE** — skip routable (`suggest_target_list` mappe la raison vers une liste)
+  → déplacement hors du feed ;
+- **SKIP** — skip sans liste (garder) → laissé en place.
+
+Le classifieur (`src/triage.py` : `triage_offer` / `build_page_triage`) s'appuie sur
+la décision **complète** de `match_offer`, pas sur `precheck_skip` seul — donc un
+signal visible seulement sur la page marchande (région Instant Gaming) route
+correctement (un IG *Steam RU* devient MOVE→Blacklist, pas un ADD GLOBAL muet). Le
+tri tous-stores (`src/sort_plan.py`) reste, lui, precheck-only (échelle account, pas
+de fetch par offre).
+
+**Intégration au sweep safe-auto** (`src/data_entry_auto.run_sweep`, opt-in
+`--triage` de `scripts/10`). Ordre par page, reflow-safe (page la plus haute
+d'abord) : extract → match → (approve + submit des ADD, **vérifiés**) → **move des
+MOVE** → page suivante. Le move tourne aussi sur une page 0-ADD (une page peut être
+tout en skips). Fail-closed identique au submit : un move non-clean **halt** tout le
+sweep (`MoveOutcome.clean()`), un stop opérateur avant un write l'empêche.
+
+**Le move est plus verrouillé que le submit.** Un batch `06_move --mode safe` est
+**refusé** tant qu'un **canary `learning` (move de 1) n'a pas validé chaque liste
+cible** (autorisation RV3, `src/move_auth.py`, §13). Donc le pas MOVE du sweep est
+**dry-run par défaut** (Romain 2026-08-13) : il **planifie** les moves de la page
+(`triage_moves.json`, pur, sans navigateur, depuis `skipped.json`) sans rien
+déplacer ; les ADD, eux, sont écrits pour de vrai. `--move-execute` exécute les
+vrais moves (synthèse d'un `learning.json` déterministe → `06_move --mode safe
+--i-authorize-batch`), qui restent **fail-closed** : une liste non couverte par un
+canary avorte → halt (l'opérateur autorise la liste d'abord, jamais de bulk-move non
+éprouvé). `--triage` absent = sweep ADD-only historique, inchangé.
