@@ -93,6 +93,35 @@ class TriageStageWiringTests(unittest.TestCase):
         stages = self.MOD._make_stages("Kinguin", "58", "all", None)
         self.assertIsNone(stages.move)
 
+    def test_dry_run_submit_creates_nothing(self):
+        run_id = "run-p1"
+        d = self.MOD.ROOT / "runs" / run_id
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "candidates.json").write_text(json.dumps(
+            [{"offer": {"name": "Game A"}, "aks_product_id": "1"},
+             {"offer": {"name": "Game B"}, "aks_product_id": "2"}]), encoding="utf-8")
+        stages = self.MOD._make_stages("Kinguin", "58", "all", None, dry_run=True)
+        out = stages.submit(run_id)
+        self.assertTrue(out.clean())
+        self.assertEqual(out.created, 0)               # nothing created
+        self.assertEqual(len(out.offers), 2)           # 2 WOULD be created
+        self.assertIn("dry-run", out.detail)
+
+    def test_dry_run_forces_move_plan_only(self):
+        # --dry-run must override --move-execute → move stays a plan (no 06_move)
+        run_id = "run-p2"
+        d = self.MOD.ROOT / "runs" / run_id
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "skipped.json").write_text(json.dumps(
+            [{"offer": {"offer_id": "1", "name": "X", "url": "https://k/1"},
+              "reason": "forbidden region: BRAZIL"}]), encoding="utf-8")
+        stages = self.MOD._make_stages("Kinguin", "58", "all", None,
+                                       triage=True, move_execute=True, dry_run=True)
+        mv = stages.move(run_id)
+        self.assertEqual(mv.moved, 0)
+        self.assertIn("dry-run", mv.detail)
+        self.assertFalse((d / "learning.json").exists())   # no real-move synthesis
+
     def test_triage_dry_run_plans_without_browser(self):
         run_id = "run-p3"
         d = self._run_dir(run_id, [

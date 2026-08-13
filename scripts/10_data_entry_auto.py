@@ -91,8 +91,15 @@ def _clock() -> str:
 
 
 def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
-                 *, triage: bool = False, move_execute: bool = False) -> Stages:
+                 *, triage: bool = False, move_execute: bool = False,
+                 dry_run: bool = False) -> Stages:
     py = sys.executable
+    # A fully read-only preview (Romain: "teste le dry-run"): extract (browser read)
+    # + match (AKS read) + triage plan, but NEVER a real write — the ADD submit is
+    # counted from candidates.json without invoking 05, and moves stay planned. Used
+    # to preview a merchant's ADD/MOVE/SKIP breakdown before any real sweep.
+    if dry_run:
+        move_execute = False
 
     def extract(page: int, run_id: str) -> ExtractOutcome:
         argv = [py, str(ROOT / "scripts" / "02_extract_feed.py"),
@@ -145,6 +152,15 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
 
     def submit(run_id: str) -> SubmitOutcome:
         run_dir = ROOT / "runs" / run_id
+        if dry_run:
+            # READ-ONLY preview: count the candidates that WOULD be created; never
+            # call 05 (no browser write path, no offer created).
+            cands = _load_json(run_dir / "candidates.json") or []
+            offers = [{"name": (c.get("offer") or {}).get("name"),
+                       "aks_id": c.get("aks_product_id"), "created": False}
+                      for c in cands] if isinstance(cands, list) else []
+            return SubmitOutcome(ok=True, created=0, offers=offers,
+                                 detail=f"dry-run (would create {len(offers)})")
         # The offers were all extracted from ONE feed page (the run id ends
         # -p<N>); pass it as --page-hint so the submit locates + verifies them in
         # a small window around that page instead of a sequential scan that can't
@@ -241,6 +257,10 @@ def main() -> int:
     ap.add_argument("--move-execute", action="store_true",
                     help="With --triage: REALLY move (06_move --mode safe, "
                          "canary-authorized lists only). Default: dry-run plan only.")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="Fully READ-ONLY preview: extract + match + triage plan, "
+                         "NO submit and NO move (nothing written). ADDs are counted "
+                         "from candidates.json, not created.")
     args = ap.parse_args()
 
     targets: list[tuple[str, str]] = []
@@ -294,7 +314,8 @@ def main() -> int:
         cfg = SweepConfig(merchant=merchant, store_id=store_id, start_page=args.start_page,
                           max_pages=args.max_pages)
         stages = _make_stages(merchant, store_id, args.available, args.pace,
-                              triage=args.triage, move_execute=args.move_execute)
+                              triage=args.triage, move_execute=args.move_execute,
+                              dry_run=args.dry_run)
         target_entry = {"merchant": merchant, "store_id": store_id, "recap": None}
         recap["targets"].append(target_entry)
 
