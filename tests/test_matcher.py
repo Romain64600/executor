@@ -1739,12 +1739,23 @@ class MatchOfferTests(unittest.TestCase):
         self.assertIsInstance(result, Candidate)
         self.assertEqual((result.platform, result.region_id), ("GOG", "6"))
 
-    def test_explicit_platform_without_page_vocab_is_trusted(self):
-        # EA has no PAGE_PLATFORM_NAMES entry — no cross-check possible; the
-        # merchant declaration stands even on a Steam-only page.
+    def test_ea_platform_is_now_cross_checked_R32(self):
+        # R32 (2026-08-13): EA/Ubisoft/Battle.net gained PAGE_PLATFORM_NAMES
+        # entries, so they ARE cross-checked now. EA App on a Steam-ONLY page →
+        # skip (was trusted-through before the Instant Gaming platform work).
         result = match_offer(
             _offer("Neon Beats EA App Key GLOBAL"),
             self._resolver(official_platforms=("Steam",)),
+        )
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("EA app", result.reason)
+
+    def test_ea_platform_enters_when_page_confirms_R32(self):
+        # a realistic EA page vocabulary (verified live on EA Sports FC 24):
+        # Epic Store, EA app, Steam, Direct Publisher. "EA app" present → enters.
+        result = match_offer(
+            _offer("Neon Beats EA App Key GLOBAL"),
+            self._resolver(official_platforms=("Epic Store", "EA app", "Steam", "Direct Publisher")),
         )
         self.assertIsInstance(result, Candidate)
         self.assertEqual(result.platform, "EA")

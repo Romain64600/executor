@@ -272,7 +272,15 @@ PLATFORM_LABEL = {
 # pages: Steam, GoG, Epic Store, Direct Publisher, Xbox Play Anywhere,
 # Nintendo eShop, Xbox. Tokens without an entry (EA, UBISOFT, …) get no page
 # cross-check — merchant declaration only.
-PAGE_PLATFORM_NAMES = {"STEAM": "Steam", "GOG": "GoG", "EPIC": "Epic Store"}
+# R32 (2026-08-13): extended to Ubisoft/EA/Battle.net so a merchant/page-resolved
+# platform for these is cross-checked against the AKS page too (was Steam/GoG/Epic
+# only → Instant Gaming Ubisoft/EA/Battle.net offers entered without page
+# confirmation). AKS page vocabulary verified live: "Ubisoft Connect", "EA app",
+# "Battle.net". A page that doesn't list the platform → fail-closed skip.
+PAGE_PLATFORM_NAMES = {
+    "STEAM": "Steam", "GOG": "GoG", "EPIC": "Epic Store",
+    "UBISOFT": "Ubisoft Connect", "EA": "EA app", "BATTLENET": "Battle.net",
+}
 # ordered so specific hints win (Ultimate Collection before Ultimate/Collection)
 EDITION_HINTS = (
     (r"\bULTIMATE COLLECTION\b", "Ultimate Collection", "348"),
@@ -1138,7 +1146,11 @@ def extract_official_platforms(body: str) -> tuple[str, ...]:
     live 2026-07-08: present on 27/27 created-offer pages, stubs included.
     """
 
-    match = re.search(r'official platforms?:\s*([^.<"]+)', body, re.IGNORECASE)
+    # Capture the comma-separated list up to the SENTENCE-ending period (". " —
+    # "official platforms: …. Depending on the store, …") or markup/quote — NOT
+    # the first "." (which truncated "Battle.net" → "Battle" and lost everything
+    # after it, R32 audit 2026-08-13). Internal dots (Battle.net) are kept.
+    match = re.search(r'official platforms?:\s*(.+?)(?:\.(?=\s|<|$)|<|"|$)', body, re.IGNORECASE)
     if not match:
         return ()
     return tuple(p.strip() for p in match.group(1).split(",") if p.strip())
