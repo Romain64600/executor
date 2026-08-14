@@ -1251,8 +1251,20 @@ sweep (`MoveOutcome.clean()`), un stop opérateur avant un write l'empêche.
 cible** (autorisation RV3, `src/move_auth.py`, §13). Donc le pas MOVE du sweep est
 **dry-run par défaut** (Romain 2026-08-13) : il **planifie** les moves de la page
 (`triage_moves.json`, pur, sans navigateur, depuis `skipped.json`) sans rien
-déplacer ; les ADD, eux, sont écrits pour de vrai. `--move-execute` exécute les
-vrais moves (synthèse d'un `learning.json` déterministe → `06_move --mode safe
---i-authorize-batch`), qui restent **fail-closed** : une liste non couverte par un
-canary avorte → halt (l'opérateur autorise la liste d'abord, jamais de bulk-move non
-éprouvé). `--triage` absent = sweep ADD-only historique, inchangé.
+déplacer ; les ADD, eux, sont écrits pour de vrai. `--triage` absent = sweep
+ADD-only historique, inchangé.
+
+**`--move-execute` = canary-puis-batch PAR PAGE, auto-autorisant `[R36]` (2026-08-14).**
+L'autorisation RV3 est liée au **hash exact de l'extraction** (`skipped.json`,
+`src/move_auth.extraction_id`) — elle **ne peut donc pas être pré-accordée** pour une
+page future (chaque page a un nouveau `skipped.json`). Chaque page s'auto-autorise
+donc, **liste par liste** (`src/triage.execute_page_moves`) : (1) un **canary**
+(`06_move --mode learning` = move de 1, prouve RV2 gone-source + present-cible →
+`grant_from_canary` accorde l'autorisation pour CE run_dir) ; (2) un **batch**
+(`06_move --mode safe --i-authorize-batch`, désormais couvert) déplace le reste.
+Fail-closed : un canary qui bouge 0 (liste non validée) ou toute phase cassée
+(abort / stop non-bénin) → halt du sweep. Subtilité vérifiée en revue adversariale :
+le signal de **succès** d'un canary est `stopped="limit_reached"` (il a bougé son 1
+et atteint le cap) — c'est **bénin** (comme `data_entry_auto._BENIGN_STOPPED`), pas
+une panne ; sinon le batch ne tournerait jamais. Double garde contre un bulk non
+validé : le garde `moved>=1` ET le `batch_authorized` propre à 06_move.

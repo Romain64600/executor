@@ -126,6 +126,98 @@ def plan_moves_from_skipped(skipped: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+# A learning CANARY stops with "limit_reached" the instant it moves its 1 offer —
+# that is its SUCCESS signal, not a fault; "operator_stop" is a cooperative stop.
+# Both are benign (mirrors data_entry_auto._BENIGN_STOPPED). Any OTHER stopped value
+# (feed_unreadable / guard_blocked / ten_consecutive_failures) is a broken session.
+_BENIGN_MOVE_STOPS = frozenset({"limit_reached", "operator_stop"})
+
+
+def _move_phase_broken(res: dict[str, Any]) -> bool:
+    """True when a canary/batch phase is a broken/blocked failure: it did not finish
+    clean, or aborted, or stopped on a NON-benign signal (a benign limit_reached /
+    operator_stop is handled by the caller)."""
+    if not res.get("ok") or res.get("aborted"):
+        return True
+    stopped = res.get("stopped")
+    return bool(stopped) and stopped not in _BENIGN_MOVE_STOPS
+
+
+def execute_page_moves(
+    by_list: dict[str, list[dict[str, Any]]],
+    *,
+    run_canary: Callable[[str, list[dict[str, Any]]], dict[str, Any]],
+    run_batch: Callable[[str, list[dict[str, Any]]], dict[str, Any]],
+) -> dict[str, Any]:
+    """Per-page Move-to-List execution, one target list at a time: CANARY then BATCH.
+
+    The move-batch authorization (`src.move_auth`) is bound to the exact extraction
+    (a hash of the run's ``skipped.json``), so it cannot be pre-granted for a future
+    sweep page — each page must self-authorize. For each target list we therefore
+    run a **canary** (``run_canary`` — a ``06_move --mode learning`` move of 1 that
+    proves the list is movable RV2 and grants the authorization for THIS extraction),
+    then a **batch** (``run_batch`` — ``06_move --mode safe --i-authorize-batch`` of
+    the rest, now covered).
+
+    Both callables take ``(list_id, rows)`` and return a dict with ``ok`` (process
+    finished clean), ``moved`` (int), ``aborted``/``stopped`` (or None). A learning
+    canary's SUCCESS signal is ``stopped="limit_reached"`` (it moved its 1 and
+    stopped at the cap), and ``operator_stop`` is cooperative — both are BENIGN
+    (mirrors ``data_entry_auto._BENIGN_STOPPED``); every OTHER stopped
+    (feed_unreadable / guard_blocked / ten_consecutive_failures) is a broken session.
+    FAIL-CLOSED: the first broken phase — a canary that aborts / stops on a
+    non-benign signal / moves 0 (the list could not be validated), or such a batch —
+    returns ``ok=False`` (the caller halts the sweep). An ``operator_stop`` halts
+    cleanly (no further list/batch). The ``moved>=1`` gate plus 06_move's own
+    per-list authorization check (``batch_authorized``) both guard against an
+    un-vetted batch. Returns ``{ok, moved, aborted, stopped, detail, phases:[…]}``."""
+
+    total = 0
+    phases: list[dict[str, Any]] = []
+
+    def _fail(phase: str, list_id: str, res: dict[str, Any], why: str) -> dict[str, Any]:
+        return {
+            "ok": False, "moved": total,
+            "aborted": res.get("aborted"), "stopped": res.get("stopped"),
+            "detail": f"{phase} for list {list_id} not clean: {why}",
+            "phases": phases,
+        }
+
+    def _operator_halt() -> dict[str, Any]:
+        return {
+            "ok": True, "moved": total, "aborted": None, "stopped": "operator_stop",
+            "detail": f"operator stop during moves (moved {total} so far)",
+            "phases": phases,
+        }
+
+    for list_id, rows in by_list.items():
+        c = run_canary(list_id, rows)
+        phases.append({"list_id": list_id, "phase": "canary", **c})
+        if _move_phase_broken(c):
+            return _fail("canary", list_id, c, c.get("aborted") or c.get("stopped") or "exit≠0")
+        if int(c.get("moved") or 0) < 1:
+            # A canary that moved nothing did NOT validate the list (no RV3 grant) —
+            # the batch would abort as unauthorized. Fail closed, don't batch blind.
+            return _fail("canary", list_id, c, "moved 0 (list not validated)")
+        total += int(c.get("moved") or 0)
+        if c.get("stopped") == "operator_stop":
+            return _operator_halt()
+
+        b = run_batch(list_id, rows)
+        phases.append({"list_id": list_id, "phase": "batch", **b})
+        if _move_phase_broken(b):
+            return _fail("batch", list_id, b, b.get("aborted") or b.get("stopped") or "exit≠0")
+        total += int(b.get("moved") or 0)
+        if b.get("stopped") == "operator_stop":
+            return _operator_halt()
+
+    return {
+        "ok": True, "moved": total, "aborted": None, "stopped": None,
+        "detail": f"moved {total} across {len(by_list)} list(s) (canary+batch each)",
+        "phases": phases,
+    }
+
+
 def build_page_triage(
     offers: list[NormalizedOffer],
     matcher: Callable[..., Candidate | SkippedOffer] = match_offer,

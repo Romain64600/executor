@@ -5,7 +5,7 @@ import unittest
 from src.contracts import NormalizedOffer
 from src.matcher import Candidate, SkippedOffer
 from src.triage import (ADD, MOVE, SKIP, Triage, build_page_triage,
-                        plan_moves_from_skipped, triage_offer)
+                        execute_page_moves, plan_moves_from_skipped, triage_offer)
 
 
 def _offer(name="Game Steam Key GLOBAL", oid="1", store="10",
@@ -160,6 +160,103 @@ class PlanMovesFromSkippedTests(unittest.TestCase):
         row = plan["by_list"]["8"][0]
         self.assertEqual((row["offer_id"], row["store_id"], row["list_id"]), ("7", "58", "8"))
         self.assertIn("BRAZIL", row["reason"])
+
+
+class ExecutePageMovesTests(unittest.TestCase):
+    """Per-page canary-then-batch orchestration (fail-closed)."""
+
+    def _by_list(self):
+        return {"8": [{"offer_id": "1"}, {"offer_id": "2"}],
+                "16": [{"offer_id": "3"}]}
+
+    def test_happy_path_canary_then_batch_each_list(self):
+        calls = []
+        # REAL shape: a successful learning canary ALWAYS stops with "limit_reached"
+        # (it moved its 1 and hit the cap) — this must be treated as success, not a
+        # fault (regression the adversarial review caught: the batch never ran).
+        def canary(lid, rows):
+            calls.append(("canary", lid)); return {"ok": True, "moved": 1, "stopped": "limit_reached"}
+        def batch(lid, rows): calls.append(("batch", lid)); return {"ok": True, "moved": len(rows) - 1}
+        r = execute_page_moves(self._by_list(), run_canary=canary, run_batch=batch)
+        self.assertTrue(r["ok"], r.get("detail"))
+        self.assertIsNone(r["stopped"])
+        # list 8: canary 1 + batch 1 = 2 ; list 16: canary 1 + batch 0 = 1 → total 3
+        self.assertEqual(r["moved"], 3)
+        # each list is canaried BEFORE it is batched, and the batch DID run
+        self.assertEqual(calls, [("canary", "8"), ("batch", "8"), ("canary", "16"), ("batch", "16")])
+
+    def test_canary_limit_reached_is_success_not_a_halt(self):
+        # a single-list page: canary limit_reached (moved 1) → batch runs → clean
+        batched = []
+        r = execute_page_moves(
+            {"8": [{"offer_id": "1"}, {"offer_id": "2"}]},
+            run_canary=lambda lid, rows: {"ok": True, "moved": 1, "stopped": "limit_reached"},
+            run_batch=lambda lid, rows: (batched.append(lid) or {"ok": True, "moved": 1}))
+        self.assertTrue(r["ok"])
+        self.assertEqual((r["moved"], batched), (2, ["8"]))
+
+    def test_non_benign_stop_fails_closed(self):
+        # feed_unreadable / guard_blocked etc. are broken sessions → halt
+        for bad in ("feed_unreadable", "guard_blocked", "ten_consecutive_failures"):
+            r = execute_page_moves(
+                {"8": [{"offer_id": "1"}]},
+                run_canary=lambda lid, rows, _b=bad: {"ok": True, "moved": 1, "stopped": _b},
+                run_batch=lambda lid, rows: {"ok": True, "moved": 0})
+            self.assertFalse(r["ok"], bad)
+            self.assertEqual(r["stopped"], bad)
+
+    def test_operator_stop_on_canary_halts_clean_no_batch(self):
+        batched = []
+        r = execute_page_moves(
+            self._by_list(),
+            run_canary=lambda lid, rows: {"ok": True, "moved": 1, "stopped": "operator_stop"},
+            run_batch=lambda lid, rows: (batched.append(lid) or {"ok": True, "moved": 1}))
+        self.assertTrue(r["ok"])                       # clean (not a failure)
+        self.assertEqual(r["stopped"], "operator_stop")
+        self.assertEqual((r["moved"], batched), (1, []))   # canary counted, no batch
+
+    def test_canary_moved_zero_fails_closed_no_batch(self):
+        batched = []
+        def canary(lid, rows): return {"ok": True, "moved": 0}    # validated nothing
+        def batch(lid, rows): batched.append(lid); return {"ok": True, "moved": 9}
+        r = execute_page_moves(self._by_list(), run_canary=canary, run_batch=batch)
+        self.assertFalse(r["ok"])
+        self.assertIn("moved 0", r["detail"])
+        self.assertEqual(batched, [])                            # never batched
+
+    def test_canary_abort_halts(self):
+        r = execute_page_moves(
+            self._by_list(),
+            run_canary=lambda lid, rows: {"ok": False, "aborted": "invariants not green", "moved": 0},
+            run_batch=lambda lid, rows: {"ok": True, "moved": 1})
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["aborted"], "invariants not green")
+
+    def test_batch_abort_halts_after_counting_canary(self):
+        def canary(lid, rows): return {"ok": True, "moved": 1}
+        def batch(lid, rows): return {"ok": False, "aborted": "guard_blocked", "moved": 0}
+        r = execute_page_moves({"8": [{"offer_id": "1"}]}, run_canary=canary, run_batch=batch)
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["aborted"], "guard_blocked")
+        self.assertEqual(r["moved"], 1)                          # the canary move still counted
+
+    def test_batch_stopped_is_not_clean(self):
+        r = execute_page_moves(
+            {"8": [{"offer_id": "1"}]},
+            run_canary=lambda lid, rows: {"ok": True, "moved": 1},
+            run_batch=lambda lid, rows: {"ok": True, "stopped": "feed_unreadable", "moved": 0})
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["stopped"], "feed_unreadable")
+
+    def test_second_list_canary_failure_stops_there(self):
+        seen = []
+        def canary(lid, rows):
+            seen.append(lid)
+            return {"ok": True, "moved": 1} if lid == "8" else {"ok": False, "aborted": "x", "moved": 0}
+        def batch(lid, rows): return {"ok": True, "moved": len(rows) - 1}
+        r = execute_page_moves(self._by_list(), run_canary=canary, run_batch=batch)
+        self.assertFalse(r["ok"])
+        self.assertEqual(seen, ["8", "16"])                      # stopped at list 16's canary
 
 
 if __name__ == "__main__":

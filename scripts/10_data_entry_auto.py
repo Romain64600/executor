@@ -36,7 +36,7 @@ from src.data_entry_auto import (  # noqa: E402
 )
 from src.admin.validation_io import apply_overrides_and_validate, ValidationIOError  # noqa: E402
 from src.admin.runs import sha256_file  # noqa: E402
-from src.triage import plan_moves_from_skipped  # noqa: E402
+from src.triage import execute_page_moves, plan_moves_from_skipped  # noqa: E402
 from src.validation import candidate_fingerprint  # noqa: E402
 
 _STOP = False
@@ -209,33 +209,43 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
                                detail=f"dry-run (plan only): {plan['movable']} à déplacer "
                                       f"vers {plan['target_lists']} liste(s)")
 
-        # --move-execute: real moves via the Stage-6 writer, synthesizing a
-        # learning.json from the deterministic routable dispositions. 06_move
-        # --mode safe stays fail-closed: a target list not covered by a canary
-        # authorization (RV3) aborts — which halts the sweep so the operator
-        # authorizes the list first (never a silent un-vetted bulk move).
-        annotations = {
-            row["offer_id"]: {
-                "target_list_id": row["list_id"],
-                "target_list_label": row["list_label"],
-                "merchant_url": row["url"],   # stable identity if the id rotated
+        if not plan["by_list"]:
+            return MoveOutcome(ok=True, moved=0, detail="rien à déplacer")
+
+        # --move-execute: real moves via the Stage-6 writer (06_move). The batch
+        # authorization is bound to THIS page's extraction (a hash of skipped.json,
+        # src.move_auth), so it can't be pre-granted — each target list must
+        # self-authorize on this page: a CANARY (learning, move of 1, RV2-proven →
+        # grants the authorization) then a BATCH (safe, covered). Fail-closed: any
+        # unclean phase halts the sweep (never a silent un-vetted bulk move).
+        def _06move(mode: str, rows: list[dict[str, Any]], extra: list[str]) -> dict[str, Any]:
+            annotations = {
+                r["offer_id"]: {
+                    "target_list_id": r["list_id"],
+                    "target_list_label": r["list_label"],
+                    "merchant_url": r["url"],   # stable identity if the id rotated
+                }
+                for r in rows
             }
-            for rows in plan["by_list"].values() for row in rows
-        }
-        (run_dir / "learning.json").write_text(
-            json.dumps({"run_id": run_id, "annotations": annotations},
-                       ensure_ascii=False, indent=2), encoding="utf-8")
-        argv = [py, str(ROOT / "scripts" / "06_move.py"), str(run_dir),
-                "--store-id", store_id, "--available", available,
-                "--execute", "--mode", "safe", "--i-authorize-batch"]
-        rc = _run_child(argv)
-        res = _load_json(run_dir / "move_plan.json") or {}
-        moved = int(res.get("moved") or 0)
-        offers = [{"name": e.get("name"), "list_id": e.get("target_list_id"),
-                   "moved": bool(e.get("moved"))} for e in res.get("plan", [])]
-        return MoveOutcome(ok=(rc == 0), aborted=res.get("aborted"),
-                           stopped=res.get("stopped"), moved=moved, offers=offers,
-                           detail="" if rc == 0 else f"exit {rc}")
+            (run_dir / "learning.json").write_text(
+                json.dumps({"run_id": run_id, "annotations": annotations},
+                           ensure_ascii=False, indent=2), encoding="utf-8")
+            rc = _run_child([py, str(ROOT / "scripts" / "06_move.py"), str(run_dir),
+                             "--store-id", store_id, "--available", available,
+                             "--execute", "--mode", mode] + extra)
+            res = _load_json(run_dir / "move_plan.json") or {}
+            return {"ok": (rc == 0 and not res.get("aborted")),
+                    "moved": int(res.get("moved") or 0),
+                    "aborted": res.get("aborted") or (None if rc == 0 else f"exit {rc}"),
+                    "stopped": res.get("stopped")}
+
+        result = execute_page_moves(
+            plan["by_list"],
+            run_canary=lambda lid, rows: _06move("learning", rows, []),
+            run_batch=lambda lid, rows: _06move("safe", rows, ["--i-authorize-batch"]))
+        return MoveOutcome(ok=result["ok"], aborted=result.get("aborted"),
+                           stopped=result.get("stopped"), moved=result["moved"],
+                           offers=result.get("phases", []), detail=result["detail"])
 
     return Stages(extract=extract, match=match, approve=approve, submit=submit,
                   move=(move if triage else None))
