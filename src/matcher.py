@@ -852,8 +852,8 @@ class IgOfferAttributes:
     """Raw (upper-stripped) signals off an Instant Gaming offer page. Mapping to
     our vocabulary and the fail-closed decision are the caller's job."""
 
-    raw_platform: str   # e.g. "STEAM" (from the offer's data-platform), "" if ambiguous
-    raw_region: str     # e.g. "LATIN AMERICA"/"EUROPE"/"ROW", "" = worldwide (from <title>)
+    raw_platform: str          # e.g. "STEAM" (from the offer's data-platform), "" if ambiguous
+    raw_region: str | None     # "LATIN AMERICA"/"EUROPE"/…; "" = worldwide; None = unparseable
 
 
 # R33 (2026-08-13): IG feed titles/URLs carry NO region, but the offer page's
@@ -878,19 +878,32 @@ IG_REGION_TEXT_MAP = {
 # connaît déjà ta région, on peut te trier" — same routing whether the region came
 # from the feed title or the offer page).
 
-# region = the <title> segment AFTER the platform parens ("… (Steam) - <Region>").
+# The IG page <title>/og:title trailing structure anchors on the platform in
+# parens: "<Game> … (<Platform>)" = worldwide, "… (<Platform>) - <Region>" =
+# region-locked. REGION_RE requires "(…) - <Region>" (so a region that itself
+# contains parens still parses — "(…)" must be FOLLOWED by " - "); WORLDWIDE_RE is
+# the positive worldwide signal (ends right after the platform parens).
 _IG_TITLE_REGION_RE = re.compile(r".*\([^)]*\)\s*-\s*(.+?)\s*$")
+_IG_TITLE_WORLDWIDE_RE = re.compile(r".*\([^)]*\)\s*$")
 
 
-def extract_ig_region(body: str) -> str:
-    """The offer's region from the IG page <title>/og:title trailing segment
-    (UPPERCASED), or "" when there is no suffix (= worldwide)."""
+def extract_ig_region(body: str) -> str | None:
+    """The offer's region from the IG page <title>/og:title trailing segment:
+    - a region label (UPPERCASED) for "… (<Platform>) - <Region>";
+    - ``""`` for a POSITIVELY-worldwide title ("… (<Platform>)" with no suffix);
+    - ``None`` when no og:title/<title> carries the recognizable "(<Platform>)"
+      anchor (layout change / malformed / reordered metadata). Audit #2 (Romain
+      2026-08-14): a missing/unparseable region must FAIL CLOSED (the caller skips),
+      never silently default to GLOBAL — ``""`` is now a positive signal only."""
     m = (re.search(r'og:title"\s+content="([^"]*)"', body)
          or re.search(r"<title>([^<]*)</title>", body))
     if not m:
-        return ""
-    rm = _IG_TITLE_REGION_RE.match(html.unescape(m.group(1)))
-    return rm.group(1).strip().upper() if rm else ""
+        return None
+    title = html.unescape(m.group(1))
+    rm = _IG_TITLE_REGION_RE.match(title)
+    if rm:
+        return rm.group(1).strip().upper()
+    return "" if _IG_TITLE_WORLDWIDE_RE.match(title) else None
 
 
 def extract_ig_platform(body: str) -> str:
@@ -930,8 +943,13 @@ def _ig_offer_signals(url: str) -> MerchantOfferSignals:
       ``forbidden region: <label>`` skip, whose blacklist-vs-park-vs-skip routing is
       decided centrally (LATAM / Brazil / Asia / Russia → Blacklist).
     platform None = unrecognized platform → the caller skips. Raises
-    IgPageUnreadable on an unreadable page → the caller skips."""
+    IgPageUnreadable on an unreadable page OR when the region metadata is missing/
+    unparseable (audit #2: never default a malformed page to GLOBAL)."""
     attrs = resolve_ig_offer(url)
+    if attrs.raw_region is None:
+        raise IgPageUnreadable(
+            "IG offer page region metadata missing/unparseable (layout change?) — "
+            "not defaulting to GLOBAL (audit #2)")
     base = IG_REGION_TEXT_MAP.get(attrs.raw_region)
     return MerchantOfferSignals(
         platform=IG_PLATFORM_TEXT_MAP.get(attrs.raw_platform),
@@ -1599,6 +1617,14 @@ def match_offer(
                 offer, f"{offer.merchant} offer page names an unrecognized platform — not entered (R32)")
         if declared_platform is None:
             declared_platform = _sig.platform
+        elif _sig.platform != declared_platform:
+            # Audit #1 (Romain 2026-08-14): the title declared one platform, the
+            # offer page (authoritative for THIS listing) another. Do not blindly
+            # trust the title — a conflict is a fail-closed skip.
+            return SkippedOffer(
+                offer,
+                f"{offer.merchant} platform conflict: title={declared_platform} "
+                f"vs offer page={_sig.platform} — not entered (audit #1)")
         _page_region_resolved = _sig.region_resolved
         _page_region_base = _sig.region_base
         _page_region_label = _sig.region_label

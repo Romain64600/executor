@@ -571,6 +571,24 @@ GLOBAL before this; they now resolve their real region. The page is fetched ONCE
 offer (same fetch that reads `data-platform`), with a normal browser UA (never the
 AKS staff UA off-AKS). Unreadable page → fail-closed skip.
 
+**Region is resolved even when the title declares a platform, and both the platform
+AND the region fail closed (audit, Romain 2026-08-14).** Two hardening fixes on top
+of R33:
+- **Resolve unconditionally** (`e6e9a2c`): the offer-page resolver runs for a
+  configured IG offer even if the feed title already carries a platform token — the
+  region is NEVER in an IG title, so gating on `declared_platform is None` would let a
+  region-locked `"…Steam…"` title default to implicit GLOBAL (R33's exact bug class).
+  Region-safety must not depend on platform-resolution.
+- **Verify, don't blindly trust, the platform** (audit #1): if the title declared one
+  platform and the page (authoritative for this listing) another, that CONFLICT is a
+  fail-closed skip — not a silent trust of the title.
+- **Region parse fails closed** (audit #2): `extract_ig_region` is now tri-state — a
+  region label, `""` for a POSITIVELY-worldwide title (`"… (<Platform>)"` with no
+  suffix), or **`None`** when no `og:title`/`<title>` carries the recognizable
+  `"(<Platform>)"` anchor (layout change / malformed / reordered metadata). A `None`
+  region raises → the caller skips. Worldwide now needs a positive signal; a missing
+  or unparseable region **never** silently defaults to GLOBAL.
+
 ### 4.11 Region policy & blacklist — MERCHANT-AGNOSTIC `[R34]` (2026-08-13)
 
 Romain 2026-08-13: *"on est sur Global, Europe et US. Le reste, on skippe et

@@ -34,6 +34,7 @@ from src.matcher import (
     IG_PLATFORM_TEXT_MAP,
     IgPageUnreadable,
     extract_ig_platform,
+    extract_ig_region,
     is_software,
     is_software_title,
     match_feed,
@@ -791,6 +792,60 @@ class MerchantConfigR32Tests(unittest.TestCase):
             ok, status, error, body = False, 503, "err", ""
         with self.assertRaises(IgPageUnreadable):
             resolve_ig_offer("https://ig/x", http_get_fn=lambda url, **k: _Resp())
+
+    # ---- Audit #2 (2026-08-14): region parse fails CLOSED, never GLOBAL ----
+    def test_extract_ig_region_tristate(self):
+        # region-locked → the region label (uppercased)
+        self.assertEqual(
+            extract_ig_region('<title>Some Game - PC (Steam) - Latin America</title>'),
+            "LATIN AMERICA")
+        # a region that itself contains parens still parses ("(…)" must be FOLLOWED by " - ")
+        self.assertEqual(
+            extract_ig_region('<title>Some Game - PC (Steam) - Latin America (LATAM)</title>'),
+            "LATIN AMERICA (LATAM)")
+        # positively worldwide: ends right after the platform parens → "" (→ GLOBAL)
+        self.assertEqual(extract_ig_region('<title>Some Game - PC (Steam)</title>'), "")
+        self.assertEqual(
+            extract_ig_region('<meta property="og:title" content="Game - Xbox (Xbox Live)" />'), "")
+        # NO recognizable "(<Platform>)" anchor → None (unparseable → skip), NOT ""
+        self.assertIsNone(extract_ig_region('<title>Some Game Steam Key</title>'))
+        # NO title/og:title at all → None (layout change) → skip, NOT GLOBAL
+        self.assertIsNone(extract_ig_region('<div data-platform="Steam"></div>'))
+
+    def test_resolve_ig_offer_titleless_page_region_none(self):
+        # a 200 page with a platform but NO parseable title → raw_region None
+        class _Resp:
+            ok, status, error = True, 200, None
+            body = '<div data-platform="Steam"></div>'
+        a = resolve_ig_offer("https://ig/x", http_get_fn=lambda url, **k: _Resp())
+        self.assertEqual(a.raw_platform, "STEAM")
+        self.assertIsNone(a.raw_region)
+
+    def test_ig_offer_signals_raises_on_unparseable_region(self):
+        # the real _ig_offer_signals must fail closed (raise) when region is None —
+        # never default the offer to GLOBAL (audit #2)
+        import src.matcher as M
+        from unittest import mock
+        with mock.patch.object(M, "resolve_ig_offer",
+                               return_value=M.IgOfferAttributes(raw_platform="STEAM", raw_region=None)):
+            with self.assertRaises(IgPageUnreadable):
+                M._ig_offer_signals("https://ig/x")
+
+    def test_ig_platform_conflict_skips_audit1(self):
+        # title says Steam, offer page says Ubisoft → conflict → fail-closed skip
+        import src.matcher as M
+        from src.merchant_config import MerchantConfig
+        saved = M.MERCHANT_CONFIGS["INSTANT GAMING"]
+        M.MERCHANT_CONFIGS["INSTANT GAMING"] = MerchantConfig(
+            "Instant Gaming",
+            offer_page_resolver=lambda u: MerchantOfferSignals(
+                platform="UBISOFT", region_resolved=True, region_base="global"))
+        self.addCleanup(lambda: M.MERCHANT_CONFIGS.__setitem__("INSTANT GAMING", saved))
+        o = NormalizedOffer(offer_id="1", name="Numina Steam",   # title declares STEAM
+                            url="https://ig/x", merchant="Instant Gaming")
+        r = match_offer(o, resolver=lambda n: self.PAGE)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("platform conflict", r.reason)
 
 
 class RegionBlacklistRoutingTests(unittest.TestCase):
