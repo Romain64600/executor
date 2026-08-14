@@ -812,6 +812,23 @@ class MerchantConfigR32Tests(unittest.TestCase):
         # NO title/og:title at all → None (layout change) → skip, NOT GLOBAL
         self.assertIsNone(extract_ig_region('<div data-platform="Steam"></div>'))
 
+    def test_extract_ig_region_parens_must_be_a_platform_audit2b(self):
+        # audit #2b (2026-08-14): a trailing "(…)" that is NOT a platform must NOT
+        # read as worldwide/GLOBAL — it is an unrecognized structure → None → skip.
+        self.assertIsNone(extract_ig_region('<title>Some Game (Deluxe)</title>'))
+        self.assertIsNone(extract_ig_region('<title>Some Game (2007)</title>'))
+        self.assertIsNone(extract_ig_region('<title>Some Game (Digital)</title>'))
+        # a non-platform parens BEFORE a "- region" is also not a valid anchor → None
+        self.assertIsNone(extract_ig_region('<title>Some Game (Deluxe) - Something</title>'))
+        # real platforms (varied names) still anchor worldwide → ""
+        for plat in ("Steam", "Epic Games Store", "Ubisoft Connect", "GOG.com",
+                     "Battle.net", "EA app", "PlayStation 5", "Nintendo Switch", "Xbox"):
+            self.assertEqual(extract_ig_region(f'<title>Some Game - PC ({plat})</title>'), "",
+                             plat)
+        # a real platform anchor with a region still yields the region
+        self.assertEqual(
+            extract_ig_region('<title>Some Game (Epic Games) - Europe</title>'), "EUROPE")
+
     def test_resolve_ig_offer_titleless_page_region_none(self):
         # a 200 page with a platform but NO parseable title → raw_region None
         class _Resp:

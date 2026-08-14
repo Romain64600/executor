@@ -588,6 +588,12 @@ of R33:
   `"(<Platform>)"` anchor (layout change / malformed / reordered metadata). A `None`
   region raises → the caller skips. Worldwide now needs a positive signal; a missing
   or unparseable region **never** silently defaults to GLOBAL.
+- **The worldwide anchor is validated as a real platform** (audit #2b, 2026-08-14): a
+  trailing `"(…)"` is trusted as the platform anchor ONLY when its content names a
+  platform (`_IG_TITLE_PLATFORM_KEYWORDS` — Steam / Epic / GOG / Ubisoft / EA /
+  Battle.net / Xbox / PlayStation / Nintendo …, keyword containment). So a decorator
+  parens like `"Game (Deluxe)"` / `"(2007)"` no longer reads as worldwide → GLOBAL;
+  an unrecognized parens → `None` → skip.
 
 ### 4.11 Region policy & blacklist — MERCHANT-AGNOSTIC `[R34]` (2026-08-13)
 

@@ -70,6 +70,20 @@ class CliSeamTests(unittest.TestCase):
         code, _ = self._run(["--targets", "Kinguin:abc", "--run-id", "t3"], {"pages": []})
         self.assertEqual(code, 2)   # non-numeric store id, fail-closed
 
+    def test_move_execute_without_triage_is_rejected(self):
+        # audit (2026-08-14): --move-execute has no effect without --triage → fail loud
+        code, captured = self._run(["--targets", "Kinguin:58", "--move-execute",
+                                    "--run-id", "t4"], {"pages": []})
+        self.assertEqual(code, 2)
+        self.assertNotIn("cfg", captured)   # never reached run_sweep
+
+    def test_move_execute_with_triage_is_accepted(self):
+        code, captured = self._run(["--targets", "Kinguin:58", "--triage",
+                                    "--move-execute", "--run-id", "t5"],
+                                   {"pages": [], "total_created": 0})
+        self.assertEqual(code, 0)
+        self.assertIn("cfg", captured)
+
 
 class TriageStageWiringTests(unittest.TestCase):
     """The --triage move stage: dry-run plans the routable skips (no browser), the

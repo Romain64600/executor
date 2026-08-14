@@ -880,30 +880,53 @@ IG_REGION_TEXT_MAP = {
 
 # The IG page <title>/og:title trailing structure anchors on the platform in
 # parens: "<Game> … (<Platform>)" = worldwide, "… (<Platform>) - <Region>" =
-# region-locked. REGION_RE requires "(…) - <Region>" (so a region that itself
-# contains parens still parses — "(…)" must be FOLLOWED by " - "); WORLDWIDE_RE is
-# the positive worldwide signal (ends right after the platform parens).
-_IG_TITLE_REGION_RE = re.compile(r".*\([^)]*\)\s*-\s*(.+?)\s*$")
-_IG_TITLE_WORLDWIDE_RE = re.compile(r".*\([^)]*\)\s*$")
+# region-locked. Each regex CAPTURES the parens content (group 1) so the caller can
+# verify it is really a platform — audit #2b (Romain 2026-08-14): a bare
+# "…)$" ending is NOT enough (a title like "Game (Deluxe)" must NOT read as
+# worldwide/GLOBAL). REGION_RE requires "(…) - <Region>" (so a region that itself
+# contains parens still parses — "(…)" must be FOLLOWED by " - ").
+_IG_TITLE_REGION_RE = re.compile(r".*\(([^)]*)\)\s*-\s*(.+?)\s*$")
+_IG_TITLE_WORLDWIDE_RE = re.compile(r".*\(([^)]*)\)\s*$")
+# Platform names that appear inside the IG title parens (PC storefronts + consoles).
+# Keyword containment (all >=3 chars, safe as substrings of a short parens) absorbs
+# naming variants: "Epic Games Store"⊃EPIC, "Ubisoft Connect"⊃UBISOFT,
+# "PlayStation 5"⊃PLAYSTATION, "Nintendo Switch"⊃NINTENDO, "GOG.com"⊃GOG.
+_IG_TITLE_PLATFORM_KEYWORDS = (
+    "STEAM", "EPIC", "GOG", "UBISOFT", "UPLAY", "ORIGIN", "EA APP", "EA PLAY",
+    "BATTLE.NET", "BATTLENET", "BLIZZARD", "ROCKSTAR", "BETHESDA",
+    "MICROSOFT", "WINDOWS", "XBOX", "PLAYSTATION", "PSN", "NINTENDO", "SWITCH",
+)
+
+
+def _is_ig_platform_parens(parens: str) -> bool:
+    """True when the IG title's "(…)" content names a platform (not an edition/year
+    /decorator like "(Deluxe)" / "(2007)"). The worldwide/region anchor is only
+    trusted when this holds; otherwise the title structure is unrecognized → skip."""
+    p = parens.strip().upper()
+    return any(kw in p for kw in _IG_TITLE_PLATFORM_KEYWORDS)
 
 
 def extract_ig_region(body: str) -> str | None:
     """The offer's region from the IG page <title>/og:title trailing segment:
     - a region label (UPPERCASED) for "… (<Platform>) - <Region>";
     - ``""`` for a POSITIVELY-worldwide title ("… (<Platform>)" with no suffix);
-    - ``None`` when no og:title/<title> carries the recognizable "(<Platform>)"
-      anchor (layout change / malformed / reordered metadata). Audit #2 (Romain
-      2026-08-14): a missing/unparseable region must FAIL CLOSED (the caller skips),
-      never silently default to GLOBAL — ``""`` is now a positive signal only."""
+    - ``None`` when no og:title/<title> carries a recognizable "(<Platform>)" anchor
+      (layout change / malformed / reordered metadata, OR the parens is not a
+      platform — e.g. "(Deluxe)"). Audit #2 (Romain 2026-08-14): a missing/
+      unparseable region must FAIL CLOSED (the caller skips), never silently default
+      to GLOBAL. The anchor parens is validated as a real platform (audit #2b)."""
     m = (re.search(r'og:title"\s+content="([^"]*)"', body)
          or re.search(r"<title>([^<]*)</title>", body))
     if not m:
         return None
     title = html.unescape(m.group(1))
     rm = _IG_TITLE_REGION_RE.match(title)
-    if rm:
-        return rm.group(1).strip().upper()
-    return "" if _IG_TITLE_WORLDWIDE_RE.match(title) else None
+    if rm and _is_ig_platform_parens(rm.group(1)):
+        return rm.group(2).strip().upper()
+    wm = _IG_TITLE_WORLDWIDE_RE.match(title)
+    if wm and _is_ig_platform_parens(wm.group(1)):
+        return ""
+    return None
 
 
 def extract_ig_platform(body: str) -> str:

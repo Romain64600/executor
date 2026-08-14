@@ -273,6 +273,15 @@ def main() -> int:
                          "from candidates.json, not created.")
     args = ap.parse_args()
 
+    # Audit (Romain 2026-08-14): --move-execute only has an effect with --triage
+    # (the Move stage is installed only then). Accepting it silently would let an
+    # operator believe they requested real moves. Fail loud instead.
+    if args.move_execute and not args.triage:
+        print(json.dumps({"aborted": True, "reason": (
+            "--move-execute n'a d'effet qu'avec --triage (le pas Move n'est installé "
+            "que sous --triage). Ajoute --triage, ou retire --move-execute.")}))
+        return 2
+
     targets: list[tuple[str, str]] = []
     if args.targets:
         for tok in args.targets.split(","):
