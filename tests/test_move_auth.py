@@ -28,17 +28,18 @@ class MoveAuthTests(unittest.TestCase):
             [{"offer": {"offer_id": "1", "name": tag, "url": "https://g2a/1"}, "reason": "x"}]
         ), encoding="utf-8")
 
-    def _grant(self, *labels):
+    def _grant(self, *labels, multi_item=False):
         entries = [{"target_list_label": l, "current_offer_id": "100", "url": "https://g2a/1"}
                    for l in labels]
         return grant_from_canary(self.run, store_id="38", source_feed_page=SOURCE,
-                                 moved_entries=entries, clock=T)
+                                 moved_entries=entries, clock=T, multi_item=multi_item)
 
     def _plan(self, *labels):
         return [{"target_list_label": l} for l in labels]
 
-    def _authorized(self, plan, store="38", source=SOURCE):
-        return batch_authorized(self.run, plan, store_id=store, source_feed_page=source)
+    def _authorized(self, plan, store="38", source=SOURCE, require_multi_item=False):
+        return batch_authorized(self.run, plan, store_id=store, source_feed_page=source,
+                                require_multi_item=require_multi_item)
 
     # ------------------------------------------------------------- grant
     def test_grant_records_scope_and_validated_lists(self):
@@ -84,6 +85,29 @@ class MoveAuthTests(unittest.TestCase):
         ok, why = self._authorized(self._plan("Softwares"), source="aks-merchant-feeds-30")
         self.assertFalse(ok)
         self.assertIn("source_feed_page", why)
+
+    # ------------------------------------------------- multi-item (batched)
+    def test_unit_canary_does_not_prove_multi_item(self):
+        self._grant("Gift cards")                                  # unitary canary
+        ok, why = self._authorized(self._plan("Gift cards"), require_multi_item=True)
+        self.assertFalse(ok)
+        self.assertIn("multi-item", why)
+        # ... but a plain (non-batched) batch is still covered
+        ok2, _ = self._authorized(self._plan("Gift cards"))
+        self.assertTrue(ok2)
+
+    def test_multi_item_canary_unlocks_batched_batch(self):
+        auth = self._grant("Gift cards", multi_item=True)
+        self.assertTrue(auth["multi_item_proven"])
+        ok, why = self._authorized(self._plan("Gift cards"), require_multi_item=True)
+        self.assertTrue(ok, why)
+
+    def test_multi_item_proof_sticks_across_canaries(self):
+        self._grant("Gift cards", multi_item=True)                 # proves batched
+        self._grant("Softwares")                                   # later unitary canary
+        # the proof accumulates — it must not be lost by a subsequent unit canary
+        ok, why = self._authorized(self._plan("Gift cards", "Softwares"), require_multi_item=True)
+        self.assertTrue(ok, why)
 
     def test_extraction_change_invalidates_authorization(self):
         # RV3: a re-match rewrites skipped.json → the authorization no longer covers

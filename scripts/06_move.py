@@ -48,12 +48,16 @@ AUTO_MAX_PAGES_HEADROOM = 1.3
 # Same R24 semantics as Stage 5: a canary mode is a cap, not a default.
 CANARY_MODES = ("learning", "advanced")
 CANARY_LIMIT = 1
+# A --batch canary must fire a MULTI-item Apply (>=2) to prove the batched
+# mechanism (mirrors 09_sort_move); capped so a "canary" stays small.
+CANARY_BATCH_LIMIT = 5
 
 
-def mode_limit(mode: str, requested: int | None) -> int | None:
+def mode_limit(mode: str, requested: int | None, batch: bool = False) -> int | None:
     if mode not in CANARY_MODES:
         return requested
-    return CANARY_LIMIT if requested is None else min(requested, CANARY_LIMIT)
+    cap = CANARY_BATCH_LIMIT if batch else CANARY_LIMIT
+    return cap if requested is None else min(requested, cap)
 
 
 # REVIEW 2026-07-22 (batch gate): a successful unit canary does NOT unlock the
@@ -129,7 +133,33 @@ def _main() -> int:
                         help="Explicit second intention to run --mode safe (the full batch). "
                              "Required IN ADDITION to a valid canary authorization covering the "
                              "plan (RV3). Without it, --execute --mode safe is refused.")
+    parser.add_argument("--batch", action="store_true",
+                        help="Batched Apply: register N offers on a source page → ONE native "
+                             "Apply → verify the group in one feed scan (~50-100x fewer scans). "
+                             f"--mode safe --batch needs a MULTI-ITEM canary (run --mode learning "
+                             f"--batch --limit 2 first, a >=2-item Apply, capped at {CANARY_BATCH_LIMIT}).")
+    parser.add_argument("--deferred", action="store_true",
+                        help="P1.6: with --batch --mode safe, verify a store's moves ONCE (pages "
+                             "highest-first, still identity- + RV2-gated). Full batch only.")
     args = parser.parse_args()
+
+    # Validation mirrors 09_sort_move: a --batch canary must fire a >=2-item Apply;
+    # --deferred is a full-batch-only optimisation.
+    if args.mode in CANARY_MODES and args.batch:
+        if args.limit is None or args.limit < 2:
+            print(json.dumps({"aborted": True, "reason": (
+                "un canary --batch doit déplacer >=2 offres en un seul Apply (preuve "
+                f"multi-item) : passe --limit 2..{CANARY_BATCH_LIMIT}")}, indent=2))
+            return 2
+        if args.limit > CANARY_BATCH_LIMIT:
+            print(json.dumps({"aborted": True, "reason": (
+                f"canary --batch plafonné à {CANARY_BATCH_LIMIT} (--limit {args.limit} "
+                "trop large). Utilise --mode safe --batch pour le lot complet.")}, indent=2))
+            return 2
+    if args.deferred and not (args.batch and args.mode == "safe"):
+        print(json.dumps({"aborted": True, "reason": (
+            "--deferred requiert --batch --mode safe (optimisation du lot complet batché).")}, indent=2))
+        return 2
 
     run_dir = Path(args.run_dir).resolve()
     if not run_dir.is_dir():
@@ -137,7 +167,10 @@ def _main() -> int:
         return 2
 
     # A canary mode is a cap, not a default (R24) — refuse a widening --limit.
-    if args.mode in CANARY_MODES and args.limit is not None and args.limit > CANARY_LIMIT:
+    # NOT for --batch: a batched canary is REQUIRED to move >=2 (the multi-item
+    # proof) and is bounded instead by CANARY_BATCH_LIMIT, checked above.
+    if (args.mode in CANARY_MODES and not args.batch
+            and args.limit is not None and args.limit > CANARY_LIMIT):
         print(json.dumps({"aborted": True, "reason": (
             f"--mode {args.mode} is capped at a canary of {CANARY_LIMIT} "
             f"(--limit {args.limit} would widen it). Use --mode safe for the full plan.")},
@@ -186,7 +219,8 @@ def _main() -> int:
         # guarantees each move in the batch still proves gone-from-source AND
         # present-on-target. Either condition missing → fail-closed refuse.
         covered, why = batch_authorized(run_dir, entries, store_id=store_id,
-                                        source_feed_page=source_list)
+                                        source_feed_page=source_list,
+                                        require_multi_item=args.batch)
         if not args.i_authorize_batch:
             print(json.dumps({"aborted": True, "reason": (
                 "batch (--execute --mode safe) requiert le flag explicite "
@@ -218,7 +252,7 @@ def _main() -> int:
         return 2
 
     max_pages, max_pages_note = derive_max_pages(args.max_pages, run_dir)
-    limit = mode_limit(args.mode, args.limit)
+    limit = mode_limit(args.mode, args.limit, batch=args.batch)
     run_id = plan_doc.get("run_id") or run_dir.name
     logger = RunLogger(run_id, log_dir=str(ROOT / "logs"))
 
@@ -258,7 +292,8 @@ def _main() -> int:
                                page_pacer=page_pacer, offer_pacer=offer_pacer).run(
                 run_id=run_id, store_id=store_id, plan=entries,
                 source_feed_page=source_list, available=args.available,
-                max_pages=max_pages, limit=limit)
+                max_pages=max_pages, limit=limit,
+                batch=args.batch, deferred=args.deferred)
     except FEED_UNREADABLE_EXCS as exc:
         print(json.dumps({"aborted": True,
                           "reason": f"fail-closed abort (feed/CDP unreadable): {exc}"}, indent=2))
@@ -277,6 +312,8 @@ def _main() -> int:
         auth = grant_from_canary(
             run_dir, store_id=store_id, source_feed_page=source_list,
             moved_entries=moved_entries,
+            # A >=2-item Apply proves the batched mechanism (unlocks a --batch batch).
+            multi_item=(int(result.get("max_apply_items") or 0) >= 2),
             clock=lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
         result["authorization"] = {
             "version": auth["version"],

@@ -1274,3 +1274,18 @@ le signal de **succès** d'un canary est `stopped="limit_reached"` (il a bougé 
 et atteint le cap) — c'est **bénin** (comme `data_entry_auto._BENIGN_STOPPED`), pas
 une panne ; sinon le batch ne tournerait jamais. Double garde contre un bulk non
 validé : le garde `moved>=1` ET le `batch_authorized` propre à 06_move.
+
+**Vérif BATCHÉE `[R37]` (2026-08-17).** La vérif RV2 unitaire fait un **scan feed-entier
+par move** (« parti de la source » exige une couverture complète — jamais une fenêtre
+page-hint, sinon fail-open sur re-import/opérateur parallèle, revue 2026-08-06). Sur un
+feed profond (Kinguin ~104 pages) c'est **~6 min/move** et la charge CDP longue fait
+échouer une navigation (`Page.navigate` → halt) — 2 sweeps de suite calés ainsi. Correctif :
+`06_move --batch/--deferred` (déjà côté tri) enregistre N offres → **un Apply + une vérif
+de groupe** (deferred : une fois par store), **~G× moins de scans**, sans affaiblir la
+couverture. Discipline : un batch batché exige un **canary MULTI-ITEM** (un Apply ≥2 offres
+prouve le mécanisme) — `move_auth.multi_item_proven`, `batch_authorized(require_multi_item)`.
+L'orchestrateur (`scripts/10`) : liste ≥2 offres → canary `--batch --limit 2` puis batch
+`--batch --deferred` ; liste à 1 offre → unitaire. Revue adversariale (4 dimensions) : 2
+défauts corrigés — la garde R24 « widening » rejetait le `--limit 2` batché (exemptée pour
+`--batch`), et un `move_plan.json` stale double-comptait sur abort précoce (unlink avant
+chaque invocation).

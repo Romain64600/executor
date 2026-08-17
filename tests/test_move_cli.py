@@ -78,6 +78,47 @@ class MoveCliGateTests(unittest.TestCase):
         self.assertIn("autorisation", out)
         self.assertIn("aucune autorisation", out)
 
+    # --------------------------------------------- --batch (batched verify)
+    def test_batch_canary_requires_two_items(self):
+        # a --batch canary MUST fire a >=2-item Apply → --limit >= 2 required
+        code, out = self._run_cli("--store-id", "38", "--execute", "--mode", "learning", "--batch")
+        self.assertEqual(code, 2)
+        self.assertIn("multi-item", out)
+        code2, _ = self._run_cli("--store-id", "38", "--execute", "--mode", "learning",
+                                 "--batch", "--limit", "1")
+        self.assertEqual(code2, 2)                    # --limit 1 is not multi-item
+
+    def test_batch_canary_limit_two_is_not_widening(self):
+        # regression (adversarial review 2026-08-17): the R24 unitary widening guard
+        # must EXEMPT --batch — a batched canary REQUIRES --limit>=2, so --limit 2
+        # must pass the guards and reach the (mocked RED) invariants, NOT abort with
+        # "capped at a canary of 1". This is the exact command scripts/10 emits.
+        self._learning({"1": {"target_list_id": "16", "target_list_label": "Softwares"}})
+        code, out = self._run_cli("--store-id", "38", "--execute", "--mode", "learning",
+                                  "--batch", "--limit", "2")
+        self.assertEqual(code, 2)
+        self.assertNotIn("capped at a canary", out)   # NOT killed by the widening guard
+        self.assertIn("invariants", out)              # reached the invariants gate
+
+    def test_deferred_requires_batch_safe(self):
+        code, out = self._run_cli("--store-id", "38", "--execute", "--mode", "safe", "--deferred")
+        self.assertEqual(code, 2)
+        self.assertIn("--deferred requiert --batch", out)
+
+    def test_batch_safe_refused_with_only_a_unit_canary(self):
+        # a unitary canary authorizes the LIST but not the batched mechanism →
+        # --mode safe --batch is refused until a multi-item canary proves it
+        self._learning({"1": {"target_list_id": "16", "target_list_label": "Softwares"}})
+        from src.move_auth import grant_from_canary
+        grant_from_canary(self.run, store_id="38", source_feed_page="aks-merchant-feeds-9",
+                          moved_entries=[{"target_list_label": "Softwares",
+                                          "current_offer_id": "1", "url": "https://g2a/1"}],
+                          clock=lambda: "2026-08-17T00:00:00Z", multi_item=False)
+        code, out = self._run_cli("--store-id", "38", "--source-list", "aks-merchant-feeds-9",
+                                  "--execute", "--mode", "safe", "--batch", "--i-authorize-batch")
+        self.assertEqual(code, 2)
+        self.assertIn("multi-item", out)
+
     def test_batch_safe_passes_gate_with_flag_and_authorization(self):
         # flag + a valid authorization covering the plan → the batch gate passes;
         # the run then stops at the mocked RED invariants, NOT at the batch gate.

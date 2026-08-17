@@ -215,9 +215,13 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
         # --move-execute: real moves via the Stage-6 writer (06_move). The batch
         # authorization is bound to THIS page's extraction (a hash of skipped.json,
         # src.move_auth), so it can't be pre-granted — each target list must
-        # self-authorize on this page: a CANARY (learning, move of 1, RV2-proven →
-        # grants the authorization) then a BATCH (safe, covered). Fail-closed: any
-        # unclean phase halts the sweep (never a silent un-vetted bulk move).
+        # self-authorize on this page: a CANARY (RV2-proven → grants the authorization)
+        # then a BATCH (safe, covered). BATCHED VERIFY (Romain 2026-08-17): a list of
+        # >=2 offers uses --batch (one Apply + one group feed-scan instead of a scan
+        # per move — ~G× fewer scans, fixing the deep-feed slowness + CDP load), which
+        # needs a MULTI-ITEM canary (--batch --limit 2, a >=2-item Apply proving the
+        # batched mechanism); a lone-offer list stays unitary. Fail-closed: any unclean
+        # phase halts the sweep (never a silent un-vetted bulk move).
         def _06move(mode: str, rows: list[dict[str, Any]], extra: list[str]) -> dict[str, Any]:
             annotations = {
                 r["offer_id"]: {
@@ -230,6 +234,14 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
             (run_dir / "learning.json").write_text(
                 json.dumps({"run_id": run_id, "annotations": annotations},
                            ensure_ascii=False, indent=2), encoding="utf-8")
+            # Remove any prior move_plan.json first: 06_move writes it only at the
+            # END, so an EARLY abort (exit 2 before the mover) would otherwise leave
+            # the PREVIOUS phase's file — the batch would read the canary's moved
+            # count and double-count it (adversarial review, 2026-08-17).
+            try:
+                (run_dir / "move_plan.json").unlink()
+            except FileNotFoundError:
+                pass
             rc = _run_child([py, str(ROOT / "scripts" / "06_move.py"), str(run_dir),
                              "--store-id", store_id, "--available", available,
                              "--execute", "--mode", mode] + extra)
@@ -239,10 +251,18 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
                     "aborted": res.get("aborted") or (None if rc == 0 else f"exit {rc}"),
                     "stopped": res.get("stopped")}
 
-        result = execute_page_moves(
-            plan["by_list"],
-            run_canary=lambda lid, rows: _06move("learning", rows, []),
-            run_batch=lambda lid, rows: _06move("safe", rows, ["--i-authorize-batch"]))
+        def _canary(lid: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+            # >=2 offers → multi-item batched canary (proves the batched Apply);
+            # a lone offer can't fire a >=2-item Apply → unitary canary.
+            extra = ["--batch", "--limit", "2"] if len(rows) >= 2 else []
+            return _06move("learning", rows, extra)
+
+        def _batch(lid: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+            extra = (["--batch", "--deferred", "--i-authorize-batch"] if len(rows) >= 2
+                     else ["--i-authorize-batch"])
+            return _06move("safe", rows, extra)
+
+        result = execute_page_moves(plan["by_list"], run_canary=_canary, run_batch=_batch)
         return MoveOutcome(ok=result["ok"], aborted=result.get("aborted"),
                            stopped=result.get("stopped"), moved=result["moved"],
                            offers=result.get("phases", []), detail=result["detail"])

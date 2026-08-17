@@ -136,6 +136,35 @@ class TriageStageWiringTests(unittest.TestCase):
         self.assertIn("dry-run", mv.detail)
         self.assertFalse((d / "learning.json").exists())   # no real-move synthesis
 
+    def test_move_execute_no_stale_move_plan_double_count(self):
+        # adversarial review 2026-08-17: if the BATCH aborts early (before writing
+        # its own move_plan.json), _06move must NOT read the CANARY's stale
+        # move_plan.json and double-count its moves. move() unlinks it first.
+        run_id = "run-p1"
+        d = self.MOD.ROOT / "runs" / run_id
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "skipped.json").write_text(json.dumps([
+            {"offer": {"offer_id": "1", "store_id": "58", "name": "A", "url": "https://k/1"},
+             "reason": "gift card"},
+            {"offer": {"offer_id": "2", "store_id": "58", "name": "B", "url": "https://k/2"},
+             "reason": "gift card"},
+        ]), encoding="utf-8")
+        (d / "move_plan.json").write_text(json.dumps({"moved": 2}), encoding="utf-8")  # stale
+
+        def fake_run_child(argv):
+            mode = argv[argv.index("--mode") + 1]
+            if mode == "learning":                      # canary: writes moved=2, ok
+                (d / "move_plan.json").write_text(json.dumps({"moved": 2}), encoding="utf-8")
+                return 0
+            return 2                                     # safe batch: early abort, NO write
+
+        with mock.patch.object(self.MOD, "_run_child", side_effect=fake_run_child):
+            stages = self.MOD._make_stages("Kinguin", "58", "all", None,
+                                           triage=True, move_execute=True)
+            mv = stages.move(run_id)
+        self.assertFalse(mv.clean())                    # batch aborted → halt
+        self.assertEqual(mv.moved, 2)                   # canary 2, batch 0 — NOT 4
+
     def test_triage_dry_run_plans_without_browser(self):
         run_id = "run-p3"
         d = self._run_dir(run_id, [

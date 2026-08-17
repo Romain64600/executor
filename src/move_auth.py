@@ -80,20 +80,26 @@ def _write_atomic(path: Path, payload: dict[str, Any]) -> None:
 
 def grant_from_canary(
     run_dir: Path, *, store_id: str | int, source_feed_page: str,
-    moved_entries: list[dict[str, Any]], clock,
+    moved_entries: list[dict[str, Any]], clock, multi_item: bool = False,
 ) -> dict[str, Any]:
     """Record/extend the authorization from the TARGET LISTS a canary verified.
 
     Only offers whose move was fully proven (gone from source AND present on the
     target — the caller passes ``result['plan']`` entries with ``moved=True``)
     contribute. The authorization is keyed by the current scope; if the scope
-    (mover version / store / source / extraction) changed, it resets."""
+    (mover version / store / source / extraction) changed, it resets.
+
+    ``multi_item`` = this canary fired a MULTI-item Apply (>=2 bulk[item][] in one
+    Apply). A ``--mode safe --batch`` run requires it: a cap-1 (single-item) canary
+    cannot prove the batched Apply mechanism, so it never unlocks a batched batch
+    (mirrors the sort path, P2 2026-07-28). Once proven for a scope it STICKS."""
 
     run_dir = Path(run_dir)
     scope = _scope(run_dir, store_id, source_feed_page)
     auth = load_authorization(run_dir)
     if not auth or any(auth.get(k) != v for k, v in scope.items()):
-        auth = dict(scope, authorized_target_lists=[], canaries=[], version=0)
+        auth = dict(scope, authorized_target_lists=[], canaries=[], version=0,
+                    multi_item_proven=False)
 
     targets = set(auth.get("authorized_target_lists", []))
     canaries = list(auth.get("canaries", []))
@@ -109,6 +115,7 @@ def grant_from_canary(
         })
     auth["authorized_target_lists"] = sorted(targets)
     auth["canaries"] = canaries[-50:]  # keep the tail, bounded
+    auth["multi_item_proven"] = bool(auth.get("multi_item_proven", False)) or bool(multi_item)
     auth["version"] = int(auth.get("version", 0)) + 1
     auth["granted_at"] = clock()
     _write_atomic(run_dir / AUTH_FILE, auth)
@@ -117,11 +124,14 @@ def grant_from_canary(
 
 def batch_authorized(
     run_dir: Path, plan_entries: list[dict[str, Any]], *,
-    store_id: str | int, source_feed_page: str,
+    store_id: str | int, source_feed_page: str, require_multi_item: bool = False,
 ) -> tuple[bool, str]:
     """``(ok, reason)`` — would a ``--mode safe`` batch of ``plan_entries`` be
-    covered by the current authorization? (Advisory: the CLI still refuses safe
-    unconditionally — RV1 — until the explicit re-enable decision.)"""
+    covered by the current authorization?
+
+    ``require_multi_item`` (a ``--batch`` run): the authorization must ALSO carry
+    ``multi_item_proven`` — a canary that fired a >=2-item Apply. A single-item
+    canary authorization does NOT unlock the batched mechanism (P2 2026-07-28)."""
 
     run_dir = Path(run_dir)
     auth = load_authorization(run_dir)
@@ -139,6 +149,10 @@ def batch_authorized(
     if unvalidated:
         return False, (f"listes cibles non validées par un canary: {sorted(unvalidated)} "
                        f"(autorisées: {sorted(authorized)})")
+    if require_multi_item and not auth.get("multi_item_proven"):
+        return False, ("le mécanisme batché (--batch) exige un canary multi-item (un Apply "
+                       ">=2 offres) — l'autorisation actuelle ne prouve qu'un move unitaire ; "
+                       "relance un canary --batch --mode learning --limit 2 d'abord")
     return True, (f"couvert par l'autorisation v{auth.get('version')} "
                   f"(listes {sorted(authorized)}, mover {MOVER_VERSION})")
 
