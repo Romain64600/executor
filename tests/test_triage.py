@@ -240,6 +240,17 @@ class ExecutePageMovesTests(unittest.TestCase):
         self.assertEqual(r["aborted"], "guard_blocked")
         self.assertEqual(r["moved"], 1)                          # the canary move still counted
 
+    def test_mid_batch_abort_counts_the_partial_moves(self):
+        # the real prod case: canary moves 1, the batch moves 2 more then aborts on
+        # feed_unreadable → the recap must report 3, not 1 (audit integrity).
+        def canary(lid, rows): return {"ok": True, "moved": 1, "stopped": "limit_reached"}
+        def batch(lid, rows): return {"ok": False, "moved": 2, "aborted": "feed_unreadable_mid_run"}
+        r = execute_page_moves({"21": [{"offer_id": str(i)} for i in range(10)]},
+                               run_canary=canary, run_batch=batch)
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["aborted"], "feed_unreadable_mid_run")
+        self.assertEqual(r["moved"], 3)                          # 1 canary + 2 batch
+
     def test_batch_stopped_is_not_clean(self):
         r = execute_page_moves(
             {"8": [{"offer_id": "1"}]},

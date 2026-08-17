@@ -193,21 +193,24 @@ def execute_page_moves(
     for list_id, rows in by_list.items():
         c = run_canary(list_id, rows)
         phases.append({"list_id": list_id, "phase": "canary", **c})
+        # Count what physically moved (RV2-verified gone-source + present-target)
+        # BEFORE deciding to halt — a real move stays real even if the phase then
+        # aborts mid-run, so the recap must not under-report it (audit integrity).
+        total += int(c.get("moved") or 0)
         if _move_phase_broken(c):
             return _fail("canary", list_id, c, c.get("aborted") or c.get("stopped") or "exit≠0")
         if int(c.get("moved") or 0) < 1:
             # A canary that moved nothing did NOT validate the list (no RV3 grant) —
             # the batch would abort as unauthorized. Fail closed, don't batch blind.
             return _fail("canary", list_id, c, "moved 0 (list not validated)")
-        total += int(c.get("moved") or 0)
         if c.get("stopped") == "operator_stop":
             return _operator_halt()
 
         b = run_batch(list_id, rows)
         phases.append({"list_id": list_id, "phase": "batch", **b})
+        total += int(b.get("moved") or 0)   # count mid-batch moves even on an abort
         if _move_phase_broken(b):
             return _fail("batch", list_id, b, b.get("aborted") or b.get("stopped") or "exit≠0")
-        total += int(b.get("moved") or 0)
         if b.get("stopped") == "operator_stop":
             return _operator_halt()
 
