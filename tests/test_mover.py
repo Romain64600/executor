@@ -297,6 +297,27 @@ class ListOptionsRetryTests(unittest.TestCase):
         self.assertEqual(result["moved"], 0)
         self.assertEqual(session.applied, [])         # never wrote anything
 
+    def test_empty_read_recovers_via_poll_without_renavigate(self):
+        # the real fix: the dropdown renders a few seconds AFTER navigate, so the
+        # cure is to POLL the same page (re-read), NOT re-navigate (which resets the
+        # render clock). empty_list_reads=1 → 1st read [], poll's 2nd read → options.
+        session = FakeMoveSession([["100", "200"]], empty_list_reads=1)
+        m = Mover(session)
+        m.post_apply_settle = 0
+        m.feed_ui_render_waits = (0, 0, 0)            # poll runs, no sleep
+        nav_at_options = None
+        orig = session.list_options
+        def counting():
+            nonlocal nav_at_options
+            if nav_at_options is None and session._list_reads == 1:
+                nav_at_options = len(session.nav)     # nav count at the first (empty) read
+            return orig()
+        session.list_options = counting
+        result = m.run(run_id="r", store_id="38", plan=_plan("100"),
+                       source_feed_page="aks-merchant-feeds-9", max_pages=5)
+        self.assertIsNone(result["aborted"])
+        self.assertEqual(result["moved"], 1)          # recovered → moved
+
 
 class FeedUiRenderWaitTests(unittest.TestCase):
     """2026-08-18: under sustained CDP load a feed page's JS-built UI can lag the

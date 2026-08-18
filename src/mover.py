@@ -122,27 +122,29 @@ class _MoverBase(_SubmitterBase):
         raise NotImplementedError
 
     def _read_list_options(self, store_id, source_feed_page: str, available: str):
-        """Read the bulk[list] move-target options, RETRYING while the result is
-        EMPTY. The dropdown is static (always present once the feed UI renders), so
-        0 options is almost always the read beating the page's JS render, not a
-        genuine "no lists" — a real batched sweep aborted target_list_unresolved on
-        a 0-option race while a read-only diag of the same page read 33
-        (2026-08-18). Re-navigates + settles between attempts (mirrors _scan_retry's
-        bounded retry). A genuinely empty result after every attempt is returned
-        as-is → the caller fails closed (target_list_unresolved), never a wrong move."""
+        """Read the bulk[list] move-target options, POLLING the DOM (re-read, NO
+        re-navigate) while empty. The dropdown (33 options on a 103-page feed) can
+        render a few seconds AFTER navigation, so a read right after navigate beats
+        it: a sweep read 0 with the default settle while a 4s-settle read of the same
+        page read 33 (2026-08-18). RE-NAVIGATING would reset the render clock each
+        time, so we poll the already-loaded page with the feed_ui_render_waits
+        backoff to let the JS finish. If still empty after the backoff, ONE
+        re-navigate as a last resort (a genuinely wedged page, not just slow); a
+        still-empty result → the caller fails closed (target_list_unresolved)."""
         options = self.session.list_options()
-        for attempt in range(1, self.feed_retry_attempts + 1):
+        if options:
+            return options
+        for wait in self.feed_ui_render_waits:
+            time.sleep(wait)
+            options = self.session.list_options()
             if options:
+                self._log("list_options_render_wait", count=len(options))
                 return options
-            if attempt < self.feed_retry_attempts:
-                self._log("list_options_empty_retry", attempt=attempt,
-                          feed_page=source_feed_page)
-                if self.feed_retry_pause:
-                    time.sleep(self.feed_retry_pause)
-                self.session.navigate(
-                    feed_url(store_id, feed_page=source_feed_page, available=available))
-                options = self.session.list_options()
-        return options
+        # last resort: the page may be wedged (not just slow) — one fresh load.
+        self._log("list_options_renavigate", feed_page=source_feed_page)
+        self.session.navigate(
+            feed_url(store_id, feed_page=source_feed_page, available=available))
+        return self.session.list_options()
 
     def run(
         self,
