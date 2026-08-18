@@ -101,7 +101,9 @@ class FakeSubmitSession:
 
 
 def _run(session, approved):
-    return DryRunSubmitter(session).run(
+    sub = DryRunSubmitter(session)
+    sub.feed_ui_render_waits = ()          # no real render-wait sleep in tests
+    return sub.run(
         run_id="r", merchant="Driffle", store_id="127", approved=approved
     )
 
@@ -238,7 +240,9 @@ class ReflowWriteSession(FakeWriteSession):
 
 
 def _real(session, approved, click_mode="native", **kw):
-    return Submitter(session, click_mode=click_mode).run(
+    sub = Submitter(session, click_mode=click_mode)
+    sub.feed_ui_render_waits = ()          # no real render-wait sleep in tests
+    return sub.run(
         run_id="r", merchant="Driffle", store_id="127", approved=approved, **kw
     )
 
@@ -1757,6 +1761,7 @@ class ModalRaisesSession(FakeSubmitSession):
 def _dry(session, approved, **kw):
     submitter = DryRunSubmitter(session)
     submitter.empty_retry_wait_s = 0
+    submitter.feed_ui_render_waits = ()   # no real render-wait sleep in tests
     return submitter.run(
         run_id="r", merchant="Driffle", store_id="127", approved=approved, **kw
     )

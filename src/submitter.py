@@ -68,6 +68,12 @@ class StopRequested(RuntimeError):
 # speedup: the full-feed post-save re-scan after each creation is the bulk of a
 # submit's time and needs no modal.
 FEED_SCAN_SETTLE = 1.0
+# Render-wait backoff (2026-08-18): under sustained CDP load (~30 min into a
+# sweep) a feed page's HTML loads but its JS-built feed UI can lag the first read,
+# so it reads feed_ui=False ("rendered without the feed UI"). Before concluding the
+# page is blank we POLL the DOM (re-read, no re-navigate) with this backoff, letting
+# a slow render finish. Tests patch to ().
+FEED_UI_RENDER_WAITS = (1.0, 2.0, 4.0)
 
 
 def _page_param(url: str) -> int:
@@ -270,6 +276,7 @@ class _SubmitterBase:
         self.offer_pacer = offer_pacer
         self.empty_retry_wait_s = EMPTY_RETRY_WAIT_S
         self.feed_scan_settle = FEED_SCAN_SETTLE
+        self.feed_ui_render_waits = FEED_UI_RENDER_WAITS
         self.catalog: dict[str, Any] | None = None
         self._region_master: list[dict[str, Any]] = []
         # Cooperative stop hook (default: never checked → submit pipeline
@@ -312,6 +319,25 @@ class _SubmitterBase:
         if self.logger is not None:
             self.logger.log(event, **fields)
 
+    def _wait_for_feed_ui(self, rows: list[dict[str, str]], state: dict[str, Any]
+                          ) -> tuple[list[dict[str, str]], dict[str, Any]]:
+        """Poll the current DOM (re-read, NO re-navigate) with a backoff until the
+        feed UI renders. A slow JS render under sustained CDP load leaves
+        feed_ui=False on the first read though the page is loading fine (2026-08-18:
+        batched sweeps halted on 'page rendered without the feed UI' after ~30 min).
+        Returns the first (rows, state) that shows rows / login / a rendered feed UI,
+        else the last read after the backoff (the caller then re-navigates / fails
+        closed). Read-only, so safe to call anywhere in a scan."""
+        for wait in self.feed_ui_render_waits:
+            time.sleep(wait)
+            rows = self.session.page_offer_rows()
+            state = self.session.feed_page_state()
+            if rows or state.get("is_login") or bool(state.get("feed_ui")):
+                break
+        self._log("feed_ui_render_wait", feed_ui=bool(state.get("feed_ui")),
+                  rows=len(rows))
+        return rows, state
+
     def _read_feed_page(self, url: str, page: int
                         ) -> tuple[list[dict[str, str]], dict[str, Any]]:
         """Navigate to one feed page and read its rows + deterministic markers,
@@ -337,6 +363,11 @@ class _SubmitterBase:
             self.session.navigate(url, settle=self.feed_scan_settle)
             rows = self.session.page_offer_rows()
             state = self.session.feed_page_state()
+            # A slow JS render under sustained CDP load can leave the feed UI
+            # unrendered on the first read (2026-08-18). Poll the DOM (re-read, NO
+            # re-navigate) before concluding the page is blank/UI-less.
+            if not rows and not state.get("is_login") and not bool(state.get("feed_ui")):
+                rows, state = self._wait_for_feed_ui(rows, state)
             if state.get("is_login"):
                 raise NotLoggedInError("feed bounced to wp-login mid-scan")
             href = str(state.get("href") or "")

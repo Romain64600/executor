@@ -179,6 +179,7 @@ def _new_mover(feed):
     mover.empty_retry_wait_s = 0
     mover.feed_scan_settle = 0
     mover.feed_retry_pause = 0      # keep the transient-error retries instant in tests
+    mover.feed_ui_render_waits = ()  # no real render-wait sleep in tests
     return mover
 
 
@@ -406,6 +407,7 @@ class BatchedMoverTests(unittest.TestCase):
         mover.empty_retry_wait_s = 0
         mover.feed_scan_settle = 0
         mover.feed_retry_pause = 0
+        mover.feed_ui_render_waits = ()
         real = mover._full_source_scan
         state = {"calls": 0}
 

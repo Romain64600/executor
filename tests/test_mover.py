@@ -123,6 +123,7 @@ def _run(mover_cls, session, plan, **kw):
     m = mover_cls(session)
     m.post_apply_settle = 0  # no real POST wait in tests (Mover only)
     m.feed_retry_pause = 0   # no real sleep between retries in tests
+    m.feed_ui_render_waits = ()  # no real render-wait sleep in tests
     return m.run(run_id="r", store_id="38", plan=plan,
                  source_feed_page="aks-merchant-feeds-9", max_pages=5, **kw)
 
@@ -295,6 +296,39 @@ class ListOptionsRetryTests(unittest.TestCase):
         self.assertEqual(result["aborted"], "target_list_unresolved")
         self.assertEqual(result["moved"], 0)
         self.assertEqual(session.applied, [])         # never wrote anything
+
+
+class FeedUiRenderWaitTests(unittest.TestCase):
+    """2026-08-18: under sustained CDP load a feed page's JS-built UI can lag the
+    first read (feed_ui=False) though the page loads fine. _wait_for_feed_ui polls
+    the DOM (re-read, no re-navigate) until it renders, before failing closed."""
+
+    class _SlowSession:
+        def __init__(self, render_on):
+            self.reads = 0
+            self.render_on = render_on   # feed_ui becomes True from this read on
+        def page_offer_rows(self):
+            return [{"id": "1", "url": "https://m/1", "name": "G"}] if self.reads >= self.render_on else []
+        def feed_page_state(self):
+            self.reads += 1
+            return {"feed_ui": self.reads >= self.render_on, "is_login": False}
+
+    def _mover(self, session):
+        m = Mover(session)
+        m.feed_ui_render_waits = (0, 0, 0)   # no real sleep
+        return m
+
+    def test_polls_until_feed_ui_renders(self):
+        session = self._SlowSession(render_on=2)   # blank first read, rendered 2nd
+        rows, state = self._mover(session)._wait_for_feed_ui([], {"feed_ui": False})
+        self.assertTrue(state["feed_ui"])          # detected the render
+        self.assertGreaterEqual(session.reads, 2)  # it polled
+
+    def test_returns_empty_after_timeout_if_never_renders(self):
+        session = self._SlowSession(render_on=99)  # never renders within the waits
+        rows, state = self._mover(session)._wait_for_feed_ui([], {"feed_ui": False})
+        self.assertFalse(state["feed_ui"])         # gives up → caller fails closed
+        self.assertEqual(rows, [])
 
 
 class ReverifyRowTests(unittest.TestCase):
