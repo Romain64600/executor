@@ -113,9 +113,36 @@ class _MoverBase(_SubmitterBase):
 
     write_mode = False
     event_name = "dry_run_move"
+    # Bounded retry for transient reads (both the dry-run preview and the real
+    # move resolve the bulk[list] options and can hit a render race).
+    feed_retry_attempts = FEED_RETRY_ATTEMPTS
+    feed_retry_pause = FEED_RETRY_PAUSE_S     # tests patch to 0
 
     def _move(self, entry: dict[str, Any], ctx: dict[str, Any]) -> bool:
         raise NotImplementedError
+
+    def _read_list_options(self, store_id, source_feed_page: str, available: str):
+        """Read the bulk[list] move-target options, RETRYING while the result is
+        EMPTY. The dropdown is static (always present once the feed UI renders), so
+        0 options is almost always the read beating the page's JS render, not a
+        genuine "no lists" — a real batched sweep aborted target_list_unresolved on
+        a 0-option race while a read-only diag of the same page read 33
+        (2026-08-18). Re-navigates + settles between attempts (mirrors _scan_retry's
+        bounded retry). A genuinely empty result after every attempt is returned
+        as-is → the caller fails closed (target_list_unresolved), never a wrong move."""
+        options = self.session.list_options()
+        for attempt in range(1, self.feed_retry_attempts + 1):
+            if options:
+                return options
+            if attempt < self.feed_retry_attempts:
+                self._log("list_options_empty_retry", attempt=attempt,
+                          feed_page=source_feed_page)
+                if self.feed_retry_pause:
+                    time.sleep(self.feed_retry_pause)
+                self.session.navigate(
+                    feed_url(store_id, feed_page=source_feed_page, available=available))
+                options = self.session.list_options()
+        return options
 
     def run(
         self,
@@ -151,7 +178,7 @@ class _MoverBase(_SubmitterBase):
         # Resolve every target list LABEL -> id LIVE from the bulk[list] options.
         # Fail-closed: one unresolvable label aborts before any write — a wrong
         # list id would misfile the offer (the region/edition-drift lesson).
-        options = self.session.list_options()
+        options = self._read_list_options(store_id, source_feed_page, available)
         result["list_options_count"] = len(options)
         for e in plan:
             resolved = resolve_list_id(e.get("target_list_label", ""), options)
@@ -491,8 +518,6 @@ class Mover(_MoverBase):
     write_mode = True
     event_name = "move_offer"
     post_apply_settle = POST_APPLY_SETTLE_S  # tests patch to 0
-    feed_retry_attempts = FEED_RETRY_ATTEMPTS
-    feed_retry_pause = FEED_RETRY_PAUSE_S     # tests patch to 0
 
     def _scan_retry(self, fn, *, what: str):
         """Run a read-only scan ``fn`` (source or target), retrying a TRANSIENT

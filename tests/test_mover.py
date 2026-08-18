@@ -16,7 +16,8 @@ class FakeMoveSession:
 
     def __init__(self, pages, *, login=False, options=None, register_ok=True,
                  bulk_set_ok=True, apply_ok=True, move_removes=True, rows=None,
-                 source_id="9", on_target=True, no_remove_ids=None):
+                 source_id="9", on_target=True, no_remove_ids=None,
+                 empty_list_reads=0):
         self.pages = [list(p) for p in pages]        # the SOURCE list, paginated
         self.rows = dict(rows or {})  # per-id {url, name} overrides (re-id sim)
         self.no_remove_ids = set(no_remove_ids or [])  # ids whose Apply doesn't take
@@ -29,6 +30,8 @@ class FakeMoveSession:
         self.source_id = source_id
         self.on_target = on_target  # does a moved offer appear on its target list?
         self.moved_to = {}          # target_list_id -> [offer_ids] (RV2 verify)
+        self.empty_list_reads = empty_list_reads   # first N list_options() reads → []
+        self._list_reads = 0
         self.nav = []
         self._page = 0
         self._list = source_id
@@ -72,6 +75,11 @@ class FakeMoveSession:
                 "href": self.nav[-1] if self.nav else ""}
 
     def list_options(self):
+        # Simulate a render race: the first ``empty_list_reads`` reads beat the JS
+        # render and return [] before the dropdown populates.
+        self._list_reads += 1
+        if self._list_reads <= self.empty_list_reads:
+            return []
         return list(self.options)
 
     def bulk_row_present(self, oid):
@@ -114,6 +122,7 @@ def _plan(*offer_ids, label="Softwares", list_id="16"):
 def _run(mover_cls, session, plan, **kw):
     m = mover_cls(session)
     m.post_apply_settle = 0  # no real POST wait in tests (Mover only)
+    m.feed_retry_pause = 0   # no real sleep between retries in tests
     return m.run(run_id="r", store_id="38", plan=plan,
                  source_feed_page="aks-merchant-feeds-9", max_pages=5, **kw)
 
@@ -264,6 +273,28 @@ class MoverWriteTests(unittest.TestCase):
         self.assertEqual(result["moved"], 1)
         self.assertEqual(result["plan"][0]["current_offer_id"], "900")
         self.assertEqual(session.applied, [("900", "16")])
+
+
+class ListOptionsRetryTests(unittest.TestCase):
+    """2026-08-18: a batched sweep aborted target_list_unresolved because
+    list_options() read 0 (a render race), though the dropdown really had 33.
+    The mover retries an EMPTY read before failing closed."""
+
+    def test_empty_read_retries_then_resolves_and_moves(self):
+        # first read [] (race), retry re-navigates + reads the real options → moves
+        session = FakeMoveSession([["100", "200"]], empty_list_reads=1)
+        result = _run(Mover, session, _plan("100"))
+        self.assertIsNone(result["aborted"])          # NOT target_list_unresolved
+        self.assertGreaterEqual(result["list_options_count"], 1)
+        self.assertEqual(result["moved"], 1)
+
+    def test_persistently_empty_fails_closed(self):
+        # every read [] (not a race — genuinely no options) → fail closed, no move
+        session = FakeMoveSession([["100"]], empty_list_reads=99)
+        result = _run(Mover, session, _plan("100"))
+        self.assertEqual(result["aborted"], "target_list_unresolved")
+        self.assertEqual(result["moved"], 0)
+        self.assertEqual(session.applied, [])         # never wrote anything
 
 
 class ReverifyRowTests(unittest.TestCase):
