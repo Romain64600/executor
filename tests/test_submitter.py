@@ -1894,18 +1894,51 @@ class ReusedIdSession(FakeSubmitSession):
         return rows
 
 
+class ReidedMidRunSession(FakeSubmitSession):
+    """The row is id "1" during the index scan (located by id), then a re-import
+    rotates it to ``new_id`` (SAME merchant URL) BEFORE _prepare's fresh read — so
+    the by-id read finds nothing and _relocate_by_url must recover it by URL."""
+
+    def __init__(self, pages, *, reid_from_call, new_id, **kw):
+        super().__init__(pages, **kw)
+        self.rows_calls = 0
+        self.reid_from_call = reid_from_call
+        self.new_id = str(new_id)
+
+    def page_offer_rows(self):
+        self.rows_calls += 1
+        rows = super().page_offer_rows()
+        if self.rows_calls >= self.reid_from_call:
+            return [dict(r, id=self.new_id) for r in rows]   # rotate id, keep url/name
+        return rows
+
+
 class FreshRowRecheckTests(unittest.TestCase):
     """Audit 2026-07-17 (SC5): _prepare re-verifies the row on the FRESH DOM
     its own navigate just produced, before opening the modal by id."""
 
     def test_row_vanished_before_modal_is_blocked(self):
         # pages=[["1"]]: scan reads rows twice (page 1 + past-end), the
-        # 3rd read is _prepare's fresh check.
+        # 3rd read is _prepare's fresh check. Genuinely gone (the URL re-locate also
+        # can't find it) → fail-closed block.
         session = VanishingRowSession([["1"]], vanish_from_call=3)
         result = _dry(session, [_cand("1")])
         entry = result["plan"][0]
         self.assertFalse(entry["ready"])
         self.assertIn("vanished", entry["blocker"])
+
+    def test_row_reided_midrun_is_relocated_by_url_and_proceeds(self):
+        # 2026-08-19: the row's id ROTATES mid-run (a re-import between the index
+        # scan and the modal open). The old "vanished" skip is now a URL re-locate:
+        # the offer is found by its stable URL with its new id and the submit
+        # proceeds (the 2/3 ADD-not-created loss on the real Kinguin sweep).
+        session = ReidedMidRunSession([["1"]], reid_from_call=3, new_id="51")
+        result = _dry(session, [_cand("1")])
+        entry = result["plan"][0]
+        self.assertTrue(entry.get("relocated_by_url"))
+        self.assertEqual(entry["offer_id"], "51")      # adopted the new id
+        self.assertNotIn("blocker", entry)
+        self.assertTrue(entry["ready"])
 
     def test_reused_id_on_fresh_page_is_blocked(self):
         session = ReusedIdSession([["1"]], mutate_from_call=3)

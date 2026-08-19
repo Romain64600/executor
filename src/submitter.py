@@ -615,7 +615,41 @@ class _SubmitterBase:
             located["id_mismatches"] = id_mismatches
         return located
 
-    def _prepare(self, candidate: dict[str, Any], located: dict[str, Any]) -> dict[str, Any]:
+    def _relocate_by_url(self, candidate: dict[str, Any], ctx: dict[str, Any]
+                         ) -> dict[str, str] | None:
+        """A reflow/re-import BETWEEN the index scan and this candidate's modal open
+        (e.g. an earlier creation this run shifted the feed, or the pending feed
+        re-imported and rotated every id) can move the located row off its page or
+        rotate its id → the by-id read on the located page finds nothing. Fresh-scan
+        the feed by the candidate's STABLE merchant URL to find its CURRENT row (id +
+        page) before giving up — mirrors the mover's ``_relocate_before_move``.
+        Read-only. Returns the row details, or None when the URL is not in the feed
+        OR now points at a DIFFERENT product (fail closed — never open a modal on a
+        mismatched identity). A feed/CDP-unreadable scan propagates to the caller's
+        fail-closed handler (as elsewhere in ``_prepare``)."""
+        url = _url_key(str(candidate["offer"].get("url") or ""))
+        if not url:
+            return None
+        try:
+            _, by_url, found = self._scan_feed(
+                ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"],
+                stop_on_url=url)
+        except (FeedScanError, CdpCommandError):
+            # The recovery scan is unreadable — this is BEFORE any write for this
+            # candidate, so treat it as "not found" → the caller keeps the vanished
+            # block (skip, retry on a fresh run). A NotLoggedInError is NOT caught
+            # (session gone) and propagates, exactly like the rest of _prepare.
+            return None
+        row = by_url.get(url) if found else None
+        if row is None:
+            return None
+        mismatches, _ = _row_check(row, candidate, check_price=False)
+        if "name" in mismatches:
+            return None   # URL now points at a DIFFERENT product → do not touch it
+        return row
+
+    def _prepare(self, candidate: dict[str, Any], located: dict[str, Any],
+                 ctx: dict[str, Any]) -> dict[str, Any]:
         offer_id = str(located.get("offer_id") or candidate["offer"]["offer_id"])
         entry: dict[str, Any] = {
             "offer_id": offer_id,
@@ -649,11 +683,37 @@ class _SubmitterBase:
             None,
         )
         if fresh is None:
-            entry["blocker"] = (
-                "row vanished from its page between the index scan and the "
-                "modal open (re-import/reflow mid-run)"
+            # A reflow/re-import mid-run shifted the row off this page or rotated its
+            # id. Re-locate by the stable merchant URL (fresh scan) before giving up,
+            # like the mover — the offer usually just moved to an adjacent page.
+            relocated = self._relocate_by_url(candidate, ctx)
+            if relocated is None:
+                entry["blocker"] = (
+                    "row vanished from its page between the index scan and the "
+                    "modal open, and not found by URL re-locate (genuinely gone / "
+                    "re-imported away)"
+                )
+                return entry
+            stale_offer_id = offer_id
+            offer_id = relocated["offer_id"]
+            entry["offer_id"] = offer_id
+            entry["page_url"] = relocated["page_url"]
+            entry["relocated_by_url"] = True
+            self._log("submit_row_relocated", stale_offer_id=stale_offer_id,
+                      current_offer_id=offer_id, page_url=relocated["page_url"],
+                      url=candidate["offer"].get("url"))
+            self.session.navigate(relocated["page_url"])   # go to its NEW page
+            fresh = next(
+                (r for r in self.session.page_offer_rows()
+                 if str(r.get("id") or "") == offer_id),
+                None,
             )
-            return entry
+            if fresh is None:
+                entry["blocker"] = (
+                    "row vanished again after URL re-locate + navigate — the feed is "
+                    "reflowing too fast to pin (retry on a fresh run)"
+                )
+                return entry
         fresh_details = {
             "offer_id": offer_id,
             "page_url": located["page_url"],
@@ -856,7 +916,7 @@ class _SubmitterBase:
             entry: dict[str, Any] | None = None
             feed_unreadable: str | None = None
             try:
-                entry = self._prepare(candidate, located)
+                entry = self._prepare(candidate, located, ctx)
                 success = self._process(entry, candidate, ctx)
             except FEED_UNREADABLE_EXCS as exc:
                 if entry is None:
