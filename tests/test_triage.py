@@ -215,7 +215,8 @@ class ExecutePageMovesTests(unittest.TestCase):
         self.assertEqual(r["stopped"], "operator_stop")
         self.assertEqual((r["moved"], batched), (1, []))   # canary counted, no batch
 
-    def test_canary_moved_zero_fails_closed_no_batch(self):
+    def test_canary_moved_zero_real_failure_fails_closed_no_batch(self):
+        # moved 0 WITHOUT all_gone = a real block/RV2 failure → fail closed
         batched = []
         def canary(lid, rows): return {"ok": True, "moved": 0}    # validated nothing
         def batch(lid, rows): batched.append(lid); return {"ok": True, "moved": 9}
@@ -223,6 +224,23 @@ class ExecutePageMovesTests(unittest.TestCase):
         self.assertFalse(r["ok"])
         self.assertIn("moved 0", r["detail"])
         self.assertEqual(batched, [])                            # never batched
+
+    def test_canary_all_gone_skips_list_and_continues(self):
+        # moved 0 because ALL offers were already relocated (all_gone) → skip this
+        # list and continue, NOT halt the productive sweep (Romain 2026-08-19).
+        calls = []
+        def canary(lid, rows):
+            calls.append(("canary", lid))
+            if lid == "8":
+                return {"ok": True, "moved": 0, "all_gone": True}   # already gone
+            return {"ok": True, "moved": 1, "stopped": "limit_reached"}
+        def batch(lid, rows):
+            calls.append(("batch", lid)); return {"ok": True, "moved": 0}
+        r = execute_page_moves(self._by_list(), run_canary=canary, run_batch=batch)
+        self.assertTrue(r["ok"], r.get("detail"))                # did NOT halt
+        self.assertEqual(r["moved"], 1)                          # only list 16 moved
+        # list 8: canary only (skipped, no batch); list 16: canary + batch
+        self.assertEqual(calls, [("canary", "8"), ("canary", "16"), ("batch", "16")])
 
     def test_canary_abort_halts(self):
         r = execute_page_moves(

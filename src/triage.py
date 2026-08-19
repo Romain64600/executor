@@ -200,8 +200,17 @@ def execute_page_moves(
         if _move_phase_broken(c):
             return _fail("canary", list_id, c, c.get("aborted") or c.get("stopped") or "exit≠0")
         if int(c.get("moved") or 0) < 1:
-            # A canary that moved nothing did NOT validate the list (no RV3 grant) —
-            # the batch would abort as unauthorized. Fail closed, don't batch blind.
+            if c.get("all_gone"):
+                # The canary counts MOVES (not attempts), so moved==0 means the
+                # mover walked the WHOLE list and found NO movable offer — every one
+                # was already relocated (a parallel operator / re-import, proven by a
+                # full scan). Nothing to move for this list → SKIP it and continue,
+                # don't halt the productive sweep (Romain 2026-08-19).
+                phases.append({"list_id": list_id, "phase": "skip",
+                               "detail": "all offers already gone (nothing to move)"})
+                continue
+            # Otherwise the canary hit a real failure (block / RV2) → it did NOT
+            # validate the list (no RV3 grant); fail closed, don't batch blind.
             return _fail("canary", list_id, c, "moved 0 (list not validated)")
         if c.get("stopped") == "operator_stop":
             return _operator_halt()

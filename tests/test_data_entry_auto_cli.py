@@ -165,6 +165,36 @@ class TriageStageWiringTests(unittest.TestCase):
         self.assertFalse(mv.clean())                    # batch aborted → halt
         self.assertEqual(mv.moved, 2)                   # canary 2, batch 0 — NOT 4
 
+    def test_move_execute_all_gone_list_skips_not_halts(self):
+        # Romain 2026-08-19: a list whose offers were ALL already relocated (parallel
+        # operator) → the canary moves 0 with every entry an already-gone skip →
+        # skip the list, don't halt the sweep.
+        run_id = "run-p1"
+        d = self.MOD.ROOT / "runs" / run_id
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "skipped.json").write_text(json.dumps([
+            {"offer": {"offer_id": "1", "store_id": "58", "name": "A", "url": "https://k/1"},
+             "reason": "gift card"},
+            {"offer": {"offer_id": "2", "store_id": "58", "name": "B", "url": "https://k/2"},
+             "reason": "gift card"},
+        ]), encoding="utf-8")
+
+        def fake_run_child(argv):
+            (d / "move_plan.json").write_text(json.dumps({"moved": 0, "plan": [
+                {"offer_id": "1", "moved": False, "blocker": None,
+                 "skipped": "not on source list (already moved?) — proven by full scan"},
+                {"offer_id": "2", "moved": False, "blocker": None,
+                 "skipped": "not on source list (already moved?) — proven by full scan"},
+            ]}), encoding="utf-8")
+            return 0
+
+        with mock.patch.object(self.MOD, "_run_child", side_effect=fake_run_child):
+            stages = self.MOD._make_stages("Kinguin", "58", "all", None,
+                                           triage=True, move_execute=True)
+            mv = stages.move(run_id)
+        self.assertTrue(mv.clean())                     # skipped, did NOT halt
+        self.assertEqual(mv.moved, 0)
+
     def test_triage_dry_run_plans_without_browser(self):
         run_id = "run-p3"
         d = self._run_dir(run_id, [

@@ -246,8 +246,16 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
                              "--store-id", store_id, "--available", available,
                              "--execute", "--mode", mode] + extra)
             res = _load_json(run_dir / "move_plan.json") or {}
+            moved = int(res.get("moved") or 0)
+            plan = res.get("plan") or []
+            # all_gone: the canary moved 0 because EVERY offer it walked was already
+            # relocated (skipped as "not on source list", proven by a full scan) with
+            # NO real block/failure → nothing to move for this list, not a failure.
+            all_gone = (moved == 0 and bool(plan)
+                        and all(e.get("skipped") for e in plan)
+                        and not any(e.get("blocker") for e in plan))
             return {"ok": (rc == 0 and not res.get("aborted")),
-                    "moved": int(res.get("moved") or 0),
+                    "moved": moved, "all_gone": all_gone,
                     "aborted": res.get("aborted") or (None if rc == 0 else f"exit {rc}"),
                     "stopped": res.get("stopped")}
 
