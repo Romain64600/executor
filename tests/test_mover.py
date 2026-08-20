@@ -235,7 +235,7 @@ class MoverWriteTests(unittest.TestCase):
         result = _run(Mover, session, _plan("100"))
         self.assertEqual(result["moved"], 0)
         self.assertEqual(result["move_attempts"], 0)
-        self.assertIn("proven by full scan", result["plan"][0]["skipped"])
+        self.assertIn("proven by the source scan", result["plan"][0]["skipped"])
         self.assertEqual(session.applied, [])
 
     def test_canary_limit_stops_after_one(self):
@@ -366,13 +366,27 @@ class PageHintIndexTests(unittest.TestCase):
         # a windowed index reads FEWER offers than the whole 4-offer feed
         self.assertLess(result["feed_offers"], 4)
 
-    def test_page_hint_relocates_offer_outside_window(self):
-        # offer "400" is on page 4, OUTSIDE the page_hint=1 window [1,2]; the
-        # per-offer relocate (fresh scan by URL) must still find + move it
+    def test_page_hint_skips_offer_far_outside_window(self):
+        # page-by-page (2026-08-20): with a window the SOURCE scans are bounded to
+        # the page — an offer that reflowed FAR outside it (page 4 vs window [1,2]) is
+        # NOT deep-scanned; it is skipped this run (a re-run / its new page catches
+        # it). Bounded to ~1 page, never a 100-page walk. moved=0, no wrong write.
         session = FakeMoveSession([["1"], ["2"], ["3"], ["400"]])
         result = _run(Mover, session, _plan("400"), page_hint=1)
         self.assertIsNone(result["aborted"])
-        self.assertEqual(result["moved"], 1)          # recovered via relocate
+        self.assertEqual(result["moved"], 0)          # skipped, not deep-relocated
+        self.assertEqual(session.applied, [])          # never wrote anything
+
+    def test_page_hint_source_scans_stay_within_window(self):
+        # the whole point: NO page beyond the window is ever navigated for a SOURCE
+        # scan (index / locate / gone-proof), so a deep feed costs ~1 page, not 100.
+        session = FakeMoveSession([["100"], ["200"], ["300"], ["400"], ["500"]])
+        _run(Mover, session, _plan("100"), page_hint=1)   # window [1,2]
+        import re
+        pages = {int(m.group(1)) for u in session.nav
+                 for m in [re.search(r"[?&]p=(\d+)", u)] if m}
+        pages.add(1)  # p=1 default (no &p= in the URL) counts as page 1
+        self.assertTrue(pages <= {1, 2}, f"navigated beyond the window: {sorted(pages)}")
 
     def test_no_page_hint_full_index_unchanged(self):
         session = FakeMoveSession([["100", "200"], ["300"]])
@@ -447,7 +461,7 @@ class FailClosedLocateTests(unittest.TestCase):
         result = _run(Mover, session, _plan("999"))
         self.assertEqual(result["moved"], 0)
         self.assertEqual(result["move_attempts"], 0)
-        self.assertIn("proven by full scan", result["plan"][0]["skipped"])
+        self.assertIn("proven by the source scan", result["plan"][0]["skipped"])
 
 
 class DryRunGuardTests(unittest.TestCase):

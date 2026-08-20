@@ -233,7 +233,7 @@ class _MoverBase(_SubmitterBase):
         self._log("feed_indexed", offers=len(index), window=window_pages)
         ctx = {"store_id": store_id, "feed_page": source_feed_page,
                "available": available, "max_pages": max_pages,
-               "index": index, "by_url": by_url}
+               "index": index, "by_url": by_url, "window_pages": window_pages}
 
         # P1 (2026-07-28): ``batch`` groups the plan by source page and moves a
         # whole page in ONE Apply, verifying the group at once — the ~50-100x
@@ -395,11 +395,10 @@ class _MoverBase(_SubmitterBase):
         if "not in current feed" not in located["blocker"]:
             return "block", located["blocker"]  # identity contradiction
         url = _url_key(str(candidate["offer"].get("url") or ""))
-        index, by_url, found = self._scan_feed(
-            ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"],
-            stop_on=offer_id, stop_on_url=url or None)
+        index, by_url, found = self._source_scan(
+            ctx, stop_on=offer_id, stop_on_url=url or None)
         if not found:
-            return "skip", "not on source list (already moved?) — proven by full scan"
+            return "skip", "not on source list (already moved?) — proven by the source scan"
         ctx["index"], ctx["by_url"] = index, by_url
         relocated = self._locate_row(candidate, offer_id, index, by_url)
         if relocated.get("blocker"):
@@ -419,9 +418,7 @@ class _MoverBase(_SubmitterBase):
         if not url:
             entry["blocker"] = "no merchant URL to relocate before move"
             return False
-        _, by_url, found = self._scan_feed(
-            ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"],
-            stop_on_url=url)
+        _, by_url, found = self._source_scan(ctx, stop_on_url=url)
         row = by_url.get(url) if found else None
         if row is None:
             entry["blocker"] = "offer not on source feed at move time (moved / re-imported away)"
@@ -484,6 +481,29 @@ class _MoverBase(_SubmitterBase):
             "moved": False,
         }
 
+    def _source_scan(self, ctx: dict[str, Any], *, stop_on: str | None = None,
+                     stop_on_url: str | None = None, full_coverage: bool = False):
+        """A SOURCE-feed scan, bounded to the page window when one is set.
+
+        Page-by-page triage (Romain 2026-08-20): the offers were extracted from ONE
+        page and a Pending page holds ≤100 offers, so a full 100-page scan for every
+        locate/gone-proof is absurd. With ``window_pages`` in ctx we read ONLY that
+        page + a small neighbourhood (via ``_scan_page_window``); an offer that
+        reflowed OUT of the window is not found → skipped/not-gone, and RV2
+        present-on-target (the TARGET scan, unchanged) is the correctness ANCHOR — a
+        windowed "gone" WITHOUT that anchor would be fail-open (the 2026-08-06 submit
+        rule), but the MOVE always pairs "gone from source" with "present on target".
+        No window (the all-stores sort) → a full ``_scan_feed`` as before. Returns
+        ``(index, by_url, found)``."""
+        window = ctx.get("window_pages")
+        if window is not None:
+            return self._scan_page_window(
+                ctx["store_id"], ctx["feed_page"], ctx["available"], window,
+                stop_on=stop_on, stop_on_url=stop_on_url)
+        return self._scan_feed(
+            ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"],
+            stop_on=stop_on, stop_on_url=stop_on_url, full_coverage=full_coverage)
+
     def _full_source_scan(self, ctx: dict[str, Any]
                           ) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]]]:
         """A source-feed scan walked to a PROVEN end-of-feed (``full_coverage`` —
@@ -492,9 +512,7 @@ class _MoverBase(_SubmitterBase):
         stop_on proof, for a whole group at once. Raises FeedScanError
         (fail-closed) when coverage cannot be proven."""
 
-        index, by_url, _ = self._scan_feed(
-            ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"],
-            full_coverage=True)
+        index, by_url, _ = self._source_scan(ctx, full_coverage=True)
         return index, by_url
 
 
@@ -773,7 +791,7 @@ class Mover(_MoverBase):
                 entry = pending[key]
                 row = by_url.get(key)
                 if row is None:
-                    entry["skipped"] = "not on source list (already moved?) — proven by full scan"
+                    entry["skipped"] = "not on source list (already moved?) — proven by the source scan"
                     self._log("move_skipped", offer_id=entry["offer_id"], reason=entry["skipped"])
                     result["plan"].append(entry)
                     del pending[key]
@@ -966,7 +984,7 @@ class Mover(_MoverBase):
         for entry in entries:
             row = by_url.get(_url_key(str(entry["url"])))
             if row is None:
-                entry["skipped"] = "not on source list (already moved?) — proven by full scan"
+                entry["skipped"] = "not on source list (already moved?) — proven by the source scan"
                 self._log("move_skipped", offer_id=entry["offer_id"], reason=entry["skipped"])
                 result["plan"].append(entry)
                 continue
