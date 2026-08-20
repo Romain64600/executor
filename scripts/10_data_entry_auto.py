@@ -242,9 +242,17 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
                 (run_dir / "move_plan.json").unlink()
             except FileNotFoundError:
                 pass
-            rc = _run_child([py, str(ROOT / "scripts" / "06_move.py"), str(run_dir),
-                             "--store-id", store_id, "--available", available,
-                             "--execute", "--mode", mode] + extra)
+            argv = [py, str(ROOT / "scripts" / "06_move.py"), str(run_dir),
+                    "--store-id", store_id, "--available", available,
+                    "--execute", "--mode", mode] + extra
+            # The offers were extracted from ONE feed page (run id ends -p<N>) —
+            # pass it so the mover indexes a small window instead of the full deep
+            # feed (~25 min/run on Kinguin). Same page-hint the submit stage uses.
+            try:
+                argv += ["--page-hint", run_id.rsplit("-p", 1)[1]]
+            except IndexError:
+                pass
+            rc = _run_child(argv)
             res = _load_json(run_dir / "move_plan.json") or {}
             moved = int(res.get("moved") or 0)
             plan = res.get("plan") or []

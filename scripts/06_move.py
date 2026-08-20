@@ -141,6 +141,11 @@ def _main() -> int:
     parser.add_argument("--deferred", action="store_true",
                         help="P1.6: with --batch --mode safe, verify a store's moves ONCE (pages "
                              "highest-first, still identity- + RV2-gated). Full batch only.")
+    parser.add_argument("--page-hint", type=int, default=None,
+                        help="The feed page the offers were extracted from — index only that "
+                             "page + a small neighbourhood (fast on a deep feed) instead of a full "
+                             "scan. A reflowed offer outside the window is relocated by URL. The "
+                             "'gone from source' verify stays full-coverage.")
     args = parser.parse_args()
 
     # Validation mirrors 09_sort_move: a --batch canary must fire a >=2-item Apply;
@@ -293,7 +298,7 @@ def _main() -> int:
                 run_id=run_id, store_id=store_id, plan=entries,
                 source_feed_page=source_list, available=args.available,
                 max_pages=max_pages, limit=limit,
-                batch=args.batch, deferred=args.deferred)
+                batch=args.batch, deferred=args.deferred, page_hint=args.page_hint)
     except FEED_UNREADABLE_EXCS as exc:
         print(json.dumps({"aborted": True,
                           "reason": f"fail-closed abort (feed/CDP unreadable): {exc}"}, indent=2))

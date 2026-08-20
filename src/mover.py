@@ -159,6 +159,8 @@ class _MoverBase(_SubmitterBase):
         should_stop=None,
         batch: bool = False,
         deferred: bool = False,
+        page_hint: int | None = None,
+        page_window: int = 1,
     ) -> dict[str, Any]:
         result: dict[str, Any] = {
             "aborted": None, "stopped": None, "feed_offers": 0,
@@ -198,9 +200,25 @@ class _MoverBase(_SubmitterBase):
         # Arm the cooperative stop ONLY for the initial index (a slow, read-only
         # scan — the phase a full-list dry-run spends minutes in). It is cleared
         # before any offer is touched, so a move is never interrupted mid-flight.
+        # WINDOWED index (2026-08-20): the initial index only LOCATES the plan's
+        # rows, and the caller knows their page from the extract (the run id's -p<N>).
+        # On a deep feed (Kinguin ~100 pages) a full _index_feed is ~25 min/run — most
+        # of a batched move's wall-clock. A page-hint window reads only that page + a
+        # small neighbourhood, and `_relocate_before_move` (a fresh full scan by URL)
+        # already recovers any offer that reflowed OUTSIDE the window. The "gone from
+        # source" VERIFY stays full-coverage (never windowed — its full scan is the
+        # fail-closed floor). No page_hint → full index, unchanged.
+        window_pages: list[int] | None = None
+        if page_hint is not None:
+            window_pages = [p for p in range(page_hint - page_window, page_hint + page_window + 1)
+                            if p >= 1]
         self._should_stop = should_stop
         try:
-            index, by_url = self._index_feed(store_id, source_feed_page, available, max_pages)
+            if window_pages is not None:
+                index, by_url, _ = self._scan_page_window(
+                    store_id, source_feed_page, available, window_pages)
+            else:
+                index, by_url = self._index_feed(store_id, source_feed_page, available, max_pages)
         except StopRequested as exc:
             self._log("run_stopped", reason="operator_stop", detail=str(exc))
             result["stopped"] = "operator_stop"
@@ -212,7 +230,7 @@ class _MoverBase(_SubmitterBase):
         finally:
             self._should_stop = None  # per-offer scans are never interruptible
         result["feed_offers"] = len(index)
-        self._log("feed_indexed", offers=len(index))
+        self._log("feed_indexed", offers=len(index), window=window_pages)
         ctx = {"store_id": store_id, "feed_page": source_feed_page,
                "available": available, "max_pages": max_pages,
                "index": index, "by_url": by_url}

@@ -352,6 +352,35 @@ class FeedUiRenderWaitTests(unittest.TestCase):
         self.assertEqual(rows, [])
 
 
+class PageHintIndexTests(unittest.TestCase):
+    """2026-08-20: on a deep feed a full initial index is ~25 min. A page_hint
+    windows the index to the offer's extract page + a neighbour; a row that
+    reflowed OUTSIDE the window is still recovered by the per-offer relocate."""
+
+    def test_page_hint_moves_offer_in_window(self):
+        # offer "100" on page 1; page_hint=1 → window [1,2] → indexed → moved
+        session = FakeMoveSession([["100", "200"], ["300"], ["400"]])
+        result = _run(Mover, session, _plan("100"), page_hint=1)
+        self.assertIsNone(result["aborted"])
+        self.assertEqual(result["moved"], 1)
+        # a windowed index reads FEWER offers than the whole 4-offer feed
+        self.assertLess(result["feed_offers"], 4)
+
+    def test_page_hint_relocates_offer_outside_window(self):
+        # offer "400" is on page 4, OUTSIDE the page_hint=1 window [1,2]; the
+        # per-offer relocate (fresh scan by URL) must still find + move it
+        session = FakeMoveSession([["1"], ["2"], ["3"], ["400"]])
+        result = _run(Mover, session, _plan("400"), page_hint=1)
+        self.assertIsNone(result["aborted"])
+        self.assertEqual(result["moved"], 1)          # recovered via relocate
+
+    def test_no_page_hint_full_index_unchanged(self):
+        session = FakeMoveSession([["100", "200"], ["300"]])
+        result = _run(Mover, session, _plan("300"))   # no page_hint
+        self.assertEqual(result["moved"], 1)
+        self.assertEqual(result["feed_offers"], 3)    # whole feed indexed
+
+
 class ReverifyRowTests(unittest.TestCase):
     """MV1/SC5 — never write against a row that no longer matches the plan."""
 
