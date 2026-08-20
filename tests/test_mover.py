@@ -17,7 +17,7 @@ class FakeMoveSession:
     def __init__(self, pages, *, login=False, options=None, register_ok=True,
                  bulk_set_ok=True, apply_ok=True, move_removes=True, rows=None,
                  source_id="9", on_target=True, no_remove_ids=None,
-                 empty_list_reads=0):
+                 empty_list_reads=0, bulk_absent_reads=0):
         self.pages = [list(p) for p in pages]        # the SOURCE list, paginated
         self.rows = dict(rows or {})  # per-id {url, name} overrides (re-id sim)
         self.no_remove_ids = set(no_remove_ids or [])  # ids whose Apply doesn't take
@@ -32,6 +32,8 @@ class FakeMoveSession:
         self.moved_to = {}          # target_list_id -> [offer_ids] (RV2 verify)
         self.empty_list_reads = empty_list_reads   # first N list_options() reads → []
         self._list_reads = 0
+        self.bulk_absent_reads = bulk_absent_reads  # first N bulk_row_present() → absent
+        self._bulk_reads = 0
         self.nav = []
         self._page = 0
         self._list = source_id
@@ -83,6 +85,11 @@ class FakeMoveSession:
         return list(self.options)
 
     def bulk_row_present(self, oid):
+        # Simulate a bulk-form render race: the first ``bulk_absent_reads`` reads
+        # find the form/checkbox not rendered yet.
+        self._bulk_reads += 1
+        if self._bulk_reads <= self.bulk_absent_reads:
+            return {"checkbox": False, "bulk_form": False}
         here = 0 <= self._page < len(self.pages) and oid in self.pages[self._page]
         return {"checkbox": here, "bulk_form": True}
 
@@ -393,6 +400,36 @@ class PageHintIndexTests(unittest.TestCase):
         result = _run(Mover, session, _plan("300"))   # no page_hint
         self.assertEqual(result["moved"], 1)
         self.assertEqual(result["feed_offers"], 3)    # whole feed indexed
+
+
+class BulkFormRenderWaitTests(unittest.TestCase):
+    """2026-08-20: a FAST page-scoped move can check the bulk checkbox/form before
+    its JS finishes rendering → "row/bulk-form not present at move time". The old
+    slow full scan masked the race; _bulk_row_present now polls the form."""
+
+    def _mover(self, session):
+        m = Mover(session)
+        m.post_apply_settle = 0
+        m.feed_ui_render_waits = (0, 0, 0)   # poll runs, no sleep
+        return m
+
+    def test_bulk_form_render_race_is_polled_then_moves(self):
+        # form absent on the first 2 reads (render race), then present → the poll
+        # recovers and the move succeeds instead of failing "not present".
+        session = FakeMoveSession([["100", "200"]], bulk_absent_reads=2)
+        result = self._mover(session).run(
+            run_id="r", store_id="38", plan=_plan("100"),
+            source_feed_page="aks-merchant-feeds-9", max_pages=5)
+        self.assertEqual(result["moved"], 1)
+
+    def test_bulk_form_persistently_absent_blocks(self):
+        # genuinely absent (not a race) → fail closed after the backoff, no write
+        session = FakeMoveSession([["100"]], bulk_absent_reads=99)
+        result = self._mover(session).run(
+            run_id="r", store_id="38", plan=_plan("100"),
+            source_feed_page="aks-merchant-feeds-9", max_pages=5)
+        self.assertEqual(result["moved"], 0)
+        self.assertEqual(session.applied, [])
 
 
 class ReverifyRowTests(unittest.TestCase):

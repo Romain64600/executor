@@ -146,6 +146,26 @@ class _MoverBase(_SubmitterBase):
             feed_url(store_id, feed_page=source_feed_page, available=available))
         return self.session.list_options()
 
+    def _bulk_row_present(self, offer_id: str) -> dict[str, bool]:
+        """Is the row's bulk checkbox + form present? POLL the DOM (re-read, no
+        re-navigate) while ABSENT — the bulk form's JS renders a few seconds after
+        navigation, so a FAST page-scoped move can check before it is ready
+        (2026-08-20: ten consecutive "row/bulk-form not present" on a fast run, while
+        the old slow full scan gave the form time to render and masked the race).
+        Same backoff as the list-options / feed-UI render-waits. A genuinely absent
+        row after the backoff returns absent → the caller fails closed (skip), never
+        a write on a missing row."""
+        present = self.session.bulk_row_present(offer_id)
+        if present.get("checkbox") and present.get("bulk_form"):
+            return present
+        for wait in self.feed_ui_render_waits:
+            time.sleep(wait)
+            present = self.session.bulk_row_present(offer_id)
+            if present.get("checkbox") and present.get("bulk_form"):
+                self._log("bulk_form_render_wait", offer_id=offer_id)
+                return present
+        return present
+
     def run(
         self,
         *,
@@ -531,7 +551,7 @@ class DryRunMover(_MoverBase):
                       blocker=entry.get("blocker"))
             return False
         current_id = entry["current_offer_id"]
-        present = self.session.bulk_row_present(current_id)
+        present = self._bulk_row_present(current_id)
         entry["selectable"] = bool(present.get("checkbox") and present.get("bulk_form"))
         if not entry["selectable"]:
             entry["ready"] = False
@@ -590,7 +610,7 @@ class Mover(_MoverBase):
             return False
         current_id = entry["current_offer_id"]
 
-        present = self.session.bulk_row_present(current_id)
+        present = self._bulk_row_present(current_id)
         if not (present.get("checkbox") and present.get("bulk_form")):
             entry["ready"] = False
             entry["blocker"] = "row/bulk-form not present at move time"
@@ -851,7 +871,7 @@ class Mover(_MoverBase):
                 result["stopped"] = "guard_blocked"
                 self._log("run_stopped", reason=result["stopped"])
                 break  # leftover offers unattempted
-            present = self.session.bulk_row_present(entry["current_offer_id"])
+            present = self._bulk_row_present(entry["current_offer_id"])
             if not (present.get("checkbox") and present.get("bulk_form")):
                 entry["ready"] = False
                 entry["blocker"] = "row/bulk-form not present at move time"
