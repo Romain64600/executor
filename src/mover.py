@@ -1072,22 +1072,59 @@ class Mover(_MoverBase):
                             _done(entry, False, detail)
                     break
 
+    def _scan_source_settled(self, registered, ctx):
+        """Post-Apply source re-scan, POLLING for the feed to reflow. AKS removes
+        the moved rows a moment AFTER the Apply, so an immediate re-scan of a big
+        group can still SEE them (a stale read) and wrongly conclude "still on
+        source" — the SAME render race already handled for list_options / bulk_form
+        / feed_ui, here on the post-Apply source feed. 2026-08-21: an 86-offer Apply
+        verified 2/86 because this re-scan read before the feed reflowed; an
+        independent extract proved most had left. Re-scan (the cheap window scan)
+        until every registered offer is gone, or the feed_ui_render_waits backoff is
+        spent — then a residual "still present" is a REAL not-moved. Fail-closed is
+        unchanged: gone-from-source stays REQUIRED, a scan error still raises."""
+
+        def _still_on_source(index, by_url):
+            # dual-key absence == gone (parity with the caller's ``gone`` test); an
+            # offer is still present if its stable URL OR its current id is on source.
+            return [(e, cid) for e, cid in registered
+                    if (_url_key(str(e["url"])) in by_url) or (cid in index)]
+
+        index, by_url = self._scan_retry(lambda: self._full_source_scan(ctx),
+                                         what="verify_source")
+        still = _still_on_source(index, by_url)
+        if not still:
+            return index, by_url
+        for wait in self.feed_ui_render_waits:
+            time.sleep(wait)
+            index, by_url = self._scan_retry(lambda: self._full_source_scan(ctx),
+                                             what="verify_source")
+            now = _still_on_source(index, by_url)
+            if len(now) < len(still):
+                self._log("verify_source_render_wait",
+                          cleared=len(still) - len(now), still_present=len(now))
+            still = now
+            if not still:
+                break
+        return index, by_url
+
     def _verify_registered_set(self, registered, target_id, ctx, result, done) -> bool:
         """RV2 for a set of just-Applied offers: ONE proven source scan (gone,
-        dual-key) then ONE target scan (present). ``registered`` = [(entry,
-        current_id)]; ``done(entry, success, detail)`` records each. Fail-closed:
-        a scan error marks the WHOLE remaining set UNKNOWN + aborts. Shared by the
-        per-group path (verify right after each Apply — tight window) and the
-        deferred per-store path (verify once after all Applies). Returns False on
-        a fail-closed abort."""
+        dual-key, POLLED for reflow via ``_scan_source_settled``) then ONE target
+        scan (present). ``registered`` = [(entry, current_id)]; ``done(entry,
+        success, detail)`` records each. Fail-closed: a scan error marks the WHOLE
+        remaining set UNKNOWN + aborts. Shared by the per-group path (verify right
+        after each Apply — tight window) and the deferred per-store path (verify
+        once after all Applies). Returns False on a fail-closed abort."""
 
         if not registered:
             return True
         # Source: an id/URL absent from a PROVEN scan genuinely left the feed. A
-        # feed/CDP error → the whole in-flight set is UNKNOWN, never "moved".
+        # feed/CDP error → the whole in-flight set is UNKNOWN, never "moved". The
+        # scan POLLS for reflow first so a big Apply's stale read never false-
+        # negatives a moved offer (2026-08-21, G2A 2/86 → see _scan_source_settled).
         try:
-            index, by_url = self._scan_retry(lambda: self._full_source_scan(ctx),
-                                             what="verify_source")
+            index, by_url = self._scan_source_settled(registered, ctx)
         except FEED_UNREADABLE_EXCS as exc:
             detail = ("feed/CDP error after Apply — offer state UNKNOWN, verify the move by "
                       f"hand on AKS before any retry: {type(exc).__name__}: {exc}")

@@ -49,7 +49,7 @@ class FakeFeed:
     def __init__(self, lists, page_size=2, *, fail_register=(), swallow_target=(),
                  bulk_list_lies=False, break_after_apply=False, break_target_scan=False,
                  rename_on_page=None, raise_reads_after_apply=None, raise_on_apply=False,
-                 hide_on_target_when_store_scoped=None):
+                 hide_on_target_when_store_scoped=None, stale_source_reads=0):
         self.lists = {k: [dict(o) for o in v] for k, v in lists.items()}
         self.page_size = page_size
         self.fail_register = set(fail_register)
@@ -66,6 +66,13 @@ class FakeFeed:
         # (?store=…) target view — models the re-import store/id rotation that made
         # a moved offer invisible to a store-filtered RV2 scan (2026-07-31 fix).
         self.hide_on_target_when_store_scoped = set(hide_on_target_when_store_scoped or ())
+        # A just-Applied offer lingers on the SOURCE feed's first page for the first
+        # N reads before the feed reflows it out — the render race the post-Apply
+        # source re-scan must POLL through (2026-08-21 G2A verified 2/86 because it
+        # read the stale pre-reflow feed once and concluded "still on source").
+        self.stale_source_reads = stale_source_reads
+        self._stale_rows = []
+        self._stale_left = 0
         self._store_scoped = False
         self._fp = None
         self._page = 1
@@ -126,12 +133,23 @@ class FakeFeed:
 
     def page_offer_rows(self):
         self._maybe_raise_reads()
-        return [] if self._read_broken() else self._rows()
+        if self._read_broken():
+            return []
+        rows = self._rows()
+        # reflow lag: re-show the just-moved rows on the source's first page until
+        # the countdown runs out (each source page-1 read consumes one).
+        if self._fp == SRC and self._page == 1 and self._stale_left > 0:
+            self._stale_left -= 1
+            rows = [dict(o) for o in self._stale_rows] + rows
+        return rows
 
     def feed_page_state(self):
         if self._read_broken():
             return {"feed_ui": False, "nav_max": 0, "is_login": False, "href": self._url}
         n = len(self._cur())
+        # keep the source's page 1 alive while stale rows still linger there
+        if self._fp == SRC and self._stale_left > 0:
+            n = max(n, self.page_size)
         nav_max = (n + self.page_size - 1) // self.page_size
         return {"feed_ui": True, "nav_max": nav_max, "is_login": False, "href": self._url}
 
@@ -164,6 +182,9 @@ class FakeFeed:
         for o in moving:
             if o["id"] not in self.swallow_target:
                 tgt.append(o)
+        if self.stale_source_reads and moving:
+            self._stale_rows = [dict(o) for o in moving]
+            self._stale_left = self.stale_source_reads
         self._registered = []
         self._applied = True
         if self.break_after_apply:
@@ -815,6 +836,50 @@ class ScanRetryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self._mover()._scan_retry(fn, what="t")
         self.assertEqual(calls["n"], 1)          # propagated immediately, no retry
+
+
+class PostApplySourceReflowTests(unittest.TestCase):
+    """The post-Apply source re-scan POLLS for the feed to reflow. A big Apply's
+    stale, pre-reflow read must not false-negative a moved offer — 2026-08-21 a
+    G2A page verified 2/86 because the single re-scan saw all 86 'still on source'
+    (an independent extract proved most had actually left). Shared by the tight
+    per-group and the deferred per-store verify (both use _verify_registered_set)."""
+
+    def _polling(self, feed):
+        m = _new_mover(feed)
+        m.feed_ui_render_waits = (0, 0, 0)   # the settle poll runs, no real sleep
+        return m
+
+    def _run(self, feed, deferred):
+        return self._polling(feed).run(
+            run_id="t", store_id="38", plan=[_spec(1), _spec(2)],
+            source_feed_page="aks-merchant-feeds-%s" % SRC,
+            max_pages=20, limit=None, batch=True, deferred=deferred)
+
+    def test_stale_read_is_polled_then_confirmed_deferred(self):
+        # first verify re-scan still shows both moved offers (stale); the poll
+        # re-scans, the feed has reflowed, both verify as moved.
+        feed = FakeFeed({SRC: [_offer(1), _offer(2)]}, page_size=10, stale_source_reads=1)
+        res = self._run(feed, deferred=True)
+        self.assertEqual(res["moved"], 2)
+        self.assertTrue(all(e["moved"] for e in res["plan"]))
+
+    def test_stale_read_is_polled_then_confirmed_tight(self):
+        feed = FakeFeed({SRC: [_offer(1), _offer(2)]}, page_size=10, stale_source_reads=1)
+        res = self._run(feed, deferred=False)
+        self.assertEqual(res["moved"], 2)
+        self.assertTrue(all(e["moved"] for e in res["plan"]))
+
+    def test_source_never_reflows_stays_unconfirmed_fail_closed(self):
+        # the offers DID land on target, but the source read is stuck showing them:
+        # after the backoff the move stays UNCONFIRMED (gone-from-source REQUIRED),
+        # never silently scored moved on target-presence alone.
+        feed = FakeFeed({SRC: [_offer(1), _offer(2)]}, page_size=10, stale_source_reads=99)
+        res = self._run(feed, deferred=True)
+        self.assertEqual(res["moved"], 0)
+        for e in res["plan"]:
+            self.assertFalse(e["moved"])
+            self.assertIn("STILL on source", e["post_verify"])
 
 
 if __name__ == "__main__":
