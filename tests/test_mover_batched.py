@@ -19,13 +19,16 @@ properties the simplification safety review required:
 import re
 import unittest
 
+from src.aks_lists import is_blacklist_label
 from src.cdp_session import CdpCommandError
 from src.mover import Mover
 from src.step_guard import StepGuard
 from src.submitter import _SubmitterBase, _url_key
 
 SRC = "9"          # source list → page aks-merchant-feeds-9
-TGT = "8"          # target list (Blacklist)
+TGT = "21"         # generic target list = Gift cards (NON-blacklist, so the RV2
+#                    present-on-target walk runs). Blacklist (8) skips RV2 by
+#                    design — its own eviction tests use label "Blacklist".
 _FP_RE = re.compile(r"aks-merchant-feeds-(\d+)")
 _P_RE = re.compile(r"[?&]p=(\d+)")
 
@@ -38,7 +41,7 @@ def _offer(i, store="38"):
 def _spec(i):
     o = _offer(i)
     return {"offer_id": o["id"], "name": o["name"], "url": o["url"],
-            "target_list_label": "Blacklist"}
+            "target_list_label": "Gift cards"}
 
 
 class FakeFeed:
@@ -104,7 +107,7 @@ class FakeFeed:
         return False
 
     def list_options(self):
-        return [{"value": TGT, "text": "Blacklist"}, {"value": "21", "text": "Gift cards"}]
+        return [{"value": "8", "text": "Blacklist"}, {"value": TGT, "text": "Gift cards"}]
 
     # -- page reads --
     def _cur(self):
@@ -432,11 +435,11 @@ class BatchedMoverTests(unittest.TestCase):
         real = mover._full_source_scan
         state = {"calls": 0}
 
-        def flaky(ctx):
+        def flaky(ctx, *, force_full=False):
             state["calls"] += 1
             if state["calls"] == 2:      # 1=drive locate, 2=post-Apply verify → one blip
                 raise FeedScanError("transient blip")
-            return real(ctx)
+            return real(ctx, force_full=force_full)
 
         mover._full_source_scan = flaky
         res = mover.run(run_id="t", store_id="38", plan=[_spec(1), _spec(2)],
@@ -588,7 +591,7 @@ class DeferredBatchedTests(unittest.TestCase):
         mover = _new_mover(feed)
         real = mover._full_source_scan
         state = {"n": 0}
-        mover._full_source_scan = lambda ctx: (state.__setitem__("n", state["n"] + 1) or real(ctx))
+        mover._full_source_scan = lambda ctx, *, force_full=False: (state.__setitem__("n", state["n"] + 1) or real(ctx, force_full=force_full))
         res = mover.run(run_id="t", store_id="38", plan=[_spec(i) for i in range(1, 5)],
                         source_feed_page="aks-merchant-feeds-%s" % SRC, max_pages=20,
                         limit=None, batch=True, deferred=True)
@@ -630,11 +633,11 @@ class DeferredBatchedTests(unittest.TestCase):
         real = mover._full_source_scan
         state = {"n": 0}
 
-        def flaky(ctx):
+        def flaky(ctx, *, force_full=False):
             state["n"] += 1
             if state["n"] >= 2:          # 1=locate ok; the deferred verify keeps failing
                 raise FeedScanError("verify blip that never clears")
-            return real(ctx)
+            return real(ctx, force_full=force_full)
 
         mover._full_source_scan = flaky
         res = mover.run(run_id="t", store_id="38", plan=[_spec(1), _spec(2)],
@@ -656,11 +659,11 @@ class DeferredBatchedTests(unittest.TestCase):
         real = mover._full_source_scan
         state = {"n": 0}
 
-        def flaky(ctx):
+        def flaky(ctx, *, force_full=False):
             state["n"] += 1
             if state["n"] >= 2:            # 1=locate ok; the Applies don't scan; verify fails
                 raise FeedScanError("deferred verify blip that never clears")
-            return real(ctx)
+            return real(ctx, force_full=force_full)
 
         mover._full_source_scan = flaky
         res = mover.run(run_id="t", store_id="38", plan=[_spec(i) for i in range(1, 5)],
@@ -836,6 +839,103 @@ class ScanRetryTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self._mover()._scan_retry(fn, what="t")
         self.assertEqual(calls["n"], 1)          # propagated immediately, no retry
+
+
+class BlacklistEvictionSkipsTargetWalkTests(unittest.TestCase):
+    """A Move to a blacklist-class list (id 8) is EVICTION from the working feed:
+    gone-from-source (proven) + our CLICKED Apply is proof, so the present-on-
+    target walk is SKIPPED (the Blacklist is ~2500 pages — that walk cost ~8h for
+    one page's moves, 2026-08-22; Romain 2026-08-23). Fail-closed is unchanged:
+    a still-on-source offer is never credited."""
+
+    def _bl(self, *ids):
+        return [{"offer_id": f"o{i}", "name": f"Game {i}", "url": f"https://m/{i}",
+                 "target_list_label": "Blacklist"} for i in ids]
+
+    def _no_walk(self, mover):
+        def boom(*a, **k):
+            raise AssertionError("a blacklist move must NOT scan the target list")
+        mover._verify_group_on_target = boom
+        mover._verify_on_target = boom
+
+    def _run(self, feed, plan, **kw):
+        mover = _new_mover(feed)
+        self._no_walk(mover)
+        return mover, mover.run(run_id="t", store_id="38", plan=plan,
+                                source_feed_page="aks-merchant-feeds-%s" % SRC,
+                                max_pages=20, limit=None, **kw)
+
+    def test_batched_blacklist_move_skips_target_walk(self):
+        feed = FakeFeed({SRC: [_offer(1), _offer(2)]}, page_size=10)
+        _, res = self._run(feed, self._bl(1, 2), batch=True)
+        self.assertEqual(res["moved"], 2)
+        for e in res["plan"]:
+            self.assertTrue(e["moved"])
+            self.assertIsNone(e["on_target"])
+            self.assertIn("eviction", e["post_verify"])
+        self.assertEqual(feed.lists[SRC], [])            # really gone from source
+
+    def test_deferred_blacklist_move_skips_target_walk(self):
+        feed = FakeFeed({SRC: [_offer(1), _offer(2)]}, page_size=10)
+        _, res = self._run(feed, self._bl(1, 2), batch=True, deferred=True)
+        self.assertEqual(res["moved"], 2)
+        self.assertTrue(all(e["moved"] and e["on_target"] is None for e in res["plan"]))
+
+    def test_per_offer_blacklist_move_skips_target_walk(self):
+        feed = FakeFeed({SRC: [_offer(1)]}, page_size=10)
+        _, res = self._run(feed, self._bl(1), batch=False)
+        self.assertEqual(res["moved"], 1)
+        self.assertIsNone(res["plan"][0]["on_target"])
+        self.assertIn("eviction", res["plan"][0]["post_verify"])
+
+    def test_blacklist_still_on_source_not_credited(self):
+        # fail-closed: if the Apply didn't remove it from source, the blacklist
+        # skip must NOT credit it (gone-from-source stays REQUIRED); and still no
+        # target walk.
+        feed = FakeFeed({SRC: [_offer(1), _offer(2)]}, page_size=10, stale_source_reads=99)
+        mover = _new_mover(feed)
+        mover.feed_ui_render_waits = (0, 0, 0)   # source poll runs then gives up
+        self._no_walk(mover)
+        res = mover.run(run_id="t", store_id="38", plan=self._bl(1, 2),
+                        source_feed_page="aks-merchant-feeds-%s" % SRC,
+                        max_pages=20, limit=None, batch=True)
+        self.assertEqual(res["moved"], 0)
+        for e in res["plan"]:
+            self.assertFalse(e["moved"])
+            self.assertIn("STILL on source", e["post_verify"])
+
+    def test_blacklist_gone_proof_is_whole_feed_under_page_hint(self):
+        # Adversarial review 2026-08-23: with a page-hint window AND no RV2 anchor,
+        # a windowed gone-proof would FALSELY evict a still-live offer that reflowed
+        # OUTSIDE the window. The blacklist skip forces a WHOLE-FEED gone-proof, so
+        # an offer lingering on page 1 (outside window [2,3,4]) is caught → NOT
+        # credited. o3 (page 3, in window) is Applied but lingers on source page 1.
+        feed = FakeFeed({SRC: [_offer(i) for i in range(1, 6)]},
+                        page_size=1, stale_source_reads=99)
+        mover = _new_mover(feed)
+        mover.feed_ui_render_waits = (0, 0, 0)
+        self._no_walk(mover)   # blacklist: still never walks the target
+        res = mover.run(run_id="t", store_id="38", plan=self._bl(3),
+                        source_feed_page="aks-merchant-feeds-%s" % SRC,
+                        max_pages=20, limit=None, batch=True, page_hint=3)
+        self.assertEqual(res["moved"], 0)            # whole-feed proof saw it → not evicted
+        self.assertFalse(res["plan"][0]["moved"])
+        self.assertIn("STILL on source", res["plan"][0]["post_verify"])
+
+
+class BlacklistLabelClassificationTests(unittest.TestCase):
+    """Classification is by the CANONICAL routing label, never the drift-prone
+    live-resolved list id (adversarial review 2026-08-23)."""
+
+    def test_blacklist_labels_true(self):
+        for lbl in ("Blacklist", "Blacklist Account", "Blacklist Gift Card",
+                    "blacklist", "  Blacklist  ", "Move to Blacklist"):
+            self.assertTrue(is_blacklist_label(lbl), lbl)
+
+    def test_non_blacklist_labels_false(self):
+        for lbl in ("Gift cards", "South America", "Softwares", "New Shop List",
+                    "account", "", None):
+            self.assertFalse(is_blacklist_label(lbl), repr(lbl))
 
 
 class PostApplySourceReflowTests(unittest.TestCase):

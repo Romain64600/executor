@@ -164,8 +164,11 @@ function card(id, g) {
     el("span", { class: "pill todo" }, "au plan"),
     el("span", {}, `${stores} store${stores > 1 ? "s" : ""}`),
   ];
+  const movedTitle = family === "Blacklist"
+    ? "réellement déplacées (cumul ; départ source prouvé — éviction, cible non re-scannée)"
+    : "réellement déplacées (cumul, prouvé source+cible RV2)";
   meta.push(moved > 0
-    ? el("span", { class: "pill moved", title: "réellement déplacées (cumul, prouvé RV2)" }, `✔ ${fmt(moved)} déplacées`)
+    ? el("span", { class: "pill moved", title: movedTitle }, `✔ ${fmt(moved)} déplacées`)
     : el("span", { class: "pill gate" }, "canary requis"));
   const c = el("div", { class: "card" }, [
     el("div", { class: "card-head" }, [
@@ -283,7 +286,8 @@ function buildActions(id, g) {
       "Dry-run = aperçu (aucune écriture). Canary = déplacement prouvé (autorise la liste). "
       + "Batch = liste complète, exige un canary validé. « Batché » groupe N offres/Apply "
       + "(rapide) et exige un canary multi-item. « Différé » = une vérif par store sur le lot "
-      + "complet (plus rapide, fenêtre par store). Chaque move prouve source+cible (RV2)."),
+      + "complet (plus rapide, fenêtre par store). Chaque move prouve le départ source ; la "
+      + "cible est vérifiée (RV2), sauf éviction blacklist (cible non re-scannée)."),
   );
 }
 
@@ -337,7 +341,11 @@ function fmtEvent(ev) {
   if (n === "feed_indexed") return `· feed indexé (${fmt(ev.offers)} offres)`;
   if (n === "row_relocated") return `· offre relocalisée (${ev.current_offer_id})`;
   if (n === "move_submitted") return `→ Apply envoyé (offre ${ev.current_offer_id} → liste ${ev.target_list_id})`;
-  if (n === "move_verified") return ev.moved ? `✔ MOVED — prouvé source+cible` : `✖ non confirmé (${ev.on_target ? "" : "absent cible"})`;
+  if (n === "move_verified") {
+    if (!ev.moved) return `✖ non confirmé (${ev.on_target === false ? "absent cible" : "encore source"})`;
+    if (ev.target === "blacklist") return `✔ évincé → blacklist (départ source prouvé ; cible non re-scannée)`;
+    return `✔ MOVED — prouvé source+cible`;
+  }
   if (n === "move_blocked") return `⛔ bloqué : ${ev.reason || ""}`;
   if (n === "move_skipped") return `↷ ignoré : ${ev.reason || ""}`;
   if (n === "run_stopped") return `■ stop : ${ev.reason || ""}`;

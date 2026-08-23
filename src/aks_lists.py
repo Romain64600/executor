@@ -54,6 +54,26 @@ LISTS = [x for x in LISTS if not (x["id"] in _seen or _seen.add(x["id"]))]
 
 _LABEL_BY_ID = {x["id"]: x["label"] for x in LISTS}
 
+
+def is_blacklist_label(label: str | None) -> bool:
+    """Is a MOVE target a blacklist-class list ("Blacklist", "Blacklist Account",
+    …)? Classified by the CANONICAL label our routing assigned (``label_for`` /
+    ``suggest_target_list``), NEVER by the live-resolved list id — list ids drift
+    (module header; ``resolve_list_id`` re-resolves label→id at write time), so
+    mapping a live id back through the static catalog would both defeat this and
+    risk misclassifying a drifted non-blacklist id AS blacklist (adversarial
+    review 2026-08-23). The label is drift-immune: it is our own routing name.
+
+    A Move to a blacklist list is junk EVICTION from the working feed — the Apply
+    (registered-by-us, CLICKED) plus a WHOLE-FEED gone-from-source proof is proof
+    enough, so the RV2 present-on-target walk is SKIPPED (the Blacklist is ~2500
+    pages; that walk cost ~8h for one page's moves, 2026-08-22; Romain
+    2026-08-23)."""
+    s = str(label or "").strip().lower()
+    if s.startswith("move to "):        # tolerate the live DOM option text form
+        s = s[len("move to "):]
+    return s.startswith("blacklist")
+
 # forbidden region label (in the skip reason) -> regional list id. Only these
 # five regions have a list; NORTH AMERICA / ROW / CIS / KOREA / ... have none,
 # so they fall through to "garder".

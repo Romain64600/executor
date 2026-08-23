@@ -22,6 +22,7 @@ import re
 import time
 from typing import Any
 
+from src.aks_lists import is_blacklist_label
 from src.extractor import DEFAULT_FEED_PAGE, feed_url
 from src.submitter import (  # reuse the proven, audited feed machinery
     CdpCommandError,
@@ -502,7 +503,8 @@ class _MoverBase(_SubmitterBase):
         }
 
     def _source_scan(self, ctx: dict[str, Any], *, stop_on: str | None = None,
-                     stop_on_url: str | None = None, full_coverage: bool = False):
+                     stop_on_url: str | None = None, full_coverage: bool = False,
+                     force_full: bool = False):
         """A SOURCE-feed scan, bounded to the page window when one is set.
 
         Page-by-page triage (Romain 2026-08-20): the offers were extracted from ONE
@@ -513,26 +515,32 @@ class _MoverBase(_SubmitterBase):
         present-on-target (the TARGET scan, unchanged) is the correctness ANCHOR — a
         windowed "gone" WITHOUT that anchor would be fail-open (the 2026-08-06 submit
         rule), but the MOVE always pairs "gone from source" with "present on target".
-        No window (the all-stores sort) → a full ``_scan_feed`` as before. Returns
-        ``(index, by_url, found)``."""
+
+        ``force_full`` OVERRIDES the window and walks the whole feed to a proven end
+        — required when the caller has NO present-on-target anchor and so needs the
+        gone-proof to be whole-feed (blacklist eviction skips RV2; adversarial review
+        2026-08-23). No window (the all-stores sort) → a full ``_scan_feed`` as
+        before. Returns ``(index, by_url, found)``."""
         window = ctx.get("window_pages")
-        if window is not None:
+        if window is not None and not force_full:
             return self._scan_page_window(
                 ctx["store_id"], ctx["feed_page"], ctx["available"], window,
                 stop_on=stop_on, stop_on_url=stop_on_url)
         return self._scan_feed(
             ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"],
-            stop_on=stop_on, stop_on_url=stop_on_url, full_coverage=full_coverage)
+            stop_on=stop_on, stop_on_url=stop_on_url,
+            full_coverage=full_coverage or force_full)
 
-    def _full_source_scan(self, ctx: dict[str, Any]
+    def _full_source_scan(self, ctx: dict[str, Any], *, force_full: bool = False
                           ) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]]]:
         """A source-feed scan walked to a PROVEN end-of-feed (``full_coverage`` —
         no 2-empty early terminate), so an id/URL ABSENT from the returned maps
         genuinely left the feed: the set-wise analogue of ``_verify_gone``'s
         stop_on proof, for a whole group at once. Raises FeedScanError
-        (fail-closed) when coverage cannot be proven."""
+        (fail-closed) when coverage cannot be proven. ``force_full`` walks the WHOLE
+        feed even under a page window (see ``_source_scan``)."""
 
-        index, by_url, _ = self._source_scan(ctx, full_coverage=True)
+        index, by_url, _ = self._source_scan(ctx, full_coverage=True, force_full=force_full)
         return index, by_url
 
 
@@ -660,6 +668,20 @@ class Mover(_MoverBase):
             entry["post_verify"] = "STILL on source list after Apply — move NOT confirmed"
             self._log("move_verified", offer_id=entry["offer_id"], moved=False)
             return False
+
+        # Blacklist-class target: EVICTION — gone-from-source (proven above by the
+        # WHOLE-FEED _verify_gone) + our CLICKED Apply is proof; skip the present-on-
+        # target walk (huge list, hours; Romain 2026-08-23). Classified by the
+        # canonical label, never the drift-prone live id. Same skip as the batched
+        # path in _verify_registered_set.
+        if is_blacklist_label(entry.get("target_list_label")):
+            entry["on_target"] = None
+            entry["moved"] = True
+            entry["post_verify"] = ("gone from source + Apply to blacklist "
+                                    "(present-on-target skipped: eviction)")
+            self._log("move_verified", offer_id=entry["offer_id"],
+                      moved=True, on_target=None, target="blacklist")
+            return True
 
         # Post-verify part 2 (RV2, review 2026-07-22): confirm the offer ARRIVED
         # on the TARGET list. Gone-from-source alone would let a parallel
@@ -1072,17 +1094,22 @@ class Mover(_MoverBase):
                             _done(entry, False, detail)
                     break
 
-    def _scan_source_settled(self, registered, ctx):
+    def _scan_source_settled(self, registered, ctx, *, force_full: bool = False):
         """Post-Apply source re-scan, POLLING for the feed to reflow. AKS removes
         the moved rows a moment AFTER the Apply, so an immediate re-scan of a big
         group can still SEE them (a stale read) and wrongly conclude "still on
         source" — the SAME render race already handled for list_options / bulk_form
         / feed_ui, here on the post-Apply source feed. 2026-08-21: an 86-offer Apply
         verified 2/86 because this re-scan read before the feed reflowed; an
-        independent extract proved most had left. Re-scan (the cheap window scan)
-        until every registered offer is gone, or the feed_ui_render_waits backoff is
-        spent — then a residual "still present" is a REAL not-moved. Fail-closed is
-        unchanged: gone-from-source stays REQUIRED, a scan error still raises."""
+        independent extract proved most had left. Re-scan until every registered
+        offer is gone, or the feed_ui_render_waits backoff is spent — then a residual
+        "still present" is a REAL not-moved. Fail-closed is unchanged: gone-from-
+        source stays REQUIRED, a scan error still raises.
+
+        ``force_full`` walks the WHOLE feed (not the page window) — required when the
+        caller skips the RV2 present-on-target anchor (blacklist eviction), so the
+        gone-proof itself must be whole-feed or an offer reflowed OUTSIDE the window
+        would be a false "gone" (adversarial review 2026-08-23)."""
 
         def _still_on_source(index, by_url):
             # dual-key absence == gone (parity with the caller's ``gone`` test); an
@@ -1090,15 +1117,15 @@ class Mover(_MoverBase):
             return [(e, cid) for e, cid in registered
                     if (_url_key(str(e["url"])) in by_url) or (cid in index)]
 
-        index, by_url = self._scan_retry(lambda: self._full_source_scan(ctx),
-                                         what="verify_source")
+        index, by_url = self._scan_retry(
+            lambda: self._full_source_scan(ctx, force_full=force_full), what="verify_source")
         still = _still_on_source(index, by_url)
         if not still:
             return index, by_url
         for wait in self.feed_ui_render_waits:
             time.sleep(wait)
-            index, by_url = self._scan_retry(lambda: self._full_source_scan(ctx),
-                                             what="verify_source")
+            index, by_url = self._scan_retry(
+                lambda: self._full_source_scan(ctx, force_full=force_full), what="verify_source")
             now = _still_on_source(index, by_url)
             if len(now) < len(still):
                 self._log("verify_source_render_wait",
@@ -1119,12 +1146,19 @@ class Mover(_MoverBase):
 
         if not registered:
             return True
+        # A blacklist-class target skips the RV2 present-on-target walk (eviction —
+        # see below), so its gone-proof loses that anchor and MUST be whole-feed:
+        # ``force_full`` overrides the page window, or an offer reflowed OUTSIDE the
+        # window would be a false "gone" (adversarial review 2026-08-23). Classified
+        # by the CANONICAL label (drift-immune), never the live-resolved id. A
+        # partition is single-target, so the first entry's label speaks for the set.
+        blacklist = is_blacklist_label(registered[0][0].get("target_list_label"))
         # Source: an id/URL absent from a PROVEN scan genuinely left the feed. A
         # feed/CDP error → the whole in-flight set is UNKNOWN, never "moved". The
         # scan POLLS for reflow first so a big Apply's stale read never false-
         # negatives a moved offer (2026-08-21, G2A 2/86 → see _scan_source_settled).
         try:
-            index, by_url = self._scan_source_settled(registered, ctx)
+            index, by_url = self._scan_source_settled(registered, ctx, force_full=blacklist)
         except FEED_UNREADABLE_EXCS as exc:
             detail = ("feed/CDP error after Apply — offer state UNKNOWN, verify the move by "
                       f"hand on AKS before any retry: {type(exc).__name__}: {exc}")
@@ -1152,6 +1186,25 @@ class Mover(_MoverBase):
             else:
                 to_target.append((entry, current_id))
         if not to_target:
+            return True
+
+        # Blacklist-class target: EVICTION, not a precise relocation. Gone-from-
+        # source (proven above by a WHOLE-FEED scan, since force_full was set for
+        # blacklist) + our CLICKED Apply is proof enough — skip the present-on-target
+        # walk (the Blacklist is ~2500 pages, so that walk cost ~8h for one page's
+        # moves, 2026-08-22; Romain 2026-08-23). Fail-closed is unchanged: a still-
+        # on-source offer never reaches here (it was rejected above), so we only ever
+        # credit offers that actually LEFT the feed.
+        if blacklist:
+            for entry, _cid in to_target:
+                entry["on_target"] = None
+                entry["moved"] = True
+                entry["post_verify"] = ("gone from source + Apply to blacklist "
+                                        "(present-on-target skipped: eviction)")
+                result["moved"] += 1
+                self._log("move_verified", offer_id=entry["offer_id"],
+                          moved=True, on_target=None, target="blacklist")
+                done(entry, True, entry["post_verify"])
             return True
 
         # RV2 in ONE target-list scan (P1.5). A target-scan error is fail-closed
