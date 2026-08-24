@@ -82,6 +82,14 @@ PAGE_STATE_JS = (
 # Wait before the single re-fetch of a blank page (on top of navigate's settle).
 EMPTY_RETRY_WAIT_S = 5.0
 
+# Backoff for a page whose feed UI has not rendered yet (feed_ui:false, 0 rows):
+# a fast sweep can read BEFORE the wp-list-table JS renders, exactly the render
+# race the mover polls through (feed_ui_render_waits). Without it a transient
+# blank aborted a multi-page sweep — G2A p2 "in-range page rendered 0 rows twice"
+# (feed_ui:false), 2026-08-22. Re-read (no re-navigate) with growing waits until
+# the table renders (then classify) or rows appear.
+FEED_UI_RENDER_WAITS = (1.0, 2.0, 4.0, 8.0)
+
 
 class NotLoggedInError(RuntimeError):
     """The feed bounced to wp-login — extraction must abort loudly, never
@@ -198,6 +206,7 @@ class FeedExtractor:
         self.logger = logger
         self.pacer = pacer
         self.empty_retry_wait_s = EMPTY_RETRY_WAIT_S
+        self.feed_ui_render_waits = FEED_UI_RENDER_WAITS
         self.last_stats: dict[str, Any] = {}
         self._fetched_once = False
 
@@ -226,6 +235,15 @@ class FeedExtractor:
             and isinstance(s.get("offers"), list),
         )
 
+    def _reread_page_state(self) -> Any:
+        """Re-READ the ALREADY-loaded page (no re-navigate, no guard attempt) — a
+        render-race poll waiting for the wp-list-table JS to finish. Re-navigating
+        would reset the render clock; the StepGuard bounds real FETCHES, not renders
+        (mirrors the mover's list_options / bulk_form render-wait polls)."""
+
+        payload = self.session.evaluate_readonly(PAGE_STATE_JS)
+        return json.loads(payload) if isinstance(payload, str) else payload
+
     def _abort_if_login(self, state: Any, *, sweep: int, page: int) -> None:
         if isinstance(state, dict) and state.get("is_login"):
             self._log("aborted", reason="not logged in (wp-login)", sweep=sweep, page=page)
@@ -234,17 +252,58 @@ class FeedExtractor:
     def _settled_page_state(
         self, *, merchant: str, sweep: int, page: int, url: str
     ) -> dict:
-        """Fetch a page's state; on a blank/unreadable render, wait and re-fetch
-        ONCE (guard attempt 2/2), then let the caller classify. A login bounce
-        aborts immediately — retrying it blind would be pointless."""
+        """Fetch a page's state; on a blank/unrendered read, POLL (re-read, no
+        re-navigate) with a growing backoff before letting the caller classify. A
+        login bounce aborts immediately — retrying it blind would be pointless.
+
+        Two blank causes, both handled by the poll: a RENDER RACE (feed_ui not up
+        yet — a fast sweep beat the wp-list-table JS; the exact race the mover polls
+        through, G2A p2 2026-08-22) and a TRANSIENT BLANK (table rendered but a
+        momentary 0 rows). Stop as soon as rows appear, OR the table has rendered
+        (feed_ui true → the caller can deterministically classify empty/past-end).
+        A page still unrendered after the whole backoff is genuinely unreadable →
+        the caller fails closed. Fail-closed is unchanged: a blank that renders as
+        a real 0-row table is still classified, never silently accepted mid-feed."""
 
         state = self._page_state(merchant=merchant, sweep=sweep, page=page, url=url)
         self._abort_if_login(state, sweep=sweep, page=page)
         if isinstance(state, dict) and state.get("offers"):
             return state
 
+        # No rows on the first read. If the table has NOT rendered (feed_ui false),
+        # it may be a RENDER RACE — a fast sweep beat the wp-list-table JS (the exact
+        # G2A p2 blip, 2026-08-22). POLL by re-READING the loaded page (no re-navigate
+        # → keep the render clock; no guard attempt → the guard caps real FETCHES, not
+        # renders): return as soon as rows appear; stop once the table renders (then
+        # fall through to the confirm to classify empty / past-the-end).
+        rendered_by_poll = False
+        if isinstance(state, dict) and not state.get("feed_ui"):
+            for wait in self.feed_ui_render_waits:
+                time.sleep(wait)
+                state = self._reread_page_state()
+                self._abort_if_login(state, sweep=sweep, page=page)
+                if isinstance(state, dict) and state.get("offers"):
+                    self._log("feed_ui_render_wait", sweep=sweep, page=page,
+                              offers=len(parse_offers_payload(state.get("offers"))))
+                    return state
+                if isinstance(state, dict) and state.get("feed_ui"):
+                    rendered_by_poll = True
+                    break
+
+        # Confirm a blank before the caller classifies it.
         time.sleep(self.empty_retry_wait_s)
-        state = self._page_state(merchant=merchant, sweep=sweep, page=page, url=url)
+        if rendered_by_poll:
+            # The poll already rendered the table WARM — confirm by re-READING, never
+            # a cold re-navigate: a reload resets the render clock and can bounce a
+            # just-rendered page back to feed_ui:false → a spurious EmptyPageAnomaly
+            # that re-opens the very multi-page-sweep abort this poll fixes
+            # (adversarial review 2026-08-24). The sleep lets late rows settle in.
+            state = self._reread_page_state()
+        else:
+            # feed_ui:true from the first read (the original transient-blank confirm)
+            # OR a page that never rendered (a wedged page, not just slow): ONE fresh
+            # re-fetch (guard attempt 2/2), then classify.
+            state = self._page_state(merchant=merchant, sweep=sweep, page=page, url=url)
         self._abort_if_login(state, sweep=sweep, page=page)
         if not isinstance(state, dict):
             self._log("aborted", reason="page state unreadable after retry", sweep=sweep, page=page)

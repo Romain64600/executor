@@ -69,6 +69,7 @@ class FakeSession:
 def _extractor(session, **kwargs):
     extractor = FeedExtractor(session, **kwargs)
     extractor.empty_retry_wait_s = 0
+    extractor.feed_ui_render_waits = (0, 0, 0, 0)   # poll runs, no real sleep
     return extractor
 
 
@@ -181,6 +182,41 @@ class ExtractSweepTests(unittest.TestCase):
         with self.assertRaises(EmptyPageAnomaly):
             _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
         self.assertEqual(session.visits(2), 2)
+
+    def test_unrendered_page_is_polled_until_it_renders(self):
+        # A fast sweep can read a page BEFORE the wp-list-table renders (feed_ui
+        # false, 0 rows) — the render race the mover already polls through. The
+        # extractor now re-reads with a backoff; when the table renders with rows,
+        # extraction proceeds with NO false "0 rows twice" abort (G2A p2 halt,
+        # 2026-08-22).
+        session = FakeSession({
+            1: [_state([], feed_ui=False, nav_max=0),        # beat the JS render
+                _state([_offer(1), _offer(2)], nav_max=0)],  # rendered on the re-read
+        })
+        _, feed = _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
+        self.assertEqual([o.offer_id for o in feed.offers], ["1", "2"])
+
+    def test_unrendered_page_that_never_renders_still_aborts(self):
+        # fail-closed unchanged: a page that stays unrendered through the whole
+        # backoff is genuinely unreadable → abort, never a silent empty feed.
+        session = FakeSession({1: [_state([], feed_ui=False, nav_max=0)]})
+        with self.assertRaises(EmptyPageAnomaly):
+            _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
+
+    def test_poll_rendered_blank_confirms_by_reread_not_cold_renavigate(self):
+        # Review 2026-08-24: once the render poll has the table WARM (feed_ui true),
+        # the confirm must re-READ, never a cold re-navigate — a reload resets the
+        # render clock and could bounce the just-rendered page back to feed_ui:false
+        # → a spurious abort re-opening the sweep halt. An empty page that renders
+        # late is classified empty with NO extra navigate for the confirm.
+        session = FakeSession({
+            1: [_state([], feed_ui=False, nav_max=0),   # beat the render → enter poll
+                _state([], feed_ui=True, nav_max=0),    # renders empty (rendered_by_poll)
+                _state([], feed_ui=True, nav_max=0)],   # confirm re-read (still empty)
+        })
+        _, feed = _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
+        self.assertEqual(len(feed.offers), 0)
+        self.assertEqual(session.visits(1), 1)  # attempt 1 only — poll + confirm re-read, no navigate
 
     def test_transient_blank_page_recovers_on_retry(self):
         session = FakeSession({
