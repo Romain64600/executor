@@ -731,6 +731,26 @@ class DataEntryByUrlsRouteTests(AppTestCase):
         self.assertEqual(body["run_id"], newest)
         self.assertEqual(body["recap"]["totals"]["candidates"], 9)
 
+    def test_log_route_tails_allowed_events_and_advances_offset(self):
+        name = self._byurls_run("20260824-121500-by-urls")
+        self.logs.mkdir(parents=True, exist_ok=True)
+        self.logs.joinpath(f"{name}.jsonl").write_text(
+            json.dumps({"event": "run_start", "urls": 1, "merchants": 10}) + "\n"
+            + json.dumps({"event": "game_resolved", "ok": True, "aks_name": "Neon Beats"}) + "\n"
+            + json.dumps({"event": "guard_snapshot", "guard": {}}) + "\n",  # not a UI event
+            encoding="utf-8")
+        response, body = self._json("GET", f"/api/data-entry/by-urls/log?run={name}&offset=0")
+        self.assertEqual(response.status, 200)
+        self.assertEqual([e["event"] for e in body["events"]], ["run_start", "game_resolved"])
+        self.assertGreater(body["offset"], 0)
+        # a second tail from the new offset returns nothing new
+        r2, b2 = self._json("GET", f"/api/data-entry/by-urls/log?run={name}&offset={body['offset']}")
+        self.assertEqual(b2["events"], [])
+
+    def test_log_route_bogus_run_404(self):
+        response, _ = self._json("GET", "/api/data-entry/by-urls/log?run=../etc&offset=0")
+        self.assertIn(response.status, (400, 404))
+
 
 class SortMoveRouteTests(AppTestCase):
     def _sort_run(self):

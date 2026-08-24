@@ -89,12 +89,50 @@ function endUi(finalText) {
   $("#stop-btn").disabled = false;
   syncLaunch();
 }
+// ---- live log ----
+let LOG_OFFSET = 0;
+function fmtLogEvent(ev) {
+  const n = ev.event || "";
+  if (n === "run_start") return `▶ démarrage · ${ev.urls} URL(s), ${ev.merchants} marchand(s)`;
+  if (n === "game_resolved") return ev.ok
+    ? `🎯 résolu : ${ev.aks_name} (AKS ${ev.aks_product_id})`
+    : `❌ non résolu : ${ev.url} — ${ev.reason || ""}`;
+  if (n === "game_start") return `— ${ev.aks_name} : recherche sur les marchands…`;
+  if (n === "candidate") return `   ✔ [${ev.merchant}] ${ev.name} — ${ev.region}, ${ev.edition}`;
+  if (n === "merchant_done") return ev.error
+    ? `   ⚠ ${ev.merchant} : ${ev.error}`
+    : `   · ${ev.merchant} : ${ev.found} trouvée(s) · ${ev.candidates} à saisir` + (ev.skipped ? ` · ${ev.skipped} ignorée(s)` : "");
+  if (n === "game_done") return `✓ ${ev.aks_name} : ${ev.candidates} à saisir`;
+  if (n === "run_done") return `■ terminé · ${ev.resolved} résolu(s), ${ev.candidates} à saisir`;
+  if (n === "run_aborted") return `■ arrêté : ${ev.reason}`;
+  return null;
+}
+function appendLog(events) {
+  const box = $("#log");
+  for (const ev of (events || [])) {
+    const line = fmtLogEvent(ev);
+    if (line == null) continue;
+    const cls = ev.event === "candidate" ? "ok" : (ev.ok === false || ev.error || ev.event === "run_aborted") ? "no" : "";
+    box.append(el("div", { class: "logline" + (cls ? " " + cls : "") }, line));
+  }
+  if ($("#autoscroll").checked) box.scrollTop = box.scrollHeight;
+}
+async function pollLog(runId) {
+  try {
+    const d = await api("api/data-entry/by-urls/log?offset=" + LOG_OFFSET + (runId ? "&run=" + encodeURIComponent(runId) : ""));
+    if (d && Array.isArray(d.events)) { appendLog(d.events); LOG_OFFSET = d.offset || LOG_OFFSET; }
+  } catch (e) { /* transient — keep polling */ }
+}
+
 function startPolling(runId) {
   $("#recap-card").classList.remove("hidden");
+  $("#log-card").classList.remove("hidden");
   $("#busy-ind").classList.remove("hidden");
+  LOG_OFFSET = 0; $("#log").replaceChildren();   // replay this run's log from the top
   if (POLL) clearInterval(POLL);
   const tick = async () => {
     const busy = await fetchBusy();
+    await pollLog(runId);
     let d = null;
     try { d = await api("api/data-entry/by-urls/recap" + (runId ? "?run=" + encodeURIComponent(runId) : "")); }
     catch (e) { d = null; }
@@ -108,7 +146,7 @@ function startPolling(runId) {
       endUi(rec && rec.aborted ? ("Arrêté : " + rec.aborted) : "Aperçu terminé.");
     }
   };
-  tick(); POLL = setInterval(tick, 5000);
+  tick(); POLL = setInterval(tick, 2000);   // ~real-time log
 }
 async function resumeIfActive() {
   const busy = await fetchBusy();
@@ -124,7 +162,14 @@ async function resumeIfActive() {
 }
 async function showLastRecap() {
   let d; try { d = await api("api/data-entry/by-urls/recap"); } catch (e) { return; }
-  if (d && d.recap) { $("#recap-card").classList.remove("hidden"); renderRecap(d); }
+  if (d && d.recap) {
+    $("#recap-card").classList.remove("hidden");
+    renderRecap(d);
+    // Replay the finished run's log too, so the operator can read what happened.
+    LOG_OFFSET = 0; $("#log").replaceChildren();
+    $("#log-card").classList.remove("hidden");
+    await pollLog(d.run_id);
+  }
 }
 
 function renderRecap(d) {

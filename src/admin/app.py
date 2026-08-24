@@ -36,10 +36,12 @@ from src.admin.runs import (
     sha256_file,
 )
 from src.admin.submit_manager import (
+    BY_URLS_EVENTS,
     CANARY_LIMIT,
     MODES,
     SubmitManager,
     SubmitStartError,
+    tail_log_events,
 )
 from src.admin.learning_io import (
     ANNOTATION_PLATFORMS,
@@ -236,6 +238,9 @@ class AdminHandler(BaseHTTPRequestHandler):
         if path == "/api/data-entry/by-urls/recap":
             run = parse_qs(parsed.query).get("run", [""])[0]
             return self._get_data_entry_recap(run, suffix="-by-urls")
+        if path == "/api/data-entry/by-urls/log":
+            q = parse_qs(parsed.query)
+            return self._get_by_urls_log(q.get("run", [""])[0], q.get("offset", ["0"])[0])
         if path == "/api/data-entry/merchants":
             # The safe-auto allowlist — the only merchants the UI may offer and
             # the server will accept for unvalidated auto entry.
@@ -547,6 +552,26 @@ class AdminHandler(BaseHTTPRequestHandler):
                            f"{len(urls)} URLs — plafonné à 200 par run (relance en lots)")
         result = self.state.manager.start_data_entry_by_urls(urls, by=by)
         self._send_json(200, result)
+
+    def _get_by_urls_log(self, run_id: str, offset_raw: str) -> None:
+        # Read-only live tail of the by-urls run's JSONL log (offset-based, like the
+        # submit console). run_id is validated to a real run dir (path-traversal
+        # guarded) before we touch its log file.
+        if not run_id:
+            byurls = sorted(
+                (p.name for p in self.state.runs_dir.glob("*-by-urls") if p.is_dir()),
+                reverse=True)
+            if not byurls:
+                return self._send_json(200, {"events": [], "offset": 0, "run_id": None})
+            run_id = byurls[0]
+        run_dir = self._run_dir(run_id)   # raises 404 on a bogus/absent run id
+        try:
+            offset = max(0, int(offset_raw))
+        except (TypeError, ValueError):
+            offset = 0
+        log_path = self.state.manager.log_dir / f"{run_dir.name}.jsonl"
+        events, new_offset = tail_log_events(log_path, offset, allowed=BY_URLS_EVENTS)
+        self._send_json(200, {"run_id": run_dir.name, "events": events, "offset": new_offset})
 
     def _get_data_entry_recap(self, run_id: str, *, suffix: str = "-auto") -> None:
         # Read-only: the live recap.json of a sweep run (no run_id → the newest

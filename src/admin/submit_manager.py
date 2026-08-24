@@ -64,6 +64,20 @@ UI_EVENTS = frozenset(
     }
 )
 
+# Events streamed to the "Saisie par jeux" (data-entry-by-urls) live log.
+BY_URLS_EVENTS = frozenset(
+    {
+        "run_start",
+        "game_resolved",
+        "game_start",
+        "merchant_done",
+        "candidate",
+        "game_done",
+        "run_done",
+        "run_aborted",
+    }
+)
+
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

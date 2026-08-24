@@ -34,6 +34,7 @@ from src.aks_env import OFFICIAL_CDP_ENDPOINT, _allkeyshop_host  # noqa: E402
 from src.browser_lock import BrowserBusyError, browser_lock  # noqa: E402
 from src.contracts import NormalizedOffer  # noqa: E402
 from src.extractor import AKS_ADMIN_URL, DEFAULT_FEED_PAGE, NotLoggedInError  # noqa: E402
+from src.run_log import RunLogger  # noqa: E402
 from src.matcher import (  # noqa: E402
     AKS_PROBE_UA,
     AksNameUnreadable,
@@ -249,16 +250,19 @@ def _parse_urls(args: argparse.Namespace) -> list[str]:
 
 def run_plan(urls: list[str], targets: list[tuple[str, str]], *, available: str,
              feed_page: str, endpoint: str, run_dir: Path,
-             http_get_fn: Callable[..., Any] = http_get, session: Any = None) -> dict:
+             http_get_fn: Callable[..., Any] = http_get, session: Any = None,
+             logger: Any = None) -> dict:
     recap: dict[str, Any] = {"mode": "dry-run", "available": available,
                              "merchants": [m for m, _ in targets], "games": [],
                              "aborted": None,
                              "totals": {"games": len(urls), "resolved": 0, "candidates": 0}}
+    emit = logger.log if logger is not None else (lambda *a, **k: None)
 
     def _flush() -> None:
         (run_dir / "recap.json").write_text(
             json.dumps(recap, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    emit("run_start", urls=len(urls), merchants=len(targets))
     # Resolve every URL first (read-only http_get, no browser) so a bad URL is
     # reported without holding the browser lock.
     resolved: list[tuple[str, AksResolution]] = []
@@ -273,28 +277,38 @@ def run_plan(urls: list[str], targets: list[tuple[str, str]], *, available: str,
             # so NotLoggedInError cannot arise here.
             recap["games"].append({"url": url, "resolved": False,
                                    "reason": f"{type(exc).__name__}: {exc}"[:200]})
+            emit("game_resolved", url=url, ok=False, reason=f"{type(exc).__name__}: {exc}"[:160])
             _flush()
             continue
         resolved.append((url, resolution))
         recap["totals"]["resolved"] += 1
+        emit("game_resolved", url=url, ok=True,
+             aks_product_id=resolution.product_id, aks_name=resolution.aks_name)
 
     if not resolved:
+        emit("run_done", resolved=0, candidates=0)
         _flush()
         return recap
 
     if session is not None:                       # injected (tests) — no real browser
-        _plan_games(session, resolved, targets, recap, available, feed_page, _flush)
+        _plan_games(session, resolved, targets, recap, available, feed_page, _flush, emit)
     else:
         with browser_lock(ROOT,
                           label="11_data_entry_by_urls (read-only) " + " ".join(urls)[:120]):
             with SubmitSession(endpoint) as live:
-                _plan_games(live, resolved, targets, recap, available, feed_page, _flush)
+                _plan_games(live, resolved, targets, recap, available, feed_page, _flush, emit)
+    if recap.get("aborted"):
+        emit("run_aborted", reason=recap["aborted"])
+    else:
+        emit("run_done", resolved=recap["totals"]["resolved"],
+             candidates=recap["totals"]["candidates"])
     _flush()
     return recap
 
 
 def _plan_games(session: Any, resolved: list[tuple[str, AksResolution]], targets, recap: dict,
-                available: str, feed_page: str, flush: Callable[[], None]) -> None:
+                available: str, feed_page: str, flush: Callable[[], None],
+                emit: Callable[..., Any] = lambda *a, **k: None) -> None:
     for url, resolution in resolved:
         game: dict[str, Any] = {
             "url": url, "resolved": True,
@@ -302,6 +316,7 @@ def _plan_games(session: Any, resolved: list[tuple[str, AksResolution]], targets
             "aks_name": resolution.aks_name,
             "aks_url": resolution.url,
             "merchants": [], "total_candidates": 0}
+        emit("game_start", aks_name=resolution.aks_name, aks_product_id=resolution.product_id)
         for merchant, store_id in targets:
             try:
                 per = plan_merchant(session, resolution, merchant, store_id, available, feed_page)
@@ -314,12 +329,23 @@ def _plan_games(session: Any, resolved: list[tuple[str, AksResolution]], targets
                 # total agrees with the recap body/report (review 2026-08-24).
                 recap["totals"]["candidates"] += game["total_candidates"]
                 recap["games"].append(game)
+                emit("merchant_done", aks_name=resolution.aks_name, merchant=merchant,
+                     error="not_logged_in")
                 flush()
                 return
             game["merchants"].append(per)
             game["total_candidates"] += len(per["candidates"])
+            for c in per["candidates"]:
+                o, reg, ed = c.get("offer", {}), c.get("region", {}), c.get("edition", {})
+                emit("candidate", aks_name=resolution.aks_name, merchant=merchant,
+                     name=o.get("name", ""), region=f"{reg.get('label')}({reg.get('id')})",
+                     edition=f"{ed.get('label')}({ed.get('id')})")
+            emit("merchant_done", aks_name=resolution.aks_name, merchant=merchant,
+                 found=per.get("found", 0), candidates=len(per["candidates"]),
+                 skipped=len(per.get("skipped", [])), error=per.get("error"))
         recap["totals"]["candidates"] += game["total_candidates"]
         recap["games"].append(game)
+        emit("game_done", aks_name=resolution.aks_name, candidates=game["total_candidates"])
         flush()
 
 
@@ -377,9 +403,11 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"run_id": args.run_id, "aborted": "no_urls"}))
         return 2
 
+    logger = RunLogger(args.run_id, log_dir=ROOT / "logs")
     try:
         recap = run_plan(urls, _targets(args.targets), available=args.available,
-                         feed_page=args.feed_page, endpoint=args.endpoint, run_dir=run_dir)
+                         feed_page=args.feed_page, endpoint=args.endpoint, run_dir=run_dir,
+                         logger=logger)
     except BrowserBusyError as exc:
         print(json.dumps({"run_id": args.run_id, "aborted": f"browser_busy: {exc}"}))
         return 2

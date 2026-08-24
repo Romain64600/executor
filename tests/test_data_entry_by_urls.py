@@ -290,5 +290,23 @@ class RunPlanTests(unittest.TestCase):
             self.assertEqual(recap["totals"]["candidates"], 1)   # merchant 1's candidate counted
 
 
+class LogEventsTests(unittest.TestCase):
+    def test_run_emits_progress_events(self):
+        class FakeLogger:
+            def __init__(self): self.events = []
+            def log(self, event, **f): self.events.append(event)
+        lg = FakeLogger()
+        session = FakeSearchSession({
+            "name": [_row("100", "Neon Beats - Steam Key - GLOBAL",
+                          "https://testmart.com/neon-beats")]})
+        with tempfile.TemporaryDirectory() as d:
+            M.run_plan([URL], [("TestMart", "999")], available="all",
+                       feed_page="aks-merchant-feeds-9", endpoint="x", run_dir=Path(d),
+                       http_get_fn=_ok(AKS_BODY), session=session, logger=lg)
+        for ev in ("run_start", "game_resolved", "game_start", "candidate",
+                   "merchant_done", "game_done", "run_done"):
+            self.assertIn(ev, lg.events, ev)
+
+
 if __name__ == "__main__":
     unittest.main()

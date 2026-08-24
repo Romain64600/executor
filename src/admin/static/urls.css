@@ -56,3 +56,24 @@ button.primary:disabled {
 }
 
 .game-unresolved { opacity: .85; }
+
+/* live log */
+.log {
+  max-height: 22rem;
+  overflow-y: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .78rem;
+  line-height: 1.5;
+  padding: .5rem .7rem;
+  border-radius: 8px;
+  border: 1px solid rgba(128, 140, 170, .28);
+  background: rgba(128, 140, 170, .06);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.logline { padding: .02rem 0; }
+.logline.ok { color: #17936a; }
+.logline.no { color: #c0392b; }
+:root[data-theme="dark"] .logline.ok { color: #4ad0a0; }
+:root[data-theme="dark"] .logline.no { color: #ff7a6b; }
+.autoscroll { font-size: .78rem; opacity: .8; display: inline-flex; gap: .35rem; align-items: center; }
