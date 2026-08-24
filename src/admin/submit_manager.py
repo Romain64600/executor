@@ -242,6 +242,7 @@ class SubmitManager:
         self.sort_move_script = sort_move_script or (repo_root / "scripts" / "09_sort_move.py")
         self.sort_scan_script = sort_scan_script or (repo_root / "scripts" / "08_sort_plan.py")
         self.data_entry_auto_script = repo_root / "scripts" / "10_data_entry_auto.py"
+        self.by_urls_script = repo_root / "scripts" / "11_data_entry_by_urls.py"
         self.python = python
         self.clock = clock
         self._mutex = threading.Lock()
@@ -690,6 +691,39 @@ class SubmitManager:
                 run_dir, kind="data_entry_auto", argv=argv,
                 meta={"targets": [{"merchant": m, "store_id": s} for m, s in clean],
                       "by": by, "run_id": run_id, "max_pages": max_pages},
+            )
+
+    def start_data_entry_by_urls(
+        self, urls: list[str], *, by: str, targets_spec: str | None = None,
+    ) -> dict[str, Any]:
+        """Launch the DRY-RUN data-entry planner from a list of AKS page URLs
+        (stage 1, Romain 2026-08-24). For each pasted AKS product page we pin that
+        page, then find the pending merchant offers to enter by driving the AKS feed
+        SEARCH (name ∪ url) across the vetted allowlist, and plan each via the SAME
+        match logic on the pinned page. READ-ONLY: it resolves + searches + plans +
+        reports; it never writes (the submit half is a separate, gated step). ONE
+        supervised run (`scripts/11_data_entry_by_urls.py`); "Arrêter" SIGTERMs it —
+        safe to kill since nothing is written."""
+
+        clean = [u.strip() for u in (urls or []) if u and u.strip()]
+        if not clean:
+            raise SubmitStartError("bad_urls", "au moins une URL de page AKS requise",
+                                   http_status=400)
+        with self._mutex:
+            self._ensure_free()
+            stamp = datetime.strptime(self.clock(), "%Y-%m-%dT%H:%M:%SZ").strftime("%Y%m%d-%H%M%S")
+            run_id = f"{stamp}-by-urls"
+            run_dir = self.repo_root / "runs" / run_id
+            run_dir.mkdir(parents=True, exist_ok=False)
+            urls_file = run_dir / "urls_input.txt"
+            urls_file.write_text("\n".join(clean), encoding="utf-8")
+            argv = [self.python, str(self.by_urls_script), "--run-id", run_id,
+                    "--urls-file", str(urls_file), "--dry-run"]
+            if targets_spec:
+                argv += ["--targets", targets_spec]
+            return self._spawn(
+                run_dir, kind="data_entry_by_urls", argv=argv,
+                meta={"by": by, "run_id": run_id, "urls": len(clean), "mode": "dry-run"},
             )
 
     def start_match(

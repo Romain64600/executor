@@ -1,0 +1,58 @@
+/* "Saisie par jeux" — additions on top of auto.css (shared topbar/card/recap). */
+
+.urls-label {
+  display: block;
+  font-size: .82rem;
+  opacity: .8;
+  margin: .2rem 0 .35rem;
+}
+
+.urls-in {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .84rem;
+  line-height: 1.45;
+  padding: .6rem .7rem;
+  border-radius: 8px;
+  border: 1px solid rgba(128, 140, 170, .35);
+  background: rgba(128, 140, 170, .06);
+  color: inherit;
+  resize: vertical;
+}
+.urls-in:focus {
+  outline: none;
+  border-color: #0195ff;
+  box-shadow: 0 0 0 2px rgba(1, 149, 255, .25);
+}
+
+button.primary {
+  background: #0195ff;
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  padding: .5rem 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+button.primary:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
+.game-url {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: .76rem;
+  word-break: break-all;
+  margin: .1rem 0 .45rem;
+}
+
+.m-title {
+  font-weight: 600;
+  font-size: .86rem;
+  margin: .5rem 0 .25rem;
+  opacity: .9;
+}
+
+.game-unresolved { opacity: .85; }

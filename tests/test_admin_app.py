@@ -663,6 +663,75 @@ class DataEntryRecapRouteTests(AppTestCase):
         self.assertIsNone(body["recap"])
 
 
+class DataEntryByUrlsRouteTests(AppTestCase):
+    """Data entry from a list of AKS page URLs — the read-only dry-run tab."""
+
+    def test_games_page_served(self):
+        response, data = self._request("GET", "/games")
+        self.assertEqual(response.status, 200)
+        self.assertIn(b"<", data)
+
+    def test_launch_passes_urls_to_manager(self):
+        seen = {}
+        def fake(urls, *, by, targets_spec=None):
+            seen["urls"] = urls
+            return {"run_id": "20260824-000000-by-urls", "started": True}
+        self.manager.start_data_entry_by_urls = fake
+        url = "https://www.allkeyshop.com/blog/buy-neon-beats-cd-key-compare-prices/"
+        response, body = self._json("POST", "/api/data-entry/by-urls",
+                                    body={"urls": [url], "by": "Romain"})
+        self.assertEqual(response.status, 200)
+        self.assertEqual(body["run_id"], "20260824-000000-by-urls")
+        self.assertEqual(seen["urls"], [url])
+
+    def test_urls_as_string_are_split(self):
+        seen = {}
+        self.manager.start_data_entry_by_urls = lambda urls, **k: seen.setdefault("urls", urls) or {}
+        self._json("POST", "/api/data-entry/by-urls", body={"urls": "u1\nu2 u3"})
+        self.assertEqual(seen["urls"], ["u1", "u2", "u3"])
+
+    def test_no_urls_refused(self):
+        calls = []
+        self.manager.start_data_entry_by_urls = lambda *a, **k: calls.append(1) or {}
+        response, body = self._json("POST", "/api/data-entry/by-urls", body={"urls": []})
+        self.assertEqual(response.status, 400)
+        self.assertEqual(body["error"]["code"], "urls_required")
+        self.assertEqual(calls, [])
+
+    def test_too_many_urls_refused(self):
+        calls = []
+        self.manager.start_data_entry_by_urls = lambda *a, **k: calls.append(1) or {}
+        response, body = self._json("POST", "/api/data-entry/by-urls",
+                                    body={"urls": [f"u{i}" for i in range(201)]})
+        self.assertEqual(response.status, 400)
+        self.assertEqual(body["error"]["code"], "too_many_urls")
+        self.assertEqual(calls, [])
+
+    def _byurls_run(self, name="20260824-115728-by-urls", candidates=2):
+        d = self.runs / name
+        d.mkdir(parents=True, exist_ok=True)
+        d.joinpath("recap.json").write_text(json.dumps({
+            "mode": "dry-run", "aborted": None, "games": [],
+            "totals": {"games": 1, "resolved": 1, "candidates": candidates},
+        }), encoding="utf-8")
+        return name
+
+    def test_recap_by_explicit_run(self):
+        name = self._byurls_run()
+        response, body = self._json("GET", f"/api/data-entry/by-urls/recap?run={name}")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(body["run_id"], name)
+        self.assertEqual(body["recap"]["totals"]["candidates"], 2)
+
+    def test_recap_defaults_to_newest_by_urls_run(self):
+        self._byurls_run("20260824-100000-by-urls", candidates=1)
+        newest = self._byurls_run("20260824-115728-by-urls", candidates=9)
+        response, body = self._json("GET", "/api/data-entry/by-urls/recap")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(body["run_id"], newest)
+        self.assertEqual(body["recap"]["totals"]["candidates"], 9)
+
+
 class SortMoveRouteTests(AppTestCase):
     def _sort_run(self):
         # a run carrying a sort_plan.json, readable by the console + sort routes

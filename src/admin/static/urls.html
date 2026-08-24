@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AKS Executor — Saisie par jeux</title>
+  <link rel="stylesheet" href="auto.css">
+  <link rel="stylesheet" href="urls.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <h1>Saisie <span class="sub">— par jeux (URLs AKS)</span></h1>
+    </div>
+    <nav class="tabs">
+      <a href="." class="tab">Validation &amp; Submit</a>
+      <a href="tri" class="tab">Tri des listes</a>
+      <a href="auto" class="tab">Data Entry Auto</a>
+      <a href="games" class="tab active" aria-current="page">Saisie par jeux</a>
+    </nav>
+    <span id="busy-ind" class="busy-ind hidden">
+      <span class="spin"></span><span id="busy-text"></span>
+      <button id="stop-btn" type="button" title="Arrêter le run en cours">Arrêter</button>
+    </span>
+    <div class="topbar-right">
+      <button id="doc-btn" type="button" title="Aide / Help">📖 Doc</button>
+      <button id="theme" type="button" title="Basculer le thème">◐</button>
+    </div>
+  </header>
+
+  <dialog id="doc-modal" class="doc-modal">
+    <div class="doc-box">
+      <header class="doc-head">
+        <h3>📖 Saisie par jeux — Aide / Help</h3>
+        <form method="dialog"><button class="doc-x" aria-label="Fermer / Close">✕</button></form>
+      </header>
+      <div class="doc-body">
+        <section>
+          <h4>Ce que fait ce mode · What it does</h4>
+          <p lang="fr">Tu colles une <b>liste d'URLs de pages AKS</b> (une par ligne, ex.
+            <code>…/buy-the-sinking-city-2-cd-key-compare-prices/</code>). Pour chaque jeu, le mode
+            <b>épingle cette page AKS</b>, puis trouve les offres marchandes à saisir en pilotant la
+            <b>recherche du feed</b> (par <b>titre</b> et par <b>URL</b>) sur tous les marchands vettés,
+            et planifie chaque offre via la même logique de match (games-only, blacklist régions,
+            région/édition) sur la page épinglée.</p>
+          <p class="en" lang="en">Paste a list of AKS page URLs (one per line). For each game it pins that
+            AKS page, finds the pending merchant offers via the feed SEARCH (by name and by URL) across
+            every vetted merchant, and plans each through the same match logic against the pinned page.</p>
+        </section>
+        <section>
+          <h4>Dry-run d'abord · Dry-run first</h4>
+          <p lang="fr">Cet aperçu est <b>100 % lecture seule</b> : il résout, cherche, planifie et
+            affiche ce qui <b>serait</b> saisi (offre, région/édition) — <b>sans rien écrire</b>. La saisie
+            réelle sera une étape séparée et explicitement confirmée. Une session tombée <b>arrête tout</b>
+            (fail-closed) — jamais de reconnexion automatique.</p>
+          <p class="en" lang="en">This preview is READ-ONLY: it resolves, searches, plans and shows what
+            WOULD be entered — no writes. Actual entry is a separate, explicitly-confirmed step. A dropped
+            session HALTS everything (fail-closed) — never an auto re-login.</p>
+        </section>
+      </div>
+    </div>
+  </dialog>
+
+  <div id="banner" class="banner hidden"></div>
+
+  <main id="app">
+    <section class="launch card">
+      <h2>Aperçu (dry-run)</h2>
+      <p class="warn">Lecture seule — aucun ajout. On cherche les offres de chaque jeu sur
+        <b>tous les marchands vettés</b> et on montre ce qui serait saisi.</p>
+      <label class="urls-label">URLs de pages AKS (une par ligne)</label>
+      <textarea id="urls" class="urls-in" rows="7" spellcheck="false" autocomplete="off"
+        placeholder="https://www.allkeyshop.com/blog/buy-the-sinking-city-2-cd-key-compare-prices/"></textarea>
+      <div class="golaunch">
+        <span id="urls-count" class="golabel">0 URL</span>
+        <button id="launch" type="button" class="primary" disabled>Lancer l'aperçu</button>
+      </div>
+      <p id="launch-msg" class="msg"></p>
+    </section>
+
+    <section id="recap-card" class="card hidden">
+      <div class="recap-head">
+        <h2>Aperçu <span id="recap-run" class="dim"></span></h2>
+        <span id="recap-status" class="pill"></span>
+      </div>
+      <div id="recap-summary" class="summary"></div>
+      <div id="recap-games" class="pages"></div>
+    </section>
+  </main>
+
+  <footer id="status" class="idle">Prêt</footer>
+  <script src="urls.js"></script>
+</body>
+</html>

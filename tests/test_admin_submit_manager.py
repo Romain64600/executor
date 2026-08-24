@@ -774,6 +774,28 @@ class DataEntryAutoTests(ManagerTestCase):
             m.start_data_entry_auto([("  ", "58")], by="Romain")
         self.assertEqual(ctx.exception.code, "bad_merchant")
 
+    def test_by_urls_argv_and_urls_file(self):
+        script = self.root / "fake_by_urls.py"
+        script.write_text("import sys; sys.exit(0)\n", encoding="utf-8")
+        m = SubmitManager(self.root, log_dir=self.logs, clock=CLOCK)
+        m.by_urls_script = script
+        url = "https://www.allkeyshop.com/blog/buy-neon-beats-cd-key-compare-prices/"
+        r = m.start_data_entry_by_urls([url, "  "], by="Romain")
+        a = r["argv"]
+        self.assertEqual(r["kind"], "data_entry_by_urls")
+        self.assertIn("--dry-run", a)
+        self.assertIn("--urls-file", a)
+        self.assertTrue(r["run_id"].endswith("-by-urls"))
+        urls_file = Path(a[a.index("--urls-file") + 1])
+        self.assertEqual(urls_file.read_text(encoding="utf-8").strip(), url)  # blank dropped
+        self.assertTrue(m.wait_idle(timeout=10))
+
+    def test_by_urls_empty_refused(self):
+        m = SubmitManager(self.root, log_dir=self.logs, clock=CLOCK)
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_data_entry_by_urls(["  ", ""], by="Romain")
+        self.assertEqual(ctx.exception.code, "bad_urls")
+
     def test_stop_grace_is_longer_for_write_kinds(self):
         # A write run (submit / data_entry_auto) needs a whole offer to finish
         # before SIGKILL; read-only runs keep the short grace.

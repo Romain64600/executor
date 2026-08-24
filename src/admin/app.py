@@ -70,6 +70,10 @@ STATIC_FILES = {
     "auto.html": "text/html; charset=utf-8",
     "auto.js": "application/javascript; charset=utf-8",
     "auto.css": "text/css; charset=utf-8",
+    # Data entry from a list of AKS page URLs (search the feed, dry-run preview).
+    "urls.html": "text/html; charset=utf-8",
+    "urls.js": "application/javascript; charset=utf-8",
+    "urls.css": "text/css; charset=utf-8",
 }
 MAX_BODY_BYTES = 2 * 1024 * 1024
 RUN_ROUTE = re.compile(r"^/api/runs/([^/]+)(/.*)?$")
@@ -224,9 +228,14 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._serve_static("sort.html")
         if path in ("/auto", "/data-entry"):
             return self._serve_static("auto.html")
+        if path in ("/games", "/urls"):
+            return self._serve_static("urls.html")
         if path == "/api/data-entry/recap":
             run = parse_qs(parsed.query).get("run", [""])[0]
             return self._get_data_entry_recap(run)
+        if path == "/api/data-entry/by-urls/recap":
+            run = parse_qs(parsed.query).get("run", [""])[0]
+            return self._get_data_entry_recap(run, suffix="-by-urls")
         if path == "/api/data-entry/merchants":
             # The safe-auto allowlist — the only merchants the UI may offer and
             # the server will accept for unvalidated auto entry.
@@ -331,7 +340,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         # their current bytes. Even a tab open across a redeploy pulls the new
         # JS/CSS on its next reload (index.html itself is no-store). Deterministic
         # (content hash, no timestamps).
-        if name in ("index.html", "sort.html", "auto.html"):
+        if name in ("index.html", "sort.html", "auto.html", "urls.html"):
             body = self._version_assets(body)
         self._send_bytes(200, STATIC_FILES[name], body)
 
@@ -340,7 +349,8 @@ class AdminHandler(BaseHTTPRequestHandler):
         # Stamp any referenced JS/CSS asset with the sha8 of its bytes, so a tab
         # open across a redeploy pulls the new asset on its next reload (the HTML
         # itself is no-store). Covers both pages' assets; a no-op for those absent.
-        for asset in ("app.js", "style.css", "sort.js", "sort.css", "auto.js", "auto.css"):
+        for asset in ("app.js", "style.css", "sort.js", "sort.css", "auto.js", "auto.css",
+                      "urls.js", "urls.css"):
             asset_path = STATIC_DIR / asset
             if not asset_path.is_file():
                 continue
@@ -410,6 +420,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._post_extract()
         if path == "/api/data-entry/auto":
             return self._post_data_entry_auto()
+        if path == "/api/data-entry/by-urls":
+            return self._post_data_entry_by_urls()
         if path == "/api/sort/stop":
             return self._send_json(200, self.state.manager.stop_active())
         if path == "/api/sort/scan":
@@ -517,12 +529,32 @@ class AdminHandler(BaseHTTPRequestHandler):
             start_page=_parse_int(body.get("start_page")))
         self._send_json(200, result)
 
-    def _get_data_entry_recap(self, run_id: str) -> None:
+    def _post_data_entry_by_urls(self) -> None:
+        body = self._json_body()
+        by = str(body.get("by") or self._basic_user() or "operateur")
+        raw = body.get("urls")
+        urls: list[str] = []
+        if isinstance(raw, list):
+            urls = [str(u).strip() for u in raw if str(u).strip()]
+        elif isinstance(raw, str):
+            urls = [u.strip() for u in re.split(r"[\s,]+", raw) if u.strip()]
+        if not urls:
+            raise ApiError(400, "urls_required",
+                           "au moins une URL de page AKS (urls: [..]) requise")
+        # Bound the blast: each URL fans out a search across the whole allowlist.
+        if len(urls) > 200:
+            raise ApiError(400, "too_many_urls",
+                           f"{len(urls)} URLs — plafonné à 200 par run (relance en lots)")
+        result = self.state.manager.start_data_entry_by_urls(urls, by=by)
+        self._send_json(200, result)
+
+    def _get_data_entry_recap(self, run_id: str, *, suffix: str = "-auto") -> None:
         # Read-only: the live recap.json of a sweep run (no run_id → the newest
-        # *-auto run). Safe run-dir access via runs.py (path traversal guarded).
+        # run of this kind: *-auto, or *-by-urls). Safe run-dir access via runs.py
+        # (path traversal guarded).
         if not run_id:
             autos = sorted(
-                (p.name for p in self.state.runs_dir.glob("*-auto") if p.is_dir()),
+                (p.name for p in self.state.runs_dir.glob("*" + suffix) if p.is_dir()),
                 reverse=True)
             if not autos:
                 return self._send_json(200, {"recap": None})
