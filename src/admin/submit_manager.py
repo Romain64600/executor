@@ -70,6 +70,7 @@ BY_URLS_EVENTS = frozenset(
         "run_start",
         "game_resolved",
         "game_start",
+        "game_searched",
         "merchant_done",
         "candidate",
         "game_done",

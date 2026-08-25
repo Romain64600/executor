@@ -50,9 +50,11 @@ from src.submit_session import SubmitSession  # noqa: E402
 
 # Same render-race backoff the extractor/mover poll through (feed_ui renders late).
 FEED_UI_RENDER_WAITS = (1.0, 2.0, 4.0)
-# A single game should not have hundreds of pending offers per merchant; read the
-# first search page and flag (never silently drop) if the filter advertises more.
+# One AKS feed page holds up to 100 rows. The all-merchants search for one game
+# rarely exceeds a page or two; read up to SEARCH_MAX_PAGES and FLAG (never silently
+# drop) a deeper result.
 SEARCH_MAX_ROWS_LOGGED = 100
+SEARCH_MAX_PAGES = 3
 
 _SLUG_RE = re.compile(r"/blog/buy-([a-z0-9-]+)-(?:cd-key|[a-z-]+-account)-compare-prices/?")
 
@@ -95,27 +97,28 @@ def resolve_pinned(url: str, http_get_fn: Callable[..., Any] = http_get) -> AksR
     return resolution
 
 
-def _search_url(store_id: str, feed_page: str, available: str, term: str, field: str) -> str:
+def _search_url(feed_page: str, available: str, term: str, field: str, page: int = 1) -> str:
     """The AKS feed tool's SEARCH form is a GET to ``page=aks-merchant-feeds-search``
-    with ``list`` (the feed list number) + ``store`` as SEPARATE params — NOT the
-    feed page with the search appended (which is silently ignored and returns the
-    unfiltered feed, verified live 2026-08-24). ``search[field]`` = name|url|productId."""
+    with ``list`` (the feed list number). We OMIT ``store`` so ONE search returns
+    matches across ALL merchants — we then keep only the vetted-allowlist stores
+    from the results (Romain 2026-08-25: 2 searches/game instead of 2×N). Appending
+    the search to the feed page is silently ignored (verified live 2026-08-24);
+    ``search[field]`` = name|url|productId; ``p`` paginates."""
     list_no = str(feed_page).rsplit("-", 1)[-1]     # "aks-merchant-feeds-9" -> "9"
-    return AKS_ADMIN_URL + "?" + urllib.parse.urlencode({
-        "page": "aks-merchant-feeds-search", "available": available,
-        "list": list_no, "store": store_id,
-        "search[search]": term, "search[field]": field})
+    q = {"page": "aks-merchant-feeds-search", "available": available,
+         "list": list_no, "search[search]": term, "search[field]": field}
+    if page > 1:
+        q["p"] = page
+    return AKS_ADMIN_URL + "?" + urllib.parse.urlencode(q)
 
 
-def _read_search_rows(session: Any, url: str,
-                      render_waits: tuple[float, ...] = FEED_UI_RENDER_WAITS) -> list[dict]:
-    """Navigate a search-filtered feed URL and return its rows [{id,url,name}].
+def _read_one_page(session: Any, url: str,
+                   render_waits: tuple[float, ...] = FEED_UI_RENDER_WAITS) -> list[dict]:
+    """Navigate a search URL and return ONE page of rows [{id,url,name,price,store_id}].
 
     Polls the render race (feed_ui late) before concluding "no results": rows →
     return; feed_ui rendered with 0 rows → a real empty result; login bounce →
-    fail-closed. Reads the first page only (a game's per-merchant matches fit one
-    page); a deeper filtered result is flagged by the caller, never silently cut.
-    """
+    fail-closed; never rendered after the backoff → SearchUnreadable (never a silent 0)."""
     session.navigate(url)
     if session.is_login_page():
         raise NotLoggedInError("feed bounced to wp-login — not logged in")
@@ -133,10 +136,22 @@ def _read_search_rows(session: Any, url: str,
             return rows
         if session.feed_page_state().get("feed_ui"):
             return []          # rendered, genuinely 0 matches
-    # Never rendered through the whole backoff, and not a login bounce → the search
-    # page is broken/errored. Fail-closed: raise so the caller records a per-merchant
-    # error, never a silent "0 offers found" (adversarial review 2026-08-24).
     raise SearchUnreadable(f"search page never rendered: {url}")
+
+
+def _read_search_pages(session: Any, feed_page: str, available: str, term: str,
+                       field: str) -> tuple[list[dict], bool]:
+    """Read a search's result pages (all-merchants) up to SEARCH_MAX_PAGES. A full
+    page (100 rows) means there may be more → read the next; a short page ends it.
+    Returns (rows, hit_cap) — hit_cap flags a result deeper than the cap (never a
+    silent cut)."""
+    rows: list[dict] = []
+    for page in range(1, SEARCH_MAX_PAGES + 1):
+        found = _read_one_page(session, _search_url(feed_page, available, term, field, page))
+        rows.extend(found)
+        if len(found) < SEARCH_MAX_ROWS_LOGGED:
+            return rows, False
+    return rows, True
 
 
 def _dedupe_rows(rows: list[dict]) -> list[dict]:
@@ -157,12 +172,12 @@ def _dedupe_rows(rows: list[dict]) -> list[dict]:
     return out
 
 
-def search_offers_for_game(session: Any, resolution: AksResolution, store_id: str,
-                           available: str, feed_page: str) -> tuple[list[dict], dict]:
-    """Search a merchant feed for a game by NAME and by URL(slug); union the rows.
-
-    Returns (rows, meta). ``meta`` records the two terms and whether either search
-    saw a full page (more results may exist — flagged, never silently dropped)."""
+def search_all_merchants(session: Any, resolution: AksResolution, available: str,
+                         feed_page: str) -> tuple[list[dict], dict]:
+    """ONE all-merchants search per game, by NAME and by URL(slug), unioned. Returns
+    (rows, meta) — rows across every merchant (each carries its store_id); the caller
+    filters to the vetted allowlist. ``meta.truncated`` flags a result deeper than
+    the page cap (never silently cut)."""
     name_term = cleaned_title(resolution.aks_name) or resolution.aks_name
     url_term = resolution.slug
     meta: dict[str, Any] = {"name_term": name_term, "url_term": url_term, "truncated": False}
@@ -170,23 +185,17 @@ def search_offers_for_game(session: Any, resolution: AksResolution, store_id: st
     for term, field in ((name_term, "name"), (url_term, "url")):
         if not term:
             continue
-        found = _read_search_rows(session, _search_url(store_id, feed_page, available, term, field))
-        if len(found) >= SEARCH_MAX_ROWS_LOGGED:
-            meta["truncated"] = True
+        found, hit_cap = _read_search_pages(session, feed_page, available, term, field)
+        meta["truncated"] = meta["truncated"] or hit_cap
         rows.extend(found)
     return _dedupe_rows(rows), meta
 
 
-def plan_merchant(session: Any, resolution: AksResolution, merchant: str, store_id: str,
-                  available: str, feed_page: str) -> dict:
-    """Search one merchant for the game and build candidates via the pinned match."""
-    try:
-        rows, meta = search_offers_for_game(session, resolution, store_id, available, feed_page)
-    except SearchUnreadable as exc:
-        # non-fatal per-merchant: flag it (never a silent found=0), keep going.
-        return {"merchant": merchant, "store_id": str(store_id), "found": 0,
-                "candidates": [], "skipped": [], "error": "search_unreadable",
-                "detail": str(exc)[:160]}
+def plan_from_rows(rows: list[dict], resolution: AksResolution, merchant: str,
+                   store_id: str) -> dict:
+    """Build candidates for ONE merchant from its already-fetched search rows, via
+    match_offer pinned to the operator's AKS page (its R01 name check rejects a
+    search over-match)."""
     pinned = lambda _name, _res=resolution: _res  # noqa: E731 — inject the pinned page
     candidates: list[dict] = []
     skipped: list[dict] = []
@@ -209,7 +218,7 @@ def plan_merchant(session: Any, resolution: AksResolution, merchant: str, store_
         else:  # SkippedOffer
             skipped.append({"name": offer.name, "url": offer.url, "reason": result.reason})
     return {"merchant": merchant, "store_id": str(store_id), "found": len(rows),
-            "candidates": candidates, "skipped": skipped, "search": meta}
+            "candidates": candidates, "skipped": skipped}
 
 
 def match_offer_pinned(offer: NormalizedOffer, pinned_resolver: Callable[[str], AksResolution]):
@@ -309,6 +318,8 @@ def run_plan(urls: list[str], targets: list[tuple[str, str]], *, available: str,
 def _plan_games(session: Any, resolved: list[tuple[str, AksResolution]], targets, recap: dict,
                 available: str, feed_page: str, flush: Callable[[], None],
                 emit: Callable[..., Any] = lambda *a, **k: None) -> None:
+    # store_id -> merchant name, the vetted allowlist we keep from the results.
+    store_to_merchant = {str(store): merchant for merchant, store in targets}
     for url, resolution in resolved:
         game: dict[str, Any] = {
             "url": url, "resolved": True,
@@ -317,22 +328,42 @@ def _plan_games(session: Any, resolved: list[tuple[str, AksResolution]], targets
             "aks_url": resolution.url,
             "merchants": [], "total_candidates": 0}
         emit("game_start", aks_name=resolution.aks_name, aks_product_id=resolution.product_id)
+        try:
+            rows, meta = search_all_merchants(session, resolution, available, feed_page)
+        except NotLoggedInError:
+            # Fail-closed STOP — NEVER a re-auth trigger (AGENTS.md).
+            recap["aborted"] = "not_logged_in"
+            game["error"] = "not_logged_in"
+            recap["games"].append(game)
+            emit("game_done", aks_name=resolution.aks_name, error="not_logged_in")
+            flush()
+            return
+        except SearchUnreadable as exc:
+            game["error"] = "search_unreadable"
+            game["detail"] = str(exc)[:160]
+            recap["games"].append(game)
+            emit("game_done", aks_name=resolution.aks_name, error="search_unreadable")
+            flush()
+            continue
+
+        # Group the all-merchants results by store, keeping only the vetted allowlist.
+        by_store: dict[str, list[dict]] = {}
+        off_allowlist = 0
+        for r in rows:
+            sid = str(r.get("store_id") or "")
+            if sid in store_to_merchant:
+                by_store.setdefault(sid, []).append(r)
+            else:
+                off_allowlist += 1
+        game["search"] = {**meta, "found": len(rows), "off_allowlist": off_allowlist}
+        emit("game_searched", aks_name=resolution.aks_name, found=len(rows),
+             off_allowlist=off_allowlist, truncated=meta["truncated"])
+
         for merchant, store_id in targets:
-            try:
-                per = plan_merchant(session, resolution, merchant, store_id, available, feed_page)
-            except NotLoggedInError:
-                # Fail-closed STOP — NEVER a re-auth trigger (AGENTS.md).
-                recap["aborted"] = "not_logged_in"
-                game["merchants"].append({"merchant": merchant, "store_id": store_id,
-                                          "error": "not_logged_in"})
-                # Count what THIS game already planned before the bounce, so the
-                # total agrees with the recap body/report (review 2026-08-24).
-                recap["totals"]["candidates"] += game["total_candidates"]
-                recap["games"].append(game)
-                emit("merchant_done", aks_name=resolution.aks_name, merchant=merchant,
-                     error="not_logged_in")
-                flush()
-                return
+            mrows = by_store.get(str(store_id))
+            if not mrows:                      # merchant absent from the results — omit
+                continue
+            per = plan_from_rows(mrows, resolution, merchant, str(store_id))
             game["merchants"].append(per)
             game["total_candidates"] += len(per["candidates"])
             for c in per["candidates"]:
@@ -341,8 +372,8 @@ def _plan_games(session: Any, resolved: list[tuple[str, AksResolution]], targets
                      name=o.get("name", ""), region=f"{reg.get('label')}({reg.get('id')})",
                      edition=f"{ed.get('label')}({ed.get('id')})")
             emit("merchant_done", aks_name=resolution.aks_name, merchant=merchant,
-                 found=per.get("found", 0), candidates=len(per["candidates"]),
-                 skipped=len(per.get("skipped", [])), error=per.get("error"))
+                 found=per["found"], candidates=len(per["candidates"]),
+                 skipped=len(per["skipped"]))
         recap["totals"]["candidates"] += game["total_candidates"]
         recap["games"].append(game)
         emit("game_done", aks_name=resolution.aks_name, candidates=game["total_candidates"])
@@ -359,11 +390,12 @@ def write_report(recap: dict, run_dir: Path) -> None:
             continue
         lines.append(f"🎯 {game['aks_product_id']} — {game['aks_name']}")
         lines.append(f"   {game['url']}")
+        if game.get("error"):                       # game-level (search/login) failure
+            lines.append(f"   ⚠ {game['error']}{(' — ' + game['detail']) if game.get('detail') else ''}")
+            lines.append("")
+            continue
         n = 0
         for per in game.get("merchants", []):
-            if per.get("error"):
-                lines.append(f"   ⚠ {per['merchant']} : {per['error']}")
-                continue
             for cand in per.get("candidates", []):
                 n += 1
                 o = cand["offer"]

@@ -97,12 +97,11 @@ function fmtLogEvent(ev) {
   if (n === "game_resolved") return ev.ok
     ? `🎯 résolu : ${ev.aks_name} (AKS ${ev.aks_product_id})`
     : `❌ non résolu : ${ev.url} — ${ev.reason || ""}`;
-  if (n === "game_start") return `— ${ev.aks_name} : recherche sur les marchands…`;
+  if (n === "game_start") return `— ${ev.aks_name} : recherche (tous marchands)…`;
+  if (n === "game_searched") return `   ⟳ ${ev.found} résultat(s) tous marchands` + (ev.off_allowlist ? ` · ${ev.off_allowlist} hors-liste ignoré(s)` : "") + (ev.truncated ? " · (tronqué)" : "");
   if (n === "candidate") return `   ✔ [${ev.merchant}] ${ev.name} — ${ev.region}, ${ev.edition}`;
-  if (n === "merchant_done") return ev.error
-    ? `   ⚠ ${ev.merchant} : ${ev.error}`
-    : `   · ${ev.merchant} : ${ev.found} trouvée(s) · ${ev.candidates} à saisir` + (ev.skipped ? ` · ${ev.skipped} ignorée(s)` : "");
-  if (n === "game_done") return `✓ ${ev.aks_name} : ${ev.candidates} à saisir`;
+  if (n === "merchant_done") return `   · ${ev.merchant} : ${ev.found} trouvée(s) · ${ev.candidates} à saisir` + (ev.skipped ? ` · ${ev.skipped} ignorée(s)` : "");
+  if (n === "game_done") return ev.error ? `⚠ ${ev.aks_name} : ${ev.error}` : `✓ ${ev.aks_name} : ${ev.candidates} à saisir`;
   if (n === "run_done") return `■ terminé · ${ev.resolved} résolu(s), ${ev.candidates} à saisir`;
   if (n === "run_aborted") return `■ arrêté : ${ev.reason}`;
   return null;
@@ -204,8 +203,13 @@ function renderRecap(d) {
       el("span", { class: "pg-m", text: "AKS " + g.aks_product_id + " · " + (g.total_candidates || 0) + " à saisir" }),
     ]),
       el("div", { class: "game-url dim", text: g.url })];
+    if (g.error) {
+      kids.push(el("div", { class: "off no" }, [el("span", { class: "off-st", text: "⚠ " + g.error + (g.detail ? " — " + g.detail : "") })]));
+      wrap.append(el("div", { class: "pg" }, kids));
+      continue;
+    }
+    if (g.search) kids.push(el("div", { class: "game-url dim", text: g.search.found + " résultat(s) tous marchands" + (g.search.off_allowlist ? " · " + g.search.off_allowlist + " hors-liste" : "") + (g.search.truncated ? " · tronqué" : "") }));
     for (const per of (g.merchants || [])) {
-      if (per.error) { kids.push(el("div", { class: "off no" }, [el("span", { class: "off-name", text: per.merchant }), el("span", { class: "off-st", text: "⚠ " + per.error })])); continue; }
       const cands = per.candidates || [];
       const nSk = (per.skipped || []).length;
       if (!cands.length && !nSk) continue;   // merchant with nothing found — omit
