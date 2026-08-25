@@ -56,14 +56,23 @@ function parseUrls() {
 function syncLaunch() {
   const n = parseUrls().length;
   $("#urls-count").textContent = n + " URL" + (n > 1 ? "s" : "");
-  $("#launch").disabled = RUNNING || n === 0;
+  // Only disable while a run is active — NOT on an empty field. A hard reload can
+  // restore the textarea value without firing 'input' (so syncLaunch never re-enabled
+  // it), leaving the button silently disabled; instead the click handler validates and
+  // gives a visible message when the field is empty (2026-08-25).
+  $("#launch").disabled = RUNNING;
 }
 $("#urls").addEventListener("input", syncLaunch);
+$("#urls").addEventListener("change", syncLaunch);
+$("#urls").addEventListener("paste", () => setTimeout(syncLaunch, 0));
 
 // ---- launch ----
 $("#launch").addEventListener("click", async () => {
   const urls = parseUrls();
-  if (!urls.length) return;
+  if (!urls.length) {
+    $("#launch-msg").textContent = "✖ Colle au moins une URL de page AKS dans le champ.";
+    return;
+  }
   $("#launch").disabled = true;
   $("#launch-msg").textContent = "Lancement de l'aperçu…";
   try {
