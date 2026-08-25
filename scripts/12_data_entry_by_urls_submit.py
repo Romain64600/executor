@@ -20,8 +20,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import signal
-import subprocess
 import sys
 from pathlib import Path
 
@@ -30,42 +28,20 @@ sys.path.insert(0, str(ROOT))
 
 from src.admin.runs import sha256_file  # noqa: E402
 from src.admin.validation_io import apply_overrides_and_validate  # noqa: E402
+from src.child_runner import CooperativeChildRunner  # noqa: E402
 from src.data_entry_auto import SubmitOutcome, run_by_urls_submit  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
 from src.validation import candidate_fingerprint  # noqa: E402
 
-_STOP = False
-_CHILD: "subprocess.Popen | None" = None
-
-
-def _on_term(_signum, _frame):
-    # Cooperative stop: set the flag AND forward SIGTERM to the current 05_submit
-    # child (it stops at an offer boundary — never mid-Create — then exits); the
-    # batch then halts between merchants. Never SIGKILL here (that would risk a
-    # mid-write kill); the manager's own escalation guarantees termination.
-    global _STOP
-    _STOP = True
-    child = _CHILD
-    if child is not None and child.poll() is None:
-        try:
-            child.terminate()
-        except Exception:
-            pass
+# Cooperative SIGTERM: forward to the current 05_submit child (it stops at an offer
+# boundary — never mid-Create), then the batch halts between merchants; a child that
+# hangs past the grace is SIGKILLed by its group so it is never orphaned (see
+# src/child_runner.py, adversarial review 2026-08-25).
+_RUNNER = CooperativeChildRunner()
 
 
 def _run_child(argv: list[str]) -> int:
-    global _CHILD
-    _CHILD = subprocess.Popen(argv, cwd=str(ROOT), start_new_session=True,
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if _STOP and _CHILD.poll() is None:
-        try:
-            _CHILD.terminate()
-        except Exception:
-            pass
-    try:
-        return _CHILD.wait()
-    finally:
-        _CHILD = None
+    return _RUNNER.run(argv, str(ROOT))
 
 
 def _read_submit_plan(run_dir: Path, rc: int) -> SubmitOutcome:
@@ -146,8 +122,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--mode", default="safe", choices=["safe"])  # R24: ADD path is safe only
     args = ap.parse_args(argv)
 
-    signal.signal(signal.SIGTERM, _on_term)
-    signal.signal(signal.SIGINT, _on_term)
+    _RUNNER.install()
 
     run_dir = ROOT / "runs" / args.run_id
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -178,7 +153,7 @@ def main(argv: list[str] | None = None) -> int:
         from_recap, available=available,
         submit_merchant=_make_submit_merchant(available, logger),
         make_sub_run=make_sub_run, flush=flush,
-        should_stop=lambda: _STOP)
+        should_stop=lambda: _RUNNER.stopped)
     if recap.get("aborted"):
         logger.log("submit_run_aborted", reason=recap["aborted"])
     else:

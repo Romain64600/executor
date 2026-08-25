@@ -21,8 +21,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import signal
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,47 +34,20 @@ from src.data_entry_auto import (  # noqa: E402
 )
 from src.admin.validation_io import apply_overrides_and_validate, ValidationIOError  # noqa: E402
 from src.admin.runs import sha256_file  # noqa: E402
+from src.child_runner import CooperativeChildRunner  # noqa: E402
 from src.triage import execute_page_moves, plan_moves_from_skipped  # noqa: E402
 from src.validation import candidate_fingerprint  # noqa: E402
 
-_STOP = False
-_CHILD: subprocess.Popen | None = None
-
-
-def _on_term(_signum, _frame):
-    # Cooperative stop: set the flag AND forward SIGTERM to the current child.
-    # 05_submit/02/03 each stop at their OWN safe boundary (05 at an offer
-    # boundary — never mid-Create), then exit; run_sweep then halts between
-    # pages. We never SIGKILL the child here (that is what caused mid-write
-    # kills); the manager's own escalation guarantees eventual termination.
-    global _STOP
-    _STOP = True
-    child = _CHILD
-    if child is not None and child.poll() is None:
-        try:
-            child.terminate()
-        except Exception:
-            pass
+# Cooperative stop: forward SIGTERM to the current child (05_submit/02/03/06 each
+# stop at their OWN safe boundary — 05 at an offer boundary, never mid-Create — then
+# exit; run_sweep then halts between pages). ``start_new_session`` isolates a child
+# from an orchestrator SIGKILL cascade; a child that HANGS past the grace is SIGKILLed
+# by its group so it is never orphaned (see src/child_runner.py, review 2026-08-25).
+_RUNNER = CooperativeChildRunner()
 
 
 def _run_child(argv: list[str]) -> int:
-    """Run a stage script as a child for cooperative SIGTERM. ``start_new_session``
-    puts it in its own process group (a SIGKILL of THIS sweep never cascades to a
-    child mid-write), and its stdout/stderr are detached so a lingering child can
-    never pin the manager supervisor's pipe."""
-    global _CHILD
-    _CHILD = subprocess.Popen(argv, cwd=str(ROOT), start_new_session=True,
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    # If a stop arrived during the fork window, terminate immediately.
-    if _STOP and _CHILD.poll() is None:
-        try:
-            _CHILD.terminate()
-        except Exception:
-            pass
-    try:
-        return _CHILD.wait()
-    finally:
-        _CHILD = None
+    return _RUNNER.run(argv, str(ROOT))
 
 
 def _load_json(path: Path):
@@ -339,8 +310,7 @@ def main() -> int:
             print(json.dumps({"aborted": True, "reason": f"store_id non numérique pour {m!r}: {s!r}"}))
             return 2
 
-    signal.signal(signal.SIGTERM, _on_term)
-    signal.signal(signal.SIGINT, _on_term)
+    _RUNNER.install()
 
     run_id = args.run_id or f"{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-auto"
     sweep_dir = ROOT / "runs" / run_id
@@ -362,7 +332,7 @@ def main() -> int:
 
     persist()
     for merchant, store_id in targets:
-        if _STOP:
+        if _RUNNER.stopped:
             recap["halted"] = "operator_stop"
             break
         slug = re.sub(r"[^a-z0-9]+", "-", merchant.lower()).strip("-") or "merchant"
@@ -382,7 +352,7 @@ def main() -> int:
 
         sweep = run_sweep(cfg, stages,
                           page_run_id=lambda p, sl=slug, sid=store_id: f"{run_id}-{sl}-s{sid}-p{p}",
-                          should_stop=lambda: _STOP, on_page=on_page)
+                          should_stop=lambda: _RUNNER.stopped, on_page=on_page)
         target_entry["recap"] = sweep
         persist()
         # A fail-closed halt on one merchant stops the whole batch (a broken
@@ -390,7 +360,7 @@ def main() -> int:
         if sweep.get("halted") and sweep["halted"] != "operator_stop":
             recap["halted"] = f"{merchant}: {sweep['halted']}"
             break
-        if _STOP:
+        if _RUNNER.stopped:
             recap["halted"] = "operator_stop"
             break
 
