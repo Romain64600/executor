@@ -14,6 +14,13 @@ function el(tag, attrs, kids) {
   for (const c of [].concat(kids || [])) if (c != null) n.append(c);
   return n;
 }
+
+// A clickable source URL for a search-result offer (candidate or skipped), on its
+// own full-width line so the operator can open/verify it. null when there is no URL.
+function offLink(url) {
+  if (!url) return null;
+  return el("a", { class: "off-url", href: url, target: "_blank", rel: "noopener noreferrer", title: url, text: url });
+}
 async function api(path, opts) {
   const r = await fetch(path, Object.assign({ headers: { "X-AKS-Admin": "1", "Content-Type": "application/json" } }, opts || {}));
   const t = await r.text();
@@ -240,15 +247,27 @@ function renderRecap(d) {
     if (g.search) kids.push(el("div", { class: "game-url dim", text: g.search.found + " résultat(s) tous marchands" + (g.search.off_allowlist ? " · " + g.search.off_allowlist + " hors-liste" : "") + (g.search.truncated ? " · tronqué" : "") }));
     for (const per of (g.merchants || [])) {
       const cands = per.candidates || [];
-      const nSk = (per.skipped || []).length;
-      if (!cands.length && !nSk) continue;   // merchant with nothing found — omit
-      kids.push(el("div", { class: "m-title", text: per.merchant + " — " + cands.length + " à saisir" + (nSk ? " · " + nSk + " ignorée(s)" : "") }));
+      const skips = per.skipped || [];
+      if (!cands.length && !skips.length) continue;   // merchant with nothing found — omit
+      kids.push(el("div", { class: "m-title", text: per.merchant + " — " + cands.length + " à saisir" + (skips.length ? " · " + skips.length + " ignorée(s)" : "") }));
       for (const c of cands) {
         const o = c.offer || {}, reg = c.region || {}, ed = c.edition || {};
         kids.push(el("div", { class: "off ok" }, [
-          el("span", { class: "off-name", text: o.name || "" }),
+          el("span", { class: "off-name", text: o.name || "", title: o.name || "" }),
           el("span", { class: "off-id", text: reg.label ? reg.label + "(" + reg.id + ") · " + (ed.label || "") + "(" + (ed.id || "") + ")" : "" }),
           el("span", { class: "off-st", text: "à saisir" }),
+          offLink(o.url),
+        ]));
+      }
+      // Skipped search results — shown WITH their source URL + reason so the operator
+      // can eyeball what was ignored without asking (Romain 2026-08-25).
+      for (const s of skips) {
+        kids.push(el("div", { class: "off skip" }, [
+          el("span", { class: "off-name", text: s.name || "", title: s.name || "" }),
+          el("span", { class: "off-id", text: "" }),
+          el("span", { class: "off-st", text: "ignorée" }),
+          s.reason ? el("span", { class: "off-why", text: s.reason }) : null,
+          offLink(s.url),
         ]));
       }
     }
