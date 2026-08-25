@@ -74,6 +74,7 @@ BY_URLS_EVENTS = frozenset(
         "game_searched",
         "merchant_done",
         "candidate",
+        "skipped",
         "game_done",
         "run_done",
         "run_aborted",

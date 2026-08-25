@@ -202,6 +202,10 @@ class RunPlanTests(unittest.TestCase):
             g = recap["games"][0]
             self.assertEqual(g["search"]["off_allowlist"], 1)        # the store-777 row dropped
             self.assertEqual([m["merchant"] for m in g["merchants"]], ["TestMart"])
+            # the off-allowlist row is RECORDED with its url (not just counted) so the
+            # operator can see every search result (Romain 2026-08-25).
+            self.assertEqual([o["url"] for o in g["off_allowlist_offers"]], ["https://x/300"])
+            self.assertEqual(g["off_allowlist_offers"][0]["store_id"], "777")
             M.write_report(recap, run_dir)
             report = (run_dir / "report.txt").read_text()
             self.assertIn("Neon Beats", report)
@@ -267,13 +271,16 @@ class LogEventsTests(unittest.TestCase):
             def __init__(self): self.events = []
             def log(self, event, **f): self.events.append(event)
         lg = FakeLogger()
+        # store 999: one MATCHING row (→ candidate) + one off-page row (→ skipped, so the
+        # "skipped" progress event fires and streams live).
         session = FakeSearchSession({
-            "name": [_row("100", "Neon Beats - Steam Key - GLOBAL", "https://testmart.com/neon-beats", store="999")]})
+            "name": [_row("100", "Neon Beats - Steam Key - GLOBAL", "https://testmart.com/neon-beats", store="999"),
+                     _row("101", "Cyberpunk 2077 - Steam Key - GLOBAL", "https://testmart.com/cp2077", store="999")]})
         with tempfile.TemporaryDirectory() as d:
             M.run_plan([URL], TARGETS, available="all", feed_page="aks-merchant-feeds-9", endpoint="x",
                        run_dir=Path(d), http_get_fn=_ok(AKS_BODY), session=session, logger=lg)
         for ev in ("run_start", "game_resolved", "game_start", "game_searched",
-                   "candidate", "merchant_done", "game_done", "run_done"):
+                   "candidate", "skipped", "merchant_done", "game_done", "run_done"):
             self.assertIn(ev, lg.events, ev)
 
 

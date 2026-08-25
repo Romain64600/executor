@@ -347,17 +347,21 @@ def _plan_games(session: Any, resolved: list[tuple[str, AksResolution]], targets
             continue
 
         # Group the all-merchants results by store, keeping only the vetted allowlist.
+        # Off-allowlist rows (non-vetted merchants) are recorded WITH their URL so the
+        # operator can still see every search result, not just a count (Romain 2026-08-25).
         by_store: dict[str, list[dict]] = {}
-        off_allowlist = 0
+        off_allowlist_offers: list[dict] = []
         for r in rows:
             sid = str(r.get("store_id") or "")
             if sid in store_to_merchant:
                 by_store.setdefault(sid, []).append(r)
             else:
-                off_allowlist += 1
-        game["search"] = {**meta, "found": len(rows), "off_allowlist": off_allowlist}
+                off_allowlist_offers.append({"store_id": sid, "name": str(r.get("name") or ""),
+                                             "url": str(r.get("url") or "")})
+        game["search"] = {**meta, "found": len(rows), "off_allowlist": len(off_allowlist_offers)}
+        game["off_allowlist_offers"] = off_allowlist_offers
         emit("game_searched", aks_name=resolution.aks_name, found=len(rows),
-             off_allowlist=off_allowlist, truncated=meta["truncated"])
+             off_allowlist=len(off_allowlist_offers), truncated=meta["truncated"])
 
         for merchant, store_id in targets:
             mrows = by_store.get(str(store_id))
@@ -371,6 +375,11 @@ def _plan_games(session: Any, resolved: list[tuple[str, AksResolution]], targets
                 emit("candidate", aks_name=resolution.aks_name, merchant=merchant,
                      name=o.get("name", ""), region=f"{reg.get('label')}({reg.get('id')})",
                      edition=f"{ed.get('label')}({ed.get('id')})")
+            # Stream each SKIPPED search result live, with its URL + reason, so the
+            # operator sees what was ignored in real time (Romain 2026-08-25).
+            for sk in per["skipped"]:
+                emit("skipped", aks_name=resolution.aks_name, merchant=merchant,
+                     name=sk.get("name", ""), url=sk.get("url", ""), reason=sk.get("reason", ""))
             emit("merchant_done", aks_name=resolution.aks_name, merchant=merchant,
                  found=per["found"], candidates=len(per["candidates"]),
                  skipped=len(per["skipped"]))

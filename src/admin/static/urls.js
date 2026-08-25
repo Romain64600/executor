@@ -112,6 +112,7 @@ function fmtLogEvent(ev) {
   if (n === "game_start") return `— ${ev.aks_name} : recherche (tous marchands)…`;
   if (n === "game_searched") return `   ⟳ ${ev.found} résultat(s) tous marchands` + (ev.off_allowlist ? ` · ${ev.off_allowlist} hors-liste ignoré(s)` : "") + (ev.truncated ? " · (tronqué)" : "");
   if (n === "candidate") return `   ✔ [${ev.merchant}] ${ev.name} — ${ev.region}, ${ev.edition}`;
+  if (n === "skipped") return `   ✖ ${ev.merchant} ignorée : ${ev.name || ""} · ${ev.reason || ""}\n      ${ev.url || ""}`;
   if (n === "merchant_done") return `   · ${ev.merchant} : ${ev.found} trouvée(s) · ${ev.candidates} à saisir` + (ev.skipped ? ` · ${ev.skipped} ignorée(s)` : "");
   if (n === "game_done") return ev.error ? `⚠ ${ev.aks_name} : ${ev.error}` : `✓ ${ev.aks_name} : ${ev.candidates} à saisir`;
   if (n === "run_done") return `■ terminé · ${ev.resolved} résolu(s), ${ev.candidates} à saisir`;
@@ -272,6 +273,20 @@ function renderRecap(d) {
       }
     }
     if ((g.total_candidates || 0) === 0) kids.push(el("div", { class: "off no" }, [el("span", { class: "off-st", text: "(aucune offre à saisir trouvée)" })]));
+    // Off-allowlist search results (non-vetted merchants) — shown with their URL too,
+    // so every search result is visible even though these can't be entered.
+    const offList = g.off_allowlist_offers || [];
+    if (offList.length) {
+      kids.push(el("div", { class: "m-title dim", text: "Hors-liste (marchands non autorisés) — " + offList.length }));
+      for (const o of offList) {
+        kids.push(el("div", { class: "off skip" }, [
+          el("span", { class: "off-name", text: o.name || "", title: o.name || "" }),
+          el("span", { class: "off-id", text: o.store_id ? "store " + o.store_id : "" }),
+          el("span", { class: "off-st", text: "hors-liste" }),
+          offLink(o.url),
+        ]));
+      }
+    }
     wrap.append(el("div", { class: "pg" }, kids));
   }
   // "Saisir" is offered only on a FINISHED, non-aborted dry-run with candidates.
