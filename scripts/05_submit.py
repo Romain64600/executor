@@ -177,6 +177,12 @@ def _main() -> int:
     )
     parser.add_argument("--page-window", type=int, default=1,
                         help="Half-width of the page-hint window (default 1 = N-1..N+1).")
+    parser.add_argument(
+        "--locate-by-search", action="store_true",
+        help="Locate each offer + prove-gone via the feed SEARCH (filtered by its URL) "
+             "instead of a whole-feed scan — for the by-urls submit, whose offers are "
+             "scattered (no page). Fast + fresh; an absence in the search is a valid "
+             "whole-feed gone-proof. Mutually exclusive with --page-hint.")
     parser.add_argument("--submit", action="store_true", help="REAL write (default: dry-run).")
     parser.add_argument(
         "--mode", default="safe", choices=["safe", "learning", "advanced"],
@@ -465,6 +471,7 @@ def _main() -> int:
                 run_id=run_id, merchant=args.merchant, store_id=args.store_id,
                 approved=approved, available=args.available, max_pages=max_pages, limit=limit,
                 page_hint=args.page_hint, page_window=args.page_window,
+                locate_by_search=args.locate_by_search,
             )
     except FEED_UNREADABLE_EXCS as exc:
         print(json.dumps({

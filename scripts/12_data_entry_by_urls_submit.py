@@ -99,12 +99,15 @@ def _make_submit_merchant(available: str, logger: RunLogger):
             logger.log("merchant_submitted", merchant=merchant, created=0,
                        attempted=len(candidates), halted=str(code))
             return SubmitOutcome(ok=False, aborted=f"{code}: {exc}"[:160])
-        # UNMODIFIED 05_submit --mode safe. No --page-hint (by-urls offers are
-        # scattered across the feed; locate falls back to a whole-feed index and
-        # prove-gone is whole-feed anyway). No --limit (safe = full batch, R24).
+        # UNMODIFIED 05_submit --mode safe, --locate-by-search (below). No --page-hint
+        # (by-urls offers are scattered — no feed page). No --limit (safe = full batch, R24).
         argv = [py, str(ROOT / "scripts" / "05_submit.py"), str(sub_run / "approved.json"),
                 "--merchant", merchant, "--store-id", store_id,
-                "--mode", "safe", "--submit", "--available", available]
+                "--mode", "safe", "--submit", "--available", available,
+                # by-urls offers are scattered (found by search, no feed page) — locate
+                # + prove-gone via the SEARCH (fast + fresh; a slow whole-feed scan let
+                # the row reflow away, 0 created, 2026-08-25).
+                "--locate-by-search"]
         rc = _run_child(argv)
         outcome = _read_submit_plan(sub_run, rc)
         logger.log("merchant_submitted", merchant=merchant, created=outcome.created,

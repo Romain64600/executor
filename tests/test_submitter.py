@@ -1957,3 +1957,155 @@ class FreshRowRecheckTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class _SearchFake:
+    """A session serving SEARCH-results pages for the by-urls search-locate path.
+    ``pages`` is a flat row-list (single page) or a list of row-lists (one per result
+    page); the served page follows the navigated ``&p=`` param. ``nav_max`` defaults to
+    the count of non-empty pages (rendered-empty → 0 = gone, a single page → 1); pass it
+    explicitly to simulate an OVERFLOW (nav advertises more pages than served).
+    ``rendered=False`` simulates a feed UI that never renders (fail-closed)."""
+
+    def __init__(self, pages=None, *, rendered=True, login=False, nav_max=None,
+                 wedge_href=None):
+        pages = pages or [[]]
+        if pages and isinstance(pages[0], dict):     # a flat row-list → one page
+            pages = [pages]
+        self._pages = [[dict(r) for r in pg] for pg in pages]
+        self.rendered = rendered
+        self.login = login
+        self._nav_max = nav_max
+        self._wedge_href = wedge_href    # simulate a wedge: location.href != navigated URL
+        self.nav = []
+        self._page = 1
+
+    def navigate(self, url, settle=3.0):
+        self.nav.append(url)
+        m = re.search(r"[?&]p=(\d+)", url)
+        self._page = int(m.group(1)) if m else 1
+
+    def is_login_page(self):
+        return self.login
+
+    def _current(self):
+        i = self._page - 1
+        return [dict(r) for r in self._pages[i]] if 0 <= i < len(self._pages) else []
+
+    def page_offer_rows(self):
+        return self._current()
+
+    def feed_page_state(self):
+        nav_max = (self._nav_max if self._nav_max is not None
+                   else len([pg for pg in self._pages if pg]))
+        href = self._wedge_href if self._wedge_href is not None else (
+            self.nav[-1] if self.nav else "")
+        return {"feed_ui": self.rendered, "nav_max": nav_max, "is_login": self.login,
+                "href": href}
+
+    def open_offer_modal(self, offer_id):
+        return "OPENED"
+
+    def modal_context(self):
+        return {"ok": True, "select_names": ["offer[region]", "offer[edition]"]}
+
+
+class SearchLocateTests(unittest.TestCase):
+    """by-urls search-locate: locate + prove-gone via the feed SEARCH (fast + fresh),
+    with the phantom-creation guard — an UNRENDERED search is UNKNOWN, never gone."""
+
+    def _sub(self, session):
+        s = DryRunSubmitter(session)
+        s.feed_ui_render_waits = ()          # no real render-wait sleep in tests
+        s.empty_retry_wait_s = 0             # no blank-page retry sleep in tests
+        s.feed_scan_settle = 0
+        return s
+
+    def test_scan_search_finds_offer_via_search_page(self):
+        from src.submitter import _url_key
+        row = {"id": "77", "url": "https://m/mhw-gold-p999", "name": "MHW Gold", "store_id": "127"}
+        sub = self._sub(_SearchFake([row]))
+        _idx, by_url = sub._scan_search("127", "aks-merchant-feeds-9", "all", "https://m/mhw-gold-p999")
+        self.assertEqual(by_url[_url_key(row["url"])]["offer_id"], "77")
+        self.assertIn("page=aks-merchant-feeds-search", sub.session.nav[-1])
+        self.assertIn("search%5Bfield%5D=url", sub.session.nav[-1])
+
+    def test_scan_search_unrendered_raises_fail_closed(self):
+        from src.submitter import FeedScanError
+        sub = self._sub(_SearchFake([], rendered=False))
+        with self.assertRaises(FeedScanError):
+            sub._scan_search("127", "aks-merchant-feeds-9", "all", "https://m/x")
+
+    def test_verify_gone_search_gone_when_absent(self):
+        sub = self._sub(_SearchFake([]))     # search returns nothing → whole-feed absent → gone
+        gone, _i, _b = sub._verify_gone("77", "https://m/x", "127", "aks-merchant-feeds-9",
+                                        "all", 40, search_locate=True)
+        self.assertTrue(gone)
+
+    def test_verify_gone_search_found_when_present(self):
+        row = {"id": "77", "url": "https://m/x", "name": "X", "store_id": "127"}
+        sub = self._sub(_SearchFake([row]))
+        gone, _i, _b = sub._verify_gone("77", "https://m/x", "127", "aks-merchant-feeds-9",
+                                        "all", 40, search_locate=True)
+        self.assertFalse(gone)
+
+    def test_verify_gone_search_unrendered_is_unknown_not_gone(self):
+        # THE phantom guard: an unrendered search page must NEVER be read as "gone".
+        from src.submitter import FeedScanError
+        sub = self._sub(_SearchFake([], rendered=False))
+        with self.assertRaises(FeedScanError):
+            sub._verify_gone("77", "https://m/x", "127", "aks-merchant-feeds-9",
+                             "all", 40, search_locate=True)
+
+    def test_scan_search_paginates_to_later_result_page(self):
+        # HIGH #1 fix: the term is a SUBSTRING match, so a short slug spans several
+        # result pages. The exact target sits on page 2 — a page-1-only read would
+        # falsely report it absent (→ phantom). The paginated scan must find it.
+        from src.submitter import _url_key
+        p1 = [{"id": "1", "url": "https://m/witcher-3-goty", "name": "GOTY", "store_id": "127"}]
+        p2 = [{"id": "2", "url": "https://m/witcher-3", "name": "Base", "store_id": "127"}]
+        sub = self._sub(_SearchFake([p1, p2]))
+        _idx, by_url = sub._scan_search("127", "aks-merchant-feeds-9", "all", "https://m/witcher-3")
+        self.assertIn(_url_key("https://m/witcher-3"), by_url)       # found on page 2
+        self.assertTrue(any("p=2" in u for u in sub.session.nav))    # actually read page 2
+
+    def test_scan_search_overflow_raises_fail_closed(self):
+        # HIGH #1 fix: results still advertise more pages than the budget covers →
+        # coverage unproven → FeedScanError (UNKNOWN), NEVER a false "gone".
+        from src.submitter import FeedScanError
+        row = {"id": "1", "url": "https://m/hot-p1", "name": "H", "store_id": "127"}
+        sub = self._sub(_SearchFake([row], nav_max=99))   # 1 page served, nav says 99
+        sub.search_scan_max_pages = 3
+        with self.assertRaises(FeedScanError):
+            sub._scan_search("127", "aks-merchant-feeds-9", "all", "https://m/hot-p1")
+
+    def test_scan_search_foreign_dom_raises_fail_closed(self):
+        # HIGH #2 fix: a stale/foreign DOM re-served under the same &p= (rows for a
+        # DIFFERENT slug — the page-number href check can't catch it) must NOT be read
+        # as this search's results → no false "gone".
+        from src.submitter import FeedScanError
+        foreign = {"id": "9", "url": "https://m/some-other-game", "name": "Other", "store_id": "127"}
+        sub = self._sub(_SearchFake([foreign]))
+        with self.assertRaises(FeedScanError):
+            sub._scan_search("127", "aks-merchant-feeds-9", "all", "https://m/target-slug-p42")
+
+    def test_scan_search_empty_wedged_to_other_term_raises(self):
+        # HIGH #2 residual fix: an EMPTY page-1 whose location.href is on a DIFFERENT
+        # search term (a wedge re-serving a prior search's empty DOM) must NOT be
+        # trusted as this search's 0-result → no false "gone".
+        from src.submitter import FeedScanError
+        other = ("https://aks/x?page=aks-merchant-feeds-search&store=127"
+                 "&search%5Bsearch%5D=some-other-term&search%5Bfield%5D=url")
+        sub = self._sub(_SearchFake([], wedge_href=other))
+        with self.assertRaises(FeedScanError):
+            sub._scan_search("127", "aks-merchant-feeds-9", "all", "https://m/target-p7")
+
+    def test_run_locate_by_search_locates_via_search(self):
+        # end-to-end (dry-run): the index is built from the search, the offer locates
+        # by URL, and only search pages are hit (no whole-feed scan).
+        row = {"id": "77", "url": "https://m/1", "name": "Game 1", "store_id": "127"}
+        sub = self._sub(_SearchFake([row]))
+        res = sub.run(run_id="r", merchant="Driffle", store_id="127",
+                      approved=[_cand("1")], locate_by_search=True)
+        self.assertTrue(res["plan"][0]["ready"])
+        self.assertTrue(any("aks-merchant-feeds-search" in u for u in sub.session.nav))

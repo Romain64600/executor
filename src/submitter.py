@@ -23,10 +23,12 @@ from __future__ import annotations
 
 import re
 import time
+import urllib.parse
 from typing import Any
 
 from src.cdp_session import CdpCommandError
 from src.extractor import (
+    AKS_ADMIN_URL,
     DEFAULT_FEED_PAGE,
     EMPTY_RETRY_WAIT_S,
     NotLoggedInError,
@@ -75,6 +77,14 @@ FEED_SCAN_SETTLE = 1.0
 # a slow render finish. Tests patch to ().
 FEED_UI_RENDER_WAITS = (1.0, 2.0, 4.0)
 
+# by-urls search-locate page budget (2026-08-25 review): the feed SEARCH is filtered
+# to ONE offer's slug, so it normally returns a single result page — but the slug is a
+# SUBSTRING match, so a short/common slug in a big store can overflow. The scan walks
+# every result page to a PROVEN end; if the results still advertise more than this many
+# pages the coverage is unproven and the scan raises FeedScanError (never a false
+# "gone"). ~1000 matching rows for one slug is already pathological.
+SEARCH_SCAN_MAX_PAGES = 10
+
 
 def _page_param(url: str) -> int:
     """The ``&p=N`` pagination param of a feed URL (1 when absent)."""
@@ -92,6 +102,21 @@ def _url_key(url: str) -> str:
     Unique in-feed for both (G2A 741/741, K4G 250/250 distinct paths)."""
 
     return (url or "").split("?", 1)[0]
+
+
+def _href_search_term(href: str) -> str | None:
+    """The ``search[search]`` query param of a feed-search URL, or None. Used to
+    confirm the browser is genuinely on THIS search before trusting an EMPTY result
+    page as a real 0-result 'gone' — a wedged navigation re-serving a foreign/prior
+    DOM leaves ``location.href`` on the PRIOR url (a different term, or none), which
+    the page-number (&p=) SC6 check alone cannot catch when there are no rows."""
+
+    try:
+        params = urllib.parse.parse_qs(urllib.parse.urlparse(href or "").query)
+    except ValueError:
+        return None
+    values = params.get("search[search]")
+    return values[0] if values else None
 
 
 def _row_check(row: dict[str, str], candidate: dict[str, Any], *,
@@ -277,6 +302,7 @@ class _SubmitterBase:
         self.empty_retry_wait_s = EMPTY_RETRY_WAIT_S
         self.feed_scan_settle = FEED_SCAN_SETTLE
         self.feed_ui_render_waits = FEED_UI_RENDER_WAITS
+        self.search_scan_max_pages = SEARCH_SCAN_MAX_PAGES
         self.catalog: dict[str, Any] | None = None
         self._region_master: list[dict[str, Any]] = []
         # Cooperative stop hook (default: never checked → submit pipeline
@@ -555,6 +581,110 @@ class _SubmitterBase:
                     found = True
         return index, by_url, found
 
+    def _search_url(self, store_id, feed_page, available, term, field="url", page=1) -> str:
+        """The AKS feed SEARCH form (page=aks-merchant-feeds-search) filtered by ONE
+        offer's slug. It is a whole-feed FILTERED query (NOT a page window): an absence
+        across ALL its result pages is a genuine whole-feed absence, so it is a VALID
+        gone-proof — unlike a single page window, which can miss a live offer on a
+        later result page (the CRITICAL phantom-creation trap). Used for the by-urls
+        submit's locate + prove-gone (Romain 2026-08-25)."""
+        list_no = str(feed_page).rsplit("-", 1)[-1]
+        params = {"page": "aks-merchant-feeds-search", "available": available,
+                  "list": list_no, "store": str(store_id),
+                  "search[search]": term, "search[field]": field}
+        if page and int(page) > 1:
+            params["p"] = str(int(page))
+        return AKS_ADMIN_URL + "?" + urllib.parse.urlencode(params)
+
+    def _scan_search(self, store_id, feed_page, available, url):
+        """Locate ``url`` via the feed SEARCH; return (index_by_id, by_url) of the
+        matching rows, each with ``page_url`` = the exact result page it was found on
+        (so ``_prepare``'s navigate re-reads that filtered view). The search is walked
+        to a PROVEN end across ALL result pages with the same fail-closed discipline as
+        the feed scan (``_read_feed_page``: blank-page retry, render-poll, nav_max
+        proven-end, the ``&p=`` wedged-navigation guard SC6): the term (the offer's
+        slug) is a SUBSTRING match that can overflow one page, and reading only page 1
+        would let a live offer on a later page read as absent → a false 'gone' →
+        phantom creation (2026-08-25 review). On top of ``_read_feed_page`` it adds a
+        term DATA-check — the server filtered by the slug, so every legit row's URL
+        contains it; rows that do NOT are a stale/foreign DOM re-served under the same
+        ``&p=`` (a prior candidate's search, or a plain feed page) that the page-number
+        href check alone cannot catch. FAIL-CLOSED: an unrendered/wedged page, or
+        results still advertising more pages than the budget covers, raises
+        FeedScanError so prove-gone is UNKNOWN and never a false 'gone'; a login bounce
+        raises NotLoggedInError."""
+        key = _url_key(str(url or ""))
+        term = key.rstrip("/").rsplit("/", 1)[-1] or key    # the offer's distinctive slug
+        index: dict[str, dict[str, str]] = {}
+        by_url: dict[str, dict[str, str]] = {}
+        max_pages = self.search_scan_max_pages
+        nav_max_seen = 0
+        for page in range(1, max_pages + 1):
+            search_url = self._search_url(store_id, feed_page, available, term, "url", page=page)
+            rows, state = self._read_feed_page(search_url, page)
+            nav_max_seen = max(nav_max_seen, int(state.get("nav_max") or 0))
+            if not rows:
+                # Proven end (_read_feed_page classified empty-queue/past-the-end). An
+                # empty page has NO rows for the term data-check, so confirm the browser
+                # is genuinely on THIS search before trusting the emptiness as a real
+                # 0-result 'gone' — a wedge re-serving a foreign/prior empty DOM (a
+                # different-term search, an empty feed page) keeps location.href on the
+                # PRIOR url, which the &p= SC6 check misses at 0 rows (2026-08-25 review).
+                on_term = _href_search_term(str(state.get("href") or ""))
+                if on_term is not None and on_term != term:
+                    raise FeedScanError(
+                        f"empty search page is on term {on_term!r}, expected {term!r} "
+                        "— stale/foreign DOM, cannot prove absence")
+                break
+            if not all(term in _url_key(str(r.get("url") or "")) for r in rows):
+                raise FeedScanError(
+                    f"search page {page} rows do not all match term {term!r} "
+                    "— stale/foreign DOM re-served")
+            for r in rows:
+                rid = str(r.get("id") or "")
+                rk = _url_key(str(r.get("url") or ""))
+                details = {"offer_id": rid, "page_url": search_url,
+                           "name": str(r.get("name") or ""), "url": str(r.get("url") or ""),
+                           "price": str(r.get("price") or ""), "store_id": str(r.get("store_id") or "")}
+                if rid:
+                    index[rid] = details
+                if rk:
+                    by_url[rk] = details
+            if nav_max_seen and page >= nav_max_seen:
+                break  # read every advertised result page — coverage proven
+        else:
+            # Ran the whole page budget with rows still on the last page and the nav
+            # advertising MORE (or an unreadable nav_max): coverage is NOT proven
+            # complete, so an absence here cannot stand as a 'gone' proof.
+            if not (0 < nav_max_seen <= max_pages):
+                raise FeedScanError(
+                    f"search for {term!r} hit max_pages={max_pages} without reaching "
+                    f"the end (nav advertises "
+                    f"{nav_max_seen if nav_max_seen else 'an unreadable number of'} "
+                    "page(s)) — coverage unproven")
+        return index, by_url
+
+    def _index_by_search(self, store_id, feed_page, available, approved):
+        """Build the locate index from the SEARCH (one filtered query per candidate
+        URL) instead of a whole-feed scan — fast, and each row is FRESH (it cannot
+        reflow away during a multi-minute scan, the by-urls submit's failure mode).
+        A candidate whose search is momentarily unreadable is simply not pre-indexed
+        (its per-offer relocate retries, else it skips) — never a batch abort; a
+        login bounce propagates (session gone)."""
+        index: dict[str, dict[str, str]] = {}
+        by_url: dict[str, dict[str, str]] = {}
+        for c in approved:
+            url = str((c.get("offer") or {}).get("url") or "")
+            if not url:
+                continue
+            try:
+                idx, bu = self._scan_search(store_id, feed_page, available, url)
+            except FeedScanError:
+                continue
+            index.update(idx)
+            by_url.update(bu)
+        return index, by_url
+
     def _locate_row(self, candidate: dict[str, Any], offer_id: str,
                     index: dict[str, dict[str, str]], by_url: dict[str, dict[str, str]]
                     ) -> dict[str, Any]:
@@ -631,16 +761,22 @@ class _SubmitterBase:
         if not url:
             return None
         try:
-            _, by_url, found = self._scan_feed(
-                ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"],
-                stop_on_url=url)
+            if ctx.get("search_locate"):
+                # by-urls: re-locate via the SEARCH (fast + fresh) — no whole-feed scan.
+                _, by_url = self._scan_search(
+                    ctx["store_id"], ctx["feed_page"], ctx["available"], url)
+            else:
+                _, by_url, found = self._scan_feed(
+                    ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"],
+                    stop_on_url=url)
+                by_url = by_url if found else {}
         except (FeedScanError, CdpCommandError):
             # The recovery scan is unreadable — this is BEFORE any write for this
             # candidate, so treat it as "not found" → the caller keeps the vanished
             # block (skip, retry on a fresh run). A NotLoggedInError is NOT caught
             # (session gone) and propagates, exactly like the rest of _prepare.
             return None
-        row = by_url.get(url) if found else None
+        row = by_url.get(url)
         if row is None:
             return None
         mismatches, _ = _row_check(row, candidate, check_price=False)
@@ -757,7 +893,8 @@ class _SubmitterBase:
         return entry
 
     def _verify_gone(self, offer_id, merchant_url, store_id, feed_page, available,
-                     max_pages) -> tuple[bool, dict[str, dict[str, str]] | None, dict[str, dict[str, str]] | None]:
+                     max_pages, *, search_locate: bool = False
+                     ) -> tuple[bool, dict[str, dict[str, str]] | None, dict[str, dict[str, str]] | None]:
         """Post-save: re-scan the feed. Returns (gone, fresh_index, fresh_by_url).
 
         gone is True iff the offer is absent under BOTH keys — the row id we
@@ -770,8 +907,20 @@ class _SubmitterBase:
         current row". 2026-07-07 G2A: 8 creations reflowed the pagination and
         the stale batch-start index yielded ROW_NOT_FOUND on a live offer).
         Both maps are None when the offer was found (partial scan, unusable).
-        """
 
+        ``search_locate`` (by-urls): prove-gone via the feed SEARCH — a whole-feed
+        FILTERED query, so an absence is a genuine whole-feed absence (a valid
+        gone-proof, NOT a page window). A search page that never renders raises
+        FeedScanError → the caller's FEED_UNREADABLE handler marks the offer UNKNOWN,
+        NEVER a false "gone" (phantom-creation guard).
+        """
+        if search_locate and merchant_url:
+            index, by_url = self._scan_search(store_id, feed_page, available, merchant_url)
+            key = _url_key(merchant_url)
+            found = (key in by_url) or (str(offer_id) in index)
+            if found:
+                return False, None, None
+            return True, index, by_url
         index, by_url, found = self._scan_feed(
             store_id, feed_page, available, max_pages,
             stop_on=offer_id, stop_on_url=merchant_url or None)
@@ -796,6 +945,7 @@ class _SubmitterBase:
         catalog: dict[str, Any] | None = None,
         page_hint: int | None = None,
         page_window: int = 1,
+        locate_by_search: bool = False,
     ) -> dict[str, Any]:
         # Pre-flight login check.
         self.session.navigate(feed_url(store_id, feed_page=feed_page, available=available))
@@ -838,7 +988,14 @@ class _SubmitterBase:
 
         self.guard.start_task(run_id)
         try:
-            if window_pages is not None:
+            if locate_by_search:
+                # by-urls: the offers were found by SEARCH (their feed page is unknown
+                # and Driffle-class feeds reflow too fast for a multi-minute whole-feed
+                # scan to pin them). Build the locate index from per-offer searches —
+                # fast + fresh (Romain 2026-08-25). Locate/relocate/prove-gone all use
+                # the search via ctx["search_locate"].
+                index, by_url = self._index_by_search(store_id, feed_page, available, approved)
+            elif window_pages is not None:
                 index, by_url, _ = self._scan_page_window(store_id, feed_page, available, window_pages)
             else:
                 index, by_url = self._index_feed(store_id, feed_page, available, max_pages)
@@ -858,7 +1015,7 @@ class _SubmitterBase:
         self._log("feed_indexed", offers=len(index), window=window_pages)
         ctx = {"store_id": store_id, "feed_page": feed_page, "available": available,
                "max_pages": max_pages, "index": index, "by_url": by_url,
-               "window_pages": window_pages}
+               "window_pages": window_pages, "search_locate": locate_by_search}
 
         # Disarm the scan-level stop hook now that the index is done: each offer's
         # post-save verify / reflow re-scan MUST complete (a stop mid-verify would
@@ -1097,6 +1254,7 @@ class Submitter(_SubmitterBase):
         gone, fresh_index, fresh_by_url = self._verify_gone(
             entry["offer_id"], str(candidate["offer"].get("url") or ""),
             ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"],
+            search_locate=ctx.get("search_locate", False),
         )
         if fresh_index is not None:
             ctx["index"].clear()
