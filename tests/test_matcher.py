@@ -1084,6 +1084,19 @@ class SlugAndResolveTests(unittest.TestCase):
         self.assertEqual(
             extract_aks_name(page("Buy The Key CD Key Compare Prices")), "The Key"
         )
+        # Third live grammar (2026-08-25, Monster Hunter Wilds / Driffle): a platform
+        # marker + "Key Prices" with NO "Compare" — left "Steam Key Prices" in the
+        # name and made R01 demand "PRICES" in merchant titles → false skips.
+        self.assertEqual(
+            extract_aks_name(page("Buy Monster Hunter Wilds Steam Key Prices")),
+            "Monster Hunter Wilds",
+        )
+        self.assertEqual(
+            extract_aks_name(page("Elden Ring Xbox Keys Prices")), "Elden Ring"
+        )
+        # But a name genuinely ending in "Key" (no trailing "Prices") is untouched.
+        self.assertEqual(extract_aks_name(page("Buy Skeleton Key Steam Key Prices")),
+                         "Skeleton Key")
 
     def test_extract_aks_name_unescapes_entities(self):
         # Live og:titles, K4G run 2026-07-07 (AKS flattens punctuation, keeps

@@ -1162,13 +1162,21 @@ def extract_aks_name(body: str) -> str | None:
         match = re.search(r"<title>([^<]+)</title>", body, re.IGNORECASE)
     if not match:
         return None
-    # og:title comes in two grammars (both live 2026-07-07):
-    #   "Buy <Name> CD Key Compare Prices"  and  "<Name> PC KEY Compare Prices".
+    # og:title comes in several grammars (all live):
+    #   "Buy <Name> CD Key Compare Prices"  and  "<Name> PC KEY Compare Prices"
+    #   (2026-07-07), and "Buy <Name> Steam Key Prices" (2026-08-25 — a platform
+    #   marker + "Key Prices" with NO "Compare", which left the furniture words in
+    #   the name so R01 demanded "PRICES"/"STEAM" in the merchant title and false-
+    #   skipped e.g. Monster Hunter Wilds / Driffle).
     # Entities must be unescaped ("Exile&#039;s" tokenized to EXILE/039/S and
     # falsely failed R01).
     name = html.unescape(match.group(1))
     name = re.split(r"(?i)\bcd key\b", name)[0]
     name = re.split(r"(?i)\bcompare prices\b", name)[0]
+    # A trailing "<platform>? Key[s] Compare? Prices" is page furniture, never part
+    # of the game name (the page always ends in "…Prices"); strip it. A bare trailing
+    # "Key" WITHOUT "Prices" is left intact (a real name like "The Key").
+    name = re.sub(r"(?i)\s+(?:\w+\s+)?keys?\s+(?:compare\s+)?prices\s*$", "", name)
     name = re.sub(r"(?i)^\s*buy\s+", "", name)
     # Only the exact "PC KEY" platform marker: a bare trailing "Key" can be a
     # real name ("The Key"), a bare trailing "PC" cannot.
