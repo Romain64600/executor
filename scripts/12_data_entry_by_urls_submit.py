@@ -120,6 +120,11 @@ def _make_submit_merchant(available: str, logger: RunLogger):
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Submit a by-urls dry-run's candidates (safe).")
     ap.add_argument("--from-run", required=True, help="The *-by-urls run whose recap to submit.")
+    ap.add_argument("--from-recap-file", default=None,
+                    help="Immutable snapshot of the validated preview recap (the manager's "
+                         "AS1 sha-bound copy). When set, read the preview from THIS file — never "
+                         "the mutable source recap — closing the sha-check→read TOCTOU (P1, "
+                         "2026-08-25). Absent: fall back to runs/<from-run>/recap.json (standalone).")
     ap.add_argument("--run-id", required=True, help="This submit run id (holds recap.json).")
     ap.add_argument("--available", default="all", choices=["all", "pending"])
     ap.add_argument("--mode", default="safe", choices=["safe"])  # R24: ADD path is safe only
@@ -131,7 +136,10 @@ def main(argv: list[str] | None = None) -> int:
     run_dir.mkdir(parents=True, exist_ok=True)
     logger = RunLogger(args.run_id, log_dir=ROOT / "logs")
 
-    src_recap_path = ROOT / "runs" / args.from_run / "recap.json"
+    # P1 (2026-08-25): prefer the manager's immutable sha-bound snapshot; the mutable
+    # source recap is only the standalone fallback (never reached from the console).
+    src_recap_path = (Path(args.from_recap_file) if args.from_recap_file
+                      else ROOT / "runs" / args.from_run / "recap.json")
     try:
         from_recap = json.loads(src_recap_path.read_text(encoding="utf-8"))
     except Exception as exc:

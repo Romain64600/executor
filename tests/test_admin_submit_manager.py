@@ -804,13 +804,17 @@ class DataEntryAutoTests(ManagerTestCase):
         m.by_urls_submit_script = script
         return m
 
-    def _from_run(self, name="20260825-000000-by-urls", *, candidates=3, aborted=None):
+    def _from_run(self, name="20260825-000000-by-urls", *, candidates=3, aborted=None,
+                  games=None, total_games=None):
         from src.admin.runs import sha256_file
         d = self.root / "runs" / name
         d.mkdir(parents=True, exist_ok=True)
         recap = d / "recap.json"
+        totals = {"candidates": candidates}
+        if total_games is not None:
+            totals["games"] = total_games
         recap.write_text(json.dumps({"available": "all", "aborted": aborted,
-                                     "totals": {"candidates": candidates}, "games": []}),
+                                     "totals": totals, "games": games or []}),
                          encoding="utf-8")
         return name, sha256_file(recap)
 
@@ -823,6 +827,80 @@ class DataEntryAutoTests(ManagerTestCase):
         self.assertTrue(r["run_id"].endswith("-by-urls-submit"))
         self.assertEqual(a[a.index("--from-run") + 1], name)
         self.assertEqual(a[a.index("--mode") + 1], "safe")
+        self.assertTrue(m.wait_idle(timeout=10))
+
+    def test_by_urls_submit_hands_child_immutable_snapshot(self):
+        # P1 (TOCTOU): the child is handed a byte-identical copy in ITS OWN run dir
+        # via --from-recap-file, not a second read of the mutable source recap.
+        m = self._byurls_submit_mgr()
+        name, sha = self._from_run()
+        src_bytes = (self.root / "runs" / name / "recap.json").read_bytes()
+        r = m.start_data_entry_by_urls_submit(name, by="Romain", expected_recap_sha=sha)
+        a = r["argv"]
+        copy = Path(a[a.index("--from-recap-file") + 1])
+        self.assertTrue(copy.is_file())
+        self.assertEqual(copy.read_bytes(), src_bytes)            # == the sha-bound preview
+        self.assertIn(r["run_id"], str(copy))                     # inside the submit run's own dir
+        self.assertNotEqual(copy, self.root / "runs" / name / "recap.json")
+        self.assertTrue(m.wait_idle(timeout=10))
+
+    def test_by_urls_submit_refuses_unresolved_game(self):
+        # P1 (incomplete preview): a game that never resolved must not be submittable.
+        m = self._byurls_submit_mgr()
+        name, sha = self._from_run(games=[{"url": "https://x/g", "resolved": False}])
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_data_entry_by_urls_submit(name, by="Romain", expected_recap_sha=sha)
+        self.assertEqual(ctx.exception.code, "preview_incomplete")
+        self.assertEqual(ctx.exception.http_status, 409)
+
+    def test_by_urls_submit_refuses_search_unreadable_game(self):
+        # search_unreadable *continues* (never sets aborted) — the old aborted-only gate
+        # let it through with the games that DID resolve. Now refused.
+        m = self._byurls_submit_mgr()
+        name, sha = self._from_run(games=[
+            {"aks_name": "Clean", "resolved": True, "search": {"truncated": False}},
+            {"aks_name": "Broken", "resolved": True, "error": "search_unreadable"}])
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_data_entry_by_urls_submit(name, by="Romain", expected_recap_sha=sha)
+        self.assertEqual(ctx.exception.code, "preview_incomplete")
+
+    def test_by_urls_submit_refuses_truncated_search(self):
+        # A truncated result set means offers beyond the cap were never seen → partial.
+        m = self._byurls_submit_mgr()
+        name, sha = self._from_run(games=[{"aks_name": "G", "resolved": True,
+                                           "search": {"truncated": True}}])
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_data_entry_by_urls_submit(name, by="Romain", expected_recap_sha=sha)
+        self.assertEqual(ctx.exception.code, "preview_incomplete")
+
+    def test_by_urls_submit_allows_clean_complete_preview(self):
+        m = self._byurls_submit_mgr()
+        name, sha = self._from_run(games=[{"aks_name": "G", "resolved": True,
+                                           "search": {"truncated": False}}])
+        r = m.start_data_entry_by_urls_submit(name, by="Romain", expected_recap_sha=sha)
+        self.assertEqual(r["kind"], "data_entry_by_urls_submit")
+        self.assertTrue(m.wait_idle(timeout=10))
+
+    def test_by_urls_submit_refuses_interrupted_short_games_list(self):
+        # P1 review: a crashed/stopped dry-run flushes FEWER games than requested with
+        # aborted=None — every present game is individually clean, but coverage is partial.
+        m = self._byurls_submit_mgr()
+        name, sha = self._from_run(
+            games=[{"aks_name": "G1", "resolved": True, "search": {"truncated": False}}],
+            total_games=3)                                    # 3 requested, 1 processed
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_data_entry_by_urls_submit(name, by="Romain", expected_recap_sha=sha)
+        self.assertEqual(ctx.exception.code, "preview_incomplete")
+        self.assertEqual(ctx.exception.http_status, 409)
+
+    def test_by_urls_submit_allows_all_requested_games_processed(self):
+        m = self._byurls_submit_mgr()
+        name, sha = self._from_run(
+            games=[{"aks_name": "G1", "resolved": True, "search": {"truncated": False}},
+                   {"aks_name": "G2", "resolved": True, "search": {"truncated": False}}],
+            total_games=2)                                    # requested == processed
+        r = m.start_data_entry_by_urls_submit(name, by="Romain", expected_recap_sha=sha)
+        self.assertEqual(r["kind"], "data_entry_by_urls_submit")
         self.assertTrue(m.wait_idle(timeout=10))
 
     def test_by_urls_submit_sha_required(self):

@@ -15,6 +15,7 @@ Standard library only.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -768,22 +769,70 @@ class SubmitManager:
         if not recap_path.is_file():
             raise SubmitStartError("source_not_found",
                                    f"aperçu {from_run} introuvable", http_status=404)
+        # P1 (2026-08-25): read the recap ONCE. The sha binding, the completeness
+        # gate, and the immutable copy handed to the child are all derived from THESE
+        # exact bytes — never a second read of the mutable source, which is the TOCTOU
+        # the AS1 sha was meant to close (the manager sha-checked one read, the child
+        # re-read another). ``raw`` is the single source of truth from here on.
         try:
-            recap = json.loads(recap_path.read_text(encoding="utf-8"))
+            raw = recap_path.read_bytes()
+            recap = json.loads(raw)
         except Exception:
             raise SubmitStartError("source_unreadable", "recap de l'aperçu illisible",
                                    http_status=400)
+        current_sha = hashlib.sha256(raw).hexdigest()
         if recap.get("aborted"):
             raise SubmitStartError(
                 "source_aborted",
                 f"l'aperçu s'est arrêté ({recap['aborted']}) — relancer un aperçu",
+                http_status=409)
+        # P1 (2026-08-25): an INCOMPLETE preview must not be submittable. ``aborted``
+        # above only catches a HARD stop; a preview can still be partial yet carry
+        # candidates for the games that DID resolve — a game that never resolved, a
+        # per-game search error (``search_unreadable`` — which *continues*, so it never
+        # sets ``aborted``), or a TRUNCATED result set (offers beyond the search cap
+        # never seen). Submitting those silently ships partial coverage. Refuse
+        # fail-closed: the operator re-runs a clean preview.
+        for g in recap.get("games") or []:
+            label = g.get("aks_name") or g.get("url") or "?"
+            if not g.get("resolved"):
+                raise SubmitStartError(
+                    "preview_incomplete",
+                    f"aperçu incomplet : jeu non résolu ({g.get('url') or label}) — "
+                    "relancer un aperçu propre avant de saisir",
+                    http_status=409)
+            if g.get("error"):
+                raise SubmitStartError(
+                    "preview_incomplete",
+                    f"aperçu incomplet : erreur '{g['error']}' sur {label} — "
+                    "relancer un aperçu propre avant de saisir",
+                    http_status=409)
+            if (g.get("search") or {}).get("truncated"):
+                raise SubmitStartError(
+                    "preview_incomplete",
+                    f"aperçu incomplet : recherche tronquée sur {label} "
+                    "(offres au-delà du cap non vues) — relancer un aperçu propre",
+                    http_status=409)
+        # P1 (2026-08-25 review): the per-game checks only inspect the games PRESENT.
+        # A dry-run that crashed or was stopped mid-run on a GENERIC error (neither
+        # NotLoggedInError nor SearchUnreadable — those set aborted or game.error)
+        # flushes FEWER game entries than requested while leaving aborted=None. A
+        # completed run appends exactly one entry per requested URL, so len(games) must
+        # equal totals.games; a short list means the preview was truncated → partial
+        # coverage. Refuse fail-closed (the interrupted preview also has no report.txt).
+        requested = int((recap.get("totals") or {}).get("games") or 0)
+        got = len(recap.get("games") or [])
+        if requested and got != requested:
+            raise SubmitStartError(
+                "preview_incomplete",
+                f"aperçu incomplet : {got}/{requested} jeux traités "
+                "(l'aperçu s'est interrompu) — relancer un aperçu propre",
                 http_status=409)
         candidates = int((recap.get("totals") or {}).get("candidates") or 0)
         if candidates <= 0:
             raise SubmitStartError("nothing_to_submit",
                                    "aucune offre à saisir dans cet aperçu", http_status=409)
         # AS1: bind the typed GO to the exact preview the operator saw.
-        current_sha = sha256_file(recap_path)
         if not expected_recap_sha:
             raise SubmitStartError(
                 "recap_sha_required",
@@ -801,9 +850,16 @@ class SubmitManager:
             run_id = f"{stamp}-by-urls-submit"
             run_dir = self.repo_root / "runs" / run_id
             run_dir.mkdir(parents=True, exist_ok=False)
+            # P1 (2026-08-25): snapshot the EXACT sha-bound bytes into THIS submit
+            # run's own dir and hand the child that immutable copy. The child reads
+            # the copy, never ``runs/<from_run>/recap.json`` (which another tab could
+            # overwrite between this GO and the child's read) — the submitted batch is
+            # now byte-identical to the one the operator's typed GO was bound to.
+            source_copy = run_dir / "source_recap.json"
+            source_copy.write_bytes(raw)
             argv = [self.python, str(self.by_urls_submit_script),
-                    "--from-run", from_run, "--run-id", run_id,
-                    "--available", available, "--mode", "safe"]
+                    "--from-run", from_run, "--from-recap-file", str(source_copy),
+                    "--run-id", run_id, "--available", available, "--mode", "safe"]
             return self._spawn(
                 run_dir, kind="data_entry_by_urls_submit", argv=argv,
                 meta={"by": by, "from_run": from_run, "run_id": run_id,

@@ -755,6 +755,12 @@ class DataEntryByUrlsRouteTests(AppTestCase):
         name = self._byurls_run()
         _, body = self._json("GET", f"/api/data-entry/by-urls/recap?run={name}")
         self.assertTrue(body.get("recap_sha256"))       # AS1 binding for the Saisir GO
+        # P1 review: the bound sha must be the hash of the EXACT bytes displayed
+        # (single read) — mirror it and confirm they agree.
+        import hashlib
+        raw = (self.runs / name / "recap.json").read_bytes()
+        self.assertEqual(body["recap_sha256"], hashlib.sha256(raw).hexdigest())
+        self.assertEqual(body["recap"], json.loads(raw))
 
     # ---- stage 2: the "Saisir" (submit) route ----
     def test_submit_route_passes_from_run_and_sha(self):

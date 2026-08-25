@@ -590,11 +590,22 @@ class AdminHandler(BaseHTTPRequestHandler):
                 return self._send_json(200, {"recap": None})
             run_id = autos[0]
         run_dir = self._run_dir(run_id)
-        recap = read_run_json(run_dir, "recap.json")
-        # recap_sha256 binds the "Saisir" typed-GO to the EXACT preview shown (AS1):
-        # the client echoes it, the manager re-checks sha256_file(recap.json).
         recap_path = run_dir / "recap.json"
-        sha = sha256_file(recap_path) if recap_path.is_file() else None
+        # recap_sha256 binds the "Saisir" typed-GO to the EXACT preview shown (AS1):
+        # the client echoes it, the manager re-checks the sha of the same recap.
+        # P1 (2026-08-25 review): read ONCE and derive BOTH the displayed recap and
+        # the bound sha from the same bytes — a concurrent dry-run flush must not be
+        # able to hand the operator one generation on screen and another in the sha
+        # (mirrors the manager's single-read; the old two reads — read_run_json then
+        # sha256_file — could split across a flush).
+        recap, sha = None, None
+        if recap_path.is_file():
+            try:
+                raw = recap_path.read_bytes()
+                recap = json.loads(raw)
+                sha = hashlib.sha256(raw).hexdigest()
+            except (OSError, ValueError):
+                recap, sha = None, None
         self._send_json(200, {"run_id": run_id, "recap": recap, "recap_sha256": sha})
 
     def _post_data_entry_by_urls_submit(self) -> None:

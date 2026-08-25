@@ -50,6 +50,45 @@ class SubmitMerchantTests(unittest.TestCase):
         self.assertFalse(out.clean())
         self.assertIn("OSError", out.aborted or "")
 
+    def test_main_reads_immutable_copy_not_mutated_source(self):
+        # P1 (TOCTOU): with --from-recap-file, main() reads the manager's sha-bound
+        # snapshot — NOT runs/<from-run>/recap.json, which a racing re-run may have
+        # overwritten between the GO's sha check and this read.
+        import json
+        captured = {}
+
+        def fake_run(from_recap, **k):
+            captured["marker"] = from_recap.get("marker")
+            captured["available"] = from_recap.get("available")
+            return {"totals": {"created": 0, "attempted": 0, "merchants": 0}, "aborted": None}
+
+        orig_run, orig_root = M.run_by_urls_submit, M.ROOT
+        orig_install = M._RUNNER.install
+        M.run_by_urls_submit = fake_run
+        M._RUNNER.install = lambda: None       # don't clobber the test runner's signal handlers
+        self.addCleanup(lambda: setattr(M, "run_by_urls_submit", orig_run))
+        self.addCleanup(lambda: setattr(M, "ROOT", orig_root))
+        self.addCleanup(lambda: setattr(M._RUNNER, "install", orig_install))
+
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            M.ROOT = root
+            src = root / "runs" / "20260825-000000-by-urls"
+            src.mkdir(parents=True)
+            (src / "recap.json").write_text(json.dumps(          # a poisoned/mutated source
+                {"available": "pending", "marker": "SOURCE-MUTATED",
+                 "games": [], "totals": {"candidates": 0}}), encoding="utf-8")
+            copy = root / "runs" / "20260825-001-by-urls-submit" / "source_recap.json"
+            copy.parent.mkdir(parents=True)
+            copy.write_text(json.dumps(                          # the manager's bound snapshot
+                {"available": "all", "marker": "BOUND",
+                 "games": [], "totals": {"candidates": 1}}), encoding="utf-8")
+            rc = M.main(["--from-run", "20260825-000000-by-urls", "--from-recap-file", str(copy),
+                         "--run-id", "20260825-001-by-urls-submit"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(captured["marker"], "BOUND")            # read the copy, not the source
+        self.assertEqual(captured["available"], "all")
+
     def test_read_submit_plan_success_is_gone_only(self):
         with tempfile.TemporaryDirectory() as d:
             run = Path(d)
