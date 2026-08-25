@@ -36,7 +36,11 @@ const setStatus = (t, busy) => { const f = $("#status"); f.textContent = t; f.cl
 $("#doc-btn").addEventListener("click", () => $("#doc-modal").showModal());
 $("#doc-modal").addEventListener("click", (e) => { if (e.target.id === "doc-modal") e.target.close(); });
 
-let RUNNING = false;   // a by-urls run is active (launched here OR elsewhere)
+let RUNNING = false;         // a by-urls dry-run (aperçu) is active
+let SUBMIT_RUNNING = false;  // a by-urls SUBMIT (Saisir) is active
+let RECAP_SHA = null;        // sha of the dry-run recap shown (binds the Saisir GO, AS1)
+let RECAP_RUN = null;        // the dry-run run id to submit from
+let SUBMIT_MERCHANTS = 0;    // distinct merchants with candidates in the shown recap
 
 // ---- URL input ----
 function parseUrls() {
@@ -84,6 +88,7 @@ async function fetchBusy() {
 function endUi(finalText) {
   clearInterval(POLL); POLL = null;
   RUNNING = false;
+  SUBMIT_RUNNING = false;
   $("#busy-ind").classList.add("hidden");
   setStatus(finalText);
   $("#stop-btn").disabled = false;
@@ -104,6 +109,12 @@ function fmtLogEvent(ev) {
   if (n === "game_done") return ev.error ? `⚠ ${ev.aks_name} : ${ev.error}` : `✓ ${ev.aks_name} : ${ev.candidates} à saisir`;
   if (n === "run_done") return `■ terminé · ${ev.resolved} résolu(s), ${ev.candidates} à saisir`;
   if (n === "run_aborted") return `■ arrêté : ${ev.reason}`;
+  // ---- submit (Saisir) events ----
+  if (n === "submit_run_start") return `▶ SAISIE — depuis l'aperçu ${ev.from_run || ""}`;
+  if (n === "merchant_submit") return `— ${ev.merchant} (store ${ev.store_id}) : saisie de ${ev.attempted} offre(s)…`;
+  if (n === "merchant_submitted") return ev.halted ? `   ⚠ ${ev.merchant} : ${ev.halted}` : `   ✔ ${ev.merchant} : ${ev.created}/${ev.attempted} créée(s)`;
+  if (n === "submit_run_done") return `■ SAISIE terminée · ${ev.created} créée(s) sur ${ev.merchants} marchand(s)`;
+  if (n === "submit_run_aborted") return `■ SAISIE arrêtée : ${ev.reason}`;
   return null;
 }
 function appendLog(events) {
@@ -111,7 +122,9 @@ function appendLog(events) {
   for (const ev of (events || [])) {
     const line = fmtLogEvent(ev);
     if (line == null) continue;
-    const cls = ev.event === "candidate" ? "ok" : (ev.ok === false || ev.error || ev.event === "run_aborted") ? "no" : "";
+    const ok = ev.event === "candidate" || (ev.event === "merchant_submitted" && !ev.halted);
+    const bad = ev.ok === false || ev.error || ev.halted || ev.event === "run_aborted" || ev.event === "submit_run_aborted";
+    const cls = bad ? "no" : (ok ? "ok" : "");
     box.append(el("div", { class: "logline" + (cls ? " " + cls : "") }, line));
   }
   if ($("#autoscroll").checked) box.scrollTop = box.scrollHeight;
@@ -143,6 +156,7 @@ function startPolling(runId) {
     if (!running) {
       const rec = d && d.recap;
       endUi(rec && rec.aborted ? ("Arrêté : " + rec.aborted) : "Aperçu terminé.");
+      if (d) renderRecap(d);   // re-render with RUNNING=false → the "Saisir" button appears
     }
   };
   tick(); POLL = setInterval(tick, 2000);   // ~real-time log
@@ -155,6 +169,15 @@ async function resumeIfActive() {
     $("#launch-msg").textContent = "Un aperçu est déjà en cours — attends la fin ou clique Arrêter.";
     setStatus("Aperçu en cours…", true);
     startPolling(busy.run_id);
+    return true;
+  }
+  if (busy && busy.kind === "data_entry_by_urls_submit") {
+    SUBMIT_RUNNING = true;
+    $("#recap-card").classList.remove("hidden");
+    $("#busy-text").textContent = "saisie en cours" + (busy.run_id ? " · " + busy.run_id : "");
+    $("#launch-msg").textContent = "Une saisie est déjà en cours — attends la fin ou clique Arrêter.";
+    setStatus("Saisie en cours…", true);
+    startSubmitPolling(busy.run_id);
     return true;
   }
   return false;
@@ -175,6 +198,12 @@ function renderRecap(d) {
   const rec = d && d.recap;
   $("#recap-run").textContent = d && d.run_id ? "· " + d.run_id : "";
   if (!rec) { $("#recap-summary").textContent = "En attente de la résolution…"; return; }
+  if (rec.mode === "submit") return renderSubmitRecap(d, rec);
+  // ---- dry-run (aperçu) recap ----
+  RECAP_SHA = d.recap_sha256 || null;
+  RECAP_RUN = d.run_id || null;
+  SUBMIT_MERCHANTS = new Set((rec.games || []).flatMap((g) => (g.merchants || [])
+    .filter((m) => (m.candidates || []).length).map((m) => m.store_id))).size;
   const t = rec.totals || {};
   const pill = $("#recap-status");
   const running = RUNNING;
@@ -226,6 +255,103 @@ function renderRecap(d) {
     if ((g.total_candidates || 0) === 0) kids.push(el("div", { class: "off no" }, [el("span", { class: "off-st", text: "(aucune offre à saisir trouvée)" })]));
     wrap.append(el("div", { class: "pg" }, kids));
   }
+  // "Saisir" is offered only on a FINISHED, non-aborted dry-run with candidates.
+  const canSubmit = !RUNNING && !SUBMIT_RUNNING && !rec.aborted && (t.candidates > 0) && RECAP_SHA;
+  $("#submit-bar").classList.toggle("hidden", !canSubmit);
+  $("#saisir-n").textContent = String(t.candidates || 0);
+}
+
+// ---- submit recap (Saisir) ----
+function renderSubmitRecap(d, rec) {
+  $("#submit-bar").classList.add("hidden");
+  const t = rec.totals || {};
+  const pill = $("#recap-status");
+  pill.textContent = rec.aborted ? ("ARRÊTÉ — " + rec.aborted) : (SUBMIT_RUNNING ? "SAISIE EN COURS" : "SAISIE TERMINÉE");
+  pill.className = "pill " + (rec.aborted ? "halted" : (SUBMIT_RUNNING ? "running" : "done"));
+  $("#recap-summary").replaceChildren(
+    el("div", { class: "kpi" }, [el("div", { class: "kpi-n", text: String(t.created || 0) }), el("div", { class: "kpi-l", text: "créées" })]),
+    el("div", { class: "kpi" }, [el("div", { class: "kpi-n", text: String(t.attempted || 0) }), el("div", { class: "kpi-l", text: "tentées" })]),
+    el("div", { class: "kpi" }, [el("div", { class: "kpi-n", text: String((rec.merchants || []).length) }), el("div", { class: "kpi-l", text: "marchand(s)" })]),
+  );
+  const wrap = $("#recap-games");
+  wrap.replaceChildren();
+  for (const m of (rec.merchants || [])) {
+    const kids = [el("div", { class: "pg-head" }, [
+      el("span", { class: "pg-n", text: m.merchant + " (store " + m.store_id + ")" }),
+      el("span", { class: "pg-m", text: (m.created || 0) + "/" + (m.attempted || 0) + " créées" + (m.halted ? " · ⚠ " + m.halted : "") }),
+    ])];
+    for (const o of (m.offers || [])) {
+      kids.push(el("div", { class: "off " + (o.created ? "ok" : "no") }, [
+        el("span", { class: "off-name", text: o.name || "" }),
+        el("span", { class: "off-id", text: o.aks_id ? "AKS " + o.aks_id : "" }),
+        el("span", { class: "off-st", text: o.created ? "créée" : (o.post_save || "?") }),
+      ]));
+    }
+    wrap.append(el("div", { class: "pg" }, kids));
+  }
+}
+
+// ---- Saisir (write) ----
+$("#saisir").addEventListener("click", () => {
+  if (!RECAP_RUN || !RECAP_SHA) return;
+  $("#confirm-n").textContent = $("#saisir-n").textContent;
+  $("#confirm-m").textContent = String(SUBMIT_MERCHANTS || "?");
+  $("#confirm-go").value = "";
+  $("#confirm-submit").disabled = true;
+  $("#confirm-msg").textContent = "";
+  $("#confirm-modal").showModal();
+});
+$("#confirm-modal").addEventListener("click", (e) => { if (e.target.id === "confirm-modal") e.target.close(); });
+$("#confirm-go").addEventListener("input", () => {
+  $("#confirm-submit").disabled = $("#confirm-go").value.trim().toUpperCase() !== "GO";
+});
+$("#confirm-submit").addEventListener("click", async () => {
+  if ($("#confirm-go").value.trim().toUpperCase() !== "GO") return;
+  $("#confirm-submit").disabled = true;
+  $("#confirm-msg").textContent = "Lancement…";
+  try {
+    const r = await api("api/data-entry/by-urls/submit", {
+      method: "POST",
+      body: JSON.stringify({ from_run: RECAP_RUN, recap_sha256: RECAP_SHA, confirm: "GO" }),
+    });
+    $("#confirm-modal").close();
+    SUBMIT_RUNNING = true;
+    $("#launch-msg").textContent = "▶ saisie lancée : " + (r.run_id || "");
+    setStatus("Saisie en cours…", true);
+    $("#busy-ind").classList.remove("hidden");
+    $("#busy-text").textContent = "saisie · " + (r.run_id || "");
+    $("#submit-bar").classList.add("hidden");
+    startSubmitPolling(r.run_id);
+  } catch (e) {
+    $("#confirm-msg").textContent = "✖ refusé : " + e.message;
+    $("#confirm-submit").disabled = false;
+  }
+});
+
+function startSubmitPolling(runId) {
+  $("#log-card").classList.remove("hidden");
+  $("#busy-ind").classList.remove("hidden");
+  LOG_OFFSET = 0; $("#log").replaceChildren();
+  if (POLL) clearInterval(POLL);
+  const tick = async () => {
+    const busy = await fetchBusy();
+    await pollLog(runId);
+    let d = null;
+    try { d = await api("api/data-entry/by-urls/submit/recap" + (runId ? "?run=" + encodeURIComponent(runId) : "")); }
+    catch (e) { d = null; }
+    if (d) renderRecap(d);
+    let running;
+    if (busy === undefined) running = true;
+    else if (busy && busy.kind === "data_entry_by_urls_submit") running = true;
+    else running = false;
+    if (!running) {
+      SUBMIT_RUNNING = false;
+      const rec = d && d.recap;
+      endUi(rec && rec.aborted ? ("Saisie arrêtée : " + rec.aborted) : "Saisie terminée.");
+      if (d) renderRecap(d);   // final render with SUBMIT_RUNNING=false (pill → terminé)
+    }
+  };
+  tick(); POLL = setInterval(tick, 2000);
 }
 
 // ---- init ----

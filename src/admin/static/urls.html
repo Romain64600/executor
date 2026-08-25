@@ -86,7 +86,30 @@
       </div>
       <div id="recap-summary" class="summary"></div>
       <div id="recap-games" class="pages"></div>
+      <div id="submit-bar" class="submit-bar hidden">
+        <button id="saisir" type="button" class="danger">Saisir les <span id="saisir-n">0</span> offre(s)</button>
+        <span class="submit-note">⚠️ écriture réelle sur AKS (safe, par marchand)</span>
+      </div>
     </section>
+
+    <dialog id="confirm-modal" class="doc-modal">
+      <div class="doc-box">
+        <header class="doc-head">
+          <h3>⚠️ Saisir — écriture réelle</h3>
+          <form method="dialog"><button class="doc-x" aria-label="Fermer">✕</button></form>
+        </header>
+        <div class="doc-body">
+          <p lang="fr">Tu vas <b>créer réellement</b> <b id="confirm-n">0</b> offre(s) sur AKS,
+            réparties sur <b id="confirm-m">0</b> marchand(s), en <b>mode safe</b> (batch complet
+            validé par marchand). Chaque offre est re-localisée sur le feed courant et prouvée
+            créée (disparue du feed). Un blocage arrête tout (fail-closed).</p>
+          <p class="golabel">Tape <b>GO</b> pour confirmer :</p>
+          <input id="confirm-go" type="text" placeholder="GO" class="go-in" autocomplete="off">
+          <button id="confirm-submit" type="button" class="danger" disabled>Lancer la saisie</button>
+          <p id="confirm-msg" class="msg"></p>
+        </div>
+      </div>
+    </dialog>
 
     <section id="log-card" class="card hidden">
       <div class="recap-head">

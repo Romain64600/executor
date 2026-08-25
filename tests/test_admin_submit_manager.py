@@ -796,6 +796,76 @@ class DataEntryAutoTests(ManagerTestCase):
             m.start_data_entry_by_urls(["  ", ""], by="Romain")
         self.assertEqual(ctx.exception.code, "bad_urls")
 
+    # ---- stage 2: submit the by-urls dry-run (the "Saisir" button) ----
+    def _byurls_submit_mgr(self):
+        script = self.root / "fake_by_urls_submit.py"
+        script.write_text("import sys; sys.exit(0)\n", encoding="utf-8")
+        m = SubmitManager(self.root, log_dir=self.logs, clock=CLOCK)
+        m.by_urls_submit_script = script
+        return m
+
+    def _from_run(self, name="20260825-000000-by-urls", *, candidates=3, aborted=None):
+        from src.admin.runs import sha256_file
+        d = self.root / "runs" / name
+        d.mkdir(parents=True, exist_ok=True)
+        recap = d / "recap.json"
+        recap.write_text(json.dumps({"available": "all", "aborted": aborted,
+                                     "totals": {"candidates": candidates}, "games": []}),
+                         encoding="utf-8")
+        return name, sha256_file(recap)
+
+    def test_by_urls_submit_argv_and_sha_binding(self):
+        m = self._byurls_submit_mgr()
+        name, sha = self._from_run()
+        r = m.start_data_entry_by_urls_submit(name, by="Romain", expected_recap_sha=sha)
+        a = r["argv"]
+        self.assertEqual(r["kind"], "data_entry_by_urls_submit")
+        self.assertTrue(r["run_id"].endswith("-by-urls-submit"))
+        self.assertEqual(a[a.index("--from-run") + 1], name)
+        self.assertEqual(a[a.index("--mode") + 1], "safe")
+        self.assertTrue(m.wait_idle(timeout=10))
+
+    def test_by_urls_submit_sha_required(self):
+        m = self._byurls_submit_mgr()
+        name, _ = self._from_run()
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_data_entry_by_urls_submit(name, by="Romain")
+        self.assertEqual(ctx.exception.code, "recap_sha_required")
+
+    def test_by_urls_submit_sha_mismatch_409(self):
+        m = self._byurls_submit_mgr()
+        name, _ = self._from_run()
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_data_entry_by_urls_submit(name, by="Romain", expected_recap_sha="deadbeef")
+        self.assertEqual(ctx.exception.code, "recap_changed")
+        self.assertEqual(ctx.exception.http_status, 409)
+
+    def test_by_urls_submit_aborted_source_refused(self):
+        m = self._byurls_submit_mgr()
+        name, sha = self._from_run(aborted="not_logged_in")
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_data_entry_by_urls_submit(name, by="Romain", expected_recap_sha=sha)
+        self.assertEqual(ctx.exception.code, "source_aborted")
+
+    def test_by_urls_submit_nothing_to_submit(self):
+        m = self._byurls_submit_mgr()
+        name, sha = self._from_run(candidates=0)
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_data_entry_by_urls_submit(name, by="Romain", expected_recap_sha=sha)
+        self.assertEqual(ctx.exception.code, "nothing_to_submit")
+
+    def test_by_urls_submit_source_not_found(self):
+        m = self._byurls_submit_mgr()
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_data_entry_by_urls_submit("nope-by-urls", by="Romain", expected_recap_sha="x")
+        self.assertEqual(ctx.exception.code, "source_not_found")
+
+    def test_by_urls_submit_path_traversal_refused(self):
+        m = self._byurls_submit_mgr()
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_data_entry_by_urls_submit("../etc", by="Romain", expected_recap_sha="x")
+        self.assertEqual(ctx.exception.code, "bad_from_run")
+
     def test_stop_grace_is_longer_for_write_kinds(self):
         # A write run (submit / data_entry_auto) needs a whole offer to finish
         # before SIGKILL; read-only runs keep the short grace.

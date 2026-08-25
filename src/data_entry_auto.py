@@ -37,7 +37,10 @@ Design after the 2026-08-04 adversarial review (which found real defects):
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable
+
+from src.validation import candidate_fingerprint
 
 # ``stopped`` values that are NOT a broken/blocked session. ``limit_reached``
 # never occurs in safe mode (no limit); ``operator_stop`` = a cooperative stop the
@@ -285,5 +288,84 @@ def run_sweep(
             recap["halted"] = f"coverage_incomplete_max_pages (feed has {feed_last} pages)"
         elif max_seen > feed_last:
             recap["halted"] = f"coverage_incomplete_feed_grew ({feed_last}→{max_seen} pages)"
+
+    return recap
+
+
+def _candidates_by_store(from_recap: dict) -> "list[dict[str, Any]]":
+    """Group a by-urls dry-run's candidates by merchant STORE, deduped by
+    candidate_fingerprint (a merchant can appear across several games; a re-import
+    can also surface the same offer twice). Returns ordered
+    ``[{merchant, store_id, candidates:[...]}, ...]`` — the unit of a safe submit."""
+    order: list[str] = []
+    groups: dict[str, dict[str, Any]] = {}
+    for game in from_recap.get("games") or []:
+        if not game.get("resolved") or game.get("error"):
+            continue
+        for per in game.get("merchants") or []:
+            sid = str(per.get("store_id") or "")
+            if not sid:
+                continue
+            g = groups.get(sid)
+            if g is None:
+                g = groups[sid] = {"merchant": per.get("merchant", ""),
+                                   "store_id": sid, "candidates": [], "_seen": set()}
+                order.append(sid)
+            for c in per.get("candidates") or []:
+                fp = candidate_fingerprint(c)
+                if fp in g["_seen"]:
+                    continue
+                g["_seen"].add(fp)
+                g["candidates"].append(c)
+    out = []
+    for sid in order:
+        g = groups[sid]
+        if g["candidates"]:
+            out.append({"merchant": g["merchant"], "store_id": sid, "candidates": g["candidates"]})
+    return out
+
+
+def run_by_urls_submit(
+    from_recap: dict, *, available: str,
+    submit_merchant: Callable[[str, str, "list[dict[str, Any]]", Path], SubmitOutcome],
+    make_sub_run: Callable[[str], Path],
+    flush: Callable[[dict], None] = lambda r: None,
+    should_stop: Callable[[], bool] | None = None,
+) -> dict:
+    """Submit a by-urls dry-run's match-validated candidates, grouped by merchant,
+    each as a standard safe batch (R24). ``submit_merchant`` builds the validation
+    triple and runs 05_submit for one store; ``make_sub_run`` mints its run dir. The
+    first NON-CLEAN merchant HALTS the whole batch fail-closed (same discipline as
+    run_sweep). Stops cooperatively only BETWEEN merchants (never mid-Create)."""
+
+    groups = _candidates_by_store(from_recap)
+    recap: dict[str, Any] = {
+        "mode": "submit", "available": available, "aborted": None,
+        "merchants": [],
+        "totals": {"merchants": len(groups),
+                   "attempted": sum(len(g["candidates"]) for g in groups),
+                   "created": 0}}
+    flush(recap)
+
+    for g in groups:
+        if should_stop is not None and should_stop():
+            recap["aborted"] = "operator_stop"
+            flush(recap)
+            break
+        merchant, store_id, cands = g["merchant"], g["store_id"], g["candidates"]
+        sub_run = make_sub_run(store_id)
+        outcome = submit_merchant(merchant, store_id, cands, sub_run)
+        entry = {"merchant": merchant, "store_id": store_id, "run": sub_run.name,
+                 "attempted": len(cands), "created": outcome.created,
+                 "offers": outcome.offers, "halted": outcome.halt_reason()}
+        recap["merchants"].append(entry)
+        recap["totals"]["created"] += outcome.created
+        flush(recap)
+        if not outcome.clean():
+            # A broken/blocked submit halts the batch — never plow on to the next
+            # merchant on a dropped session / unreadable feed (fail-closed).
+            recap["aborted"] = f"submit_not_clean:{merchant}: {outcome.halt_reason()}"
+            flush(recap)
+            break
 
     return recap

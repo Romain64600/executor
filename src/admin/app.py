@@ -238,6 +238,9 @@ class AdminHandler(BaseHTTPRequestHandler):
         if path == "/api/data-entry/by-urls/recap":
             run = parse_qs(parsed.query).get("run", [""])[0]
             return self._get_data_entry_recap(run, suffix="-by-urls")
+        if path == "/api/data-entry/by-urls/submit/recap":
+            run = parse_qs(parsed.query).get("run", [""])[0]
+            return self._get_data_entry_recap(run, suffix="-by-urls-submit")
         if path == "/api/data-entry/by-urls/log":
             q = parse_qs(parsed.query)
             return self._get_by_urls_log(q.get("run", [""])[0], q.get("offset", ["0"])[0])
@@ -427,6 +430,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._post_data_entry_auto()
         if path == "/api/data-entry/by-urls":
             return self._post_data_entry_by_urls()
+        if path == "/api/data-entry/by-urls/submit":
+            return self._post_data_entry_by_urls_submit()
         if path == "/api/sort/stop":
             return self._send_json(200, self.state.manager.stop_active())
         if path == "/api/sort/scan":
@@ -586,7 +591,29 @@ class AdminHandler(BaseHTTPRequestHandler):
             run_id = autos[0]
         run_dir = self._run_dir(run_id)
         recap = read_run_json(run_dir, "recap.json")
-        self._send_json(200, {"run_id": run_id, "recap": recap})
+        # recap_sha256 binds the "Saisir" typed-GO to the EXACT preview shown (AS1):
+        # the client echoes it, the manager re-checks sha256_file(recap.json).
+        recap_path = run_dir / "recap.json"
+        sha = sha256_file(recap_path) if recap_path.is_file() else None
+        self._send_json(200, {"run_id": run_id, "recap": recap, "recap_sha256": sha})
+
+    def _post_data_entry_by_urls_submit(self) -> None:
+        body = self._json_body()
+        by = str(body.get("by") or self._basic_user() or "operateur")
+        from_run = str(body.get("from_run") or "").strip()
+        if not from_run:
+            raise ApiError(400, "from_run_required", "from_run (l'aperçu à saisir) requis")
+        # Server-side typed-GO — the same explicit-operator gate every other write path
+        # enforces (parity with _post_submit / _post_sort_move); the sha binding alone
+        # is anti-race, not an operator confirmation (adversarial review 2026-08-25).
+        if str(body.get("confirm") or "").strip().upper() != "GO":
+            raise ApiError(400, "confirm_required", "tape GO pour confirmer la saisie réelle")
+        # SubmitStartError (bad/absent/aborted source, sha mismatch, busy) → do_POST
+        # translates it to the right HTTP status. This is a WRITE — the manager binds
+        # the GO to recap_sha256 (AS1) and spawns a supervised orchestrator.
+        result = self.state.manager.start_data_entry_by_urls_submit(
+            from_run, by=by, expected_recap_sha=body.get("recap_sha256"))
+        self._send_json(200, result)
 
     def _post_catalog(self, run_dir: Path) -> None:
         body = self._json_body()

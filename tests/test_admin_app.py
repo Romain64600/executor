@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from src.admin.app import AppState, make_server
-from src.admin.submit_manager import SubmitManager
+from src.admin.submit_manager import SubmitManager, SubmitStartError
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -750,6 +750,51 @@ class DataEntryByUrlsRouteTests(AppTestCase):
     def test_log_route_bogus_run_404(self):
         response, _ = self._json("GET", "/api/data-entry/by-urls/log?run=../etc&offset=0")
         self.assertIn(response.status, (400, 404))
+
+    def test_recap_returns_sha_for_saisir_binding(self):
+        name = self._byurls_run()
+        _, body = self._json("GET", f"/api/data-entry/by-urls/recap?run={name}")
+        self.assertTrue(body.get("recap_sha256"))       # AS1 binding for the Saisir GO
+
+    # ---- stage 2: the "Saisir" (submit) route ----
+    def test_submit_route_passes_from_run_and_sha(self):
+        seen = {}
+        def fake(from_run, *, by, expected_recap_sha=None):
+            seen.update(from_run=from_run, sha=expected_recap_sha)
+            return {"run_id": "20260825-000000-by-urls-submit", "started": True}
+        self.manager.start_data_entry_by_urls_submit = fake
+        response, body = self._json(
+            "POST", "/api/data-entry/by-urls/submit",
+            body={"from_run": "20260825-000000-by-urls", "recap_sha256": "abc", "confirm": "GO"})
+        self.assertEqual(response.status, 200)
+        self.assertEqual((seen["from_run"], seen["sha"]), ("20260825-000000-by-urls", "abc"))
+
+    def test_submit_route_requires_from_run(self):
+        calls = []
+        self.manager.start_data_entry_by_urls_submit = lambda *a, **k: calls.append(1) or {}
+        response, body = self._json("POST", "/api/data-entry/by-urls/submit", body={"confirm": "GO"})
+        self.assertEqual(response.status, 400)
+        self.assertEqual(body["error"]["code"], "from_run_required")
+        self.assertEqual(calls, [])
+
+    def test_submit_route_requires_typed_go(self):
+        # server-side typed-GO gate (parity with the other write paths).
+        calls = []
+        self.manager.start_data_entry_by_urls_submit = lambda *a, **k: calls.append(1) or {}
+        response, body = self._json("POST", "/api/data-entry/by-urls/submit",
+                                    body={"from_run": "x", "recap_sha256": "y"})
+        self.assertEqual(response.status, 400)
+        self.assertEqual(body["error"]["code"], "confirm_required")
+        self.assertEqual(calls, [])
+
+    def test_submit_route_propagates_submit_start_error(self):
+        def fake(*a, **k):
+            raise SubmitStartError("recap_changed", "changed", http_status=409)
+        self.manager.start_data_entry_by_urls_submit = fake
+        response, body = self._json("POST", "/api/data-entry/by-urls/submit",
+                                    body={"from_run": "x", "recap_sha256": "y", "confirm": "GO"})
+        self.assertEqual(response.status, 409)
+        self.assertEqual(body["error"]["code"], "recap_changed")
 
 
 class SortMoveRouteTests(AppTestCase):

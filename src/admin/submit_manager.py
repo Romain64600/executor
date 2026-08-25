@@ -76,6 +76,12 @@ BY_URLS_EVENTS = frozenset(
         "game_done",
         "run_done",
         "run_aborted",
+        # stage-2 submit orchestrator (the "Saisir" button)
+        "submit_run_start",
+        "merchant_submit",
+        "merchant_submitted",
+        "submit_run_done",
+        "submit_run_aborted",
     }
 )
 
@@ -258,6 +264,7 @@ class SubmitManager:
         self.sort_scan_script = sort_scan_script or (repo_root / "scripts" / "08_sort_plan.py")
         self.data_entry_auto_script = repo_root / "scripts" / "10_data_entry_auto.py"
         self.by_urls_script = repo_root / "scripts" / "11_data_entry_by_urls.py"
+        self.by_urls_submit_script = repo_root / "scripts" / "12_data_entry_by_urls_submit.py"
         self.python = python
         self.clock = clock
         self._mutex = threading.Lock()
@@ -741,6 +748,67 @@ class SubmitManager:
                 meta={"by": by, "run_id": run_id, "urls": len(clean), "mode": "dry-run"},
             )
 
+    def start_data_entry_by_urls_submit(
+        self, from_run: str, *, by: str, expected_recap_sha: str | None = None,
+    ) -> dict[str, Any]:
+        """SUBMIT the candidates of a finished ``*-by-urls`` dry-run (the "Saisir"
+        button, Romain 2026-08-25). ONE supervised orchestrator
+        (``scripts/12_data_entry_by_urls_submit.py``) groups the preview's candidates
+        by merchant and submits each as a standard safe batch (05_submit --mode safe);
+        the first non-clean merchant halts fail-closed. Never fire-and-forget.
+
+        AS1: the typed GO is bound to the EXACT preview via ``expected_recap_sha`` —
+        a preview regenerated since the operator saw it (re-run in another tab) 409s
+        instead of silently submitting a different batch."""
+
+        from_run = str(from_run or "").strip()
+        if not from_run or "/" in from_run or "\\" in from_run or ".." in from_run:
+            raise SubmitStartError("bad_from_run", "run source invalide", http_status=400)
+        recap_path = self.repo_root / "runs" / from_run / "recap.json"
+        if not recap_path.is_file():
+            raise SubmitStartError("source_not_found",
+                                   f"aperçu {from_run} introuvable", http_status=404)
+        try:
+            recap = json.loads(recap_path.read_text(encoding="utf-8"))
+        except Exception:
+            raise SubmitStartError("source_unreadable", "recap de l'aperçu illisible",
+                                   http_status=400)
+        if recap.get("aborted"):
+            raise SubmitStartError(
+                "source_aborted",
+                f"l'aperçu s'est arrêté ({recap['aborted']}) — relancer un aperçu",
+                http_status=409)
+        candidates = int((recap.get("totals") or {}).get("candidates") or 0)
+        if candidates <= 0:
+            raise SubmitStartError("nothing_to_submit",
+                                   "aucune offre à saisir dans cet aperçu", http_status=409)
+        # AS1: bind the typed GO to the exact preview the operator saw.
+        current_sha = sha256_file(recap_path)
+        if not expected_recap_sha:
+            raise SubmitStartError(
+                "recap_sha_required",
+                "un submit réel exige recap_sha256 (l'identité de l'aperçu affiché) — recharger",
+                http_status=400)
+        if expected_recap_sha != current_sha:
+            raise SubmitStartError(
+                "recap_changed",
+                "l'aperçu a changé depuis l'affichage — recharger, re-vérifier le lot, retaper GO",
+                http_status=409)
+        available = str(recap.get("available") or "all")
+        with self._mutex:
+            self._ensure_free()
+            stamp = datetime.strptime(self.clock(), "%Y-%m-%dT%H:%M:%SZ").strftime("%Y%m%d-%H%M%S")
+            run_id = f"{stamp}-by-urls-submit"
+            run_dir = self.repo_root / "runs" / run_id
+            run_dir.mkdir(parents=True, exist_ok=False)
+            argv = [self.python, str(self.by_urls_submit_script),
+                    "--from-run", from_run, "--run-id", run_id,
+                    "--available", available, "--mode", "safe"]
+            return self._spawn(
+                run_dir, kind="data_entry_by_urls_submit", argv=argv,
+                meta={"by": by, "from_run": from_run, "run_id": run_id,
+                      "candidates": candidates})
+
     def start_match(
         self, run_dir: Path, *, by: str, max_candidates: int | None = None
     ) -> dict[str, Any]:
@@ -884,7 +952,8 @@ class SubmitManager:
     # take tens of seconds on a slow feed, so these kinds get a longer SIGKILL
     # grace — a premature SIGKILL would hard-kill a Create mid-flight (the very
     # thing the cooperative stop avoids). Read-only runs keep the short grace.
-    _STOP_GRACE_BY_KIND = {"submit": 90.0, "data_entry_auto": 120.0}
+    _STOP_GRACE_BY_KIND = {"submit": 90.0, "data_entry_auto": 120.0,
+                           "data_entry_by_urls_submit": 90.0}
 
     def stop_active(self, *, grace: float | None = None) -> dict[str, Any]:
         """Stop the active run. SIGTERM first (the spawned script stops at a safe

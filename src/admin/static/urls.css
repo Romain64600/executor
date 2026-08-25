@@ -77,3 +77,14 @@ button.primary:disabled {
 :root[data-theme="dark"] .logline.ok { color: #4ad0a0; }
 :root[data-theme="dark"] .logline.no { color: #ff7a6b; }
 .autoscroll { font-size: .78rem; opacity: .8; display: inline-flex; gap: .35rem; align-items: center; }
+
+/* Saisir (write) bar */
+.submit-bar {
+  display: flex;
+  align-items: center;
+  gap: .8rem;
+  margin-top: .8rem;
+  padding-top: .8rem;
+  border-top: 1px solid rgba(128, 140, 170, .28);
+}
+.submit-note { font-size: .8rem; opacity: .75; }

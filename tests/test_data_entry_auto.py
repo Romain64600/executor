@@ -1,11 +1,91 @@
 """Safe-auto data-entry sweep engine v2 — reflow-safe highest-first, fail-closed
 halting (incl. mid-batch submitter STOP), coverage honesty. No browser."""
+import tempfile
 import unittest
+from pathlib import Path
 
 from src.data_entry_auto import (
     ExtractOutcome, MatchOutcome, MoveOutcome, Stages, StageError, SubmitOutcome,
-    SweepConfig, run_sweep,
+    SweepConfig, _candidates_by_store, run_by_urls_submit, run_sweep,
 )
+
+
+def _cand(oid, pid="205027", rid="2", eid="1"):
+    return {"offer": {"offer_id": oid, "name": f"Game {oid}", "url": f"https://m/{oid}"},
+            "aks_product_id": pid, "aks_name": "X",
+            "region": {"id": rid, "label": "GLOBAL", "implicit": False},
+            "edition": {"id": eid, "label": "Standard"}}
+
+
+def _game(*merchants):   # merchants: (merchant, store_id, [cands])
+    return {"resolved": True, "aks_name": "X",
+            "merchants": [{"merchant": m, "store_id": s, "candidates": c} for m, s, c in merchants]}
+
+
+class ByUrlsSubmitTests(unittest.TestCase):
+    def _run(self, recap, submit_merchant, should_stop=None):
+        tmp = Path(tempfile.mkdtemp())
+        return run_by_urls_submit(
+            recap, available="all", submit_merchant=submit_merchant,
+            make_sub_run=lambda sid: tmp / f"s{sid}", should_stop=should_stop)
+
+    def test_groups_by_store_merges_across_games(self):
+        recap = {"available": "all", "games": [
+            _game(("G2A", "38", [_cand("1")])),
+            _game(("G2A", "38", [_cand("2")]), ("Kinguin", "58", [_cand("3")]))]}
+        seen = []
+        def sm(merchant, store, cands, sub):
+            seen.append((merchant, store, [c["offer"]["offer_id"] for c in cands]))
+            return SubmitOutcome(ok=True, created=len(cands), offers=[])
+        out = self._run(recap, sm)
+        self.assertEqual(sorted((m, s) for m, s, _ in seen), [("G2A", "38"), ("Kinguin", "58")])
+        g2a = next(ids for m, s, ids in seen if s == "38")
+        self.assertEqual(sorted(g2a), ["1", "2"])          # merged across games
+        self.assertEqual(out["totals"], {"merchants": 2, "attempted": 3, "created": 3})
+        self.assertIsNone(out["aborted"])
+
+    def test_dedupe_by_fingerprint(self):
+        c = _cand("1")
+        recap = {"available": "all", "games": [
+            _game(("G2A", "38", [c])), _game(("G2A", "38", [dict(c)]))]}   # same fingerprint twice
+        seen = {}
+        def sm(m, s, cands, sub):
+            seen["n"] = len(cands)
+            return SubmitOutcome(ok=True, created=len(cands))
+        self._run(recap, sm)
+        self.assertEqual(seen["n"], 1)
+
+    def test_halts_on_first_non_clean(self):
+        recap = {"available": "all", "games": [
+            _game(("G2A", "38", [_cand("1")]), ("Kinguin", "58", [_cand("2")]))]}
+        calls = []
+        def sm(m, s, cands, sub):
+            calls.append(m)
+            return SubmitOutcome(ok=False, aborted="not_logged_in") if m == "G2A" \
+                else SubmitOutcome(ok=True, created=1)
+        out = self._run(recap, sm)
+        self.assertEqual(calls, ["G2A"])                   # Kinguin NEVER reached
+        self.assertIn("submit_not_clean:G2A", out["aborted"])
+
+    def test_operator_stop_between_merchants(self):
+        recap = {"available": "all", "games": [
+            _game(("G2A", "38", [_cand("1")]), ("Kinguin", "58", [_cand("2")]))]}
+        calls = []
+        def sm(m, s, cands, sub):
+            calls.append(m)
+            return SubmitOutcome(ok=True, created=1)
+        out = self._run(recap, sm, should_stop=lambda: True)   # stop before the first merchant
+        self.assertEqual(calls, [])
+        self.assertEqual(out["aborted"], "operator_stop")
+
+    def test_candidates_by_store_skips_unresolved_and_errored_games(self):
+        recap = {"games": [
+            {"resolved": False, "url": "x"},
+            {"resolved": True, "error": "search_unreadable", "merchants": [
+                {"merchant": "G2A", "store_id": "38", "candidates": [_cand("9")]}]},
+            _game(("G2A", "38", [_cand("1")]))]}
+        groups = _candidates_by_store(recap)
+        self.assertEqual([(g["store_id"], len(g["candidates"])) for g in groups], [("38", 1)])
 
 
 class FakeStages:
