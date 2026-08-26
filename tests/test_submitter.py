@@ -2006,28 +2006,38 @@ class _SearchFake:
         self._nav_max = nav_max
         self._wedge_href = wedge_href    # simulate a wedge: location.href != navigated URL
         self.nav = []
-        self._page = 1
+        self._req = 1        # the page number requested by the last navigate
+        self._served = 1     # the page AKS actually served (out-of-range → back to page 1)
 
     def navigate(self, url, settle=3.0):
         self.nav.append(url)
         m = re.search(r"[?&]p=(\d+)", url)
-        self._page = int(m.group(1)) if m else 1
+        self._req = int(m.group(1)) if m else 1
+        # AKS re-serves page 1 for an out-of-range p (a single result page + p=2 stays on
+        # page 1) — the realistic behaviour the &p= SC6 check relies on.
+        self._served = self._req if 1 <= self._req <= len(self._pages) else 1
 
     def is_login_page(self):
         return self.login
 
     def _current(self):
-        i = self._page - 1
+        i = self._served - 1
         return [dict(r) for r in self._pages[i]] if 0 <= i < len(self._pages) else []
 
     def page_offer_rows(self):
         return self._current()
 
     def feed_page_state(self):
-        nav_max = (self._nav_max if self._nav_max is not None
-                   else len([pg for pg in self._pages if pg]))
-        href = self._wedge_href if self._wedge_href is not None else (
-            self.nav[-1] if self.nav else "")
+        npages = len([pg for pg in self._pages if pg])
+        # AKS reports nav_max=0 for a SINGLE result page (no pagination nav), even with
+        # many rows — probed live 2026-08-26. N (>=2) only when there are real extra pages.
+        nav_max = self._nav_max if self._nav_max is not None else (0 if npages <= 1 else npages)
+        if self._wedge_href is not None:
+            href = self._wedge_href
+        else:
+            href = self.nav[-1] if self.nav else ""
+            if self._served != self._req:       # out-of-range request fell back to page 1
+                href = re.sub(r"[&?]p=\d+", "", href)
         return {"feed_ui": self.rendered, "nav_max": nav_max, "is_login": self.login,
                 "href": href}
 
@@ -2050,13 +2060,19 @@ class SearchLocateTests(unittest.TestCase):
         return s
 
     def test_scan_search_finds_offer_via_search_page(self):
+        # Single result page → AKS reports nav_max=0. The scan must STOP after page 1
+        # and return the found offer, NOT over-read a non-existent page 2 (which AKS
+        # re-serves as page 1 → &p= SC6 wedge → FeedScanError → the found offer wrongly
+        # discarded as "not in current feed"). Regression: live DOOM Anthology / Driffle
+        # offers present in the feed yet reported not-found (2026-08-26).
         from src.submitter import _url_key
         row = {"id": "77", "url": "https://m/mhw-gold-p999", "name": "MHW Gold", "store_id": "127"}
-        sub = self._sub(_SearchFake([row]))
+        sub = self._sub(_SearchFake([row]))                      # 1 page → nav_max=0
         _idx, by_url = sub._scan_search("127", "aks-merchant-feeds-9", "all", "https://m/mhw-gold-p999")
         self.assertEqual(by_url[_url_key(row["url"])]["offer_id"], "77")
         self.assertIn("page=aks-merchant-feeds-search", sub.session.nav[-1])
         self.assertIn("search%5Bfield%5D=url", sub.session.nav[-1])
+        self.assertFalse(any("p=2" in u for u in sub.session.nav))   # never over-read page 2
 
     def test_scan_search_unrendered_raises_fail_closed(self):
         from src.submitter import FeedScanError

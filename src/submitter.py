@@ -663,12 +663,19 @@ class _SubmitterBase:
                     index[rid] = details
                 if rk:
                     by_url[rk] = details
-            if nav_max_seen and page >= nav_max_seen:
-                break  # read every advertised result page — coverage proven
+            # AKS reports nav_max=0 for a SINGLE result page (no pagination nav) — even
+            # with dozens of rows (probed live 2026-08-26). So page >= nav_max_seen (0 or
+            # 1) means "read the only/last page, stop": navigating a non-existent page 2
+            # re-serves page 1, which the &p= SC6 check then rejects as a wedge → a valid
+            # single-page result was discarded as FeedScanError → "not in current feed".
+            # Only nav_max >= 2 means there are genuinely more result pages to read.
+            if page >= nav_max_seen:
+                break  # read the only/last advertised result page — coverage proven
         else:
             # Ran the whole page budget with rows still on the last page and the nav
-            # advertising MORE (or an unreadable nav_max): coverage is NOT proven
-            # complete, so an absence here cannot stand as a 'gone' proof.
+            # advertising MORE than the budget covers: coverage is NOT proven complete,
+            # so an absence here cannot stand as a 'gone' proof. (nav_max 0/1 breaks
+            # above at page 1, so reaching here means nav_max_seen > max_pages.)
             if not (0 < nav_max_seen <= max_pages):
                 raise FeedScanError(
                     f"search for {term!r} hit max_pages={max_pages} without reaching "
