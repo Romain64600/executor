@@ -712,6 +712,34 @@ class FetchSessionCatalogTests(unittest.TestCase):
         result = fetch_session_catalog(FakeSubmitSession([[]]), store_id="127")
         self.assertEqual(result, {"ok": False, "reason": "no_openable_offer"})
 
+    def test_transient_blank_first_read_is_polled_not_fatal(self):
+        # A slow JS render (empty first reads, feed_ui not ready) must be POLLED, not
+        # read as no_openable_offer — that aborted a live submit on a healthy Driffle
+        # feed (2026-08-26: catalog_unavailable). The ids render on a later read.
+        from unittest import mock
+        from src.submitter import fetch_session_catalog
+
+        class _SlowRender(FakeSubmitSession):
+            def __init__(self, *a, blank_reads=2, **kw):
+                super().__init__(*a, **kw)
+                self._reads = 0
+                self._blank = blank_reads
+
+            def page_offer_ids(self):
+                self._reads += 1
+                return [] if self._reads <= self._blank else super().page_offer_ids()
+
+            def feed_page_state(self):
+                st = super().feed_page_state()
+                st["feed_ui"] = self._reads > self._blank   # UI lags during the blank reads
+                return st
+
+        session = _SlowRender([["10", "11"]], blank_reads=2)
+        with mock.patch("src.submitter.time.sleep", lambda *_: None):
+            result = fetch_session_catalog(session, store_id="127")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["offer_id"], "10")
+
 
 class ResolveCatalogIdTests(unittest.TestCase):
     # Realistic live dropdown: the Steam global/worldwide region is labelled

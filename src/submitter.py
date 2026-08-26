@@ -248,6 +248,19 @@ def fetch_session_catalog(
     for page in range(1, max_pages + 1):
         session.navigate(feed_url(store_id, page=page, feed_page=feed_page, available=available))
         ids = session.page_offer_ids()
+        # Render-poll: a slow JS-built feed list can read EMPTY on the first read under
+        # CDP load; re-read the DOM (no re-navigate) before concluding the page is blank.
+        # Without this a single transient empty read on page 1 breaks the whole catalog
+        # fetch → no_openable_offer → catalog_unavailable → the submit halts fail-closed
+        # (observed live 2026-08-26 on a healthy Driffle feed). Mirrors the extractor/
+        # search render-poll (FEED_UI_RENDER_WAITS).
+        for wait in FEED_UI_RENDER_WAITS:
+            if ids or session.feed_page_state().get("feed_ui"):
+                break
+            time.sleep(wait)
+            ids = session.page_offer_ids()
+        if session.is_login_page():
+            return {"ok": False, "reason": "not_logged_in"}
         if not ids:
             break
         for offer_id in ids:
