@@ -2144,6 +2144,54 @@ class SearchLocateTests(unittest.TestCase):
         with self.assertRaises(FeedScanError):
             sub._scan_search("127", "aks-merchant-feeds-9", "all", "https://m/target-p7")
 
+    def test_index_by_search_retries_transient_scan_error(self):
+        # Hardening 1: a TRANSIENT FeedScanError on a candidate's index search must be
+        # retried, not drop the offer — an index miss is not recovered downstream, so a
+        # single blip lost a live creation (DOOM Anthology Global, 2026-08-26).
+        from src.submitter import FeedScanError, _url_key
+        sub = self._sub(_SearchFake([]))            # session unused; _scan_search stubbed
+        calls = {"n": 0}
+
+        def flaky(store, fp, avail, url):
+            calls["n"] += 1
+            if calls["n"] < 2:
+                raise FeedScanError("transient render blip")
+            d = {"offer_id": "77", "url": url, "page_url": "s"}
+            return {"77": d}, {_url_key(url): d}
+
+        sub._scan_search = flaky
+        index, by_url = sub._index_by_search("127", "aks-merchant-feeds-9", "all", [_cand("77")])
+        self.assertIn("77", index)                  # indexed on the retry, not dropped
+        self.assertEqual(calls["n"], 2)
+
+    def test_index_by_search_logs_persistent_drop(self):
+        # Hardening 2: a candidate still unreadable after the retries is dropped
+        # fail-closed but LOGGED — never a SILENT drop mistaken for a genuine absence.
+        from src.submitter import FeedScanError
+
+        class _Log:
+            def __init__(self):
+                self.events = []
+
+            def log(self, event, **f):
+                self.events.append((event, f))
+
+        lg = _Log()
+        sub = DryRunSubmitter(_SearchFake([]), logger=lg)
+        sub.empty_retry_wait_s = 0
+        sub.search_index_attempts = 3
+
+        def always_fail(store, fp, avail, url):
+            raise FeedScanError("persistent unreadable")
+
+        sub._scan_search = always_fail
+        index, _by = sub._index_by_search("127", "aks-merchant-feeds-9", "all", [_cand("77")])
+        self.assertNotIn("77", index)               # dropped fail-closed
+        drops = [f for e, f in lg.events if e == "index_search_unreadable"]
+        self.assertEqual(len(drops), 1)             # and LOGGED
+        self.assertEqual(drops[0]["attempts"], 3)
+        self.assertIn("persistent", drops[0]["reason"])
+
     def test_run_locate_by_search_locates_via_search(self):
         # end-to-end (dry-run): the index is built from the search, the offer locates
         # by URL, and only search pages are hit (no whole-feed scan).

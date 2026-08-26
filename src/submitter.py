@@ -85,6 +85,15 @@ FEED_UI_RENDER_WAITS = (1.0, 2.0, 4.0)
 # "gone"). ~1000 matching rows for one slug is already pathological.
 SEARCH_SCAN_MAX_PAGES = 10
 
+# by-urls search-locate: how many times to (re)try ONE candidate's index-build search
+# before dropping it. The per-offer search can hit a TRANSIENT FeedScanError (a slow
+# search-page render / a wedged navigate under CDP load); a single blip must not
+# silently drop a valid offer from the locate index — that surfaced downstream as a
+# misleading "offer not in current feed" (a LIVE creation missed, 2026-08-26). A
+# persistent failure after the retries is dropped fail-closed AND logged, never a
+# batch abort.
+SEARCH_INDEX_ATTEMPTS = 3
+
 
 def _page_param(url: str) -> int:
     """The ``&p=N`` pagination param of a feed URL (1 when absent)."""
@@ -316,6 +325,7 @@ class _SubmitterBase:
         self.feed_scan_settle = FEED_SCAN_SETTLE
         self.feed_ui_render_waits = FEED_UI_RENDER_WAITS
         self.search_scan_max_pages = SEARCH_SCAN_MAX_PAGES
+        self.search_index_attempts = SEARCH_INDEX_ATTEMPTS
         self.catalog: dict[str, Any] | None = None
         self._region_master: list[dict[str, Any]] = []
         # Cooperative stop hook (default: never checked → submit pipeline
@@ -688,21 +698,37 @@ class _SubmitterBase:
         """Build the locate index from the SEARCH (one filtered query per candidate
         URL) instead of a whole-feed scan — fast, and each row is FRESH (it cannot
         reflow away during a multi-minute scan, the by-urls submit's failure mode).
-        A candidate whose search is momentarily unreadable is simply not pre-indexed
-        (its per-offer relocate retries, else it skips) — never a batch abort; a
-        login bounce propagates (session gone)."""
+
+        Each candidate's search is RETRIED on a transient FeedScanError (a slow
+        search-page render / a wedged navigate under CDP load) up to
+        ``search_index_attempts`` — an index miss is NOT recovered downstream (a
+        missing row makes ``_locate_row`` return "not in current feed" and ``_prepare``
+        returns that blocker immediately, never reaching the URL re-locate), so a single
+        blip must not silently drop a valid offer (a live creation was missed this way,
+        2026-08-26). A candidate still unreadable after the retries is dropped
+        fail-closed AND LOGGED (``index_search_unreadable``) — never a batch abort, and
+        never a SILENT drop mistaken for a genuine absence. A login bounce propagates."""
         index: dict[str, dict[str, str]] = {}
         by_url: dict[str, dict[str, str]] = {}
         for c in approved:
             url = str((c.get("offer") or {}).get("url") or "")
             if not url:
                 continue
-            try:
-                idx, bu = self._scan_search(store_id, feed_page, available, url)
-            except FeedScanError:
-                continue
-            index.update(idx)
-            by_url.update(bu)
+            last_err: FeedScanError | None = None
+            for attempt in range(1, max(1, self.search_index_attempts) + 1):  # always ≥1 try
+                if attempt > 1:
+                    time.sleep(self.empty_retry_wait_s)
+                try:
+                    idx, bu = self._scan_search(store_id, feed_page, available, url)
+                    index.update(idx)
+                    by_url.update(bu)
+                    last_err = None
+                    break
+                except FeedScanError as exc:
+                    last_err = exc
+            if last_err is not None:
+                self._log("index_search_unreadable", url=url,
+                          attempts=self.search_index_attempts, reason=str(last_err)[:200])
         return index, by_url
 
     def _locate_row(self, candidate: dict[str, Any], offer_id: str,
