@@ -1344,7 +1344,8 @@ class ExplicitPlatformFromUrlTests(unittest.TestCase):
         # it: eneba.com/steam-apothecarium-....
         self.assertEqual(
             explicit_platform_from_url(
-                "https://www.eneba.com/steam-apothecarium-the-renaissance-of-evil-premium-edition"
+                "https://www.eneba.com/steam-apothecarium-the-renaissance-of-evil-premium-edition",
+                "Eneba",
             ),
             "STEAM",
         )
@@ -1359,7 +1360,7 @@ class ExplicitPlatformFromUrlTests(unittest.TestCase):
             "https://www.eneba.com/windows-store-sid-meiers-civilization-vi-windows-store-key": "MICROSOFT",
         }
         for url, expected in cases.items():
-            self.assertEqual(explicit_platform_from_url(url), expected, url)
+            self.assertEqual(explicit_platform_from_url(url, "Eneba"), expected, url)
 
     def test_eneba_unrecognized_prefix_is_none(self):
         # Console/currency/software prefixes are left unmapped — already
@@ -1370,15 +1371,39 @@ class ExplicitPlatformFromUrlTests(unittest.TestCase):
             "https://www.eneba.com/top-up-hay-day-diamonds-philippines",
             "https://www.eneba.com/other-glary-utilities-pro-5-windows-key-global",
         ):
-            self.assertIsNone(explicit_platform_from_url(url), url)
+            self.assertIsNone(explicit_platform_from_url(url, "Eneba"), url)
 
-    def test_non_eneba_url_is_none(self):
-        # Scoped to eneba.com only — no other merchant uses this URL shape,
-        # and a coincidental "steam-"-prefixed game title elsewhere must not
-        # be misread as a platform declaration.
+    def test_no_url_platform_source_is_none(self):
+        # A merchant without a URL platform knob (Kinguin: title-sourced) reads
+        # nothing from the URL — a coincidental "steam-"-in-slug game title must not
+        # be misread as a platform. Also None when no merchant is given (R32b).
         self.assertIsNone(
-            explicit_platform_from_url("https://www.kinguin.net/en/category/1/steam-punk-cd-key")
-        )
+            explicit_platform_from_url(
+                "https://www.kinguin.net/en/category/1/steam-punk-cd-key", "Kinguin"))
+        self.assertIsNone(
+            explicit_platform_from_url("https://www.eneba.com/steam-some-game"))  # no merchant
+
+    def test_g2a_url_platform_scan(self):
+        # R32b: G2A titles are unreliable → platform from the slug, collocated with the
+        # key marker (so a game-name platform word is not misread, and a token-less
+        # green-gift slug is None → fail-closed).
+        cases = {
+            "https://www.g2a.com/some-game-pc-steam-key-global-i1": "STEAM",
+            "https://www.g2a.com/rainbow-six-x-16000-credits-ubisoft-connect-key-global-i1": "UBISOFT",
+            "https://www.g2a.com/red-dead-redemption-2-rockstar-key-global-i1": "ROCKSTAR",
+            "https://www.g2a.com/some-game-epic-key-global-i1": "EPIC",
+            # green gift → NO platform token → None (GMG disambiguation still pending)
+            "https://www.g2a.com/red-dead-redemption-2-pc-green-gift-key-global-i1": None,
+            # a game NAME platform word not adjacent to the key marker is NOT read
+            "https://www.g2a.com/epic-chef-pc-green-gift-key-global-i1": None,
+            # TWO adjacent platform-key collocations sharing one hyphen → ambiguous →
+            # None (fail-closed on >1; 2026-08-27 review — a consuming trailing boundary
+            # ate the shared '-' and wrongly returned the first platform alone).
+            "https://www.g2a.com/game-steam-key-epic-key-global-i1": None,
+            "https://www.g2a.com/game-ubisoft-connect-key-steam-key-i1": None,
+        }
+        for url, expected in cases.items():
+            self.assertEqual(explicit_platform_from_url(url, "G2A"), expected, url)
 
 
 class MatchOfferTests(unittest.TestCase):
@@ -1403,6 +1428,28 @@ class MatchOfferTests(unittest.TestCase):
         self.assertEqual(result.aks_product_id, "205027")
         self.assertEqual((result.region_label, result.region_id), ("GLOBAL", "2"))
         self.assertEqual((result.edition_label, result.edition_id), ("Standard", "1"))
+
+    def test_g2a_platform_from_url_not_title(self):
+        # R32b: G2A titles are unreliable → the platform comes from the URL, not the
+        # title. A token-less title + a steam-key URL now resolves (was R27-skipped); a
+        # bogus title platform is IGNORED (URL wins); a token-less green-gift URL stays
+        # fail-closed skipped (the GMG-gift disambiguation is a separate pending decision).
+        def g2a(name, url):
+            return NormalizedOffer(offer_id="1", name=name, url=url, merchant="G2A")
+
+        res = self._resolver(aks_name="Neon Beats", official_platforms=("Steam",))
+        ok = match_offer(g2a("Neon Beats (PC) - GLOBAL",
+                             "https://www.g2a.com/neon-beats-pc-steam-key-global-i1"), res)
+        self.assertIsInstance(ok, Candidate)
+        self.assertEqual(ok.region_id, "2")
+        bogus = match_offer(g2a("Neon Beats EPIC (PC) - GLOBAL",
+                                "https://www.g2a.com/neon-beats-pc-steam-key-global-i1"), res)
+        self.assertIsInstance(bogus, Candidate)        # title "EPIC" ignored, URL STEAM wins
+        self.assertEqual(bogus.region_id, "2")
+        gift = match_offer(g2a("Neon Beats (PC) - Green Gift Key - GLOBAL",
+                               "https://www.g2a.com/neon-beats-pc-green-gift-key-global-i1"),
+                           self._resolver(official_platforms=("Steam", "Rockstar")))
+        self.assertIsInstance(gift, SkippedOffer)      # mute → fail-closed, no wrong platform
 
     def _account_resolver(self, aks_name="Rogue Loops Steam Account",
                           product_id="187974", editions=None):

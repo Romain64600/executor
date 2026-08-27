@@ -65,6 +65,15 @@ class MerchantConfig:
     # Gamivo: a URL path that matches this regex is a language-locked key
     # ("…-steam-en-global" → EN-only) → skip. Applied within the merchant's scope.
     url_language_lock: Optional[str] = None
+    # Platform-source control (R32b, 2026-08-27 — Romain: "ça dépend du marchand").
+    # By default the merchant TITLE declares the platform. A merchant whose titles are
+    # unreliable for the platform sets ``title_is_platform_source=False`` — then the
+    # platform comes from the URL/page instead of the title (G2A). ``url_platform_scan``
+    # scans the WHOLE URL path for a platform token collocated with the key marker
+    # (G2A "…-steam-key-…"), as opposed to ``url_platform_prefixes``' leading segment
+    # (Eneba). Kinguin is left title-sourced on purpose (Romain: it works today).
+    title_is_platform_source: bool = True
+    url_platform_scan: bool = False
     # Free-form notes / extension point for future per-merchant knobs.
     notes: str = ""
     extra: dict[str, Any] = field(default_factory=dict)

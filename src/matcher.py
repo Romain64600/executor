@@ -529,17 +529,45 @@ ENEBA_URL_PLATFORM_PREFIXES = {
 }
 
 
-def explicit_platform_from_url(url: str) -> str | None:
-    """Eneba-only: the URL's leading platform-prefix path segment, or None. The
-    prefix map lives in Eneba's MerchantConfig (R32, single source)."""
+def _url_platform_scan(path: str) -> str | None:
+    """The platform token collocated with the key marker in a merchant URL PATH
+    ("…-steam-key-…", "…-ubisoft-connect-key-…", "…-rockstar-key-…"), or None.
 
-    if "eneba.com" not in url.lower():
+    Collocation with "key" is what makes a WHOLE-path scan safe: a game-name platform
+    word ("epic-chef-…-key") is NOT read as EPIC (it is not adjacent to the key
+    marker), and a token-less delivery slug ("…-green-gift-key-…", the G2A GMG gift)
+    yields None → fail-closed. Zero or >1 distinct platforms → None (ambiguous)."""
+
+    words = "|".join(sorted((w.lower() for w in _PLATFORM_WORDS), key=len, reverse=True))
+    # Trailing boundary is a zero-width LOOKAHEAD, not a consuming class: two adjacent
+    # collocations share one hyphen ("…-steam-key-epic-key-…"), and a consuming boundary
+    # would eat the '-' the second token needs, so non-overlapping finditer would miss it
+    # and return ONE platform instead of failing closed on the ambiguous >1 (2026-08-27
+    # review). The lookahead keeps the delimiter so both collocations match → None.
+    hits = {
+        _PLATFORM_WORDS[m.group(1).upper()]
+        for m in re.finditer(r"[-/](" + words + r")(?:-connect)?-(?:cd-)?keys?(?=[-/]|$)", path)
+    }
+    return next(iter(hits)) if len(hits) == 1 else None
+
+
+def explicit_platform_from_url(url: str, merchant: str = "") -> str | None:
+    """The platform declared in a merchant's URL, per that merchant's MerchantConfig
+    (R32b, 2026-08-27 — was Eneba-only). Two per-merchant modes: ``url_platform_prefixes``
+    → the URL's LEADING path segment maps to a platform (Eneba, ``eneba.com/steam-…``);
+    ``url_platform_scan`` → the platform token collocated with the key marker anywhere in
+    the path (G2A, ``…-steam-key-…``; a token-less ``…-green-gift-key-…`` → None). A
+    merchant with neither knob (or no config) → None, unchanged."""
+
+    cfg = merchant_config(merchant)
+    if cfg is None:
         return None
-    cfg = merchant_config("Eneba")
-    prefixes = cfg.url_platform_prefixes if cfg else {}
     path = urlparse(url).path.strip("/").lower()
-    prefix = path.split("-", 1)[0]
-    return prefixes.get(prefix)
+    if cfg.url_platform_prefixes:
+        return cfg.url_platform_prefixes.get(path.split("-", 1)[0])
+    if cfg.url_platform_scan:
+        return _url_platform_scan(path)
+    return None
 
 
 def detect_platform(title: str) -> str:
@@ -998,6 +1026,15 @@ def _ig_offer_signals(url: str) -> MerchantOfferSignals:
 # just REPRESENTED here (its url-ignore already lives in the config).
 MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
     "KINGUIN": MerchantConfig("Kinguin", domain="kinguin.net"),
+    "G2A": MerchantConfig(
+        "G2A",
+        # R32b (2026-08-27, Romain): G2A titles are unreliable for the platform; the
+        # slug carries it instead (…-steam-key-…, …-ubisoft-connect-key-…, …-rockstar-…).
+        # A green-gift slug (…-green-gift-key-…) carries NO platform token → None →
+        # fail-closed (the GMG-gift disambiguation is a separate, pending decision).
+        title_is_platform_source=False,
+        url_platform_scan=True,
+    ),
     "DIFMARK": MerchantConfig(
         "Difmark",
         url_ignore_substrings=("buy-console-account-", "buy-console-account"),
@@ -1636,13 +1673,20 @@ def match_offer(
         return SkippedOffer(offer, reason)
 
     is_difmark = offer.merchant.strip().upper() == "DIFMARK"
-    declared_platform = explicit_platform(offer.name) or explicit_platform_from_url(offer.url)
+    _cfg = merchant_config(offer.merchant)
+    # Platform source is per-merchant (R32b, 2026-08-27 — Romain: "ça dépend du
+    # marchand"): the TITLE by default, but a merchant whose titles are unreliable for
+    # the platform (G2A) reads it from the URL instead (title_is_platform_source=False).
+    # The URL fallback runs for every merchant, so a title-sourced merchant that simply
+    # omitted the token still picks up a URL-declared platform when one is present.
+    _title_src = _cfg is None or _cfg.title_is_platform_source
+    declared_platform = (explicit_platform(offer.name) if _title_src else None) \
+        or explicit_platform_from_url(offer.url, offer.merchant)
     # R32 (2026-08-11): merchant config — when the platform is not in the title,
     # read it from the merchant's OWN offer page (Instant Gaming: token-less titles
     # hide a Steam key; a whole IG sweep wrongly defaulted to Publisher). Fail
     # closed if the page is unreadable or names an unrecognized platform — never
     # guess. Games from merchants without a config are unchanged.
-    _cfg = merchant_config(offer.merchant)
     _page_region_resolved = False             # R33: the offer page gave a region
     _page_region_base: str | None = None      #      → ENTER with this base, or
     _page_region_label = ""                   #      → forbidden region: <label> skip
