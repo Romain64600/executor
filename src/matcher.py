@@ -343,9 +343,17 @@ def extra_significant_words(aks_name: str, merchant_title: str) -> list[str]:
     """
 
     aks = set(tokenize(aks_name))
+    toks = tokenize(merchant_title)
     extras: list[str] = []
-    for token in tokenize(merchant_title):
+    for i, token in enumerate(toks):
         if token in aks or token in NOISE_TOKENS:
+            continue
+        # "Green Gift" is G2A's Steam-gift delivery label (Romain 2026-08-27), NOT a
+        # product differentiator — GIFT is already noise, so drop the GREEN that forms
+        # the phrase (only when it directly precedes GIFT, so a real "…Green…" name
+        # word elsewhere is still counted). Keeps a valid G2A "Green Gift Key GLOBAL"
+        # from false-skipping as "extra words: ['GREEN']".
+        if token == "GREEN" and i + 1 < len(toks) and toks[i + 1] == "GIFT":
             continue
         extras.append(token)
     return extras

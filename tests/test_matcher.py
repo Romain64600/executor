@@ -110,6 +110,28 @@ class TokenizeTests(unittest.TestCase):
             ["II"],
         )
 
+    def test_green_gift_phrase_is_not_a_product_extra(self):
+        # "Green Gift" is a Steam-gift delivery label (ANY merchant — Romain 2026-08-27):
+        # GIFT is already noise, and the GREEN forming that phrase must not count as an
+        # extra product word, else a valid "…Green Gift Key GLOBAL" false-skips as
+        # "different/expanded product — extra words: ['GREEN']".
+        self.assertEqual(
+            extra_significant_words(
+                "Red Dead Redemption 2",
+                "Red Dead Redemption 2 (PC) - Green Gift Key - GLOBAL"),
+            [],
+        )
+        # It works for any merchant's "green gift", not just G2A.
+        self.assertEqual(
+            extra_significant_words("Some Game", "Some Game Green Gift GLOBAL"), [])
+        # But GREEN that is NOT the "Green Gift" phrase stays a significant extra —
+        # "green" alone is not whitelisted.
+        self.assertEqual(
+            extra_significant_words("Red Dead Redemption 2",
+                                    "Red Dead Redemption 2 Green Deluxe"),
+            ["GREEN"],
+        )
+
     def test_unicode_roman_numeral_survives_slug_building(self):
         # Same escape: build_slug_candidates feeds the AKS resolve URL from
         # the same text, so the wrong page was being probed in the first
