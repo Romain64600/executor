@@ -1172,11 +1172,19 @@ def extract_aks_name(body: str) -> str | None:
     # falsely failed R01).
     name = html.unescape(match.group(1))
     name = re.split(r"(?i)\bcd key\b", name)[0]
+    # A trailing "<platform> Key[s] [Compare] Prices" is page furniture, never part of
+    # the game name. Strip it BEFORE the "compare prices" split — else that split
+    # strands "<platform> Key" ("…Steam Key Compare Prices" → "…Steam Key"), leaving
+    # STEAM/KEY in the name so R01 demands them in the merchant title and false-skips
+    # (Red Dead Redemption 2 / G2A "Green Gift Key", 2026-08-27; Monster Hunter Wilds
+    # earlier). The platform word is REQUIRED (an explicit list) so a real name ending
+    # in "Key" ("The Key") is never amputated — the whole reason the strip can't use a
+    # generic "<any word> Key".
+    name = re.sub(
+        r"(?i)\s+(?:cd|pc|steam|epic(?:\s+games)?|gog|uplay|ubisoft(?:\s+connect)?|"
+        r"origin|ea(?:\s+app)?|rockstar|bethesda|windows|xbox|playstation|psn|switch|"
+        r"nintendo)\s+keys?\s+(?:compare\s+)?prices\s*$", "", name)
     name = re.split(r"(?i)\bcompare prices\b", name)[0]
-    # A trailing "<platform>? Key[s] Compare? Prices" is page furniture, never part
-    # of the game name (the page always ends in "…Prices"); strip it. A bare trailing
-    # "Key" WITHOUT "Prices" is left intact (a real name like "The Key").
-    name = re.sub(r"(?i)\s+(?:\w+\s+)?keys?\s+(?:compare\s+)?prices\s*$", "", name)
     name = re.sub(r"(?i)^\s*buy\s+", "", name)
     # Only the exact "PC KEY" platform marker: a bare trailing "Key" can be a
     # real name ("The Key"), a bare trailing "PC" cannot.

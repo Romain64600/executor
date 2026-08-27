@@ -1097,6 +1097,20 @@ class SlugAndResolveTests(unittest.TestCase):
         # But a name genuinely ending in "Key" (no trailing "Prices") is untouched.
         self.assertEqual(extract_aks_name(page("Buy Skeleton Key Steam Key Prices")),
                          "Skeleton Key")
+        # Fourth live grammar (2026-08-27, Red Dead Redemption 2): a platform marker +
+        # "Key" WITH "Compare Prices". The "compare prices" split ran first and stranded
+        # "Steam Key", so R01 demanded "STEAM" in merchant titles → false-skipped G2A's
+        # "Green Gift Key". The platform-Key furniture is now stripped BEFORE that split.
+        self.assertEqual(
+            extract_aks_name(page("Buy Red Dead Redemption 2 Steam Key Compare Prices")),
+            "Red Dead Redemption 2",
+        )
+        self.assertEqual(
+            extract_aks_name(page("Buy Far Cry 6 Uplay Key Compare Prices")), "Far Cry 6"
+        )
+        # A real name ending in "Key" + the FULL "Compare Prices" furniture is still
+        # preserved: the platform word before "Key" is required to strip.
+        self.assertEqual(extract_aks_name(page("Buy The Key Compare Prices")), "The Key")
 
     def test_extract_aks_name_unescapes_entities(self):
         # Live og:titles, K4G run 2026-07-07 (AKS flattens punctuation, keeps
