@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from src.aks_env import http_get
+from src.merchant_config import MerchantConfig
 
 DIFMARK_PROBE_DELAY_S = 0.3
 
@@ -187,3 +188,10 @@ def resolve_difmark_offer(
         raw_region=str(attrs.get("region", "")).strip().upper(),
         offer_name=parse_difmark_offer_name(probe.body) or "",
     )
+
+
+CONFIG = MerchantConfig(
+    "Difmark",
+    url_ignore_substrings=("buy-console-account-", "buy-console-account"),
+    notes="offer-page resolver (resolve_difmark_offer) still handled in match_offer",
+)

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from src.aks_env import REQUIRED_USER_AGENT, http_get
-from src.merchant_config import MerchantOfferSignals
+from src.merchant_config import MerchantConfig, MerchantOfferSignals
 
 IG_PROBE_DELAY_S = 0.3  # Instant Gaming offer-page probe courtesy (R32), like Difmark
 
@@ -168,3 +168,10 @@ def ig_offer_signals(url: str) -> MerchantOfferSignals:
         region_base=base,
         region_label=(attrs.raw_region or "worldwide") if base is None else "",
     )
+
+
+CONFIG = MerchantConfig(
+    "Instant Gaming",
+    offer_page_resolver=ig_offer_signals,
+    notes="token-less titles — platform (data-platform) + region (<title> suffix) on the offer page",
+)

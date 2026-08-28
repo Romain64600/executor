@@ -54,6 +54,13 @@ from src.merchants.difmark import (  # noqa: F401 — re-exported for tests/back
     parse_difmark_offer_name,
     resolve_difmark_offer,
 )
+from src.merchants import (  # noqa: F401
+    difmark as _difmark,
+    eneba as _eneba,
+    g2a as _g2a,
+    gamivo as _gamivo,
+    instant_gaming as _ig,
+)
 
 AKS_BUY_URL = "https://www.allkeyshop.com/blog/buy-{slug}-cd-key-compare-prices/"
 # AKS product pages come in "kinds": the ordinary key page (`…-cd-key-…`) and,
@@ -541,15 +548,6 @@ def explicit_platform(title: str) -> str | None:
 # software prefixes (nintendo, xbox, psn, top, other, riot, …) are left
 # unmapped — they're already caught by the console/currency/software-app
 # categorical skips before platform detection runs.
-ENEBA_URL_PLATFORM_PREFIXES = {
-    "steam": "STEAM",
-    "gog": "GOG",
-    "epic": "EPIC",
-    "uplay": "UBISOFT",
-    "origin": "EA",
-    "blizzard": "BATTLENET",
-    "windows": "MICROSOFT",  # no REGION_IDS entry -> fail-closed skip, not Steam
-}
 
 
 def _url_platform_scan(path: str) -> str | None:
@@ -699,34 +697,14 @@ def account_identity(aks_name: str, page_kind: str) -> str | None:
 # scattered dicts; Difmark's complex offer-page branch stays as-is for now and is
 # just REPRESENTED here (its url-ignore already lives in the config).
 MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
+    # Trivial (config-only) merchants stay inline; merchants with real specifics
+    # live in their own src/merchants/<name>.py and export a CONFIG (R32d refactor).
     "KINGUIN": MerchantConfig("Kinguin", domain="kinguin.net"),
-    "G2A": MerchantConfig(
-        "G2A",
-        # R32b (2026-08-27, Romain): G2A titles are unreliable for the platform; the
-        # slug carries it instead (…-steam-key-…, …-ubisoft-connect-key-…, …-rockstar-…).
-        # A green-gift slug (…-green-gift-key-…) carries NO platform token → None →
-        # fail-closed (the GMG-gift disambiguation is a separate, pending decision).
-        title_is_platform_source=False,
-        url_platform_scan=True,
-    ),
-    "DIFMARK": MerchantConfig(
-        "Difmark",
-        url_ignore_substrings=("buy-console-account-", "buy-console-account"),
-        notes="offer-page resolver (resolve_difmark_offer) still handled in match_offer",
-    ),
-    "INSTANT GAMING": MerchantConfig(
-        "Instant Gaming",
-        offer_page_resolver=ig_offer_signals,
-        notes="token-less titles — platform (data-platform) + region (<title> suffix) on the offer page",
-    ),
-    "GAMIVO": MerchantConfig(
-        "Gamivo",
-        url_language_lock=r"(?:^|-)en(?:-|$)",  # "…-steam-en-global" = EN-only key → skip
-    ),
-    "ENEBA": MerchantConfig(
-        "Eneba",
-        url_platform_prefixes=ENEBA_URL_PLATFORM_PREFIXES,  # URL leading segment = platform (R29)
-    ),
+    "G2A": _g2a.CONFIG,
+    "DIFMARK": _difmark.CONFIG,
+    "INSTANT GAMING": _ig.CONFIG,
+    "GAMIVO": _gamivo.CONFIG,
+    "ENEBA": _eneba.CONFIG,
 }
 
 
