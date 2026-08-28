@@ -1452,6 +1452,42 @@ class MatchOfferTests(unittest.TestCase):
                            self._resolver(official_platforms=("Steam", "Rockstar")))
         self.assertIsInstance(gift, SkippedOffer)      # mute → fail-closed, no wrong platform
 
+    def test_green_gift_gmg_region_and_page_not_openable_skip(self):
+        # GMG "Green Gift" (R32c): NOT a plain Steam gift. A green gift → the platform's
+        # gmg_gift region; a merchant whose page we can't open (G2A, 403) fails closed.
+        from src.matcher import detect_region, is_green_gift
+
+        # only the "Green Gift" phrase counts (a bare "Green" / plain "Gift" does not)
+        self.assertTrue(is_green_gift("RDR2 (PC) - Green Gift Key - GLOBAL", ""))
+        self.assertTrue(is_green_gift("x", "https://g2a.com/rdr2-pc-green-gift-key-global"))
+        self.assertFalse(is_green_gift("RDR2 Steam Gift GLOBAL", "https://x/rdr2-steam-gift"))
+        self.assertFalse(is_green_gift("Green Ranch Deluxe", "https://x/green-ranch-deluxe"))
+
+        def gg_region(platform, url):
+            o = NormalizedOffer(offer_id="1", name="Game (PC) - Green Gift Key", url=url, merchant="G2A")
+            return detect_region(o, platform)[1]
+
+        self.assertEqual(gg_region("ROCKSTAR", "https://x/game-green-gift-key-global"), "159")
+        self.assertEqual(gg_region("EPIC", "https://x/game-green-gift-key-global"), "633")
+        self.assertEqual(gg_region("STEAM", "https://x/game-green-gift-key-eu"), "387")
+        # a HYPHEN-compound "GREEN-GIFT" title (no gift URL segment) must still map to the
+        # gmg_gift region, NOT leak to the plain Steam GLOBAL region (2026-08-28 review D):
+        # the gmg branch is checked independent of the space-delimited is_gift gate.
+        hyphen = NormalizedOffer(offer_id="1", name="Some Game GREEN-GIFT", url="https://x/some-game", merchant="X")
+        self.assertEqual(detect_region(hyphen, "STEAM")[1], "386")
+        # a platform with no gmg_gift entry (GOG) → None → fail-closed downstream
+        self.assertIsNone(gg_region("GOG", "https://x/game-green-gift-key-global"))
+
+        # a G2A green gift: platform is only on the (unopenable) G2A page → clear R32c skip
+        offer = NormalizedOffer(
+            offer_id="1", name="Red Dead Redemption 2 (PC) - Green Gift Key - GLOBAL",
+            url="https://www.g2a.com/red-dead-redemption-2-pc-green-gift-key-global-i1", merchant="G2A")
+        res = self._resolver(aks_name="Red Dead Redemption 2", official_platforms=("Steam", "Rockstar"))
+        r = match_offer(offer, res)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("green gift", r.reason)
+        self.assertIn("R32c", r.reason)
+
     def _account_resolver(self, aks_name="Rogue Loops Steam Account",
                           product_id="187974", editions=None):
         # AKS's dedicated account PAGE — a distinct product whose name ends

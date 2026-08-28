@@ -267,13 +267,22 @@ def is_account_offer(name: str) -> bool:
 #     itself is never touched (§4.6 URL hygiene); only the local derivation text is.
 
 # platform -> region key -> AKS region id (EXECUTOR_RULES §10; dropdown is truth)
+# ``gmg_gift`` / ``gmg_gift_eu`` / ``gmg_gift_us`` (R32c, ids from Romain 2026-08-28):
+# the per-platform "GMG Green Gift" region — a Green Man Gaming gift, NOT a plain gift.
+# A green-gift resolves to REGION_IDS[platform][gmg_gift…]; a platform with no gmg_gift
+# key (or a green-gift whose base region has no variant) fails closed. The submitter
+# re-resolves these ids against the live catalog (label), so drift is handled there.
 REGION_IDS = {
-    "STEAM": {"global": "2", "eu": "9", "us": "8", "uk": "71", "gift": "25", "gift_eu": "259"},
+    "STEAM": {"global": "2", "eu": "9", "us": "8", "uk": "71", "gift": "25", "gift_eu": "259",
+              "gmg_gift": "386", "gmg_gift_eu": "387"},
     "GOG": {"global": "6", "eu": "62", "us": "63", "uk": "64"},
-    "UBISOFT": {"global": "50", "eu": "54", "us": "55", "uk": "52"},
-    "EPIC": {"global": "80", "eu": "80eu"},
-    "EA": {"global": "3", "eu": "3eu"},
-    "BATTLENET": {"global": "45", "eu": "4", "us": "41", "uk": "47", "gift": "570", "gift_eu": "567"},
+    "UBISOFT": {"global": "50", "eu": "54", "us": "55", "uk": "52",
+                "gmg_gift": "60", "gmg_gift_eu": "58", "gmg_gift_us": "59"},
+    "EPIC": {"global": "80", "eu": "80eu", "gmg_gift": "633", "gmg_gift_us": "635"},
+    "EA": {"global": "3", "eu": "3eu", "gmg_gift": "35", "gmg_gift_eu": "36", "gmg_gift_us": "37"},
+    "ROCKSTAR": {"gmg_gift": "159"},  # GMG gift only; a plain Rockstar key stays fail-closed
+    "BATTLENET": {"global": "45", "eu": "4", "us": "41", "uk": "47", "gift": "570", "gift_eu": "567",
+                  "gmg_gift": "630", "gmg_gift_eu": "631", "gmg_gift_us": "632"},
     # "Publisher (1)" is the GLOBAL bucket (the dropdown has no "Publisher
     # GLOBAL" label); ids read from the live session catalogs of 2026-07-07
     # and 2026-07-08 (identical). No gift mapping — publisher gifts fail closed.
@@ -600,6 +609,18 @@ def _region_id(platform: str, key: str) -> str | None:
     return REGION_IDS.get(platform, {}).get(key)
 
 
+def is_green_gift(name: str, url: str) -> bool:
+    """A Green Man Gaming ("Green Gift") delivery, or False (R32c, 2026-08-28 — Romain:
+    "Green Gift = Greenmangaming gift, != Steam"). GREEN adjacent to GIFT in the title,
+    or a ``green-gift`` URL segment. A GMG gift maps to the per-platform gmg_gift region,
+    not the plain Steam-gift region; only the "Green Gift" phrase counts (a bare "Green"
+    or plain "Gift" does not)."""
+
+    if re.search(r"(?:^|[-/])green-gift(?:[-/]|$)", (url or "").lower()):
+        return True
+    return re.search(r"\bGREEN[\s-]+GIFT\b", (name or "").upper()) is not None
+
+
 def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | None, bool]:
     """Return (label, region_id, implicit). URL wins over title (rule Ga01).
 
@@ -662,6 +683,17 @@ def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | Non
         else:
             implicit = True  # Kinguin-style implicit GLOBAL
 
+    # A Green Man Gaming ("Green Gift") delivery is NOT a plain (Steam) gift — it maps to
+    # the platform's dedicated gmg_gift region (R32c). Checked BEFORE and INDEPENDENT of
+    # the plain is_gift branch: is_gift's title test is the space-delimited " GIFT ", but a
+    # green gift can be a hyphen-compound "GREEN-GIFT" which is_green_gift accepts — gating
+    # the gmg branch on is_gift would leak that form to the plain region (2026-08-28
+    # review). Base variants fall back to the GLOBAL gmg_gift; no gmg_gift for the platform
+    # → None → fail-closed skip downstream.
+    if is_green_gift(offer.name, offer.url):
+        key = {"eu": "gmg_gift_eu", "us": "gmg_gift_us"}.get(base, "gmg_gift")
+        gid = _region_id(platform, key) or _region_id(platform, "gmg_gift")
+        return ("GMG GIFT" + {"eu": " EU", "us": " US"}.get(base, ""), gid, implicit)
     if is_gift:
         if base == "eu":
             return ("GIFT EU", _region_id(platform, "gift_eu"), implicit)
@@ -1405,6 +1437,18 @@ def match_offer(
             declared_platform = mapped_platform
             difmark_platform_verified = True
 
+    # A green gift's REAL platform (→ which gmg_gift region) is not in a token-less
+    # G2A slug; it lives on the merchant offer page. For a merchant whose page we can't
+    # open yet (R32c: G2A hard-blocks fetches with 403), the platform is UNVERIFIABLE →
+    # fail-closed skip with a clear, specific reason (not the generic R27), and flagged
+    # as pending the browser page-read work. When the platform IS known (readable page,
+    # or a URL that declares it) the green gift resolves its gmg_gift region below.
+    if declared_platform is None and _cfg is not None and not _cfg.offer_page_readable \
+            and is_green_gift(offer.name, offer.url):
+        return SkippedOffer(
+            offer,
+            f"{offer.merchant} green gift — real platform is only on the merchant offer "
+            "page, not openable yet (R32c); pending browser page-read")
     platform = declared_platform or "STEAM"  # default — R20 verifies it below
     region_label, region_id, implicit = detect_region(offer, platform)
     if implicit and is_difmark:

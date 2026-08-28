@@ -74,6 +74,13 @@ class MerchantConfig:
     # (Eneba). Kinguin is left title-sourced on purpose (Romain: it works today).
     title_is_platform_source: bool = True
     url_platform_scan: bool = False
+    # The MAINTAINED list of "we can't open this merchant's offer page yet" (R32c,
+    # 2026-08-28 — Romain: "les marchands [dont] on arrive pas à ouvrir la page … par la
+    # suite on travaillera dessus"). G2A hard-blocks non-browser fetches (HTTP 403), so
+    # a signal only on its offer page (a green-gift's real platform) is UNVERIFIABLE →
+    # fail-closed skip, NOT a guess. Flip to True once page-opening via the browser (CDP)
+    # lands. Default True (openable) preserves every other merchant.
+    offer_page_readable: bool = True
     # Free-form notes / extension point for future per-merchant knobs.
     notes: str = ""
     extra: dict[str, Any] = field(default_factory=dict)

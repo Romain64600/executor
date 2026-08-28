@@ -15,4 +15,8 @@ CONFIG = MerchantConfig(
     "G2A",
     title_is_platform_source=False,
     url_platform_scan=True,
+    # G2A hard-blocks non-browser fetches (403), so a green-gift's real platform — only
+    # on its offer page — is unverifiable yet → fail-closed skip until browser
+    # page-opening lands (R32c). The maintained "can't open page" list.
+    offer_page_readable=False,
 )
