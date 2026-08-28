@@ -861,14 +861,15 @@ class MerchantConfigR32Tests(unittest.TestCase):
         self.assertIsNone(a.raw_region)
 
     def test_ig_offer_signals_raises_on_unparseable_region(self):
-        # the real _ig_offer_signals must fail closed (raise) when region is None —
-        # never default the offer to GLOBAL (audit #2)
-        import src.matcher as M
+        # ig_offer_signals must fail closed (raise) when region is None — never default
+        # the offer to GLOBAL (audit #2). Patch resolve_ig_offer on the IG module, where
+        # ig_offer_signals now lives and looks it up (migrated 2026-08-28).
+        import src.merchants.instant_gaming as IG
         from unittest import mock
-        with mock.patch.object(M, "resolve_ig_offer",
-                               return_value=M.IgOfferAttributes(raw_platform="STEAM", raw_region=None)):
+        with mock.patch.object(IG, "resolve_ig_offer",
+                               return_value=IG.IgOfferAttributes(raw_platform="STEAM", raw_region=None)):
             with self.assertRaises(IgPageUnreadable):
-                M._ig_offer_signals("https://ig/x")
+                IG.ig_offer_signals("https://ig/x")
 
     def test_ig_platform_conflict_skips_audit1(self):
         # title says Steam, offer page says Ubisoft → conflict → fail-closed skip
