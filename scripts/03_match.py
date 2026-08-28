@@ -21,7 +21,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from src.aks_env import AKS_DIRECT_URL, http_get, validate_aks_direct_status  # noqa: E402
+from src.aks_env import AKS_DIRECT_URL, AKS_STAFF_UA, http_get, validate_aks_direct_status  # noqa: E402
 from src.contracts import NormalizedFeed, NormalizedOffer  # noqa: E402
 from src.matcher import match_feed, resolve_aks  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
@@ -65,8 +65,11 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    # Fail-closed: never mass-skip because AKS itself is unreachable.
-    probe = http_get(AKS_DIRECT_URL, follow_redirects=False)
+    # Fail-closed: never mass-skip because AKS itself is unreachable. Staff UA
+    # (allkeyshop.com host) — AKS whitelists it; a plain-Chrome probe looked
+    # bot-like and helped trip an IP ban (2026-08-28). Matches the matcher's own
+    # AKS_PROBE_UA so the whole match stage speaks to AKS as staff.
+    probe = http_get(AKS_DIRECT_URL, follow_redirects=False, user_agent=AKS_STAFF_UA)
     if not validate_aks_direct_status(probe.status).ok:
         print(json.dumps({"aborted": True, "reason": "AKS not reachable", "status": probe.status}, indent=2))
         return 2

@@ -11,6 +11,7 @@ from typing import Any
 
 from src.aks_env import (
     AKS_DIRECT_URL,
+    AKS_STAFF_UA,
     OFFICIAL_CDP_ENDPOINT,
     checks_to_dict,
     current_environment,
@@ -54,10 +55,18 @@ def build_report(
     guard = StepGuard(max_attempts_per_signature=2, max_consecutive_failures=4)
     guard.start_task("invariant-check")
 
+    # Reachability probe carries the AKS staff UA (allowed: AKS_DIRECT_URL is an
+    # allkeyshop.com host). AKS whitelists ``AKS/Staff``; a plain-Chrome health
+    # check from a datacenter IP looks bot-like and — run before EVERY stage —
+    # likely tripped AKS/OVH's WAF into an IP ban (2026-08-28). The rest of our
+    # AKS traffic (matcher resolve, CDP feed reads) already identifies as staff.
     aks_probe = guard.run_step(
         "probe",
         "aks_direct",
-        action=lambda: http_get(AKS_DIRECT_URL, timeout=timeout, follow_redirects=False),
+        action=lambda: http_get(
+            AKS_DIRECT_URL, timeout=timeout, follow_redirects=False,
+            user_agent=AKS_STAFF_UA,
+        ),
         success_predicate=lambda p: validate_aks_direct_status(p.status).ok,
     )
     openvpn_pids = guard.run_step(

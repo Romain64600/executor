@@ -4,6 +4,7 @@ from unittest import mock
 
 from src.aks_env import (
     AKS_DIRECT_URL,
+    AKS_STAFF_UA,
     OFFICIAL_CDP_ENDPOINT,
     REQUIRED_USER_AGENT,
     CheckResult,
@@ -76,6 +77,25 @@ class BuildReportTests(unittest.TestCase):
         self.assertEqual(report["guard"]["counters"]["total_failures"], 0)
         self.assertEqual(report["guard"]["counters"]["attempts_by_signature"],
                          {"aks_direct": 1, "openvpn_process": 1, "cdp_version": 1})
+
+    def test_aks_probe_uses_staff_ua(self):
+        """The reachability probe must reach AKS as staff (``AKS/Staff``): a
+        plain-Chrome health check from a datacenter IP looks bot-like and — run
+        before every stage — helped trip an AKS/OVH IP ban (2026-08-28).
+        AKS_DIRECT_URL is an allkeyshop.com host, so the staff UA is allowed."""
+        ok = HttpProbeResult(url=AKS_DIRECT_URL, ok=True, status=200, body="")
+        with mock.patch("src.invariants.http_get", return_value=ok) as hg, mock.patch(
+            "src.invariants.ReadOnlyCdpClient"
+        ) as cdp_cls, mock.patch(
+            "src.invariants.list_openvpn_pids", return_value=[]
+        ), mock.patch(
+            "src.invariants.current_environment", return_value=_env(True)
+        ):
+            cdp_cls.return_value.get_version.return_value = _ok_cdp()
+            invariants.build_report()
+        hg.assert_called_once()
+        self.assertEqual(hg.call_args.args[0], AKS_DIRECT_URL)
+        self.assertEqual(hg.call_args.kwargs.get("user_agent"), AKS_STAFF_UA)
 
     def test_cdp_payload_is_redacted(self):
         report = self._run(HttpProbeResult(url=AKS_DIRECT_URL, ok=True, status=200, body=""))
