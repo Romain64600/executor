@@ -49,6 +49,20 @@ def _status(code, err=None):
         url=url, ok=False, status=code, body="", error=err)
 
 
+def _seq(*probes):
+    """A fake http_get returning each HttpProbeResult in turn (the last repeats),
+    tracking the call count on ``.calls['n']``."""
+    calls = {"n": 0}
+
+    def fake(url, timeout=8, user_agent=None):
+        p = probes[min(calls["n"], len(probes) - 1)]
+        calls["n"] += 1
+        return p
+
+    fake.calls = calls
+    return fake
+
+
 def _row(oid, name, url, store="999"):
     return {"id": oid, "name": name, "url": url, "price": "", "store_id": store}
 
@@ -148,6 +162,41 @@ class ResolvePinnedTests(unittest.TestCase):
         from src.matcher import AksNameUnreadable
         with self.assertRaises(AksNameUnreadable):
             M.resolve_pinned(URL, _ok("<html>no id</html>"))
+
+    def test_transient_503_retries_then_resolves(self):
+        # A 503 server blip is retried and resolves on a later 200 (Romain 2026-09-01:
+        # buy-inner-world 503'd then 200'd seconds later). No sleep under a stub.
+        fake = _seq(
+            HttpProbeResult(url=URL, ok=False, status=503, body=""),
+            HttpProbeResult(url=URL, ok=False, status=503, body=""),
+            HttpProbeResult(url=URL, ok=True, status=200, body=AKS_BODY),
+        )
+        res = M.resolve_pinned(URL, fake)
+        self.assertEqual(res.product_id, "205027")
+        self.assertEqual(fake.calls["n"], 3)
+
+    def test_timeout_retried_then_resolves(self):
+        fake = _seq(
+            HttpProbeResult(url=URL, ok=False, status=None, body="", error="timeout"),
+            HttpProbeResult(url=URL, ok=True, status=200, body=AKS_BODY),
+        )
+        res = M.resolve_pinned(URL, fake)
+        self.assertEqual(res.product_id, "205027")
+        self.assertEqual(fake.calls["n"], 2)
+
+    def test_persistent_503_exhausts_bounded_and_raises(self):
+        from src.matcher import AksProbeUnreliable
+        fake = _seq(HttpProbeResult(url=URL, ok=False, status=503, body=""))
+        with self.assertRaises(AksProbeUnreliable):
+            M.resolve_pinned(URL, fake)
+        self.assertEqual(fake.calls["n"], M.RESOLVE_ATTEMPTS)   # bounded, never infinite
+
+    def test_404_is_a_real_absence_never_retried(self):
+        from src.matcher import AksProbeUnreliable
+        fake = _seq(HttpProbeResult(url=URL, ok=False, status=404, body=""))
+        with self.assertRaises(AksProbeUnreliable):
+            M.resolve_pinned(URL, fake)
+        self.assertEqual(fake.calls["n"], 1)                    # 404 → no retry
 
 
 class SearchUrlTests(unittest.TestCase):

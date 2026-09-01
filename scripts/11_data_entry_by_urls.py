@@ -56,6 +56,14 @@ FEED_UI_RENDER_WAITS = (1.0, 2.0, 4.0)
 SEARCH_MAX_ROWS_LOGGED = 100
 SEARCH_MAX_PAGES = 3
 
+# resolve_pinned retries a TRANSIENT probe failure (a 5xx/429 server blip or a
+# timeout/connection error) with a bounded backoff before giving up — an AKS 503
+# wrongly failed an aperçu that resolved fine seconds later (Romain 2026-09-01).
+# A 404/410 is a REAL absence and is never retried; a 200 short-circuits.
+RESOLVE_ATTEMPTS = 3
+RESOLVE_RETRY_WAIT_S = 1.5
+_TRANSIENT_RESOLVE_STATUSES = frozenset({429, 500, 502, 503, 504})
+
 # Two AKS product-page shapes. KEY pages: buy-<slug>-cd-key-compare-prices/ —
 # but some omit the "cd-" (buy-the-green-light-key-compare-prices/, id 216255);
 # the slug is captured NON-greedily so the "cd-"/"key" marker is never absorbed
@@ -93,11 +101,26 @@ def resolve_pinned(url: str, http_get_fn: Callable[..., Any] = http_get) -> AksR
 
     Raises on anything that is not a clean, parseable 200 — fail-closed, so a
     typo'd / dead / throttled URL is reported and skipped, never guessed around.
+    A TRANSIENT probe failure (5xx/429 server blip or timeout/connection error) is
+    RETRIED with a bounded backoff (``RESOLVE_ATTEMPTS``) before failing closed — an
+    AKS 503 wrongly failed an aperçu that resolved fine seconds later. A 404/410 is a
+    REAL absence and is never retried; a 200 short-circuits.
     """
     slug = extract_slug(url)
     if not slug:
         raise AksProbeUnreliable(f"not an AKS product URL: {url!r}")
-    probe = http_get_fn(url, timeout=8, user_agent=AKS_PROBE_UA)
+    probe = None
+    for attempt in range(1, RESOLVE_ATTEMPTS + 1):
+        probe = http_get_fn(url, timeout=8, user_agent=AKS_PROBE_UA)
+        if probe.ok and probe.status == 200 and probe.body:
+            break                                    # got the page
+        if probe.status in (404, 410):
+            break                                    # real absence — never retry
+        transient = probe.status is None or probe.status in _TRANSIENT_RESOLVE_STATUSES
+        if not transient or attempt == RESOLVE_ATTEMPTS:
+            break                                    # persistent / exhausted → fail closed
+        if http_get_fn is http_get:
+            time.sleep(RESOLVE_RETRY_WAIT_S)         # backoff (no sleep under test stubs)
     if not (probe.ok and probe.status == 200 and probe.body):
         raise AksProbeUnreliable(f"{url} -> {probe.status or probe.error}")
     resolution = _resolution_from_body(slug, url, probe.body)
