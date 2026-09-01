@@ -2013,6 +2013,34 @@ class FreshRowRecheckTests(unittest.TestCase):
         self.assertTrue(entry["ready"])
         self.assertEqual(entry["fresh_row_checked"], ["name", "url"])
 
+    def _prepare_with_index_miss(self, relocate):
+        # An index-scan miss reaches _prepare as a located blocker; stub the fresh
+        # per-candidate URL re-search to control what it recovers.
+        sub = DryRunSubmitter(FakeSubmitSession([["1"]]))
+        sub.feed_ui_render_waits = ()
+        sub._relocate_by_url = relocate
+        located = {"blocker": "offer not in current feed (by id and by URL)"}
+        ctx = {"store_id": "127", "feed_page": "aks-merchant-feeds-9",
+               "available": "all", "search_locate": True, "max_pages": 1}
+        return sub._prepare(_cand("1"), located, ctx)
+
+    def test_index_miss_recovered_by_url_research(self):
+        # The bulk _index_by_search dropped a present offer (same-product multi-edition
+        # batch entered 1/N per run — Whiteout Survival Frost Stars, 2026-09-01). The
+        # fresh per-candidate URL re-search finds it → proceed, don't skip.
+        entry = self._prepare_with_index_miss(
+            lambda c, ctx: {"offer_id": "1", "page_url": "s", "name": "Game 1",
+                            "url": "https://m/1", "store_id": "127", "price": ""})
+        self.assertTrue(entry.get("relocated_by_url"))
+        self.assertNotIn("blocker", entry)
+        self.assertTrue(entry["ready"])
+
+    def test_index_miss_genuinely_absent_keeps_blocker(self):
+        # fail-closed preserved: if the fresh re-search also can't find it → SKIP.
+        entry = self._prepare_with_index_miss(lambda c, ctx: None)
+        self.assertFalse(entry["ready"])
+        self.assertIn("not in current feed", entry["blocker"])
+
 
 class SlowModalSession(FakeSubmitSession):
     """The ThickBox modal opens but ``#TB_ajaxContent`` renders a beat late, so the

@@ -908,8 +908,29 @@ class _SubmitterBase:
         if located.get("row_checked"):
             entry["row_checked"] = located["row_checked"]
         if located.get("blocker"):
-            entry["blocker"] = located["blocker"]
-            return entry
+            # An index-scan MISS is not a proven absence. The bulk _index_by_search
+            # runs one rapid search per candidate at start-up; a transient incomplete
+            # render drops some — in a same-product multi-edition batch it dropped
+            # all-but-one (Whiteout Survival Frost Stars: 1/7 created per run while the
+            # other 6 sat in the feed, 2026-09-01). Before giving up, RE-SEARCH this
+            # candidate ALONE by its stable URL (fresh, spaced out, one at a time).
+            # Found → adopt its current id/page and proceed; still absent → keep the
+            # fail-closed blocker. _relocate_by_url is itself fail-closed (name-checks
+            # the row, None on any drift or genuine absence). ONLY on the search-locate
+            # path (by-urls): a page-hint window miss is a DELIBERATE bound, not a
+            # transient, so a whole-feed re-scan there would break its intended scope.
+            relocated = self._relocate_by_url(candidate, ctx) if ctx.get("search_locate") else None
+            if relocated is None:
+                entry["blocker"] = located["blocker"]
+                return entry
+            offer_id = relocated["offer_id"]
+            entry["offer_id"] = offer_id
+            entry["relocated_by_url"] = True
+            self._log("submit_row_relocated",
+                      stale_offer_id=str(candidate["offer"].get("offer_id") or ""),
+                      current_offer_id=offer_id, page_url=relocated["page_url"],
+                      url=candidate["offer"].get("url"))
+            located = {"offer_id": offer_id, "page_url": relocated["page_url"]}
         entry["page_url"] = located["page_url"]
         url_key = _url_key(str(candidate["offer"].get("url") or ""))
         self.session.navigate(located["page_url"])  # refresh the row's page

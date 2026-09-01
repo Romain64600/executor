@@ -743,6 +743,15 @@ For each validated candidate, in order, fail-closed:
    **exact-title check** (fail-closed on any drift) and adopts the row's
    current id (`row_relocated` in the log). Absent by id AND path = the offer
    genuinely left the feed (worked in parallel / delisted) — a correct SKIP.
+   **On the by-urls SEARCH-locate path only, an index-scan miss is NOT trusted as
+   that SKIP** (hardened 2026-09-01): the bulk `_index_by_search` runs one rapid
+   search per candidate at start-up and a transient incomplete render can drop
+   some — in a same-product multi-edition batch it dropped all-but-one (Whiteout
+   Survival's 7 Frost-Stars editions entered 1/7 per run while the other 6 sat in
+   the feed). Before giving up, `_prepare` RE-SEARCHES that one candidate alone by
+   its stable URL (fresh, spaced out); found → adopt + proceed, still absent →
+   keep the fail-closed blocker. A page-hint window miss is a deliberate bound, so
+   this recovery is search-locate-only.
    Post-save disappearance (§7) is proven under BOTH keys: id-only would
    false-positive "gone" whenever a mid-run re-import re-ids a still-pending
    row.
