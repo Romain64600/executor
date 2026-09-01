@@ -262,8 +262,16 @@ Single-word tokens (STEAM/GOG/EPIC/UBISOFT/UPLAY/ROCKSTAR) are word-boundary;
 when several appear, the one collocated with the key-type marker
 (`<PLATFORM> [CD ]KEY/GIFT/ALTERGIFT`) is the declaration; still ambiguous →
 None and the token-less path (URL prefix R29, page-verified R20/R27) decides
-fail-closed. Multi-word declarations (EA APP, MICROSOFT STORE/KEY,
-BATTLE.NET) are unchanged collocations.
+fail-closed. Multi-word declarations (EA APP, **EA PLAY**, MICROSOFT STORE/KEY,
+BATTLE.NET) are collocations.
+**EA Play `[R38]` (2026-09-01, Driffle FC 24 escape):** "EA Play" is the EA app
+storefront/brand (region ids live under `EA`), so a game key sold *on EA Play*
+is an EA-platform product like "EA App" — `explicit_platform` now returns `EA`
+for it. It also required adding `PLAY` to `NOISE_TOKENS`: the different-product
+guard had "EA"/"APP" but not "PLAY", so "EA Sports FC 24 … EA Play" was
+false-skipped as *extra word ['PLAY']* before platform detection even ran. Both
+fixes are needed together (the name guard runs first). Anti-regression: a game
+literally named "…Play" (e.g. "Foul Play") is NOT tagged EA.
 
 **Platform is page-verified, fail-closed `[R20]` (2026-07-08, Su-27 escape):**
 `detect_platform`'s STEAM is a **default**, not a detection — "Su-27 for DCS

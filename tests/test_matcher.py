@@ -1336,6 +1336,19 @@ class ExplicitPlatformTests(unittest.TestCase):
         self.assertIsNone(explicit_platform("Su-27 for DCS World Key GLOBAL"))
         self.assertEqual(detect_platform("Su-27 for DCS World Key GLOBAL"), "STEAM")
 
+    def test_ea_play_is_ea_platform(self):
+        # "EA Play" is the EA app storefront/brand — a game key sold on it is an
+        # EA-platform product, like "EA App"/"EA Origin". Was skipped: platform
+        # went undetected (None) AND "PLAY" tripped the different-product guard
+        # (Driffle FC 24 "…EA Play Digital Key", 2026-09-01).
+        from src.matcher import NOISE_TOKENS
+        self.assertEqual(
+            explicit_platform("EA Sports FC 24 Europe PC EA Play Digital Key"), "EA")
+        self.assertEqual(explicit_platform("EA Sports FC 24 EA Play"), "EA")
+        self.assertIn("PLAY", NOISE_TOKENS)  # no false "extra word: ['PLAY']"
+        # anti-regression: a real game literally named "…Play" is not mis-tagged EA
+        self.assertIsNone(explicit_platform("Foul Play"))
+
 
 class ExplicitPlatformFromUrlTests(unittest.TestCase):
     def test_eneba_steam_prefix(self):

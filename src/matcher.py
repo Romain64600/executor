@@ -291,7 +291,7 @@ REGION_IDS = {
 # Tokens that do NOT count as a "significant extra" word (platform / region /
 # format / edition / stopwords). Used by the different-product guard.
 NOISE_TOKENS = {
-    "PC", "MAC", "STEAM", "GOG", "EPIC", "EA", "APP", "ORIGIN", "UPLAY", "UBISOFT",
+    "PC", "MAC", "STEAM", "GOG", "EPIC", "EA", "APP", "PLAY", "ORIGIN", "UPLAY", "UBISOFT",
     "CONNECT", "GAMES", "LAUNCHER", "STORE",  # "Ubisoft Connect" / "Epic Games Store"
     "BATTLE", "NET", "BATTLENET", "KEY", "KEYS", "CD", "CDKEY", "DIGITAL", "DOWNLOAD",
     "CODE", "GAME", "VERSION", "FULL", "PLATFORM", "WINDOWS", "ACTIVATION", "EDITION",
@@ -518,8 +518,11 @@ def explicit_platform(title: str) -> str | None:
 
     t = " " + normalize_apostrophes(title).upper() + " "
     # Multi-word declarations first — already collocational, unambiguous.
-    if "EA APP" in t or "ORIGIN KEY" in t or "EA ORIGIN" in t or "ORIGIN CD KEY" in t:
-        return "EA"  # R14: bare "Origin" in a game name is NOT the EA platform
+    if ("EA APP" in t or "EA PLAY" in t or "ORIGIN KEY" in t or "EA ORIGIN" in t
+            or "ORIGIN CD KEY" in t):
+        return "EA"  # R14: bare "Origin" in a game name is NOT the EA platform;
+        # "EA Play" is the EA app storefront/brand (region ids under EA) — a game
+        # key sold "on EA Play" is an EA-platform product, like "EA App" (2026-09-01).
     if "BATTLE.NET" in t or "BATTLENET" in t:
         return "BATTLENET"
     if "MICROSOFT STORE" in t or "MICROSOFT KEY" in t:
