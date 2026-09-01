@@ -229,7 +229,16 @@ DLC/extension without base game; title with **≥1 significant word** absent fro
 the AKS name (platform/format/region/edition noise excluded, incl. `COM` from
 "GOG.COM"; tightened from the CORE ≥2 floor on 2026-07-07 after the
 "Offworld Trading Company - Interdimensional" DLC escaped with a single extra
-word — doubt goes to skip) `[R16]`; **Microsoft Store Key / Microsoft Key**
+word — doubt goes to skip) `[R16]` — **UNLESS every extra token names ONE page
+edition** (page-verified rescue `[R39]`, 2026-09-01): "Legends of Eisenwald -
+Knight's Edition" (URL `…-knights-edition-…`) → the page's own "Knights Editon"
+(id 2723), so the KNIGHTS token is that edition's qualifier, not a different
+product. The match is on the distinctive token, apostrophe-folded ("Knight's" ==
+"knights") and tolerant of AKS's "Editon" typo (never the "Edition" suffix), and
+it also resolves the offer TO that page edition instead of a guessed Standard. An
+extra in NO page edition — a distinguishing subtitle like "… Valhalla Edition" on
+the base game's page, which has no Valhalla edition — stays a skip; a Bundle-named
+edition is never rescued (we never enter bundles); **Microsoft Store Key / Microsoft Key**
 (key-type marker only — "Microsoft Flight Simulator … Steam Key" stays Steam;
 MICROSOFT platform has no region mapping → fail-closed) `[R17]`;
 year/version absent from AKS name; edition not present in the AKS dropdown;

@@ -38,6 +38,7 @@ from src.matcher import (
     is_software,
     is_software_title,
     match_feed,
+    match_extras_to_page_edition,
     merchant_config,
     resolve_ig_offer,
     match_offer,
@@ -1325,6 +1326,44 @@ class ExtractPricesTests(unittest.TestCase):
 
     def test_absent_blob(self):
         self.assertEqual(extract_prices("<html><body>nothing</body></html>"), ())
+
+
+class MatchExtrasToPageEditionTests(unittest.TestCase):
+    """Page-verified rescue (Romain 2026-09-01): merchant 'extra' tokens that all
+    name ONE page edition are that edition's qualifier, not a different product —
+    Legends of Eisenwald - Knight's Edition → page 'Knights Editon' (2723)."""
+
+    EDS = {"1": "Standard", "2723": "Knights Editon", "4": "Limited", "5": "Early Access"}
+
+    def test_extra_naming_a_page_edition_is_rescued(self):
+        # apostrophe folded ("KNIGHT'S" from the title == "KNIGHTS" in the URL/page),
+        # tolerant of AKS's "Editon" typo (match is on the KNIGHTS token, not "Edition")
+        self.assertEqual(match_extras_to_page_edition(["KNIGHT'S"], self.EDS),
+                         ("2723", "Knights Editon"))
+
+    def test_extra_in_no_edition_is_not_rescued(self):
+        # a distinguishing subtitle (a DIFFERENT game) on the base page → stays a skip
+        self.assertIsNone(match_extras_to_page_edition(
+            ["VALHALLA"], {"1": "Standard", "7": "Deluxe"}))
+
+    def test_extras_split_across_editions_not_rescued(self):
+        self.assertIsNone(match_extras_to_page_edition(["KNIGHTS", "DIRECTORS"], self.EDS))
+
+    def test_bundle_edition_never_rescued(self):
+        self.assertIsNone(match_extras_to_page_edition(["MEGA"], {"8": "Mega Bundle"}))
+
+    def test_full_match_offer_resolves_the_page_edition(self):
+        res = AksResolution(
+            slug="s", url="https://aks/legends", product_id="2501",
+            aks_name="Legends of Eisenwald", editions=self.EDS,
+            regions={"2": "GLOBAL"}, official_platforms=("Steam",))
+        offer = _offer(
+            "Legends of Eisenwald - Knight's Edition (Global) (PC) - Steam - Digital Key",
+            url="https://m.test/legends-of-eisenwald-knights-edition-global-pc-steam-digital-key-p1")
+        r = match_offer(offer, resolver=lambda n: res)
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual(r.edition_id, "2723")
+        self.assertEqual(r.platform, "STEAM")
 
 
 class ExplicitPlatformTests(unittest.TestCase):

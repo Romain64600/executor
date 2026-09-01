@@ -1311,6 +1311,36 @@ def resolve_software_edition(
     return None
 
 
+def match_extras_to_page_edition(
+    extras: list[str], editions: dict[str, Any]
+) -> tuple[str, str] | None:
+    """Page-verified rescue for the different-product guard: when EVERY merchant
+    "extra" token (a word absent from the AKS game name and not format/region/edition
+    noise) is contained in ONE page edition's OWN name, those tokens NAME that edition
+    — not a different product. "Legends of Eisenwald - Knight's Edition" (URL
+    ``…-knights-edition-…``) → the page's "Knights Editon" (id 2723): the shared
+    signal is the token KNIGHTS, apostrophe-folded, NOT the "Edition"/"Editon" suffix
+    (AKS typos it; the merchant apostrophizes it). Returns ``(edition_id, label)`` of
+    the most specific match, or None. Fail-closed: an extra split across editions, an
+    extra in NO edition (a distinguishing subtitle like "… Valhalla Edition" on the
+    base game's page, which has no Valhalla edition), or only a Standard/Bundle match
+    → None → stays a different-product SKIP."""
+
+    want = {t.replace("'", "") for t in extras}
+    if not want:
+        return None
+    best: tuple[str, str, int] | None = None
+    for eid, value in editions.items():
+        etoks = {t.replace("'", "") for t in tokenize(_edition_entry_name(value))}
+        if not etoks or etoks == {"STANDARD"}:
+            continue
+        if etoks & {"BUNDLE", "PACK", "TRILOGY"}:
+            continue                       # never enter bundles (absolute)
+        if want <= etoks and (best is None or len(etoks) > best[2]):
+            best = (eid, _edition_entry_name(value), len(etoks))
+    return (best[0], best[1]) if best else None
+
+
 def resolve_software_region(
     region_label: str, regions: dict[str, str]
 ) -> tuple[str, str] | None:
@@ -1561,10 +1591,16 @@ def match_offer(
     if missing:
         return SkippedOffer(offer, f"name mismatch, missing AKS words: {missing}")
 
+    edition_from_extras: tuple[str, str] | None = None
     if not sw:
         extras = extra_significant_words(identity_name, offer.name)
         if extras:
-            return SkippedOffer(offer, f"different/expanded product — extra words: {extras}")
+            # Page-verified rescue: extras that ALL name one page edition are that
+            # edition's qualifier ("Knight's Edition" → page "Knights Editon" 2723),
+            # not a different product — carry the resolved edition to §edition below.
+            edition_from_extras = match_extras_to_page_edition(extras, resolution.editions)
+            if edition_from_extras is None:
+                return SkippedOffer(offer, f"different/expanded product — extra words: {extras}")
 
         qualifier = dangerous_qualifier(offer.name, resolution.aks_name)
         if qualifier:
@@ -1703,6 +1739,10 @@ def match_offer(
     # below don't apply ("Pack" in a DLC's own name is identity, not a bundle).
     if _dlc_edition_on_page(resolution.editions):
         edition_label, edition_id = "DLC", "16"
+    elif edition_from_extras is not None:
+        # A page-verified edition named by the merchant's "extra" tokens, rescued
+        # above from the different-product guard (e.g. Knights Editon 2723).
+        edition_id, edition_label = edition_from_extras
     else:
         edition_label, edition_id = detect_edition(offer.name, offer.url, offer.merchant)
         # CORE rule 4 / E05: an edition word that is part of the AKS game name is not
