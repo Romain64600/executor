@@ -2014,6 +2014,44 @@ class FreshRowRecheckTests(unittest.TestCase):
         self.assertEqual(entry["fresh_row_checked"], ["name", "url"])
 
 
+class SlowModalSession(FakeSubmitSession):
+    """The ThickBox modal opens but ``#TB_ajaxContent`` renders a beat late, so the
+    first ``modal_context`` read misses it (open_offer_modal returns the instant it
+    clicks; the content loads async). Lost a pinned Kinguin offer as "modal context
+    missing" — Simpler Times, 2026-09-01. ok flips true from ``ok_from_call``."""
+
+    def __init__(self, pages, *, ok_from_call=2, **kw):
+        super().__init__(pages, **kw)
+        self.ctx_calls = 0
+        self.ok_from_call = ok_from_call
+
+    def modal_context(self):
+        self.ctx_calls += 1
+        if self.ctx_calls < self.ok_from_call:
+            return {"ok": False, "select_names": []}
+        return super().modal_context()
+
+
+class ModalContextRenderWaitTests(unittest.TestCase):
+    def _run(self, session):
+        sub = DryRunSubmitter(session)
+        sub.empty_retry_wait_s = 0
+        sub.feed_ui_render_waits = (0, 0)     # poll re-reads, no real sleep
+        return sub.run(run_id="r", merchant="Kinguin", store_id="58",
+                       approved=[_cand("1")])
+
+    def test_slow_modal_content_is_render_polled_then_proceeds(self):
+        entry = self._run(SlowModalSession([["1"]], ok_from_call=2))["plan"][0]
+        self.assertNotIn("blocker", entry)
+        self.assertTrue(entry["ready"])
+
+    def test_modal_content_never_renders_still_blocks(self):
+        # fail-closed preserved: an unrendered modal after the backoff stays a skip.
+        entry = self._run(SlowModalSession([["1"]], ok_from_call=99))["plan"][0]
+        self.assertFalse(entry["ready"])
+        self.assertIn("modal context missing", entry["blocker"])
+
+
 if __name__ == "__main__":
     unittest.main()
 

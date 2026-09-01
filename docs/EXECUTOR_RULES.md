@@ -749,6 +749,12 @@ For each validated candidate, in order, fail-closed:
    genuinely absent by URL (worked in parallel / delisted), or a URL now pointing
    at a different product, → blocker; never open a modal on an unverified row.
 3. Open the modal from that row's `[data-create-offer]` button (`#TB_window`).
+   The click returns as soon as it fires — the ThickBox loads `#TB_ajaxContent`
+   ASYNCHRONOUSLY — so the modal context is **render-polled** (re-read, NO
+   re-click) with the feed render-wait backoff before concluding it is missing
+   (hardened 2026-09-01: an immediate read skipped a genuinely-open Kinguin modal
+   as "modal context missing (#TB_ajaxContent)" — Simpler Times). Still absent
+   after the backoff → fail-closed skip.
 4. **Verify the select names before filling** — they vary per feed:
    `offer[region]`/`offer[edition]` on some, `offer[region_id]`/`offer[edition_id]`
    on others. Wrong name → silent `selectize` failure → false `[data-success]`

@@ -387,6 +387,25 @@ class _SubmitterBase:
                   rows=len(rows))
         return rows, state
 
+    def _wait_for_modal_context(self) -> dict[str, Any]:
+        """Poll the modal context (re-read ``#TB_ajaxContent``, NO re-click) with the
+        same render-wait backoff as the feed. ``open_offer_modal`` returns the instant
+        it clicks ``[data-create-offer]`` — the ThickBox loads its content
+        ASYNCHRONOUSLY, so an immediate read can miss it under CDP load and skip a
+        genuinely-open modal as "modal context missing" (a pinned Kinguin offer lost
+        this way, 2026-09-01). Returns the first context with ``ok`` true, else the
+        last read after the backoff (the caller then fails closed). Read-only."""
+        context = self.session.modal_context()
+        if context.get("ok"):
+            return context
+        for wait in self.feed_ui_render_waits:
+            time.sleep(wait)
+            context = self.session.modal_context()
+            if context.get("ok"):
+                self._log("modal_ctx_render_wait")
+                return context
+        return context
+
     def _read_feed_page(self, url: str, page: int
                         ) -> tuple[list[dict[str, str]], dict[str, Any]]:
         """Navigate to one feed page and read its rows + deterministic markers,
@@ -944,7 +963,7 @@ class _SubmitterBase:
         if status != "OPENED":
             entry["blocker"] = f"modal open: {status}"
             return entry
-        context = self.session.modal_context()
+        context = self._wait_for_modal_context()
         names = set(context.get("select_names", []))
         entry["select_names"] = sorted(names)
         if not context.get("ok"):
