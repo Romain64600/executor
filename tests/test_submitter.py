@@ -1941,9 +1941,38 @@ class ReidedMidRunSession(FakeSubmitSession):
         return rows
 
 
+class AlwaysReidingSession(FakeSubmitSession):
+    """The feed re-imports so fast the row's id rotates on EVERY DOM read after the
+    index scan (SAME merchant URL) — the "reflowing too fast to pin" feed (The Green
+    Light Steam offer, 2026-09-01). An id-match reads the present row as gone twice
+    (scan-page then relocated-page) → the old skip; the URL pin catches it, adopting
+    whatever the CURRENT id is."""
+
+    def __init__(self, pages, **kw):
+        super().__init__(pages, **kw)
+        self.rows_calls = 0
+
+    def page_offer_rows(self):
+        self.rows_calls += 1
+        rows = super().page_offer_rows()
+        if self.rows_calls <= 2:                 # index scan (page 1 + past-end)
+            return rows
+        return [dict(r, id=f"r{self.rows_calls}") for r in rows]   # rotate every read
+
+
 class FreshRowRecheckTests(unittest.TestCase):
     """Audit 2026-07-17 (SC5): _prepare re-verifies the row on the FRESH DOM
     its own navigate just produced, before opening the modal by id."""
+
+    def test_row_reids_on_every_read_is_pinned_by_url(self):
+        # The feed reflows so fast the id differs on every DOM read — an id-match
+        # reads the present row as gone ("reflowing too fast to pin"). The URL pin
+        # finds it and the submit proceeds (The Green Light Steam offer, 2026-09-01).
+        session = AlwaysReidingSession([["1"]])
+        result = _dry(session, [_cand("1")])
+        entry = result["plan"][0]
+        self.assertNotIn("blocker", entry)
+        self.assertTrue(entry["ready"])
 
     def test_row_vanished_before_modal_is_blocked(self):
         # pages=[["1"]]: scan reads rows twice (page 1 + past-end), the
@@ -1955,16 +1984,18 @@ class FreshRowRecheckTests(unittest.TestCase):
         self.assertFalse(entry["ready"])
         self.assertIn("vanished", entry["blocker"])
 
-    def test_row_reided_midrun_is_relocated_by_url_and_proceeds(self):
-        # 2026-08-19: the row's id ROTATES mid-run (a re-import between the index
-        # scan and the modal open). The old "vanished" skip is now a URL re-locate:
-        # the offer is found by its stable URL with its new id and the submit
-        # proceeds (the 2/3 ADD-not-created loss on the real Kinguin sweep).
+    def test_row_reided_midrun_is_pinned_by_url_and_proceeds(self):
+        # 2026-08-19 / hardened 2026-09-01: the row's id ROTATES mid-run (a re-import
+        # between the index scan and the modal open). The fresh-row pin matches by the
+        # STABLE merchant URL FIRST, so a same-page re-id is picked up directly on the
+        # fresh DOM — its CURRENT id adopted, submit proceeds — without even needing
+        # the explicit URL re-locate scan. (Matching by the rotated id read the present
+        # row as gone: the 2/3 ADD-not-created Kinguin loss; the un-pinnable The Green
+        # Light Steam offer, 2026-09-01.)
         session = ReidedMidRunSession([["1"]], reid_from_call=3, new_id="51")
         result = _dry(session, [_cand("1")])
         entry = result["plan"][0]
-        self.assertTrue(entry.get("relocated_by_url"))
-        self.assertEqual(entry["offer_id"], "51")      # adopted the new id
+        self.assertEqual(entry["offer_id"], "51")      # adopted the new id (URL-pinned)
         self.assertNotIn("blocker", entry)
         self.assertTrue(entry["ready"])
 

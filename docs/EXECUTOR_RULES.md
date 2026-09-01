@@ -736,12 +736,18 @@ For each validated candidate, in order, fail-closed:
    and price is never part of what the modal enters. The drift stays visible —
    it is surfaced as `id_mismatches` in the plan entry and the `row_relocated`
    log line. A **store_id** contradiction, by contrast, blocks on both paths.
-2b. **Re-verify the row on the FRESH render** (audit 2026-07-17, SC5): the
-   modal-opening navigate produces a NEW page load, minutes after the index
-   scan — the row must still be there under that id AND still match the
-   candidate (name + URL path, `check_price=False`) on the fresh DOM. A
-   vanished row, or an id a mid-run re-import handed to a different product,
-   → blocker; never open a modal on an unverified row.
+2b. **Re-verify the row on the FRESH render** (audit 2026-07-17, SC5; hardened
+   2026-09-01): the modal-opening navigate produces a NEW page load, minutes
+   after the index scan — re-find the row on the fresh DOM and re-match the
+   candidate (name + URL path, `check_price=False`) before opening its modal.
+   The row is pinned by its **stable URL first, NOT the scanned id** (`_pin_
+   fresh_row`): the feed rotates every id on each re-import, so an id-match reads
+   a still-present row as gone — the "reflowing too fast to pin" skip that lost a
+   stably-pending offer over two runs (The Green Light Steam, 2026-09-01). The
+   URL-matched row yields its CURRENT id for the modal open, and a slow JS render
+   is render-polled (re-read, no re-navigate) before concluding absence. A row
+   genuinely absent by URL (worked in parallel / delisted), or a URL now pointing
+   at a different product, → blocker; never open a modal on an unverified row.
 3. Open the modal from that row's `[data-create-offer]` button (`#TB_window`).
 4. **Verify the select names before filling** — they vary per feed:
    `offer[region]`/`offer[edition]` on some, `offer[region_id]`/`offer[edition_id]`

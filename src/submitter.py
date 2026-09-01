@@ -830,6 +830,34 @@ class _SubmitterBase:
             return None   # URL now points at a DIFFERENT product → do not touch it
         return row
 
+    def _pin_fresh_row(self, offer_id: str, url_key: str) -> dict[str, Any] | None:
+        """Find this offer's row on the CURRENT (just-navigated) page. Match by the
+        STABLE merchant URL first — the feed rotates EVERY id on each re-import, so the
+        id captured a moment ago (index scan / URL re-locate) can already be stale on
+        this fresh render: matching by id then reads the present row as gone (the
+        "reflowing too fast to pin" failure, The Green Light Steam offer 2026-09-01).
+        The URL-matched row hands back its CURRENT id for the modal open; identity is
+        re-checked by the caller. Render-poll the DOM (re-read, NO re-navigate) so a
+        slow JS render under CDP load is not misread as absence. Read-only."""
+        def _match(rows: list[dict[str, str]]) -> dict[str, Any] | None:
+            if url_key:
+                hit = next((r for r in rows
+                            if _url_key(str(r.get("url") or "")) == url_key), None)
+                if hit is not None:
+                    return hit
+            return next((r for r in rows if str(r.get("id") or "") == offer_id), None)
+
+        row = _match(self.session.page_offer_rows())
+        if row is not None:
+            return row
+        for wait in self.feed_ui_render_waits:
+            time.sleep(wait)
+            row = _match(self.session.page_offer_rows())
+            if row is not None:
+                self._log("submit_row_render_wait", offer_id=offer_id)
+                return row
+        return None
+
     def _prepare(self, candidate: dict[str, Any], located: dict[str, Any],
                  ctx: dict[str, Any]) -> dict[str, Any]:
         offer_id = str(located.get("offer_id") or candidate["offer"]["offer_id"])
@@ -853,17 +881,16 @@ class _SubmitterBase:
             entry["blocker"] = located["blocker"]
             return entry
         entry["page_url"] = located["page_url"]
+        url_key = _url_key(str(candidate["offer"].get("url") or ""))
         self.session.navigate(located["page_url"])  # refresh the row's page
         # The index scan's row check is now minutes old and this navigate just
-        # produced a NEW render — re-verify the row on the FRESH DOM before
-        # opening its modal by id (audit 2026-07-17, SC5): a re-import in the
-        # window can hand this id to a different product, and the modal would
-        # open on it without any identity check.
-        fresh = next(
-            (r for r in self.session.page_offer_rows()
-             if str(r.get("id") or "") == offer_id),
-            None,
-        )
+        # produced a NEW render — re-find the row on the FRESH DOM before opening
+        # its modal (audit 2026-07-17, SC5). Match by the STABLE merchant URL, not
+        # the scanned id: a re-import in the window rotates every id (so an id-match
+        # reads a present row as gone — "reflowing too fast to pin") and can hand an
+        # id to a different product; the URL match yields the row's CURRENT id, and
+        # identity is re-checked below.
+        fresh = self._pin_fresh_row(offer_id, url_key)
         if fresh is None:
             # A reflow/re-import mid-run shifted the row off this page or rotated its
             # id. Re-locate by the stable merchant URL (fresh scan) before giving up,
@@ -885,17 +912,17 @@ class _SubmitterBase:
                       current_offer_id=offer_id, page_url=relocated["page_url"],
                       url=candidate["offer"].get("url"))
             self.session.navigate(relocated["page_url"])   # go to its NEW page
-            fresh = next(
-                (r for r in self.session.page_offer_rows()
-                 if str(r.get("id") or "") == offer_id),
-                None,
-            )
+            fresh = self._pin_fresh_row(offer_id, url_key)
             if fresh is None:
                 entry["blocker"] = (
                     "row vanished again after URL re-locate + navigate — the feed is "
                     "reflowing too fast to pin (retry on a fresh run)"
                 )
                 return entry
+        # The row's id may have rotated again between the scan/re-locate and this
+        # render; open the modal with the id on THIS (URL-matched) fresh row.
+        offer_id = str(fresh.get("id") or offer_id)
+        entry["offer_id"] = offer_id
         fresh_details = {
             "offer_id": offer_id,
             "page_url": located["page_url"],
