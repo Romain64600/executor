@@ -291,7 +291,7 @@ REGION_IDS = {
 # Tokens that do NOT count as a "significant extra" word (platform / region /
 # format / edition / stopwords). Used by the different-product guard.
 NOISE_TOKENS = {
-    "PC", "MAC", "STEAM", "GOG", "EPIC", "EA", "APP", "PLAY", "ORIGIN", "UPLAY", "UBISOFT",
+    "PC", "MAC", "STEAM", "GOG", "EPIC", "EA", "APP", "ORIGIN", "UPLAY", "UBISOFT",
     "CONNECT", "GAMES", "LAUNCHER", "STORE",  # "Ubisoft Connect" / "Epic Games Store"
     "BATTLE", "NET", "BATTLENET", "KEY", "KEYS", "CD", "CDKEY", "DIGITAL", "DOWNLOAD",
     "CODE", "GAME", "VERSION", "FULL", "PLATFORM", "WINDOWS", "ACTIVATION", "EDITION",
@@ -405,6 +405,12 @@ def extra_significant_words(aks_name: str, merchant_title: str) -> list[str]:
         # word elsewhere is still counted). Keeps a valid G2A "Green Gift Key GLOBAL"
         # from false-skipping as "extra words: ['GREEN']".
         if token == "GREEN" and i + 1 < len(toks) and toks[i + 1] == "GIFT":
+            continue
+        # "EA Play" is the EA app storefront/brand, not a product word — drop PLAY
+        # ONLY in that exact collocation (immediately after EA). A standalone "Play"
+        # elsewhere stays significant (R38 revision 2026-09-01, Romain review: PLAY
+        # is no longer universal NOISE).
+        if token == "PLAY" and i > 0 and toks[i - 1] == "EA":
             continue
         extras.append(token)
     return extras
@@ -524,11 +530,14 @@ def explicit_platform(title: str) -> str | None:
 
     t = " " + normalize_apostrophes(title).upper() + " "
     # Multi-word declarations first — already collocational, unambiguous.
-    if ("EA APP" in t or "EA PLAY" in t or "ORIGIN KEY" in t or "EA ORIGIN" in t
-            or "ORIGIN CD KEY" in t):
-        return "EA"  # R14: bare "Origin" in a game name is NOT the EA platform;
-        # "EA Play" is the EA app storefront/brand (region ids under EA) — a game
-        # key sold "on EA Play" is an EA-platform product, like "EA App" (2026-09-01).
+    # Word-boundary collocations (NOT raw substring): "EA Player"/"EA Playground"
+    # must NOT read as EA (R38 revision 2026-09-01, Romain review). "EA Play" is the
+    # EA app storefront/brand (region ids under EA) — a key sold on it is an
+    # EA-platform product, like "EA App"/"EA Origin"; bare "Origin" in a game name is
+    # NOT the EA platform (R14).
+    if (re.search(r"\bEA (?:APP|PLAY|ORIGIN)\b", t)
+            or re.search(r"\bORIGIN (?:CD )?KEY\b", t)):
+        return "EA"
     if "BATTLE.NET" in t or "BATTLENET" in t:
         return "BATTLENET"
     if "MICROSOFT STORE" in t or "MICROSOFT KEY" in t:
@@ -1322,29 +1331,47 @@ def match_extras_to_page_edition(
 ) -> tuple[str, str] | None:
     """Page-verified rescue for the different-product guard: when EVERY merchant
     "extra" token (a word absent from the AKS game name and not format/region/edition
-    noise) is contained in ONE page edition's OWN name, those tokens NAME that edition
-    — not a different product. "Legends of Eisenwald - Knight's Edition" (URL
+    noise) is contained in a page edition's OWN name, those tokens NAME that edition —
+    not a different product. "Legends of Eisenwald - Knight's Edition" (URL
     ``…-knights-edition-…``) → the page's "Knights Editon" (id 2723): the shared
     signal is the token KNIGHTS, apostrophe-folded, NOT the "Edition"/"Editon" suffix
-    (AKS typos it; the merchant apostrophizes it). Returns ``(edition_id, label)`` of
-    the most specific match, or None. Fail-closed: an extra split across editions, an
-    extra in NO edition (a distinguishing subtitle like "… Valhalla Edition" on the
-    base game's page, which has no Valhalla edition), or only a Standard/Bundle match
-    → None → stays a different-product SKIP."""
+    (AKS typos it; the merchant apostrophizes it).
+
+    Resolution is DETERMINISTIC and fail-closed (Romain review 2026-09-01) — never a
+    guess by token count or dict order:
+      - exactly ONE compatible edition → resolve to it;
+      - ≥2 compatible editions → the title carries no signal to choose between them
+        ("KNIGHTS" fits both "Knights Edition" and "Knights Deluxe Edition", with no
+        DELUXE in the title) → None UNLESS a SINGLE edition's distinctive tokens (its
+        name minus format/edition NOISE) EXACTLY equal the wanted tokens;
+      - anything else (extra split across editions, an extra in NO edition — a
+        distinguishing subtitle like "… Valhalla Edition" on a page with no Valhalla
+        edition, a Standard/Bundle-only match) → None → stays a SKIP.
+    Bundles are never rescued (absolute)."""
 
     want = {t.replace("'", "") for t in extras}
     if not want:
         return None
-    best: tuple[str, str, int] | None = None
+    compatible: list[tuple[str, str, set[str]]] = []
     for eid, value in editions.items():
         etoks = {t.replace("'", "") for t in tokenize(_edition_entry_name(value))}
         if not etoks or etoks == {"STANDARD"}:
             continue
         if etoks & {"BUNDLE", "PACK", "TRILOGY"}:
             continue                       # never enter bundles (absolute)
-        if want <= etoks and (best is None or len(etoks) > best[2]):
-            best = (eid, _edition_entry_name(value), len(etoks))
-    return (best[0], best[1]) if best else None
+        if want <= etoks:
+            compatible.append((eid, _edition_entry_name(value), etoks))
+    if len(compatible) == 1:
+        return (compatible[0][0], compatible[0][1])
+    if not compatible:
+        return None
+    # ≥2 compatible: only a UNIQUE exact match (distinctive tokens == wanted) may win;
+    # ties (or several exacts) are ambiguous → fail-closed skip. Order-independent.
+    exact = [c for c in compatible
+             if {t for t in c[2] if t not in NOISE_TOKENS} == want]
+    if len(exact) == 1:
+        return (exact[0][0], exact[0][1])
+    return None
 
 
 def resolve_software_region(

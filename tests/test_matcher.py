@@ -1351,6 +1351,27 @@ class MatchExtrasToPageEditionTests(unittest.TestCase):
     def test_bundle_edition_never_rescued(self):
         self.assertIsNone(match_extras_to_page_edition(["MEGA"], {"8": "Mega Bundle"}))
 
+    def test_ambiguous_when_several_editions_compatible(self):
+        # "KNIGHTS" fits both, and the title has no DELUXE signal → never guess.
+        eds = {"10": "Knights Edition", "11": "Knights Deluxe Edition"}
+        self.assertIsNone(match_extras_to_page_edition(["KNIGHTS"], eds))
+
+    def test_ambiguity_is_dict_order_independent(self):
+        a = {"10": "Knights Edition", "11": "Knights Deluxe Edition"}
+        b = {"11": "Knights Deluxe Edition", "10": "Knights Edition"}
+        self.assertEqual(match_extras_to_page_edition(["KNIGHTS"], a),
+                         match_extras_to_page_edition(["KNIGHTS"], b))
+        self.assertIsNone(match_extras_to_page_edition(["KNIGHTS"], b))
+
+    def test_unique_exact_match_wins_regardless_of_order(self):
+        # "Knights Edition" (distinctive == {KNIGHTS}) is the SOLE exact match next
+        # to a more-specific "Dark Knights Rising Edition" → deterministic, and the
+        # dict order must not change the answer.
+        a = {"10": "Knights Edition", "11": "Dark Knights Rising Edition"}
+        b = {"11": "Dark Knights Rising Edition", "10": "Knights Edition"}
+        self.assertEqual(match_extras_to_page_edition(["KNIGHTS"], a), ("10", "Knights Edition"))
+        self.assertEqual(match_extras_to_page_edition(["KNIGHTS"], b), ("10", "Knights Edition"))
+
     def test_full_match_offer_resolves_the_page_edition(self):
         res = AksResolution(
             slug="s", url="https://aks/legends", product_id="2501",
@@ -1376,14 +1397,24 @@ class ExplicitPlatformTests(unittest.TestCase):
 
     def test_ea_play_is_ea_platform(self):
         # "EA Play" is the EA app storefront/brand — a game key sold on it is an
-        # EA-platform product, like "EA App"/"EA Origin". Was skipped: platform
-        # went undetected (None) AND "PLAY" tripped the different-product guard
-        # (Driffle FC 24 "…EA Play Digital Key", 2026-09-01).
-        from src.matcher import NOISE_TOKENS
+        # EA-platform product, like "EA App"/"EA Origin" (Driffle FC 24, 2026-09-01).
         self.assertEqual(
             explicit_platform("EA Sports FC 24 Europe PC EA Play Digital Key"), "EA")
         self.assertEqual(explicit_platform("EA Sports FC 24 EA Play"), "EA")
-        self.assertIn("PLAY", NOISE_TOKENS)  # no false "extra word: ['PLAY']"
+        # the different-product guard drops PLAY only in the exact "EA Play"
+        # collocation — NOT as universal noise (Romain review 2026-09-01):
+        self.assertEqual(
+            extra_significant_words("EA Sports FC 24",
+                                    "EA Sports FC 24 EA Play Digital Key"), [])
+        # a standalone "Play" (not after EA) stays a significant word:
+        self.assertEqual(extra_significant_words("Foo", "Foo Play Steam Key"), ["PLAY"])
+        # word-boundary: "EA Player"/"EA Playground" must NOT read as EA (a bare
+        # substring match used to). With a real platform token they resolve to it:
+        self.assertEqual(explicit_platform("Some Game EA Player Steam Key"), "STEAM")
+        self.assertEqual(explicit_platform("Some Game EA Playground Steam Key"), "STEAM")
+        # and with no competing token, they are None, never EA:
+        self.assertIsNone(explicit_platform("Some Game EA Player"))
+        self.assertIsNone(explicit_platform("Some Game EA Playground"))
         # anti-regression: a real game literally named "…Play" is not mis-tagged EA
         self.assertIsNone(explicit_platform("Foul Play"))
 

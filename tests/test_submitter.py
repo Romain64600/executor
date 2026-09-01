@@ -2213,6 +2213,17 @@ class SearchLocateTests(unittest.TestCase):
         with self.assertRaises(FeedScanError):
             sub._scan_search("127", "aks-merchant-feeds-9", "all", "https://m/target-p7")
 
+    def test_scan_search_empty_without_search_param_raises(self):
+        # #1 (Romain review 2026-09-01): an empty result proves absence ONLY when the
+        # browser is EXACTLY on this search. A rendered (feed_ui=True) empty page whose
+        # href carries NO search[search] (on_term None — a wedge re-serving a plain feed
+        # DOM) must fail closed, NEVER a false 'gone'.
+        from src.submitter import FeedScanError
+        no_term = "https://aks/x?page=aks-merchant-feeds-9&store=127"   # no search[search]
+        sub = self._sub(_SearchFake([], rendered=True, wedge_href=no_term))
+        with self.assertRaises(FeedScanError):
+            sub._scan_search("127", "aks-merchant-feeds-9", "all", "https://m/target-p7")
+
     def test_index_by_search_retries_transient_scan_error(self):
         # Hardening 1: a TRANSIENT FeedScanError on a candidate's index search must be
         # retried, not drop the offer — an index miss is not recovered downstream, so a
@@ -2233,9 +2244,12 @@ class SearchLocateTests(unittest.TestCase):
         self.assertIn("77", index)                  # indexed on the retry, not dropped
         self.assertEqual(calls["n"], 2)
 
-    def test_index_by_search_logs_persistent_drop(self):
-        # Hardening 2: a candidate still unreadable after the retries is dropped
-        # fail-closed but LOGGED — never a SILENT drop mistaken for a genuine absence.
+    def test_index_by_search_persistent_unreadable_aborts_fail_closed(self):
+        # Hardening 2 (Romain review 2026-09-01): a candidate still unreadable after
+        # the bounded retries is NOT dropped-and-continued. It LOGS
+        # index_search_unreadable then PROPAGATES FeedScanError (AGENTS.md: uncertainty
+        # → STOP, no degraded mode) — a dropped index row would read as a genuine
+        # absence downstream.
         from src.submitter import FeedScanError
 
         class _Log:
@@ -2254,12 +2268,24 @@ class SearchLocateTests(unittest.TestCase):
             raise FeedScanError("persistent unreadable")
 
         sub._scan_search = always_fail
-        index, _by = sub._index_by_search("127", "aks-merchant-feeds-9", "all", [_cand("77")])
-        self.assertNotIn("77", index)               # dropped fail-closed
+        with self.assertRaises(FeedScanError):
+            sub._index_by_search("127", "aks-merchant-feeds-9", "all", [_cand("77")])
         drops = [f for e, f in lg.events if e == "index_search_unreadable"]
-        self.assertEqual(len(drops), 1)             # and LOGGED
+        self.assertEqual(len(drops), 1)             # LOGGED before it propagates
         self.assertEqual(drops[0]["attempts"], 3)
         self.assertIn("persistent", drops[0]["reason"])
+
+    def test_run_locate_by_search_persistent_unreadable_aborts_before_write(self):
+        # #2 end-to-end: a candidate whose index search stays unreadable aborts the run
+        # feed_unreadable BEFORE any write — no degraded continue to a next candidate.
+        sub = self._sub(_SearchFake([], rendered=False))    # search never renders
+        sub.search_index_attempts = 2
+        res = sub.run(run_id="r", merchant="Driffle", store_id="127",
+                      approved=[_cand("1"), _cand("2")], locate_by_search=True)
+        self.assertEqual(res["aborted"], "feed_unreadable")
+        self.assertEqual(res["write_attempts"], 0)
+        self.assertEqual(res["created"], 0)
+        self.assertEqual(res["plan"], [])
 
     def test_run_locate_by_search_locates_via_search(self):
         # end-to-end (dry-run): the index is built from the search, the offer locates

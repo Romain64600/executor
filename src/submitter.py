@@ -667,16 +667,19 @@ class _SubmitterBase:
             nav_max_seen = max(nav_max_seen, int(state.get("nav_max") or 0))
             if not rows:
                 # Proven end (_read_feed_page classified empty-queue/past-the-end). An
-                # empty page has NO rows for the term data-check, so confirm the browser
-                # is genuinely on THIS search before trusting the emptiness as a real
-                # 0-result 'gone' — a wedge re-serving a foreign/prior empty DOM (a
-                # different-term search, an empty feed page) keeps location.href on the
-                # PRIOR url, which the &p= SC6 check misses at 0 rows (2026-08-25 review).
+                # empty page has NO rows for the term data-check, so an empty result can
+                # only prove absence when the browser is EXACTLY on THIS search. A wedge
+                # re-serving a foreign/prior empty DOM leaves location.href on the PRIOR
+                # url — a DIFFERENT term OR one with NO search[search] at all (on_term
+                # None) — which the &p= SC6 check misses at 0 rows (2026-08-25 review;
+                # tightened 2026-09-01, Romain review: None must also fail closed, never
+                # a false 'gone').
                 on_term = _href_search_term(str(state.get("href") or ""))
-                if on_term is not None and on_term != term:
+                if on_term != term:
                     raise FeedScanError(
                         f"empty search page is on term {on_term!r}, expected {term!r} "
-                        "— stale/foreign DOM, cannot prove absence")
+                        "— not proven on this search (stale/foreign DOM or no "
+                        "search[search]), cannot prove absence")
                 break
             if not all(term in _url_key(str(r.get("url") or "")) for r in rows):
                 raise FeedScanError(
@@ -724,9 +727,12 @@ class _SubmitterBase:
         missing row makes ``_locate_row`` return "not in current feed" and ``_prepare``
         returns that blocker immediately, never reaching the URL re-locate), so a single
         blip must not silently drop a valid offer (a live creation was missed this way,
-        2026-08-26). A candidate still unreadable after the retries is dropped
-        fail-closed AND LOGGED (``index_search_unreadable``) — never a batch abort, and
-        never a SILENT drop mistaken for a genuine absence. A login bounce propagates."""
+        2026-08-26). A candidate still unreadable after the retries LOGS
+        ``index_search_unreadable`` and then PROPAGATES the FeedScanError — the batch
+        aborts fail-closed BEFORE any write (AGENTS.md: uncertainty → STOP, no degraded
+        mode; Romain review 2026-09-01), never a silent drop mistaken for a genuine
+        absence and never a continuation to the next candidate/merchant. A login bounce
+        propagates the same way."""
         index: dict[str, dict[str, str]] = {}
         by_url: dict[str, dict[str, str]] = {}
         for c in approved:
@@ -746,8 +752,13 @@ class _SubmitterBase:
                 except FeedScanError as exc:
                     last_err = exc
             if last_err is not None:
+                # Fail-closed: a candidate still unreadable is NOT a proven absence;
+                # dropping it would make _locate_row read "not in current feed" → a
+                # false 'gone' / silent skip. Log then PROPAGATE so the submitter aborts
+                # before any write and no further candidate/merchant is processed.
                 self._log("index_search_unreadable", url=url,
                           attempts=self.search_index_attempts, reason=str(last_err)[:200])
+                raise last_err
         return index, by_url
 
     def _locate_row(self, candidate: dict[str, Any], offer_id: str,

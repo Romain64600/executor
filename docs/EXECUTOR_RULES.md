@@ -235,10 +235,15 @@ Knight's Edition" (URL `…-knights-edition-…`) → the page's own "Knights Ed
 (id 2723), so the KNIGHTS token is that edition's qualifier, not a different
 product. The match is on the distinctive token, apostrophe-folded ("Knight's" ==
 "knights") and tolerant of AKS's "Editon" typo (never the "Edition" suffix), and
-it also resolves the offer TO that page edition instead of a guessed Standard. An
-extra in NO page edition — a distinguishing subtitle like "… Valhalla Edition" on
-the base game's page, which has no Valhalla edition — stays a skip; a Bundle-named
-edition is never rescued (we never enter bundles); **Microsoft Store Key / Microsoft Key**
+it also resolves the offer TO that page edition instead of a guessed Standard.
+Resolution is DETERMINISTIC (Romain review 2026-09-01): exactly ONE compatible
+edition → resolve; ≥2 compatible → the title has no signal to choose, so None
+(skip) UNLESS a SINGLE edition's distinctive tokens EXACTLY equal the wanted
+tokens — never a guess by token count or dict order ("KNIGHTS" fits both "Knights
+Edition" and "Knights Deluxe Edition" → skip). An extra in NO page edition — a
+distinguishing subtitle like "… Valhalla Edition" on the base game's page, which
+has no Valhalla edition — stays a skip; a Bundle-named edition is never rescued (we
+never enter bundles); **Microsoft Store Key / Microsoft Key**
 (key-type marker only — "Microsoft Flight Simulator … Steam Key" stays Steam;
 MICROSOFT platform has no region mapping → fail-closed) `[R17]`;
 year/version absent from AKS name; edition not present in the AKS dropdown;
@@ -279,14 +284,16 @@ when several appear, the one collocated with the key-type marker
 None and the token-less path (URL prefix R29, page-verified R20/R27) decides
 fail-closed. Multi-word declarations (EA APP, **EA PLAY**, MICROSOFT STORE/KEY,
 BATTLE.NET) are collocations.
-**EA Play `[R38]` (2026-09-01, Driffle FC 24 escape):** "EA Play" is the EA app
-storefront/brand (region ids live under `EA`), so a game key sold *on EA Play*
-is an EA-platform product like "EA App" — `explicit_platform` now returns `EA`
-for it. It also required adding `PLAY` to `NOISE_TOKENS`: the different-product
-guard had "EA"/"APP" but not "PLAY", so "EA Sports FC 24 … EA Play" was
-false-skipped as *extra word ['PLAY']* before platform detection even ran. Both
-fixes are needed together (the name guard runs first). Anti-regression: a game
-literally named "…Play" (e.g. "Foul Play") is NOT tagged EA.
+**EA Play `[R38]` (2026-09-01, Driffle FC 24 escape; tightened same day, Romain
+review):** "EA Play" is the EA app storefront/brand (region ids live under `EA`),
+so a game key sold *on EA Play* is an EA-platform product like "EA App" —
+`explicit_platform` returns `EA` for it. Both the platform detection and the
+different-product guard treat it as the **exact collocation only**, NOT a broad
+rule: `explicit_platform` matches `\bEA (?:APP|PLAY|ORIGIN)\b` (word-boundary, so
+"EA **Player**"/"EA **Playground**" do NOT read as EA), and the guard drops `PLAY`
+ONLY when it is immediately preceded by `EA` (never universal `NOISE`, so a
+standalone "… Play …" stays a significant word). Anti-regression: "Foul Play" is
+not tagged EA; "Foo Play Steam Key" still flags `PLAY` as an extra.
 
 **Platform is page-verified, fail-closed `[R20]` (2026-07-08, Su-27 escape):**
 `detect_platform`'s STEAM is a **default**, not a detection — "Su-27 for DCS
