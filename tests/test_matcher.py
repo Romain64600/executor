@@ -2573,13 +2573,21 @@ class LanguageCodeNotExtraWordTests(unittest.TestCase):
         self.assertEqual(
             extra_significant_words("Neon Beats", "Neon Beats Prologue EN"), ["PROLOGUE"])
 
-    def test_leading_language_code_is_a_title_word_not_a_marker(self):
-        # POSITION is the signal (Romain audit 2026-09-01): a code in the LEADING
-        # game-name run is a real title word, so a different (shorter) product is
-        # still caught — a blanket ISO allow-list wrongly matched these.
+    def test_language_code_before_all_aks_tokens_is_a_title_word(self):
+        # A code is a language marker ONLY once EVERY AKS-name token is already covered;
+        # while any game-name token remains after it, it is a significant title word
+        # (Romain audit 2026-09-01: `seen_head` on the first common/noise token let a
+        # leading article THE/A — both NOISE — neutralize the code and cause false
+        # matches). All of these must still flag the distinguishing code:
         self.assertEqual(extra_significant_words("Garde", "En Garde Steam Key"), ["EN"])
         self.assertEqual(
+            extra_significant_words("The Garde", "The En Garde Steam Key"), ["EN"])
+        self.assertEqual(
+            extra_significant_words("Legend Garde", "Legend En Garde Steam Key"), ["EN"])
+        self.assertEqual(
             extra_significant_words("Man's Sky", "No Man's Sky Steam Key"), ["NO"])
+        self.assertEqual(
+            extra_significant_words("A Man's Sky", "A No Man's Sky Steam Key"), ["NO"])
 
     def test_code_after_the_game_name_head_is_a_marker(self):
         # once a game-name (AKS) or noise token has been seen, a trailing code IS a

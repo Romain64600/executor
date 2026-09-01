@@ -266,13 +266,14 @@ Derive region from the offer URL when the merchant encodes it there
 régions qui ont leur version EN only").** A Gamivo `-en-` URL segment used to skip
 as an EN-only *language restriction*; a language variant now ENTERS as the same
 product. A language code (EN/FR/DE/…, `LANGUAGE_TOKENS`) counts as noise in the
-different-product guard **only in the metadata TAIL** — once a game-name (AKS) or
-noise (region/format/platform/gift) token has been seen — so "Hard Bullet VR Gift
-EN Global" / "Neon Beats FR Global" enter, while a **LEADING** code stays a
-significant title word so a different (shorter) product is still caught: "En
-Garde" ≠ "Garde", "No Man's Sky" ≠ "Man's Sky" (Romain audit 2026-09-01 — a
-blanket ISO allow-list matched those wrongly). Position is the signal, never a
-global neutralization of every code.
+different-product guard **only once EVERY AKS-name token has already been covered**
+before it (nothing of the game name remains after it) — so "Hard Bullet VR Gift EN
+Global" / "Neon Beats FR Global" enter, while a code with a game-name token still to
+come stays a significant title word so a different (shorter) product is still caught:
+"En Garde" / "The En Garde" / "Legend En Garde" ≠ "Garde"-family, "No Man's Sky" / "A
+No Man's Sky" ≠ "Man's Sky" (Romain audit 2026-09-01 — an earlier rule armed on the
+FIRST common/noise token, so a leading article THE/A wrongly neutralized the code).
+Position after the FULL game name is the signal, never a global neutralization.
 Audit 2026-07-17 hardenings: `gift` must be its own URL segment (`MA4` —
 `the-gifted-rabbit` no longer proposes GIFT(25)); title-side defense in
 depth for regions (`MA8`): bare `EUROPE` mid-title (K4G grammar) and a
