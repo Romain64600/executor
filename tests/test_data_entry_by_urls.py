@@ -96,6 +96,27 @@ class SlugTests(unittest.TestCase):
         self.assertEqual(M.extract_slug(
             "https://www.allkeyshop.com/blog/buy-fortnite-steam-account-compare-prices/"), "fortnite")
 
+    def test_key_page_without_cd(self):
+        # Some AKS pages omit "cd-": buy-the-green-light-KEY-compare-prices/ (id
+        # 216255) was rejected "not an AKS product URL" (Romain, 2026-09-01).
+        self.assertEqual(M.extract_slug(
+            "https://www.allkeyshop.com/blog/buy-the-green-light-key-compare-prices/"),
+            "the-green-light")
+
+    def test_slug_containing_key_word_not_amputated(self):
+        # The non-greedy slug must not eat "cd"/"key" nor stop early inside a
+        # word that contains "key".
+        self.assertEqual(M.extract_slug(
+            "https://www.allkeyshop.com/blog/buy-the-key-cd-key-compare-prices/"), "the-key")
+        self.assertEqual(M.extract_slug(
+            "https://www.allkeyshop.com/blog/buy-turnkey-key-compare-prices/"), "turnkey")
+
+    def test_account_page_digit_platform(self):
+        # Account platform can carry a digit (ps5/ps4) — was silently unmatched.
+        self.assertEqual(M.extract_slug(
+            "https://www.allkeyshop.com/blog/buy-007-first-light-ps5-account-compare-prices/"),
+            "007-first-light")
+
     def test_wrong_host_is_none(self):
         self.assertIsNone(M.extract_slug("https://evil.com/blog/buy-foo-cd-key-compare-prices/"))
 

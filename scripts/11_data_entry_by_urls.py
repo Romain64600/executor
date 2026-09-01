@@ -56,7 +56,16 @@ FEED_UI_RENDER_WAITS = (1.0, 2.0, 4.0)
 SEARCH_MAX_ROWS_LOGGED = 100
 SEARCH_MAX_PAGES = 3
 
-_SLUG_RE = re.compile(r"/blog/buy-([a-z0-9-]+)-(?:cd-key|[a-z-]+-account)-compare-prices/?")
+# Two AKS product-page shapes. KEY pages: buy-<slug>-cd-key-compare-prices/ —
+# but some omit the "cd-" (buy-the-green-light-key-compare-prices/, id 216255);
+# the slug is captured NON-greedily so the "cd-"/"key" marker is never absorbed
+# into it (greedy + optional cd- would eat "…-cd" for a bare "key"). ACCOUNT
+# pages: buy-<slug>-<platform>-account-compare-prices/ — slug stays greedy so the
+# game name keeps its own hyphens before the <platform>-account marker.
+_SLUG_RE = re.compile(
+    r"/blog/buy-(?:([a-z0-9-]+?)-(?:cd-)?key|([a-z0-9-]+)-[a-z0-9-]+-account)"
+    r"-compare-prices/?"
+)
 
 
 class SearchUnreadable(RuntimeError):
@@ -76,7 +85,7 @@ def extract_slug(url: str) -> str | None:
     if not _allkeyshop_host(url or ""):
         return None
     m = _SLUG_RE.search((url or "").split("?", 1)[0].split("#", 1)[0])
-    return m.group(1) if m else None
+    return (m.group(1) or m.group(2)) if m else None
 
 
 def resolve_pinned(url: str, http_get_fn: Callable[..., Any] = http_get) -> AksResolution:
