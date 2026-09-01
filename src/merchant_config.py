@@ -62,9 +62,6 @@ class MerchantConfig:
     # Eneba: the URL's leading path segment encodes the platform
     # ("eneba.com/steam-…" → STEAM). {prefix: platform token}.
     url_platform_prefixes: dict[str, str] = field(default_factory=dict)
-    # Gamivo: a URL path that matches this regex is a language-locked key
-    # ("…-steam-en-global" → EN-only) → skip. Applied within the merchant's scope.
-    url_language_lock: Optional[str] = None
     # Platform-source control (R32b, 2026-08-27 — Romain: "ça dépend du marchand").
     # By default the merchant TITLE declares the platform. A merchant whose titles are
     # unreliable for the platform sets ``title_is_platform_source=False`` — then the

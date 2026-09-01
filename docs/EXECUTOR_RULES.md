@@ -254,12 +254,18 @@ edition, §4.5 `[R18]`.)
 
 ### 4.4 Region & platform — **URL and AKS page decide, not the title** `[Ga01]`
 Derive region from the offer URL when the merchant encodes it there
-(e.g. Gamivo `…-steam-global` / `-eu` / `-gift-eu`; look for `-en-` and
+(e.g. Gamivo `…-steam-global` / `-eu` / `-gift-eu`; look for
 `-gift-`) `[GAMIVO]`. Kinguin Steam titles often omit the region → accept as
 **GLOBAL implicit** unless a forbidden region is present `[KINGUIN]`.
-Audit 2026-07-17 hardenings: the Gamivo `-en-` marker is now CODED as a
-language-restriction skip (`MA7`, scoped to gamivo.com — elsewhere `en` can
-be a real title word); `gift` must be its own URL segment (`MA4` —
+**`MA7` RETIRED (2026-09-01, Romain: "EN = english only … on a quasi toutes les
+régions qui ont leur version EN only").** A Gamivo `-en-` URL segment used to skip
+as an EN-only *language restriction*; a language variant now ENTERS as the same
+product. Language codes (EN/FR/DE/…, `LANGUAGE_TOKENS`) are also folded into the
+different-product NOISE so a title marker like "… EN Global" is not a false
+`extra words: ['EN']` skip (Gamivo "Hard Bullet VR Gift EN Global"). Safe: a code
+that is a genuine title word (En Garde!, It Takes Two) is in the AKS name too, so
+it is never an "extra".
+Audit 2026-07-17 hardenings: `gift` must be its own URL segment (`MA4` —
 `the-gifted-rabbit` no longer proposes GIFT(25)); title-side defense in
 depth for regions (`MA8`): bare `EUROPE` mid-title (K4G grammar) and a
 region in ANY parenthesised group (not only the first) now map to EU/…
@@ -542,7 +548,8 @@ list via `is_software_title` (no page fetch). Doubt still goes to skip `[G02]`.
 ### 4.10 Per-merchant config — "start from the merchant config" `[R32]` (2026-08-11)
 
 Merchant-specific handling was scattered (Kinguin's domain rule, Difmark's
-offer-page resolver + maps, Gamivo's `-en-` language lock, Eneba's URL prefixes).
+offer-page resolver + maps, Eneba's URL prefixes; Gamivo's `-en-` language lock
+was here too until MA7 was retired 2026-09-01).
 Romain: **each merchant should start from its own config** — its specific
 instructions. `src/merchant_config.py` `MerchantConfig` is the single declarative
 place; `match_offer` reads `merchant_config(offer.merchant)` and applies it. A
@@ -989,7 +996,8 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167.
 - **Kinguin**: filter by URL `&store=58`, not dropdown; candidate URL must
   contain `kinguin.net`; URLs carry `?params` (`nosalesbooster`, `currency`) —
   report them as-is (§4.6); Steam region often implicit GLOBAL.
-- **Gamivo**: URL decides region (`-global`/`-eu`/`-gift-`/`-en-`), not the title.
+- **Gamivo**: URL decides region (`-global`/`-eu`/`-gift-`), not the title.
+  (`-en-` is a language marker, not a region, and no longer skips — MA7 retired.)
 - **Driffle**: `name`/`url` fields; `stock` is `"y"`/`"n"`; modal selects are
   `offer[region]`/`offer[edition]`; dynamic feed → re-scan before submit.
 - **GOG**: everything is GOG GLOBAL(6)/Standard(1) unless the AKS page says

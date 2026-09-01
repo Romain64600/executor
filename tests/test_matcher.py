@@ -716,8 +716,7 @@ class MerchantConfigR32Tests(unittest.TestCase):
         self.assertIsNotNone(merchant_config("Instant Gaming").offer_page_resolver)
         self.assertIsNone(merchant_config("Kinguin").offer_page_resolver)
         self.assertIsNone(merchant_config("Some Random Merchant"))
-        # R32 migration of Gamivo / Eneba
-        self.assertEqual(merchant_config("Gamivo").url_language_lock, r"(?:^|-)en(?:-|$)")
+        # R32 migration of Eneba (Gamivo's url_language_lock retired 2026-09-01, MA7)
         self.assertEqual(merchant_config("Eneba").url_platform_prefixes.get("uplay"), "UBISOFT")
         self.assertEqual(merchant_config("Eneba").url_platform_prefixes.get("blizzard"), "BATTLENET")
 
@@ -2505,31 +2504,43 @@ class AuditMa6MarkupDriftTests(unittest.TestCase):
         self.assertIn("markup drifted", result.reason)
 
 
-class AuditMa7GamivoEnMarkerTests(unittest.TestCase):
-    """MA7 (audit 2026-07-17): Gamivo's '-en-' URL segment is an EN-only
-    language lock — documented in §4.3/§4.4, never coded."""
+class Ma7RetiredGamivoEnMarkerTests(unittest.TestCase):
+    """MA7 RETIRED (2026-09-01, Romain: "EN = english only … on a quasi toutes les
+    régions qui ont leur version EN only"). A Gamivo '-en-' URL segment used to skip
+    as an EN-only language restriction; a language variant now enters as the same
+    product (see LANGUAGE_TOKENS)."""
 
-    def test_gamivo_en_marker_skips(self):
+    def test_gamivo_en_marker_no_longer_skips(self):
         offer = _offer("Neon Beats (PC) Steam Key",
                        url="https://www.gamivo.com/product/neon-beats-steam-en-global")
-        self.assertEqual(
-            precheck_skip(offer),
-            "language restriction (Gamivo '-en-' URL marker — EN-only key)",
-        )
+        self.assertIsNone(precheck_skip(offer))
 
     def test_gamivo_without_marker_passes(self):
         offer = _offer("Neon Beats (PC) Steam Key",
                        url="https://www.gamivo.com/product/neon-beats-steam-global")
         self.assertIsNone(precheck_skip(offer))
 
-    def test_other_merchants_are_not_scoped(self):
-        # French title word "en" on a non-Gamivo host must not skip.
-        offer = NormalizedOffer(
-            offer_id="1", name="Alice en Wonderland Steam Key",
-            url="https://www.kinguin.net/category/1/alice-en-wonderland",
-            merchant="Kinguin",
-        )
-        self.assertIsNone(precheck_skip(offer))
+
+class LanguageCodeNotExtraWordTests(unittest.TestCase):
+    """A store's language marker (EN/FR/DE/…) is a variant of the SAME product, not
+    a different one — never a different-product 'extra word' (Romain 2026-09-01,
+    Gamivo "Hard Bullet VR Gift EN Global")."""
+
+    def test_language_code_is_not_an_extra_word(self):
+        self.assertEqual(
+            extra_significant_words("Hard Bullet VR", "Hard Bullet VR Gift EN Global"), [])
+        self.assertEqual(
+            extra_significant_words("Neon Beats", "Neon Beats FR Global Steam Key"), [])
+
+    def test_real_title_word_that_is_a_code_still_matches(self):
+        # "It Takes Two": IT is in the AKS name, so it is never an extra anyway.
+        self.assertEqual(
+            extra_significant_words("It Takes Two", "It Takes Two IT Steam Key"), [])
+
+    def test_a_genuine_extra_still_skips_alongside_a_code(self):
+        # a real distinguishing word is still flagged even next to a language code
+        self.assertEqual(
+            extra_significant_words("Neon Beats", "Neon Beats Prologue EN"), ["PROLOGUE"])
 
 
 class AccountPageResolutionTests(unittest.TestCase):

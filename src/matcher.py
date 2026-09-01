@@ -302,6 +302,18 @@ NOISE_TOKENS = {
     "ANNIVERSARY", "THE", "OF", "AND", "A", "AN", "FOR", "TO", "WITH", "VS",
     "UNITED", "STATES",
 }
+# ISO 639-1 language codes. A store's language marker ("Hard Bullet VR Gift EN
+# Global", "… FR", …) is NOT a product differentiator (Romain 2026-09-01: "EN =
+# english only, on a quasi toutes les régions qui ont leur version EN only" →
+# enter every language variant as the SAME product). Folded into the
+# different-product NOISE below. Safe as an "extra": a code that is genuinely part
+# of a title ("En Garde!", "It Takes Two") is ALSO in the AKS name, so it is never
+# counted as an extra word — only a language variant the AKS name omits is dropped.
+LANGUAGE_TOKENS = frozenset({
+    "EN", "FR", "DE", "ES", "IT", "PT", "NL", "PL", "RU", "SV", "DA", "NO", "FI",
+    "CS", "SK", "HU", "RO", "BG", "HR", "SL", "ET", "LV", "LT", "EL", "TR", "UK",
+    "JA", "KO", "ZH", "AR", "HE", "TH", "VI", "ID", "MS", "HI", "FA", "UA",
+})
 PLATFORM_LABEL = {
     "STEAM": "Steam", "GOG": "GOG", "EPIC": "Epic", "EA": "EA App",
     "UBISOFT": "Ubisoft", "BATTLENET": "Battle.net", "PUBLISHER": "Publisher",
@@ -385,7 +397,7 @@ def extra_significant_words(aks_name: str, merchant_title: str) -> list[str]:
     toks = tokenize(merchant_title)
     extras: list[str] = []
     for i, token in enumerate(toks):
-        if token in aks or token in NOISE_TOKENS:
+        if token in aks or token in NOISE_TOKENS or token in LANGUAGE_TOKENS:
             continue
         # "Green Gift" is G2A's Steam-gift delivery label (Romain 2026-08-27), NOT a
         # product differentiator — GIFT is already noise, so drop the GREEN that forms
@@ -418,15 +430,9 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
         host = urlparse(offer.url).netloc.lower()
         if host != domain and not host.endswith("." + domain):
             return f"offer URL not on {domain} (merchant-domain mismatch)"
-    # Gamivo encodes an English-only language lock as an '-en-' URL segment
-    # ("…-steam-en-global") — a language restriction (audit 2026-07-17, MA7). The
-    # lock regex lives in Gamivo's MerchantConfig (R32); scoped to gamivo.com like
-    # R29 is to Eneba (on other merchants '-en-' can be a real word, French "en").
-    _gam = merchant_config("Gamivo")
-    if (_gam and _gam.url_language_lock
-            and "gamivo.com" in urlparse(offer.url).netloc.lower()
-            and re.search(_gam.url_language_lock, urlparse(offer.url).path.strip("/").lower())):
-        return "language restriction (Gamivo '-en-' URL marker — EN-only key)"
+    # (MA7 retired 2026-09-01, Romain: "EN = english only … enterrable") — a
+    # Gamivo '-en-' URL segment used to skip as an EN-only language restriction;
+    # a language variant is now entered as the same product (see LANGUAGE_TOKENS).
     padded = " " + re.sub(r"[^A-Z0-9]+", " ", offer.name.upper()) + " "
     if any(f" {t} " in padded for t in CONSOLE_TOKENS):
         return "console"
