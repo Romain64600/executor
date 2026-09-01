@@ -304,11 +304,10 @@ NOISE_TOKENS = {
 }
 # ISO 639-1 language codes. A store's language marker ("Hard Bullet VR Gift EN
 # Global", "… FR", …) is NOT a product differentiator (Romain 2026-09-01: "EN =
-# english only, on a quasi toutes les régions qui ont leur version EN only" →
-# enter every language variant as the SAME product). Folded into the
-# different-product NOISE below. Safe as an "extra": a code that is genuinely part
-# of a title ("En Garde!", "It Takes Two") is ALSO in the AKS name, so it is never
-# counted as an extra word — only a language variant the AKS name omits is dropped.
+# english only … enter every language variant as the SAME product"). But a code is
+# treated as noise ONLY in the metadata TAIL (see extra_significant_words), never in
+# the leading game-name run — otherwise "En Garde" would match "Garde" and "No
+# Man's Sky" would match "Man's Sky" (Romain audit). Position is the signal.
 LANGUAGE_TOKENS = frozenset({
     "EN", "FR", "DE", "ES", "IT", "PT", "NL", "PL", "RU", "SV", "DA", "NO", "FI",
     "CS", "SK", "HU", "RO", "BG", "HR", "SL", "ET", "LV", "LT", "EL", "TR", "UK",
@@ -396,8 +395,22 @@ def extra_significant_words(aks_name: str, merchant_title: str) -> list[str]:
     aks = set(tokenize(aks_name))
     toks = tokenize(merchant_title)
     extras: list[str] = []
+    seen_head = False
     for i, token in enumerate(toks):
-        if token in aks or token in NOISE_TOKENS or token in LANGUAGE_TOKENS:
+        if token in aks:
+            seen_head = True
+            continue
+        if token in NOISE_TOKENS:
+            seen_head = True
+            continue
+        # A language code (EN/FR/…) is a language MARKER only AFTER the game-name head
+        # — once a game-name (AKS) token or a metadata (noise: region/format/platform/
+        # gift) token has been seen — NEVER as a LEADING token. So "Neon Beats FR
+        # Global" and "…Gift EN Global" drop their FR/EN, while "En Garde"/"No Man's
+        # Sky" keep the leading EN/NO as significant title words (Romain audit
+        # 2026-09-01: a blanket ISO-code allow-list let "En Garde" match "Garde" and
+        # "No Man's Sky" match "Man's Sky"). Position is the signal, not the code.
+        if token in LANGUAGE_TOKENS and seen_head:
             continue
         # "Green Gift" is G2A's Steam-gift delivery label (Romain 2026-08-27), NOT a
         # product differentiator — GIFT is already noise, so drop the GREEN that forms

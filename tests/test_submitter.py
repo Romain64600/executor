@@ -485,15 +485,26 @@ class RealSubmitTests(unittest.TestCase):
         self.assertFalse(result["plan"][0]["submitted"])
         self.assertIn("STILL in feed", result["plan"][0]["post_save"])
 
-    def test_page_hint_offer_outside_window_fails_closed(self):
-        # The offer is on page 5 but the hint says page 2 (window 1,2,3) — it is
-        # NOT in the window → located as not-in-feed, no create (fail-closed).
+    def test_page_hint_offer_outside_window_recovered_by_research(self):
+        # The offer is on page 5 but the hint says page 2 (window 1,2,3) — an index
+        # miss. Parity recovery (Romain 2026-09-01): _prepare re-locates it by URL
+        # (bounded feed scan) and finds it → recovered + created, not a false skip.
         session = FakeWriteSession(self._deep_feed(6))
         result = Submitter(session, click_mode="native").run(
             run_id="r", merchant="Kinguin", store_id="58",
             approved=[_cand("54")], page_hint=2, page_window=1)
+        self.assertEqual(result["created"], 1)
+        self.assertTrue(result["plan"][0].get("submitted"))
+        self.assertTrue(result["plan"][0].get("relocated_by_url"))
+
+    def test_page_hint_offer_absent_everywhere_fails_closed(self):
+        # Genuinely absent (in NO page): the recovery re-scan finds nothing → the
+        # fail-closed blocker stands (no create).
+        session = FakeWriteSession(self._deep_feed(6))
+        result = Submitter(session, click_mode="native").run(
+            run_id="r", merchant="Kinguin", store_id="58",
+            approved=[_cand("999")], page_hint=2, page_window=1)
         self.assertEqual(result["created"], 0)
-        self.assertFalse(result["plan"][0].get("submitted"))
         self.assertIn("not in current feed", result["plan"][0].get("blocker", ""))
 
     def test_page_hint_window_covers_reflow_shift(self):
@@ -1974,15 +1985,17 @@ class FreshRowRecheckTests(unittest.TestCase):
         self.assertNotIn("blocker", entry)
         self.assertTrue(entry["ready"])
 
-    def test_row_vanished_before_modal_is_blocked(self):
-        # pages=[["1"]]: scan reads rows twice (page 1 + past-end), the
-        # 3rd read is _prepare's fresh check. Genuinely gone (the URL re-locate also
-        # can't find it) → fail-closed block.
+    def test_row_vanished_and_unreadable_rescan_stops_feed_unreadable(self):
+        # The row vanishes from the fresh render, then the recovery re-scan can't
+        # cleanly classify the now-contradictory page (0 rows, but nav still advertises
+        # the page) → UNREADABLE, not a proven absence → the FeedScanError PROPAGATES
+        # (Romain audit 2026-09-01) so the run STOPS feed_unreadable, never a swallowed
+        # skip. (A genuinely-gone row renders a clean page and skips — see the
+        # index-miss recovery tests.)
         session = VanishingRowSession([["1"]], vanish_from_call=3)
         result = _dry(session, [_cand("1")])
-        entry = result["plan"][0]
-        self.assertFalse(entry["ready"])
-        self.assertIn("vanished", entry["blocker"])
+        self.assertEqual(result.get("stopped"), "feed_unreadable")
+        self.assertFalse(result["plan"][0]["ready"])
 
     def test_row_reided_midrun_is_pinned_by_url_and_proceeds(self):
         # 2026-08-19 / hardened 2026-09-01: the row's id ROTATES mid-run (a re-import
@@ -2013,7 +2026,7 @@ class FreshRowRecheckTests(unittest.TestCase):
         self.assertTrue(entry["ready"])
         self.assertEqual(entry["fresh_row_checked"], ["name", "url"])
 
-    def _prepare_with_index_miss(self, relocate):
+    def _prepare_with_index_miss(self, relocate, search_locate=True):
         # An index-scan miss reaches _prepare as a located blocker; stub the fresh
         # per-candidate URL re-search to control what it recovers.
         sub = DryRunSubmitter(FakeSubmitSession([["1"]]))
@@ -2021,7 +2034,7 @@ class FreshRowRecheckTests(unittest.TestCase):
         sub._relocate_by_url = relocate
         located = {"blocker": "offer not in current feed (by id and by URL)"}
         ctx = {"store_id": "127", "feed_page": "aks-merchant-feeds-9",
-               "available": "all", "search_locate": True, "max_pages": 1}
+               "available": "all", "search_locate": search_locate, "max_pages": 1}
         return sub._prepare(_cand("1"), located, ctx)
 
     def test_index_miss_recovered_by_url_research(self):
@@ -2040,6 +2053,21 @@ class FreshRowRecheckTests(unittest.TestCase):
         entry = self._prepare_with_index_miss(lambda c, ctx: None)
         self.assertFalse(entry["ready"])
         self.assertIn("not in current feed", entry["blocker"])
+
+    def test_index_miss_recovery_fires_on_sweep_path_too(self):
+        # Parity (Romain 2026-09-01): the re-search recovery fires for the page-hint
+        # SWEEP (search_locate=False) as well, not only the by-urls path.
+        seen = {}
+
+        def relocate(c, ctx):
+            seen["called"] = True
+            return {"offer_id": "1", "page_url": "s", "name": "Game 1",
+                    "url": "https://m/1", "store_id": "127", "price": ""}
+
+        entry = self._prepare_with_index_miss(relocate, search_locate=False)
+        self.assertTrue(seen.get("called"))          # recovery ran on the sweep path
+        self.assertTrue(entry.get("relocated_by_url"))
+        self.assertTrue(entry["ready"])
 
 
 class SlowModalSession(FakeSubmitSession):
@@ -2314,6 +2342,25 @@ class SearchLocateTests(unittest.TestCase):
         self.assertEqual(res["write_attempts"], 0)
         self.assertEqual(res["created"], 0)
         self.assertEqual(res["plan"], [])
+
+    def test_index_miss_recovery_unreadable_stops_no_next_candidate(self):
+        # P1 (Romain audit 2026-09-01): a candidate missing from the index triggers a
+        # per-candidate re-search; when THAT is UNREADABLE it is UNKNOWN state, not a
+        # proven absence — the FeedScanError PROPAGATES so the run stops feed_unreadable
+        # and NO further candidate is processed (never swallowed as "not found" + plow
+        # on). Here the bulk index is empty (all miss) and the recovery raises.
+        from src.submitter import FeedScanError
+
+        def boom(candidate, ctx):
+            raise FeedScanError("recovery search never rendered")
+
+        sub = self._sub(_SearchFake([]))       # empty index → every candidate misses
+        sub._relocate_by_url = boom
+        res = sub.run(run_id="r", merchant="Driffle", store_id="127",
+                      approved=[_cand("1"), _cand("2")], locate_by_search=True)
+        self.assertEqual(res.get("aborted") or res.get("stopped"), "feed_unreadable")
+        self.assertEqual(len(res["plan"]), 1)     # stopped at candidate 1, #2 untouched
+        self.assertFalse(res["plan"][0]["ready"])  # nothing created
 
     def test_run_locate_by_search_locates_via_search(self):
         # end-to-end (dry-run): the index is built from the search, the offer locates

@@ -265,11 +265,14 @@ Derive region from the offer URL when the merchant encodes it there
 **`MA7` RETIRED (2026-09-01, Romain: "EN = english only … on a quasi toutes les
 régions qui ont leur version EN only").** A Gamivo `-en-` URL segment used to skip
 as an EN-only *language restriction*; a language variant now ENTERS as the same
-product. Language codes (EN/FR/DE/…, `LANGUAGE_TOKENS`) are also folded into the
-different-product NOISE so a title marker like "… EN Global" is not a false
-`extra words: ['EN']` skip (Gamivo "Hard Bullet VR Gift EN Global"). Safe: a code
-that is a genuine title word (En Garde!, It Takes Two) is in the AKS name too, so
-it is never an "extra".
+product. A language code (EN/FR/DE/…, `LANGUAGE_TOKENS`) counts as noise in the
+different-product guard **only in the metadata TAIL** — once a game-name (AKS) or
+noise (region/format/platform/gift) token has been seen — so "Hard Bullet VR Gift
+EN Global" / "Neon Beats FR Global" enter, while a **LEADING** code stays a
+significant title word so a different (shorter) product is still caught: "En
+Garde" ≠ "Garde", "No Man's Sky" ≠ "Man's Sky" (Romain audit 2026-09-01 — a
+blanket ISO allow-list matched those wrongly). Position is the signal, never a
+global neutralization of every code.
 Audit 2026-07-17 hardenings: `gift` must be its own URL segment (`MA4` —
 `the-gifted-rabbit` no longer proposes GIFT(25)); title-side defense in
 depth for regions (`MA8`): bare `EUROPE` mid-title (K4G grammar) and a
@@ -743,15 +746,17 @@ For each validated candidate, in order, fail-closed:
    **exact-title check** (fail-closed on any drift) and adopts the row's
    current id (`row_relocated` in the log). Absent by id AND path = the offer
    genuinely left the feed (worked in parallel / delisted) — a correct SKIP.
-   **On the by-urls SEARCH-locate path only, an index-scan miss is NOT trusted as
-   that SKIP** (hardened 2026-09-01): the bulk `_index_by_search` runs one rapid
-   search per candidate at start-up and a transient incomplete render can drop
-   some — in a same-product multi-edition batch it dropped all-but-one (Whiteout
-   Survival's 7 Frost-Stars editions entered 1/7 per run while the other 6 sat in
-   the feed). Before giving up, `_prepare` RE-SEARCHES that one candidate alone by
-   its stable URL (fresh, spaced out); found → adopt + proceed, still absent →
-   keep the fail-closed blocker. A page-hint window miss is a deliberate bound, so
-   this recovery is search-locate-only.
+   **An index-scan miss is NOT trusted as that SKIP** (hardened 2026-09-01): the
+   bulk index build (`_index_by_search` for by-urls; `_scan_page_window` for a
+   sweep) can transiently drop a present offer — in a same-product multi-edition
+   batch it dropped all-but-one (Whiteout Survival's 7 Frost-Stars editions entered
+   1/7 per run while the other 6 sat in the feed). Before giving up, `_prepare`
+   RE-LOCATES that one candidate alone by its stable URL — via the feed SEARCH on
+   the by-urls path, a bounded feed scan on a sweep (BOTH paths now, parity). Found
+   → adopt + proceed; genuinely absent → keep the fail-closed blocker; **UNREADABLE
+   → the FeedScanError/CdpCommandError PROPAGATES** (unknown state, never swallowed
+   as "not found") so the run loop stops `feed_unreadable` and no further candidate
+   is processed (AGENTS.md: uncertainty → STOP).
    Post-save disappearance (§7) is proven under BOTH keys: id-only would
    false-positive "gone" whenever a mid-run re-import re-ids a still-pending
    row.

@@ -2573,6 +2573,20 @@ class LanguageCodeNotExtraWordTests(unittest.TestCase):
         self.assertEqual(
             extra_significant_words("Neon Beats", "Neon Beats Prologue EN"), ["PROLOGUE"])
 
+    def test_leading_language_code_is_a_title_word_not_a_marker(self):
+        # POSITION is the signal (Romain audit 2026-09-01): a code in the LEADING
+        # game-name run is a real title word, so a different (shorter) product is
+        # still caught — a blanket ISO allow-list wrongly matched these.
+        self.assertEqual(extra_significant_words("Garde", "En Garde Steam Key"), ["EN"])
+        self.assertEqual(
+            extra_significant_words("Man's Sky", "No Man's Sky Steam Key"), ["NO"])
+
+    def test_code_after_the_game_name_head_is_a_marker(self):
+        # once a game-name (AKS) or noise token has been seen, a trailing code IS a
+        # language marker — "Neon Beats FR Global" enters as the same product.
+        self.assertEqual(
+            extra_significant_words("Neon Beats", "Neon Beats FR Global Steam Key"), [])
+
 
 class AccountPageResolutionTests(unittest.TestCase):
     """Romain 2026-07-18: account offers resolve AKS's dedicated account

@@ -831,27 +831,30 @@ class _SubmitterBase:
         page) before giving up — mirrors the mover's ``_relocate_before_move``.
         Read-only. Returns the row details, or None when the URL is not in the feed
         OR now points at a DIFFERENT product (fail closed — never open a modal on a
-        mismatched identity). A feed/CDP-unreadable scan propagates to the caller's
-        fail-closed handler (as elsewhere in ``_prepare``)."""
+        mismatched identity). A feed/CDP-unreadable scan PROPAGATES to the caller's
+        fail-closed handler (as elsewhere in ``_prepare``). Path-appropriate: the
+        by-urls path re-locates via the feed SEARCH; the sweep via a bounded feed scan
+        (its own primary-locate mechanism) — the index-miss recovery uses whichever
+        matches ``ctx["search_locate"]`` (parity for the sweep, 2026-09-01)."""
         url = _url_key(str(candidate["offer"].get("url") or ""))
         if not url:
             return None
-        try:
-            if ctx.get("search_locate"):
-                # by-urls: re-locate via the SEARCH (fast + fresh) — no whole-feed scan.
-                _, by_url = self._scan_search(
-                    ctx["store_id"], ctx["feed_page"], ctx["available"], url)
-            else:
-                _, by_url, found = self._scan_feed(
-                    ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"],
-                    stop_on_url=url)
-                by_url = by_url if found else {}
-        except (FeedScanError, CdpCommandError):
-            # The recovery scan is unreadable — this is BEFORE any write for this
-            # candidate, so treat it as "not found" → the caller keeps the vanished
-            # block (skip, retry on a fresh run). A NotLoggedInError is NOT caught
-            # (session gone) and propagates, exactly like the rest of _prepare.
-            return None
+        use_search = ctx.get("search_locate")
+        # A feed/CDP-unreadable recovery scan is UNKNOWN state, NOT a proven absence:
+        # FeedScanError/CdpCommandError PROPAGATE to the run loop's fail-closed handler
+        # (stops the run feed_unreadable, no next candidate) — never swallowed as "not
+        # found", which would silently skip a maybe-present offer and plow on (Romain
+        # audit 2026-09-01; this now matches the method's own contract). NotLoggedInError
+        # propagates the same way.
+        if use_search:
+            # re-locate via the SEARCH (fast + fresh) — no whole-feed scan.
+            _, by_url = self._scan_search(
+                ctx["store_id"], ctx["feed_page"], ctx["available"], url)
+        else:
+            _, by_url, found = self._scan_feed(
+                ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"],
+                stop_on_url=url)
+            by_url = by_url if found else {}
         row = by_url.get(url)
         if row is None:
             return None
@@ -915,11 +918,12 @@ class _SubmitterBase:
             # other 6 sat in the feed, 2026-09-01). Before giving up, RE-SEARCH this
             # candidate ALONE by its stable URL (fresh, spaced out, one at a time).
             # Found → adopt its current id/page and proceed; still absent → keep the
-            # fail-closed blocker. _relocate_by_url is itself fail-closed (name-checks
-            # the row, None on any drift or genuine absence). ONLY on the search-locate
-            # path (by-urls): a page-hint window miss is a DELIBERATE bound, not a
-            # transient, so a whole-feed re-scan there would break its intended scope.
-            relocated = self._relocate_by_url(candidate, ctx) if ctx.get("search_locate") else None
+            # fail-closed blocker; UNREADABLE → propagate (stops the run feed_unreadable,
+            # never a swallowed skip — Romain audit 2026-09-01). BOTH paths recover now
+            # (parity for the page-hint SWEEP: an offer that reflowed out of its window
+            # is re-found), each via its own locate mechanism (by-urls = search, sweep =
+            # bounded feed scan).
+            relocated = self._relocate_by_url(candidate, ctx)
             if relocated is None:
                 entry["blocker"] = located["blocker"]
                 return entry
