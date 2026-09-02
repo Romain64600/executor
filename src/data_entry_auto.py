@@ -292,6 +292,34 @@ def run_sweep(
     return recap
 
 
+def preview_incomplete_reason(from_recap: dict) -> "str | None":
+    """A by-urls dry-run is submittable ONLY when it is COMPLETE (P2-3, audit
+    2026-09-02). Returns a fail-closed reason string when the preview is partial,
+    else None. Mirrors the console's incomplete-preview gate (``submit_manager``) so
+    the DETERMINISTIC path (``scripts/12`` calling ``run_by_urls_submit`` directly,
+    bypassing the HTTP handler) can never ship partial coverage the console would 409:
+    a HARD stop (``aborted``), a game that never resolved or carries a per-game
+    ``error``, a TRUNCATED search (offers beyond the cap never seen — it *continues*,
+    so it never sets ``aborted``), or FEWER game entries than requested (a run
+    interrupted on a generic error flushes a short list while leaving aborted=None)."""
+
+    if from_recap.get("aborted"):
+        return f"source_aborted: l'aperçu s'est arrêté ({from_recap['aborted']})"
+    for g in from_recap.get("games") or []:
+        label = g.get("aks_name") or g.get("url") or "?"
+        if not g.get("resolved"):
+            return f"preview_incomplete: jeu non résolu ({g.get('url') or label})"
+        if g.get("error"):
+            return f"preview_incomplete: erreur '{g['error']}' sur {label}"
+        if (g.get("search") or {}).get("truncated"):
+            return f"preview_incomplete: recherche tronquée sur {label}"
+    requested = int((from_recap.get("totals") or {}).get("games") or 0)
+    got = len(from_recap.get("games") or [])
+    if requested and got != requested:
+        return f"preview_incomplete: {got}/{requested} jeux traités (aperçu interrompu)"
+    return None
+
+
 def _candidates_by_store(from_recap: dict) -> "list[dict[str, Any]]":
     """Group a by-urls dry-run's candidates by merchant STORE, deduped by
     candidate_fingerprint (a merchant can appear across several games; a re-import
@@ -337,6 +365,17 @@ def run_by_urls_submit(
     triple and runs 05_submit for one store; ``make_sub_run`` mints its run dir. The
     first NON-CLEAN merchant HALTS the whole batch fail-closed (same discipline as
     run_sweep). Stops cooperatively only BETWEEN merchants (never mid-Create)."""
+
+    # P2-3 (audit 2026-09-02): refuse an INCOMPLETE preview at the DETERMINISTIC core,
+    # not only in the console handler. _candidates_by_store silently DROPS unresolved /
+    # errored games and would submit the rest — partial coverage shipped without an
+    # operator ever seeing the console's 409. Fail closed here too.
+    incomplete = preview_incomplete_reason(from_recap)
+    if incomplete is not None:
+        recap = {"mode": "submit", "available": available, "aborted": incomplete,
+                 "merchants": [], "totals": {"merchants": 0, "attempted": 0, "created": 0}}
+        flush(recap)
+        return recap
 
     groups = _candidates_by_store(from_recap)
     recap: dict[str, Any] = {

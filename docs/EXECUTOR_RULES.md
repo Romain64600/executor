@@ -1383,6 +1383,16 @@ DÉTERMINISTE qui lance réellement les écritures (`scripts/10`) ne validait qu
 créer en contournant le gate. `scripts/10` applique désormais **la même allowlist**,
 fail-closed (store canonique imposé), refusant tout le batch sur un miss.
 
+**Aperçu incomplet = refus au cœur by-urls `[P2-3]` (audit 2026-09-02).** Un
+aperçu by-urls n'est saisissable que COMPLET. Le handler console refuse un aperçu
+partiel (`aborted`, un jeu non-résolu / `error` / `search.truncated`, ou
+`len(games) != totals.games`), mais `scripts/12` appelle `run_by_urls_submit`
+(`src/data_entry_auto`) DIRECTEMENT, hors handler — et ne faisait que **skipper**
+les jeux non-résolus pour soumettre le reste (couverture partielle expédiée sans le
+409 de la console). `preview_incomplete_reason` (mêmes conditions que le manager) est
+maintenant appliqué au cœur : `run_by_urls_submit` **abort fail-closed** (aucune
+saisie) sur un aperçu partiel.
+
 **Intégration au sweep safe-auto** (`src/data_entry_auto.run_sweep`, opt-in
 `--triage` de `scripts/10`). Ordre par page, reflow-safe (page la plus haute
 d'abord) : extract → match → (approve + submit des ADD, **vérifiés**) → **move des

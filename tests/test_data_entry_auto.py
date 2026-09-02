@@ -78,6 +78,53 @@ class ByUrlsSubmitTests(unittest.TestCase):
         self.assertEqual(calls, [])
         self.assertEqual(out["aborted"], "operator_stop")
 
+    def test_refuses_aborted_preview(self):
+        # P2-3 (audit 2026-09-02): a hard-stopped preview is not submittable at the
+        # deterministic core, not only in the console — never ship partial coverage.
+        recap = {"available": "all", "aborted": "not_logged_in",
+                 "games": [_game(("G2A", "38", [_cand("1")]))]}
+        calls = []
+        out = self._run(recap, lambda *a: calls.append(1) or SubmitOutcome(ok=True, created=1))
+        self.assertEqual(calls, [])                          # nothing submitted
+        self.assertIn("source_aborted", out["aborted"])
+        self.assertEqual(out["totals"]["created"], 0)
+
+    def test_refuses_unresolved_game(self):
+        recap = {"available": "all", "games": [
+            _game(("G2A", "38", [_cand("1")])),
+            {"resolved": False, "url": "https://x/y"}]}
+        calls = []
+        out = self._run(recap, lambda *a: calls.append(1) or SubmitOutcome(ok=True, created=1))
+        self.assertEqual(calls, [])
+        self.assertIn("preview_incomplete", out["aborted"])
+
+    def test_refuses_truncated_search(self):
+        recap = {"available": "all", "games": [
+            {"resolved": True, "aks_name": "X", "search": {"truncated": True},
+             "merchants": [{"merchant": "G2A", "store_id": "38", "candidates": [_cand("1")]}]}]}
+        calls = []
+        out = self._run(recap, lambda *a: calls.append(1) or SubmitOutcome(ok=True, created=1))
+        self.assertEqual(calls, [])
+        self.assertIn("preview_incomplete", out["aborted"])
+
+    def test_refuses_game_count_mismatch(self):
+        # totals.games=2 but only 1 game flushed → the preview was interrupted.
+        recap = {"available": "all", "totals": {"games": 2},
+                 "games": [_game(("G2A", "38", [_cand("1")]))]}
+        calls = []
+        out = self._run(recap, lambda *a: calls.append(1) or SubmitOutcome(ok=True, created=1))
+        self.assertEqual(calls, [])
+        self.assertIn("preview_incomplete", out["aborted"])
+
+    def test_complete_preview_still_submits(self):
+        # control: a complete recap (count matches, all resolved) submits normally.
+        recap = {"available": "all", "totals": {"games": 1},
+                 "games": [_game(("G2A", "38", [_cand("1")]))]}
+        calls = []
+        out = self._run(recap, lambda *a: calls.append(1) or SubmitOutcome(ok=True, created=1))
+        self.assertEqual(calls, [1])
+        self.assertIsNone(out["aborted"])
+
     def test_candidates_by_store_skips_unresolved_and_errored_games(self):
         recap = {"games": [
             {"resolved": False, "url": "x"},
