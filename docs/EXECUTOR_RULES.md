@@ -115,6 +115,15 @@ site** `[F01]`.
   then only two blank states are legitimate — page 1 with feed UI and **no**
   pagination (empty queue) or a past-the-end page after a mid-sweep shrink.
   Anything else aborts loudly (`EmptyPageAnomaly`).
+- **The browser must have LANDED on the page navigated to `[P1-5]` (audit
+  2026-09-02).** `PAGE_STATE_JS` now returns `href`, and every page read
+  (`_assert_landed`, both sweep and slice modes) checks `_page_param(href) ==
+  page`. A wedged `Page.navigate` (commits but re-serves the PREVIOUS page's DOM,
+  leaving `location.href` on the prior url — a real CDP-under-load hazard the
+  submitter already guards, SC6) would otherwise feed page N-1's rows: they all
+  dedupe into `seen` (`new=0`), so the sweep falsely proves coverage while page N
+  goes silently unread → a sub-covered snapshot reported as complete. A mismatch
+  aborts loudly (`WedgedNavigationError`, a subclass of `EmptyPageAnomaly`).
 - `data-offer` is HTML-entity-encoded → `html.unescape()` **before**
   `json.loads()` `[F05]`.
 - For large feeds (>50 offers) filter in-page JS to return only relevant PC rows

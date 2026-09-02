@@ -58,12 +58,36 @@ class FakeSession:
     def evaluate_readonly(self, expression):
         states = self.script.get(self._page)
         if not states:
-            return json.dumps(_state([], nav_max=max(self.script) if self.script else 0))
-        state = states.pop(0) if len(states) > 1 else states[0]
+            state = _state([], nav_max=max(self.script) if self.script else 0)
+        else:
+            state = states.pop(0) if len(states) > 1 else states[0]
+        state = dict(state)
+        state.setdefault("href", self._href())   # well-behaved: href = navigated page
         return json.dumps(state)
+
+    def _href(self):
+        # A well-behaved browser reports the URL it actually landed on.
+        return self.nav[-1] if self.nav else ""
 
     def visits(self, page):
         return sum(1 for u in self.nav if _page_of(u) == page)
+
+
+class WedgedSession(FakeSession):
+    """A wedged navigation: Page.navigate to page N commits, but the tab re-serves
+    the PREVIOUS page's DOM AND leaves location.href on the prior url (SC6, P1-5).
+    Rows served are page (N-1)'s; href reports p=(N-1)."""
+
+    def __init__(self, script, wedge_from_page=2):
+        super().__init__(script)
+        self.wedge_from_page = wedge_from_page
+
+    def _href(self):
+        if self._page >= self.wedge_from_page:
+            # href stuck on the previous page (the stale DOM being re-served)
+            from src.extractor import feed_url
+            return feed_url("58", page=self._page - 1)
+        return super()._href()
 
 
 def _extractor(session, **kwargs):
@@ -122,6 +146,42 @@ class ParsePayloadTests(unittest.TestCase):
         self.assertEqual(parse_offers_payload(None), [])
         self.assertEqual(parse_offers_payload("[]"), [])
         self.assertEqual(parse_offers_payload([]), [])
+
+
+class WedgedNavigationTests(unittest.TestCase):
+    def test_wedged_navigation_is_detected_and_aborts(self):
+        # P1-5 (audit 2026-09-02): a wedged Page.navigate to page 2 re-serves page 1's
+        # DOM and leaves location.href on the prior url. Undetected, page 2's real rows
+        # go unread while the re-served page-1 rows dedupe to new=0 → the sweep falsely
+        # concludes full coverage. The href!=page guard must abort fail-closed.
+        from src.extractor import WedgedNavigationError
+        session = WedgedSession({
+            1: [_state([_offer(1)], nav_max=2)],
+            2: [_state([_offer(2)], nav_max=2)],
+        }, wedge_from_page=2)
+        with self.assertRaises(WedgedNavigationError):
+            _extractor(session).extract(run_id="r", merchant="M", store_id=1)
+
+    def test_well_behaved_navigation_passes(self):
+        # Control: href matches every navigated page → normal full extraction.
+        session = FakeSession({
+            1: [_state([_offer(1)], nav_max=2)],
+            2: [_state([_offer(2)], nav_max=2)],
+        })
+        _snap, feed = _extractor(session).extract(run_id="r", merchant="M", store_id=1)
+        self.assertEqual([o.offer_id for o in feed.offers], ["1", "2"])
+
+    def test_wedge_detected_in_slice_mode_too(self):
+        # The guard applies to extract_pages (slice mode) as well — a wedge there
+        # would misattribute page 1's rows to page 2.
+        from src.extractor import WedgedNavigationError
+        session = WedgedSession({
+            1: [_state([_offer(1)], nav_max=2)],
+            2: [_state([_offer(2)], nav_max=2)],
+        }, wedge_from_page=2)
+        with self.assertRaises(WedgedNavigationError):
+            _extractor(session).extract_pages(
+                run_id="r", merchant="M", store_id=1, first_page=1, last_page=2)
 
 
 class ExtractSweepTests(unittest.TestCase):

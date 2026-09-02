@@ -76,8 +76,21 @@ PAGE_STATE_JS = (
     "offers: Array.from(document.querySelectorAll('[data-offer]'))"
     ".map(function(e){return e.getAttribute('data-offer');}),"
     + FEED_MARKER_JS_FIELDS +
+    # href lets the extractor verify the browser actually LANDED on the page it
+    # navigated to — a wedged navigation (Page.navigate commits but re-serves the
+    # PREVIOUS page's DOM) leaves location.href on the prior url (P1-5, audit
+    # 2026-09-02). Mirrors the submitter's _FEED_STATE_JS SC6 guard.
+    ",href: String(location.href)"
     "})"
 )
+
+
+def _page_param(url: str) -> int:
+    """The ``&p=N`` pagination param of a feed URL (1 when absent) — the page the
+    browser is actually on. Mirrors the submitter's ``_page_param``."""
+
+    match = re.search(r"[?&]p=(\d+)", url or "")
+    return int(match.group(1)) if match else 1
 
 # Wait before the single re-fetch of a blank page (on top of navigate's settle).
 EMPTY_RETRY_WAIT_S = 5.0
@@ -101,6 +114,14 @@ class EmptyPageAnomaly(RuntimeError):
     """An in-range page rendered 0 rows twice without a deterministic
     explanation (empty queue on page 1, or past-the-end after a shrink).
     Transient blank render or feed breakage — abort, do not under-extract."""
+
+
+class WedgedNavigationError(EmptyPageAnomaly):
+    """The browser's location.href does not match the page we navigated to — a
+    wedged navigation re-serving the PREVIOUS page's DOM (SC6, P1-5 audit
+    2026-09-02). Its rows would all dedupe into ``seen`` (new=0) and the sweep
+    would falsely conclude full coverage while pages went silently unread.
+    Subclasses EmptyPageAnomaly so existing fail-closed callers already catch it."""
 
 
 class FeedUnstableError(RuntimeError):
@@ -249,6 +270,24 @@ class FeedExtractor:
             self._log("aborted", reason="not logged in (wp-login)", sweep=sweep, page=page)
             raise NotLoggedInError("feed bounced to wp-login — not logged in")
 
+    def _assert_landed(self, state: Any, *, sweep: int, page: int) -> None:
+        """P1-5 (audit 2026-09-02): verify the browser actually LANDED on this page.
+        A wedged Page.navigate commits but re-serves the PREVIOUS page's DOM; its
+        offers would all dedupe into ``seen`` (new=0), so the sweep would read them as
+        "already covered" and silently skip the real page N — a sub-covered snapshot
+        reported as fully covered. The submitter already guards this (SC6); the
+        extractor did not. Applied to BOTH sweep and slice reads. Fail-closed."""
+        href = str(state.get("href") or "") if isinstance(state, dict) else ""
+        served = _page_param(href)
+        if served != page:
+            self._log("aborted", reason="wedged navigation (href mismatch)",
+                      sweep=sweep, page=page, served=served)
+            raise WedgedNavigationError(
+                f"sweep {sweep} page {page}: browser is on p={served} "
+                f"(location.href {href!r}) after navigating to page {page} — wedged "
+                "navigation re-serving a stale DOM; refusing to read it as fresh coverage"
+            )
+
     def _settled_page_state(
         self, *, merchant: str, sweep: int, page: int, url: str
     ) -> dict:
@@ -357,6 +396,7 @@ class FeedExtractor:
                 state = self._settled_page_state(
                     merchant=merchant, sweep=sweep, page=page, url=url
                 )
+                self._assert_landed(state, sweep=sweep, page=page)
                 page_offers = parse_offers_payload(state.get("offers"))
                 nav_max = int(state.get("nav_max") or 0)
                 feed_ui = bool(state.get("feed_ui"))
@@ -514,6 +554,7 @@ class FeedExtractor:
             url = feed_url(store_id, page=page, feed_page=feed_page, available=available)
             self._pace()
             state = self._settled_page_state(merchant=merchant, sweep=1, page=page, url=url)
+            self._assert_landed(state, sweep=1, page=page)   # P1-5: wedge guard here too
             pages_fetched += 1
             page_offers = parse_offers_payload(state.get("offers"))
             nav_max = int(state.get("nav_max") or 0)
