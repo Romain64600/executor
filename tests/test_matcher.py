@@ -1386,6 +1386,128 @@ class MatchExtrasToPageEditionTests(unittest.TestCase):
         self.assertEqual(r.platform, "STEAM")
 
 
+class GameEditionPageVerifiedTests(unittest.TestCase):
+    """P1-1/P1-2 (audit 2026-09-02): a GUESSED non-Standard game edition must be
+    reconciled against the resolved AKS page's editions map — skip if the page does
+    not sell it, adopt the page's real id when the label matches. detect_edition's
+    generic hardcoded id (Deluxe→7, Gold→10, …) from the merchant title/URL slug was
+    emitted with no page proof → wrong-edition write surviving human validation."""
+
+    def _match(self, name, editions, aks_name="Some Game", url="https://m.test/x"):
+        res = AksResolution(slug="s", url="https://aks/x", product_id="1",
+                            aks_name=aks_name, editions=editions,
+                            regions={"2": "GLOBAL"}, official_platforms=("Steam",))
+        offer = NormalizedOffer(offer_id="1", name=name, url=url, merchant="Test")
+        return match_offer(offer, resolver=lambda n: res)
+
+    def test_guessed_deluxe_absent_from_page_is_skipped(self):
+        r = self._match("Some Game Deluxe Edition Steam Key", {"1": "Standard"})
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("guessed edition unverified", r.reason)
+
+    def test_real_deluxe_on_page_enters_with_page_id(self):
+        r = self._match("Some Game Deluxe Edition Steam Key",
+                        {"1": "Standard", "7": "Deluxe"})
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual(r.edition_id, "7")
+
+    def test_label_match_adopts_the_pages_own_id_not_the_generic(self):
+        # the page sells Gold under its own id 555, not the generic Gold→10
+        r = self._match("Some Game Gold Edition Steam Key",
+                        {"1": "Standard", "555": "Gold"})
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual(r.edition_id, "555")
+
+    def test_suffixed_page_label_is_adopted_not_false_skipped(self):
+        # AKS page labels carry an "Edition"/"Pack" suffix ("Deluxe Edition",
+        # "Gold Edition", "Complete Pack"); the guessed bare label ("Deluxe") matches by
+        # token-set equality modulo format noise and adopts the page's real id — bare
+        # equality over-skipped these legitimate offers (adversarial review 2026-09-02).
+        r = self._match("Some Game Deluxe Edition Steam Key",
+                        {"1": "Standard", "12": "Deluxe Edition"})
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual(r.edition_id, "12")
+        r = self._match("Some Game Complete Edition Steam Key",
+                        {"1": "Standard", "92": "Complete Pack"})
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual(r.edition_id, "92")
+
+    def test_digital_deluxe_edition_is_a_format_qualifier_not_a_tier(self):
+        # "Digital Deluxe Edition" is a near-universal premium-edition name; "Digital"
+        # is a delivery-format qualifier (like "Edition"), so it must not break the
+        # Deluxe match (adversarial review 2026-09-02, Q2).
+        r = self._match("Some Game Digital Deluxe Edition Steam Key GLOBAL",
+                        {"1": "Standard", "12": "Digital Deluxe Edition"})
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual(r.edition_id, "12")
+
+    def test_goty_abbreviation_matches_expanded_page_label(self):
+        # "GOTY" (the hint label) must reconcile with the page's spelled-out
+        # "Game of the Year Edition" (adversarial review 2026-09-02, Q2).
+        r = self._match("Some Game GOTY Steam Key GLOBAL",
+                        {"1": "Standard", "500": "Game of the Year Edition"})
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual(r.edition_id, "500")
+
+    def test_guessed_id_coincidence_with_different_tier_is_skipped(self):
+        # The guessed id must EARN its place via a label match: a page listing that id
+        # under a DIFFERENT tier ("Winter Pack" at id 7, guessed Deluxe→7) must NOT be
+        # entered under the guessed label — that is a wrong-edition write (Winter-Pack
+        # hole, adversarial review 2026-09-02).
+        r = self._match("Some Game Deluxe Edition Steam Key",
+                        {"1": "Standard", "7": "Winter Pack"})
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("guessed edition unverified", r.reason)
+        # …and the REAL Deluxe elsewhere on the page is found instead
+        r = self._match("Some Game Deluxe Edition Steam Key",
+                        {"1": "Standard", "7": "Winter Pack", "12": "Deluxe Edition"})
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual(r.edition_id, "12")
+
+    def test_e05_page_verified_edition_is_not_reprocessed(self):
+        # When the edition word is IN the AKS name, the E05/R23 block already page-
+        # verifies it; the new reconciliation must NOT re-run and false-flag ambiguity
+        # (regression guard, adversarial review 2026-09-02).
+        r = self._match("Neon Beats Complete Pack Steam GLOBAL",
+                        {"1": "Standard", "92": "Complete Pack", "91": "Complete"},
+                        aks_name="Neon Beats Complete Pack")
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual(r.edition_id, "91")
+
+    def test_superset_or_subword_page_label_never_adopted(self):
+        # DANGEROUS direction: a page label that merely CONTAINS the guessed word but is
+        # a DIFFERENT tier (or an accidental sub-word) must NOT be adopted — that would
+        # ENTER a wrong edition (adversarial review 2026-09-02, Q1). All must skip.
+        for name, editions in [
+            ("Some Game Gold Edition Steam Key", {"1": "Standard", "99": "Marigold Edition"}),
+            ("Some Game Deluxe Edition Steam Key", {"1": "Standard", "20": "Deluxe Plus Edition"}),
+            ("Some Game Collection Steam Key", {"1": "Standard", "348": "Ultimate Collection"}),
+            ("Some Game Premium Steam Key", {"1": "Standard", "30": "Premium Deluxe Edition"}),
+        ]:
+            r = self._match(name, editions)
+            self.assertIsInstance(r, SkippedOffer, name)
+            self.assertIn("guessed edition unverified", r.reason, name)
+
+    def test_slug_parasite_edition_absent_from_page_is_skipped(self):
+        # P1-2: a stray edition word in the URL slug (not the title) must not enter
+        r = self._match("Neon Beats Steam Key",
+                        {"1": "Standard"}, aks_name="Neon Beats",
+                        url="https://m.test/neon-beats-complete-edition-i123")
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("guessed edition unverified", r.reason)
+
+    def test_ambiguous_page_label_is_skipped(self):
+        r = self._match("Some Game Gold Edition Steam Key",
+                        {"1": "Standard", "555": "Gold", "777": "Gold"})
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("ambiguous page edition", r.reason)
+
+    def test_plain_standard_still_enters(self):
+        r = self._match("Some Game Steam Key GLOBAL", {"1": "Standard", "7": "Deluxe"})
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual(r.edition_id, "1")
+
+
 class ExplicitPlatformTests(unittest.TestCase):
     def test_steam_token_is_explicit(self):
         self.assertEqual(explicit_platform("Neon Beats - Steam Key - GLOBAL"), "STEAM")

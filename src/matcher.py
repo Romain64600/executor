@@ -1237,6 +1237,34 @@ def _edition_entry_name(value: Any) -> str:
     return str(value.get("name", "")) if isinstance(value, dict) else str(value)
 
 
+# Edition-label reconciliation (P1-1/P1-2, adversarial review 2026-09-02). Comparing a
+# guessed hint label to a page label needs neither bare equality (over-skips the common
+# suffixed page labels "Deluxe Edition"/"Complete Pack") nor raw substring (wrongly
+# adopts a tier SUPERSET or a sub-word: "Gold"⊂"Marigold Edition", "Deluxe"⊂"Deluxe Plus
+# Edition"). The safe match is TOKEN-SET EQUALITY modulo pure format noise: strip only
+# "Edition"/"Pack" and stopwords, so a residual DISTINCTIVE token (PLUS/ULTIMATE/…)
+# breaks the match. GOTY is expanded so its abbreviation matches "Game of the Year …".
+# "Edition"/"Pack" + stopwords + pure delivery-format qualifiers ("Digital", "Version")
+# — none is a distinctive tier word, so stripping them can never collapse two real tiers
+# ("Digital Deluxe Edition" == "Deluxe"; adversarial review 2026-09-02, a near-universal
+# premium-edition naming on AKS). Distinctive words (PLUS/ULTIMATE/GOLD/…) are NOT here.
+_EDITION_FORMAT_NOISE = frozenset({
+    "EDITION", "PACK", "DIGITAL", "VERSION", "OF", "THE", "AND", "A", "FOR"})
+_EDITION_LABEL_ALIASES = (("GOTY", "GAME OF THE YEAR"),)
+
+
+def _edition_key(label: str) -> frozenset[str]:
+    """The distinctive-token signature of an edition label (format noise + stopwords
+    removed, GOTY expanded). Two labels name the same edition tier iff their keys are
+    equal — never a substring/superset."""
+
+    up = " " + label.strip().upper() + " "
+    for abbr, expanded in _EDITION_LABEL_ALIASES:
+        up = re.sub(r"\b" + abbr + r"\b", expanded, up)
+    return frozenset(t for t in re.findall(r"[A-Z0-9]+", up)
+                     if t not in _EDITION_FORMAT_NOISE)
+
+
 def _dlc_edition_on_page(editions: dict[str, Any]) -> str:
     """The DLC bucket of an AKS editions map, or "" (id 16 is canonical today,
     the name match is the seatbelt if ids ever move). A truthy value means the
@@ -1799,10 +1827,11 @@ def match_offer(
         # an edition — fall back to Standard. Label match alone misses hint synonyms
         # ("Trilogy" resolves to label "Bundle"), so also compare via re-detection on
         # the AKS name: same edition id there = the word is product identity.
-        if edition_id != "1" and (
+        e05_page_verified = edition_id != "1" and (
             edition_label.upper() in resolution.aks_name.upper()
             or detect_edition(resolution.aks_name)[1] == edition_id
-        ):
+        )
+        if e05_page_verified:
             # R23 (2026-07-13, Valve Complete Pack escape): the E05 identity
             # heuristic assumes a name-embedded edition word can't be a real
             # edition, but some products genuinely sell Standard AND a
@@ -1863,6 +1892,49 @@ def match_offer(
         # resolves to the Bundle edition after E05 (Pack/Trilogy/…) is a bundle.
         if edition_id == "8":
             return SkippedOffer(offer, "bundle edition resolved — no bundles ever")
+        # P1-1/P1-2 (audit 2026-09-02): a GUESSED non-Standard game edition MUST be
+        # RECONCILED against the resolved AKS page's own editions map. detect_edition
+        # returns a generic hardcoded id (Deluxe→7, Gold→10, GOTY→9, …) from the merchant
+        # TITLE or the URL SLUG; the E05/R23 page-verification just above only runs when
+        # the edition word is IN the AKS name — the OPPOSITE of the common case (edition
+        # in the merchant title/slug, not the AKS name), leaving the guessed id emitted
+        # with NO proof the page sells it → a wrong-edition write that survives human
+        # validation ("Sniper Elite 4 Deluxe" → base page → Deluxe(7); a slug-parasite
+        # "…-complete-edition" → 91). Every OTHER edition producer already binds to the
+        # map (DLC via _dlc_edition_on_page, extras via match_extras_to_page_edition,
+        # software via resolve_software_edition) — the game path was the sole gap.
+        # Reconcile a non-Standard guessed edition ENTIRELY against the page's own map,
+        # by _edition_key TOKEN-SET EQUALITY modulo format noise (so "Deluxe"=="Deluxe
+        # Edition" and "GOTY"=="Game of the Year Edition", but "Gold"≠"Marigold Edition",
+        # "Deluxe"≠"Deluxe Plus Edition" — neither over-skip nor wrong-tier adoption,
+        # adversarial review 2026-09-02). We do NOT trust the guessed id even when it
+        # happens to be a page key: a page could list that id under a DIFFERENT tier
+        # ("Winter Pack" at id 7), and entering it under the guessed "Deluxe" label would
+        # be a wrong-edition write — so the id must EARN its place via a label match.
+        # >1 match is a guess → skip; 0 match → skip. A "Bundle"(8) guess already returned
+        # above; Standard(1) is the safe canonical fallback and stays untouched. Runs ONLY
+        # when E05 did NOT already page-verify the edition (E05 leaves a real map id or
+        # Standard(1)); re-running on an E05-resolved id would false-flag ambiguity.
+        if edition_id != "1" and not e05_page_verified:
+            want_key = _edition_key(edition_label)
+            pool = [(eid, _edition_entry_name(v))
+                    for eid, v in resolution.editions.items()
+                    if _edition_entry_name(v).strip().upper() != "STANDARD"
+                    and want_key and _edition_key(_edition_entry_name(v)) == want_key]
+            if len(pool) == 1:
+                edition_id, edition_label = pool[0]          # adopt the page's real id
+            elif len(pool) > 1:
+                return SkippedOffer(
+                    offer,
+                    f"ambiguous page edition for {edition_label!r}: "
+                    f"{[n for _, n in pool]} — not guessed (audit P1-1)",
+                )
+            else:
+                return SkippedOffer(
+                    offer,
+                    f"edition {edition_label!r}({edition_id}) not sold on the resolved "
+                    f"AKS page — guessed edition unverified (audit P1-1)",
+                )
 
     # R25 (2026-07-15, Romain — Kinguin/Darkwood escape): the AKS page's own
     # price-comparison table already lists every merchant currently selling

@@ -423,6 +423,27 @@ tied at the same specificity is a guess, not a page-verified pick — SKIP
 ("ambiguous page-verified edition … (R23 P2)") instead of silently taking
 whichever entry the page happened to list first.
 
+**Guessed game editions are page-verified too `[R40]` (audit 2026-09-02, P1-1/P1-2).**
+R23 above only fires when the edition word is IN the AKS name. The COMMON case — the
+edition is in the merchant TITLE or URL slug but NOT the AKS name — bypassed it, so
+`detect_edition`'s generic hardcoded id (Deluxe→7, Gold→10, GOTY→9, …) was emitted with
+NO proof the resolved page sells that tier → a wrong-edition write surviving human
+validation ("Sniper Elite 4 Deluxe" on a base-only page; a slug-parasite
+`…-complete-edition`). Now a non-Standard game edition is RECONCILED against the page's
+own map by **token-set equality modulo format noise** (`_edition_key`: strip
+`Edition`/`Pack`/`Digital`/`Version` + stopwords, expand `GOTY`→`Game of the Year`): the
+page edition whose distinctive tokens EXACTLY equal the guess is adopted **with the
+page's real id** (a page sells Deluxe under its own id 12, labelled "Deluxe Edition");
+>1 match → SKIP (ambiguous); 0 match → SKIP ("guessed edition unverified"). Not bare
+equality (over-skips suffixed labels) and NOT substring (would enter a wrong tier:
+"Gold"⊂"Marigold Edition", "Deluxe"⊂"Deluxe Plus Edition"). The guessed id is NOT
+trusted even when it coincidentally exists on the page — it must EARN its place via the
+label match, else a page listing that id under a different tier ("Winter Pack" at id 7)
+would be entered under the wrong label. Runs ONLY when R23 did not already verify.
+Standard(1) is the safe canonical fallback and is exempt. (Three adversarial-review
+rounds: closed a suffixed-label over-skip, a substring wrong-tier adoption, an
+id-coincidence hole, and the "Digital Deluxe" false-skip.)
+
 ### 4.6 URL hygiene
 The merchant URL is kept **complete, exactly as the feed carries it** — never
 strip query params in artifacts or reports. G2A is not the only merchant with
