@@ -1375,10 +1375,24 @@ class Submitter(_SubmitterBase):
     event_name = "submit_offer"
     ALL_CLICK_MODES = ("native", "dispatch", "trusted")
 
-    def __init__(self, session: Any, *, click_mode: str = "trusted", **kw: Any) -> None:
+    def __init__(self, session: Any, *, click_mode: str = "trusted",
+                 allow_degraded_click: bool = False, **kw: Any) -> None:
         if click_mode not in self.ALL_CLICK_MODES:
             raise ValueError(
                 f"unknown click_mode: {click_mode!r} (allowed: {self.ALL_CLICK_MODES})"
+            )
+        # P2-1 (audit 2026-09-02): 'native'/'dispatch' route to the UNGUARDED
+        # fill_and_create — no SC3 read-back, no VALUE_DRIFTED_BEFORE_CLICK re-read, no
+        # obstruction probe, no form_validity() hard gate, no NO_OPTION guard (the guards
+        # that fixed the 2026-07-06 wrong-edition incident). They also produce
+        # isTrusted:false and are proven NOT to persist. A real WRITE must be 'trusted'
+        # ("no degraded mode"); the degraded modes are diagnostics only, gated behind an
+        # EXPLICIT opt-in so production (scripts/05 --submit) can never select them.
+        if click_mode != "trusted" and not allow_degraded_click:
+            raise ValueError(
+                f"click_mode={click_mode!r} is a DEGRADED, unguarded write path — a real "
+                "submit must use 'trusted' (no degraded mode). Pass "
+                "allow_degraded_click=True only for an explicit diagnostic."
             )
         super().__init__(session, **kw)
         self.click_mode = click_mode

@@ -287,6 +287,17 @@ class SubmitCliTests(unittest.TestCase):
 
     # -- gates ---------------------------------------------------------------
 
+    def test_submit_refuses_degraded_click_mode(self):
+        # P2-1 (audit 2026-09-02): a production --submit must not select the unguarded
+        # native/dispatch click paths — refused before any session opens (no degraded mode).
+        approved = self._write_fixture()
+        for mode in ("native", "dispatch"):
+            code, out = self._run_cli(
+                self._base_argv(approved, "--submit", "--click-mode", mode))
+            self.assertEqual(code, 2, mode)
+        # trusted (the default guarded mode) is accepted at the arg-validation gate
+        # (this run proceeds past it — asserted elsewhere via the normal submit tests).
+
     def test_invariants_red_aborts_before_validation(self):
         approved = self._write_fixture()
         code, out = self._run_cli(self._base_argv(approved), report=RED)

@@ -242,6 +242,14 @@ def _main() -> int:
     if args.click_mode is not None and not args.submit:
         print("--click-mode is only meaningful with --submit", file=sys.stderr)
         return 2
+    # P2-1 (audit 2026-09-02): a real write must use the guarded 'trusted' click. The
+    # 'native'/'dispatch' modes bypass every wrong-edition guard and are proven not to
+    # persist — kept in code as diagnostics, but NEVER selectable for a production
+    # --submit (no degraded mode). The canary-#3 investigation that needed them is done.
+    if args.submit and args.click_mode in ("native", "dispatch"):
+        print(f"--click-mode {args.click_mode} is a degraded, unguarded write path — a "
+              "real --submit must use 'trusted' (the default). Refusing.", file=sys.stderr)
+        return 2
     # A canary mode is a cap, not a default: refuse a --limit that tries to widen
     # it rather than silently clamping (the operator asked for a batch the mode
     # forbids — say so).
