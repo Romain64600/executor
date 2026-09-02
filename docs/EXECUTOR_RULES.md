@@ -865,14 +865,14 @@ For each validated candidate, in order, fail-closed:
    button — the only trigger Driffle's handler honours `[S09]`. It drives the
    modal's **own** `admin-ajax do=create_offer`; we never issue a direct XHR
    (the merchant id is auto-assigned by the modal).
-   **A real write is `trusted`-only `[P2-1]` (audit 2026-09-02).** The `native`
-   (`button.click()`) and `dispatch` (MouseEvent) click modes route to the UNGUARDED
-   `fill_and_create` — no SC3 read-back, no `VALUE_DRIFTED_BEFORE_CLICK`, no
+   **A real write is `trusted`-only `[P2-1, A2]` (audit 2026-09-02).** The old
+   `native` (`button.click()`) and `dispatch` (MouseEvent) click modes routed to the
+   UNGUARDED `fill_and_create` — no SC3 read-back, no `VALUE_DRIFTED_BEFORE_CLICK`, no
    `form_validity()` gate, no `NO_OPTION` guard (the very guards steps 5–7 add) — and
-   produce `isTrusted:false` (proven not to persist). They are diagnostics only:
-   `scripts/05 --submit` refuses them, and `Submitter` refuses a non-trusted
-   `click_mode` unless an explicit `allow_degraded_click` opt-in is set (never in
-   production). No degraded write path is selectable.
+   produced `isTrusted:false` (proven not to persist). The degraded write path is
+   **REMOVED** from the write `Submitter` (A2): its `__init__` accepts ONLY `trusted`
+   and raises on anything else — **no opt-in escape hatch** ("no degraded mode").
+   `scripts/05 --submit` also refuses `native`/`dispatch` at the CLI (defense in depth).
 9. Verify post-save (§7), then close via `#TB_closeWindowButton`.
 10. Pacing ≥ 500 ms between submissions `[S03]` — implemented as bounded-random
     pacers (`src/pacing.py`): `--pace-offers` (default `5-15` s) between offers,

@@ -1379,59 +1379,41 @@ class InspectSubmitter(_SubmitterBase):
 class Submitter(_SubmitterBase):
     """Real submitter — WRITES. Requires a WriteSubmitSession.
 
-    ``click_mode`` is passed through to the session: 'trusted' (default —
-    Chantier n°1, 2026-07-03 — CDP `Input.dispatchMouseEvent` at the button
-    center, produces `event.isTrusted:true`; the *only* mode that reliably fires
-    Driffle's handler), 'native' (`b.click()`) or 'dispatch' (documented S09
-    derogation — MouseEvent on the Create button only). native/dispatch produce
-    `isTrusted:false` and are proven NOT to persist on Driffle — kept only as
-    documented diagnostics. Post-save (offer gone from the refreshed feed, same
-    available mode as the run) remains the ONLY success proof in every mode.
+    A real write is **trusted-only** (`fill_then_click_trusted`): a CDP
+    `Input.dispatchMouseEvent` at the button center (`event.isTrusted:true`,
+    Chantier n°1 2026-07-03 — the only mode that reliably fires Driffle's handler),
+    carrying every wrong-edition guard (SC3 read-back, `VALUE_DRIFTED_BEFORE_CLICK`,
+    obstruction probe, `form_validity()`, `NO_OPTION`). The old `native`/`dispatch`
+    modes routed to the UNGUARDED `fill_and_create` (`isTrusted:false`, proven not to
+    persist) — a degraded write path REMOVED entirely (A2, audit 2026-09-02: "no
+    degraded mode", no opt-in). Post-save (offer gone from the refreshed feed, same
+    available mode as the run) remains the ONLY success proof.
     """
 
     write_mode = True
     event_name = "submit_offer"
-    ALL_CLICK_MODES = ("native", "dispatch", "trusted")
 
-    def __init__(self, session: Any, *, click_mode: str = "trusted",
-                 allow_degraded_click: bool = False, **kw: Any) -> None:
-        if click_mode not in self.ALL_CLICK_MODES:
+    def __init__(self, session: Any, *, click_mode: str = "trusted", **kw: Any) -> None:
+        # A2 (audit 2026-09-02): the production write submitter accepts ONLY the guarded
+        # 'trusted' click — no native/dispatch, no opt-in escape hatch. A degraded,
+        # unguarded write path must not even be constructible here.
+        if click_mode != "trusted":
             raise ValueError(
-                f"unknown click_mode: {click_mode!r} (allowed: {self.ALL_CLICK_MODES})"
-            )
-        # P2-1 (audit 2026-09-02): 'native'/'dispatch' route to the UNGUARDED
-        # fill_and_create — no SC3 read-back, no VALUE_DRIFTED_BEFORE_CLICK re-read, no
-        # obstruction probe, no form_validity() hard gate, no NO_OPTION guard (the guards
-        # that fixed the 2026-07-06 wrong-edition incident). They also produce
-        # isTrusted:false and are proven NOT to persist. A real WRITE must be 'trusted'
-        # ("no degraded mode"); the degraded modes are diagnostics only, gated behind an
-        # EXPLICIT opt-in so production (scripts/05 --submit) can never select them.
-        if click_mode != "trusted" and not allow_degraded_click:
-            raise ValueError(
-                f"click_mode={click_mode!r} is a DEGRADED, unguarded write path — a real "
-                "submit must use 'trusted' (no degraded mode). Pass "
-                "allow_degraded_click=True only for an explicit diagnostic."
+                f"click_mode={click_mode!r}: a real submit is trusted-only — no degraded "
+                "click mode (native/dispatch bypass the wrong-edition guards; removed)."
             )
         super().__init__(session, **kw)
-        self.click_mode = click_mode
 
     def _process(self, entry, candidate, ctx):
         if not entry.get("ready"):
             return False
-        if self.click_mode == "trusted":
-            diag = self.session.fill_then_click_trusted(
-                entry["region_select"], entry["region_id"],
-                entry["edition_select"], entry["edition_id"],
-                target_value=entry.get("aks_product_id"),
-                region_query=entry.get("region_text"),
-                edition_query=entry.get("edition_text"),
-            )
-        else:
-            diag = self.session.fill_and_create(
-                entry["region_select"], entry["region_id"],
-                entry["edition_select"], entry["edition_id"],
-                click_mode=self.click_mode,
-            )
+        diag = self.session.fill_then_click_trusted(
+            entry["region_select"], entry["region_id"],
+            entry["edition_select"], entry["edition_id"],
+            target_value=entry.get("aks_product_id"),
+            region_query=entry.get("region_text"),
+            edition_query=entry.get("edition_text"),
+        )
         entry["create"] = diag  # dict: status + read-back values + options + signal
         status = diag.get("status") if isinstance(diag, dict) else diag
         # Only a settled click (success signal, or no signal but no error) proceeds to

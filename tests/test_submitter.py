@@ -239,11 +239,10 @@ class ReflowWriteSession(FakeWriteSession):
         return super().open_offer_modal(offer_id)
 
 
-def _real(session, approved, click_mode="native", **kw):
-    # allow_degraded_click: these tests exercise the write flow through the simpler
-    # fill_and_create mock (native/dispatch); the P2-1 guard requires the explicit
-    # diagnostic opt-in for a degraded write. Harmless when click_mode="trusted".
-    sub = Submitter(session, click_mode=click_mode, allow_degraded_click=True)
+def _real(session, approved, click_mode="trusted", **kw):
+    # A real write is trusted-only (A2). The FakeWriteSession's fill_then_click_trusted
+    # mock drives the write flow just like the removed native path did.
+    sub = Submitter(session, click_mode=click_mode)
     sub.feed_ui_render_waits = ()          # no real render-wait sleep in tests
     sub.empty_retry_wait_s = 0             # no blank-page/empty-confirm retry sleep
     sub.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
@@ -433,7 +432,7 @@ class RealSubmitTests(unittest.TestCase):
         self.assertEqual(result["stopped"], "limit_reached")
         self.assertEqual(len(result["plan"]), 1)
         self.assertTrue(result["plan"][0]["submitted"])
-        self.assertEqual(session.fill_calls, [("offer[region]", "2", "offer[edition]", "1", "native")])
+        self.assertEqual(session.fill_calls, [("offer[region]", "2", "offer[edition]", "1", "trusted")])
 
     def test_full_batch_creates_all(self):
         session = FakeWriteSession([["1", "2"]])
@@ -459,7 +458,7 @@ class RealSubmitTests(unittest.TestCase):
         # a reflow feed). page_hint=5 indexes the window [4,5,6] to LOCATE it
         # cheaply, then creates; the post-save gone-proof is whole-feed.
         session = FakeWriteSession(self._deep_feed(6))
-        result = Submitter(session, click_mode="native", allow_degraded_click=True).run(
+        result = Submitter(session).run(
             run_id="r", merchant="Kinguin", store_id="58",
             approved=[_cand("54")], page_hint=5, page_window=1)
         self.assertEqual((result["write_attempts"], result["created"]), (1, 1))
@@ -472,7 +471,7 @@ class RealSubmitTests(unittest.TestCase):
         # window is falsely proven gone. After locating "54" via the window [4,5,6],
         # the post-save verify must scan pages OUTSIDE the window too.
         session = FakeWriteSession(self._deep_feed(6))
-        Submitter(session, click_mode="native", allow_degraded_click=True).run(
+        Submitter(session).run(
             run_id="r", merchant="Kinguin", store_id="58",
             approved=[_cand("54")], page_hint=5, page_window=1)
         nav = self._pages_navigated(session)
@@ -483,7 +482,7 @@ class RealSubmitTests(unittest.TestCase):
         # still live). The whole-feed gone-proof finds it → submitted=False. A
         # window-only proof would have missed it → phantom creation.
         session = FakeWriteSession(self._deep_feed(6), create_removes=False)
-        result = Submitter(session, click_mode="native", allow_degraded_click=True).run(
+        result = Submitter(session).run(
             run_id="r", merchant="Kinguin", store_id="58",
             approved=[_cand("54")], page_hint=5, page_window=1)
         self.assertEqual(result["created"], 0)
@@ -495,7 +494,7 @@ class RealSubmitTests(unittest.TestCase):
         # miss. Parity recovery (Romain 2026-09-01): _prepare re-locates it by URL
         # (bounded feed scan) and finds it → recovered + created, not a false skip.
         session = FakeWriteSession(self._deep_feed(6))
-        result = Submitter(session, click_mode="native", allow_degraded_click=True).run(
+        result = Submitter(session).run(
             run_id="r", merchant="Kinguin", store_id="58",
             approved=[_cand("54")], page_hint=2, page_window=1)
         self.assertEqual(result["created"], 1)
@@ -506,7 +505,7 @@ class RealSubmitTests(unittest.TestCase):
         # Genuinely absent (in NO page): the recovery re-scan finds nothing → the
         # fail-closed blocker stands (no create).
         session = FakeWriteSession(self._deep_feed(6))
-        result = Submitter(session, click_mode="native", allow_degraded_click=True).run(
+        result = Submitter(session).run(
             run_id="r", merchant="Kinguin", store_id="58",
             approved=[_cand("999")], page_hint=2, page_window=1)
         self.assertEqual(result["created"], 0)
@@ -518,7 +517,7 @@ class RealSubmitTests(unittest.TestCase):
         feed = self._deep_feed(6)
         feed[3].append("54")            # "54" now also on page 4 (index 3)
         session = FakeWriteSession(feed)
-        result = Submitter(session, click_mode="native", allow_degraded_click=True).run(
+        result = Submitter(session).run(
             run_id="r", merchant="Kinguin", store_id="58",
             approved=[_cand("54")], page_hint=5, page_window=1)
         self.assertEqual(result["created"], 1)
@@ -529,7 +528,7 @@ class RealSubmitTests(unittest.TestCase):
         # fully created, offer 2 is never started (no mid-write kill), and the
         # run stops with stopped="operator_stop".
         session = FakeWriteSession([["1", "2"]])
-        sub = Submitter(session, click_mode="native", allow_degraded_click=True)
+        sub = Submitter(session)
         # Drive the stop off real progress (robust vs the index scan's own
         # should_stop polling): trip once offer 1 has actually been created.
         sub._should_stop = lambda: len(session.created) >= 1
@@ -610,20 +609,6 @@ class RealSubmitTests(unittest.TestCase):
         # and the original index finds it there.
         self.assertTrue(by_id["4"]["ready"])
 
-    def test_dispatch_click_mode_is_passed_through(self):
-        session = FakeWriteSession([["1"]])
-        result = _real(session, [_cand("1")], click_mode="dispatch", limit=1)
-        self.assertEqual(session.fill_calls[0][-1], "dispatch")
-        self.assertEqual(result["plan"][0]["create"]["click_mode"], "dispatch")
-        # The derogation NEVER weakens the proof: post-save still decides.
-        self.assertTrue(result["plan"][0]["submitted"])
-
-    def test_dispatch_mode_still_fails_when_still_pending(self):
-        session = FakeWriteSession([["1"]], create_removes=False)
-        result = _real(session, [_cand("1")], click_mode="dispatch", limit=1)
-        self.assertFalse(result["plan"][0]["submitted"])
-        self.assertIn("STILL in feed", result["plan"][0]["post_save"])
-
     def test_default_click_mode_is_trusted(self):
         # native/dispatch are proven dead on Driffle; the class default must be
         # the only working mode. Construct Submitter WITHOUT click_mode to assert
@@ -671,12 +656,6 @@ class RealSubmitTests(unittest.TestCase):
         _real(session, [_cand("1")], click_mode="trusted", limit=1)
         self.assertEqual(session.last_target_value, "1")
 
-    def test_native_path_does_not_thread_target(self):
-        # Only the trusted path fills offer[targets][]; native never touches it.
-        session = FakeWriteSession([["1"]])
-        _real(session, [_cand("1")], click_mode="native", limit=1)
-        self.assertIsNone(session.last_target_value)
-
 
 class ClickModeValidationTests(unittest.TestCase):
     def test_unknown_click_mode_is_refused(self):
@@ -692,16 +671,15 @@ class ClickModeValidationTests(unittest.TestCase):
             Submitter(session, click_mode="xhr")
 
     def test_trusted_is_the_only_click_mode_a_real_write_accepts(self):
-        # P2-1 (audit 2026-09-02): a real write must use the guarded 'trusted' click.
-        # 'native'/'dispatch' are unguarded degraded diagnostics — refused unless the
-        # explicit allow_degraded_click opt-in is set (which production never passes).
+        # A2 (audit 2026-09-02): a real write is trusted-only — the degraded native/
+        # dispatch write path is REMOVED, with NO opt-in escape hatch. They raise
+        # UNCONDITIONALLY; only 'trusted' (the default) constructs.
         session = FakeWriteSession([["1"]])
-        Submitter(session, click_mode="trusted")               # ok, the default
+        Submitter(session, click_mode="trusted")               # ok
         Submitter(session)                                     # ok, default trusted
         for mode in ("native", "dispatch"):
             with self.assertRaises(ValueError):
-                Submitter(session, click_mode=mode)            # refused without opt-in
-            Submitter(session, click_mode=mode, allow_degraded_click=True)  # diagnostic
+                Submitter(session, click_mode=mode)            # no opt-in, always refused
 
 
 class FetchSessionCatalogTests(unittest.TestCase):
@@ -1737,7 +1715,7 @@ class PacingTests(unittest.TestCase):
     def test_write_mode_offer_pacer_skips_not_ready_offers(self):
         pacer = Pacer(1, 1, sleeper=lambda s: None)
         session = FakeWriteSession([["1"]])
-        sub = Submitter(session, click_mode="native", offer_pacer=pacer, allow_degraded_click=True)
+        sub = Submitter(session, offer_pacer=pacer)
         sub.empty_retry_wait_s = 0
         sub.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
         sub.feed_ui_render_waits = ()
@@ -1823,8 +1801,8 @@ class BrokenAfterClickSession(FakeWriteSession):
         super().__init__(pages, **kw)
         self.broken = False
 
-    def fill_and_create(self, *a, **kw):
-        diag = super().fill_and_create(*a, **kw)
+    def fill_then_click_trusted(self, *a, **kw):
+        diag = super().fill_then_click_trusted(*a, **kw)
         self.broken = True
         return diag
 
@@ -1978,7 +1956,7 @@ class FeedScanFailClosedTests(unittest.TestCase):
 
     def test_verify_scan_death_after_click_is_unknown_not_created(self):
         session = BrokenAfterClickSession([["1", "2"]])
-        submitter = Submitter(session, click_mode="native", allow_degraded_click=True)
+        submitter = Submitter(session)
         submitter.empty_retry_wait_s = 0
         submitter.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
         submitter.feed_ui_render_waits = ()
