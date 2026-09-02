@@ -503,6 +503,15 @@ class AdminHandler(BaseHTTPRequestHandler):
 
     def _post_validation(self, run_dir: Path) -> None:
         body = self._json_body()
+        # P2-9 (audit 2026-09-02): validated_by AUTHORIZES live offer creation — it is
+        # the single approval gate. It must be the AUTHENTICATED (nginx basic-auth)
+        # user, never a client free-text field an operator could set to anyone else.
+        # The authenticated identity WINS over any body-supplied value (mirrors L11,
+        # _post_learning). With no basic auth (standalone/dev), fall back to the body
+        # field as before (the missing-validated_by 400 still applies downstream).
+        authed = self._basic_user()
+        if authed:
+            body["validated_by"] = authed
         with self.state.validation_lock:
             result = apply_overrides_and_validate(
                 run_dir,

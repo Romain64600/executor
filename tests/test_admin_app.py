@@ -216,6 +216,37 @@ class CsrfTests(AppTestCase):
 
 
 class ValidationFlowTests(AppTestCase):
+    def test_validated_by_is_the_authenticated_user_not_the_body(self):
+        # P2-9 (audit 2026-09-02): validated_by authorizes live offer creation — it must
+        # be the AUTHENTICATED (basic-auth) user, never a client free-text field an
+        # operator could spoof to someone else. The authenticated identity WINS.
+        import base64
+        _, payload = self._json("GET", "/api/runs/20260715-000000-test/validation")
+        fp = payload["candidates"][0]["fingerprint"]
+        auth = "Basic " + base64.b64encode(b"alice:secret").decode()
+        resp, _ = self._json(
+            "POST", "/api/runs/20260715-000000-test/validation",
+            body={"candidates_sha256": payload["candidates_sha256"],
+                  "validated_by": "Romain",   # spoofed — must be ignored
+                  "decisions": [{"fingerprint": fp, "approve": True}]},
+            headers={"Authorization": auth})
+        self.assertEqual(resp.status, 200)
+        stored = json.loads((self.run / "validation.json").read_text(encoding="utf-8"))
+        self.assertEqual(stored["validated_by"], "alice")   # authed wins, not "Romain"
+
+    def test_validated_by_falls_back_to_body_without_auth(self):
+        # No basic auth (standalone/dev) → the body field is used, as before.
+        _, payload = self._json("GET", "/api/runs/20260715-000000-test/validation")
+        fp = payload["candidates"][0]["fingerprint"]
+        resp, _ = self._json(
+            "POST", "/api/runs/20260715-000000-test/validation",
+            body={"candidates_sha256": payload["candidates_sha256"],
+                  "validated_by": "Bob",
+                  "decisions": [{"fingerprint": fp, "approve": True}]})
+        self.assertEqual(resp.status, 200)
+        stored = json.loads((self.run / "validation.json").read_text(encoding="utf-8"))
+        self.assertEqual(stored["validated_by"], "Bob")
+
     def test_save_validation_and_submit_flow(self):
         _, payload = self._json("GET", "/api/runs/20260715-000000-test/validation")
         fingerprint = payload["candidates"][0]["fingerprint"]

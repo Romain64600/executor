@@ -716,7 +716,13 @@ moment of submission, not only at 04_validate time.
 
 **Admin page (2026-07-15):** the operator can validate from the web page
 (`src/admin/`, `scripts/07_admin_server.py`, behind nginx HTTPS + basic auth)
-instead of hand-editing `validation.json`. Same gate, same artifacts: every
+instead of hand-editing `validation.json`. **`validated_by` is the AUTHENTICATED
+user, never the request body `[P2-9]` (audit 2026-09-02):** it authorizes live
+offer creation (non-repudiation), so `_post_validation` overwrites it with
+`_basic_user()` — the authenticated identity wins over any client-supplied value
+(mirrors L11, `_post_learning`). A no-auth standalone/dev request falls back to the
+body field (production always carries the nginx-validated Authorization header).
+Same gate, same artifacts: every
 save regenerates the full `candidates.json` + `validation.json` +
 `approved.json` triple through the real `04_validate.py check` — the page can
 never patch `approved.json` alone. Operator overrides (region/edition, from
