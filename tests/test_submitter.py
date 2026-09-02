@@ -242,6 +242,8 @@ class ReflowWriteSession(FakeWriteSession):
 def _real(session, approved, click_mode="native", **kw):
     sub = Submitter(session, click_mode=click_mode)
     sub.feed_ui_render_waits = ()          # no real render-wait sleep in tests
+    sub.empty_retry_wait_s = 0             # no blank-page/empty-confirm retry sleep
+    sub.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
     return sub.run(
         run_id="r", merchant="Driffle", store_id="127", approved=approved, **kw
     )
@@ -624,7 +626,11 @@ class RealSubmitTests(unittest.TestCase):
         # the only working mode. Construct Submitter WITHOUT click_mode to assert
         # the class default (not the _real helper's explicit native).
         session = FakeWriteSession([["1"]])
-        Submitter(session).run(
+        sub = Submitter(session)   # class default click_mode (trusted)
+        sub.empty_retry_wait_s = 0
+        sub.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
+        sub.feed_ui_render_waits = ()
+        sub.run(
             run_id="r", merchant="Driffle", store_id="127",
             approved=[_cand("1")], limit=1,
         )
@@ -838,7 +844,11 @@ class CatalogResolutionInWritePathTests(unittest.TestCase):
         cand = _cand("1", edition_id="999")
         cand["edition"]["label"] = "Deluxe"
         session = FakeWriteSession([["1"]])
-        result = Submitter(session, click_mode="trusted").run(
+        sub = Submitter(session, click_mode="trusted")
+        sub.empty_retry_wait_s = 0
+        sub.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
+        sub.feed_ui_render_waits = ()
+        result = sub.run(
             run_id="r", merchant="Driffle", store_id="127", approved=[cand], limit=1,
         )
         # Resolution swapped the stale 999 for the live Deluxe id (7) and the
@@ -1717,7 +1727,11 @@ class PacingTests(unittest.TestCase):
     def test_write_mode_offer_pacer_skips_not_ready_offers(self):
         pacer = Pacer(1, 1, sleeper=lambda s: None)
         session = FakeWriteSession([["1"]])
-        Submitter(session, click_mode="native", offer_pacer=pacer).run(
+        sub = Submitter(session, click_mode="native", offer_pacer=pacer)
+        sub.empty_retry_wait_s = 0
+        sub.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
+        sub.feed_ui_render_waits = ()
+        sub.run(
             run_id="r", merchant="Driffle", store_id="127",
             approved=[_cand("1"), _cand("9")], limit=None
         )
@@ -1738,6 +1752,29 @@ class BlankPagesSession(FakeSubmitSession):
             self.blank_reads -= 1
             return []
         return super().page_offer_rows()
+
+
+class TransientEmptyNavSession(FakeSubmitSession):
+    """The P1-3 transient blank (2026-07-07): on the FIRST read of page 1 the
+    wp-list-table shell has rendered (feed_ui=True) but BOTH the rows AND the
+    pagination nav are still loading → rows=[], nav_max=0. The OLD _read_feed_page
+    classified that as a PROVEN empty queue on the first read (false 'gone'); the
+    _wait_for_feed_ui poll did NOT fire because feed_ui was already True. The
+    confirming re-fetch shows the real rows + nav."""
+
+    def __init__(self, pages, **kw):
+        super().__init__(pages, **kw)
+        self.reads = 0
+
+    def page_offer_rows(self):
+        self.reads += 1
+        return [] if self.reads == 1 else super().page_offer_rows()
+
+    def feed_page_state(self):
+        state = super().feed_page_state()
+        if self.reads <= 1:               # first attempt: nav not rendered yet
+            state["nav_max"] = 0
+        return state
 
 
 class LoginMidScanSession(FakeSubmitSession):
@@ -1800,6 +1837,7 @@ class ModalRaisesSession(FakeSubmitSession):
 def _dry(session, approved, **kw):
     submitter = DryRunSubmitter(session)
     submitter.empty_retry_wait_s = 0
+    submitter.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
     submitter.feed_ui_render_waits = ()   # no real render-wait sleep in tests
     return submitter.run(
         run_id="r", merchant="Driffle", store_id="127", approved=approved, **kw
@@ -1851,6 +1889,16 @@ class FeedScanFailClosedTests(unittest.TestCase):
         self.assertEqual(result["aborted"], "feed_unreadable")
         self.assertEqual(result["plan"], [])
 
+    def test_transient_empty_with_nav_zero_is_confirmed_not_falsely_gone(self):
+        # P1-3 (audit 2026-09-02): feed_ui=True, rows=[], nav_max=0 on the FIRST read
+        # (rows AND nav still loading) must NOT be classified as a proven empty queue —
+        # that is the transient blank whose false 'gone' causes a phantom creation. The
+        # confirming re-fetch finds the row, so the offer locates and is ready.
+        session = TransientEmptyNavSession([["1"]])
+        result = _dry(session, [_cand("1")])
+        self.assertIsNone(result["aborted"])
+        self.assertTrue(result["plan"][0]["ready"])
+
     def test_login_bounce_mid_scan_aborts(self):
         session = LoginMidScanSession([["1"]])
         result = _dry(session, [_cand("1")])
@@ -1877,6 +1925,8 @@ class FeedScanFailClosedTests(unittest.TestCase):
         session = BrokenAfterClickSession([["1", "2"]])
         submitter = Submitter(session, click_mode="native")
         submitter.empty_retry_wait_s = 0
+        submitter.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
+        submitter.feed_ui_render_waits = ()
         result = submitter.run(
             run_id="r", merchant="Driffle", store_id="127",
             approved=[_cand("1"), _cand("2")], limit=None,
@@ -2092,6 +2142,7 @@ class ModalContextRenderWaitTests(unittest.TestCase):
     def _run(self, session):
         sub = DryRunSubmitter(session)
         sub.empty_retry_wait_s = 0
+        sub.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
         sub.feed_ui_render_waits = (0, 0)     # poll re-reads, no real sleep
         return sub.run(run_id="r", merchant="Kinguin", store_id="58",
                        approved=[_cand("1")])
@@ -2181,6 +2232,7 @@ class SearchLocateTests(unittest.TestCase):
         s = DryRunSubmitter(session)
         s.feed_ui_render_waits = ()          # no real render-wait sleep in tests
         s.empty_retry_wait_s = 0             # no blank-page retry sleep in tests
+        s.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
         s.feed_scan_settle = 0
         return s
 
@@ -2318,6 +2370,7 @@ class SearchLocateTests(unittest.TestCase):
         lg = _Log()
         sub = DryRunSubmitter(_SearchFake([]), logger=lg)
         sub.empty_retry_wait_s = 0
+        sub.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
         sub.search_index_attempts = 3
 
         def always_fail(store, fp, avail, url):

@@ -937,6 +937,19 @@ verify scan (and the batch-start index) prove their own coverage:
   past-the-end (feed UI + nav advertising fewer pages) or empty queue on
   page 1 — anything else raises `FeedScanError` (the extractor's §3
   discipline, via `SubmitSession.feed_page_state()`);
+  **`nav_max=0` is confirmed, never trusted on the first read `[P1-3]` (audit
+  2026-09-02).** An empty page with the feed UI up but `nav_max=0` is AMBIGUOUS: a
+  genuine empty queue (page 1, no results) OR a transient blank where the rows AND
+  the pagination nav are still loading into the already-rendered shell (2026-07-07).
+  The `_wait_for_feed_ui` poll does not catch it (feed_ui is already True), so a
+  single read would prove a FALSE end-of-feed → false 'gone' → phantom creation
+  (this scan backs both the whole-feed prove-gone AND the by-urls search-locate).
+  It is CONFIRMED by re-reading the DOM (no re-navigate) with the `EMPTY_CONFIRM_
+  WAITS` backoff — the SAME slow-render headroom as `FEED_UI_RENDER_WAITS`, because
+  page-1-empty is the phantom-critical branch — before returning `[]`; if a
+  re-read never ran (misconfig) it falls through to the fail-closed raise, never a
+  first-read `[]`. A past-the-end page with `nav_max>=1` (nav rendered) stays a
+  fast return — the nav proved the page count, no ambiguity;
 - a login bounce mid-scan raises `NotLoggedInError`;
 - the browser's `location.href` must match the page navigated to (a wedged
   tab re-serving the previous DOM is detected, never re-read as fresh pages);

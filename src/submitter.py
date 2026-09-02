@@ -77,6 +77,17 @@ FEED_SCAN_SETTLE = 1.0
 # a slow render finish. Tests patch to ().
 FEED_UI_RENDER_WAITS = (1.0, 2.0, 4.0)
 
+# When an empty page has the feed UI up but nav_max=0 (ambiguous: genuine empty queue
+# OR a transient blank whose rows+nav are still loading, P1-3), CONFIRM by re-reading
+# the DOM (no re-navigate) with this backoff — a transient resolves once the AJAX rows
+# land, a genuine empty stays empty. Matches FEED_UI_RENDER_WAITS: this is the SAME
+# slow-render-under-load phenomenon (feed_ui/rows can lag up to ~4s, 2026-08-18), and
+# page-1-empty is the PHANTOM-CRITICAL branch (a search/feed prove-gone reads it as
+# 'gone'), so it must get the same render headroom the rest of the file assumes — a
+# shorter budget false-'gone'd a slow transient (adversarial review 2026-09-02).
+# The genuine-empty cost is a DOM re-read poll, not a re-navigate. Tests patch to (0,).
+EMPTY_CONFIRM_WAITS = (1.0, 2.0, 4.0)
+
 # by-urls search-locate page budget (2026-08-25 review): the feed SEARCH is filtered
 # to ONE offer's slug, so it normally returns a single result page — but the slug is a
 # SUBSTRING match, so a short/common slug in a big store can overflow. The scan walks
@@ -322,6 +333,7 @@ class _SubmitterBase:
         self.page_pacer = page_pacer
         self.offer_pacer = offer_pacer
         self.empty_retry_wait_s = EMPTY_RETRY_WAIT_S
+        self.empty_confirm_waits = EMPTY_CONFIRM_WAITS
         self.feed_scan_settle = FEED_SCAN_SETTLE
         self.feed_ui_render_waits = FEED_UI_RENDER_WAITS
         self.search_scan_max_pages = SEARCH_SCAN_MAX_PAGES
@@ -449,10 +461,42 @@ class _SubmitterBase:
                 return rows, state
             nav_max = int(state.get("nav_max") or 0)
             feed_ui = bool(state.get("feed_ui"))
-            if page == 1 and feed_ui and nav_max == 0:
-                return [], state  # empty queue — proven
-            if page > 1 and feed_ui and nav_max < page:
-                return [], state  # past-the-end — proven
+            if feed_ui and page > 1 and 1 <= nav_max < page:
+                # Genuine past-the-end: the pagination nav IS rendered and advertises
+                # fewer pages than this one, so an empty page here is expected (no
+                # transient ambiguity — the nav proved the page count). Fast path.
+                return [], state
+            if feed_ui and nav_max == 0:
+                # P1-3 (audit 2026-09-02): nav_max=0 is AMBIGUOUS — a genuine empty queue
+                # (page 1, no results) OR a transient blank where BOTH the rows AND the
+                # pagination nav are still loading into the already-rendered shell
+                # (feed_ui up, rows=[] — the blank of 2026-07-07). The _wait_for_feed_ui
+                # poll above did NOT fire (feed_ui was already True), so a single read
+                # would "prove" a FALSE end-of-feed → a false 'gone' → phantom creation
+                # (this scan backs both the whole-feed prove-gone and the by-urls
+                # search-locate). CONFIRM by RE-READING the DOM (no re-navigate) with a
+                # short backoff — a transient resolves in ~1s, a genuine empty stays
+                # empty (much cheaper than the 5s blank re-fetch on this hot path).
+                confirmed = False
+                for wait in self.empty_confirm_waits:
+                    time.sleep(wait)
+                    rows = self.session.page_offer_rows()
+                    state = self.session.feed_page_state()
+                    confirmed = True
+                    if rows:
+                        return rows, state          # transient resolved — real rows
+                    nav_max = int(state.get("nav_max") or 0)
+                    if nav_max:
+                        break                        # nav rendered now → re-classify
+                # Only trust an empty as PROVEN after at least one confirming re-read
+                # ran — an empty ``empty_confirm_waits`` (misconfig) must NOT silently
+                # revert to the first-read false 'gone'; it falls through to fail-closed.
+                if confirmed and not rows and page == 1 and nav_max == 0:
+                    return [], state                 # confirmed empty queue
+                if confirmed and not rows and page > 1 and 1 <= nav_max < page:
+                    return [], state                 # nav rendered on re-read → past-end
+                # Unconfirmed, or still ambiguous (page>1 nav never rendered, nav>=page):
+                # the end-of-feed is UNPROVEN — fall through to the fail-closed raise.
             reason = (
                 f"blank page {page} with feed_ui={feed_ui} nav_max={nav_max}"
                 if feed_ui else f"page {page} rendered without the feed UI"
