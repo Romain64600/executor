@@ -90,6 +90,13 @@ class AppTestCase(unittest.TestCase):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
         self.addCleanup(conn.close)
         send_headers = dict(headers or {})
+        # Production runs behind nginx basic auth; default every request to an
+        # authenticated operator so tests match production (A3: validation refuses an
+        # unauthenticated request). A test passing its own Authorization (or "" to
+        # simulate no/malformed auth) overrides this default.
+        import base64 as _b64
+        send_headers.setdefault(
+            "Authorization", "Basic " + _b64.b64encode(b"operateur:x").decode())
         payload = None
         if body is not None:
             payload = json.dumps(body)
@@ -210,9 +217,22 @@ class CsrfTests(AppTestCase):
             "POST", "/api/runs/20260715-000000-test/validation",
             body={}, headers={"Origin": f"http://127.0.0.1:{self.port}"},
         )
-        # passes CSRF, fails later on missing validated_by (400, not 403)
+        # passes CSRF + auth (default operator), then fails later on the empty body
+        # (missing candidates_sha256/decisions) — a 400, not a 403 csrf/auth refusal.
         self.assertEqual(response.status, 400)
-        self.assertEqual(body["error"]["code"], "missing_validated_by")
+        self.assertEqual(body["error"]["code"], "bad_request")
+
+    def test_validation_refused_without_basic_auth(self):
+        # A3 (audit 2026-09-02): validation authorizes a live write, so an
+        # unauthenticated request (Authorization absent/malformed) is refused
+        # fail-closed — never a client-supplied validated_by fallback.
+        response, body = self._json(
+            "POST", "/api/runs/20260715-000000-test/validation",
+            body={"validated_by": "Bob", "decisions": []},
+            headers={"Origin": f"http://127.0.0.1:{self.port}", "Authorization": ""},
+        )
+        self.assertEqual(response.status, 403)
+        self.assertEqual(body["error"]["code"], "authentication_required")
 
 
 class ValidationFlowTests(AppTestCase):
@@ -234,18 +254,20 @@ class ValidationFlowTests(AppTestCase):
         stored = json.loads((self.run / "validation.json").read_text(encoding="utf-8"))
         self.assertEqual(stored["validated_by"], "alice")   # authed wins, not "Romain"
 
-    def test_validated_by_falls_back_to_body_without_auth(self):
-        # No basic auth (standalone/dev) → the body field is used, as before.
+    def test_validation_without_basic_auth_is_refused_not_fallback(self):
+        # A3 (audit 2026-09-02): with no reliable Basic identity, validation is REFUSED
+        # fail-closed (403) — never a fallback to the client's free-text validated_by.
         _, payload = self._json("GET", "/api/runs/20260715-000000-test/validation")
         fp = payload["candidates"][0]["fingerprint"]
-        resp, _ = self._json(
+        resp, body = self._json(
             "POST", "/api/runs/20260715-000000-test/validation",
             body={"candidates_sha256": payload["candidates_sha256"],
                   "validated_by": "Bob",
-                  "decisions": [{"fingerprint": fp, "approve": True}]})
-        self.assertEqual(resp.status, 200)
-        stored = json.loads((self.run / "validation.json").read_text(encoding="utf-8"))
-        self.assertEqual(stored["validated_by"], "Bob")
+                  "decisions": [{"fingerprint": fp, "approve": True}]},
+            headers={"Authorization": ""})   # no/malformed Basic auth
+        self.assertEqual(resp.status, 403)
+        self.assertEqual(body["error"]["code"], "authentication_required")
+        self.assertFalse((self.run / "validation.json").exists())   # nothing written
 
     def test_save_validation_and_submit_flow(self):
         _, payload = self._json("GET", "/api/runs/20260715-000000-test/validation")

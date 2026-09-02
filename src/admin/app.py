@@ -503,15 +503,20 @@ class AdminHandler(BaseHTTPRequestHandler):
 
     def _post_validation(self, run_dir: Path) -> None:
         body = self._json_body()
-        # P2-9 (audit 2026-09-02): validated_by AUTHORIZES live offer creation — it is
-        # the single approval gate. It must be the AUTHENTICATED (nginx basic-auth)
-        # user, never a client free-text field an operator could set to anyone else.
-        # The authenticated identity WINS over any body-supplied value (mirrors L11,
-        # _post_learning). With no basic auth (standalone/dev), fall back to the body
-        # field as before (the missing-validated_by 400 still applies downstream).
+        # P2-9 / A3 (audit 2026-09-02): validated_by AUTHORIZES live offer creation — it
+        # is the single approval gate, so it MUST be the AUTHENTICATED (nginx basic-auth)
+        # user, never a client free-text field. With NO reliable authenticated identity
+        # (Authorization header absent or malformed → _basic_user() None) there is no
+        # operator to attribute the approval to: REFUSE fail-closed rather than trust a
+        # client-supplied value (A3 — no unauthenticated validation fallback). Otherwise
+        # the authenticated identity WINS over any body-supplied value.
         authed = self._basic_user()
-        if authed:
-            body["validated_by"] = authed
+        if not authed:
+            raise ApiError(
+                403, "authentication_required",
+                "validation refusée : identité Basic authentifiée requise "
+                "(l'approbation autorise une écriture live)")
+        body["validated_by"] = authed
         with self.state.validation_lock:
             result = apply_overrides_and_validate(
                 run_dir,
