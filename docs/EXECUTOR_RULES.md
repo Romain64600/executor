@@ -1307,6 +1307,19 @@ Règles de la vue Learning (audit `AUDIT_LEARNING_2026-07-21.md`) :
   reste **hors ledger** et est **réessayée** au run suivant. Règle née d'une revue
   P1.6 (2026-07-29) : la fenêtre différée par-store transformait un reflow bénin en
   `identity_blocked` permanent → une offre légitime perdue à jamais.
+  **`_reverify_row` : l'URL est l'identité, l'id ne l'est jamais `[P1-4]` (audit
+  2026-09-02).** L'id est instable (chaque ré-import le fait tourner ET peut le
+  RÉATTRIBUER à un autre produit). `_reverify_row` cherchait la ligne par id et ne
+  relocalisait par URL que si l'id avait **disparu** ; un id **présent mais réattribué
+  à un autre produit** filait donc direct en `identity_mismatch` TERMINAL sans jamais
+  chercher l'URL stable ailleurs sur la page → une offre encore présente (déplacée
+  vers un nouvel id, souvent sur la MÊME page) skippée à jamais. Corrigé : quand l'id
+  est absent **ou** est un autre produit, RELOCALISER par l'URL ; trouvée → adopter son
+  id courant et continuer ; URL absente de cette page → **retriable** (reflow/partie),
+  jamais terminal. `identity_mismatch` reste réservé au vrai cas : l'URL est **présente**
+  mais nomme un autre produit (slug réutilisé) ou store contradictoire. Vérifié en
+  adverse : aucun move de mauvais produit possible (le `_row_check` final re-vérifie
+  name+url+store après relocalisation).
 - **RV2 = scan cible GLOBAL, jamais par store (`_verify_on_target` /
   `_verify_group_on_target`, fix 2026-07-31)** : la présence sur la liste cible se
   prouve sur la vue **tous-stores** (`store_id=None`), pas sous le store source de

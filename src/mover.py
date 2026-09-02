@@ -464,24 +464,33 @@ class _MoverBase(_SubmitterBase):
         candidate = {"offer": {"offer_id": current_id, "name": entry["name"],
                                "url": entry["url"], "store_id": entry.get("store_id", "")}}
         rows = {str(r.get("id")): r for r in self.session.page_offer_rows()}
+        url = _url_key(str(entry.get("url") or ""))
         row = rows.get(current_id)
-        if row is None:
-            url = _url_key(str(entry.get("url") or ""))
+        # The id is UNSTABLE — a re-import rotates it and can REASSIGN it to a DIFFERENT
+        # product. Identity is the STABLE URL path: whenever the id-row is ABSENT *or* is
+        # a different product, RELOCATE by URL on this page BEFORE concluding anything.
+        # Previously an id reassigned to another product went straight to a TERMINAL
+        # identity block without ever searching the URL — permanently skipping (ledger
+        # `identity_blocked`) a still-present offer that had merely moved to a new id
+        # (P1-4, audit 2026-09-02; the offer usually sits nearby on the SAME page).
+        if row is None or _row_check(row, candidate, check_price=False)[0]:
             match = next((r for r in rows.values()
                           if url and _url_key(str(r.get("url", ""))) == url), None)
             if match is None:
-                return False, "row id vanished from the page (re-import?) — URL not here either"
+                # The offer's stable URL is not on THIS page — it reflowed to another
+                # page or genuinely left the feed. RETRIABLE, never a terminal identity
+                # block on a possibly-present offer (fail-safe: the ledger retries it
+                # next pass, rather than skipping a live offer for good).
+                return False, "offer URL not on this page (reflow/re-import?) — retriable"
             entry["current_offer_id"] = str(match.get("id"))
             row = match
+        # The row now located by the STABLE URL (or the id-row that already matched)
+        # must still be the plan's product. A remaining mismatch here means the URL
+        # ITSELF resolves to a different product (the merchant reused the slug) or a
+        # store contradiction — a genuine identity contradiction → TERMINAL (the ledger
+        # may skip it for good; fail-closed, never mis-move a different product).
         mismatches, _ = _row_check(row, candidate, check_price=False)
         if mismatches:
-            # TERMINAL: the row at this id/URL FAILS the (name, url) identity check
-            # — the slug now resolves to a different product (a re-import reused the
-            # id/URL). This does not self-heal against the same plan, so the ledger
-            # may skip it for good (fail-closed: skip rather than risk mis-moving a
-            # different product). Distinct from a row merely NOT PRESENT / vanished
-            # this pass (reflow churn) — that never sets this flag and stays
-            # retriable. See _ledger_status.
             entry["identity_mismatch"] = True
             return False, f"fresh-page identity mismatch ({', '.join(mismatches)}) — NOT moving"
         return True, ""

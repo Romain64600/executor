@@ -717,13 +717,17 @@ class DeferredBatchedTests(unittest.TestCase):
         self.assertEqual({e["offer_id"] for e in res["plan"]}, {"o3", "o4"})
 
     def test_true_identity_mismatch_is_terminal_transient_miss_is_not(self):
-        # The ledger's terminal/transient split hinges on this flag: a real
-        # URL→different-product contradiction sets identity_mismatch (→ permanent
-        # skip); a row merely gone from the page this pass does NOT (→ retried).
+        # The ledger's terminal/transient split hinges on this flag. TERMINAL = the
+        # plan's own stable URL IS on the page but now names a DIFFERENT product (the
+        # merchant reused the slug). A row merely gone from THIS page (its URL not
+        # here) is NOT terminal — the offer may have reflowed to another page (P1-4,
+        # audit 2026-09-02: an id reassigned to another product no longer terminal-
+        # blocks a still-present offer without first searching its URL).
         feed = FakeFeed({SRC: [_offer(1)]}, page_size=10, rename_on_page={"o1": "OTHER GAME"})
         mover = _new_mover(feed)
-        entry = {"offer_id": "o1", "current_offer_id": "o1", "name": "Game o1",
-                 "url": "https://g2a/o1"}
+        # url m/1 IS the feed row's URL; rename makes it a different product AT that URL
+        entry = {"offer_id": "o1", "current_offer_id": "o1", "name": "Game 1",
+                 "url": "https://m/1"}
         mover.session.navigate("aks-merchant-feeds-%s" % SRC)
         ok, reason = mover._reverify_row(entry)
         self.assertFalse(ok)
@@ -731,10 +735,10 @@ class DeferredBatchedTests(unittest.TestCase):
         self.assertTrue(entry.get("identity_mismatch"))          # terminal
 
         gone = {"offer_id": "z9", "current_offer_id": "z9", "name": "Vanished",
-                "url": "https://g2a/z9"}                          # not on the page at all
+                "url": "https://g2a/z9"}                          # url not on the page
         ok2, reason2 = mover._reverify_row(gone)
         self.assertFalse(ok2)
-        self.assertIn("vanished", reason2)
+        self.assertIn("not on this page", reason2)
         self.assertFalse(gone.get("identity_mismatch"))          # transient → retriable
 
     def test_deferred_partitions_verify_by_target_list(self):

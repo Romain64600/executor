@@ -440,14 +440,46 @@ class ReverifyRowTests(unittest.TestCase):
         m.post_apply_settle = 0
         return m
 
-    def test_reverify_blocks_reided_row(self):
-        # id 100 on the page is now a DIFFERENT product than the plan's
+    def test_reided_row_with_url_absent_is_retriable_not_terminal(self):
+        # id 100 on the page is now a DIFFERENT product, AND the plan's stable URL is
+        # NOT on this page → the plan's offer moved to another page / left the feed.
+        # RETRIABLE, never a terminal identity block on a possibly-present offer
+        # (P1-4, audit 2026-09-02: previously this went straight to identity_mismatch,
+        # permanently skipping the offer without ever searching its URL).
         session = FakeMoveSession([["100"]])
         entry = {"current_offer_id": "100", "name": "Different Game",
                  "url": "https://m/other", "store_id": "38"}
         ok, reason = self._mover(session)._reverify_row(entry)
         self.assertFalse(ok)
-        self.assertIn("mismatch", reason)
+        self.assertIn("not on this page", reason)
+        self.assertFalse(entry.get("identity_mismatch"))   # retriable, not permanent
+
+    def test_reided_offer_recovered_by_url_on_same_page(self):
+        # P1-4 core: a re-import reassigned id 100 to a DIFFERENT product AND moved the
+        # plan's offer to a NEW id (200) on the SAME page. It must be RELOCATED by its
+        # stable URL and proceed — not terminally identity-blocked.
+        session = FakeMoveSession(
+            [["100", "200"]],
+            rows={"100": {"url": "https://m/hijack", "name": "Hijacked"},
+                  "200": {"url": "https://m/mygame", "name": "My Game"}})
+        entry = {"current_offer_id": "100", "name": "My Game",
+                 "url": "https://m/mygame", "store_id": "38"}
+        ok, reason = self._mover(session)._reverify_row(entry)
+        self.assertTrue(ok)
+        self.assertEqual(entry["current_offer_id"], "200")   # adopted the stable-URL id
+        self.assertFalse(entry.get("identity_mismatch"))
+
+    def test_reverify_url_present_but_different_product_is_terminal(self):
+        # The genuine TERMINAL case: the plan's own URL IS on the page but now names a
+        # DIFFERENT product (the merchant reused the slug). No point retrying.
+        session = FakeMoveSession([["100"]],
+                                  rows={"100": {"url": "https://m/100", "name": "Reused Slug Game"}})
+        entry = {"current_offer_id": "100", "name": "Game 100",
+                 "url": "https://m/100", "store_id": "38"}
+        ok, reason = self._mover(session)._reverify_row(entry)
+        self.assertFalse(ok)
+        self.assertIn("identity mismatch", reason)
+        self.assertTrue(entry.get("identity_mismatch"))   # terminal
 
     def test_reverify_relocates_by_url_when_id_vanished(self):
         session = FakeMoveSession([["900"]])  # id 100 gone; URL m/900 now id 900
