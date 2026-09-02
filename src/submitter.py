@@ -483,17 +483,35 @@ class _SubmitterBase:
                     rows = self.session.page_offer_rows()
                     state = self.session.feed_page_state()
                     confirmed = True
+                    # A1 (audit 2026-09-02): the session can EXPIRE during the backoff
+                    # wait, bouncing the tab to wp-login (rows=[], feed_ui drops) — which
+                    # the earlier loop read as a genuine empty queue → a false 'gone'.
+                    # RE-CHECK the live signals on EVERY re-read, exactly like the main
+                    # scan does after each navigate: a login bounce raises
+                    # NotLoggedInError, an href that no longer names this page raises
+                    # FeedScanError, and a dropped feed UI is not a trustable empty.
+                    if state.get("is_login"):
+                        raise NotLoggedInError("feed bounced to wp-login mid-confirm")
+                    href = str(state.get("href") or "")
+                    if _page_param(href) != page:
+                        raise FeedScanError(
+                            f"browser drifted to p={_page_param(href)} during the empty-"
+                            f"confirm on page {page} (href {href!r}) — stale/redirected DOM")
+                    feed_ui = bool(state.get("feed_ui"))
+                    nav_max = int(state.get("nav_max") or 0)
                     if rows:
                         return rows, state          # transient resolved — real rows
-                    nav_max = int(state.get("nav_max") or 0)
+                    if not feed_ui:
+                        break                        # feed shell gone → not a real empty
                     if nav_max:
                         break                        # nav rendered now → re-classify
-                # Only trust an empty as PROVEN after at least one confirming re-read
-                # ran — an empty ``empty_confirm_waits`` (misconfig) must NOT silently
-                # revert to the first-read false 'gone'; it falls through to fail-closed.
-                if confirmed and not rows and page == 1 and nav_max == 0:
+                # Only trust an empty as PROVEN after a confirming re-read that STILL
+                # shows the feed UI with no rows — an empty ``empty_confirm_waits``
+                # (misconfig) or a feed UI that dropped (login/error) falls through to
+                # the fail-closed raise, never the first-read false 'gone'.
+                if confirmed and feed_ui and not rows and page == 1 and nav_max == 0:
                     return [], state                 # confirmed empty queue
-                if confirmed and not rows and page > 1 and 1 <= nav_max < page:
+                if confirmed and feed_ui and not rows and page > 1 and 1 <= nav_max < page:
                     return [], state                 # nav rendered on re-read → past-end
                 # Unconfirmed, or still ambiguous (page>1 nav never rendered, nav>=page):
                 # the end-of-feed is UNPROVEN — fall through to the fail-closed raise.

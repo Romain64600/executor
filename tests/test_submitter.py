@@ -1909,6 +1909,51 @@ class FeedScanFailClosedTests(unittest.TestCase):
         self.assertIsNone(result["aborted"])
         self.assertTrue(result["plan"][0]["ready"])
 
+    def test_session_expiry_during_empty_confirm_is_not_false_gone(self):
+        # A1 (audit 2026-09-02): the session can EXPIRE during the empty-confirm backoff.
+        # The first read is a plausible transient blank (feed_ui=True, rows=[], nav_max=0)
+        # but the confirming re-read has bounced to wp-login → it must raise
+        # NotLoggedInError, never be read as a genuine empty queue → false 'gone'.
+        from src.submitter import NotLoggedInError, DryRunSubmitter
+
+        class _ExpireMidConfirm:
+            def __init__(self): self.reads = 0; self.nav = []
+            def navigate(self, url, settle=0): self.nav.append(url)
+            def is_login_page(self): return False
+            def page_offer_rows(self):
+                self.reads += 1
+                return []                                   # blank, then login (no rows)
+            def feed_page_state(self):
+                login = self.reads >= 2                      # bounced on the confirm read
+                return {"feed_ui": not login, "nav_max": 0, "is_login": login,
+                        "href": self.nav[-1] if self.nav else ""}
+        sub = DryRunSubmitter(_ExpireMidConfirm())
+        sub.empty_confirm_waits = (0,); sub.empty_retry_wait_s = 0
+        sub.feed_ui_render_waits = (); sub.feed_scan_settle = 0
+        with self.assertRaises(NotLoggedInError):
+            sub._read_feed_page("https://aks/x?p=1", 1)
+
+    def test_feed_ui_drop_during_empty_confirm_is_not_false_gone(self):
+        # A1: if the feed shell DISAPPEARS on the confirm re-read (feed_ui=False), the
+        # empty is no longer trustable → fail-closed FeedScanError, not a proven empty.
+        from src.submitter import FeedScanError, DryRunSubmitter
+
+        class _DropFeedUi:
+            def __init__(self): self.reads = 0; self.nav = []
+            def navigate(self, url, settle=0): self.nav.append(url)
+            def is_login_page(self): return False
+            def page_offer_rows(self):
+                self.reads += 1
+                return []
+            def feed_page_state(self):
+                return {"feed_ui": self.reads < 2, "nav_max": 0, "is_login": False,
+                        "href": self.nav[-1] if self.nav else ""}
+        sub = DryRunSubmitter(_DropFeedUi())
+        sub.empty_confirm_waits = (0,); sub.empty_retry_wait_s = 0
+        sub.feed_ui_render_waits = (); sub.feed_scan_settle = 0
+        with self.assertRaises(FeedScanError):
+            sub._read_feed_page("https://aks/x?p=1", 1)
+
     def test_login_bounce_mid_scan_aborts(self):
         session = LoginMidScanSession([["1"]])
         result = _dry(session, [_cand("1")])

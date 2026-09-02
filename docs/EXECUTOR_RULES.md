@@ -971,8 +971,13 @@ verify scan (and the batch-start index) prove their own coverage:
   WAITS` backoff — the SAME slow-render headroom as `FEED_UI_RENDER_WAITS`, because
   page-1-empty is the phantom-critical branch — before returning `[]`; if a
   re-read never ran (misconfig) it falls through to the fail-closed raise, never a
-  first-read `[]`. A past-the-end page with `nav_max>=1` (nav rendered) stays a
-  fast return — the nav proved the page count, no ambiguity;
+  first-read `[]`. **Each confirm re-read re-checks the LIVE signals `[A1]` (audit
+  2026-09-02):** the session can EXPIRE during the backoff wait (bouncing to wp-login,
+  rows=[] and feed_ui dropping) — so a login bounce raises `NotLoggedInError`, an href
+  that no longer names this page raises `FeedScanError`, and the empty is trusted only
+  while `feed_ui` still holds; otherwise it was not a genuine empty. A past-the-end
+  page with `nav_max>=1` (nav rendered) stays a fast return — the nav proved the page
+  count, no ambiguity;
 - a login bounce mid-scan raises `NotLoggedInError`;
 - the browser's `location.href` must match the page navigated to (a wedged
   tab re-serving the previous DOM is detected, never re-read as fresh pages);
