@@ -17,8 +17,10 @@ moves the risky work behind a scripted engine with a hard guardrail: the model
 > (Sprints 1–3) complete, and the write stage created its **first real AKS offers on
 > 2026-07-06** (Driffle, `--submit --click-mode trusted`). All write stages stay
 > gated behind green + authoritative invariants on the Debian VPS target. A full
-> multi-agent audit ran on **2026-07-17**; its findings are tracked in
-> [`docs/AUDIT_2026-07-17.md`](docs/AUDIT_2026-07-17.md). See [Roadmap](#roadmap).
+> multi-agent audit ran on **2026-07-17** ([`docs/AUDIT_2026-07-17.md`](docs/AUDIT_2026-07-17.md));
+> a second multi-agent audit ran on **2026-09-02** — its P1 findings and the first
+> P2 hardenings are fixed (see [`docs/CHANGELOG.md`](docs/CHANGELOG.md)), remaining
+> P2s in progress. See [Roadmap](#roadmap).
 
 ---
 
@@ -459,7 +461,9 @@ the `aks-data-entry` skill maps onto a guard signal.
 - [`docs/AUDIT_2026-07-17.md`](docs/AUDIT_2026-07-17.md) — the audit register:
   findings from the 2026-07-17 multi-agent audit, each tracked `OPEN` → `FIXED`
   with date and commit. Complements [`docs/AUDIT.md`](docs/AUDIT.md) (Sprint 1
-  audit, 2026-07-02, fully resolved).
+  audit, 2026-07-02, fully resolved). The **2026-09-02** multi-agent audit
+  (P1 + P2 fixes) is logged in [`docs/CHANGELOG.md`](docs/CHANGELOG.md), with the
+  per-stage rules in [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md).
 - [`AGENTS.md`](AGENTS.md) / [`CLAUDE.md`](CLAUDE.md) — builder rules for Codex
   and Claude.
 

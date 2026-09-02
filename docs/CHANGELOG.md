@@ -3,6 +3,51 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-02 — Multi-agent audit : correctifs P1 + P2 (matcher, submitter, mover, admin)
+
+Audit adversarial multi-agents du projet (31 findings). Chaque correctif est un
+commit atomique avec test(s) de non-régression et a été contre-vérifié par un
+sous-agent adversarial. Les règles par-étape correspondantes sont dans
+[`EXECUTOR_RULES.md`](EXECUTOR_RULES.md). Suite complète verte (**1217 tests**).
+
+**P1 — faux succès / mauvaise saisie (tous corrigés, poussés) :**
+
+- **P1 (langue)** — `181d996` : un code langue (`EN`, `FR`, …) n'est traité comme
+  bruit que **lorsque TOUS les tokens du nom AKS sont couverts** (`aks_seen == aks`).
+  Évite « The Garde » ⇄ « Garde », « A No Man's Sky » ⇄ « No Man's Sky ».
+- **P1-1/P1-2 (éditions jeux)** — `e84af71` (R40) : les éditions devinées sont
+  **page-vérifiées** contre la page résolue par égalité d'ensemble de tokens
+  (modulo bruit de format `EDITION/PACK/DIGITAL/VERSION…`, alias GOTY), gaté sur
+  `e05_page_verified`. Plus d'adoption d'un mauvais palier par sous-chaîne.
+- **P1-3 (faux « gone » sur blanc transitoire)** — `d2a7d89` : `nav_max=0` est
+  **confirmé** par re-lecture DOM (`EMPTY_CONFIRM_WAITS`, aligné sur
+  `FEED_UI_RENDER_WAITS`) avant de prouver la disparition.
+- **P1-5 (nav wedgée)** — `b7b8bb1` : l'extracteur **vérifie l'atterrissage** sur
+  la page navigée (`href`/`_page_param`, `WedgedNavigationError`) avant de lire.
+- **P1-4 (ligne ré-idée)** — `eb4d619` : le mover **relocalise par URL stable**
+  une ligne ré-idée avant de la bloquer en terminal ; identité URL-first.
+
+**P2 — durcissements fail-closed (corrigés, poussés) :**
+
+- **P2-9 puis A3 (validated_by)** — `9b48662` + `b95e8a2` : `validated_by`
+  autorise une écriture live (non-répudiation) ⇒ c'est l'**identité authentifiée**
+  (Basic nginx), jamais le corps client ; **sans identité Basic fiable la
+  validation est REFUSÉE fail-closed** (403 `authentication_required`), plus aucun
+  fallback non authentifié.
+- **P2-1 puis A2 (clic dégradé)** — `6e1ad92` + `6162731` : une vraie écriture est
+  **trusted-only** ; le chemin de clic natif/dispatch dégradé est **supprimé**
+  (plus d'opt-in `allow_degraded_click`).
+- **P2-2 (allowlist marchands)** — `eafe4d0` : l'allowlist du mode auto est
+  imposée au **cœur CLI déterministe** (`scripts/10`), pas seulement côté HTTP.
+- **P2-3 (preview incomplète)** — `2ddfdfc` : le cœur submit by-urls **refuse une
+  preview incomplète** (abandon/non-résolu/erreur/tronqué/count-mismatch), miroir
+  du gate manager.
+
+**Restant (non commencé) :** P2-4 (MOVE mal routé ACCOUNT), P2-6/P2-8 (région
+URL-interdite / GMG gift → GLOBAL), P2-7 (CATEGORY_SKIP sous-chaîne + token
+SOFTWARE), puis le lot d'hygiène P2/P3. `181d996` conservé comme acquis ; aucun
+changement d'hygiène mélangé aux correctifs fonctionnels.
+
 ## 2026-07-31 — Tri : RV2 target-verify GLOBAL + mega-stores hors-scope (Gift cards)
 
 Opération de tri Gift cards (liste 21) sur le scan frais `20260730-134546-sort`.
