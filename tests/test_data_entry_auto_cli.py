@@ -60,8 +60,9 @@ class CliSeamTests(unittest.TestCase):
         self.assertEqual(rec["targets"][0]["merchant"], "Kinguin")
 
     def test_main_multi_target(self):
+        # P2-2: stores must be the CANONICAL allowlist stores (Eneba is 19, not 70).
         recap = {"pages": [], "total_created": 1, "halted": None}
-        code, _ = self._run(["--targets", "Kinguin:58,Eneba:70", "--run-id", "t2"], recap)
+        code, _ = self._run(["--targets", "Kinguin:58,Eneba:19", "--run-id", "t2"], recap)
         self.assertEqual(code, 0)
         rec = json.loads((self.MOD.ROOT / "runs" / "t2" / "recap.json").read_text())
         self.assertEqual([t["merchant"] for t in rec["targets"]], ["Kinguin", "Eneba"])
@@ -69,6 +70,20 @@ class CliSeamTests(unittest.TestCase):
     def test_main_rejects_bad_target(self):
         code, _ = self._run(["--targets", "Kinguin:abc", "--run-id", "t3"], {"pages": []})
         self.assertEqual(code, 2)   # non-numeric store id, fail-closed
+
+    def test_main_rejects_non_allowlisted_merchant(self):
+        # P2-2 (audit 2026-09-02): safe-auto writes without validation → the allowlist
+        # is an authoritative gate enforced at the CLI, not only in the HTTP handler.
+        # A parked/non-vetted merchant (Difmark:167) is refused before any write.
+        code, captured = self._run(["--targets", "Difmark:167", "--run-id", "t-bad"], {"pages": []})
+        self.assertEqual(code, 2)
+        self.assertNotIn("cfg", captured)   # never built a sweep / opened a session
+
+    def test_main_rejects_wrong_store_for_allowlisted_merchant(self):
+        # A tampered/stale store for a vetted merchant is refused (canonical store).
+        code, captured = self._run(["--targets", "Kinguin:99", "--run-id", "t-store"], {"pages": []})
+        self.assertEqual(code, 2)
+        self.assertNotIn("cfg", captured)
 
     def test_move_execute_without_triage_is_rejected(self):
         # audit (2026-08-14): --move-execute has no effect without --triage → fail loud

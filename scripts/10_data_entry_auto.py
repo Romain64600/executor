@@ -34,6 +34,7 @@ from src.data_entry_auto import (  # noqa: E402
 )
 from src.admin.validation_io import apply_overrides_and_validate, ValidationIOError  # noqa: E402
 from src.admin.runs import sha256_file  # noqa: E402
+from src.admin.auto_merchants import rejection_reason  # noqa: E402
 from src.child_runner import CooperativeChildRunner  # noqa: E402
 from src.triage import execute_page_moves, plan_moves_from_skipped  # noqa: E402
 from src.validation import candidate_fingerprint  # noqa: E402
@@ -308,6 +309,17 @@ def main() -> int:
     for m, s in targets:
         if not s.isdigit():
             print(json.dumps({"aborted": True, "reason": f"store_id non numérique pour {m!r}: {s!r}"}))
+            return 2
+        # P2-2 (audit 2026-09-02): safe-auto WRITES without human validation, so the
+        # merchant allowlist is an AUTHORITATIVE gate, not a UI suggestion. The HTTP
+        # handler re-checks it (app.py _post_data_entry_auto), but this deterministic
+        # CLI entrypoint — the one that actually spawns the writes — only validated
+        # `store_id.isdigit()`, so `--targets 'Difmark:167'` (parked, non-vetted) could
+        # sweep and create offers bypassing the gate. Enforce the SAME allowlist here,
+        # fail-closed, refusing the whole batch on any miss (canonical store enforced).
+        reason = rejection_reason(m, s)
+        if reason is not None:
+            print(json.dumps({"aborted": True, "reason": reason}))
             return 2
 
     _RUNNER.install()

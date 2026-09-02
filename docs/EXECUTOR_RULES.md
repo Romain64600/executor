@@ -1374,6 +1374,15 @@ correctement (un IG *Steam RU* devient MOVE→Blacklist, pas un ADD GLOBAL muet)
 tri tous-stores (`src/sort_plan.py`) reste, lui, precheck-only (échelle account, pas
 de fetch par offre).
 
+**Allowlist marchand = gate AUTORITATIF au cœur `[P2-2]` (audit 2026-09-02).**
+Safe-auto ÉCRIT sans validation humaine, donc la liste des marchands vettés
+(`auto_merchants.rejection_reason`) est un gate autoritatif, pas une suggestion UI.
+Le handler HTTP le re-vérifie déjà (`app.py _post_data_entry_auto`), mais l'entrypoint
+DÉTERMINISTE qui lance réellement les écritures (`scripts/10`) ne validait que
+`store_id.isdigit()` → `--targets 'Difmark:167'` (parké, non-vetté) pouvait balayer et
+créer en contournant le gate. `scripts/10` applique désormais **la même allowlist**,
+fail-closed (store canonique imposé), refusant tout le batch sur un miss.
+
 **Intégration au sweep safe-auto** (`src/data_entry_auto.run_sweep`, opt-in
 `--triage` de `scripts/10`). Ordre par page, reflow-safe (page la plus haute
 d'abord) : extract → match → (approve + submit des ADD, **vérifiés**) → **move des
