@@ -151,20 +151,30 @@ def suggest_target_list(reason: str) -> str | None:
         return _REGION_LIST.get(region)  # None for NA / ROW / TURKEY / EMEA / …
     if r.startswith("no aks"):
         return None  # 22-vs-27 is the operator's 5-year call (docs/AKS_LISTS.md)
-    haystack = r.split(":", 1)[1] if r.startswith("skip category") and ":" in r else r
+    # Audit L8 + P2-4 (audit 2026-09-02): route ONLY "skip category: …" reasons, and
+    # only on the CATEGORY token — the text after the colon and BEFORE any
+    # "(qualifier)". NEVER free-substring the whole reason or the qualifier. The
+    # matcher emits non-category reasons that interpolate RAW title tokens
+    # ("different/expanded product — extra words: ['account']"); a bare substring
+    # match there once sent such an offer to a MOVE→list under --move-execute (P2-4).
+    # Real "skip category:" emitters interpolate only FIXED category vocabulary
+    # (matcher CATEGORY_SKIP / BUNDLE_SKIN_TOKENS / …, sort_plan "SOFTWARE"), so
+    # token-anchoring keeps every legitimate route while an incidental word in a
+    # qualifier — or a raw title a future emitter might interpolate — cannot route.
+    # (Genuine account offers are routed separately by sort_plan.is_account_offer.)
+    if not r.startswith("skip category"):
+        return None
+    haystack = r.split(":", 1)[1] if ":" in r else r
+    token = haystack.split("(")[0].strip()
     # Blacklist (Romain 2026-07-23): skins, soundtracks, artbooks -> Blacklist (8).
-    # NOT bundles (which share the "(no bundles/skins)" suffix) — match the exact
-    # category token before the parenthetical, so "BUNDLE" is excluded.
-    if r.startswith("skip category"):
-        token = haystack.split("(")[0].strip()
-        if token in _BLACKLIST_CATEGORY_TOKENS:
-            return "8"
-    # software / app (e.g. "skip category: SOFTWARE", "... IOBIT (software/app...)")
-    if "software" in haystack:
+    # NOT bundles (which share the "(no bundles/skins)" suffix), so "BUNDLE" is excluded.
+    if token in _BLACKLIST_CATEGORY_TOKENS:
+        return "8"
+    if token == "software":                        # "skip category: SOFTWARE [(…)]"
         return "16"
-    if "gift card" in haystack or "giftcard" in haystack:
+    if token == "gift card" or token.endswith(" gift card"):  # GIFT CARD, STEAM GIFT CARD
         return "21"
-    if _ACCOUNT_WORD_RE.search(haystack):
+    if _ACCOUNT_WORD_RE.search(token):             # STEAM ACCOUNT (word-boundary account)
         return "30"
     return None
 

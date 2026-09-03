@@ -12,12 +12,46 @@ from src.aks_lists import (
 class AksListsTests(unittest.TestCase):
     def test_software_maps_to_softwares(self):
         self.assertEqual(suggest_target_list("skip category: SOFTWARE"), "16")
+        # the real sort emitter carries a qualifier parenthetical — token is "software"
         self.assertEqual(
-            suggest_target_list("skip category: IOBIT (software/app, not a game)"), "16")
+            suggest_target_list("skip category: SOFTWARE (software/app — sort routing)"), "16")
 
     def test_gift_card_and_account(self):
         self.assertEqual(suggest_target_list("skip category: GIFT CARD"), "21")
-        self.assertEqual(suggest_target_list("difmark account offer"), "30")
+        self.assertEqual(suggest_target_list("skip category: STEAM GIFT CARD"), "21")
+        # account routing via the anchored CATEGORY (precheck_skip "STEAM ACCOUNT");
+        # the sort's marker path (is_account_offer) also feeds list 30 directly.
+        self.assertEqual(suggest_target_list("skip category: STEAM ACCOUNT"), "30")
+
+    def test_p2_4_non_category_reason_never_free_substring_routes(self):
+        # P2-4 (audit 2026-09-02): a reason that is NOT "skip category: …" must never
+        # route on an incidental title token. The matcher interpolates raw title
+        # words into non-category reasons ("extra words: [...]", "missing AKS words:
+        # [...]"); an incidental "account"/"software"/"gift card" there previously
+        # sent a real MOVE to a list under --move-execute. All must be garder (None).
+        for reason in (
+            "different/expanded product — extra words: ['account']",
+            "different/expanded product — extra words: ['software']",
+            "different/expanded product — extra words: ['giftcard']",
+            "different/expanded product — extra words: ['gift', 'card']",
+            "name mismatch, missing AKS words: ['account']",
+            "Difmark Account region unconfirmed for STEAM/GLOBAL",
+            "Difmark account page kind unknown for platform 'EPIC'",
+            "no region id for STEAM/SOFTWARE",
+        ):
+            self.assertIsNone(suggest_target_list(reason), reason)
+
+    def test_p2_4_category_route_anchors_on_token_not_qualifier(self):
+        # Defense-in-depth (Audit L8): even a "skip category: …" reason routes on the
+        # CATEGORY token only — an incidental word inside a (qualifier) parenthetical,
+        # or a raw title a future emitter might interpolate, must NOT route.
+        for reason in (
+            "skip category: Some Cool Game (account edition)",
+            "skip category: Roboword (software/app clone)",
+            "skip category: My Card Game (gift card themed)",
+            "skip category: STEAM PLAYER TRADE (account-bound)",
+        ):
+            self.assertIsNone(suggest_target_list(reason), reason)
 
     def test_skins_soundtracks_artbooks_to_blacklist(self):
         # Romain 2026-07-23: these categories route to Blacklist (8)

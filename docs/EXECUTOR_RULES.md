@@ -1400,6 +1400,20 @@ les jeux non-résolus pour soumettre le reste (couverture partielle expédiée s
 maintenant appliqué au cœur : `run_by_urls_submit` **abort fail-closed** (aucune
 saisie) sur un aperçu partiel.
 
+**Routage MOVE ancré sur la CATÉGORIE, jamais un free-substring `[P2-4]` (audit
+2026-09-02, prolonge Audit L8).** `suggest_target_list` ne route **que** les raisons
+`skip category: …`, et uniquement sur le **token de catégorie** (texte après le
+« : », avant toute « (parenthèse) ») — jamais la raison entière ni la parenthèse. Le
+matcher émet des raisons hors-catégorie qui interpolent des tokens de titre bruts
+(`different/expanded product — extra words: ['account']`) : l'ancien match
+sous-chaîne sur la raison entière envoyait une telle offre en **MOVE→liste 30 sous
+`--move-execute`** sur un simple mot de titre. Les émetteurs `skip category:` réels
+n'interpolent que du vocabulaire fixe (`CATEGORY_SKIP`/`BUNDLE_SKIN_TOKENS`/…), donc
+l'ancrage sur le token conserve toutes les routes légitimes (SOFTWARE→16, GIFT
+CARD/STEAM GIFT CARD→21, STEAM ACCOUNT→30, skins/OST/artbooks→8) tout en fermant le
+vecteur. Les offres *account* réelles sont routées à part par
+`sort_plan.is_account_offer` (marqueur `(Account)`), pas par du texte libre.
+
 **Intégration au sweep safe-auto** (`src/data_entry_auto.run_sweep`, opt-in
 `--triage` de `scripts/10`). Ordre par page, reflow-safe (page la plus haute
 d'abord) : extract → match → (approve + submit des ADD, **vérifiés**) → **move des

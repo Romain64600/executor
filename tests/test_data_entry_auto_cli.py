@@ -160,9 +160,9 @@ class TriageStageWiringTests(unittest.TestCase):
         d.mkdir(parents=True, exist_ok=True)
         (d / "skipped.json").write_text(json.dumps([
             {"offer": {"offer_id": "1", "store_id": "58", "name": "A", "url": "https://k/1"},
-             "reason": "gift card"},
+             "reason": "skip category: GIFT CARD"},
             {"offer": {"offer_id": "2", "store_id": "58", "name": "B", "url": "https://k/2"},
-             "reason": "gift card"},
+             "reason": "skip category: GIFT CARD"},
         ]), encoding="utf-8")
         (d / "move_plan.json").write_text(json.dumps({"moved": 2}), encoding="utf-8")  # stale
 
@@ -189,9 +189,9 @@ class TriageStageWiringTests(unittest.TestCase):
         d.mkdir(parents=True, exist_ok=True)
         (d / "skipped.json").write_text(json.dumps([
             {"offer": {"offer_id": "1", "store_id": "58", "name": "A", "url": "https://k/1"},
-             "reason": "gift card"},
+             "reason": "skip category: GIFT CARD"},
             {"offer": {"offer_id": "2", "store_id": "58", "name": "B", "url": "https://k/2"},
-             "reason": "gift card"},
+             "reason": "skip category: GIFT CARD"},
         ]), encoding="utf-8")
 
         def fake_run_child(argv):
