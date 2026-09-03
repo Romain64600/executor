@@ -42,11 +42,18 @@ sous-agent adversarial. Les règles par-étape correspondantes sont dans
 - **P2-3 (preview incomplète)** — `2ddfdfc` : le cœur submit by-urls **refuse une
   preview incomplète** (abandon/non-résolu/erreur/tronqué/count-mismatch), miroir
   du gate manager.
+- **P2-4 (MOVE mal routé)** — `964017e` : `suggest_target_list` ne route **que** les
+  raisons `skip category: …`, et sur le **token de catégorie** (avant toute
+  parenthèse), jamais un free-substring de la raison entière. Un mot de titre
+  incident dans une raison hors-catégorie (`extra words: ['account']`) ne peut plus
+  déclencher un MOVE→liste sous `--move-execute` (prolonge Audit L8). Sweep old-vs-new
+  sur tout `CATEGORY_SKIP` : zéro diff ; offres account réelles routées par
+  `sort_plan.is_account_offer`.
 
-**Restant (non commencé) :** P2-4 (MOVE mal routé ACCOUNT), P2-6/P2-8 (région
-URL-interdite / GMG gift → GLOBAL), P2-7 (CATEGORY_SKIP sous-chaîne + token
-SOFTWARE), puis le lot d'hygiène P2/P3. `181d996` conservé comme acquis ; aucun
-changement d'hygiène mélangé aux correctifs fonctionnels.
+**Restant (non commencé) :** P2-6/P2-8 (région URL-interdite / GMG gift → GLOBAL),
+P2-7 (CATEGORY_SKIP sous-chaîne + token SOFTWARE), puis le lot d'hygiène P2/P3.
+`181d996` conservé comme acquis ; aucun changement d'hygiène mélangé aux correctifs
+fonctionnels.
 
 ## 2026-07-31 — Tri : RV2 target-verify GLOBAL + mega-stores hors-scope (Gift cards)
 
