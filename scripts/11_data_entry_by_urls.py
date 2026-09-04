@@ -186,9 +186,11 @@ def _read_search_pages(session: Any, feed_page: str, available: str, term: str,
     the whole feed, a `truncated = nav_max > SEARCH_MAX_PAGES` OR would fire on EVERY
     search → the manager's preview_incomplete gate would block every /games-tab submit
     (a hard over-block regression). The additive nav_max→truncated wiring must be gated
-    on a one-time LIVE confirmation of the search page's nav semantics first; until then
-    the fail-safe short-page heuristic stands (under-read = under-entry on a re-run,
-    never a wrong entry)."""
+    on a one-time LIVE confirmation of the search page's nav semantics first — run the
+    read-only probe `scripts/probe_p2_13_search_navmax.py` on the VPS (verdict FILTERED
+    → safe to wire; WHOLE-FEED → keep this heuristic). Until then the fail-safe
+    short-page heuristic stands (under-read = under-entry on a re-run, never a wrong
+    entry)."""
     rows: list[dict] = []
     for page in range(1, SEARCH_MAX_PAGES + 1):
         found = _read_one_page(session, _search_url(feed_page, available, term, field, page))
