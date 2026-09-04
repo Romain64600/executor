@@ -59,10 +59,21 @@ sous-agent adversarial. Les règles par-étape correspondantes sont dans
   le chemin software R31). Résidu fail-safe documenté : "Gems of War" reste skippé
   (règle games-only). Vérifié : le patch ne peut qu'AJOUTER des matches → aucun
   nouveau leak, seuls des sur-skips fail-safe.
+- **P2-6 (région interdite URL-encodée)** — `d1f0e78` : `precheck_skip` scanne aussi
+  le **path de l'URL** pour `FORBIDDEN_REGIONS` (query strippée, bruit marchand retiré,
+  word-boundary, même normalisation que le titre) — une région interdite présente
+  seulement dans l'URL (Gamivo `…-brazil`) ne tombe plus en GLOBAL implicite. Même
+  raison `forbidden region: <label>` → routage identique. Résidu documenté : codes
+  2-lettres (`-ru`/`-tr`) non couverts (trop de faux positifs sans gating contextuel).
+- **P2-8 (GMG green-gift → GLOBAL silencieux)** — `d1f0e78` : `detect_region` résout le
+  bucket `gmg_gift` **exact par base**, sans fallback silencieux vers le gmg_gift
+  GLOBAL. STEAM n'a pas `gmg_gift_us`, EPIC pas `gmg_gift_eu` ; l'ancien `or` rendait
+  l'id GLOBAL sous un label "US"/"EU" (label ≠ id, région élargie, clé restreinte
+  entrée mondialement). Base manquante → id `None` → skip fail-closed `no region id`
+  (label et id ne peuvent plus diverger). Buckets existants inchangés.
 
-**Restant (non commencé) :** P2-6/P2-8 (région URL-interdite / GMG gift → GLOBAL),
-puis le lot d'hygiène P2/P3. `181d996` conservé comme acquis ; aucun changement
-d'hygiène mélangé aux correctifs fonctionnels.
+**Restant (non commencé) :** le lot d'hygiène P2/P3. `181d996` conservé comme acquis ;
+aucun changement d'hygiène mélangé aux correctifs fonctionnels.
 
 ## 2026-07-31 — Tri : RV2 target-verify GLOBAL + mega-stores hors-scope (Gift cards)
 
