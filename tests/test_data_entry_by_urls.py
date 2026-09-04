@@ -239,6 +239,34 @@ class SearchAllMerchantsTests(unittest.TestCase):
         self.assertEqual(rows, [])
 
 
+class ReadSearchPagesTests(unittest.TestCase):
+    """P2-13 (resolved live 2026-09-04): the AKS search shows all matches on ONE page,
+    capped at SEARCH_RESULT_CAP; read page 1 only, truncated iff the cap was hit."""
+
+    def test_sub_cap_result_is_complete_and_reads_page1_only(self):
+        rows = [_row(str(i), f"G{i}", f"https://m/{i}") for i in range(5)]
+        s = FakeSearchSession({"name": rows})
+        got, truncated = M._read_search_pages(s, "aks-merchant-feeds-9", "all", "term", "name")
+        self.assertEqual(len(got), 5)
+        self.assertFalse(truncated)                             # sub-cap → complete
+        self.assertTrue(all("&p=2" not in u and "?p=2" not in u for u in s.nav))  # page 1 only
+
+    def test_cap_hit_flags_truncated(self):
+        rows = [_row(str(i), f"G{i}", f"https://m/{i}") for i in range(M.SEARCH_RESULT_CAP)]
+        s = FakeSearchSession({"name": rows})
+        got, truncated = M._read_search_pages(s, "aks-merchant-feeds-9", "all", "term", "name")
+        self.assertEqual(len(got), M.SEARCH_RESULT_CAP)
+        self.assertTrue(truncated)                              # hit the cap → may be cut off
+
+    def test_hundred_rows_is_not_truncated_anymore(self):
+        # the old 100-row/3-page heuristic mis-flagged this as truncated (over-block);
+        # a 100-row result is well under the 300 cap → COMPLETE.
+        rows = [_row(str(i), f"G{i}", f"https://m/{i}") for i in range(100)]
+        s = FakeSearchSession({"name": rows})
+        _got, truncated = M._read_search_pages(s, "aks-merchant-feeds-9", "all", "term", "name")
+        self.assertFalse(truncated)
+
+
 class PlanFromRowsTests(unittest.TestCase):
     def test_builds_candidate(self):
         rows = [_row("100", "Neon Beats - Steam Key - GLOBAL", "https://testmart.com/neon-beats-global")]

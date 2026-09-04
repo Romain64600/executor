@@ -50,11 +50,12 @@ from src.submit_session import SubmitSession  # noqa: E402
 
 # Same render-race backoff the extractor/mover poll through (feed_ui renders late).
 FEED_UI_RENDER_WAITS = (1.0, 2.0, 4.0)
-# One AKS feed page holds up to 100 rows. The all-merchants search for one game
-# rarely exceeds a page or two; read up to SEARCH_MAX_PAGES and FLAG (never silently
-# drop) a deeper result.
-SEARCH_MAX_ROWS_LOGGED = 100
-SEARCH_MAX_PAGES = 3
+# The AKS all-merchants SEARCH renders ALL matches on a SINGLE page (P2-13, resolved
+# live 2026-09-04 by scripts/probe_p2_13_search_navmax.py): nav_max is ALWAYS 0, `&p=N`
+# re-serves the SAME page, and the result is capped SERVER-SIDE at SEARCH_RESULT_CAP
+# distinct rows ("Steam"/"Key"/"a" → 300; "e" → 151). So a search is COMPLETE iff it
+# returned FEWER than the cap; a result AT the cap may have been cut off → truncated.
+SEARCH_RESULT_CAP = 300
 
 # resolve_pinned retries a TRANSIENT probe failure (a 5xx/429 server blip or a
 # timeout/connection error) with a bounded backoff before giving up — an AKS 503
@@ -173,31 +174,21 @@ def _read_one_page(session: Any, url: str,
 
 def _read_search_pages(session: Any, feed_page: str, available: str, term: str,
                        field: str) -> tuple[list[dict], bool]:
-    """Read a search's result pages (all-merchants) up to SEARCH_MAX_PAGES. A full
-    page (100 rows) means there may be more → read the next; a short page ends it.
-    Returns (rows, hit_cap) — hit_cap flags a result deeper than the cap (never a
-    silent cut).
+    """Read an all-merchants search. Returns (rows, truncated).
 
-    P2-13 (audit 2026-09-02, DEFERRED — NOT wired): EXECUTOR_RULES §3 prefers bounding
-    by the authoritative `.tablenav` nav_max over a short-page heuristic, and
-    `feed_page_state()` already returns nav_max. It is deliberately NOT wired in here
-    yet: on this SEARCH page (page=aks-merchant-feeds-search) it is UNCONFIRMED whether
-    nav_max reports the FILTERED result's page count or the whole feed's. If it reports
-    the whole feed, a `truncated = nav_max > SEARCH_MAX_PAGES` OR would fire on EVERY
-    search → the manager's preview_incomplete gate would block every /games-tab submit
-    (a hard over-block regression). The additive nav_max→truncated wiring must be gated
-    on a one-time LIVE confirmation of the search page's nav semantics first — run the
-    read-only probe `scripts/probe_p2_13_search_navmax.py` on the VPS (verdict FILTERED
-    → safe to wire; WHOLE-FEED → keep this heuristic). Until then the fail-safe
-    short-page heuristic stands (under-read = under-entry on a re-run, never a wrong
-    entry)."""
-    rows: list[dict] = []
-    for page in range(1, SEARCH_MAX_PAGES + 1):
-        found = _read_one_page(session, _search_url(feed_page, available, term, field, page))
-        rows.extend(found)
-        if len(found) < SEARCH_MAX_ROWS_LOGGED:
-            return rows, False
-    return rows, True
+    P2-13 (resolved live 2026-09-04, scripts/probe_p2_13_search_navmax.py): the AKS
+    search shows ALL matches on ONE page — nav_max is always 0, `&p=N` re-serves the
+    same page, and the result is capped server-side at SEARCH_RESULT_CAP distinct rows.
+    So read page 1 ONLY and flag `truncated` iff the result HIT the cap — the one case
+    where matches may have been cut off (the manager's preview_incomplete gate then
+    blocks that game). A sub-cap result is COMPLETE.
+
+    (The old code read up to 3 pages bounded by a 100-row short-page heuristic. Given
+    `&p=N` re-serves page 1, that re-read the same page twice AND mis-flagged truncated
+    for ANY ≥100-row result — a false over-block. The once-considered nav_max→truncated
+    wiring is moot: nav_max is always 0 on the search page.)"""
+    rows = _read_one_page(session, _search_url(feed_page, available, term, field, 1))
+    return rows, len(rows) >= SEARCH_RESULT_CAP
 
 
 def _dedupe_rows(rows: list[dict]) -> list[dict]:

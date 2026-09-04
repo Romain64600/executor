@@ -102,13 +102,26 @@ délibéré ⇒ disposition **doc/test-only** plutôt qu'un correctif risqué.
   scan sweep capé = UNKNOWN → abort intentionnel), P2-12 (`d8a5706`, siblings
   même-chemin → « échec » = fail-safe, ne pas relâcher la clé URL sous peine de
   ré-ouvrir le P0 K4G), P3-6 (`cdb5a5d`, label « WINDOWED » au lieu de « proven » sous
-  page-hint), P2-13 (`6e4421e`, wiring nav_max→truncated DIFFÉRÉ, gaté sur une
-  confirmation live pour éviter un over-block de tous les submits).
+  page-hint), P2-13 (`6e4421e`, wiring nav_max→truncated d'abord DIFFÉRÉ — puis
+  **RÉSOLU** live, voir ci-dessous).
+
+**P2-13 — résolu live (sonde read-only) + vrai correctif.** La sonde
+`scripts/probe_p2_13_search_navmax.py` (lancée sur le VPS, 2026-09-04) a montré que la
+page de recherche AKS `aks-merchant-feeds-search` **ne pagine pas** : `nav_max`
+toujours 0, `&p=N` re-sert la même page, tout tient sur UNE page **plafonnée à 300
+lignes distinctes** (« Steam »/« Key »/« a » → 300 ; « e » → 151). Le wiring
+`nav_max→truncated` différé était donc **inutile** (nav_max toujours 0). Vrai correctif :
+`_read_search_pages` lit **la page 1 uniquement** et pose `truncated` ⟺ le cap est
+atteint (≥ 300). L'ancienne heuristique 100-lignes/3-pages **re-lisait la même page**
+et **flaggait `truncated` à tort pour tout résultat ≥ 100 lignes** (over-block).
+Vérifié SOLID (aucun fail-open ; une recherche par-jeu n'approche jamais le cap). Sonde
+read-only committée (fail-closed, CDP officiel, browser-lock) pour re-confirmer le cap
+au besoin.
 
 Résidus documentés (hors périmètre, fail-safe) : `-gift-us` plain gift (P2-6b),
-« Gems of War » / « Points2Win » (P2-7/P2-6b), P2-13 nav_max en attente de confirm
-live, P2-11 sur-redaction cosmétique de `target_add.value` (id produit, non secret).
-Campagne d'audit 2026-09-02 **terminée** (tous P1 + P2 + P3 traités).
+« Gems of War » / « Points2Win » (P2-7/P2-6b), P2-11 sur-redaction cosmétique de
+`target_add.value` (id produit, non secret). Campagne d'audit 2026-09-02 **terminée**
+(tous P1 + P2 + P3 traités, P2-13 résolu live).
 
 ## 2026-07-31 — Tri : RV2 target-verify GLOBAL + mega-stores hors-scope (Gift cards)
 

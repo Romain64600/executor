@@ -106,6 +106,14 @@ site** `[F01]`.
 - The real page count comes from the feed's own pagination nav (`.tablenav`
   links, rendered on every page incl. past-the-end) — bound the scan by it,
   never by "first empty page" heuristics.
+- **EXCEPTION — the `aks-merchant-feeds-search` page does NOT paginate `[P2-13]`
+  (resolved live 2026-09-04, `scripts/probe_p2_13_search_navmax.py`).** The
+  all-merchants SEARCH renders ALL matches on ONE page: `nav_max` is always 0 and
+  `&p=N` re-serves the same page, capped SERVER-SIDE at **300 distinct rows**
+  ("Steam"/"Key"/"a" → 300; "e" → 151). So the by-urls search reads page 1 ONLY and
+  flags `truncated` iff the result HIT the cap (a sub-cap result is complete). Do NOT
+  apply the `.tablenav` nav rule here (nav is absent) nor a 100-row/3-page heuristic
+  (it re-read the same page and false-flagged truncated for any ≥100-row result).
 - Some feeds re-order between page fetches (G2A 2026-07-07: 762 rows seen /
   482 distinct in one pass) → repeat **full sweeps**, unioning by offer id,
   until a whole sweep adds 0 new offers. Sweeps exhausted while still finding
