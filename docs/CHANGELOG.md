@@ -63,8 +63,16 @@ sous-agent adversarial. Les règles par-étape correspondantes sont dans
   le **path de l'URL** pour `FORBIDDEN_REGIONS` (query strippée, bruit marchand retiré,
   word-boundary, même normalisation que le titre) — une région interdite présente
   seulement dans l'URL (Gamivo `…-brazil`) ne tombe plus en GLOBAL implicite. Même
-  raison `forbidden region: <label>` → routage identique. Résidu documenté : codes
-  2-lettres (`-ru`/`-tr`) non couverts (trop de faux positifs sans gating contextuel).
+  raison `forbidden region: <label>` → routage identique.
+- **P2-6b (codes région 2-lettres + base `-us`)** — `3613feb` : les deux résidus de
+  P2-6/P2-8 fermés. `_url_region_code` capte un code 2-lettres UNIQUEMENT dans un
+  **region slot** (précédé d'un marqueur key/gift/plateforme ET en fin de path, suffixe
+  produit `-i123`/`-p123` toléré) → exclut `among-us`, `lost-in-random`, `war-thunder`.
+  Codes interdits `ru/tr/br/ar/cn/kr/jp` → skip routé (`in`/Inde exclu, trop de
+  collisions ; `-india` complet déjà couvert). Le slot `-us` fixe la base US (compose
+  avec P2-8 : EPIC US green gift → `gmg_gift_us` 635 ; STEAM sans bucket → skip
+  fail-closed). Résidu pré-existant documenté : un **plain** gift US (`-gift-us`) entre
+  encore sous le bucket gift global (la branche plain-gift ne gère que EU).
 - **P2-8 (GMG green-gift → GLOBAL silencieux)** — `d1f0e78` : `detect_region` résout le
   bucket `gmg_gift` **exact par base**, sans fallback silencieux vers le gmg_gift
   GLOBAL. STEAM n'a pas `gmg_gift_us`, EPIC pas `gmg_gift_eu` ; l'ancien `or` rendait
