@@ -492,6 +492,20 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
     for region in FORBIDDEN_REGIONS:
         if f" {region} " in padded:
             return f"forbidden region: {region}"
+    # P2-6 (audit 2026-09-02): a forbidden region encoded ONLY in the merchant URL
+    # (e.g. Gamivo ".../cyberpunk-2077-steam-key-brazil") escaped this title-only scan
+    # and reached detect_region, which recognizes ONLY sellable buckets
+    # (eu/global/us/uk) → an implicit GLOBAL, entering a region-locked key worldwide
+    # (the R33 page-region rescue needs a merchant page config Gamivo doesn't have).
+    # Scan the URL PATH the same way — normalized, word-boundary, query stripped and
+    # merchant noise removed (the stored/reported URL is never mutated). SAME reason
+    # string as the title path so the one router (suggest_target_list) sends
+    # BRAZIL/LATAM/… → Blacklist and NA/ROW/… → garder, identically.
+    url_path = urlparse(strip_merchant_url_noise(offer.url, offer.merchant)).path
+    url_padded = " " + re.sub(r"[^A-Z0-9]+", " ", url_path.upper()) + " "
+    for region in FORBIDDEN_REGIONS:
+        if f" {region} " in url_padded:
+            return f"forbidden region: {region}"
     if _COUNTRY_GIFT_RE.search(padded):
         return "country gift (region-locked gift, §4.3)"
     # Random/lootbox keys & items (_RANDOM_LOOT_RE, see its definition). Checked
@@ -753,11 +767,17 @@ def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | Non
     # the plain is_gift branch: is_gift's title test is the space-delimited " GIFT ", but a
     # green gift can be a hyphen-compound "GREEN-GIFT" which is_green_gift accepts — gating
     # the gmg branch on is_gift would leak that form to the plain region (2026-08-28
-    # review). Base variants fall back to the GLOBAL gmg_gift; no gmg_gift for the platform
-    # → None → fail-closed skip downstream.
+    # review).
+    # P2-8 (audit 2026-09-02): resolve the EXACT per-base gmg_gift bucket — NO silent
+    # fallback to the GLOBAL gmg_gift id. STEAM has gmg_gift+gmg_gift_eu (no _us), EPIC has
+    # gmg_gift+gmg_gift_us (no _eu); the old `or gmg_gift` returned the GLOBAL id while the
+    # label still said "US"/"EU", contradicting the id (a mislabel that widened the region
+    # and defeated the validation gate — a US-restricted key entered worldwide). A base the
+    # platform lacks → gid None → fail-closed skip downstream (label and id can never
+    # disagree; same fail-closed stance as GOG plain gift → None).
     if is_green_gift(offer.name, offer.url):
         key = {"eu": "gmg_gift_eu", "us": "gmg_gift_us"}.get(base, "gmg_gift")
-        gid = _region_id(platform, key) or _region_id(platform, "gmg_gift")
+        gid = _region_id(platform, key)
         return ("GMG GIFT" + {"eu": " EU", "us": " US"}.get(base, ""), gid, implicit)
     if is_gift:
         if base == "eu":

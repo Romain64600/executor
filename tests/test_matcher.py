@@ -386,6 +386,32 @@ class PrecheckSkipTests(unittest.TestCase):
     def test_forbidden_region(self):
         self.assertIn("forbidden region", precheck_skip(_offer("Game Steam Key TURKEY")))
 
+    def test_p2_6_forbidden_region_encoded_only_in_url_skips(self):
+        # P2-6 (audit 2026-09-02): a forbidden region present ONLY in the merchant URL
+        # (title clean) must skip — before, it fell to detect_region → implicit GLOBAL,
+        # entering a region-locked key worldwide. Same reason string as the title path,
+        # so it routes identically (BRAZIL/LATAM → Blacklist, SOUTH AMERICA → its list).
+        from src.aks_lists import suggest_target_list
+        cases = {
+            "https://www.gamivo.com/product/cyberpunk-2077-steam-key-brazil": ("BRAZIL", "8"),
+            "https://www.gamivo.com/product/elden-ring-latam": ("LATAM", "8"),
+            "https://www.gamivo.com/product/gta-v-south-america-steam-key": ("SOUTH AMERICA", "36"),
+        }
+        for url, (region, listid) in cases.items():
+            reason = precheck_skip(_offer("Some Game Steam Key", url=url))
+            self.assertEqual(reason, f"forbidden region: {region}", url)
+            self.assertEqual(suggest_target_list(reason), listid, url)
+
+    def test_p2_6_clean_url_and_query_region_do_not_skip(self):
+        # a sellable/clean URL is not skipped; a region in the QUERY string (campaign
+        # junk, like detect_region) is ignored — only the PATH speaks for the product.
+        self.assertIsNone(precheck_skip(
+            _offer("Cyberpunk 2077 Steam Key",
+                   url="https://www.gamivo.com/product/cyberpunk-2077-steam-key-global")))
+        self.assertIsNone(precheck_skip(
+            _offer("Cyberpunk 2077 Steam Key",
+                   url="https://www.gamivo.com/product/cyberpunk-2077-steam-key?region=brazil")))
+
     def test_currency_category(self):
         self.assertIn("POINTS", precheck_skip(_offer("500 FIFA Points")))
 
@@ -1735,6 +1761,24 @@ class MatchOfferTests(unittest.TestCase):
         self.assertEqual(detect_region(hyphen, "STEAM")[1], "386")
         # a platform with no gmg_gift entry (GOG) → None → fail-closed downstream
         self.assertIsNone(gg_region("GOG", "https://x/game-green-gift-key-global"))
+
+        # P2-8 (audit 2026-09-02): a per-base gmg_gift bucket the platform LACKS must
+        # resolve to None (→ fail-closed skip), NEVER silently fall back to the GLOBAL
+        # gmg_gift id while the label still says US/EU (mislabel + region widening).
+        # STEAM has gmg_gift+gmg_gift_eu but no _us; EPIC has gmg_gift+gmg_gift_us but no _eu.
+        steam_us = detect_region(NormalizedOffer(
+            offer_id="1", name="Game (PC) - Green Gift Key",
+            url="https://x/game-green-gift-key-united-states", merchant="G2A"), "STEAM")
+        self.assertEqual(steam_us[0], "GMG GIFT US")   # label
+        self.assertIsNone(steam_us[1])                 # id — NOT the global 386
+        epic_eu = detect_region(NormalizedOffer(
+            offer_id="1", name="Game (PC) - Green Gift Key",
+            url="https://x/game-green-gift-key-eu", merchant="G2A"), "EPIC")
+        self.assertEqual(epic_eu[0], "GMG GIFT EU")
+        self.assertIsNone(epic_eu[1])                  # NOT the global 633
+        # the buckets that DO exist are unchanged (label agrees with id)
+        self.assertEqual(gg_region("EPIC", "https://x/game-green-gift-key-united-states"), "635")
+        self.assertEqual(gg_region("STEAM", "https://x/game-green-gift-key-global"), "386")
 
         # a G2A green gift: platform is only on the (unopenable) G2A page → clear R32c skip
         offer = NormalizedOffer(

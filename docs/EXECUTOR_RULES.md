@@ -303,6 +303,28 @@ Audit 2026-07-17 hardenings: `gift` must be its own URL segment (`MA4` —
 depth for regions (`MA8`): bare `EUROPE` mid-title (K4G grammar) and a
 region in ANY parenthesised group (not only the first) now map to EU/…
 instead of implicit GLOBAL.
+**Forbidden region in the URL is a skip `[P2-6]` (audit 2026-09-02).** `precheck_skip`
+scanned `FORBIDDEN_REGIONS` on the TITLE only; a forbidden region encoded solely in the
+merchant URL (Gamivo `…-steam-key-brazil`, clean title) escaped and fell to
+`detect_region`, which knows only sellable buckets (eu/global/us/uk) → **implicit
+GLOBAL** = a region-locked key entered worldwide (Gamivo's empty config gives no R33
+page-region rescue). The FORBIDDEN_REGIONS scan now also runs on the URL **path**
+(query stripped, merchant noise removed, word-boundary, same normalization as the
+title) and returns the **same** `forbidden region: <label>` reason → identical routing.
+Known residual (fail-closed follow-up, NOT closed): a **bare 2-letter** region code in a
+slug (`-ru`/`-tr`/`-br`) still falls to implicit GLOBAL — `FORBIDDEN_REGIONS` uses full
+names, and 2-letter codes are too false-positive-prone to scan without context gating.
+**GMG green-gift resolves the EXACT per-base bucket, no silent global fallback `[P2-8,
+R32c]` (audit 2026-09-02).** A Green Man Gaming "Green Gift" maps to the platform's
+dedicated `gmg_gift` region. STEAM has `gmg_gift`+`gmg_gift_eu` (no `_us`); EPIC has
+`gmg_gift`+`gmg_gift_us` (no `_eu`). The old `_region_id(platform, key) or
+_region_id(platform, "gmg_gift")` silently substituted the GLOBAL id when the per-base
+bucket was missing, while the LABEL still read "GMG GIFT US"/"EU" — the label contradicted
+the id, the region was silently widened, and a US-restricted key became enterable
+worldwide (and the mislabel defeated the human validation gate). Now `detect_region`
+resolves ONLY the exact per-base bucket; a base the platform lacks → id `None` → clean
+fail-closed `no region id for <platform>/<label>` skip (label and id can never disagree),
+the same stance as a GOG plain gift → None.
 **Platform declaration is word-boundary + collocation (`MA2`):** the old raw
 substring, fixed-order checks let a game-name word override the merchant's
 declaration ("Epic Chef … Steam Key" → EPIC, "Gogol's Quest" → GOG).
