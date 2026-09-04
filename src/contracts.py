@@ -141,8 +141,13 @@ class RawSnapshot:
     ) -> "RawSnapshot":
         _require(bool(_clean_str(run_id)), "run_id is required")
         _require(bool(_clean_str(merchant)), "merchant is required")
+        # P3-7 (audit 2026-09-02): check the type BEFORE calling a str method, so a
+        # non-string source_url (None, int) raises the promised ContractError, not a
+        # bare AttributeError a `except ContractError` caller would miss (the module
+        # contract: malformed input → ContractError, never a silent pass / raw crash).
         _require(
-            source_url.startswith("http://") or source_url.startswith("https://"),
+            isinstance(source_url, str)
+            and (source_url.startswith("http://") or source_url.startswith("https://")),
             "source_url must be an http(s) URL",
         )
         _require(int(pages_scanned) >= 1, "pages_scanned must be >= 1")

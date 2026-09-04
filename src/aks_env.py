@@ -288,12 +288,41 @@ class _NoRedirectHandler(HTTPRedirectHandler):
         return None
 
 
-def _http_open(request: Request, timeout: int, follow_redirects: bool = True):
-    """Single, patchable IO seam for all read-only HTTP in this module."""
+class _StaffUaHostGuardRedirectHandler(HTTPRedirectHandler):
+    """Follow same-domain (allkeyshop.com) redirects, but REFUSE a redirect to any
+    other host (P2-15, audit 2026-09-02).
 
-    if follow_redirects:
-        return urlopen(request, timeout=timeout)
-    return build_opener(_NoRedirectHandler()).open(request, timeout=timeout)
+    urllib's ``HTTPRedirectHandler`` preserves the ``User-Agent`` header across a
+    cross-host redirect (it strips only content-length/-type), so a staff-UA probe
+    that AKS 3xx-redirects off-domain would leak the ``AKS/Staff`` UA off
+    allkeyshop.com — the first-hop check in :func:`http_get` only guards the URL the
+    caller passed in. Refusing surfaces as an ``HTTPError`` the caller treats as a
+    non-200 (fail-closed: over-abort a resolve, never a wrong entry). Same-domain
+    canonicalization redirects (301/302) are still followed, so no resolve regresses.
+    """
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not _allkeyshop_host(newurl):
+            raise HTTPError(
+                req.full_url, code,
+                f"AKS/Staff redirect off allkeyshop.com refused: {newurl}", headers, fp
+            )
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _http_open(request: Request, timeout: int, follow_redirects: bool = True,
+               host_locked: bool = False):
+    """Single, patchable IO seam for all read-only HTTP in this module.
+
+    ``host_locked`` (staff-UA callers) follows only same-domain redirects and refuses
+    an off-allkeyshop.com hop, so the staff UA never leaks past a cross-host 3xx (P2-15).
+    """
+
+    if not follow_redirects:
+        return build_opener(_NoRedirectHandler()).open(request, timeout=timeout)
+    if host_locked:
+        return build_opener(_StaffUaHostGuardRedirectHandler()).open(request, timeout=timeout)
+    return urlopen(request, timeout=timeout)
 
 
 def _allkeyshop_host(url: str) -> bool:
@@ -321,7 +350,8 @@ def http_get(
         )
     request = Request(url, method="GET", headers={"User-Agent": user_agent or REQUIRED_USER_AGENT})
     try:
-        with _http_open(request, timeout=timeout, follow_redirects=follow_redirects) as response:
+        with _http_open(request, timeout=timeout, follow_redirects=follow_redirects,
+                        host_locked=(user_agent == AKS_STAFF_UA)) as response:
             return _response_to_probe(url, response)
     except HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")

@@ -194,6 +194,24 @@ class ApplyCookiesTests(unittest.TestCase):
             mgr.apply_cookies(JSON_COOKIES, by="Romain")
         self.assertEqual(ctx.exception.code, "login_busy")
 
+    def test_p3_8_injection_error_reason_never_leaks_exception_message(self):
+        # P3-8 (audit 2026-09-02): a cookie-injection exception must NOT put its
+        # message (which could echo a cookie value) into the aborted reason returned
+        # to /api/login/cookies and re-served by /api/login/status. Only the type.
+        SECRET = "SECRET-COOKIE-VALUE-XYZ"
+
+        class _BoomSession(_FakeSession):
+            def set_cookies(self, cookies):
+                raise RuntimeError(f"CDP Network.setCookies rejected value={SECRET}")
+
+        mgr = LoginManager(self.root, session_factory=lambda endpoint: _BoomSession({"ok": True}),
+                           report_fn=lambda **k: GREEN, clock=lambda: 1.0)
+        res = mgr.apply_cookies(JSON_COOKIES, by="Romain")
+        self.assertEqual(res["status"], "aborted")
+        self.assertNotIn(SECRET, res["reason"])           # the value never reaches the wire
+        self.assertNotIn("value=", res["reason"])
+        self.assertIn("RuntimeError", res["reason"])      # the type is kept to categorize
+
 
 class VerifyDashboardTests(unittest.TestCase):
     """The kept LoginSession.verify_dashboard — session proof needs BOTH the

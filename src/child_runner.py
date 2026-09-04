@@ -32,6 +32,7 @@ class CooperativeChildRunner:
         self.grace_s = grace_s
         self._child: "subprocess.Popen | None" = None
         self.stopped = False
+        self._alarm_armed = False
 
     def install(self) -> None:
         """Install SIGTERM/SIGINT (cooperative stop) + SIGALRM (kill escalation)."""
@@ -50,7 +51,14 @@ class CooperativeChildRunner:
                 c.terminate()                    # cooperative SIGTERM: stop at a safe boundary
             except Exception:
                 pass
-            signal.alarm(int(self.grace_s))      # escalate ourselves if it hangs past the grace
+            # P2-10 (audit 2026-09-02): arm the escalation alarm ONCE, on the FIRST
+            # cooperative stop — a repeated /api/sort/stop must NOT re-arm a fresh full
+            # grace (that would push our child-SIGKILL past the manager's fixed 90s/120s
+            # orchestrator-SIGKILL window and orphan a hung child). max(1, …) also stops
+            # a sub-second grace from truncating to alarm(0) (a silent disarm).
+            if not self._alarm_armed:
+                self._alarm_armed = True
+                signal.alarm(max(1, int(self.grace_s)))
 
     def _on_alarm(self, _signum=None, _frame=None) -> None:
         c = self._child
@@ -75,4 +83,5 @@ class CooperativeChildRunner:
             return self._child.wait()
         finally:
             signal.alarm(0)                      # disarm — this child is done
+            self._alarm_armed = False            # a reused runner arms fresh for the next child
             self._child = None

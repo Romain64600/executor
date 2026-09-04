@@ -190,7 +190,14 @@ class LoginManager:
                 self._busy = False
             raise
         except Exception as exc:  # fail-closed: any error → clean aborted result
-            result = {"status": "aborted", "reason": f"erreur: {type(exc).__name__}: {exc}"}
+            # P3-8 (audit 2026-09-02): build the reason from the exception TYPE + a
+            # FIXED message only — never interpolate `{exc}`. This catch-all wraps the
+            # cookie-injection chain, whose exception string could carry a cookie VALUE;
+            # the reason is returned by /api/login/cookies and re-served by
+            # /api/login/status, and `_scrub` is key-name based (it can't redact a
+            # free-text field). The type is enough to categorize; details stay off the wire.
+            result = {"status": "aborted",
+                      "reason": f"erreur interne ({type(exc).__name__}) — voir les logs serveur"}
         with self._mutex:
             self._result = _scrub(result)
             self._busy = False

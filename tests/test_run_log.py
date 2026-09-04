@@ -25,6 +25,30 @@ class RedactTests(unittest.TestCase):
         self.assertEqual(out["token_count"], 5)
         self.assertEqual(out["secret_sauce"], "ok")
 
+    def test_p2_11_cookie_jar_value_is_redacted_name_preserved(self):
+        # P2-11 (audit 2026-09-02): the secret in a cookie descriptor lives under
+        # "value" (the key run_log used to omit). It must be scrubbed; "name" and
+        # "domain" are kept (auditable, non-secret).
+        out = redact({"jar": [
+            {"name": "wordpress_logged_in_x", "value": "SECRET-SESSION", "domain": ".allkeyshop.com"},
+        ]})
+        cookie = out["jar"][0]
+        self.assertEqual(cookie["value"], REDACTED)
+        self.assertEqual(cookie["name"], "wordpress_logged_in_x")   # name kept (not a secret)
+        self.assertEqual(cookie["domain"], ".allkeyshop.com")
+
+    def test_p2_11_otp_under_value_key_is_redacted(self):
+        self.assertEqual(redact({"otp_field": {"value": "123456"}})["otp_field"]["value"], REDACTED)
+
+    def test_p2_11_secret_scrubbers_converge(self):
+        # run_log.REDACT_KEYS and login_manager._SECRET_KEYS must not silently drift
+        # apart on the key that carries the cookie/OTP secret: every login-manager
+        # secret key must also be a run_log redact key (fail-closed superset).
+        from src.run_log import REDACT_KEYS
+        from src.admin.login_manager import _SECRET_KEYS
+        missing = {k.lower() for k in _SECRET_KEYS} - REDACT_KEYS
+        self.assertEqual(missing, set(), f"REDACT_KEYS missing login-manager secrets: {missing}")
+
 
 class RunLoggerTests(unittest.TestCase):
     def test_empty_run_id_raises(self):

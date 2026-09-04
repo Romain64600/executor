@@ -86,6 +86,12 @@ class RawSnapshotTests(unittest.TestCase):
             self._create(run_id="")
         with self.assertRaises(ContractError):
             self._create(source_url="ftp://x")
+        # P3-7: a non-string source_url must raise the typed ContractError, not a bare
+        # AttributeError (a `except ContractError` caller would otherwise crash).
+        with self.assertRaises(ContractError):
+            self._create(source_url=None)
+        with self.assertRaises(ContractError):
+            self._create(source_url=12345)
         with self.assertRaises(ContractError):
             self._create(pages_scanned=0)
         with self.assertRaises(ContractError):

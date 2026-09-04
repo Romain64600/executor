@@ -24,6 +24,14 @@ REDACT_KEYS = frozenset(
         "cookie",
         "cookies",
         "set-cookie",
+        # P2-11 (audit 2026-09-02): "value" is the secret CARRIER in a cookie/OTP
+        # descriptor ([{name, value, domain}], {"value": "<otp>"}); login_manager
+        # ._SECRET_KEYS already scrubs it — the two scrubbers MUST NOT diverge on the
+        # key that matters (test_secret_keys_converge locks this). Redacting more is
+        # the fail-closed direction for a secret log. NB "name" is intentionally NOT
+        # here: it is a legitimate audit field (merchant/product/list/region names),
+        # not a secret, and login_manager doesn't scrub it either.
+        "value",
         "authorization",
         "password",
         "passwd",

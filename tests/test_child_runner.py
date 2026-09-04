@@ -63,6 +63,48 @@ class ChildRunnerTests(unittest.TestCase):
         # stray SIGALRM would fire on no child — assert none pending.
         self.assertEqual(signal.alarm(0), 0)
 
+    def test_p2_10_repeated_stop_arms_alarm_once(self):
+        # P2-10 (audit 2026-09-02): a SECOND cooperative stop (repeated /api/sort/stop)
+        # must NOT re-arm a fresh full grace — that would push our child-SIGKILL past the
+        # manager's fixed orchestrator-SIGKILL window and orphan a hung child. The alarm
+        # is armed ONCE, on the first stop; later stops re-forward SIGTERM but don't re-arm.
+        from unittest import mock
+
+        class _Alive:
+            def poll(self):   return None    # child still running
+            def terminate(self):  pass
+
+        r = CooperativeChildRunner(grace_s=5)
+        r._child = _Alive()
+        with mock.patch("src.child_runner.signal.alarm") as m_alarm:
+            r._on_term()   # first stop → arms the grace
+            r._on_term()   # second stop → re-forwards SIGTERM, must NOT re-arm
+        armed = [c.args[0] for c in m_alarm.call_args_list if c.args and c.args[0]]
+        self.assertEqual(armed, [5])   # exactly one arm, at the full grace
+
+    def test_p2_10_subsecond_grace_arms_at_least_one_second(self):
+        # max(1, int(grace)) — a sub-second grace must not truncate to alarm(0) (a
+        # silent disarm that would let a hung child run unbounded).
+        from unittest import mock
+
+        class _Alive:
+            def poll(self):   return None
+            def terminate(self):  pass
+
+        r = CooperativeChildRunner(grace_s=0.4)
+        r._child = _Alive()
+        with mock.patch("src.child_runner.signal.alarm") as m_alarm:
+            r._on_term()
+        armed = [c.args[0] for c in m_alarm.call_args_list if c.args]
+        self.assertEqual(armed, [1])   # max(1, int(0.4)) == 1, never 0
+
+    def test_p2_10_alarm_flag_resets_for_reuse(self):
+        # a reused runner arms fresh for the next child (flag reset in run()'s finally).
+        r = CooperativeChildRunner(grace_s=1)
+        r.install()
+        r.run([sys.executable, "-c", "pass"], cwd=".")
+        self.assertFalse(r._alarm_armed)
+
 
 if __name__ == "__main__":
     unittest.main()

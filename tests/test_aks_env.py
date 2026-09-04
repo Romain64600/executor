@@ -376,5 +376,50 @@ class MarkerAuthorizesTests(unittest.TestCase):
                 self.assertFalse(marker_authorizes(path, hostname="host-a"))
 
 
+class StaffUaRedirectGuardTests(unittest.TestCase):
+    """P2-15: the AKS/Staff UA must never leak off allkeyshop.com via a followed 3xx."""
+
+    def _handler(self):
+        from src.aks_env import _StaffUaHostGuardRedirectHandler
+        return _StaffUaHostGuardRedirectHandler()
+
+    def _req(self):
+        from urllib.request import Request
+        return Request("https://www.allkeyshop.com/blog/buy-x-cd-key-compare-prices/",
+                       headers={"User-agent": AKS_STAFF_UA})
+
+    class _FP:
+        def read(self):  return b""
+        def close(self): pass
+
+    def test_off_domain_redirect_is_refused(self):
+        with self.assertRaises(HTTPError):
+            self._handler().redirect_request(
+                self._req(), self._FP(), 302, "Found", {}, "https://cdn.evil.tld/x")
+
+    def test_same_domain_redirect_is_followed_ua_preserved(self):
+        r = self._handler().redirect_request(
+            self._req(), self._FP(), 301, "Moved", {}, "https://www.allkeyshop.com/canonical/")
+        self.assertIsNotNone(r)                                  # followed, not refused
+        self.assertEqual(r.get_header("User-agent"), AKS_STAFF_UA)  # UA preserved across the hop
+
+    def test_http_get_staff_ua_uses_host_locked_opener(self):
+        # a staff-UA follow-redirect GET opens through the host-locked opener; the
+        # default UA and the no-redirect (invariants) path do NOT.
+        captured = {}
+
+        def fake_open(request, timeout, follow_redirects=True, host_locked=False):
+            captured["host_locked"] = host_locked
+            return _FakeResp(200, b"ok")
+
+        with mock.patch("src.aks_env._http_open", side_effect=fake_open):
+            http_get("https://www.allkeyshop.com/x", user_agent=AKS_STAFF_UA)
+            self.assertTrue(captured["host_locked"])
+            http_get("https://www.allkeyshop.com/x")            # default UA
+            self.assertFalse(captured["host_locked"])
+            http_get("https://www.allkeyshop.com/x", user_agent=AKS_STAFF_UA, follow_redirects=False)
+            self.assertTrue(captured["host_locked"])            # passed, but _http_open uses the no-redirect handler
+
+
 if __name__ == "__main__":
     unittest.main()
