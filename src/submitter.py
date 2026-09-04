@@ -812,6 +812,13 @@ class _SubmitterBase:
                     last_err = None
                     break
                 except FeedScanError as exc:
+                    # P3-4 (audit 2026-09-02): retry ONLY the content-level, re-readable
+                    # FeedScanError (slow render / wedged nav). A transport-level
+                    # CdpCommandError is DELIBERATELY not caught here — it propagates to
+                    # run()'s FEED_UNREADABLE_EXCS handler and aborts before any write,
+                    # matching the no-mid-run-reconnect invariant (cdp_session). Do NOT
+                    # broaden this to CdpCommandError: a dead socket has no reconnect, so a
+                    # retry would re-raise anyway, and broadening softens the fail-closed abort.
                     last_err = exc
             if last_err is not None:
                 # Fail-closed: a candidate still unreadable is NOT a proven absence;
@@ -913,6 +920,15 @@ class _SubmitterBase:
             _, by_url = self._scan_search(
                 ctx["store_id"], ctx["feed_page"], ctx["available"], url)
         else:
+            # P2-5 (audit 2026-09-02): the sweep re-locate is a whole-feed scan CAPPED
+            # at ctx["max_pages"] (the shallow-feed cap). If the row reflowed BEYOND the
+            # cap and nav still advertises more pages, _scan_feed raises FeedScanError
+            # → propagates → the run aborts feed_unreadable. That is INTENTIONAL, not a
+            # bug to "fix": coverage past the cap is unproven = UNKNOWN, and the re-run
+            # is idempotent. Do NOT swallow it into a per-candidate skip (a false 'gone'
+            # / silent plow-on) nor narrow it to the page window (would miss a row that
+            # reflowed OUTSIDE the window — the real defect is the capped scan, which is
+            # the deliberate shallow-feed tradeoff, not a swallow).
             _, by_url, found = self._scan_feed(
                 ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"],
                 stop_on_url=url)
@@ -1090,7 +1106,16 @@ class _SubmitterBase:
         gone is True iff the offer is absent under BOTH keys — the row id we
         just acted on AND the merchant URL. An id-only check would prove a
         false disappearance whenever a re-import re-ids the row mid-run (K4G
-        2026-07-08) while it is in fact still in the feed. When gone, the scan ran
+        2026-07-08) while it is in fact still in the feed.
+        P2-12 (audit 2026-09-02): the URL key is the query-stripped path, so two
+        DISTINCT offers sharing one merchant path (implicit-GLOBAL + a region-specific
+        listing; currency-quantity variants) collapse to one key — a surviving sibling
+        makes gone=False and a real creation is reported STILL-in-feed / FAILED. That
+        mislabel is DELIBERATE and fail-safe (never a phantom / wrong-region write): a
+        same-row id rotation and a same-path sibling are indistinguishable at verify
+        time (both: acted-on id absent, path present), so relaxing the path key to
+        clear the sibling case would reopen the K4G id-rotation phantom-creation (P0).
+        When gone, the scan ran
         to the end of the feed and the collected maps ARE the current feed
         state — callers reuse them to locate the next candidate on the
         refreshed feed (AGENTS.md: "refresh current merchant feed; locate exact

@@ -548,6 +548,22 @@ class RealSubmitTests(unittest.TestCase):
         # the creation is NOT — the old single `writes` field conflated them.
         self.assertEqual((result["write_attempts"], result["created"]), (1, 0))
 
+    def test_p2_12_same_path_sibling_reports_real_creation_as_failure_failsafe(self):
+        # P2-12 (audit 2026-09-02): _verify_gone proves absence by id AND url PATH.
+        # Two distinct offers sharing one merchant path (implicit-GLOBAL + a region-
+        # specific Kinguin listing; or currency-quantity variants) collapse to one
+        # _url_key. Creating "1" removes it, but the same-path sibling "2" remains →
+        # gone=False → the REAL creation is reported STILL-in-feed / not-submitted.
+        # This is FAIL-SAFE (no phantom, no wrong-region write) and DELIBERATE: the
+        # url-key membership check is the primary phantom-creation guard (a same-row id
+        # rotation must ALSO read not-gone), so it must NOT be weakened to satisfy the
+        # sibling case — that would reopen the K4G id-rotation phantom-creation (P0).
+        session = FakeWriteSession([["1", "2"]], rows={"2": {"url": "https://m/1"}})
+        result = _real(session, [_cand("1")], limit=1)
+        self.assertFalse(result["plan"][0]["submitted"])
+        self.assertIn("STILL in feed", result["plan"][0]["post_save"])
+        self.assertEqual((result["write_attempts"], result["created"]), (1, 0))
+
     def test_create_not_confirmed_is_failure(self):
         session = FakeWriteSession([["1"]], create_status="NO_SELECTS")
         result = _real(session, [_cand("1")], limit=1)
@@ -2289,6 +2305,25 @@ class SearchLocateTests(unittest.TestCase):
         sub = self._sub(_SearchFake([], rendered=False))
         with self.assertRaises(FeedScanError):
             sub._scan_search("127", "aks-merchant-feeds-9", "all", "https://m/x")
+
+    def test_p3_4_index_by_search_cdp_error_aborts_not_retried(self):
+        # P3-4 (audit 2026-09-02): a transport-level CdpCommandError during index build
+        # is NOT caught by the FeedScanError-only retry — it propagates (→ run's
+        # FEED_UNREADABLE handler → abort before any write), matching the no-mid-run-
+        # reconnect invariant. It must never be swallowed into a silent index drop.
+        sub = self._sub(_SearchFake([]))
+        sub.search_index_attempts = 3
+        calls = []
+
+        def boom(*a, **k):
+            calls.append(1)
+            raise CdpCommandError("CDP Runtime.evaluate: no response within 20s")
+
+        sub._scan_search = boom
+        with self.assertRaises(CdpCommandError):
+            sub._index_by_search("127", "aks-merchant-feeds-9", "all",
+                                 [{"offer": {"url": "https://m/x-p1"}}])
+        self.assertEqual(len(calls), 1)   # propagated on the FIRST raise — NOT retried
 
     def test_verify_gone_search_gone_when_absent(self):
         sub = self._sub(_SearchFake([]))     # search returns nothing → whole-feed absent → gone
