@@ -32,7 +32,7 @@ from src.data_entry_auto import (  # noqa: E402
     ExtractOutcome, MatchOutcome, MoveOutcome, Stages, StageError, SubmitOutcome,
     SweepConfig, run_sweep,
 )
-from src.admin.validation_io import apply_overrides_and_validate, ValidationIOError  # noqa: E402
+from src.admin.validation_io import apply_overrides_and_validate  # noqa: E402
 from src.admin.runs import sha256_file  # noqa: E402
 from src.admin.auto_merchants import rejection_reason  # noqa: E402
 from src.child_runner import CooperativeChildRunner  # noqa: E402
@@ -107,19 +107,25 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
     def approve(run_id: str) -> int:
         run_dir = ROOT / "runs" / run_id
         cpath = run_dir / "candidates.json"
-        cands = _load_json(cpath) or []
-        payload = {
-            "validated_by": "auto (safe-auto data entry)",
-            "candidates_sha256": sha256_file(cpath),
-            "decisions": [{"fingerprint": candidate_fingerprint(c), "approve": True} for c in cands],
-        }
+        # P3-5 (audit 2026-09-02): wrap the WHOLE approve body — the payload build too
+        # (a malformed/stale candidates.json crashes candidate_fingerprint with a
+        # KeyError, the SAME class as a validator error). ANY failure must become a
+        # StageError so run_sweep records it (approve_failed_p<N>), halts fail-closed,
+        # and main() still reaches the finished_at/persist() stamp — before, only a
+        # ValidationIOError was caught, so an OSError/KeyError crashed the supervised
+        # sweep with a half-written recap. Approve failing means the page is NEVER
+        # submitted (over-skip, never a wrong entry); mirrors the by-urls orchestrator.
         try:
+            cands = _load_json(cpath) or []
+            payload = {
+                "validated_by": "auto (safe-auto data entry)",
+                "candidates_sha256": sha256_file(cpath),
+                "decisions": [{"fingerprint": candidate_fingerprint(c), "approve": True} for c in cands],
+            }
             res = apply_overrides_and_validate(run_dir, payload, repo_root=ROOT, created_offer_ids=None)
-        except ValidationIOError as exc:
-            # A stale candidates.json (feed re-import between match and approve) or
-            # any validation refusal is a fail-closed halt, recorded in the recap
-            # — never a bare crash that drops the page silently.
-            raise StageError(f"{getattr(exc, 'code', 'validation')}: {exc}")
+        except Exception as exc:
+            code = getattr(exc, "code", None) or type(exc).__name__
+            raise StageError(f"{code}: {exc}")
         return int(res.get("approved_count") or 0)
 
     def submit(run_id: str) -> SubmitOutcome:
@@ -147,20 +153,29 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
         if pace:
             argv += ["--pace", pace]
         rc = _run_child(argv)
-        plan = _load_json(run_dir / "submit_plan.json") or {}
+        # P2-14 (audit 2026-09-02): on exit 0 an UNREADABLE submit_plan.json (None from
+        # _load_json — external corruption / interrupted write) leaves the post-write
+        # state UNKNOWN. Do NOT collapse it to {} and record a benign 0-created page:
+        # fold unreadability into `ok` so `.clean()` HALTS the sweep (uncertainty →
+        # STOP). A genuine empty page (valid JSON, plan=[]) stays benign (not None).
+        plan = _load_json(run_dir / "submit_plan.json")
+        plan_readable = plan is not None
+        plan = plan or {}
         offers = []
         created = 0
         for e in plan.get("plan", []):
             ps = str(e.get("post_save") or "")
-            ok = "gone" in ps.lower()
-            if ok:
+            created_ok = "gone" in ps.lower()
+            if created_ok:
                 created += 1
             offers.append({"name": e.get("merchant_title"), "aks_id": e.get("aks_product_id"),
                            "region_id": e.get("region_id"), "edition_id": e.get("edition_id"),
-                           "created": ok, "post_save": ps})
-        return SubmitOutcome(ok=(rc == 0), aborted=plan.get("aborted"),
+                           "created": created_ok, "post_save": ps})
+        ok = (rc == 0 and plan_readable)
+        detail = "" if ok else (f"exit {rc}" if rc else "submit_plan.json unreadable after exit 0")
+        return SubmitOutcome(ok=ok, aborted=plan.get("aborted"),
                              stopped=plan.get("stopped"),
-                             created=created, offers=offers, detail="" if rc == 0 else f"exit {rc}")
+                             created=created, offers=offers, detail=detail)
 
     def move(run_id: str) -> MoveOutcome:
         # Move-to-List step of the unified per-page workflow. The plan comes from

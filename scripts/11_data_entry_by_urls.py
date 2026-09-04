@@ -176,7 +176,19 @@ def _read_search_pages(session: Any, feed_page: str, available: str, term: str,
     """Read a search's result pages (all-merchants) up to SEARCH_MAX_PAGES. A full
     page (100 rows) means there may be more → read the next; a short page ends it.
     Returns (rows, hit_cap) — hit_cap flags a result deeper than the cap (never a
-    silent cut)."""
+    silent cut).
+
+    P2-13 (audit 2026-09-02, DEFERRED — NOT wired): EXECUTOR_RULES §3 prefers bounding
+    by the authoritative `.tablenav` nav_max over a short-page heuristic, and
+    `feed_page_state()` already returns nav_max. It is deliberately NOT wired in here
+    yet: on this SEARCH page (page=aks-merchant-feeds-search) it is UNCONFIRMED whether
+    nav_max reports the FILTERED result's page count or the whole feed's. If it reports
+    the whole feed, a `truncated = nav_max > SEARCH_MAX_PAGES` OR would fire on EVERY
+    search → the manager's preview_incomplete gate would block every /games-tab submit
+    (a hard over-block regression). The additive nav_max→truncated wiring must be gated
+    on a one-time LIVE confirmation of the search page's nav semantics first; until then
+    the fail-safe short-page heuristic stands (under-read = under-entry on a re-run,
+    never a wrong entry)."""
     rows: list[dict] = []
     for page in range(1, SEARCH_MAX_PAGES + 1):
         found = _read_one_page(session, _search_url(feed_page, available, term, field, page))

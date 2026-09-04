@@ -122,6 +122,29 @@ class TriageStageWiringTests(unittest.TestCase):
         stages = self.MOD._make_stages("Kinguin", "58", "all", None)
         self.assertIsNone(stages.move)
 
+    def test_p3_5_approve_wraps_any_error_as_stageerror(self):
+        # P3-5 (audit 2026-09-02): ANY approve failure (OSError/KeyError/JSON, not just
+        # ValidationIOError) must become a StageError so run_sweep halts fail-closed and
+        # main() still finalizes recap.json — never a bare crash with a half-written recap.
+        from unittest import mock
+        run_id = "run-p1"
+        d = self.MOD.ROOT / "runs" / run_id
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "candidates.json").write_text(json.dumps([{
+            "offer": {"name": "Game A", "offer_id": "77"}, "aks_product_id": "1",
+            "region": {"id": "9"}, "edition": {"id": "1"}}]), encoding="utf-8")
+        stages = self.MOD._make_stages("Kinguin", "58", "all", None)
+        with mock.patch.object(self.MOD, "apply_overrides_and_validate", side_effect=OSError("disk full")):
+            with self.assertRaises(self.MOD.StageError) as ctx:
+                stages.approve(run_id)
+        self.assertIn("OSError", str(ctx.exception))
+        self.assertIn("disk full", str(ctx.exception))
+        # the widened try also covers the payload build: a malformed candidates.json
+        # (KeyError in candidate_fingerprint) is a StageError too, not a bare crash.
+        (d / "candidates.json").write_text(json.dumps([{"offer": {"name": "no id"}}]), encoding="utf-8")
+        with self.assertRaises(self.MOD.StageError):
+            stages.approve(run_id)
+
     def test_dry_run_submit_creates_nothing(self):
         run_id = "run-p1"
         d = self.MOD.ROOT / "runs" / run_id
