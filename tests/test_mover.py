@@ -383,6 +383,11 @@ class PageHintIndexTests(unittest.TestCase):
         self.assertIsNone(result["aborted"])
         self.assertEqual(result["moved"], 0)          # skipped, not deep-relocated
         self.assertEqual(session.applied, [])          # never wrote anything
+        # P3-6 (audit 2026-09-02): the skip label must NOT claim a whole-feed "proven"
+        # absence under a page window — it must signal the windowed scope instead.
+        skipped = result["plan"][0]["skipped"]
+        self.assertNotIn("proven", skipped)
+        self.assertIn("window", skipped.lower())
 
     def test_page_hint_source_scans_stay_within_window(self):
         # the whole point: NO page beyond the window is ever navigated for a SOURCE

@@ -405,10 +405,12 @@ class _MoverBase(_SubmitterBase):
     ) -> tuple[str, Any]:
         """('proceed', located) | ('skip', reason) | ('block', reason).
 
-        MV8: an "absent per the start index" miss is re-proven by a targeted scan
-        (``stop_on`` disables the early-terminate and runs to a proven feed end,
-        raising FeedScanError if coverage is unprovable) before it is trusted as
-        "already moved". A present-but-contradicting row is never a skip."""
+        MV8: an "absent per the start index" miss is re-checked by a targeted scan
+        (``stop_on`` disables the early-terminate) before it is trusted as "already
+        moved" — a whole-feed proof with no page window (raising FeedScanError if
+        coverage is unprovable), or window-scoped under a page-hint (P3-6: the skip
+        reason is labelled accordingly; no write on a windowed absence). A
+        present-but-contradicting row is never a skip."""
 
         located = self._locate_row(candidate, offer_id, ctx["index"], ctx["by_url"])
         if not located.get("blocker"):
@@ -419,7 +421,7 @@ class _MoverBase(_SubmitterBase):
         index, by_url, found = self._source_scan(
             ctx, stop_on=offer_id, stop_on_url=url or None)
         if not found:
-            return "skip", "not on source list (already moved?) — proven by the source scan"
+            return "skip", self._absent_from_source_reason(ctx)   # P3-6: window-aware label
         ctx["index"], ctx["by_url"] = index, by_url
         relocated = self._locate_row(candidate, offer_id, index, by_url)
         if relocated.get("blocker"):
@@ -542,15 +544,34 @@ class _MoverBase(_SubmitterBase):
 
     def _full_source_scan(self, ctx: dict[str, Any], *, force_full: bool = False
                           ) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]]]:
-        """A source-feed scan walked to a PROVEN end-of-feed (``full_coverage`` —
-        no 2-empty early terminate), so an id/URL ABSENT from the returned maps
-        genuinely left the feed: the set-wise analogue of ``_verify_gone``'s
-        stop_on proof, for a whole group at once. Raises FeedScanError
-        (fail-closed) when coverage cannot be proven. ``force_full`` walks the WHOLE
-        feed even under a page window (see ``_source_scan``)."""
+        """A source-feed scan with ``full_coverage`` (no 2-empty early terminate).
+
+        With NO page window (all-stores sort) or ``force_full``, it walks to a PROVEN
+        end-of-feed, so an id/URL ABSENT from the returned maps genuinely left the feed
+        — the set-wise analogue of ``_verify_gone``'s stop_on proof, for a whole group
+        at once, raising FeedScanError (fail-closed) when coverage is unprovable. Under
+        a page window WITHOUT ``force_full`` it is WINDOWED (P3-6): absence means only
+        "not in the window", not whole-feed proof — the caller must pair it with an RV2
+        present-on-target anchor (a windowed absence never writes). See ``_source_scan``."""
 
         index, by_url, _ = self._source_scan(ctx, full_coverage=True, force_full=force_full)
         return index, by_url
+
+    def _absent_from_source_reason(self, ctx: dict[str, Any]) -> str:
+        """The skip reason for an offer absent from the source scan — window-aware.
+
+        P3-6 (audit 2026-09-02): only a WHOLE-FEED scan proves "already moved". Under a
+        page-hint the scan is WINDOWED (``_source_scan`` reads only the neighbourhood
+        unless ``force_full``), so an absence is window-scoped, NOT proven. The move is
+        still fail-closed — a windowed absence performs NO write (RV2 present-on-target
+        is the correctness anchor) — so this only corrects a misleading "proven" label
+        that could otherwise mislead an operator reading the plan."""
+
+        window = ctx.get("window_pages")
+        if window:
+            return (f"not found in the page-hint window (pages {window}) — WINDOWED scan, "
+                    "not a whole-feed proof; left in place (no write; RV2 is the anchor)")
+        return "not on source list (already moved?) — proven by the source scan"
 
 
 class DryRunMover(_MoverBase):
@@ -835,14 +856,15 @@ class Mover(_MoverBase):
             ctx["index"], ctx["by_url"] = index, by_url
 
             # Group remaining offers by (current page, target list). An offer gone
-            # from the source is an idempotent skip (already moved) — proven by
-            # this full scan, so it is not an unscanned-tail false absence.
+            # from the source is an idempotent skip (already moved) — proven by this
+            # scan when it is whole-feed, or window-scoped under a page-hint (P3-6);
+            # either way it is not an unscanned-tail false absence that would write.
             groups: dict[tuple[str, str], list[dict[str, Any]]] = {}
             for key in list(pending):
                 entry = pending[key]
                 row = by_url.get(key)
                 if row is None:
-                    entry["skipped"] = "not on source list (already moved?) — proven by the source scan"
+                    entry["skipped"] = self._absent_from_source_reason(ctx)   # P3-6
                     self._log("move_skipped", offer_id=entry["offer_id"], reason=entry["skipped"])
                     result["plan"].append(entry)
                     del pending[key]
