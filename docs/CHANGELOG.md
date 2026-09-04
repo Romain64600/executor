@@ -80,8 +80,35 @@ sous-agent adversarial. Les règles par-étape correspondantes sont dans
   entrée mondialement). Base manquante → id `None` → skip fail-closed `no region id`
   (label et id ne peuvent plus diverger). Buckets existants inchangés.
 
-**Restant (non commencé) :** le lot d'hygiène P2/P3. `181d996` conservé comme acquis ;
-aucun changement d'hygiène mélangé aux correctifs fonctionnels.
+**Lot d'hygiène P2/P3 — 15 findings restants (terminé).** Triage read-only en
+parallèle (15 sous-agents, workflow `hygiene-audit-assess`), puis correctifs par
+lot-de-fichier, chacun contre-vérifié ; diff complet re-vérifié adversarialement
+(SOLID, suite complète **1243 tests**). Fait notable : le triage a **corrigé la
+prémisse** de plusieurs findings — plusieurs « bugs » étaient en fait du fail-closed
+délibéré ⇒ disposition **doc/test-only** plutôt qu'un correctif risqué.
+
+- **Corrigés (code) :** P3-1 (`1c5ce59`, resolve fallback aussi sur page `-key-` nue),
+  P3-2 (`1c5ce59`, whitelist skin `^Skin Deep` au lieu de `^Skins?`), P2-14
+  (`6e4421e`, plan illisible après exit 0 → halt fail-closed), P3-5 (`6e4421e`,
+  approve wrap `except Exception` → StageError typé), P2-10 (`b243004`, alarme SIGKILL
+  armée UNE fois par stop), P2-11 (`b243004`, `value` ajouté à `REDACT_KEYS` +
+  convergence `_SECRET_KEYS ⊆ REDACT_KEYS`), P2-15 (`b243004`, handler redirect
+  host-locked : UA `AKS/Staff` ne fuit plus hors allkeyshop.com sur un 3xx),
+  P3-7 (`b243004`, `isinstance(str)` → `ContractError` typé), P3-8 (`b243004`, reason
+  d'abort = type d'exception seul, jamais `{exc}`).
+- **Doc/label/test-only (comportement fail-closed délibéré, verrouillé) :** P3-3
+  (`1c5ce59`, `continue` OST porteur, pas mort — routage testé), P3-4 (`d8a5706`,
+  retry FeedScanError-only par conception ; CdpCommandError abort), P2-5 (`d8a5706`,
+  scan sweep capé = UNKNOWN → abort intentionnel), P2-12 (`d8a5706`, siblings
+  même-chemin → « échec » = fail-safe, ne pas relâcher la clé URL sous peine de
+  ré-ouvrir le P0 K4G), P3-6 (`cdb5a5d`, label « WINDOWED » au lieu de « proven » sous
+  page-hint), P2-13 (`6e4421e`, wiring nav_max→truncated DIFFÉRÉ, gaté sur une
+  confirmation live pour éviter un over-block de tous les submits).
+
+Résidus documentés (hors périmètre, fail-safe) : `-gift-us` plain gift (P2-6b),
+« Gems of War » / « Points2Win » (P2-7/P2-6b), P2-13 nav_max en attente de confirm
+live, P2-11 sur-redaction cosmétique de `target_add.value` (id produit, non secret).
+Campagne d'audit 2026-09-02 **terminée** (tous P1 + P2 + P3 traités).
 
 ## 2026-07-31 — Tri : RV2 target-verify GLOBAL + mega-stores hors-scope (Gift cards)
 
