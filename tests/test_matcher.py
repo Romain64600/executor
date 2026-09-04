@@ -412,6 +412,49 @@ class PrecheckSkipTests(unittest.TestCase):
             _offer("Cyberpunk 2077 Steam Key",
                    url="https://www.gamivo.com/product/cyberpunk-2077-steam-key?region=brazil")))
 
+    def test_p2_6b_forbidden_2letter_code_in_url_slot_skips(self):
+        # P2-6b (audit 2026-09-02): a forbidden region as a BARE 2-letter slug code,
+        # in a trailing region slot (after a key/gift/platform marker), skips + routes.
+        from src.aks_lists import suggest_target_list
+        cases = {
+            "https://www.gamivo.com/cyberpunk-2077-steam-key-ru": ("RUSSIA", "8"),
+            "https://www.g2a.com/game-steam-key-tr-i1": ("TURKEY", None),
+            "https://www.gamivo.com/elden-ring-pc-br": ("BRAZIL", "8"),
+            "https://www.gamivo.com/game-steam-key-cn": ("CHINA", "8"),
+            "https://www.driffle.com/game-steam-key-jp-p1": ("JAPAN", "8"),
+        }
+        for url, (label, listid) in cases.items():
+            reason = precheck_skip(_offer("Some Game", url=url))
+            self.assertEqual(reason, f"forbidden region: {label}", url)
+            self.assertEqual(suggest_target_list(reason), listid, url)
+
+    def test_p2_6b_english_word_collisions_never_skip(self):
+        # the region slot (marker-preceded AND trailing) must exclude English words:
+        # "among-us" (us not marker-preceded), "lost-in-random" ("in" excluded + not
+        # slot), "…key-in-the-lock…" ("in" not trailing), "war-thunder" ("ar" in war).
+        for name, url in (
+            ("Among Us", "https://www.g2a.com/among-us-pc-steam-key-global-i1"),
+            ("Among Us", "https://store.example.com/among-us"),
+            ("Lost in Random", "https://www.g2a.com/lost-in-random-steam-key-global-i1"),
+            ("The Key in the Lock", "https://x.com/the-key-in-the-lock-steam-key"),
+            ("War Thunder", "https://x.com/war-thunder-steam-key-global"),
+        ):
+            self.assertIsNone(precheck_skip(_offer(name, url=url)), url)
+
+    def test_p2_6b_us_slug_detects_us_base_not_implicit_global(self):
+        # residual 2: a "-us" slug in a region slot now reads US base (was implicit
+        # GLOBAL, entering a US-locked key worldwide) — but "among-us" stays GLOBAL.
+        def gr(url, plat="STEAM"):
+            return detect_region(_offer("Some Game", url=url), plat)
+        self.assertEqual(gr("https://www.gamivo.com/game-steam-key-us"), ("US", "8", False))
+        self.assertEqual(gr("https://www.g2a.com/game-steam-key-us-i1"), ("US", "8", False))
+        self.assertEqual(gr("https://g/game-steam-us"), ("US", "8", False))
+        self.assertEqual(gr("https://store/among-us"), ("GLOBAL", "2", True))
+        # closes the loop with P2-8: EPIC US green gift enters gmg_gift_us (635);
+        # STEAM has no gmg_gift_us → None → fail-closed skip (not silent global).
+        self.assertEqual(gr("https://x/game-green-gift-key-us", "EPIC")[1], "635")
+        self.assertIsNone(gr("https://x/game-green-gift-key-us", "STEAM")[1])
+
     def test_currency_category(self):
         self.assertIn("POINTS", precheck_skip(_offer("500 FIFA Points")))
 

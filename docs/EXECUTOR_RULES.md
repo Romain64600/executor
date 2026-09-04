@@ -311,9 +311,20 @@ GLOBAL** = a region-locked key entered worldwide (Gamivo's empty config gives no
 page-region rescue). The FORBIDDEN_REGIONS scan now also runs on the URL **path**
 (query stripped, merchant noise removed, word-boundary, same normalization as the
 title) and returns the **same** `forbidden region: <label>` reason → identical routing.
-Known residual (fail-closed follow-up, NOT closed): a **bare 2-letter** region code in a
-slug (`-ru`/`-tr`/`-br`) still falls to implicit GLOBAL — `FORBIDDEN_REGIONS` uses full
-names, and 2-letter codes are too false-positive-prone to scan without context gating.
+**Bare 2-letter region codes + the `-us` base `[P2-6b]` (audit 2026-09-02).** A forbidden
+region also appears as a bare 2-letter slug code (`…-steam-key-ru`), and a US-locked key as
+`…-steam-key-us` (which `detect_region` didn't read → implicit GLOBAL). Both are now caught
+by `_url_region_code`, gated on a **region slot**: the code must be immediately preceded by a
+region-context marker (`key`/`gift`/`code`/platform) AND **trailing** (end of the path,
+optionally a merchant product-id suffix `-i123`/`-p123`). That excludes the English-word
+collisions — `among-us` (`us` not marker-preceded), `lost-in-random` / `the-key-in-the-lock`
+(`in` excluded + not a trailing slot), `war-thunder` (`ar` inside a word). Forbidden codes
+`ru/tr/br/ar/cn/kr/jp` → `forbidden region: <FULL NAME>` (same routing); **`in` (India) is
+deliberately excluded** (too collision-heavy — full `-india` is caught by the name/URL scan).
+The `-us` slot sets base US, composing with P2-8 (EPIC US green gift → `gmg_gift_us`; STEAM
+lacks it → fail-closed skip). Residual (pre-existing, NOT this fix): a US **plain** gift
+(`-gift-us`) still enters under the global gift bucket (the plain-gift branch only
+special-cases EU; there is no `gift_us` id) — flagged for future hardening.
 **GMG green-gift resolves the EXACT per-base bucket, no silent global fallback `[P2-8,
 R32c]` (audit 2026-09-02).** A Green Man Gaming "Green Gift" maps to the platform's
 dedicated `gmg_gift` region. STEAM has `gmg_gift`+`gmg_gift_eu` (no `_us`); EPIC has

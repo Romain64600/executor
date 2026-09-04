@@ -116,6 +116,39 @@ FORBIDDEN_REGIONS = (
 _COUNTRY_GIFT_RE = re.compile(
     r" (?:CZ|RU|TR|BR|AR|IN|CN) GIFT | GIFT (?:CZ|RU|TR|BR|AR|IN|CN) "
 )
+
+# Region encoded as a BARE 2-letter code in a merchant slug (P2-6b + the "-us" base,
+# audit 2026-09-02). Matched ONLY in a "region slot": immediately after a region-
+# context marker (key/gift/platform) AND trailing — end of the path, optionally a
+# merchant product-id suffix (G2A "-i123", Driffle "-p123"). This excludes the
+# English-word collisions where the code is NOT marker-preceded ("among-us",
+# "lost-in-random") or NOT trailing ("the-key-in-the-lock-steam-key"). Distinctive
+# markers only — no generic "games"/"net" that would hit "The Hunger Games".
+_URL_REGION_MARKER = (
+    r"key|gift|code|digital|account|pc|mac|linux|steam|epic|gog|origin|uplay|"
+    r"ubisoft|rockstar|windows|xbox|psn|switch"
+)
+
+
+def _url_region_code(url: str, code: str) -> bool:
+    """True if a bare region ``code`` (e.g. 'us', 'ru') sits in a trailing region
+    slot of the (lowercased, query-stripped) ``url``. See ``_URL_REGION_MARKER``."""
+
+    return re.search(
+        r"-(?:" + _URL_REGION_MARKER + r")-" + re.escape(code) + r"(?:-[ip]\d+)?/?$",
+        url,
+    ) is not None
+
+
+# Forbidden regions that also appear as bare 2-letter slug codes → skip. "IN"
+# (India) is DELIBERATELY excluded — even gated it is too collision-heavy; the full
+# "-india" form is caught by the name / URL FORBIDDEN_REGIONS scan. Labels reuse the
+# FORBIDDEN_REGIONS full names so suggest_target_list routes them identically.
+_URL_FORBIDDEN_CODES = (
+    ("ru", "RUSSIA"), ("tr", "TURKEY"), ("br", "BRAZIL"), ("ar", "ARGENTINA"),
+    ("cn", "CHINA"), ("kr", "KOREA"), ("jp", "JAPAN"),
+)
+
 # "OFFICE" and "VPN" moved to SOFTWARE_APP_TOKENS (R22, word-boundary): as
 # substrings here they false-hit game titles ("The Office Quest", "…Officer…").
 # P2-7 (audit 2026-09-02): "SOFTWARE" dropped — a title literally containing the
@@ -506,6 +539,13 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
     for region in FORBIDDEN_REGIONS:
         if f" {region} " in url_padded:
             return f"forbidden region: {region}"
+    # P2-6b (audit 2026-09-02): forbidden regions also appear as bare 2-letter slug
+    # codes ("…-steam-key-ru") — caught only in a trailing region slot (see
+    # _url_region_code) so English words ("lost-in-random", "among-us") don't skip.
+    url_lower = url_path.lower()
+    for code, label in _URL_FORBIDDEN_CODES:
+        if _url_region_code(url_lower, code):
+            return f"forbidden region: {label}"
     if _COUNTRY_GIFT_RE.search(padded):
         return "country gift (region-locked gift, §4.3)"
     # Random/lootbox keys & items (_RANDOM_LOOT_RE, see its definition). Checked
@@ -738,7 +778,11 @@ def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | Non
         base, label = "eu", "EU"
     elif "-global" in url or " GLOBAL " in padded or "(GLOBAL)" in padded or " WORLDWIDE " in padded:
         base, label = "global", "GLOBAL"
-    elif re.search(r"-united-states(?:[-/]|$)", url) or tail in ("UNITED STATES", "US", "USA"):
+    elif (re.search(r"-united-states(?:[-/]|$)", url) or _url_region_code(url, "us")
+          or tail in ("UNITED STATES", "US", "USA")):
+        # "-us" only in a trailing region slot ("…-steam-key-us"), never a bare
+        # "among-us" (P2-6b gate) — before, a "-us" slug fell to implicit GLOBAL,
+        # entering a US-locked key worldwide (and a US green gift missed gmg_gift_us).
         base, label = "us", "US"
     elif " UK " in padded or "(UK)" in padded or tail in ("UK", "UNITED KINGDOM"):
         base, label = "uk", "UK"
