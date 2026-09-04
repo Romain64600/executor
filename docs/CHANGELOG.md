@@ -49,11 +49,20 @@ sous-agent adversarial. Les règles par-étape correspondantes sont dans
   déclencher un MOVE→liste sous `--move-execute` (prolonge Audit L8). Sweep old-vs-new
   sur tout `CATEGORY_SKIP` : zéro diff ; offres account réelles routées par
   `sort_plan.is_account_offer`.
+- **P2-7 (CATEGORY_SKIP sous-chaîne + token SOFTWARE)** — `5e87768` : `precheck_skip`
+  matche `CATEGORY_SKIP` en **mots entiers** (`_category_skip_pattern`), plus en
+  sous-chaîne brute — fini les sur-skips de jeux valides ("Stratagems"→GEMS,
+  "Checkpoints"→POINTS, "Laptop Upgrade"→TOP UP). Bord **lettre-only** : un token
+  collé à un CHIFFRE (montant) skippe encore ("5000Gems"), collé à une LETTRE passe
+  ("Gemstone") ; pluriels `S`/`ES` conservés ("Vouchers", "Season Passes"). Token
+  `SOFTWARE` **retiré** (désormais classifieur `is_software`, pas un skip — atteint
+  le chemin software R31). Résidu fail-safe documenté : "Gems of War" reste skippé
+  (règle games-only). Vérifié : le patch ne peut qu'AJOUTER des matches → aucun
+  nouveau leak, seuls des sur-skips fail-safe.
 
 **Restant (non commencé) :** P2-6/P2-8 (région URL-interdite / GMG gift → GLOBAL),
-P2-7 (CATEGORY_SKIP sous-chaîne + token SOFTWARE), puis le lot d'hygiène P2/P3.
-`181d996` conservé comme acquis ; aucun changement d'hygiène mélangé aux correctifs
-fonctionnels.
+puis le lot d'hygiène P2/P3. `181d996` conservé comme acquis ; aucun changement
+d'hygiène mélangé aux correctifs fonctionnels.
 
 ## 2026-07-31 — Tri : RV2 target-verify GLOBAL + mega-stores hors-scope (Gift cards)
 
