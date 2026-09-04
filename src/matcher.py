@@ -118,13 +118,43 @@ _COUNTRY_GIFT_RE = re.compile(
 )
 # "OFFICE" and "VPN" moved to SOFTWARE_APP_TOKENS (R22, word-boundary): as
 # substrings here they false-hit game titles ("The Office Quest", "…Officer…").
+# P2-7 (audit 2026-09-02): "SOFTWARE" dropped — a title literally containing the
+# word "software" must NOT be hard-skipped here: that jumped the R31 software path
+# (is_software + page-driven licence edition/region), losing software AKS actually
+# sells. Software is now classified by SOFTWARE_APP_TOKENS / is_software, never this
+# list. "TOP-UP" dropped as redundant (the word-boundary matcher normalizes
+# punctuation, so "TOP UP" already catches "Top-Up").
 CATEGORY_SKIP = (
     "GIFT CARD", "WALLET", "CASH CARD", "SHARK CARD", "VOUCHER", "SUBSCRIPTION",
-    "PREPAID", "SOFTWARE", "ANTIVIRUS", "POINTS", "CREDITS",
-    "COINS", "GEMS", "DIAMONDS", "TOP-UP", "TOP UP", "MEMBERSHIP", "CURRENCY",
+    "PREPAID", "ANTIVIRUS", "POINTS", "CREDITS",
+    "COINS", "GEMS", "DIAMONDS", "TOP UP", "MEMBERSHIP", "CURRENCY",
     "ACTIVATION LINK", "STEAM ACCOUNT", "STEAM GIFT CARD",
     "MICROSOFT KEY", "MICROSOFT STORE", "SEASON PASS", "STEAM PLAYER TRADE",
 )
+
+
+def _category_skip_pattern(cat: str) -> "re.Pattern[str]":
+    """A word-boundary matcher for a CATEGORY_SKIP token (P2-7, audit 2026-09-02).
+
+    A raw substring over-skipped valid games ("Stratagems"→GEMS, "Checkpoints"→
+    POINTS, "Laptop Upgrade"→TOP UP). This matches the token as whole words —
+    internal spaces accept any punctuation ("Gift-Card" ≡ "Gift Card"), and an
+    OPTIONAL trailing plural ("S"/"ES") keeps plural offers caught ("Vouchers",
+    "Gift Cards", "Season Passes", "Antiviruses"), which a bare word boundary would
+    have regressed.
+
+    The word boundary is LETTER-only (`[A-Z]`), NOT alphanumeric: a token glued to a
+    DIGIT stays a skip ("5000Gems"/"Wallet100" — a digit adjacency is a currency
+    AMOUNT, the strongest 'this is currency' signal), while a token glued to a LETTER
+    is a game word and passes ("Stratagems", "Gemstone"). NB a bare currency word
+    that is genuinely a game's leading word ("Gems of War") stays a fail-SAFE skip
+    (doubt → skip; the "games only / no currency" hard rule forbids the reverse)."""
+
+    core = r"[^A-Z0-9]+".join(re.escape(w) for w in re.split(r"[^A-Z0-9]+", cat) if w)
+    return re.compile(r"(?<![A-Z])" + core + r"(?:E?S)?(?![A-Z])")
+
+
+_CATEGORY_SKIP_RES = tuple((cat, _category_skip_pattern(cat)) for cat in CATEGORY_SKIP)
 # Short in-game currency tokens (G2A.md): substring matching would false-hit
 # ordinary words ("ORB" in "Absorber"), so these are word-boundary only.
 # GEM singular: "Growtopia Gem Fountain" (2026-07-07) is a gem-currency item
@@ -470,8 +500,8 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
     if _RANDOM_LOOT_RE.search(padded):
         return "skip category: RANDOM (random/lootbox, not a game)"
     upper = offer.name.upper()
-    for cat in CATEGORY_SKIP:
-        if cat in upper:
+    for cat, pat in _CATEGORY_SKIP_RES:      # word-boundary, not raw substring (P2-7)
+        if pat.search(upper):
             return f"skip category: {cat}"
     for token in BUNDLE_SKIN_TOKENS:
         if f" {token} " in padded:

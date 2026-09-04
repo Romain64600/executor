@@ -389,6 +389,60 @@ class PrecheckSkipTests(unittest.TestCase):
     def test_currency_category(self):
         self.assertIn("POINTS", precheck_skip(_offer("500 FIFA Points")))
 
+    def test_p2_7_category_skip_is_word_boundary_not_substring(self):
+        # P2-7 (audit 2026-09-02): CATEGORY_SKIP matches WHOLE WORDS, not raw
+        # substrings — valid PC games whose title merely CONTAINS a category token
+        # must pass precheck (fall through to the AKS lookup), not be silently skipped.
+        for name in ("Stratagems Steam Key GLOBAL",       # GEMS inside "Stratagems"
+                     "Checkpoints Steam Key GLOBAL",       # POINTS inside "Checkpoints"
+                     "Laptop Upgrade Simulator Steam Key", # "TOP UP" across "LapTOP UPgrade"
+                     "Gemstone Keeper Steam Key GLOBAL",   # GEMS inside "Gemstone"
+                     "Software Inc Steam Key GLOBAL"):     # SOFTWARE token dropped (R31)
+            self.assertIsNone(precheck_skip(_offer(name)), name)
+
+    def test_p2_7_real_category_offers_still_skip_incl_plurals(self):
+        # The word-boundary matcher must NOT regress real category skips, including
+        # PLURALS (a bare boundary would miss "Vouchers") and punctuation variants.
+        cases = {
+            "Steam Gift Card 50 EUR": "GIFT CARD",
+            "Steam Gift Cards Pack": "GIFT CARD",          # plural
+            "Steam Vouchers": "VOUCHER",                   # plural
+            "Genshin Impact 500 Gems": "GEMS",
+            "Riot Points 10 EUR": "POINTS",
+            "Diablo IV Platinum Top-Up": "TOP UP",         # hyphen normalized
+            "WoW 60 Day Subscription": "SUBSCRIPTION",
+            "Cyberpunk 2077 Steam Account": "STEAM ACCOUNT",
+        }
+        for name, cat in cases.items():
+            self.assertIn(cat, precheck_skip(_offer(name)) or "", name)
+
+    def test_p2_7_digit_glued_currency_still_skips(self):
+        # The word boundary is LETTER-only: a currency token glued to a DIGIT (an
+        # AMOUNT) stays a skip — a digit adjacency is the strongest "this is currency"
+        # signal, so "5000Gems"/"Wallet100" must NOT leak to entry.
+        for name, cat in (("Free Fire 5000Gems", "GEMS"), ("1000Coins Pack", "COINS"),
+                          ("Wallet100 EUR", "WALLET"), ("500Diamonds", "DIAMONDS")):
+            self.assertIn(cat, precheck_skip(_offer(name)) or "", name)
+        # but a game word merely letter-adjacent to a token still passes
+        self.assertIsNone(precheck_skip(_offer("Stratagems 2 Steam Key GLOBAL")))
+
+    def test_p2_7_es_plurals_still_skip(self):
+        # sibilant plurals ("-ES") stay caught (a bare "-S?" would have regressed).
+        self.assertIn("SEASON PASS", precheck_skip(_offer("Ultimate Season Passes Pack")) or "")
+        self.assertIn("ANTIVIRUS", precheck_skip(_offer("Avast Antiviruses Bundle")) or "")
+
+    def test_p2_7_software_literal_reaches_r31_path(self):
+        # A title literally containing "software" is no longer hard-skipped here; it
+        # falls through to the software path (is_software / SOFTWARE_APP_TOKENS).
+        self.assertIsNone(precheck_skip(_offer("IObit Software Updater Pro Key")))
+        self.assertIsNone(precheck_skip(_offer("Ashampoo Backup Software Key")))
+
+    def test_p2_7_gems_of_war_is_documented_failsafe_skip(self):
+        # KNOWN residual (fail-SAFE): a bare currency word that is genuinely a game's
+        # leading word stays skipped — the "games only / no in-game currency" hard
+        # rule forbids the reverse error, so doubt goes to skip (operator can enter).
+        self.assertIn("GEMS", precheck_skip(_offer("Gems of War Steam Key")))
+
     def test_non_game_content_soundtrack_artbook(self):
         # Romain 2026-07-23: soundtracks / artbooks -> non-game content (Blacklist)
         self.assertIn("SOUNDTRACK", precheck_skip(_offer("Celeste Original Soundtrack")))

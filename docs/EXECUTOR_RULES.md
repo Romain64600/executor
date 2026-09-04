@@ -193,8 +193,23 @@ remaster `[critical learned rule]`.
 Console (Xbox/PS/Nintendo); forbidden regions
 (RoW/AMERICAS/ASIA/OTHER/North America/EU-NA/EMEA/NA/Eastern Europe/SEA/Middle
 East/Turkey/Germany); Country Gift (CZ/RU/TR/BR/AR/IN/CN);
-PREPAID/SOFTWARE/VPN/Subscription/Voucher/Gift Card/Currency; language
+Prepaid/Subscription/Voucher/Gift Card/Wallet/in-game currency
+(Points/Coins/Gems/Diamonds/Credits/Top-Up)/Membership/Steam Account
+(`CATEGORY_SKIP`); language
 restrictions (EN/FR/ES "… Languages Only", EN/CS);
+**`CATEGORY_SKIP` is matched WORD-BOUNDARY, not raw substring** `[P2-7]` (audit
+2026-09-02): a raw substring silently over-skipped valid games ("Stratagems"→GEMS,
+"Checkpoints"→POINTS, "Laptop Upgrade"→"TOP UP"). Each token now matches as whole
+words (`_category_skip_pattern`): internal spaces accept any punctuation
+("Gift-Card" ≡ "Gift Card"), an optional `S`/`ES` keeps plurals caught
+("Vouchers", "Season Passes"), and the boundary is **letter-only** so a token glued
+to a DIGIT (an amount — the strongest currency signal) still skips ("5000Gems",
+"Wallet100") while a game word glued to a LETTER passes ("Gemstone"). `SOFTWARE` was
+**dropped** from the list (a title literally containing "software" would jump the
+R31 software path — §4.6); it is now a classifier, not a skip. Known fail-SAFE
+residual: a bare currency word that is genuinely a game's leading word ("Gems of
+War") stays skipped — the games-only/no-currency hard rule forbids the reverse
+error, so doubt → skip (the operator can enter it by hand);
 **ANY bundle and ANY skin** — categorical, word-boundary on the title
 (`Bundle(s)`/`Skin(s)`), even single-game/cosmetic bundles that have their own
 token-perfect AKS product page (Romain, direct rule 2026-07-07, after the
