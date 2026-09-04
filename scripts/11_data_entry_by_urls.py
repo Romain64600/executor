@@ -53,7 +53,9 @@ FEED_UI_RENDER_WAITS = (1.0, 2.0, 4.0)
 # The AKS all-merchants SEARCH renders ALL matches on a SINGLE page (P2-13, resolved
 # live 2026-09-04 by scripts/probe_p2_13_search_navmax.py): nav_max is ALWAYS 0, `&p=N`
 # re-serves the SAME page, and the result is capped SERVER-SIDE at SEARCH_RESULT_CAP
-# distinct rows ("Steam"/"Key"/"a" → 300; "e" → 151). So a search is COMPLETE iff it
+# distinct rows. The cap is GLOBAL, not list-specific — confirmed across lists: broad
+# term "a" → exactly 300 on both list 8 (Blacklist) and list 21 (Gift cards), while
+# smaller lists return their true count (< 300). So a search is COMPLETE iff it
 # returned FEWER than the cap; a result AT the cap may have been cut off → truncated.
 SEARCH_RESULT_CAP = 300
 
