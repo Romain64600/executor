@@ -222,12 +222,17 @@ BUNDLE_SKIN_TOKENS = (
 # what it decorates*. The same word is an ordinary noun in a real game's title,
 # recognisable structurally (Romain 2026-07-23, "Blacksad: Under the Skin"): SKIN
 # governed by a determiner/possessive ("Under the Skin", "Second Skin", "Save
-# Your Skin") or LEADING the title ("Skin Deep") is a noun phrase, not a cosmetic.
-# ("Skinwalker" is already excluded by the word boundary.)
+# Your Skin") is a noun phrase, not a cosmetic. ("Skinwalker" is already excluded
+# by the word boundary.)
+# P3-2 (audit 2026-09-02): the old leading branch `^\s*SKINS?\b` whitelisted ANY
+# title starting with SKIN/SKINS — so a cosmetic pack "Skins Pack" / "Skin Pack"
+# bypassed the categorical SKIN skip. Narrowed to the ONE documented SKIN-leading
+# GAME ("Skin Deep"); every other "Skins …" title falls through to the skip
+# (fail-closed → Blacklist; a rare other SKIN-leading game is a fail-safe over-skip).
 _SKIN_NOUN_DETERMINERS = ("THE", "YOUR", "MY", "HIS", "HER", "OUR", "ITS", "OWN", "SECOND")
 _SKIN_TOKEN_RE = re.compile(r"\bSKINS?\b")
 _SKIN_TITLE_PHRASE_RE = re.compile(
-    r"\b(?:" + "|".join(_SKIN_NOUN_DETERMINERS) + r")\s+SKINS?\b|^\s*SKINS?\b"
+    r"\b(?:" + "|".join(_SKIN_NOUN_DETERMINERS) + r")\s+SKINS?\b|^\s*SKIN\s+DEEP\b"
 )
 # Romain (2026-07-23): soundtracks / artbooks / digital books are non-game add-on
 # content — never a game, routed to Blacklist. Word-boundary (same mechanism as
@@ -564,10 +569,17 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
         return "skip category: SKIN (no bundles/skins)"
     for token in NON_GAME_CONTENT_TOKENS:
         if f" {token} " in padded:
-            # A game bundled with its OST/artbook is a sellable game, not
-            # standalone non-game content: "<game> + OST", "… Soundtrack Edition"
-            # (audit 2026-07-23: "Sinless + OST", "Lost Records … Soundtrack
-            # Edition" were wrongly Blacklisted). Those keep the base game.
+            # A game bundled with its OST/artbook is NOT standalone non-game content,
+            # so it must not auto-route to Blacklist as a soundtrack (audit 2026-07-23:
+            # "Sinless + OST", "Lost Records … Soundtrack Edition" were wrongly
+            # Blacklisted). The two forms then diverge (P3-3, audit 2026-09-02 —
+            # the `continue` is load-bearing, NOT dead):
+            #   • "… <token> EDITION" (no " + ") → falls through, ENTERS the base game;
+            #   • "<game> + OST" → falls through to the " + " multi-game-bundle skip
+            #     below → "possible multi-game bundle" → garder (None), a fail-closed
+            #     OVER-skip (we NEVER enter bundles), NOT a base-game entry.
+            # Do NOT "fix" this to enter the " + " base game (fail-open bundle entry)
+            # nor to drop the " + " branch (reintroduces the wrong-Blacklist bug).
             if " + " in offer.name or f" {token} EDITION " in padded:
                 continue
             return f"skip category: {token} (non-game content)"
@@ -1207,7 +1219,12 @@ def search_aks_slugs(
     if not (probe.ok and probe.status == 200 and probe.body):
         return []
     slugs: list[str] = []
-    for slug in re.findall(r"/blog/buy-([a-z0-9-]+)-cd-key-compare-prices/", probe.body):
+    # P3-1 (audit 2026-09-02): AKS serves BOTH the ordinary `-cd-key-` page and a
+    # bare `-key-` page (e.g. buy-the-green-light-key-compare-prices/, id 216255).
+    # Recognize both. The slug capture is NON-GREEDY (`+?`) so a `-cd-key-` link does
+    # NOT mis-capture a trailing `-cd` ("road-to-empress-cd"); `(?:cd-)?` still cannot
+    # match a `-<platform>-account-` page, so the account-page exclusion is preserved.
+    for slug in re.findall(r"/blog/buy-([a-z0-9-]+?)-(?:cd-)?key-compare-prices/", probe.body):
         if slug not in slugs:
             slugs.append(slug)
         if len(slugs) >= limit:
@@ -1224,8 +1241,10 @@ def resolve_aks(
     account kind like ``steam-account`` — Romain 2026-07-18). Falls back to
     search_aks_slugs (R30) only when every guessed slug comes back cleanly
     404/410 AND ``page_kind`` is ``cd-key`` — the site-search result regex
-    only recognizes `-cd-key-` slugs, so there is no search fallback for
-    account pages; they rely on slug-guessing alone. A transient or unreadable
+    recognizes `-cd-key-` AND bare `-key-` slugs (P3-1), but never an account
+    page, so there is no search fallback for account pages; they rely on
+    slug-guessing alone (each fallback slug is probed as both `cd-key` and bare
+    `key`). A transient or unreadable
     signal from a *guessed* slug still fails closed immediately, same as
     before; the fallback is "try harder before giving up", not a new
     correctness gate.
@@ -1258,15 +1277,19 @@ def resolve_aks(
     if page_kind != "cd-key":
         return None  # no site-search fallback for account pages (see docstring)
     for slug in search_aks_slugs(name, http_get_fn):
-        url = aks_url(slug)
-        if http_get_fn is http_get:
-            time.sleep(AKS_PROBE_DELAY_S)
-        probe = http_get_fn(url, timeout=8, user_agent=AKS_PROBE_UA)
-        if not (probe.ok and probe.status == 200 and probe.body):
-            continue
-        resolution = _resolution_from_body(slug, url, probe.body)
-        if resolution is not None:
-            return resolution
+        # P3-1: a fallback slug may live at the bare `-key-` page, not `-cd-key-`.
+        # Probe both kinds (cd-key first — the common shape); the loop still soft-
+        # continues on any non-200 (the fallback never starts raising).
+        for kind in ("cd-key", "key"):
+            url = aks_url(slug, kind)
+            if http_get_fn is http_get:
+                time.sleep(AKS_PROBE_DELAY_S)
+            probe = http_get_fn(url, timeout=8, user_agent=AKS_PROBE_UA)
+            if not (probe.ok and probe.status == 200 and probe.body):
+                continue
+            resolution = _resolution_from_body(slug, url, probe.body)
+            if resolution is not None:
+                return resolution
     return None
 
 

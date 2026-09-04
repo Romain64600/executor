@@ -650,15 +650,25 @@ class PrecheckSkipTests(unittest.TestCase):
             self.assertIsNone(precheck_skip(_offer(name)), name)
 
     def test_soundtrack_bundle_with_base_game_is_not_blacklisted(self):
-        # audit 2026-07-23: "<game> + OST" / "… Soundtrack Edition" keep the base
-        # game — sellable, must NOT be Blacklisted as standalone soundtrack.
-        self.assertNotIn("non-game content", precheck_skip(_offer("Sinless + OST")) or "")
-        self.assertNotIn("non-game content",
-                         precheck_skip(_offer("Chants of Sennaar - Game + OST")) or "")
+        # audit 2026-07-23 + P3-3 (2026-09-02): "<game> + OST" / "… Soundtrack Edition"
+        # must NOT auto-route to Blacklist as standalone soundtrack. Assert the ROUTING,
+        # not just the reason substring (the substring check passed on the buggy variant
+        # too). The two forms diverge on purpose:
+        from src.aks_lists import suggest_target_list
+        #  • "<game> + OST" → "possible multi-game bundle" → garder (None), NOT Blacklist,
+        #    and NOT entered (we never enter bundles — a fail-closed over-skip).
+        for name in ("Sinless + OST", "Chants of Sennaar - Game + OST"):
+            reason = precheck_skip(_offer(name))
+            self.assertIsNotNone(reason, name)                    # skipped (not entered)
+            self.assertNotIn("non-game content", reason, name)    # not the soundtrack route
+            self.assertIsNone(suggest_target_list(reason), name)  # garder, NOT Blacklist "8"
+        #  • "… Soundtrack Edition" (no " + ") → falls through → ENTERS the base game.
         self.assertIsNone(precheck_skip(_offer("The Lonesome Guild: Soundtrack Edition")))
         self.assertIsNone(precheck_skip(_offer("Lost Records: Bloom & Rage - Soundtrack Edition")))
-        # a standalone soundtrack/artbook is still non-game content
-        self.assertIn("non-game content", precheck_skip(_offer("Celeste Original Soundtrack")))
+        # a standalone soundtrack/artbook is still non-game content → Blacklist "8"
+        standalone = precheck_skip(_offer("Celeste Original Soundtrack"))
+        self.assertIn("non-game content", standalone)
+        self.assertEqual(suggest_target_list(standalone), "8")
 
     def test_language_restriction(self):
         self.assertIn("language", precheck_skip(_offer("Game (EN/FR) Steam")))
