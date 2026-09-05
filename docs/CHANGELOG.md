@@ -3,6 +3,37 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-05 — Re-audit multi-agents de TOUTE la campagne (30 auditeurs adversariaux)
+
+Re-audit adversarial de chaque correctif de la campagne 2026-09-02 (un auditeur par
+fix, relecture du code courant + repro concrète). **25/28 SOLID** ; 2 auditeurs morts
+sur erreur API transitoire (P2-6+P2-8, P3-7 — tous deux déjà vérifiés SOLID lors de
+leurs tours dédiés). **3 anomalies, toutes fail-safe (aucune entrée/gone/phantom)**,
+corrigées + vérifiées SOLID (suite complète 1260 tests) :
+
+- **P1-3 — régression réintroduite par P1-3 lui-même** (`bc2507a`). P1-3 avait resserré
+  le retour past-the-end de l'over-page à `1 <= nav_max < page`, supprimant le cas
+  `nav_max == 0`. Or AKS renvoie `nav_max=0` pour une page unique, et `_scan_feed`
+  n'est pas borné par nav_max → sur un feed **mono-page** il marche jusqu'à l'over-page
+  (p=2, vide, nav_max=0) → aucun branchement de retour → **raise fail-closed → tout le
+  scan avortait** (over-block de toutes les offres du feed). Retour past-the-end
+  restauré après la boucle de confirmation A1 (miroir de l'extracteur ; plus sûr que
+  l'avant-P1-3 grâce aux re-checks is_login/href/feed_ui). Test : feed mono-page
+  `nav_max=0` (le fake modélisait `nav_max=1`, ce qui masquait le bug).
+- **P3-6 — incomplet** (`f069591`). Le libellé window-aware ne couvrait pas le 3e site,
+  le chemin `--deferred` par-store (`_drive_batched_deferred`), qui hardcodait encore
+  « proven by the source scan » sous page-hint (scan pourtant windowed). Routé via
+  `_absent_from_source_reason(ctx)` comme les deux autres sites. Label-only, no-write.
+- **P2-7 — sur-promesse doc** (`36ec0b8`). Le commit affirmait que le word-boundary
+  « ne peut pas créer de leak » : trop fort — un token monnaie/gift collé à un préfixe
+  de marque minuscule (« Amazon eGift Card », « Garena eCoins ») échappe au precheck.
+  Mais le filet AUTORITAIRE est en aval (pas de page jeu / R01 / extra-words) et les
+  attrape (vérifié : « no AKS product page found »), donc **rien n'est saisi**. Doc-only :
+  precheck = défense-en-profondeur, pas le filet ; ne pas durcir (indistinguable d'un
+  mot-jeu embarqué). Test backstop (échappe le precheck + skip aval).
+
+Reste : la sonde P2-13 (déjà auditée SOLID après tes 2 anomalies, commit `833c323`).
+
 ## 2026-09-02 — Multi-agent audit : correctifs P1 + P2 (matcher, submitter, mover, admin)
 
 Audit adversarial multi-agents du projet (31 findings). Chaque correctif est un
