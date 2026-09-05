@@ -137,8 +137,16 @@ site** `[F01]`.
   reports `nav_max = 0` for a single result page (not 1). This exact quirk has now
   caused **three** bugs (`_scan_search` locate, the `truncated` heuristic, the P1-3
   over-page above) — each hidden because a test fake modelled one page as `nav_max = 1`.
-  A feed/search fake MUST render a single page as `nav_max = 0` (and an out-of-range
-  `&p=` re-serving page 1) so single-page-feed logic is actually exercised.
+  A fake MUST render a single page as `nav_max = 0`; the OVER-PAGE (`p > 1`) shape then
+  DIFFERS by scanner and must match reality, or the fake masks the branch it should test:
+  - **FEED fake** (`_read_feed_page` / `_scan_feed`) — render the over-page EMPTY but
+    STILL on `p > 1` (href on p2, `feed_ui=True`, `nav_max=0`). THAT is the PAST-THE-END
+    branch the P1-3 rule above protects (see `SinglePageNavZeroSession`). Do NOT re-serve
+    page 1 — that is a DIFFERENT branch (the `&p=` wedge, caught by the href-drift guard),
+    so a feed fake that re-serves p1 never exercises past-the-end.
+  - **SEARCH fake** (`_scan_search` / `_read_search_pages`) — an out-of-range `&p=`
+    RE-SERVES page 1 (the search's real behavior, P2-13 probe 2026-09-04); the locate's
+    stop-at-`nav_max` is what bounds it. This is the opposite of the feed over-page.
 - **The browser must have LANDED on the page navigated to `[P1-5]` (audit
   2026-09-02).** `PAGE_STATE_JS` now returns `href`, and every page read
   (`_assert_landed`, both sweep and slice modes) checks `_page_param(href) ==
