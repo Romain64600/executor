@@ -181,7 +181,16 @@ def _category_skip_pattern(cat: str) -> "re.Pattern[str]":
     AMOUNT, the strongest 'this is currency' signal), while a token glued to a LETTER
     is a game word and passes ("Stratagems", "Gemstone"). NB a bare currency word
     that is genuinely a game's leading word ("Gems of War") stays a fail-SAFE skip
-    (doubt → skip; the "games only / no currency" hard rule forbids the reverse)."""
+    (doubt → skip; the "games only / no currency" hard rule forbids the reverse).
+
+    This precheck is DEFENSE-IN-DEPTH, NOT the leak-proof games-only net (re-audit
+    2026-09-05): the same LETTER boundary that keeps "Stratagems" also lets a currency/
+    gift token glued to a lowercase BRAND prefix escape ("Amazon eGift Card", "Garena
+    eCoins", "Free Fire eDiamonds") — precheck returns None for these. The AUTHORITATIVE
+    non-game filter downstream still catches them: they resolve no AKS game page ("no
+    AKS product page found") or fail R01 / the extra-words guard, so none is entered
+    (verified live). Do NOT tighten this with a brand-prefix heuristic — it cannot be
+    distinguished from an embedded game word ("Strata|gems") without re-breaking games."""
 
     core = r"[^A-Z0-9]+".join(re.escape(w) for w in re.split(r"[^A-Z0-9]+", cat) if w)
     return re.compile(r"(?<![A-Z])" + core + r"(?:E?S)?(?![A-Z])")

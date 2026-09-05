@@ -217,7 +217,14 @@ to a DIGIT (an amount — the strongest currency signal) still skips ("5000Gems"
 R31 software path — §4.6); it is now a classifier, not a skip. Known fail-SAFE
 residual: a bare currency word that is genuinely a game's leading word ("Gems of
 War") stays skipped — the games-only/no-currency hard rule forbids the reverse
-error, so doubt → skip (the operator can enter it by hand);
+error, so doubt → skip (the operator can enter it by hand). **This precheck is
+defense-in-depth, NOT the leak-proof games-only net** (re-audit 2026-09-05): the same
+letter boundary that keeps "Stratagems" lets a currency/gift token glued to a
+lowercase brand prefix escape ("Amazon eGift Card", "Garena eCoins") — precheck
+returns None for these. The AUTHORITATIVE non-game filter is downstream (no AKS game
+page / R01 / extra-words), which still catches them, so none is entered; do NOT
+tighten precheck with a brand-prefix heuristic (indistinguishable from an embedded
+game word without re-breaking games);
 **ANY bundle and ANY skin** — categorical, word-boundary on the title
 (`Bundle(s)`/`Skin(s)`), even single-game/cosmetic bundles that have their own
 token-perfect AKS product page (Romain, direct rule 2026-07-07, after the

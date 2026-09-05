@@ -512,6 +512,19 @@ class PrecheckSkipTests(unittest.TestCase):
         # rule forbids the reverse error, so doubt goes to skip (operator can enter).
         self.assertIn("GEMS", precheck_skip(_offer("Gems of War Steam Key")))
 
+    def test_p2_7_brand_prefix_glue_escapes_precheck_but_downstream_catches(self):
+        # Re-audit 2026-09-05: the LETTER-only word boundary (that keeps "Stratagems")
+        # also lets a currency/gift token glued to a lowercase brand prefix escape the
+        # precheck — precheck is DEFENSE-IN-DEPTH, not the leak-proof net. The
+        # AUTHORITATIVE downstream filter (no AKS game page / R01 / extra-words) still
+        # catches them, so none is ENTERED (the games-only hard rule holds).
+        from src.matcher import match_offer, SkippedOffer
+        for name in ("Amazon eGift Card 50 EUR", "Garena eCoins 1000", "Free Fire eDiamonds"):
+            self.assertIsNone(precheck_skip(_offer(name)), name)     # escapes precheck
+            r = match_offer(_offer(name), resolver=lambda _n: None)  # resolves no page
+            self.assertIsInstance(r, SkippedOffer, name)             # → still SKIPPED downstream
+            self.assertIn("no AKS", r.reason, name)
+
     def test_non_game_content_soundtrack_artbook(self):
         # Romain 2026-07-23: soundtracks / artbooks -> non-game content (Blacklist)
         self.assertIn("SOUNDTRACK", precheck_skip(_offer("Celeste Original Soundtrack")))
