@@ -15,10 +15,13 @@ by a short-page heuristic (a page with < 100 rows ends it, 3-page cap) and ignor
     (a hard over-block regression).
 
 This probe answers that question, READ-ONLY. It navigates + reads the feed-page
-state only — no modal, no fill, no submit, no write of any kind. It must run on the
-authoritative VPS through the official CDP endpoint, under the browser lock, on a
-logged-in WP session. A wp-login bounce is a fail-closed STOP — NEVER a re-auth
-trigger (AGENTS.md): complete the cookie transfer in the console first, then re-run.
+state only — no modal, no fill, no submit, no write of any kind. It fail-closed
+REFUSES (build_report gate, EXECUTOR_RULES §1) unless the invariants are green AND
+authoritative on the OFFICIAL CDP endpoint — so it only touches the browser on the
+VPS target with the official endpoint (an arbitrary --endpoint is rejected by the
+gate). It runs under the browser lock, on a logged-in WP session; a wp-login bounce
+is a fail-closed STOP — NEVER a re-auth trigger (AGENTS.md): complete the cookie
+transfer in the console first, then re-run.
 
 METHOD (the decisive comparison):
   1. Read the PLAIN feed page's ``nav_max`` — the whole list's page count (reference).
@@ -48,6 +51,7 @@ sys.path.insert(0, str(ROOT))
 from src.aks_env import OFFICIAL_CDP_ENDPOINT  # noqa: E402
 from src.browser_lock import BrowserBusyError, browser_lock  # noqa: E402
 from src.extractor import DEFAULT_FEED_PAGE, NotLoggedInError, feed_url  # noqa: E402
+from src.invariants import build_report  # noqa: E402
 from src.submit_session import SubmitSession  # noqa: E402
 
 
@@ -97,20 +101,32 @@ def _verdict(feed_navmax: int, term_reads: list[dict]) -> tuple[str, str]:
         return ("INCONCLUSIVE",
                 "No search returned a partial single page (0 < rows < 100). Re-run with "
                 "a --term you expect to match a HANDFUL of offers on this list.")
-    whole_feed = [t for t in narrow if t["nav_max"] >= 2 or t["nav_max"] == feed_navmax]
-    filtered = [t for t in narrow if t["nav_max"] <= 1 and t["nav_max"] != feed_navmax]
+    # The comparison needs a genuinely MULTI-PAGE plain feed as the reference: a
+    # FILTERED search collapses a many-page feed to a single page (nav_max 0/1). If the
+    # plain feed is itself single-page (nav_max < 2, or unreadable), a narrow search's
+    # nav_max=0 is INDISTINGUISHABLE from whole-feed=0 → INCONCLUSIVE, not WHOLE-FEED
+    # (fixes the false WHOLE-FEED verdict when feed_navmax == 0).
+    if feed_navmax < 2:
+        return ("INCONCLUSIVE",
+                f"The plain feed reports nav_max={feed_navmax} (< 2: single-page or "
+                "unreadable). With no multi-page reference, a narrow search's nav_max=0 "
+                "is indistinguishable from whole-feed. Re-run against a list whose feed "
+                "spans many pages (e.g. aks-merchant-feeds-9).")
+    # feed is multi-page → the two are cleanly separable: a narrow single-page result
+    # whose nav_max is ≥ 2 tracks the whole feed; nav_max ≤ 1 means it collapsed.
+    whole_feed = [t for t in narrow if t["nav_max"] >= 2]
+    filtered = [t for t in narrow if t["nav_max"] <= 1]
     if whole_feed and not filtered:
         return ("WHOLE-FEED",
-                "A narrow search (one page of results) still reports the whole feed's "
-                "nav_max → nav_max does NOT reflect the filtered result. KEEP the "
-                "short-page heuristic; do NOT wire truncated = nav_max > SEARCH_MAX_PAGES "
-                "(it would over-block every /games-tab submit).")
+                "A narrow search (one page of results) still reports a multi-page nav_max "
+                "(≥ 2, tracking the whole feed) → nav_max does NOT reflect the filtered "
+                "result. A nav_max-based truncation bound would over-flag every big search "
+                "— keep a result-size/cap signal instead.")
     if filtered and not whole_feed:
         return ("FILTERED",
-                "A narrow search (one page of results) reports nav_max ≈ 0 (< the whole "
-                "feed's) → nav_max reflects the FILTERED result. It is SAFE to wire "
-                "truncated = nav_max > SEARCH_MAX_PAGES in _read_search_pages (bound by "
-                "the authoritative nav, EXECUTOR_RULES §3).")
+                "A narrow search (one page of results) reports nav_max ≤ 1 while the plain "
+                "feed is multi-page → nav_max reflects the FILTERED result, so a "
+                "nav_max-based truncation bound would be meaningful.")
     return ("MIXED",
             "Narrow searches disagree — inspect the per-term table by hand before wiring.")
 
@@ -135,6 +151,23 @@ def main(argv: list[str] | None = None) -> int:
 
     out: dict = {"probe": "p2_13_search_navmax", "feed_page": args.feed_page,
                  "available": args.available, "field": args.field}
+
+    # Fail-closed gate (EXECUTOR_RULES §1): NEVER touch the browser unless the invariants
+    # are GREEN and AUTHORITATIVE on the target, via the OFFICIAL CDP endpoint ONLY.
+    # build_report probes the passed endpoint and its cdp_version check runs
+    # validate_official_cdp_endpoint FIRST — so an arbitrary --endpoint yields ok=False
+    # and is refused HERE, before any session is opened.
+    report = build_report(endpoint=args.endpoint)
+    if not (report.get("ok") and report.get("authoritative")):
+        out["aborted"] = "invariants_not_green"
+        out["ok"] = report.get("ok")
+        out["authoritative"] = report.get("authoritative")
+        print(json.dumps(out, ensure_ascii=False, indent=2))
+        print("\nSTOP (fail-closed): invariants not green/authoritative on the official CDP "
+              "endpoint — refusing browser access (EXECUTOR_RULES §1). Run on the VPS target "
+              "with the official endpoint.", file=sys.stderr)
+        return 2
+
     try:
         with browser_lock(ROOT, label="probe_p2_13_search_navmax (read-only)"):
             with SubmitSession(args.endpoint) as live:

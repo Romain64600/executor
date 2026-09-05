@@ -85,6 +85,64 @@ class VerdictTests(unittest.TestCase):
         v, _ = self.M._verdict(42, [self._r(100, 42, "full")])
         self.assertEqual(v, "INCONCLUSIVE")
 
+    def test_single_page_plain_feed_is_inconclusive_not_whole_feed(self):
+        # AUDIT anomaly 2: feed_navmax=0 (single-page/unreadable plain feed) + a narrow
+        # search nav_max=0 are INDISTINGUISHABLE — must be INCONCLUSIVE, not WHOLE-FEED.
+        v, _ = self.M._verdict(0, [self._r(0, 0, "ctl"), self._r(5, 0, "narrow")])
+        self.assertEqual(v, "INCONCLUSIVE")
+        # nav_max=1 plain feed is equally without a multi-page reference
+        v, _ = self.M._verdict(1, [self._r(5, 0, "narrow")])
+        self.assertEqual(v, "INCONCLUSIVE")
+        # but a genuinely multi-page feed still classifies the same narrow read
+        self.assertEqual(self.M._verdict(650, [self._r(5, 0, "narrow")])[0], "FILTERED")
+
+
+class InvariantsGateTests(unittest.TestCase):
+    """AUDIT anomaly 1: the probe must NOT touch the browser unless build_report is
+    green AND authoritative on the official endpoint (EXECUTOR_RULES §1)."""
+
+    def setUp(self):
+        self.M = _load_probe()
+
+    def _no_browser(self):
+        from unittest import mock
+        return (mock.patch.object(self.M, "browser_lock",
+                                  side_effect=AssertionError("browser opened despite the gate")),
+                mock.patch.object(self.M, "SubmitSession",
+                                  side_effect=AssertionError("session opened despite the gate")))
+
+    def test_refuses_when_not_green(self):
+        from unittest import mock
+        lock, sess = self._no_browser()
+        with mock.patch.object(self.M, "build_report",
+                               return_value={"ok": False, "authoritative": True}), lock, sess:
+            self.assertEqual(self.M.main([]), 2)
+
+    def test_refuses_when_not_authoritative(self):
+        from unittest import mock
+        lock, sess = self._no_browser()
+        with mock.patch.object(self.M, "build_report",
+                               return_value={"ok": True, "authoritative": False}), lock, sess:
+            self.assertEqual(self.M.main([]), 2)
+
+    def test_green_authoritative_reaches_the_browser(self):
+        import contextlib
+        from unittest import mock
+
+        class _S:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def navigate(self, url): pass
+            def is_login_page(self): return False
+            def page_offer_rows(self): return []
+            def feed_page_state(self): return {"feed_ui": True, "nav_max": 0, "href": ""}
+
+        with mock.patch.object(self.M, "build_report",
+                               return_value={"ok": True, "authoritative": True}), \
+             mock.patch.object(self.M, "browser_lock", return_value=contextlib.nullcontext()), \
+             mock.patch.object(self.M, "SubmitSession", return_value=_S()):
+            self.assertEqual(self.M.main([]), 0)   # gate passed → ran (INCONCLUSIVE on the stub)
+
 
 if __name__ == "__main__":
     unittest.main()
