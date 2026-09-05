@@ -1781,6 +1781,19 @@ class TransientEmptyNavSession(FakeSubmitSession):
         return state
 
 
+class SinglePageNavZeroSession(FakeSubmitSession):
+    """A SINGLE-page feed that reports nav_max=0 — the real AKS shape for one page
+    (submitter.py:760), NOT the default fake's nav_max=1. Its over-page (p>1) renders
+    empty with feed_ui=True, nav_max=0, and href on p2 (it does NOT re-serve p1). The
+    default fake modelled one page as nav_max=1, which HID the P1-3 over-page
+    regression (re-audit 2026-09-05) — mirror the backend quirk so the test bites."""
+
+    def feed_page_state(self):
+        state = super().feed_page_state()
+        state["nav_max"] = 0          # AKS: a single result page has no pagination nav
+        return state
+
+
 class LoginMidScanSession(FakeSubmitSession):
     """Session whose WP login expires between the pre-flight check and the
     feed scan (is_login_page() False, then the scanned page IS wp-login)."""
@@ -1892,6 +1905,19 @@ class FeedScanFailClosedTests(unittest.TestCase):
         result = _dry(session, [_cand("1")])
         self.assertEqual(result["aborted"], "feed_unreadable")
         self.assertEqual(result["plan"], [])
+
+    def test_single_page_feed_navzero_overpage_is_past_end_not_abort(self):
+        # Re-audit 2026-09-05: a single-page feed reports nav_max=0 (AKS shape for one
+        # page). _scan_feed is NOT nav_max-bounded, so it walks to the over-page (p=2),
+        # which renders empty with feed_ui=True + nav_max=0. That is PAST-THE-END (the
+        # extractor + pre-P1-3 submitter both returned []); P1-3 wrongly narrowed the
+        # over-page return to 1<=nav_max, making this RAISE and over-block the whole
+        # single-page feed. It must complete (offer on page 1 located), not abort.
+        session = SinglePageNavZeroSession([["1"]])
+        result = _dry(session, [_cand("1")])
+        self.assertIsNone(result["aborted"])              # NOT feed_unreadable
+        self.assertTrue(result["plan"][0]["ready"])       # offer 1 located on page 1
+        self.assertTrue(any("p=2" in u for u in session.nav))  # the over-page WAS walked
 
     def test_transient_empty_with_nav_zero_is_confirmed_not_falsely_gone(self):
         # P1-3 (audit 2026-09-02): feed_ui=True, rows=[], nav_max=0 on the FIRST read

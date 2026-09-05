@@ -513,6 +513,18 @@ class _SubmitterBase:
                     return [], state                 # confirmed empty queue
                 if confirmed and feed_ui and not rows and page > 1 and 1 <= nav_max < page:
                     return [], state                 # nav rendered on re-read → past-end
+                if confirmed and feed_ui and not rows and page > 1 and nav_max == 0:
+                    # Re-audit 2026-09-05: a CONFIRMED empty over-page with nav_max=0 is
+                    # PAST-THE-END, exactly as the extractor classifies it (extractor.py
+                    # `page > 1 and feed_ui and nav_max < page`, which includes 0) and as
+                    # the pre-P1-3 submitter did (`nav_max < page`). P1-3 narrowed the
+                    # over-page return to 1 <= nav_max, which made a single-page feed
+                    # (AKS reports nav_max=0 for one page) RAISE on its over-page and
+                    # abort the whole scan — an over-block of every offer in that feed.
+                    # The A1 confirm loop already re-checked is_login + href/_page_param
+                    # (a re-served p=1 → drift → raise) + feed_ui on each re-read, so
+                    # this is exactly as safe as the nav_max>=1 branch above.
+                    return [], state                 # past-the-end (nav_max=0 over-page)
                 # Unconfirmed, or still ambiguous (page>1 nav never rendered, nav>=page):
                 # the end-of-feed is UNPROVEN — fall through to the fail-closed raise.
             reason = (
