@@ -123,6 +123,22 @@ site** `[F01]`.
   then only two blank states are legitimate — page 1 with feed UI and **no**
   pagination (empty queue) or a past-the-end page after a mid-sweep shrink.
   Anything else aborts loudly (`EmptyPageAnomaly`).
+- **The submitter's `_read_feed_page` MUST mirror the extractor's past-the-end
+  classification.** A confirmed empty over-page (`page > 1`, feed UI up) with
+  `nav_max < page` — which **INCLUDES `nav_max == 0`** — is PAST-THE-END, returned as
+  `[]`, not an error. `nav_max == 0` is the shape AKS renders for a **single-page
+  feed** (one page, no pagination nav), and `_scan_feed` is not nav_max-bounded, so it
+  walks to the over-page (p=2). Narrowing the return to `1 <= nav_max < page` (the P1-3
+  regression, fixed `bc2507a` in the 2026-09-05 re-audit) makes a single-page feed
+  RAISE on its over-page → the whole scan aborts `feed_unreadable` → an over-block of
+  every offer in that feed. Keep the submitter and `extractor.py`'s
+  (`page > 1 and feed_ui and nav_max < page`) classification identical.
+- **Testing caution — model `nav_max == 0` for single-page feeds in fakes.** AKS
+  reports `nav_max = 0` for a single result page (not 1). This exact quirk has now
+  caused **three** bugs (`_scan_search` locate, the `truncated` heuristic, the P1-3
+  over-page above) — each hidden because a test fake modelled one page as `nav_max = 1`.
+  A feed/search fake MUST render a single page as `nav_max = 0` (and an out-of-range
+  `&p=` re-serving page 1) so single-page-feed logic is actually exercised.
 - **The browser must have LANDED on the page navigated to `[P1-5]` (audit
   2026-09-02).** `PAGE_STATE_JS` now returns `href`, and every page read
   (`_assert_landed`, both sweep and slice modes) checks `_page_param(href) ==
