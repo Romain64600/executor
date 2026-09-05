@@ -1043,7 +1043,8 @@ class Mover(_MoverBase):
             self._log("run_stopped", reason=result["stopped"])
             return
 
-        # ONE initial proven scan → locate every remaining offer (reflow-safe base).
+        # ONE initial source scan → locate every remaining offer (reflow-safe base).
+        # Whole-feed proof with no page window; WINDOWED under a page-hint (P3-6).
         try:
             index, by_url = self._scan_retry(lambda: self._full_source_scan(ctx),
                                              what="deferred_locate")
@@ -1057,7 +1058,10 @@ class Mover(_MoverBase):
         for entry in entries:
             row = by_url.get(_url_key(str(entry["url"])))
             if row is None:
-                entry["skipped"] = "not on source list (already moved?) — proven by the source scan"
+                # P3-6 (re-audit 2026-09-05): the deferred path also runs WINDOWED under
+                # a page-hint, so its absence label must be window-aware too — the fix
+                # missed this third site and it still hardcoded the "proven" string.
+                entry["skipped"] = self._absent_from_source_reason(ctx)
                 self._log("move_skipped", offer_id=entry["offer_id"], reason=entry["skipped"])
                 result["plan"].append(entry)
                 continue

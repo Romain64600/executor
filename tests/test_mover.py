@@ -389,6 +389,20 @@ class PageHintIndexTests(unittest.TestCase):
         self.assertNotIn("proven", skipped)
         self.assertIn("window", skipped.lower())
 
+    def test_deferred_page_hint_windowed_skip_label_is_not_proven(self):
+        # P3-6 (re-audit 2026-09-05): the --deferred per-store path also runs WINDOWED
+        # under a page-hint, so an offer outside the window must be skipped with the
+        # window-aware label, NOT the misleading whole-feed "proven by the source scan"
+        # (the original P3-6 fix missed this third call site).
+        session = FakeMoveSession([["1"], ["2"], ["3"], ["400"]])
+        result = _run(Mover, session, _plan("400"), batch=True, deferred=True, page_hint=1)
+        self.assertIsNone(result["aborted"])
+        self.assertEqual(result["moved"], 0)          # outside the window → skipped
+        self.assertEqual(session.applied, [])          # no write
+        skipped = result["plan"][0]["skipped"]
+        self.assertNotIn("proven", skipped)
+        self.assertIn("window", skipped.lower())
+
     def test_page_hint_source_scans_stay_within_window(self):
         # the whole point: NO page beyond the window is ever navigated for a SOURCE
         # scan (index / locate / gone-proof), so a deep feed costs ~1 page, not 100.
