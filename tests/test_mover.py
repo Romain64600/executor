@@ -508,6 +508,66 @@ class ReverifyRowTests(unittest.TestCase):
         self.assertTrue(ok)
         self.assertEqual(entry["current_offer_id"], "900")
 
+    def test_reverify_picks_name_matching_same_path_sibling(self):
+        # [29] (Fable re-audit 2026-09-06): two rows share ONE URL path (an implicit-GLOBAL
+        # + a region-specific sibling). The id-row (100) is the DIFFERENTLY-named sibling;
+        # the plan's offer sits under id 200 at the SAME path. Pick the name-matching
+        # sibling, not blindly the first → adopt id 200, never a terminal identity_mismatch.
+        session = FakeMoveSession(
+            [["100", "200"]],
+            rows={"100": {"url": "https://m/shared", "name": "Some Game EU"},
+                  "200": {"url": "https://m/shared", "name": "My Game"}})
+        entry = {"current_offer_id": "100", "name": "My Game",
+                 "url": "https://m/shared", "store_id": "38"}
+        ok, reason = self._mover(session)._reverify_row(entry)
+        self.assertTrue(ok, reason)
+        self.assertEqual(entry["current_offer_id"], "200")
+        self.assertFalse(entry.get("identity_mismatch"))
+
+    def test_reverify_all_same_path_rows_wrong_name_is_terminal(self):
+        # [29]: when EVERY same-path row contradicts the plan name (the slug was reused
+        # for a different product), it stays a terminal identity_mismatch — never mis-move.
+        session = FakeMoveSession(
+            [["100", "200"]],
+            rows={"100": {"url": "https://m/shared", "name": "Wrong A"},
+                  "200": {"url": "https://m/shared", "name": "Wrong B"}})
+        entry = {"current_offer_id": "100", "name": "My Game",
+                 "url": "https://m/shared", "store_id": "38"}
+        ok, reason = self._mover(session)._reverify_row(entry)
+        self.assertFalse(ok)
+        self.assertIn("identity mismatch", reason)
+        self.assertTrue(entry.get("identity_mismatch"))
+
+    def test_reverify_several_clean_same_path_matches_is_retriable(self):
+        # [29]: two same-path rows BOTH match the plan name — ambiguous which is ours →
+        # retriable (never guess a row to move), not a terminal block.
+        session = FakeMoveSession(
+            [["100", "200"]],
+            rows={"100": {"url": "https://m/shared", "name": "My Game"},
+                  "200": {"url": "https://m/shared", "name": "My Game"}})
+        entry = {"current_offer_id": "999", "name": "My Game",   # id not on page → relocate
+                 "url": "https://m/shared", "store_id": "38"}
+        ok, reason = self._mover(session)._reverify_row(entry)
+        self.assertFalse(ok)
+        self.assertIn("ambiguous", reason)
+        self.assertFalse(entry.get("identity_mismatch"))   # retriable, not terminal
+
+    def test_verify_on_target_uses_decoupled_deep_cap(self):
+        # [30] (Fable re-audit 2026-09-06): the per-offer RV2 target scan is NOT capped at
+        # the SOURCE feed's max_pages — a deep target list would else make a committed
+        # canary Apply deterministically UNKNOWN. It uses max(max_pages, TARGET_SCAN_MAX_PAGES).
+        from src.mover import TARGET_SCAN_MAX_PAGES
+        m = self._mover(FakeMoveSession([[]]))
+        seen = {}
+
+        def spy(store_id, feed_page, available, max_pages, **kw):
+            seen["max_pages"] = max_pages
+            return {}, {}, False
+
+        m._scan_feed = spy
+        m._verify_on_target("https://m/x", "38", "21", "all", max_pages=5)   # tiny source cap
+        self.assertGreaterEqual(seen["max_pages"], TARGET_SCAN_MAX_PAGES)
+
     def test_reid_between_locate_and_move_is_never_moved(self):
         # id 100 is the plan's offer at index time (url m/100), but on the fresh
         # page its checkbox value 100 belongs to product m/hijack → block, no write

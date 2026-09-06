@@ -3,6 +3,24 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-06 — Gros audit Fable : P3 mover (lot K)
+
+- **[29] `_reverify_row` adoptait la PREMIÈRE ligne même-chemin** : deux listings
+  partageant un chemin URL (GLOBAL implicite + région-spécifique) → si le sibling
+  différemment-nommé venait en premier, une offre encore présente devenait un
+  `identity_mismatch` TERMINAL. Désormais on choisit la ligne même-chemin dont le NOM
+  matche le plan ; une seule propre → adopte ; plusieurs → retriable ; terminal seulement
+  si TOUTES les lignes même-chemin contredisent le nom.
+- **[30] scan RV2 unitaire plafonné au max_pages du feed SOURCE** → une liste cible
+  profonde rendait un Apply canary committé déterministiquement UNKNOWN. `_verify_on_target`
+  utilise `max(max_pages, TARGET_SCAN_MAX_PAGES)` comme `_verify_group_on_target` (l'arrêt
+  sur URL garde le cap généreux bon marché).
+- **[32] register batché sondait `_bulk_row_present` avec l'id de scan STALE** avant la
+  relocalisation par URL → une rotation d'id (re-import) bloquait à tort une offre
+  présente et 10 blocages haltaient tout le store. `_reverify_row` (reloc URL + refresh
+  id) est appelé D'ABORD, puis la sonde de présence utilise l'id rafraîchi (parité avec
+  `Mover._move`).
+
 ## 2026-09-06 — Gros audit Fable : P3 cdp_session (lot J)
 
 - **[27] exception JS in-page → `RuntimeError` nu** qui contournait `FEED_UNREADABLE_EXCS`

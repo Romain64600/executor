@@ -477,25 +477,33 @@ class _MoverBase(_SubmitterBase):
         # `identity_blocked`) a still-present offer that had merely moved to a new id
         # (P1-4, audit 2026-09-02; the offer usually sits nearby on the SAME page).
         if row is None or _row_check(row, candidate, check_price=False)[0]:
-            match = next((r for r in rows.values()
-                          if url and _url_key(str(r.get("url", ""))) == url), None)
-            if match is None:
+            url_matches = [r for r in rows.values()
+                           if url and _url_key(str(r.get("url", ""))) == url]
+            if not url_matches:
                 # The offer's stable URL is not on THIS page — it reflowed to another
                 # page or genuinely left the feed. RETRIABLE, never a terminal identity
                 # block on a possibly-present offer (fail-safe: the ledger retries it
                 # next pass, rather than skipping a live offer for good).
                 return False, "offer URL not on this page (reflow/re-import?) — retriable"
-            entry["current_offer_id"] = str(match.get("id"))
-            row = match
-        # The row now located by the STABLE URL (or the id-row that already matched)
-        # must still be the plan's product. A remaining mismatch here means the URL
-        # ITSELF resolves to a different product (the merchant reused the slug) or a
-        # store contradiction — a genuine identity contradiction → TERMINAL (the ledger
-        # may skip it for good; fail-closed, never mis-move a different product).
-        mismatches, _ = _row_check(row, candidate, check_price=False)
-        if mismatches:
-            entry["identity_mismatch"] = True
-            return False, f"fresh-page identity mismatch ({', '.join(mismatches)}) — NOT moving"
+            # [29] Fable re-audit 2026-09-06: an implicit-GLOBAL + a region-specific
+            # listing can share ONE merchant URL path. Pick the same-path row whose NAME
+            # matches the plan — not blindly the first, which turned a still-present offer
+            # into a TERMINAL identity_mismatch when a differently-named sibling came first.
+            clean = [r for r in url_matches
+                     if not _row_check(r, candidate, check_price=False)[0]]
+            if len(clean) == 1:
+                entry["current_offer_id"] = str(clean[0].get("id"))
+                return True, ""
+            if not clean:
+                # EVERY same-path row contradicts the plan name — a genuine identity
+                # contradiction (slug reused / store mismatch) → TERMINAL, never mis-move.
+                entry["identity_mismatch"] = True
+                mismatches, _ = _row_check(url_matches[0], candidate, check_price=False)
+                return False, f"fresh-page identity mismatch ({', '.join(mismatches)}) — NOT moving"
+            # SEVERAL same-path rows match the plan name — ambiguous which is ours →
+            # RETRIABLE (never guess a row to move); a later pass may disambiguate.
+            return False, "several same-path rows match the plan name — ambiguous, retriable"
+        # The id-row already matched name+URL — it is the plan's product. Done.
         return True, ""
 
     def _new_entry(self, spec: dict[str, Any], store_id: str | int) -> dict[str, Any]:
@@ -748,7 +756,13 @@ class Mover(_MoverBase):
         if not key:
             return False
         target_page = "aks-merchant-feeds-%s" % str(target_list_id)
-        _, _, found = self._scan_feed(None, target_page, available, max_pages,
+        # [30] Fable re-audit 2026-09-06: decouple the target cap from the SOURCE feed's
+        # max_pages, exactly as _verify_group_on_target does. The target list can be far
+        # deeper than the source (it GROWS as offers move in); capping the RV2 scan at the
+        # source's max_pages made a committed canary Apply deterministically UNKNOWN on a
+        # deep target. The stop_on_url early-stop keeps the generous cap cheap.
+        scan_pages = max(int(max_pages), TARGET_SCAN_MAX_PAGES)
+        _, _, found = self._scan_feed(None, target_page, available, scan_pages,
                                       stop_on_url=key)
         return bool(found)
 
@@ -953,13 +967,11 @@ class Mover(_MoverBase):
                 result["stopped"] = "guard_blocked"
                 self._log("run_stopped", reason=result["stopped"])
                 break  # leftover offers unattempted
-            present = self._bulk_row_present(entry["current_offer_id"])
-            if not (present.get("checkbox") and present.get("bulk_form")):
-                entry["ready"] = False
-                entry["blocker"] = "row/bulk-form not present at move time"
-                self._log("move_blocked", offer_id=entry["offer_id"], reason=entry["blocker"])
-                done(entry, False, entry["blocker"])
-                continue
+            # [32] Fable re-audit 2026-09-06: identity re-check (relocate by URL + refresh
+            # the id) FIRST, then probe presence with the REFRESHED id — parity with
+            # Mover._move. Probing the STALE scan id first (before relocation) falsely
+            # blocked a still-present offer whose id a re-import had rotated, and 10 such
+            # blocks tripped the breaker and halted the whole store.
             ok, reason = self._reverify_row(entry)
             if not ok:
                 entry["ready"] = False
@@ -967,7 +979,14 @@ class Mover(_MoverBase):
                 self._log("move_blocked", offer_id=entry["offer_id"], reason=reason)
                 done(entry, False, reason)
                 continue
-            current_id = entry["current_offer_id"]  # _reverify_row may relocate by URL
+            present = self._bulk_row_present(entry["current_offer_id"])
+            if not (present.get("checkbox") and present.get("bulk_form")):
+                entry["ready"] = False
+                entry["blocker"] = "row/bulk-form not present at move time"
+                self._log("move_blocked", offer_id=entry["offer_id"], reason=entry["blocker"])
+                done(entry, False, entry["blocker"])
+                continue
+            current_id = entry["current_offer_id"]  # _reverify_row may have relocated by URL
             reg = self.session.register_row(current_id)
             entry["register"] = {"method": reg.get("method"), "registered": reg.get("registered")}
             if not reg.get("registered"):

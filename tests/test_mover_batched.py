@@ -523,6 +523,29 @@ class BatchedMoverTests(unittest.TestCase):
                   source_feed_page="aks-merchant-feeds-%s" % SRC, max_pages=20, batch=True)
         self.assertNotIn(True, forces)                     # non-blacklist, no window → not forced
 
+    def test_register_reverifies_before_presence_probe(self):
+        # [32] (Fable re-audit 2026-09-06): _register_apply_page runs _reverify_row (URL
+        # relocation + id refresh) BEFORE probing _bulk_row_present, so a re-import id
+        # rotation is recovered by URL instead of falsely blocking (and halting the store).
+        feed = FakeFeed({SRC: [_offer(1)]}, page_size=10)
+        mover = _new_mover(feed)
+        order = []
+        real_rev, real_present = mover._reverify_row, mover._bulk_row_present
+
+        def rev(e):
+            order.append("reverify")
+            return real_rev(e)
+
+        def present(cid):
+            order.append("present")
+            return real_present(cid)
+
+        mover._reverify_row = rev
+        mover._bulk_row_present = present
+        mover.run(run_id="t", store_id="38", plan=[_spec(1)],
+                  source_feed_page="aks-merchant-feeds-%s" % SRC, max_pages=20, batch=True)
+        self.assertEqual(order[:2], ["reverify", "present"])
+
     def test_parallel_move_to_target_before_group_is_skipped_not_credited(self):
         # A parallel operator already moved o2 to the target (gone from source,
         # present on target) — it never entered OUR Apply, so it must be an
