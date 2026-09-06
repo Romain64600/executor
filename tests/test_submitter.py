@@ -733,6 +733,28 @@ class FetchSessionCatalogTests(unittest.TestCase):
         result = fetch_session_catalog(FakeSubmitSession([[]]), store_id="127")
         self.assertEqual(result, {"ok": False, "reason": "no_openable_offer"})
 
+    def test_unreadable_dropdown_probe_is_fail_closed(self):
+        # [28] (Fable re-audit 2026-09-06): a modal whose dropdowns probe empty/unreadable
+        # yields an UNUSABLE catalog — return ok:False up front, never ok:True that burns
+        # the whole batch with a per-offer misleading blocker.
+        from src.submitter import fetch_session_catalog
+
+        class _EmptyProbe(FakeSubmitSession):
+            def probe_select_options(self, select_name):
+                return {"ok": True, "select_name": select_name, "rendered_count": 0,
+                        "rendered_options": [], "master_options": []}
+
+        self.assertEqual(fetch_session_catalog(_EmptyProbe([["10"]]), store_id="127"),
+                         {"ok": False, "reason": "catalog_probe_unreadable"})
+
+        class _NotOkProbe(FakeSubmitSession):
+            def probe_select_options(self, select_name):
+                return {"ok": False, "select_name": select_name,
+                        "master_options": [{"key": "2", "text": "Steam (2)"}]}
+
+        self.assertEqual(fetch_session_catalog(_NotOkProbe([["10"]]), store_id="127"),
+                         {"ok": False, "reason": "catalog_probe_unreadable"})
+
     def test_transient_blank_first_read_is_polled_not_fatal(self):
         # A slow JS render (empty first reads, feed_ui not ready) must be POLLED, not
         # read as no_openable_offer — that aborted a live submit on a healthy Driffle

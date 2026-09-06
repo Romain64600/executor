@@ -295,13 +295,23 @@ def fetch_session_catalog(
             )
             if not region_select or not edition_select:
                 continue
+            regions = session.probe_select_options(region_select)
+            editions = session.probe_select_options(edition_select)
+            # [28] Fable re-audit 2026-09-06: a catalog with unreadable/empty dropdowns is
+            # UNUSABLE — resolving any offer's region/edition against it fails. Returning
+            # ok:True here burned the WHOLE batch with a misleading per-offer blocker.
+            # Require BOTH probes ok AND non-empty master lists before ok:True; else fail
+            # closed with a clear reason so the caller aborts up front.
+            if not (regions.get("ok") and editions.get("ok")
+                    and regions.get("master_options") and editions.get("master_options")):
+                return {"ok": False, "reason": "catalog_probe_unreadable"}
             return {
                 "ok": True,
                 "offer_id": offer_id,
                 "region_select": region_select,
                 "edition_select": edition_select,
-                "regions": session.probe_select_options(region_select),
-                "editions": session.probe_select_options(edition_select),
+                "regions": regions,
+                "editions": editions,
             }
     return {"ok": False, "reason": "no_openable_offer"}
 

@@ -3,6 +3,14 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-06 — Gros audit Fable : P3 submitter catalog (lot L)
+
+- **[28] `fetch_session_catalog` ne vérifiait jamais les résultats des sondes dropdown**
+  (`submitter.py`) → `ok:True` avec des masters vides/illisibles → un catalogue INUTILISABLE
+  qui brûlait tout le batch avec un blocker par-offre trompeur. Exige désormais
+  `regions.ok` ET `editions.ok` ET des `master_options` non vides avant `ok:True` ; sinon
+  `{ok:False, reason:'catalog_probe_unreadable'}` (le caller avorte d'emblée).
+
 ## 2026-09-06 — Gros audit Fable : P3 mover (lot K)
 
 - **[29] `_reverify_row` adoptait la PREMIÈRE ligne même-chemin** : deux listings
