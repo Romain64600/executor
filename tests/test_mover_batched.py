@@ -460,6 +460,69 @@ class BatchedMoverTests(unittest.TestCase):
         self.assertEqual(feed.apply_count, 1)                    # page 2 never applied
         self.assertEqual(len(res["plan"]), 10)                   # only page-1 group processed
 
+    def test_same_path_siblings_excluded_not_silently_dropped(self):
+        # [18] (Fable re-audit 2026-09-06): two plan entries share ONE merchant URL
+        # path (the P2-12 same-path sibling). Keyed by _url_key alone, the second
+        # OVERWROTE the first in `pending` → one vanished from the report while the
+        # sibling's row was physically moved (a mis-routable write). Both must be
+        # excluded + surfaced, none moved; an unrelated offer still moves.
+        dup = "https://m/dup"
+        src = [{"id": "oA", "url": dup, "name": "Game A", "price": "10", "store_id": "38"},
+               {"id": "oB", "url": dup, "name": "Game B", "price": "10", "store_id": "38"},
+               _offer(3)]
+        feed = FakeFeed({SRC: src}, page_size=10)
+        sA = {"offer_id": "oA", "name": "Game A", "url": dup, "target_list_label": "Gift cards"}
+        sB = {"offer_id": "oB", "name": "Game B", "url": dup, "target_list_label": "Gift cards"}
+        res = _run(feed, [sA, sB, _spec(3)])
+        by_id = {e["offer_id"]: e for e in res["plan"]}
+        self.assertIn("identity collision", by_id["oA"]["blocker"])
+        self.assertIn("identity collision", by_id["oB"]["blocker"])
+        self.assertFalse(by_id["oA"].get("moved"))
+        self.assertFalse(by_id["oB"].get("moved"))
+        self.assertTrue(by_id["o3"]["moved"])              # a non-colliding offer still moves
+        self.assertEqual(res["moved"], 1)
+        self.assertEqual(self._tgt_ids(feed), {"o3"})      # neither sibling's row moved
+
+    def test_windowed_batched_verify_gone_is_whole_feed(self):
+        # [19] (Fable re-audit 2026-09-06): under a page window the batched post-Apply
+        # source gone-proof must be WHOLE-FEED, not windowed — a windowed "gone" (an
+        # offer that merely reflowed OUTSIDE the window) paired with a stale same-path
+        # row already on the target list would mint a false "moved". The verify forces a
+        # whole-feed scan when a window is set; the initial locate stays windowed (speed).
+        feed = FakeFeed({SRC: [_offer(1)]}, page_size=10)
+        mover = _new_mover(feed)
+        real = mover._full_source_scan
+        forces: list[bool] = []
+
+        def spy(ctx, *, force_full=False):
+            forces.append(force_full)
+            return real(ctx, force_full=force_full)
+
+        mover._full_source_scan = spy
+        res = mover.run(run_id="t", store_id="38", plan=[_spec(1)],
+                        source_feed_page="aks-merchant-feeds-%s" % SRC,
+                        max_pages=20, batch=True, page_hint=1, page_window=1)
+        self.assertEqual(res["moved"], 1)                  # the move still completes
+        self.assertIn(False, forces)                       # locate stayed windowed
+        self.assertIn(True, forces)                        # verify forced a whole-feed proof
+
+    def test_unwindowed_batched_verify_gone_not_forced(self):
+        # contrast: with NO window the scan is already whole-feed, so force_full is never
+        # set (it is only the window override) — the [19] change is scoped to windows.
+        feed = FakeFeed({SRC: [_offer(1)]}, page_size=10)
+        mover = _new_mover(feed)
+        real = mover._full_source_scan
+        forces: list[bool] = []
+
+        def spy(ctx, *, force_full=False):
+            forces.append(force_full)
+            return real(ctx, force_full=force_full)
+
+        mover._full_source_scan = spy
+        mover.run(run_id="t", store_id="38", plan=[_spec(1)],
+                  source_feed_page="aks-merchant-feeds-%s" % SRC, max_pages=20, batch=True)
+        self.assertNotIn(True, forces)                     # non-blacklist, no window → not forced
+
     def test_parallel_move_to_target_before_group_is_skipped_not_credited(self):
         # A parallel operator already moved o2 to the target (gone from source,
         # present on target) — it never entered OUR Apply, so it must be an
@@ -600,6 +663,24 @@ class DeferredBatchedTests(unittest.TestCase):
         self.assertEqual(feed.lists[SRC], [])
         self.assertEqual(state["n"], 2)            # ONE locate + ONE deferred verify
         self.assertEqual(feed.target_scan_starts, 1)
+
+    def test_same_path_siblings_excluded_not_silently_dropped(self):
+        # [18] (Fable re-audit 2026-09-06): the deferred path shares _batch_intake — two
+        # same-path plan entries would otherwise BOTH resolve to one source row and be
+        # moved/credited twice. Both must be excluded + surfaced; an unrelated one moves.
+        dup = "https://m/dup"
+        src = [{"id": "oA", "url": dup, "name": "Game A", "price": "10", "store_id": "38"},
+               {"id": "oB", "url": dup, "name": "Game B", "price": "10", "store_id": "38"},
+               _offer(3)]
+        feed = FakeFeed({SRC: src}, page_size=10)
+        sA = {"offer_id": "oA", "name": "Game A", "url": dup, "target_list_label": "Gift cards"}
+        sB = {"offer_id": "oB", "name": "Game B", "url": dup, "target_list_label": "Gift cards"}
+        res = self._run_deferred(feed, [sA, sB, _spec(3)])
+        by_id = {e["offer_id"]: e for e in res["plan"]}
+        self.assertIn("identity collision", by_id["oA"]["blocker"])
+        self.assertIn("identity collision", by_id["oB"]["blocker"])
+        self.assertEqual(res["moved"], 1)
+        self.assertEqual(self._tgt_ids(feed), {"o3"})
 
     def test_reflow_safe_highest_first(self):
         # 6 offers over 3 pages — the real reflow (each Apply shrinks the source)

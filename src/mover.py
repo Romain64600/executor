@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import re
 import time
+from collections import Counter
 from typing import Any
 
 from src.aks_lists import is_blacklist_label
@@ -782,6 +783,41 @@ class Mover(_MoverBase):
         return want & by_url.keys()
 
     # ------------------------------------------------------------------ batched
+    def _batch_intake(self, plan, store_id, result) -> list[dict[str, Any]]:
+        """Build the batch working set, failing closed on identity collisions.
+
+        [18] Fable re-audit 2026-09-06: two plan entries can share ONE merchant URL
+        path (an implicit-GLOBAL listing + a region-specific one on a single Kinguin
+        path, or currency-quantity variants — the P2-12 same-path sibling) or, after
+        an id rotation, one offer id. The batched verify proves membership set-wise by
+        ``_url_key`` and CANNOT attribute a move to one of two same-path rows, so every
+        colliding entry is EXCLUDED and surfaced (the operator moves it individually) —
+        never silently dropped (``pending[key] = entry`` used to overwrite the first)
+        nor moved twice (the deferred path's list would process both). An entry with no
+        URL cannot be batch-verified either → the same fail-closed surface."""
+
+        entries = [self._new_entry(spec, store_id) for spec in plan]
+        url_counts = Counter(k for k in (_url_key(str(e["url"])) for e in entries) if k)
+        id_counts = Counter(str(e["offer_id"]) for e in entries if str(e["offer_id"]))
+        keep: list[dict[str, Any]] = []
+        for entry in entries:
+            key = _url_key(str(entry["url"]))
+            if not key:
+                entry["blocker"] = "no merchant URL — cannot batch-verify"
+                self._log("move_blocked", offer_id=entry["offer_id"], reason=entry["blocker"])
+                result["plan"].append(entry)
+                continue
+            if url_counts[key] > 1 or id_counts[str(entry["offer_id"])] > 1:
+                entry["blocker"] = (
+                    "identity collision — another plan entry shares this URL path or "
+                    "offer id; excluded from the batch (its set-wise verify cannot "
+                    "attribute a move to one of two same-path rows), move it individually")
+                self._log("move_blocked", offer_id=entry["offer_id"], reason=entry["blocker"])
+                result["plan"].append(entry)
+                continue
+            keep.append(entry)
+        return keep
+
     def _drive_batched(self, plan, ctx, result, limit, should_stop) -> None:
         """Batched Move-to-List (P1, 2026-07-28): register MANY offers on one
         source page, fire ONE Apply, verify the whole GROUP at once — the
@@ -815,19 +851,12 @@ class Mover(_MoverBase):
         """
 
         store_id = ctx["store_id"]
-        # Working set keyed by stable merchant URL (ids can rotate on re-import;
-        # the URL path is the always-safe identity). An offer with no URL cannot
-        # be batch-verified set-wise → fail-closed skip, surfaced.
-        pending: dict[str, dict[str, Any]] = {}
-        for spec in plan:
-            entry = self._new_entry(spec, store_id)
-            key = _url_key(str(entry["url"]))
-            if not key:
-                entry["blocker"] = "no merchant URL — cannot batch-verify"
-                self._log("move_blocked", offer_id=entry["offer_id"], reason=entry["blocker"])
-                result["plan"].append(entry)
-                continue
-            pending[key] = entry
+        # Working set keyed by stable merchant URL (ids can rotate on re-import; the
+        # URL path is the always-safe identity). Identity collisions are excluded +
+        # surfaced at intake ([18]), so keying by _url_key never silently overwrites.
+        pending: dict[str, dict[str, Any]] = {
+            _url_key(str(e["url"])): e for e in self._batch_intake(plan, store_id, result)
+        }
 
         while pending:
             if should_stop is not None and should_stop():
@@ -1027,15 +1056,9 @@ class Mover(_MoverBase):
             self.guard.record_result("move", f"move:{entry['offer_id']}", success, detail=detail)
             result["plan"].append(entry)
 
-        entries: list[dict[str, Any]] = []
-        for spec in plan:
-            entry = self._new_entry(spec, store_id)
-            if not _url_key(str(entry["url"])):
-                entry["blocker"] = "no merchant URL — cannot batch-verify"
-                self._log("move_blocked", offer_id=entry["offer_id"], reason=entry["blocker"])
-                result["plan"].append(entry)
-                continue
-            entries.append(entry)
+        # Identity collisions excluded + surfaced at intake ([18]) — the deferred list
+        # would otherwise process two same-path rows twice.
+        entries = self._batch_intake(plan, store_id, result)
         if not entries:
             return
         if should_stop is not None and should_stop():
@@ -1192,8 +1215,17 @@ class Mover(_MoverBase):
         # feed/CDP error → the whole in-flight set is UNKNOWN, never "moved". The
         # scan POLLS for reflow first so a big Apply's stale read never false-
         # negatives a moved offer (2026-08-21, G2A 2/86 → see _scan_source_settled).
+        # [19] Fable re-audit 2026-09-06: the gone-proof MUST be whole-feed under a
+        # page window too, not just for blacklist. A WINDOWED gone-proof reads an offer
+        # that merely reflowed OUTSIDE the window as "gone"; paired with an RV2 that
+        # finds a STALE same-path row already on the target list, that mints a false
+        # "moved". Whole-feed here means an offer still on the source (anywhere) is
+        # correctly seen present → "STILL on source", never credited off a stale target
+        # row. (No window → the scan is already whole-feed; this only forces the windowed
+        # case.)
+        force_full_gone = blacklist or ctx.get("window_pages") is not None
         try:
-            index, by_url = self._scan_source_settled(registered, ctx, force_full=blacklist)
+            index, by_url = self._scan_source_settled(registered, ctx, force_full=force_full_gone)
         except FEED_UNREADABLE_EXCS as exc:
             detail = ("feed/CDP error after Apply — offer state UNKNOWN, verify the move by "
                       f"hand on AKS before any retry: {type(exc).__name__}: {exc}")

@@ -3,6 +3,31 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-06 — Gros audit Fable : P2 mover (lot D)
+
+Findings P2 CONFIRMÉS côté `mover.py` — sécurité du chemin d'écriture (Move-to-List).
+
+- **[18] collision d'identité au montage du batch** → deux entrées de plan peuvent
+  partager UN chemin URL marchand (listing GLOBAL implicite + listing région-spécifique
+  sur un même chemin Kinguin, ou variantes quantité/devise — le sibling même-chemin
+  P2-12) ou, après rotation d'id, un offer_id. `pending` clé par `_url_key` seul →
+  la seconde ÉCRASAIT la première → une entrée disparaissait du rapport pendant que la
+  ligne du sibling était physiquement déplacée (écriture mal-routable) ; le chemin
+  deferred (liste) la traitait deux fois. Nouveau `_batch_intake` : toute collision
+  `_url_key`/offer_id est EXCLUE + remontée (l'opérateur la déplace à la main — le
+  verify set-wise par url_key ne peut pas attribuer un move à l'une de deux lignes
+  même-chemin), jamais silencieusement droppée/doublée.
+- **[19] RV2 fenêtré peut fabriquer un faux « moved »** depuis une ligne stale
+  même-chemin déjà sur la liste cible. Sous une fenêtre (page-hint), la preuve
+  « gone-from-source » du verify était fenêtrée → une offre simplement reflowée HORS
+  fenêtre se lisait « gone » ; couplée à un RV2 qui trouve une ligne stale même-chemin
+  sur la cible → faux « moved ». Correctif (option a du président) : la preuve
+  gone-from-source du verify batché force le WHOLE-FEED dès qu'une fenêtre est active
+  (comme déjà pour blacklist) — une offre encore présente sur la source (n'importe où)
+  est vue présente → « STILL on source », jamais créditée depuis une ligne stale. Le
+  locate initial reste fenêtré (vitesse). Chemin per-offre inchangé (design fenêtré revu,
+  `test_page_hint_source_scans_stay_within_window`).
+
 ## 2026-09-06 — Gros audit Fable : P2 extractor (lot C)
 
 Findings P2 CONFIRMÉS côté `extractor.py` (couverture read-only — un mensonge de
