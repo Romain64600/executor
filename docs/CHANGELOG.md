@@ -3,6 +3,55 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-06 — Gros audit multi-agents (Fable) : correctifs P1 fail-open (lot A)
+
+Audit adversarial de TOUT le codebase (13 « diggers » + un président Fable qui
+dédoublonne / recoupe / classe) → 39 findings CONFIRMÉS. **Lot A = les 5 fail-open
+P1** — les seuls défauts pouvant faire *entrer* une clé région-locquée ou *prouver à
+tort* une offre « disparue » (le reste est fail-safe : sur-skip / sur-block).
+Chaque correctif : commit atomique + test(s) de non-régression, suite complète verte.
+
+- **P1 — vocabulaire région à la traîne** (`matcher.py`). `FORBIDDEN_REGIONS` /
+  `_URL_FORBIDDEN_CODES` avaient divergé de `aks_lists._BLACKLIST_REGION_KEYWORDS` +
+  `_REGION_LIST` : un lock encodé UNIQUEMENT dans le slug marchand
+  (`…-steam-key-philippines`, `…-latin-america`, `…-poland`) échappait aux deux scans
+  → `detect_region` tombait en GLOBAL implicite → **clé région-locquée saisie
+  mondialement**, auto-approuvée en sweep safe-auto. Ajouté (titre + URL) : LATIN
+  AMERICA / PHILIPPINES / MALAYSIA / INDONESIA / THAILAND / MEXICO / CHILE / COLOMBIA
+  / PERU / POLAND / UKRAINE / CANADA / AFRICA / OCEANIA ; codes 2-lettres bas-collision
+  (`pl/ua/mx/ph/vn/th`, gate slot). VIETNAM = URL-slot-only (`_URL_ONLY_FORBIDDEN_REGIONS`,
+  gate `_url_region_code`) car il collisionne les jeux de guerre (« Rising Storm 2:
+  Vietnam »). Routage en phase : Poland/Ukraine ajoutés à `_BLACKLIST_REGION_KEYWORDS`
+  (→ Blacklist 8) ; Canada/Africa → leur liste dédiée (33/35).
+- **P1 — codes langue = locks région avalés** (`matcher.py`, `extra_significant_words`).
+  Un code final à la fois langue ET lock gris (RU/TR/AR/PL/UA) était neutralisé comme
+  bruit de langue → une clé région-locquée devenait candidate GLOBAL/GIFT auto-validée.
+  Ces codes (`_REGION_LOCK_LANG_CODES`) restent un extra significatif → skip fail-closed
+  (« different/expanded product »). Les langues bénignes (FR/DE/EN…) restent avalées.
+- **P1 — gift US/UK élargi en GLOBAL** (`matcher.py`, `detect_region`). Les deux
+  branches gift résolvent le bucket EXACT par base, sans fallback global silencieux :
+  `gift_us` / `gift_uk` / `gmg_gift_uk` n'existent sur aucune plateforme → gid None →
+  skip fail-closed (label et id ne peuvent plus se contredire — la classe de bug P2-8,
+  jamais corrigée pour us/uk). Bonus symétrique : slot `-uk` détecté comme base UK
+  (miroir du `-us` P2-6b) — un `…-steam-key-uk` lisait GLOBAL implicite.
+- **P1 — rescue édition R39 : montée de gamme silencieuse** (`matcher.py`,
+  `match_extras_to_page_edition`). La branche « seule édition compatible » adoptait
+  l'édition même quand elle portait un mot de GAMME distinctif absent du titre
+  (`want={KNIGHTS} ⊆ {KNIGHTS,DELUXE,EDITION}`, DELUXE étant du bruit dans `want`) →
+  écriture wrong-tier auto-approuvée. Elle exige désormais un résidu = bruit de FORMAT
+  pur (`_EDITION_RESIDUE_NOISE`, garde les mots de gamme distinctifs ; `NOISE_TOKENS`
+  est le MAUVAIS filtre — il liste DELUXE/ULTIMATE en bruit). Rescue Eisenwald
+  « Knights Editon » (typo) préservé.
+- **P1 — prove-gone : stall in-range pris pour past-the-end** (`submitter.py`,
+  `_scan_feed`). `bc2507a` fait classer par `_read_feed_page` tout over-page vide
+  nav_max=0 comme past-the-end (juste pour un feed mono-page). Sur un feed multi-page,
+  un stall de page-N sous charge CDP rend la MÊME forme — mais une page antérieure a
+  déjà annoncé nav_max≥N. Garde inter-pages (`nav_max_seen`) : contradiction →
+  `FeedScanError`, jamais un faux « gone » (créa phantom). Feed mono-page
+  (`nav_max_seen` 0 < page) et shrink légitime (nav courant ≠ 0) épargnés.
+
+Reste (lots suivants) : 34 findings CONFIRMÉS hard-rule P2 + P2/P3 clairs.
+
 ## 2026-09-05 — Re-audit multi-agents de TOUTE la campagne (30 auditeurs adversariaux)
 
 Re-audit adversarial de chaque correctif de la campagne 2026-09-02 (un auditeur par

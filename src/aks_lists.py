@@ -102,6 +102,10 @@ _BLACKLIST_REGION_KEYWORDS = (
     "mexico", "chile", "colombia", "peru",
     "asia", "china", "japan", "korea", "india", "indonesia", "thailand",
     "vietnam", "philippines", "malaysia",
+    # Fable re-audit 2026-09-06 (P1): kept in phase with matcher.FORBIDDEN_REGIONS
+    # so the newly-caught Poland/Ukraine slug locks route to Blacklist (8) in the
+    # sort path, not "garder". Russia/CIS-adjacent gray markets per Romain 2026-08-13.
+    "poland", "ukraine",
     "russia", "cis",
 )
 

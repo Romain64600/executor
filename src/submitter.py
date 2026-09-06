@@ -595,6 +595,19 @@ class _SubmitterBase:
             rows, state = self._read_feed_page(url, page)
             nav_max_seen = max(nav_max_seen, int(state.get("nav_max") or 0))
             if not rows:
+                # bc2507a lets _read_feed_page classify a CONFIRMED nav_max=0 empty
+                # over-page as past-the-end (a single-page feed reports nav_max=0). Fable
+                # re-audit 2026-09-06: on a MULTI-page feed a page-N stall under CDP load
+                # renders the SAME shape (feed_ui, nav_max=0, empty) — but a PRIOR page's
+                # nav already proved in-range pages exist (nav_max_seen >= page). Treat
+                # that as a CONTRADICTION and fail closed, so a prove-gone walk can never
+                # end early on the stall and report a FALSE 'gone' (phantom creation). A
+                # single-page feed has nav_max_seen==0 < page (untouched), and a genuine
+                # mid-sweep shrink reports a NON-ZERO current nav (< page) → not this branch.
+                if int(state.get("nav_max") or 0) == 0 and page <= nav_max_seen:
+                    raise FeedScanError(
+                        f"empty page {page} with nav_max=0, but a prior page advertised "
+                        f">= {nav_max_seen} pages — in-range blank stall, coverage unproven")
                 break  # proven end-of-feed (_read_feed_page classified it)
             new = 0
             for row in rows:

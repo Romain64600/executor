@@ -1794,6 +1794,28 @@ class SinglePageNavZeroSession(FakeSubmitSession):
         return state
 
 
+class StallMidScanSession(FakeSubmitSession):
+    """A MULTI-page feed whose page 2 STALLS under CDP load: the shell renders
+    (feed_ui=True) but the rows AND the pagination nav are still blank → rows=[],
+    nav_max=0 — the SAME shape a genuine single-page over-page has. Page 1 already
+    advertised a multi-page nav (nav_max=3), so the scan KNOWS in-range pages exist.
+    Fable re-audit 2026-09-06 (P1): bc2507a made _read_feed_page classify any
+    nav_max=0 empty over-page as past-the-end (right for one page, WRONG for this
+    in-range stall). Without the _scan_feed cross-page guard a prove-gone walk would
+    'break' at page 2 and report the target (live on page 3) as GONE → phantom."""
+
+    def page_offer_rows(self):
+        return [] if self._page == 1 else super().page_offer_rows()
+
+    def feed_page_state(self):
+        state = super().feed_page_state()
+        if self._page == 0:
+            state["nav_max"] = 3      # page 1 advertises the real multi-page count
+        elif self._page == 1:
+            state["nav_max"] = 0      # page 2 stalls: rows + nav both unrendered
+        return state
+
+
 class LoginMidScanSession(FakeSubmitSession):
     """Session whose WP login expires between the pre-flight check and the
     feed scan (is_login_page() False, then the scanned page IS wp-login)."""
@@ -1918,6 +1940,20 @@ class FeedScanFailClosedTests(unittest.TestCase):
         self.assertIsNone(result["aborted"])              # NOT feed_unreadable
         self.assertTrue(result["plan"][0]["ready"])       # offer 1 located on page 1
         self.assertTrue(any("p=2" in u for u in session.nav))  # the over-page WAS walked
+
+    def test_in_range_navmax0_stall_raises_not_false_gone(self):
+        # Fable re-audit 2026-09-06 (P1): the COMPLEMENT of the single-page case above.
+        # bc2507a lets _read_feed_page treat ANY nav_max=0 empty over-page as past-the-end
+        # (its local view can't tell). On a MULTI-page feed a page-N stall renders the
+        # SAME shape, but page 1 already advertised nav_max=3 — so ending the walk at the
+        # stall would falsely prove an offer LIVE on page 3 GONE (a phantom-creation
+        # enabler). _scan_feed's cross-page guard (nav_max_seen) must fail closed.
+        from src.submitter import FeedScanError, DryRunSubmitter
+        sub = DryRunSubmitter(StallMidScanSession([["1", "2"], ["3", "4"], ["54"]]))
+        sub.feed_ui_render_waits = (); sub.empty_retry_wait_s = 0
+        sub.empty_confirm_waits = (0,); sub.feed_scan_settle = 0
+        with self.assertRaises(FeedScanError):
+            sub._verify_gone("54", "https://m/54", "127", "aks-merchant-feeds-9", "all", 5)
 
     def test_transient_empty_with_nav_zero_is_confirmed_not_falsely_gone(self):
         # P1-3 (audit 2026-09-02): feed_ui=True, rows=[], nav_max=0 on the FIRST read

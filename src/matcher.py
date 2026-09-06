@@ -106,7 +106,28 @@ FORBIDDEN_REGIONS = (
     # §4.3 promised this since v1; never coded until DO6 (audit 2026-07-17).
     # The precheck normalizes punctuation to spaces, so "EU-NA" matches here.
     "EU NA",
+    # Fable re-audit 2026-09-06 (P1): the vocabulary lagged aks_lists'
+    # _BLACKLIST_REGION_KEYWORDS + _REGION_LIST, so a lock encoded only as a
+    # merchant slug (…-steam-key-philippines, …-latin-america) escaped BOTH the
+    # title and URL scans and detect_region fell to implicit GLOBAL — a
+    # region-locked key entered worldwide, auto-approved in safe-auto sweeps.
+    # The routing labels stay in phase: LATIN AMERICA / PHILIPPINES / MALAYSIA /
+    # INDONESIA / THAILAND / MEXICO / CHILE / COLOMBIA / PERU / POLAND / UKRAINE
+    # → Blacklist (8) via _BLACKLIST_REGION_KEYWORDS; CANADA / AFRICA → their
+    # dedicated _REGION_LIST (33 / 35), exactly like AUSTRALIA above; OCEANIA has
+    # no list → garder. VIETNAM is deliberately NOT here — it collides with legit
+    # war-game titles ("Rising Storm 2: Vietnam", "Men of War: Vietnam"); it is
+    # caught URL-slot-only via _URL_ONLY_FORBIDDEN_REGIONS below.
+    "LATIN AMERICA", "PHILIPPINES", "MALAYSIA", "INDONESIA", "THAILAND",
+    "MEXICO", "CHILE", "COLOMBIA", "PERU", "POLAND", "UKRAINE",
+    "CANADA", "AFRICA", "OCEANIA",
 )
+
+# Forbidden regions matched ONLY in the merchant URL slot, NEVER the title — the
+# name would over-skip legit games that carry the word as a theme, not a lock
+# (Fable re-audit 2026-09-06). VIETNAM is the clear case: a "…-steam-key-vietnam"
+# slug is a region lock, but "Rising Storm 2: Vietnam" is a game we sell.
+_URL_ONLY_FORBIDDEN_REGIONS = ("VIETNAM",)
 
 # Country-restricted gifts (§4.3 "Country Gift (CZ/RU/TR/BR/AR/IN/CN)" —
 # promised since v1, never coded until DO6, audit 2026-07-17). The code must
@@ -147,6 +168,15 @@ def _url_region_code(url: str, code: str) -> bool:
 _URL_FORBIDDEN_CODES = (
     ("ru", "RUSSIA"), ("tr", "TURKEY"), ("br", "BRAZIL"), ("ar", "ARGENTINA"),
     ("cn", "CHINA"), ("kr", "KOREA"), ("jp", "JAPAN"),
+    # Fable re-audit 2026-09-06 (P1): the bare-code set lagged the full-name set.
+    # Only LOW-collision country codes in a trailing region SLOT (see
+    # _url_region_code) — "pl/ua/mx/ph/vn/th" are not English words in a
+    # "-<marker>-<code>" slot. Skipped as too collision-heavy even when gated:
+    # "id" (Indonesia vs "id"), "my" (Malaysia vs "my"), "co"/"cl"/"pe"
+    # (Colombia/Chile/Peru vs common fragments) — their full-name slugs still
+    # catch via the FORBIDDEN_REGIONS URL scan. "in" (India) stays excluded (v1).
+    ("pl", "POLAND"), ("ua", "UKRAINE"), ("mx", "MEXICO"),
+    ("ph", "PHILIPPINES"), ("vn", "VIETNAM"), ("th", "THAILAND"),
 )
 
 # "OFFICE" and "VPN" moved to SOFTWARE_APP_TOKENS (R22, word-boundary): as
@@ -392,6 +422,14 @@ LANGUAGE_TOKENS = frozenset({
     "CS", "SK", "HU", "RO", "BG", "HR", "SL", "ET", "LV", "LT", "EL", "TR", "UK",
     "JA", "KO", "ZH", "AR", "HE", "TH", "VI", "ID", "MS", "HI", "FA", "UA",
 })
+# Codes that are ALSO classic gray-market region-lock suffixes (Russia/Turkey/
+# Argentina/Poland/Ukraine). A trailing bare one is AMBIGUOUS — language variant vs
+# region lock — so it must NOT be swallowed as language noise (Fable re-audit
+# 2026-09-06): a region-locked key would otherwise become a GLOBAL(2)/GIFT candidate
+# that safe-auto auto-approves. Kept as a significant extra → the "different/expanded
+# product — extra words" fail-closed skip (doubt → skip), mirroring the P2-6b URL
+# decision that already rules the SAME trailing code a forbidden region.
+_REGION_LOCK_LANG_CODES = frozenset({"RU", "TR", "AR", "PL", "UA"})
 PLATFORM_LABEL = {
     "STEAM": "Steam", "GOG": "GOG", "EPIC": "Epic", "EA": "EA App",
     "UBISOFT": "Ubisoft", "BATTLENET": "Battle.net", "PUBLISHER": "Publisher",
@@ -491,7 +529,7 @@ def extra_significant_words(aks_name: str, merchant_title: str) -> list[str]:
         # because all of the game name is already seen. Position AFTER the full name is
         # the signal (the earlier `seen_head` armed on the first common/noise token —
         # THE/A are NOISE — which an article could trip).
-        if token in LANGUAGE_TOKENS and aks_seen == aks:
+        if token in LANGUAGE_TOKENS and token not in _REGION_LOCK_LANG_CODES and aks_seen == aks:
             continue
         # "Green Gift" is G2A's Steam-gift delivery label (Romain 2026-08-27), NOT a
         # product differentiator — GIFT is already noise, so drop the GREEN that forms
@@ -560,6 +598,15 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
     for code, label in _URL_FORBIDDEN_CODES:
         if _url_region_code(url_lower, code):
             return f"forbidden region: {label}"
+    # Fable re-audit 2026-09-06 (P1): URL-slot-only forbidden regions (VIETNAM) — a
+    # lock in the slug, but too title-collision-heavy for BOTH the name AND a plain
+    # URL word-boundary scan: "rising-storm-2-vietnam-steam-key" carries "vietnam"
+    # as the GAME NAME. So gate it to the trailing region SLOT exactly like the
+    # 2-letter codes — only "-<marker>-vietnam" (a lock) matches, never a mid-slug
+    # game name. (The bare "vn" code above already covers the abbreviated slug.)
+    for region in _URL_ONLY_FORBIDDEN_REGIONS:
+        if _url_region_code(url_lower, region.lower()):
+            return f"forbidden region: {region}"
     if _COUNTRY_GIFT_RE.search(padded):
         return "country gift (region-locked gift, §4.3)"
     # Random/lootbox keys & items (_RANDOM_LOOT_RE, see its definition). Checked
@@ -805,7 +852,12 @@ def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | Non
         # "among-us" (P2-6b gate) — before, a "-us" slug fell to implicit GLOBAL,
         # entering a US-locked key worldwide (and a US green gift missed gmg_gift_us).
         base, label = "us", "US"
-    elif " UK " in padded or "(UK)" in padded or tail in ("UK", "UNITED KINGDOM"):
+    elif (re.search(r"-united-kingdom(?:[-/]|$)", url) or _url_region_code(url, "uk")
+          or " UK " in padded or "(UK)" in padded or tail in ("UK", "UNITED KINGDOM")):
+        # Fable re-audit 2026-09-06: mirror the P2-6b "-us" slot detection for "-uk" —
+        # a "…-steam-key-uk" slug used to fall to implicit GLOBAL (a UK-locked key sold
+        # worldwide, and a UK gift missing gift_uk/gmg_gift_uk). Gated to the trailing
+        # region slot so "uk" is never matched mid-slug.
         base, label = "uk", "UK"
     else:
         # Scan ALL parenthesised groups, not only the first (audit
@@ -840,14 +892,20 @@ def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | Non
     # and defeated the validation gate — a US-restricted key entered worldwide). A base the
     # platform lacks → gid None → fail-closed skip downstream (label and id can never
     # disagree; same fail-closed stance as GOG plain gift → None).
+    # Fable re-audit 2026-09-06: BOTH gift branches resolve the EXACT per-base bucket with
+    # NO silent default for a locked base — a US/UK-locked (green-)gift must NOT widen to
+    # the platform-global gift bucket under a region-less label (the P2-8 mislabel, which
+    # was only fixed for the gmg 'us'/'eu' cases). A base the platform lacks a bucket for
+    # (gift_us/gift_uk/gmg_gift_uk exist on no platform) → gid None → the existing
+    # "no region id" fail-closed skip, and the label carries the base so id and label agree.
     if is_green_gift(offer.name, offer.url):
-        key = {"eu": "gmg_gift_eu", "us": "gmg_gift_us"}.get(base, "gmg_gift")
+        key = {"eu": "gmg_gift_eu", "us": "gmg_gift_us", "uk": "gmg_gift_uk"}.get(base, "gmg_gift")
         gid = _region_id(platform, key)
-        return ("GMG GIFT" + {"eu": " EU", "us": " US"}.get(base, ""), gid, implicit)
+        return ("GMG GIFT" + {"eu": " EU", "us": " US", "uk": " UK"}.get(base, ""), gid, implicit)
     if is_gift:
-        if base == "eu":
-            return ("GIFT EU", _region_id(platform, "gift_eu"), implicit)
-        return ("GIFT", _region_id(platform, "gift"), implicit)
+        key = {"eu": "gift_eu", "us": "gift_us", "uk": "gift_uk"}.get(base, "gift")
+        return ("GIFT" + {"eu": " EU", "us": " US", "uk": " UK"}.get(base, ""),
+                _region_id(platform, key), implicit)
     return (label, _region_id(platform, base), implicit)
 
 
@@ -1376,6 +1434,12 @@ def _edition_entry_name(value: Any) -> str:
 # premium-edition naming on AKS). Distinctive words (PLUS/ULTIMATE/GOLD/…) are NOT here.
 _EDITION_FORMAT_NOISE = frozenset({
     "EDITION", "PACK", "DIGITAL", "VERSION", "OF", "THE", "AND", "A", "FOR"})
+# The residue a sole-compatible edition may carry over the wanted extras and still be
+# the SAME tier (match_extras_to_page_edition, Fable re-audit 2026-09-06): pure edition-
+# FORMAT noise only — the format-noise set plus AKS's "Editon" typo. NOISE_TOKENS is the
+# WRONG gate here (it lists DELUXE/ULTIMATE/GOLD/GOTY as noise); a distinctive TIER word
+# in the residue must fail the rescue closed, never silently upgrade the tier.
+_EDITION_RESIDUE_NOISE = _EDITION_FORMAT_NOISE | frozenset({"EDITON"})
 _EDITION_LABEL_ALIASES = (("GOTY", "GAME OF THE YEAR"),)
 
 
@@ -1533,7 +1597,16 @@ def match_extras_to_page_edition(
         if want <= etoks:
             compatible.append((eid, _edition_entry_name(value), etoks))
     if len(compatible) == 1:
-        return (compatible[0][0], compatible[0][1])
+        # Fable re-audit 2026-09-06: adopt the sole compatible edition ONLY when its
+        # residue (tokens minus the wanted extras) is pure edition-FORMAT noise — NEVER a
+        # distinctive TIER word. `want <= etoks` (subset) alone upgraded a plain offer to
+        # the page's higher tier (want={KNIGHTS} ⊆ {KNIGHTS,DELUXE,EDITION}: DELUXE is
+        # stripped from `want` as noise, so the subset test passes) — a wrong-tier write
+        # that safe-auto auto-approves. Residue of pure format noise (incl. the "Editon"
+        # typo) keeps the endorsed Eisenwald "Knights Editon"(2723) rescue resolving.
+        if (compatible[0][2] - want) <= _EDITION_RESIDUE_NOISE:
+            return (compatible[0][0], compatible[0][1])
+        return None
     if not compatible:
         return None
     # ≥2 compatible: only a UNIQUE exact match (distinctive tokens == wanted) may win;

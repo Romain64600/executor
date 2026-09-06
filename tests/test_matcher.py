@@ -133,6 +133,21 @@ class TokenizeTests(unittest.TestCase):
             ["GREEN"],
         )
 
+    def test_reaudit_region_lock_language_codes_not_swallowed(self):
+        # Fable re-audit 2026-09-06 (P1): a trailing code that is BOTH a language tag
+        # AND a classic gray-market region lock (RU/TR/AR/PL/UA) is ambiguous — it must
+        # NOT be neutralized as language noise. Swallowing it turned a region-locked key
+        # into a GLOBAL/GIFT candidate that safe-auto auto-approves; kept a significant
+        # extra it becomes the "different/expanded product" fail-closed skip (doubt→skip).
+        for code in ("RU", "TR", "AR", "PL", "UA"):
+            self.assertEqual(
+                extra_significant_words("Cyberpunk 2077", f"Cyberpunk 2077 {code}"), [code], code)
+        # a benign language tag with no region-lock collision is still swallowed (a
+        # language variant enters as the same product — MA7 retired 2026-09-01).
+        for code in ("FR", "DE", "EN", "IT", "ES", "PT"):
+            self.assertEqual(
+                extra_significant_words("Cyberpunk 2077", f"Cyberpunk 2077 {code}"), [], code)
+
     def test_unicode_roman_numeral_survives_slug_building(self):
         # Same escape: build_slug_candidates feeds the AKS resolve URL from
         # the same text, so the wrong page was being probed in the first
@@ -454,6 +469,50 @@ class PrecheckSkipTests(unittest.TestCase):
         # STEAM has no gmg_gift_us → None → fail-closed skip (not silent global).
         self.assertEqual(gr("https://x/game-green-gift-key-us", "EPIC")[1], "635")
         self.assertIsNone(gr("https://x/game-green-gift-key-us", "STEAM")[1])
+
+    def test_reaudit_extended_forbidden_region_vocab(self):
+        # Fable re-audit 2026-09-06 (P1): the vocabulary lagged aks_lists — a lock
+        # encoded only as a merchant slug (…-philippines, …-latin-america, …-poland)
+        # escaped both scans → detect_region fell to implicit GLOBAL (region-locked key
+        # entered worldwide, auto-approved in sweeps). Now caught + routed in phase.
+        cases = {
+            "https://www.gamivo.com/product/cyberpunk-2077-steam-key-philippines": ("PHILIPPINES", "8"),
+            "https://www.gamivo.com/product/game-steam-key-latin-america": ("LATIN AMERICA", "8"),
+            "https://www.gamivo.com/product/game-steam-key-poland": ("POLAND", "8"),
+            "https://www.gamivo.com/product/game-steam-key-ukraine": ("UKRAINE", "8"),
+            "https://www.gamivo.com/product/game-steam-key-mexico": ("MEXICO", "8"),
+            "https://www.gamivo.com/product/game-steam-key-canada": ("CANADA", "33"),
+            "https://www.gamivo.com/product/game-steam-key-africa": ("AFRICA", "35"),
+        }
+        for url, (region, listid) in cases.items():
+            reason = precheck_skip(_offer("Some Game", url=url))
+            self.assertEqual(reason, f"forbidden region: {region}", url)
+            self.assertEqual(suggest_target_list(reason), listid, url)
+        # extended bare 2-letter codes, only in a trailing region slot (see _url_region_code)
+        for url, region in (
+            ("https://www.gamivo.com/game-steam-key-pl", "POLAND"),
+            ("https://www.g2a.com/game-steam-key-ua-i1", "UKRAINE"),
+            ("https://www.gamivo.com/game-steam-key-mx", "MEXICO"),
+            ("https://www.driffle.com/game-steam-key-ph-p1", "PHILIPPINES"),
+        ):
+            self.assertEqual(precheck_skip(_offer("Some Game", url=url)),
+                             f"forbidden region: {region}", url)
+
+    def test_reaudit_vietnam_is_url_slot_only_spares_wargame_titles(self):
+        # VIETNAM is a region lock in a slug SLOT but a legit game name elsewhere — it is
+        # scanned URL-slot-only (never the title, never mid-slug), so war games entered
+        # under their real name are not over-skipped (Fable re-audit 2026-09-06).
+        self.assertEqual(
+            precheck_skip(_offer("Some Game", url="https://www.gamivo.com/game-steam-key-vietnam")),
+            "forbidden region: VIETNAM")
+        self.assertEqual(
+            precheck_skip(_offer("Some Game", url="https://www.driffle.com/game-steam-key-vn-p1")),
+            "forbidden region: VIETNAM")
+        for name, url in (
+            ("Rising Storm 2 Vietnam", "https://www.g2a.com/rising-storm-2-vietnam-steam-key-i1"),
+            ("Men of War Vietnam", "https://www.gamivo.com/product/men-of-war-vietnam"),
+        ):
+            self.assertIsNone(precheck_skip(_offer(name, url=url)), url)
 
     def test_currency_category(self):
         self.assertIn("POINTS", precheck_skip(_offer("500 FIFA Points")))
@@ -1093,6 +1152,38 @@ class DetectTests(unittest.TestCase):
         self.assertEqual((label, rid), ("GLOBAL", "2"))
         self.assertTrue(implicit)
 
+    def test_reaudit_gift_us_uk_fail_closed_not_widened(self):
+        # Fable re-audit 2026-09-06 (P1): a US/UK-locked (green-)gift must NOT silently
+        # widen to the platform-global gift bucket under a region-less label. gift_us /
+        # gift_uk / gmg_gift_uk exist on NO platform → gid None → fail-closed skip, and
+        # the label carries the base so id and label can never disagree (the P2-8 class
+        # of mislabel, previously fixed only for the gmg us/eu cases).
+        def gr(name, url, plat="STEAM"):
+            return detect_region(_offer(name, url=url), plat)
+        self.assertEqual(gr("Some Game", "https://g/game-steam-gift-us"), ("GIFT US", None, False))
+        self.assertEqual(gr("Some Game", "https://g/game-steam-gift-uk"), ("GIFT UK", None, False))
+        self.assertEqual(gr("Some Game (UK)", "https://g/game-steam-gift"), ("GIFT UK", None, False))
+        # base 'uk' is now read explicitly from the "-uk" slug (implicit=False)
+        self.assertEqual(gr("Some Game", "https://g/game-green-gift-key-uk"), ("GMG GIFT UK", None, False))
+        self.assertEqual(gr("Some Game", "https://g/game-green-gift-key-uk", "BATTLENET"),
+                         ("GMG GIFT UK", None, False))
+        # EU / GLOBAL gifts and a platform that HAS the US green-gift bucket still resolve
+        self.assertEqual(gr("Some Game", "https://g/game-steam-gift-eu"), ("GIFT EU", "259", False))
+        self.assertEqual(gr("Some Game", "https://g/game-steam-gift-global"), ("GIFT", "25", False))
+        self.assertEqual(gr("Some Game", "https://g/game-green-gift-key-us", "EPIC"),
+                         ("GMG GIFT US", "635", False))
+
+    def test_reaudit_uk_url_slot_detected_not_implicit_global(self):
+        # Fable re-audit 2026-09-06: mirror the P2-6b "-us" slot fix for "-uk" — a
+        # "-steam-key-uk" slug now reads the UK base (sellable region 71), not implicit
+        # GLOBAL (which sold a UK-locked key worldwide). Gated to the trailing slot, so a
+        # mid-slug "uk" ("duke-nukem-…") never triggers it.
+        def gr(url):
+            return detect_region(_offer("Some Game", url=url), "STEAM")
+        self.assertEqual(gr("https://g/game-steam-key-uk"), ("UK", "71", False))
+        self.assertEqual(gr("https://g/game-steam-key-uk-i1"), ("UK", "71", False))
+        self.assertEqual(gr("https://g/duke-nukem-3d-steam-key-global"), ("GLOBAL", "2", False))
+
     def test_edition(self):
         self.assertEqual(detect_edition("Game Deluxe Edition"), ("Deluxe", "7"))
         self.assertEqual(detect_edition("Game Ultimate Collection"), ("Ultimate Collection", "348"))
@@ -1517,6 +1608,26 @@ class MatchExtrasToPageEditionTests(unittest.TestCase):
         b = {"11": "Dark Knights Rising Edition", "10": "Knights Edition"}
         self.assertEqual(match_extras_to_page_edition(["KNIGHTS"], a), ("10", "Knights Edition"))
         self.assertEqual(match_extras_to_page_edition(["KNIGHTS"], b), ("10", "Knights Edition"))
+
+    def test_reaudit_sole_compatible_higher_tier_not_upgraded(self):
+        # Fable re-audit 2026-09-06 (P1): when the ONLY compatible edition carries a
+        # distinctive TIER word absent from the title, `want <= etoks` alone silently
+        # upgraded a plain offer to that tier — DELUXE/ULTIMATE are noise-stripped from
+        # `want`, so the subset test passed. The sole-compatible branch now requires the
+        # residue (etoks − want) to be pure edition-FORMAT noise; a tier residue fails
+        # closed (skip). NOISE_TOKENS is the WRONG gate (it lists DELUXE/ULTIMATE noise).
+        self.assertIsNone(match_extras_to_page_edition(
+            ["KNIGHTS"], {"1": "Standard", "77": "Knights Deluxe Edition"}))
+        self.assertIsNone(match_extras_to_page_edition(["KNIGHTS"], {"77": "Knights Ultimate Edition"}))
+        # a matching-tier offer (title carries the tier word too) still resolves
+        self.assertEqual(
+            match_extras_to_page_edition(["KNIGHTS", "DELUXE"], {"77": "Knights Deluxe Edition"}),
+            ("77", "Knights Deluxe Edition"))
+        # the endorsed Eisenwald rescue (residue = pure "Editon"/"Edition" noise) is intact
+        self.assertEqual(match_extras_to_page_edition(["KNIGHTS"], {"2723": "Knights Editon"}),
+                         ("2723", "Knights Editon"))
+        self.assertEqual(match_extras_to_page_edition(["KNIGHTS"], {"9": "Knights Edition"}),
+                         ("9", "Knights Edition"))
 
     def test_full_match_offer_resolves_the_page_edition(self):
         res = AksResolution(
