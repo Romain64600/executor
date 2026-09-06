@@ -816,6 +816,19 @@ class SoftwareEntryR31Tests(unittest.TestCase):
         self.assertEqual(resolve_software_edition(_offer("Whatever"), {"9": "Lifetime License"}),
                          ("9", "Lifetime License"))
 
+    def test_reaudit_lone_edition_skipped_on_contradictory_licence_signal(self):
+        # [25] (Fable re-audit 2026-09-06): a lone page edition is auto-taken ONLY when the
+        # title carries no contradictory licence/duration signal — a "1 Year"/"OEM"/"5 PC"
+        # offer on a lone "Lifetime" page must NOT be entered as Lifetime (wrong licence).
+        for name in ("Bigasoft Total Video 1 Year", "Windows 11 Pro OEM",
+                     "Some Tool 5 PC", "App 3 Months", "Suite 2 Devices"):
+            self.assertIsNone(
+                resolve_software_edition(_offer(name), {"9": "Lifetime License"}), name)
+        # no licence signal in the title → the lone edition is still taken (R31)
+        self.assertEqual(
+            resolve_software_edition(_offer("Bigasoft Total Video Converter"),
+                                     {"9": "Lifetime License"}), ("9", "Lifetime License"))
+
     # ---- page-driven region ----
     def test_region_exact_then_substring_then_single(self):
         self.assertEqual(resolve_software_region("GLOBAL", self.WIN.regions), ("532", "GLOBAL"))
@@ -1858,6 +1871,25 @@ class ExplicitPlatformFromUrlTests(unittest.TestCase):
         }
         for url, expected in cases.items():
             self.assertEqual(explicit_platform_from_url(url, "Eneba"), expected, url)
+
+    def test_reaudit_g2a_scan_multiword_platform_key_slugs(self):
+        # [37] (Fable re-audit 2026-09-06): the G2A collocation SCAN (not Eneba's leading
+        # prefix) reads the platform from multi-word key slugs — gog-com / epic-games /
+        # ea-app / battle-net / origin — not just the bare "steam-key" form. A game-name
+        # platform word NOT collocated with the key marker is never mis-read.
+        cases = {
+            "https://www.g2a.com/game-gog-com-key-global": "GOG",
+            "https://www.g2a.com/game-epic-games-key-global": "EPIC",
+            "https://www.g2a.com/game-ea-app-key-global": "EA",
+            "https://www.g2a.com/game-battle-net-key-global": "BATTLENET",
+            "https://www.g2a.com/game-origin-key-global": "EA",
+            "https://www.g2a.com/game-steam-key-global": "STEAM",
+        }
+        for url, expected in cases.items():
+            self.assertEqual(explicit_platform_from_url(url, "G2A"), expected, url)
+        for url in ("https://www.g2a.com/epic-chef-cook-steam-key-global",
+                    "https://www.g2a.com/battle-chef-brigade-steam-key-global"):
+            self.assertEqual(explicit_platform_from_url(url, "G2A"), "STEAM", url)
 
     def test_eneba_unrecognized_prefix_is_none(self):
         # Console/currency/software prefixes are left unmapped — already

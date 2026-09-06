@@ -3,6 +3,19 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-06 — Gros audit Fable : P3 matcher (lot I)
+
+- **[25] édition logicielle unique auto-prise malgré un signal de licence contradictoire**
+  (`matcher.py`) : une offre « 1 Year » / « OEM » / « 5 PC » sur une page à édition unique
+  « Lifetime » était saisie en Lifetime (mauvaise licence). Avant l'auto-prise, tout token
+  licence/durée non matché (`LIFETIME/OEM/RETAIL/LTSC/\d+ (PC|DEVICES|MONTHS|YEARS)`) →
+  skip fail-closed. Sans signal → auto-prise conservée (R31).
+- **[37] scan plateforme URL G2A** ratait `gog-com` / `epic-games` / `ea-app` / `battle-net`
+  key-slugs + EA/ORIGIN/BATTLENET → clé région-locquée en STEAM implicite. Grammaire de
+  collocation étendue (suffixe `-com/-games/-app/-net` entre le mot plateforme et « key »)
+  + `_URL_PLATFORM_WORDS` (superset URL-only, pour ne pas polluer le scan titre). Un mot
+  plateforme dans le nom du jeu (non collocaté à « key ») n'est jamais mal-lu.
+
 ## 2026-09-06 — Gros audit Fable : P2 AS1 TOCTOU (lot H)
 
 - **[15] TOCTOU AS1 dans `start_submit`** (`submit_manager.py`, `app.py`) : le GO

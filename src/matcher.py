@@ -679,6 +679,17 @@ _PLATFORM_WORDS = {
     "STEAM": "STEAM",
 }
 
+# [37] Fable re-audit 2026-09-06: the URL slug scan needs MORE platform words than the
+# title scan (which handles EA / Origin / Battle.net specially, above), but adding them
+# to the shared _PLATFORM_WORDS would leak into the title scan (collisions like a game
+# named "…Battle…"). URL-scan-only superset — the "key" collocation gate below keeps it
+# safe. "battle" → BATTLENET matches "…-battle-net-key" / "…-battle-key" only.
+_URL_PLATFORM_WORDS = {
+    **_PLATFORM_WORDS,
+    "EA": "EA", "ORIGIN": "EA",
+    "BATTLENET": "BATTLENET", "BATTLE": "BATTLENET",
+}
+
 
 def explicit_platform(title: str) -> str | None:
     """The platform the merchant DECLARES in the title, or None.
@@ -755,15 +766,20 @@ def _url_platform_scan(path: str) -> str | None:
     marker), and a token-less delivery slug ("…-green-gift-key-…", the G2A GMG gift)
     yields None → fail-closed. Zero or >1 distinct platforms → None (ambiguous)."""
 
-    words = "|".join(sorted((w.lower() for w in _PLATFORM_WORDS), key=len, reverse=True))
+    words = "|".join(sorted((w.lower() for w in _URL_PLATFORM_WORDS), key=len, reverse=True))
     # Trailing boundary is a zero-width LOOKAHEAD, not a consuming class: two adjacent
     # collocations share one hyphen ("…-steam-key-epic-key-…"), and a consuming boundary
     # would eat the '-' the second token needs, so non-overlapping finditer would miss it
     # and return ONE platform instead of failing closed on the ambiguous >1 (2026-08-27
     # review). The lookahead keeps the delimiter so both collocations match → None.
+    # [37] Fable re-audit 2026-09-06: allow a platform-suffix segment between the word and
+    # the key marker — "gog-com-key", "epic-games-key", "ea-app-key", "battle-net-key" —
+    # else those slugs read no platform and a locked key fell to implicit STEAM/None.
     hits = {
-        _PLATFORM_WORDS[m.group(1).upper()]
-        for m in re.finditer(r"[-/](" + words + r")(?:-connect)?-(?:cd-)?keys?(?=[-/]|$)", path)
+        _URL_PLATFORM_WORDS[m.group(1).upper()]
+        for m in re.finditer(
+            r"[-/](" + words + r")(?:-(?:connect|com|games|app|net))?-(?:cd-)?keys?(?=[-/]|$)",
+            path)
     }
     return next(iter(hits)) if len(hits) == 1 else None
 
@@ -1563,8 +1579,20 @@ def resolve_software_edition(
         (eid, value), = editions.items()
         if _norm_tokens(_edition_entry_name(value)) == "STANDARD":
             return None
+        # [25] Fable re-audit 2026-09-06: we only reach here with NO page-edition label in
+        # the title. If the title still carries a licence/duration SIGNAL (it just didn't
+        # match this lone edition — e.g. a "1 Year" offer on a lone "Lifetime" page),
+        # auto-taking the lone edition enters the WRONG licence. Any unmatched licence
+        # token → fail-closed skip, never guess (mirror EXECUTOR_RULES §4.9).
+        if _SOFTWARE_LICENCE_SIGNAL_RE.search(padded):
+            return None
         return (eid, _edition_entry_name(value))
     return None
+
+
+# Licence / duration signals in a software title (uppercased, space-normalised form).
+_SOFTWARE_LICENCE_SIGNAL_RE = re.compile(
+    r" (?:LIFETIME|OEM|RETAIL|LTSC|\d+\s*(?:PC|DEVICES?|MONTHS?|YEARS?)) ")
 
 
 def match_extras_to_page_edition(
