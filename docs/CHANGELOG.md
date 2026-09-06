@@ -3,6 +3,23 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-06 — Gros audit Fable : P2 by-urls submit (lot E)
+
+Findings P2 CONFIRMÉS sur le chemin de saisie par URLs (`src/data_entry_auto.py`,
+`scripts/12`) — parité avec Safe-Auto (scripts/10).
+
+- **[12] contournement de l'allowlist marchand** : `run_by_urls_submit` écrivait vers
+  N'IMPORTE quel (marchand, store) issu de l'aperçu — il ne re-vérifiait pas l'allowlist
+  `AUTO_MERCHANTS` que Safe-Auto impose. Pré-vol ajouté : tout groupe hors-allowlist
+  refuse le batch ENTIER fail-closed (tout-ou-rien, avant le moindre `05_submit`).
+- **[13] `created` dérivé d'une sous-chaîne « gone »** du texte humain `post_save` au
+  lieu du booléen déterministe `submitted` de 05_submit → un vrai create dont le
+  `post_save` omet « gone » était compté 0, un « …not gone… » aurait pu compter faux.
+  Utilise `bool(e["submitted"])` ; `post_save` reste pour l'affichage.
+- **[14] `submit_plan.json` illisible après exit 0 = marchand PROPRE** (P2-14 jamais
+  miroité depuis scripts/10) → `plan_readable` suivi ; `ok = rc==0 and plan_readable`,
+  donc `clean()` halte le batch au lieu de créditer un plan illisible.
+
 ## 2026-09-06 — Gros audit Fable : P2 mover (lot D)
 
 Findings P2 CONFIRMÉS côté `mover.py` — sécurité du chemin d'écriture (Move-to-List).

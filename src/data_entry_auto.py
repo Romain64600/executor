@@ -40,6 +40,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
+from src.admin.auto_merchants import rejection_reason
 from src.validation import candidate_fingerprint
 
 # ``stopped`` values that are NOT a broken/blocked session. ``limit_reached``
@@ -385,6 +386,20 @@ def run_by_urls_submit(
                    "attempted": sum(len(g["candidates"]) for g in groups),
                    "created": 0}}
     flush(recap)
+
+    # [12] Fable re-audit 2026-09-06: PRE-FLIGHT the vetted-merchant allowlist BEFORE any
+    # write. The by-urls submit path used to write to ANY (merchant, store) the preview
+    # produced — it never re-checked the AUTO_MERCHANTS allowlist that Safe-Auto
+    # (scripts/10) enforces, so a real auto-validated ADD could land on an unvetted
+    # store. ANY off-allowlist group refuses the WHOLE batch fail-closed (all-or-nothing,
+    # like scripts/10), before the first 05_submit ever spawns.
+    for g in groups:
+        reason = rejection_reason(g["merchant"], g["store_id"])
+        if reason is not None:
+            recap["aborted"] = (f"merchant_not_allowed:{g['merchant']} "
+                                f"(store {g['store_id']}): {reason}")
+            flush(recap)
+            return recap
 
     for g in groups:
         if should_stop is not None and should_stop():

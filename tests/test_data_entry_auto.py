@@ -67,6 +67,19 @@ class ByUrlsSubmitTests(unittest.TestCase):
         self.assertEqual(calls, ["G2A"])                   # Kinguin NEVER reached
         self.assertIn("submit_not_clean:G2A", out["aborted"])
 
+    def test_off_allowlist_merchant_refuses_whole_batch(self):
+        # [12] (Fable re-audit 2026-09-06): the by-urls submit re-checks the vetted-
+        # merchant allowlist BEFORE any write — an off-allowlist (merchant, store)
+        # refuses the WHOLE batch fail-closed (like Safe-Auto), never a real ADD to an
+        # unvetted store; the allowed merchant in the same batch is not submitted either.
+        recap = {"available": "all", "games": [
+            _game(("G2A", "38", [_cand("1")]), ("Sketchy Store", "999", [_cand("2")]))]}
+        calls = []
+        out = self._run(recap, lambda *a: calls.append(1) or SubmitOutcome(ok=True, created=1))
+        self.assertEqual(calls, [])                          # pre-flight: nothing submitted
+        self.assertIn("merchant_not_allowed", out["aborted"])
+        self.assertEqual(out["totals"]["created"], 0)
+
     def test_operator_stop_between_merchants(self):
         recap = {"available": "all", "games": [
             _game(("G2A", "38", [_cand("1")]), ("Kinguin", "58", [_cand("2")]))]}

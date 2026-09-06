@@ -89,17 +89,31 @@ class SubmitMerchantTests(unittest.TestCase):
         self.assertEqual(captured["marker"], "BOUND")            # read the copy, not the source
         self.assertEqual(captured["available"], "all")
 
-    def test_read_submit_plan_success_is_gone_only(self):
+    def test_read_submit_plan_uses_submitted_boolean_not_post_save_substring(self):
+        # [13] (Fable re-audit 2026-09-06): per-offer created is 05_submit's deterministic
+        # `submitted` boolean, NOT a "gone" substring of the human post_save text (which
+        # may omit the word for a real creation, or contain it in "…not gone…").
         with tempfile.TemporaryDirectory() as d:
             run = Path(d)
             import json
             (run / "submit_plan.json").write_text(json.dumps({"plan": [
-                {"merchant_title": "A", "post_save": "gone from feed (available=all)"},
-                {"merchant_title": "B", "post_save": "still present"},
+                {"merchant_title": "A", "submitted": True, "post_save": "gone from feed (available=all)"},
+                {"merchant_title": "B", "submitted": False, "post_save": "still present"},
+                # submitted but post_save phrasing omits the word "gone" → still counted
+                {"merchant_title": "C", "submitted": True, "post_save": "offer left the refreshed feed"},
             ]}), encoding="utf-8")
             out = M._read_submit_plan(run, 0)
-        self.assertEqual(out.created, 1)          # only the "gone" one
+        self.assertEqual(out.created, 2)          # A and C by `submitted`, not B
         self.assertTrue(out.clean())
+
+    def test_read_submit_plan_unreadable_after_exit0_is_not_clean(self):
+        # [14] (Fable re-audit 2026-09-06): a missing/unreadable submit_plan.json after
+        # exit 0 must NOT read as a clean merchant (mirror Safe-Auto P2-14) → the batch
+        # halts fail-closed instead of crediting a merchant whose plan we couldn't read.
+        with tempfile.TemporaryDirectory() as d:
+            out = M._read_submit_plan(Path(d), 0)   # no submit_plan.json written
+        self.assertFalse(out.clean())
+        self.assertEqual(out.created, 0)
 
 
 if __name__ == "__main__":

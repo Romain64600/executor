@@ -45,23 +45,36 @@ def _run_child(argv: list[str]) -> int:
 
 
 def _read_submit_plan(run_dir: Path, rc: int) -> SubmitOutcome:
-    """Deterministic result: success = the offer GONE from the refreshed feed
-    (``post_save`` contains "gone"), never a self-assessment (EXECUTOR_RULES)."""
+    """Deterministic result: per-offer success is 05_submit's own ``submitted``
+    boolean (itself set only from the prove-gone check), never re-derived here from a
+    post_save substring (EXECUTOR_RULES)."""
+    # [14] Fable re-audit 2026-09-06: an UNREADABLE/missing submit_plan.json after
+    # exit 0 must NOT read as a clean merchant (mirror Safe-Auto's P2-14). Track
+    # readability and fold it into ok, so clean() halts the batch fail-closed instead
+    # of crediting a merchant whose plan we could not even read.
+    plan: dict | None
     try:
         plan = json.loads((run_dir / "submit_plan.json").read_text(encoding="utf-8"))
     except Exception:
-        plan = {}
+        plan = None
+    plan_readable = isinstance(plan, dict)
+    plan = plan or {}
     offers, created = [], 0
     for e in plan.get("plan", []):
         ps = str(e.get("post_save") or "")
-        ok = "gone" in ps.lower()
+        # [13] Fable re-audit 2026-09-06: trust 05_submit's deterministic ``submitted``
+        # boolean, not a "gone" SUBSTRING of the human post_save text (which can read
+        # "…not gone…" or omit the word) — post_save stays for display only.
+        ok = bool(e.get("submitted"))
         if ok:
             created += 1
         offers.append({"name": e.get("merchant_title"), "aks_id": e.get("aks_product_id"),
                        "region_id": e.get("region_id"), "edition_id": e.get("edition_id"),
                        "created": ok, "post_save": ps})
-    return SubmitOutcome(ok=(rc == 0), aborted=plan.get("aborted"), stopped=plan.get("stopped"),
-                         created=created, offers=offers, detail="" if rc == 0 else f"exit {rc}")
+    return SubmitOutcome(ok=(rc == 0 and plan_readable), aborted=plan.get("aborted"),
+                         stopped=plan.get("stopped"), created=created, offers=offers,
+                         detail="" if (rc == 0 and plan_readable)
+                         else (f"exit {rc}" if rc != 0 else "submit_plan.json unreadable after exit 0"))
 
 
 def _make_submit_merchant(available: str, logger: RunLogger):
