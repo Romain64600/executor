@@ -130,6 +130,14 @@ class FeedUnstableError(RuntimeError):
     advertises more pages than the configured cap."""
 
 
+class FeedSchemaError(RuntimeError):
+    """A parsed ``data-offer`` row lacks a non-empty id (Fable re-audit
+    2026-09-06, [21]). Every real offer row carries a stable id; an id-less row
+    means the feed schema drifted (or a non-offer row leaked into the payload).
+    Silently dropping it undercounts the feed yet still reports 'coverage
+    complete' — so abort loudly instead of guessing."""
+
+
 def feed_url(
     store_id: str | int | None,
     *,
@@ -373,6 +381,7 @@ class FeedExtractor:
         max_page_reached = 1
         sweeps_done = 0
         stable = False
+        single_page_corroborated = False   # [20]: p=2 probed once when nav_max==0
         source_url = feed_url(store_id, feed_page=feed_page, available=available)
 
         for sweep in range(1, max_sweeps + 1):
@@ -439,13 +448,52 @@ class FeedExtractor:
                         "treat this as an empty feed"
                     )
 
+                # [20] Fable re-audit 2026-09-06: a row-full page 1 with nav_max==0 makes
+                # last_page stay 1 → the walk stops after one page. That is correct for a
+                # genuine single-page feed, but a drifted/re-rendered pagination nav also
+                # reports nav_max==0 on a MULTI-page feed → silent truncation reported
+                # "coverage complete". Corroborate once by probing p=2: rows there prove
+                # the nav is unreadable → abort (fail-safe, never silently truncate); a
+                # confirmed-empty over-page proves the single page and the walk ends as
+                # before. Probed ONCE per run (the nav-rendering is a static property).
+                if (page == 1 and feed_ui and nav_max == 0 and page_offers
+                        and not single_page_corroborated):
+                    probe_url = feed_url(store_id, page=2, feed_page=feed_page, available=available)
+                    self._pace()
+                    probe_state = self._settled_page_state(
+                        merchant=merchant, sweep=sweep, page=2, url=probe_url)
+                    if parse_offers_payload(probe_state.get("offers")):
+                        self._log(
+                            "aborted",
+                            reason="nav_max=0 on a row-full page 1 but p=2 rendered rows",
+                            merchant=merchant, sweep=sweep, page=page,
+                        )
+                        raise FeedUnstableError(
+                            f"sweep {sweep}: page 1 rendered rows with nav_max=0 (the "
+                            "single-page marker) but page 2 also rendered rows — the "
+                            "pagination nav is unreadable; refusing to silently truncate "
+                            "a multi-page feed (re-run; the nav markup may have drifted)")
+                    single_page_corroborated = True
+
                 last_page = max(last_page, nav_max, page)
                 max_page_reached = max(max_page_reached, page)
                 rows_seen += len(page_offers)
                 new = 0
                 for offer in page_offers:
                     offer_id = str(offer.get("id", "")).strip()
-                    if not offer_id or offer_id in seen:
+                    if not offer_id:
+                        # [21] Fable re-audit 2026-09-06: a parsed data-offer with no id
+                        # is a schema drift (or a non-offer row) — silently skipping it
+                        # undercounts while still reporting coverage complete. Fail closed.
+                        self._log(
+                            "aborted", reason="feed row without an id",
+                            merchant=merchant, sweep=sweep, page=page,
+                        )
+                        raise FeedSchemaError(
+                            f"sweep {sweep} page {page}: a data-offer row has no id "
+                            "(feed schema drift or a non-offer row leaked in) — refusing "
+                            "to under-extract and report false coverage")
+                    if offer_id in seen:
                         continue
                     seen.add(offer_id)
                     raw_offers.append(offer)
@@ -598,7 +646,17 @@ class FeedExtractor:
             new = 0
             for offer in page_offers:
                 offer_id = str(offer.get("id", "")).strip()
-                if not offer_id or offer_id in seen:
+                if not offer_id:
+                    # [21] Fable re-audit 2026-09-06: same schema-integrity guard as the
+                    # sweep loop — an id-less data-offer row is a drift, not a droppable.
+                    self._log(
+                        "aborted", reason="feed row without an id",
+                        mode="pages", page=page,
+                    )
+                    raise FeedSchemaError(
+                        f"page {page}: a data-offer row has no id (feed schema drift or "
+                        "a non-offer row leaked in) — refusing to under-extract")
+                if offer_id in seen:
                     continue
                 seen.add(offer_id)
                 raw_offers.append(offer)

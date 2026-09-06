@@ -3,6 +3,25 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-06 — Gros audit Fable : P2 extractor (lot C)
+
+Findings P2 CONFIRMÉS côté `extractor.py` (couverture read-only — un mensonge de
+couverture corrompt tout l'aval).
+
+- **[20] `nav_max=0` non corroboré sur une page 1 pleine** → la boucle `while page
+  <= last_page` avec `last_page = max(last_page, nav_max, page)` fige `last_page=1`
+  quand la page 1 a des lignes et `nav_max==0` → **p=2 jamais visitée**. Correct pour
+  un vrai feed mono-page, mais une nav de pagination dérivée/re-rendue annonce le même
+  `nav_max==0` sur un feed MULTI-page → troncature silencieuse annoncée « complète ».
+  Sonde p=2 UNE fois : des lignes en p=2 prouvent la nav illisible → abort fail-safe
+  (`FeedUnstableError`) ; une over-page vide confirme la page unique. Une seule sonde
+  par run (le rendu de la nav est une propriété statique).
+- **[21] lignes sans `id` silencieusement droppées** (les DEUX boucles d'union :
+  `extract` sweeps + `extract_pages` slice) → une dérive de schéma data-offer devient
+  un run « 0 offre, couverture complète ». Une ligne `data-offer` sans id non-vide lève
+  désormais `FeedSchemaError` (chaque offre réelle porte un id ; une ligne sans id = 
+  schéma dérivé ou ligne non-offre). Fail-closed, jamais sous-extraire en silence.
+
 ## 2026-09-06 — Gros audit Fable : P2 matcher (lot B)
 
 Suite du lot A. Findings P2 CONFIRMÉS côté `matcher.py` (tests de non-régression,

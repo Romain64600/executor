@@ -7,6 +7,7 @@ from src.extractor import (
     PAGE_STATE_JS,
     EmptyPageAnomaly,
     FeedExtractor,
+    FeedSchemaError,
     FeedUnstableError,
     NotLoggedInError,
     feed_url,
@@ -200,11 +201,38 @@ class ExtractSweepTests(unittest.TestCase):
         self.assertEqual(session.visits(2), 2)
         self.assertEqual(session.visits(3), 0)
 
-    def test_single_page_feed_never_fetches_page_two(self):
+    def test_single_page_feed_corroborates_page_two_once(self):
+        # [20] (Fable re-audit 2026-09-06): a row-full page 1 with nav_max==0 is the
+        # single-page marker, but a drifted nav reports the same on a multi-page feed.
+        # The walk now probes p=2 ONCE to corroborate; page 2 is empty (past-the-end)
+        # → single page confirmed, one offer, and the probe is not repeated per sweep.
         session = FakeSession({1: [_state([_offer(1)], nav_max=0)]})
         _, feed = _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
         self.assertEqual(len(feed.offers), 1)
-        self.assertEqual(session.visits(2), 0)
+        # ONE corroboration probe (not per-sweep): its _settled_page_state reads p=2
+        # then re-navigates once to confirm the blank → 2 visits total, never the
+        # 4 an every-sweep probe would produce on a 2-sweep run.
+        self.assertEqual(session.visits(2), 2)
+
+    def test_row_without_id_aborts_not_silently_dropped(self):
+        # [21] (Fable re-audit 2026-09-06): a parsed data-offer row with no id is a feed
+        # schema drift (or a non-offer row) — silently skipping it undercounts while
+        # still reporting coverage complete. Fail closed instead.
+        session = FakeSession({1: [_state(
+            [_offer(1), {"name": "No Id", "url": "https://m/x", "storeId": "127"}], nav_max=0)]})
+        with self.assertRaises(FeedSchemaError):
+            _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
+
+    def test_navmax_zero_but_page_two_has_rows_aborts(self):
+        # [20]: nav_max==0 on a row-full page 1 while page 2 ALSO renders rows means the
+        # pagination nav is unreadable (markup drift) — abort rather than silently
+        # truncate the feed to page 1 and report "coverage complete".
+        session = FakeSession({
+            1: [_state([_offer(1)], nav_max=0)],
+            2: [_state([_offer(2)], nav_max=0)],
+        })
+        with self.assertRaises(FeedUnstableError):
+            _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
 
     def test_unstable_ordering_unions_across_sweeps(self):
         # Sweep 1 never sees offer 4 (the feed re-ordered it onto an
@@ -502,8 +530,9 @@ class ExtractorPacingTests(unittest.TestCase):
         pacer = Pacer(1, 1, sleeper=sleeps.append)
         session = FakeSession({1: [_state([_offer(1)], nav_max=0)]})
         _extractor(session, pacer=pacer).extract(run_id="r1", merchant="M", store_id=1)
-        # sweep 1 p1 + confirming sweep 2 p1 = 2 fetches → 1 wait
-        self.assertEqual(len(sleeps), 1)
+        # sweep 1 p1 + the [20] p=2 corroboration probe + confirming sweep 2 p1
+        # = 3 fetches → 2 waits (the first fetch is never preceded by a wait)
+        self.assertEqual(len(sleeps), 2)
 
 class ReadOnlyGuardTests(unittest.TestCase):
     def test_page_state_js_is_considered_read_only(self):
