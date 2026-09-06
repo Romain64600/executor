@@ -269,6 +269,25 @@ class ValidationFlowTests(AppTestCase):
         self.assertEqual(body["error"]["code"], "authentication_required")
         self.assertFalse((self.run / "validation.json").exists())   # nothing written
 
+    def test_validation_refused_while_run_active_on_same_run(self):
+        # [15] (Fable re-audit 2026-09-06, defense in depth): regenerating the triple
+        # while a run is ACTIVE on THIS run_dir is refused (409) — it would race the
+        # in-flight submit. The operator waits for the run to finish, then re-validates.
+        import base64
+        from unittest import mock
+        _, payload = self._json("GET", "/api/runs/20260715-000000-test/validation")
+        fp = payload["candidates"][0]["fingerprint"]
+        auth = "Basic " + base64.b64encode(b"alice:secret").decode()
+        with mock.patch.object(self.manager, "busy",
+                               return_value={"run_id": self.run.name, "kind": "submit"}):
+            resp, body = self._json(
+                "POST", "/api/runs/20260715-000000-test/validation",
+                body={"candidates_sha256": payload["candidates_sha256"],
+                      "decisions": [{"fingerprint": fp, "approve": True}]},
+                headers={"Authorization": auth})
+        self.assertEqual(resp.status, 409)
+        self.assertEqual(body["error"]["code"], "run_active")
+
     def test_save_validation_and_submit_flow(self):
         _, payload = self._json("GET", "/api/runs/20260715-000000-test/validation")
         fingerprint = payload["candidates"][0]["fingerprint"]

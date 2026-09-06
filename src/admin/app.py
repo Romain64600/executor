@@ -517,6 +517,18 @@ class AdminHandler(BaseHTTPRequestHandler):
                 "validation refusée : identité Basic authentifiée requise "
                 "(l'approbation autorise une écriture live)")
         body["validated_by"] = authed
+        # [15] Fable re-audit 2026-09-06 (defense in depth): refuse to regenerate the
+        # triple while a run is ACTIVE on THIS run_dir. The submit path already snapshots
+        # the sha-bound approved.json, so a concurrent save can never swap the SUBMITTED
+        # batch; this stops the save from making that submit's live-triple re-verify
+        # mismatch and fail-closed abort. The operator waits for the run to end, re-reads,
+        # re-verifies and edits — no lost work, no silent swap.
+        busy = self.state.manager.busy()
+        if busy and busy.get("run_id") == run_dir.name:
+            raise ApiError(
+                409, "run_active",
+                f"un run est en cours sur ce run ({busy.get('kind')}) — attends sa fin "
+                "avant de re-valider (évite d'écraser le lot en cours de soumission)")
         with self.state.validation_lock:
             result = apply_overrides_and_validate(
                 run_dir,

@@ -264,6 +264,35 @@ class RunLifecycleTests(ManagerTestCase):
         events = [e["event"] for e in tail_log_events(self.logs / f"{self.run.name}.jsonl", 0)[0]]
         self.assertEqual(events, ["admin_submit_started", "admin_submit_finished"])
 
+    def test_real_submit_hands_child_immutable_snapshot_not_live_approved(self):
+        # [15] (Fable re-audit 2026-09-06): a real submit snapshots the sha-bound
+        # approved.json into an immutable per-launch copy and hands the child THAT — not
+        # the live approved.json a concurrent validation save could swap between GO and
+        # the child's read (the AS1 TOCTOU). Verified by CONTENT, not just the path.
+        self._write_triple()
+        manager = self._manager()
+        sha = self._approved_sha()
+        original = (self.run / "approved.json").read_bytes()
+        result = manager.start_submit(self.run, mode="safe", limit=None, dry_run=False,
+                                      by="Romain", expected_approved_sha=sha)
+        approved_arg = Path(result["argv"][2])
+        self.assertEqual(approved_arg.name, "approved.submitted.json")
+        self.assertEqual(approved_arg.read_bytes(), original)   # the sha-bound bytes
+        # a post-GO overwrite of the LIVE approved.json does NOT change the snapshot the
+        # child reads — the submitted batch stays byte-identical to the GO-bound one.
+        (self.run / "approved.json").write_text(
+            json.dumps([dict(_cand(), aks_product_id="999")]), encoding="utf-8")
+        self.assertEqual(approved_arg.read_bytes(), original)
+        self.assertTrue(manager.wait_idle(timeout=10))
+
+    def test_dry_run_uses_live_approved_path(self):
+        # a dry-run (preview, no write) keeps the live path — no snapshot needed.
+        self._write_triple()
+        manager = self._manager()
+        result = manager.start_submit(self.run, mode="safe", limit=None, dry_run=True, by="Romain")
+        self.assertEqual(Path(result["argv"][2]).name, "approved.json")
+        self.assertTrue(manager.wait_idle(timeout=10))
+
     def test_dry_run_argv_has_no_submit_flag(self):
         self._write_triple()
         manager = self._manager()

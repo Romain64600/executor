@@ -412,6 +412,7 @@ class SubmitManager:
             self._check_mode_limit(mode, limit)
             self._check_max_pages(max_pages)
             approved = self._verify_triple(run_dir)
+            approved_arg = run_file(run_dir, "approved.json")   # dry-run: live path is fine
             if not dry_run:
                 # AS1 (audit 2026-07-17): the typed GO must be bound to the
                 # exact batch the operator SAW when typing it. Between the
@@ -420,7 +421,23 @@ class SubmitManager:
                 # approved.json — the triple still verifies, but it is a
                 # DIFFERENT batch. The client echoes the sha it displayed;
                 # anything else refuses, never silently submits the new lot.
-                current_sha = sha256_file(run_file(run_dir, "approved.json"))
+                # [15] Fable re-audit 2026-09-06: read the approved bytes ONCE, verify
+                # the sha against THOSE bytes, and hand the child an IMMUTABLE snapshot of
+                # them (mirroring the by-urls path's 2026-08-25 fix). Previously the sha
+                # was checked on one read while the child re-read the LIVE approved.json —
+                # a concurrent save between GO and the child's read swapped the whole
+                # (internally-consistent) triple, so the child re-verified and submitted a
+                # DIFFERENT batch than the one GO was bound to. The child now reads the
+                # snapshot; a candidates/validation swap makes its own re-verify mismatch
+                # → fail-closed refuse, never a wrong-batch submit.
+                try:
+                    approved_bytes = run_file(run_dir, "approved.json").read_bytes()
+                except OSError as exc:
+                    raise SubmitStartError(
+                        "approved_unreadable",
+                        f"approved.json illisible au lancement: {exc}", http_status=400,
+                    ) from exc
+                current_sha = hashlib.sha256(approved_bytes).hexdigest()
                 if not expected_approved_sha:
                     raise SubmitStartError(
                         "approved_sha_required",
@@ -456,6 +473,12 @@ class SubmitManager:
                             "'safe' (lot complet) est refusé : re-matcher en safe ou "
                             "soumettre dans le mode matché (FC5)",
                         )
+                # [15] hand the child the IMMUTABLE snapshot of the sha-bound bytes. Same
+                # run_dir (so out_dir, candidates/validation, and submit_plan.json stay
+                # where the manager reads them); 05_submit derives out_dir from this
+                # path's parent and re-verifies the snapshot against the sibling triple.
+                approved_arg = run_dir / "approved.submitted.json"
+                approved_arg.write_bytes(approved_bytes)
             already = sorted(
                 {str(c["offer"]["offer_id"]) for c in approved} & set(self.created_offers(run_dir))
             )
@@ -473,7 +496,7 @@ class SubmitManager:
             argv = [
                 self.python,
                 str(self.submit_script),
-                str(run_file(run_dir, "approved.json")),
+                str(approved_arg),   # [15] immutable snapshot for a real submit; live path for dry-run
                 "--merchant",
                 merchant,
                 "--store-id",

@@ -3,6 +3,20 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-06 — Gros audit Fable : P2 AS1 TOCTOU (lot H)
+
+- **[15] TOCTOU AS1 dans `start_submit`** (`submit_manager.py`, `app.py`) : le GO
+  sha-vérifiait `approved.json` sur UNE lecture, mais l'enfant `05_submit` re-lisait le
+  chemin LIVE — une sauvegarde de validation concurrente (autre onglet/opérateur) entre
+  le GO et la lecture de l'enfant échangeait tout le triple (cohérent en interne), donc
+  l'enfant re-vérifiait et soumettait un lot DIFFÉRENT de celui lié au GO. Corrigé comme
+  le chemin by-urls (2026-08-25) : lecture des octets une seule fois, sha vérifiée sur
+  CES octets, snapshot immuable `approved.submitted.json` remis à l'enfant (même run_dir,
+  donc out_dir/candidates/validation/submit_plan restent là où le manager lit). Un swap
+  de candidates/validation fait échouer-fermé la re-vérification de l'enfant, jamais une
+  soumission du mauvais lot. Défense en profondeur : `_post_validation` refuse (409
+  `run_active`) une re-validation tant qu'un run est actif sur ce run_dir.
+
 ## 2026-09-06 — Gros audit Fable : P2 scripts browser-gate (lot G)
 
 - **[17] `06_move` sans SIGTERM coopératif** : le sweep « Arrêter » tuait un enfant de
