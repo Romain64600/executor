@@ -59,6 +59,33 @@ class CliSeamTests(unittest.TestCase):
         self.assertEqual(rec["total_created"], 3)
         self.assertEqual(rec["targets"][0]["merchant"], "Kinguin")
 
+    def test_exit_nonzero_when_sweep_halts_fail_closed(self):
+        # [34] (Fable re-audit 2026-09-06): a fail-closed halt exits non-zero so a
+        # supervising caller (manager / CI) sees the failure, not a green exit 0.
+        recap = {"pages": [], "total_created": 0, "halted": "feed_unreadable"}
+        code, _ = self._run(["--targets", "Kinguin:58", "--run-id", "t-halt"], recap)
+        self.assertEqual(code, 2)
+
+    def test_submit_maps_pace_onto_05_flags_not_bare_pace(self):
+        # [33] (Fable re-audit 2026-09-06): 05_submit has no --pace (only --pace-pages /
+        # --pace-offers), so a bare --pace is an ambiguous prefix that halted every paced
+        # sweep at its first submit. The submit stage maps the sweep's pace onto BOTH real
+        # flags (same Pacer spec) and never emits a bare --pace.
+        captured = {}
+        stages = self.MOD._make_stages("Kinguin", "58", "all", "0.4-0.6")   # pace set
+        run_dir = self.MOD.ROOT / "runs" / "t-pace-p1"
+        run_dir.mkdir(parents=True)
+        (run_dir / "approved.json").write_text("[]")
+        with mock.patch.object(self.MOD, "_run_child",
+                               side_effect=lambda argv: captured.setdefault("argv", argv) or 0):
+            stages.submit("t-pace-p1")
+        argv = captured["argv"]
+        self.assertIn("--pace-pages", argv)
+        self.assertIn("--pace-offers", argv)
+        self.assertNotIn("--pace", argv)   # never the bare ambiguous flag
+        self.assertEqual(argv[argv.index("--pace-pages") + 1], "0.4-0.6")
+        self.assertEqual(argv[argv.index("--pace-offers") + 1], "0.4-0.6")
+
     def test_main_multi_target(self):
         # P2-2: stores must be the CANONICAL allowlist stores (Eneba is 19, not 70).
         recap = {"pages": [], "total_created": 1, "halted": None}

@@ -199,6 +199,13 @@ def execute_page_moves(
         total += int(c.get("moved") or 0)
         if _move_phase_broken(c):
             return _fail("canary", list_id, c, c.get("aborted") or c.get("stopped") or "exit≠0")
+        # [38] Fable re-audit 2026-09-06: honour an operator_stop IMMEDIATELY (mirroring
+        # the batch phase below), BEFORE the moved<1 branch — otherwise a stop that
+        # coincided with moved==0 was either swallowed by the all_gone `continue` (the
+        # stop ignored, the next list processed) or misreported as "moved 0 (not
+        # validated)". operator_stop is benign, so _move_phase_broken above skips it.
+        if c.get("stopped") == "operator_stop":
+            return _operator_halt()
         if int(c.get("moved") or 0) < 1:
             if c.get("all_gone"):
                 # The canary counts MOVES (not attempts), so moved==0 means the
@@ -209,11 +216,18 @@ def execute_page_moves(
                 phases.append({"list_id": list_id, "phase": "skip",
                                "detail": "all offers already gone (nothing to move)"})
                 continue
+            if c.get("window_missed"):
+                # [31] every offer was absent ONLY within the page-hint window — not a
+                # whole-feed proof, so it is NOT "all gone". Surface it and continue (a
+                # windowed miss defers, never mis-moves); the operator re-runs this list
+                # without --page-hint to reach offers outside the window.
+                phases.append({"list_id": list_id, "phase": "skip",
+                               "detail": "window-missed — offers outside the page-hint "
+                                         "window; re-run this list without --page-hint"})
+                continue
             # Otherwise the canary hit a real failure (block / RV2) → it did NOT
             # validate the list (no RV3 grant); fail closed, don't batch blind.
             return _fail("canary", list_id, c, "moved 0 (list not validated)")
-        if c.get("stopped") == "operator_stop":
-            return _operator_halt()
 
         b = run_batch(list_id, rows)
         phases.append({"list_id": list_id, "phase": "batch", **b})

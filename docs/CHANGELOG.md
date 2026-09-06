@@ -3,6 +3,23 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-06 — Gros audit Fable : P3 sweep + triage (lot M)
+
+- **[31] `all_gone` acceptait des absences FENÊTRÉES comme « prouvées par un full scan »**
+  → les moves d'une liste étaient silencieusement sautés (offres hors fenêtre page-hint).
+  Le mover pose désormais `entry['skip_scope']='window'|'whole_feed'` ; scripts/10 ne
+  compte QUE `whole_feed` dans all_gone et remonte `window_missed` ; triage surface
+  « window-missed — re-run sans --page-hint » et continue (jamais de mis-move).
+- **[33] la sweep passait `--pace` à `05_submit`** qui n'a que `--pace-pages`/`--pace-offers`
+  → `--pace` = préfixe AMBIGU → chaque sweep pacée haltait à son premier submit. Mappé sur
+  les deux vrais flags (même spec Pacer).
+- **[34] `scripts/10` sortait 0 même après un halt fail-closed** → un superviseur voyait
+  un exit vert. Exit non-zéro dès que `recap['halted']` ≠ None/'operator_stop'.
+- **[38] `execute_page_moves` vérifiait `operator_stop` APRÈS le `continue` all_gone et le
+  fail moved<1** (`triage.py`) → un stop coïncidant avec moved==0 était avalé (ignoré,
+  liste suivante traitée) ou mal-rapporté « moved 0 not validated ». Hissé juste après
+  `_move_phase_broken(c)`, avant la branche moved<1 (parité avec la phase batch).
+
 ## 2026-09-06 — Gros audit Fable : P3 submitter catalog (lot L)
 
 - **[28] `fetch_session_catalog` ne vérifiait jamais les résultats des sondes dropdown**

@@ -242,6 +242,40 @@ class ExecutePageMovesTests(unittest.TestCase):
         # list 8: canary only (skipped, no batch); list 16: canary + batch
         self.assertEqual(calls, [("canary", "8"), ("canary", "16"), ("batch", "16")])
 
+    def test_operator_stop_with_moved_zero_halts_not_swallowed(self):
+        # [38] (Fable re-audit 2026-09-06): an operator_stop that coincides with moved==0
+        # must halt cleanly on the FIRST list — NOT be swallowed by the all_gone `continue`
+        # (stop ignored, next list processed) nor misreported as "moved 0 (not validated)".
+        # It is now honoured immediately after the phase-broken check, before moved<1.
+        calls = []
+
+        def canary(lid, rows):
+            calls.append(lid)
+            return {"ok": True, "moved": 0, "all_gone": True, "stopped": "operator_stop"}
+
+        r = execute_page_moves(self._by_list(), run_canary=canary,
+                               run_batch=lambda lid, rows: {"ok": True, "moved": 1})
+        self.assertTrue(r["ok"])
+        self.assertEqual(r["stopped"], "operator_stop")
+        self.assertEqual(len(calls), 1)   # halted on the first list; the next never ran
+
+    def test_canary_window_missed_skips_with_warning_not_fail(self):
+        # [31] (Fable re-audit 2026-09-06): moved 0 with a WINDOWED absence (not a
+        # whole-feed proof) is NOT all_gone — surface "window-missed" and continue
+        # (defer, never mis-move), never fail-closed the list as "not validated".
+        def canary(lid, rows):
+            if lid == "8":
+                return {"ok": True, "moved": 0, "all_gone": False, "window_missed": True}
+            return {"ok": True, "moved": 1, "stopped": "limit_reached"}
+
+        def batch(lid, rows):
+            return {"ok": True, "moved": 0}
+
+        r = execute_page_moves(self._by_list(), run_canary=canary, run_batch=batch)
+        self.assertTrue(r["ok"], r.get("detail"))            # did NOT fail-closed
+        self.assertTrue(any("window-missed" in (p.get("detail") or "")
+                            for p in r["phases"]))
+
     def test_canary_abort_halts(self):
         r = execute_page_moves(
             self._by_list(),

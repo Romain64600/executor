@@ -335,6 +335,7 @@ class _MoverBase(_SubmitterBase):
             status, payload = self._resolve_location(candidate, offer_id, ctx)
             if status == "skip":
                 entry["skipped"] = payload
+                entry["skip_scope"] = self._source_absence_scope(ctx)   # [31]
                 self._log("move_skipped", offer_id=offer_id, reason=payload)
                 result["plan"].append(entry)
                 continue
@@ -581,6 +582,15 @@ class _MoverBase(_SubmitterBase):
             return (f"not found in the page-hint window (pages {window}) — WINDOWED scan, "
                     "not a whole-feed proof; left in place (no write; RV2 is the anchor)")
         return "not on source list (already moved?) — proven by the source scan"
+
+    def _source_absence_scope(self, ctx: dict[str, Any]) -> str:
+        """Machine-readable scope of an "absent from source" skip ([31] Fable re-audit
+        2026-09-06): "window" (proven absent only WITHIN the page-hint window — the offer
+        may still be on the source outside it, so it must NOT count as "already moved /
+        nothing to move") vs "whole_feed" (a real proven absence). scripts/10's all_gone
+        counts ONLY whole_feed; a windowed miss is surfaced, never silently skipped."""
+
+        return "window" if ctx.get("window_pages") else "whole_feed"
 
 
 class DryRunMover(_MoverBase):
@@ -908,6 +918,7 @@ class Mover(_MoverBase):
                 row = by_url.get(key)
                 if row is None:
                     entry["skipped"] = self._absent_from_source_reason(ctx)   # P3-6
+                    entry["skip_scope"] = self._source_absence_scope(ctx)   # [31]
                     self._log("move_skipped", offer_id=entry["offer_id"], reason=entry["skipped"])
                     result["plan"].append(entry)
                     del pending[key]
@@ -1104,6 +1115,7 @@ class Mover(_MoverBase):
                 # a page-hint, so its absence label must be window-aware too — the fix
                 # missed this third site and it still hardcoded the "proven" string.
                 entry["skipped"] = self._absent_from_source_reason(ctx)
+                entry["skip_scope"] = self._source_absence_scope(ctx)   # [31]
                 self._log("move_skipped", offer_id=entry["offer_id"], reason=entry["skipped"])
                 result["plan"].append(entry)
                 continue

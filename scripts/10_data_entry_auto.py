@@ -151,7 +151,11 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
         except IndexError:
             pass
         if pace:
-            argv += ["--pace", pace]
+            # [33] Fable re-audit 2026-09-06: 05_submit has NO --pace flag — only
+            # --pace-pages / --pace-offers, so a bare "--pace" is an AMBIGUOUS prefix and
+            # argparse errored, halting every paced sweep at its first submit. Map the
+            # sweep's single pace spec onto both real flags (same Pacer spec format).
+            argv += ["--pace-pages", pace, "--pace-offers", pace]
         rc = _run_child(argv)
         # P2-14 (audit 2026-09-02): on exit 0 an UNREADABLE submit_plan.json (None from
         # _load_json — external corruption / interrupted write) leaves the post-write
@@ -246,11 +250,18 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
             # all_gone: the canary moved 0 because EVERY offer it walked was already
             # relocated (skipped as "not on source list", proven by a full scan) with
             # NO real block/failure → nothing to move for this list, not a failure.
-            all_gone = (moved == 0 and bool(plan)
-                        and all(e.get("skipped") for e in plan)
-                        and not any(e.get("blocker") for e in plan))
+            # [31] Fable re-audit 2026-09-06: only a WHOLE-FEED absence proves "gone". A
+            # WINDOWED skip (page-hint) means "not in the window" — the offer may still be
+            # on the source outside it, so it must NOT count as all_gone (that silently
+            # skipped a list's moves). A windowed miss surfaces window_missed so the
+            # operator re-runs that list without a page-hint.
+            skipped = [e for e in plan if e.get("skipped")]
+            clean = (moved == 0 and bool(plan) and len(skipped) == len(plan)
+                     and not any(e.get("blocker") for e in plan))
+            window_missed = clean and any(e.get("skip_scope") == "window" for e in skipped)
+            all_gone = clean and not window_missed
             return {"ok": (rc == 0 and not res.get("aborted")),
-                    "moved": moved, "all_gone": all_gone,
+                    "moved": moved, "all_gone": all_gone, "window_missed": window_missed,
                     "aborted": res.get("aborted") or (None if rc == 0 else f"exit {rc}"),
                     "stopped": res.get("stopped")}
 
@@ -397,7 +408,10 @@ def main() -> int:
                       "total_moved": recap["total_moved"],
                       "halted": recap["halted"], "targets": len(recap["targets"]),
                       "recap": str(recap_path)}, ensure_ascii=False, indent=2))
-    return 0
+    # [34] Fable re-audit 2026-09-06: exit non-zero when the sweep HALTED fail-closed, so
+    # a supervising caller (manager / CI) sees the failure instead of a green exit 0. A
+    # clean run or a cooperative operator stop is a 0.
+    return 0 if recap["halted"] in (None, "operator_stop") else 2
 
 
 if __name__ == "__main__":
