@@ -548,6 +548,12 @@ class AdminHandler(BaseHTTPRequestHandler):
             reason = rejection_reason(merchant, store_id)
             if reason is not None:
                 raise ApiError(403, "merchant_not_allowed", reason)
+        # [11] Fable re-audit 2026-09-06: safe-auto WRITES with no per-offer validation,
+        # so it needs the same server-side typed GO every other real-write path enforces
+        # (_post_sort_move, by-urls submit) — never launch a real sweep on a bare POST.
+        if str(body.get("confirm") or "").strip().upper() != "GO":
+            raise ApiError(400, "confirm_required",
+                           "tape GO pour confirmer le sweep safe-auto réel")
         result = self.state.manager.start_data_entry_auto(
             targets, by=by, max_pages=_parse_int(body.get("max_pages")),
             start_page=_parse_int(body.get("start_page")))

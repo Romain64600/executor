@@ -950,6 +950,12 @@ class DataEntryAutoTests(ManagerTestCase):
         g = SubmitManager._STOP_GRACE_BY_KIND
         self.assertGreaterEqual(g.get("data_entry_auto", 0), 60)
         self.assertGreaterEqual(g.get("submit", 0), 60)
+        # [16] (Fable re-audit 2026-09-06): bulk sort Move/Apply is a WRITE run too.
+        self.assertGreaterEqual(g.get("sort_canary", 0), 60)
+        self.assertGreaterEqual(g.get("sort_batch", 0), 60)
+        # read-only sort kinds are NOT given the long grace (default short)
+        self.assertNotIn("sort_scan", g)
+        self.assertNotIn("sort_dry_run", g)
 
 
 class SortMoveTests(ManagerTestCase):

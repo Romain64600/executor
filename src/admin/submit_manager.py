@@ -1009,8 +1009,14 @@ class SubmitManager:
     # take tens of seconds on a slow feed, so these kinds get a longer SIGKILL
     # grace — a premature SIGKILL would hard-kill a Create mid-flight (the very
     # thing the cooperative stop avoids). Read-only runs keep the short grace.
+    # [16] Fable re-audit 2026-09-06: a bulk sort Move/Apply (kinds "sort_canary" /
+    # "sort_batch") is a WRITE run — one Apply moves many rows and its verify re-scans
+    # the feed — so it needs the long grace too, else "Arrêter" SIGKILLs it mid-Apply
+    # after only 12 s (the very mid-write kill the cooperative stop exists to avoid).
+    # "sort_dry_run" / "sort_scan" are read-only → the short default grace is fine.
     _STOP_GRACE_BY_KIND = {"submit": 90.0, "data_entry_auto": 120.0,
-                           "data_entry_by_urls_submit": 90.0}
+                           "data_entry_by_urls_submit": 90.0,
+                           "sort_canary": 90.0, "sort_batch": 90.0}
 
     def stop_active(self, *, grace: float | None = None) -> dict[str, Any]:
         """Stop the active run. SIGTERM first (the spawned script stops at a safe

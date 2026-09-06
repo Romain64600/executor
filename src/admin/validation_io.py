@@ -142,7 +142,25 @@ def _apply_override(
             )
         candidate["edition"] = {"label": entry["text"], "id": entry["key"]}
     if "platform" in changes:
-        candidate["platform"] = changes["platform"]
+        new_platform = changes["platform"]
+        # [10] Fable re-audit 2026-09-06: region ids are PER-PLATFORM (REGION_IDS[platform]).
+        # Changing the platform WITHOUT re-picking the region leaves the region id in the
+        # OLD platform's namespace — the displayed/written region then means a different
+        # bucket (or none) under the new platform, so the operator's screen and the write
+        # disagree. If no region_id override accompanies the platform change, the current
+        # region id MUST be valid for the new platform, else refuse fail-closed.
+        if "region_id" not in changes:
+            cur_region_id = str(candidate["region"]["id"])
+            valid_ids = {str(v) for v in REGION_IDS.get(new_platform, {}).values()}
+            if cur_region_id not in valid_ids:
+                raise ValidationIOError(
+                    "platform_region_mismatch",
+                    f"changer la plateforme vers {new_platform!r} exige de re-choisir la "
+                    f"région (l'id région {cur_region_id!r} appartient à l'ancienne "
+                    "plateforme, pas à la nouvelle)",
+                    http_status=400,
+                )
+        candidate["platform"] = new_platform
 
     candidate["fingerprint"] = candidate_fingerprint(candidate)
     audit = candidate.get("operator_override")

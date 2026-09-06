@@ -80,7 +80,9 @@ $("#go").addEventListener("input", syncGo);
 $("#launch").addEventListener("click", async () => {
   const targets = collectTargets();
   if (!targets.length || $("#go").value.trim().toUpperCase() !== "GO") return;
-  const body = { targets };
+  // [11] the server re-enforces the typed GO (confirm=GO) like every other real-write
+  // path — send it, not just gate the button client-side.
+  const body = { targets, confirm: "GO" };
   const mp = parseInt($("#max-pages").value, 10); if (mp > 0) body.max_pages = mp;
   const sp = parseInt($("#start-page").value, 10); if (sp > 0) body.start_page = sp;
   $("#launch").disabled = true;

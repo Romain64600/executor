@@ -258,17 +258,35 @@ class OverrideTests(ValidationIOTestCase):
             )
         self.assertEqual(ctx.exception.code, "no_catalog")
 
-    def test_platform_override_works_without_catalog(self):
-        c1 = _cand("1")
+    def test_platform_only_override_refused_region_mismatch(self):
+        # [10] (Fable re-audit 2026-09-06): region ids are PER-PLATFORM (no overlap), so a
+        # platform change WITHOUT re-picking the region leaves the region id in the OLD
+        # platform's namespace — the operator's screen and the write then disagree. A
+        # platform-only override is refused fail-closed; the operator must re-pick the
+        # region alongside it (which pins the new id against the session catalog).
+        c1 = _cand("1")   # STEAM, region id "2" (GLOBAL) — not a valid GOG region id
         sha = self._write([c1], catalog=False)
+        with self.assertRaises(ValidationIOError) as ctx:
+            self._save(
+                [{"fingerprint": c1["fingerprint"], "approve": True, "override": {"platform": "GOG"}}],
+                sha,
+            )
+        self.assertEqual(ctx.exception.code, "platform_region_mismatch")
+
+    def test_platform_plus_region_repick_together_succeeds(self):
+        # [10] the legit path: changing the platform WITH a region re-pick (a real
+        # session-catalog id) is accepted — the picked id is authoritative for the write,
+        # so there is no old-platform namespace mismatch to guard against.
+        c1 = _cand("1")   # STEAM / region id "2"
+        sha = self._write([c1])   # with catalog
         self._save(
-            [{"fingerprint": c1["fingerprint"], "approve": True, "override": {"platform": "GOG"}}],
+            [{"fingerprint": c1["fingerprint"], "approve": True,
+              "override": {"platform": "GOG", "region_id": "1"}}],   # region 1 = Publisher (in catalog)
             sha,
         )
         candidates, _, _ = self._triple()
         self.assertEqual(candidates[0]["platform"], "GOG")
-        # platform is not part of the fingerprint
-        self.assertEqual(candidates[0]["fingerprint"], "1|207861|2|1")
+        self.assertEqual(candidates[0]["region"]["id"], "1")
 
     def test_unknown_platform_rejected(self):
         c1 = _cand("1")

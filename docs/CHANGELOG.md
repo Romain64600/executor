@@ -3,6 +3,25 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-06 — Gros audit Fable : P2 admin (lot F)
+
+Findings P2 CONFIRMÉS côté console admin (`src/admin/`).
+
+- **[10] override plateforme sans re-choix de région** (`validation_io.py`) : les ids
+  région sont PAR PLATEFORME (sans recouvrement). Changer la plateforme sans re-choisir
+  la région laissait l'id région dans l'ancien namespace → l'écran de l'opérateur et
+  l'écriture divergent. Un override plateforme seul est refusé fail-closed
+  (`platform_region_mismatch`) ; l'opérateur re-choisit la région (validée contre le
+  catalogue de session). Un override plateforme + région ensemble reste accepté.
+- **[11] sweep safe-auto réel sans GO serveur** (`app.py`, `auto.js`) : `/api/data-entry/
+  auto` écrit sans validation par-offre mais ne demandait AUCUN GO tapé côté serveur
+  (contrairement à `_post_sort_move` et à la saisie by-urls). Ajout du même gate
+  `confirm==GO` (400 `confirm_required` sinon) + `auto.js` l'envoie.
+- **[16] Arrêter SIGKILL un Move/Apply de tri** (`submit_manager.py`) : `sort_canary` /
+  `sort_batch` (runs d'ÉCRITURE) manquaient de `_STOP_GRACE_BY_KIND` → grâce par défaut
+  12 s → SIGKILL en plein Apply. Ajoutés à 90 s (les kinds read-only gardent la grâce
+  courte).
+
 ## 2026-09-06 — Gros audit Fable : P2 by-urls submit (lot E)
 
 Findings P2 CONFIRMÉS sur le chemin de saisie par URLs (`src/data_entry_auto.py`,
