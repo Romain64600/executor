@@ -1184,6 +1184,19 @@ class DetectTests(unittest.TestCase):
         self.assertEqual(gr("https://g/game-steam-key-uk-i1"), ("UK", "71", False))
         self.assertEqual(gr("https://g/duke-nukem-3d-steam-key-global"), ("GLOBAL", "2", False))
 
+    def test_reaudit_usa_and_gb_region_forms_detected(self):
+        # [9] (Fable re-audit 2026-09-06): the "-usa" slug spelling + bare " USA "/"(USA)"
+        # mid-title (US) and the "-gb" code (UK) all read the locked base, not implicit
+        # GLOBAL. All slot-gated, so "among-us"/mid-slug forms never trigger.
+        def gr(name, url, plat="STEAM"):
+            return detect_region(_offer(name, url=url), plat)
+        self.assertEqual(gr("Some Game", "https://g/game-steam-key-usa"), ("US", "8", False))
+        self.assertEqual(gr("Some Game", "https://g/game-steam-key-usa-i1"), ("US", "8", False))
+        self.assertEqual(gr("Some Game USA", "https://g/game-pc"), ("US", "8", False))
+        self.assertEqual(gr("Some Game (USA)", "https://g/game-pc"), ("US", "8", False))
+        self.assertEqual(gr("Some Game", "https://g/game-steam-key-gb"), ("UK", "71", False))
+        self.assertEqual(gr("Among Us", "https://g/among-us"), ("GLOBAL", "2", True))
+
     def test_edition(self):
         self.assertEqual(detect_edition("Game Deluxe Edition"), ("Deluxe", "7"))
         self.assertEqual(detect_edition("Game Ultimate Collection"), ("Ultimate Collection", "348"))
@@ -1758,6 +1771,28 @@ class GameEditionPageVerifiedTests(unittest.TestCase):
                         {"1": "Standard", "555": "Gold", "777": "Gold"})
         self.assertIsInstance(r, SkippedOffer)
         self.assertIn("ambiguous page edition", r.reason)
+
+    def test_reaudit_r23_pool_rejects_bundle_and_superset_page_tiers(self):
+        # [6] (Fable re-audit 2026-09-06): the R23 E05 page-verify pool matched by RAW
+        # SUBSTRING (`label in name`), so a name-embedded "Complete" adopted a page's
+        # SUPERSET tier ("Complete Plus") or its own BUNDLE-named tier under a non-"8"
+        # id (invisible to the bundle skip) → a bundle entered. Now token-set equality +
+        # explicit bundle/trilogy exclusion. The E05 path needs the word IN the aks_name.
+        # a page BUNDLE tier is never resurrected — falls back to Standard(1)
+        r = self._match("Neon Beats Complete Steam GLOBAL",
+                        {"1": "Standard", "555": "Complete Bundle"}, aks_name="Neon Beats Complete")
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual(r.edition_id, "1")
+        # a SUPERSET page tier ("Complete Plus") is not the same tier → Standard(1)
+        r = self._match("Neon Beats Complete Steam GLOBAL",
+                        {"1": "Standard", "556": "Complete Plus Edition"}, aks_name="Neon Beats Complete")
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual(r.edition_id, "1")
+        # the endorsed same-tier adoption survives ("Complete Pack"(92): PACK is format noise)
+        r = self._match("Neon Beats Complete Steam GLOBAL",
+                        {"1": "Standard", "92": "Complete Pack"}, aks_name="Neon Beats Complete")
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual(r.edition_id, "92")
 
     def test_plain_standard_still_enters(self):
         r = self._match("Some Game Steam Key GLOBAL", {"1": "Standard", "7": "Deluxe"})
@@ -2366,9 +2401,13 @@ class MatchOfferTests(unittest.TestCase):
         self.assertEqual((result.edition_label, result.edition_id), ("Complete", "91"))
 
     def test_page_verified_edition_ambiguous_is_skipped(self):
-        # P2 fix: two distinct non-Standard entries both matching the
-        # detected label, neither an exact match — a guess, not a
-        # page-verified pick. Fail closed instead of taking page order.
+        # P2 fix: two distinct non-Standard entries both matching the detected label,
+        # neither an exact match — a guess, not a page-verified pick. Fail closed
+        # instead of taking page order. [6] (Fable re-audit 2026-09-06): the pool now
+        # matches by _edition_key TOKEN-SET equality, so the ambiguity must be two
+        # SAME-TIER entries ("Complete Pack" / "Complete Edition", both key {COMPLETE});
+        # a "Complete Deluxe Pack" is a DIFFERENT tier and no longer collides (that is
+        # the superset-adoption bug this finding closed — see the reaudit test above).
         result = match_offer(
             _offer("Neon Beats Complete Pack - Steam GLOBAL"),
             self._resolver(
@@ -2376,7 +2415,7 @@ class MatchOfferTests(unittest.TestCase):
                 editions={
                     "1": {"name": "Standard"},
                     "92": {"name": "Complete Pack"},
-                    "93": {"name": "Complete Deluxe Pack"},
+                    "93": {"name": "Complete Edition"},
                 },
             ),
         )

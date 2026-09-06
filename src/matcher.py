@@ -847,17 +847,23 @@ def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | Non
     elif "-global" in url or " GLOBAL " in padded or "(GLOBAL)" in padded or " WORLDWIDE " in padded:
         base, label = "global", "GLOBAL"
     elif (re.search(r"-united-states(?:[-/]|$)", url) or _url_region_code(url, "us")
+          or _url_region_code(url, "usa")
+          or " USA " in padded or "(USA)" in padded
           or tail in ("UNITED STATES", "US", "USA")):
-        # "-us" only in a trailing region slot ("…-steam-key-us"), never a bare
+        # "-us"/"-usa" only in a trailing region slot ("…-steam-key-us"), never a bare
         # "among-us" (P2-6b gate) — before, a "-us" slug fell to implicit GLOBAL,
         # entering a US-locked key worldwide (and a US green gift missed gmg_gift_us).
+        # [9] (Fable re-audit 2026-09-06): also the "-usa" slug spelling + a bare
+        # mid-title " USA " / "(USA)" (the tail-only check missed both).
         base, label = "us", "US"
-    elif (re.search(r"-united-kingdom(?:[-/]|$)", url) or _url_region_code(url, "uk")
+    elif (re.search(r"-united-kingdom(?:[-/]|$)", url)
+          or _url_region_code(url, "uk") or _url_region_code(url, "gb")
           or " UK " in padded or "(UK)" in padded or tail in ("UK", "UNITED KINGDOM")):
-        # Fable re-audit 2026-09-06: mirror the P2-6b "-us" slot detection for "-uk" —
-        # a "…-steam-key-uk" slug used to fall to implicit GLOBAL (a UK-locked key sold
-        # worldwide, and a UK gift missing gift_uk/gmg_gift_uk). Gated to the trailing
-        # region slot so "uk" is never matched mid-slug.
+        # Fable re-audit 2026-09-06: mirror the P2-6b "-us" slot detection for "-uk"
+        # (and the "-gb" spelling) — a "…-steam-key-uk" slug used to fall to implicit
+        # GLOBAL (a UK-locked key sold worldwide, and a UK gift missing gift_uk/
+        # gmg_gift_uk). Gated to the trailing region slot so "uk"/"gb" is never matched
+        # mid-slug.
         base, label = "uk", "UK"
     else:
         # Scan ALL parenthesised groups, not only the first (audit
@@ -1650,6 +1656,12 @@ def resolve_software_region(
         # Take the lone region only when it is a GLOBAL/PUBLISHER type, or the
         # offer carries no concrete region — NEVER file a GLOBAL offer under a lone
         # country region (R31 audit: {"7":"TURKEY"} + a GLOBAL offer must skip).
+        # NB (Fable re-audit 2026-09-06, finding [7]): the auditor flagged that a
+        # US/EU-locked software offer is also filed under a lone GLOBAL/PUBLISHER page
+        # here. That DIRECTLY contradicts the Romain-reviewed R31 catch-all ("a lone
+        # GLOBAL/PUBLISHER region is still taken for an unknown label", 2026-08-11) —
+        # software licences are global, the merchant region label is usually noise. Left
+        # unchanged pending Romain's call; do NOT tighten unilaterally.
         if not want or "GLOBAL" in norm or "PUBLISHER" in norm:
             return (rid, fname)
         return None
@@ -2067,12 +2079,27 @@ def match_offer(
                 # {"1": "Standard"} used to crash this comprehension with
                 # AttributeError and abort the whole match run (audit
                 # 2026-07-17, MA5).
-                on_page = [
-                    (eid, _edition_entry_name(data))
-                    for eid, data in resolution.editions.items()
-                    if _edition_entry_name(data).strip().upper() != "STANDARD"
-                    and edition_label.upper() in _edition_entry_name(data).upper()
-                ]
+                # [6] Fable re-audit 2026-09-06: match by _edition_key TOKEN-SET
+                # equality (format noise stripped, GOTY expanded) as the R40/P1-1
+                # reconciliation already does — NEVER a raw substring. The old
+                # `label in name` adopted a page's SUPERSET tier ("Complete" →
+                # "Complete Plus"/"Complete Deluxe") or, worse, its own BUNDLE-named
+                # tier under a non-"8" id (invisible to the `edition_id == "8"` skip
+                # below) → a bundle entered, breaking the absolute no-bundles rule.
+                # Bundle/Trilogy entries are excluded outright; exact-name preference is
+                # kept, so "Complete Pack"(92) — key {COMPLETE}, PACK being format noise
+                # — remains the endorsed page-verified adoption.
+                want_key = _edition_key(edition_label)
+                on_page = []
+                for eid, data in resolution.editions.items():
+                    ename = _edition_entry_name(data)
+                    if ename.strip().upper() == "STANDARD":
+                        continue
+                    ekey = _edition_key(ename)
+                    if ekey & {"BUNDLE", "TRILOGY"}:
+                        continue                       # never resurrect a bundle tier
+                    if ekey == want_key:
+                        on_page.append((eid, ename))
                 exact = [c for c in on_page if c[1].strip().upper() == edition_label.upper()]
                 pool = exact or on_page
                 if len(pool) > 1:

@@ -3,6 +3,31 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-06 — Gros audit Fable : P2 matcher (lot B)
+
+Suite du lot A. Findings P2 CONFIRMÉS côté `matcher.py` (tests de non-régression,
+suite complète verte).
+
+- **[6] pool R23 (E05) par SOUS-CHAÎNE brute** → adoptait un palier SURENSEMBLE de la
+  page (« Complete » → « Complete Plus ») ou, pire, son propre palier nommé Bundle sous
+  un id ≠ « 8 » (invisible au skip bundle) → **un bundle saisi**. Remplacé par l'égalité
+  de jeu de tokens `_edition_key` (bruit de format retiré, GOTY étendu) + exclusion
+  explicite BUNDLE/TRILOGY. Préférence nom-exact conservée → « Complete Pack »(92) reste
+  l'adoption endossée (PACK = bruit de format). L'ancienne ambiguïté « Complete Pack »
+  vs « Complete Deluxe Pack » disparaît (paliers distincts, désormais bien départagés).
+- **[9] formes URL US/UK manquantes** (fusion 2 findings) : le slug `-usa`, un « USA »/
+  « (USA) » nu en milieu de titre (US) et le code `-gb` (UK) tombaient en GLOBAL
+  implicite → clé région-locquée mondiale. Ajoutés au `detect_region`, tous slot-gated
+  (`_url_region_code`) → « among-us » et formes en milieu de slug jamais déclenchées.
+  (Le slot `-uk` + `gmg_gift_uk` [8] avaient été traités au lot A.)
+- **[7] resolve_software_region — NON corrigé, remonté à Romain.** L'auditeur signale
+  qu'une offre logicielle US/EU-locquée est classée sous une région page GLOBAL/PUBLISHER
+  unique. **Mais ça CONTREDIT directement le choix R31 revu par Romain** (2026-08-11,
+  `test_region_lone_country_is_not_forced` : « une région GLOBAL/PUBLISHER unique est
+  prise pour un label inconnu » — les licences logicielles sont globales, le label région
+  marchand est du bruit). Laissé inchangé, à l'arbitrage de Romain — pas de durcissement
+  unilatéral d'une décision revue.
+
 ## 2026-09-06 — Gros audit multi-agents (Fable) : correctifs P1 fail-open (lot A)
 
 Audit adversarial de TOUT le codebase (13 « diggers » + un président Fable qui
