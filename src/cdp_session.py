@@ -152,7 +152,11 @@ class ReadOnlyCdpSession:
         )
         result = response.get("result", {})
         if "exceptionDetails" in result:
-            raise RuntimeError(f"CDP evaluate raised: {result['exceptionDetails']}")
+            # [27] Fable re-audit 2026-09-06: an in-page JS exception must raise
+            # CdpCommandError, not a BARE RuntimeError — the latter is not in
+            # FEED_UNREADABLE_EXCS, so a post-click evaluate crash escaped the UNKNOWN
+            # -state handler and aborted with no submit_plan.json entry (offer state lost).
+            raise CdpCommandError(f"CDP evaluate raised: {result['exceptionDetails']}")
         return result.get("result", {}).get("value")
 
     def evaluate_readonly(self, expression: str) -> object:
@@ -300,7 +304,22 @@ class ReadOnlyCdpSession:
                 message.extend(payload)
                 if fin:
                     return message.decode("utf-8", errors="replace")
-            first = self._recv_exact(1)
+            # Reading the NEXT frame's first byte (between frames). [42] Fable re-audit
+            # 2026-09-06: if NO data fragment is accumulated (we've only handled control
+            # frames — e.g. a keepalive ping arrived during an idle poll), a timeout here
+            # is a BENIGN poll timeout → return None, exactly like the initial read. Only
+            # a PARTIAL message (data fragments already buffered) makes a timeout an
+            # unrecoverable mid-frame stall. Previously _recv_exact raised either way,
+            # over-aborting an idle poll (possibly after a dispatched click).
+            try:
+                first = self._sock.recv(1)
+            except socket.timeout:
+                if not message:
+                    return None
+                raise CdpCommandError(
+                    "WebSocket stalled mid-frame — stream unrecoverable") from None
+            if not first:
+                raise CdpCommandError("WebSocket closed mid-frame (EOF)")
 
     def _cmd(self, method: str, params: dict | None = None) -> dict:
         self._mid += 1

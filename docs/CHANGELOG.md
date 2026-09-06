@@ -3,6 +3,18 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-06 — Gros audit Fable : P3 cdp_session (lot J)
+
+- **[27] exception JS in-page → `RuntimeError` nu** qui contournait `FEED_UNREADABLE_EXCS`
+  → un crash d'evaluate post-clic échappait au handler UNKNOWN, sans entrée
+  submit_plan.json (état de l'offre perdu). Lève désormais `CdpCommandError` (dans
+  FEED_UNREADABLE_EXCS → chemin UNKNOWN fail-closed).
+- **[42] ping WS pendant un poll idle** → un keepalive ping suivi de silence, SANS
+  fragment de données accumulé, transformait un timeout bénin en `CdpCommandError`
+  « stalled mid-frame » (sur-abort, possiblement après un clic dispatché). Le premier
+  octet de la trame SUIVANTE (entre trames) renvoie None sur timeout quand aucun message
+  n'est en cours ; un message PARTIEL (fragments bufferisés) lève toujours (stall réel).
+
 ## 2026-09-06 — Gros audit Fable : P3 matcher (lot I)
 
 - **[25] édition logicielle unique auto-prise malgré un signal de licence contradictoire**

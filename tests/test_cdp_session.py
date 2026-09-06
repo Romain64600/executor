@@ -72,6 +72,17 @@ class CmdFailClosedTests(unittest.TestCase):
         with self.assertRaises(CdpCommandError):
             session._evaluate("document.title")
 
+    def test_evaluate_in_page_exception_raises_cdp_error(self):
+        # [27] (Fable re-audit 2026-09-06): an in-page JS exception must raise
+        # CdpCommandError (which IS in FEED_UNREADABLE_EXCS → the UNKNOWN-state path), not
+        # a bare RuntimeError that escapes the fail-closed handler with no submit_plan.json.
+        session = _StubbedSession(frames=[json.dumps(
+            {"id": 1, "result": {"result": {},
+                                 "exceptionDetails": {"text": "Uncaught ReferenceError"}}})])
+        with self.assertRaises(CdpCommandError) as ctx:
+            session._evaluate("boom()")
+        self.assertIn("evaluate raised", str(ctx.exception))
+
     def test_unrelated_ids_are_skipped_until_match(self):
         session = _StubbedSession(
             frames=[
@@ -125,6 +136,21 @@ class WsFramingTests(unittest.TestCase):
         with self.assertRaises(CdpCommandError) as ctx:
             self.session._ws_recv(timeout=1)
         self.assertIn("close frame", str(ctx.exception))
+
+    def test_ping_then_idle_is_benign_none_not_stall(self):
+        # [42] (Fable re-audit 2026-09-06): a keepalive ping during an idle poll (no data
+        # fragment accumulated) then silence must return None — NOT raise "stalled
+        # mid-frame" (over-abort, possibly after a dispatched click).
+        self.server.sendall(_server_frame(0x9, b"hb"))
+        self.assertIsNone(self.session._ws_recv(timeout=0.1))
+
+    def test_partial_message_then_stall_still_raises(self):
+        # [42] the guard is narrow: a PARTIAL data message (fragments already buffered)
+        # that then stalls IS an unrecoverable mid-frame stall → still raise.
+        self.server.sendall(_server_frame(0x1, b"half", fin=False))
+        with self.assertRaises(CdpCommandError) as ctx:
+            self.session._ws_recv(timeout=0.1)
+        self.assertIn("stalled", str(ctx.exception))
 
     def test_ping_is_answered_with_pong_and_data_still_returned(self):
         self.server.sendall(_server_frame(0x9, b"hb") + _server_frame(0x1, b"ok"))
