@@ -34,6 +34,7 @@ from src.aks_env import OFFICIAL_CDP_ENDPOINT, _allkeyshop_host  # noqa: E402
 from src.browser_lock import BrowserBusyError, browser_lock  # noqa: E402
 from src.contracts import NormalizedOffer  # noqa: E402
 from src.extractor import AKS_ADMIN_URL, DEFAULT_FEED_PAGE, NotLoggedInError  # noqa: E402
+from src.invariants import build_report  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
 from src.matcher import (  # noqa: E402
     AKS_PROBE_UA,
@@ -481,6 +482,28 @@ def main(argv: list[str] | None = None) -> int:
         (run_dir / "recap.json").write_text(json.dumps(recap, ensure_ascii=False, indent=2),
                                             encoding="utf-8")
         print(json.dumps({"run_id": args.run_id, "aborted": "no_urls"}))
+        return 2
+
+    # [24] Fable re-audit 2026-09-06: this stage drives the shared AKS tab (a live
+    # SubmitSession), so it MUST pass the same fail-closed gate as every other browser
+    # stage BEFORE touching it — invariants green AND authoritative on the VPS target.
+    # build_report includes validate_official_cdp_endpoint, so an unvalidated/non-official
+    # --endpoint also fails the gate here (never drive the tab through a bogus endpoint).
+    report = None
+    for attempt in range(3):
+        report = build_report(endpoint=args.endpoint)
+        if report["ok"] and report["authoritative"]:
+            break
+        if attempt < 2:
+            time.sleep(2)
+    if not (report["ok"] and report["authoritative"]):
+        recap = {"mode": "dry-run", "aborted": "invariants not green/authoritative",
+                 "games": [], "totals": {"games": 0, "resolved": 0, "candidates": 0}}
+        (run_dir / "recap.json").write_text(json.dumps(recap, ensure_ascii=False, indent=2),
+                                            encoding="utf-8")
+        print(json.dumps({"run_id": args.run_id, "aborted": recap["aborted"],
+                          "invariants": {"ok": report["ok"],
+                                         "authoritative": report["authoritative"]}}))
         return 2
 
     logger = RunLogger(args.run_id, log_dir=ROOT / "logs")

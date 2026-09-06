@@ -382,5 +382,38 @@ class LogEventsTests(unittest.TestCase):
             self.assertIn(ev, lg.events, ev)
 
 
+class InvariantsGateTests(unittest.TestCase):
+    """[24] (Fable re-audit 2026-09-06): scripts/11 drives the shared AKS tab, so it gates
+    on invariants (green + authoritative, official CDP endpoint) BEFORE opening it."""
+
+    def test_non_green_invariants_abort_before_browser(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(M, "ROOT", Path(d)), \
+                mock.patch.object(M.time, "sleep"), \
+                mock.patch.object(M, "build_report",
+                                  return_value={"ok": False, "authoritative": True}) as br, \
+                mock.patch.object(M, "run_plan") as rp:
+            rc = M.main(["--run-id", "t24", "--urls", URL,
+                         "--endpoint", "http://127.0.0.1:9999/json/version"])
+        self.assertEqual(rc, 2)
+        br.assert_called()          # the gate ran
+        rp.assert_not_called()      # the browser was never driven
+
+    def test_green_authoritative_proceeds_to_plan(self):
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(M, "ROOT", Path(d)), \
+                mock.patch.object(M, "build_report",
+                                  return_value={"ok": True, "authoritative": True}), \
+                mock.patch.object(M, "run_plan",
+                                  return_value={"aborted": None,
+                                                "totals": {"games": 0, "resolved": 0, "candidates": 0}}) as rp:
+            rc = M.main(["--run-id", "t24b", "--urls", URL,
+                         "--endpoint", "http://127.0.0.1:9999/json/version"])
+        self.assertEqual(rc, 0)
+        rp.assert_called_once()     # gate passed → the planner ran
+
+
 if __name__ == "__main__":
     unittest.main()

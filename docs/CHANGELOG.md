@@ -3,6 +3,19 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-06 — Gros audit Fable : P2 scripts browser-gate (lot G)
+
+- **[17] `06_move` sans SIGTERM coopératif** : le sweep « Arrêter » tuait un enfant de
+  move réel en plein Apply. Miroir de `05_submit` : handler `_on_term` → flag `_STOP`,
+  `should_stop=lambda: _STOP` passé à `Mover.run` (arrêt à une frontière de move, jamais
+  mid-Apply).
+- **[24] `scripts/11` pilote l'onglet AKS sans gate invariants ni endpoint validé** :
+  ajout du gate `build_report(endpoint)` (vert ET authoritative) AVANT d'ouvrir la
+  session — `build_report` inclut `validate_official_cdp_endpoint`, donc un `--endpoint`
+  non-officiel échoue aussi le gate. Défense en profondeur : `ReadOnlyCdpSession.open()`
+  refuse désormais tout endpoint non-officiel (couvre `SubmitSession`/`WriteSubmitSession`
+  qui en héritent, et tout futur point d'entrée qui oublierait le gate).
+
 ## 2026-09-06 — Gros audit Fable : P2 admin (lot F)
 
 Findings P2 CONFIRMÉS côté console admin (`src/admin/`).

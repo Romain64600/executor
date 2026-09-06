@@ -28,6 +28,8 @@ import time
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from src.aks_env import validate_official_cdp_endpoint
+
 # Expressions containing any of these (whitespace-insensitive) tokens are refused.
 _FORBIDDEN_EVAL = (
     ".click(",
@@ -89,6 +91,17 @@ class ReadOnlyCdpSession:
 
     # -- lifecycle -------------------------------------------------------
     def open(self) -> "ReadOnlyCdpSession":
+        # [24] Fable re-audit 2026-09-06: defense in depth — refuse to drive the browser
+        # through a non-official CDP endpoint whatever entrypoint opened the session
+        # (EXECUTOR_RULES §1: the official Docker-bridge proxy only). The per-stage
+        # build_report gate is the primary check; this stops any future entrypoint that
+        # forgets it from ever connecting to an arbitrary endpoint. SubmitSession /
+        # WriteSubmitSession inherit this open(), so the write path is covered too.
+        check = validate_official_cdp_endpoint(self.endpoint)
+        if not check.ok:
+            raise CdpCommandError(
+                f"refusing non-official CDP endpoint {self.endpoint!r}: {check.detail} "
+                f"(expected {check.data.get('expected')!r})")
         self._sock = self._ws_connect(self._page_ws_path())
         self._cmd("Page.enable")
         self._cmd("Runtime.enable")

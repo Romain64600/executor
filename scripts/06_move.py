@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import signal
 import sys
 import time
 from datetime import datetime, timezone
@@ -102,7 +103,21 @@ def _status(entry: dict, write: bool) -> str:
     return f"FAILED ({entry.get('blocker') or entry.get('post_verify')})"
 
 
+_STOP = False
+
+
+def _on_term(_signum, _frame):
+    # [17] Fable re-audit 2026-09-06: cooperative stop, mirroring 05_submit. The mover
+    # checks this at a MOVE BOUNDARY (between offers / between groups) — never mid-Apply
+    # — so the sweep's "Arrêter" (SIGTERM from the admin manager) finishes the in-flight
+    # move and writes its plan, instead of hard-killing a real move child mid-write.
+    global _STOP
+    _STOP = True
+
+
 def main() -> int:
+    signal.signal(signal.SIGTERM, _on_term)
+    signal.signal(signal.SIGINT, _on_term)
     try:
         with browser_lock(ROOT, label="06_move " + " ".join(sys.argv[1:])[:160]):
             return _main()
@@ -298,7 +313,8 @@ def _main() -> int:
                 run_id=run_id, store_id=store_id, plan=entries,
                 source_feed_page=source_list, available=args.available,
                 max_pages=max_pages, limit=limit,
-                batch=args.batch, deferred=args.deferred, page_hint=args.page_hint)
+                batch=args.batch, deferred=args.deferred, page_hint=args.page_hint,
+                should_stop=lambda: _STOP)   # [17] cooperative stop at a move boundary
     except FEED_UNREADABLE_EXCS as exc:
         print(json.dumps({"aborted": True,
                           "reason": f"fail-closed abort (feed/CDP unreadable): {exc}"}, indent=2))
