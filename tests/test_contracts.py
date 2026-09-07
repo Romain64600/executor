@@ -97,6 +97,22 @@ class RawSnapshotTests(unittest.TestCase):
         with self.assertRaises(ContractError):
             self._create(raw_offers=[{"id": "1"}, "not-a-dict"])
 
+    def test_malformed_page_counts_raise_contracterror_not_raw_or_truncated(self):
+        # [41] (Fable re-audit 2026-09-06): pages_scanned / feed_last_page are type-checked
+        # BEFORE coercion — a non-int (None / "abc") raises the typed ContractError (not a
+        # raw ValueError/TypeError a `except ContractError` caller misses), a float is NOT
+        # silently truncated, and bool (an int subclass) is rejected.
+        for bad in (None, "abc", 3.7, True):
+            with self.assertRaises(ContractError):
+                self._create(pages_scanned=bad)
+        for bad in (None, "abc", 2.5, True):
+            with self.assertRaises(ContractError):
+                self._create(feed_last_page=bad)
+        # a valid int is preserved exactly (no truncation); a negative still clamps to 0
+        # (documented lenient behavior), never a raw crash.
+        self.assertEqual(self._create(pages_scanned=5, feed_last_page=357).pages_scanned, 5)
+        self.assertEqual(self._create(feed_last_page=-5).feed_last_page, 0)
+
     def test_to_dict_is_json_serializable(self):
         json.dumps(self._create().to_dict())
 

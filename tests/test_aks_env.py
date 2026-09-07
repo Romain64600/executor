@@ -219,6 +219,19 @@ class StaffUaPolicyTests(unittest.TestCase):
         request = opener.call_args[0][0]
         self.assertEqual(request.get_header("User-agent"), REQUIRED_USER_AGENT)
 
+    def test_refused_off_domain_redirect_is_not_ok(self):
+        # [40] (Fable re-audit 2026-09-06): a staff-UA probe 3xx-redirected off
+        # allkeyshop.com is refused — a fail-closed MISS (ok=False), NEVER a success,
+        # even though its 3xx code (302) is in ACCEPTED_AKS_STATUSES (200/301/302).
+        import io
+        from src.aks_env import StaffUaRedirectRefused
+        exc = StaffUaRedirectRefused("https://allkeyshop.com/x", 302,
+                                     "off-domain redirect refused", {}, io.BytesIO(b""))
+        with mock.patch("src.aks_env._http_open", side_effect=exc):
+            probe = http_get("https://www.allkeyshop.com/blog/x", user_agent=AKS_STAFF_UA)
+        self.assertFalse(probe.ok)          # refused → fail-closed, not a success
+        self.assertEqual(probe.status, 302)
+
 
 class HttpProbeTests(unittest.TestCase):
     def test_http_get_success_2xx(self):

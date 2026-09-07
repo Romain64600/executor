@@ -3,6 +3,23 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-06 — Gros audit Fable : P3 env/contracts (lot O — dernier)
+
+Derniers findings CONFIRMÉS — clôt les 39.
+
+- **[39] `feed_url` émettait l'URL-piège store arbitraire pour `''`/`0`** (`extractor.py`) →
+  `&store=` / `&store=0` que AKS résout silencieusement vers UN store arbitraire. Seul
+  `None` peut lâcher le filtre (vue tous-stores) ; `''`/`0`/`'0'` lèvent `ValueError`.
+  Le gate admin `start_extract` durci à `int(store_id) >= 1` (« 0 ».isdigit() passait).
+- **[40] redirect staff-UA hors-domaine refusé renvoyait `ok=True`** (`aks_env.py`) —
+  contredit le contrat fail-closed (le code 3xx est dans ACCEPTED_AKS_STATUSES). Exception
+  dédiée `StaffUaRedirectRefused` → `http_get` force `ok=False` (un refus est un miss
+  fail-closed, jamais un succès).
+- **[41] `RawSnapshot.create` levait ValueError/TypeError brut et tronquait les floats**
+  (`contracts.py`) sur `pages_scanned`/`feed_last_page`. Type-check AVANT coercition (comme
+  P3-7) : un non-int lève `ContractError` (typé), un float n'est plus tronqué, bool rejeté ;
+  le clamp-négatif documenté de feed_last_page est conservé.
+
 ## 2026-09-06 — Gros audit Fable : P3 admin app (lot N)
 
 - **[35] le champ body `by` écrasait l'identité authentifiée** sur chaque déclencheur

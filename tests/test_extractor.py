@@ -112,6 +112,15 @@ class FeedUrlTests(unittest.TestCase):
         self.assertIn("&p=3", feed_url(127, page=3))
         self.assertIn("available=pending", feed_url(127, available="pending"))
 
+    def test_empty_or_zero_store_is_refused_only_none_drops_filter(self):
+        # [39] (Fable re-audit 2026-09-06): "&store=" / "&store=0" is the arbitrary-store
+        # trap URL — only None may drop the store filter (the all-stores view).
+        for bad in ("", "0", 0):
+            with self.assertRaises(ValueError):
+                feed_url(bad)
+        self.assertNotIn("&store=", feed_url(None))        # None → all-stores view
+        self.assertIn("&store=127", feed_url("127"))
+
 
 class ParsePayloadTests(unittest.TestCase):
     def test_parses_array_of_json_strings(self):

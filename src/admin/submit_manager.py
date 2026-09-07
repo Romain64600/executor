@@ -655,9 +655,11 @@ class SubmitManager:
         store_id = store_id.strip()
         if not merchant:
             raise SubmitStartError("bad_merchant", "merchant requis", http_status=400)
-        if not store_id.isdigit():
+        if not store_id.isdigit() or int(store_id) < 1:
+            # [39] Fable re-audit 2026-09-06: "0".isdigit() is True, but store 0 builds the
+            # arbitrary-store trap URL (see feed_url). Require a real store id >= 1.
             raise SubmitStartError(
-                "bad_store_id", f"store_id doit être numérique, reçu {store_id!r}",
+                "bad_store_id", f"store_id doit être un entier >= 1, reçu {store_id!r}",
                 http_status=400,
             )
         if page is not None:

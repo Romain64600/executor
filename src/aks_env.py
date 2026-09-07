@@ -288,6 +288,13 @@ class _NoRedirectHandler(HTTPRedirectHandler):
         return None
 
 
+class StaffUaRedirectRefused(HTTPError):
+    """A staff-UA probe was 3xx-redirected off allkeyshop.com and refused (P2-15). [40]
+    Fable re-audit 2026-09-06: a DISTINCT type so :func:`http_get` reports ok=False — a
+    refused redirect is a fail-closed MISS, never a success, even though its 3xx code is
+    in ACCEPTED_AKS_STATUSES (200/301/302) which would otherwise wave it through."""
+
+
 class _StaffUaHostGuardRedirectHandler(HTTPRedirectHandler):
     """Follow same-domain (allkeyshop.com) redirects, but REFUSE a redirect to any
     other host (P2-15, audit 2026-09-02).
@@ -303,7 +310,7 @@ class _StaffUaHostGuardRedirectHandler(HTTPRedirectHandler):
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         if not _allkeyshop_host(newurl):
-            raise HTTPError(
+            raise StaffUaRedirectRefused(
                 req.full_url, code,
                 f"AKS/Staff redirect off allkeyshop.com refused: {newurl}", headers, fp
             )
@@ -355,9 +362,12 @@ def http_get(
             return _response_to_probe(url, response)
     except HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
+        # [40] a guard-refused off-domain staff-UA redirect is a fail-closed MISS, never a
+        # success — force ok=False even though its 3xx code is an accepted status.
+        refused = isinstance(exc, StaffUaRedirectRefused)
         return HttpProbeResult(
             url=url,
-            ok=exc.code in ACCEPTED_AKS_STATUSES,
+            ok=(not refused) and exc.code in ACCEPTED_AKS_STATUSES,
             status=exc.code,
             body=body,
             error=str(exc),

@@ -150,7 +150,17 @@ class RawSnapshot:
             and (source_url.startswith("http://") or source_url.startswith("https://")),
             "source_url must be an http(s) URL",
         )
-        _require(int(pages_scanned) >= 1, "pages_scanned must be >= 1")
+        # [41] Fable re-audit 2026-09-06: type-check BEFORE coercing (same discipline as
+        # source_url above). `int(pages_scanned)` raised a raw ValueError/TypeError on a
+        # non-int (None / "abc") — which a `except ContractError` caller misses — and
+        # SILENTLY TRUNCATED a float (3.7 → 3). bool is an int subclass, so exclude it.
+        _require(isinstance(pages_scanned, int) and not isinstance(pages_scanned, bool)
+                 and pages_scanned >= 1, "pages_scanned must be an int >= 1")
+        # feed_last_page keeps its documented negative-clamp (a "best effort" advertised
+        # count), but the TYPE is checked first so None/"abc"/float/bool raise
+        # ContractError instead of a raw crash / silent truncation.
+        _require(isinstance(feed_last_page, int) and not isinstance(feed_last_page, bool),
+                 "feed_last_page must be an int")
         offers = tuple(raw_offers)
         _require(all(isinstance(o, dict) for o in offers), "every raw offer must be a dict")
         return cls(
@@ -161,9 +171,9 @@ class RawSnapshot:
             store_id="" if store_id is None else str(store_id),
             source_url=source_url,
             fetched_at=clock(),
-            pages_scanned=int(pages_scanned),
+            pages_scanned=pages_scanned,
             raw_offers=offers,
-            feed_last_page=max(0, int(feed_last_page)),
+            feed_last_page=max(0, feed_last_page),
         )
 
 

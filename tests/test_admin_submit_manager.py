@@ -401,9 +401,12 @@ class StartExtractTests(ManagerTestCase):
 
     def test_bad_store_id_refused_before_spawn(self):
         manager = self._extract_manager()
-        with self.assertRaises(SubmitStartError) as ctx:
-            manager.start_extract("GameSeal", "not-a-number", by="Romain")
-        self.assertEqual(ctx.exception.code, "bad_store_id")
+        # [39] (Fable re-audit 2026-09-06): non-numeric AND store "0" (which passes
+        # .isdigit() but builds the arbitrary-store trap URL) are refused — require >= 1.
+        for bad in ("not-a-number", "0"):
+            with self.assertRaises(SubmitStartError) as ctx:
+                manager.start_extract("GameSeal", bad, by="Romain")
+            self.assertEqual(ctx.exception.code, "bad_store_id", bad)
         self.assertIsNone(manager.busy())
 
     def test_empty_merchant_refused(self):

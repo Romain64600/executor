@@ -155,6 +155,14 @@ def feed_url(
     they silently default to one arbitrary store — so None must drop the key.
     """
 
+    if store_id is not None and str(store_id).strip() in ("", "0"):
+        # [39] Fable re-audit 2026-09-06: ONLY None may drop the store filter (the
+        # all-stores view). An EMPTY or 0/'0' store_id builds "&store=" / "&store=0",
+        # which AKS silently resolves to ONE arbitrary store — the documented trap URL.
+        # Refuse it loudly rather than scan the wrong store.
+        raise ValueError(
+            f"store_id {store_id!r} is invalid — pass None for the all-stores view "
+            "or a real store id >= 1, never '' or 0")
     store_clause = "" if store_id is None else f"&store={store_id}"
     query = f"?available={available}{store_clause}&page={feed_page}"
     if page is not None and int(page) > 1:
