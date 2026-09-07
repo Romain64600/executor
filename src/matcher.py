@@ -1684,12 +1684,14 @@ def resolve_software_region(
         # Take the lone region only when it is a GLOBAL/PUBLISHER type, or the
         # offer carries no concrete region — NEVER file a GLOBAL offer under a lone
         # country region (R31 audit: {"7":"TURKEY"} + a GLOBAL offer must skip).
-        # NB (Fable re-audit 2026-09-06, finding [7]): the auditor flagged that a
-        # US/EU-locked software offer is also filed under a lone GLOBAL/PUBLISHER page
-        # here. That DIRECTLY contradicts the Romain-reviewed R31 catch-all ("a lone
-        # GLOBAL/PUBLISHER region is still taken for an unknown label", 2026-08-11) —
-        # software licences are global, the merchant region label is usually noise. Left
-        # unchanged pending Romain's call; do NOT tighten unilaterally.
+        # NB (Fable re-audit 2026-09-06, finding [7] — DECLINED by Romain 2026-09-07):
+        # the auditor flagged that a US/EU-locked software offer is also filed under a
+        # lone GLOBAL/PUBLISHER page here. That DIRECTLY contradicts the Romain-reviewed
+        # R31 catch-all ("a lone GLOBAL/PUBLISHER region is still taken for an unknown
+        # label", 2026-08-11) — software licences are global, the merchant region label
+        # is usually noise. Romain reviewed the finding and decided KEEP AS-IS ("laisse
+        # [7] tel quel, ne durcis pas"). Do NOT re-tighten — this is a deliberate call,
+        # not an oversight, and re-audits will re-flag it.
         if not want or "GLOBAL" in norm or "PUBLISHER" in norm:
             return (rid, fname)
         return None

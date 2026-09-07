@@ -223,13 +223,14 @@ suite complète verte).
   implicite → clé région-locquée mondiale. Ajoutés au `detect_region`, tous slot-gated
   (`_url_region_code`) → « among-us » et formes en milieu de slug jamais déclenchées.
   (Le slot `-uk` + `gmg_gift_uk` [8] avaient été traités au lot A.)
-- **[7] resolve_software_region — NON corrigé, remonté à Romain.** L'auditeur signale
-  qu'une offre logicielle US/EU-locquée est classée sous une région page GLOBAL/PUBLISHER
-  unique. **Mais ça CONTREDIT directement le choix R31 revu par Romain** (2026-08-11,
+- **[7] resolve_software_region — DÉCLINÉ par Romain (2026-09-07), gardé tel quel.**
+  L'auditeur signalait qu'une offre logicielle US/EU-locquée est classée sous une région
+  page GLOBAL/PUBLISHER unique. **Ça CONTREDIT le choix R31 revu par Romain** (2026-08-11,
   `test_region_lone_country_is_not_forced` : « une région GLOBAL/PUBLISHER unique est
   prise pour un label inconnu » — les licences logicielles sont globales, le label région
-  marchand est du bruit). Laissé inchangé, à l'arbitrage de Romain — pas de durcissement
-  unilatéral d'une décision revue.
+  marchand est du bruit). Remonté à Romain, qui a tranché « laisse tel quel, ne durcis
+  pas ». Comportement inchangé — décision délibérée, à ne pas re-durcir (les re-audits
+  le re-signaleront).
 
 ## 2026-09-06 — Gros audit multi-agents (Fable) : correctifs P1 fail-open (lot A)
 
