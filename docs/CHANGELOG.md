@@ -3,6 +3,18 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-07 — by-urls : accepter le format d'URL AKS `compare-and-buy`
+
+`extract_slug` (scripts/11) ne connaissait que `buy-<slug>-cd-key-compare-prices/` et
+`buy-<slug>-<platform>-account-compare-prices/`. Quelques anciens produits (Minecraft) ne
+vivent QUE sous `compare-and-buy-cd-key-for-digital-download-<slug>/` (le format moderne
+`buy-…` renvoie 404) → une URL top-popular légitime était rejetée « not an AKS product
+URL ». Le parser accepte désormais aussi le préfixe `compare-and-buy-` de façon GÉNÉRALE
+(milieu `cd-key-for-digital-download-` optionnel → slug propre quand présent). Le slug ne
+sert que de gate + métadonnée (`AksResolution.slug`) ; l'identité produit vient du body,
+donc la résolution live de Minecraft passe (id 216, 9 éditions, 13 régions). Formats
+existants inchangés (tests de slug verts).
+
 ## 2026-09-07 — Revue Romain du pull e13ea6c..3a6278b (findings + résiduels)
 
 Audit du lot Fable par Romain : 2 findings directs corrigés + 2 P2 résiduels antérieurs

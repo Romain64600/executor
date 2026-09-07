@@ -146,6 +146,18 @@ class SlugTests(unittest.TestCase):
             "https://www.allkeyshop.com/blog/buy-007-first-light-ps5-account-compare-prices/"),
             "007-first-light")
 
+    def test_legacy_compare_and_buy_page(self):
+        # Romain 2026-09-07: a few older products live under the compare-and-buy prefix
+        # (Minecraft: compare-and-buy-cd-key-for-digital-download-minecraft/ — the modern
+        # buy-…-compare-prices form 404s). Accept compare-and-buy GENERALLY (known middle
+        # stripped when present), else a genuine top-popular URL is rejected "not an AKS
+        # product URL".
+        self.assertEqual(M.extract_slug(
+            "https://www.allkeyshop.com/blog/compare-and-buy-cd-key-for-digital-download-minecraft/"),
+            "minecraft")
+        self.assertEqual(M.extract_slug(
+            "https://www.allkeyshop.com/blog/compare-and-buy-some-old-game/"), "some-old-game")
+
     def test_wrong_host_is_none(self):
         self.assertIsNone(M.extract_slug("https://evil.com/blog/buy-foo-cd-key-compare-prices/"))
 

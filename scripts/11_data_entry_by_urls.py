@@ -68,15 +68,20 @@ RESOLVE_ATTEMPTS = 3
 RESOLVE_RETRY_WAIT_S = 1.5
 _TRANSIENT_RESOLVE_STATUSES = frozenset({429, 500, 502, 503, 504})
 
-# Two AKS product-page shapes. KEY pages: buy-<slug>-cd-key-compare-prices/ —
-# but some omit the "cd-" (buy-the-green-light-key-compare-prices/, id 216255);
-# the slug is captured NON-greedily so the "cd-"/"key" marker is never absorbed
-# into it (greedy + optional cd- would eat "…-cd" for a bare "key"). ACCOUNT
-# pages: buy-<slug>-<platform>-account-compare-prices/ — slug stays greedy so the
-# game name keeps its own hyphens before the <platform>-account marker.
+# AKS product-page shapes. KEY pages: buy-<slug>-cd-key-compare-prices/ — but some
+# omit the "cd-" (buy-the-green-light-key-compare-prices/, id 216255); the slug is
+# captured NON-greedily so the "cd-"/"key" marker is never absorbed into it (greedy +
+# optional cd- would eat "…-cd" for a bare "key"). ACCOUNT pages: buy-<slug>-<platform>
+# -account-compare-prices/ — slug stays greedy so the game name keeps its own hyphens
+# before the <platform>-account marker. LEGACY pages (Romain 2026-09-07): a handful of
+# older products live under compare-and-buy-cd-key-for-digital-download-<slug>/ (e.g.
+# Minecraft — the modern buy-…-compare-prices form 404s), so recognise it too, else a
+# genuine top-popular URL is wrongly rejected as "not an AKS product URL".
 _SLUG_RE = re.compile(
-    r"/blog/buy-(?:([a-z0-9-]+?)-(?:cd-)?key|([a-z0-9-]+)-[a-z0-9-]+-account)"
-    r"-compare-prices/?"
+    r"/blog/(?:"
+    r"buy-(?:([a-z0-9-]+?)-(?:cd-)?key|([a-z0-9-]+)-[a-z0-9-]+-account)-compare-prices"
+    r"|compare-and-buy-(?:cd-key-for-digital-download-)?([a-z0-9-]+)"
+    r")/?"
 )
 
 
@@ -97,7 +102,7 @@ def extract_slug(url: str) -> str | None:
     if not _allkeyshop_host(url or ""):
         return None
     m = _SLUG_RE.search((url or "").split("?", 1)[0].split("#", 1)[0])
-    return (m.group(1) or m.group(2)) if m else None
+    return (m.group(1) or m.group(2) or m.group(3)) if m else None
 
 
 def resolve_pinned(url: str, http_get_fn: Callable[..., Any] = http_get) -> AksResolution:
