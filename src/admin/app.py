@@ -214,6 +214,11 @@ class AdminHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802 (http.server API)
         try:
+            # [36] Fable re-audit 2026-09-06: a GET can carry a body (Content-Length). If
+            # left unread it desyncs the HTTP/1.1 keep-alive stream — the next request
+            # parses from mid-body. Drain it up front exactly as do_POST does (the 413/
+            # close path lives in _drain_body).
+            self._drain_body()
             self._route_get()
         except ApiError as exc:
             self._send_error_json(exc.http_status, exc.code, exc.message, exc.detail)
@@ -436,7 +441,7 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._send_json(200, self.state.manager.stop_active())
         if path == "/api/sort/scan":
             body = self._json_body()
-            by = str(body.get("by") or self._basic_user() or "operateur")
+            by = str(self._basic_user() or body.get("by") or "operateur")  # [35] authed wins; body "by" cannot forge attribution
             mp = _parse_int(body.get("max_pages"))
             result = self.state.manager.start_sort_scan(by=by, max_pages=mp if mp is not None else 800)
             return self._send_json(200, result)
@@ -472,7 +477,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         list_id = str(body.get("list_id") or "").strip()
         action = str(body.get("action") or "").strip()
         store = str(body.get("store") or "").strip() or None
-        by = str(body.get("by") or self._basic_user() or "operateur")
+        by = str(self._basic_user() or body.get("by") or "operateur")  # [35] authed wins; body "by" cannot forge attribution
         if not list_id:
             raise ApiError(400, "list_required", "list_id requis")
         # A REAL move (canary/batch) needs the operator's explicit typed GO at the
@@ -543,7 +548,7 @@ class AdminHandler(BaseHTTPRequestHandler):
 
     def _post_data_entry_auto(self) -> None:
         body = self._json_body()
-        by = str(body.get("by") or self._basic_user() or "operateur")
+        by = str(self._basic_user() or body.get("by") or "operateur")  # [35] authed wins; body "by" cannot forge attribution
         raw = body.get("targets")
         targets: list[tuple[str, str]] = []
         if isinstance(raw, list):
@@ -573,7 +578,7 @@ class AdminHandler(BaseHTTPRequestHandler):
 
     def _post_data_entry_by_urls(self) -> None:
         body = self._json_body()
-        by = str(body.get("by") or self._basic_user() or "operateur")
+        by = str(self._basic_user() or body.get("by") or "operateur")  # [35] authed wins; body "by" cannot forge attribution
         raw = body.get("urls")
         urls: list[str] = []
         if isinstance(raw, list):
@@ -642,7 +647,7 @@ class AdminHandler(BaseHTTPRequestHandler):
 
     def _post_data_entry_by_urls_submit(self) -> None:
         body = self._json_body()
-        by = str(body.get("by") or self._basic_user() or "operateur")
+        by = str(self._basic_user() or body.get("by") or "operateur")  # [35] authed wins; body "by" cannot forge attribution
         from_run = str(body.get("from_run") or "").strip()
         if not from_run:
             raise ApiError(400, "from_run_required", "from_run (l'aperçu à saisir) requis")
@@ -660,13 +665,13 @@ class AdminHandler(BaseHTTPRequestHandler):
 
     def _post_catalog(self, run_dir: Path) -> None:
         body = self._json_body()
-        by = str(body.get("by") or self._basic_user() or "operateur")
+        by = str(self._basic_user() or body.get("by") or "operateur")  # [35] authed wins; body "by" cannot forge attribution
         result = self.state.manager.start_catalog(run_dir, by=by, max_pages=_parse_int(body.get("max_pages")))
         self._send_json(200, result)
 
     def _post_extract(self) -> None:
         body = self._json_body()
-        by = str(body.get("by") or self._basic_user() or "operateur")
+        by = str(self._basic_user() or body.get("by") or "operateur")  # [35] authed wins; body "by" cannot forge attribution
         raw_page = body.get("page")
         page = str(raw_page).strip() if raw_page not in (None, "") else None
         result = self.state.manager.start_extract(
@@ -676,7 +681,7 @@ class AdminHandler(BaseHTTPRequestHandler):
 
     def _post_match(self, run_dir: Path) -> None:
         body = self._json_body()
-        by = str(body.get("by") or self._basic_user() or "operateur")
+        by = str(self._basic_user() or body.get("by") or "operateur")  # [35] authed wins; body "by" cannot forge attribution
         result = self.state.manager.start_match(
             run_dir, by=by, max_candidates=_parse_int(body.get("max_candidates")),
         )
@@ -707,7 +712,7 @@ class AdminHandler(BaseHTTPRequestHandler):
                 'un submit réel exige confirm: "GO" (le go explicite de l\'opérateur)',
             )
         limit = _parse_int(body.get("limit"))
-        by = str(body.get("by") or self._basic_user() or "operateur")
+        by = str(self._basic_user() or body.get("by") or "operateur")  # [35] authed wins; body "by" cannot forge attribution
         approved_sha = body.get("approved_sha256")
         result = self.state.manager.start_submit(
             run_dir,

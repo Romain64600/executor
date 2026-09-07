@@ -3,6 +3,17 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-06 — Gros audit Fable : P3 admin app (lot N)
+
+- **[35] le champ body `by` écrasait l'identité authentifiée** sur chaque déclencheur
+  d'écriture (`app.py`) → attribution d'écriture FORGEABLE. Précédence inversée partout :
+  `str(self._basic_user() or body.get('by') or 'operateur')` — l'authentifié gagne, le
+  body ne peut plus usurper l'attribution (9 sites).
+- **[36] `do_GET` sans drain de corps (AS3)** → un GET-avec-corps laissait ses octets sur
+  le flux keep-alive HTTP/1.1 → la requête suivante parsait depuis le milieu du corps
+  (desync reproduit). `_drain_body()` (avec le chemin 413/close) est appelé en tête de
+  `do_GET` comme dans `do_POST`.
+
 ## 2026-09-06 — Gros audit Fable : P3 sweep + triage (lot M)
 
 - **[31] `all_gone` acceptait des absences FENÊTRÉES comme « prouvées par un full scan »**

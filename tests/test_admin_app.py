@@ -970,6 +970,37 @@ class SortMoveRouteTests(AppTestCase):
         self.assertEqual(response.status, 400)
         self.assertEqual(data["error"]["code"], "targets_required")
 
+    def test_write_trigger_by_is_authenticated_not_body_spoof(self):
+        # [35] (Fable re-audit 2026-09-06): the write-attribution `by` is the AUTHENTICATED
+        # basic-auth user, never a forgeable body field — a spoofed body "by" is ignored.
+        seen = {}
+        self.manager.start_data_entry_auto = (
+            lambda targets, *, by, **k: seen.update(by=by) or {"run_id": "r", "started": True})
+        resp, _ = self._json("POST", "/api/data-entry/auto",
+                             body={"targets": [{"merchant": "Kinguin", "store_id": "58"}],
+                                   "by": "SpoofedName", "confirm": "GO"})
+        self.assertEqual(resp.status, 200)
+        self.assertEqual(seen["by"], "operateur")   # authed (basic-auth), not "SpoofedName"
+
+    def test_get_with_body_does_not_desync_keepalive(self):
+        # [36] (Fable re-audit 2026-09-06): a GET carrying a body must be drained (like
+        # do_POST), else its unread bytes desync the NEXT request on the same keep-alive
+        # connection. Two requests on ONE connection must both parse cleanly.
+        import base64
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        self.addCleanup(conn.close)
+        auth = "Basic " + base64.b64encode(b"operateur:x").decode()
+        payload = json.dumps({"x": 1})
+        conn.request("GET", "/", body=payload,
+                     headers={"Authorization": auth, "Content-Length": str(len(payload))})
+        r1 = conn.getresponse()
+        r1.read()
+        self.assertEqual(r1.status, 200)
+        conn.request("GET", "/", headers={"Authorization": auth})   # same connection
+        r2 = conn.getresponse()
+        r2.read()
+        self.assertEqual(r2.status, 200)   # no desync — the GET body was drained
+
     def test_data_entry_auto_requires_typed_go(self):
         # [11] (Fable re-audit 2026-09-06): safe-auto WRITES with no per-offer validation,
         # so a real sweep needs the server-side typed GO like every other write path — a
