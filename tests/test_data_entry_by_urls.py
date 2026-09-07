@@ -98,6 +98,21 @@ class FakeSearchSession:
         return {"feed_ui": self.feed_ui, "nav_max": 1, "is_login": self.login}
 
 
+class TransientBlankSearchSession(FakeSearchSession):
+    """feed_ui=True but the rows render ``blank_reads`` reads LATE — the transient blank
+    that must be polled through, not read as a real empty result on the first read."""
+
+    def __init__(self, rows_by_field=None, *, blank_reads=1, **kw):
+        super().__init__(rows_by_field, **kw)
+        self._blank = blank_reads
+
+    def page_offer_rows(self):
+        if self._blank > 0:
+            self._blank -= 1
+            return []
+        return super().page_offer_rows()
+
+
 class SlugTests(unittest.TestCase):
     def test_cd_key(self):
         self.assertEqual(M.extract_slug(URL), "neon-beats")
@@ -264,6 +279,16 @@ class ReadSearchPagesTests(unittest.TestCase):
         rows = [_row(str(i), f"G{i}", f"https://m/{i}") for i in range(100)]
         s = FakeSearchSession({"name": rows})
         _got, truncated = M._read_search_pages(s, "aks-merchant-feeds-9", "all", "term", "name")
+        self.assertFalse(truncated)
+
+    def test_transient_blank_feed_ui_up_is_polled_not_false_empty(self):
+        # Romain audit 2026-09-07: feed_ui=True with rows still loading (a transient blank)
+        # must NOT be read as a real empty result on the FIRST read — the confirming
+        # re-read finds the rows. The prior code returned [] immediately → false empty.
+        s = TransientBlankSearchSession(
+            {"name": [_row("1", "Game 1", "https://m/1")]}, blank_reads=1)
+        got, truncated = M._read_search_pages(s, "aks-merchant-feeds-9", "all", "term", "name")
+        self.assertEqual([r["id"] for r in got], ["1"])
         self.assertFalse(truncated)
 
 

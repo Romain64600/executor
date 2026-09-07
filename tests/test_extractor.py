@@ -112,14 +112,19 @@ class FeedUrlTests(unittest.TestCase):
         self.assertIn("&p=3", feed_url(127, page=3))
         self.assertIn("available=pending", feed_url(127, available="pending"))
 
-    def test_empty_or_zero_store_is_refused_only_none_drops_filter(self):
-        # [39] (Fable re-audit 2026-09-06): "&store=" / "&store=0" is the arbitrary-store
-        # trap URL — only None may drop the store filter (the all-stores view).
-        for bad in ("", "0", 0):
-            with self.assertRaises(ValueError):
+    def test_store_id_must_be_none_or_a_strictly_positive_int(self):
+        # [39] (Fable re-audit 2026-09-06 + Romain audit 2026-09-07): only None (all-stores
+        # view) or a strictly-positive DECIMAL integer is allowed — everything else builds
+        # the arbitrary-store trap ("&store=" / "&store=0") or a malformed clause.
+        for bad in ("", "0", 0, "00", -1, "-1", "abc", 3.7, "3.7", " ", "١٢٣"):
+            with self.assertRaises(ValueError, msg=repr(bad)):
                 feed_url(bad)
         self.assertNotIn("&store=", feed_url(None))        # None → all-stores view
-        self.assertIn("&store=127", feed_url("127"))
+        # accepted AND normalized to the canonical int form (no spaces / leading zeros)
+        for good, want in (("127", "&store=127"), (127, "&store=127"),
+                           (" 127 ", "&store=127"), ("007", "&store=7"), (58, "&store=58")):
+            self.assertIn(want, feed_url(good), repr(good))
+            self.assertNotIn("&store= ", feed_url(good))   # never a padded value
 
 
 class ParsePayloadTests(unittest.TestCase):
@@ -210,18 +215,31 @@ class ExtractSweepTests(unittest.TestCase):
         self.assertEqual(session.visits(2), 2)
         self.assertEqual(session.visits(3), 0)
 
-    def test_single_page_feed_corroborates_page_two_once(self):
-        # [20] (Fable re-audit 2026-09-06): a row-full page 1 with nav_max==0 is the
+    def test_single_page_feed_corroborates_page_two_each_sweep(self):
+        # [20] + Romain audit 2026-09-07: a row-full page 1 with nav_max==0 is the
         # single-page marker, but a drifted nav reports the same on a multi-page feed.
-        # The walk now probes p=2 ONCE to corroborate; page 2 is empty (past-the-end)
-        # → single page confirmed, one offer, and the probe is not repeated per sweep.
+        # The walk probes p=2 EVERY sweep it holds (a once-per-run flag cached the sweep-1
+        # verdict and missed a feed that GREW to multi-page after sweep 1). A genuine
+        # single-page feed just confirms empty each time.
         session = FakeSession({1: [_state([_offer(1)], nav_max=0)]})
         _, feed = _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
         self.assertEqual(len(feed.offers), 1)
-        # ONE corroboration probe (not per-sweep): its _settled_page_state reads p=2
-        # then re-navigates once to confirm the blank → 2 visits total, never the
-        # 4 an every-sweep probe would produce on a 2-sweep run.
-        self.assertEqual(session.visits(2), 2)
+        # 2 sweeps (sweep 1 + the stability-confirming sweep 2), each probes p=2 whose
+        # _settled_page_state reads it then re-navigates once to confirm the blank → 4.
+        self.assertEqual(session.visits(2), 4)
+
+    def test_feed_grown_to_multipage_after_sweep1_is_caught_not_truncated(self):
+        # Romain audit 2026-09-07: the residual the once-per-run flag left open. p=2 is
+        # EMPTY on sweep 1 (feed genuinely single-page then), but GAINS rows by sweep 2
+        # while page-1 nav stays drifted at 0. Re-corroborating each sweep catches it and
+        # aborts fail-closed, instead of silently truncating to page 1's rows.
+        session = FakeSession({
+            1: [_state([_offer(1)], nav_max=0)],   # page 1: same drifted nav_max=0 throughout
+            # p=2: empty for sweep-1's probe (2 reads: settled + confirm), then rows
+            2: [_state([], nav_max=0), _state([], nav_max=0), _state([_offer(9)], nav_max=0)],
+        })
+        with self.assertRaises(FeedUnstableError):
+            _extractor(session).extract(run_id="r1", merchant="M", store_id=1)
 
     def test_row_without_id_aborts_not_silently_dropped(self):
         # [21] (Fable re-audit 2026-09-06): a parsed data-offer row with no id is a feed
@@ -539,9 +557,10 @@ class ExtractorPacingTests(unittest.TestCase):
         pacer = Pacer(1, 1, sleeper=sleeps.append)
         session = FakeSession({1: [_state([_offer(1)], nav_max=0)]})
         _extractor(session, pacer=pacer).extract(run_id="r1", merchant="M", store_id=1)
-        # sweep 1 p1 + the [20] p=2 corroboration probe + confirming sweep 2 p1
-        # = 3 fetches → 2 waits (the first fetch is never preceded by a wait)
-        self.assertEqual(len(sleeps), 2)
+        # sweep 1: p1 (no wait — first fetch) + p=2 corroboration probe (wait);
+        # sweep 2: p1 (wait) + p=2 probe again (wait, re-corroborated each sweep,
+        # Romain audit 2026-09-07) → 4 paced fetches → 3 waits.
+        self.assertEqual(len(sleeps), 3)
 
 class ReadOnlyGuardTests(unittest.TestCase):
     def test_page_state_js_is_considered_read_only(self):

@@ -155,14 +155,19 @@ def feed_url(
     they silently default to one arbitrary store — so None must drop the key.
     """
 
-    if store_id is not None and str(store_id).strip() in ("", "0"):
-        # [39] Fable re-audit 2026-09-06: ONLY None may drop the store filter (the
-        # all-stores view). An EMPTY or 0/'0' store_id builds "&store=" / "&store=0",
-        # which AKS silently resolves to ONE arbitrary store — the documented trap URL.
-        # Refuse it loudly rather than scan the wrong store.
-        raise ValueError(
-            f"store_id {store_id!r} is invalid — pass None for the all-stores view "
-            "or a real store id >= 1, never '' or 0")
+    if store_id is not None:
+        # [39] Fable re-audit 2026-09-06 + Romain audit 2026-09-07: ONLY None may drop the
+        # store filter (the all-stores view). Otherwise store_id MUST be a strictly-positive
+        # decimal integer, used in its NORMALIZED form. The first pass only rejected ''/0,
+        # so '-1', 'abc', 3.7 and a whitespace-padded ' 127 ' still built an invalid or
+        # non-normalized "&store=" clause (empty/0 = the arbitrary-store trap; the rest =
+        # a malformed query). Refuse loudly, or scan the wrong / a broken store.
+        s = str(store_id).strip()
+        if not re.fullmatch(r"[0-9]+", s) or int(s) < 1:
+            raise ValueError(
+                f"store_id {store_id!r} is invalid — pass None for the all-stores view "
+                "or a strictly-positive integer store id")
+        store_id = int(s)   # canonical form: no sign, no spaces, no leading zeros
     store_clause = "" if store_id is None else f"&store={store_id}"
     query = f"?available={available}{store_clause}&page={feed_page}"
     if page is not None and int(page) > 1:
@@ -389,7 +394,6 @@ class FeedExtractor:
         max_page_reached = 1
         sweeps_done = 0
         stable = False
-        single_page_corroborated = False   # [20]: p=2 probed once when nav_max==0
         source_url = feed_url(store_id, feed_page=feed_page, available=available)
 
         for sweep in range(1, max_sweeps + 1):
@@ -460,12 +464,13 @@ class FeedExtractor:
                 # last_page stay 1 → the walk stops after one page. That is correct for a
                 # genuine single-page feed, but a drifted/re-rendered pagination nav also
                 # reports nav_max==0 on a MULTI-page feed → silent truncation reported
-                # "coverage complete". Corroborate once by probing p=2: rows there prove
-                # the nav is unreadable → abort (fail-safe, never silently truncate); a
-                # confirmed-empty over-page proves the single page and the walk ends as
-                # before. Probed ONCE per run (the nav-rendering is a static property).
-                if (page == 1 and feed_ui and nav_max == 0 and page_offers
-                        and not single_page_corroborated):
+                # "coverage complete". Corroborate by probing p=2: rows there prove the nav
+                # is unreadable → abort (fail-safe, never silently truncate); a confirmed-
+                # empty over-page proves the single page and the walk ends as before.
+                # Probed EVERY sweep it holds (Romain audit 2026-09-07): a once-per-run flag
+                # cached the sweep-1 verdict, so a feed that GREW to multi-page (with the
+                # same nav drift) after sweep 1 was silently truncated on later sweeps.
+                if page == 1 and feed_ui and nav_max == 0 and page_offers:
                     probe_url = feed_url(store_id, page=2, feed_page=feed_page, available=available)
                     self._pace()
                     probe_state = self._settled_page_state(
@@ -481,7 +486,6 @@ class FeedExtractor:
                             "single-page marker) but page 2 also rendered rows — the "
                             "pagination nav is unreadable; refusing to silently truncate "
                             "a multi-page feed (re-run; the nav markup may have drifted)")
-                    single_page_corroborated = True
 
                 last_page = max(last_page, nav_max, page)
                 max_page_reached = max(max_page_reached, page)

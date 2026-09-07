@@ -3,6 +3,27 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-07 — Revue Romain du pull e13ea6c..3a6278b (findings + résiduels)
+
+Audit du lot Fable par Romain : 2 findings directs corrigés + 2 P2 résiduels antérieurs
+traités (durcissements fail-closed).
+
+- **P2 — validation `store_id` de `feed_url` incomplète** (`extractor.py`). Le fix `[39]`
+  ne refusait que `''`/`0` alors que le contrat promet « entier ≥ 1 » : `-1`, `'abc'`, `3.7`
+  et un ` 127 ` padded produisaient encore des `&store=` invalides/non normalisés.
+  `feed_url` n'accepte plus que `None` (vue tous-stores) ou un **entier décimal
+  strictement positif**, utilisé sous sa **forme normalisée** (`[0-9]+`, `int()` — pas de
+  signe/espace/zéros de tête, rejette les chiffres non-ASCII).
+- **P3 — espace final historique** dans `docs/CHANGELOG.md:206`. Retiré.
+- **Résiduel P2 — corroboration `nav_max=0` mise en cache entre sweeps** (`extractor.py`).
+  La sonde p=2 (fix `[20]`) était faite UNE fois par run ; un feed qui GROSSIT en
+  multi-page (même drift nav) après le sweep 1 était alors silencieusement tronqué. Elle
+  est re-corroborée à CHAQUE sweep → abort fail-closed au lieu d'une couverture mensongère.
+- **Résiduel P2 — vide transitoire de `_read_one_page`** (`scripts/11`). `feed_ui=True +
+  0 ligne` était cru dès la 1ère lecture (faux « 0 résultat » si les lignes rendent en
+  retard). Empty-confirm ajouté (une re-lecture 0-wait puis le backoff de render-race),
+  cohérent avec l'extractor/submitter — jamais un 0 silencieux sur un blip.
+
 ## 2026-09-06 — Gros audit Fable : P3 env/contracts (lot O — dernier)
 
 Derniers findings CONFIRMÉS — clôt les 39.
@@ -203,7 +224,7 @@ couverture corrompt tout l'aval).
 - **[21] lignes sans `id` silencieusement droppées** (les DEUX boucles d'union :
   `extract` sweeps + `extract_pages` slice) → une dérive de schéma data-offer devient
   un run « 0 offre, couverture complète ». Une ligne `data-offer` sans id non-vide lève
-  désormais `FeedSchemaError` (chaque offre réelle porte un id ; une ligne sans id = 
+  désormais `FeedSchemaError` (chaque offre réelle porte un id ; une ligne sans id =
   schéma dérivé ou ligne non-offre). Fail-closed, jamais sous-extraire en silence.
 
 ## 2026-09-06 — Gros audit Fable : P2 matcher (lot B)

@@ -161,9 +161,14 @@ def _read_one_page(session: Any, url: str,
     rows = session.page_offer_rows()
     if rows:
         return rows
-    if session.feed_page_state().get("feed_ui"):
-        return []              # table rendered with 0 matches — a real empty result
-    for wait in render_waits:  # not rendered yet → render race, poll before concluding
+    # 0 rows on the FIRST read is never trusted directly (Romain audit 2026-09-07): a
+    # transient blank shows feed_ui=True with rows still loading — the same empty-confirm
+    # the extractor/submitter do — and a not-yet-rendered table shows feed_ui=False. Both
+    # are resolved by a confirming re-read (0-wait first, then the render-race backoff):
+    # rows → return; feed_ui + 0 rows on the RE-READ → a real empty result; never rendered
+    # after the whole backoff → SearchUnreadable (never a silent 0). The prior code
+    # trusted feed_ui + 0 rows on the first read → a transient blank became a false empty.
+    for wait in (0.0, *render_waits):
         time.sleep(wait)
         if session.is_login_page():
             raise NotLoggedInError("feed bounced to wp-login — not logged in")
@@ -171,8 +176,8 @@ def _read_one_page(session: Any, url: str,
         if rows:
             return rows
         if session.feed_page_state().get("feed_ui"):
-            return []          # rendered, genuinely 0 matches
-    raise SearchUnreadable(f"search page never rendered: {url}")
+            return []          # confirmed rendered with 0 matches — a real empty result
+    raise SearchUnreadable(f"search page never rendered/settled: {url}")
 
 
 def _read_search_pages(session: Any, feed_page: str, available: str, term: str,
