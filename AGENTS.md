@@ -128,3 +128,18 @@ No degraded mode.
 - Human reports go in Markdown.
 - Never store passwords, 2FA codes, or session cookies.
 - Never commit secrets.
+
+## Reviewed decisions — do NOT re-tighten (an audit will re-flag these)
+
+These are deliberate, Romain-reviewed calls. An adversarial audit re-derives them as
+"findings" every time; leave them AS-IS unless Romain explicitly changes his mind.
+
+- **Software region catch-all (`resolve_software_region`, Fable finding [7], DECLINED
+  2026-09-07).** When an AKS software page has a SINGLE region and it is a
+  GLOBAL/PUBLISHER-type bucket, a merchant offer is filed under it even when the offer's
+  own region label looks US/EU-locked. Rationale: software licences are global and the
+  merchant region label is usually noise (R31, 2026-08-11 — locked by
+  `test_region_lone_country_is_not_forced`). Romain reviewed the audit finding that wanted
+  to fail-close this and said "laisse [7] tel quel, ne durcis pas". A GLOBAL offer under a
+  lone COUNTRY region still skips (unchanged); only the lone GLOBAL/PUBLISHER catch-all is
+  kept. Do not add a US/EU-locked refusal here.
