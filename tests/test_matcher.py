@@ -1397,6 +1397,19 @@ class SlugAndResolveTests(unittest.TestCase):
         # A real name ending in "Key" + the FULL "Compare Prices" furniture is still
         # preserved: the platform word before "Key" is required to strip.
         self.assertEqual(extract_aks_name(page("Buy The Key Compare Prices")), "The Key")
+        # Fifth/sixth live grammars (Romain audit 2026-09-07): a trailing site suffix
+        # " - AllKeyShop.com" broke the $-anchored strips (left "Steam Key" → R01 demanded
+        # STEAM/KEY → GTA 5 false-skipped), and "Steam Key at best Price (PC)" was a wholly
+        # unhandled tail (BG3 / Helldivers 2). Both now yield the clean game name.
+        self.assertEqual(
+            extract_aks_name(page("Buy GTA 5 Steam Key Compare Prices - AllKeyShop.com")),
+            "GTA 5")
+        self.assertEqual(
+            extract_aks_name(page("Buy Baldur&#039;s Gate 3 Steam Key at best Price (PC) - Allkeyshop.com")),
+            "Baldur's Gate 3")
+        self.assertEqual(
+            extract_aks_name(page("Buy Helldivers 2 Steam Key at best Price (PC) - Allkeyshop.com")),
+            "Helldivers 2")
 
     def test_extract_aks_name_unescapes_entities(self):
         # Live og:titles, K4G run 2026-07-07 (AKS flattens punctuation, keeps

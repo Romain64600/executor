@@ -1121,35 +1121,37 @@ def extract_aks_name(body: str) -> str | None:
         match = re.search(r"<title>([^<]+)</title>", body, re.IGNORECASE)
     if not match:
         return None
-    # og:title comes in several grammars (all live):
-    #   "Buy <Name> CD Key Compare Prices"  and  "<Name> PC KEY Compare Prices"
-    #   (2026-07-07), and "Buy <Name> Steam Key Prices" (2026-08-25 — a platform
-    #   marker + "Key Prices" with NO "Compare", which left the furniture words in
-    #   the name so R01 demanded "PRICES"/"STEAM" in the merchant title and false-
-    #   skipped e.g. Monster Hunter Wilds / Driffle).
-    # Entities must be unescaped ("Exile&#039;s" tokenized to EXILE/039/S and
-    # falsely failed R01).
+    # og:title comes in several live grammars — always "<Name>" followed by page
+    # furniture that is NEVER part of the game name:
+    #   "Buy <Name> CD Key Compare Prices", "<Name> PC KEY Compare Prices" (2026-07-07),
+    #   "Buy <Name> Steam Key Prices" (2026-08-25 — platform marker + "Key Prices", no
+    #   "Compare"), "Buy <Name> Steam Key Compare Prices - AllKeyShop.com" and
+    #   "Buy <Name> Steam Key at best Price (PC) - Allkeyshop.com" (2026-09-07 — the site
+    #   suffix and the "at best Price (PC)" tail; the old $-anchored strips failed on the
+    #   " - AllKeyShop.com" suffix and left "Steam Key"/"…Price (PC)" in the name, so R01
+    #   demanded STEAM/KEY/PRICE/PC in merchant titles → false-skips, e.g. GTA 5 / BG3 /
+    #   Helldivers 2). Entities must be unescaped ("Exile&#039;s" → EXILE/039/S false-R01).
     name = html.unescape(match.group(1))
-    name = re.split(r"(?i)\bcd key\b", name)[0]
-    # A trailing "<platform> Key[s] [Compare] Prices" is page furniture, never part of
-    # the game name. Strip it BEFORE the "compare prices" split — else that split
-    # strands "<platform> Key" ("…Steam Key Compare Prices" → "…Steam Key"), leaving
-    # STEAM/KEY in the name so R01 demands them in the merchant title and false-skips
-    # (Red Dead Redemption 2 / G2A "Green Gift Key", 2026-08-27; Monster Hunter Wilds
-    # earlier). The platform word is REQUIRED (an explicit list) so a real name ending
-    # in "Key" ("The Key") is never amputated — the whole reason the strip can't use a
-    # generic "<any word> Key".
-    name = re.sub(
-        r"(?i)\s+(?:cd|pc|steam|epic(?:\s+games)?|gog|uplay|ubisoft(?:\s+connect)?|"
-        r"origin|ea(?:\s+app)?|rockstar|bethesda|windows|xbox|playstation|psn|switch|"
-        r"nintendo)\s+keys?\s+(?:compare\s+)?prices\s*$", "", name)
-    name = re.split(r"(?i)\bcompare prices\b", name)[0]
     name = re.sub(r"(?i)^\s*buy\s+", "", name)
-    # Only the exact "PC KEY" platform marker: a bare trailing "Key" can be a
-    # real name ("The Key"), a bare trailing "PC" cannot.
-    name = re.sub(r"(?i)\s+pc\s+key\s*$", "", name)
+    # Strip the trailing " - AllKeyShop.com" site suffix FIRST, so the furniture cut below
+    # is never blocked by it (og:title comes both with and without the suffix).
+    name = re.sub(r"(?i)\s*[-–|]\s*allkeyshop(?:\.com)?\s*$", "", name)
+    # Cut at the FIRST furniture marker — everything after it is furniture. A bare
+    # trailing "Key" is NOT a marker (a real name can end in "Key" — "The Key"/"Skeleton
+    # Key"): every "…Key" marker REQUIRES a "cd"/platform word before it, so the name
+    # keeps its own "Key". "pc" is a platform here so "PC KEY" is furniture.
+    name = re.split(
+        r"(?i)\s+(?:"
+        r"cd\s+keys?"
+        r"|(?:steam|epic(?:\s+games)?|gog|uplay|ubisoft(?:\s+connect)?|origin|ea(?:\s+app)?|"
+        r"rockstar|bethesda|windows|xbox|playstation|psn|switch|nintendo|pc)\s+keys?"
+        r"|at\s+best\s+prices?"
+        r"|compare\s+prices?"
+        r")\b",
+        name, maxsplit=1)[0]
+    # A trailing "(PC)" tag or a bare trailing "PC" left over is furniture, never the name.
+    name = re.sub(r"(?i)\s*\(pc\)\s*$", "", name)
     name = re.sub(r"(?i)\s+pc\s*$", "", name)
-    name = re.split(r"\s[|\-–]\s", name)[0]
     return name.strip() or None
 
 

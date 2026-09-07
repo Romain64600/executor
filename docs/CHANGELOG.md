@@ -3,6 +3,20 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-07 — matcher : `extract_aks_name` — noms AKS pollués par le marketing
+
+En creusant pourquoi GTA 5 / BG3 / Helldivers 2 sortaient à 0 candidat, trouvé que
+`extract_aks_name` laissait du texte marketing dans le nom (3/15 top-popular) : les
+strips ancrés en `$` échouaient quand l'og:title portait le suffixe « - AllKeyShop.com »
+(« GTA 5 **Steam Key** »), et la grammaire « Steam Key **at best Price (PC)** » n'était pas
+gérée (« Baldur's Gate 3 Steam Key at best Price (PC) »). Ces mots parasites (STEAM/KEY/
+PRICE/PC) devenaient des mots R01 requis → des offres réelles false-skippées. Réécrit :
+strip du préfixe « Buy » + du suffixe site D'ABORD, puis coupe au PREMIER marqueur de
+furniture (cd/plateforme + Key, « at best Price », « Compare Prices ») — un « Key » nu
+reste préservé (The Key / Skeleton Key : un marqueur exige toujours cd/plateforme avant
+Key). Live : GTA 5 → « GTA 5 », BG3 → « Baldur's Gate 3 », Helldivers 2 → « Helldivers 2 ».
+Les 11 grammaires existantes inchangées (suite matcher verte, 287).
+
 ## 2026-09-07 — by-urls : accepter le format d'URL AKS `compare-and-buy`
 
 `extract_slug` (scripts/11) ne connaissait que `buy-<slug>-cd-key-compare-prices/` et
