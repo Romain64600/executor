@@ -10,6 +10,11 @@ reporting submissions that never actually landed in the database. The new design
 moves the risky work behind a scripted engine with a hard guardrail: the model
 **builds and supervises**, but never free-hands browser actions.
 
+> **Resuming on a new server, or a fresh session?** Read
+> [`docs/HANDOFF.md`](docs/HANDOFF.md) FIRST — current state, the from-scratch
+> bring-up pointer, the decisions/gotchas that live outside the repo, and the
+> backlog. Then `AGENTS.md` + `CLAUDE.md` (the rules).
+
 > **New to the project?** Start with [`docs/NOOB.md`](docs/NOOB.md) — a
 > beginner-friendly, analogy-driven walkthrough of the whole system (in French).
 
