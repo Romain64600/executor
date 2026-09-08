@@ -169,7 +169,11 @@ executor/
 
 ## Requirements
 
-- **Python 3.10+** — standard library only, no production dependencies.
+- **Python 3.10+** — the core is standard-library only. The sole **optional**
+  dependency is `requests` (`requirements.txt`): when installed it backs the AKS
+  resolve probes with an HTTP keep-alive Session (~1.85× faster matching, ban-safe —
+  same request count); when absent the code falls back to urllib with identical
+  behavior, so the invariant gate stays dependency-free.
 - Production runtime target: a **Debian VPS** whose **CDP proxy is required** for
   every browser-driving stage — a socat bridge exposing the headless Chromium on
   the Docker bridge at `http://172.17.0.1:9223/json/version` (the official

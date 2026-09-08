@@ -300,6 +300,83 @@ class HttpProbeTests(unittest.TestCase):
         self.assertIsNone(probe.status)
 
 
+class _FakeReqResp:
+    """Minimal stand-in for a ``requests.Response`` (keep-alive backend)."""
+
+    def __init__(self, status_code, content=b"", headers=None, reason="OK"):
+        self.status_code = status_code
+        self.content = content
+        self.headers = headers or {}
+        self.reason = reason
+        self.closed = False
+
+    def close(self):
+        self.closed = True
+
+
+class KeepAliveBackendTests(unittest.TestCase):
+    """The optional requests keep-alive backend honors the SAME `_http_open` contract as
+    the urllib fallback: HTTPResponse-like on 2xx, HTTPError on non-2xx, StaffUaRedirect-
+    Refused off-domain (staff), URLError on transport failure (Romain 2026-09-08)."""
+
+    def _open(self, request, *, follow_redirects=True, host_locked=False, side_effect=None,
+              return_value=None):
+        from urllib.request import Request
+        from src.aks_env import _http_open_keepalive
+        sess = mock.Mock()
+        if side_effect is not None:
+            sess.request.side_effect = side_effect
+        else:
+            sess.request.return_value = return_value
+        req = request if isinstance(request, Request) else Request(
+            request, method="GET", headers={"User-Agent": AKS_STAFF_UA})
+        with mock.patch("src.aks_env._SESSION", sess):
+            return _http_open_keepalive(req, 8, follow_redirects, host_locked), sess
+
+    def test_2xx_returns_readable_response(self):
+        resp, _ = self._open("https://www.allkeyshop.com/blog/x",
+                             return_value=_FakeReqResp(200, b'{"a":1}', {"X": "y"}))
+        with resp as r:
+            self.assertEqual(r.status, 200)
+            self.assertEqual(r.read(), b'{"a":1}')
+            self.assertEqual(dict(r.headers.items()), {"X": "y"})
+
+    def test_non_2xx_raises_httperror_with_status_and_body(self):
+        with self.assertRaises(HTTPError) as ctx:
+            self._open("https://www.allkeyshop.com/blog/x",
+                       return_value=_FakeReqResp(404, b"nope", reason="Not Found"))
+        self.assertEqual(ctx.exception.code, 404)
+        self.assertEqual(ctx.exception.read(), b"nope")
+
+    def test_no_follow_surfaces_302_as_httperror(self):
+        with self.assertRaises(HTTPError) as ctx:
+            self._open("https://www.allkeyshop.com/blog/x", follow_redirects=False,
+                       return_value=_FakeReqResp(302, b"", {"Location": "/elsewhere"}))
+        self.assertEqual(ctx.exception.code, 302)
+
+    def test_host_locked_refuses_off_domain_redirect(self):
+        from src.aks_env import StaffUaRedirectRefused
+        with self.assertRaises(StaffUaRedirectRefused) as ctx:
+            self._open("https://www.allkeyshop.com/blog/x", host_locked=True,
+                       return_value=_FakeReqResp(302, b"", {"Location": "https://evil.tld/x"}))
+        self.assertEqual(ctx.exception.code, 302)
+
+    def test_host_locked_follows_same_domain_redirect(self):
+        resps = [_FakeReqResp(302, b"", {"Location": "https://www.allkeyshop.com/blog/y"}),
+                 _FakeReqResp(200, b"ok")]
+        resp, sess = self._open("https://www.allkeyshop.com/blog/x", host_locked=True,
+                                side_effect=resps)
+        with resp as r:
+            self.assertEqual(r.status, 200)
+        self.assertEqual(sess.request.call_count, 2)
+
+    def test_transport_error_becomes_urlerror(self):
+        import requests
+        with self.assertRaises(URLError):
+            self._open("https://www.allkeyshop.com/blog/x",
+                       side_effect=requests.exceptions.ConnectionError("down"))
+
+
 class CurrentEnvironmentTests(unittest.TestCase):
     def _env(self, *, system="Linux", marker=False, aks_target=None):
         environ = {} if aks_target is None else {"AKS_TARGET": aks_target}

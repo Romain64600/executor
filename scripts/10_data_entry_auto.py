@@ -292,7 +292,15 @@ def main() -> int:
     ap.add_argument("--store-id", help="Single-target store id.")
     ap.add_argument("--run-id", default=None, help="Sweep run id (holds recap.json).")
     ap.add_argument("--start-page", type=int, default=1)
-    ap.add_argument("--max-pages", type=int, default=200)
+    ap.add_argument(
+        "--max-pages", type=int, default=30,
+        help="Cap pages processed per merchant (default 30). The sweep runs highest-page-"
+             "first down to page 1, and the submit index is only productive on the ~28-30 "
+             "shallowest pages — deeper pages are old/obscure titles that mostly 404 on "
+             "resolve (slowest matching, ~0 candidate). Capping skips that junk for a big "
+             "wall-clock win at ~0 productive loss; hitting the cap over a longer feed is "
+             "still flagged coverage_incomplete_max_pages (honest, never a silent clean end). "
+             "Raise it for a deliberate deep sweep.")
     ap.add_argument("--available", default="all", choices=["all", "pending"])
     ap.add_argument("--pace", default=None)
     ap.add_argument("--triage", action="store_true",

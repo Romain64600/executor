@@ -1,0 +1,12 @@
+# AKS Controlled Executor — runtime dependencies.
+#
+# The CORE (invariant gate, matcher, extractor, submitter) is deliberately
+# STDLIB-ONLY so it runs anywhere, including the read-only invariant gate.
+#
+# OPTIONAL accelerator:
+#   requests — enables HTTP keep-alive for the resolve probes (src/aks_env.py):
+#              one persistent TLS connection is reused across a page's hundreds
+#              of probes (~134ms → ~32ms per request), with NO change to the
+#              request count or rate. When absent, src/aks_env falls back to the
+#              stdlib urllib path with identical behavior (just no keep-alive).
+requests>=2.28

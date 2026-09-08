@@ -76,7 +76,13 @@ AKS_COMPARE_URL = "https://www.allkeyshop.com/blog/buy-{slug}-{kind}-compare-pri
 # real product pages into "no AKS page" between two matcher runs. Restricted to
 # allkeyshop.com — http_get refuses it for any other host (audit #4, 2026-07-08).
 AKS_PROBE_UA = AKS_STAFF_UA
-AKS_PROBE_DELAY_S = 0.3
+# Per-probe politeness budget for bulk AKS resolves. 0.3 → 0.15 (Romain 2026-09-08): the
+# serial 0.3s sleep DOMINATED match wall-clock (~69% of each 0.434s request; measured RPM
+# ~138). Halving it ~doubles the resolve rate (measured target ~330 RPM with HTTP keep-alive)
+# — still serial, no concurrency, so the request rate rise is modest and bounded (AKS/OVH
+# only ever banned under concurrent-browser load, not probe rate). Watched on a small batch
+# for 429/throttling before adopting; raise back if AKS pushes back.
+AKS_PROBE_DELAY_S = 0.15
 # Politeness budget for the two plain GETs to difmark.com per page-verified
 # offer (product page + its own top-offer API) — no staff UA bypass exists
 # for third-party merchants, same courtesy as AKS_PROBE_DELAY_S.
@@ -488,7 +494,15 @@ def normalize_apostrophes(text: str) -> str:
 def tokenize(name: str) -> list[str]:
     """Uppercase word tokens, apostrophes normalized, punctuation stripped."""
 
-    cleaned = normalize_apostrophes(name).upper()
+    # Strip trademark/service-mark/registered/copyright symbols FIRST — BEFORE the NFKC
+    # normalization inside normalize_apostrophes, which COMPATIBILITY-decomposes some of
+    # them into LETTERS that then glue onto the adjacent word: "Company™" → "COMPANYTM"
+    # (™ → "TM"), "…℠" → "…SM". That broke R01 ("name mismatch, missing AKS words:
+    # ['COMPANY']" on Eneba's "STAR WARS Zero Company™ …", Romain 2026-09-08). Replaced
+    # with a space so a glued symbol still splits its words (®/© have no letter
+    # decomposition; kept for robustness against a future "Halo®Deluxe").
+    cleaned = re.sub(r"[™℠®©℗]", " ", name)
+    cleaned = normalize_apostrophes(cleaned).upper()
     return [t for t in re.findall(r"[A-Z0-9']+", cleaned) if t.strip("'")]
 
 

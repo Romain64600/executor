@@ -112,6 +112,26 @@ class TokenizeTests(unittest.TestCase):
             ["II"],
         )
 
+    def test_trademark_symbol_does_not_glue_into_a_token(self):
+        # Eneba escape (Romain 2026-09-08): "STAR WARS Zero Company™ Steam Key" tokenized to
+        # …COMPANYTM… because NFKC compatibility-decomposes ™ (U+2122) into the LETTERS "TM"
+        # which glue onto the preceding word → R01 "missing AKS words: ['COMPANY']" and the
+        # offer false-skipped. The symbol is stripped BEFORE NFKC so the word stays clean.
+        self.assertEqual(tokenize("Company™"), ["COMPANY"])
+        self.assertEqual(
+            tokenize("STAR WARS Zero Company™ Steam Key (PC) EUROPE"),
+            ["STAR", "WARS", "ZERO", "COMPANY", "STEAM", "KEY", "PC", "EUROPE"],
+        )
+        self.assertEqual(
+            missing_aks_words("STAR WARS Zero Company",
+                              "STAR WARS Zero Company™ Deluxe Edition Steam Key (PC) GLOBAL"),
+            [],
+        )
+        # ℠ (service mark → "SM") is the same failure mode; ® / © have no letter
+        # decomposition but are stripped too (a glued "Halo®Deluxe" still splits).
+        self.assertEqual(tokenize("Widget℠ Pro"), ["WIDGET", "PRO"])
+        self.assertEqual(tokenize("Halo®Deluxe"), ["HALO", "DELUXE"])
+
     def test_green_gift_phrase_is_not_a_product_extra(self):
         # "Green Gift" is a Steam-gift delivery label (ANY merchant — Romain 2026-08-27):
         # GIFT is already noise, and the GREEN forming that phrase must not count as an

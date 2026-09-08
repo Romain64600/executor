@@ -3,6 +3,41 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-08 — perf : keep-alive HTTP + pacing 0,15s + cap pages safe-auto
+
+« Les sweep sont très longs. » Mesure : la résolution (`03_match`) est série, ~138 req/min,
+et le coût par requête = **0,3s pacing (69%) + ~134ms réseau (connexion fraîche/urllib à
+chaque probe)**. Contrainte : AKS/OVH a déjà ban l'IP **sous charge navigateur**, pas sur le
+débit de probes → on vise des gains **sans multiplier le débit** (pas de concurrence). Trois
+leviers (Romain) :
+- **Keep-alive HTTP** (`src/aks_env.py`) : `requests.Session` persistante réutilise UNE
+  connexion TLS sur les centaines de probes d'une page (~134ms → ~30-84ms) — même nombre de
+  requêtes, ban-safe. `requests` est un accélérateur **optionnel** : `_http_open` garde le
+  fallback urllib (contrat identique : HTTPResponse-like sur 2xx, `HTTPError` sur non-2xx,
+  `StaffUaRedirectRefused` off-domain, `URLError` transport) → le cœur reste stdlib-only,
+  la gate invariants tourne sans dépendance. Cookies désactivés sur la Session (statelessness
+  urllib préservée → résolution déterministe). `requirements.txt` créé.
+- **Pacing** `AKS_PROBE_DELAY_S` 0,3 → **0,15s** (`src/matcher.py`) : le vrai throttle. Série
+  maintenue (pas de concurrence).
+- **Cap** `scripts/10 --max-pages` 200 → **30** par défaut : le sweep balaie p_top→p1, et
+  l'index submit n'est productif que sur ~28-30 pages ; les pages profondes sont du software/
+  obscur qui 404 (matching le plus lent, ~0 candidat). Le flag `coverage_incomplete_max_pages`
+  reste (honnête). Override pour un sweep profond délibéré.
+
+Mesuré sur petits lots live : **~255 req/min** (1,85× l'actuel), **0 erreur 429/5xx**. Combiné
+au cap (~55% des pages, les plus lentes, sautées), un marchand à feed profond gagne ~4× en
+wall-clock. Concurrence gardée en réserve (seul levier qui monte le débit → risque ban).
+
+## 2026-09-08 — matcher : symbole ™ collé dans un token (Eneba)
+
+Les offres Eneba « STAR WARS Zero Company™ … » étaient skippées « name mismatch, missing AKS
+words: ['COMPANY'] ». Cause : `normalize_apostrophes` fait un NFKC (voulu, « Empress Ⅱ » →
+« II ») qui **décompose aussi ™ (U+2122) en les LETTRES « TM »** → « Company™ » → « COMPANYTM »
+→ R01 échoue. Corrigé dans `tokenize` : retrait des symboles marque/service/copyright
+(`™ ℠ ® © ℗`) **AVANT** le NFKC, remplacés par une espace (un symbole collé « Halo®Deluxe »
+splitte quand même). Live : les 2 Eneba redeviennent candidates (Deluxe/GLOBAL, Standard/EU) ;
+régression NFKC « Ⅱ » → II préservée.
+
 ## 2026-09-08 — matcher : R25 (skip doublon) RETIRÉ + pre-order = statut, pas produit
 
 Sur Phantom Blade Zero (aperçu by-urls), 4 offres légitimes étaient ignorées à tort.

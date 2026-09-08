@@ -1,13 +1,17 @@
 """Invariant checks for the AKS controlled executor.
 
-This module is intentionally small and dependency-free. It contains pure
-validation helpers plus read-only HTTP probes used by Sprint 1 tooling.
+This module is intentionally small and stdlib-only at its core. It contains pure
+validation helpers plus read-only HTTP probes used by Sprint 1 tooling. The only
+optional dependency is ``requests`` — when installed it backs the probes with a
+keep-alive Session (see ``_http_open``); when absent the module falls back to
+urllib with identical behavior, so the invariant gate still runs dependency-free.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from http.client import HTTPException, HTTPResponse
+import io
 import json
 import os
 import platform
@@ -15,7 +19,7 @@ import socket
 import subprocess
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
 
 OFFICIAL_CDP_ENDPOINT = "http://172.17.0.1:9223/json/version"
@@ -317,19 +321,112 @@ class _StaffUaHostGuardRedirectHandler(HTTPRedirectHandler):
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
-def _http_open(request: Request, timeout: int, follow_redirects: bool = True,
-               host_locked: bool = False):
-    """Single, patchable IO seam for all read-only HTTP in this module.
+# HTTP keep-alive (Romain 2026-09-08). This module's core stays stdlib-only; ``requests``
+# is an OPTIONAL accelerator: when present, a persistent Session reuses ONE TLS connection
+# across a page's hundreds of resolve probes (measured 134ms → ~32ms per request, no change
+# to the request COUNT or rate → ban-safe). When absent, ``_http_open`` falls back to the
+# unchanged urllib path, so the dependency-free invariant gate still runs anywhere.
+try:  # pragma: no cover - trivial import guard
+    import requests as _requests
+    from http.cookiejar import DefaultCookiePolicy
 
-    ``host_locked`` (staff-UA callers) follows only same-domain redirects and refuses
-    an off-allkeyshop.com hop, so the staff UA never leaks past a cross-host 3xx (P2-15).
-    """
+    _SESSION = _requests.Session()
+    # Never STORE cookies — match urllib's per-call statelessness so a Set-Cookie from one
+    # probe cannot change another probe's response (resolution must stay deterministic).
+    _SESSION.cookies.set_policy(DefaultCookiePolicy(allowed_domains=[]))
+except Exception:  # requests missing / broken → stdlib fallback
+    _requests = None
+    _SESSION = None
+
+
+class _KeepAliveResponse:
+    """Adapt a ``requests.Response`` to the ``http.client.HTTPResponse``-ish interface that
+    :func:`_response_to_probe` and :func:`http_head_status` read — ``.read()`` (bytes),
+    ``.status``, ``.headers`` — plus the context-manager protocol the callers use."""
+
+    def __init__(self, resp: "Any") -> None:
+        self._resp = resp
+        self.status = resp.status_code
+        self.headers = resp.headers
+
+    def read(self) -> bytes:
+        return self._resp.content
+
+    def __enter__(self) -> "_KeepAliveResponse":
+        return self
+
+    def __exit__(self, *exc: Any) -> bool:
+        self._resp.close()
+        return False
+
+
+def _http_open_keepalive(request: Request, timeout: int, follow_redirects: bool,
+                         host_locked: bool):
+    """Keep-alive backend for :func:`_http_open` — SAME contract as the urllib path:
+    returns an HTTPResponse-like object on 2xx, raises ``HTTPError`` for any non-2xx (incl.
+    a no-redirect 3xx), :class:`StaffUaRedirectRefused` for an off-domain staff hop, and
+    ``URLError`` for a transport failure — so ``http_get``/``http_head_status`` are unchanged."""
+
+    url = request.full_url
+    method = request.get_method()
+    headers = dict(request.header_items())
+    try:
+        if host_locked:
+            current = url
+            for _ in range(10):  # bounded redirect chain
+                resp = _SESSION.request(method, current, headers=headers,
+                                        allow_redirects=False, timeout=timeout)
+                location = resp.headers.get("Location")
+                if resp.status_code in (301, 302, 303, 307, 308) and location:
+                    code, hdrs = resp.status_code, dict(resp.headers)
+                    resp.close()
+                    nxt = urljoin(current, location)
+                    if not _allkeyshop_host(nxt):
+                        raise StaffUaRedirectRefused(
+                            url, code,
+                            f"AKS/Staff redirect off allkeyshop.com refused: {nxt}",
+                            hdrs, io.BytesIO(b""))
+                    current = nxt
+                    continue
+                break
+            else:
+                raise URLError("too many redirects (host-locked)")
+        else:
+            resp = _SESSION.request(method, url, headers=headers,
+                                    allow_redirects=follow_redirects, timeout=timeout)
+    except _requests.exceptions.RequestException as exc:
+        raise URLError(str(exc)) from exc
+    if not 200 <= resp.status_code < 300:
+        code, reason, hdrs, body = (resp.status_code, resp.reason or "",
+                                    dict(resp.headers), resp.content)
+        resp.close()
+        raise HTTPError(url, code, reason, hdrs, io.BytesIO(body))
+    return _KeepAliveResponse(resp)
+
+
+def _http_open_urllib(request: Request, timeout: int, follow_redirects: bool,
+                      host_locked: bool):
+    """Stdlib fallback (unchanged behavior): opens with the redirect handler the mode needs."""
 
     if not follow_redirects:
         return build_opener(_NoRedirectHandler()).open(request, timeout=timeout)
     if host_locked:
         return build_opener(_StaffUaHostGuardRedirectHandler()).open(request, timeout=timeout)
     return urlopen(request, timeout=timeout)
+
+
+def _http_open(request: Request, timeout: int, follow_redirects: bool = True,
+               host_locked: bool = False):
+    """Single, patchable IO seam for all read-only HTTP in this module.
+
+    Uses the keep-alive backend when ``requests`` is available, else the stdlib fallback —
+    both honor the same contract. ``host_locked`` (staff-UA callers) follows only
+    same-domain redirects and refuses an off-allkeyshop.com hop, so the staff UA never
+    leaks past a cross-host 3xx (P2-15).
+    """
+
+    backend = _http_open_keepalive if _SESSION is not None else _http_open_urllib
+    return backend(request, timeout, follow_redirects, host_locked)
 
 
 def _allkeyshop_host(url: str) -> bool:
