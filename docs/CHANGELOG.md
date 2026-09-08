@@ -3,6 +3,24 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-08 — matcher : R25 (skip doublon) RETIRÉ + pre-order = statut, pas produit
+
+Sur Phantom Blade Zero (aperçu by-urls), 4 offres légitimes étaient ignorées à tort.
+**(1) K4G "Digital Deluxe Edition PRE-ORDER"** → skip R16 "extra words: ['PRE','ORDER']" :
+`PRE-ORDER` est un **statut de sortie**, pas un mot produit (le même jeu/édition en
+pré-commande = même produit). `extra_significant_words` retire désormais la collocation
+`PRE ORDER` et le token `PREORDER` — jamais quand `BONUS` suit (`PREORDER BONUS` reste une
+édition-contenu distincte, skip amont `precheck_skip`). Phrase-level, pas du noise brut :
+un vrai "Order"/"Pre" ailleurs reste significatif. Résultat : K4G → Deluxe(7)/GLOBAL(2) et
+Deluxe(7)/EU(9), toutes deux nouvelles (K4G n'y était pas). **(2) Kinguin "Deluxe"/"Standard"**
+→ skip **R25** "already lists a price". **R25 est RETIRÉ (Romain)** : une offre en **pending
+est à ajouter, point** — on ne teste plus "déjà sur AKS". L'ancien garde (2026-07-15, batch
+matché périmé) matchait par `merchantName` et sur-bloquait sur un prix d'un autre canal /
+auto-sync AKS (id marchand page 47 ≠ store feed 58) ; la péremption est désormais couverte
+par le pending feed stable + prove-gone au submit. `prices` reste extrait (routage/diag),
+plus une source de skip. Deux sites retirés (chemin principal + software), doc §6 + AGENTS.md
+"Reviewed decisions" (ne pas ré-ajouter). Live : les 4 offres → candidates. Suite verte.
+
 ## 2026-09-08 — matcher : « Key » nu de furniture retiré par le slug de l'URL
 
 En confirmant l'aperçu top-15, plusieurs offres Minecraft légitimes (« Minecraft Java &

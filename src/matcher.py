@@ -544,6 +544,23 @@ def extra_significant_words(aks_name: str, merchant_title: str) -> list[str]:
         # is no longer universal NOISE).
         if token == "PLAY" and i > 0 and toks[i - 1] == "EA":
             continue
+        # "Pre-Order" / "Preorder" is a release-TIMING status, not a product word: the
+        # same game/edition sold as a pre-order is the SAME product (Romain 2026-09-08,
+        # Phantom Blade Zero — K4G "Digital Deluxe Edition PRE-ORDER" false-skipped
+        # "extra words: ['PRE','ORDER']" while it is just the Deluxe edition pre-ordered,
+        # and K4G had no Deluxe/GLOBAL nor Deluxe/EU price on the page yet). Strip the
+        # "PRE ORDER" collocation and the "PREORDER" token — but NEVER when "BONUS"
+        # follows: "PREORDER BONUS" is a distinct CONTENT edition, hard-skipped upstream
+        # (precheck_skip, matcher.py:652). Phrase-level, not bare-token NOISE, so a real
+        # "Pre"/"Order" name word elsewhere ("Order of War") stays significant.
+        if token == "PREORDER" and not (i + 1 < len(toks) and toks[i + 1] == "BONUS"):
+            continue
+        if token == "PRE" and i + 1 < len(toks) and toks[i + 1] == "ORDER" \
+                and not (i + 2 < len(toks) and toks[i + 2] == "BONUS"):
+            continue
+        if token == "ORDER" and i > 0 and toks[i - 1] == "PRE" \
+                and not (i + 1 < len(toks) and toks[i + 1] == "BONUS"):
+            continue
         extras.append(token)
     return extras
 
@@ -2000,16 +2017,8 @@ def match_offer(
             )
         edition_id, edition_label = sw_edition
         region_id, region_label = sw_region
-        if any(
-            str(p.get("merchantName", "")).strip().upper() == offer.merchant.strip().upper()
-            and str(p.get("edition", "")) == edition_id
-            and str(p.get("region", "")) == region_id
-            for p in resolution.prices
-        ):
-            return SkippedOffer(
-                offer,
-                f"{offer.merchant} already lists a price for this region/edition on AKS (R25)",
-            )
+        # R25 duplicate guard RETIRED here too (Romain 2026-09-08) — see the main-path
+        # note below; a PENDING offer is to be added regardless of the page's price table.
         return Candidate(
             offer=offer,
             aks_product_id=resolution.product_id,
@@ -2229,29 +2238,19 @@ def match_offer(
                     f"AKS page — guessed edition unverified (audit P1-1)",
                 )
 
-    # R25 (2026-07-15, Romain — Kinguin/Darkwood escape): the AKS page's own
-    # price-comparison table already lists every merchant currently selling
-    # this exact region/edition. A candidate's own matcher run only proves
-    # the offer is still live on the MERCHANT's feed; it says nothing about
-    # whether AKS already has a price for it — from an earlier run, a human
-    # operator working the same feed in parallel, or any other source. Check
-    # the page's own current listing (already in hand, zero extra requests)
-    # before ever proposing a duplicate as a "new" candidate.
-    duplicate = next(
-        (
-            p for p in resolution.prices
-            if str(p.get("merchantName", "")).strip().upper() == offer.merchant.strip().upper()
-            and str(p.get("edition", "")) == edition_id
-            and str(p.get("region", "")) == region_id
-        ),
-        None,
-    )
-    if duplicate is not None:
-        return SkippedOffer(
-            offer,
-            f"{offer.merchant} already lists a price for this region/edition on AKS (R25)",
-        )
-
+    # R25 duplicate guard RETIRED (Romain 2026-09-08). It was added 2026-07-15
+    # (Kinguin/Darkwood escape) to skip a candidate whose merchant already had a price
+    # on the AKS page for this exact region/edition — the concern was a STALE matched
+    # batch re-submitted after the offer had since been entered. Romain's ruling: an
+    # offer that is still in the PENDING feed is TO BE ADDED, period — we do not second-
+    # guess it against the page's price table. Two reasons the old guard was wrong: (1)
+    # it matched by merchantName, but the page price can come from another channel /
+    # AKS auto-sync (the page merchant id ≠ the operator's feed store_id — e.g. Phantom
+    # Blade Zero: page "Kinguin" id 47 vs feed store 58), so it false-skipped genuinely
+    # new offers; (2) staleness is now handled by the STABLE pending feed (offers are
+    # kept, ids no longer rotate) + submit-time prove-gone, not this page check. Do NOT
+    # re-add — see AGENTS.md "Reviewed decisions". ``prices`` is still extracted (price
+    # routing / diagnostics), just no longer a skip source.
     return Candidate(
         offer=offer,
         aks_product_id=resolution.product_id,

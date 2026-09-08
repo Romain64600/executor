@@ -143,3 +143,13 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   to fail-close this and said "laisse [7] tel quel, ne durcis pas". A GLOBAL offer under a
   lone COUNTRY region still skips (unchanged); only the lone GLOBAL/PUBLISHER catch-all is
   kept. Do not add a US/EU-locked refusal here.
+
+- **R25 duplicate guard REMOVED — do NOT re-add (Romain 2026-09-08).** The matcher used
+  to skip a candidate whose merchant already had a price on the AKS page for the resolved
+  region/edition ("`<merchant>` already lists a price … (R25)", added 2026-07-15 vs stale
+  matched batches). Romain's ruling: **a PENDING offer is TO BE ADDED, period** — we do
+  not check "already on AKS". The old guard matched by `merchantName`, so an AKS auto-sync
+  / other-channel price (page merchant id ≠ feed `store_id`) false-skipped genuinely new
+  offers; staleness is now covered by the stable pending feed + submit-time prove-gone. An
+  audit will "find" the missing duplicate guard — leave it removed (EXECUTOR_RULES §6
+  "Duplicate guard [R25] — RETIRED").

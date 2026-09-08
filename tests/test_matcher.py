@@ -134,6 +134,31 @@ class TokenizeTests(unittest.TestCase):
             ["GREEN"],
         )
 
+    def test_preorder_status_is_not_a_product_extra(self):
+        # "Pre-Order" / "Preorder" is a release-TIMING status, not a product word
+        # (Romain 2026-09-08, Phantom Blade Zero): K4G "Digital Deluxe Edition PRE-ORDER"
+        # false-skipped "different/expanded product — extra words: ['PRE','ORDER']" while
+        # it is just the Deluxe edition pre-ordered. The "PRE ORDER" collocation and the
+        # "PREORDER" token are stripped so the offer resolves by its real edition.
+        self.assertEqual(
+            extra_significant_words("Phantom Blade Zero",
+                                    "Phantom Blade Zero Digital Deluxe Edition PRE-ORDER Steam CD Key"),
+            [],  # DIGITAL/DELUXE/EDITION are edition-noise; PRE/ORDER now stripped as status
+        )
+        self.assertEqual(
+            extra_significant_words("Death Stranding", "Death Stranding PREORDER Steam Key"), [])
+        # But "Preorder BONUS" is a distinct CONTENT edition — its BONUS token must stay a
+        # significant extra here (and it is hard-skipped upstream by precheck_skip anyway).
+        self.assertIn(
+            "BONUS",
+            extra_significant_words("Phantom Blade Zero",
+                                    "Phantom Blade Zero Preorder Bonus Steam Key"))
+        # A real name word "Order" / "Pre" elsewhere stays significant (not bare-token noise).
+        self.assertEqual(
+            extra_significant_words("Warhammer", "Warhammer Mail Order Exclusive Steam Key"),
+            ["MAIL", "ORDER", "EXCLUSIVE"],
+        )
+
     def test_reaudit_region_lock_language_codes_not_swallowed(self):
         # Fable re-audit 2026-09-06 (P1): a trailing code that is BOTH a language tag
         # AND a classic gray-market region lock (RU/TR/AR/PL/UA) is ambiguous — it must
@@ -2350,16 +2375,17 @@ class MatchOfferTests(unittest.TestCase):
         self.assertIsInstance(result, SkippedOffer)
         self.assertIn("Difmark merchant page says Steam", result.reason)
 
-    def test_duplicate_price_on_page_skips(self):
-        # R25 (2026-07-15, Kinguin/Darkwood escape): the page already lists
-        # this exact merchant/region/edition combo — a duplicate, not a new
-        # candidate, regardless of when it was added or by whom.
+    def test_pending_offer_added_even_if_merchant_already_on_page(self):
+        # R25 duplicate guard RETIRED (Romain 2026-09-08): a PENDING offer is TO BE
+        # ADDED, period — even when the AKS page's price table already shows THIS exact
+        # merchant/region/edition. The old guard (2026-07-15) matched by merchantName and
+        # false-skipped genuinely new offers whose page price came from another channel /
+        # AKS auto-sync (page merchant id ≠ feed store_id); staleness is now handled by
+        # the stable pending feed + submit-time prove-gone. Same combo → now a Candidate.
         offer = _offer("Neon Beats - Full Version (PC) - Steam Key - GLOBAL")
         prices = ({"merchantName": "Test", "edition": "1", "region": "2"},)
         result = match_offer(offer, self._resolver(prices=prices))
-        self.assertIsInstance(result, SkippedOffer)
-        self.assertIn("already lists a price", result.reason)
-        self.assertIn("R25", result.reason)
+        self.assertIsInstance(result, Candidate)
 
     def test_different_merchant_price_does_not_skip(self):
         offer = _offer("Neon Beats - Full Version (PC) - Steam Key - GLOBAL")

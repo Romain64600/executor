@@ -576,19 +576,21 @@ token-less skip).
 SKIPPED with a distinct reason — never fall back to the offer title as the AKS
 name** (that turns the §4.1 identity check into a tautology; 2026-07-07 a
 Microsoft Store Key offer surfaced as a "Steam US" candidate this way) `[R15]`.
-**Duplicate guard `[R25]` (2026-07-15, Kinguin/Darkwood escape):** the same
-resolve pass also extracts the page's own `"prices":[…]` current-offers list
-— each entry carries `merchantName`, `edition`, `region`. A candidate whose
-merchant already has an entry matching the resolved region **and** edition is
-SKIPPED ("`<merchant>` already lists a price for this region/edition on AKS
-(R25)") — the offer is still live on the merchant's own feed (that's what got
-it this far), but AKS already has this exact price, from an earlier run, a
-human operator working the same feed in parallel, or any other source. This
-was caught live: candidate Darkwood (GOG GLOBAL(6), Standard(1)) had a
-Kinguin price at that exact region/edition already on the page when Romain
-flagged that a prior day's matched batch could be stale by submit time.
-Zero extra requests — the price list is already in hand at resolve time,
-same pattern as the editions/platforms checks below.
+**Duplicate guard `[R25]` — RETIRED (Romain 2026-09-08).** It was added
+2026-07-15 (Kinguin/Darkwood escape): the resolve pass extracts the page's own
+`"prices":[…]` list and a candidate whose merchant already matched the resolved
+region **and** edition was SKIPPED, to stop a STALE matched batch being
+re-submitted after the offer had since been entered. **Ruling reversed:** an
+offer that is still in the **pending feed is TO BE ADDED, period** — the matcher
+no longer second-guesses it against the page's price table. Two reasons the old
+guard was wrong: (1) it matched by `merchantName`, but the page price can come
+from another channel / an AKS auto-sync — the page merchant id ≠ the operator's
+feed `store_id` (Phantom Blade Zero 2026-09-08: page `Kinguin` id 47 vs feed
+store 58) — so it **false-skipped genuinely new offers**; (2) staleness is now
+handled by the **stable pending feed** (offers are kept, ids no longer rotate) +
+**submit-time prove-gone**, not this page check. `prices` is still extracted
+(price routing / diagnostics) but is no longer a skip source. Do **not** re-add
+the guard — see AGENTS.md "Reviewed decisions".
 
 The extracted editions map doubles as a product-nature check: DLC bucket
 present → the product is a DLC → edition DLC(16) per §4.5 `[R18]`. Systematic
@@ -667,7 +669,8 @@ list no `official_platforms`):
    page region; anything ambiguous → **skip**. The page region **id** is used
    (`GLOBAL` = 532 "Microsoft Software", `PUBLISHER GLOBAL` = 1), never the generic
    per-platform id.
-5. R25 duplicate check + build `Candidate(platform="SOFTWARE", …)`.
+5. Build `Candidate(platform="SOFTWARE", …)` (the R25 duplicate check that used
+   to sit here is RETIRED — Romain 2026-09-08, see the Duplicate guard note above).
 
 `extract_regions` (`AksResolution.regions`) exposes the page region dropdown. The
 list-**sort** console is unaffected — it still groups software under the Softwares
