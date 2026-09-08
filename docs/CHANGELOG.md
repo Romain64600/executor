@@ -3,6 +3,21 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-08 — matcher : « Key » nu de furniture retiré par le slug de l'URL
+
+En confirmant l'aperçu top-15, plusieurs offres Minecraft légitimes (« Minecraft Java &
+Bedrock Edition (PC) GLOBAL », « Minecraft Java Edition United States ») étaient
+false-skippées « name mismatch, missing AKS words: ['KEY'] ». Cause : l'og:title de la
+page 216 donne « Minecraft **Key** » et `extract_aks_name` préserve délibérément un « Key »
+final (un vrai nom peut finir par Key — The Key / Skeleton Key), donc R01 exigeait « KEY »
+dans le titre de l'offre. Le titre seul ne distingue pas furniture d'identité — **le slug
+de l'URL, si** : `minecraft` ne porte pas « key » → le « Key » est de la furniture.
+Ajouté `_strip_furniture_key(name, slug)`, appelé dans `_resolution_from_body` (choke point
+slug+body, couvre pinned ET slug-guess) : retire un « Key »/« Keys » final si le slug ne le
+porte pas ; sinon (`the-key`, `skeleton-key`) intact ; jamais réduit à vide ; slug vide →
+conservateur. Live page 216 : nom résolu « Minecraft », les 3 offres deviennent candidates
+(éd. 2063 / java, région 1), Terraria reste skippé (missing MINECRAFT). Romain 2026-09-08.
+
 ## 2026-09-08 — matcher : mot plateforme dans un nom d'édition = bruit de résidu (R39)
 
 En creusant Minecraft (2 pages AKS), une offre « Minecraft Windows 10 Edition » était

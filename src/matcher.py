@@ -1155,6 +1155,30 @@ def extract_aks_name(body: str) -> str | None:
     return name.strip() or None
 
 
+def _strip_furniture_key(name: str, slug: str) -> str:
+    """A bare trailing "Key"/"Keys" in the AKS name is DELIVERY furniture, not identity,
+    UNLESS the URL slug carries it too — the slug is the canonical product identity.
+
+    ``extract_aks_name`` deliberately keeps a bare trailing "Key" because a real name can
+    end in one ("The Key", "Skeleton Key") and the og:title alone can't tell furniture
+    from identity. The slug can: "Minecraft Key" comes from slug ``minecraft`` (no "key")
+    → the "Key" is furniture → "Minecraft"; "The Key" / "Skeleton Key" come from slug
+    ``the-key`` / ``skeleton-key`` (carry "key") → the "Key" stays.
+
+    Romain 2026-09-08: the bare "Key" made R01 demand KEY in the merchant title, so
+    legitimate Minecraft Java/Bedrock/US offers (no "Key" in their name) were false-skipped
+    as "missing AKS words: ['KEY']". Slug-gated so "The Key"/"Skeleton Key" are untouched."""
+
+    if not name or not slug:
+        return name
+    slug_tokens = {t for t in re.split(r"[^a-z0-9]+", slug.lower()) if t}
+    if "key" in slug_tokens or "keys" in slug_tokens:
+        return name
+    stripped = re.sub(r"(?i)\s+keys?\s*$", "", name).strip()
+    # Only strip when a real name word survives — never reduce the name to empty.
+    return stripped if stripped else name
+
+
 def extract_editions(body: str) -> dict[str, Any]:
     match = re.search(r'"editions"\s*:\s*(\{(?:[^{}]|\{[^{}]*\})*\})', body)
     if not match:
@@ -1278,6 +1302,7 @@ def _resolution_from_body(slug: str, url: str, body: str) -> AksResolution | Non
     aks_name = extract_aks_name(body)
     if not aks_name:
         return None
+    aks_name = _strip_furniture_key(aks_name, slug)
     return AksResolution(
         slug=slug,
         url=url,

@@ -7,6 +7,7 @@ from src.contracts import NormalizedFeed, NormalizedOffer
 from src.merchant_config import MerchantOfferSignals
 from src.matcher import (
     _SKIN_NOUN_DETERMINERS,
+    _strip_furniture_key,
     AksNameUnreadable,
     AksProbeUnreliable,
     AksResolution,
@@ -1425,6 +1426,39 @@ class SlugAndResolveTests(unittest.TestCase):
             'content="Buy Demeo x Dungeons &amp; Dragons Battlemarked CD Key Compare Prices">'
         )
         self.assertEqual(extract_aks_name(body), "Demeo x Dungeons & Dragons Battlemarked")
+
+    def test_strip_furniture_key_slug_gated(self):
+        # Minecraft page 216 og:title yields the bare "Minecraft Key" — extract_aks_name
+        # keeps a bare trailing "Key" (can't tell furniture from identity from the title
+        # alone). The URL slug can: `minecraft` carries no "key" → the "Key" is delivery
+        # furniture. Without this, R01 demanded "KEY" in merchant titles and false-skipped
+        # Minecraft Java/Bedrock/US offers as "missing AKS words: ['KEY']" (Romain 2026-09-08).
+        self.assertEqual(_strip_furniture_key("Minecraft Key", "minecraft"), "Minecraft")
+        self.assertEqual(_strip_furniture_key("Minecraft Keys", "minecraft"), "Minecraft")
+        # A name whose "Key" IS identity keeps it — the slug carries "key".
+        self.assertEqual(_strip_furniture_key("The Key", "the-key"), "The Key")
+        self.assertEqual(_strip_furniture_key("Skeleton Key", "skeleton-key"), "Skeleton Key")
+        # No trailing "Key" → untouched; empty slug → conservative keep; never reduce to empty.
+        self.assertEqual(_strip_furniture_key("GTA 5", "grand-theft-auto-v"), "GTA 5")
+        self.assertEqual(_strip_furniture_key("Minecraft Key", ""), "Minecraft Key")
+        self.assertEqual(_strip_furniture_key("Key", "key"), "Key")
+
+    def test_resolution_strips_furniture_key_by_slug(self):
+        # End-to-end: _resolution_from_body applies the slug-gated strip so the whole
+        # matcher (R01, search, display) sees "Minecraft", not "Minecraft Key".
+        from src.matcher import _resolution_from_body
+        body = (
+            '<meta property="og:title" content="Buy Minecraft Key Compare Prices">'
+            '<div data-product-id="216"></div>'
+            '"editions":{"1":{"name":"Standard"}},'
+            '"regions":{"1":{"filter_name":"GLOBAL"}}'
+        )
+        res = _resolution_from_body("minecraft", "https://x/minecraft/", body)
+        self.assertEqual(res.aks_name, "Minecraft")
+        # A genuine "X Key" game (slug carries "key") is preserved end-to-end.
+        body2 = body.replace("Buy Minecraft Key", "Buy The Key")
+        res2 = _resolution_from_body("the-key", "https://x/the-key/", body2)
+        self.assertEqual(res2.aks_name, "The Key")
 
     def test_resolve_returns_first_real_page(self):
         def fake_http(url, timeout=8, user_agent=None):
