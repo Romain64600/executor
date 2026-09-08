@@ -108,7 +108,64 @@ Ces décisions sont dans `AGENTS.md` § « Reviewed decisions ». Rappel :
 - **`--max-pages` du sweep n'est PAS passé à `05_submit`** (il utilise `--page-hint` + son
   propre auto-défaut plein-feed) → le prove-gone couvre tout le feed même avec le cap.
 
-## 7. Règles de travail (rappel)
+## 7. Commandes fréquentes
+
+Toujours depuis `/home/debian/executor`. Les `--help` de chaque script font foi ; le
+`manual_launch/run_executor.sh` enveloppe le flow par-marchand (prepare/dry-run/submit).
+
+**Gate & santé (read-only, à faire souvent) :**
+```sh
+python3 scripts/01_check_invariants.py          # DOIT être ok:true ET authoritative:true (VPS) avant tout write
+python3 -m unittest discover -s tests           # suite complète (~6 min sur 4 cœurs) ; -q pour le résumé
+curl -s http://127.0.0.1:9222/json/version      # Chrome hôte (UA Chrome/149)
+curl -s http://172.17.0.1:9223/json/version     # pont CDP officiel (celui qu'utilise le code)
+cat state/browser.lock                           # qui tient l'onglet (label ; flock réel = kernel)
+```
+
+**Services (systemd) :**
+```sh
+systemctl status aks-chromium hermes-cdp-proxy aks-admin
+sudo systemctl restart aks-chromium              # navigateur planté (récup : BROWSER_RUNBOOK §2.1)
+# ⚠️ NE JAMAIS restart aks-admin pendant un submit en cours (tue l'enfant 05).
+```
+
+**Pipeline par-marchand (manuel) :** extract → match → (validation) → submit.
+```sh
+python3 scripts/02_extract_feed.py --merchant Driffle --store-id 127         # → runs/<id>/offers.json
+python3 scripts/03_match.py runs/<id>/offers.json                            # → candidates.json, report.txt
+python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127            # DRY-RUN (défaut)
+python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127 --submit   # WRITE (safe: lot validé complet) — sur GO
+python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127 --submit --mode learning   # canary de 1 (WRITE)
+```
+
+**Safe-auto sweep (multi-marchands, par page, highest-first) :**
+```sh
+python3 scripts/10_data_entry_auto.py --targets "Kinguin:58,Eneba:70" --run-id <id>   # défaut --max-pages 30
+python3 scripts/10_data_entry_auto.py --targets "Kinguin:58" --max-pages 30 --triage  # + plan Move-to-List des skips
+# Recap live : runs/<run-id>/recap.json (par page, incrémental).
+```
+
+**Saisie par liste d'URLs AKS (by-urls, onglet /games) :**
+```sh
+python3 scripts/11_data_entry_by_urls.py <fichier_urls | urls...>            # APERÇU dry-run (résout + cherche le feed + plan)
+# Le submit by-urls (12) part de l'aperçu, sur GO, via la console (« Saisir »).
+```
+
+**Move / tri de listes :**
+```sh
+python3 scripts/06_move.py runs/<id> --store-id 38                           # dry-run (plan only)
+python3 scripts/06_move.py runs/<id> --store-id 38 --execute --mode safe     # plan confirmé complet (WRITE) — sur GO
+```
+
+**Diagnostic d'un run en cours (read-only, ne pas toucher au browser) :**
+```sh
+pgrep -af "10_data_entry_auto|05_submit|03_match"    # qu'est-ce qui tourne
+python3 -m json.tool runs/<run-id>/recap.json        # état / prove-gone par offre (created + "gone from feed")
+```
+
+**Git (à chaque changement) :** `git add -A && git commit && git push` (maj `/docs` + `README` d'abord).
+
+## 8. Règles de travail (rappel)
 
 - **Fail-closed** : dans le doute, STOP + rapport d'erreur. Pas de fallback browser/VPN/
   Playwright/Browserbase. Endpoint CDP officiel uniquement (`172.17.0.1:9223`).
