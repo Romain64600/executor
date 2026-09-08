@@ -394,6 +394,18 @@ class KeepAliveBackendTests(unittest.TestCase):
         with self.assertRaises(URLError):
             self._open("https://www.allkeyshop.com/blog/x", side_effect=RuntimeError("boom"))
 
+    def test_too_many_redirects_fails_closed(self):
+        # re-verify 2026-09-08: the Session caps at max_redirects=10 (like urllib), so a
+        # >10-hop chain raises TooManyRedirects → URLError → ok=False, never a spurious 200.
+        import requests
+        with self.assertRaises(URLError):
+            self._open("https://www.allkeyshop.com/blog/x",
+                       side_effect=requests.exceptions.TooManyRedirects("loop"))
+
+    def test_session_matches_urllib_redirect_ceiling(self):
+        import src.aks_env as env
+        self.assertEqual(env._SESSION.max_redirects, 10)
+
 
 class CurrentEnvironmentTests(unittest.TestCase):
     def _env(self, *, system="Linux", marker=False, aks_target=None):

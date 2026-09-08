@@ -22,6 +22,13 @@ symboles NFKC→lettres déplacé de `tokenize` vers **`normalize_apostrophes`**
 math ni aux chiffres romains ; (4) l'except keepalive attrape désormais toute exception
 non-`RequestException` (requests cassé au runtime) → `URLError`, préservant « ne lève jamais ».
 
+Une **re-vérif adversariale** du seam corrigé (4 chasseurs, commit 54f1f88) a confirmé la
+parité par mode (gate no-redirect + host-lock = urllib exactement, strip sans sur-strip). Seul
+reste un écart **pré-existant et pathologique** : `requests` suit jusqu'à 30 redirects par
+défaut vs 10 pour urllib — divergence uniquement sur une chaîne de 11-30 hops (jamais vue sur
+AKS, hors gate). Fermé par `_SESSION.max_redirects = 10` (parité fail-closed exacte) + tests
+(TooManyRedirects → URLError, ceiling = 10).
+
 ## 2026-09-08 — perf : keep-alive HTTP + pacing 0,15s + cap pages safe-auto
 
 « Les sweep sont très longs. » Mesure : la résolution (`03_match`) est série, ~138 req/min,

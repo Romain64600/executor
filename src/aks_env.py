@@ -334,6 +334,12 @@ try:  # pragma: no cover - trivial import guard
     # Never STORE cookies — match urllib's per-call statelessness so a Set-Cookie from one
     # probe cannot change another probe's response (resolution must stay deterministic).
     _SESSION.cookies.set_policy(DefaultCookiePolicy(allowed_domains=[]))
+    # Match urllib's redirect ceiling (max_redirections=10) instead of requests' default 30
+    # (re-verify 2026-09-08): otherwise the two interchangeable _http_open backends diverge on
+    # an 11-30 hop chain — requests would follow it to a 200 (ok=True) where urllib caps at 10
+    # and raises HTTPError(3xx) (ok=False for 303/307/308). Pathological on AKS, but capping to
+    # 10 keeps the backends provably fail-closed-equivalent.
+    _SESSION.max_redirects = 10
 except Exception:  # requests missing / broken → stdlib fallback
     _requests = None
     _SESSION = None
