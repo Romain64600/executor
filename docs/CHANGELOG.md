@@ -3,6 +3,18 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-08 — matcher : mot plateforme dans un nom d'édition = bruit de résidu (R39)
+
+En creusant Minecraft (2 pages AKS), une offre « Minecraft Windows 10 Edition » était
+skippée « produit étendu » sur la page 216 alors que l'édition « Windows 10 Edition » (140)
+existe. Cause : `extra_significant_words` retire le mot PLATEFORME « Windows » de l'offre
+(extras → `['10']`) mais l'édition garde `{WINDOWS,10,EDITION}` → le résidu du garde-fou
+R39 (`_EDITION_RESIDUE_NOISE`) contenait WINDOWS, absent du set format-only → skip
+asymétrique. Corrigé : `_EDITION_RESIDUE_NOISE = NOISE_TOKENS − tiers` (les mots
+plateforme/format/région de NOISE_TOKENS sont du bruit ; les tokens de TIER — DELUXE/
+ULTIMATE/GOLD/GOTY/… — restent distinctifs et échouent-fermés). Live : « Windows 10
+Edition » → éd. 140, J&B (2063) / Bedrock (1010) inchangés, garde-fou tier intact (287→288).
+
 ## 2026-09-07 — matcher : `extract_aks_name` — noms AKS pollués par le marketing
 
 En creusant pourquoi GTA 5 / BG3 / Helldivers 2 sortaient à 0 candidat, trouvé que

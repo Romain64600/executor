@@ -1458,12 +1458,22 @@ def _edition_entry_name(value: Any) -> str:
 # premium-edition naming on AKS). Distinctive words (PLUS/ULTIMATE/GOLD/…) are NOT here.
 _EDITION_FORMAT_NOISE = frozenset({
     "EDITION", "PACK", "DIGITAL", "VERSION", "OF", "THE", "AND", "A", "FOR"})
-# The residue a sole-compatible edition may carry over the wanted extras and still be
-# the SAME tier (match_extras_to_page_edition, Fable re-audit 2026-09-06): pure edition-
-# FORMAT noise only — the format-noise set plus AKS's "Editon" typo. NOISE_TOKENS is the
-# WRONG gate here (it lists DELUXE/ULTIMATE/GOLD/GOTY as noise); a distinctive TIER word
-# in the residue must fail the rescue closed, never silently upgrade the tier.
-_EDITION_RESIDUE_NOISE = _EDITION_FORMAT_NOISE | frozenset({"EDITON"})
+# Distinctive edition-TIER tokens: their presence in a residue means a DIFFERENT tier, so
+# they must fail the sole-compatible rescue closed (never silently upgrade "Knights" →
+# "Knights Deluxe"). Everything else in NOISE_TOKENS (format + PLATFORM + region words) is
+# safe residue noise.
+_EDITION_TIER_TOKENS = frozenset({
+    "DELUXE", "ULTIMATE", "GOLD", "GOTY", "PREMIUM", "COMPLETE", "DEFINITIVE",
+    "ANNIVERSARY", "REMASTER", "REMASTERED", "COLLECTION", "BUNDLE", "TRILOGY"})
+# The residue a sole-compatible edition may carry over the wanted extras and still be the
+# SAME tier (match_extras_to_page_edition). = the matcher's canonical noise MINUS the tier
+# tokens, plus AKS's "Editon" typo. Using NOISE_TOKENS (not just the format-noise set) is
+# what lets a PLATFORM word in an edition NAME be residue noise: extra_significant_words
+# strips "Windows" from a "Minecraft Windows 10 Edition" offer (extras → {10}) but the
+# page edition keeps it ({WINDOWS,10,EDITION}), so the residue {WINDOWS,EDITION} must be
+# noise for the offer to adopt edition "Windows 10 Edition" (Romain audit 2026-09-08). A
+# distinctive TIER word in the residue still fails closed (kept out of the noise set).
+_EDITION_RESIDUE_NOISE = (NOISE_TOKENS - _EDITION_TIER_TOKENS) | frozenset({"EDITON"})
 _EDITION_LABEL_ALIASES = (("GOTY", "GAME OF THE YEAR"),)
 
 

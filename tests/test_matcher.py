@@ -1668,6 +1668,19 @@ class MatchExtrasToPageEditionTests(unittest.TestCase):
         self.assertEqual(match_extras_to_page_edition(["KNIGHTS"], {"9": "Knights Edition"}),
                          ("9", "Knights Edition"))
 
+    def test_platform_word_in_edition_name_is_residue_noise(self):
+        # Romain audit 2026-09-08: extra_significant_words strips a PLATFORM word
+        # ("Windows") from a "Minecraft Windows 10 Edition" offer (extras → ['10']) while
+        # the page edition keeps it ("Windows 10 Edition" → {WINDOWS,10,EDITION}). WINDOWS
+        # in the residue must be NOISE (a platform/format word, not a tier), so the offer
+        # ADOPTS "Windows 10 Edition" instead of false-skipping "different product".
+        self.assertEqual(
+            match_extras_to_page_edition(["10"], {"1": "Standard", "140": "Windows 10 Edition"}),
+            ("140", "Windows 10 Edition"))
+        # the tier guard is intact: a distinctive TIER word in the residue still skips
+        self.assertIsNone(
+            match_extras_to_page_edition(["10"], {"140": "Windows 10 Deluxe Edition"}))
+
     def test_full_match_offer_resolves_the_page_edition(self):
         res = AksResolution(
             slug="s", url="https://aks/legends", product_id="2501",
