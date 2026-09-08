@@ -371,7 +371,17 @@ def _http_open_keepalive(request: Request, timeout: int, follow_redirects: bool,
     method = request.get_method()
     headers = dict(request.header_items())
     try:
-        if host_locked:
+        if not follow_redirects:
+            # No-redirect mode (reachability gate): do NOT follow — a 3xx first hop surfaces
+            # as HTTPError below, EXACTLY like urllib's _NoRedirectHandler. This MUST take
+            # priority over host_locked (adversarial verify 2026-09-08): the urllib fallback
+            # checks `if not follow_redirects` first, so a staff-UA + no-redirect probe that
+            # met a same-domain 3xx→200 would otherwise be FOLLOWED to 200 here (ok=True)
+            # while urllib raised HTTPError(3xx) (ok=False) — flipping the invariant gate to a
+            # spurious green. No redirect is followed here, so there is nothing to host-lock.
+            resp = _SESSION.request(method, url, headers=headers,
+                                    allow_redirects=False, timeout=timeout)
+        elif host_locked:
             current = url
             for _ in range(10):  # bounded redirect chain
                 resp = _SESSION.request(method, current, headers=headers,
@@ -393,8 +403,13 @@ def _http_open_keepalive(request: Request, timeout: int, follow_redirects: bool,
                 raise URLError("too many redirects (host-locked)")
         else:
             resp = _SESSION.request(method, url, headers=headers,
-                                    allow_redirects=follow_redirects, timeout=timeout)
-    except _requests.exceptions.RequestException as exc:
+                                    allow_redirects=True, timeout=timeout)
+    except StaffUaRedirectRefused:
+        raise  # our own fail-closed refusal — never mask it as a transport error
+    except Exception as exc:
+        # ANY other failure (requests transport errors, or requests broken at runtime with a
+        # non-RequestException) → URLError, so http_get/http_head_status keep their "never
+        # raises, fails closed" contract (adversarial verify 2026-09-08, minor #4).
         raise URLError(str(exc)) from exc
     if not 200 <= resp.status_code < 300:
         code, reason, hdrs, body = (resp.status_code, resp.reason or "",

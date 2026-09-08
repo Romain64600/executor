@@ -376,6 +376,24 @@ class KeepAliveBackendTests(unittest.TestCase):
             self._open("https://www.allkeyshop.com/blog/x",
                        side_effect=requests.exceptions.ConnectionError("down"))
 
+    def test_no_follow_under_host_lock_surfaces_3xx_not_followed(self):
+        # Adversarial verify 2026-09-08 (CRITICAL fail-open): a staff-UA + follow_redirects=
+        # False probe (the invariant reachability gate + 03_match) must NOT follow even a
+        # SAME-domain 3xx — it surfaces as HTTPError, exactly like urllib's _NoRedirectHandler.
+        # Before the fix the host_locked branch was checked first and followed the 3xx to 200,
+        # flipping the gate ok=True where urllib fail-closed.
+        with self.assertRaises(HTTPError) as ctx:
+            self._open("https://www.allkeyshop.com/blog/", host_locked=True,
+                       follow_redirects=False,
+                       return_value=_FakeReqResp(307, b"", {"Location": "https://www.allkeyshop.com/blog/x"}))
+        self.assertEqual(ctx.exception.code, 307)
+
+    def test_runtime_non_request_exception_becomes_urlerror(self):
+        # minor #4: requests broken at RUNTIME (not import) with a non-RequestException must
+        # still fail closed as URLError, keeping http_get's "never raises" contract.
+        with self.assertRaises(URLError):
+            self._open("https://www.allkeyshop.com/blog/x", side_effect=RuntimeError("boom"))
+
 
 class CurrentEnvironmentTests(unittest.TestCase):
     def _env(self, *, system="Linux", marker=False, aks_target=None):

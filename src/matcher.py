@@ -470,6 +470,17 @@ EDITION_HINTS = (
 
 
 # -- pure helpers -----------------------------------------------------------
+# Trademark / legal / abbreviation symbols whose NFKC compatibility decomposition is a
+# LETTER sequence ("™"→"TM", "℠"→"SM", "№"→"No", "℡"→"TEL", "℅"→"c/o") — left in, NFKC glues
+# them onto the adjacent word and breaks identity checks ("Company™" → "COMPANYTM"; Eneba
+# escape + adversarial verify 2026-09-08). Stripped BEFORE NFKC in normalize_apostrophes so
+# EVERY caller is covered (tokenize / cleaned_title / build_slug_candidates / precheck), not
+# just tokenize. Deliberately NOT the letterlike MATH symbols (ℂ ℝ ℋ, Å U+212B) which
+# decompose to a single legitimate letter, nor Roman numerals (Ⅱ U+2161 → "II", kept).
+_NFKC_LETTER_SYMBOL_RE = re.compile(
+    "[©®℀℁℅℆№℗℠℡™]")
+
+
 def normalize_apostrophes(text: str) -> str:
     """NFKC-normalize, then fold curly quotes to ASCII `'`.
 
@@ -488,21 +499,16 @@ def normalize_apostrophes(text: str) -> str:
     explicit replace stays after it.
     """
 
+    text = _NFKC_LETTER_SYMBOL_RE.sub(" ", text)
     return unicodedata.normalize("NFKC", text).replace("’", "'").replace("‘", "'")
 
 
 def tokenize(name: str) -> list[str]:
     """Uppercase word tokens, apostrophes normalized, punctuation stripped."""
 
-    # Strip trademark/service-mark/registered/copyright symbols FIRST — BEFORE the NFKC
-    # normalization inside normalize_apostrophes, which COMPATIBILITY-decomposes some of
-    # them into LETTERS that then glue onto the adjacent word: "Company™" → "COMPANYTM"
-    # (™ → "TM"), "…℠" → "…SM". That broke R01 ("name mismatch, missing AKS words:
-    # ['COMPANY']" on Eneba's "STAR WARS Zero Company™ …", Romain 2026-09-08). Replaced
-    # with a space so a glued symbol still splits its words (®/© have no letter
-    # decomposition; kept for robustness against a future "Halo®Deluxe").
-    cleaned = re.sub(r"[™℠®©℗]", " ", name)
-    cleaned = normalize_apostrophes(cleaned).upper()
+    # Trademark/legal symbols (™ ® © ℠ ℡ №…) are stripped inside normalize_apostrophes,
+    # BEFORE its NFKC — else NFKC glues them into letters ("Company™" → "COMPANYTM").
+    cleaned = normalize_apostrophes(name).upper()
     return [t for t in re.findall(r"[A-Z0-9']+", cleaned) if t.strip("'")]
 
 

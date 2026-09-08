@@ -3,6 +3,25 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-08 — keep-alive : correctif fail-open trouvé par vérif adversariale
+
+Vérif adversariale multi-agents du seam keep-alive (184b2b8) : 9 findings confirmés, dont
+**1 CRITIQUE fail-open**. `_http_open_keepalive` testait `host_locked` AVANT `follow_redirects`,
+alors que le fallback urllib teste `if not follow_redirects` en PREMIER. Conséquence : un
+probe staff-UA en `follow_redirects=False` (la **gate d'invariants** `src/invariants.py` +
+`03_match`) suivait un 3xx **same-domain** (307/308/303 WAF/canonical) jusqu'au 200 →
+`ok=True`, là où urllib lève `HTTPError` → `ok=False`. Un 3xx same-domain sur `allkeyshop.com/
+blog/` aurait fait passer la gate « read-only until green » au **VERT à tort** → risque de
+débloquer les stages d'écriture. Corrigé : `_http_open_keepalive` teste `if not follow_redirects`
+en premier (ne suit rien, le 3xx ressort en HTTPError comme urllib), `elif host_locked`, `else`
+— miroir exact de l'ordre urllib. Régression-test ajouté (host_locked + no-redirect → HTTPError).
+Vérifié : pas de fuite staff-UA off-domain, pas de wrong-entry (probes de résolution en
+`follow_redirects=True`, identiques). Minors corrigés en même temps : (2/3) le strip des
+symboles NFKC→lettres déplacé de `tokenize` vers **`normalize_apostrophes`** (couvre aussi
+`cleaned_title`/`build_slug_candidates`) et élargi (`™®©℠℗℡№℅℀℁℆`) sans toucher aux lettres
+math ni aux chiffres romains ; (4) l'except keepalive attrape désormais toute exception
+non-`RequestException` (requests cassé au runtime) → `URLError`, préservant « ne lève jamais ».
+
 ## 2026-09-08 — perf : keep-alive HTTP + pacing 0,15s + cap pages safe-auto
 
 « Les sweep sont très longs. » Mesure : la résolution (`03_match`) est série, ~138 req/min,

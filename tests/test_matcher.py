@@ -131,6 +131,11 @@ class TokenizeTests(unittest.TestCase):
         # decomposition but are stripped too (a glued "Halo®Deluxe" still splits).
         self.assertEqual(tokenize("Widget℠ Pro"), ["WIDGET", "PRO"])
         self.assertEqual(tokenize("Halo®Deluxe"), ["HALO", "DELUXE"])
+        # The strip lives in normalize_apostrophes, so cleaned_title / build_slug_candidates
+        # are covered too (adversarial verify 2026-09-08), and № (→"No") / ℡ (→"TEL") likewise.
+        from src.matcher import cleaned_title
+        self.assertNotIn("COMPANYTM", cleaned_title("Company™").upper())
+        self.assertEqual(tokenize("Game № 5"), ["GAME", "5"])
 
     def test_green_gift_phrase_is_not_a_product_extra(self):
         # "Green Gift" is a Steam-gift delivery label (ANY merchant — Romain 2026-08-27):
