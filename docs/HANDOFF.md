@@ -37,8 +37,8 @@ l'ordre : Chromium 149 + hold → politique UA-Switcher → `aks-chromium.servic
   restent verrouillées** (read-only until green, `CLAUDE.md`).
 - **Deps** : `sudo apt install python3-requests` (optionnel — `requests` pour le keep-alive ;
   fallback urllib sinon ; `pip install -r requirements.txt` est refusé par PEP 668 sur
-  l'interpréteur système de Debian 12, cf. `ops/BROWSER_RUNBOOK.md §3`). Le cœur reste
-  stdlib-only.
+  l'interpréteur système de Debian 12 comme 13, cf. `ops/BROWSER_RUNBOOK.md §3`). Le cœur reste
+  stdlib-only. Nomenclature complète : §2.1.
 - **Gate avant tout write** : `python3 scripts/01_check_invariants.py` doit rendre `ok:true`
   ET `authoritative:true` **sur le VPS**. Un rouge en local/sandbox (`authoritative:false`)
   est normal et ne débloque rien.
@@ -81,6 +81,18 @@ Inventaire réel (vérifié live 2026-09-09). Install pas-à-pas : `ops/BROWSER_
 
 ⚠️ Le vhost nginx **et le cert TLS sont liés à l'IP** (domaine sslip.io) → nouvelle IP = nouveau
 vhost + nouveau certificat.
+
+**Nouveau VPS `vmi3565249` (217.76.57.126, Debian 13 trixie) — reconstruit le 2026-09-09** selon
+cette nomenclature, avec ces écarts vérifiés live : Python **3.13** + `python3-requests` 2.32
+(apt) ; **Chromium 150.0.7871.100-1~deb13u1** (149 n'existe pas pour trixie ; le build trixie
+tourne headless **sans SIGTRAP**, `apt-mark hold` posé ; l'unité force toujours l'UA
+`Chrome/149.0.0.0`, donc l'invariant passe — bumper `REQUIRED_USER_AGENT` reste une décision
+explicite de Romain, cf. RUNBOOK §1.1) ; `docker.io` 26 (paquet Debian, fournit `docker0`) ;
+socat 1.8 ; nginx 1.26 ; certbot 4.0 ; console `https://217.76.57.126.sslip.io/executor/`
+(mot de passe initial dans `/root/executor-admin.pass`, root-only — à faire tourner via
+`ops/INSTALL_ADMIN.md §1`) ; gate `ok:true` + `authoritative:true` ; suite 1353 OK en `debian`.
+Restait à faire par Romain : `ufw` (§3 étape 6, non exécutable par Claude) et le transfert des
+cookies WP. L'ancien VPS était `vps-9ee9f9cf`.
 
 **Hermes (superviseur conversationnel) — PAS requis par l'executor :** services
 `hermes-gateway`, `hermes-web-ui` ; pip `litellm` / `openai` / `gunicorn`. Seul le pont CDP

@@ -31,6 +31,11 @@ sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d <VPS_HOST> --redirect --agree-tos --no-eff-email -m <ADMIN_EMAIL>
 ```
 
+`<VPS_HOST>` is `<public IP>.sslip.io` (resolves to the IP with no DNS setup; the cert is
+therefore bound to the IP). Without an operator email use
+`--register-unsafely-without-email` (no expiry notifications; `certbot update_account -m`
+adds one later).
+
 `--redirect` rewrites the vhost so port 80 forwards to HTTPS — basic auth
 credentials never travel in clear text. Renewal is automatic
 (`certbot.timer`).

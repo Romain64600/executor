@@ -39,6 +39,13 @@ SIGTRAP dans notre configuration headless/CDP — constaté en live, d'où le ge
 à 149 sur les trois paquets. Ne **jamais** lever le hold « pour mettre à
 jour » sans test : un Chromium qui SIGTRAP = plus aucun stage ne tourne.
 
+**Debian 13 (trixie) — nouveau VPS `vmi3565249`, 2026-09-09.** 149 n'existe pas pour
+trixie (versions dispo : 150 dans main, 152 dans security). Le **150.0.7871.100-1~deb13u1**
+a été installé avec la même unité (§1.2) et tourne headless **sans SIGTRAP** (le SIGTRAP
+constaté sur bookworm était le build 150 de bookworm-security) ; hold posé sur les trois
+paquets. L'unité force toujours l'UA `Chrome/149.0.0.0`, donc l'invariant reste vert avec un
+binaire 150 — la mise à jour de `REQUIRED_USER_AGENT` reste la décision explicite ci-dessous.
+
 **Contrainte couplée : le User-Agent.** L'invariant `required_user_agent`
 (`src/aks_env.py:23-26`, `REQUIRED_USER_AGENT`) exige exactement
 `... Chrome/149.0.0.0 Safari/537.36`, et `scripts/01_check_invariants.py` le
@@ -376,7 +383,9 @@ d'invariants reste sans-dépendance. Vérifier depuis le repo :
                     chromium-sandbox=149.0.7827.196-1~deb12u1
    ```
    Si 149 a disparu de l'archive, le récupérer via
-   https://snapshot.debian.org. Ne pas installer 150 (SIGTRAP, §1.1).
+   https://snapshot.debian.org. Ne pas installer le 150 de **bookworm** (SIGTRAP, §1.1).
+   Sur **Debian 13** : `chromium=150.0.7871.100-1~deb13u1` (+ `-common`, `-sandbox`),
+   testé sans SIGTRAP le 2026-09-09 (§1.1).
 2. **Hold** :
    ```sh
    sudo apt-mark hold chromium chromium-common chromium-sandbox
@@ -416,7 +425,8 @@ d'invariants reste sans-dépendance. Vérifier depuis le repo :
 7. **nginx + basic auth + TLS + aks-admin** : suivre `ops/INSTALL_ADMIN.md`
    dans l'ordre (htpasswd → vhost depuis
    `ops/nginx-executor.conf` → certbot → unité depuis
-   `ops/aks-admin.service`).
+   `ops/aks-admin.service`). `<VPS_HOST>` = `<IP publique>.sslip.io` (aucun DNS à
+   configurer ; le cert est donc lié à l'IP).
 8. **Marqueur FC2** (root, sur la machine cible uniquement) :
    ```sh
    sudo sh -c 'hostname > /etc/aks-executor.target'
