@@ -37,10 +37,13 @@ from src.extractor import AKS_ADMIN_URL, DEFAULT_FEED_PAGE, NotLoggedInError  # 
 from src.invariants import build_report  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
 from src.matcher import (  # noqa: E402
+    AKS_PROBE_DELAY_S,
     AKS_PROBE_UA,
     AksNameUnreadable,
     AksProbeUnreliable,
     AksResolution,
+    AksThrottled,
+    _ThrottleGuard,
     Candidate,
     SkippedOffer,
     _resolution_from_body,
@@ -105,6 +108,16 @@ def extract_slug(url: str) -> str | None:
     return (m.group(1) or m.group(2) or m.group(3)) if m else None
 
 
+def _pace_between_urls(http_get_fn: Callable[..., Any], index: int) -> None:
+    """Politeness pacing between consecutive operator URLs (audit 2026-09-09): the
+    resolve loop had NO pacing at all, and keep-alive made it the densest staff-UA
+    burst (~30 req/s on a long list). Same budget as the matcher's slug probes; never
+    under an injected test stub, never before the first URL."""
+
+    if index and http_get_fn is http_get:
+        time.sleep(AKS_PROBE_DELAY_S)
+
+
 def resolve_pinned(url: str, http_get_fn: Callable[..., Any] = http_get) -> AksResolution:
     """Resolve the OPERATOR-provided AKS page directly (no slug guessing).
 
@@ -125,13 +138,16 @@ def resolve_pinned(url: str, http_get_fn: Callable[..., Any] = http_get) -> AksR
             break                                    # got the page
         if probe.status in (404, 410):
             break                                    # real absence — never retry
+        if probe.status == 429:
+            break                                    # explicit rate limit: STOP, never retry
         transient = probe.status is None or probe.status in _TRANSIENT_RESOLVE_STATUSES
         if not transient or attempt == RESOLVE_ATTEMPTS:
             break                                    # persistent / exhausted → fail closed
         if http_get_fn is http_get:
             time.sleep(RESOLVE_RETRY_WAIT_S)         # backoff (no sleep under test stubs)
     if not (probe.ok and probe.status == 200 and probe.body):
-        raise AksProbeUnreliable(f"{url} -> {probe.status or probe.error}")
+        raise AksProbeUnreliable(f"{url} -> {probe.status or probe.error}",
+                                 status=probe.status, slug=slug)
     resolution = _resolution_from_body(slug, url, probe.body)
     if resolution is None:
         raise AksNameUnreadable(f"{url} -> 200 but no product id / name")
@@ -325,9 +341,22 @@ def run_plan(urls: list[str], targets: list[tuple[str, str]], *, available: str,
     # Resolve every URL first (read-only http_get, no browser) so a bad URL is
     # reported without holding the browser lock.
     resolved: list[tuple[str, AksResolution]] = []
-    for url in urls:
+    # Review 2026-09-09: the same throttle backstop as match_feed — a 429 or 5 consecutive
+    # unreliable probes on distinct pages STOP the run (recap.aborted = aks_throttled)
+    # instead of hammering one throttled URL after another to a "completed" 0-résolu preview.
+    guard = _ThrottleGuard(lambda u: resolve_pinned(u, http_get_fn))
+    for index, url in enumerate(urls):
+        _pace_between_urls(http_get_fn, index)
         try:
-            resolution = resolve_pinned(url, http_get_fn)
+            resolution = guard(url)
+        except AksThrottled as exc:
+            recap["aborted"] = "aks_throttled"
+            recap["games"].append({"url": url, "resolved": False,
+                                   "reason": f"AksThrottled: {exc}"[:200]})
+            emit("game_resolved", url=url, ok=False, reason=f"AksThrottled: {exc}"[:160])
+            emit("run_aborted", reason="aks_throttled", detail=str(exc)[:160])
+            _flush()
+            return recap
         except Exception as exc:
             # Per-URL fail-closed isolation: ANY resolution error (bad URL, throttle,
             # markup drift → AksPageUnparseable, wrong-host ValueError, …) is reported

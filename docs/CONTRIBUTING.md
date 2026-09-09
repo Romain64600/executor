@@ -16,9 +16,11 @@ degraded submit). **If anything is uncertain, stop.**
 
 ## Setup
 
-- **Python 3.10+**, standard library only. There are **no third-party
-  dependencies**, and none may be added without Romain's explicit approval
-  (`AGENTS.md`). No virtualenv is required for the current code.
+- **Python 3.11+**. The core is standard-library only; the sole third-party
+  package is the **optional** `requests` accelerator in `requirements.txt` (HTTP
+  keep-alive for AKS probes — everything works without it). No other dependency
+  may be added without Romain's explicit approval (`AGENTS.md`). No virtualenv is
+  required for the current code.
 - Clone, then work from the repo root; scripts and tests assume it as CWD.
 
 ```bash
@@ -62,10 +64,11 @@ production failure and never unlocks write stages. Force detection with
   `tests/`, named `test_<module>.py`.
 - Prefer **pure** tests (no network, no clock, no filesystem). Inject seams:
   - `StepGuard(clock=lambda: "2026-01-01T00:00:00Z")` for deterministic timestamps.
-  - Patch IO at the boundary — e.g. `unittest.mock.patch("src.aks_env.urlopen", …)`
-    to test `http_get` / `http_head_status` branches, or patch
-    `src.cdp_client.http_get` to drive `ReadOnlyCdpClient.get_version` outcomes.
-    (These two areas are the current coverage gaps — see `AUDIT.md` T2/T3.)
+  - Patch IO at the boundary — e.g. `unittest.mock.patch("src.aks_env._http_open", …)`
+    to test `http_get` / `http_head_status` branches (patch the seam, not
+    `urlopen`: with `requests` installed the keep-alive backend bypasses urlopen
+    entirely), or patch `src.cdp_client.http_get` to drive
+    `ReadOnlyCdpClient.get_version` outcomes.
 - A test that asserts **behavior at a boundary** is worth more than one that
   restates the implementation. Example: assert the HTTP *method* used for the AKS
   probe, so the shell/Python gates can't silently diverge (AUDIT.md C1).

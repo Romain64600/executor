@@ -130,11 +130,19 @@ class TokenizeTests(unittest.TestCase):
         # ℠ (service mark → "SM") is the same failure mode; ® / © have no letter
         # decomposition but are stripped too (a glued "Halo®Deluxe" still splits).
         self.assertEqual(tokenize("Widget℠ Pro"), ["WIDGET", "PRO"])
+        # ® has no decomposition, so "Halo®Deluxe" split on the OLD code too (the token
+        # regex dropped it); the glued-™ form is the one that pins the fix (audit 2026-09-09:
+        # the ® assertion was vacuous — old code gave ['HALOTMDELUXE'] for this one).
         self.assertEqual(tokenize("Halo®Deluxe"), ["HALO", "DELUXE"])
+        self.assertEqual(tokenize("Halo™Deluxe"), ["HALO", "DELUXE"])
         # The strip lives in normalize_apostrophes, so cleaned_title / build_slug_candidates
         # are covered too (adversarial verify 2026-09-08), and № (→"No") / ℡ (→"TEL") likewise.
-        from src.matcher import cleaned_title
+        from src.matcher import build_slug_candidates, cleaned_title
         self.assertNotIn("COMPANYTM", cleaned_title("Company™").upper())
+        self.assertEqual(cleaned_title("Halo®"), "Halo")
+        slugs = build_slug_candidates("Company™ Edition")
+        self.assertIn("company-edition", slugs)
+        self.assertFalse(any("tm" in s.split("-") or "companytm" in s for s in slugs), slugs)
         self.assertEqual(tokenize("Game № 5"), ["GAME", "5"])
 
     def test_green_gift_phrase_is_not_a_product_extra(self):
@@ -1580,11 +1588,18 @@ class SearchFallbackTests(unittest.TestCase):
         slugs = search_aks_slugs("Road to Empress", fake_http, limit=3)
         self.assertEqual(slugs, ["road-to-empress", "gta-5", "palworld"])
 
-    def test_search_empty_on_non_200(self):
+    def test_search_non_200_is_unreliable_not_empty(self):
+        # Review 2026-09-09: a failing/throttled site search is NOT "no results" — it used
+        # to soft-fail to [] and mask a 429/5xx from the throttle guard.
+        from src.matcher import AksProbeUnreliable
+
         def fake_http(url, timeout=8, user_agent=None):
             return HttpProbeResult(url=url, ok=False, status=500, body="")
 
-        self.assertEqual(search_aks_slugs("Road to Empress", fake_http), [])
+        with self.assertRaises(AksProbeUnreliable) as ctx:
+            search_aks_slugs("Road to Empress", fake_http)
+        self.assertEqual(ctx.exception.status, 500)
+        self.assertEqual(ctx.exception.slug, "site-search")
 
     def test_resolve_falls_back_to_search_when_slugs_all_404(self):
         calls = []
@@ -2823,6 +2838,69 @@ class MatchFeedTests(unittest.TestCase):
         self.assertEqual(len(skipped), 2)
         self.assertTrue(any("cap" in s.reason for s in skipped))
 
+    def test_throttle_guard_aborts_on_429_immediately(self):
+        # Audit 2026-09-09 (critic): an explicit 429 is AKS pushing back → the whole
+        # stage stops fail-closed on the FIRST one, never one 429 per offer.
+        from src.matcher import AksProbeUnreliable, AksThrottled
+        calls = []
+
+        def resolver(name):
+            calls.append(name)
+            raise AksProbeUnreliable("neon-beats -> 429", status=429)
+
+        feed = self._feed(*[_offer("Neon Beats - Steam GLOBAL", oid=str(i)) for i in range(3)])
+        with self.assertRaises(AksThrottled) as ctx:
+            match_feed(feed, resolver)
+        self.assertIn("429", str(ctx.exception))
+        self.assertEqual(len(calls), 1)
+
+    def test_throttle_guard_aborts_after_consecutive_unreliable(self):
+        from src.matcher import (AksProbeUnreliable, AksThrottled,
+                                 THROTTLE_MAX_CONSECUTIVE_UNRELIABLE as N)
+        calls = []
+
+        def resolver(name):
+            calls.append(name)                     # a DIFFERENT failing page each time
+            raise AksProbeUnreliable(f"page-{len(calls)} -> 503", status=503, slug=f"page-{len(calls)}")
+
+        feed = self._feed(*[_offer("Neon Beats - Steam GLOBAL", oid=str(i)) for i in range(N + 3)])
+        with self.assertRaises(AksThrottled):
+            match_feed(feed, resolver)
+        self.assertEqual(len(calls), N)          # stops at the Nth — the rest is never probed
+
+    def test_throttle_guard_ignores_repeats_of_one_broken_page(self):
+        # Review 2026-09-09: consecutive feed rows are often variants of ONE title sharing
+        # the same first slug; a single AKS page answering 500 is not throttling.
+        from src.matcher import AksProbeUnreliable, THROTTLE_MAX_CONSECUTIVE_UNRELIABLE as N
+
+        def resolver(name):
+            raise AksProbeUnreliable("neon-beats -> 500", status=500, slug="neon-beats")
+
+        feed = self._feed(*[_offer("Neon Beats - Steam GLOBAL", oid=str(i)) for i in range(2 * N)])
+        candidates, skipped = match_feed(feed, resolver)     # no AksThrottled
+        self.assertEqual(candidates, [])
+        self.assertEqual(len(skipped), 2 * N)
+        self.assertTrue(all(s.reason.startswith("AKS probe unreliable") for s in skipped))
+
+    def test_throttle_guard_resets_on_a_clean_resolution(self):
+        # Below the limit an unreliable probe stays a per-offer skip (unchanged behaviour),
+        # and any clean resolution resets the consecutive count.
+        from src.matcher import AksProbeUnreliable, THROTTLE_MAX_CONSECUTIVE_UNRELIABLE as N
+        res = AksResolution("neon-beats", "https://aks/x", "205027", "Neon Beats", {"1": {"name": "Standard"}})
+        state = {"n": 0}
+
+        def resolver(name):
+            state["n"] += 1
+            if state["n"] % N == 0:          # every Nth call resolves → never N in a row
+                return res
+            raise AksProbeUnreliable("neon-beats -> timed out", status=None)
+
+        feed = self._feed(*[_offer("Neon Beats - Steam GLOBAL", oid=str(i)) for i in range(2 * N)])
+        candidates, skipped = match_feed(feed, resolver)
+        self.assertEqual(len(candidates), 2)
+        unreliable = [s for s in skipped if s.reason.startswith("AKS probe unreliable")]
+        self.assertEqual(len(unreliable), 2 * N - 2)
+
     def test_cap_message_uses_actual_max(self):
         res = AksResolution("neon-beats", "https://aks/x", "205027", "Neon Beats", {"1": {"name": "Standard"}})
         feed = self._feed(*[_offer("Neon Beats - Steam GLOBAL", oid=str(i)) for i in range(3)])
@@ -3273,3 +3351,47 @@ class AuditMa8RegionTitleDefenseTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ThrottleStatusPropagationTests(unittest.TestCase):
+    """The production raise sites must carry status + slug, or the guard's 429 fast path
+    and page-dedupe silently degrade (review 2026-09-09)."""
+
+    def test_resolve_aks_429_carries_status_and_slug(self):
+        from src.matcher import AksProbeUnreliable, resolve_aks
+
+        def fake_http(url, timeout=8, user_agent=None):
+            return HttpProbeResult(url=url, ok=False, status=429, body="")
+
+        with self.assertRaises(AksProbeUnreliable) as ctx:
+            resolve_aks("Neon Beats", fake_http)
+        self.assertEqual(ctx.exception.status, 429)
+        self.assertTrue(ctx.exception.slug)
+
+    def test_resolve_aks_transport_failure_carries_none_status(self):
+        from src.matcher import AksProbeUnreliable, resolve_aks
+
+        def fake_http(url, timeout=8, user_agent=None):
+            return HttpProbeResult(url=url, ok=False, status=None, body="", error="timed out")
+
+        with self.assertRaises(AksProbeUnreliable) as ctx:
+            resolve_aks("Neon Beats", fake_http)
+        self.assertIsNone(ctx.exception.status)
+
+    def test_search_fallback_429_reaches_the_guard(self):
+        # slugs 404 → search fallback; the search GET answers 429 → unreliable(429), not [].
+        from src.matcher import AksProbeUnreliable, AksThrottled, resolve_aks
+        from src.contracts import NormalizedFeed
+
+        def fake_http(url, timeout=8, user_agent=None):
+            if "?s=" in url:
+                return HttpProbeResult(url=url, ok=False, status=429, body="")
+            return HttpProbeResult(url=url, ok=False, status=404, body="")
+
+        with self.assertRaises(AksProbeUnreliable) as ctx:
+            resolve_aks("Neon Beats", fake_http)
+        self.assertEqual(ctx.exception.status, 429)
+        feed = NormalizedFeed(run_id="r", merchant="Test", fetched_at="t",
+                              offers=(_offer("Neon Beats - Steam GLOBAL", oid="1"),))
+        with self.assertRaises(AksThrottled):
+            match_feed(feed, lambda name: resolve_aks(name, fake_http))

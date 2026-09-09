@@ -7,6 +7,14 @@
 #   requests — enables HTTP keep-alive for the resolve probes (src/aks_env.py):
 #              one persistent TLS connection is reused across a page's hundreds
 #              of probes (~134ms → ~32ms per request), with NO change to the
-#              request count or rate. When absent, src/aks_env falls back to the
-#              stdlib urllib path with identical behavior (just no keep-alive).
+#              request COUNT (the request RATE rise of 2026-09-08 comes from the
+#              separate AKS_PROBE_DELAY_S pacing change in src/matcher.py, still
+#              serial). When absent, src/aks_env falls back to the stdlib urllib
+#              path with the same probe contract (status / ok / body) — the wire
+#              shape differs (keep-alive, gzip), never the outcome. The Session is
+#              env-blind like urllib (no ~/.netrc, no CA-bundle env vars).
+#
+# Debian 12 (the VPS): `sudo apt install python3-requests` (2.28.1 satisfies this);
+# a bare `pip install` is refused by PEP 668 on the system interpreter that
+# aks-admin.service runs (ops/BROWSER_RUNBOOK.md §3).
 requests>=2.28

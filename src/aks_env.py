@@ -4,7 +4,9 @@ This module is intentionally small and stdlib-only at its core. It contains pure
 validation helpers plus read-only HTTP probes used by Sprint 1 tooling. The only
 optional dependency is ``requests`` — when installed it backs the probes with a
 keep-alive Session (see ``_http_open``); when absent the module falls back to
-urllib with identical behavior, so the invariant gate still runs dependency-free.
+urllib with the same probe contract (status / ok / body — see ``_http_open_keepalive``
+for the known, fail-closed divergences), so the invariant gate still runs
+dependency-free.
 """
 
 from __future__ import annotations
@@ -15,12 +17,15 @@ import io
 import json
 import os
 import platform
+import re
 import socket
+import string
 import subprocess
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urljoin, urlsplit
-from urllib.request import HTTPRedirectHandler, Request, build_opener, urlopen
+from urllib.parse import quote, urljoin, urlsplit
+from urllib.request import (HTTPRedirectHandler, Request, build_opener, getproxies,
+                            proxy_bypass, urlopen)
 
 OFFICIAL_CDP_ENDPOINT = "http://172.17.0.1:9223/json/version"
 HOST_CDP_ENDPOINT = "http://127.0.0.1:9222/json/version"
@@ -324,9 +329,11 @@ class _StaffUaHostGuardRedirectHandler(HTTPRedirectHandler):
 # HTTP keep-alive (Romain 2026-09-08). This module's core stays stdlib-only; ``requests``
 # is an OPTIONAL accelerator: when present, a persistent Session reuses ONE TLS connection
 # across a page's hundreds of resolve probes (measured 134ms → ~32ms per request, no change
-# to the request COUNT or rate → ban-safe). When absent, ``_http_open`` falls back to the
-# unchanged urllib path, so the dependency-free invariant gate still runs anywhere.
-try:  # pragma: no cover - trivial import guard
+# to the request COUNT — the request RATE rise of the same change comes from the separate
+# AKS_PROBE_DELAY_S 0.3→0.15 s pacing in src/matcher.py, still strictly serial). When
+# absent, ``_http_open`` falls back to the unchanged urllib path, so the dependency-free
+# invariant gate still runs anywhere.
+try:  # requests is optional — ANY import/setup failure means "use the stdlib backend"
     import requests as _requests
     from http.cookiejar import DefaultCookiePolicy
 
@@ -340,6 +347,12 @@ try:  # pragma: no cover - trivial import guard
     # and raises HTTPError(3xx) (ok=False for 303/307/308). Pathological on AKS, but capping to
     # 10 keeps the backends provably fail-closed-equivalent.
     _SESSION.max_redirects = 10
+    # Stay ENV-BLIND like urllib (audit 2026-09-09): with trust_env, requests reads
+    # ~/.netrc / $NETRC (a `default` entry injects `Authorization: Basic …` into EVERY
+    # probe — staff-UA ones to AKS included) and REQUESTS_CA_BUNDLE/CURL_CA_BUNDLE; urllib
+    # honours neither. The ONE env feature urllib does honour (http(s)_proxy / no_proxy,
+    # ProxyHandler) is mirrored per request by _urllib_proxies() instead.
+    _SESSION.trust_env = False
 except Exception:  # requests missing / broken → stdlib fallback
     _requests = None
     _SESSION = None
@@ -366,16 +379,44 @@ class _KeepAliveResponse:
         return False
 
 
+def _urllib_proxies(url: str) -> dict[str, str]:
+    """The proxy mapping urllib's default ``ProxyHandler`` would apply to ``url``: the
+    ``http(s)_proxy`` env vars unless ``no_proxy``/``proxy_bypass`` exempts the host. The
+    Session is ``trust_env=False`` (see above), so this keeps the env behaviour the stdlib
+    fallback has (urllib's ``req.host`` is ``host[:port]`` with the userinfo stripped, so a
+    ``no_proxy=host:port`` entry matches here too)."""
+
+    parts = urlsplit(url)
+    if not parts.hostname:
+        return {}
+    authority = parts.netloc.rpartition("@")[2]
+    if proxy_bypass(authority):
+        return {}
+    return dict(getproxies())
+
+
 def _http_open_keepalive(request: Request, timeout: int, follow_redirects: bool,
                          host_locked: bool):
     """Keep-alive backend for :func:`_http_open` — SAME contract as the urllib path:
     returns an HTTPResponse-like object on 2xx, raises ``HTTPError`` for any non-2xx (incl.
     a no-redirect 3xx), :class:`StaffUaRedirectRefused` for an off-domain staff hop, and
-    ``URLError`` for a transport failure — so ``http_get``/``http_head_status`` are unchanged."""
+    ``URLError`` for a transport failure — so ``http_get``/``http_head_status`` are unchanged.
+
+    Known, deliberate divergences from urllib (audit + review 2026-09-09) — every one fails
+    CLOSED on this side (ok=False), never less closed than urllib: a chain exhausting the
+    redirect ceiling raises ``URLError`` (status None) where urllib raises ``HTTPError(3xx)``;
+    in the plain (non-locked) follow branch requests forwards a hop-1 ``Set-Cookie`` to hop 2
+    within ONE call (never across calls — the jar rejects everything); a ``Location`` holding
+    a lone non-UTF-8 byte makes requests raise while pre-computing ``Response.next`` — in
+    EVERY mode, the no-redirect gate included — so it surfaces as ``URLError`` (status None,
+    gate red) where urllib reports the 3xx itself (gate green on 301/302); the obsolete
+    ``URI:`` redirect header is ignored here (urllib still honours it).
+    """
 
     url = request.full_url
     method = request.get_method()
     headers = dict(request.header_items())
+    exhausted = False
     try:
         if not follow_redirects:
             # No-redirect mode (reachability gate): do NOT follow — a 3xx first hop surfaces
@@ -385,18 +426,26 @@ def _http_open_keepalive(request: Request, timeout: int, follow_redirects: bool,
             # met a same-domain 3xx→200 would otherwise be FOLLOWED to 200 here (ok=True)
             # while urllib raised HTTPError(3xx) (ok=False) — flipping the invariant gate to a
             # spurious green. No redirect is followed here, so there is nothing to host-lock.
-            resp = _SESSION.request(method, url, headers=headers,
-                                    allow_redirects=False, timeout=timeout)
+            resp = _SESSION.request(method, url, headers=headers, allow_redirects=False,
+                                    timeout=timeout, proxies=_urllib_proxies(url))
         elif host_locked:
             current = url
-            for _ in range(10):  # bounded redirect chain
+            # Initial fetch + at most 10 FOLLOWED redirects — the same ceiling as urllib's
+            # HTTPRedirectHandler.max_redirections (audit 2026-09-09: `range(10)` counted
+            # requests, so an exactly-10-hop chain resolved on urllib but failed here).
+            for _ in range(11):
                 resp = _SESSION.request(method, current, headers=headers,
-                                        allow_redirects=False, timeout=timeout)
+                                        allow_redirects=False, timeout=timeout,
+                                        proxies=_urllib_proxies(current))
                 location = resp.headers.get("Location")
                 if resp.status_code in (301, 302, 303, 307, 308) and location:
                     code, hdrs = resp.status_code, dict(resp.headers)
                     resp.close()
-                    nxt = urljoin(current, location)
+                    # http.client decoded the header value as latin-1; re-quote it exactly
+                    # like urllib's HTTPRedirectHandler.http_error_302 so a UTF-8 permalink
+                    # ("é" → %C3%A9) is requested as-is instead of double-encoded mojibake.
+                    nxt = urljoin(current, quote(location, encoding="iso-8859-1",
+                                                 safe=string.punctuation))
                     if not _allkeyshop_host(nxt):
                         raise StaffUaRedirectRefused(
                             url, code,
@@ -406,10 +455,10 @@ def _http_open_keepalive(request: Request, timeout: int, follow_redirects: bool,
                     continue
                 break
             else:
-                raise URLError("too many redirects (host-locked)")
+                exhausted = True   # raised below, OUTSIDE the blanket except (no double wrap)
         else:
-            resp = _SESSION.request(method, url, headers=headers,
-                                    allow_redirects=True, timeout=timeout)
+            resp = _SESSION.request(method, url, headers=headers, allow_redirects=True,
+                                    timeout=timeout, proxies=_urllib_proxies(url))
     except StaffUaRedirectRefused:
         raise  # our own fail-closed refusal — never mask it as a transport error
     except Exception as exc:
@@ -417,6 +466,8 @@ def _http_open_keepalive(request: Request, timeout: int, follow_redirects: bool,
         # non-RequestException) → URLError, so http_get/http_head_status keep their "never
         # raises, fails closed" contract (adversarial verify 2026-09-08, minor #4).
         raise URLError(str(exc)) from exc
+    if exhausted:
+        raise URLError("too many redirects (host-locked)")
     if not 200 <= resp.status_code < 300:
         code, reason, hdrs, body = (resp.status_code, resp.reason or "",
                                     dict(resp.headers), resp.content)
@@ -450,8 +501,30 @@ def _http_open(request: Request, timeout: int, follow_redirects: bool = True,
     return backend(request, timeout, follow_redirects, host_locked)
 
 
+# An UNAMBIGUOUS authority: host chars + optional :port. No userinfo (`@`), no backslash, no
+# whitespace, no IPv6 literal — see _allkeyshop_host.
+_STRICT_NETLOC_RE = re.compile(r"^[A-Za-z0-9.-]+(?::\d{1,5})?$")
+
+
 def _allkeyshop_host(url: str) -> bool:
-    host = (urlsplit(url).hostname or "").lower()
+    """True only for an http(s) URL on allkeyshop.com whose authority is UNAMBIGUOUS.
+
+    Parser-differential guard (audit 2026-09-09, major): ``urlsplit`` ends the netloc at
+    ``/?#`` only, but urllib3 (the keep-alive connection) also ends it at a backslash — so
+    ``https://evil.tld\\@www.allkeyshop.com/x`` has hostname ``www.allkeyshop.com`` for a
+    naive check and host ``evil.tld`` for the actual connection: the staff UA would be sent
+    off-domain with the guard green (the urllib fallback fails closed on the same input).
+    Refusing any netloc with userinfo, a backslash, whitespace or anything outside
+    ``[A-Za-z0-9.-]`` + an optional ``:port`` makes EVERY parser agree on the host before a
+    request is made. Non-http(s) schemes (``javascript:``/``data:`` Locations) are refused too.
+    """
+
+    parts = urlsplit(url)
+    if parts.scheme.lower() not in ("http", "https"):
+        return False
+    if not _STRICT_NETLOC_RE.match(parts.netloc or ""):
+        return False
+    host = (parts.hostname or "").lower()
     return host == "allkeyshop.com" or host.endswith(".allkeyshop.com")
 
 

@@ -300,6 +300,11 @@ class HttpProbeTests(unittest.TestCase):
         self.assertIsNone(probe.status)
 
 
+import src.aks_env as _aks_env_mod
+
+_REAL_SESSION = _aks_env_mod._SESSION   # None on a stdlib-only box
+
+
 class _FakeReqResp:
     """Minimal stand-in for a ``requests.Response`` (keep-alive backend)."""
 
@@ -330,7 +335,9 @@ class KeepAliveBackendTests(unittest.TestCase):
             sess.request.return_value = return_value
         req = request if isinstance(request, Request) else Request(
             request, method="GET", headers={"User-Agent": AKS_STAFF_UA})
-        with mock.patch("src.aks_env._SESSION", sess):
+        # Hermetic: the backend mirrors the process proxy env (like urllib); neutralise it.
+        with mock.patch("src.aks_env._SESSION", sess), \
+                mock.patch.dict("os.environ", {"no_proxy": "*"}):
             return _http_open_keepalive(req, 8, follow_redirects, host_locked), sess
 
     def test_2xx_returns_readable_response(self):
@@ -369,12 +376,118 @@ class KeepAliveBackendTests(unittest.TestCase):
         with resp as r:
             self.assertEqual(r.status, 200)
         self.assertEqual(sess.request.call_count, 2)
+        # Audit 2026-09-09: assert the hop actually PROGRESSED to the Location and the
+        # request shape (method, UA header, no auto-follow, timeout, env-blind proxies).
+        first, second = sess.request.call_args_list
+        self.assertEqual(first.args, ("GET", "https://www.allkeyshop.com/blog/x"))
+        self.assertEqual(second.args, ("GET", "https://www.allkeyshop.com/blog/y"))
+        for call in (first, second):
+            self.assertEqual(call.kwargs["headers"]["User-agent"], AKS_STAFF_UA)
+            self.assertFalse(call.kwargs["allow_redirects"])
+            self.assertEqual(call.kwargs["timeout"], 8)
+            self.assertEqual(call.kwargs["proxies"], {})
+        self.assertTrue(resps[0].closed)   # the 3xx hop is closed before moving on
+        self.assertTrue(resps[1].closed)   # __exit__ closes the final response
+
+    def test_host_locked_resolves_relative_location_against_current_hop(self):
+        resps = [_FakeReqResp(301, b"", {"Location": "/blog/a/"}),
+                 _FakeReqResp(302, b"", {"Location": "b/"}),
+                 _FakeReqResp(200, b"ok")]
+        resp, sess = self._open("https://www.allkeyshop.com/blog/x", host_locked=True,
+                                side_effect=resps)
+        with resp as r:
+            self.assertEqual(r.status, 200)
+        urls = [c.args[1] for c in sess.request.call_args_list]
+        self.assertEqual(urls, ["https://www.allkeyshop.com/blog/x",
+                                "https://www.allkeyshop.com/blog/a/",
+                                "https://www.allkeyshop.com/blog/a/b/"])
+
+    @unittest.skipUnless(_REAL_SESSION is not None, "requests not installed (stdlib-only box)")
+    def test_host_locked_lowercase_location_header_is_followed(self):
+        # The property production relies on is requests' CaseInsensitiveDict — use the
+        # real class, not a stand-in (review 2026-09-09).
+        from requests.structures import CaseInsensitiveDict
+        resps = [_FakeReqResp(302, b"", CaseInsensitiveDict({"location": "https://www.allkeyshop.com/blog/y"})),
+                 _FakeReqResp(200, b"ok")]
+        resp, sess = self._open("https://www.allkeyshop.com/blog/x", host_locked=True,
+                                side_effect=resps)
+        with resp as r:
+            self.assertEqual(r.status, 200)
+        self.assertEqual(sess.request.call_args_list[1].args[1], "https://www.allkeyshop.com/blog/y")
+
+    def test_host_locked_3xx_without_location_is_not_followed(self):
+        with self.assertRaises(HTTPError) as ctx:
+            self._open("https://www.allkeyshop.com/blog/x", host_locked=True,
+                       return_value=_FakeReqResp(302, b"", {}))
+        self.assertEqual(ctx.exception.code, 302)
+
+    def test_host_locked_follows_exactly_ten_redirects_like_urllib(self):
+        # Audit 2026-09-09: urllib's HTTPRedirectHandler follows 10 redirects (fetching the
+        # 11th URL); the loop used to follow only 9. 10 hops → 200 on both backends now.
+        chain = [_FakeReqResp(302, b"", {"Location": f"https://www.allkeyshop.com/blog/h{i}"})
+                 for i in range(10)] + [_FakeReqResp(200, b"end")]
+        resp, sess = self._open("https://www.allkeyshop.com/blog/x", host_locked=True,
+                                side_effect=chain)
+        with resp as r:
+            self.assertEqual(r.read(), b"end")
+        self.assertEqual(sess.request.call_count, 11)
+
+    def test_host_locked_eleventh_redirect_is_refused_single_wrapped(self):
+        chain = [_FakeReqResp(302, b"", {"Location": f"https://www.allkeyshop.com/blog/h{i}"})
+                 for i in range(12)]
+        with self.assertRaises(URLError) as ctx:
+            self._open("https://www.allkeyshop.com/blog/x", host_locked=True, side_effect=chain)
+        self.assertEqual(str(ctx.exception), "<urlopen error too many redirects (host-locked)>")
+        self.assertNotIn("<urlopen error <urlopen error", str(ctx.exception))  # no double wrap
+
+    def test_host_locked_refuses_backslash_authority_location(self):
+        # Audit 2026-09-09 (MAJOR): urlsplit reads the host as www.allkeyshop.com but
+        # urllib3 would CONNECT to evil.tld — the staff UA must never be sent there.
+        from src.aks_env import StaffUaRedirectRefused
+        evil = "https://evil.tld\\@www.allkeyshop.com/blog/x"
+        with self.assertRaises(StaffUaRedirectRefused):
+            self._open("https://www.allkeyshop.com/blog/x", host_locked=True,
+                       return_value=_FakeReqResp(302, b"", {"Location": evil}))
+        # userinfo form, same class of ambiguity
+        with self.assertRaises(StaffUaRedirectRefused):
+            self._open("https://www.allkeyshop.com/blog/x", host_locked=True,
+                       return_value=_FakeReqResp(302, b"", {"Location": "https://evil.tld@www.allkeyshop.com/x"}))
+        with self.assertRaises(StaffUaRedirectRefused):
+            self._open("https://www.allkeyshop.com/blog/x", host_locked=True,
+                       return_value=_FakeReqResp(302, b"", {"Location": "javascript:alert(1)"}))
+
+    def test_host_locked_never_requests_a_refused_location(self):
+        from src.aks_env import StaffUaRedirectRefused
+        evil = "https://evil.tld\\@www.allkeyshop.com/blog/x"
+        # only the original URL is ever requested — the refused hop never reaches the wire
+        sess = mock.Mock()
+        sess.request.return_value = _FakeReqResp(302, b"", {"Location": evil})
+        from urllib.request import Request
+        from src.aks_env import _http_open_keepalive
+        req = Request("https://www.allkeyshop.com/blog/x", headers={"User-Agent": AKS_STAFF_UA})
+        with mock.patch("src.aks_env._SESSION", sess):
+            with self.assertRaises(StaffUaRedirectRefused):
+                _http_open_keepalive(req, 8, True, True)
+        self.assertEqual([c.args[1] for c in sess.request.call_args_list],
+                         ["https://www.allkeyshop.com/blog/x"])
+
+    def test_host_locked_requotes_latin1_decoded_utf8_location_like_urllib(self):
+        # Audit 2026-09-09 (critic): http.client decodes header bytes as latin-1, so a UTF-8
+        # permalink "é" (C3 A9) arrives as "Ã©"; urllib re-quotes it to %C3%A9. Mirror that
+        # instead of letting urllib3 double-encode it to %C3%83%C2%A9 (a 404 on any site).
+        mojibake = "/blog/buy-pok\u00c3\u00a9mon-cd-key-compare-prices/"
+        resps = [_FakeReqResp(301, b"", {"Location": mojibake}), _FakeReqResp(200, b"ok")]
+        _, sess = self._open("https://www.allkeyshop.com/blog/x", host_locked=True,
+                             side_effect=resps)
+        self.assertEqual(sess.request.call_args_list[1].args[1],
+                         "https://www.allkeyshop.com/blog/buy-pok%C3%A9mon-cd-key-compare-prices/")
 
     def test_transport_error_becomes_urlerror(self):
-        import requests
+        # A transport failure (requests raises a RequestException subclass of OSError) maps
+        # to URLError. Uses the stdlib ConnectionError so the test runs without requests.
         with self.assertRaises(URLError):
             self._open("https://www.allkeyshop.com/blog/x",
-                       side_effect=requests.exceptions.ConnectionError("down"))
+                       side_effect=ConnectionError("down"))
 
     def test_no_follow_under_host_lock_surfaces_3xx_not_followed(self):
         # Adversarial verify 2026-09-08 (CRITICAL fail-open): a staff-UA + follow_redirects=
@@ -397,14 +510,22 @@ class KeepAliveBackendTests(unittest.TestCase):
     def test_too_many_redirects_fails_closed(self):
         # re-verify 2026-09-08: the Session caps at max_redirects=10 (like urllib), so a
         # >10-hop chain raises TooManyRedirects → URLError → ok=False, never a spurious 200.
-        import requests
+        class TooManyRedirects(Exception):   # shape of requests.exceptions.TooManyRedirects
+            pass
         with self.assertRaises(URLError):
-            self._open("https://www.allkeyshop.com/blog/x",
-                       side_effect=requests.exceptions.TooManyRedirects("loop"))
+            self._open("https://www.allkeyshop.com/blog/x", side_effect=TooManyRedirects("loop"))
 
-    def test_session_matches_urllib_redirect_ceiling(self):
+    @unittest.skipUnless(_REAL_SESSION is not None, "requests not installed (stdlib-only box)")
+    def test_real_session_is_capped_stateless_and_env_blind(self):
+        # The three properties the keep-alive Session relies on, asserted on the REAL
+        # object (audit 2026-09-09: only max_redirects was covered before).
         import src.aks_env as env
         self.assertEqual(env._SESSION.max_redirects, 10)
+        self.assertFalse(env._SESSION.trust_env)            # no ~/.netrc, no CA env vars
+        policy = env._SESSION.cookies.get_policy()
+        self.assertEqual(policy.allowed_domains(), ())
+        self.assertTrue(policy.is_not_allowed("www.allkeyshop.com"))
+        self.assertTrue(policy.is_not_allowed("difmark.com"))
 
 
 class CurrentEnvironmentTests(unittest.TestCase):
@@ -539,6 +660,194 @@ class StaffUaRedirectGuardTests(unittest.TestCase):
             self.assertFalse(captured["host_locked"])
             http_get("https://www.allkeyshop.com/x", user_agent=AKS_STAFF_UA, follow_redirects=False)
             self.assertTrue(captured["host_locked"])            # passed, but _http_open uses the no-redirect handler
+
+
+
+class ProxyMirrorTests(unittest.TestCase):
+    """`_urllib_proxies` mirrors urllib's ProxyHandler env handling (review 2026-09-09)."""
+
+    ENV = {"http_proxy": "http://p:1", "https_proxy": "http://p:1",
+           "no_proxy": ".allkeyshop.com,172.17.0.1:9223"}
+
+    def test_env_proxies_forwarded_unless_bypassed(self):
+        from src.aks_env import _urllib_proxies
+        with mock.patch.dict("os.environ", self.ENV, clear=False):
+            self.assertEqual(_urllib_proxies("https://www.allkeyshop.com/blog/"), {})
+            self.assertEqual(_urllib_proxies("http://172.17.0.1:9223/json/version"), {})  # host:port form
+            self.assertEqual(_urllib_proxies("https://difmark.com/x").get("https"), "http://p:1")
+            self.assertEqual(_urllib_proxies("not a url"), {})
+
+    def test_every_keepalive_branch_passes_the_mirrored_proxies(self):
+        from urllib.request import Request
+        from src.aks_env import _http_open_keepalive
+        env = {"http_proxy": "http://p:1", "https_proxy": "http://p:1", "no_proxy": ""}
+        for follow, locked in ((False, True), (True, True), (True, False)):
+            sess = mock.Mock()
+            sess.request.return_value = _FakeReqResp(200, b"ok")
+            req = Request("https://www.allkeyshop.com/blog/x", headers={"User-Agent": AKS_STAFF_UA})
+            with mock.patch("src.aks_env._SESSION", sess), mock.patch.dict("os.environ", env):
+                _http_open_keepalive(req, 8, follow, locked)
+            self.assertEqual(sess.request.call_args.kwargs["proxies"].get("https"), "http://p:1",
+                             (follow, locked))
+
+
+class HostGuardTests(unittest.TestCase):
+    """`_allkeyshop_host` must be UNAMBIGUOUS across URL parsers (audit 2026-09-09)."""
+
+    def test_accepts_plain_allkeyshop_hosts(self):
+        from src.aks_env import _allkeyshop_host
+        for url in ("https://www.allkeyshop.com/blog/x", "http://allkeyshop.com",
+                    "https://WWW.AllKeyShop.com:443/blog/?s=q#f", "https://cdn.allkeyshop.com/a"):
+            self.assertTrue(_allkeyshop_host(url), url)
+
+    def test_refuses_ambiguous_or_foreign_authorities(self):
+        from src.aks_env import _allkeyshop_host
+        for url in ("https://evil.tld\\@www.allkeyshop.com/x",     # backslash: urllib3 → evil.tld
+                    "https://evil.tld@www.allkeyshop.com/x",       # userinfo
+                    "https://www.allkeyshop.com evil.tld/x",       # whitespace
+                    "https://www.allkeyshop.com.evil.tld/x",       # suffix trick
+                    "https://notallkeyshop.com/x", "https://allkeyshop.com.evil/x",
+                    "javascript:alert(1)", "data:text/html,x", "//www.allkeyshop.com/x",
+                    "https://[::1]/x", ""):
+            self.assertFalse(_allkeyshop_host(url), url)
+
+
+class _LocalHandler(__import__("http.server").server.BaseHTTPRequestHandler):
+    """Tiny 127.0.0.1 server for REAL-backend tests: records every request it sees."""
+    seen: list = []
+
+    def log_message(self, *a):  # silence
+        pass
+
+    def do_HEAD(self):
+        type(self).seen.append((self.path, dict(self.headers)))
+        self.send_response(200 if self.path == "/ok" else 404)
+        self.send_header("Content-Length", "0"); self.end_headers()
+
+    def do_GET(self):
+        type(self).seen.append((self.path, dict(self.headers)))
+        if self.path == "/ok":
+            body = b"ok"
+            self.send_response(200); self.send_header("Content-Length", str(len(body)))
+            self.end_headers(); self.wfile.write(body)
+        elif self.path == "/r302":
+            self.send_response(302); self.send_header("Location", "/ok"); self.end_headers()
+        elif self.path == "/off":                                  # off-domain hop
+            self.send_response(302)
+            self.send_header("Location", f"http://localhost:{self.server.server_port}/ok")
+            self.end_headers()
+        elif self.path == "/backslash":   # parser-differential authority (audit major)
+            self.send_response(302)
+            self.send_header("Location",
+                             f"http://localhost:{self.server.server_port}\\@127.0.0.1:{self.server.server_port}/ok")
+            self.end_headers()
+        elif self.path == "/setcookie":
+            self.send_response(200); self.send_header("Set-Cookie", "sid=42; Path=/")
+            self.send_header("Content-Length", "0"); self.end_headers()
+        elif self.path == "/echo":
+            body = json.dumps({"cookie": self.headers.get("Cookie"),
+                               "auth": self.headers.get("Authorization"),
+                               "ua": self.headers.get("User-Agent")}).encode()
+            self.send_response(200); self.send_header("Content-Length", str(len(body)))
+            self.end_headers(); self.wfile.write(body)
+        else:
+            self.send_response(404); self.send_header("Content-Length", "0"); self.end_headers()
+
+
+class RealBackendsLocalServerTests(unittest.TestCase):
+    """Drive the REAL `_http_open` dispatcher and BOTH backends end to end through http_get
+    against a throwaway 127.0.0.1 server (audit 2026-09-09: the dispatcher and the stdlib
+    fallback executed 0 times in the suite; a swapped positional in the dispatcher — the
+    exact 54f1f88 fail-open shape — went unnoticed). No network leaves the box."""
+
+    @classmethod
+    def setUpClass(cls):
+        import threading
+        from http.server import ThreadingHTTPServer
+        cls.server = ThreadingHTTPServer(("127.0.0.1", 0), _LocalHandler)
+        cls.port = cls.server.server_port
+        cls.thread = threading.Thread(target=cls.server.serve_forever, daemon=True)
+        cls.thread.start()
+        cls.base = f"http://127.0.0.1:{cls.port}"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown(); cls.server.server_close()
+
+    def setUp(self):
+        _LocalHandler.seen = []
+        # The staff host-lock is keyed on allkeyshop.com; point it at the local box so the
+        # host-locked branches run for real (localhost ≠ 127.0.0.1 → "off-domain"), keeping
+        # the REAL strictness (scheme + netloc regex) so the guard runs against a socket.
+        from urllib.parse import urlsplit
+        from src.aks_env import _STRICT_NETLOC_RE
+
+        def local_guard(u):
+            parts = urlsplit(u)
+            return (parts.scheme == "http" and bool(_STRICT_NETLOC_RE.match(parts.netloc or ""))
+                    and parts.hostname == "127.0.0.1")
+        patcher = mock.patch("src.aks_env._allkeyshop_host", local_guard)
+        patcher.start(); self.addCleanup(patcher.stop)
+        env = mock.patch.dict("os.environ", {"no_proxy": "*"})   # hermetic to the shell's proxies
+        env.start(); self.addCleanup(env.stop)
+
+    def _backends(self):
+        yield "urllib", mock.patch("src.aks_env._SESSION", None)
+        if _REAL_SESSION is not None:
+            yield "keep-alive", mock.patch("src.aks_env._SESSION", _REAL_SESSION)
+
+    def test_no_redirect_mode_never_follows_on_either_backend(self):
+        for name, patch in self._backends():
+            with self.subTest(backend=name), patch:
+                _LocalHandler.seen = []
+                p = http_get(self.base + "/r302", follow_redirects=False, user_agent=AKS_STAFF_UA)
+                self.assertEqual(p.status, 302, name)
+                self.assertEqual([s[0] for s in _LocalHandler.seen], ["/r302"], name)
+
+    def test_staff_follow_same_host_and_refuses_off_host_on_either_backend(self):
+        for name, patch in self._backends():
+            with self.subTest(backend=name), patch:
+                _LocalHandler.seen = []
+                p = http_get(self.base + "/r302", user_agent=AKS_STAFF_UA)
+                self.assertEqual((p.ok, p.status, p.body), (True, 200, "ok"), name)
+                self.assertEqual([s[0] for s in _LocalHandler.seen], ["/r302", "/ok"], name)
+                _LocalHandler.seen = []
+                p = http_get(self.base + "/off", user_agent=AKS_STAFF_UA)
+                self.assertEqual((p.ok, p.status), (False, 302), name)
+                # the refused hop was NEVER requested — the staff UA stayed on-host
+                self.assertEqual([s[0] for s in _LocalHandler.seen], ["/off"], name)
+                _LocalHandler.seen = []
+                # backslash-authority Location (urlsplit says 127.0.0.1, urllib3 would connect
+                # to localhost): refused BEFORE any socket is opened, on both backends
+                p = http_get(self.base + "/backslash", user_agent=AKS_STAFF_UA)
+                self.assertEqual((p.ok, p.status), (False, 302), name)
+                self.assertEqual([s[0] for s in _LocalHandler.seen], ["/backslash"], name)
+
+    def test_plain_ua_follow_and_status_mapping_on_either_backend(self):
+        for name, patch in self._backends():
+            with self.subTest(backend=name), patch:
+                p = http_get(self.base + "/r302")
+                self.assertEqual((p.ok, p.status, p.body), (True, 200, "ok"), name)
+                p = http_get(self.base + "/missing")
+                self.assertEqual((p.ok, p.status), (False, 404), name)
+                self.assertEqual(http_head_status(self.base + "/ok").status, 200, name)
+                self.assertIn("Content-Length", http_get(self.base + "/echo").headers, name)
+
+    def test_keepalive_is_stateless_across_calls_and_netrc_blind(self):
+        if _REAL_SESSION is None:
+            self.skipTest("requests not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            netrc = Path(tmp) / "netrc"
+            netrc.write_text("default login leakuser password leakpass\n")
+            netrc.chmod(0o600)
+            with mock.patch.dict("os.environ", {"NETRC": str(netrc)}), \
+                    mock.patch("src.aks_env._SESSION", _REAL_SESSION):
+                http_get(self.base + "/setcookie")
+                echo = json.loads(http_get(self.base + "/echo").body)
+        self.assertIsNone(echo["cookie"])       # Set-Cookie from call N never replayed
+        self.assertIsNone(echo["auth"])         # no ~/.netrc Authorization injection
+        self.assertEqual(echo["ua"], REQUIRED_USER_AGENT)
+        self.assertEqual(len(_REAL_SESSION.cookies), 0)
 
 
 if __name__ == "__main__":

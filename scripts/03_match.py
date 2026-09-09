@@ -23,7 +23,7 @@ if str(ROOT) not in sys.path:
 
 from src.aks_env import AKS_DIRECT_URL, AKS_STAFF_UA, http_get, validate_aks_direct_status  # noqa: E402
 from src.contracts import NormalizedFeed, NormalizedOffer  # noqa: E402
-from src.matcher import match_feed, resolve_aks  # noqa: E402
+from src.matcher import AksThrottled, match_feed, resolve_aks  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
 
 
@@ -78,13 +78,30 @@ def main() -> int:
     # Live progression: log match_progress events to the run's JSONL so the
     # admin streams them (2026-07-20). Harmless for a plain CLI run too.
     logger = RunLogger(feed.run_id, log_dir=str(ROOT / "logs"))
-    candidates, skipped = match_feed(
-        feed, resolve_aks, max_candidates=args.max_candidates,
-        on_progress=lambda d: logger.log("match_progress", **d),
-    )
-
     out_dir = Path(args.out_dir) if args.out_dir else Path(args.offers).resolve().parent
     out_dir.mkdir(parents=True, exist_ok=True)
+    aborted_path = out_dir / "match_aborted.json"
+    try:
+        candidates, skipped = match_feed(
+            feed, resolve_aks, max_candidates=args.max_candidates,
+            on_progress=lambda d: logger.log("match_progress", **d),
+        )
+    except AksThrottled as exc:
+        # Audit 2026-09-09 (critic): AKS is pushing back (429 / consecutive unreliable
+        # probes) → STOP fail-closed instead of one 429 per offer at the pacing rate with
+        # every offer silently skipped. Exit 2 halts a safe-auto sweep (MatchOutcome.ok is
+        # rc == 0) and shows the console stage as failed; nothing is written.
+        logger.log("match_aborted", reason="aks_throttled", detail=str(exc))
+        # Sidecar for the safe-auto sweep (whose child stdout is not captured): scripts/10
+        # folds it into the recap so a throttle is distinguishable from a match crash.
+        aborted_path.write_text(json.dumps({"reason": "aks_throttled", "detail": str(exc)},
+                                           indent=2), encoding="utf-8")
+        print(json.dumps({"aborted": True, "reason": "aks_throttled", "detail": str(exc)},
+                         indent=2))
+        return 2
+    if aborted_path.exists():
+        aborted_path.unlink()      # a clean match supersedes a previous abort of this dir
+
     (out_dir / "candidates.json").write_text(
         json.dumps([c.to_dict() for c in candidates], indent=2), encoding="utf-8"
     )
@@ -100,6 +117,10 @@ def main() -> int:
             "run_id": feed.run_id,
             "data_entry_mode": args.mode,
             "matched_at": feed.fetched_at,
+            # Audit 2026-09-09: how many offers were skipped on an unreliable AKS probe
+            # (below the AksThrottled abort threshold) — a throttled page is otherwise
+            # indistinguishable from an empty one in the recap.
+            "probe_unreliable": sum(1 for s in skipped if s.reason.startswith("AKS probe unreliable")),
         }, indent=2),
         encoding="utf-8",
     )

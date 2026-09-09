@@ -28,7 +28,10 @@ Design after the 2026-08-04 adversarial review (which found real defects):
   mode). A NotLoggedIn/feed-unreadable is a STOP, never an auto re-auth.
 
 * COVERAGE HONESTY. Hitting the ``max_pages`` cap while the feed advertises more
-  pages is flagged (``coverage_incomplete_max_pages``), never a silent clean end.
+  pages (or a feed that grew mid-sweep) is recorded in the recap's ``coverage``
+  field (``incomplete_max_pages`` / ``incomplete_feed_grew``), never a silent clean
+  end — but it is NOT a halt (audit 2026-09-09): the sweep is clean, a multi-merchant
+  batch continues and the process exits 0.
 
 * OPERATOR STOP is re-checked between stages (and before the real submit), so a
   stop that lands mid-page still prevents that page's writes when it can.
@@ -56,7 +59,8 @@ class SweepConfig:
     merchant: str
     store_id: str
     start_page: int = 1
-    max_pages: int = 400      # safety cap on pages processed (a full shop is fewer)
+    max_pages: int = 30       # shallow-index cap, same default as scripts/10 --max-pages (the
+                              # submit index is only productive on the ~28-30 shallowest pages)
 
 
 @dataclass
@@ -72,6 +76,7 @@ class MatchOutcome:
     ok: bool
     candidates: int = 0
     movable: int = 0          # routable skips on this page (→ Move-to-List step)
+    probe_unreliable: int = 0  # offers skipped on an unreliable AKS probe (below the abort bar)
     detail: str = ""
 
 
@@ -156,7 +161,10 @@ def run_sweep(
 ) -> dict[str, Any]:
     """Sweep a merchant's feed reflow-safe (highest page first), halting fail-closed.
 
-    Returns ``{merchant, store_id, pages:[…], total_created, halted, feed_last_page}``.
+    Returns ``{merchant, store_id, pages:[…], total_created, total_moved, halted,
+    feed_last_page, coverage}`` — ``coverage`` (set only when ``halted`` is None) is
+    ``None`` | ``'incomplete_max_pages (feed has N pages)'`` | ``'incomplete_feed_grew
+    (a→b pages)'``; a page entry may carry ``probe_unreliable`` (unreliable-probe skips).
     ``on_page`` is called after each page with the LIVE recap dict (mutated in
     place) so the caller can persist per-page progress before the sweep returns.
     """
@@ -164,7 +172,7 @@ def run_sweep(
     recap: dict[str, Any] = {
         "merchant": cfg.merchant, "store_id": cfg.store_id,
         "pages": [], "total_created": 0, "total_moved": 0,
-        "halted": None, "feed_last_page": None,
+        "halted": None, "feed_last_page": None, "coverage": None,
     }
 
     def finish_page(entry: dict[str, Any]) -> None:
@@ -224,6 +232,8 @@ def run_sweep(
         entry["candidates"] = mt.candidates
         if mt.movable:
             entry["movable"] = mt.movable
+        if mt.probe_unreliable:
+            entry["probe_unreliable"] = mt.probe_unreliable   # a throttled page ≠ an empty one
         if not mt.ok:
             entry["error"] = "match: " + (mt.detail or "failed")
             recap["halted"] = f"match_failed_p{page}"
@@ -280,15 +290,19 @@ def run_sweep(
 
         finish_page(entry)
 
-    # Coverage honesty: a max_pages cap over a longer feed, OR a feed that GREW
-    # past the probed last page mid-sweep (a re-import), is NOT a clean full sweep.
-    # The tail pages beyond ``top`` were never processed — flag it, never a silent
-    # clean end (the operator re-runs on the fresh feed to catch the new tail).
+    # Coverage honesty: a max_pages cap over a longer feed, OR a feed that GREW past the
+    # probed last page mid-sweep (a re-import), is NOT a full sweep — the tail pages beyond
+    # ``top`` were never processed. Recorded in ``coverage``, never a silent clean end (the
+    # operator re-runs deeper / on the fresh feed to catch the tail). Audit 2026-09-09: this
+    # used to be a ``halted`` fail-closed halt, which with the default --max-pages 30 stopped
+    # EVERY multi-merchant batch on its first deep feed (exit 2, later merchants never swept,
+    # run shown as failed). A cap is the expected outcome of the shallow-index default, not
+    # a broken session — so it is coverage information, not a halt.
     if recap["halted"] is None:
         if capped:
-            recap["halted"] = f"coverage_incomplete_max_pages (feed has {feed_last} pages)"
+            recap["coverage"] = f"incomplete_max_pages (feed has {feed_last} pages)"
         elif max_seen > feed_last:
-            recap["halted"] = f"coverage_incomplete_feed_grew ({feed_last}→{max_seen} pages)"
+            recap["coverage"] = f"incomplete_feed_grew ({feed_last}→{max_seen} pages)"
 
     return recap
 

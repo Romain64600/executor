@@ -14,7 +14,7 @@ does not finish clean HALTS the whole sweep (no plowing through a broken session
 a NotLoggedIn/feed-unreadable abort stops it, never a re-auth.
 
   python3 scripts/10_data_entry_auto.py --targets "Kinguin:58" --run-id <id>
-  python3 scripts/10_data_entry_auto.py --targets "Kinguin:58,Eneba:70" --max-pages 50
+  python3 scripts/10_data_entry_auto.py --targets "Kinguin:58,Eneba:19" --max-pages 50
 """
 from __future__ import annotations
 
@@ -94,6 +94,16 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
                          str(ROOT / "runs" / run_id / "offers.json")])
         cands = _load_json(ROOT / "runs" / run_id / "candidates.json")
         n = len(cands) if isinstance(cands, list) else 0
+        # Review 2026-09-09: surface WHY 03 aborted (its stdout is not captured) and how
+        # many offers were skipped on an unreliable AKS probe below the abort threshold —
+        # a throttled page must not read like an empty one in the recap.
+        detail = "" if rc == 0 else f"exit {rc}"
+        if rc != 0:
+            aborted = _load_json(ROOT / "runs" / run_id / "match_aborted.json")
+            if isinstance(aborted, dict) and aborted.get("reason"):
+                detail = f"exit {rc} ({aborted['reason']}: {str(aborted.get('detail') or '')[:120]})"
+        meta = _load_json(ROOT / "runs" / run_id / "match_meta.json")
+        unreliable = int((meta or {}).get("probe_unreliable") or 0) if isinstance(meta, dict) else 0
         movable = 0
         if triage:
             # Count this page's routable skips (→ Move-to-List). Pure read of the
@@ -102,7 +112,7 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
             skipped = _load_json(ROOT / "runs" / run_id / "skipped.json") or []
             movable = int(plan_moves_from_skipped(skipped).get("movable", 0))
         return MatchOutcome(ok=(rc == 0), candidates=n, movable=movable,
-                            detail="" if rc == 0 else f"exit {rc}")
+                            probe_unreliable=unreliable, detail=detail)
 
     def approve(run_id: str) -> int:
         run_dir = ROOT / "runs" / run_id
@@ -299,8 +309,9 @@ def main() -> int:
              "shallowest pages — deeper pages are old/obscure titles that mostly 404 on "
              "resolve (slowest matching, ~0 candidate). Capping skips that junk for a big "
              "wall-clock win at ~0 productive loss; hitting the cap over a longer feed is "
-             "still flagged coverage_incomplete_max_pages (honest, never a silent clean end). "
-             "Raise it for a deliberate deep sweep.")
+             "recorded as coverage=incomplete_max_pages in the merchant's recap (honest, never "
+             "a silent clean end) — it is NOT a halt: the batch continues and exits 0 (audit "
+             "2026-09-09). Raise it for a deliberate deep sweep.")
     ap.add_argument("--available", default="all", choices=["all", "pending"])
     ap.add_argument("--pace", default=None)
     ap.add_argument("--triage", action="store_true",
@@ -314,6 +325,13 @@ def main() -> int:
                          "NO submit and NO move (nothing written). ADDs are counted "
                          "from candidates.json, not created.")
     args = ap.parse_args()
+    if args.max_pages < 1 or args.start_page < 1:
+        # Review 2026-09-09: with the cap now benign coverage (not a halt), a zero/negative
+        # cap would be a silent exit-0 "done" run that processes NO page. Fail loud instead.
+        print(json.dumps({"aborted": True,
+                          "reason": f"--max-pages ({args.max_pages}) and --start-page "
+                                    f"({args.start_page}) must be >= 1"}))
+        return 2
 
     # Audit (Romain 2026-08-14): --move-execute only has an effect with --triage
     # (the Move stage is installed only then). Accepting it silently would let an
@@ -362,7 +380,7 @@ def main() -> int:
     sweep_dir = ROOT / "runs" / run_id
     sweep_dir.mkdir(parents=True, exist_ok=True)
     recap = {"run_id": run_id, "started_at": _clock(), "targets": [], "halted": None,
-             "total_created": 0, "total_moved": 0}
+             "coverage_incomplete": [], "total_created": 0, "total_moved": 0}
     recap_path = sweep_dir / "recap.json"
 
     def persist():
@@ -400,6 +418,10 @@ def main() -> int:
                           page_run_id=lambda p, sl=slug, sid=store_id: f"{run_id}-{sl}-s{sid}-p{p}",
                           should_stop=lambda: _RUNNER.stopped, on_page=on_page)
         target_entry["recap"] = sweep
+        if sweep.get("coverage"):
+            # Benign coverage cap (max_pages / feed grew): surfaced at batch level for the
+            # operator, but NOT a halt — the next merchant is still swept (audit 2026-09-09).
+            recap["coverage_incomplete"].append(f"{merchant}: {sweep['coverage']}")
         persist()
         # A fail-closed halt on one merchant stops the whole batch (a broken
         # session / login bounce affects every subsequent merchant too).
@@ -415,6 +437,7 @@ def main() -> int:
     print(json.dumps({"run_id": run_id, "total_created": recap["total_created"],
                       "total_moved": recap["total_moved"],
                       "halted": recap["halted"], "targets": len(recap["targets"]),
+                      "coverage_incomplete": recap["coverage_incomplete"],
                       "recap": str(recap_path)}, ensure_ascii=False, indent=2))
     # [34] Fable re-audit 2026-09-06: exit non-zero when the sweep HALTED fail-closed, so
     # a supervising caller (manager / CI) sees the failure instead of a green exit 0. A

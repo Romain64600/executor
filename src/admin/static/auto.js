@@ -142,7 +142,11 @@ function startPolling(runId) {
     else if (busy && busy.kind === "data_entry_auto") running = true;
     else if (rec) running = !rec.finished_at;
     else running = false;
-    if (!running) endSweepUi(rec && rec.halted ? ("Arrêté : " + rec.halted) : "Sweep terminé.");
+    if (!running) {
+      const cov = rec && rec.coverage_incomplete && rec.coverage_incomplete.length ? rec.coverage_incomplete : [];
+      endSweepUi(rec && rec.halted ? ("Arrêté : " + rec.halted)
+                 : (cov.length ? "Sweep terminé — couverture partielle : " + cov.join(" ; ") : "Sweep terminé."));
+    }
   };
   tick(); POLL = setInterval(tick, 5000);
 }
@@ -172,7 +176,11 @@ function renderRecap(d) {
   if (!rec) { $("#recap-summary").textContent = "En attente du premier scan…"; return; }
   const st = rec.finished_at ? (rec.halted ? "halted" : "done") : "running";
   const pill = $("#recap-status");
-  pill.textContent = rec.halted ? "ARRÊTÉ — " + rec.halted : (rec.finished_at ? "TERMINÉ" : "EN COURS");
+  // A coverage cap (max_pages / feed grew) is NOT a halt: the run is done, just not deep.
+  const partial = (rec.coverage_incomplete && rec.coverage_incomplete.length) ||
+                  (rec.targets || []).some(t => t.recap && t.recap.coverage);
+  pill.textContent = rec.halted ? "ARRÊTÉ — " + rec.halted
+                   : (rec.finished_at ? (partial ? "TERMINÉ — couverture partielle" : "TERMINÉ") : "EN COURS");
   pill.className = "pill " + st;
   const total = rec.total_created || 0;
   $("#recap-summary").replaceChildren(
@@ -183,12 +191,13 @@ function renderRecap(d) {
   wrap.replaceChildren();
   for (const t of (rec.targets || [])) {
     const sr = t.recap || {};
-    wrap.append(el("h3", { class: "t-title", text: t.merchant + " (store " + t.store_id + ") — " + (sr.total_created || 0) + " créées" + (sr.halted ? " · " + sr.halted : "") }));
+    wrap.append(el("h3", { class: "t-title", text: t.merchant + " (store " + t.store_id + ") — " + (sr.total_created || 0) + " créées" + (sr.halted ? " · " + sr.halted : "") + (sr.coverage ? " · couverture : " + sr.coverage : "") }));
     for (const p of (sr.pages || [])) {
       const tags = [];
       if (p.end_of_feed) tags.push("fin du feed");
       if (p.empty) tags.push("page vide (feed rétréci)");
       if (p.stopped_before_submit) tags.push("stop avant écriture");
+      if (p.probe_unreliable) tags.push("⚠ " + p.probe_unreliable + " sonde(s) AKS non fiable(s)");
       if (p.error) tags.push("⚠ " + p.error);
       const head = el("div", { class: "pg-head" }, [
         el("span", { class: "pg-n", text: "page " + p.page }),

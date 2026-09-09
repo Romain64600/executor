@@ -191,7 +191,8 @@ Consumes the normalized offers JSON; emits candidates JSON + skipped JSON. No
 network side effects except read-only AKS slug `200` checks.
 
 ### 4.1 Name match — necessary condition `[R01]`
-Tokenize the AKS product name (NFKC-normalize, then apostrophes
+Tokenize the AKS product name (strip trademark/legal symbols
+`™ ℠ № ℡ © ® ℗ ℅ ℀ ℁ ℆` to a space, then NFKC-normalize, then apostrophes
 `U+2019/U+2018 → '`). **Every meaningful word of the AKS name must be present
 in the merchant title.** One word missing → **SKIP**. (Necessary, not
 sufficient.)
@@ -207,6 +208,13 @@ before both — standard-library, zero-dependency, and specifically designed
 to decompose compatibility characters like Roman numerals into plain ASCII
 ("Ⅱ" → "II"). Curly quotes stay a separate explicit replace (not an NFKC
 compatibility decomposition of `'`).
+**Symbol strip before NFKC (2026-09-08, Eneba `Company™`):** NFKC decomposes `™`
+into the letters `TM` glued to the word (`COMPANYTM`), so these symbols are
+replaced by a space BEFORE NFKC in `normalize_apostrophes` (covers tokenize /
+cleaned_title / build_slug_candidates). `©`/`®`/`℗` have no NFKC decomposition
+(`tokenize`'s `[A-Z0-9']+` would drop them anyway); they sit in the same strip so
+that `cleaned_title` — the AKS search query and the slug candidates — never
+carries them.
 
 ### 4.2 Different-product guard — `[R01b]`
 Even if all words match, **SKIP** when the merchant title carries a dangerous
@@ -555,6 +563,21 @@ URL domain matches the merchant (e.g. must contain `kinguin.net` for Kinguin)
 `[KINGUIN]`.
 
 ### 4.7 AKS resolution
+
+**Throttle guard (2026-09-09, audit/critic).** Below the per-slug rule `MA1` (a
+transient answer on a *guessed* slug raises immediately → per-offer skip "AKS probe
+unreliable"), the match stage has a stage-level STOP: the **first `429`** on any AKS
+probe (guessed slug, site-search GET, or a search-fallback slug), or
+**`THROTTLE_MAX_CONSECUTIVE_UNRELIABLE` = 5 consecutive unreliable probes on distinct
+AKS pages** (a repeat of the same failing page does not count; any clean resolution
+resets), raises `AksThrottled`. `scripts/03_match.py` then exits **2** with stdout
+`{"aborted": true, "reason": "aks_throttled"}`, logs `match_aborted`, writes only the
+sidecar `match_aborted.json` (no candidates/skipped/match_meta) — so a safe-auto sweep
+halts `match_failed_p<N>` with the reason in its recap instead of recording a throttled
+page as clean. Below the bar, `match_meta.json.probe_unreliable` counts the unreliable
+skips (and the sweep page entry carries `probe_unreliable`). A non-200 site search other
+than 404/410 is unreliable, not "no result". The by-urls preview (scripts/11) applies the
+same rule to its URL resolves (`recap.aborted = aks_throttled`; a 429 is never retried).
 Build the slug from the AKS name (lowercase, `[^a-z0-9] → -`), verify
 `/blog/buy-{slug}-cd-key-compare-prices/` returns **200**, then extract
 `data-product-id` (the AKS_ID) and `<title>`. Extract available editions from
@@ -1453,6 +1476,11 @@ Règles de la vue Learning (audit `AUDIT_LEARNING_2026-07-21.md`) :
 ---
 
 ## 14. Workflow unifié par page — ADD / MOVE / SKIP `[R35]` (2026-08-13)
+
+> **Cap de pages = couverture, pas une halte (2026-09-09).** Le défaut `--max-pages 30` du
+> safe-auto s'arrête aux 30 pages les moins profondes ; un feed plus long est enregistré
+> dans le champ `coverage` du recap du marchand (`incomplete_max_pages (feed has N pages)`,
+> idem `incomplete_feed_grew (a→b pages)`), jamais dans `halted` : le lot continue, exit 0.
 
 Romain : *« vu qu'on passe page par page, on peut ajouter des offres safe. Par la
 même … envoyer certaines offres dans certaines listes … et on skippe ce qu'on a à

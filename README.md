@@ -174,11 +174,16 @@ executor/
 
 ## Requirements
 
-- **Python 3.10+** — the core is standard-library only. The sole **optional**
-  dependency is `requests` (`requirements.txt`): when installed it backs the AKS
-  resolve probes with an HTTP keep-alive Session (~1.85× faster matching, ban-safe —
-  same request count); when absent the code falls back to urllib with identical
-  behavior, so the invariant gate stays dependency-free.
+- **Python 3.11+** (Debian 12 target; urllib gained 308-redirect support in 3.11,
+  so the two HTTP backends only behave identically on 3.11+) — the core is
+  standard-library only. The sole **optional** dependency is `requests`
+  (`requirements.txt`): when installed it backs the AKS resolve probes with an HTTP
+  keep-alive Session (~1.85× faster matching, ban-safe — same request count); when
+  absent the code falls back to urllib with the same probe contract (status / ok /
+  body) — the wire shape differs (keep-alive, gzip) and the few known divergences are
+  all fail-closed (see `_http_open_keepalive`), never a less-closed outcome — so the
+  invariant gate stays dependency-free (the keep-alive Session ignores `~/.netrc` and
+  the CA-bundle env vars; proxy env vars are mirrored from urllib's own handling).
 - Production runtime target: a **Debian VPS** whose **CDP proxy is required** for
   every browser-driving stage — a socat bridge exposing the headless Chromium on
   the Docker bridge at `http://172.17.0.1:9223/json/version` (the official

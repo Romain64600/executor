@@ -27,6 +27,20 @@ def _load():
 
 M = _load()
 
+
+class PacingTests(unittest.TestCase):
+    def test_paces_between_urls_only_for_the_real_http_get(self):
+        # Audit 2026-09-09: the by-urls resolve loop had no inter-URL pacing (densest
+        # staff-UA burst once keep-alive landed). Same budget as the matcher; never under
+        # a test stub, never before the first URL.
+        from unittest import mock
+        with mock.patch.object(M.time, "sleep") as sleep:
+            M._pace_between_urls(M.http_get, 0)
+            M._pace_between_urls(lambda *a, **k: None, 1)
+            sleep.assert_not_called()
+            M._pace_between_urls(M.http_get, 1)
+            sleep.assert_called_once_with(M.AKS_PROBE_DELAY_S)
+
 AKS_BODY = (
     '<meta property="og:title" content="Buy Neon Beats CD Key Compare Prices">'
     '<div data-product-id="205027"></div>'
@@ -190,6 +204,20 @@ class ResolvePinnedTests(unittest.TestCase):
         with self.assertRaises(AksNameUnreadable):
             M.resolve_pinned(URL, _ok("<html>no id</html>"))
 
+    def test_429_is_never_retried_and_carries_status(self):
+        # Review 2026-09-09: an explicit rate limit is a STOP signal for the throttle guard,
+        # not a transient to retry 3× with backoff.
+        calls = []
+
+        def fake(url, timeout=8, user_agent=None):
+            calls.append(url)
+            return HttpProbeResult(url=url, ok=False, status=429, body="")
+
+        with self.assertRaises(M.AksProbeUnreliable) as ctx:
+            M.resolve_pinned(URL, fake)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(ctx.exception.status, 429)
+
     def test_transient_503_retries_then_resolves(self):
         # A 503 server blip is retried and resolves on a later 200 (Romain 2026-09-01:
         # buy-inner-world 503'd then 200'd seconds later). No sleep under a stub.
@@ -326,6 +354,17 @@ class RunPlanTests(unittest.TestCase):
             "name": [_row("100", "Neon Beats - Steam Key - GLOBAL", "https://testmart.com/neon-beats", store="999"),
                      _row("300", "Neon Beats - Steam Key - GLOBAL", "https://x/300", store="777")],
         })
+
+    def test_run_plan_aborts_on_aks_throttle(self):
+        # Review 2026-09-09: a throttled AKS must stop the preview (aborted=aks_throttled),
+        # not walk the whole URL list to a "completed" 0-résolu run.
+        with tempfile.TemporaryDirectory() as d:
+            recap = M.run_plan([URL, URL, URL], TARGETS, available="all",
+                               feed_page="aks-merchant-feeds-9", endpoint="x", run_dir=Path(d),
+                               http_get_fn=_status(429), session=self._session())
+        self.assertEqual(recap["aborted"], "aks_throttled")
+        self.assertEqual(len(recap["games"]), 1)          # stopped at the first 429
+        self.assertEqual(recap["totals"]["resolved"], 0)
 
     def test_end_to_end_filters_to_allowlist(self):
         with tempfile.TemporaryDirectory() as d:

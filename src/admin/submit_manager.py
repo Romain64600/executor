@@ -730,6 +730,7 @@ class SubmitManager:
             run_dir = self.repo_root / "runs" / run_id
             run_dir.mkdir(parents=True, exist_ok=False)
             spec = ",".join(f"{m}:{s}" for m, s in clean)
+            self._check_max_pages(max_pages)   # review 2026-09-09: parity with the other spawns
             argv = [self.python, str(self.data_entry_auto_script),
                     "--targets", spec, "--run-id", run_id]
             if max_pages is not None:

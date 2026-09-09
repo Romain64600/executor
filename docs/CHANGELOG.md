@@ -3,6 +3,67 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-09 — audit adversarial des 5 commits du 08/09 : 38 findings corrigés
+
+Revue en lecture seule demandée par Romain (« regarde mes 3 derniers commits, ne code
+pas ») des commits `184b2b8 → e7586f6`, menée en workflow multi-agents (5 chasseurs, 3
+vérificateurs adversariaux par finding, critique de complétude), coupée trois fois par la
+limite de session et reprise depuis son journal (état sauvegardé incrémentalement dans
+`docs/audit_2026-09-09_last-commits/`, bilan `BILAN.md`). **45 findings, 38 confirmés, 7
+réfutés, 0 critique, 2 majors.** Correctifs appliqués sur GO de Romain, puis re-vérifiés par
+une seconde revue adversariale (137 agents, 40 remarques mineures intégrées).
+
+- **[major, sécurité] Garde host-lock du staff-UA contournable** (`src/aks_env.py`
+  `_allkeyshop_host`) : `urlsplit` lisait `www.allkeyshop.com` dans
+  `https://evil.tld\@www.allkeyshop.com/x` alors que urllib3 (connexion keep-alive) s'arrête
+  au `\` et se connectait à `evil.tld` avec `AKS/Staff` — reproduit 3× à HEAD. Le garde exige
+  désormais un netloc non ambigu (`[A-Za-z0-9.-]` + `:port` optionnel, pas d'userinfo, de `\`,
+  d'espace, ni de schéma non-http). Testé sur les deux backends contre un serveur local.
+- **[major, ops] Défaut `--max-pages 30` = halte fail-closed du lot** : tout feed > 30 pages
+  finissait `halted=coverage_incomplete_max_pages` → `break` + exit 2, marchands suivants
+  jamais balayés, run « ARRÊTÉ » en console. Le cap est désormais **de la couverture** :
+  champ `coverage` du recap du marchand (`incomplete_max_pages (feed has N pages)` /
+  `incomplete_feed_grew (a→b pages)`), liste `coverage_incomplete` au niveau du lot, lot
+  poursuivi, exit 0, pastille « TERMINÉ — couverture partielle ». `SweepConfig.max_pages`
+  aligné à 30, placeholder `/auto` « 30 (défaut) », modale d'aide mise à jour.
+  `--max-pages`/`--start-page` < 1 refusés (exit 2) ; le manager valide `max_pages` aussi.
+- **Throttling AKS = STOP fail-closed** (critique de complétude) : `_ThrottleGuard` autour du
+  résolveur de `match_feed` lève `AksThrottled` au premier **429** (slug deviné, recherche R30
+  ou slug de repli) ou à **5 sondes non fiables consécutives sur des pages distinctes** ;
+  `03_match` sort en 2 (`reason: aks_throttled`, sidecar `match_aborted.json`, rien d'autre
+  écrit) → le sweep halte `match_failed_pN` avec la raison ; `match_meta.probe_unreliable` et
+  le recap de page comptent les skips non fiables sous le seuil. Une recherche R30 en 429/5xx
+  n'est plus « aucun résultat ». Même règle dans le flow by-urls (`recap.aborted =
+  aks_throttled`, 429 jamais retenté).
+- **Boucle host-locked keep-alive** : suit 10 redirects comme urllib (`range(11)`, l'ancien
+  `range(10)` en suivait 9) ; `Location` re-quotée comme `http_error_302` (permalink UTF-8 →
+  `%C3%A9`, plus de mojibake) ; `URLError` du plafond levée hors du `except` général (plus de
+  double enrobage). Divergences résiduelles documentées dans la docstring, toutes fail-closed.
+- **Session keep-alive env-blind** : `trust_env=False` (plus d'injection `Authorization` via
+  `~/.netrc`, ni `REQUESTS_CA_BUNDLE`) ; proxies miroir de urllib (`getproxies` +
+  `proxy_bypass` sur `host:port`).
+- **by-urls** : pacing `AKS_PROBE_DELAY_S` entre URLs (la boucle de résolution était la
+  rafale staff-UA la plus dense).
+- **Tests** (+31, 1322 → 1353) : dispatcher `_http_open` et les DEUX backends réels contre un
+  `http.server` 127.0.0.1 (no-redirect, host-lock same-host / off-host / `\@`, plain, HEAD,
+  cookies, netrc) ; boucle host-locked (hop 2, Location relative/minuscule/absente, plafond
+  10/11, `\@`, userinfo, `javascript:`, mojibake) ; garde strict ; miroir proxy ; session
+  réelle (cap, cookies, `trust_env`) ; throttle (429 immédiat, 5 distincts, page cassée
+  répétée, propagation status/slug, repli recherche) ; CLI 03 (abort/sidecar/compteur) ; CLI 10
+  (cap = exit 0 + lot poursuivi, bornes < 1) ; by-urls (429 non retenté, abort du run,
+  pacing) ; `Halo™Deluxe` non vacuous. Tests hermétiques aux variables proxy ; les tests
+  exigeant `requests` sont `skipUnless` (suite stdlib-only à nouveau verte).
+- **CI** : matrice Python 3.11 sans / avec `requests`. **Docs** : plancher Python 3.11+
+  (README, CONTRIBUTING, RUNBOOK), `requests` optionnel via `apt python3-requests` (PEP 668),
+  « même contrat de sonde » au lieu de « comportement identique », HANDOFF §1/§3/§4/§6/§7
+  (commandes corrigées : `Eneba:19`, script 11 `--run-id --urls-file`, étape `04_validate
+  check`, safe-auto marquée WRITE/GO avec `--dry-run`, `06_move` canary puis
+  `--i-authorize-batch`, 08/09), EXECUTOR_RULES §4.1/§4.7/§14, commentaires du strip ™ et du
+  pacing (attribution du ban 2026-08-28) réalignés.
+- Réfutés (non modifiés) : `pip` sous PEP 668 (`python3-requests` déjà tiré par certbot),
+  substring `"gone"` du recap (05 n'écrit jamais « NOT gone »), cas résiduels du matcher
+  (ᵀᴹ/Ⓡ/№, choix testé), docstring « single seam », `Location: javascript:` sur la gate.
+
 ## 2026-09-08 — keep-alive : correctif fail-open trouvé par vérif adversariale
 
 Vérif adversariale multi-agents du seam keep-alive (184b2b8) : 9 findings confirmés, dont
@@ -48,7 +109,8 @@ leviers (Romain) :
 - **Cap** `scripts/10 --max-pages` 200 → **30** par défaut : le sweep balaie p_top→p1, et
   l'index submit n'est productif que sur ~28-30 pages ; les pages profondes sont du software/
   obscur qui 404 (matching le plus lent, ~0 candidat). Le flag `coverage_incomplete_max_pages`
-  reste (honnête). Override pour un sweep profond délibéré.
+  reste (honnête) — devenu le champ `coverage` du recap, plus une halte, le 2026-09-09 (voir
+  cette entrée). Override pour un sweep profond délibéré.
 
 Mesuré sur petits lots live : **~255 req/min** (1,85× l'actuel), **0 erreur 429/5xx**. Combiné
 au cap (~55% des pages, les plus lentes, sautées), un marchand à feed profond gagne ~4× en

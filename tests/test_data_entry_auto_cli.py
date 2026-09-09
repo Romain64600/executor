@@ -59,6 +59,42 @@ class CliSeamTests(unittest.TestCase):
         self.assertEqual(rec["total_created"], 3)
         self.assertEqual(rec["targets"][0]["merchant"], "Kinguin")
 
+    def test_coverage_cap_is_not_a_halt_batch_continues_exit_0(self):
+        # Audit 2026-09-09 (major): with the default --max-pages 30 every deep feed used to
+        # end as halted=coverage_incomplete_max_pages → break + exit 2 → later merchants
+        # never swept and the console showed the run as failed. A cap is coverage info.
+        swept = []
+
+        def fake_run_sweep(cfg, stages, *, on_page=lambda r: None, **kw):
+            swept.append(cfg.merchant)
+            rec = {"merchant": cfg.merchant, "store_id": cfg.store_id, "pages": [],
+                   "total_created": 0, "halted": None,
+                   "coverage": "incomplete_max_pages (feed has 60 pages)" if cfg.merchant == "Kinguin" else None}
+            on_page(rec)
+            return rec
+
+        with mock.patch.object(self.MOD, "run_sweep", side_effect=fake_run_sweep), \
+                mock.patch.object(sys, "argv", ["10_data_entry_auto.py", "--targets",
+                                                "Kinguin:58,Eneba:19", "--run-id", "t-cov"]):
+            code = self.MOD.main()
+        self.assertEqual(code, 0)
+        self.assertEqual(swept, ["Kinguin", "Eneba"])       # the batch went on
+        rec = json.loads((self.MOD.ROOT / "runs" / "t-cov" / "recap.json").read_text())
+        self.assertIsNone(rec["halted"])
+        self.assertEqual(rec["coverage_incomplete"], ["Kinguin: incomplete_max_pages (feed has 60 pages)"])
+
+    def test_zero_or_negative_page_bounds_fail_loud(self):
+        # Review 2026-09-09: with the cap now benign coverage, --max-pages 0 would be a
+        # silent exit-0 "done" run processing no page. Refuse it before anything starts.
+        for argv in (["--max-pages", "0"], ["--max-pages", "-3"], ["--start-page", "0"]):
+            with self.subTest(argv=argv):
+                with mock.patch.object(self.MOD, "run_sweep") as rs, \
+                        mock.patch.object(sys, "argv", ["10_data_entry_auto.py", "--targets",
+                                                        "Kinguin:58", "--run-id", "t-bad"] + argv):
+                    code = self.MOD.main()
+                self.assertEqual(code, 2)
+                rs.assert_not_called()
+
     def test_exit_nonzero_when_sweep_halts_fail_closed(self):
         # [34] (Fable re-audit 2026-09-06): a fail-closed halt exits non-zero so a
         # supervising caller (manager / CI) sees the failure, not a green exit 0.

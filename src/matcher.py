@@ -78,10 +78,13 @@ AKS_COMPARE_URL = "https://www.allkeyshop.com/blog/buy-{slug}-{kind}-compare-pri
 AKS_PROBE_UA = AKS_STAFF_UA
 # Per-probe politeness budget for bulk AKS resolves. 0.3 → 0.15 (Romain 2026-09-08): the
 # serial 0.3s sleep DOMINATED match wall-clock (~69% of each 0.434s request; measured RPM
-# ~138). Halving it ~doubles the resolve rate (measured target ~330 RPM with HTTP keep-alive)
-# — still serial, no concurrency, so the request rate rise is modest and bounded (AKS/OVH
-# only ever banned under concurrent-browser load, not probe rate). Watched on a small batch
-# for 429/throttling before adopting; raise back if AKS pushes back.
+# ~138). Halving it ~doubles the resolve rate (measured ~255 RPM, ~330 theoretical with HTTP
+# keep-alive) — still serial, no concurrency, so the rate rise is bounded. This IS the one
+# change that raised the request rate (keep-alive alone did not); the 2026-08-28 IP ban
+# is attributed by src/invariants.py to bot-like plain-Chrome health probes run before every
+# stage, not to staff-UA probe rate. Runtime backstop (audit 2026-09-09): a 429 or a run of unreliable
+# probes aborts the match stage fail-closed (AksThrottled) — raise the delay back if AKS
+# pushes back.
 AKS_PROBE_DELAY_S = 0.15
 # Politeness budget for the two plain GETs to difmark.com per page-verified
 # offer (product page + its own top-offer API) — no staff UA bypass exists
@@ -470,13 +473,17 @@ EDITION_HINTS = (
 
 
 # -- pure helpers -----------------------------------------------------------
-# Trademark / legal / abbreviation symbols whose NFKC compatibility decomposition is a
-# LETTER sequence ("™"→"TM", "℠"→"SM", "№"→"No", "℡"→"TEL", "℅"→"c/o") — left in, NFKC glues
-# them onto the adjacent word and breaks identity checks ("Company™" → "COMPANYTM"; Eneba
-# escape + adversarial verify 2026-09-08). Stripped BEFORE NFKC in normalize_apostrophes so
-# EVERY caller is covered (tokenize / cleaned_title / build_slug_candidates / precheck), not
-# just tokenize. Deliberately NOT the letterlike MATH symbols (ℂ ℝ ℋ, Å U+212B) which
-# decompose to a single legitimate letter, nor Roman numerals (Ⅱ U+2161 → "II", kept).
+# Trademark / legal / abbreviation symbols stripped to a space BEFORE NFKC in
+# normalize_apostrophes, so EVERY caller is covered (tokenize / cleaned_title /
+# build_slug_candidates), not just tokenize. Two families (audit 2026-09-09 wording): ™ ℠
+# № ℡ decompose to a LETTER sequence ("TM", "SM", "No", "TEL") that NFKC glues onto the
+# adjacent word and breaks identity checks ("Company™" → "COMPANYTM"; Eneba escape +
+# adversarial verify 2026-09-08); ℅ ℀ ℁ ℆ decompose to letter+slash forms ("c/o", "a/c")
+# that leave stray letters behind; © ® ℗ have NO decomposition (the token regex already
+# dropped them) and are stripped only so cleaned_title / the R30 search query stay clean.
+# Deliberately NOT the letterlike MATH symbols (ℂ ℝ ℋ, Å U+212B) which decompose to a single
+# legitimate letter, nor Roman numerals (Ⅱ U+2161 → "II", kept). № is therefore dropped, not
+# read as "No" — a title spelling "№ 5" against an AKS "No. 5" would skip (R01), by design.
 _NFKC_LETTER_SYMBOL_RE = re.compile(
     "[©®℀℁℅℆№℗℠℡™]")
 
@@ -1316,7 +1323,67 @@ class AksProbeUnreliable(Exception):
     403/429/5xx/timeouts under bulk load are transient throttling, not proof
     that the product page does not exist — treating them as "no AKS page"
     makes candidate lists flap between runs. Fail closed, distinctly.
+    ``status`` carries the HTTP status (None for a transport failure) so the
+    match-level throttle guard can react to an explicit 429.
     """
+
+    def __init__(self, message: str, status: int | None = None, slug: str | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+        self.slug = slug        # which AKS page failed (the throttle guard dedupes on it)
+
+
+# Audit 2026-09-09 (critic): with 0.15 s pacing + keep-alive, a 429/503 window used to
+# turn EVERY offer into one probe → one 'AKS probe unreliable' skip at ~400 req/min on
+# one staff-UA connection, 03_match exited 0 and a safe-auto sweep plowed on, page after
+# page. The only safeguard was the human 'watched on a small batch'. Now deterministic:
+THROTTLE_MAX_CONSECUTIVE_UNRELIABLE = 5
+
+
+class AksThrottled(Exception):
+    """AKS is pushing back — a 429, or THROTTLE_MAX_CONSECUTIVE_UNRELIABLE offers in a row
+    whose probe was unreliable. The match stage must STOP fail-closed (03_match exits 2 →
+    a safe-auto sweep halts) instead of hammering AKS and silently false-skipping every
+    remaining offer of the page."""
+
+
+class _ThrottleGuard:
+    """Wraps the resolver handed to :func:`match_feed`: counts consecutive
+    :class:`AksProbeUnreliable` outcomes (reset by any clean resolution) and raises
+    :class:`AksThrottled` — which :func:`match_offer` does NOT catch — on a 429 or at
+    the consecutive limit. Everything else passes through unchanged."""
+
+    def __init__(self, resolver: Callable[..., AksResolution | None],
+                 limit: int = THROTTLE_MAX_CONSECUTIVE_UNRELIABLE) -> None:
+        self._resolver = resolver
+        self._limit = limit
+        self.consecutive = 0
+        self.unreliable_total = 0
+        self._last_failed: str | None = None
+
+    def __call__(self, name: str, **kwargs: Any) -> AksResolution | None:
+        try:
+            result = self._resolver(name, **kwargs)
+        except AksProbeUnreliable as exc:
+            self.unreliable_total += 1
+            if getattr(exc, "status", None) == 429:
+                raise AksThrottled(f"AKS answered 429 (rate limited): {exc}") from exc
+            # One persistently broken AKS page (a 500 on the slug shared by consecutive
+            # variants of one title) is NOT throttling: a repeat of the SAME failing page
+            # does not advance the count (review 2026-09-09) — only distinct pages do.
+            key = getattr(exc, "slug", None) or str(exc)
+            if key != self._last_failed:
+                self.consecutive += 1
+                self._last_failed = key
+            if self.consecutive >= self._limit:
+                raise AksThrottled(
+                    f"{self.consecutive} consecutive unreliable AKS probes on distinct pages "
+                    f"(last: {exc})"
+                ) from exc
+            raise
+        self.consecutive = 0
+        self._last_failed = None
+        return result
 
 
 class AksNameUnreadable(Exception):
@@ -1370,7 +1437,13 @@ def search_aks_slugs(
     url = f"{AKS_SEARCH_URL}?s={quote(query)}"
     probe = http_get_fn(url, timeout=AKS_SEARCH_TIMEOUT_S, user_agent=AKS_PROBE_UA)
     if not (probe.ok and probe.status == 200 and probe.body):
-        return []
+        if probe.status in (404, 410):
+            return []      # clean absence, same reading as a slug probe
+        # Review 2026-09-09: a throttled / failing site search used to soft-fail to [] →
+        # "no AKS product page found", which masked a 429/5xx from the throttle guard and
+        # even RESET its counter. Anything but 200/404/410 is unreliable, not "no result".
+        raise AksProbeUnreliable(f"site search -> {probe.status or probe.error}",
+                                 status=probe.status, slug="site-search")
     slugs: list[str] = []
     # P3-1 (audit 2026-09-02): AKS serves BOTH the ordinary `-cd-key-` page and a
     # bare `-key-` page (e.g. buy-the-green-light-key-compare-prices/, id 216255).
@@ -1416,7 +1489,8 @@ def resolve_aks(
         probe = http_get_fn(url, timeout=8, user_agent=AKS_PROBE_UA)
         if not (probe.ok and probe.status == 200 and probe.body):
             if probe.status not in (404, 410):
-                raise AksProbeUnreliable(f"{slug} -> {probe.status or probe.error}")
+                raise AksProbeUnreliable(f"{slug} -> {probe.status or probe.error}",
+                                         status=probe.status, slug=slug)
             continue
         resolution = _resolution_from_body(slug, url, probe.body)
         if resolution is None:
@@ -1432,13 +1506,16 @@ def resolve_aks(
     for slug in search_aks_slugs(name, http_get_fn):
         # P3-1: a fallback slug may live at the bare `-key-` page, not `-cd-key-`.
         # Probe both kinds (cd-key first — the common shape); the loop still soft-
-        # continues on any non-200 (the fallback never starts raising).
+        # continues on any non-200 EXCEPT an explicit 429, which is AKS pushing back and
+        # must reach the throttle guard (review 2026-09-09).
         for kind in ("cd-key", "key"):
             url = aks_url(slug, kind)
             if http_get_fn is http_get:
                 time.sleep(AKS_PROBE_DELAY_S)
             probe = http_get_fn(url, timeout=8, user_agent=AKS_PROBE_UA)
             if not (probe.ok and probe.status == 200 and probe.body):
+                if probe.status == 429:
+                    raise AksProbeUnreliable(f"{slug} -> 429", status=429, slug=slug)
                 continue
             resolution = _resolution_from_body(slug, url, probe.body)
             if resolution is not None:
@@ -2298,13 +2375,21 @@ def match_feed(
     every ``progress_every`` offers and once at the end with
     ``{done, total, candidates, skipped}`` — the admin logs these as
     ``match_progress`` events so the operator sees live progression instead of
-    a silent panel (the stage does no per-offer logging of its own)."""
+    a silent panel (the stage does no per-offer logging of its own).
+
+    Raises :class:`AksThrottled` (fail-closed STOP for the whole stage) on a 429 or
+    on THROTTLE_MAX_CONSECUTIVE_UNRELIABLE consecutive unreliable probes (audit
+    2026-09-09) — a per-offer unreliable probe below that stays a SkippedOffer."""
 
     candidates: list[Candidate] = []
     skipped: list[SkippedOffer] = []
     total = len(feed.offers)
+    guard = _ThrottleGuard(resolver)
+    # Account-page resolutions (Difmark accounts) go through the same guard when the
+    # production resolver is in use; an injected test resolver keeps the default.
+    account_resolver = guard if resolver is resolve_aks else resolve_aks
     for i, offer in enumerate(feed.offers, 1):
-        result = match_offer(offer, resolver, difmark_offer_resolver)
+        result = match_offer(offer, guard, difmark_offer_resolver, account_resolver=account_resolver)
         if isinstance(result, Candidate):
             if len(candidates) < max_candidates:
                 candidates.append(result)

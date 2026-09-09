@@ -38,10 +38,14 @@
         <section>
           <h4>Ce que fait ce mode · What it does</h4>
           <p lang="fr">Pour chaque marchand, il balaie le feed <b>page par page</b> : extraire → matcher →
-            <b>ajouter automatiquement TOUTES les offres candidates</b> (sans validation humaine) → page suivante,
-            jusqu'à la fin du feed. Il tient un <b>recap</b> détaillé.</p>
+            <b>ajouter automatiquement TOUTES les offres candidates</b> (sans validation humaine) → page suivante.
+            Par défaut il s'arrête aux <b>30 pages les moins profondes</b> (l'index submit n'est productif que là) :
+            sur un feed plus long le run finit « TERMINÉ — couverture partielle » (la fin non balayée est notée dans le
+            recap) ; monte « Max pages » pour un balayage profond. Il tient un <b>recap</b> détaillé.</p>
           <p class="en" lang="en">For each merchant it sweeps the feed page by page: extract → match → auto-add
-            EVERY candidate (no human validation) → next page, to the end of the feed, keeping a detailed recap.</p>
+            EVERY candidate (no human validation) → next page. By default it stops after the 30 shallowest pages
+            (where the submit index is productive): a deeper feed ends “TERMINÉ — couverture partielle” with the
+            unswept tail noted in the recap; raise “Max pages” for a deep sweep. It keeps a detailed recap.</p>
         </section>
         <section>
           <h4>Sécurité · Safety</h4>
@@ -74,7 +78,7 @@
         <span lang="en" class="en">Only vetted merchants are offered (auto = unvalidated writes).</span>
         Difmark (parké) et Gameboost sont exclus pour le moment.</p>
       <div class="opts">
-        <label>Max pages <input id="max-pages" type="number" min="1" placeholder="(tout le feed)" class="num"></label>
+        <label>Max pages <input id="max-pages" type="number" min="1" placeholder="30 (défaut)" class="num"></label>
         <label>Page de départ <input id="start-page" type="number" min="1" placeholder="1" class="num"></label>
       </div>
       <div class="golaunch">

@@ -330,8 +330,16 @@ class SweepEngineTests(unittest.TestCase):
         # (highest-first: 3,2,1), flag the rest as NOT covered.
         fs = FakeStages(10, {p: {"candidates": 0} for p in range(1, 11)})
         r = _run(fs, max_pages=3)
-        self.assertIn("coverage_incomplete_max_pages", r["halted"])
+        # Audit 2026-09-09: coverage, NOT a halt — the sweep is clean (the batch goes on).
+        self.assertIsNone(r["halted"])
+        self.assertIn("incomplete_max_pages (feed has 10 pages)", r["coverage"])
         self.assertEqual([p["page"] for p in r["pages"]], [3, 2, 1])
+
+    def test_uncapped_sweep_has_no_coverage_note(self):
+        fs = FakeStages(3, {p: {"candidates": 0} for p in range(1, 4)})
+        r = _run(fs, max_pages=3)
+        self.assertIsNone(r["halted"])
+        self.assertIsNone(r["coverage"])
 
     def test_operator_stop_before_submit(self):
         # stop lands after match, before the write → no submit on that page.
@@ -356,8 +364,8 @@ class SweepEngineTests(unittest.TestCase):
                 return out
         fs = GrowFakeStages(2, {1: {"candidates": 1}, 2: {"candidates": 1}})
         r = _run(fs)
-        self.assertIsNotNone(r["halted"])
-        self.assertIn("coverage_incomplete_feed_grew", r["halted"])
+        self.assertIsNone(r["halted"])
+        self.assertIn("incomplete_feed_grew (2→4 pages)", r["coverage"])
 
     def test_on_page_receives_live_recap_each_page(self):
         # The console's live panel needs per-page progress BEFORE the sweep

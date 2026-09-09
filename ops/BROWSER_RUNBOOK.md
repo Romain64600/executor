@@ -356,14 +356,18 @@ Procédure — au plus **UNE** offre en état UNKNOWN par run :
 ## 3. Checklist reconstruction VM (de zéro)
 
 Dans l'ordre. Prérequis : Debian 12 (bookworm), accès sudo, le dépôt cloné
-dans `/home/debian/executor`, **Python 3.10+**, Docker installé (l'interface
-`docker0` est requise par le pont socat, §1.3).
+dans `/home/debian/executor`, **Python 3.11+** (Debian 12 = 3.11), Docker installé
+(l'interface `docker0` est requise par le pont socat, §1.3).
 
-**Dépendances Python** (optionnelles) : `pip install -r requirements.txt` — installe
-`requests`, qui active le **keep-alive HTTP** des probes de résolution (~1,85× plus
-rapide, sans hausse de débit). Sans lui, le code retombe sur `urllib` (comportement
-identique, juste sans keep-alive), donc la gate d'invariants reste sans-dépendance. À faire
-sur le nouveau serveur pour retrouver la vitesse.
+**Dépendances Python** (optionnelles) : `requests` active le **keep-alive HTTP** des probes
+de résolution (~1,85× plus rapide, sans hausse de débit). Sur Debian 12, utiliser le paquet
+système `sudo apt install python3-requests` (2.28.1 suffit) : `pip install -r requirements.txt`
+est refusé par PEP 668 sur l'interpréteur système, et un venv ne serait pas vu par
+`aks-admin.service` qui lance `/usr/bin/python3`. Sans lui, le code retombe sur `urllib`
+(même contrat de sonde — status / ok / body — juste sans keep-alive), donc la gate
+d'invariants reste sans-dépendance. Vérifier depuis le repo :
+`python3 -c 'import src.aks_env as e; print("keep-alive" if e._SESSION else "urllib")'`.
+À faire sur le nouveau serveur pour retrouver la vitesse.
 
 1. **Chromium 149** :
    ```sh

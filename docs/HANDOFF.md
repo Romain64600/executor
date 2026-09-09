@@ -4,7 +4,7 @@ Ce document est le **point d'entrée de reprise** (migration serveur / nouvelle 
 Claude). Il capture l'ÉTAT, les DÉCISIONS et les GOTCHAS qui, jusqu'ici, vivaient dans la
 mémoire hors-repo de Claude et **ne voyagent donc PAS avec un `git clone`**. Lis-le en
 premier, puis `AGENTS.md` + `CLAUDE.md` (les règles), puis `docs/EXECUTOR_RULES.md` (les
-règles par étage). Dernière mise à jour : **2026-09-08**, commit `9ddf185`.
+règles par étage). Dernière mise à jour : **2026-09-09** (voir `git log` pour le commit courant).
 
 > ⚠️ Aucun secret ici (cookies WP, mots de passe, codes 2FA n'entrent jamais dans le repo).
 
@@ -14,8 +14,9 @@ règles par étage). Dernière mise à jour : **2026-09-08**, commit `9ddf185`.
 
 Pipeline **déterministe et fail-closed** de saisie de données pour les feeds marchands
 d'AllKeyShop (AKS). Étapes : `02 extract` (scan feed via CDP) → `03 match` (résolution AKS
-read-only + règles R01…R40) → `04 report` → validation → `05 submit` (écriture via la modale
-UI officielle) → prove-gone. Claude est **builder** (code/tests/docs/diagnostics read-only),
+read-only + règles R01…R40, écrit `candidates.json` / `skipped.json` / `match_meta.json` /
+`report.txt`) → `04 validate` (`check` → `approved.json`) → `05 submit` (écriture via la
+modale UI officielle) → prove-gone. Claude est **builder** (code/tests/docs/diagnostics read-only),
 pas exécuteur libre. Voir `README.md`, `docs/ARCHITECTURE.md`.
 
 Interfaces : CLI (`scripts/NN_*.py`) + page opérateur `/executor/` (service `aks-admin`,
@@ -34,8 +35,10 @@ l'ordre : Chromium 149 + hold → politique UA-Switcher → `aks-chromium.servic
   machine — copier le marqueur d'un autre box NE transfère PAS l'autorité (`marker_authorizes`,
   `src/aks_env.py`). Sans marqueur valide → `authoritative:false` → **toutes les écritures
   restent verrouillées** (read-only until green, `CLAUDE.md`).
-- **Deps** : `pip install -r requirements.txt` (optionnel — `requests` pour le keep-alive ;
-  fallback urllib sinon). Le cœur reste stdlib-only.
+- **Deps** : `sudo apt install python3-requests` (optionnel — `requests` pour le keep-alive ;
+  fallback urllib sinon ; `pip install -r requirements.txt` est refusé par PEP 668 sur
+  l'interpréteur système de Debian 12, cf. `ops/BROWSER_RUNBOOK.md §3`). Le cœur reste
+  stdlib-only.
 - **Gate avant tout write** : `python3 scripts/01_check_invariants.py` doit rendre `ok:true`
   ET `authoritative:true` **sur le VPS**. Un rouge en local/sandbox (`authoritative:false`)
   est normal et ne débloque rien.
@@ -43,9 +46,9 @@ l'ordre : Chromium 149 + hold → politique UA-Switcher → `aks-chromium.servic
   auto-déclenché ; `docs/LOGIN_SPEC.md`). Profil vierge au démarrage.
 - **Chromium gelé à 149** (150 SIGTRAP). Ne pas upgrader.
 
-## 3. État courant (2026-09-08, `9ddf185`)
+## 3. État courant (2026-09-09)
 
-Tout est poussé sur `origin/main`, suite verte (**1322 tests**). Travaux récents (voir
+Tout est poussé sur `origin/main`, suite verte (**1353 tests**). Travaux récents (voir
 `docs/CHANGELOG.md` pour le détail) :
 - Campagne d'audit Fable : 38/39 findings corrigés (1 décliné, cf. §5).
 - Correctifs matcher : `extract_aks_name` (noms marketing), R39 (mot plateforme = bruit
@@ -57,6 +60,14 @@ Tout est poussé sur `origin/main`, suite verte (**1322 tests**). Travaux récen
   sur feed profond, ban-safe. Un **fail-open critique** (keep-alive suivait un 3xx en mode
   no-redirect → gate au vert à tort) a été trouvé par vérif adversariale multi-agents et
   corrigé (`54f1f88`), puis durci (`9ddf185`).
+- **Audit 2026-09-09** (38 findings confirmés / 7 réfutés), correctifs appliqués : garde
+  host-lock strict (`_allkeyshop_host`), cap `--max-pages` = couverture (champ `coverage` du
+  recap, plus une halte), throttling AKS = abort fail-closed (premier 429, ou 5 sondes non
+  fiables consécutives sur des pages distinctes → `03_match` exit 2, stdout
+  `reason: aks_throttled`, sidecar `match_aborted.json`, même règle dans le flow by-urls →
+  `recap.aborted = aks_throttled`), `trust_env` off sur la Session keep-alive (proxies miroir
+  urllib), tests réels des deux backends HTTP, matrice CI sans/avec `requests`, HANDOFF §7
+  corrigé. Détail : `docs/CHANGELOG.md` (2026-09-09) et `docs/audit_2026-09-09_last-commits/`.
 
 ## 4. Backlog / prochaines étapes
 
@@ -67,7 +78,8 @@ Tout est poussé sur `origin/main`, suite verte (**1322 tests**). Travaux récen
   restart admin) — préférence de Romain. Faits durs : 1 seul onglet Chrome + verrou machine-
   wide → pas de vrai // browser (seul le lock-free tourne en // : match/report, console) ;
   session WP TTL borne le H24 → park fail-closed + notif sur session morte, jamais d'auto-
-  réparation. Synthèse complète : voir le CHANGELOG / l'historique de session.
+  réparation. La synthèse tient dans ce paragraphe (il n'existe pas d'entrée CHANGELOG
+  dédiée) ; à compléter ici si le mandat est ratifié.
 - **Concurrence de résolution** : SEUL levier vitesse restant, gardé **en réserve** — c'est
   le seul qui augmente le débit de requêtes AKS (→ risque de re-ban OVH ; le ban historique
   était sous charge navigateur, pas débit de probes). À sortir seulement sur go de Romain,
@@ -107,16 +119,23 @@ Ces décisions sont dans `AGENTS.md` § « Reviewed decisions ». Rappel :
   build-time. Jamais de LLM à l'exécution.
 - **`--max-pages` du sweep n'est PAS passé à `05_submit`** (il utilise `--page-hint` + son
   propre auto-défaut plein-feed) → le prove-gone couvre tout le feed même avec le cap.
+  Cap atteint = **couverture, pas une halte** : `run_sweep` l'enregistre dans le champ
+  `coverage` du recap du marchand (`incomplete_max_pages (feed has 60 pages)` ou
+  `incomplete_feed_grew (2→4 pages)`), pas dans `halted` ; le `recap.json` du lot les liste
+  dans `coverage_incomplete` (`"<marchand>: <coverage>"`) ; le lot passe au marchand suivant
+  et le process sort en 0 (l'onglet `/auto` l'affiche « TERMINÉ — couverture partielle »,
+  pas « ARRÊTÉ »). `--max-pages`/`--start-page` < 1 sont refusés (exit 2).
 
 ## 7. Commandes fréquentes
 
 Toujours depuis `/home/debian/executor`. Les `--help` de chaque script font foi ; le
-`manual_launch/run_executor.sh` enveloppe le flow par-marchand (prepare/dry-run/submit).
+`manual_launch/run_executor.sh` enveloppe le flow par-marchand (prepare / check / dry-run /
+submit — l'étape `check` écrit `approved.json`).
 
 **Gate & santé (read-only, à faire souvent) :**
 ```sh
 python3 scripts/01_check_invariants.py          # DOIT être ok:true ET authoritative:true (VPS) avant tout write
-python3 -m unittest discover -s tests           # suite complète (~6 min sur 4 cœurs) ; -q pour le résumé
+python3 -m unittest discover -s tests           # suite complète (~6 min, mono-process) ; -q pour le résumé
 curl -s http://127.0.0.1:9222/json/version      # Chrome hôte (UA Chrome/149)
 curl -s http://172.17.0.1:9223/json/version     # pont CDP officiel (celui qu'utilise le code)
 cat state/browser.lock                           # qui tient l'onglet (label ; flock réel = kernel)
@@ -129,32 +148,40 @@ sudo systemctl restart aks-chromium              # navigateur planté (récup : 
 # ⚠️ NE JAMAIS restart aks-admin pendant un submit en cours (tue l'enfant 05).
 ```
 
-**Pipeline par-marchand (manuel) :** extract → match → (validation) → submit.
+**Pipeline par-marchand (manuel) :** extract → match → validation (check) → submit.
 ```sh
 python3 scripts/02_extract_feed.py --merchant Driffle --store-id 127         # → runs/<id>/offers.json
-python3 scripts/03_match.py runs/<id>/offers.json                            # → candidates.json, report.txt
+python3 scripts/03_match.py runs/<id>/offers.json                            # → candidates.json, skipped.json, match_meta.json, report.txt
+python3 scripts/04_validate.py template runs/<id>/candidates.json            # → validation.template.json (à remplir, puis copier en validation.json)
+python3 scripts/04_validate.py check runs/<id>/candidates.json runs/<id>/validation.json   # vérifie validation.json → écrit approved.json (05 le re-vérifie contre candidates.json + validation.json voisins : un approved.json non vérifié / périmé est refusé)
 python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127            # DRY-RUN (défaut)
 python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127 --submit   # WRITE (safe: lot validé complet) — sur GO
-python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127 --submit --mode learning   # canary de 1 (WRITE)
+python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127 --submit --mode learning   # canary de 1 (WRITE) — sur GO
 ```
 
 **Safe-auto sweep (multi-marchands, par page, highest-first) :**
 ```sh
-python3 scripts/10_data_entry_auto.py --targets "Kinguin:58,Eneba:70" --run-id <id>   # défaut --max-pages 30
-python3 scripts/10_data_entry_auto.py --targets "Kinguin:58" --max-pages 30 --triage  # + plan Move-to-List des skips
+python3 scripts/10_data_entry_auto.py --targets "Kinguin:58,Eneba:19" --run-id <id> --dry-run   # APERÇU read-only (extract + match + plan, rien d'écrit)
+python3 scripts/10_data_entry_auto.py --targets "Kinguin:58,Eneba:19" --run-id <id>             # WRITE auto-approuvé (safe, défaut --max-pages 30) — sur GO
+python3 scripts/10_data_entry_auto.py --targets "Kinguin:58" --max-pages 30 --triage            # + plan Move-to-List des skips (WRITE) — sur GO
+# Cap atteint = champ coverage du recap (pas une halte) ; le lot continue.
 # Recap live : runs/<run-id>/recap.json (par page, incrémental).
 ```
 
 **Saisie par liste d'URLs AKS (by-urls, onglet /games) :**
 ```sh
-python3 scripts/11_data_entry_by_urls.py <fichier_urls | urls...>            # APERÇU dry-run (résout + cherche le feed + plan)
+python3 scripts/11_data_entry_by_urls.py --run-id <id> --urls-file <fichier>   # APERÇU dry-run (résout + cherche le feed + plan) ; --urls "u1 u2" en alternative
 # Le submit by-urls (12) part de l'aperçu, sur GO, via la console (« Saisir »).
 ```
 
 **Move / tri de listes :**
 ```sh
-python3 scripts/06_move.py runs/<id> --store-id 38                           # dry-run (plan only)
-python3 scripts/06_move.py runs/<id> --store-id 38 --execute --mode safe     # plan confirmé complet (WRITE) — sur GO
+python3 scripts/06_move.py runs/<id> --store-id 38                                            # dry-run (plan only)
+python3 scripts/06_move.py runs/<id> --store-id 38 --execute --mode learning                  # canary de 1 (WRITE) — sur GO
+python3 scripts/06_move.py runs/<id> --store-id 38 --execute --mode safe --i-authorize-batch  # plan confirmé complet (WRITE, exige le canary préalable — RV3) — sur GO
+# Tri all-stores (Pending) : 08 planifie (read-only), 09 exécute UNE liste cible (même séquence learning → safe --i-authorize-batch).
+python3 scripts/08_sort_plan.py --run-id <sort-id>                                            # read-only → runs/<sort-id>/sort_plan.json + report.txt
+python3 scripts/09_sort_move.py runs/<sort-id> --list 8                                       # dry-run (liste 8) ; puis --execute --mode learning, puis --execute --mode safe --i-authorize-batch — sur GO
 ```
 
 **Diagnostic d'un run en cours (read-only, ne pas toucher au browser) :**
