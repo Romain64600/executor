@@ -91,8 +91,9 @@ explicite de Romain, cf. RUNBOOK §1.1) ; `docker.io` 26 (paquet Debian, fournit
 socat 1.8 ; nginx 1.26 ; certbot 4.0 ; console `https://217.76.57.126.sslip.io/executor/`
 (mot de passe initial dans `/root/executor-admin.pass`, root-only — à faire tourner via
 `ops/INSTALL_ADMIN.md §1`) ; gate `ok:true` + `authoritative:true` ; suite 1353 OK en `debian`.
-Restait à faire par Romain : `ufw` (§3 étape 6, non exécutable par Claude) et le transfert des
-cookies WP. L'ancien VPS était `vps-9ee9f9cf`.
+`ufw` actif (OpenSSH, Nginx Full, 9223 restreint à `docker0` — posé par Romain, Claude n'a pas la
+permission). Reste : le transfert des cookies WP (profil vierge). L'ancien VPS était
+`vps-9ee9f9cf`.
 
 **Hermes (superviseur conversationnel) — PAS requis par l'executor :** services
 `hermes-gateway`, `hermes-web-ui` ; pip `litellm` / `openai` / `gunicorn`. Seul le pont CDP
