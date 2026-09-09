@@ -34,3 +34,11 @@ cookies.json
 *.cookies
 *.har
 *.otp
+
+# Audit workflow runner state (regenerable; the curated BILAN.md / REVIEW.md / RESUME.md are tracked)
+docs/audit_*/state.json
+docs/audit_*/build.log
+docs/audit_*/*.js
+docs/audit_*/*.sh
+docs/audit_*/build_progress.py
+docs/audit_*/inputs/
