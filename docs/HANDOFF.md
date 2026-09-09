@@ -46,6 +46,47 @@ l'ordre : Chromium 149 + hold → politique UA-Switcher → `aks-chromium.servic
   auto-déclenché ; `docs/LOGIN_SPEC.md`). Profil vierge au démarrage.
 - **Chromium gelé à 149** (150 SIGTRAP). Ne pas upgrader.
 
+### 2.1 Nomenclature — ce qui est installé sur le VPS (bill of materials)
+
+Inventaire réel (vérifié live 2026-09-09). Install pas-à-pas : `ops/BROWSER_RUNBOOK.md §1/§3`
++ `ops/INSTALL_ADMIN.md`.
+
+**Paquets apt — requis :**
+
+| Paquet | Version | Rôle |
+|---|---|---|
+| `python3` | 3.11 | cœur de l'executor (stdlib only) |
+| `chromium` + `chromium-common` + `chromium-sandbox` | **149.0.7827.196**, `apt-mark hold` | navigateur headless piloté en CDP (150 = SIGTRAP) |
+| `socat` | 1.7.4 | pont CDP `9222 → 172.17.0.1:9223` |
+| `docker-ce` | 29.x | fournit l'interface `docker0` (172.17.0.1) que le pont socat bind |
+| `nginx` | 1.22 | sert la page `/executor/` |
+| `certbot` + `python3-certbot-nginx` | 2.1 | TLS (domaine sslip.io, renouvellement `certbot.timer`) |
+| `ufw` | 0.36 | pare-feu (9223 restreint au réseau docker) |
+
+**Paquet apt — optionnel (accélérateur) :**
+- `python3-requests` (2.28) → **keep-alive HTTP** (~1,85×, ban-safe). Sans lui, fallback urllib
+  identique. ⚠️ Debian 12 : installer via **apt**, PAS `pip` (bloqué par PEP 668 sur
+  l'interpréteur système). `requirements.txt` documente la dépendance.
+
+**Config & services (repo → système) — requis :**
+
+| Élément | Emplacement | Source dans le repo |
+|---|---|---|
+| Policy UA-Switcher + extension forcée | `/etc/chromium/policies/managed/aks-ua-switcher.json` | `docs/ua-switcher-aks-staff.json` |
+| Marqueur d'autorité (= hostname du box) | `/etc/aks-executor.target` | — (root, par machine) |
+| Chromium headless CDP 9222 | `aks-chromium.service` | `ops/BROWSER_RUNBOOK.md §1.2` |
+| Pont socat 9223 (REQUIS malgré le nom « hermes ») | `hermes-cdp-proxy.service` | `ops/BROWSER_RUNBOOK.md §1.3` |
+| Page opérateur `/executor/` | `aks-admin.service` | `ops/aks-admin.service` |
+| nginx vhost + basic-auth + TLS | `<IP>.sslip.io.conf`, `/etc/nginx/.htpasswd_executor` | `ops/nginx-executor.conf`, `ops/INSTALL_ADMIN.md` |
+
+⚠️ Le vhost nginx **et le cert TLS sont liés à l'IP** (domaine sslip.io) → nouvelle IP = nouveau
+vhost + nouveau certificat.
+
+**Hermes (superviseur conversationnel) — PAS requis par l'executor :** services
+`hermes-gateway`, `hermes-web-ui` ; pip `litellm` / `openai` / `gunicorn`. Seul le pont CDP
+(`hermes-cdp-proxy`) partage le préfixe de nom mais EST requis. Ne pas réinstaller si tu ne
+veux que l'executor + sa page.
+
 ## 3. État courant (2026-09-09)
 
 Tout est poussé sur `origin/main`, suite verte (**1353 tests**). Travaux récents (voir
