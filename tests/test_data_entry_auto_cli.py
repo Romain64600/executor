@@ -122,6 +122,21 @@ class CliSeamTests(unittest.TestCase):
         self.assertEqual(argv[argv.index("--pace-pages") + 1], "0.4-0.6")
         self.assertEqual(argv[argv.index("--pace-offers") + 1], "0.4-0.6")
 
+    def test_submit_proves_gone_by_search_by_default_and_scan_on_request(self):
+        # Romain GO 2026-09-10: the sweep's 05 argv carries --prove-gone-by-search unless
+        # --prove-gone-scan restores the whole-feed re-walk.
+        for scan, expected in ((False, True), (True, False)):
+            captured = {}
+            stages = self.MOD._make_stages("Kinguin", "58", "all", None, prove_gone_scan=scan)
+            run_dir = self.MOD.ROOT / "runs" / f"t-pg{int(scan)}-p3"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            (run_dir / "approved.json").write_text("[]")
+            with mock.patch.object(self.MOD, "_run_child",
+                                   side_effect=lambda argv: captured.setdefault("argv", argv) or 0):
+                stages.submit(f"t-pg{int(scan)}-p3")
+            self.assertEqual("--prove-gone-by-search" in captured["argv"], expected, scan)
+            self.assertIn("--page-hint", captured["argv"])           # locate window kept
+
     def test_main_multi_target(self):
         # P2-2: stores must be the CANONICAL allowlist stores (Eneba is 19, not 70).
         recap = {"pages": [], "total_created": 1, "halted": None}

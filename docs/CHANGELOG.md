@@ -3,6 +3,21 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-10 — sweep safe-auto : preuve post-save par la recherche du feed (GO Romain)
+
+« On peut gagner du temps à l'écriture » : dans le sweep, le post-save re-balayait TOUT le
+feed après chaque création (~1,5 s × 66 pages ≈ 100 s par offre sur Kinguin), alors que
+by-urls prouve la disparition par la **recherche du feed filtrée par l'URL de l'offre**
+(requête sur tout le feed, même mode `available`) depuis le 25/08. Sur GO de Romain, le
+sweep utilise cette preuve par défaut : `05_submit --prove-gone-by-search`
+(`Submitter.run(prove_gone_by_search=True)`), émis par `scripts/10` sauf
+`--prove-gone-scan`. La localisation garde la fenêtre `--page-hint` (index conservé : les
+0-1 lignes d'une recherche ne l'écrasent jamais) ; la re-localisation d'une ligne qui a
+bougé passe aussi par la recherche. Gardes inchangés : recherche non rendue / bloquée /
+débordante → `FeedScanError` → offre UNKNOWN, jamais un faux « gone ». Tests : câblage
+`run()` → ctx, preuve par recherche + index conservé, chemin by-urls inchangé, re-localisation,
+argv de 10 (défaut et `--prove-gone-scan`). Docs : EXECUTOR_RULES §7, HANDOFF §6.
+
 ## 2026-09-10 — `[R42]` chiffres romains ≡ chiffres (MMOGA « Crusader Kings III »)
 
 Test de Romain par la page `/games` avec la page AKS « Crusader Kings 3 » : l'offre MMOGA

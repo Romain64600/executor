@@ -943,7 +943,7 @@ class _SubmitterBase:
         url = _url_key(str(candidate["offer"].get("url") or ""))
         if not url:
             return None
-        use_search = ctx.get("search_locate")
+        use_search = ctx.get("search_locate") or ctx.get("prove_gone_by_search")
         # A feed/CDP-unreadable recovery scan is UNKNOWN state, NOT a proven absence:
         # FeedScanError/CdpCommandError PROPAGATE to the run loop's fail-closed handler
         # (stops the run feed_unreadable, no next candidate) — never swallowed as "not
@@ -1196,6 +1196,7 @@ class _SubmitterBase:
         page_hint: int | None = None,
         page_window: int = 1,
         locate_by_search: bool = False,
+        prove_gone_by_search: bool = False,
     ) -> dict[str, Any]:
         # Pre-flight login check.
         self.session.navigate(feed_url(store_id, feed_page=feed_page, available=available))
@@ -1263,9 +1264,15 @@ class _SubmitterBase:
             return {"aborted": "feed_unreadable", "stopped": None, "feed_offers": 0,
                     "write_attempts": 0, "created": 0, "plan": []}
         self._log("feed_indexed", offers=len(index), window=window_pages)
+        # ``prove_gone_by_search`` (Romain GO 2026-09-10, sweep): keep the cheap page-hint
+        # LOCATE, but prove the post-save disappearance with the feed SEARCH (a whole-feed
+        # FILTERED query in the run's available mode — the same proof the by-urls path has
+        # used since 2026-08-25) instead of re-walking the whole feed after EVERY creation
+        # (~1.5 s × 66 pages ≈ 100 s per offer on Kinguin). Re-locates use the search too.
         ctx = {"store_id": store_id, "feed_page": feed_page, "available": available,
                "max_pages": max_pages, "index": index, "by_url": by_url,
-               "window_pages": window_pages, "search_locate": locate_by_search}
+               "window_pages": window_pages, "search_locate": locate_by_search,
+               "prove_gone_by_search": bool(locate_by_search or prove_gone_by_search)}
 
         # Disarm the scan-level stop hook now that the index is done: each offer's
         # post-save verify / reflow re-scan MUST complete (a stop mid-verify would
@@ -1500,9 +1507,15 @@ class Submitter(_SubmitterBase):
         gone, fresh_index, fresh_by_url = self._verify_gone(
             entry["offer_id"], str(candidate["offer"].get("url") or ""),
             ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"],
-            search_locate=ctx.get("search_locate", False),
+            search_locate=bool(ctx.get("prove_gone_by_search", False)),
         )
-        if fresh_index is not None:
+        # A whole-feed walk IS the refreshed feed → it becomes the next locate index. A
+        # search proof only covers the searched offer: under the sweep's page-hint locate
+        # the window index stays as is (the next offers are still on their page; a row
+        # that reflowed is re-found by _relocate_by_url), so never wipe it with the
+        # search's 0-1 rows (2026-09-10).
+        keep_index = ctx.get("prove_gone_by_search") and not ctx.get("search_locate")
+        if fresh_index is not None and not keep_index:
             ctx["index"].clear()
             ctx["index"].update(fresh_index)
             ctx["by_url"].clear()

@@ -171,7 +171,10 @@ Ces décisions sont dans `AGENTS.md` § « Reviewed decisions ». Rappel :
 - **Succès submit = `prove-gone`** : l'offre a disparu du feed rafraîchi (même `available`
   mode que le run). **JAMAIS** `[data-success]` (faux positif prouvé — selectize silencieux).
   C'est LA règle du skill (`docs/EXECUTOR_RULES.md §7`). Ne jamais faire confiance au toast
-  « ajoutée ».
+  « ajoutée ». Deux formes admises de la preuve : le re-balayage complet du feed (manuel par
+  marchand, `scripts/10 --prove-gone-scan`) ou la **recherche du feed filtrée par l'URL de
+  l'offre** (by-urls depuis le 25/08 ; **défaut du sweep safe-auto depuis le GO de Romain du
+  2026-09-10**, `05 --prove-gone-by-search`, ~2 s au lieu de ~100 s par offre).
 - **Le feed re-import fait tourner TOUS les ids** ; identité stable = **chemin d'URL marchand**
   (`_url_key`), pas l'id. Le submitter épingle par l'URL. (Romain : « on garde les pending
   maintenant » → ids stables dans la fenêtre extract→submit, mais le code reste robuste à la

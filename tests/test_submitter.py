@@ -2576,3 +2576,71 @@ class SearchLocateTests(unittest.TestCase):
                       approved=[_cand("1")], locate_by_search=True)
         self.assertTrue(res["plan"][0]["ready"])
         self.assertTrue(any("aks-merchant-feeds-search" in u for u in sub.session.nav))
+
+
+class SweepProveGoneBySearchTests(unittest.TestCase):
+    """Romain GO 2026-09-10: the safe-auto sweep keeps its page-hint LOCATE but proves
+    each post-save disappearance with the feed SEARCH (whole-feed filtered query) — the
+    by-urls proof — instead of re-walking the whole feed after every creation."""
+
+    def _ctx(self, **over):
+        ctx = {"store_id": "58", "feed_page": "aks-merchant-feeds-9", "available": "all",
+               "max_pages": 40, "index": {"1": {"offer_id": "1", "page_url": "u", "name": "A", "url": "https://m/a", "price": "", "store_id": "58"},
+                                          "2": {"offer_id": "2", "page_url": "u", "name": "B", "url": "https://m/b", "price": "", "store_id": "58"}},
+               "by_url": {"https://m/a": {"offer_id": "1"}, "https://m/b": {"offer_id": "2"}},
+               "window_pages": [29, 30, 31], "search_locate": False, "prove_gone_by_search": True}
+        ctx.update(over)
+        return ctx
+
+    def test_run_wires_the_flag_into_ctx(self):
+        # the run() kwarg reaches the ctx the write path reads (search proof + search relocate)
+        sub = DryRunSubmitter(_SearchFake([]))
+        sub.feed_ui_render_waits = (); sub.empty_retry_wait_s = 0; sub.empty_confirm_waits = (0,); sub.feed_scan_settle = 0
+        seen = {}
+        sub._scan_page_window = lambda *a, **k: ({}, {}, None)
+        def fake_prepare(cand, located, ctx):
+            seen["ctx"] = ctx
+            return {"offer_id": "1", "merchant_title": "A", "aks_url": "x", "ready": False, "blocker": "test"}
+        sub._prepare = fake_prepare
+        sub.run(run_id="r", merchant="Kinguin", store_id="58",
+                approved=[{"offer": {"offer_id": "1", "name": "A", "url": "https://m/a"}, "aks_url": "x",
+                           "region": {"id": "2"}, "edition": {"id": "1"}}],
+                page_hint=30, prove_gone_by_search=True)
+        self.assertTrue(seen["ctx"]["prove_gone_by_search"])
+        self.assertFalse(seen["ctx"]["search_locate"])          # locate stays the page window
+
+    def test_write_path_proves_gone_by_search_and_keeps_the_window_index(self):
+        session = FakeWriteSession([[]])
+        sub = Submitter(session)
+        calls = []
+        sub._verify_gone = lambda *a, **k: (calls.append(k) or (True, {}, {}))
+        ctx = self._ctx()
+        entry = {"ready": True, "offer_id": "1", "region_select": "offer[region]", "region_id": "2",
+                 "edition_select": "offer[edition]", "edition_id": "1"}
+        ok = sub._process(entry, {"offer": {"offer_id": "1", "name": "A", "url": "https://m/a"}}, ctx)
+        self.assertTrue(ok)
+        self.assertTrue(calls[0]["search_locate"])              # the proof went through the SEARCH
+        self.assertEqual(set(ctx["index"]), {"1", "2"})          # window index NOT wiped by the search's 0 rows
+        self.assertIn("gone from feed (available=all)", entry["post_save"])
+
+    def test_by_urls_path_still_refreshes_its_index_from_the_search(self):
+        session = FakeWriteSession([[]])
+        sub = Submitter(session)
+        sub._verify_gone = lambda *a, **k: (True, {"9": {"offer_id": "9"}}, {"https://m/z": {"offer_id": "9"}})
+        ctx = self._ctx(search_locate=True)
+        entry = {"ready": True, "offer_id": "1", "region_select": "offer[region]", "region_id": "2",
+                 "edition_select": "offer[edition]", "edition_id": "1"}
+        sub._process(entry, {"offer": {"offer_id": "1", "name": "A", "url": "https://m/a"}}, ctx)
+        self.assertEqual(set(ctx["index"]), {"9"})              # unchanged by-urls behaviour
+
+    def test_relocate_uses_the_search_under_the_sweep_flag(self):
+        sub = DryRunSubmitter(_SearchFake([]))
+        sub.feed_ui_render_waits = (); sub.empty_retry_wait_s = 0; sub.empty_confirm_waits = (0,); sub.feed_scan_settle = 0
+        used = []
+        sub._scan_search = lambda *a, **k: (used.append("search") or ({}, {}))
+        sub._scan_feed = lambda *a, **k: (used.append("feed") or ({}, {}, False))
+        self.assertIsNone(sub._relocate_by_url({"offer": {"url": "https://m/a", "name": "A"}}, self._ctx()))
+        self.assertEqual(used, ["search"])
+        used.clear()
+        sub._relocate_by_url({"offer": {"url": "https://m/a", "name": "A"}}, self._ctx(prove_gone_by_search=False))
+        self.assertEqual(used, ["feed"])                          # the old walk when the flag is off

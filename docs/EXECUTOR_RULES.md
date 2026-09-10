@@ -1108,7 +1108,19 @@ This is THE rule of the skill `[DB proof override][S10][S18]`.
 
 `success = (offer no longer in the refreshed feed, same available mode as the
 run)`. This boolean is what the submitter passes to
-`StepGuard.record_result`. The mode matters: on Kinguin `available=pending` is
+`StepGuard.record_result`.
+
+**Two accepted forms of the refreshed-feed proof (Romain GO 2026-09-10).** (a) The
+whole-feed WALK to a proven end (the historical form; still the by-merchant manual
+default and `scripts/10 --prove-gone-scan`). (b) The feed **SEARCH filtered by the
+offer's URL** in the run's `available` mode — a whole-feed filtered query, so an absence
+is a genuine whole-feed absence (the by-urls proof since 2026-08-25); now the safe-auto
+sweep's default (`05_submit --prove-gone-by-search`, ~2 s instead of ~100 s per offer on
+a 66-page feed). Same fail-closed guards as the walk: an unrendered / wedged / overflowing
+search raises `FeedScanError` → the offer is UNKNOWN, never a false "gone"; the search
+term data-check rejects a re-served foreign DOM. Under the search proof the sweep keeps
+its page-hint locate index (the search's 0-1 rows never replace it); a row that reflowed
+is re-found by the search re-locate. The mode matters: on Kinguin `available=pending` is
 empty even with 1197 rows in `available=all` (2026-07-08), so "gone from
 pending" would be trivially — and falsely — true.
 

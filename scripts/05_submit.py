@@ -183,6 +183,12 @@ def _main() -> int:
              "instead of a whole-feed scan — for the by-urls submit, whose offers are "
              "scattered (no page). Fast + fresh; an absence in the search is a valid "
              "whole-feed gone-proof. Mutually exclusive with --page-hint.")
+    parser.add_argument(
+        "--prove-gone-by-search", action="store_true",
+        help="Keep the page-hint (or scan) LOCATE but prove each post-save disappearance "
+             "with the feed SEARCH filtered by the offer URL (a whole-feed filtered query in "
+             "the run's available mode — the by-urls proof) instead of re-walking the whole "
+             "feed after every creation. Romain GO 2026-09-10 for the safe-auto sweep.")
     parser.add_argument("--submit", action="store_true", help="REAL write (default: dry-run).")
     parser.add_argument(
         "--mode", default="safe", choices=["safe", "learning", "advanced"],
@@ -480,6 +486,7 @@ def _main() -> int:
                 approved=approved, available=args.available, max_pages=max_pages, limit=limit,
                 page_hint=args.page_hint, page_window=args.page_window,
                 locate_by_search=args.locate_by_search,
+                prove_gone_by_search=args.prove_gone_by_search,
             )
     except FEED_UNREADABLE_EXCS as exc:
         print(json.dumps({

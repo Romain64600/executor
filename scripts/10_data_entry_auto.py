@@ -3,7 +3,9 @@
 
 For each target ``merchant:store_id``, sweep the feed page by page:
 extract (02) → match (03) → auto-approve EVERY matcher candidate → submit (05,
-``--mode safe`` real write). NO human validation; the matcher is the safety gate.
+``--mode safe`` real write, post-save proven by the feed SEARCH filtered by the offer
+URL since Romain's GO of 2026-09-10 — ``--prove-gone-scan`` restores the whole-feed
+re-walk). NO human validation; the matcher is the safety gate.
 A per-page recap is written to ``runs/<run-id>/recap.json`` incrementally; Romain
 audits it and deletes any mistake afterwards.
 
@@ -64,7 +66,7 @@ def _clock() -> str:
 
 def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
                  *, triage: bool = False, move_execute: bool = False,
-                 dry_run: bool = False) -> Stages:
+                 dry_run: bool = False, prove_gone_scan: bool = False) -> Stages:
     py = sys.executable
     # A fully read-only preview (Romain: "teste le dry-run"): extract (browser read)
     # + match (AKS read) + triage plan, but NEVER a real write — the ADD submit is
@@ -160,6 +162,12 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
             argv += ["--page-hint", run_id.rsplit("-p", 1)[1]]
         except IndexError:
             pass
+        if not prove_gone_scan:
+            # Romain GO 2026-09-10: prove each post-save disappearance with the feed
+            # SEARCH (whole-feed filtered query) instead of a whole-feed re-walk per
+            # creation — ~100 s → ~2 s per offer on a 66-page feed. --prove-gone-scan
+            # restores the walk.
+            argv.append("--prove-gone-by-search")
         if pace:
             # [33] Fable re-audit 2026-09-06: 05_submit has NO --pace flag — only
             # --pace-pages / --pace-offers, so a bare "--pace" is an AMBIGUOUS prefix and
@@ -320,6 +328,10 @@ def main() -> int:
     ap.add_argument("--move-execute", action="store_true",
                     help="With --triage: REALLY move (06_move --mode safe, "
                          "canary-authorized lists only). Default: dry-run plan only.")
+    ap.add_argument("--prove-gone-scan", action="store_true",
+                    help="Prove each post-save disappearance by re-walking the WHOLE feed "
+                         "(the pre-2026-09-10 behaviour) instead of the feed SEARCH filtered "
+                         "by the offer URL (default since Romain's GO, ~50x faster per offer).")
     ap.add_argument("--dry-run", action="store_true",
                     help="Fully READ-ONLY preview: extract + match + triage plan, "
                          "NO submit and NO move (nothing written). ADDs are counted "
@@ -404,7 +416,7 @@ def main() -> int:
                           max_pages=args.max_pages)
         stages = _make_stages(merchant, store_id, args.available, args.pace,
                               triage=args.triage, move_execute=args.move_execute,
-                              dry_run=args.dry_run)
+                              dry_run=args.dry_run, prove_gone_scan=args.prove_gone_scan)
         target_entry = {"merchant": merchant, "store_id": store_id, "recap": None}
         recap["targets"].append(target_entry)
 
