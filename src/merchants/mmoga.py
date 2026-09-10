@@ -95,5 +95,5 @@ CONFIG = MerchantConfig(
     precheck=precheck,
     title_region=title_region,
     resolve_name=resolve_name,
-    notes="store id: to confirm on the live AKS feed dropdown (2026-09-10)",
+    notes="feed store id 12 (&store=12); AKS page merchant id 40 (Romain 2026-09-10)",
 )

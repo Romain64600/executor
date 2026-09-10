@@ -32,6 +32,7 @@ const MERCHANTS = [
   { name: 'Gamivo', storeId: '51' },
   { name: 'Allyouplay', storeId: '17' },
   { name: 'Difmark', storeId: '167' },
+  { name: 'MMOGA', storeId: '12' },      // feed store 12 (AKS page merchant id 40) — 2026-09-10
 ];
 
 // ---------------------------------------------------------------- helpers

@@ -21,9 +21,10 @@ reste global), codes interdits → `forbidden region: <LABEL>`, code sans bucket
 → skip fail-closed, slug résolu sans le suffixe (`borderlands-2`), `?ref=` ignoré, domaine
 `mmoga.com` obligatoire. Vérifié sur les 3 URL d'exemple + cas limites. Tests :
 `MerchantHookTests` (marchand factice, 3 hooks) + `MmogaRulesTests` (8 cas). Docs :
-EXECUTOR_RULES §4.10 `[R32e]` + §11 MMOGA + §10, README `[R32]`. **Store id AKS à
-confirmer** ; MMOGA n'entre dans l'allowlist safe-auto et le sélecteur console qu'après un
-run supervisé validé.
+EXECUTOR_RULES §4.10 `[R32e]` + §11 MMOGA + §10, README `[R32]`. Store ids (Romain) :
+**12** côté feed (`&store=12`, celui que tous les étages utilisent), 40 côté pages AKS.
+Ajouté au sélecteur console (`app.js`) ; l'allowlist safe-auto attend un run supervisé
+validé (extract 1 page → match → validation → dry-run submit).
 
 ## 2026-09-10 — R30 : disjoncteur sur la recherche AKS + délai de grâce avant `AksThrottled`
 

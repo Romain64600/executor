@@ -1223,7 +1223,7 @@ Collection 348.
 
 **Merchant store ids** (verify against feed): Kinguin 58, G2A 38, Driffle 127,
 Eneba 19, GameSeal 126, K4G 92, CJS 30, Instant Gaming 28, Gameboost 157,
-Gamivo 51, Allyouplay 17, GOG 34, Difmark 167, MMOGA — to confirm (2026-09-10).
+Gamivo 51, Allyouplay 17, GOG 34, Difmark 167, MMOGA 12 (its AKS page merchant id is 40 — the feed store id is what every stage uses, 2026-09-10).
 
 ---
 
@@ -1234,8 +1234,9 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167, MMOGA — to confirm (2026-09-10)
 - **Kinguin**: filter by URL `&store=58`, not dropdown; candidate URL must
   contain `kinguin.net`; URLs carry `?params` (`nosalesbooster`, `currency`) —
   report them as-is (§4.6); Steam region often implicit GLOBAL.
-- **MMOGA** (2026-09-10, `src/merchants/mmoga.py`; store id: **to confirm on the live feed
-  dropdown**): URL `mmoga.com/<Platform>-Games/<Product>[-<REGION>-Key].html?ref=<affid>`.
+- **MMOGA** (2026-09-10, `src/merchants/mmoga.py`; feed store id **12** — `&store=12`, the id
+  every stage uses; the AKS product-page merchant id is 40, like Kinguin 58/47): URL
+  `mmoga.com/<Platform>-Games/<Product>[-<REGION>-Key].html?ref=<affid>`.
   Platform = the URL category segment (`Steam-Games` → STEAM, `EA-Games` → EA, GOG/Epic/
   Ubisoft/Uplay/Rockstar/Battle.net/Windows mapped; console categories unmapped → console
   skip / fail-closed). Region = an **UPPERCASE 2-letter code right before the trailing

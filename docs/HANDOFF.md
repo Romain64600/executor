@@ -133,8 +133,9 @@ Tout est poussé sur `origin/main`, suite verte (**1353 tests**). Travaux récen
   ×5 initial a déclenché des 503). Une 2e tentative après 2 s sur un 5xx, jamais sur 429.
 - **MMOGA** (2026-09-10) : nouveau marchand porté par `src/merchants/mmoga.py` via les
   **hooks de config marchand** `[R32e]` (`precheck` / `title_region` / `resolve_name` —
-  un fichier marchand peut ajouter ou surcharger le générique). Store id AKS **à confirmer** ;
-  pas encore dans l'allowlist safe-auto ni le sélecteur console (run supervisé d'abord).
+  un fichier marchand peut ajouter ou surcharger le générique). Store id feed **12** (page
+  AKS : 40) ; dans le sélecteur console, pas encore dans l'allowlist safe-auto (run
+  supervisé d'abord).
 
 ## 4. Backlog / prochaines étapes
 
