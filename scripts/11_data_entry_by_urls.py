@@ -344,7 +344,8 @@ def run_plan(urls: list[str], targets: list[tuple[str, str]], *, available: str,
     # Review 2026-09-09: the same throttle backstop as match_feed — a 429 or 5 consecutive
     # unreliable probes on distinct pages STOP the run (recap.aborted = aks_throttled)
     # instead of hammering one throttled URL after another to a "completed" 0-résolu preview.
-    guard = _ThrottleGuard(lambda u: resolve_pinned(u, http_get_fn))
+    guard = _ThrottleGuard(lambda u: resolve_pinned(u, http_get_fn),
+                           sleep=time.sleep if http_get_fn is http_get else (lambda s: None))
     for index, url in enumerate(urls):
         _pace_between_urls(http_get_fn, index)
         try:

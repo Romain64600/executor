@@ -570,7 +570,9 @@ unreliable"), the match stage has a stage-level STOP: the **first `429`** on any
 probe (guessed slug, site-search GET, or a search-fallback slug), or
 **`THROTTLE_MAX_CONSECUTIVE_UNRELIABLE` = 5 consecutive unreliable probes on distinct
 AKS pages** (a repeat of the same failing page does not count; any clean resolution
-resets), raises `AksThrottled`. `scripts/03_match.py` then exits **2** with stdout
+resets) — after **one grace** (Romain 2026-09-10: sleep `THROTTLE_GRACE_S` = 30 s, retry
+that offer once, abort only if it still fails; never for a 429; at most
+`THROTTLE_MAX_GRACES` = 2 per run) — raises `AksThrottled`. `scripts/03_match.py` then exits **2** with stdout
 `{"aborted": true, "reason": "aks_throttled"}`, logs `match_aborted`, writes only the
 sidecar `match_aborted.json` (no candidates/skipped/match_meta) — so a safe-auto sweep
 halts `match_failed_p<N>` with the reason in its recap instead of recording a throttled
@@ -578,6 +580,15 @@ page as clean. Below the bar, `match_meta.json.probe_unreliable` counts the unre
 skips (and the sweep page entry carries `probe_unreliable`). A non-200 site search other
 than 404/410 is unreliable, not "no result". The by-urls preview (scripts/11) applies the
 same rule to its URL resolves (`recap.aborted = aks_throttled`; a 429 is never retried).
+**R30 circuit breaker (Romain 2026-09-10):** site-search failures never count toward the
+abort (they say nothing about the product pages AKS throttles); after
+`SEARCH_CIRCUIT_BREAKER_FAILURES` = 3 consecutive search failures (timeout / empty body /
+5xx) in one run, the search is not called again for the rest of that run — offers whose
+guessed slugs all 404 are then "no AKS product page found" without the 20 s wait, and
+`match_meta.json.search_circuit_open_offers` counts them (a second pass once AKS search
+works again is worthwhile); `search_failures` and `throttle_graces` are recorded too.
+Measured 2026-09-09 on the new VPS: AKS search answered in 22-28 s with an EMPTY 200 body —
+59 offers × 20 s on one Kinguin page.
 Build the slug from the AKS name (lowercase, `[^a-z0-9] → -`), verify
 `/blog/buy-{slug}-cd-key-compare-prices/` returns **200**, then extract
 `data-product-id` (the AKS_ID) and `<title>`. Extract available editions from

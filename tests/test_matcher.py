@@ -2866,7 +2866,8 @@ class MatchFeedTests(unittest.TestCase):
         feed = self._feed(*[_offer("Neon Beats - Steam GLOBAL", oid=str(i)) for i in range(N + 3)])
         with self.assertRaises(AksThrottled):
             match_feed(feed, resolver)
-        self.assertEqual(len(calls), N)          # stops at the Nth — the rest is never probed
+        # stops at the Nth (+ the ONE grace retry of that offer) — the rest is never probed
+        self.assertEqual(len(calls), N + 1)
 
     def test_throttle_guard_ignores_repeats_of_one_broken_page(self):
         # Review 2026-09-09: consecutive feed rows are often variants of ONE title sharing
@@ -3395,3 +3396,163 @@ class ThrottleStatusPropagationTests(unittest.TestCase):
                               offers=(_offer("Neon Beats - Steam GLOBAL", oid="1"),))
         with self.assertRaises(AksThrottled):
             match_feed(feed, lambda name: resolve_aks(name, fake_http))
+
+
+class ThrottleGraceAndSearchBreakerTests(unittest.TestCase):
+    """Romain 2026-09-10: one grace before the throttle abort (never on 429), and the R30
+    site-search circuit breaker (3 consecutive search failures → no more search this run)."""
+
+    def _guard(self, resolver, **kw):
+        from src.matcher import _ThrottleGuard
+        sleeps = []
+        g = _ThrottleGuard(resolver, sleep=sleeps.append, **kw)
+        return g, sleeps
+
+    def test_grace_absorbs_a_short_burst(self):
+        from src.matcher import AksProbeUnreliable, THROTTLE_GRACE_S, THROTTLE_MAX_CONSECUTIVE_UNRELIABLE as N
+        res = AksResolution("neon-beats", "https://aks/x", "205027", "Neon Beats", {"1": {"name": "Standard"}})
+        state = {"n": 0}
+
+        def resolver(name):
+            state["n"] += 1
+            if state["n"] <= N:                      # burst of N distinct 503s, then healthy
+                raise AksProbeUnreliable(f"p{state['n']} -> 503", status=503, slug=f"p{state['n']}")
+            return res
+
+        g, sleeps = self._guard(resolver)
+        for _ in range(N - 1):
+            with self.assertRaises(AksProbeUnreliable):
+                g("x")
+        self.assertIs(g("x"), res)                   # Nth failure → grace → retry succeeds
+        self.assertEqual(sleeps, [THROTTLE_GRACE_S])
+        self.assertEqual(g.consecutive, 0)
+        self.assertEqual(g.stats["throttle_graces"], 1)
+
+    def test_grace_then_still_failing_aborts(self):
+        from src.matcher import AksProbeUnreliable, AksThrottled, THROTTLE_MAX_CONSECUTIVE_UNRELIABLE as N
+        n = [0]
+
+        def resolver(name):
+            n[0] += 1
+            raise AksProbeUnreliable(f"p{n[0]} -> 503", status=503, slug=f"p{n[0]}")
+
+        g, sleeps = self._guard(resolver)
+        for _ in range(N - 1):
+            with self.assertRaises(AksProbeUnreliable):
+                g("x")
+        with self.assertRaises(AksThrottled) as ctx:
+            g("x")
+        self.assertIn("grace", str(ctx.exception))
+        self.assertEqual(len(sleeps), 1)
+
+    def test_429_never_gets_a_grace(self):
+        from src.matcher import AksProbeUnreliable, AksThrottled
+
+        def resolver(name):
+            raise AksProbeUnreliable("p -> 429", status=429, slug="p")
+
+        g, sleeps = self._guard(resolver)
+        with self.assertRaises(AksThrottled):
+            g("x")
+        self.assertEqual(sleeps, [])
+
+    def test_graces_are_capped_per_run(self):
+        from src.matcher import AksProbeUnreliable, AksThrottled, THROTTLE_MAX_CONSECUTIVE_UNRELIABLE as N, THROTTLE_MAX_GRACES
+        res = AksResolution("neon-beats", "https://aks/x", "205027", "Neon Beats", {"1": {"name": "Standard"}})
+        n = [0]
+
+        def resolver(name):
+            n[0] += 1
+            # bursts of N distinct failures, each healed by the retry — until graces run out
+            if n[0] % (N + 1) == 0:
+                return res
+            raise AksProbeUnreliable(f"p{n[0]} -> 503", status=503, slug=f"p{n[0]}")
+
+        g, sleeps = self._guard(resolver)
+        healed = 0
+        try:
+            for _ in range(200):
+                try:
+                    if g("x") is res:
+                        healed += 1
+                except AksProbeUnreliable:
+                    pass
+        except AksThrottled:
+            pass
+        else:
+            self.fail("expected AksThrottled once the graces were spent")
+        self.assertEqual(healed, THROTTLE_MAX_GRACES)
+        self.assertEqual(len(sleeps), THROTTLE_MAX_GRACES)
+
+    def test_search_failures_trip_the_breaker_and_never_abort(self):
+        from src.matcher import AksProbeUnreliable, SEARCH_SLUG_KEY, SEARCH_CIRCUIT_BREAKER_FAILURES as K
+        seen = []
+
+        def resolver(name, **kw):                    # accepts search= like resolve_aks
+            seen.append(kw.get("search", True))
+            if kw.get("search", True):
+                raise AksProbeUnreliable("site search -> timed out", status=None, slug=SEARCH_SLUG_KEY)
+            return None                              # circuit open: slug-only → not found
+
+        g, sleeps = self._guard(resolver)
+        for _ in range(K):
+            with self.assertRaises(AksProbeUnreliable):
+                g("x")
+        self.assertTrue(g.search_open)
+        self.assertIsNone(g("x"))                    # no more search, no 20 s timeout
+        self.assertIsNone(g("y"))
+        self.assertEqual(seen, [True] * K + [False, False])
+        self.assertEqual(g.consecutive, 0)           # search failures never feed the abort
+        self.assertEqual(sleeps, [])
+        self.assertEqual(g.stats, {"probe_unreliable": K, "search_failures": K,
+                                   "search_circuit_open_offers": 2, "throttle_graces": 0})
+
+    def test_breaker_never_passes_search_to_a_resolver_that_cannot_take_it(self):
+        from src.matcher import AksProbeUnreliable, SEARCH_SLUG_KEY, SEARCH_CIRCUIT_BREAKER_FAILURES as K
+
+        def resolver(name):                          # plain injected resolver (tests)
+            raise AksProbeUnreliable("site search -> timed out", status=None, slug=SEARCH_SLUG_KEY)
+
+        g, _ = self._guard(resolver)
+        for _ in range(K + 2):
+            with self.assertRaises(AksProbeUnreliable):
+                g("x")                               # still called without search= (no TypeError)
+        self.assertTrue(g.search_open)
+
+    def test_end_to_end_search_breaker_through_match_feed(self):
+        # Kinguin page 30 (2026-09-09): every guessed slug 404s, the R30 search times out →
+        # 59 × 20 s. With the breaker: 3 search attempts, then slug-only for the rest.
+        from src.matcher import SEARCH_CIRCUIT_BREAKER_FAILURES as K, resolve_aks
+        from src.contracts import NormalizedFeed
+        urls = []
+
+        def fake_http(url, timeout=8, user_agent=None):
+            urls.append(url)
+            if "?s=" in url:
+                return HttpProbeResult(url=url, ok=False, status=None, body="", error="Read timed out")
+            return HttpProbeResult(url=url, ok=False, status=404, body="")
+
+        feed = NormalizedFeed(run_id="r", merchant="Test", fetched_at="t",
+                              offers=tuple(_offer(f"Obscure Title {i} - Steam GLOBAL", oid=str(i)) for i in range(K + 4)))
+        stats = {}
+        candidates, skipped = match_feed(feed, lambda name, **kw: resolve_aks(name, fake_http, **kw), stats=stats)
+        self.assertEqual(candidates, [])
+        self.assertEqual(sum(1 for u in urls if "?s=" in u), K)      # search tried exactly K times
+        unreliable = [s for s in skipped if s.reason.startswith("AKS probe unreliable")]
+        not_found = [s for s in skipped if "no AKS product page" in s.reason]
+        self.assertEqual(len(unreliable), K)
+        self.assertEqual(len(not_found), 4)
+        self.assertEqual(stats["search_failures"], K)
+        self.assertEqual(stats["search_circuit_open_offers"], 4)
+        self.assertEqual(stats["throttle_graces"], 0)
+
+    def test_resolve_aks_search_false_never_queries_search(self):
+        from src.matcher import resolve_aks
+        urls = []
+
+        def fake_http(url, timeout=8, user_agent=None):
+            urls.append(url)
+            return HttpProbeResult(url=url, ok=False, status=404, body="")
+
+        self.assertIsNone(resolve_aks("Some Obscure Game", fake_http, search=False))
+        self.assertFalse(any("?s=" in u for u in urls))

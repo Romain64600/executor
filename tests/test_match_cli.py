@@ -67,6 +67,8 @@ class MatchCliTests(unittest.TestCase):
         self.assertFalse((self.run / "match_aborted.json").exists())
         meta = json.loads((self.run / "match_meta.json").read_text())
         self.assertEqual(meta["probe_unreliable"], 1)
+        for key in ("search_failures", "search_circuit_open_offers", "throttle_graces"):
+            self.assertEqual(meta[key], 0)        # counters present even when match_feed is mocked
         self.assertEqual(len(json.loads((self.run / "skipped.json").read_text())), 2)
 
 

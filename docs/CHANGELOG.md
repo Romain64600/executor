@@ -3,6 +3,30 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-10 — R30 : disjoncteur sur la recherche AKS + délai de grâce avant `AksThrottled`
+
+Premier dry-run safe-auto Kinguin sur le nouveau VPS (lecture seule) : page 30 en ~21 min
+parce que **59 offres sur 100** sont arrivées au repli R30 dont chaque requête `?s=` a
+expiré (20 s) — mesuré directement : la recherche AKS répond en **22-28 s avec un 200 au
+corps vide** (`Content-Length: 0`, timeout PHP côté WordPress probable). Puis page 29
+arrêtée par le garde anti-throttling sur une rafale de **5 × 503 en 4 s** (pages produit
+normales juste après). Décision Romain (« fais 1+2 ») :
+- **Disjoncteur R30** (`_ThrottleGuard`, `SEARCH_CIRCUIT_BREAKER_FAILURES = 3`) : après 3
+  échecs consécutifs de la recherche dans un run (timeout / corps vide / 5xx), plus aucun
+  appel à la recherche pour le reste du run — `resolve_aks(search=False)` — les offres dont
+  les slugs devinés font 404 deviennent « no AKS product page found » sans attendre 20 s.
+  Les échecs de recherche **ne comptent plus** vers l'abort (ce n'est pas du throttling des
+  pages produit). `match_meta.json` : `search_failures`, `search_circuit_open_offers` (à
+  repasser quand la recherche AKS remarchera), `throttle_graces`.
+- **Délai de grâce** (`THROTTLE_GRACE_S = 30`, `THROTTLE_MAX_GRACES = 2`) : au seuil des 5
+  sondes non fiables consécutives sur des pages distinctes, attendre 30 s et retenter
+  l'offre une fois ; `AksThrottled` seulement si ça échoue encore. Jamais sur un 429
+  (arrêt immédiat). Même garde dans le flow by-urls (pas de sommeil sous un stub de test).
+- Tests : grâce absorbée / grâce puis échec / 429 sans grâce / plafond de grâces ;
+  disjoncteur (déclenchement, jamais d'abort, `search=` passé seulement aux résolveurs qui
+  l'acceptent, bout-en-bout `match_feed` + `resolve_aks` reproduisant la page 30) ;
+  `resolve_aks(search=False)`. Suite complète verte.
+
 ## 2026-09-09 — audit adversarial des 5 commits du 08/09 : 38 findings corrigés
 
 Revue en lecture seule demandée par Romain (« regarde mes 3 derniers commits, ne code

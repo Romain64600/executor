@@ -122,6 +122,11 @@ Tout est poussé sur `origin/main`, suite verte (**1353 tests**). Travaux récen
   `recap.aborted = aks_throttled`), `trust_env` off sur la Session keep-alive (proxies miroir
   urllib), tests réels des deux backends HTTP, matrice CI sans/avec `requests`, HANDOFF §7
   corrigé. Détail : `docs/CHANGELOG.md` (2026-09-09) et `docs/audit_2026-09-09_last-commits/`.
+- **2026-09-10** (premier dry-run Kinguin sur le nouveau VPS) : **disjoncteur R30** (3 échecs
+  consécutifs de la recherche AKS → plus d'appel pour le reste du run ; la recherche AKS répond
+  en 22-28 s avec un corps vide depuis ce box) et **délai de grâce** avant `AksThrottled`
+  (30 s puis une nouvelle tentative, jamais sur 429, 2 grâces/run). `match_meta.json` porte
+  `search_failures` / `search_circuit_open_offers` / `throttle_graces`.
 
 ## 4. Backlog / prochaines étapes
 

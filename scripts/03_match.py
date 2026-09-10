@@ -81,10 +81,11 @@ def main() -> int:
     out_dir = Path(args.out_dir) if args.out_dir else Path(args.offers).resolve().parent
     out_dir.mkdir(parents=True, exist_ok=True)
     aborted_path = out_dir / "match_aborted.json"
+    stats: dict[str, int] = {}
     try:
         candidates, skipped = match_feed(
             feed, resolve_aks, max_candidates=args.max_candidates,
-            on_progress=lambda d: logger.log("match_progress", **d),
+            on_progress=lambda d: logger.log("match_progress", **d), stats=stats,
         )
     except AksThrottled as exc:
         # Audit 2026-09-09 (critic): AKS is pushing back (429 / consecutive unreliable
@@ -121,6 +122,12 @@ def main() -> int:
             # (below the AksThrottled abort threshold) — a throttled page is otherwise
             # indistinguishable from an empty one in the recap.
             "probe_unreliable": sum(1 for s in skipped if s.reason.startswith("AKS probe unreliable")),
+            # R30 circuit breaker + throttle grace counters (2026-09-10): search_failures =
+            # site-search timeouts/empties, search_circuit_open_offers = offers resolved
+            # WITHOUT the search fallback (worth a second pass once AKS search works again).
+            "search_failures": int(stats.get("search_failures", 0)),
+            "search_circuit_open_offers": int(stats.get("search_circuit_open_offers", 0)),
+            "throttle_graces": int(stats.get("throttle_graces", 0)),
         }, indent=2),
         encoding="utf-8",
     )

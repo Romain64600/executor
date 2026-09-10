@@ -18,6 +18,7 @@ is injectable for tests.
 from __future__ import annotations
 
 import html
+import inspect
 import json
 import re
 import time
@@ -1338,6 +1339,18 @@ class AksProbeUnreliable(Exception):
 # one staff-UA connection, 03_match exited 0 and a safe-auto sweep plowed on, page after
 # page. The only safeguard was the human 'watched on a small batch'. Now deterministic:
 THROTTLE_MAX_CONSECUTIVE_UNRELIABLE = 5
+# Grace before aborting on a burst of NON-429 unreliable answers (a 4-second 503 hiccup killed
+# a whole sweep on 2026-09-09): wait, retry the offer ONCE, abort only if it still fails.
+# Never for a 429 (explicit rate limit = stop now). At most THROTTLE_MAX_GRACES per run.
+THROTTLE_GRACE_S = 30.0
+THROTTLE_MAX_GRACES = 2
+# R30 site-search circuit breaker (Romain 2026-09-10): after this many CONSECUTIVE search
+# failures (timeout / empty body / 5xx) in one run the endpoint is considered down for the
+# rest of the run — no more 20 s timeouts per deep offer (59 × 20 s on one Kinguin page).
+# Search failures never count toward the throttle abort: they say nothing about the
+# product pages, which are what AKS throttles.
+SEARCH_CIRCUIT_BREAKER_FAILURES = 3
+SEARCH_SLUG_KEY = "site-search"
 
 
 class AksThrottled(Exception):
@@ -1348,26 +1361,62 @@ class AksThrottled(Exception):
 
 
 class _ThrottleGuard:
-    """Wraps the resolver handed to :func:`match_feed`: counts consecutive
-    :class:`AksProbeUnreliable` outcomes (reset by any clean resolution) and raises
-    :class:`AksThrottled` — which :func:`match_offer` does NOT catch — on a 429 or at
-    the consecutive limit. Everything else passes through unchanged."""
+    """Wraps the resolver handed to :func:`match_feed` (one instance per run):
+
+    * counts consecutive :class:`AksProbeUnreliable` outcomes on DISTINCT product pages
+      (reset by any clean resolution) and raises :class:`AksThrottled` — which
+      :func:`match_offer` does NOT catch — on a 429 immediately, or at the consecutive
+      limit after ONE grace (sleep THROTTLE_GRACE_S, retry the offer once; at most
+      THROTTLE_MAX_GRACES graces per run);
+    * R30 circuit breaker: SEARCH_CIRCUIT_BREAKER_FAILURES consecutive site-search
+      failures open the circuit — the resolver is then called with ``search=False`` for
+      the rest of the run (only when it accepts that keyword, i.e. :func:`resolve_aks`).
+      Search failures never count toward the throttle abort.
+
+    ``stats`` (dict) is filled for match_meta: probe_unreliable, search_failures,
+    search_circuit_open_offers, throttle_graces."""
 
     def __init__(self, resolver: Callable[..., AksResolution | None],
-                 limit: int = THROTTLE_MAX_CONSECUTIVE_UNRELIABLE) -> None:
+                 limit: int = THROTTLE_MAX_CONSECUTIVE_UNRELIABLE, *,
+                 sleep: Callable[[float], None] = time.sleep,
+                 grace_s: float = THROTTLE_GRACE_S, max_graces: int = THROTTLE_MAX_GRACES,
+                 search_breaker: int = SEARCH_CIRCUIT_BREAKER_FAILURES) -> None:
         self._resolver = resolver
         self._limit = limit
+        self._sleep = sleep
+        self._grace_s = grace_s
+        self._max_graces = max_graces
+        self._search_breaker = search_breaker
+        self._accepts_search = _accepts_kwarg(resolver, "search")
         self.consecutive = 0
-        self.unreliable_total = 0
+        self.graces = 0
+        self.search_failures_consecutive = 0
+        self.search_open = False
         self._last_failed: str | None = None
+        self.stats: dict[str, int] = {"probe_unreliable": 0, "search_failures": 0,
+                                      "search_circuit_open_offers": 0, "throttle_graces": 0}
+
+    def _call(self, name: str, kwargs: dict[str, Any]) -> AksResolution | None:
+        if self.search_open and self._accepts_search:
+            self.stats["search_circuit_open_offers"] += 1
+            return self._resolver(name, search=False, **kwargs)
+        return self._resolver(name, **kwargs)
 
     def __call__(self, name: str, **kwargs: Any) -> AksResolution | None:
         try:
-            result = self._resolver(name, **kwargs)
+            result = self._call(name, kwargs)
         except AksProbeUnreliable as exc:
-            self.unreliable_total += 1
-            if getattr(exc, "status", None) == 429:
+            self.stats["probe_unreliable"] += 1
+            status = getattr(exc, "status", None)
+            if status == 429:
                 raise AksThrottled(f"AKS answered 429 (rate limited): {exc}") from exc
+            if getattr(exc, "slug", None) == SEARCH_SLUG_KEY:
+                # R30 endpoint failing: not product-page throttling. Trip the breaker.
+                self.stats["search_failures"] += 1
+                self.search_failures_consecutive += 1
+                if self.search_failures_consecutive >= self._search_breaker:
+                    self.search_open = True
+                raise
             # One persistently broken AKS page (a 500 on the slug shared by consecutive
             # variants of one title) is NOT throttling: a repeat of the SAME failing page
             # does not advance the count (review 2026-09-09) — only distinct pages do.
@@ -1375,15 +1424,43 @@ class _ThrottleGuard:
             if key != self._last_failed:
                 self.consecutive += 1
                 self._last_failed = key
-            if self.consecutive >= self._limit:
+            if self.consecutive < self._limit:
+                raise
+            # At the limit: one grace (Romain 2026-09-10) — a short burst of 503s must not
+            # kill a whole sweep, but a persistent one must still stop it fail-closed.
+            if self.graces < self._max_graces:
+                self.graces += 1
+                self.stats["throttle_graces"] += 1
+                self._sleep(self._grace_s)
+                try:
+                    result = self._call(name, kwargs)
+                except AksProbeUnreliable as exc2:
+                    raise AksThrottled(
+                        f"{self.consecutive} consecutive unreliable AKS probes on distinct pages, "
+                        f"still failing after a {self._grace_s:.0f}s grace (last: {exc2})"
+                    ) from exc2
+            else:
                 raise AksThrottled(
                     f"{self.consecutive} consecutive unreliable AKS probes on distinct pages "
-                    f"(last: {exc})"
+                    f"({self.graces} grace(s) already spent; last: {exc})"
                 ) from exc
-            raise
         self.consecutive = 0
         self._last_failed = None
+        self.search_failures_consecutive = 0
         return result
+
+
+def _accepts_kwarg(fn: Callable[..., Any], kw: str) -> bool:
+    """True if ``fn`` can be called with ``kw=...`` (a keyword or **kwargs parameter)."""
+
+    try:
+        params = inspect.signature(fn).parameters
+    except (TypeError, ValueError):
+        return False
+    if kw in params and params[kw].kind in (inspect.Parameter.KEYWORD_ONLY,
+                                             inspect.Parameter.POSITIONAL_OR_KEYWORD):
+        return True
+    return any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
 
 
 class AksNameUnreadable(Exception):
@@ -1443,7 +1520,7 @@ def search_aks_slugs(
         # "no AKS product page found", which masked a 429/5xx from the throttle guard and
         # even RESET its counter. Anything but 200/404/410 is unreliable, not "no result".
         raise AksProbeUnreliable(f"site search -> {probe.status or probe.error}",
-                                 status=probe.status, slug="site-search")
+                                 status=probe.status, slug=SEARCH_SLUG_KEY)
     slugs: list[str] = []
     # P3-1 (audit 2026-09-02): AKS serves BOTH the ordinary `-cd-key-` page and a
     # bare `-key-` page (e.g. buy-the-green-light-key-compare-prices/, id 216255).
@@ -1459,7 +1536,8 @@ def search_aks_slugs(
 
 
 def resolve_aks(
-    name: str, http_get_fn: Callable[..., Any] = http_get, *, page_kind: str = "cd-key"
+    name: str, http_get_fn: Callable[..., Any] = http_get, *, page_kind: str = "cd-key",
+    search: bool = True,
 ) -> AksResolution | None:
     """Try each candidate slug read-only; return the first real product page.
 
@@ -1501,8 +1579,10 @@ def resolve_aks(
             raise AksNameUnreadable(slug)
         return resolution
 
-    if page_kind != "cd-key":
-        return None  # no site-search fallback for account pages (see docstring)
+    if page_kind != "cd-key" or not search:
+        # no site-search fallback for account pages (see docstring), nor once the R30
+        # circuit breaker is open for this run (_ThrottleGuard, 2026-09-10)
+        return None
     for slug in search_aks_slugs(name, http_get_fn):
         # P3-1: a fallback slug may live at the bare `-key-` page, not `-cd-key-`.
         # Probe both kinds (cd-key first — the common shape); the loop still soft-
@@ -2370,6 +2450,7 @@ def match_feed(
     max_candidates: int = 100,
     on_progress: Callable[[dict[str, int]], None] | None = None,
     progress_every: int = 5,
+    stats: dict[str, int] | None = None,
 ) -> tuple[list[Candidate], list[SkippedOffer]]:
     """Match every offer. ``on_progress`` (2026-07-20), when given, is called
     every ``progress_every`` offers and once at the end with
@@ -2379,12 +2460,15 @@ def match_feed(
 
     Raises :class:`AksThrottled` (fail-closed STOP for the whole stage) on a 429 or
     on THROTTLE_MAX_CONSECUTIVE_UNRELIABLE consecutive unreliable probes (audit
-    2026-09-09) — a per-offer unreliable probe below that stays a SkippedOffer."""
+    2026-09-09, one 30 s grace first) — a per-offer unreliable probe below that stays a
+    SkippedOffer. ``stats`` (optional dict) receives the guard's counters
+    (probe_unreliable, search_failures, search_circuit_open_offers, throttle_graces)."""
 
     candidates: list[Candidate] = []
     skipped: list[SkippedOffer] = []
     total = len(feed.offers)
-    guard = _ThrottleGuard(resolver)
+    # No real sleep under an injected test resolver (same identity rule as the pacing).
+    guard = _ThrottleGuard(resolver, sleep=time.sleep if resolver is resolve_aks else (lambda s: None))
     # Account-page resolutions (Difmark accounts) go through the same guard when the
     # production resolver is in use; an injected test resolver keeps the default.
     account_resolver = guard if resolver is resolve_aks else resolve_aks
@@ -2400,4 +2484,6 @@ def match_feed(
         if on_progress is not None and (i % progress_every == 0 or i == total):
             on_progress({"done": i, "total": total,
                          "candidates": len(candidates), "skipped": len(skipped)})
+    if stats is not None:
+        stats.update(guard.stats)
     return candidates, skipped
