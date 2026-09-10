@@ -11,7 +11,7 @@ import socket
 import unittest
 from unittest import mock
 
-from src.cdp_session import CdpCommandError, ReadOnlyCdpSession
+from src.cdp_session import CdpTimeoutError, CdpCommandError, ReadOnlyCdpSession
 
 
 def _server_frame(opcode: int, payload: bytes = b"", fin: bool = True) -> bytes:
@@ -51,6 +51,30 @@ class CmdFailClosedTests(unittest.TestCase):
         with self.assertRaises(CdpCommandError) as ctx:
             session._cmd("Runtime.evaluate", {"expression": "1"})
         self.assertIn("no response", str(ctx.exception))
+        # The timeout is the SUBCLASS (socket intact) — the post-save proof may retry
+        # it once; it still IS a CdpCommandError for every fail-closed handler.
+        self.assertIsInstance(ctx.exception, CdpTimeoutError)
+
+    def test_dead_socket_is_not_a_timeout_error(self):
+        session = _StubbedSession(frames=[], cmd_timeout=1)
+
+        def dead(timeout=5.0):
+            raise CdpCommandError("WebSocket closed (EOF)")
+        session._ws_recv = dead
+        with self.assertRaises(CdpCommandError) as ctx:
+            session._cmd("Runtime.evaluate", {"expression": "1"})
+        self.assertNotIsInstance(ctx.exception, CdpTimeoutError)
+
+    def test_late_answer_to_a_timed_out_command_is_discarded(self):
+        # The answer to id 1 arrives while id 2 waits: id 2 must NOT take it.
+        session = _StubbedSession(frames=[], cmd_timeout=0)
+        with self.assertRaises(CdpTimeoutError):
+            session._cmd("Runtime.evaluate", {"expression": "slow"})
+        session.frames = [json.dumps({"id": 1, "result": {"result": {"value": "late"}}}),
+                          json.dumps({"id": 2, "result": {"result": {"value": "fresh"}}})]
+        session._cmd_timeout = 1
+        response = session._cmd("Runtime.evaluate", {"expression": "next"})
+        self.assertEqual(response["result"]["result"]["value"], "fresh")
 
     def test_protocol_error_raises(self):
         session = _StubbedSession(

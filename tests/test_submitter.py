@@ -2,7 +2,7 @@ import json
 import re
 import unittest
 
-from src.cdp_session import CdpCommandError
+from src.cdp_session import CdpCommandError, CdpTimeoutError
 from src.pacing import Pacer
 from src.submitter import DryRunSubmitter, InspectSubmitter, Submitter
 
@@ -2743,3 +2743,106 @@ class SubmitSessionTimeoutTests(unittest.TestCase):
         self.assertEqual(SubmitSession(ep)._cmd_timeout, SUBMIT_CDP_CMD_TIMEOUT_S)
         self.assertEqual(WriteSubmitSession(ep)._cmd_timeout, SUBMIT_CDP_CMD_TIMEOUT_S)
         self.assertGreater(SUBMIT_CDP_CMD_TIMEOUT_S, ReadOnlyCdpSession(ep)._cmd_timeout)   # read-only stays 20
+
+
+class SlowProofSession(FakeWriteSession):
+    """The tab is SLOW right after the Create click (AKS admin page > cmd_timeout on the
+    proof navigation, 2026-09-10 MMOGA sweeps): the first ``timeouts`` proof reads raise
+    CdpTimeoutError (socket intact), then the feed reads normally."""
+
+    def __init__(self, pages, *, timeouts=1, exc=CdpTimeoutError, **kw):
+        super().__init__(pages, **kw)
+        self.timeouts = timeouts
+        self.exc = exc
+        self.clicked = False
+        self.proof_reads = 0
+
+    def fill_then_click_trusted(self, *a, **kw):
+        diag = super().fill_then_click_trusted(*a, **kw)
+        self.clicked = True
+        return diag
+
+    def page_offer_rows(self):
+        if self.clicked:
+            self.proof_reads += 1
+            if self.proof_reads <= self.timeouts:
+                raise self.exc("CDP Runtime.evaluate: no response within 45s")
+        return super().page_offer_rows()
+
+
+class PostSaveProofRetryTests(unittest.TestCase):
+    """Romain GO 2026-09-10: one bounded retry of the READ-ONLY post-save proof on a CDP
+    command timeout — a slow tab must not halt a whole sweep with a created offer marked
+    UNKNOWN. Anything else (second timeout, dead socket) stays UNKNOWN + stop."""
+
+    def _run(self, session):
+        sub = Submitter(session, click_mode="trusted")
+        sub.feed_ui_render_waits = (); sub.modal_ctx_waits = ()
+        sub.empty_retry_wait_s = 0; sub.empty_confirm_waits = (0,)
+        sub.post_save_proof_retry_wait_s = 0
+        events = []
+        sub._log = lambda event, **kw: events.append((event, kw))
+        result = sub.run(run_id="r", merchant="Driffle", store_id="127",
+                         approved=[_cand("1"), _cand("2")], limit=None)
+        return result, events
+
+    def test_one_timeout_then_readable_feed_is_a_proven_creation(self):
+        session = SlowProofSession([["1", "2"]], timeouts=1)
+        result, events = self._run(session)
+        self.assertIsNone(result["stopped"]); self.assertIsNone(result["aborted"])
+        self.assertEqual(result["created"], 2)                      # both offers, no halt
+        first = result["plan"][0]
+        self.assertTrue(first["submitted"])
+        self.assertEqual(first["post_save"], "gone from feed (available=all)")
+        self.assertIn("no response within 45s", first["post_save_proof_retry"])
+        retries = [kw for ev, kw in events if ev == "post_save_proof_retry"]
+        self.assertEqual(len(retries), 1)
+        self.assertEqual(retries[0]["offer_id"], "1")
+        self.assertNotIn("post_save_proof_retry", result["plan"][1])  # second offer: no retry
+
+    def test_two_timeouts_stay_unknown_and_stop(self):
+        session = SlowProofSession([["1", "2"]], timeouts=2)
+        result, events = self._run(session)
+        self.assertEqual(result["stopped"], "feed_unreadable")
+        self.assertEqual(result["created"], 0)                      # UNKNOWN is not a creation
+        self.assertEqual(result["write_attempts"], 1)
+        entry = result["plan"][0]
+        self.assertFalse(entry.get("submitted"))
+        self.assertIn("UNKNOWN", entry["post_save"]); self.assertIn("CdpTimeoutError", entry["post_save"])
+        self.assertEqual(len(result["plan"]), 1)                    # offer 2 never attempted
+        self.assertEqual(len([1 for ev, _ in events if ev == "post_save_proof_retry"]), 1)
+
+    def test_dead_socket_is_never_retried(self):
+        session = SlowProofSession([["1", "2"]], timeouts=5, exc=CdpCommandError)
+        result, events = self._run(session)
+        self.assertEqual(result["stopped"], "feed_unreadable")
+        self.assertEqual(session.proof_reads, 1)                    # one read, no retry
+        self.assertFalse(any(ev == "post_save_proof_retry" for ev, _ in events))
+        self.assertIn("UNKNOWN", result["plan"][0]["post_save"])
+
+    def test_retry_applies_to_the_search_proof_too(self):
+        # Sweep flavour (prove_gone_by_search): the retried proof is the SAME search
+        # proof (search_locate=True), the window index is kept, the entry is proven.
+        session = FakeWriteSession([[]])
+        sub = Submitter(session)
+        sub.post_save_proof_retry_wait_s = 0
+        calls = []
+
+        def verify(*a, **k):
+            calls.append(k)
+            if len(calls) == 1:
+                raise CdpTimeoutError("CDP Runtime.evaluate: no response within 45s")
+            return True, {}, {}
+        sub._verify_gone = verify
+        ctx = {"store_id": "58", "feed_page": "aks-merchant-feeds-9", "available": "all", "max_pages": 40,
+               "index": {"1": {"offer_id": "1"}, "2": {"offer_id": "2"}}, "by_url": {"https://m/a": {"offer_id": "1"}},
+               "window_pages": [30], "search_locate": False, "prove_gone_by_search": True}
+        entry = {"ready": True, "offer_id": "1", "region_select": "offer[region]", "region_id": "2",
+                 "edition_select": "offer[edition]", "edition_id": "1"}
+        ok = sub._process(entry, {"offer": {"offer_id": "1", "name": "A", "url": "https://m/a"}}, ctx)
+        self.assertTrue(ok)
+        self.assertEqual([k["search_locate"] for k in calls], [True, True])
+        self.assertEqual(set(ctx["index"]), {"1", "2"})
+        self.assertIn("no response within 45s", entry["post_save_proof_retry"])
+        self.assertEqual(entry["post_save"], "gone from feed (available=all)")
+

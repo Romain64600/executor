@@ -1183,6 +1183,20 @@ UNKNOWN, verify it by hand …"` (attempt counted, creation NOT), stops the run
 with `stopped="feed_unreadable"`, and still writes `submit_plan.json` + logs.
 At batch start they abort with `aborted="feed_unreadable"` before any write.
 
+**One bounded retry of the proof on a CDP command TIMEOUT (Romain GO 2026-09-10).**
+Twice in ~100 MMOGA creations the AKS admin page took longer than the 45 s command
+timeout to answer the proof navigation right after a successful Create (signal "Offer
+created …"), so a created offer was marked UNKNOWN and the whole sweep halted. The
+proof is read-only, so re-running it can never create: when `_verify_gone` raises
+`CdpTimeoutError` (the `_cmd` "no response within Ns" case — the WebSocket is intact, a
+late answer to the timed-out id is discarded by the next command's id match) the
+submitter logs `post_save_proof_retry`, waits `POST_SAVE_PROOF_RETRY_WAIT_S` = 5 s and
+re-runs the SAME proof (feed walk or search, fresh navigations) once; the entry keeps
+`post_save_proof_retry`. A second timeout, a dead socket (`CdpCommandError`: EOF, close
+frame, mid-frame stall — never retried), `FeedScanError` or `NotLoggedInError` stay the
+UNKNOWN + `stopped="feed_unreadable"` above. The relaunch is safe by construction
+either way: the submitter only writes what it re-locates in the refreshed feed.
+
 **Verification method is UI/feed only** `[S12]` — do **not** verify by direct DB
 query, network payload inspection, XHR, admin-ajax, or curl backend probing.
 

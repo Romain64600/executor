@@ -62,6 +62,16 @@ class CdpCommandError(RuntimeError):
     page."""
 
 
+class CdpTimeoutError(CdpCommandError):
+    """ONE command got no answer within ``cmd_timeout`` while the WebSocket stayed
+    intact (no EOF, no close frame, no mid-frame stall — those raise the plain
+    ``CdpCommandError``). The socket is still usable: a late answer to the timed-out
+    id is discarded by the next ``_cmd``'s id match. Tells "the tab is slow" (a bounded
+    READ-ONLY retry can be worth it — the post-save proof, Romain GO 2026-09-10) from
+    "the transport is dead" (never retried). Still a CdpCommandError everywhere else:
+    every fail-closed handler that catches the base class keeps catching this."""
+
+
 def _derive_base(endpoint: str) -> tuple[str, int, str]:
     """From ``http://host:port/json/version`` → ``(host, port, 'http://host:port')``."""
 
@@ -341,6 +351,6 @@ class ReadOnlyCdpSession:
                 if "error" in data:
                     raise CdpCommandError(f"CDP {method} failed: {data['error']}")
                 return data
-        raise CdpCommandError(
+        raise CdpTimeoutError(
             f"CDP {method}: no response within {self._cmd_timeout}s"
         )

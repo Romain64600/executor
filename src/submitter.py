@@ -26,7 +26,7 @@ import time
 import urllib.parse
 from typing import Any
 
-from src.cdp_session import CdpCommandError
+from src.cdp_session import CdpCommandError, CdpTimeoutError
 from src.extractor import (
     AKS_ADMIN_URL,
     DEFAULT_FEED_PAGE,
@@ -116,6 +116,15 @@ EMPTY_CONFIRM_WAITS = (1.0, 2.0, 4.0)
 # pages the coverage is unproven and the scan raises FeedScanError (never a false
 # "gone"). ~1000 matching rows for one slug is already pathological.
 SEARCH_SCAN_MAX_PAGES = 10
+
+# Post-save proof retry (Romain GO 2026-09-10): twice in ~100 MMOGA creations the AKS
+# admin page took > 45 s to answer the proof navigation right after a successful Create
+# (CDP ``Runtime.evaluate`` timeout, socket intact) → offer UNKNOWN → the whole sweep
+# halted. The proof is READ-ONLY, so re-running it can never create anything: on a
+# CdpTimeoutError (and ONLY that — a dead socket stays a stop) the proof is re-run ONCE
+# after this wait, with fresh navigations. A second timeout, or any other unreadable
+# state, is the same UNKNOWN + ``stopped="feed_unreadable"`` as before.
+POST_SAVE_PROOF_RETRY_WAIT_S = 5.0
 
 # by-urls search-locate: how many times to (re)try ONE candidate's index-build search
 # before dropping it. The per-offer search can hit a TRANSIENT FeedScanError (a slow
@@ -371,6 +380,7 @@ class _SubmitterBase:
         self.page_scripts_ready_waits = PAGE_SCRIPTS_READY_WAITS
         self.search_scan_max_pages = SEARCH_SCAN_MAX_PAGES
         self.search_index_attempts = SEARCH_INDEX_ATTEMPTS
+        self.post_save_proof_retry_wait_s = POST_SAVE_PROOF_RETRY_WAIT_S
         self.catalog: dict[str, Any] | None = None
         self._region_master: list[dict[str, Any]] = []
         # Cooperative stop hook (default: never checked → submit pipeline
@@ -1568,11 +1578,22 @@ class Submitter(_SubmitterBase):
         # creation (2026-08-06 review, CRITICAL). page_hint only makes the LOCATE
         # cheap (find the row without a deep sequential scan); proving it left the
         # feed still requires covering the whole feed under both id and URL keys.
-        gone, fresh_index, fresh_by_url = self._verify_gone(
-            entry["offer_id"], str(candidate["offer"].get("url") or ""),
-            ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"],
-            search_locate=bool(ctx.get("prove_gone_by_search", False)),
-        )
+        proof_args = (entry["offer_id"], str(candidate["offer"].get("url") or ""),
+                      ctx["store_id"], ctx["feed_page"], ctx["available"], ctx["max_pages"])
+        proof_kw = {"search_locate": bool(ctx.get("prove_gone_by_search", False))}
+        try:
+            gone, fresh_index, fresh_by_url = self._verify_gone(*proof_args, **proof_kw)
+        except CdpTimeoutError as exc:
+            # A slow tab, not a dead socket (see POST_SAVE_PROOF_RETRY_WAIT_S): re-run the
+            # READ-ONLY proof once, from fresh navigations. A second CdpTimeoutError (or
+            # any other FEED_UNREADABLE_EXCS) propagates to run()'s handler → UNKNOWN +
+            # stop, exactly as without the retry. Nothing here can click or create.
+            self._log("post_save_proof_retry", offer_id=entry["offer_id"],
+                      wait_s=self.post_save_proof_retry_wait_s, reason=str(exc)[:200])
+            entry["post_save_proof_retry"] = str(exc)[:200]
+            if self.post_save_proof_retry_wait_s:
+                time.sleep(self.post_save_proof_retry_wait_s)
+            gone, fresh_index, fresh_by_url = self._verify_gone(*proof_args, **proof_kw)
         # A whole-feed walk IS the refreshed feed → it becomes the next locate index. A
         # search proof only covers the searched offer: under the sweep's page-hint locate
         # the window index stays as is (the next offers are still on their page; a row

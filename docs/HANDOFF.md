@@ -129,7 +129,10 @@ Tout est poussé sur `origin/main`, suite verte (**1353 tests**). Travaux récen
   `search_failures` / `search_circuit_open_offers` / `throttle_graces`. Le disjoncteur est
   **persisté par sweep** (`<sweep>/search_circuit.json`, sans expiration — Romain 2026-09-10 :
   une fois ouvert il le reste jusqu'à la fin du sweep, les offres non résolues par URL
-  attendent le sweep suivant). **Trois formes d'URL
+  attendent le sweep suivant). **Preuve post-save réessayée une fois** sur timeout de
+  commande CDP (`CdpTimeoutError`, socket intact ; jamais sur socket mort) — la page admin
+  AKS a mis > 45 s à répondre après un Create réussi, 2× sur ~100 créations, chaque fois
+  une halte du sweep avec l'offre UNKNOWN (EXECUTOR_RULES §7). **Trois formes d'URL
   AKS** par slug deviné : courante (tous paliers) → avec année (`buy-fable-2026-…`, pages
   créées depuis 2026) → ancienne (`compare-and-buy-cd-key-for-digital-download-<slug>/`,
   ≈2021), les deux dernières pour le slug le plus spécifique seulement (+3 sondes max ; le

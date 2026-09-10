@@ -3,6 +3,22 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-10 — submit : preuve post-save réessayée une fois sur timeout CDP (socket intact)
+
+2e halte `feed_unreadable` du jour (*End of Lines*, page 19 : Create réussi puis
+`Runtime.evaluate` sans réponse en 45 s sur la preuve → UNKNOWN → sweep arrêté après 24
+créations, offre vérifiée créée en lecture seule). Cause : la page admin AKS met parfois
+plus de 45 s à répondre à la navigation de preuve juste après un Create — le socket, lui,
+est intact. GO de Romain : `CdpTimeoutError(CdpCommandError)` levée par `_cmd` sur le seul
+cas « no response within Ns » (EOF / close frame / flux coupé restent `CdpCommandError`), et
+le submitter réessaie **une fois** la preuve post-save (lecture seule, navigations fraîches)
+après `POST_SAVE_PROOF_RETRY_WAIT_S` = 5 s, événement `post_save_proof_retry` + champ
+`post_save_proof_retry` dans le plan. Deuxième timeout, socket mort, `FeedScanError`,
+`NotLoggedInError` : UNKNOWN + `stopped=feed_unreadable` comme avant. Tests : timeout =
+sous-classe, socket mort ≠ timeout, réponse tardive ignorée par la commande suivante (CDP) ;
+1 timeout → créée sans halte, 2 timeouts → UNKNOWN + stop, socket mort → jamais réessayé,
+preuve par recherche réessayée à l'identique (submitter). Docs : EXECUTOR_RULES §7, HANDOFF §3.
+
 ## 2026-09-10 — disjoncteur R30 : ouvert pour tout le sweep (plus d'expiration 30 min)
 
 Sweep MMOGA 30 pages (#2, tous leviers) : page 20 = 8/8 en 7 min (match 1 min : 3 échecs de
