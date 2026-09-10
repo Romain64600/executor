@@ -5,6 +5,7 @@ import importlib.util
 import json
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -74,3 +75,47 @@ class MatchCliTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SearchCircuitFileTests(MatchCliTests):
+    """Sweep-scoped R30 breaker persistence (Romain GO 2026-09-10)."""
+
+    def _circuit(self, **fields):
+        path = self.root / "search_circuit.json"
+        path.write_text(json.dumps(fields))
+        return path
+
+    def _main_with(self, path, match_feed_stub):
+        with mock.patch.object(self.MOD, "match_feed", side_effect=match_feed_stub), \
+                mock.patch.object(sys, "argv", ["03_match.py", str(self.run / "offers.json"),
+                                                "--search-circuit-file", str(path)]):
+            return self.MOD.main()
+
+    def test_open_unexpired_file_preopens_the_circuit(self):
+        path = self._circuit(open=True, open_until=time.time() + 600)
+        seen = {}
+
+        def stub(feed, resolver, **kw):
+            seen.update(kw); kw["stats"].update({"search_circuit_open_offers": 4, "search_failures": 0}); return ([], [])
+        self.assertEqual(self._main_with(path, stub), 0)
+        self.assertTrue(seen["search_circuit_open"])
+        self.assertTrue(json.loads(path.read_text())["open"])            # re-armed for the next page
+
+    def test_expired_file_does_not_preopen(self):
+        path = self._circuit(open=True, open_until=time.time() - 1)
+        seen = {}
+
+        def stub(feed, resolver, **kw):
+            seen.update(kw); return ([], [])
+        self.assertEqual(self._main_with(path, stub), 0)
+        self.assertFalse(seen["search_circuit_open"])
+        self.assertFalse(path.exists())                                    # search worked → cleared
+
+    def test_a_tripped_run_writes_the_file(self):
+        path = self.root / "search_circuit.json"
+
+        def stub(feed, resolver, **kw):
+            kw["stats"].update({"search_failures": 3, "search_circuit_open_offers": 10}); return ([], [])
+        self.assertEqual(self._main_with(path, stub), 0)
+        data = json.loads(path.read_text())
+        self.assertTrue(data["open"]); self.assertGreater(data["open_until"], time.time())

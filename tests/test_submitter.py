@@ -1922,6 +1922,23 @@ class FeedScanSettleTests(unittest.TestCase):
         self.assertIn(3.0, settles)               # pre-modal row nav: full
         self.assertNotEqual(FEED_SCAN_SETTLE, 3.0)
 
+    def test_pre_modal_navigate_uses_the_short_settle_when_the_readiness_probe_exists(self):
+        # Romain GO 2026-09-10: with the page-scripts readiness gate the fixed 3 s settle
+        # only has to cover the navigation → ROW_PAGE_SETTLE (1 s); a session without the
+        # probe (above) keeps the 3 s default.
+        from src.submitter import ROW_PAGE_SETTLE
+        session = ReclickAfterLostClickSession([["1"]], content_after_opens=1)
+        sub = DryRunSubmitter(session)
+        sub.empty_retry_wait_s = 0; sub.empty_confirm_waits = (0,); sub.feed_ui_render_waits = (0, 0)
+        sub.modal_ctx_waits = (0, 0); sub.page_scripts_ready_waits = (0, 0)
+        result = sub.run(run_id="r", merchant="Kinguin", store_id="58", approved=[_cand("1")])
+        self.assertTrue(result["plan"][0]["ready"])
+        self.assertIn(ROW_PAGE_SETTLE, session.nav_settles)
+        # only the run's pre-flight login navigate keeps the 3 s default; every row-page
+        # navigate before a modal open used the short settle
+        self.assertEqual(session.nav_settles.count(3.0), 1)
+        self.assertEqual(session.nav_settles[0], 3.0)
+
     def test_post_save_rescan_uses_short_settle(self):
         from src.submitter import FEED_SCAN_SETTLE
 

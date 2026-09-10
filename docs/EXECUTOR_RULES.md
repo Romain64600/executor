@@ -608,6 +608,11 @@ abort (they say nothing about the product pages AKS throttles); after
 guessed slugs all 404 are then "no AKS product page found" without the 20 s wait, and
 `match_meta.json.search_circuit_open_offers` counts them (a second pass once AKS search
 works again is worthwhile); `search_failures` and `throttle_graces` are recorded too.
+**Sweep-scoped persistence (Romain GO 2026-09-10, "gagner du temps"):** `scripts/10` hands
+`03_match --search-circuit-file <sweep>/search_circuit.json`; a page that trips the breaker
+(or starts open and still fails) re-arms the file with a 30 min expiry, the next pages start
+with the circuit OPEN (`search_circuit_preopened`, no 3 × timeout tax per page), a page whose
+search worked clears it. `AKS_SEARCH_TIMEOUT_S` 20 → 8 s (a slow answer was never a useful one).
 Measured 2026-09-09 on the new VPS: AKS search answered in 22-28 s with an EMPTY 200 body —
 59 offers × 20 s on one Kinguin page.
 Build the slug from the AKS name (lowercase, `[^a-z0-9] → -`), verify
@@ -1000,7 +1005,9 @@ For each validated candidate, in order, fail-closed:
    `tb_show` defined, `PAGE_SCRIPTS_READY_WAITS` ≈15 s, read-only), and (b) after
    `MODAL_RECLICK_AFTER_POLLS` = 3 empty polls the click is re-issued **once** (opening a
    modal has no side effect). Still absent after the backoff → fail-closed skip, logged
-   `modal_ctx_missing` with the last context and page-scripts probe.
+   `modal_ctx_missing` with the last context and page-scripts probe. With the gate in place
+   the fixed navigate settle before a modal open is `ROW_PAGE_SETTLE` = 1 s (was the 3 s
+   default; a session without the probe keeps 3 s — Romain GO 2026-09-10).
 4. **Verify the select names before filling** — they vary per feed:
    `offer[region]`/`offer[edition]` on some, `offer[region_id]`/`offer[edition_id]`
    on others. Wrong name → silent `selectize` failure → false `[data-success]`

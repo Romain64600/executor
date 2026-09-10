@@ -128,6 +128,37 @@ def _status(entry, write):
     return f"FAILED ({entry.get('post_save')})"
 
 
+# Region/edition dropdown catalog cache — the lists do not change between two pages of one
+# sweep; a per-page fetch (feed navigate + modal open + probes) cost ~30-40 s per page.
+CATALOG_CACHE_TTL_S = 2 * 3600
+
+
+def _load_catalog_cache(path: str | None, store_id: str) -> dict | None:
+    """The cached catalog if present, ok, for this store and younger than the TTL."""
+    if not path:
+        return None
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not data.get("ok") or str(data.get("cache_store_id")) != str(store_id):
+        return None
+    if time.time() - float(data.get("cache_fetched_at", 0)) > CATALOG_CACHE_TTL_S:
+        return None
+    return data
+
+
+def _write_catalog_cache(path: str | None, catalog: dict, store_id: str) -> None:
+    if not path or not catalog.get("ok"):
+        return
+    try:
+        Path(path).write_text(json.dumps({**catalog, "cache_store_id": str(store_id),
+                                          "cache_fetched_at": time.time()}, indent=2),
+                              encoding="utf-8")
+    except OSError:
+        pass   # an accelerator only — never a reason to fail the submit
+
+
 def main() -> int:
     # OP1 (audit 2026-07-17): one tab, one driver — every mode of this script
     # (catalog/inspect/dry-run/submit) navigates the single CDP tab, so the
@@ -183,6 +214,11 @@ def _main() -> int:
              "instead of a whole-feed scan — for the by-urls submit, whose offers are "
              "scattered (no page). Fast + fresh; an absence in the search is a valid "
              "whole-feed gone-proof. Mutually exclusive with --page-hint.")
+    parser.add_argument(
+        "--catalog-cache", default=None,
+        help="Sweep-scoped cache of the live region/edition catalog (Romain GO 2026-09-10). "
+             "A fresh (< 2 h) cache for the same store skips the per-page catalog fetch; "
+             "otherwise the catalog is fetched and the cache written. Write mode only.")
     parser.add_argument(
         "--prove-gone-by-search", action="store_true",
         help="Keep the page-hint (or scan) LOCATE but prove each post-save disappearance "
@@ -481,12 +517,26 @@ def _main() -> int:
         with session_cls(args.endpoint) as session:
             submitter = submitter_cls(session, logger=logger, **pacer_kw, **submitter_kw)
             submitter._should_stop = lambda: _STOP   # cooperative stop at offer boundaries
+            # Sweep-scoped catalog cache (Romain GO 2026-09-10): only when a cache path is
+            # given; otherwise run() fetches the live catalog itself, as always.
+            catalog = None
+            if write and args.catalog_cache:
+                catalog = _load_catalog_cache(args.catalog_cache, args.store_id)
+                if catalog is None:
+                    catalog = fetch_session_catalog(
+                        session, store_id=args.store_id, available=args.available,
+                        max_pages=max_pages,
+                    )
+                    _write_catalog_cache(args.catalog_cache, catalog, args.store_id)
+                else:
+                    logger.log("catalog_cache_hit", path=args.catalog_cache)
             result = submitter.run(
                 run_id=run_id, merchant=args.merchant, store_id=args.store_id,
                 approved=approved, available=args.available, max_pages=max_pages, limit=limit,
                 page_hint=args.page_hint, page_window=args.page_window,
                 locate_by_search=args.locate_by_search,
                 prove_gone_by_search=args.prove_gone_by_search,
+                catalog=catalog,
             )
     except FEED_UNREADABLE_EXCS as exc:
         print(json.dumps({

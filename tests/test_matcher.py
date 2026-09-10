@@ -3512,7 +3512,8 @@ class ThrottleGraceAndSearchBreakerTests(unittest.TestCase):
         self.assertEqual(g.consecutive, 0)           # search failures never feed the abort
         self.assertEqual(sleeps, [])
         self.assertEqual(g.stats, {"probe_unreliable": K, "search_failures": K,
-                                   "search_circuit_open_offers": 2, "throttle_graces": 0})
+                                   "search_circuit_open_offers": 2, "throttle_graces": 0,
+                                   "search_circuit_preopened": 0})
 
     def test_breaker_never_passes_search_to_a_resolver_that_cannot_take_it(self):
         from src.matcher import AksProbeUnreliable, SEARCH_SLUG_KEY, SEARCH_CIRCUIT_BREAKER_FAILURES as K
@@ -3860,3 +3861,25 @@ class RomanNumeralEquivalenceTests(unittest.TestCase):
         self.assertEqual(swap_numerals("civilization-6"), "civilization-vi")
         self.assertEqual(swap_numerals("Fable 2026"), "Fable 2026")
         self.assertEqual(swap_numerals("Mega Man X"), "Mega Man X")
+
+
+class SearchCircuitPreopenedTests(unittest.TestCase):
+    def test_match_feed_can_start_with_the_search_circuit_open(self):
+        # Romain GO 2026-09-10: the breaker state travels across a sweep's pages — a page
+        # may start WITHOUT the site search (no 3 × timeout tax) when the previous one tripped.
+        from src.matcher import resolve_aks
+        from src.contracts import NormalizedFeed
+        urls = []
+
+        def fake_http(url, timeout=8, user_agent=None):
+            urls.append(url)
+            return HttpProbeResult(url=url, ok=False, status=404, body="")
+
+        feed = NormalizedFeed(run_id="r", merchant="Test", fetched_at="t",
+                              offers=tuple(_offer(f"Obscure Title {i} - Steam GLOBAL", oid=str(i)) for i in range(3)))
+        stats = {}
+        match_feed(feed, lambda name, **kw: resolve_aks(name, fake_http, **kw), stats=stats, search_circuit_open=True)
+        self.assertFalse(any("?s=" in u for u in urls))                  # never searched
+        self.assertEqual(stats["search_circuit_open_offers"], 3)
+        self.assertEqual(stats["search_circuit_preopened"], 1)
+        self.assertEqual(stats["search_failures"], 0)

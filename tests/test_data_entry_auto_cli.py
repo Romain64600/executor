@@ -137,6 +137,24 @@ class CliSeamTests(unittest.TestCase):
             self.assertEqual("--prove-gone-by-search" in captured["argv"], expected, scan)
             self.assertIn("--page-hint", captured["argv"])           # locate window kept
 
+    def test_sweep_passes_the_sweep_scoped_cache_files_to_03_and_05(self):
+        # Romain GO 2026-09-10: the R30 breaker state and the live catalog travel across the
+        # sweep's pages via files in the sweep dir.
+        from pathlib import Path
+        captured = []
+        sweep_dir = self.MOD.ROOT / "runs" / "t-sweep"
+        stages = self.MOD._make_stages("Kinguin", "58", "all", None, sweep_dir=sweep_dir)
+        run_dir = self.MOD.ROOT / "runs" / "t-sweep-kinguin-s58-p3"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        (run_dir / "approved.json").write_text("[]")
+        (run_dir / "offers.json").write_text("{}")
+        with mock.patch.object(self.MOD, "_run_child", side_effect=lambda argv: captured.append(argv) or 0):
+            stages.match("t-sweep-kinguin-s58-p3")
+            stages.submit("t-sweep-kinguin-s58-p3")
+        m_argv, s_argv = captured
+        self.assertEqual(m_argv[m_argv.index("--search-circuit-file") + 1], str(sweep_dir / "search_circuit.json"))
+        self.assertEqual(s_argv[s_argv.index("--catalog-cache") + 1], str(sweep_dir / "catalog.json"))
+
     def test_main_multi_target(self):
         # P2-2: stores must be the CANONICAL allowlist stores (Eneba is 19, not 70).
         recap = {"pages": [], "total_created": 1, "halted": None}

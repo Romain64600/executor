@@ -102,7 +102,10 @@ AKS_PROBE_DELAY_S = 0.15
 # single product-page probe (confirmed live: ~15-20s, not the ~1s of a normal
 # slug probe) — this is deliberately a last-resort fallback, not a first try.
 AKS_SEARCH_URL = "https://www.allkeyshop.com/blog/"
-AKS_SEARCH_TIMEOUT_S = 20
+# 20 → 8 s (Romain GO 2026-09-10, "gagner du temps"): the site search answered in 22-28 s
+# with an EMPTY 200 body on the new VPS — a slow answer is never a useful one, so waiting
+# 20 s per attempt only fed the circuit breaker 3 × 20 s per page.
+AKS_SEARCH_TIMEOUT_S = 8
 # Confirmed live (Romain, 2026-07-16): when the query has no good match, AKS
 # pads the results with unrelated "top games" filler instead of an empty
 # list — the search alone cannot tell a real hit from filler. Bounded to a
@@ -1470,7 +1473,8 @@ class _ThrottleGuard:
                  limit: int = THROTTLE_MAX_CONSECUTIVE_UNRELIABLE, *,
                  sleep: Callable[[float], None] = time.sleep,
                  grace_s: float = THROTTLE_GRACE_S, max_graces: int = THROTTLE_MAX_GRACES,
-                 search_breaker: int = SEARCH_CIRCUIT_BREAKER_FAILURES) -> None:
+                 search_breaker: int = SEARCH_CIRCUIT_BREAKER_FAILURES,
+                 search_open: bool = False) -> None:
         self._resolver = resolver
         self._limit = limit
         self._sleep = sleep
@@ -1481,10 +1485,13 @@ class _ThrottleGuard:
         self.consecutive = 0
         self.graces = 0
         self.search_failures_consecutive = 0
-        self.search_open = False
+        # A sweep may START with the circuit open (persisted from the previous page,
+        # Romain GO 2026-09-10) — no 3 × timeout tax on every page while AKS search is down.
+        self.search_open = bool(search_open)
         self._last_failed: str | None = None
         self.stats: dict[str, int] = {"probe_unreliable": 0, "search_failures": 0,
-                                      "search_circuit_open_offers": 0, "throttle_graces": 0}
+                                      "search_circuit_open_offers": 0, "throttle_graces": 0,
+                                      "search_circuit_preopened": int(bool(search_open))}
 
     def _call(self, name: str, kwargs: dict[str, Any]) -> AksResolution | None:
         if self.search_open and self._accepts_search:
@@ -2575,6 +2582,7 @@ def match_feed(
     on_progress: Callable[[dict[str, int]], None] | None = None,
     progress_every: int = 5,
     stats: dict[str, int] | None = None,
+    search_circuit_open: bool = False,
 ) -> tuple[list[Candidate], list[SkippedOffer]]:
     """Match every offer. ``on_progress`` (2026-07-20), when given, is called
     every ``progress_every`` offers and once at the end with
@@ -2592,7 +2600,8 @@ def match_feed(
     skipped: list[SkippedOffer] = []
     total = len(feed.offers)
     # No real sleep under an injected test resolver (same identity rule as the pacing).
-    guard = _ThrottleGuard(resolver, sleep=time.sleep if resolver is resolve_aks else (lambda s: None))
+    guard = _ThrottleGuard(resolver, sleep=time.sleep if resolver is resolve_aks else (lambda s: None),
+                           search_open=search_circuit_open)
     # Account-page resolutions (Difmark accounts) go through the same guard when the
     # production resolver is in use; an injected test resolver keeps the default.
     account_resolver = guard if resolver is resolve_aks else resolve_aks

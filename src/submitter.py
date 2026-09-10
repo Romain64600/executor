@@ -70,6 +70,11 @@ class StopRequested(RuntimeError):
 # speedup: the full-feed post-save re-scan after each creation is the bulk of a
 # submit's time and needs no modal.
 FEED_SCAN_SETTLE = 1.0
+# Navigate settle BEFORE a modal open. Was the 3 s default (1 s "broke every modal",
+# 2026-07-20); since the page-scripts readiness gate (2026-09-10) waits until the ThickBox
+# handler is bound, the fixed settle only needs to cover the navigation itself (Romain GO
+# 2026-09-10: ~2 s saved per offer). A session without the probe keeps the 3 s default.
+ROW_PAGE_SETTLE = 1.0
 # Render-wait backoff (2026-08-18): under sustained CDP load (~30 min into a
 # sweep) a feed page's HTML loads but its JS-built feed UI can lag the first read,
 # so it reads feed_ui=False ("rendered without the feed UI"). Before concluding the
@@ -426,6 +431,11 @@ class _SubmitterBase:
         self._log("feed_ui_render_wait", feed_ui=bool(state.get("feed_ui")),
                   rows=len(rows))
         return rows, state
+
+    def _row_page_settle(self) -> float:
+        """1 s when the session exposes the page-scripts readiness probe (the gate does the
+        waiting), else the historical 3 s default."""
+        return ROW_PAGE_SETTLE if getattr(self.session, "page_scripts_state", None) else 3.0
 
     def _wait_page_scripts_ready(self) -> dict[str, Any] | None:
         """Read-only gate before the create-offer click: poll until the page reports
@@ -1103,7 +1113,7 @@ class _SubmitterBase:
             located = {"offer_id": offer_id, "page_url": relocated["page_url"]}
         entry["page_url"] = located["page_url"]
         url_key = _url_key(str(candidate["offer"].get("url") or ""))
-        self.session.navigate(located["page_url"])  # refresh the row's page
+        self.session.navigate(located["page_url"], settle=self._row_page_settle())  # refresh the row's page
         # The index scan's row check is now minutes old and this navigate just
         # produced a NEW render — re-find the row on the FRESH DOM before opening
         # its modal (audit 2026-07-17, SC5). Match by the STABLE merchant URL, not
@@ -1132,7 +1142,7 @@ class _SubmitterBase:
             self._log("submit_row_relocated", stale_offer_id=stale_offer_id,
                       current_offer_id=offer_id, page_url=relocated["page_url"],
                       url=candidate["offer"].get("url"))
-            self.session.navigate(relocated["page_url"])   # go to its NEW page
+            self.session.navigate(relocated["page_url"], settle=self._row_page_settle())   # go to its NEW page
             fresh = self._pin_fresh_row(offer_id, url_key)
             if fresh is None:
                 entry["blocker"] = (

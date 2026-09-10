@@ -3,6 +3,26 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-10 — sweep : −2 min par page (disjoncteur persistant, catalogue par sweep, settle 1 s)
+
+Mesure sur le sweep MMOGA 30 pages (pages 20-21) : ~24 s d'extract, **~196 s de match**
+(dont 3 × 20 s de timeouts de recherche avant l'ouverture du disjoncteur, à chaque page),
+**~59 s de préparation du submit** (login, catalogue live, index), puis 34-38 s par offre.
+Trois leviers sur GO de Romain, sans toucher aux règles ni à la preuve :
+- **Disjoncteur R30 persistant par sweep** : `03_match --search-circuit-file
+  <sweep>/search_circuit.json` (émis par `scripts/10`) — une page qui déclenche le
+  disjoncteur ré-arme le fichier (expiration 30 min), les suivantes démarrent circuit ouvert
+  (`match_meta.search_circuit_preopened`), une page dont la recherche a marché l'efface.
+  `AKS_SEARCH_TIMEOUT_S` 20 → 8 s. Gain ≈ 60 s/page tant que la recherche AKS est morte.
+- **Catalogue live une fois par sweep** : `05_submit --catalog-cache <sweep>/catalog.json`
+  (émis par `scripts/10`) — cache valable 2 h et pour le même store, sinon fetch + écriture ;
+  sans le flag, `run()` fetch comme avant. Gain ≈ 30-40 s/page.
+- **Settle avant la modale 3 s → 1 s** (`ROW_PAGE_SETTLE`) quand la session expose la gate
+  de readiness (qui fait désormais l'attente utile) ; 3 s conservées sinon. Gain ≈ 2 s/offre.
+Tests : circuit pré-ouvert dans `match_feed`, fichier ouvert/expiré/ré-armé (CLI 03), cache
+catalogue (aller-retour, autre store, périmé, non-ok), argv du sweep (03 + 05), settle court
+avec sonde / 3 s sans. Docs : EXECUTOR_RULES §4.7 et §6.
+
 ## 2026-09-10 — modale : gate de readiness des scripts + un re-clic (clic perdu)
 
 Sweep MMOGA n° 3 (attente de modale 23 s) : 7 des 9 offres bloquées la veille sont passées,

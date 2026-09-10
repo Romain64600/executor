@@ -66,7 +66,8 @@ def _clock() -> str:
 
 def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
                  *, triage: bool = False, move_execute: bool = False,
-                 dry_run: bool = False, prove_gone_scan: bool = False) -> Stages:
+                 dry_run: bool = False, prove_gone_scan: bool = False,
+                 sweep_dir: Path | None = None) -> Stages:
     py = sys.executable
     # A fully read-only preview (Romain: "teste le dry-run"): extract (browser read)
     # + match (AKS read) + triage plan, but NEVER a real write — the ADD submit is
@@ -92,8 +93,13 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
                               detail="" if rc == 0 else f"exit {rc}")
 
     def match(run_id: str) -> MatchOutcome:
-        rc = _run_child([py, str(ROOT / "scripts" / "03_match.py"),
-                         str(ROOT / "runs" / run_id / "offers.json")])
+        argv = [py, str(ROOT / "scripts" / "03_match.py"),
+                str(ROOT / "runs" / run_id / "offers.json")]
+        if sweep_dir is not None:
+            # Romain GO 2026-09-10: the R30 breaker state travels across the sweep's pages
+            # (no 3 × timeout tax per page while AKS search is down; expires on its own).
+            argv += ["--search-circuit-file", str(sweep_dir / "search_circuit.json")]
+        rc = _run_child(argv)
         cands = _load_json(ROOT / "runs" / run_id / "candidates.json")
         n = len(cands) if isinstance(cands, list) else 0
         # Review 2026-09-09: surface WHY 03 aborted (its stdout is not captured) and how
@@ -168,6 +174,9 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
             # creation — ~100 s → ~2 s per offer on a 66-page feed. --prove-gone-scan
             # restores the walk.
             argv.append("--prove-gone-by-search")
+        if sweep_dir is not None:
+            # Romain GO 2026-09-10: one live catalog fetch per sweep, not per page.
+            argv += ["--catalog-cache", str(sweep_dir / "catalog.json")]
         if pace:
             # [33] Fable re-audit 2026-09-06: 05_submit has NO --pace flag — only
             # --pace-pages / --pace-offers, so a bare "--pace" is an AMBIGUOUS prefix and
@@ -416,7 +425,8 @@ def main() -> int:
                           max_pages=args.max_pages)
         stages = _make_stages(merchant, store_id, args.available, args.pace,
                               triage=args.triage, move_execute=args.move_execute,
-                              dry_run=args.dry_run, prove_gone_scan=args.prove_gone_scan)
+                              dry_run=args.dry_run, prove_gone_scan=args.prove_gone_scan,
+                              sweep_dir=sweep_dir)
         target_entry = {"merchant": merchant, "store_id": store_id, "recap": None}
         recap["targets"].append(target_entry)
 

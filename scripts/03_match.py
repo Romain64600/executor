@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -49,6 +50,41 @@ def load_feed(path: str) -> NormalizedFeed:
     )
 
 
+# The persisted R30 breaker expires on its own: AKS search may come back.
+SEARCH_CIRCUIT_TTL_S = 30 * 60
+
+
+def _search_circuit_is_open(path: str | None) -> bool:
+    """True iff ``path`` records an open circuit whose expiry is still in the future."""
+    if not path:
+        return False
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        return bool(data.get("open")) and float(data.get("open_until", 0)) > time.time()
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def _search_circuit_persist(path: str | None, stats: dict, was_open: bool) -> None:
+    """After a clean match: re-arm the file when the search failed this run (breaker
+    tripped, or started open and no search succeeded); clear it when the search worked."""
+    if not path:
+        return
+    tripped = int(stats.get("search_circuit_open_offers", 0)) > 0 or int(stats.get("search_failures", 0)) >= 3
+    searched_ok = int(stats.get("search_failures", 0)) == 0 and not was_open
+    try:
+        if tripped or (was_open and int(stats.get("search_failures", 0)) > 0):
+            Path(path).write_text(json.dumps({
+                "open": True, "open_until": time.time() + SEARCH_CIRCUIT_TTL_S,
+                "search_failures": int(stats.get("search_failures", 0)),
+                "written_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }, indent=2), encoding="utf-8")
+        elif searched_ok and Path(path).exists():
+            Path(path).unlink()
+    except OSError:
+        pass   # the cache is an accelerator only — never a reason to fail a clean match
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Match a normalized feed to AKS (read-only).")
     parser.add_argument("offers", help="Path to offers.json (a NormalizedFeed).")
@@ -63,6 +99,13 @@ def main() -> int:
              "profiles yet — behaviour is identical for all three, only the "
              "stamp differs.",
     )
+    parser.add_argument(
+        "--search-circuit-file", default=None,
+        help="Sweep-scoped state of the R30 site-search circuit breaker (Romain GO "
+             "2026-09-10). If the file says the circuit is open and not expired, this run "
+             "starts WITHOUT the site search (no 3 x timeout tax per page); if this run "
+             "trips the breaker the file is (re)written with a fresh expiry; a run whose "
+             "search worked clears it.")
     args = parser.parse_args()
 
     # Fail-closed: never mass-skip because AKS itself is unreachable. Staff UA
@@ -82,10 +125,14 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     aborted_path = out_dir / "match_aborted.json"
     stats: dict[str, int] = {}
+    circuit_open = _search_circuit_is_open(args.search_circuit_file)
+    if circuit_open:
+        logger.log("search_circuit_preopened", file=args.search_circuit_file)
     try:
         candidates, skipped = match_feed(
             feed, resolve_aks, max_candidates=args.max_candidates,
             on_progress=lambda d: logger.log("match_progress", **d), stats=stats,
+            search_circuit_open=circuit_open,
         )
     except AksThrottled as exc:
         # Audit 2026-09-09 (critic): AKS is pushing back (429 / consecutive unreliable
@@ -102,6 +149,7 @@ def main() -> int:
         return 2
     if aborted_path.exists():
         aborted_path.unlink()      # a clean match supersedes a previous abort of this dir
+    _search_circuit_persist(args.search_circuit_file, stats, circuit_open)
 
     (out_dir / "candidates.json").write_text(
         json.dumps([c.to_dict() for c in candidates], indent=2), encoding="utf-8"
