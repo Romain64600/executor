@@ -126,7 +126,9 @@ Tout est poussé sur `origin/main`, suite verte (**1353 tests**). Travaux récen
   consécutifs de la recherche AKS → plus d'appel pour le reste du run ; la recherche AKS répond
   en 22-28 s avec un corps vide depuis ce box) et **délai de grâce** avant `AksThrottled`
   (30 s puis une nouvelle tentative, jamais sur 429, 2 grâces/run). `match_meta.json` porte
-  `search_failures` / `search_circuit_open_offers` / `throttle_graces`.
+  `search_failures` / `search_circuit_open_offers` / `throttle_graces`. **Trois formes d'URL
+  AKS** par slug deviné : courante → avec année (`buy-fable-2026-…`, pages créées depuis 2026)
+  → ancienne (`compare-and-buy-cd-key-for-digital-download-<slug>/`, ≈2021).
 
 ## 4. Backlog / prochaines étapes
 

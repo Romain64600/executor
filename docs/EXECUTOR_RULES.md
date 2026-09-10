@@ -564,6 +564,14 @@ URL domain matches the merchant (e.g. must contain `kinguin.net` for Kinguin)
 
 ### 4.7 AKS resolution
 
+**URL shapes per guessed slug (Romain 2026-09-10).** Each guessed slug is probed as
+`buy-<slug>-cd-key-compare-prices/` (current), then `buy-<slug>-<year>-cd-key-compare-prices/`
+for this year / next / previous (AKS pages created since 2026 carry the release year, e.g.
+`buy-fable-2026-…`; skipped when the slug already ends with a year), then the legacy
+`compare-and-buy-cd-key-for-digital-download-<slug>/` (≈2021 pages such as Minecraft) —
+all shapes of one slug before the next, less specific slug, so `MA1` still holds per tier.
+Account kinds keep their single shape (`aks_page_urls`, `src/matcher.py`).
+
 **Throttle guard (2026-09-09, audit/critic).** Below the per-slug rule `MA1` (a
 transient answer on a *guessed* slug raises immediately → per-offer skip "AKS probe
 unreliable"), the match stage has a stage-level STOP: the **first `429`** on any AKS

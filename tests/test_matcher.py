@@ -3556,3 +3556,110 @@ class ThrottleGraceAndSearchBreakerTests(unittest.TestCase):
 
         self.assertIsNone(resolve_aks("Some Obscure Game", fake_http, search=False))
         self.assertFalse(any("?s=" in u for u in urls))
+
+
+class AksUrlShapesTests(unittest.TestCase):
+    """Romain 2026-09-10: guessed slugs are probed as current → new (year-suffixed, e.g.
+    buy-fable-2026-cd-key-compare-prices) → legacy (compare-and-buy-cd-key-for-digital-
+    download-<slug>), every shape of a slug before the next slug (MA1 per tier)."""
+
+    def test_shapes_order_and_year_variants(self):
+        from src.matcher import aks_page_urls
+        shapes = aks_page_urls("fable", years=(2026, 2027, 2025))
+        self.assertEqual([v for v, _ in shapes], ["fable", "fable-2026", "fable-2027", "fable-2025", "fable"])
+        self.assertEqual([u for _, u in shapes], [
+            "https://www.allkeyshop.com/blog/buy-fable-cd-key-compare-prices/",
+            "https://www.allkeyshop.com/blog/buy-fable-2026-cd-key-compare-prices/",
+            "https://www.allkeyshop.com/blog/buy-fable-2027-cd-key-compare-prices/",
+            "https://www.allkeyshop.com/blog/buy-fable-2025-cd-key-compare-prices/",
+            "https://www.allkeyshop.com/blog/compare-and-buy-cd-key-for-digital-download-fable/",
+        ])
+
+    def test_slug_already_ending_with_a_year_gets_no_year_variants(self):
+        from src.matcher import aks_page_urls
+        self.assertEqual([v for v, _ in aks_page_urls("fable-2026", years=(2026, 2027, 2025))],
+                         ["fable-2026", "fable-2026"])
+        self.assertEqual([v for v, _ in aks_page_urls("f1-24", years=(2026,))],
+                         ["f1-24", "f1-24-2026", "f1-24"])   # "24" is not a 4-digit year → variants kept
+
+    def test_default_years_are_this_year_next_and_previous(self):
+        import datetime
+        from src.matcher import aks_page_urls
+        y = datetime.date.today().year
+        self.assertEqual([v for v, _ in aks_page_urls("x")][1:4], [f"x-{y}", f"x-{y + 1}", f"x-{y - 1}"])
+
+    def test_account_kind_keeps_a_single_shape(self):
+        from src.matcher import aks_page_urls
+        self.assertEqual(aks_page_urls("final-knight", "steam-account"),
+                         [("final-knight", "https://www.allkeyshop.com/blog/buy-final-knight-steam-account-compare-prices/")])
+
+    def _page(self, pid, name):
+        return (f'<html><head><meta property="og:title" content="{name} Steam Key"></head>'
+                f'<body data-product-id="{pid}"></body></html>')
+
+    def test_resolve_finds_the_new_year_suffixed_page(self):
+        from src.matcher import resolve_aks
+        urls = []
+
+        def fake_http(url, timeout=8, user_agent=None):
+            urls.append(url)
+            if url.endswith("/buy-fable-2026-cd-key-compare-prices/"):
+                return HttpProbeResult(url=url, ok=True, status=200, body=self._page("999", "Fable"))
+            return HttpProbeResult(url=url, ok=False, status=404, body="")
+
+        from unittest import mock
+        with mock.patch("src.matcher.datetime") as dt:
+            dt.date.today.return_value = __import__("datetime").date(2026, 9, 10)
+            res = resolve_aks("Fable", fake_http)
+        self.assertIsNotNone(res)
+        self.assertEqual((res.slug, res.product_id), ("fable-2026", "999"))
+        self.assertTrue(res.url.endswith("/buy-fable-2026-cd-key-compare-prices/"))
+        self.assertEqual(urls[:2], ["https://www.allkeyshop.com/blog/buy-fable-cd-key-compare-prices/",
+                                    "https://www.allkeyshop.com/blog/buy-fable-2026-cd-key-compare-prices/"])
+
+    def test_resolve_finds_the_legacy_page_last(self):
+        from src.matcher import resolve_aks
+        urls = []
+
+        def fake_http(url, timeout=8, user_agent=None):
+            urls.append(url)
+            if "compare-and-buy-cd-key-for-digital-download-minecraft/" in url:
+                return HttpProbeResult(url=url, ok=True, status=200, body=self._page("216", "Minecraft"))
+            return HttpProbeResult(url=url, ok=False, status=404, body="")
+
+        res = resolve_aks("Minecraft", fake_http, )
+        self.assertIsNotNone(res)
+        self.assertEqual((res.slug, res.product_id), ("minecraft", "216"))
+        # every shape of the first slug was tried, the legacy one last
+        first = [u for u in urls if "minecraft" in u.split("/")[-2]]
+        self.assertTrue(first[-1].endswith("download-minecraft/"))
+        self.assertTrue(all("compare-and-buy" not in u for u in first[:-1]))
+
+    def test_transient_on_a_year_variant_still_raises_immediately(self):
+        from src.matcher import AksProbeUnreliable, resolve_aks
+        urls = []
+
+        import re as _re
+
+        def fake_http(url, timeout=8, user_agent=None):
+            urls.append(url)
+            if _re.search(r"-(?:19|20)\d\d-cd-key-compare-prices/$", url):   # a year variant
+                return HttpProbeResult(url=url, ok=False, status=503, body="")
+            return HttpProbeResult(url=url, ok=False, status=404, body="")
+
+        with self.assertRaises(AksProbeUnreliable) as ctx:
+            resolve_aks("Fable", fake_http, search=False)
+        self.assertEqual(ctx.exception.status, 503)
+        self.assertTrue(ctx.exception.slug.startswith("fable-"))       # MA1: the variant, at once
+        self.assertFalse(any("compare-and-buy" in u for u in urls))   # legacy never reached
+
+    def test_unresolvable_slug_costs_five_probes_then_next_slug(self):
+        from src.matcher import build_slug_candidates, resolve_aks
+        urls = []
+
+        def fake_http(url, timeout=8, user_agent=None):
+            urls.append(url)
+            return HttpProbeResult(url=url, ok=False, status=404, body="")
+
+        self.assertIsNone(resolve_aks("Some Obscure Game", fake_http, search=False))
+        self.assertEqual(len(urls), 5 * len(build_slug_candidates("Some Obscure Game")))

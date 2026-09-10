@@ -26,6 +26,17 @@ normales juste après). Décision Romain (« fais 1+2 ») :
   disjoncteur (déclenchement, jamais d'abort, `search=` passé seulement aux résolveurs qui
   l'acceptent, bout-en-bout `match_feed` + `resolve_aks` reproduisant la page 30) ;
   `resolve_aks(search=False)`. Suite complète verte.
+- **Trois formes d'URL AKS par slug deviné** (Romain, même jour : « essaie le current, puis
+  le nouveau, puis l'ancien ») — `aks_page_urls(slug)` : (1) courante
+  `buy-<slug>-cd-key-compare-prices/` ; (2) **nouvelle**, les pages créées depuis 2026
+  portent l'année de sortie (`buy-fable-2026-cd-key-compare-prices/`) → essayée avec
+  l'année en cours, la suivante et la précédente, sauf si le slug finit déjà par une année ;
+  (3) **ancienne** (pages ≈2021, ex. Minecraft)
+  `compare-and-buy-cd-key-for-digital-download-<slug>/`. Toutes les formes d'un slug sont
+  sondées avant le slug suivant (MA1 par palier conservé : un 503 sur une variante lève
+  immédiatement) ; les pages account gardent leur forme unique. Coût : jusqu'à 5 sondes
+  par slug non résolu (0,15 s chacune) au lieu d'une — sans commune mesure avec les 20 s de
+  la recherche. La résolution garde le slug réel de la page (`fable-2026`).
 
 ## 2026-09-09 — audit adversarial des 5 commits du 08/09 : 38 findings corrigés
 

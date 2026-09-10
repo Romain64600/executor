@@ -18,6 +18,7 @@ is injectable for tests.
 from __future__ import annotations
 
 import html
+import datetime
 import inspect
 import json
 import re
@@ -64,6 +65,10 @@ from src.merchants import (  # noqa: F401
 )
 
 AKS_BUY_URL = "https://www.allkeyshop.com/blog/buy-{slug}-cd-key-compare-prices/"
+# Legacy page shape (pages created around 2021 — "Minecraft" & co, Romain 2026-09-10):
+AKS_LEGACY_URL = "https://www.allkeyshop.com/blog/compare-and-buy-cd-key-for-digital-download-{slug}/"
+# Slugs that already end with a year never get the "new" year-suffixed variants.
+_SLUG_YEAR_SUFFIX_RE = re.compile(r"-(?:19|20)\d\d$")
 # AKS product pages come in "kinds": the ordinary key page (`…-cd-key-…`) and,
 # for account-delivery listings, a SEPARATE dedicated page per platform
 # (`…-steam-account-…`, `…-ps5-account-…`, …) — a distinct AKS product with its
@@ -1154,6 +1159,34 @@ def aks_url(slug: str, page_kind: str = "cd-key") -> str:
     return AKS_COMPARE_URL.format(slug=slug, kind=page_kind)
 
 
+def aks_page_urls(slug: str, page_kind: str = "cd-key", *,
+                  years: tuple[int, ...] | None = None) -> list[tuple[str, str]]:
+    """The ordered ``(slug_variant, url)`` shapes to probe for ONE guessed slug (Romain
+    2026-09-10 — "essaie le current, puis le nouveau, puis l'ancien"):
+
+    1. current  ``buy-<slug>-cd-key-compare-prices/``
+    2. new      ``buy-<slug>-<year>-cd-key-compare-prices/`` — pages AKS creates since
+                2026 carry the release year (``buy-fable-2026-…``); tried for this year,
+                next year, previous year, unless the slug already ends with a year;
+    3. legacy   ``compare-and-buy-cd-key-for-digital-download-<slug>/`` (≈2021 pages).
+
+    Account kinds keep their single current shape. ``years`` is injectable for tests
+    (default: today's year, +1, −1)."""
+
+    shapes = [(slug, AKS_COMPARE_URL.format(slug=slug, kind=page_kind))]
+    if page_kind != "cd-key":
+        return shapes
+    if not _SLUG_YEAR_SUFFIX_RE.search(slug):
+        if years is None:
+            y = datetime.date.today().year
+            years = (y, y + 1, y - 1)
+        for year in years:
+            variant = f"{slug}-{year}"
+            shapes.append((variant, AKS_COMPARE_URL.format(slug=variant, kind=page_kind)))
+    shapes.append((slug, AKS_LEGACY_URL.format(slug=slug)))
+    return shapes
+
+
 # -- AKS page extraction ----------------------------------------------------
 def extract_product_id(body: str) -> str | None:
     match = re.search(r'data-product-id=["\']?(\d+)', body)
@@ -1561,23 +1594,25 @@ def resolve_aks(
     # exactly what the docstring always promised ("fails closed immediately")
     # and what the old collect-then-maybe-raise code did not do.
     for slug in build_slug_candidates(name):
-        url = aks_url(slug, page_kind)
-        if http_get_fn is http_get:
-            time.sleep(AKS_PROBE_DELAY_S)  # politeness budget for bulk AKS runs
-        probe = http_get_fn(url, timeout=8, user_agent=AKS_PROBE_UA)
-        if not (probe.ok and probe.status == 200 and probe.body):
-            if probe.status not in (404, 410):
-                raise AksProbeUnreliable(f"{slug} -> {probe.status or probe.error}",
-                                         status=probe.status, slug=slug)
-            continue
-        resolution = _resolution_from_body(slug, url, probe.body)
-        if resolution is None:
-            if not extract_product_id(probe.body):
+        # Every URL shape of this slug (current → year-suffixed → legacy) is tried before
+        # the next, LESS specific slug — so MA1 still holds per tier (Romain 2026-09-10).
+        for variant, url in aks_page_urls(slug, page_kind):
+            if http_get_fn is http_get:
+                time.sleep(AKS_PROBE_DELAY_S)  # politeness budget for bulk AKS runs
+            probe = http_get_fn(url, timeout=8, user_agent=AKS_PROBE_UA)
+            if not (probe.ok and probe.status == 200 and probe.body):
+                if probe.status not in (404, 410):
+                    raise AksProbeUnreliable(f"{variant} -> {probe.status or probe.error}",
+                                             status=probe.status, slug=variant)
                 continue
-            # Never fall back to the offer title: name checks would compare
-            # the title to itself and pass anything (fail-open).
-            raise AksNameUnreadable(slug)
-        return resolution
+            resolution = _resolution_from_body(variant, url, probe.body)
+            if resolution is None:
+                if not extract_product_id(probe.body):
+                    continue
+                # Never fall back to the offer title: name checks would compare
+                # the title to itself and pass anything (fail-open).
+                raise AksNameUnreadable(variant)
+            return resolution
 
     if page_kind != "cd-key" or not search:
         # no site-search fallback for account pages (see docstring), nor once the R30
