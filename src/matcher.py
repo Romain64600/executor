@@ -517,13 +517,45 @@ def normalize_apostrophes(text: str) -> str:
     return unicodedata.normalize("NFKC", text).replace("’", "'").replace("‘", "'")
 
 
+# [R42] Roman numerals ≡ digits (2026-09-10, MMOGA "Crusader Kings III" vs the AKS page
+# "Crusader Kings 3"): a sequel number is the SAME word whichever way it is written, so
+# identity checks canonicalise standalone II–XV tokens to digits and slug guessing /
+# feed searches try both spellings. Deliberately NOT I, V, X, L, C, D, M — single-letter
+# numerals are real title words ("V Rising", "Mega Man X", "I Am Alive"), fail-closed.
+_ROMAN_TO_DIGIT = {
+    "II": "2", "III": "3", "IV": "4", "VI": "6", "VII": "7", "VIII": "8", "IX": "9",
+    "XI": "11", "XII": "12", "XIII": "13", "XIV": "14", "XV": "15",
+}
+_DIGIT_TO_ROMAN = {v: k for k, v in _ROMAN_TO_DIGIT.items()}
+_NUMERAL_TOKEN_RE = re.compile(r"(?<![A-Za-z0-9])(?:II|III|IV|VI|VII|VIII|IX|XI|XII|XIII|XIV|XV|"
+                               r"2|3|4|6|7|8|9|11|12|13|14|15)(?![A-Za-z0-9])", re.IGNORECASE)
+
+
+def swap_numerals(text: str) -> str:
+    """The same text with every standalone Roman numeral II–XV written as a digit and
+    every standalone digit 2–15 written as a Roman numeral (case preserved for lowercase
+    slugs). "Crusader Kings III" ↔ "Crusader Kings 3"; "Fable 2026" unchanged."""
+
+    lower = text == text.lower()
+
+    def _swap(m: "re.Match[str]") -> str:
+        tok = m.group(0).upper()
+        if tok in _ROMAN_TO_DIGIT:
+            return _ROMAN_TO_DIGIT[tok]
+        rom = _DIGIT_TO_ROMAN.get(tok, m.group(0))
+        return rom.lower() if lower else rom
+
+    return _NUMERAL_TOKEN_RE.sub(_swap, text)
+
+
 def tokenize(name: str) -> list[str]:
-    """Uppercase word tokens, apostrophes normalized, punctuation stripped."""
+    """Uppercase word tokens, apostrophes normalized, punctuation stripped; standalone
+    Roman numerals II–XV canonicalised to digits ([R42])."""
 
     # Trademark/legal symbols (™ ® © ℠ ℡ №…) are stripped inside normalize_apostrophes,
     # BEFORE its NFKC — else NFKC glues them into letters ("Company™" → "COMPANYTM").
     cleaned = normalize_apostrophes(name).upper()
-    return [t for t in re.findall(r"[A-Z0-9']+", cleaned) if t.strip("'")]
+    return [_ROMAN_TO_DIGIT.get(t, t) for t in re.findall(r"[A-Z0-9']+", cleaned) if t.strip("'")]
 
 
 def missing_aks_words(aks_name: str, merchant_title: str) -> list[str]:
@@ -1161,13 +1193,16 @@ def build_slug_candidates(name: str) -> list[str]:
     out: list[str] = []
     for base in bases:
         base = base.lower()
-        for variant in (
-            re.sub(r"[^a-z0-9]+", "-", base.replace("'", "")).strip("-"),
-            re.sub(r"[^a-z0-9]+", "-", base).strip("-"),
-        ):
-            variant = re.sub(r"-+", "-", variant)
-            if variant and variant not in out:
-                out.append(variant)
+        # [R42] the numeral-swapped spelling right after each base ("crusader-kings-iii"
+        # then "crusader-kings-3"): same tier, one extra probe only when a numeral exists.
+        for text in (base, swap_numerals(base)):
+            for variant in (
+                re.sub(r"[^a-z0-9]+", "-", text.replace("'", "")).strip("-"),
+                re.sub(r"[^a-z0-9]+", "-", text).strip("-"),
+            ):
+                variant = re.sub(r"-+", "-", variant)
+                if variant and variant not in out:
+                    out.append(variant)
     return out
 
 

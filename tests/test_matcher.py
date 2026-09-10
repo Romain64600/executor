@@ -102,14 +102,14 @@ class TokenizeTests(unittest.TestCase):
         # Unicode Roman numeral codepoint) used to tokenize to just
         # ROAD/TO/EMPRESS — the sequel indicator silently vanished and the
         # offer matched the unrelated base game "Road To Empress". NFKC
-        # decomposes it to plain ASCII "II" before tokenizing.
+        # decomposes it to plain ASCII "2" before tokenizing.
         self.assertEqual(
             tokenize("Road to Empress Ⅱ Steam Key"),
-            ["ROAD", "TO", "EMPRESS", "II", "STEAM", "KEY"],
+            ["ROAD", "TO", "EMPRESS", "2", "STEAM", "KEY"],
         )
         self.assertEqual(
             extra_significant_words("Road To Empress", "Road to Empress Ⅱ Steam Key"),
-            ["II"],
+            ["2"],
         )
 
     def test_trademark_symbol_does_not_glue_into_a_token(self):
@@ -3798,8 +3798,10 @@ class MmogaRulesTests(unittest.TestCase):
 
     def test_resolution_name_drops_the_code_key_tail(self):
         from src.merchants.mmoga import resolve_name
-        self.assertEqual(build_slug_candidates(resolve_name("Borderlands 2 EU Key")), ["borderlands-2"])
-        self.assertEqual(build_slug_candidates(resolve_name("Borderlands 2 US CD Key")), ["borderlands-2"])
+        # first guess = the bare product (R42 adds the "borderlands-ii" spelling right after)
+        self.assertEqual(build_slug_candidates(resolve_name("Borderlands 2 EU Key"))[0], "borderlands-2")
+        self.assertEqual(build_slug_candidates(resolve_name("Borderlands 2 US CD Key"))[0], "borderlands-2")
+        self.assertNotIn("borderlands-2-eu", build_slug_candidates(resolve_name("Borderlands 2 EU Key")))
         self.assertEqual(resolve_name("Company of Heroes 2"), "Company of Heroes 2")
 
     def test_edition_and_affiliate_param(self):
@@ -3825,3 +3827,36 @@ class MmogaRulesTests(unittest.TestCase):
         self.assertIsInstance(r, Candidate)
         self.assertEqual(seen, ["Borderlands 2"])
         self.assertEqual((r.platform, r.region_label), ("STEAM", "US"))
+
+
+class RomanNumeralEquivalenceTests(unittest.TestCase):
+    """[R42] (2026-09-10): MMOGA "Crusader Kings III" vs the AKS page "Crusader Kings 3" —
+    a sequel number is the same word whichever way it is written. II–XV only; single-letter
+    numerals (I, V, X) stay letters (real title words), fail-closed."""
+
+    def test_tokenize_canonicalises_roman_ii_to_xv_to_digits(self):
+        self.assertEqual(tokenize("Crusader Kings III"), ["CRUSADER", "KINGS", "3"])
+        self.assertEqual(tokenize("Civilization VI"), ["CIVILIZATION", "6"])
+        self.assertEqual(tokenize("Final Fantasy XV"), ["FINAL", "FANTASY", "15"])
+        self.assertEqual(tokenize("V Rising"), ["V", "RISING"])              # single letters untouched
+        self.assertEqual(tokenize("Mega Man X"), ["MEGA", "MAN", "X"])
+        self.assertEqual(tokenize("Wiiware"), ["WIIWARE"])                   # inside a word untouched
+
+    def test_identity_check_accepts_either_spelling(self):
+        self.assertEqual(missing_aks_words("Crusader Kings 3", "Crusader Kings III Steam Key"), [])
+        self.assertEqual(missing_aks_words("Civilization VI", "Civilization 6 (PC) - Steam Key - GLOBAL"), [])
+        self.assertEqual(missing_aks_words("Crusader Kings 3", "Crusader Kings II"), ["3"])   # a different sequel
+
+    def test_slug_candidates_try_both_spellings_same_tier(self):
+        from src.matcher import build_slug_candidates
+        self.assertEqual(build_slug_candidates("Crusader Kings III")[:2], ["crusader-kings-iii", "crusader-kings-3"])
+        self.assertEqual(build_slug_candidates("Civilization 6")[:2], ["civilization-6", "civilization-vi"])
+        self.assertEqual(build_slug_candidates("Fable 2026"), ["fable-2026"])   # a year is not a numeral
+
+    def test_swap_numerals(self):
+        from src.matcher import swap_numerals
+        self.assertEqual(swap_numerals("crusader-kings-iii"), "crusader-kings-3")
+        self.assertEqual(swap_numerals("Crusader Kings 3"), "Crusader Kings III")
+        self.assertEqual(swap_numerals("civilization-6"), "civilization-vi")
+        self.assertEqual(swap_numerals("Fable 2026"), "Fable 2026")
+        self.assertEqual(swap_numerals("Mega Man X"), "Mega Man X")

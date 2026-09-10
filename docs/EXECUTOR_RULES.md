@@ -216,6 +216,15 @@ cleaned_title / build_slug_candidates). `©`/`®`/`℗` have no NFKC decompositi
 that `cleaned_title` — the AKS search query and the slug candidates — never
 carries them.
 
+**Roman numerals ≡ digits `[R42]` (2026-09-10, MMOGA "Crusader Kings III" vs the AKS page
+"Crusader Kings 3"):** a sequel number is the same word whichever way it is written.
+`tokenize` canonicalises standalone II–XV to digits (so `[R01]` / `[R16]` accept either
+spelling), `build_slug_candidates` tries the other spelling right after each base
+(`crusader-kings-iii` then `crusader-kings-3`, same tier, one extra probe only when a
+numeral exists) and the by-urls feed search (scripts/11) queries both spellings by name
+and by URL. Deliberately NOT I, V, X (real title words: "V Rising", "Mega Man X") — those
+stay letters, fail-closed; a year (`Fable 2026`) is never a numeral.
+
 ### 4.2 Different-product guard — `[R01b]`
 Even if all words match, **SKIP** when the merchant title carries a dangerous
 qualifier absent from the AKS name: `Remaster(ed)`, `HD`, `Reboot`, `Remake`,

@@ -49,6 +49,7 @@ from src.matcher import (  # noqa: E402
     _resolution_from_body,
     cleaned_title,
     http_get,
+    swap_numerals,
 )
 from src.submit_session import SubmitSession  # noqa: E402
 
@@ -247,8 +248,16 @@ def search_all_merchants(session: Any, resolution: AksResolution, available: str
     name_term = cleaned_title(resolution.aks_name) or resolution.aks_name
     url_term = resolution.slug
     meta: dict[str, Any] = {"name_term": name_term, "url_term": url_term, "truncated": False}
+    # [R42] a merchant may spell the sequel number the other way ("Crusader Kings III" for
+    # the AKS page "Crusader Kings 3") — search both spellings, name and URL (2026-09-10).
+    terms = [(name_term, "name"), (url_term, "url")]
+    for term, field in list(terms):
+        alt = swap_numerals(term or "")
+        if alt and alt != term:
+            terms.append((alt, field))
+    meta["alt_terms"] = [t for t, _ in terms[2:]]
     rows: list[dict] = []
-    for term, field in ((name_term, "name"), (url_term, "url")):
+    for term, field in terms:
         if not term:
             continue
         found, hit_cap = _read_search_pages(session, feed_page, available, term, field)

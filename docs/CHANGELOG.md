@@ -3,6 +3,20 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-10 — `[R42]` chiffres romains ≡ chiffres (MMOGA « Crusader Kings III »)
+
+Test de Romain par la page `/games` avec la page AKS « Crusader Kings 3 » : l'offre MMOGA
+`Steam-Games/Crusader-Kings-III.html` n'a pas été détectée. Deux causes : l'aperçu datait
+d'avant l'ajout de MMOGA à l'allowlist (store 12 non cherché), et surtout **III ≠ 3** pour
+la recherche du feed (`Crusader Kings 3` / `crusader-kings-3`) comme pour l'identité R01
+(« mot AKS manquant : 3 »). Règle générique : `tokenize` canonise II–XV en chiffres (R01/R16
+acceptent les deux graphies), `build_slug_candidates` ajoute la graphie alternative après
+chaque base (`crusader-kings-iii` puis `crusader-kings-3`, même palier, +1 sonde seulement
+si un numéral existe), et la recherche feed de by-urls interroge les deux graphies par nom
+et par URL (`meta.alt_terms`). Jamais I/V/X (mots réels : « V Rising », « Mega Man X »),
+jamais une année. Tests : tokenisation, identité, slugs, `swap_numerals`, termes de
+recherche. Docs : EXECUTOR_RULES §4.1 `[R42]`.
+
 ## 2026-09-10 — MMOGA : nouveau marchand via des hooks de config marchand `[R32e]`
 
 Romain : « notre executor doit apprendre à ajouter les offres mmoga » et « un fichier de

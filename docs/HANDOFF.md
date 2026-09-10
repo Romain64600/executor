@@ -135,7 +135,9 @@ Tout est poussé sur `origin/main`, suite verte (**1353 tests**). Travaux récen
   **hooks de config marchand** `[R32e]` (`precheck` / `title_region` / `resolve_name` —
   un fichier marchand peut ajouter ou surcharger le générique). Store id feed **12** (page
   AKS : 40) ; dans le sélecteur console ET dans l'allowlist safe-auto (décision Romain
-  2026-09-10, sans run supervisé préalable).
+  2026-09-10, sans run supervisé préalable). **`[R42]`** : chiffres romains II–XV ≡ chiffres
+  (identité, slugs, recherche feed by-urls) — « Crusader Kings III » = page AKS « Crusader
+  Kings 3 ».
 
 ## 4. Backlog / prochaines étapes
 

@@ -28,6 +28,28 @@ def _load():
 M = _load()
 
 
+class NumeralSearchTermTests(unittest.TestCase):
+    def test_search_tries_the_other_numeral_spelling_by_name_and_url(self):
+        # [R42] 2026-09-10: MMOGA "Crusader Kings III" was invisible to the feed search for
+        # the AKS page "Crusader Kings 3" (terms "Crusader Kings 3" / "crusader-kings-3").
+        res = AksResolution("crusader-kings-3", "https://aks/x", "1", "Crusader Kings 3", {"1": {"name": "Standard"}})
+        session = FakeSearchSession({"name": [], "url": []})
+        rows, meta = M.search_all_merchants(session, res, "all", "aks-merchant-feeds-9")
+        self.assertEqual(rows, [])
+        self.assertEqual(meta["alt_terms"], ["Crusader Kings III", "crusader-kings-iii"])
+        self.assertEqual(len(session.nav), 4)                       # 2 spellings × name/url
+        terms = [_up.parse_qs(_up.urlsplit(u).query) for u in session.nav]
+        self.assertTrue(any("Crusader Kings III" in str(q) for q in terms))
+        self.assertTrue(any("crusader-kings-iii" in str(q) for q in terms))
+
+    def test_no_numeral_means_no_extra_search(self):
+        res = AksResolution("neon-beats", "https://aks/x", "1", "Neon Beats", {"1": {"name": "Standard"}})
+        session = FakeSearchSession({"name": [], "url": []})
+        _, meta = M.search_all_merchants(session, res, "all", "aks-merchant-feeds-9")
+        self.assertEqual(meta["alt_terms"], [])
+        self.assertEqual(len(session.nav), 2)
+
+
 class PacingTests(unittest.TestCase):
     def test_paces_between_urls_only_for_the_real_http_get(self):
         # Audit 2026-09-09: the by-urls resolve loop had no inter-URL pacing (densest
