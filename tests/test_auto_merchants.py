@@ -48,6 +48,12 @@ class AutoMerchantsAllowlistTests(unittest.TestCase):
         self.assertIn("Kinguin", names)
         self.assertNotIn("Difmark", names)
         self.assertNotIn("Gameboost", names)
+        # MMOGA (Romain 2026-09-10): allowed with its FEED store id only — the AKS page
+        # merchant id (40) is not a store and must be refused like any tampered id.
+        self.assertIn("MMOGA", names)
+        self.assertIsNone(rejection_reason("MMOGA", "12"))
+        self.assertIsNone(rejection_reason("mmoga", "12"))
+        self.assertIsNotNone(rejection_reason("MMOGA", "40"))
         for r in rows:
             self.assertEqual(set(r), {"name", "store_id"})
             self.assertRegex(r["store_id"], r"^\d+$")

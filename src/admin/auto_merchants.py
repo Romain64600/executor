@@ -27,6 +27,10 @@ AUTO_MERCHANTS: list[tuple[str, str]] = [
     ("CJS-CDKeys", "30"),
     ("Allyouplay", "17"),
     ("GameSeal", "126"),
+    ("MMOGA", "12"),            # Romain 2026-09-10 (« je préfère passer directement par /auto »):
+                                # authorised for safe-auto BEFORE a supervised validated run —
+                                # the merchant rules (src/merchants/mmoga.py) fail closed on any
+                                # region code they cannot map. Feed store 12; AKS page id 40.
 ]
 
 # Deliberately NOT suggested (enforcement is simply "absent from the list";

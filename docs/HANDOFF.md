@@ -134,8 +134,8 @@ Tout est poussé sur `origin/main`, suite verte (**1353 tests**). Travaux récen
 - **MMOGA** (2026-09-10) : nouveau marchand porté par `src/merchants/mmoga.py` via les
   **hooks de config marchand** `[R32e]` (`precheck` / `title_region` / `resolve_name` —
   un fichier marchand peut ajouter ou surcharger le générique). Store id feed **12** (page
-  AKS : 40) ; dans le sélecteur console, pas encore dans l'allowlist safe-auto (run
-  supervisé d'abord).
+  AKS : 40) ; dans le sélecteur console ET dans l'allowlist safe-auto (décision Romain
+  2026-09-10, sans run supervisé préalable).
 
 ## 4. Backlog / prochaines étapes
 

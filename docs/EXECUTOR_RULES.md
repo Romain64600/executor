@@ -1248,8 +1248,9 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167, MMOGA 12 (its AKS page merchant i
   the title with the `<CODE> Key` tail peeled (`borderlands-2`, not the 404
   `borderlands-2-eu`); edition from the generic title rule (`Battlefield 4 Premium` →
   Premium); `?ref=615` is affiliate noise kept verbatim (§4.6) and ignored by every signal;
-  a non-`mmoga.com` URL fails closed. Not yet in the safe-auto allowlist: a supervised
-  validated run (extract 1 page → match → validate → dry-run submit) comes first.
+  a non-`mmoga.com` URL fails closed. In the safe-auto allowlist since 2026-09-10 on
+  Romain's explicit decision (« je préfère passer directement par /auto »), before any
+  supervised validated run — the first sweeps are the validation; watch the recap.
 - **Gamivo**: URL decides region (`-global`/`-eu`/`-gift-`), not the title.
   (`-en-` is a language marker, not a region, and no longer skips — MA7 retired.)
 - **Driffle**: `name`/`url` fields; `stock` is `"y"`/`"n"`; modal selects are

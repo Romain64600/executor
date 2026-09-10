@@ -23,8 +23,9 @@ reste global), codes interdits → `forbidden region: <LABEL>`, code sans bucket
 `MerchantHookTests` (marchand factice, 3 hooks) + `MmogaRulesTests` (8 cas). Docs :
 EXECUTOR_RULES §4.10 `[R32e]` + §11 MMOGA + §10, README `[R32]`. Store ids (Romain) :
 **12** côté feed (`&store=12`, celui que tous les étages utilisent), 40 côté pages AKS.
-Ajouté au sélecteur console (`app.js`) ; l'allowlist safe-auto attend un run supervisé
-validé (extract 1 page → match → validation → dry-run submit).
+Ajouté au sélecteur console (`app.js`) **et à l'allowlist safe-auto** (Romain, même jour :
+« je préfère passer directement par /auto », avant tout run supervisé — signalé ; les
+règles MMOGA échouent-fermé sur tout code région non mappé).
 
 ## 2026-09-10 — R30 : disjoncteur sur la recherche AKS + délai de grâce avant `AksThrottled`
 
