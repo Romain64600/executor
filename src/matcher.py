@@ -62,6 +62,7 @@ from src.merchants import (  # noqa: F401
     g2a as _g2a,
     gamivo as _gamivo,
     instant_gaming as _ig,
+    mmoga as _mmoga,
 )
 
 AKS_BUY_URL = "https://www.allkeyshop.com/blog/buy-{slug}-cd-key-compare-prices/"
@@ -618,6 +619,12 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
         host = urlparse(offer.url).netloc.lower()
         if host != domain and not host.endswith("." + domain):
             return f"offer URL not on {domain} (merchant-domain mismatch)"
+    # Merchant-config override hook (R32e, 2026-09-10): the merchant's own categorical
+    # skip, before the generic scans (MMOGA "<Product> <CODE> Key" locks).
+    if cfg is not None and cfg.precheck is not None:
+        hook_reason = cfg.precheck(offer.name, offer.url)
+        if hook_reason:
+            return hook_reason
     # (MA7 retired 2026-09-01, Romain: "EN = english only … enterrable") — a
     # Gamivo '-en-' URL segment used to skip as an EN-only language restriction;
     # a language variant is now entered as the same product (see LANGUAGE_TOKENS).
@@ -895,9 +902,17 @@ def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | Non
         or "GIFT)" in padded
     )
     tail = offer.name.rsplit(" - ", 1)[-1].strip().upper() if " - " in offer.name else ""
+    # Merchant-config override hook (R32e, 2026-09-10): the region the merchant's title
+    # grammar declares wins over the generic title/URL scan below (MMOGA "… US Key").
+    cfg = merchant_config(offer.merchant)
+    hook_base = cfg.title_region(offer.name) if cfg is not None and cfg.title_region else None
 
     base, label, implicit = "global", "GLOBAL", False
-    if (
+    if hook_base is not None:
+        # The merchant's grammar is authoritative when it speaks (its URL is derived from
+        # the same title, so the generic URL scan cannot know better).
+        base, label = hook_base, ("GLOBAL" if hook_base == "global" else hook_base.upper())
+    elif (
         "gift-eu" in url
         or re.search(r"-eu(?:[-/]|$)", url)
         or re.search(r"-europe(?:[-/]|$)", url)
@@ -1017,6 +1032,7 @@ MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
     "INSTANT GAMING": _ig.CONFIG,
     "GAMIVO": _gamivo.CONFIG,
     "ENEBA": _eneba.CONFIG,
+    "MMOGA": _mmoga.CONFIG,
 }
 
 
@@ -2166,11 +2182,15 @@ def match_offer(
                 offer, f"Difmark account page kind unknown for platform {platform!r}"
             )
 
+    # Merchant-config override hook (R32e, 2026-09-10): the merchant may rewrite the text
+    # handed to AKS resolution (MMOGA peels the "<CODE> Key" tail → slug "borderlands-2",
+    # not the 404 "borderlands-2-eu"). The identity checks keep using the raw title.
+    resolve_name = _cfg.resolve_name(offer.name) if _cfg is not None and _cfg.resolve_name else offer.name
     try:
         if account_page_kind is not None:
-            resolution = account_resolver(offer.name, page_kind=account_page_kind)
+            resolution = account_resolver(resolve_name, page_kind=account_page_kind)
         else:
-            resolution = resolver(offer.name)
+            resolution = resolver(resolve_name)
     except AksProbeUnreliable as exc:
         return SkippedOffer(offer, f"AKS probe unreliable (throttled?): {exc}")
     except AksNameUnreadable as exc:

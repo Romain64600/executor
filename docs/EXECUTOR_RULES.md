@@ -724,6 +724,22 @@ list via `is_software_title` (no page fetch). Doubt still goes to skip `[G02]`.
 
 ### 4.10 Per-merchant config — "start from the merchant config" `[R32]` (2026-08-11)
 
+**Override hooks `[R32e]` (Romain 2026-09-10 — « un fichier de config marchand par
+marchand, qui peut ajouter, overwrite, modifier des comportements génériques »).** Besides
+its data fields, a `MerchantConfig` may carry three optional pure functions of the feed
+row; the matcher calls each FIRST and falls through to the generic rule when it returns
+`None`, so the matcher stays merchant-agnostic:
+- `precheck(name, url) -> reason | None` — an extra categorical skip, evaluated right after
+  the domain check and before the generic console / forbidden-region / category scans;
+- `title_region(name) -> "eu" | "us" | "uk" | "global" | None` — the region the merchant's
+  title grammar declares; **authoritative when it speaks** (the merchant's URL is derived
+  from the same title, the generic URL/title scan cannot know better);
+- `resolve_name(name) -> str` — the text handed to AKS resolution (slug guessing + site
+  search) instead of the raw title; the identity checks (`[R01]`, `[R16]`) keep the RAW
+  title, so a hook can never launder a title past the name gate.
+First user: MMOGA (`src/merchants/mmoga.py`, §11). Tests: `MerchantHookTests` (throwaway
+merchant) + `MmogaRulesTests`.
+
 Merchant-specific handling was scattered (Kinguin's domain rule, Difmark's
 offer-page resolver + maps, Eneba's URL prefixes; Gamivo's `-en-` language lock
 was here too until MA7 was retired 2026-09-01).
@@ -1207,7 +1223,7 @@ Collection 348.
 
 **Merchant store ids** (verify against feed): Kinguin 58, G2A 38, Driffle 127,
 Eneba 19, GameSeal 126, K4G 92, CJS 30, Instant Gaming 28, Gameboost 157,
-Gamivo 51, Allyouplay 17, GOG 34, Difmark 167.
+Gamivo 51, Allyouplay 17, GOG 34, Difmark 167, MMOGA — to confirm (2026-09-10).
 
 ---
 
@@ -1218,6 +1234,21 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167.
 - **Kinguin**: filter by URL `&store=58`, not dropdown; candidate URL must
   contain `kinguin.net`; URLs carry `?params` (`nosalesbooster`, `currency`) —
   report them as-is (§4.6); Steam region often implicit GLOBAL.
+- **MMOGA** (2026-09-10, `src/merchants/mmoga.py`; store id: **to confirm on the live feed
+  dropdown**): URL `mmoga.com/<Platform>-Games/<Product>[-<REGION>-Key].html?ref=<affid>`.
+  Platform = the URL category segment (`Steam-Games` → STEAM, `EA-Games` → EA, GOG/Epic/
+  Ubisoft/Uplay/Rockstar/Battle.net/Windows mapped; console categories unmapped → console
+  skip / fail-closed). Region = an **UPPERCASE 2-letter code right before the trailing
+  "Key"** (`Borderlands 2 EU Key` → EU 9, `… US Key` → US 8, `… UK Key` → UK 71), read
+  **case-sensitively**: `Among Us Key` (Us) is a global key. A forbidden code (RU/TR/BR/…)
+  skips with the same `forbidden region: <LABEL>` string as everywhere; an **unmapped**
+  code (DE, FR, …) skips `forbidden region: <CODE>` — fail-closed, never an implicit
+  worldwide entry (price: a rare false skip on "… GO Key"-style acronyms). Resolution uses
+  the title with the `<CODE> Key` tail peeled (`borderlands-2`, not the 404
+  `borderlands-2-eu`); edition from the generic title rule (`Battlefield 4 Premium` →
+  Premium); `?ref=615` is affiliate noise kept verbatim (§4.6) and ignored by every signal;
+  a non-`mmoga.com` URL fails closed. Not yet in the safe-auto allowlist: a supervised
+  validated run (extract 1 page → match → validate → dry-run submit) comes first.
 - **Gamivo**: URL decides region (`-global`/`-eu`/`-gift-`), not the title.
   (`-en-` is a language marker, not a region, and no longer skips — MA7 retired.)
 - **Driffle**: `name`/`url` fields; `stock` is `"y"`/`"n"`; modal selects are

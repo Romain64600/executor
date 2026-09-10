@@ -3,6 +3,28 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-10 — MMOGA : nouveau marchand via des hooks de config marchand `[R32e]`
+
+Romain : « notre executor doit apprendre à ajouter les offres mmoga » et « un fichier de
+config marchand par marchand, qui peut ajouter, overwrite, modifier des comportements
+génériques ». Le contrat commun gagne **trois hooks optionnels** dans `MerchantConfig`
+(`precheck(name, url)`, `title_region(name)`, `resolve_name(name)`), appelés en premier par
+le matcher (repli sur la règle générique sur `None`) — le matcher reste agnostique. Le
+hook région est autoritaire quand il se prononce ; `resolve_name` ne réécrit que le texte
+envoyé à la résolution AKS, jamais celui des contrôles d'identité (R01/R16).
+
+`src/merchants/mmoga.py` porte toute la grammaire
+`mmoga.com/<Platform>-Games/<Product>[-<REGION>-Key].html?ref=<affid>` : plateforme par le
+segment de catégorie de l'URL (`Steam-Games` → STEAM, `EA-Games` → EA…), région par le
+**code MAJUSCULE avant « Key »** en fin de titre, lu **sensible à la casse** (`Among Us Key`
+reste global), codes interdits → `forbidden region: <LABEL>`, code sans bucket AKS (DE, FR…)
+→ skip fail-closed, slug résolu sans le suffixe (`borderlands-2`), `?ref=` ignoré, domaine
+`mmoga.com` obligatoire. Vérifié sur les 3 URL d'exemple + cas limites. Tests :
+`MerchantHookTests` (marchand factice, 3 hooks) + `MmogaRulesTests` (8 cas). Docs :
+EXECUTOR_RULES §4.10 `[R32e]` + §11 MMOGA + §10, README `[R32]`. **Store id AKS à
+confirmer** ; MMOGA n'entre dans l'allowlist safe-auto et le sélecteur console qu'après un
+run supervisé validé.
+
 ## 2026-09-10 — R30 : disjoncteur sur la recherche AKS + délai de grâce avant `AksThrottled`
 
 Premier dry-run safe-auto Kinguin sur le nouveau VPS (lecture seule) : page 30 en ~21 min

@@ -78,6 +78,20 @@ class MerchantConfig:
     # fail-closed skip, NOT a guess. Flip to True once page-opening via the browser (CDP)
     # lands. Default True (openable) preserves every other merchant.
     offer_page_readable: bool = True
+    # Generic-behaviour OVERRIDE hooks (Romain 2026-09-10: « un fichier de config marchand
+    # par marchand, qui peut ajouter, overwrite, modifier des comportements génériques »).
+    # Each is optional; the matcher calls it FIRST and falls through to the generic rule
+    # when it returns None. All pure functions of the feed row (no network).
+    #   precheck(name, url) -> skip reason | None   — an extra categorical skip, evaluated
+    #       right after the domain check (before the generic console/region/category scans).
+    #   title_region(name) -> "eu" | "us" | "uk" | "global" | None — the region the
+    #       merchant's title grammar declares; wins over the generic title/URL scan.
+    #   resolve_name(name) -> str — the text handed to AKS resolution (slug guessing +
+    #       site search) instead of the raw title; e.g. a grammar tail peeled off.
+    # MMOGA uses all three ("<Product> <CODE> Key", src/merchants/mmoga.py).
+    precheck: Optional[Callable[[str, str], Optional[str]]] = None
+    title_region: Optional[Callable[[str], Optional[str]]] = None
+    resolve_name: Optional[Callable[[str], str]] = None
     # Free-form notes / extension point for future per-merchant knobs.
     notes: str = ""
     extra: dict[str, Any] = field(default_factory=dict)

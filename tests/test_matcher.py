@@ -996,6 +996,13 @@ class MerchantConfigR32Tests(unittest.TestCase):
         # R32 migration of Eneba (Gamivo's url_language_lock retired 2026-09-01, MA7)
         self.assertEqual(merchant_config("Eneba").url_platform_prefixes.get("uplay"), "UBISOFT")
         self.assertEqual(merchant_config("Eneba").url_platform_prefixes.get("blizzard"), "BATTLENET")
+        # MMOGA (2026-09-10): config file carries the grammar through the generic hooks
+        mm = merchant_config("mmoga")
+        self.assertEqual(mm.domain, "mmoga.com")
+        self.assertEqual(mm.url_platform_prefixes.get("steam"), "STEAM")
+        self.assertEqual(mm.url_platform_prefixes.get("ea"), "EA")
+        self.assertIsNotNone(mm.precheck); self.assertIsNotNone(mm.title_region); self.assertIsNotNone(mm.resolve_name)
+        self.assertIsNone(merchant_config("Kinguin").precheck)
 
     # ---- IG platform + region from the offer page ----
     def test_ig_enters_real_platform_from_page(self):
@@ -3705,3 +3712,116 @@ class AksUrlShapesTests(unittest.TestCase):
         with self.assertRaises(AksProbeUnreliable) as ctx:
             resolve_aks("Some Obscure Game", fake_http, search=False)
         self.assertEqual((len(urls), ctx.exception.status), (1, 429))
+
+
+class MerchantHookTests(unittest.TestCase):
+    """R32e (Romain 2026-09-10): a merchant config file can ADD / OVERRIDE generic
+    behaviour through three optional hooks — precheck, title_region, resolve_name — and
+    the matcher stays merchant-agnostic. Exercised with a throwaway merchant."""
+
+    def _with_cfg(self, **hooks):
+        from unittest import mock
+        from src.merchant_config import MerchantConfig
+        from src import matcher as M
+        cfg = MerchantConfig("Hooky", **hooks)
+        return mock.patch.dict(M.MERCHANT_CONFIGS, {"HOOKY": cfg})
+
+    def test_precheck_hook_runs_before_the_generic_scans(self):
+        with self._with_cfg(precheck=lambda name, url: "hook says no" if "NOPE" in name else None):
+            off = NormalizedOffer(offer_id="1", name="Neon Beats NOPE", url="https://h.test/x", merchant="Hooky")
+            self.assertEqual(precheck_skip(off), "hook says no")
+            self.assertIsNone(precheck_skip(NormalizedOffer(offer_id="2", name="Neon Beats", url="https://h.test/x", merchant="Hooky")))
+
+    def test_title_region_hook_wins_over_the_generic_scan(self):
+        with self._with_cfg(title_region=lambda name: "us" if name.endswith("XX") else None):
+            self.assertEqual(detect_region(NormalizedOffer(offer_id="1", name="Neon Beats XX", url="https://h.test/x", merchant="Hooky"), "STEAM"),
+                             ("US", "8", False))
+            # None → generic behaviour (implicit GLOBAL here)
+            self.assertEqual(detect_region(NormalizedOffer(offer_id="1", name="Neon Beats", url="https://h.test/x", merchant="Hooky"), "STEAM"),
+                             ("GLOBAL", "2", True))
+
+    def test_resolve_name_hook_rewrites_only_the_resolution_input(self):
+        seen = []
+        res = AksResolution("neon-beats", "https://aks/x", "205027", "Neon Beats", {"1": {"name": "Standard"}})
+
+        def resolver(name):
+            seen.append(name)
+            return res
+
+        with self._with_cfg(resolve_name=lambda name: name.replace(" ZZ", "")):
+            r = match_offer(NormalizedOffer(offer_id="1", name="Neon Beats ZZ - Steam GLOBAL", url="https://h.test/x", merchant="Hooky"), resolver)
+        self.assertEqual(seen, ["Neon Beats - Steam GLOBAL"])       # the resolver saw the rewrite…
+        # …but the identity checks still see the RAW title (ZZ is an extra word → R16 skip):
+        # the hook never launders a title past the name gate.
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("extra words: ['ZZ']", r.reason)
+
+
+class MmogaRulesTests(unittest.TestCase):
+    """MMOGA grammar (src/merchants/mmoga.py, Romain 2026-09-10):
+    mmoga.com/<Platform>-Games/<Product>[-<REGION>-Key].html?ref=<affid>."""
+
+    URL = "https://www.mmoga.com/Steam-Games/Borderlands-2-EU-Key.html?ref=615"
+
+    def _o(self, name, url=None):
+        return NormalizedOffer(offer_id="1", name=name, url=url or self.URL, merchant="MMOGA")
+
+    def test_platform_from_the_url_category_segment(self):
+        from src.matcher import explicit_platform_from_url
+        self.assertEqual(explicit_platform_from_url(self.URL, "MMOGA"), "STEAM")
+        self.assertEqual(explicit_platform_from_url("https://www.mmoga.com/EA-Games/Battlefield-4-Premium.html?ref=615", "MMOGA"), "EA")
+        self.assertEqual(explicit_platform_from_url("https://www.mmoga.com/GOG-Games/X.html", "MMOGA"), "GOG")
+        self.assertIsNone(explicit_platform_from_url("https://www.mmoga.com/PlayStation-Games/X.html", "MMOGA"))
+
+    def test_region_from_the_uppercase_code_before_key(self):
+        self.assertEqual(detect_region(self._o("Borderlands 2 EU Key"), "STEAM"), ("EU", "9", False))
+        self.assertEqual(detect_region(self._o("Borderlands 2 US Key", "https://www.mmoga.com/Steam-Games/Borderlands-2-US-Key.html?ref=615"), "STEAM"),
+                         ("US", "8", False))
+        self.assertEqual(detect_region(self._o("Borderlands 2 UK CD Key", "https://www.mmoga.com/Steam-Games/Borderlands-2-UK-Key.html?ref=615"), "STEAM"),
+                         ("UK", "71", False))
+        self.assertEqual(detect_region(self._o("Company of Heroes 2", "https://www.mmoga.com/Steam-Games/Company-of-Heroes-2.html?ref=615"), "STEAM"),
+                         ("GLOBAL", "2", True))
+
+    def test_lowercase_us_in_a_title_is_not_a_lock(self):
+        # "Among Us Key" — the code must be UPPERCASE; the URL slot is not trailing either.
+        off = self._o("Among Us Key", "https://www.mmoga.com/Steam-Games/Among-Us-Key.html?ref=615")
+        self.assertIsNone(precheck_skip(off))
+        self.assertEqual(detect_region(off, "STEAM"), ("GLOBAL", "2", True))
+        from src.merchants.mmoga import resolve_name
+        self.assertEqual(resolve_name("Among Us Key"), "Among Us Key")
+
+    def test_forbidden_or_unmapped_codes_fail_closed(self):
+        self.assertEqual(precheck_skip(self._o("Borderlands 2 RU Key")), "forbidden region: RUSSIA")
+        self.assertEqual(precheck_skip(self._o("Borderlands 2 BR Key")), "forbidden region: BRAZIL")
+        self.assertEqual(precheck_skip(self._o("Borderlands 2 DE Key")), "forbidden region: DE")   # no AKS bucket → skip
+        self.assertIsNone(precheck_skip(self._o("Borderlands 2 EU Key")))
+
+    def test_resolution_name_drops_the_code_key_tail(self):
+        from src.merchants.mmoga import resolve_name
+        self.assertEqual(build_slug_candidates(resolve_name("Borderlands 2 EU Key")), ["borderlands-2"])
+        self.assertEqual(build_slug_candidates(resolve_name("Borderlands 2 US CD Key")), ["borderlands-2"])
+        self.assertEqual(resolve_name("Company of Heroes 2"), "Company of Heroes 2")
+
+    def test_edition_and_affiliate_param(self):
+        from src.matcher import detect_edition
+        self.assertEqual(detect_edition("Battlefield 4 Premium", "https://www.mmoga.com/EA-Games/Battlefield-4-Premium.html?ref=615", "MMOGA")[0], "Premium")
+        # ?ref=615 never sets a region (query stripped before every signal)
+        self.assertEqual(detect_region(self._o("Company of Heroes 2", "https://www.mmoga.com/Steam-Games/Company-of-Heroes-2.html?ref=615&region=us"), "STEAM"),
+                         ("GLOBAL", "2", True))
+
+    def test_foreign_domain_fails_closed(self):
+        self.assertEqual(precheck_skip(self._o("Borderlands 2 EU Key", "https://www.kinguin.net/Borderlands-2-EU-Key.html")),
+                         "offer URL not on mmoga.com (merchant-domain mismatch)")
+
+    def test_end_to_end_candidate(self):
+        res = AksResolution("borderlands-2", "https://aks/x", "1", "Borderlands 2", {"1": {"name": "Standard"}})
+        seen = []
+
+        def resolver(name):
+            seen.append(name)
+            return res
+
+        r = match_offer(self._o("Borderlands 2 US Key", "https://www.mmoga.com/Steam-Games/Borderlands-2-US-Key.html?ref=615"), resolver)
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual(seen, ["Borderlands 2"])
+        self.assertEqual((r.platform, r.region_label), ("STEAM", "US"))

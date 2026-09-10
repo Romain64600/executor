@@ -97,7 +97,11 @@ state and cannot be argued away by a language model.
   `merchant_config(offer.merchant)`. A merchant's config carries e.g. its domain
   (Kinguin) or an offer-page platform resolver (Instant Gaming lists Steam keys
   under token-less titles → the real platform is read from the IG offer page, not
-  defaulted to Publisher). No config → generic behaviour. See **§4.10**.
+  defaulted to Publisher). Since 2026-09-10 a merchant file (`src/merchants/<name>.py`)
+  can also **add or override generic behaviour** through three optional hooks —
+  `precheck`, `title_region`, `resolve_name` (MMOGA's "`<Product> <CODE> Key`" grammar
+  lives entirely in `src/merchants/mmoga.py`). No config → generic behaviour. See
+  **§4.10**.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full decision record.
 
