@@ -3,6 +3,21 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-10 — sweep MMOGA 30 pages : 35 créées, UNKNOWN levé en lecture seule, timeout CDP submit 45 s
+
+Sweep lancé par Romain (`--max-pages 30`, feed de 21 pages) : page 21 = 12/12, page 20 =
+23 créées sur 32 candidats, puis arrêt fail-closed `feed_unreadable` : un `Runtime.evaluate`
+sans réponse en 20 s **juste après** un Create réussi (signal AKS « Offer created … merchant
+40 »), donc preuve post-save impossible → *Jurassic World Evolution 3 Deluxe* marquée
+**UNKNOWN**. Vérification en lecture seule par la recherche du feed (la preuve du submitter) :
+l'offre a **disparu du feed → créée** ; une relance ne peut pas la dupliquer (le feed fait
+foi). *Tomb Raider: Legacy of Atlantis* : refus AKS « Bad request : paramètre "offer" manquant
+ou invalide » (2e occurrence du jour ; remplissage identique à l'entrée Deluxe créée juste
+après, donc transitoire côté backend) — toujours dans le feed, reprise au run suivant, pas de
+re-tentative dans le run (règle fail-closed). Correctif : `SUBMIT_CDP_CMD_TIMEOUT_S` = 45 s pour
+`SubmitSession` / `WriteSubmitSession` (les sessions lecture seule gardent 20 s) — la page
+admin AKS peut bloquer 20-30 s sous lenteur backend, comme sa recherche.
+
 ## 2026-09-10 — sweep : −2 min par page (disjoncteur persistant, catalogue par sweep, settle 1 s)
 
 Mesure sur le sweep MMOGA 30 pages (pages 20-21) : ~24 s d'extract, **~196 s de match**

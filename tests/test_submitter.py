@@ -2731,3 +2731,15 @@ class ModalReadinessAndReclickTests(unittest.TestCase):
         entry = sub.run(run_id="r", merchant="Kinguin", store_id="58", approved=[_cand("1")])["plan"][0]
         self.assertFalse(entry["ready"])
         self.assertEqual(session.opens, 1)
+
+
+class SubmitSessionTimeoutTests(unittest.TestCase):
+    def test_submit_sessions_use_the_longer_cdp_command_timeout(self):
+        # 2026-09-10: a 20 s Runtime.evaluate wall killed the post-save proof twice in ~100
+        # offers (AKS admin page hanging under backend slowness) → UNKNOWN although created.
+        from src.submit_session import SUBMIT_CDP_CMD_TIMEOUT_S, SubmitSession, WriteSubmitSession
+        from src.cdp_session import ReadOnlyCdpSession
+        ep = "http://172.17.0.1:9223/json/version"
+        self.assertEqual(SubmitSession(ep)._cmd_timeout, SUBMIT_CDP_CMD_TIMEOUT_S)
+        self.assertEqual(WriteSubmitSession(ep)._cmd_timeout, SUBMIT_CDP_CMD_TIMEOUT_S)
+        self.assertGreater(SUBMIT_CDP_CMD_TIMEOUT_S, ReadOnlyCdpSession(ep)._cmd_timeout)   # read-only stays 20

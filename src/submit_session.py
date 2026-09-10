@@ -373,8 +373,21 @@ _RECT_JS = (
 )
 
 
+# CDP command timeout for the SUBMIT sessions (2026-09-10): the read-only default is 20 s,
+# but the AKS admin page can hang its JS thread / a navigation for 20-30 s under backend
+# slowness (the same spikes as the 25 s site search). Twice in ~100 offers a
+# `Runtime.evaluate` hit the 20 s wall right after a successful Create → the post-save proof
+# died → offer marked UNKNOWN although created (verified read-only in the feed). 45 s only
+# delays the detection of a genuinely dead browser; the fail-closed handling is unchanged.
+SUBMIT_CDP_CMD_TIMEOUT_S = 45
+
+
 class SubmitSession(ReadOnlyCdpSession):
     """Read + open-modal only. No fill, no create."""
+
+    def __init__(self, endpoint: str, *, connect_timeout: int = 10,
+                 cmd_timeout: int = SUBMIT_CDP_CMD_TIMEOUT_S) -> None:
+        super().__init__(endpoint, connect_timeout=connect_timeout, cmd_timeout=cmd_timeout)
 
     def is_login_page(self) -> bool:
         return bool(self.evaluate_readonly(_IS_LOGIN_JS))
