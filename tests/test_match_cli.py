@@ -91,25 +91,39 @@ class SearchCircuitFileTests(MatchCliTests):
                                                 "--search-circuit-file", str(path)]):
             return self.MOD.main()
 
-    def test_open_unexpired_file_preopens_the_circuit(self):
-        path = self._circuit(open=True, open_until=time.time() + 600)
+    def test_open_file_preopens_the_circuit_and_stays_open(self):
+        path = self._circuit(open=True, written_at="2026-09-10T16:27:04Z")
+        before = path.read_text()
         seen = {}
 
         def stub(feed, resolver, **kw):
             seen.update(kw); kw["stats"].update({"search_circuit_open_offers": 4, "search_failures": 0}); return ([], [])
         self.assertEqual(self._main_with(path, stub), 0)
         self.assertTrue(seen["search_circuit_open"])
-        self.assertTrue(json.loads(path.read_text())["open"])            # re-armed for the next page
+        self.assertEqual(path.read_text(), before)                        # left in place, untouched
 
-    def test_expired_file_does_not_preopen(self):
-        path = self._circuit(open=True, open_until=time.time() - 1)
+    def test_an_old_file_still_preopens_no_expiry(self):
+        """Sweep-scoped, no TTL (Romain 2026-09-10): a legacy `open_until` in the past or a
+        file written hours ago keeps the search OFF for the rest of the sweep."""
+        path = self._circuit(open=True, open_until=time.time() - 3600, written_at="2026-09-10T01:00:00Z")
         seen = {}
 
         def stub(feed, resolver, **kw):
-            seen.update(kw); return ([], [])
+            seen.update(kw); kw["stats"].update({"search_circuit_open_offers": 1}); return ([], [])
         self.assertEqual(self._main_with(path, stub), 0)
-        self.assertFalse(seen["search_circuit_open"])
-        self.assertFalse(path.exists())                                    # search worked → cleared
+        self.assertTrue(seen["search_circuit_open"])
+        self.assertTrue(path.exists())
+
+    def test_closed_or_garbage_file_does_not_preopen(self):
+        for body in ('{"open": false}', "not json", "[1, 2]", ""):
+            path = self.root / "search_circuit.json"; path.write_text(body)
+            seen = {}
+
+            def stub(feed, resolver, **kw):
+                seen.update(kw); return ([], [])
+            self.assertEqual(self._main_with(path, stub), 0, body)
+            self.assertFalse(seen["search_circuit_open"], body)
+            self.assertFalse(path.exists(), body)                          # search worked → cleared
 
     def test_a_tripped_run_writes_the_file(self):
         path = self.root / "search_circuit.json"
@@ -118,4 +132,5 @@ class SearchCircuitFileTests(MatchCliTests):
             kw["stats"].update({"search_failures": 3, "search_circuit_open_offers": 10}); return ([], [])
         self.assertEqual(self._main_with(path, stub), 0)
         data = json.loads(path.read_text())
-        self.assertTrue(data["open"]); self.assertGreater(data["open_until"], time.time())
+        self.assertTrue(data["open"]); self.assertNotIn("open_until", data)
+        self.assertEqual(data["search_failures"], 3)

@@ -3,6 +3,27 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-10 — disjoncteur R30 : ouvert pour tout le sweep (plus d'expiration 30 min)
+
+Sweep MMOGA 30 pages (#2, tous leviers) : page 20 = 8/8 en 7 min (match 1 min : 3 échecs de
+recherche → disjoncteur ouvert et persisté), page 19 démarre circuit pré-ouvert
+(`search_circuit_preopened`, 71 offres non recherchées) et catalogue en cache
+(`catalog_cache_hit`), match en 1 min au lieu de ~10, puis 24 créées sur 25 tentatives à
+32-67 s par offre (moyenne 41 s) avant un arrêt fail-closed `feed_unreadable` : *End of Lines*
+(AKS 122402) — Create réussi (signal « Offer created … merchant 40 »), puis `Runtime.evaluate`
+sans réponse en 45 s sur la preuve post-save → UNKNOWN. Vérifié en lecture seule par l'aperçu
+by-urls (`scripts/11 --targets MMOGA:12`, recherche du feed `available=all`) : aucune ligne
+MMOGA pour ce jeu → **créée**. 2e halte de ce type en ~100 créations MMOGA sur la journée ;
+une relance ne peut pas dupliquer (le feed fait foi à la localisation). Décision de Romain : les offres non
+résolues par devinette d'URL n'ont pas à repasser par la recherche AKS à l'expiration d'un
+TTL — elles restent dans le feed pending et seront reprises par le sweep suivant du marchand.
+`scripts/03_match` : `SEARCH_CIRCUIT_TTL_S` / `open_until` retirés, `_search_circuit_is_open`
+ne regarde que `open`, une page qui démarre circuit ouvert laisse le fichier tel quel (rien
+appris), une page dont la recherche a été appelée sans échec l'efface. Le fichier vit dans le
+répertoire du sweep : un nouveau sweep repart recherche active. Tests CLI 03 : fichier ancien
+(`open_until` passé) → toujours pré-ouvert, fichier fermé/illisible → pas de pré-ouverture,
+fichier armé sans `open_until`. Docs : EXECUTOR_RULES §4.7, HANDOFF §3.
+
 ## 2026-09-10 — sweep MMOGA 30 pages : 35 créées, UNKNOWN levé en lecture seule, timeout CDP submit 45 s
 
 Sweep lancé par Romain (`--max-pages 30`, feed de 21 pages) : page 21 = 12/12, page 20 =

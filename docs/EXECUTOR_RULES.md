@@ -610,9 +610,12 @@ guessed slugs all 404 are then "no AKS product page found" without the 20 s wait
 works again is worthwhile); `search_failures` and `throttle_graces` are recorded too.
 **Sweep-scoped persistence (Romain GO 2026-09-10, "gagner du temps"):** `scripts/10` hands
 `03_match --search-circuit-file <sweep>/search_circuit.json`; a page that trips the breaker
-(or starts open and still fails) re-arms the file with a 30 min expiry, the next pages start
-with the circuit OPEN (`search_circuit_preopened`, no 3 × timeout tax per page), a page whose
-search worked clears it. `AKS_SEARCH_TIMEOUT_S` 20 → 8 s (a slow answer was never a useful one).
+arms the file, the next pages start with the circuit OPEN (`search_circuit_preopened`, no
+3 × timeout tax per page), a page whose search was actually called and never failed clears
+it. **No expiry (Romain 2026-09-10):** once open, the breaker stays open for the REST OF THE
+SWEEP — the pages never re-probe the search mid-sweep; the offers left unresolved by the URL
+guesses stay in the pending feed and are simply picked up by the next sweep of that merchant.
+The file lives in the sweep directory, so a new sweep always starts with the search on. `AKS_SEARCH_TIMEOUT_S` 20 → 8 s (a slow answer was never a useful one).
 Measured 2026-09-09 on the new VPS: AKS search answered in 22-28 s with an EMPTY 200 body —
 59 offers × 20 s on one Kinguin page.
 Build the slug from the AKS name (lowercase, `[^a-z0-9] → -`), verify

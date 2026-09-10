@@ -50,32 +50,34 @@ def load_feed(path: str) -> NormalizedFeed:
     )
 
 
-# The persisted R30 breaker expires on its own: AKS search may come back.
-SEARCH_CIRCUIT_TTL_S = 30 * 60
+# The persisted R30 breaker is SWEEP-SCOPED and has no expiry (Romain 2026-09-10): once a
+# page trips it, the remaining pages of that sweep never re-probe the AKS search — offers
+# whose guessed URLs all 404 are simply left in the feed for the next sweep. The file lives
+# in the sweep directory (`scripts/10`), so a fresh sweep always starts with the search on.
 
 
 def _search_circuit_is_open(path: str | None) -> bool:
-    """True iff ``path`` records an open circuit whose expiry is still in the future."""
+    """True iff ``path`` records an open circuit (age is irrelevant — sweep-scoped)."""
     if not path:
         return False
     try:
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
-        return bool(data.get("open")) and float(data.get("open_until", 0)) > time.time()
-    except (OSError, ValueError, TypeError):
+        return bool(json.loads(Path(path).read_text(encoding="utf-8")).get("open"))
+    except (OSError, ValueError, TypeError, AttributeError):
         return False
 
 
 def _search_circuit_persist(path: str | None, stats: dict, was_open: bool) -> None:
-    """After a clean match: re-arm the file when the search failed this run (breaker
-    tripped, or started open and no search succeeded); clear it when the search worked."""
+    """After a clean match: arm the file when the breaker tripped this run; leave it in
+    place when the run started open (the search was never called, nothing was learnt);
+    clear it when the search was actually called and never failed."""
     if not path:
         return
     tripped = int(stats.get("search_circuit_open_offers", 0)) > 0 or int(stats.get("search_failures", 0)) >= 3
     searched_ok = int(stats.get("search_failures", 0)) == 0 and not was_open
     try:
-        if tripped or (was_open and int(stats.get("search_failures", 0)) > 0):
+        if tripped and not was_open:
             Path(path).write_text(json.dumps({
-                "open": True, "open_until": time.time() + SEARCH_CIRCUIT_TTL_S,
+                "open": True,
                 "search_failures": int(stats.get("search_failures", 0)),
                 "written_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             }, indent=2), encoding="utf-8")
