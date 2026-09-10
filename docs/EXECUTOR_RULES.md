@@ -988,10 +988,13 @@ For each validated candidate, in order, fail-closed:
 3. Open the modal from that row's `[data-create-offer]` button (`#TB_window`).
    The click returns as soon as it fires — the ThickBox loads `#TB_ajaxContent`
    ASYNCHRONOUSLY — so the modal context is **render-polled** (re-read, NO
-   re-click) with the feed render-wait backoff before concluding it is missing
-   (hardened 2026-09-01: an immediate read skipped a genuinely-open Kinguin modal
-   as "modal context missing (#TB_ajaxContent)" — Simpler Times). Still absent
-   after the backoff → fail-closed skip.
+   re-click) with its own backoff `MODAL_CTX_WAITS` = 1/2/4/8/8 s (≈23 s) before
+   concluding it is missing (hardened 2026-09-01: an immediate read skipped a
+   genuinely-open Kinguin modal as "modal context missing (#TB_ajaxContent)" —
+   Simpler Times; widened 2026-09-10: 9/24 MMOGA offers were refused at the old 7 s
+   feed-style budget while a read-only re-open served the form instantly — the
+   ThickBox content is an admin-ajax round trip to the same AKS backend whose latency
+   spikes to 20-30 s). Still absent after the backoff → fail-closed skip.
 4. **Verify the select names before filling** — they vary per feed:
    `offer[region]`/`offer[edition]` on some, `offer[region_id]`/`offer[edition_id]`
    on others. Wrong name → silent `selectize` failure → false `[data-success]`

@@ -76,6 +76,13 @@ FEED_SCAN_SETTLE = 1.0
 # page is blank we POLL the DOM (re-read, no re-navigate) with this backoff, letting
 # a slow render finish. Tests patch to ().
 FEED_UI_RENDER_WAITS = (1.0, 2.0, 4.0)
+# Modal-context wait after the create-offer click (2026-09-10, MMOGA page-1 sweeps): the
+# ThickBox content is an admin-ajax round trip to the SAME AKS backend whose latency spikes
+# to 20-30 s (search) and 503 bursts — 9/24 offers of one sweep were refused "modal context
+# missing" at the old 7 s budget although a read-only re-open of the same rows served the
+# form instantly (diagnostic, Romain GO). Poll longer (≈23 s), never re-click; a genuinely
+# missing modal still fails closed at the end of the budget.
+MODAL_CTX_WAITS = (1.0, 2.0, 4.0, 8.0, 8.0)
 
 # When an empty page has the feed UI up but nav_max=0 (ambiguous: genuine empty queue
 # OR a transient blank whose rows+nav are still loading, P1-3), CONFIRM by re-reading
@@ -346,6 +353,7 @@ class _SubmitterBase:
         self.empty_confirm_waits = EMPTY_CONFIRM_WAITS
         self.feed_scan_settle = FEED_SCAN_SETTLE
         self.feed_ui_render_waits = FEED_UI_RENDER_WAITS
+        self.modal_ctx_waits = MODAL_CTX_WAITS
         self.search_scan_max_pages = SEARCH_SCAN_MAX_PAGES
         self.search_index_attempts = SEARCH_INDEX_ATTEMPTS
         self.catalog: dict[str, Any] | None = None
@@ -420,11 +428,13 @@ class _SubmitterBase:
         context = self.session.modal_context()
         if context.get("ok"):
             return context
-        for wait in self.feed_ui_render_waits:
+        waited = 0.0
+        for wait in self.modal_ctx_waits:
             time.sleep(wait)
+            waited += wait
             context = self.session.modal_context()
             if context.get("ok"):
-                self._log("modal_ctx_render_wait")
+                self._log("modal_ctx_render_wait", waited_s=waited)
                 return context
         return context
 

@@ -3,6 +3,21 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-10 — MMOGA en safe-auto : 41 créations, attente de modale portée à ~23 s
+
+Premiers sweeps safe-auto MMOGA (page 1, `--max-pages 1`, preuve post-save par recherche) :
+run 1 = 33 candidats, **26 créées** (prouvées « disparues du feed »), 1 échec réel (clic sans
+signal, offre restée dans le feed), 2 bloquées « modal context missing », arrêt fail-closed
+sur un timeout CDP de 20 s AVANT tout clic (offre marquée UNKNOWN par prudence, rien d'écrit) ;
+run 2 = 24 candidats, **15 créées**, exit 0, 9 bloquées « modal context missing ». Timing :
+32-34 s par offre (contre ~100 s avant la preuve par recherche), dont ~9 s de preuve.
+**Diagnostic en lecture seule (GO Romain)** : ré-ouvrir la modale de 3 lignes bloquées + 1
+contrôle sert le formulaire (`offer[region]` / `offer[edition]`) **instantanément** — le
+blocage n'est pas lié aux produits mais à la latence de l'AJAX ThickBox pendant le sweep (même
+backend AKS que la recherche à 20-30 s). Correctif : `MODAL_CTX_WAITS` = 1/2/4/8/8 s (≈23 s,
+relecture sans re-clic, `modal_ctx_render_wait` journalise le délai), distinct des attentes de
+rendu du feed ; toujours fail-closed au bout du budget. Doc : EXECUTOR_RULES §6 étape 3.
+
 ## 2026-09-10 — sweep safe-auto : preuve post-save par la recherche du feed (GO Romain)
 
 « On peut gagner du temps à l'écriture » : dans le sweep, le post-save re-balayait TOUT le

@@ -102,7 +102,7 @@ class FakeSubmitSession:
 
 def _run(session, approved):
     sub = DryRunSubmitter(session)
-    sub.feed_ui_render_waits = ()          # no real render-wait sleep in tests
+    sub.feed_ui_render_waits = (); sub.modal_ctx_waits = ()          # no real render-wait sleep in tests
     return sub.run(
         run_id="r", merchant="Driffle", store_id="127", approved=approved
     )
@@ -243,7 +243,7 @@ def _real(session, approved, click_mode="trusted", **kw):
     # A real write is trusted-only (A2). The FakeWriteSession's fill_then_click_trusted
     # mock drives the write flow just like the removed native path did.
     sub = Submitter(session, click_mode=click_mode)
-    sub.feed_ui_render_waits = ()          # no real render-wait sleep in tests
+    sub.feed_ui_render_waits = (); sub.modal_ctx_waits = ()          # no real render-wait sleep in tests
     sub.empty_retry_wait_s = 0             # no blank-page/empty-confirm retry sleep
     sub.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
     return sub.run(
@@ -633,7 +633,7 @@ class RealSubmitTests(unittest.TestCase):
         sub = Submitter(session)   # class default click_mode (trusted)
         sub.empty_retry_wait_s = 0
         sub.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
-        sub.feed_ui_render_waits = ()
+        sub.feed_ui_render_waits = (); sub.modal_ctx_waits = ()
         sub.run(
             run_id="r", merchant="Driffle", store_id="127",
             approved=[_cand("1")], limit=1,
@@ -873,7 +873,7 @@ class CatalogResolutionInWritePathTests(unittest.TestCase):
         sub = Submitter(session, click_mode="trusted")
         sub.empty_retry_wait_s = 0
         sub.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
-        sub.feed_ui_render_waits = ()
+        sub.feed_ui_render_waits = (); sub.modal_ctx_waits = ()
         result = sub.run(
             run_id="r", merchant="Driffle", store_id="127", approved=[cand], limit=1,
         )
@@ -1756,7 +1756,7 @@ class PacingTests(unittest.TestCase):
         sub = Submitter(session, offer_pacer=pacer)
         sub.empty_retry_wait_s = 0
         sub.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
-        sub.feed_ui_render_waits = ()
+        sub.feed_ui_render_waits = (); sub.modal_ctx_waits = ()
         sub.run(
             run_id="r", merchant="Driffle", store_id="127",
             approved=[_cand("1"), _cand("9")], limit=None
@@ -1899,7 +1899,7 @@ def _dry(session, approved, **kw):
     submitter = DryRunSubmitter(session)
     submitter.empty_retry_wait_s = 0
     submitter.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
-    submitter.feed_ui_render_waits = ()   # no real render-wait sleep in tests
+    submitter.feed_ui_render_waits = (); submitter.modal_ctx_waits = ()   # no real render-wait sleep in tests
     return submitter.run(
         run_id="r", merchant="Driffle", store_id="127", approved=approved, **kw
     )
@@ -1972,7 +1972,7 @@ class FeedScanFailClosedTests(unittest.TestCase):
         # enabler). _scan_feed's cross-page guard (nav_max_seen) must fail closed.
         from src.submitter import FeedScanError, DryRunSubmitter
         sub = DryRunSubmitter(StallMidScanSession([["1", "2"], ["3", "4"], ["54"]]))
-        sub.feed_ui_render_waits = (); sub.empty_retry_wait_s = 0
+        sub.feed_ui_render_waits = (); sub.modal_ctx_waits = (); sub.empty_retry_wait_s = 0
         sub.empty_confirm_waits = (0,); sub.feed_scan_settle = 0
         with self.assertRaises(FeedScanError):
             sub._verify_gone("54", "https://m/54", "127", "aks-merchant-feeds-9", "all", 5)
@@ -2007,7 +2007,7 @@ class FeedScanFailClosedTests(unittest.TestCase):
                         "href": self.nav[-1] if self.nav else ""}
         sub = DryRunSubmitter(_ExpireMidConfirm())
         sub.empty_confirm_waits = (0,); sub.empty_retry_wait_s = 0
-        sub.feed_ui_render_waits = (); sub.feed_scan_settle = 0
+        sub.feed_ui_render_waits = (); sub.modal_ctx_waits = (); sub.feed_scan_settle = 0
         with self.assertRaises(NotLoggedInError):
             sub._read_feed_page("https://aks/x?p=1", 1)
 
@@ -2028,7 +2028,7 @@ class FeedScanFailClosedTests(unittest.TestCase):
                         "href": self.nav[-1] if self.nav else ""}
         sub = DryRunSubmitter(_DropFeedUi())
         sub.empty_confirm_waits = (0,); sub.empty_retry_wait_s = 0
-        sub.feed_ui_render_waits = (); sub.feed_scan_settle = 0
+        sub.feed_ui_render_waits = (); sub.modal_ctx_waits = (); sub.feed_scan_settle = 0
         with self.assertRaises(FeedScanError):
             sub._read_feed_page("https://aks/x?p=1", 1)
 
@@ -2059,7 +2059,7 @@ class FeedScanFailClosedTests(unittest.TestCase):
         submitter = Submitter(session)
         submitter.empty_retry_wait_s = 0
         submitter.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
-        submitter.feed_ui_render_waits = ()
+        submitter.feed_ui_render_waits = (); submitter.modal_ctx_waits = ()
         result = submitter.run(
             run_id="r", merchant="Driffle", store_id="127",
             approved=[_cand("1"), _cand("2")], limit=None,
@@ -2213,7 +2213,7 @@ class FreshRowRecheckTests(unittest.TestCase):
         # An index-scan miss reaches _prepare as a located blocker; stub the fresh
         # per-candidate URL re-search to control what it recovers.
         sub = DryRunSubmitter(FakeSubmitSession([["1"]]))
-        sub.feed_ui_render_waits = ()
+        sub.feed_ui_render_waits = (); sub.modal_ctx_waits = ()
         sub._relocate_by_url = relocate
         located = {"blocker": "offer not in current feed (by id and by URL)"}
         ctx = {"store_id": "127", "feed_page": "aks-merchant-feeds-9",
@@ -2363,7 +2363,7 @@ class SearchLocateTests(unittest.TestCase):
 
     def _sub(self, session):
         s = DryRunSubmitter(session)
-        s.feed_ui_render_waits = ()          # no real render-wait sleep in tests
+        s.feed_ui_render_waits = (); s.modal_ctx_waits = ()          # no real render-wait sleep in tests
         s.empty_retry_wait_s = 0             # no blank-page retry sleep in tests
         s.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
         s.feed_scan_settle = 0
@@ -2595,7 +2595,7 @@ class SweepProveGoneBySearchTests(unittest.TestCase):
     def test_run_wires_the_flag_into_ctx(self):
         # the run() kwarg reaches the ctx the write path reads (search proof + search relocate)
         sub = DryRunSubmitter(_SearchFake([]))
-        sub.feed_ui_render_waits = (); sub.empty_retry_wait_s = 0; sub.empty_confirm_waits = (0,); sub.feed_scan_settle = 0
+        sub.feed_ui_render_waits = (); sub.modal_ctx_waits = (); sub.empty_retry_wait_s = 0; sub.empty_confirm_waits = (0,); sub.feed_scan_settle = 0
         seen = {}
         sub._scan_page_window = lambda *a, **k: ({}, {}, None)
         def fake_prepare(cand, located, ctx):
@@ -2635,7 +2635,7 @@ class SweepProveGoneBySearchTests(unittest.TestCase):
 
     def test_relocate_uses_the_search_under_the_sweep_flag(self):
         sub = DryRunSubmitter(_SearchFake([]))
-        sub.feed_ui_render_waits = (); sub.empty_retry_wait_s = 0; sub.empty_confirm_waits = (0,); sub.feed_scan_settle = 0
+        sub.feed_ui_render_waits = (); sub.modal_ctx_waits = (); sub.empty_retry_wait_s = 0; sub.empty_confirm_waits = (0,); sub.feed_scan_settle = 0
         used = []
         sub._scan_search = lambda *a, **k: (used.append("search") or ({}, {}))
         sub._scan_feed = lambda *a, **k: (used.append("feed") or ({}, {}, False))
