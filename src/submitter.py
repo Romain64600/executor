@@ -83,6 +83,15 @@ FEED_UI_RENDER_WAITS = (1.0, 2.0, 4.0)
 # form instantly (diagnostic, Romain GO). Poll longer (≈23 s), never re-click; a genuinely
 # missing modal still fails closed at the end of the budget.
 MODAL_CTX_WAITS = (1.0, 2.0, 4.0, 8.0, 8.0)
+# Before the create-offer click: wait for the page scripts to be bound (readyState
+# 'complete' + ThickBox `tb_show` defined). Under AKS slowness the 3 s navigate settle is
+# not always enough; a click fired earlier is silently lost (2026-09-10: 3 rows refused
+# "modal context missing" across two sweeps while a read-only re-open served the form at
+# 0.0 s). Read-only polling; if never ready we still try (the modal wait fails closed).
+PAGE_SCRIPTS_READY_WAITS = (0.5, 1.0, 2.0, 4.0, 8.0)
+# After this many modal-context polls with no content, re-issue the create-offer click ONCE
+# (opening a modal is a UI action without side effect; a lost click is the failure mode).
+MODAL_RECLICK_AFTER_POLLS = 3
 
 # When an empty page has the feed UI up but nav_max=0 (ambiguous: genuine empty queue
 # OR a transient blank whose rows+nav are still loading, P1-3), CONFIRM by re-reading
@@ -354,6 +363,7 @@ class _SubmitterBase:
         self.feed_scan_settle = FEED_SCAN_SETTLE
         self.feed_ui_render_waits = FEED_UI_RENDER_WAITS
         self.modal_ctx_waits = MODAL_CTX_WAITS
+        self.page_scripts_ready_waits = PAGE_SCRIPTS_READY_WAITS
         self.search_scan_max_pages = SEARCH_SCAN_MAX_PAGES
         self.search_index_attempts = SEARCH_INDEX_ATTEMPTS
         self.catalog: dict[str, Any] | None = None
@@ -417,25 +427,58 @@ class _SubmitterBase:
                   rows=len(rows))
         return rows, state
 
-    def _wait_for_modal_context(self) -> dict[str, Any]:
-        """Poll the modal context (re-read ``#TB_ajaxContent``, NO re-click) with the
-        same render-wait backoff as the feed. ``open_offer_modal`` returns the instant
-        it clicks ``[data-create-offer]`` — the ThickBox loads its content
-        ASYNCHRONOUSLY, so an immediate read can miss it under CDP load and skip a
-        genuinely-open modal as "modal context missing" (a pinned Kinguin offer lost
-        this way, 2026-09-01). Returns the first context with ``ok`` true, else the
-        last read after the backoff (the caller then fails closed). Read-only."""
+    def _wait_page_scripts_ready(self) -> dict[str, Any] | None:
+        """Read-only gate before the create-offer click: poll until the page reports
+        ``readyState == 'complete'`` and the ThickBox opener ``tb_show`` is defined
+        (2026-09-10). Sessions without the probe (tests' fakes) skip the gate. Returns
+        the last state; never raises for a not-ready page (the modal wait fails closed)."""
+        probe = getattr(self.session, "page_scripts_state", None)
+        if probe is None:
+            return None
+        state = probe()
+        ready = lambda st: st.get("ready") == "complete" and st.get("tb") == "function"  # noqa: E731
+        if ready(state):
+            return state
+        waited = 0.0
+        for wait in self.page_scripts_ready_waits:
+            time.sleep(wait)
+            waited += wait
+            state = probe()
+            if ready(state):
+                self._log("page_scripts_wait", waited_s=waited, state=state)
+                return state
+        self._log("page_scripts_not_ready", waited_s=waited, state=state)
+        return state
+
+    def _wait_for_modal_context(self, offer_id: str | None = None) -> dict[str, Any]:
+        """Poll the modal context (re-read ``#TB_ajaxContent``) with its own backoff.
+        ``open_offer_modal`` returns the instant it clicks ``[data-create-offer]`` — the
+        ThickBox loads its content ASYNCHRONOUSLY, so an immediate read can miss it under
+        CDP load and skip a genuinely-open modal as "modal context missing" (a pinned
+        Kinguin offer lost this way, 2026-09-01). After MODAL_RECLICK_AFTER_POLLS empty
+        polls the click is re-issued ONCE (2026-09-10: a click fired before the page
+        scripts were bound is silently lost). Returns the first context with ``ok`` true,
+        else the last read after the backoff — logged with a read-only page probe so the
+        failure state is known (the caller then fails closed)."""
         context = self.session.modal_context()
         if context.get("ok"):
             return context
         waited = 0.0
-        for wait in self.modal_ctx_waits:
+        reclicked = False
+        for n, wait in enumerate(self.modal_ctx_waits, 1):
             time.sleep(wait)
             waited += wait
             context = self.session.modal_context()
             if context.get("ok"):
-                self._log("modal_ctx_render_wait", waited_s=waited)
+                self._log("modal_ctx_render_wait", waited_s=waited, reclicked=reclicked)
                 return context
+            if not reclicked and offer_id is not None and n >= MODAL_RECLICK_AFTER_POLLS:
+                reclicked = True
+                status = self.session.open_offer_modal(offer_id)
+                self._log("modal_reclicked", offer_id=offer_id, after_s=waited, status=status)
+        probe = getattr(self.session, "page_scripts_state", None)
+        self._log("modal_ctx_missing", offer_id=offer_id, waited_s=waited, reclicked=reclicked,
+                  context=context, page_scripts=(probe() if probe else None))
         return context
 
     def _read_feed_page(self, url: str, page: int
@@ -1117,12 +1160,13 @@ class _SubmitterBase:
             )
             return entry
         entry["fresh_row_checked"] = fresh_checked
+        self._wait_page_scripts_ready()                 # the click must find its handler
         status = self.session.open_offer_modal(offer_id)
         entry["modal"] = status
         if status != "OPENED":
             entry["blocker"] = f"modal open: {status}"
             return entry
-        context = self._wait_for_modal_context()
+        context = self._wait_for_modal_context(offer_id)
         names = set(context.get("select_names", []))
         entry["select_names"] = sorted(names)
         if not context.get("ok"):

@@ -63,6 +63,14 @@ _PAGE_ROWS_JS = (
     "catch(x){return null;}}).filter(Boolean))"
 )
 
+# Read-only readiness probe of the feed page's scripts (2026-09-10): the create-offer
+# click only works once the page's JS has bound the ThickBox handler (``tb_show``). A
+# click fired before that is silently lost — "OPENED" with no `#TB_ajaxContent` ever.
+_PAGE_SCRIPTS_JS = (
+    "JSON.stringify({ready:String(document.readyState),tb:typeof window.tb_show,"
+    "jq:typeof window.jQuery})"
+)
+
 _MODAL_CTX_JS = (
     "JSON.stringify((function(){var c=document.querySelector('#TB_ajaxContent');"
     "if(!c){return {ok:false,select_names:[]};}"
@@ -419,6 +427,14 @@ class SubmitSession(ReadOnlyCdpSession):
     def modal_context(self) -> dict[str, Any]:
         raw = self.evaluate_readonly(_MODAL_CTX_JS)
         return json.loads(raw) if raw else {"ok": False, "select_names": []}
+
+    def page_scripts_state(self) -> dict[str, Any]:
+        """Read-only: ``{ready, tb, jq}`` — document.readyState and whether the ThickBox
+        opener (``tb_show``) / jQuery are defined yet. The submitter waits for
+        ``ready == 'complete'`` and ``tb == 'function'`` before the create-offer click."""
+
+        raw = self.evaluate_readonly(_PAGE_SCRIPTS_JS)
+        return json.loads(raw) if raw else {"ready": None, "tb": None, "jq": None}
 
     def inspect_modal_dom(self) -> dict[str, Any]:
         """Read-only DOM inspection of the currently-open modal (S02).

@@ -2277,6 +2277,8 @@ class ModalContextRenderWaitTests(unittest.TestCase):
         sub.empty_retry_wait_s = 0
         sub.empty_confirm_waits = (0,)   # one 0-wait re-read (P1-3)
         sub.feed_ui_render_waits = (0, 0)     # poll re-reads, no real sleep
+        sub.modal_ctx_waits = (0, 0)          # modal polls, no real sleep
+        sub.page_scripts_ready_waits = (0, 0)
         return sub.run(run_id="r", merchant="Kinguin", store_id="58",
                        approved=[_cand("1")])
 
@@ -2644,3 +2646,71 @@ class SweepProveGoneBySearchTests(unittest.TestCase):
         used.clear()
         sub._relocate_by_url({"offer": {"url": "https://m/a", "name": "A"}}, self._ctx(prove_gone_by_search=False))
         self.assertEqual(used, ["feed"])                          # the old walk when the flag is off
+
+
+class ReclickAfterLostClickSession(FakeSubmitSession):
+    """2026-09-10 (MMOGA): the create-offer click fired before the page scripts were bound
+    is silently lost — "OPENED" but no #TB_ajaxContent ever. The content appears only after
+    a SECOND click. Also exposes the read-only page_scripts_state probe."""
+
+    def __init__(self, pages, *, ready_after_probes=0, content_after_opens=2, **kw):
+        super().__init__(pages, **kw)
+        self.opens = 0
+        self.probes = 0
+        self.ready_after_probes = ready_after_probes
+        self.content_after_opens = content_after_opens
+
+    def page_scripts_state(self):
+        self.probes += 1
+        ok = self.probes > self.ready_after_probes
+        return {"ready": "complete" if ok else "interactive", "tb": "function" if ok else "undefined", "jq": "function"}
+
+    def open_offer_modal(self, offer_id):
+        self.opens += 1
+        return "OPENED"
+
+    def modal_context(self):
+        if self.opens >= self.content_after_opens:
+            return super().modal_context()
+        return {"ok": False, "select_names": []}
+
+
+class ModalReadinessAndReclickTests(unittest.TestCase):
+    def _sub(self, session, modal_waits=(0, 0, 0, 0, 0)):
+        sub = DryRunSubmitter(session)
+        sub.empty_retry_wait_s = 0
+        sub.empty_confirm_waits = (0,)
+        sub.feed_ui_render_waits = (0, 0)
+        sub.modal_ctx_waits = modal_waits
+        sub.page_scripts_ready_waits = (0, 0, 0)
+        return sub
+
+    def test_waits_for_page_scripts_before_the_click(self):
+        session = ReclickAfterLostClickSession([["1"]], ready_after_probes=2, content_after_opens=1)
+        sub = self._sub(session)
+        entry = sub.run(run_id="r", merchant="Kinguin", store_id="58", approved=[_cand("1")])["plan"][0]
+        self.assertTrue(entry["ready"])
+        self.assertGreaterEqual(session.probes, 3)     # polled until ready, then clicked
+        self.assertEqual(session.opens, 1)
+
+    def test_lost_click_is_reissued_once_then_proceeds(self):
+        session = ReclickAfterLostClickSession([["1"]], content_after_opens=2)
+        sub = self._sub(session)
+        entry = sub.run(run_id="r", merchant="Kinguin", store_id="58", approved=[_cand("1")])["plan"][0]
+        self.assertTrue(entry["ready"])
+        self.assertEqual(session.opens, 2)              # exactly one re-click
+
+    def test_never_rendering_modal_still_fails_closed_with_one_reclick_only(self):
+        session = ReclickAfterLostClickSession([["1"]], content_after_opens=99)
+        sub = self._sub(session)
+        entry = sub.run(run_id="r", merchant="Kinguin", store_id="58", approved=[_cand("1")])["plan"][0]
+        self.assertFalse(entry["ready"])
+        self.assertIn("modal context missing", entry["blocker"])
+        self.assertEqual(session.opens, 2)              # original click + ONE re-click, never more
+
+    def test_no_reclick_without_waits(self):
+        session = ReclickAfterLostClickSession([["1"]], content_after_opens=2)
+        sub = self._sub(session, modal_waits=())
+        entry = sub.run(run_id="r", merchant="Kinguin", store_id="58", approved=[_cand("1")])["plan"][0]
+        self.assertFalse(entry["ready"])
+        self.assertEqual(session.opens, 1)

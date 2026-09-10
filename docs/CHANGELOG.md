@@ -3,6 +3,24 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-10 — modale : gate de readiness des scripts + un re-clic (clic perdu)
+
+Sweep MMOGA n° 3 (attente de modale 23 s) : 7 des 9 offres bloquées la veille sont passées,
+mais 3 sont restées « modal context missing » **sans jamais recevoir le contenu en 23 s**
+(*God Eater 2*, *The Long Journey Home*, *The Crew 2 Gold*), alors qu'un second diagnostic
+lecture-seule (GO Romain) ouvre leur modale à 0,0 s avec le formulaire complet
+(`offer[merchant]=40` pré-rempli). Conclusion : ce n'est ni le produit ni la latence AJAX,
+c'est le **clic lui-même qui est perdu** quand il part avant que les scripts de la page aient
+lié le handler ThickBox (le settle de 3 s ne suffit pas toujours sous lenteur AKS — la leçon
+du 20/07 en version aléatoire). Correctif : (a) gate lecture-seule avant le clic —
+`page_scripts_state()` (`document.readyState == 'complete'` et `tb_show` défini), polling
+`PAGE_SCRIPTS_READY_WAITS` ≈ 15 s ; (b) après `MODAL_RECLICK_AFTER_POLLS` = 3 lectures vides,
+le clic est réémis **une fois** (ouvrir une modale n'a pas d'effet de bord) ; (c) sur échec
+final, événement `modal_ctx_missing` avec le dernier contexte et l'état des scripts, pour ne
+plus diagnostiquer à l'aveugle. *Assetto Corsa* : « Bad request : paramètre offer manquant »
+renvoyé par AKS au Create — à observer au prochain run. Tests : gate, re-clic unique, échec
+fermé avec un seul re-clic, pas de re-clic sans attente. Doc : EXECUTOR_RULES §6 étape 3.
+
 ## 2026-09-10 — MMOGA en safe-auto : 41 créations, attente de modale portée à ~23 s
 
 Premiers sweeps safe-auto MMOGA (page 1, `--max-pages 1`, preuve post-save par recherche) :
