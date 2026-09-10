@@ -1166,12 +1166,14 @@ def aks_page_urls(slug: str, page_kind: str = "cd-key", *,
 
     1. current  ``buy-<slug>-cd-key-compare-prices/``
     2. new      ``buy-<slug>-<year>-cd-key-compare-prices/`` — pages AKS creates since
-                2026 carry the release year (``buy-fable-2026-…``); tried for this year,
-                next year, previous year, unless the slug already ends with a year;
+                2026 carry the release year (``buy-fable-2026-…``); tried for this year
+                and next year, unless the slug already ends with a year;
     3. legacy   ``compare-and-buy-cd-key-for-digital-download-<slug>/`` (≈2021 pages).
 
     Account kinds keep their single current shape. ``years`` is injectable for tests
-    (default: today's year, +1, −1)."""
+    (default: today's year, +1). :func:`resolve_aks` probes shape 1 for every slug tier
+    first and shapes 2-3 for the most specific slug only — probing all shapes of every
+    tier (×5) drove ~300 req/min and AKS answered with 503 bursts (run 2026-09-10 10:22)."""
 
     shapes = [(slug, AKS_COMPARE_URL.format(slug=slug, kind=page_kind))]
     if page_kind != "cd-key":
@@ -1179,7 +1181,7 @@ def aks_page_urls(slug: str, page_kind: str = "cd-key", *,
     if not _SLUG_YEAR_SUFFIX_RE.search(slug):
         if years is None:
             y = datetime.date.today().year
-            years = (y, y + 1, y - 1)
+            years = (y, y + 1)
         for year in years:
             variant = f"{slug}-{year}"
             shapes.append((variant, AKS_COMPARE_URL.format(slug=variant, kind=page_kind)))
@@ -1384,6 +1386,10 @@ THROTTLE_MAX_GRACES = 2
 # product pages, which are what AKS throttles.
 SEARCH_CIRCUIT_BREAKER_FAILURES = 3
 SEARCH_SLUG_KEY = "site-search"
+# One same-URL retry after a short pause on a 5xx / transport failure of a guessed-slug probe
+# (never on 429 — explicit rate limit). MA1 is intact: the SAME tier is retried, never a lower
+# one. Under an injected test http_get the retry happens without the pause.
+PROBE_TRANSIENT_RETRY_WAIT_S = 2.0
 
 
 class AksThrottled(Exception):
@@ -1568,6 +1574,30 @@ def search_aks_slugs(
     return slugs
 
 
+def _probe_guessed_page(url: str, http_get_fn: Callable[..., Any]) -> Any:
+    """Paced GET of one guessed AKS page. Returns ``None`` on a clean 404/410, the probe on
+    200, or — after ONE same-URL retry on a 5xx / transport failure (PROBE_TRANSIENT_RETRY_WAIT_S,
+    no pause under an injected http_get) — the last failing probe for the caller to raise on.
+    A 429 is never retried."""
+
+    probe = None
+    for attempt in (1, 2):
+        if http_get_fn is http_get:
+            time.sleep(AKS_PROBE_DELAY_S)  # politeness budget for bulk AKS runs
+        probe = http_get_fn(url, timeout=8, user_agent=AKS_PROBE_UA)
+        if probe.ok and probe.status == 200 and probe.body:
+            return probe
+        if probe.status in (404, 410):
+            return None
+        transient = probe.status is None or probe.status >= 500
+        if attempt == 1 and transient:
+            if http_get_fn is http_get:
+                time.sleep(PROBE_TRANSIENT_RETRY_WAIT_S)
+            continue
+        break
+    return probe
+
+
 def resolve_aks(
     name: str, http_get_fn: Callable[..., Any] = http_get, *, page_kind: str = "cd-key",
     search: bool = True,
@@ -1593,26 +1623,30 @@ def resolve_aks(
     # 200 on "some-game" silently resolves the wrong product tier. That is
     # exactly what the docstring always promised ("fails closed immediately")
     # and what the old collect-then-maybe-raise code did not do.
-    for slug in build_slug_candidates(name):
-        # Every URL shape of this slug (current → year-suffixed → legacy) is tried before
-        # the next, LESS specific slug — so MA1 still holds per tier (Romain 2026-09-10).
-        for variant, url in aks_page_urls(slug, page_kind):
-            if http_get_fn is http_get:
-                time.sleep(AKS_PROBE_DELAY_S)  # politeness budget for bulk AKS runs
-            probe = http_get_fn(url, timeout=8, user_agent=AKS_PROBE_UA)
-            if not (probe.ok and probe.status == 200 and probe.body):
-                if probe.status not in (404, 410):
-                    raise AksProbeUnreliable(f"{variant} -> {probe.status or probe.error}",
-                                             status=probe.status, slug=variant)
+    slugs = build_slug_candidates(name)
+    # Pass 1 — the current URL shape for every slug tier (most → least specific): the
+    # common case, unchanged cost. Pass 2 (cd-key only) — the alternate shapes of the MOST
+    # specific slug: year-suffixed (new AKS pages, e.g. buy-fable-2026-…) then legacy
+    # (compare-and-buy-…, ≈2021 pages) — Romain 2026-09-10, bounded to +3 probes per
+    # unresolvable offer. MA1 holds: a transient answer raises at once, never a lower tier.
+    probes: list[tuple[str, str]] = [(slug, aks_url(slug, page_kind)) for slug in slugs]
+    if page_kind == "cd-key" and slugs:
+        probes += aks_page_urls(slugs[0], page_kind)[1:]
+    for variant, url in probes:
+        probe = _probe_guessed_page(url, http_get_fn)
+        if probe is None:
+            continue                                   # clean 404/410 → next shape/tier
+        if not (probe.ok and probe.status == 200 and probe.body):
+            raise AksProbeUnreliable(f"{variant} -> {probe.status or probe.error}",
+                                     status=probe.status, slug=variant)
+        resolution = _resolution_from_body(variant, url, probe.body)
+        if resolution is None:
+            if not extract_product_id(probe.body):
                 continue
-            resolution = _resolution_from_body(variant, url, probe.body)
-            if resolution is None:
-                if not extract_product_id(probe.body):
-                    continue
-                # Never fall back to the offer title: name checks would compare
-                # the title to itself and pass anything (fail-open).
-                raise AksNameUnreadable(variant)
-            return resolution
+            # Never fall back to the offer title: name checks would compare
+            # the title to itself and pass anything (fail-open).
+            raise AksNameUnreadable(variant)
+        return resolution
 
     if page_kind != "cd-key" or not search:
         # no site-search fallback for account pages (see docstring), nor once the R30

@@ -32,11 +32,16 @@ normales juste après). Décision Romain (« fais 1+2 ») :
   portent l'année de sortie (`buy-fable-2026-cd-key-compare-prices/`) → essayée avec
   l'année en cours, la suivante et la précédente, sauf si le slug finit déjà par une année ;
   (3) **ancienne** (pages ≈2021, ex. Minecraft)
-  `compare-and-buy-cd-key-for-digital-download-<slug>/`. Toutes les formes d'un slug sont
-  sondées avant le slug suivant (MA1 par palier conservé : un 503 sur une variante lève
-  immédiatement) ; les pages account gardent leur forme unique. Coût : jusqu'à 5 sondes
-  par slug non résolu (0,15 s chacune) au lieu d'une — sans commune mesure avec les 20 s de
-  la recherche. La résolution garde le slug réel de la page (`fable-2026`).
+  `compare-and-buy-cd-key-for-digital-download-<slug>/`. **Borné après le dry-run n° 2**
+  (10h22, arrêt `aks_throttled` dès la page 30 : sonder 5 formes × chaque palier de slug a
+  fait monter le débit à ~200-300 req/min soutenues — chaque 404 AKS pèse 500 Ko — et AKS
+  a répondu par des rafales de 503 ; hors charge, toutes les formes répondent 404
+  proprement) : passe 1 = forme courante pour tous les paliers (coût inchangé), passe 2 =
+  variantes année (année en cours, suivante) puis ancienne pour le slug **le plus
+  spécifique seulement** → +3 sondes max par offre non résolue. MA1 conservé (un 5xx lève
+  après une seule nouvelle tentative de la MÊME URL, `PROBE_TRANSIENT_RETRY_WAIT_S` = 2 s,
+  jamais sur 429 ; jamais de palier inférieur). Les pages account gardent leur forme
+  unique ; la résolution garde le slug réel de la page (`fable-2026`).
 
 ## 2026-09-09 — audit adversarial des 5 commits du 08/09 : 38 findings corrigés
 

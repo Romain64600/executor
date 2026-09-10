@@ -3565,28 +3565,27 @@ class AksUrlShapesTests(unittest.TestCase):
 
     def test_shapes_order_and_year_variants(self):
         from src.matcher import aks_page_urls
-        shapes = aks_page_urls("fable", years=(2026, 2027, 2025))
-        self.assertEqual([v for v, _ in shapes], ["fable", "fable-2026", "fable-2027", "fable-2025", "fable"])
+        shapes = aks_page_urls("fable", years=(2026, 2027))
+        self.assertEqual([v for v, _ in shapes], ["fable", "fable-2026", "fable-2027", "fable"])
         self.assertEqual([u for _, u in shapes], [
             "https://www.allkeyshop.com/blog/buy-fable-cd-key-compare-prices/",
             "https://www.allkeyshop.com/blog/buy-fable-2026-cd-key-compare-prices/",
             "https://www.allkeyshop.com/blog/buy-fable-2027-cd-key-compare-prices/",
-            "https://www.allkeyshop.com/blog/buy-fable-2025-cd-key-compare-prices/",
             "https://www.allkeyshop.com/blog/compare-and-buy-cd-key-for-digital-download-fable/",
         ])
 
     def test_slug_already_ending_with_a_year_gets_no_year_variants(self):
         from src.matcher import aks_page_urls
-        self.assertEqual([v for v, _ in aks_page_urls("fable-2026", years=(2026, 2027, 2025))],
+        self.assertEqual([v for v, _ in aks_page_urls("fable-2026", years=(2026, 2027))],
                          ["fable-2026", "fable-2026"])
         self.assertEqual([v for v, _ in aks_page_urls("f1-24", years=(2026,))],
                          ["f1-24", "f1-24-2026", "f1-24"])   # "24" is not a 4-digit year → variants kept
 
-    def test_default_years_are_this_year_next_and_previous(self):
+    def test_default_years_are_this_year_and_next(self):
         import datetime
         from src.matcher import aks_page_urls
         y = datetime.date.today().year
-        self.assertEqual([v for v, _ in aks_page_urls("x")][1:4], [f"x-{y}", f"x-{y + 1}", f"x-{y - 1}"])
+        self.assertEqual([v for v, _ in aks_page_urls("x")][1:3], [f"x-{y}", f"x-{y + 1}"])
 
     def test_account_kind_keeps_a_single_shape(self):
         from src.matcher import aks_page_urls
@@ -3653,7 +3652,9 @@ class AksUrlShapesTests(unittest.TestCase):
         self.assertTrue(ctx.exception.slug.startswith("fable-"))       # MA1: the variant, at once
         self.assertFalse(any("compare-and-buy" in u for u in urls))   # legacy never reached
 
-    def test_unresolvable_slug_costs_five_probes_then_next_slug(self):
+    def test_unresolvable_offer_costs_current_shapes_plus_three(self):
+        # Current shape for every tier first, then year/year+1/legacy for the FIRST slug only
+        # (bounded: the ×5 expansion drove ~300 req/min and AKS 503-bursts, 2026-09-10).
         from src.matcher import build_slug_candidates, resolve_aks
         urls = []
 
@@ -3661,5 +3662,46 @@ class AksUrlShapesTests(unittest.TestCase):
             urls.append(url)
             return HttpProbeResult(url=url, ok=False, status=404, body="")
 
+        slugs = build_slug_candidates("Some Obscure Game")
         self.assertIsNone(resolve_aks("Some Obscure Game", fake_http, search=False))
-        self.assertEqual(len(urls), 5 * len(build_slug_candidates("Some Obscure Game")))
+        self.assertEqual(len(urls), len(slugs) + 3)
+        self.assertTrue(all("compare-and-buy" not in u and not any(f"-{y}-cd-key" in u for y in range(1990, 2100))
+                            for u in urls[:len(slugs)]))          # pass 1 = current shape only
+        self.assertIn(f"buy-{slugs[0]}-", urls[len(slugs)])         # pass 2 = first slug's variants
+        self.assertTrue(urls[-1].endswith(f"download-{slugs[0]}/"))
+
+    def test_transient_5xx_is_retried_once_on_the_same_url(self):
+        from src.matcher import AksProbeUnreliable, resolve_aks
+        urls = []
+
+        def fake_http(url, timeout=8, user_agent=None):
+            urls.append(url)
+            if len(urls) == 1:
+                return HttpProbeResult(url=url, ok=False, status=503, body="")
+            return HttpProbeResult(url=url, ok=True, status=200, body=self._page("7", "Some Obscure Game"))
+
+        res = resolve_aks("Some Obscure Game", fake_http, search=False)
+        self.assertEqual(res.product_id, "7")
+        self.assertEqual(urls[0], urls[1])                        # same URL retried, no lower tier
+
+        urls.clear()
+
+        def always_503(url, timeout=8, user_agent=None):
+            urls.append(url)
+            return HttpProbeResult(url=url, ok=False, status=503, body="")
+
+        with self.assertRaises(AksProbeUnreliable):
+            resolve_aks("Some Obscure Game", always_503, search=False)
+        self.assertEqual(len(urls), 2)                             # one retry, then raise (MA1)
+
+    def test_429_is_never_retried(self):
+        from src.matcher import AksProbeUnreliable, resolve_aks
+        urls = []
+
+        def fake_http(url, timeout=8, user_agent=None):
+            urls.append(url)
+            return HttpProbeResult(url=url, ok=False, status=429, body="")
+
+        with self.assertRaises(AksProbeUnreliable) as ctx:
+            resolve_aks("Some Obscure Game", fake_http, search=False)
+        self.assertEqual((len(urls), ctx.exception.status), (1, 429))
