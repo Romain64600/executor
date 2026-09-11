@@ -394,16 +394,15 @@ MONTHLY, WEEKLY PASS) stay the `PASS` skip even when tagged "(DLC)"; a tagged "<
 and the season / expansion passes (tagged or not) go to resolution; an untagged
 "<x> Pass" stays the `PASS` skip as before.
 
-**Known R18 exposure surfaced by the same review (2026-09-11, NOT changed — Romain's
-call):** live base-game pages DO carry bucket 16 (Stray Blade, Aliens Dark Descent,
-Dragon Quest III HD-2D Remake), so `[R18]`'s premise "bucket 16 ⇒ the product IS a DLC"
-entered those three base games as DLC(16) on 2026-09-10 (to be corrected by hand on AKS).
-No deterministic page-level nature signal was found (no product-type field; the
-"#basegame" related section and the editions-map order are both inconsistent across
-sampled DLC / base pages). R43 itself is protected by the own-page and unnamed-DLC rules
-above; the markerless R18 path keeps its 2026-07-08 behaviour until Romain decides
-(options: Standard(1) when Standard coexists with 16 and the title carries no DLC word;
-or skip such pages as ambiguous).
+**R18 for markerless titles — REVIEWED, KEPT AS IS (Romain 2026-09-11):** the review
+found live base-game pages carrying bucket 16 (Stray Blade, Aliens Dark Descent, Dragon
+Quest III HD-2D Remake — entered DLC(16) on 2026-09-10) and no deterministic page-level
+nature signal (no product-type field; the "#basegame" related section and the
+editions-map order are both inconsistent across sampled DLC / base pages). Romain's
+ruling: "des fois, les titres n'ont pas de marqueur et sont des DLC" — the bucket keeps
+deciding for a markerless title, and those three entries are NOT to be corrected. Do not
+re-tighten R18 (an audit will re-flag it — see AGENTS.md "Reviewed decisions"). R43's
+own-page and unnamed-DLC rules above apply to MARKED titles only.
 
 ### 4.4 Region & platform — **URL and AKS page decide, not the title** `[Ga01]`
 **MMOGA second region grammar (adversarial review 2026-09-11):** besides "<Product>

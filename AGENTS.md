@@ -153,3 +153,13 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   offers; staleness is now covered by the stable pending feed + submit-time prove-gone. An
   audit will "find" the missing duplicate guard — leave it removed (EXECUTOR_RULES §6
   "Duplicate guard [R25] — RETIRED").
+
+- **R18 "DLC bucket on the page ⇒ edition DLC(16)" for MARKERLESS titles — KEPT (Romain
+  2026-09-11).** The R43 adversarial review showed live base-game pages carrying bucket 16
+  (Stray Blade, Aliens Dark Descent, Dragon Quest III HD-2D Remake were entered DLC(16) on
+  2026-09-10) and no deterministic page-level nature signal exists. Romain's ruling: "des
+  fois, les titres n'ont pas de marqueur et sont des DLC" — the bucket keeps deciding, the
+  three entries are not corrected. An audit will "find" this as a wrong-edition risk — leave
+  R18 as is. (Titles that DO carry a DLC / Season Pass marker are governed by R43's stricter
+  own-page + unnamed-DLC rules — those are not the same decision.)
+

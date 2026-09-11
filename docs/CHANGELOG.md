@@ -48,14 +48,19 @@ Karts (DLC) », skip seulement si sa page vend aussi Standard), 204/205 au palie
   bucket 16 — *Stray Blade* (92993, page 7), *Aliens - Dark Descent* (115227, page 19),
   *DRAGON QUEST III HD-2D Remake* (116084, page 16) créés en DLC(16) le 2026-09-10. Aucun
   signal de nature de page trouvé (pas de champ type produit ; section « #basegame » et
-  ordre des éditions incohérents). R43 est protégé par la règle de la page propre et le
-  skip « sans nom » ; le chemin R18 sans marqueur reste tel quel en attendant Romain.
+  ordre des éditions incohérents). **Décision Romain 2026-09-11 : R18 reste tel quel**
+  (« des fois, les titres n'ont pas de marqueur et sont des DLC »), les trois fiches ne
+  sont pas à corriger ; consigné dans AGENTS.md « Reviewed decisions ». R43 est protégé
+  par la règle de la page propre et le skip « sans nom » (titres marqués seulement).
 - **9 offres MMOGA à queue de région « (Steam Key EU) » / « [EU] » saisies GLOBAL** le
   2026-09-10 (WWE 2K24 ×2, The Last of Us Part II Remastered, Marvel's Midnight Suns, Dragon
   Ball The Breakers Special, Wild West Dynasty ×2, Sengoku Dynasty Guide, NBA 2K24 Black
   Mamba) : seconde grammaire MMOGA `REGION_CODE_TAIL_RE` (code après le mot Key, entre
   crochets/parenthèses ; « (PC) » n'est pas une région) + `resolve_name` la retire. Tests
-  `MmogaRulesTests.test_bracket_and_paren_region_tails`. EXECUTOR_RULES §4.4.
+  `MmogaRulesTests.test_bracket_and_paren_region_tails`. EXECUTOR_RULES §4.4. Romain
+  corrige les 9 fiches à la main (pages AKS : wwe-2k24 ×2, the-last-of-us-part-ii-remastered,
+  marvels-midnight-suns, dragon-ball-the-breakers, wild-west-dynasty ×2, sengoku-dynasty,
+  nba-2k24 — région saisie Steam (2) / Epic Store (80) → EU).
 Tests (`DlcTitleR43Tests`) : classifieur, retrait du marqueur, DLC / Season Pass / Add-On
 sur page DLC → candidat DLC(16) avec nom résolu sans marqueur, page du jeu de base → skip
 R43, stub → skip R43, autre DLC → R01/R16, Remastered non levé, extras, pas de page ; routage

@@ -151,8 +151,9 @@ Tout est poussé sur `origin/main`, suite verte (**1353 tests**). Travaux récen
   Revue adversariale → règle de la page propre (palier 1 seulement), DLC sans nom → skip,
   collections de DLC = bundles, passes in-game skippés ; **seconde grammaire de région MMOGA**
   « (Steam Key EU) » / « [EU] » (9 offres saisies GLOBAL le 2026-09-10 à corriger à la main) ;
-  **R18 expose 3 jeux de base saisis DLC(16)** (Stray Blade, Aliens Dark Descent, Dragon
-  Quest III HD-2D Remake) — décision Romain en attente (EXECUTOR_RULES §4.3 fin de `[R43]`).
+  **R18 gardé tel quel sur décision Romain** malgré 3 jeux de base saisis DLC(16) (Stray
+  Blade, Aliens Dark Descent, Dragon Quest III HD-2D Remake — pas à corriger) : « des fois,
+  les titres n'ont pas de marqueur et sont des DLC » (AGENTS.md « Reviewed decisions »).
 - **MMOGA** (2026-09-10) : nouveau marchand porté par `src/merchants/mmoga.py` via les
   **hooks de config marchand** `[R32e]` (`precheck` / `title_region` / `resolve_name` —
   un fichier marchand peut ajouter ou surcharger le générique). Store id feed **12** (page
