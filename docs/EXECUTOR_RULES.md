@@ -661,6 +661,15 @@ so a raw `&currency=EUR` in a query string survives instead of becoming
 URL domain matches the merchant (e.g. must contain `kinguin.net` for Kinguin)
 `[KINGUIN]`.
 
+**Every HTTP request to allkeyshop.com carries the `AKS/Staff` User-Agent — by default
+(2026-09-11).** `http_get` switches to `AKS_STAFF_UA` for any allkeyshop.com host when no
+UA is given (an explicit UA is honoured; the staff UA stays forbidden on any other host,
+audit #4). Why: the pipeline always probed with `AKS/Staff`, but ~60 ad-hoc read-only
+diagnostics sent with the browser UA on 2026-09-11 got the VPS IP dropped at TCP level by
+the AKS anti-bot for hours — sweeps, browser and console included. Rule for humans and
+agents alike: **never send the Chrome UA to AKS over HTTP** (curl included: `-A AKS/Staff`);
+CDP browsing keeps the Chrome UA, that is a different channel.
+
 ### 4.7 AKS resolution
 
 **URL shapes per guessed slug (Romain 2026-09-10).** Pass 1 probes the current shape

@@ -3,6 +3,17 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-11 — AKS/Staff par défaut vers allkeyshop.com (bannissement IP du VPS)
+
+Vers 09:35Z, AKS a cessé de répondre au VPS (timeouts TCP sur 443/80, autres hôtes OK, AKS
+joignable par Romain) : bannissement de l'IP 217.76.57.126 par l'anti-bot AKS après ~60
+sondes de diagnostic en lecture seule envoyées avec l'UA navigateur (scripts ad hoc et
+`curl` de l'agent ; le pipeline, lui, sonde toujours en `AKS/Staff`). Romain : « tu dois
+utiliser l'user agent AKS/Staff pour éviter le ban ». `http_get` prend désormais
+`AKS_STAFF_UA` par défaut pour tout hôte allkeyshop.com (UA explicite honoré, staff UA
+toujours interdit ailleurs). Test `test_default_ua_towards_allkeyshop_is_the_staff_ua`.
+EXECUTOR_RULES §4.6/4.7, HANDOFF, BROWSER_RUNBOOK. Sweep DLC en attente de la levée du ban.
+
 ## 2026-09-11 — matcher : DLC / Add-On / Season Pass saisis sur leur page AKS (R43)
 
 GO de Romain (« apprendre à ajouter les DLC sur les pages AKS à édition DLC … inclus les

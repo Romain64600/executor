@@ -446,3 +446,12 @@ d'invariants reste sans-dépendance. Vérifier depuis le repo :
     `scripts/00b_login.py` / `AKS_WP_*` est retiré.
 11. **Tests** : `python3 -m unittest discover -s tests` — la suite doit être verte avant de
     reprendre l'exploitation.
+
+## Sondes HTTP vers AKS : toujours `AKS/Staff` (2026-09-11)
+
+L'anti-bot AKS bannit l'IP (drop TCP sur 443/80, plusieurs heures) après quelques dizaines
+de requêtes HTTP portant l'UA navigateur. Le pipeline sonde en `AKS/Staff` ; pour tout
+diagnostic manuel : `curl -A "AKS/Staff" https://www.allkeyshop.com/blog/…` et, en Python,
+`http_get(url)` (défaut staff UA sur allkeyshop.com). Symptôme d'un ban : `curl` status 000
+en ~20 s vers AKS, autres hôtes OK, `traceroute -T -p 443` sans réponse du dernier saut.
+

@@ -219,6 +219,21 @@ class StaffUaPolicyTests(unittest.TestCase):
         request = opener.call_args[0][0]
         self.assertEqual(request.get_header("User-agent"), REQUIRED_USER_AGENT)
 
+    def test_default_ua_towards_allkeyshop_is_the_staff_ua(self):
+        # 2026-09-11: the browser UA over HTTP got the VPS IP banned by the AKS anti-bot;
+        # every request to an allkeyshop.com host defaults to AKS/Staff (host-locked).
+        opener = mock.Mock(return_value=_FakeResp(200, b"ok"))
+        with mock.patch("src.aks_env._http_open", opener):
+            http_get("https://www.allkeyshop.com/blog/buy-x-cd-key-compare-prices/")
+            http_get("https://allkeyshop.com/blog/")
+        for call in opener.call_args_list:
+            self.assertEqual(call[0][0].get_header("User-agent"), AKS_STAFF_UA)
+            self.assertTrue(call[1].get("host_locked"))
+        # an explicit browser UA is still honoured when a caller asks for it
+        with mock.patch("src.aks_env._http_open", opener):
+            http_get("https://www.allkeyshop.com/blog/", user_agent=REQUIRED_USER_AGENT)
+        self.assertEqual(opener.call_args[0][0].get_header("User-agent"), REQUIRED_USER_AGENT)
+
     def test_refused_off_domain_redirect_is_not_ok(self):
         # [40] (Fable re-audit 2026-09-06): a staff-UA probe 3xx-redirected off
         # allkeyshop.com is refused — a fail-closed MISS (ok=False), NEVER a success,
@@ -645,8 +660,9 @@ class StaffUaRedirectGuardTests(unittest.TestCase):
         self.assertEqual(r.get_header("User-agent"), AKS_STAFF_UA)  # UA preserved across the hop
 
     def test_http_get_staff_ua_uses_host_locked_opener(self):
-        # a staff-UA follow-redirect GET opens through the host-locked opener; the
-        # default UA and the no-redirect (invariants) path do NOT.
+        # a staff-UA follow-redirect GET opens through the host-locked opener; an
+        # explicit browser UA on AKS and any other host do NOT. Since 2026-09-11 the
+        # DEFAULT towards an allkeyshop.com host IS the staff UA (→ host-locked too).
         captured = {}
 
         def fake_open(request, timeout, follow_redirects=True, host_locked=False):
@@ -656,7 +672,11 @@ class StaffUaRedirectGuardTests(unittest.TestCase):
         with mock.patch("src.aks_env._http_open", side_effect=fake_open):
             http_get("https://www.allkeyshop.com/x", user_agent=AKS_STAFF_UA)
             self.assertTrue(captured["host_locked"])
-            http_get("https://www.allkeyshop.com/x")            # default UA
+            http_get("https://www.allkeyshop.com/x")            # default towards AKS = staff UA
+            self.assertTrue(captured["host_locked"])
+            http_get("https://www.allkeyshop.com/x", user_agent=REQUIRED_USER_AGENT)
+            self.assertFalse(captured["host_locked"])           # explicit browser UA: as before
+            http_get("https://www.g2a.com/x")                   # other host: default browser UA
             self.assertFalse(captured["host_locked"])
             http_get("https://www.allkeyshop.com/x", user_agent=AKS_STAFF_UA, follow_redirects=False)
             self.assertTrue(captured["host_locked"])            # passed, but _http_open uses the no-redirect handler
@@ -846,7 +866,9 @@ class RealBackendsLocalServerTests(unittest.TestCase):
                 echo = json.loads(http_get(self.base + "/echo").body)
         self.assertIsNone(echo["cookie"])       # Set-Cookie from call N never replayed
         self.assertIsNone(echo["auth"])         # no ~/.netrc Authorization injection
-        self.assertEqual(echo["ua"], REQUIRED_USER_AGENT)
+        # this server is patched to count as an allkeyshop host (setUpClass) → the
+        # 2026-09-11 default applies: the staff UA, never the browser UA, towards AKS
+        self.assertEqual(echo["ua"], AKS_STAFF_UA)
         self.assertEqual(len(_REAL_SESSION.cookies), 0)
 
 

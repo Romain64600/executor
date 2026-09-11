@@ -137,6 +137,10 @@ Tout est poussé sur `origin/main`, suite verte (**1353 tests**). Travaux récen
   créées depuis 2026) → ancienne (`compare-and-buy-cd-key-for-digital-download-<slug>/`,
   ≈2021), les deux dernières pour le slug le plus spécifique seulement (+3 sondes max ; le
   ×5 initial a déclenché des 503). Une 2e tentative après 2 s sur un 5xx, jamais sur 429.
+- **Jamais l'UA navigateur vers AKS en HTTP** (2026-09-11) : ~60 sondes ad hoc en UA Chrome
+  ont fait bannir l'IP du VPS par l'anti-bot AKS (timeouts TCP pendant des heures, sweeps et
+  console bloqués). `http_get` envoie `AKS/Staff` par défaut vers allkeyshop.com ; en `curl`,
+  toujours `-A AKS/Staff`. Le pipeline l'a toujours fait ; la règle vaut pour les diagnostics.
 - **DLC / Add-On / Season Pass saisis `[R43]`** (2026-09-11, GO Romain) : plus de pré-skip
   « DLC in title » ni de catégorie `SEASON PASS` — le titre est résolu marqueur retiré
   (`strip_dlc_marker`, les mots Season/Expansion Pass restent : ils sont le slug AKS) et la

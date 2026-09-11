@@ -37,6 +37,10 @@ AKS_DIRECT_URL = "https://www.allkeyshop.com/blog/"
 # Staff anti-bot bypass UA for AKS HTTP probes — allkeyshop.com ONLY (Romain,
 # audit #4, 2026-07-08): CDP browsing keeps REQUIRED_USER_AGENT, and no other
 # host may ever see a staff/crawler UA. http_get enforces this fail-closed.
+# Since 2026-09-11 it is also the DEFAULT for every HTTP request to an allkeyshop.com
+# host (Romain: "tu dois utiliser l'user agent AKS/Staff pour éviter le ban"): ~60
+# ad-hoc read-only diagnostics sent with the browser UA got the VPS IP dropped at TCP
+# level by the AKS anti-bot for hours — the pipeline itself always used AKS/Staff.
 AKS_STAFF_UA = "AKS/Staff"
 
 
@@ -546,6 +550,8 @@ def http_get(
             f"{AKS_STAFF_UA!r} User-Agent is restricted to allkeyshop.com hosts"
             f" (audit #4, 2026-07-08): {url}"
         )
+    if user_agent is None and _allkeyshop_host(url):
+        user_agent = AKS_STAFF_UA           # never the browser UA towards AKS (2026-09-11 ban)
     request = Request(url, method="GET", headers={"User-Agent": user_agent or REQUIRED_USER_AGENT})
     try:
         with _http_open(request, timeout=timeout, follow_redirects=follow_redirects,
