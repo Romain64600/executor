@@ -53,6 +53,28 @@ def _run_child(argv: list[str]) -> int:
     return _RUNNER.run(argv, str(ROOT))
 
 
+def _last_abort_reason(run_id: str) -> str:
+    """The reason of the LAST ``aborted`` event in ``logs/<run_id>.jsonl`` ("" if none).
+    The child stages' stdout is not captured, so this is how the sweep learns WHY an
+    extract failed — twice on 2026-09-11 a sweep halted `extract_failed_p1` and the only
+    trace of "not logged in (wp-login)" sat in the page log (Romain had to be told by
+    hand that a cookie transfer was needed)."""
+
+    path = ROOT / "logs" / f"{run_id}.jsonl"
+    reason = ""
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if event.get("event") == "aborted" and event.get("reason"):
+                reason = str(event["reason"])
+    except OSError:
+        pass
+    return reason[:160]
+
+
 def _load_json(path: Path):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -88,9 +110,13 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
         if n is None and isinstance(offers, dict):
             n = offers.get("count") or len(offers.get("offers", []))
         flp = offers.get("feed_last_page") if isinstance(offers, dict) else None
+        detail = "" if rc == 0 else f"exit {rc}"
+        if rc != 0:
+            why = _last_abort_reason(run_id)
+            if why:
+                detail = f"exit {rc} ({why})"       # e.g. "exit 2 (not logged in (wp-login))"
         return ExtractOutcome(ok=(rc == 0), offers=int(n or 0),
-                              feed_last_page=int(flp) if flp else None,
-                              detail="" if rc == 0 else f"exit {rc}")
+                              feed_last_page=int(flp) if flp else None, detail=detail)
 
     def match(run_id: str) -> MatchOutcome:
         argv = [py, str(ROOT / "scripts" / "03_match.py"),

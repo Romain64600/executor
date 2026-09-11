@@ -3,6 +3,17 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-11 — sweep : le motif d'un extract en échec remonte dans le recap (« not logged in »)
+
+Deux haltes `extract_failed_p1` dans la journée (ancien VPS 12:45Z, nouveau VPS 15:52Z,
+Driffle) dont la cause — « not logged in (wp-login) », session AKS expirée → transfert de
+cookies nécessaire — n'apparaissait que dans le log de page. `scripts/10` lit désormais le
+dernier événement `aborted` de `logs/<run>.jsonl` (`_last_abort_reason`) : le détail devient
+« extract: exit 2 (not logged in (wp-login)) » et le recap porte `halted_detail`. Tests
+`ExtractAbortReasonTests`. Sweeps en parallèle (Romain : Driffle sur le nouveau VPS, Gamivo
+sur l'ancien) : un marchand par VPS, jamais deux sur la même machine (un navigateur, un
+verrou).
+
 ## 2026-09-11 — état du feed par marchand : `scripts/14_feed_status.py` → `docs/feeds/<MARCHAND>.md`
 
 Romain : « un document par marchand pour expliquer l'état du feed : le dernier passage, ce

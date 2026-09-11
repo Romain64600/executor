@@ -192,6 +192,8 @@ def run_sweep(
     probe = stages.extract(cfg.start_page, probe_id)
     if not probe.ok:
         recap["halted"] = f"extract_failed_p{cfg.start_page}"
+        if probe.detail:
+            recap["halted_detail"] = probe.detail      # the WHY, surfaced by the console/monitor
         finish_page({"page": cfg.start_page, "run": probe_id, "offers": probe.offers,
                      "error": "extract: " + (probe.detail or "failed")})
         return recap
@@ -221,6 +223,8 @@ def run_sweep(
         if not ex.ok:
             entry["error"] = "extract: " + (ex.detail or "failed")
             recap["halted"] = f"extract_failed_p{page}"
+            if ex.detail:
+                recap["halted_detail"] = ex.detail
             finish_page(entry)
             break
         if ex.offers == 0:

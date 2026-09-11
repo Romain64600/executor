@@ -354,3 +354,36 @@ class TriageStageWiringTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExtractAbortReasonTests(unittest.TestCase):
+    """2026-09-11: an extract that halts the sweep carries its WHY (the page log's last
+    'aborted' event) into the outcome/recap — 'exit 2 (not logged in (wp-login))'."""
+
+    def setUp(self):
+        self.MOD = _load_cli()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self._orig_root = self.MOD.ROOT
+        self.MOD.ROOT = Path(self.tmp.name)
+        self.addCleanup(lambda: setattr(self.MOD, "ROOT", self._orig_root))
+
+    def test_extract_detail_carries_the_abort_reason(self):
+        run_id = "r-p1"
+        logs = self.MOD.ROOT / "logs"; logs.mkdir(parents=True)
+        (logs / f"{run_id}.jsonl").write_text(
+            json.dumps({"event": "feed_page", "run_id": run_id}) + "\n"
+            + json.dumps({"event": "aborted", "page": 1, "reason": "not logged in (wp-login)", "run_id": run_id}) + "\n",
+            encoding="utf-8")
+        with mock.patch.object(self.MOD, "_run_child", return_value=2):
+            stages = self.MOD._make_stages("Driffle", "127", "all", None)
+            ex = stages.extract(1, run_id)
+        self.assertFalse(ex.ok)
+        self.assertEqual(ex.detail, "exit 2 (not logged in (wp-login))")
+
+    def test_extract_detail_without_a_logged_reason_stays_the_exit_code(self):
+        with mock.patch.object(self.MOD, "_run_child", return_value=2):
+            stages = self.MOD._make_stages("Driffle", "127", "all", None)
+            self.assertEqual(stages.extract(1, "r-nolog").detail, "exit 2")
+        self.assertEqual(self.MOD._last_abort_reason("r-nolog"), "")
+
