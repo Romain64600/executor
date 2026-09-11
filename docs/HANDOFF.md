@@ -141,6 +141,9 @@ Tout est poussé sur `origin/main`, suite verte (**1353 tests**). Travaux récen
   ont fait bannir l'IP du VPS par l'anti-bot AKS (timeouts TCP pendant des heures, sweeps et
   console bloqués). `http_get` envoie `AKS/Staff` par défaut vers allkeyshop.com ; en `curl`,
   toujours `-A AKS/Staff`. Le pipeline l'a toujours fait ; la règle vaut pour les diagnostics.
+  **Sonde officielle : `python3 scripts/13_aks_ping.py`** (staff UA, une requête, JSON ;
+  `--wait 900 --max 16` = une sonde par quart d'heure jusqu'à réponse) — ne plus « pinger »
+  AKS autrement.
 - **DLC / Add-On / Season Pass saisis `[R43]`** (2026-09-11, GO Romain) : plus de pré-skip
   « DLC in title » ni de catégorie `SEASON PASS` — le titre est résolu marqueur retiré
   (`strip_dlc_marker`, les mots Season/Expansion Pass restent : ils sont le slug AKS) et la

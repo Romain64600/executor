@@ -451,7 +451,10 @@ d'invariants reste sans-dépendance. Vérifier depuis le repo :
 
 L'anti-bot AKS bannit l'IP (drop TCP sur 443/80, plusieurs heures) après quelques dizaines
 de requêtes HTTP portant l'UA navigateur. Le pipeline sonde en `AKS/Staff` ; pour tout
-diagnostic manuel : `curl -A "AKS/Staff" https://www.allkeyshop.com/blog/…` et, en Python,
-`http_get(url)` (défaut staff UA sur allkeyshop.com). Symptôme d'un ban : `curl` status 000
+diagnostic manuel, **la sonde officielle** : `python3 scripts/13_aks_ping.py` (une requête
+en staff UA, sortie JSON ; `--wait 900 --max 16` pour attendre la levée d'un ban). À défaut
+`curl -A "AKS/Staff" …` ; en Python `http_get(url)` (défaut staff UA sur allkeyshop.com).
+Un onglet Chromium laissé sur une page wp-admin d'AKS renvoie un heartbeat toutes les
+minutes (UA navigateur) : pendant un ban, le remettre sur `about:blank`. Symptôme d'un ban : `curl` status 000
 en ~20 s vers AKS, autres hôtes OK, `traceroute -T -p 443` sans réponse du dernier saut.
 

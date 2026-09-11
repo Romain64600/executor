@@ -13,6 +13,11 @@ utiliser l'user agent AKS/Staff pour éviter le ban ». `http_get` prend désorm
 `AKS_STAFF_UA` par défaut pour tout hôte allkeyshop.com (UA explicite honoré, staff UA
 toujours interdit ailleurs). Test `test_default_ua_towards_allkeyshop_is_the_staff_ua`.
 EXECUTOR_RULES §4.6/4.7, HANDOFF, BROWSER_RUNBOOK. Sweep DLC en attente de la levée du ban.
+Le ban a persisté > 3 h malgré le silence (drop réseau en amont du site : la liste blanche
+par UA ne peut plus jouer) ; l'onglet Chromium resté sur wp-admin renvoyait un heartbeat en
+UA navigateur → remis sur `about:blank`. Romain : « fais en sorte que ce qui te sert de
+sonde ait l'UA AKS/Staff » → **`scripts/13_aks_ping.py`**, la sonde officielle (staff UA,
+une requête, JSON, `--wait/--max` pour attendre une levée de ban) — HANDOFF, RUNBOOK.
 
 ## 2026-09-11 — matcher : DLC / Add-On / Season Pass saisis sur leur page AKS (R43)
 
