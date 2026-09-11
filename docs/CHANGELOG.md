@@ -3,6 +3,19 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-11 — `--continue-on-halt` : lot multi-marchands qui ne s'arrête pas à la première halte
+
+Romain : « après les deux marchands suivants, tu prendras d'autres marchands sur lesquels on
+sait travailler (Kinguin, K4G…), tu continues jusqu'à demain matin ». Le lot multi-cibles de
+`scripts/10` s'arrêtait à la première halte fail-closed d'un marchant (règle 2026-09 : une
+session cassée touche tous les suivants). Nouveau flag `--continue-on-halt` : la halte est
+consignée (`recap.halted_merchants`, `recap.halted` = liste), le marchand suivant est balayé
+(son feed est indépendant), exit 2 à la fin s'il y a eu une halte ; un « not logged in »
+(`halted_detail`) arrête toujours le lot. Console : `continue_on_halt` dans le POST
+`/api/data-entry/auto` → argv. Tests : CLI (défaut = arrêt, flag = continue, login bounce =
+arrêt), manager argv, handler. HANDOFF §7. Plan de nuit : nouveau VPS Driffle → Kinguin, G2A,
+Instant Gaming, CJS-CDKeys ; ancien VPS MMOGA → Gamivo, K4G, Eneba, Allyouplay, GameSeal.
+
 ## 2026-09-11 — sweep : le motif d'un extract en échec remonte dans le recap (« not logged in »)
 
 Deux haltes `extract_failed_p1` dans la journée (ancien VPS 12:45Z, nouveau VPS 15:52Z,

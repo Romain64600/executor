@@ -387,3 +387,53 @@ class ExtractAbortReasonTests(unittest.TestCase):
             self.assertEqual(stages.extract(1, "r-nolog").detail, "exit 2")
         self.assertEqual(self.MOD._last_abort_reason("r-nolog"), "")
 
+
+class ContinueOnHaltTests(unittest.TestCase):
+    """--continue-on-halt (Romain 2026-09-11, unattended multi-merchant nights): a halt on
+    one merchant is recorded and the next merchant is still swept; a login bounce stops."""
+
+    def setUp(self):
+        self.MOD = _load_cli()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self._orig_root = self.MOD.ROOT
+        self.MOD.ROOT = Path(self.tmp.name)
+        self.addCleanup(lambda: setattr(self.MOD, "ROOT", self._orig_root))
+        (self.MOD.ROOT / "runs").mkdir(parents=True)
+
+    def _run(self, argv_extra, sweeps):
+        # run_sweep is stubbed per merchant: returns the given recap dicts in order
+        it = iter(sweeps)
+        with mock.patch.object(self.MOD, "run_sweep", side_effect=lambda cfg, stages, **kw: next(it)), \
+                mock.patch.object(self.MOD, "_make_stages", return_value=object()), \
+                mock.patch.object(sys, "argv", ["10", "--targets", "Kinguin:58,Eneba:19", "--run-id", "t-batch"] + argv_extra):
+            rc = self.MOD.main()
+        recap = json.loads((self.MOD.ROOT / "runs" / "t-batch" / "recap.json").read_text())
+        return rc, recap
+
+    def test_default_first_halt_stops_the_batch(self):
+        rc, recap = self._run([], [{"halted": "submit_not_clean_p3", "pages": [], "total_created": 1, "total_moved": 0},
+                                   {"halted": None, "pages": [], "total_created": 5, "total_moved": 0}])
+        self.assertEqual(rc, 2)
+        self.assertEqual(recap["halted"], "Kinguin: submit_not_clean_p3")
+        self.assertEqual(len(recap["targets"]), 1)                   # Eneba never swept
+
+    def test_continue_on_halt_sweeps_the_next_merchant(self):
+        rc, recap = self._run(["--continue-on-halt"],
+                              [{"halted": "submit_not_clean_p3", "pages": [], "total_created": 1, "total_moved": 0},
+                               {"halted": None, "pages": [], "total_created": 5, "total_moved": 0}])
+        self.assertEqual(rc, 2)                                       # a halt happened → non-zero
+        self.assertEqual(len(recap["targets"]), 2)                   # Eneba swept anyway
+        self.assertEqual(recap["halted_merchants"], ["Kinguin: submit_not_clean_p3"])
+        self.assertEqual(recap["halted"], "Kinguin: submit_not_clean_p3")
+        self.assertEqual(recap["total_created"], 6)
+
+    def test_login_bounce_still_stops_the_batch(self):
+        rc, recap = self._run(["--continue-on-halt"],
+                              [{"halted": "extract_failed_p1", "halted_detail": "exit 2 (not logged in (wp-login))",
+                                "pages": [], "total_created": 0, "total_moved": 0},
+                               {"halted": None, "pages": [], "total_created": 5, "total_moved": 0}])
+        self.assertEqual(rc, 2)
+        self.assertEqual(len(recap["targets"]), 1)
+        self.assertEqual(recap["halted"], "Kinguin: extract_failed_p1")
+

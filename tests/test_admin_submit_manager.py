@@ -785,9 +785,19 @@ class DataEntryAutoTests(ManagerTestCase):
     def test_argv_multi_target(self):
         m = self._m()
         r = m.start_data_entry_auto([("Kinguin", "58"), ("Eneba", "70")], by="Romain")
+        self.assertNotIn("--continue-on-halt", r["argv"])           # default: first halt stops the batch
         self.assertEqual(r["argv"][r["argv"].index("--targets") + 1], "Kinguin:58,Eneba:70")
         self.assertTrue(m.wait_idle(timeout=10))
 
+
+    def test_argv_continue_on_halt(self):
+        # unattended multi-merchant batch (Romain 2026-09-11): the flag reaches the CLI
+        m = self._m()
+        self.assertTrue(m.wait_idle(timeout=10))
+        m.clock = lambda: "2026-09-11T20:00:00Z"                   # a distinct run id
+        r = m.start_data_entry_auto([("Kinguin", "58"), ("Eneba", "70")], by="Romain", continue_on_halt=True)
+        self.assertIn("--continue-on-halt", r["argv"])
+        self.assertTrue(m.wait_idle(timeout=10))
     def test_non_numeric_store_refused(self):
         m = self._m()
         with self.assertRaises(SubmitStartError) as ctx:

@@ -696,6 +696,7 @@ class SubmitManager:
     def start_data_entry_auto(
         self, targets: list[tuple[str, str]], *, by: str,
         max_pages: int | None = None, start_page: int | None = None,
+        continue_on_halt: bool = False,
     ) -> dict[str, Any]:
         """Launch the safe-auto data-entry sweep (Romain's explicit go, 2026-08-04):
         for each ``(merchant, store_id)`` target, sweep the feed page by page —
@@ -737,10 +738,13 @@ class SubmitManager:
                 argv += ["--max-pages", str(int(max_pages))]
             if start_page is not None:
                 argv += ["--start-page", str(int(start_page))]
+            if continue_on_halt:
+                argv.append("--continue-on-halt")   # unattended multi-merchant batch (2026-09-11)
             return self._spawn(
                 run_dir, kind="data_entry_auto", argv=argv,
                 meta={"targets": [{"merchant": m, "store_id": s} for m, s in clean],
-                      "by": by, "run_id": run_id, "max_pages": max_pages},
+                      "by": by, "run_id": run_id, "max_pages": max_pages,
+                      "continue_on_halt": bool(continue_on_halt)},
             )
 
     def start_data_entry_by_urls(

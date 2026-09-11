@@ -341,6 +341,11 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
 def main() -> int:
     ap = argparse.ArgumentParser(description="Safe-auto data-entry sweep (real writes).")
     ap.add_argument("--targets", help="Comma list 'Merchant:store_id[,Merchant:store_id...]'.")
+    ap.add_argument("--continue-on-halt", action="store_true",
+                    help="Multi-merchant batch: a fail-closed halt on one merchant (UNKNOWN offer, "
+                         "feed unreadable, 10 failures…) is recorded and the NEXT merchant is still "
+                         "swept (its feed is independent). Default: the first halt stops the batch. "
+                         "A login bounce (not logged in) always stops it: every merchant would fail.")
     ap.add_argument("--merchant", help="Single-target merchant (with --store-id).")
     ap.add_argument("--store-id", help="Single-target store id.")
     ap.add_argument("--run-id", default=None, help="Sweep run id (holds recap.json).")
@@ -427,6 +432,7 @@ def main() -> int:
     sweep_dir = ROOT / "runs" / run_id
     sweep_dir.mkdir(parents=True, exist_ok=True)
     recap = {"run_id": run_id, "started_at": _clock(), "targets": [], "halted": None,
+             "halted_merchants": [],
              "coverage_incomplete": [], "total_created": 0, "total_moved": 0}
     recap_path = sweep_dir / "recap.json"
 
@@ -472,9 +478,19 @@ def main() -> int:
             recap["coverage_incomplete"].append(f"{merchant}: {sweep['coverage']}")
         persist()
         # A fail-closed halt on one merchant stops the whole batch (a broken
-        # session / login bounce affects every subsequent merchant too).
+        # session / login bounce affects every subsequent merchant too) — unless
+        # --continue-on-halt (Romain 2026-09-11, unattended multi-merchant nights): the
+        # halt is recorded per merchant and the next feed is still swept. A login bounce
+        # ("not logged in") stops the batch either way: no merchant can be read.
         if sweep.get("halted") and sweep["halted"] != "operator_stop":
-            recap["halted"] = f"{merchant}: {sweep['halted']}"
+            label = f"{merchant}: {sweep['halted']}"
+            login_bounce = "not logged in" in str(sweep.get("halted_detail") or "").lower()
+            if args.continue_on_halt and not login_bounce:
+                recap["halted_merchants"].append(label)
+                recap["halted"] = "; ".join(recap["halted_merchants"])
+                persist()
+                continue
+            recap["halted"] = label
             break
         if _RUNNER.stopped:
             recap["halted"] = "operator_stop"

@@ -573,7 +573,8 @@ class AdminHandler(BaseHTTPRequestHandler):
                            "tape GO pour confirmer le sweep safe-auto réel")
         result = self.state.manager.start_data_entry_auto(
             targets, by=by, max_pages=_parse_int(body.get("max_pages")),
-            start_page=_parse_int(body.get("start_page")))
+            start_page=_parse_int(body.get("start_page")),
+            continue_on_halt=bool(body.get("continue_on_halt")))
         self._send_json(200, result)
 
     def _post_data_entry_by_urls(self) -> None:

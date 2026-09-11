@@ -141,6 +141,14 @@ Tout est poussé sur `origin/main`, suite verte (**1353 tests**). Travaux récen
   ont fait bannir l'IP du VPS par l'anti-bot AKS (timeouts TCP pendant des heures, sweeps et
   console bloqués). `http_get` envoie `AKS/Staff` par défaut vers allkeyshop.com ; en `curl`,
   toujours `-A AKS/Staff`. Le pipeline l'a toujours fait ; la règle vaut pour les diagnostics.
+  **Nuit multi-marchands : `python3 scripts/10_data_entry_auto.py --targets "Gamivo:51,K4G:92,…"
+  --max-pages 30 --continue-on-halt`** (2026-09-11, Romain : « tu continues jusqu'à demain
+  matin ») — une halte fail-closed sur un marchand (offre UNKNOWN, feed illisible, 10 échecs)
+  est consignée dans `recap.halted_merchants` et le marchand suivant est quand même balayé ;
+  une session expirée (« not logged in ») arrête tout ; exit 2 s'il y a eu au moins une halte.
+  Sans le flag, la première halte arrête le lot (comportement historique). Via la console :
+  champ `continue_on_halt: true` dans le POST `/api/data-entry/auto`. Un marchand par VPS,
+  jamais deux sur la même machine (un navigateur, un verrou).
   **État du feed par marchand : `python3 scripts/14_feed_status.py --merchant MMOGA --store-id 12
   --out docs/feeds/MMOGA.md`** (Romain 2026-09-11 : « un document par marchand » — dernier
   passage, offres ajoutées, ce qui reste et pourquoi ; lecture seule sur `runs/`, à régénérer
