@@ -3,6 +3,23 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-11 — sweep MMOGA du matin : 10 créées (les 10 refus 400 de la nuit), feed réduit à 10 pages
+
+Run `20260911-083407-auto` (`--max-pages 30`), 08:34Z → 08:55Z (**21 min**), exit 0, 10 pages,
+936 offres, **10 candidats → 10 créées** : exactement les 10 refus AKS 400 « paramètre
+"offer" manquant » de la nuit (Jackbox Survey Scramble, Yakuza Like a Dragon, Wild Bastards,
+Space Marine 2 Gold, FF XIV Endwalker, Square Dungeon 2, SAO Last Recollection Deluxe,
+Wattam, Book of Demons, Age of Empires III DE) — confirmé transitoire côté AKS. Les 5
+« sans signal » de la nuit (Shadows of the Damned, Karate Kid, The Invincible, Pro Cycling
+Manager 2023, Double Dragon Gaiden) sont **absentes du feed** ce matin : AKS les a créées en
+retard après notre fenêtre d'observation ; le verdict FAILED d'hier était fail-safe et aucun
+doublon n'a été saisi (elles n'étaient plus à localiser). Reste du feed = écarts stables :
+388 consoles, 212 DLC, 157 « no AKS product page found » (recherche AKS toujours en timeout
+8 s → disjoncteur ouvert dès la page 10, 53-42 offres non recherchées par page), 70 bundles/
+skins, 52 produits élargis, 13 noms non concordants, 12 plateformes non vérifiables, 8
+éditions logicielles non résolues, 3 sondes non fiables, 3 sans carte d'éditions, 2 régions
+interdites, 2 ROCKSTAR/GLOBAL sans id région.
+
 ## 2026-09-11 — sweep MMOGA complet : 922 créées sur 938 candidats, 20 pages, 0 halte
 
 Run `20260910-170123-auto` (MMOGA store 12, `--max-pages 30`, feed de 20 pages), lancé
