@@ -404,6 +404,25 @@ deciding for a markerless title, and those three entries are NOT to be corrected
 re-tighten R18 (an audit will re-flag it — see AGENTS.md "Reviewed decisions"). R43's
 own-page and unnamed-DLC rules above apply to MARKED titles only.
 
+**Console keys — PARKED (Romain 2026-09-11: "on reviendra sur les consoles après
+modification de l'outil AKS feed").** Findings kept for that day: (a) AKS has NO separate
+console product pages (`…-ps5`, `…-xbox-series-x`, `…-xbox-one`, `…-nintendo-switch` all
+404) — console offers live on the SAME product page as PC, routed by the REGION bucket
+(Street Fighter 6 carries `300` "XBOX X|S GLOBAL"); (b) the feed modal's region catalog
+(867 buckets) has the console families: Xbox One `24` / EU `24eu` / US `24us` / UK `226`,
+Xbox Series `300` / EU `302` / US `303` / UK `305`, Xbox+Windows (Play Anywhere) `306` /
+EU `241` / US `242` / UK `240`, PlayStation 4 `88` / EU `88eu` / US `88us` / UK `88uk`,
+PS5 `88ps5h` (single bucket), Nintendo `99` / EU `99eu` / US `99us` / UK `992` — **no
+Switch 2 bucket exists**; (c) MMOGA grammar: URL categories `Xbox-Live/Xbox-One-Game-Keys`,
+`Xbox-Live/Xbox-Series-XS-Game-Keys`, `Nintendo/Switch`, `Playstation-Network`, platform in
+a bracket of the title, region tail " - EU" / "[EU]" (232 of 388), 79 non-games among the
+console rows (currencies, Xbox Live / eShop cards, subscriptions) that stay skipped;
+(d) the BLOCKER: one feed row = one offer, and creating it consumes the row (our proof), so
+a cross-gen key ("Xbox One / Series X|S" — 121 of 388 at MMOGA; "PS4 / PS5"; Switch 1/2)
+cannot get its second platform from the feed. Romain wants the AKS feed tool changed first
+(multi-region offer, or a row that survives the first creation); the mono-platform ~160
+MMOGA rows are feasible with the feed as is once he reopens the topic.
+
 ### 4.4 Region & platform — **URL and AKS page decide, not the title** `[Ga01]`
 **MMOGA second region grammar (adversarial review 2026-09-11):** besides "<Product>
 <CODE> Key", MMOGA writes the code AFTER the key word inside a trailing bracket —

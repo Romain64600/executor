@@ -3,6 +3,18 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-11 — consoles : étude faite, chantier mis en attente (outil AKS feed à modifier)
+
+Romain : « J'aimerais bien pouvoir traiter les consoles » → étude lecture seule (catalogue
+du modal, pages AKS, feed MMOGA : 388 lignes console dont 79 non-jeux) consignée dans
+EXECUTOR_RULES §4.3 (paragraphe « Console keys — PARKED ») : même page produit que le PC,
+plateforme portée par le bucket de région (Xbox One 24/24eu…, Xbox Series 300/302…,
+XBOX/PC 306/241…, PS4 88/88eu…, PS5 88ps5h, Nintendo 99/99eu…, pas de bucket Switch 2).
+Bloqueur : une ligne de feed = une offre, consommée à la création → pas de 2e plateforme
+pour le cross-gen (121/388 chez MMOGA). Décision Romain : « on reviendra sur les consoles
+après modification de l'outil AKS feed ». Sweep DLC du jour : depuis l'ancien VPS (IP du
+nouveau bannie jusqu'à 13:55Z), run `20260911-130500-auto`.
+
 ## 2026-09-11 — AKS/Staff par défaut vers allkeyshop.com (bannissement IP du VPS)
 
 Vers 09:35Z, AKS a cessé de répondre au VPS (timeouts TCP sur 443/80, autres hôtes OK, AKS
