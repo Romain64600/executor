@@ -3,6 +3,17 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-11 — état du feed par marchand : `scripts/14_feed_status.py` → `docs/feeds/<MARCHAND>.md`
+
+Romain : « un document par marchand pour expliquer l'état du feed : le dernier passage, ce
+qu'on a ajouté d'offres et pourquoi on n'a pas ajouté ce qui reste ». `src/feed_status.py`
+(fonctions pures sur `runs/` : recap des sweeps, `submit_plan.json` / `skipped.json` des pages,
+runs by-urls du même store ; pas de réseau, pas de secret) + CLI `scripts/14_feed_status.py`.
+Sections : dernier passage (run, durée, pages, vues / candidats / créées, halte, non créées),
+offres ajoutées (cumul par jour / édition / région, historique des passages, liste du dernier
+passage), ce qui reste et pourquoi (taxonomie des motifs de skip → famille, « pourquoi »,
+« levier », exemples). Premier document : `docs/feeds/MMOGA.md`. Tests `test_feed_status`.
+
 ## 2026-09-11 — consoles : étude faite, chantier mis en attente (outil AKS feed à modifier)
 
 Romain : « J'aimerais bien pouvoir traiter les consoles » → étude lecture seule (catalogue

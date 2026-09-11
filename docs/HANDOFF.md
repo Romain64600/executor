@@ -141,6 +141,10 @@ Tout est poussé sur `origin/main`, suite verte (**1353 tests**). Travaux récen
   ont fait bannir l'IP du VPS par l'anti-bot AKS (timeouts TCP pendant des heures, sweeps et
   console bloqués). `http_get` envoie `AKS/Staff` par défaut vers allkeyshop.com ; en `curl`,
   toujours `-A AKS/Staff`. Le pipeline l'a toujours fait ; la règle vaut pour les diagnostics.
+  **État du feed par marchand : `python3 scripts/14_feed_status.py --merchant MMOGA --store-id 12
+  --out docs/feeds/MMOGA.md`** (Romain 2026-09-11 : « un document par marchand » — dernier
+  passage, offres ajoutées, ce qui reste et pourquoi ; lecture seule sur `runs/`, à régénérer
+  après chaque passage et à commiter).
   **Sonde officielle : `python3 scripts/13_aks_ping.py`** (staff UA, une requête, JSON ;
   `--wait 900 --max 16` = une sonde par quart d'heure jusqu'à réponse) — ne plus « pinger »
   AKS autrement.
