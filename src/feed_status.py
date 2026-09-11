@@ -135,6 +135,12 @@ def _load(path: Path) -> Any:
         return None
 
 
+def _merchant_slug(merchant: str) -> str:
+    """The page-run slug scripts/10 uses: "Instant Gaming" → "instant-gaming"."""
+
+    return re.sub(r"[^a-z0-9]+", "-", merchant.lower()).strip("-") or "merchant"
+
+
 def _page_run_dirs(runs_dir: Path, sweep_id: str, merchant_slug: str, store_id: str) -> list[Path]:
     prefix = f"{sweep_id}-{merchant_slug}-s{store_id}-p"
     out = [p for p in runs_dir.iterdir() if p.is_dir() and p.name.startswith(prefix)]
@@ -169,7 +175,7 @@ def summarize_pass(runs_dir: Path, sweep_id: str, recap: dict[str, Any], merchan
         candidates=sum(int(p.get("candidates") or 0) for p in pages),
         created=int(rc.get("total_created") or 0),
     )
-    merchant_slug = re.sub(r"[^a-z0-9]+", "", merchant.lower())
+    merchant_slug = _merchant_slug(merchant)
     for pdir in _page_run_dirs(runs_dir, sweep_id, merchant_slug, str(store_id)):
         plan = _load(pdir / "submit_plan.json") or {}
         for e in plan.get("plan", []) if isinstance(plan, dict) else []:
@@ -190,7 +196,7 @@ def created_by_day(runs_dir: Path, merchant: str, store_id: str) -> tuple[dict[s
     """All offers created for the merchant (every sweep page run + by-urls submit runs):
     per day, per edition, per region, total."""
 
-    merchant_slug = re.sub(r"[^a-z0-9]+", "", merchant.lower())
+    merchant_slug = _merchant_slug(merchant)
     by_day: dict[str, int] = defaultdict(int)
     editions: Counter = Counter()
     regions: Counter = Counter()

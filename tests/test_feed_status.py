@@ -106,6 +106,22 @@ class ReportTests(unittest.TestCase):
         # deterministic
         self.assertEqual(md, build_report(self.runs, "MMOGA", "12", generated_at="2026-09-11 15:00 UTC"))
 
+    def test_multi_word_merchant_uses_the_dashed_page_slug(self):
+        # scripts/10 names page runs "<sweep>-instant-gaming-s28-p<N>" — the report must find them
+        _write(self.runs / "20260911-161908-auto" / "recap.json", {
+            "run_id": "20260911-161908-auto", "started_at": "2026-09-11T16:19:08Z", "finished_at": "2026-09-11T20:00:00Z",
+            "halted": None, "total_created": 1,
+            "targets": [{"merchant": "Instant Gaming", "store_id": "28", "recap": {"merchant": "Instant Gaming", "halted": None, "coverage": None, "total_created": 1,
+                "pages": [{"page": 1, "run": "20260911-161908-auto-instant-gaming-s28-p1", "offers": 10, "candidates": 1, "created": 1}]}}]})
+        _write(self.runs / "20260911-161908-auto-instant-gaming-s28-p1" / "submit_plan.json", {"plan": [
+            {"merchant_title": "IG Game", "aks_url": "https://www.allkeyshop.com/blog/buy-ig-game-cd-key-compare-prices/", "edition_text": "Standard", "region_text": "Steam (2)", "submitted": True}]})
+        _write(self.runs / "20260911-161908-auto-instant-gaming-s28-p1" / "skipped.json", [
+            {"offer": {"name": "Halo", "url": "https://www.instant-gaming.com/x"}, "reason": "console"}])
+        md = build_report(self.runs, "Instant Gaming", "28", generated_at="x")
+        self.assertIn("**Total : 1 offres créées**", md)
+        self.assertIn("IG Game → `ig-game-cd-key-compare-prices`", md)
+        self.assertIn("| Consoles (Xbox / PlayStation / Switch) | 1 |", md)
+
     def test_no_sweep_yet(self):
         md = build_report(self.runs, "Kinguin", "58", generated_at="x")
         self.assertIn("Aucun passage safe-auto enregistré", md)

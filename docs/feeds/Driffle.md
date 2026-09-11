@@ -1,6 +1,6 @@
 # État du feed — Driffle (store 127)
 
-_Généré le 2026-09-11 16:19 UTC par `scripts/14_feed_status.py` à partir des runs sur disque ; régénérer après chaque passage._
+_Généré le 2026-09-11 20:29 UTC par `scripts/14_feed_status.py` à partir des runs sur disque ; régénérer après chaque passage._
 
 ## Dernier passage
 

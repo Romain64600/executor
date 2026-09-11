@@ -1,6 +1,6 @@
 # État du feed — MMOGA (store 12)
 
-_Généré le 2026-09-11 16:13 UTC par `scripts/14_feed_status.py` à partir des runs sur disque ; régénérer après chaque passage._
+_Généré le 2026-09-11 20:29 UTC par `scripts/14_feed_status.py` à partir des runs sur disque ; régénérer après chaque passage._
 
 ## Dernier passage
 
@@ -60,6 +60,7 @@ Historique des passages :
 | `20260910-161854-auto` | 2026-09-10 16:18 UTC | 2 | 186 | 68 | 32 | submit_not_clean_p19 |
 | `20260910-170123-auto` | 2026-09-10 17:01 UTC | 20 | 1953 | 938 | 922 | — |
 | `20260911-083407-auto` | 2026-09-11 08:34 UTC | 10 | 936 | 10 | 10 | — |
+| `20260911-125000-auto` | 2026-09-11 12:45 UTC | 1 | 0 | 0 | 0 | extract_failed_p1 |
 | `20260911-130500-auto` | 2026-09-11 13:04 UTC | 10 | 926 | 204 | 202 | — |
 
 ### Offres créées au dernier passage (202)
