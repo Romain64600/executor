@@ -3,6 +3,22 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-11 — sweep MMOGA complet : 922 créées sur 938 candidats, 20 pages, 0 halte
+
+Run `20260910-170123-auto` (MMOGA store 12, `--max-pages 30`, feed de 20 pages), lancé
+2026-09-10 17:01Z, fini 2026-09-11 03:00Z (**10 h**), exit 0, couverture complète, tous
+leviers actifs : disjoncteur R30 ouvert dès la page 20 et gardé pour tout le sweep (aucune
+recherche AKS ensuite), catalogue en cache, settle 1 s, timeout CDP 45 s, réessai de preuve.
+**922 créées / 938 candidats (98,3 %)**, 33-39 s par offre (moyenne ≈ 36 s), 22-41 min par
+page selon le nombre de candidats. **16 non créées**, toutes laissées dans le feed pour le
+sweep suivant : 11 refus AKS 400 « paramètre "offer" manquant ou invalide » (transitoire
+backend, aucun motif commun région/édition, jamais consécutifs) et 5 « sans signal » (la
+requête de création n'a pas répondu dans les 40 sondages, preuve « toujours dans le feed »
+→ FAILED, jamais UNKNOWN). **0 halte, 0 réessai de preuve nécessaire, 0 contexte modal
+manquant.** Page 1 (dernière traitée) : 5 candidats sur 100, 31 « no AKS product page
+found » dont 59 offres non recherchées (disjoncteur) — à reprendre par le sweep suivant si
+la recherche AKS répond.
+
 ## 2026-09-10 — submit : preuve post-save réessayée une fois sur timeout CDP (socket intact)
 
 2e halte `feed_unreadable` du jour (*End of Lines*, page 19 : Create réussi puis
