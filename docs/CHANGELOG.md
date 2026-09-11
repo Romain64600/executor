@@ -13,8 +13,14 @@ consignée (`recap.halted_merchants`, `recap.halted` = liste), le marchand suiva
 (son feed est indépendant), exit 2 à la fin s'il y a eu une halte ; un « not logged in »
 (`halted_detail`) arrête toujours le lot. Console : `continue_on_halt` dans le POST
 `/api/data-entry/auto` → argv. Tests : CLI (défaut = arrêt, flag = continue, login bounce =
-arrêt), manager argv, handler. HANDOFF §7. Plan de nuit : nouveau VPS Driffle → Kinguin, G2A,
-Instant Gaming, CJS-CDKeys ; ancien VPS MMOGA → Gamivo, K4G, Eneba, Allyouplay, GameSeal.
+arrêt), manager argv, handler. HANDOFF §7. Plan de nuit (Romain : « t'es sûr qu'Allyouplay et
+Instant Gaming sont prêts ? » → vérification de l'historique : seuls Kinguin (142 pages
+safe-auto), Gamivo (91), Driffle (22), MMOGA (11), G2A (10), Instant Gaming (8, config + R33)
+et K4G (4) ont déjà tourné ; Eneba, Allyouplay, GameSeal, CJS-CDKeys sont en liste blanche
+mais jamais balayés → exclus, dry-run d'abord un autre jour) : nouveau VPS Driffle → Kinguin,
+G2A, Instant Gaming ; ancien VPS MMOGA → Gamivo, K4G (lot `20260911-162100-auto`, le premier
+lot avec Eneba/Allyouplay/GameSeal ayant été arrêté proprement — `operator_stop` — avant
+toute écriture).
 
 ## 2026-09-11 — sweep : le motif d'un extract en échec remonte dans le recap (« not logged in »)
 
