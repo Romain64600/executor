@@ -81,7 +81,9 @@ class AksListsTests(unittest.TestCase):
     def test_ambiguous_reasons_have_no_suggestion(self):
         for reason in ("console", "possible multi-game bundle",
                        "skip category: COINS", "no AKS product page found (slug not 200)",
-                       "DLC in title", ""):
+                       "DLC in title", "",
+                       "DLC in title but AKS page 'x' carries no DLC edition — base game or wrong product, not entered (R43)",
+                       "SEASON PASS in title but AKS page 'x' carries no DLC edition — base game or wrong product, not entered (R43)"):
             self.assertIsNone(suggest_target_list(reason), reason)
 
     def test_slug_tokens_never_suggest(self):

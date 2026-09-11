@@ -228,7 +228,8 @@ stay letters, fail-closed; a year (`Fable 2026`) is never a numeral.
 ### 4.2 Different-product guard — `[R01b]`
 Even if all words match, **SKIP** when the merchant title carries a dangerous
 qualifier absent from the AKS name: `Remaster(ed)`, `HD`, `Reboot`, `Remake`,
-`Redux`, `Season Pass`, `DLC`, `Upgrade`, `Skin`, `Soundtrack`,
+`Redux`, `Season Pass`, `DLC` (both waived when the resolved page carries the DLC
+bucket — the page IS the DLC, §4.3 `[R43]`), `Upgrade`, `Skin`, `Soundtrack`,
 `Digital Book/Artbook`, and since the 2026-07-17 audit (`MA3`) `Anniversary` /
 `Definitive` — they were noise-whitelisted with no backstop, so "Skyrim
 Anniversary Edition" entered the base-game page as Standard(1); the live
@@ -251,7 +252,7 @@ restrictions (EN/FR/ES "… Languages Only", EN/CS);
 "Checkpoints"→POINTS, "Laptop Upgrade"→"TOP UP"). Each token now matches as whole
 words (`_category_skip_pattern`): internal spaces accept any punctuation
 ("Gift-Card" ≡ "Gift Card"), an optional `S`/`ES` keeps plurals caught
-("Vouchers", "Season Passes"), and the boundary is **letter-only** so a token glued
+("Vouchers", "Antiviruses"), and the boundary is **letter-only** so a token glued
 to a DIGIT (an amount — the strongest currency signal) still skips ("5000Gems",
 "Wallet100") while a game word glued to a LETTER passes ("Gemstone"). `SOFTWARE` was
 **dropped** from the list (a title literally containing "software" would jump the
@@ -337,7 +338,95 @@ it assigns platform PUBLISHER, §4.4 `[R20]` revision.)
 (A DLC bucket on the resolved AKS page is NOT a skip — it assigns the DLC
 edition, §4.5 `[R18]`.)
 
+**DLC / Add-On / Season Pass titles are ENTERED, on their own AKS page `[R43]`
+(Romain GO 2026-09-11, "apprendre à ajouter les DLC … inclus les Season Pass").**
+Until then "DLC in title" (DLC / Add-On / Downloadable Content) and the `SEASON PASS`
+category were pre-skips, so a DLC that announces itself never reached resolution while
+a DLC that hides it ("Exoplanets Pack") was entered via `[R18]`. Measured 2026-09-11
+on 12 MMOGA "(DLC)" titles: 9 resolve, by plain slug guessing once the marker is
+stripped, to their OWN AKS page ("Northgard Svardilfari Clan of the Horse", "Railway
+Empire Great Britain & Ireland", "Ready or Not Home Invasion"…) and all 9 carry the DLC
+bucket (16); 3 have no page. The marker (`dlc_title_marker`: SEASON PASS, EXPANSION
+PASS, DOWNLOADABLE CONTENT, ADD ON, ADDON, DLC — word-boundary, plurals) is now a
+**classifier**: (1) the title is resolved with the DLC / Add-On / Downloadable Content
+words removed (`strip_dlc_marker`; Season / Expansion Pass words are KEPT — they are
+the AKS slug, `hearts-of-iron-iv-expansion-pass-2`); (2) **the resolved page MUST carry
+the DLC bucket** — a base-game page reached through a less specific slug tier, a stub
+map `[R19]` or any other product is a fail-closed skip `"<MARKER> in title but AKS page
+'<slug>' carries no DLC edition — base game or wrong product, not entered (R43)"`,
+raised BEFORE the name guards so the reason is explicit; (3) on a DLC page the R01b
+`DLC` / `SEASON PASS` qualifiers are waived (the page IS the DLC; REMASTERED/HD/
+ANNIVERSARY… are not) and the marker words are not "extra words" for `[R16]` — but
+the DLC's OWN words still must match the AKS name (R01 missing words / R16 extras
+stay the second net: "… Crimson Moon (DLC)" on the "Tidal Wave" DLC page skips);
+(4) the edition is **DLC(16)** by `[R18]`, never Standard. In-game / battle passes
+("Royal Grow Pass", "Battle Pass", "Game Pass" — even tagged "(DLC)") stay the `PASS`
+category skip; only SEASON / EXPANSION PASS bypass it. The list-sort router keeps the
+R43 reason as "garder" (an operator call), like the old "DLC in title".
+**Adversarial review 2026-09-11 (three refute lenses) hardened R43:** (a) **own-page
+rule** — the DLC bucket alone does not prove the page is THIS DLC (a base-game page can
+carry one, e.g. a DLC once filed under it), so a DLC-marked title is accepted only when
+the resolved slug is one of its OWN tier-1 slugs (`own_page_slugs` / `resolved_on_own_page`:
+the full cleaned name, apostrophe and [R42] numeral spellings, year-suffixed or legacy
+shape); a resolution reached through the edition-stripped or dash-split base-game tiers
+skips `"… resolved through a less specific slug tier ('hunt-showdown' is not the page of
+…) — not the DLC's own page, not entered (R43)"` (204/205 dry-run DLC candidates resolve
+at tier 1; the one loss, "Destiny 2: Year of Prophecy Ultimate Edition DLC", is a
+fail-safe skip); (b) the R16 marker waiver is **gated on the DLC-page proof**
+(`extra_significant_words(..., dlc_page=True)` from `match_offer` only — any other
+caller still counts "DLC" as an extra word, the pre-R43 behaviour); (c) the classifier
+and the stripper are **NFKC-normalised like `tokenize`** (a fullwidth "ＤＬＣ" classifies
+exactly as the token it becomes, so the waiver and the guard cannot disagree) and accept
+the plural / hyphenated forms ("DLCs", "Add-Ons", "Downloadable-Content"); (d) **unnamed
+DLC** — a marker with no DLC name of its own ("<Game> (DLC)", "<Game> Add-On": no
+subtitle left once the marker and the market noise are stripped) on a page that ALSO
+sells Standard(1) is indistinguishable from the base game's own page carrying a DLC
+bucket (live 2026-09-11: the Stray Blade, Aliens Dark Descent and Dragon Quest III HD-2D
+Remake base pages all carry bucket 16) → skip `"… without a DLC name of its own … (R43)"`;
+a DLC-only page ({16} without Standard) still enters; (e) **DLC collections are
+bundles** — "DLC Pack / Collection / Bundle / Set", "All / Complete / Every DLC", "DLCs"
+(`dlc_collection_marker`, direction-aware: "World's Fair Pack (DLC)" is ONE content pack
+and stays a DLC) → `skip category: … (DLC collection — no bundles)`; (f) a **leading
+"DLC" is a name** ("DLC Quest", a real game): no marker, nothing stripped, its own page
+resolves Standard; (g) **passes**: in-game / subscription passes (BATTLE, GAME, GROW,
+MONTHLY, WEEKLY PASS) stay the `PASS` skip even when tagged "(DLC)"; a tagged "<x> Pass"
+("Year 1 Pass (DLC)", "Extra Pass (DLC)" — 5 MMOGA rows resolve to their own DLC page)
+and the season / expansion passes (tagged or not) go to resolution; an untagged
+"<x> Pass" stays the `PASS` skip as before.
+
+**Known R18 exposure surfaced by the same review (2026-09-11, NOT changed — Romain's
+call):** live base-game pages DO carry bucket 16 (Stray Blade, Aliens Dark Descent,
+Dragon Quest III HD-2D Remake), so `[R18]`'s premise "bucket 16 ⇒ the product IS a DLC"
+entered those three base games as DLC(16) on 2026-09-10 (to be corrected by hand on AKS).
+No deterministic page-level nature signal was found (no product-type field; the
+"#basegame" related section and the editions-map order are both inconsistent across
+sampled DLC / base pages). R43 itself is protected by the own-page and unnamed-DLC rules
+above; the markerless R18 path keeps its 2026-07-08 behaviour until Romain decides
+(options: Standard(1) when Standard coexists with 16 and the title carries no DLC word;
+or skip such pages as ambiguous).
+
 ### 4.4 Region & platform — **URL and AKS page decide, not the title** `[Ga01]`
+**MMOGA second region grammar (adversarial review 2026-09-11):** besides "<Product>
+<CODE> Key", MMOGA writes the code AFTER the key word inside a trailing bracket —
+"WWE 2K24 - Deluxe Edition (Steam Key EU)", "Marvel's Midnight Suns - Epic Games Store
+Key [EU]", "Wild West Dynasty - Ultimate Edition [EU]", "The Sims 4 - For Rent DLC (EA App
+Key EU)". `mmoga.region_code` now reads both (`REGION_CODE_TAIL_RE`; a bare "[XX]" / "(XX)"
+only for a KNOWN sellable / forbidden code, so "(PC)" is not a region; a "(… Key XX)" slot
+takes any code, unmapped → skip), `resolve_name` strips the tail before slug building.
+Before this, 9 of the 1 060 MMOGA offers created 2026-09-10/11 carried an EU tail and were
+entered GLOBAL (to be corrected by hand on AKS; listed in CHANGELOG 2026-09-11).
+**A region phrase that is part of the AKS PRODUCT NAME is identity, not a lock
+`[R44]`** (R43 dry-run 2026-09-11): "Age of Empires III Definitive Edition - United
+States Civilization (DLC)" carries `-united-states-` in its merchant slug and the URL
+scan read it as US — a GLOBAL DLC would have been entered US-locked. After resolution
+`match_offer` re-checks the detected label against the page name
+(`region_phrase_in_aks_name`: US ↔ "United States"/"USA", UK ↔ "United Kingdom",
+EU ↔ "Europe" — whole words; "Europa Universalis" is not "Europe") and **skips**
+`"region US read from 'UNITED STATES', which is part of the AKS product name … —
+region ambiguous, not entered (R44)"` — fail-closed, never a guessed region. Not
+applied when the merchant's own title grammar declared the region (MMOGA "… US Key",
+`title_region` hook — authoritative `[R32e]`), nor when an explicit GLOBAL / EU marker
+won the scan first (the `detect_region` order: hook → EU → GLOBAL → US → UK → parens).
 Derive region from the offer URL when the merchant encodes it there
 (e.g. Gamivo `…-steam-global` / `-eu` / `-gift-eu`; look for
 `-gift-`) `[GAMIVO]`. Kinguin Steam titles often omit the region → accept as
@@ -500,7 +589,9 @@ or "Deluxe" in a DLC's own name is identity, not an edition, and the
 bundle-resolution guard does not apply). Do NOT extend to Bundle/Early Access
 buckets: those describe other offers listed on the page, not the product's
 nature (GUILTY GEAR Xrd {Standard, Bundle} and Early Access indies stay
-Standard). Systematic — the map is already in hand at resolve time.
+Standard). Systematic — the map is already in hand at resolve time. Since `[R43]`
+(2026-09-11) the same bucket is also the MANDATORY proof for a title that announces
+its DLC / season-pass nature — absent bucket → skip, never a base-game entry.
 Otherwise, title hints:
 `DLC→16`, `Complete/Complete Season→91` (≠ Deluxe), `Deluxe→7`, `Gold→10`,
 `GOTY→9`, `Collection` (no Trilogy/Bundle)→98`, `Bundle/Pack/Trilogy→8`,

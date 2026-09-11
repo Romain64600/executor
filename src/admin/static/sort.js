@@ -151,7 +151,7 @@ function render() {
   $("#board").replaceChildren(...lists.map(([id, g]) => card(id, g)));
 
   $("#secondary").replaceChildren(
-    note(c.unrouted_skips, "À garder — skips sans liste sûre (devises, console, DLC, bundles). Restent dans Pending, décision opérateur."),
+    note(c.unrouted_skips, "À garder — skips sans liste sûre (devises, console, bundles, DLC sans page AKS propre). Restent dans Pending, décision opérateur."),
     note(c.candidates, "Candidats création — passent le precheck. Traités par le flux Validation/Submit, hors tri."),
   );
 }

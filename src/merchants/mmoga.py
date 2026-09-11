@@ -47,6 +47,16 @@ MMOGA_URL_PLATFORM_PREFIXES = {
 
 # "<Product> <CODE> Key" / "<Product> <CODE> CD Key" — uppercase code, raw title case.
 REGION_CODE_KEY_RE = re.compile(r"(?:^|\s)([A-Z]{2})\s+(?:CD\s+)?[Kk][Ee][Yy]\s*$")
+# Second MMOGA grammar (adversarial review 2026-09-11 — 9 of 1 060 created offers carried it
+# and were entered GLOBAL): the code sits AFTER the key word inside a trailing bracket:
+# "WWE 2K24 - Deluxe Edition (Steam Key EU)", "Marvel's Midnight Suns - Epic Games Store
+# Key [EU]", "Wild West Dynasty - Ultimate Edition [EU]", "The Sims 4 - For Rent DLC (EA App
+# Key EU)". Same 2-letter vocabulary, same SELLABLE / FORBIDDEN routing.
+REGION_CODE_TAIL_RE = re.compile(
+    r"(?:\s*\((?:[A-Za-z][A-Za-z .]*\s)?(?:CD\s+)?[Kk][Ee][Yy]\s+([A-Z]{2})\)"
+    r"|\s*\[([A-Z]{2})\]"
+    r"|\s*\(([A-Z]{2})\))\s*$"
+)
 # Codes with an AKS region bucket (matcher REGION_IDS keys).
 SELLABLE_CODES = {"EU": "eu", "US": "us", "UK": "uk", "GB": "uk"}
 # Forbidden locks — the SAME labels as the matcher's FORBIDDEN_REGIONS / _URL_FORBIDDEN_CODES
@@ -62,7 +72,16 @@ def region_code(name: str) -> str | None:
     """The uppercase 2-letter code right before a trailing Key, or None ("Among Us Key" → None)."""
 
     m = REGION_CODE_KEY_RE.search(name or "")
-    return m.group(1) if m else None
+    if m:
+        return m.group(1)
+    m = REGION_CODE_TAIL_RE.search(name or "")
+    if not m:
+        return None
+    key_code, bracket_code, paren_code = m.groups()
+    if key_code:
+        return key_code                      # "(… Key XX)": a region slot — any code, unmapped → skip
+    code = bracket_code or paren_code        # bare "[XX]" / "(XX)": only a KNOWN region code
+    return code if code in SELLABLE_CODES or code in FORBIDDEN_CODES else None
 
 
 def precheck(name: str, url: str) -> str | None:
@@ -85,7 +104,9 @@ def resolve_name(name: str) -> str:
     """The title handed to AKS resolution: the "<CODE> Key" tail peeled off, so the slug is
     "borderlands-2", not the 404 "borderlands-2-eu". Untouched when there is no code."""
 
-    return REGION_CODE_KEY_RE.sub("", name) if region_code(name) else name
+    if not region_code(name):
+        return name
+    return REGION_CODE_TAIL_RE.sub("", REGION_CODE_KEY_RE.sub("", name)).rstrip()
 
 
 CONFIG = MerchantConfig(

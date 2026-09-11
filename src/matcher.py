@@ -211,8 +211,87 @@ CATEGORY_SKIP = (
     "PREPAID", "ANTIVIRUS", "POINTS", "CREDITS",
     "COINS", "GEMS", "DIAMONDS", "TOP UP", "MEMBERSHIP", "CURRENCY",
     "ACTIVATION LINK", "STEAM ACCOUNT", "STEAM GIFT CARD",
-    "MICROSOFT KEY", "MICROSOFT STORE", "SEASON PASS", "STEAM PLAYER TRADE",
+    "MICROSOFT KEY", "MICROSOFT STORE", "STEAM PLAYER TRADE",
 )
+# ("SEASON PASS" left this list 2026-09-11 — it is a DLC marker now, see [R43].)
+
+
+# [R43] DLC-announcing title markers (Romain GO 2026-09-11, "apprendre à ajouter les
+# DLC … inclus les Season Pass"). Until now "DLC in title" / "SEASON PASS" were
+# categorical pre-skips, so a DLC that ANNOUNCES itself never reached AKS resolution,
+# while a DLC that hides it ("Exoplanets Pack") was entered via the page's DLC bucket
+# [R18]. Measured 2026-09-11 on 12 MMOGA "(DLC)" titles: 9 resolve, by plain slug
+# guessing once the marker is stripped, to their OWN AKS page and all 9 carry the DLC
+# bucket (id 16); 3 have no page. So the marker is a CLASSIFIER now: the title is
+# resolved with the marker stripped (strip_dlc_marker — SEASON/EXPANSION PASS stay,
+# they ARE the AKS slug: hearts-of-iron-iv-expansion-pass-2), and the resolved page
+# MUST carry the DLC bucket, else the offer is skipped (base game / wrong product —
+# the fail-closed guard; R16 extra-words is the second net). Entered as DLC(16).
+DLC_TITLE_MARKERS = ("SEASON PASS", "EXPANSION PASS", "DOWNLOADABLE CONTENT",
+                     "ADD ON", "ADDON", "DLC")
+# The marker words that are NOT part of an AKS product name/slug — removed before
+# slug building and ignored by the extra-words guard. (SEASON/EXPANSION PASS are.)
+_DLC_MARKER_STRIP_RE = re.compile(
+    r"\(\s*DLCS?\s*\)|(?<![A-Za-z0-9])(?:DLCS?|ADD[- ]?ONS?|DOWNLOADABLE[- ]CONTENTS?)(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+_DLC_MARKER_TOKENS = frozenset({"DLC", "DLCS", "ADDON", "ADDONS"})
+# The passes that ARE DLC products (own AKS page) even without a DLC tag. Any other
+# "<x> Pass" ("Year 1 Pass", "Extra Pass", "X Games Pass", "Ultimate Pass") is a DLC only
+# when the merchant tags it (DLC / Add-On) — measured 2026-09-11: 5 such MMOGA rows
+# resolve to their own DLC-bucket page. "Battle Pass" / "Game Pass" / "Grow Pass" are
+# in-game or subscription passes and stay the PASS category skip even when tagged.
+_DLC_PASS_MARKERS = frozenset({"SEASON PASS", "EXPANSION PASS"})
+_INGAME_PASS_RE = re.compile(r"\b(?:BATTLE|GAME|GROW|MONTHLY|WEEKLY|PREMIUM BATTLE)\s+PASS(?:ES)?\b")
+
+
+def dlc_title_marker(name: str) -> str | None:
+    """The DLC marker a merchant title announces ("SEASON PASS", "EXPANSION PASS",
+    "DOWNLOADABLE CONTENT", "ADD ON", "ADDON", "DLC"), or None. Word-boundary on the
+    padded upper title ("(DLC)", "Add-On", "Season Passes" all count); a game word
+    merely containing the letters ("Addonis") does not. NFKC-normalised first, like
+    ``tokenize`` (adversarial review 2026-09-11: a fullwidth "ＤＬＣ" must classify
+    exactly as the token it becomes, else the R16 waiver and the R43 guard disagree)."""
+
+    padded = " " + re.sub(r"[^A-Z0-9]+", " ", normalize_apostrophes(name).upper()) + " "
+    if padded.startswith(" DLC ") and not padded.startswith(" DLC PACK ") and " DLC " not in padded[5:]:
+        return None      # a LEADING "DLC" is a name ("DLC Quest", a real game), not a marker
+    for marker in DLC_TITLE_MARKERS:
+        if f" {marker} " in padded or f" {marker}S " in padded or f" {marker}ES " in padded:
+            return marker
+    return None
+
+
+# [R43] explicit DLC COLLECTIONS are bundles of DLCs — "we NEVER enter bundles" (§4.3):
+# "<Game> - DLC Pack / DLC Collection / DLC Bundle", "All DLC", "Complete DLC", "DLCs".
+# Direction matters: "World's Fair Pack (DLC)" is ONE content pack (PACK before DLC) and
+# stays a DLC; "DLC Pack" (DLC before PACK) is a collection.
+_DLC_COLLECTION_RE = re.compile(
+    r"\b(?:ALL|COMPLETE|EVERY|FULL)\s+DLCS?\b|\bDLCS?\s+(?:PACK|COLLECTION|BUNDLE|SET)S?\b|\bDLCS\b"
+)
+
+
+def dlc_collection_marker(name: str) -> str | None:
+    padded = re.sub(r"[^A-Z0-9]+", " ", normalize_apostrophes(name).upper())
+    m = _DLC_COLLECTION_RE.search(padded)
+    return m.group(0).strip() if m else None
+
+
+def strip_dlc_marker(name: str) -> str:
+    """The title with its DLC / Add-On / Downloadable Content marker removed — the text
+    handed to AKS resolution ("Northgard - Svardilfari Clan of the Horse (DLC)" →
+    "Northgard - Svardilfari Clan of the Horse"). Season/Expansion Pass words are kept
+    (they name the AKS page). Dangling separators left by the removal are trimmed;
+    the identity checks keep using the raw title. NFKC-normalised like the classifier."""
+
+    if dlc_title_marker(name) is None:
+        return name                                   # nothing to strip ("DLC Quest")
+    text = _DLC_MARKER_STRIP_RE.sub(" ", normalize_apostrophes(name))
+    text = re.sub(r"\(\s*\)", " ", text)                       # "( )" left by "(DLC)"
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"\s*[-–—:|]\s*(?=$|\s*[-–—:|])", " ", text)   # "… - - Steam" / trailing " -"
+    text = re.sub(r"\s+", " ", text).strip(" -–—:|")
+    return text or name
 
 
 def _category_skip_pattern(cat: str) -> "re.Pattern[str]":
@@ -568,8 +647,10 @@ def missing_aks_words(aks_name: str, merchant_title: str) -> list[str]:
     return [w for w in tokenize(aks_name) if w not in merchant]
 
 
-def extra_significant_words(aks_name: str, merchant_title: str) -> list[str]:
+def extra_significant_words(aks_name: str, merchant_title: str, *, dlc_page: bool = False) -> list[str]:
     """Merchant tokens absent from the AKS name and not platform/region/format noise.
+    ``dlc_page`` ([R43]: the resolved page carries the DLC bucket) waives the DLC marker
+    words only; by default (any other caller) they count as extras, exactly as before.
 
     ANY of these signals a different or expanded product. The skill CORE floor is
     ≥2 ("titre a ≥2 mots absents du nom AKS → SKIP"; e.g. GreedFall "The Dying
@@ -588,6 +669,24 @@ def extra_significant_words(aks_name: str, merchant_title: str) -> list[str]:
             continue
         if token in NOISE_TOKENS:
             continue
+        # [R43] the DLC marker ("DLC", "Add-On", "Downloadable Content") announces the
+        # product's nature, it is not a product word — waived ONLY when the caller
+        # proved the resolved page IS a DLC (dlc_page: DLC bucket, match_offer), so the
+        # AKS name legitimately lacks the word ("Northgard Svardilfari Clan of the
+        # Horse" for "… Clan of the Horse (DLC)"). Phrase-level for the two-word forms.
+        # Never unconditional (adversarial review 2026-09-11): without the proof the
+        # marker stays an extra word, i.e. the pre-R43 "extra words: ['DLC']" skip.
+        if dlc_page:
+            if token in _DLC_MARKER_TOKENS:
+                continue
+            if token == "ADD" and i + 1 < len(toks) and toks[i + 1] in ("ON", "ONS"):
+                continue
+            if token in ("ON", "ONS") and i > 0 and toks[i - 1] == "ADD":
+                continue
+            if token == "DOWNLOADABLE" and i + 1 < len(toks) and toks[i + 1] in ("CONTENT", "CONTENTS"):
+                continue
+            if token in ("CONTENT", "CONTENTS") and i > 0 and toks[i - 1] == "DOWNLOADABLE":
+                continue
         # A language code (EN/FR/…) is a language MARKER only once EVERY AKS-name token
         # has ALREADY been covered — nothing of the game name remains after it. A
         # leading article/common word is NOT enough (Romain audit 2026-09-01): "The En
@@ -634,12 +733,48 @@ def extra_significant_words(aks_name: str, merchant_title: str) -> list[str]:
     return extras
 
 
-def dangerous_qualifier(merchant_title: str, aks_name: str) -> str | None:
-    """R01b: a dangerous qualifier in the merchant title but not the AKS name."""
+# [R44] (R43 dry-run 2026-09-11): a REGION phrase that is part of the AKS PRODUCT NAME
+# is identity, not a lock — "Age of Empires III Definitive Edition - United States
+# Civilization (DLC)" carries "-united-states-" in its merchant slug and detect_region
+# read it as US (a GLOBAL DLC would have been entered US-locked). The title/URL scan
+# cannot know the product name; match_offer re-checks the detected label against the
+# resolved page name and SKIPS (fail-closed, never a guessed region) — unless the
+# merchant's own title grammar declared the region (MMOGA "… US Key" is authoritative).
+# "GLOBAL" is not listed: a "Worldwide" name word yields the default anyway.
+_REGION_IDENTITY_PHRASES = {
+    "US": ("UNITED STATES", "USA"),
+    "UK": ("UNITED KINGDOM",),
+    "EU": ("EUROPE",),
+}
+
+
+def region_phrase_in_aks_name(region_label: str, aks_name: str) -> str | None:
+    """The region phrase of ``region_label`` that also appears, as whole words, in the
+    AKS product name — or None (the common case)."""
+
+    padded = " " + re.sub(r"[^A-Z0-9]+", " ", aks_name.upper()) + " "
+    for phrase in _REGION_IDENTITY_PHRASES.get(region_label, ()):
+        if f" {phrase} " in padded:
+            return phrase
+    return None
+
+
+# [R43] qualifiers whose "absent from the AKS name" alarm is answered by the PAGE's
+# nature: a DLC-bucket page IS the DLC / season pass the title announces, even when
+# its name omits the word ("Northgard Svardilfari Clan of the Horse").
+_DLC_PAGE_QUALIFIERS = frozenset({"SEASON PASS", "DLC"})
+
+
+def dangerous_qualifier(merchant_title: str, aks_name: str, *, dlc_page: bool = False) -> str | None:
+    """R01b: a dangerous qualifier in the merchant title but not the AKS name.
+    ``dlc_page`` (the resolved page carries the DLC bucket, [R43]) waives the DLC /
+    SEASON PASS qualifiers only — a remaster/HD/anniversary word stays a skip."""
 
     mt = " " + merchant_title.upper() + " "
     an = " " + aks_name.upper() + " "
     for q in DANGEROUS_QUALIFIERS:
+        if dlc_page and q in _DLC_PAGE_QUALIFIERS:
+            continue
         if q in mt and q not in an:
             return q.strip()
     return None
@@ -739,13 +874,19 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
     for token in CURRENCY_TOKENS:
         if f" {token} " in padded:
             return f"skip category: {token} (in-game currency)"
-    if " DLC " in padded or " ADD ON " in padded or "DOWNLOADABLE CONTENT" in upper:
-        return "DLC in title"
+    # [R43] (2026-09-11): a "DLC" / "Add-On" / "Season Pass" title is NO LONGER a
+    # pre-skip — it is resolved (marker stripped) and must land on an AKS page carrying
+    # the DLC bucket (match_offer), entered as DLC(16). See dlc_title_marker. A DLC
+    # COLLECTION ("DLC Pack", "All DLC", "DLCs") is a bundle of DLCs → never entered.
+    collection = dlc_collection_marker(offer.name)
+    if collection:
+        return f"skip category: {collection} (DLC collection — no bundles)"
     if " PREORDER BONUS " in padded or " PRE ORDER BONUS " in padded:
         return "preorder bonus"
     # "Royal Grow Pass", "Battle Pass", "Game Pass"… — in-game passes are not
-    # games ("Season Pass" is caught above as a category).
-    if " PASS " in padded:
+    # games. A SEASON / EXPANSION pass is a DLC product with its own AKS page ([R43])
+    # and falls through to resolution instead.
+    if " PASS " in padded and (dlc_title_marker(offer.name) is None or _INGAME_PASS_RE.search(padded)):
         return "skip category: PASS (in-game/battle pass)"
     if " + " in offer.name:
         return "possible multi-game bundle"
@@ -1134,7 +1275,8 @@ _TRAILING_NOISE_PHRASES = tuple(sorted(
 ))
 # Edition words stripped (trailing only) for the fallback slug variant.
 # EDITION_HINTS vocabulary minus BUNDLE/PACK/TRILOGY/DLC: those name a
-# different product, and bundle/DLC titles are hard-skipped upstream anyway.
+# different product (bundle titles are hard-skipped upstream; a DLC title has its
+# marker stripped by strip_dlc_marker before slug building, [R43]).
 _TRAILING_EDITION_PHRASES = (
     "ULTIMATE COLLECTION", "GAME OF THE YEAR", "GOTY", "DELUXE", "GOLD",
     "PREMIUM", "COMPLETE", "ULTIMATE", "COLLECTION", "STANDARD", "EDITION",
@@ -1195,18 +1337,46 @@ def build_slug_candidates(name: str) -> list[str]:
     ]
     out: list[str] = []
     for base in bases:
-        base = base.lower()
-        # [R42] the numeral-swapped spelling right after each base ("crusader-kings-iii"
-        # then "crusader-kings-3"): same tier, one extra probe only when a numeral exists.
-        for text in (base, swap_numerals(base)):
-            for variant in (
-                re.sub(r"[^a-z0-9]+", "-", text.replace("'", "")).strip("-"),
-                re.sub(r"[^a-z0-9]+", "-", text).strip("-"),
-            ):
-                variant = re.sub(r"-+", "-", variant)
-                if variant and variant not in out:
-                    out.append(variant)
+        for variant in _slug_variants(base):
+            if variant not in out:
+                out.append(variant)
     return out
+
+
+def _slug_variants(base: str) -> list[str]:
+    """The slug spellings of ONE base text: apostrophes dropped / kept as a dash, and
+    [R42] the numeral-swapped spelling right after each ("crusader-kings-iii" then
+    "crusader-kings-3") — same tier, one extra probe only when a numeral exists."""
+
+    base = base.lower()
+    out: list[str] = []
+    for text in (base, swap_numerals(base)):
+        for variant in (
+            re.sub(r"[^a-z0-9]+", "-", text.replace("'", "")).strip("-"),
+            re.sub(r"[^a-z0-9]+", "-", text).strip("-"),
+        ):
+            variant = re.sub(r"-+", "-", variant)
+            if variant and variant not in out:
+                out.append(variant)
+    return out
+
+
+def own_page_slugs(name: str) -> list[str]:
+    """Tier 1 only — the slugs of the FULL cleaned name. [R43]: a title that announces a
+    DLC may only be accepted on the page of its own full name; a resolution reached
+    through the less specific tiers (edition words stripped, the dash-split base-game
+    head) is NOT the DLC's page (adversarial review 2026-09-11: a base-game page can
+    carry a DLC bucket, so the bucket alone does not prove the page is THIS DLC)."""
+
+    return _slug_variants(cleaned_title(name))
+
+
+def resolved_on_own_page(slug: str, name: str) -> bool:
+    """True iff ``slug`` (the resolved variant — current, year-suffixed or legacy shape)
+    is one of :func:`own_page_slugs` of ``name``."""
+
+    own = own_page_slugs(name)
+    return slug in own or re.sub(r"-\d{4}$", "", slug) in own
 
 
 def aks_url(slug: str, page_kind: str = "cd-key") -> str:
@@ -2228,6 +2398,11 @@ def match_offer(
     # handed to AKS resolution (MMOGA peels the "<CODE> Key" tail → slug "borderlands-2",
     # not the 404 "borderlands-2-eu"). The identity checks keep using the raw title.
     resolve_name = _cfg.resolve_name(offer.name) if _cfg is not None and _cfg.resolve_name else offer.name
+    # [R43] the DLC marker is not part of the AKS slug ("… Clan of the Horse (DLC)" →
+    # northgard-svardilfari-clan-of-the-horse); Season/Expansion Pass words are kept.
+    dlc_marker = dlc_title_marker(offer.name)
+    if dlc_marker is not None:
+        resolve_name = strip_dlc_marker(resolve_name)
     try:
         if account_page_kind is not None:
             resolution = account_resolver(resolve_name, page_kind=account_page_kind)
@@ -2244,6 +2419,54 @@ def match_offer(
     if resolution is None:
         kind_note = f" {account_page_kind}" if account_page_kind else ""
         return SkippedOffer(offer, f"no AKS{kind_note} product page found (slug not 200)")
+
+    # [R43] (Romain GO 2026-09-11): a title that ANNOUNCES a DLC / season pass must land
+    # on an AKS page whose editions map carries the DLC bucket — that page IS the DLC
+    # (the same truth R18 reads for hidden DLCs). Any other page (the base game reached
+    # through a less specific slug tier, an empty stub map, a wrong product) is a
+    # fail-closed skip, BEFORE the name guards so the reason is explicit. R16 (the DLC's
+    # own words absent from a base-game name) stays the second net behind it.
+    dlc_page = bool(_dlc_edition_on_page(resolution.editions))
+    if dlc_marker is not None and not dlc_page:
+        return SkippedOffer(
+            offer,
+            f"{dlc_marker} in title but AKS page {resolution.slug!r} carries no DLC "
+            "edition — base game or wrong product, not entered (R43)",
+        )
+    if (dlc_marker not in (None, *_DLC_PASS_MARKERS) and "1" in resolution.editions
+            and not re.search(r"\s[-–—:|]\s|:\s", cleaned_title(strip_dlc_marker(offer.name)))):
+        # "<Game> (DLC)" — a DLC marker with NO DLC name of its own (no subtitle) on a page
+        # that also sells a Standard product: indistinguishable from the base game's own
+        # page carrying a DLC bucket (live 2026-09-11: Stray Blade, Aliens Dark Descent,
+        # Dragon Quest III HD-2D Remake base pages all carry bucket 16). Doubt → skip.
+        return SkippedOffer(
+            offer,
+            f"{dlc_marker} in title without a DLC name of its own, on a page that also "
+            f"sells Standard ({resolution.slug!r}) — base game or unnamed DLC, not entered (R43)",
+        )
+    if dlc_marker is not None and not resolved_on_own_page(resolution.slug, resolve_name):
+        # The DLC bucket alone is not proof the page is THIS DLC (a base-game page may
+        # carry one): the DLC must resolve under its own full name (tier 1), never via
+        # the edition-stripped or dash-split base-game tiers. Fail-closed; measured
+        # 2026-09-11: 204/205 dry-run DLC candidates resolve at tier 1.
+        return SkippedOffer(
+            offer,
+            f"{dlc_marker} in title resolved through a less specific slug tier "
+            f"({resolution.slug!r} is not the page of {resolve_name!r}) — not the DLC's "
+            "own page, not entered (R43)",
+        )
+
+    # [R44] a region phrase that is part of the resolved product name is identity, not
+    # a lock (see _REGION_IDENTITY_PHRASES) — fail-closed skip unless the merchant's
+    # title grammar itself declared the region (hook = authoritative, R32e).
+    hook_region = _cfg.title_region(offer.name) if _cfg is not None and _cfg.title_region else None
+    identity_phrase = region_phrase_in_aks_name(region_label, resolution.aks_name)
+    if identity_phrase is not None and hook_region is None:
+        return SkippedOffer(
+            offer,
+            f"region {region_label} read from {identity_phrase!r}, which is part of the AKS "
+            f"product name {resolution.aks_name!r} — region ambiguous, not entered (R44)",
+        )
 
     # R01 / different-product guards compare against the game-identity name.
     # For an account page that means stripping the "<platform> Account" suffix;
@@ -2274,7 +2497,7 @@ def match_offer(
 
     edition_from_extras: tuple[str, str] | None = None
     if not sw:
-        extras = extra_significant_words(identity_name, offer.name)
+        extras = extra_significant_words(identity_name, offer.name, dlc_page=dlc_page)
         if extras:
             # Page-verified rescue: extras that ALL name one page edition are that
             # edition's qualifier ("Knight's Edition" → page "Knights Editon" 2723),
@@ -2283,7 +2506,7 @@ def match_offer(
             if edition_from_extras is None:
                 return SkippedOffer(offer, f"different/expanded product — extra words: {extras}")
 
-        qualifier = dangerous_qualifier(offer.name, resolution.aks_name)
+        qualifier = dangerous_qualifier(offer.name, resolution.aks_name, dlc_page=dlc_page)
         if qualifier:
             return SkippedOffer(offer, f"dangerous qualifier absent from AKS name: {qualifier}")
 

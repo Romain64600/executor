@@ -3,6 +3,77 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-11 — matcher : DLC / Add-On / Season Pass saisis sur leur page AKS (R43)
+
+GO de Romain (« apprendre à ajouter les DLC sur les pages AKS à édition DLC … inclus les
+Season Pass »). Constat : 212 offres « DLC in title » et 27 « SEASON PASS » dans le feed
+MMOGA restant ; sondage lecture seule sur 12 titres « (DLC) » : 9 se résolvent par simple
+devinette de slug (marqueur retiré) sur **leur propre page AKS**, toutes avec le bucket DLC
+(16), 3 sans page, 0 sur la page du jeu de base. Changement (`src/matcher.py`) :
+- `dlc_title_marker` (SEASON PASS / EXPANSION PASS / DOWNLOADABLE CONTENT / ADD ON / ADDON /
+  DLC, mots entiers, pluriels) remplace le pré-skip « DLC in title » et la catégorie
+  `SEASON PASS` ; « Battle Pass » & co restent skippés (`PASS`).
+- `strip_dlc_marker` retire DLC / Add-On / Downloadable Content du texte résolu (les mots
+  Season/Expansion Pass restent : ils sont le slug AKS, `hearts-of-iron-iv-expansion-pass-2`).
+- **Garde-fou R43** : titre marqué DLC ⇒ la page résolue doit porter le bucket DLC, sinon
+  skip « `<MARKER>` in title but AKS page '…' carries no DLC edition — base game or wrong
+  product, not entered (R43) », avant les gardes de nom (page du jeu de base atteinte par un
+  palier de slug moins spécifique, stub R19, autre produit).
+- R01b : qualificatifs `DLC` / `SEASON PASS` levés quand la page porte le bucket DLC
+  (REMASTERED/HD/ANNIVERSARY jamais) ; R16 : les mots du marqueur ne sont pas des « mots en
+  trop » (les mots propres du DLC doivent toujours coller au nom AKS — 2e filet).
+- Édition saisie DLC(16) par R18, jamais Standard.
+**Revue adversariale (workflow, 3 angles : saisie fantôme, regex/PASS, contrats aval)**
+→ durcissements : (a) **règle de la page propre** — le bucket DLC seul ne prouve pas que la
+page est CE DLC (une page de jeu de base peut en porter un) : un titre marqué DLC n'est
+accepté que si le slug résolu est l'un de ses slugs de palier 1 (`own_page_slugs`,
+`resolved_on_own_page`) ; atteint via les paliers moins spécifiques (mots d'édition
+retirés, tête avant « - ») → skip « … resolved through a less specific slug tier … (R43) »
+(204/205 candidats DLC du dry-run résolvent au palier 1) ; (b) levée R16 des mots du
+marqueur **conditionnée à la preuve de page DLC** (`dlc_page=True` depuis `match_offer`
+seulement) ; (c) classifieur et retrait **normalisés NFKC comme `tokenize`** (« ＤＬＣ »
+pleine chasse) + pluriels/traits d'union (« DLCs », « Add-Ons », « Downloadable-Content ») ;
+(d) passes : BATTLE / GAME / GROW / MONTHLY / WEEKLY PASS restent skippés même tagués
+« (DLC) » ; un « <x> Pass (DLC) » (Year 1 Pass, Extra Pass — 5 lignes MMOGA ont leur page
+DLC) et les Season / Expansion Pass vont en résolution, un « <x> Pass » non tagué reste
+skippé ; (e) **DLC sans nom propre** (« <Jeu> (DLC) », pas de sous-titre) sur une page qui
+vend aussi Standard → skip (indiscernable de la page du jeu de base portant un bucket
+DLC) ; (f) **collections de DLC** (« DLC Pack / Collection / Bundle », « All DLC », « DLCs »)
+= bundles → jamais saisies (`dlc_collection_marker`, « World's Fair Pack (DLC) » reste un
+DLC) ; (g) un « DLC » en tête est un nom (« DLC Quest », vrai jeu) : rien retiré.
+Effet mesuré sur les 215 candidats du dry-run : 0 collection, 1 forme sans nom (« Arma 3
+Karts (DLC) », skip seulement si sa page vend aussi Standard), 204/205 au palier 1.
+**Constats live de la revue, hors R43 (à corriger à la main sur AKS, décision Romain) :**
+- **R18 saisit des jeux de base en DLC(16)** : des pages AKS de jeux de base portent le
+  bucket 16 — *Stray Blade* (92993, page 7), *Aliens - Dark Descent* (115227, page 19),
+  *DRAGON QUEST III HD-2D Remake* (116084, page 16) créés en DLC(16) le 2026-09-10. Aucun
+  signal de nature de page trouvé (pas de champ type produit ; section « #basegame » et
+  ordre des éditions incohérents). R43 est protégé par la règle de la page propre et le
+  skip « sans nom » ; le chemin R18 sans marqueur reste tel quel en attendant Romain.
+- **9 offres MMOGA à queue de région « (Steam Key EU) » / « [EU] » saisies GLOBAL** le
+  2026-09-10 (WWE 2K24 ×2, The Last of Us Part II Remastered, Marvel's Midnight Suns, Dragon
+  Ball The Breakers Special, Wild West Dynasty ×2, Sengoku Dynasty Guide, NBA 2K24 Black
+  Mamba) : seconde grammaire MMOGA `REGION_CODE_TAIL_RE` (code après le mot Key, entre
+  crochets/parenthèses ; « (PC) » n'est pas une région) + `resolve_name` la retire. Tests
+  `MmogaRulesTests.test_bracket_and_paren_region_tails`. EXECUTOR_RULES §4.4.
+Tests (`DlcTitleR43Tests`) : classifieur, retrait du marqueur, DLC / Season Pass / Add-On
+sur page DLC → candidat DLC(16) avec nom résolu sans marqueur, page du jeu de base → skip
+R43, stub → skip R43, autre DLC → R01/R16, Remastered non levé, extras, pas de page ; routage
+listes inchangé (garder). Docs : EXECUTOR_RULES §4.2/§4.3 `[R43]`/§4.5, HANDOFF §3.
+**Dry-run match seul** (lecture seule, code R43, snapshots des 10 pages du sweep du matin,
+disjoncteur partagé) : **215 candidats** (10 ce matin) dont 205 DLC/Season Pass entrés en
+DLC(16) sur leur propre page AKS (206 candidats DLC(16), un jeu sans marqueur via R18) ;
+**R43 a écarté 21 DLC** retombés sur la page du jeu de base (The Elder Scrolls Online ×4, Le Mans Ultimate ×2, Blood Bowl 3 ×2, Taxi Life ×2, Total
+War Warhammer III, Fatal Fury Season Pass 3…) — aucun DLC candidat sur une page de jeu de
+base ; cas fail-safe R01 : « The Sims 4 - Jungle Adventure (DLC) » tombé sur une page
+« … Bundle ». Trouvaille du dry-run → **`[R44]`** : « Age of Empires III DE - United States
+Civilization (DLC) » sortait région **US** (slug `-united-states-` lu comme un lock) ;
+désormais `region_phrase_in_aks_name` : un mot de région (United States/USA, United
+Kingdom, Europe — mots entiers) présent dans le nom du produit AKS rend la région
+ambiguë → skip fail-closed, sauf région déclarée par la grammaire du marchand (hook MMOGA
+« US Key », autoritaire) ou marqueur GLOBAL/EU explicite gagnant avant. Tests
+`RegionIdentityPhraseR44Tests`. EXECUTOR_RULES §4.4.
+
 ## 2026-09-11 — sweep MMOGA du matin : 10 créées (les 10 refus 400 de la nuit), feed réduit à 10 pages
 
 Run `20260911-083407-auto` (`--max-pages 30`), 08:34Z → 08:55Z (**21 min**), exit 0, 10 pages,

@@ -137,6 +137,22 @@ Tout est poussé sur `origin/main`, suite verte (**1353 tests**). Travaux récen
   créées depuis 2026) → ancienne (`compare-and-buy-cd-key-for-digital-download-<slug>/`,
   ≈2021), les deux dernières pour le slug le plus spécifique seulement (+3 sondes max ; le
   ×5 initial a déclenché des 503). Une 2e tentative après 2 s sur un 5xx, jamais sur 429.
+- **DLC / Add-On / Season Pass saisis `[R43]`** (2026-09-11, GO Romain) : plus de pré-skip
+  « DLC in title » ni de catégorie `SEASON PASS` — le titre est résolu marqueur retiré
+  (`strip_dlc_marker`, les mots Season/Expansion Pass restent : ils sont le slug AKS) et la
+  page trouvée **doit** porter l'édition DLC (16), sinon skip fail-closed « … carries no DLC
+  edition (R43) » (page du jeu de base, stub, autre produit) ; édition saisie DLC(16) par R18 ;
+  R01b `DLC`/`SEASON PASS` levés sur une page DLC, mots du marqueur ignorés par R16 ; les
+  passes in-game (« Battle Pass ») restent skippés. Sondage 2026-09-11 : 9/12 DLC MMOGA ont
+  leur page AKS propre avec le bucket DLC. EXECUTOR_RULES §4.3 `[R43]`. Dry-run : 215
+  candidats sur le feed MMOGA restant. **`[R44]`** (trouvé par ce dry-run) : un mot de région
+  faisant partie du nom du produit AKS (« … United States Civilization ») rend la région
+  ambiguë → skip, sauf région déclarée par la grammaire du marchand (EXECUTOR_RULES §4.4).
+  Revue adversariale → règle de la page propre (palier 1 seulement), DLC sans nom → skip,
+  collections de DLC = bundles, passes in-game skippés ; **seconde grammaire de région MMOGA**
+  « (Steam Key EU) » / « [EU] » (9 offres saisies GLOBAL le 2026-09-10 à corriger à la main) ;
+  **R18 expose 3 jeux de base saisis DLC(16)** (Stray Blade, Aliens Dark Descent, Dragon
+  Quest III HD-2D Remake) — décision Romain en attente (EXECUTOR_RULES §4.3 fin de `[R43]`).
 - **MMOGA** (2026-09-10) : nouveau marchand porté par `src/merchants/mmoga.py` via les
   **hooks de config marchand** `[R32e]` (`precheck` / `title_region` / `resolve_name` —
   un fichier marchand peut ajouter ou surcharger le générique). Store id feed **12** (page

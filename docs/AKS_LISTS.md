@@ -105,7 +105,8 @@ and leaves the rest a per-offer pick (default = *garder*).
 | gift card | 21 Gift cards | yes |
 | account offer | 30 account | yes |
 | uncertain | 13 I have a doubt | — |
-| console / bundle / DLC | per-offer / often *garder* (no clean target) | no |
+| console / bundle / DLC without its own AKS page (R43 skip) | per-offer / often *garder* (no clean target) | no |
+| DLC / Season Pass with its own AKS page (R43, 2026-09-11) | not a skip — a creation candidate (edition DLC 16) | — |
 
 **Why "no AKS page" can't be auto-split (22 vs 27):** the 5-year rule needs a
 release date, and **the feed gives none** (`releaseDate` = null on 100/100

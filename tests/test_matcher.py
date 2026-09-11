@@ -54,6 +54,10 @@ from src.matcher import (
     search_aks_slugs,
     strip_merchant_url_noise,
     tokenize,
+    dlc_title_marker, strip_dlc_marker,
+    region_phrase_in_aks_name,
+    resolved_on_own_page,
+    dlc_collection_marker,
 )
 
 AKS_PAGE = (
@@ -615,8 +619,10 @@ class PrecheckSkipTests(unittest.TestCase):
 
     def test_p2_7_es_plurals_still_skip(self):
         # sibilant plurals ("-ES") stay caught (a bare "-S?" would have regressed).
-        self.assertIn("SEASON PASS", precheck_skip(_offer("Ultimate Season Passes Pack")) or "")
         self.assertIn("ANTIVIRUS", precheck_skip(_offer("Avast Antiviruses Bundle")) or "")
+        # "Season Passes" is a DLC marker since [R43] (2026-09-11) — no longer a pre-skip;
+        # it is resolved and must land on a DLC-bucket page (DlcTitleR43Tests).
+        self.assertIsNone(precheck_skip(_offer("Ultimate Season Passes Pack")))
 
     def test_p2_7_software_literal_reaches_r31_path(self):
         # A title literally containing "software" is no longer hard-skipped here; it
@@ -2995,8 +3001,6 @@ class G2ARulesTests(unittest.TestCase):
     def test_g2a_categorical_skips(self):
         cases = {
             "Forza Horizon 5 (PC) - Microsoft Key - GLOBAL": "MICROSOFT KEY",
-            "OMSI 2 Add-On Aachen (PC) - Steam Key - GLOBAL": "DLC",
-            "Hunt: Showdown Season Pass (PC) - Steam Key - GLOBAL": "SEASON PASS",
             "CS2 AK-47 Redline (Field-Tested)": "no bundles/skins",
             "NBA 2K25: 200,000 VC (PC) - Steam Key - GLOBAL": "VC",
             "Path of Exile 100 Exalted Orbs (PC)": "ORBS",
@@ -3013,6 +3017,11 @@ class G2ARulesTests(unittest.TestCase):
 
     def test_ampersand_in_game_name_not_skipped(self):
         self.assertIsNone(precheck_skip(_offer("Sam & Max Save the World (PC) - Steam Key - GLOBAL")))
+
+    def test_dlc_and_season_pass_titles_are_no_longer_pre_skipped(self):
+        # [R43] 2026-09-11: they go to resolution and must land on a DLC-bucket page.
+        self.assertIsNone(precheck_skip(_offer("OMSI 2 Add-On Aachen (PC) - Steam Key - GLOBAL")))
+        self.assertIsNone(precheck_skip(_offer("Hunt: Showdown Season Pass (PC) - Steam Key - GLOBAL")))
 
     def test_trilogy_without_aks_trilogy_is_skipped(self):
         # TRILOGY absent from the AKS name now trips the ≥1 extra-word guard
@@ -3767,6 +3776,37 @@ class MmogaRulesTests(unittest.TestCase):
     def _o(self, name, url=None):
         return NormalizedOffer(offer_id="1", name=name, url=url or self.URL, merchant="MMOGA")
 
+    def test_bracket_and_paren_region_tails(self):
+        # Second grammar (review 2026-09-11): the code AFTER the key word, in a trailing
+        # bracket — 9 of 1 060 offers created 2026-09-10 carried it and were entered GLOBAL.
+        from src.merchants.mmoga import region_code, title_region, resolve_name, precheck
+        cases = {
+            "WWE 2K24 - Deluxe Edition (Steam Key EU)": "EU",
+            "Marvel's Midnight Suns - Epic Games Store Key [EU]": "EU",
+            "Wild West Dynasty - Ultimate Edition [EU]": "EU",
+            "The Sims 4 - For Rent DLC (EA App Key EU)": "EU",
+            "NBA 2K24 - Black Mamba Edition (EU)": "EU",
+            "Some Game (Steam Key US)": "US",
+            "Some Game [RU]": "RU",
+            "Borderlands 2 EU Key": "EU",
+            "Among Us Key": None,
+            "Crusader Kings III": None,
+            "Game (PC)": None,                       # a platform bracket is not a region code
+        }
+        for name, code in cases.items():
+            self.assertEqual(region_code(name), code, name)
+        self.assertEqual(title_region("WWE 2K24 - Deluxe Edition (Steam Key EU)"), "eu")
+        self.assertEqual(title_region("Wild West Dynasty - Ultimate Edition [EU]"), "eu")
+        self.assertIn("RUSSIA", precheck("Some Game [RU]", self.URL) or "")
+        self.assertEqual(resolve_name("WWE 2K24 - Deluxe Edition (Steam Key EU)"), "WWE 2K24 - Deluxe Edition")
+        self.assertEqual(resolve_name("Wild West Dynasty - Ultimate Edition [EU]"), "Wild West Dynasty - Ultimate Edition")
+        self.assertEqual(resolve_name("The Sims 4 - For Rent DLC (EA App Key EU)"), "The Sims 4 - For Rent DLC")
+        # end to end: the EU tail becomes region EU, never implicit GLOBAL
+        from src.matcher import detect_region
+        label, _rid, implicit = detect_region(self._o("Wild West Dynasty - Ultimate Edition [EU]",
+                                                       "https://www.mmoga.com/Steam-Games/Wild-West-Dynasty-Ultimate-Edition-EU.html?ref=615"), "STEAM")
+        self.assertEqual((label, implicit), ("EU", False))
+
     def test_platform_from_the_url_category_segment(self):
         from src.matcher import explicit_platform_from_url
         self.assertEqual(explicit_platform_from_url(self.URL, "MMOGA"), "STEAM")
@@ -3883,3 +3923,271 @@ class SearchCircuitPreopenedTests(unittest.TestCase):
         self.assertEqual(stats["search_circuit_open_offers"], 3)
         self.assertEqual(stats["search_circuit_preopened"], 1)
         self.assertEqual(stats["search_failures"], 0)
+
+
+class DlcTitleR43Tests(unittest.TestCase):
+    """[R43] Romain GO 2026-09-11: DLC / Add-On / Season Pass titles are resolved
+    (marker stripped) and entered as DLC(16) on their OWN AKS page — the page must
+    carry the DLC bucket, anything else is a fail-closed skip."""
+
+    def _res(self, aks_name, editions, slug="neon-beats-tidal-wave"):
+        return AksResolution(slug=slug, url=f"https://aks/buy-{slug}", product_id="777",
+                             aks_name=aks_name, editions=editions, official_platforms=("Steam",))
+
+    def test_marker_classifier(self):
+        cases = {
+            "Northgard - Svardilfari Clan of the Horse (DLC)": "DLC",
+            "Hearts of Iron IV: Expansion Pass 2 DLC": "SEASON PASS" if False else "EXPANSION PASS",
+            "OMSI 2 Add-On Aachen (PC) - Steam Key - GLOBAL": "ADD ON",
+            "Hunt: Showdown Season Pass (PC) - Steam Key": "SEASON PASS",
+            "Ultimate Season Passes Pack": "SEASON PASS",
+            "Some Game - Downloadable Content Vol. 2": "DOWNLOADABLE CONTENT",
+            "Growtopia Royal Grow Pass - GLOBAL": None,          # in-game pass, not a DLC
+            "Fortnite Battle Pass": None,
+            "Addonis Chronicles": None,                          # letters inside a word
+            "Neon Beats - Full Version (PC) - Steam Key": None,
+        }
+        for name, expected in cases.items():
+            self.assertEqual(dlc_title_marker(name), expected, name)
+
+    def test_strip_marker_for_resolution(self):
+        cases = {
+            "Northgard - Svardilfari Clan of the Horse (DLC)": "Northgard - Svardilfari Clan of the Horse",
+            "Hearts of Iron IV: Expansion Pass 2 DLC": "Hearts of Iron IV: Expansion Pass 2",
+            "OMSI 2 Add-On Aachen (PC) - Steam Key - GLOBAL": "OMSI 2 Aachen (PC) - Steam Key - GLOBAL",
+            "Farming Simulator 22 - Platinum Expansion (DLC) - Steam Key [EU]":
+                "Farming Simulator 22 - Platinum Expansion - Steam Key [EU]",
+            "Hunt: Showdown Season Pass (PC) - Steam Key - GLOBAL": "Hunt: Showdown Season Pass (PC) - Steam Key - GLOBAL",
+            "Some Game - DLC": "Some Game",
+            "DLC Quest": "DLC Quest",                    # a LEADING DLC is a name (real game)
+        }
+        for name, expected in cases.items():
+            self.assertEqual(strip_dlc_marker(name), expected, name)
+        # the slug then comes out clean, most specific tier first
+        self.assertEqual(build_slug_candidates(strip_dlc_marker(
+            "Northgard - Svardilfari Clan of the Horse (DLC)"))[0], "northgard-svardilfari-clan-of-the-horse")
+
+    def test_dlc_title_on_its_own_dlc_page_is_entered_as_dlc(self):
+        seen = []
+
+        def resolver(name):
+            seen.append(name)
+            return self._res("Neon Beats Tidal Wave", {"16": {"name": "DLC"}, "1": {"name": "Standard"}})
+        result = match_offer(_offer("Neon Beats - Tidal Wave (DLC) - Steam Key GLOBAL"), resolver)
+        self.assertIsInstance(result, Candidate, getattr(result, "reason", None))
+        self.assertEqual((result.edition_label, result.edition_id), ("DLC", "16"))
+        self.assertEqual(seen, ["Neon Beats - Tidal Wave - Steam Key GLOBAL"])   # marker stripped for AKS
+
+    def test_season_pass_on_its_own_dlc_page_is_entered_as_dlc(self):
+        seen = []
+
+        def resolver(name):
+            seen.append(name)
+            return self._res("Neon Beats Season Pass", {"16": {"name": "DLC"}}, slug="neon-beats-season-pass")
+        result = match_offer(_offer("Neon Beats Season Pass (PC) - Steam Key - GLOBAL"), resolver)
+        self.assertIsInstance(result, Candidate, getattr(result, "reason", None))
+        self.assertEqual((result.edition_label, result.edition_id), ("DLC", "16"))
+        self.assertIn("Season Pass", seen[0])                                    # kept: it IS the slug
+
+    def test_add_on_title_is_entered_as_dlc(self):
+        resolver = lambda name: self._res("OMSI 2 Aachen", {"16": {"name": "DLC"}}, slug="omsi-2-aachen")
+        result = match_offer(_offer("OMSI 2 Add-On Aachen (PC) - Steam Key - GLOBAL"), resolver)
+        self.assertIsInstance(result, Candidate, getattr(result, "reason", None))
+        self.assertEqual(result.edition_id, "16")
+
+    def test_dlc_title_on_the_base_game_page_is_skipped_r43(self):
+        # A less specific slug tier reached the base game ("neon-beats", Standard only).
+        resolver = lambda name: self._res("Neon Beats", {"1": {"name": "Standard"}}, slug="neon-beats")
+        for title in ("Neon Beats - Tidal Wave (DLC) - Steam Key GLOBAL",
+                      "Neon Beats Season Pass - Steam Key GLOBAL",
+                      "Neon Beats Add-On Aachen - Steam Key GLOBAL"):
+            result = match_offer(_offer(title), resolver)
+            self.assertIsInstance(result, SkippedOffer, title)
+            self.assertIn("(R43)", result.reason, title)
+            self.assertIn("carries no DLC edition", result.reason, title)
+
+    def test_dlc_title_on_a_stub_page_is_skipped_r43(self):
+        resolver = lambda name: self._res("Neon Beats Tidal Wave", {})
+        result = match_offer(_offer("Neon Beats - Tidal Wave (DLC) - Steam Key GLOBAL"), resolver)
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("(R43)", result.reason)
+
+    def test_dlc_page_but_different_product_words_still_skips_r16(self):
+        # The page is a DLC but not THIS one: the title's own words are missing/extra.
+        # (slug = the title's own tier-1 slug, so the own-page rule passes and the NAME
+        # guards are what fire — the page name says a different DLC)
+        resolver = lambda name: self._res("Neon Beats Tidal Wave", {"16": {"name": "DLC"}}, slug="neon-beats-crimson-moon")
+        result = match_offer(_offer("Neon Beats - Crimson Moon (DLC) - Steam Key GLOBAL"), resolver)
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertTrue("missing AKS words" in result.reason or "extra words" in result.reason, result.reason)
+
+    def test_remaster_qualifier_is_not_waived_by_a_dlc_page(self):
+        resolver = lambda name: self._res("Neon Beats Tidal Wave", {"16": {"name": "DLC"}},
+                                          slug="neon-beats-tidal-wave-remastered")
+        result = match_offer(_offer("Neon Beats - Tidal Wave Remastered (DLC) - Steam Key GLOBAL"), resolver)
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("qualifier", result.reason)
+
+    def test_dangerous_qualifier_waiver_unit(self):
+        self.assertEqual(dangerous_qualifier("X DLC", "X"), "DLC")
+        self.assertIsNone(dangerous_qualifier("X DLC", "X", dlc_page=True))
+        self.assertIsNone(dangerous_qualifier("X Season Pass", "X", dlc_page=True))
+        self.assertEqual(dangerous_qualifier("X Remastered", "X", dlc_page=True), "REMASTERED")
+
+    def test_extra_words_ignore_the_marker_on_a_dlc_page(self):
+        self.assertEqual(extra_significant_words("Neon Beats Tidal Wave", "Neon Beats - Tidal Wave (DLC)", dlc_page=True), [])
+        self.assertEqual(extra_significant_words("OMSI 2 Aachen", "OMSI 2 Add-On Aachen", dlc_page=True), [])
+        self.assertEqual(extra_significant_words("Some Game Vol 2", "Some Game - Downloadable Content Vol. 2", dlc_page=True), [])
+        # a real extra word next to the marker still counts
+        self.assertEqual(extra_significant_words("Neon Beats", "Neon Beats - Tidal Wave (DLC)", dlc_page=True), ["TIDAL", "WAVE"])
+
+    def test_no_page_for_the_dlc_is_the_usual_skip(self):
+        result = match_offer(_offer("Neon Beats - Tidal Wave (DLC) - Steam Key GLOBAL"), lambda name: None)
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("no AKS product page found", result.reason)
+
+    # --- adversarial review 2026-09-11 (refute lens: classifier / regex / PASS) ---
+
+    def test_fullwidth_marker_classifies_like_its_token(self):
+        # tokenize() NFKC-folds "ＤＬＣ" to DLC; the classifier must agree, else the R16
+        # waiver and the R43 guard disagree and a base-game page gets entered Standard.
+        title = "Neon Beats - Tidal Wave ＤＬＣ - Steam Key GLOBAL"
+        self.assertEqual(dlc_title_marker(title), "DLC")
+        self.assertNotIn("ＤＬＣ", strip_dlc_marker(title)); self.assertNotIn("DLC", strip_dlc_marker(title))
+        base = lambda name: self._res("Neon Beats", {"1": {"name": "Standard"}}, slug="neon-beats")
+        result = match_offer(_offer(title), base)
+        self.assertIsInstance(result, SkippedOffer); self.assertIn("(R43)", result.reason)
+
+    def test_extras_waiver_needs_the_dlc_page_proof(self):
+        # default callers: the marker is an extra word exactly as before R43
+        self.assertEqual(extra_significant_words("Neon Beats Tidal Wave", "Neon Beats - Tidal Wave (DLC)"), ["DLC"])
+        self.assertEqual(extra_significant_words("Neon Beats Tidal Wave", "Neon Beats - Tidal Wave (DLC)", dlc_page=True), [])
+        self.assertEqual(extra_significant_words("OMSI 2 Aachen", "OMSI 2 Add-Ons Aachen", dlc_page=True), [])
+
+    def test_tagged_battle_pass_stays_the_pass_skip(self):
+        # in-game / subscription passes skip even when tagged; a tagged "<x> Pass" DLC and
+        # the season / expansion passes (tagged or not) go to resolution
+        self.assertIn("PASS", precheck_skip(_offer("Game X Battle Pass (DLC) - Steam Key GLOBAL")) or "")
+        self.assertIn("PASS", precheck_skip(_offer("PC Game Pass 3 Months Add-On")) or "")
+        self.assertIn("PASS", precheck_skip(_offer("Growtopia Royal Grow Pass DLC")) or "")
+        self.assertIn("PASS", precheck_skip(_offer("Riders Republic - Year 1 Pass")) or "")     # untagged: as before
+        self.assertIsNone(precheck_skip(_offer("Riders Republic - Year 1 Pass (DLC)")))
+        self.assertIsNone(precheck_skip(_offer("Dragon Ball Xenoverse 2 - Extra Pass (DLC)")))
+        self.assertIsNone(precheck_skip(_offer("Game X - Expansion Pass 2 DLC")))
+        self.assertIsNone(precheck_skip(_offer("Game X Season Pass - Steam Key GLOBAL")))
+
+    def test_dlc_bucket_on_a_base_page_reached_by_the_head_tier_is_skipped(self):
+        # A base-game page CAN carry a DLC bucket (a DLC filed under it). Reached through
+        # the dash-split head tier ("hunt-showdown" for "Hunt: Showdown - Season Pass"),
+        # it is not the DLC's own page → skip, even with a rescuing "Season Pass" label.
+        base = lambda name: self._res("Hunt: Showdown", {"1": {"name": "Standard"}, "16": {"name": "DLC"},
+                                                          "500": {"name": "Season Pass Edition"}}, slug="hunt-showdown")
+        for title in ("Hunt: Showdown - Season Pass (PC) - Steam Key - GLOBAL",
+                      "Hunt: Showdown - Bounty Hunter (DLC) - Steam Key GLOBAL"):
+            result = match_offer(_offer(title), base)
+            self.assertIsInstance(result, SkippedOffer, title)
+            self.assertIn("less specific slug tier", result.reason, title)
+
+    def test_own_page_rule_accepts_every_tier1_spelling(self):
+        self.assertTrue(resolved_on_own_page("railway-empire-great-britain-ireland", "Railway Empire - Great Britain & Ireland"))
+        self.assertTrue(resolved_on_own_page("crusader-kings-3-wards", "Crusader Kings III - Wards"))   # numeral swap
+        self.assertTrue(resolved_on_own_page("northgard-clan-2026", "Northgard - Clan"))               # year shape
+        self.assertFalse(resolved_on_own_page("northgard", "Northgard - Svardilfari Clan of the Horse"))
+        self.assertFalse(resolved_on_own_page("destiny-2-year-of-prophecy", "Destiny 2: Year of Prophecy Ultimate Edition"))
+
+    def test_leading_dlc_is_a_name_not_a_marker(self):
+        # "DLC Quest" is a real game: no marker, nothing stripped, its own page resolves.
+        self.assertIsNone(dlc_title_marker("DLC Quest (PC) - Steam Key - GLOBAL"))
+        self.assertEqual(strip_dlc_marker("DLC Quest (PC) - Steam Key - GLOBAL"), "DLC Quest (PC) - Steam Key - GLOBAL")
+        self.assertEqual(build_slug_candidates(strip_dlc_marker("DLC Quest"))[0], "dlc-quest")
+        own = lambda name: self._res("DLC Quest", {"1": {"name": "Standard"}}, slug="dlc-quest")
+        result = match_offer(_offer("DLC Quest (PC) - Steam Key - GLOBAL"), own)
+        self.assertIsInstance(result, Candidate, getattr(result, "reason", None))
+        self.assertEqual(result.edition_id, "1")
+        # but "DLC" elsewhere is still a marker, and a leading "DLC Pack" is a collection
+        self.assertEqual(dlc_title_marker("Quest DLC"), "DLC")
+        self.assertIsNotNone(dlc_collection_marker("DLC Pack - Neon Beats"))
+
+    def test_dlc_collections_are_bundles_never_entered(self):
+        for title in ("Neon Beats - DLC Pack - Steam Key GLOBAL", "Neon Beats - DLC Collection",
+                      "Neon Beats - All DLC Pack", "Neon Beats - Complete DLC", "Neon Beats DLCs",
+                      "Neon Beats - DLC Bundle (Steam)"):
+            reason = precheck_skip(_offer(title))
+            self.assertIsNotNone(reason, title)
+            self.assertTrue("DLC collection" in reason or "no bundles" in reason, (title, reason))
+        # ONE content pack named "… Pack (DLC)" is a DLC (PACK before DLC), not a collection
+        self.assertIsNone(precheck_skip(_offer("Planet Coaster - World's Fair Pack (DLC)")))
+        self.assertIsNone(dlc_collection_marker("Planet Coaster - World's Fair Pack (DLC)"))
+
+    def test_unnamed_dlc_on_a_page_that_also_sells_standard_is_skipped(self):
+        # "<Game> (DLC)" with no DLC name: the base game's own page carries bucket 16 live
+        # (Stray Blade, Aliens Dark Descent, Dragon Quest III HD-2D Remake) → doubt → skip.
+        both = lambda name: self._res("Neon Beats", {"1": {"name": "Standard"}, "16": {"name": "DLC"}}, slug="neon-beats")
+        for title in ("Neon Beats (DLC) - Steam Key GLOBAL", "Neon Beats DLC", "Neon Beats Add-On - Steam Key"):
+            result = match_offer(_offer(title), both)
+            self.assertIsInstance(result, SkippedOffer, title)
+            self.assertIn("without a DLC name of its own", result.reason, title)
+        # a DLC-only page (no Standard bucket) under the same shape is the DLC itself
+        only = lambda name: self._res("Neon Beats", {"16": {"name": "DLC"}}, slug="neon-beats")
+        result = match_offer(_offer("Neon Beats (DLC) - Steam Key GLOBAL"), only)
+        self.assertIsInstance(result, Candidate, getattr(result, "reason", None))
+        # a season pass names itself; a subtitle names the DLC — both keep going
+        sp = lambda name: self._res("Neon Beats Season Pass", {"1": {"name": "Standard"}, "16": {"name": "DLC"}}, slug="neon-beats-season-pass")
+        self.assertIsInstance(match_offer(_offer("Neon Beats Season Pass - Steam Key GLOBAL"), sp), Candidate)
+
+    def test_plural_and_hyphen_marker_forms_are_stripped(self):
+        for name, expected in {
+            "Game X DLCs": "Game X",
+            "OMSI 2 Add-Ons Aachen": "OMSI 2 Aachen",
+            "Game X - Downloadable-Content Vol. 2": "Game X - Vol. 2",
+            "Game X (DLCs)": "Game X",
+        }.items():
+            self.assertEqual(strip_dlc_marker(name), expected, name)
+            self.assertIsNotNone(dlc_title_marker(name), name)
+
+
+class RegionIdentityPhraseR44Tests(unittest.TestCase):
+    """[R44] (R43 dry-run 2026-09-11): a region phrase inside the AKS product name is
+    identity, not a lock — "United States Civilization" must not enter US-locked."""
+
+    AKS = "Age of Empires III Definitive Edition United States Civilization"
+
+    def _res(self, name):
+        return AksResolution(slug="age-of-empires-3-definitive-edition-united-states-civilization",
+                             url="https://aks/x", product_id="42", aks_name=self.AKS,
+                             editions={"16": {"name": "DLC"}}, official_platforms=("Steam",))
+
+    def test_phrase_lookup(self):
+        self.assertEqual(region_phrase_in_aks_name("US", self.AKS), "UNITED STATES")
+        self.assertIsNone(region_phrase_in_aks_name("US", "Neon Beats"))
+        self.assertIsNone(region_phrase_in_aks_name("EU", "Europa Universalis IV"))     # EUROPA ≠ EUROPE
+        self.assertIsNone(region_phrase_in_aks_name("GLOBAL", "Worldwide Soccer Manager"))
+        self.assertEqual(region_phrase_in_aks_name("UK", "United Kingdom Simulator"), "UNITED KINGDOM")
+
+    def test_slug_region_inside_the_product_name_skips_r44(self):
+        offer = NormalizedOffer(
+            offer_id="1", merchant="Test",
+            name="Age of Empires III Definitive Edition - United States Civilization (DLC)",
+            url="https://m.test/Age-of-Empires-III-Definitive-Edition-United-States-Civilization-DLC.html")
+        result = match_offer(offer, self._res)
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("(R44)", result.reason); self.assertIn("UNITED STATES", result.reason)
+
+    def test_explicit_global_marker_still_enters_global(self):
+        offer = NormalizedOffer(
+            offer_id="1", merchant="Test",
+            name="Age of Empires III Definitive Edition - United States Civilization (DLC) - Steam Key GLOBAL",
+            url="https://m.test/Age-of-Empires-III-Definitive-Edition-United-States-Civilization-DLC-Steam-Key-GLOBAL.html")
+        result = match_offer(offer, self._res)
+        self.assertIsInstance(result, Candidate, getattr(result, "reason", None))
+        self.assertEqual((result.region_label, result.edition_id), ("GLOBAL", "16"))
+
+    def test_merchant_grammar_region_is_authoritative(self):
+        # MMOGA "… US Key": the hook declared US itself — R44 does not second-guess it.
+        offer = NormalizedOffer(
+            offer_id="1", merchant="MMOGA",
+            name="Age of Empires III Definitive Edition - United States Civilization (DLC) US Key",
+            url="https://www.mmoga.com/Steam-Games/Age-of-Empires-III-Definitive-Edition-United-States-Civilization-DLC-US-Key.html?ref=615")
+        result = match_offer(offer, self._res)
+        self.assertIsInstance(result, Candidate, getattr(result, "reason", None))
+        self.assertEqual(result.region_label, "US")
