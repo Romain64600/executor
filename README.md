@@ -486,6 +486,7 @@ the `aks-data-entry` skill maps onto a guard signal.
   and Claude.
 
 ---
+- [`docs/MERCHANTS.md`](docs/MERCHANTS.md) — one section per merchant: store ids, feed grammar, merchant-config hooks (R32), merchant-specific rules, safe-auto status, residual feed profile; the live feed state is in `docs/feeds/<Merchant>.md`.
 
 ## Roadmap
 

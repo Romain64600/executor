@@ -149,6 +149,9 @@ Tout est poussé sur `origin/main`, suite verte (**1353 tests**). Travaux récen
   Sans le flag, la première halte arrête le lot (comportement historique). Via la console :
   champ `continue_on_halt: true` dans le POST `/api/data-entry/auto`. Un marchand par VPS,
   jamais deux sur la même machine (un navigateur, un verrou).
+  **Référence par marchand : `docs/MERCHANTS.md`** (2026-09-12 — identifiants, grammaire du
+  feed, hooks de config, règles propres, statut safe-auto, résiduel) ; à tenir à jour à chaque
+  nouveau marchand ou nouvelle règle marchand.
   **État du feed par marchand : `python3 scripts/14_feed_status.py --merchant MMOGA --store-id 12
   --out docs/feeds/MMOGA.md`** (Romain 2026-09-11 : « un document par marchand » — dernier
   passage, offres ajoutées, ce qui reste et pourquoi ; lecture seule sur `runs/`, à régénérer
