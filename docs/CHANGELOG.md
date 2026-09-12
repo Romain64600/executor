@@ -3,6 +3,39 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-12 — `docs/MERCHANTS.md` : la référence par marchand ; dry-run Eneba
+
+Romain : « On a bien un doc avec chaque config marchand expliquée ? » — non, c'était réparti
+entre EXECUTOR_RULES §4.10 (contrat R32), §11 (notes brèves) et les docstrings de
+`src/merchants/*.py`. Nouveau `docs/MERCHANTS.md` : le contrat `MerchantConfig` champ par
+champ, puis une section par marchand de la liste blanche (Kinguin, Gamivo, G2A, MMOGA, K4G,
+Driffle, Instant Gaming, Eneba, Allyouplay, GameSeal, CJS-CDKeys, Difmark parqué) —
+identifiants, grammaire titre / URL, hooks actifs, règles propres numérotées, statut
+safe-auto, résiduel — et un tableau de statut. Lié depuis README « Rules & docs » et HANDOFF.
+**Dry-run Eneba** (`20260912-075500-dryrun`, lecture seule, 07:50Z → 09:30Z) : 30 pages sur
+59, 3 000 offres vues, **32 candidats** (plateforme lue dans l'URL `steam-…` / `origin-…`,
+GLOBAL implicite ou EU/US du titre, éditions Complete/Deluxe/Premium/DLC(16) cohérentes,
+pages AKS du bon jeu) ; écartées : **2 698 consoles (90 %)**, 147 catégories exclues, 77
+régions interdites, 31 sans page AKS. Une même ligne (Cheap Golf, offer 101042157) vue sur
+deux pages = reflow du feed entre deux extractions, pas un doublon (la 2e saisie la
+trouverait absente du feed). Décision de sweep réel : Romain.
+
+## 2026-09-12 — nuit multi-marchands : 460 offres créées sur 7 marchands, 0 halte
+
+Romain (2026-09-11) : « tu continues jusqu'à demain matin » — un marchand par VPS, marchands
+à historique safe-auto seulement. Soirée (16:19Z → 20:25Z) : nouveau VPS Driffle 9 → Kinguin
+44 (pages 30-1) → G2A 56 → Instant Gaming 38 → G2A pages 31-37 : 8 ; ancien VPS MMOGA (DLC)
+202 → Gamivo 2 → K4G 77 → Gamivo pages 31-56 : 4 → Kinguin pages 31-67 : 7. Tournée de nuit
+02:00Z (10 premières pages) : nouveau VPS MMOGA 1, Kinguin 1, G2A 1 ; ancien VPS K4G 9,
+Driffle 1, Gamivo 0, Instant Gaming 0. **Total 460 créées**, 0 halte, 4 non créées (2 refus
+AKS 400, 1 sans signal, 1 « offer not in current feed » — disparue entre extract et submit).
+Feeds désormais couverts en entier (Kinguin 67 pages, Gamivo 56, G2A 37, MMOGA 8, K4G 7,
+Driffle 6, Instant Gaming 4-5) ; le résiduel est stable (consoles, sans page AKS, bundles,
+monnaies, variantes d'édition). Documents `docs/feeds/*.md` régénérés avec l'historique des
+deux VPS (runs de l'ancien VPS copiés : recap / submit_plan / skipped / match_meta /
+candidates). Session AKS des deux navigateurs restaurée par transfert de cookies (Romain) après
+le ban ; ban de l'IP du nouveau VPS levé à 13:55Z.
+
 ## 2026-09-11 — `--continue-on-halt` : lot multi-marchands qui ne s'arrête pas à la première halte
 
 Romain : « après les deux marchands suivants, tu prendras d'autres marchands sur lesquels on
