@@ -1,17 +1,17 @@
 # État du feed — Kinguin (store 58)
 
-_Généré le 2026-09-11 20:29 UTC par `scripts/14_feed_status.py` à partir des runs sur disque ; régénérer après chaque passage._
+_Généré le 2026-09-12 02:59 UTC par `scripts/14_feed_status.py` à partir des runs sur disque ; régénérer après chaque passage._
 
 ## Dernier passage
 
-- **Run** `20260911-190500-auto` — du 2026-09-11 19:14 UTC au 2026-09-11 20:15 UTC (1 h 00)
-- **Pages parcourues** : 37 — 3633 offres vues, 7 candidats, **7 créées**
-- **Issue** : aucune halte
+- **Run** `20260912-020001-auto` — du 2026-09-12 02:00 UTC au 2026-09-12 02:47 UTC (47 min)
+- **Pages parcourues** : 10 — 1000 offres vues, 1 candidats, **1 créées**
+- **Issue** : aucune halte, couverture : `incomplete_max_pages (feed has 67 pages)`
 - **Non créées** : aucune (toutes les tentatives ont abouti)
 
 ## Offres ajoutées (cumul, tous passages)
 
-**Total : 122 offres créées** (sweeps safe-auto + saisies par URLs).
+**Total : 123 offres créées** (sweeps safe-auto + saisies par URLs).
 
 | Jour | Créées |
 |---|---|
@@ -21,11 +21,12 @@ _Généré le 2026-09-11 20:29 UTC par `scripts/14_feed_status.py` à partir des
 | 2026-09-07 | 1 |
 | 2026-09-08 | 27 |
 | 2026-09-11 | 51 |
+| 2026-09-12 | 1 |
 | tria-ge--e | 17 |
 
 | Édition saisie | Offres |
 |---|---|
-| Standard | 96 |
+| Standard | 97 |
 | DLC | 17 |
 | Deluxe | 5 |
 | Complete | 3 |
@@ -33,7 +34,7 @@ _Généré le 2026-09-11 20:29 UTC par `scripts/14_feed_status.py` à partir des
 
 | Région saisie | Offres |
 |---|---|
-| Steam (2) | 103 |
+| Steam (2) | 104 |
 | GOG Global (6) | 10 |
 | Steam EU (9) | 3 |
 | Steam Gift (25) | 2 |
@@ -53,124 +54,113 @@ Historique des passages :
 | `20260908-160023-auto` | 2026-09-08 16:00 UTC | 30 | 3000 | 46 | 25 | coverage_incomplete_max_pages (feed has 65 pages) |
 | `20260911-161908-auto` | 2026-09-11 16:19 UTC | 30 | 3000 | 44 | 44 | — |
 | `20260911-190500-auto` | 2026-09-11 19:14 UTC | 37 | 3633 | 7 | 7 | — |
+| `20260912-020001-auto` | 2026-09-12 02:00 UTC | 10 | 1000 | 1 | 1 | — |
 
-### Offres créées au dernier passage (7)
+### Offres créées au dernier passage (1)
 
-- Big Fish Legend Steam CD Key → `big-fish-legend-cd-key-compare-prices` (Standard, Steam (2))
-- Beats Of Fury PC Steam CD Key → `beats-of-fury-cd-key-compare-prices` (Standard, Steam (2))
-- Saga of the Moon Priestess Steam CD Key → `saga-of-the-moon-priestess-cd-key-compare-prices` (Standard, Steam (2))
-- Forge Steam CD Key → `forge-cd-key-compare-prices` (Standard, Steam (2))
-- Memory of Memorie: A Chill Story PC Steam CD Key → `memory-of-memorie-a-chill-story-cd-key-compare-prices` (Standard, Steam (2))
-- Radio Commander: Squad Management DLC PC Steam CD Key → `radio-commander-squad-management-cd-key-compare-prices` (DLC, Steam (2))
-- Unheard Screams - King Leopold II rule over the Congo Steam CD Key → `unheard-screams-king-leopold-2-rule-over-the-congo-cd-key-compare-prices` (Standard, Steam (2))
+- Dungeons of Blood and Dream PC Steam CD Key → `dungeons-of-blood-and-dream-cd-key-compare-prices` (Standard, Steam (2))
 
 ## Ce qui reste dans le feed et pourquoi
 
-3626 offres écartées au dernier passage, par famille :
+999 offres écartées au dernier passage, par famille :
 
 | Famille | Offres | Pourquoi ce n'est pas saisi | Levier |
 |---|---|---|---|
-| Consoles (Xbox / PlayStation / Switch) | 884 | l'outil AKS feed ne sait pas saisir une clé multi-plateforme (une ligne = une offre, consommée à la création) ; chantier mis en attente (2026-09-11) | modification de l'outil AKS feed, puis classifieur console (EXECUTOR_RULES §4.3) |
-| Sans page produit AKS | 2203 | aucune page AKS trouvée sous les slugs devinés (et la recherche AKS était en panne pendant le passage) | créer la page produit sur AKS, ou retour de la recherche AKS (reprise automatique) |
-| DLC sans page AKS propre | 152 | le titre annonce un DLC mais AKS n'a pas de page pour ce DLC : la devinette retombe sur la page du jeu de base, jamais saisie (R43) | créer la page du DLC sur AKS |
-| Bundles / packs multi-jeux | 216 | règle : on ne saisit jamais de bundle | décision Romain |
-| Monnaie in-game (points, coins, gems…) | 12 | règle : jeux uniquement, pas de monnaie | décision Romain |
-| Cartes prépayées / gift cards / wallets | 28 | hors périmètre (prepaids) | décision Romain |
-| Régions verrouillées interdites | 25 | région non vendue (RoW, LATAM, RU, TR…) | décision Romain |
-| Édition / variante absente de la page AKS | 51 | le titre marchand porte des mots (édition, sous-titre) que la page AKS ne connaît pas → autre produit, doute → skip (R16) | ajouter l'édition sur la page AKS, ou vérifier à la main |
-| Page AKS trouvée mais nom différent | 4 | la page atteinte n'est pas ce produit (R01), fail-safe | vérifier à la main |
-| Logiciels | 5 | édition / région logicielle non résolue sur la page AKS (R31) | vérifier à la main |
-| Page AKS sans carte d'éditions | 1 | page AKS vide (stub), édition invérifiable (R19) | compléter la page sur AKS |
-| Sonde AKS non fiable (transitoire) | 3 | AKS a répondu en erreur ou timeout pendant le passage | reprise automatique au passage suivant |
-| Autres | 42 | voir le motif exact | — |
+| Consoles (Xbox / PlayStation / Switch) | 388 | l'outil AKS feed ne sait pas saisir une clé multi-plateforme (une ligne = une offre, consommée à la création) ; chantier mis en attente (2026-09-11) | modification de l'outil AKS feed, puis classifieur console (EXECUTOR_RULES §4.3) |
+| Sans page produit AKS | 318 | aucune page AKS trouvée sous les slugs devinés (et la recherche AKS était en panne pendant le passage) | créer la page produit sur AKS, ou retour de la recherche AKS (reprise automatique) |
+| DLC sans page AKS propre | 22 | le titre annonce un DLC mais AKS n'a pas de page pour ce DLC : la devinette retombe sur la page du jeu de base, jamais saisie (R43) | créer la page du DLC sur AKS |
+| Bundles / packs multi-jeux | 14 | règle : on ne saisit jamais de bundle | décision Romain |
+| Cartes prépayées / gift cards / wallets | 109 | hors périmètre (prepaids) | décision Romain |
+| Abonnements | 37 | hors périmètre pour l'instant | à apprendre (type « subscription » AKS) |
+| Régions verrouillées interdites | 26 | région non vendue (RoW, LATAM, RU, TR…) | décision Romain |
+| Édition / variante absente de la page AKS | 75 | le titre marchand porte des mots (édition, sous-titre) que la page AKS ne connaît pas → autre produit, doute → skip (R16) | ajouter l'édition sur la page AKS, ou vérifier à la main |
+| Page AKS trouvée mais nom différent | 2 | la page atteinte n'est pas ce produit (R01), fail-safe | vérifier à la main |
+| Logiciels | 1 | édition / région logicielle non résolue sur la page AKS (R31) | vérifier à la main |
+| Rockstar sans région | 3 | plateforme Rockstar sans bucket de région AKS | à apprendre |
+| Autres | 4 | voir le motif exact | — |
 
-### Consoles (Xbox / PlayStation / Switch) (884)
+### Consoles (Xbox / PlayStation / Switch) (388)
 
-- Little Droid EU Nintendo Switch / Switch 2 CD Key — `console`
-- Unicorn Overlord - ATLUS X Vanillaware Heraldry Pack DLC EU (without DE) PS5 CD Key — `console`
-- Tom Clancy's The Division 2 - Warlords Of New York Expansion DLC US XBOX One / Xbox Series X\|S CD Key — `console`
-- … 881 autres
+- Onimusha: Way of the Sword EU PS5 CD Key — `console`
+- Star Wars Zero Company Deluxe Edition US PS5 CD Key — `console`
+- Blocky Farm XBOX One / Xbox Series X\|S Account — `console`
+- … 385 autres
 
-### Sans page produit AKS (2203)
+### Sans page produit AKS (318)
 
-- RAGER PC Steam CD Key — `no AKS product page found (slug not 200)`
-- Survivor Spark Steam CD Key — `no AKS product page found (slug not 200)`
-- Dawn of Kagura: Maika's Story - The Dragon's Wrath PC Steam CD Key — `no AKS product page found (slug not 200)`
-- … 2200 autres
+- Warhammer 40,000: Gladius - Relics of War - Lord of Skulls DLC EU PC Steam CD Key — `no AKS product page found (slug not 200)`
+- Darksiders Genesis TR PC Steam CD Key — `no AKS product page found (slug not 200)`
+- Metro Awakening US PC Steam CD Key — `no AKS product page found (slug not 200)`
+- … 315 autres
 
-### DLC sans page AKS propre (152)
+### DLC sans page AKS propre (22)
 
-Motifs exacts : DLC in title but AKS page 'oddworld-new-n-tasty' carries no DLC edition (15), DLC in title but AKS page 'djmax-respect-v' carries no DLC edition (14), DLC in title but AKS page 'overwatch-2' carries no DLC edition (14), ADD ON in title but AKS page 'train-simulator-2017' carries no DLC edition (14), DLC in title but AKS page 'battlefleet-gothic-armada' carries no DLC edition (13), DLC in title but AKS page 'pioner' carries no DLC edition (13).
+Motifs exacts : DLC in title but AKS page 'fortnite' carries no DLC edition (4), DLC in title but AKS page 'god-of-weapons' carries no DLC edition (2), DLC in title but AKS page 'rpg-maker-mv' carries no DLC edition (2), DLC in title but AKS page 'overcooked-2' carries no DLC edition (1), DLC in title but AKS page 'taxi-life-a-city-driving-simulator' carries no DLC edition (1), DLC in title but AKS page 'meadow' carries no DLC edition (1).
 
-- Over The Top: WWI - Elite Armored DLC PC Steam CD Key — `DLC in title but AKS page 'over-the-top-wwi' carries no DLC edition — base game or wrong product, not entered `
-- DragonSword Awakening - Deluxe Pack DLC PC Steam CD Key — `DLC in title but AKS page 'dragonsword-awakening' carries no DLC edition — base game or wrong product, not ent`
-- Wild Terra 2: New Lands - Christmas Pack DLC CD Key — `DLC in title but AKS page 'wild-terra-2-new-lands' carries no DLC edition — base game or wrong product, not en`
-- … 149 autres
+- Fortnite - Frosty Visions Wrap DLC PC Epic Games CD Key — `DLC in title but AKS page 'fortnite' carries no DLC edition — base game or wrong product, not entered (R43)`
+- Fortnite - Taffy Wrap DLC PC Epic Games CD Key — `DLC in title but AKS page 'fortnite' carries no DLC edition — base game or wrong product, not entered (R43)`
+- Overcooked! 2 - Campfire Cook Off DLC EU PC Steam CD Key — `DLC in title but AKS page 'overcooked-2' carries no DLC edition — base game or wrong product, not entered (R43`
+- … 19 autres
 
-### Bundles / packs multi-jeux (216)
+### Bundles / packs multi-jeux (14)
 
-Motifs exacts : skip category (196), possible multi-game bundle (20).
+Motifs exacts : skip category (11), possible multi-game bundle (3).
 
-- TechSmith Software Bundle CD Key (2 Devices) — `skip category: BUNDLE (no bundles/skins)`
-- Windows 10 Professional OEM 3 Keys Bundle — `skip category: BUNDLE (no bundles/skins)`
-- The Caligula Effect: Overdose - Swimsuit Bundle DLC Steam CD Key — `skip category: BUNDLE (no bundles/skins)`
-- … 213 autres
+- Hearts of Iron IV: Ultimate Bundle 2020 PC Steam CD Key — `skip category: BUNDLE (no bundles/skins)`
+- Our Life Bundle PC Steam CD Key — `skip category: BUNDLE (no bundles/skins)`
+- Our Life Bundle PC Steam CD Key — `skip category: BUNDLE (no bundles/skins)`
+- … 11 autres
 
-### Monnaie in-game (points, coins, gems…) (12)
+### Cartes prépayées / gift cards / wallets (109)
 
-- CaseBattles.gg 1000 Gems Code — `skip category: GEMS`
-- CaseBattles.gg 1000 Gems Code — `skip category: GEMS`
-- CaseBattles.gg 1000 Gems Code — `skip category: GEMS`
-- … 9 autres
+- Google Play SAR 12 Gift Card SA — `skip category: GIFT CARD`
+- ASOS $100 Gift Card AU — `skip category: GIFT CARD`
+- Tokopedia IDR 10000 Gift Card ID — `skip category: GIFT CARD`
+- … 106 autres
 
-### Cartes prépayées / gift cards / wallets (28)
+### Abonnements (37)
 
-- RewUp PayPal 50 EUR Gift Card — `skip category: GIFT CARD`
-- RewUp PayPal 50 EUR Gift Card — `skip category: GIFT CARD`
-- RewUp PayPal 50 EUR Gift Card — `skip category: GIFT CARD`
-- … 25 autres
+- GeForce NOW Game+ - 3 Months Subscription TR — `skip category: SUBSCRIPTION`
+- Super Duolingo 12 Month Subscription Link — `skip category: SUBSCRIPTION`
+- Adobe Creative Cloud Photography Plan - 1 Year Subscription Key AU — `skip category: SUBSCRIPTION`
+- … 34 autres
 
-### Régions verrouillées interdites (25)
+### Régions verrouillées interdites (26)
 
-- Smalland: Survive the Wilds EU/NA PC Steam CD Key — `forbidden region: EU NA`
-- Final Fantasy VII Remake & Rebirth: Twin Pack RoW PC Steam CD Key — `forbidden region: ROW`
-- Smalland: Survive the Wilds EU/NA PC Steam CD Key — `forbidden region: EU NA`
-- … 22 autres
+- Bus Simulator 27 RoW PC Steam CD Key — `forbidden region: ROW`
+- Dead Cells - The Bad Seed DLC RoW PC Steam CD Key (valid until March 2027) — `forbidden region: ROW`
+- Dead Cells RoW PC Steam CD Key (valid until March 2027) — `forbidden region: ROW`
+- … 23 autres
 
-### Édition / variante absente de la page AKS (51)
+### Édition / variante absente de la page AKS (75)
 
-- MAGIX Music Maker - Breakbeat Electronic Breaks Digital Download CD Key — `different/expanded product — extra words: ['BREAKBEAT', 'ELECTRONIC', 'BREAKS']`
-- AVG PC TuneUp 2020 Key (2 Years / 1 PC) — `different/expanded product — extra words: ['2', 'YEARS', '1']`
-- AVG PC TuneUp 2020 Key (2 Years / 1 PC) — `different/expanded product — extra words: ['2', 'YEARS', '1']`
-- … 48 autres
+- GreedFall PC Steam CD Key (valid until June 2027) — `different/expanded product — extra words: ['VALID', 'UNTIL', 'JUNE', '2027']`
+- Time to Morp PC Steam CD Key (valid until June 2027) — `different/expanded product — extra words: ['VALID', 'UNTIL', 'JUNE', '2027']`
+- Factory Town PC Steam CD Key (valid until June 2027) — `different/expanded product — extra words: ['VALID', 'UNTIL', 'JUNE', '2027']`
+- … 72 autres
 
-### Page AKS trouvée mais nom différent (4)
+### Page AKS trouvée mais nom différent (2)
 
-- Amerzone: The Explorer's Legacy (2025) Deluxe Edition PC Steam CD Key — `name mismatch, missing AKS words: ['EXPLORERS']`
-- Amerzone: The Explorer's Legacy (2025) Deluxe Edition PC Steam CD Key — `name mismatch, missing AKS words: ['EXPLORERS']`
-- Amerzone: The Explorer's Legacy (2025) Deluxe Edition PC Steam CD Key — `name mismatch, missing AKS words: ['EXPLORERS']`
+- Budget Cuts Ultimate PC Steam CD Key (valid until June 2027) — `name mismatch, missing AKS words: ['VR']`
+- Farmer's Dynasty 2 Complete Edition PC Steam CD Key — `name mismatch, missing AKS words: ['FARMERS']`
+
+### Logiciels (1)
+
+- CCleaner Professional 2021 Key (2 Years / 1 PC) — `software edition unresolved on the AKS page (1 editions, none in title) — not guessed (R31)`
+
+### Rockstar sans région (3)
+
+Motifs exacts : no region id for ROCKSTAR/GLOBAL (2), no region id for ROCKSTAR/UK (1).
+
+- Grand Theft Auto V Enhanced DE PC Rockstar Digital Download CD Key — `no region id for ROCKSTAR/GLOBAL`
+- Grand Theft Auto V Enhanced BR PC Rockstar Digital Download CD Key — `no region id for ROCKSTAR/GLOBAL`
+- Grand Theft Auto V Enhanced UK PC Rockstar Digital Download CD Key — `no region id for ROCKSTAR/UK`
+
+### Autres (4)
+
+Motifs exacts : skip category (3), language restriction (1).
+
+- Far Cry 5 - Season Pass EU Uplay Activation Link — `skip category: ACTIVATION LINK`
+- Bitdefender Antivirus For Mac 2026 EU Key (2 Years / 3 Devices) — `skip category: ANTIVIRUS`
+- Deadlight: Director's Cut English Language Only Steam CD Key — `language restriction`
 - … 1 autres
-
-### Logiciels (5)
-
-- EaseUS Partition Master Professional 2026 Key (1 Month / 2 PCs) — `software edition unresolved on the AKS page (2 editions, none in title) — not guessed (R31)`
-- AVG Internet Security 2025 Key (2 Years / 5 Devices) — `software edition unresolved on the AKS page (2 editions, none in title) — not guessed (R31)`
-- EaseUS Partition Master Professional 2026 Key (1 Month / 2 PCs) — `software edition unresolved on the AKS page (2 editions, none in title) — not guessed (R31)`
-- … 2 autres
-
-### Page AKS sans carte d'éditions (1)
-
-- Reveal The Deep Steam Gift — `AKS page carries no editions map — edition unverifiable (R19)`
-
-### Sonde AKS non fiable (transitoire) (3)
-
-- Color Splash: Mushrooms PC Steam CD Key — `AKS probe unreliable (throttled?): site search -> <urlopen error HTTPSConnectionPool(host='www.allkeyshop.com'`
-- Qrabbles PC Steam CD Key — `AKS probe unreliable (throttled?): site search -> <urlopen error HTTPSConnectionPool(host='www.allkeyshop.com'`
-- PhotoFiltre Studio 11 CD Key (3 PCs) — `AKS probe unreliable (throttled?): site search -> <urlopen error HTTPSConnectionPool(host='www.allkeyshop.com'`
-
-### Autres (42)
-
-- Nioh 2 The Complete Edition EN Language Only US PC Steam CD Key — `language restriction`
-- Nioh 2 The Complete Edition EN Language Only US PC Steam CD Key — `language restriction`
-- Call of Duty: Modern Warfare II Endowment (C.O.D.E.) - Protector Pack DLC EN Language Only Battle.net CD Key — `language restriction`
-- … 39 autres

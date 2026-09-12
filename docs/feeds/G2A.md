@@ -1,17 +1,17 @@
 # État du feed — G2A (store 38)
 
-_Généré le 2026-09-11 20:29 UTC par `scripts/14_feed_status.py` à partir des runs sur disque ; régénérer après chaque passage._
+_Généré le 2026-09-12 02:59 UTC par `scripts/14_feed_status.py` à partir des runs sur disque ; régénérer après chaque passage._
 
 ## Dernier passage
 
-- **Run** `20260911-201147-auto` — du 2026-09-11 20:11 UTC au 2026-09-11 20:28 UTC (16 min)
-- **Pages parcourues** : 7 — 620 offres vues, 8 candidats, **8 créées**
-- **Issue** : aucune halte
+- **Run** `20260912-020001-auto` — du 2026-09-12 02:00 UTC au 2026-09-12 02:47 UTC (47 min)
+- **Pages parcourues** : 10 — 1000 offres vues, 1 candidats, **1 créées**
+- **Issue** : aucune halte, couverture : `incomplete_max_pages (feed has 37 pages)`
 - **Non créées** : aucune (toutes les tentatives ont abouti)
 
 ## Offres ajoutées (cumul, tous passages)
 
-**Total : 99 offres créées** (sweeps safe-auto + saisies par URLs).
+**Total : 100 offres créées** (sweeps safe-auto + saisies par URLs).
 
 | Jour | Créées |
 |---|---|
@@ -20,11 +20,12 @@ _Généré le 2026-09-11 20:29 UTC par `scripts/14_feed_status.py` à partir des
 | 2026-09-07 | 4 |
 | 2026-09-08 | 1 |
 | 2026-09-11 | 64 |
+| 2026-09-12 | 1 |
 | tria-ge--e | 5 |
 
 | Édition saisie | Offres |
 |---|---|
-| Standard | 63 |
+| Standard | 64 |
 | DLC | 22 |
 | Deluxe | 8 |
 | Gold | 2 |
@@ -34,7 +35,7 @@ _Généré le 2026-09-11 20:29 UTC par `scripts/14_feed_status.py` à partir des
 
 | Région saisie | Offres |
 |---|---|
-| Steam (2) | 55 |
+| Steam (2) | 56 |
 | Steam EU (9) | 30 |
 | Steam Gift EU (259) | 5 |
 | Steam Gift (25) | 4 |
@@ -50,133 +51,141 @@ Historique des passages :
 | `20260810-091857-auto` | 2026-08-10 09:18 UTC | 10 | 988 | 24 | 24 | — |
 | `20260911-161908-auto` | 2026-09-11 16:19 UTC | 30 | 3000 | 57 | 56 | — |
 | `20260911-201147-auto` | 2026-09-11 20:11 UTC | 7 | 620 | 8 | 8 | — |
+| `20260912-020001-auto` | 2026-09-12 02:00 UTC | 10 | 1000 | 1 | 1 | — |
 
-### Offres créées au dernier passage (8)
+### Offres créées au dernier passage (1)
 
-- Dragon Ball: Xenoverse 2 - Legendary Pack 1 (PC) - Steam Key - GLOBAL → `dragon-ball-xenoverse-2-legendary-pack-1-cd-key-compare-prices` (DLC, Steam (2))
-- Microsoft Flight Simulator 2024 \| Premium Deluxe Edition (PC) - Steam Key - GLOBAL → `microsoft-flight-simulator-2024-cd-key-compare-prices` (Deluxe, Steam (2))
-- Galactic Civilizations IV: Species Pack (PC) - Steam Key - GLOBAL → `galactic-civilizations-iv-species-pack-cd-key-compare-prices` (DLC, Steam (2))
-- Microsoft Flight Simulator 2024 \| Premium Deluxe Edition (PC) - Steam Key - EUROPE → `microsoft-flight-simulator-2024-cd-key-compare-prices` (Deluxe, Steam EU (9))
-- R-Type Dimensions III (PC) - Steam Key - GLOBAL → `r-type-dimensions-3-cd-key-compare-prices` (Standard, Steam (2))
-- Final Fantasy XIV: Dawntrail (PC) - Steam Key - GLOBAL → `final-fantasy-14-dawntrail-cd-key-compare-prices` (DLC, Steam (2))
-- Blackthorn Arena: Reforged - Shadow of Wuxia (PC) - Steam Key - GLOBAL → `blackthorn-arena-reforged-shadow-of-wuxia-cd-key-compare-prices` (DLC, Steam (2))
-- C O S M Steam Key GLOBAL → `c-o-s-m-cd-key-compare-prices` (Standard, Steam (2))
+- Seafrog (PC) - Steam Key - GLOBAL → `seafrog-cd-key-compare-prices` (Standard, Steam (2))
 
 ## Ce qui reste dans le feed et pourquoi
 
-612 offres écartées au dernier passage, par famille :
+999 offres écartées au dernier passage, par famille :
 
 | Famille | Offres | Pourquoi ce n'est pas saisi | Levier |
 |---|---|---|---|
-| Consoles (Xbox / PlayStation / Switch) | 160 | l'outil AKS feed ne sait pas saisir une clé multi-plateforme (une ligne = une offre, consommée à la création) ; chantier mis en attente (2026-09-11) | modification de l'outil AKS feed, puis classifieur console (EXECUTOR_RULES §4.3) |
-| Sans page produit AKS | 210 | aucune page AKS trouvée sous les slugs devinés (et la recherche AKS était en panne pendant le passage) | créer la page produit sur AKS, ou retour de la recherche AKS (reprise automatique) |
-| Bundles / packs multi-jeux | 72 | règle : on ne saisit jamais de bundle | décision Romain |
-| Monnaie in-game (points, coins, gems…) | 59 | règle : jeux uniquement, pas de monnaie | décision Romain |
-| Cartes prépayées / gift cards / wallets | 20 | hors périmètre (prepaids) | décision Romain |
-| Passes in-game (Battle Pass, Game Pass…) | 8 | ce ne sont pas des jeux ; seuls Season / Expansion Pass sont saisis | — |
-| Abonnements | 2 | hors périmètre pour l'instant | à apprendre (type « subscription » AKS) |
-| Microsoft Store | 14 | plateforme Microsoft sans correspondance de région AKS | à apprendre |
-| Régions verrouillées interdites | 40 | région non vendue (RoW, LATAM, RU, TR…) | décision Romain |
-| Édition / variante absente de la page AKS | 13 | le titre marchand porte des mots (édition, sous-titre) que la page AKS ne connaît pas → autre produit, doute → skip (R16) | ajouter l'édition sur la page AKS, ou vérifier à la main |
-| Page AKS trouvée mais nom différent | 1 | la page atteinte n'est pas ce produit (R01), fail-safe | vérifier à la main |
-| Plateforme non vérifiable | 1 | pas de plateforme dans le titre et la page AKS ne confirme pas un éditeur direct (R20) | vérifier à la main |
-| Page AKS sans carte d'éditions | 1 | page AKS vide (stub), édition invérifiable (R19) | compléter la page sur AKS |
-| Sonde AKS non fiable (transitoire) | 3 | AKS a répondu en erreur ou timeout pendant le passage | reprise automatique au passage suivant |
-| Autres | 8 | voir le motif exact | — |
+| Consoles (Xbox / PlayStation / Switch) | 47 | l'outil AKS feed ne sait pas saisir une clé multi-plateforme (une ligne = une offre, consommée à la création) ; chantier mis en attente (2026-09-11) | modification de l'outil AKS feed, puis classifieur console (EXECUTOR_RULES §4.3) |
+| Sans page produit AKS | 246 | aucune page AKS trouvée sous les slugs devinés (et la recherche AKS était en panne pendant le passage) | créer la page produit sur AKS, ou retour de la recherche AKS (reprise automatique) |
+| DLC sans page AKS propre | 2 | le titre annonce un DLC mais AKS n'a pas de page pour ce DLC : la devinette retombe sur la page du jeu de base, jamais saisie (R43) | créer la page du DLC sur AKS |
+| Bundles / packs multi-jeux | 84 | règle : on ne saisit jamais de bundle | décision Romain |
+| Monnaie in-game (points, coins, gems…) | 1 | règle : jeux uniquement, pas de monnaie | décision Romain |
+| Cartes prépayées / gift cards / wallets | 4 | hors périmètre (prepaids) | décision Romain |
+| Passes in-game (Battle Pass, Game Pass…) | 5 | ce ne sont pas des jeux ; seuls Season / Expansion Pass sont saisis | — |
+| Abonnements | 3 | hors périmètre pour l'instant | à apprendre (type « subscription » AKS) |
+| Microsoft Store | 3 | plateforme Microsoft sans correspondance de région AKS | à apprendre |
+| Régions verrouillées interdites | 196 | région non vendue (RoW, LATAM, RU, TR…) | décision Romain |
+| Édition / variante absente de la page AKS | 25 | le titre marchand porte des mots (édition, sous-titre) que la page AKS ne connaît pas → autre produit, doute → skip (R16) | ajouter l'édition sur la page AKS, ou vérifier à la main |
+| Page AKS trouvée mais nom différent | 6 | la page atteinte n'est pas ce produit (R01), fail-safe | vérifier à la main |
+| Plateforme non vérifiable | 349 | pas de plateforme dans le titre et la page AKS ne confirme pas un éditeur direct (R20) | vérifier à la main |
+| Logiciels | 3 | édition / région logicielle non résolue sur la page AKS (R31) | vérifier à la main |
+| Page AKS sans carte d'éditions | 6 | page AKS vide (stub), édition invérifiable (R19) | compléter la page sur AKS |
+| Autres | 19 | voir le motif exact | — |
 
-### Consoles (Xbox / PlayStation / Switch) (160)
+### Consoles (Xbox / PlayStation / Switch) (47)
 
-- FINAL FANTASY XIV ONLINE COMPLETE COLLECTOR'S EDITION (Xbox Series X/S) - Xbox Live Key - EUROPE — `console`
-- FINAL FANTASY XIII (Xbox One) - Xbox Live Key - EUROPE — `console`
-- LIGHTNING RETURNS: FINAL FANTASY XIII (Xbox One) - Xbox Live Key - EUROPE — `console`
-- … 157 autres
+- Shadowrun Trilogy (Xbox Series X/S) - Xbox Live Key - EUROPE — `console`
+- Jurassic World Evolution: Expansion Collection (Xbox One) - Xbox Live Key - EUROPE — `console`
+- Train Sim World 6 \| Deluxe Edition (Xbox Series X/S, PC) - Xbox Live Key - UNITED KINGDOM — `console`
+- … 44 autres
 
-### Sans page produit AKS (210)
+### Sans page produit AKS (246)
 
-- Riot Access Code 788 HKD - Riot Key - HONG KONG — `no AKS product page found (slug not 200)`
-- Riot Access Code 158 HKD - Riot Key - HONG KONG — `no AKS product page found (slug not 200)`
-- Riot Access Code 78 HKD - Riot Key - HONG KONG — `no AKS product page found (slug not 200)`
-- … 207 autres
+- Komplete 26 Select \| Beats (PC, Mac) (1 Device, Lifetime) - Native Instruments Key - GLOBAL — `no AKS product page found (slug not 200)`
+- Murder Mystery 2 Icewing - Roblox Player Trade - GLOBAL — `no AKS product page found (slug not 200)`
+- Murder Mystery 2 Sakura Knife - Roblox Player Trade - GLOBAL — `no AKS product page found (slug not 200)`
+- … 243 autres
 
-### Bundles / packs multi-jeux (72)
+### DLC sans page AKS propre (2)
 
-Motifs exacts : skip category (50), possible multi-game bundle (22).
+Motifs exacts : DLC in title but AKS page 'before-exit-gas-station' carries no DLC edition (1), SEASON PASS in title but AKS page 'paladins-season-pass-2022' carries no DLC edition (1).
 
-- The LEGO Games Bundle (PC) - Steam Gift - GLOBAL — `skip category: BUNDLE (no bundles/skins)`
-- The LEGO Games Bundle (PC) - Steam Gift - EUROPE — `skip category: BUNDLE (no bundles/skins)`
-- Call of Duty: Black Ops 7 - Exclusive Domino's Reward Set Bundle (All Devices) - Call of Duty Official Key - GLOBAL — `skip category: BUNDLE (no bundles/skins)`
-- … 69 autres
+- Before Exit: Gas Station - Midnight DLC (PC) - Steam Key - GLOBAL — `DLC in title but AKS page 'before-exit-gas-station' carries no DLC edition — base game or wrong product, not e`
+- Paladins Season Pass 2022 (PC) - Steam Gift - GLOBAL — `SEASON PASS in title but AKS page 'paladins-season-pass-2022' carries no DLC edition — base game or wrong prod`
 
-### Monnaie in-game (points, coins, gems…) (59)
+### Bundles / packs multi-jeux (84)
 
-- MiocAI Pack 50 Credits - miocai Key - GLOBAL — `skip category: CREDITS`
-- MiocAI Pack 250 Credits - miocai Key - GLOBAL — `skip category: CREDITS`
-- MiocAI Pack 1000 Credits - miocai Key - GLOBAL — `skip category: CREDITS`
-- … 56 autres
+Motifs exacts : skip category (83), possible multi-game bundle (1).
 
-### Cartes prépayées / gift cards / wallets (20)
+- Lightyear Frontier: Supporter Pack: Pioneer Bundle (PC) - Steam Key - EUROPE — `skip category: BUNDLE (no bundles/skins)`
+- Lightyear Frontier: Supporter Pack: Pioneer Bundle (PC) - Steam Key - GLOBAL — `skip category: BUNDLE (no bundles/skins)`
+- Heileen Bundle Steam Gift EUROPE — `skip category: BUNDLE (no bundles/skins)`
+- … 81 autres
 
-- Grand Theft Auto V Enhanced & Great White Shark Card Bundle (PC) - Microsoft Store Key - EUROPE — `skip category: SHARK CARD`
-- Cryptocurrency: Wallets, Investing & Trading - Eduxpress Key - GLOBAL — `skip category: WALLET`
-- Cryptonow Bitcoin Voucher 50 CHF - Cryptonow Key - SWITZERLAND — `skip category: VOUCHER`
-- … 17 autres
+### Monnaie in-game (points, coins, gems…) (1)
 
-### Passes in-game (Battle Pass, Game Pass…) (8)
+- Train Valley 2: Workshop Gems - Onyx (PC) - Steam Key - GLOBAL — `skip category: GEMS`
 
-- Mobile Legends: Bang Bang Twilight Pass - UNITED STATES — `skip category: PASS (in-game/battle pass)`
-- Mobile Legends: Bang Bang Weekly Diamond Pass - UNITED STATES — `skip category: PASS (in-game/battle pass)`
-- Lebara Data Pass S 1 Month - Lebara Data Key - FRANCE — `skip category: PASS (in-game/battle pass)`
-- … 5 autres
+### Cartes prépayées / gift cards / wallets (4)
 
-### Abonnements (2)
+- VALORANT Gift Card 45.98 SGD - Riot Key - SINGAPORE — `skip category: GIFT CARD`
+- Perplexity Manual Top-Up - Max 1 Month - Perplexity - GLOBAL — `skip category: TOP UP`
+- Perplexity Manual Top-Up - Pro 1 Year - Perplexity - GLOBAL — `skip category: TOP UP`
+- … 1 autres
 
-- Audible Membership 1 Month - Audible Key - GLOBAL — `skip category: MEMBERSHIP`
-- Alpha Academy Prime Membership Lifetime - Alpha Academy Key - GLOBAL — `skip category: MEMBERSHIP`
+### Passes in-game (Battle Pass, Game Pass…) (5)
 
-### Microsoft Store (14)
+- Insurgency: Sandstorm - Year 2 Pass (PC) - Steam Gift - GLOBAL — `skip category: PASS (in-game/battle pass)`
+- Insurgency: Sandstorm - Year 2 Pass (PC) - Steam Gift - GLOBAL — `skip category: PASS (in-game/battle pass)`
+- ONE PIECE: PIRATE WARRIORS 4 - Character Pass (PC) - Steam Gift - GLOBAL — `skip category: PASS (in-game/battle pass)`
+- … 2 autres
 
-- Cataclismo (PC) - Microsoft Store Key - EUROPE — `skip category: MICROSOFT STORE`
-- CALL OF DUTY: MODERN WARFARE \| Digital Standard Edition (PC) - Microsoft Store Key - EUROPE — `skip category: MICROSOFT STORE`
-- Visual Studio 2017 \| Essential (PC) (1 PC, Lifetime) - Microsoft Key - GLOBAL — `skip category: MICROSOFT KEY`
-- … 11 autres
+### Abonnements (3)
 
-### Régions verrouillées interdites (40)
+- Nastia AI Membership Basic 12 Months - NastiaAI Key - GLOBAL — `skip category: MEMBERSHIP`
+- Nastia AI Membership Unlimited 12 Months - NastiaAI Key - GLOBAL — `skip category: MEMBERSHIP`
+- Nastia AI Membership Unlimited 12 Months - NastiaAI Key - GLOBAL — `skip category: MEMBERSHIP`
 
-- Breakout 13 \| Complete Edition (PC) - Steam Gift - NORTH AMERICA — `forbidden region: NORTH AMERICA`
-- Cthulhu: The Cosmic Abyss (PC) - Steam Gift - NORTH AMERICA — `forbidden region: NORTH AMERICA`
-- Farming Simulator 25 \| Beans & Alpacas Pre-Order Edition (PC) - Steam Key - EUROPE / NORTH AMERICA — `forbidden region: NORTH AMERICA`
-- … 37 autres
+### Microsoft Store (3)
 
-### Édition / variante absente de la page AKS (13)
+- Mafia: Definitive Edition (PC) - Microsoft Store Account - GLOBAL — `skip category: MICROSOFT STORE`
+- Minecraft Dungeons II \| Deluxe Edition (PC) - Microsoft Store Key - GLOBAL — `skip category: MICROSOFT STORE`
+- Call of Duty: Black Ops 6 - Vault Edition Upgrade (PC) - Microsoft Store Key - GLOBAL — `skip category: MICROSOFT STORE`
 
-- Deck of Ashes - Print-Ready Posters (PC) - Steam Key - GLOBAL — `different/expanded product — extra words: ['PRINT', 'READY', 'POSTERS']`
-- Total War: Warhammer III - Tides of Torment (PC) - Steam Key - EUROPE — `different/expanded product — extra words: ['TIDES', 'TORMENT']`
-- Total War: Warhammer III - Thrones of Decay (PC) - Steam Gift - EUROPE — `different/expanded product — extra words: ['THRONES', 'DECAY']`
-- … 10 autres
+### Régions verrouillées interdites (196)
 
-### Page AKS trouvée mais nom différent (1)
+- Idle Colony (PC) - Steam Key - NORTH AMERICA — `forbidden region: NORTH AMERICA`
+- Halloween: The Game (PC) - Steam Key - NORTH AMERICA — `forbidden region: NORTH AMERICA`
+- Norton 360 Platinum (20 Devices, 1 Year) - Norton Key - CANADA — `forbidden region: CANADA`
+- … 193 autres
 
-- Assassin's Creed Chronicles Trilogy (PC) - Epic Games Key - GLOBAL — `name mismatch, missing AKS words: ['ASSASSINS']`
+### Édition / variante absente de la page AKS (25)
 
-### Plateforme non vérifiable (1)
+- Dungeon Defenders II - Celestial Vault Pack (PC) - Steam Key - GLOBAL — `different/expanded product — extra words: ['CELESTIAL', 'VAULT']`
+- Age of Empires III: Definitive Edition - The Baltic Powers (PC) - Steam Key - GLOBAL — `different/expanded product — extra words: ['BALTIC', 'POWERS']`
+- DJMAX RESPECT V - V LIBERTY V PACK (PC) - Steam Key - GLOBAL — `different/expanded product — extra words: ['LIBERTY']`
+- … 22 autres
 
-- Resident Evil 2 (PC) - Steam Gift - GLOBAL — `no platform in title and AKS page does not confirm Direct Publisher — platform unverifiable, not defaulted (R2`
+### Page AKS trouvée mais nom différent (6)
 
-### Page AKS sans carte d'éditions (1)
+- Cafe Stella and the Reaper's Butterflies (PC) - Steam Key - GLOBAL — `name mismatch, missing AKS words: ['CAF']`
+- Cafe Stella and the Reaper's Butterflies (PC) - Steam Key - EUROPE — `name mismatch, missing AKS words: ['CAF']`
+- It's Quiz Time Steam Gift EUROPE — `name mismatch, missing AKS words: ['ITS']`
+- … 3 autres
 
-- Cannon Fodder 2 GOG.COM Key GLOBAL — `AKS page carries no editions map — edition unverifiable (R19)`
+### Plateforme non vérifiable (349)
 
-### Sonde AKS non fiable (transitoire) (3)
+- Mia's Hunt (PC) - Steam Gift - GLOBAL — `no platform in title and AKS page does not confirm Direct Publisher — platform unverifiable, not defaulted (R2`
+- Steam Squad Steam Gift GLOBAL — `no platform in title and AKS page does not confirm Direct Publisher — platform unverifiable, not defaulted (R2`
+- Fort Defense - Atlantic Ocean Steam Gift GLOBAL — `no platform in title and AKS page does not confirm Direct Publisher — platform unverifiable, not defaulted (R2`
+- … 346 autres
 
-- Riot Access Code 24.99 USD - Riot Key - UNITED STATES — `AKS probe unreliable (throttled?): site search -> <urlopen error HTTPSConnectionPool(host='www.allkeyshop.com'`
-- AcePDF Converter & Editor (PC, Mac) (1 Device, Lifetime) - AcePDF Key - GLOBAL — `AKS probe unreliable (throttled?): site search -> <urlopen error HTTPSConnectionPool(host='www.allkeyshop.com'`
-- Resident Evil 0 (PC) - Steam Key - UNITED STATES — `AKS probe unreliable (throttled?): site search -> <urlopen error HTTPSConnectionPool(host='www.allkeyshop.com'`
+### Logiciels (3)
 
-### Autres (8)
+- Gecata by Movavi 5 - Game Recording Software (PC) - Steam Gift - GLOBAL — `software edition unresolved on the AKS page (1 editions, none in title) — not guessed (R31)`
+- Gecata by Movavi 5 - Game Recording Software (PC) - Steam Gift - EUROPE — `software edition unresolved on the AKS page (1 editions, none in title) — not guessed (R31)`
+- Gecata by Movavi 5 - Game Recording Software (PC) - Steam Gift - GLOBAL — `software edition unresolved on the AKS page (1 editions, none in title) — not guessed (R31)`
 
-Motifs exacts : skip category (7), G2A green gift (1).
+### Page AKS sans carte d'éditions (6)
 
-- Canva Business 1 Month - Canva Activation Link - GLOBAL — `skip category: ACTIVATION LINK`
-- M4A4 \| Neo-Noir (Field-Tested) - Steam Player Trade - GLOBAL — `skip category: STEAM PLAYER TRADE`
-- Glock-18 \| Water Elemental (Minimal Wear) - Steam Player Trade - GLOBAL — `skip category: STEAM PLAYER TRADE`
-- … 5 autres
+- WAKFU - Excarnus Pack Steam Gift GLOBAL — `AKS page carries no editions map — edition unverifiable (R19)`
+- Ecco the Dolphin Steam Gift GLOBAL — `AKS page carries no editions map — edition unverifiable (R19)`
+- Tiny Thief Steam Gift GLOBAL — `AKS page carries no editions map — edition unverifiable (R19)`
+- … 3 autres
+
+### Autres (19)
+
+Motifs exacts : skip category (10), no region id for PUBLISHER/GIFT (9).
+
+- Gunman Contracts: Stand Alone (PC) - Steam Account - GLOBAL — `skip category: STEAM ACCOUNT`
+- Pillars of Eternity II: Deadfire (PC) - Steam Account - GLOBAL — `skip category: STEAM ACCOUNT`
+- Police Tactics: Imperio (PC) - Steam Account - GLOBAL — `skip category: STEAM ACCOUNT`
+- … 16 autres
