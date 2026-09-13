@@ -54,6 +54,99 @@ class FeedScanError(RuntimeError):
 # fail-closed, the current offer's state is UNKNOWN, nothing may be inferred".
 FEED_UNREADABLE_EXCS = (NotLoggedInError, FeedScanError, CdpCommandError)
 
+# R45 (console keys, 2026-09-12). A console key declared on several platforms carries
+# one TARGET per AKS console page (``candidates.json`` ``"targets": [...]`` — page id,
+# region bucket, edition). The per-target region overwrite Romain announced for the
+# AKS feed tool has NOT been observed in the modal yet (``--inspect``), so a plan entry
+# with more than one target is refused fail-closed BEFORE any write. Never "the first
+# target only": a feed row is consumed by its first creation, so a partial entry would
+# silently lose the second platform — the one outcome the design forbids. One target
+# (every PC key, a single-platform console key, any pre-R45 candidates.json) = the
+# current write path, byte-identical.
+MULTI_TARGET_BLOCKER = "multi_target_unsupported_until_modal_verified"
+MULTI_TARGET_BLOCKER_MESSAGE = (
+    "la saisie multi-cibles / overwrite par cible attend l'observation du nouveau "
+    "modal (--inspect) — R45"
+)
+
+
+def _strip_bom(text: Any) -> str | None:
+    """Type-to-filter query for a Selectize pick = the catalog text WITHOUT U+FEFF.
+
+    One live region label carries a leading BOM in its master option
+    ("\ufeffXbox/PC GLOBAL (306)", the only one of the 867 — R45, 2026-09-12) while
+    the rendered dropdown text has none: typing the BOM as a key event would never
+    match the option. The plan's ``region_text`` stays verbatim (it is the catalog's
+    own text, the value ``resolve_catalog_id`` compared); only the TYPED query is
+    cleaned. ``None`` stays ``None`` (no query = no typing, as before)."""
+
+    if text is None:
+        return None
+    return str(text).replace("\ufeff", "")
+
+
+def _primary_target(candidate: dict[str, Any]) -> dict[str, Any]:
+    """The candidate's primary fields as one flat plan target (R45)."""
+
+    region = candidate.get("region") or {}
+    edition = candidate.get("edition") or {}
+    return {
+        "platform": candidate.get("platform"),
+        "aks_product_id": candidate.get("aks_product_id"),
+        "aks_url": candidate.get("aks_url"),
+        "aks_name": candidate.get("aks_name"),
+        "region_label": region.get("label"),
+        "region_id": region.get("id"),
+        "edition_label": edition.get("label"),
+        "edition_id": edition.get("id"),
+    }
+
+
+def normalize_targets(candidate: dict[str, Any]) -> list[dict[str, Any]]:
+    """The plan's flat target list for one candidate (R45, 2026-09-12).
+
+    - no ``targets`` key (pre-R45 candidates.json), an empty list or a single
+      entry → ONE target built from the PRIMARY fields (the validated identity —
+      what the fingerprint keys on and what the operator saw/overrode);
+    - several entries → each flattened as written (nested ``region``/``edition``
+      dicts, or flat ``region_id``/``edition_id`` keys). A malformed entry is kept
+      with ``None`` ids so the catalog resolution blocks it EXPLICITLY — a target
+      is never dropped on the way to the modal.
+    """
+
+    raw = candidate.get("targets")
+    if not isinstance(raw, list) or len(raw) <= 1:
+        return [_primary_target(candidate)]
+    targets: list[dict[str, Any]] = []
+    for item in raw:
+        target = item if isinstance(item, dict) else {}
+        region = target.get("region")
+        if not isinstance(region, dict):
+            region = {"label": target.get("region_label"), "id": target.get("region_id")}
+        edition = target.get("edition")
+        if not isinstance(edition, dict):
+            edition = {"label": target.get("edition_label"), "id": target.get("edition_id")}
+        targets.append({
+            "platform": target.get("platform"),
+            "aks_product_id": target.get("aks_product_id"),
+            "aks_url": target.get("aks_url"),
+            "aks_name": target.get("aks_name"),
+            "region_label": region.get("label"),
+            "region_id": region.get("id"),
+            "edition_label": edition.get("label"),
+            "edition_id": edition.get("id"),
+        })
+    return targets
+
+
+def _target_summary(target: dict[str, Any]) -> str:
+    """One-line, human-readable target for the dry-run plan / logs (R45)."""
+
+    return (
+        f"{target.get('platform')} page {target.get('aks_product_id')} "
+        f"region={target.get('region_id')} edition={target.get('edition_id')}"
+    )
+
 
 class StopRequested(RuntimeError):
     """The operator asked to stop the run. Raised only at a SAFE point (a
@@ -403,21 +496,46 @@ class _SubmitterBase:
         """Re-resolve the offer's region/edition ids against the live session
         catalog and stash the canonical text for type-to-filter. Fail-closed:
         an unresolvable label/id blocks the offer (no forcing — that created the
-        2026-07-06 wrong-edition offers)."""
+        2026-07-06 wrong-edition offers).
 
-        for kind, master in (("region", self._region_master), ("edition", self._edition_master)):
-            src = candidate.get(kind) or {}
-            resolved = resolve_catalog_id(src.get("label", ""), src.get("id", ""), master)
-            if resolved is None:
-                entry["ready"] = False
-                entry["blocker"] = (
-                    f"{kind} not in session catalog "
-                    f"(label={src.get('label')!r} id={src.get('id')!r})"
+        R45 (2026-09-12): EVERY target of ``entry["targets"]`` is resolved, each
+        one's ``region_id/region_text/region_resolution`` (and edition) stored on
+        its own target dict; the PRIMARY target's results also land in the
+        historical top-level ``entry`` fields, so a one-target entry is
+        byte-identical to before. The first unresolvable target blocks the whole
+        entry (the blocker names it) — never a partial resolution.
+        """
+
+        targets = entry.get("targets") or normalize_targets(candidate)
+        entry["targets"] = targets
+        total = len(targets)
+        for index, target in enumerate(targets):
+            for kind, master in (("region", self._region_master), ("edition", self._edition_master)):
+                label = target.get(f"{kind}_label")
+                matcher_id = target.get(f"{kind}_id")
+                resolved = resolve_catalog_id(
+                    label or "", "" if matcher_id is None else matcher_id, master,
                 )
-                return
-            entry[f"{kind}_id"] = resolved["id"]
-            entry[f"{kind}_text"] = resolved["text"]
-            entry[f"{kind}_resolution"] = resolved
+                if resolved is None:
+                    entry["ready"] = False
+                    blocker = (
+                        f"{kind} not in session catalog "
+                        f"(label={label!r} id={matcher_id!r})"
+                    )
+                    if index > 0:
+                        blocker += (
+                            f" — target {index + 1}/{total} {target.get('platform')} "
+                            f"{target.get('aks_product_id')} (R45)"
+                        )
+                    entry["blocker"] = blocker
+                    return
+                target[f"{kind}_id"] = resolved["id"]
+                target[f"{kind}_text"] = resolved["text"]
+                target[f"{kind}_resolution"] = resolved
+                if index == 0:
+                    entry[f"{kind}_id"] = resolved["id"]
+                    entry[f"{kind}_text"] = resolved["text"]
+                    entry[f"{kind}_resolution"] = resolved
 
     def _log(self, event: str, **fields: Any) -> None:
         if self.logger is not None:
@@ -1088,6 +1206,8 @@ class _SubmitterBase:
             "region_id": candidate["region"]["id"],
             "edition_id": candidate["edition"]["id"],
             "ready": False,
+            # R45: every target this entry stands for (one = the primary fields).
+            "targets": normalize_targets(candidate),
         }
         if located.get("located_by") == "url":
             entry["approved_offer_id"] = located["approved_offer_id"]
@@ -1205,6 +1325,16 @@ class _SubmitterBase:
         entry["ready"] = True
         if self.catalog is not None:
             self._resolve_from_catalog(entry, candidate)
+        if len(entry["targets"]) > 1:
+            # R45 fail-closed gate (2026-09-12) — AFTER the read-only modal/context
+            # checks and the per-target catalog resolution (so the dry-run plan shows
+            # the modal state and every target's live ids) and BEFORE any write: the
+            # per-target overwrite is unobserved, a partial entry would consume the
+            # row. A resolution blocker set above is more specific and is kept.
+            if entry["ready"]:
+                entry["blocker"] = MULTI_TARGET_BLOCKER
+                entry["blocker_message"] = MULTI_TARGET_BLOCKER_MESSAGE
+            entry["ready"] = False
         return entry
 
     def _verify_gone(self, offer_id, merchant_url, store_id, feed_page, available,
@@ -1485,6 +1615,15 @@ class DryRunSubmitter(_SubmitterBase):
                 f"{entry['edition_select']}={entry['edition_id']}, "
                 "click .button-primary (NOT clicked — dry-run)"
             )
+        elif entry.get("blocker") == MULTI_TARGET_BLOCKER:
+            # R45 (2026-09-12): the rehearsal of a multi-target entry lists EVERY
+            # target (what a future per-target write would set) — nothing is
+            # ready, nothing would be clicked.
+            entry["would_submit"] = (
+                f"NOT ready ({MULTI_TARGET_BLOCKER}) — targets: "
+                + "; ".join(_target_summary(t) for t in entry.get("targets") or [])
+                + " (NOT clicked — dry-run)"
+            )
         return bool(entry.get("ready"))
 
 
@@ -1500,7 +1639,11 @@ class InspectSubmitter(_SubmitterBase):
     event_name = "inspect_offer"
 
     def _process(self, entry, candidate, ctx):
-        if not entry.get("ready"):
+        # R45 (2026-09-12): an entry gated ONLY by the multi-target blocker has its
+        # modal open and verified — inspecting it is exactly the read-only
+        # observation the gate waits for, so dump it too (the entry stays
+        # ``ready: False`` with its blocker; inspect never writes).
+        if not entry.get("ready") and entry.get("blocker") != MULTI_TARGET_BLOCKER:
             return False
         entry["inspection"] = self.session.inspect_modal_dom()
         # Read-only HTML5 validity summary (covers input/select/textarea — the
@@ -1548,12 +1691,22 @@ class Submitter(_SubmitterBase):
     def _process(self, entry, candidate, ctx):
         if not entry.get("ready"):
             return False
+        if len(entry.get("targets") or ()) > 1:
+            # Defence in depth (R45, 2026-09-12): _prepare's gate already made such an
+            # entry not-ready; should any path ever hand a multi-target entry here
+            # marked ready, refuse the write rather than enter the first target.
+            entry["ready"] = False
+            entry["blocker"] = MULTI_TARGET_BLOCKER
+            entry["blocker_message"] = MULTI_TARGET_BLOCKER_MESSAGE
+            return False
         diag = self.session.fill_then_click_trusted(
             entry["region_select"], entry["region_id"],
             entry["edition_select"], entry["edition_id"],
             target_value=entry.get("aks_product_id"),
-            region_query=entry.get("region_text"),
-            edition_query=entry.get("edition_text"),
+            # Typed queries = catalog text without U+FEFF (R45); the plan's
+            # region_text / edition_text stay verbatim.
+            region_query=_strip_bom(entry.get("region_text")),
+            edition_query=_strip_bom(entry.get("edition_text")),
         )
         entry["create"] = diag  # dict: status + read-back values + options + signal
         status = diag.get("status") if isinstance(diag, dict) else diag

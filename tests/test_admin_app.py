@@ -153,6 +153,21 @@ class ApiGetTests(AppTestCase):
         self.assertEqual(body["modes"], ["safe", "learning", "advanced"])
         self.assertEqual(body["canary_limit"], 1)
 
+    def test_meta_platforms_keep_the_pc_platforms_and_label_the_console_families(self):
+        # R45 (2026-09-12): the console families (XBOX_ONE, XBOX_SERIES, XBOX_PC, PS4,
+        # PS5, SWITCH) join REGION_IDS / PLATFORM_LABEL through the matcher's console
+        # tables. Tolerant on purpose: the PC platforms must stay, and any console
+        # family served MUST carry a label (the validation select shows labels) —
+        # the exact list is the matcher's business.
+        _response, body = self._json("GET", "/api/meta")
+        for platform in ("STEAM", "GOG", "EPIC", "EA", "UBISOFT", "BATTLENET", "PUBLISHER"):
+            self.assertIn(platform, body["platforms"])
+            self.assertIn(platform, body["platform_labels"])
+        for family in ("XBOX_ONE", "XBOX_SERIES", "XBOX_PC", "PS4", "PS5", "SWITCH"):
+            if family in body["platforms"]:
+                self.assertTrue(body["platform_labels"].get(family), f"{family} served without a label")
+        self.assertEqual(body["platforms"], sorted(body["platforms"]))
+
     def test_runs_list_and_detail(self):
         response, body = self._json("GET", "/api/runs")
         self.assertEqual(response.status, 200)

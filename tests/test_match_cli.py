@@ -134,3 +134,32 @@ class SearchCircuitFileTests(MatchCliTests):
         data = json.loads(path.read_text())
         self.assertTrue(data["open"]); self.assertNotIn("open_until", data)
         self.assertEqual(data["search_failures"], 3)
+
+
+class ConsolesFlagTests(MatchCliTests):
+    """[R45] (2026-09-12): --consoles reaches match_feed and is stamped into match_meta."""
+
+    def _main_flags(self, flags, stub):
+        with mock.patch.object(self.MOD, "match_feed", side_effect=stub), \
+                mock.patch.object(sys, "argv", ["03_match.py", str(self.run / "offers.json")] + flags):
+            return self.MOD.main()
+
+    def test_consoles_flag_is_passed_and_stamped(self):
+        seen = {}
+
+        def stub(feed, resolver, **kw):
+            seen.update(kw); return ([], [])
+        self.assertEqual(self._main_flags(["--consoles"], stub), 0)
+        self.assertTrue(seen["consoles"])
+        meta = json.loads((self.run / "match_meta.json").read_text())
+        self.assertIs(meta["consoles"], True)
+
+    def test_consoles_off_by_default(self):
+        seen = {}
+
+        def stub(feed, resolver, **kw):
+            seen.update(kw); return ([], [])
+        self.assertEqual(self._main_flags([], stub), 0)
+        self.assertFalse(seen["consoles"])
+        meta = json.loads((self.run / "match_meta.json").read_text())
+        self.assertIs(meta["consoles"], False)

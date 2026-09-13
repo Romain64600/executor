@@ -260,6 +260,9 @@ td a:hover { text-decoration: underline; }
 
 .override-tag { color: var(--warn-text); font-size: 0.75rem; margin-top: 0.15rem; }
 
+/* R45 (2026-09-12): multi-target candidate — one line per target inside the product cell. */
+.targets .target { color: var(--muted); font-size: 0.75rem; }
+
 .status-cell { min-width: 8rem; }
 
 .status {

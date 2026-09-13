@@ -293,7 +293,9 @@ class OverrideTests(ValidationIOTestCase):
         sha = self._write([c1])
         with self.assertRaises(ValidationIOError) as ctx:
             self._save(
-                [{"fingerprint": c1["fingerprint"], "approve": True, "override": {"platform": "SWITCH"}}],
+                # "SWITCH" became a real family with R45 (2026-09-12) — use a name that
+                # can never be a platform.
+                [{"fingerprint": c1["fingerprint"], "approve": True, "override": {"platform": "AMSTRAD_CPC"}}],
                 sha,
             )
         self.assertEqual(ctx.exception.code, "bad_option")
@@ -413,6 +415,112 @@ class DeleteTests(ValidationIOTestCase):
         self.assertEqual(candidates[0]["fingerprint"], "1|207861|2|1")
         self.assertEqual(candidates[0]["operator_override"]["original"]["edition"]["id"], "16")
         self.assertEqual(len(approved), 1)
+
+
+def _console_cand(offer_id="1", second=True):
+    """R45 console candidate: primary = Hades PS5 (page 85105, bucket 88ps5h); targets =
+    PS5 (+ PS4 page 85104, bucket 88 when ``second``)."""
+    cand = _cand(offer_id, pid="85105", region="88ps5h", edition="1", name="Hades PS5")
+    cand["platform"] = "PS5"
+    cand["aks_url"] = "https://aks/ps5"          # the primary IS targets[0]
+    cand["region"] = {"label": "PS5", "id": "88ps5h", "implicit": False}
+    cand["targets"] = [{
+        "platform": "PS5", "aks_product_id": "85105", "aks_url": "https://aks/ps5",
+        "aks_name": "Hades PS5",
+        "region": {"label": "PS5", "id": "88ps5h"}, "edition": {"label": "Standard", "id": "1"},
+    }]
+    if second:
+        cand["targets"].append({
+            "platform": "PS4", "aks_product_id": "85104", "aks_url": "https://aks/ps4",
+            "aks_name": "Hades PS4",
+            "region": {"label": "Playstation Game Code GLOBAL", "id": "88"},
+            "edition": {"label": "Standard", "id": "1"},
+        })
+        cand["fingerprint"] = f"{offer_id}|85105|88ps5h|1|+85104:88:1"
+    return cand
+
+
+class MultiTargetTests(ValidationIOTestCase):
+    """R45 (2026-09-12): a multi-target candidate accepts NO override (re-match instead);
+    approve-only decisions save with the extended fingerprint; a single target keeps
+    the current override path with targets[0] mirrored."""
+
+    def test_override_on_multi_target_candidate_refused_before_any_write(self):
+        c1 = _console_cand("1")
+        sha = self._write([c1])
+        with self.assertRaises(ValidationIOError) as ctx:
+            self._save(
+                [{"fingerprint": c1["fingerprint"], "approve": True, "override": {"edition_id": "16"}}],
+                sha,
+            )
+        self.assertEqual(ctx.exception.code, "bad_override")
+        self.assertEqual(
+            ctx.exception.message, "candidat multi-cibles (R45) : pas de surcharge, relancer le match"
+        )
+        self.assertEqual(ctx.exception.http_status, 400)
+        self.assertFalse((self.run / "validation.json").exists())
+        self.assertFalse((self.run / "approved.json").exists())
+        on_disk = json.loads((self.run / "candidates.json").read_text(encoding="utf-8"))
+        self.assertEqual(on_disk, [c1])   # untouched
+        self.assertEqual(self._log_events(), [])
+
+    def test_same_value_override_on_multi_target_candidate_is_refused_too(self):
+        c1 = _console_cand("1")
+        sha = self._write([c1])
+        with self.assertRaises(ValidationIOError) as ctx:
+            self._save(
+                [{"fingerprint": c1["fingerprint"], "approve": False, "override": {"region_id": "88ps5h"}}],
+                sha,
+            )
+        self.assertEqual(ctx.exception.code, "bad_override")
+
+    def test_approve_without_override_saves_the_multi_target_fingerprint(self):
+        c1, c2 = _console_cand("1"), _cand("2")
+        sha = self._write([c1, c2])
+        result = self._save(
+            [
+                {"fingerprint": c1["fingerprint"], "approve": True},
+                {"fingerprint": c2["fingerprint"], "approve": False},
+            ],
+            sha,
+        )
+        self.assertEqual(result["approved_count"], 1)
+        candidates, validation, approved = self._triple()
+        verify_approved_against_source(
+            approved, validation, candidates, expected_run_id="20260715-000000-test"
+        )
+        entry = validation["candidates"][0]
+        self.assertEqual(entry["fingerprint"], "1|85105|88ps5h|1|+85104:88:1")
+        self.assertEqual([t["platform"] for t in entry["targets"]], ["PS5", "PS4"])
+        self.assertEqual(approved[0]["targets"], c1["targets"])
+
+    def test_single_target_override_still_works_and_mirrors_targets0(self):
+        c1 = _console_cand("1", second=False)
+        sha = self._write([c1])
+        result = self._save(
+            [{"fingerprint": c1["fingerprint"], "approve": True, "override": {"region_id": "9"}}],
+            sha,
+        )
+        self.assertEqual(result["overrides"][0]["new_fingerprint"], "1|85105|9|1")
+        candidates, _validation, approved = self._triple()
+        rewritten = candidates[0]
+        self.assertEqual(rewritten["region"], {"label": "Steam EU (9)", "id": "9", "implicit": False})
+        self.assertEqual(len(rewritten["targets"]), 1)
+        self.assertEqual(rewritten["targets"][0]["region"], {"label": "Steam EU (9)", "id": "9"})
+        self.assertEqual(rewritten["targets"][0]["aks_product_id"], "85105")
+        self.assertEqual(rewritten["targets"][0]["aks_url"], "https://aks/ps5")
+        self.assertEqual(approved[0]["fingerprint"], "1|85105|9|1")
+
+    def test_pre_r45_candidate_override_invents_no_targets_key(self):
+        c1 = _cand("1")
+        sha = self._write([c1])
+        self._save(
+            [{"fingerprint": c1["fingerprint"], "approve": True, "override": {"edition_id": "16"}}],
+            sha,
+        )
+        candidates, _validation, _approved = self._triple()
+        self.assertNotIn("targets", candidates[0])
+        self.assertEqual(candidates[0]["fingerprint"], "1|207861|2|16")
 
 
 class CheckSubprocessTests(ValidationIOTestCase):

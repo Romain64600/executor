@@ -4,7 +4,7 @@ Ce document est le **point d'entrée de reprise** (migration serveur / nouvelle 
 Claude). Il capture l'ÉTAT, les DÉCISIONS et les GOTCHAS qui, jusqu'ici, vivaient dans la
 mémoire hors-repo de Claude et **ne voyagent donc PAS avec un `git clone`**. Lis-le en
 premier, puis `AGENTS.md` + `CLAUDE.md` (les règles), puis `docs/EXECUTOR_RULES.md` (les
-règles par étage). Dernière mise à jour : **2026-09-09** (voir `git log` pour le commit courant).
+règles par étage). Dernière mise à jour : **2026-09-12** (voir `git log` pour le commit courant).
 
 > ⚠️ Aucun secret ici (cookies WP, mots de passe, codes 2FA n'entrent jamais dans le repo).
 
@@ -90,7 +90,7 @@ tourne headless **sans SIGTRAP**, `apt-mark hold` posé ; l'unité force toujour
 explicite de Romain, cf. RUNBOOK §1.1) ; `docker.io` 26 (paquet Debian, fournit `docker0`) ;
 socat 1.8 ; nginx 1.26 ; certbot 4.0 ; console `https://217.76.57.126.sslip.io/executor/`
 (mot de passe initial dans `/root/executor-admin.pass`, root-only — à faire tourner via
-`ops/INSTALL_ADMIN.md §1`) ; gate `ok:true` + `authoritative:true` ; suite 1353 OK en `debian`.
+`ops/INSTALL_ADMIN.md §1`) ; gate `ok:true` + `authoritative:true` ; suite 1579 OK (2026-09-13).
 `ufw` actif (OpenSSH, Nginx Full, 9223 restreint à `docker0` — posé par Romain, Claude n'a pas la
 permission). Reste : le transfert des cookies WP (profil vierge). L'ancien VPS était
 `vps-9ee9f9cf`.
@@ -102,7 +102,7 @@ veux que l'executor + sa page.
 
 ## 3. État courant (2026-09-09)
 
-Tout est poussé sur `origin/main`, suite verte (**1353 tests**). Travaux récents (voir
+Tout est poussé sur `origin/main`, suite verte (**1579 tests**, 2026-09-13). Travaux récents (voir
 `docs/CHANGELOG.md` pour le détail) :
 - Campagne d'audit Fable : 38/39 findings corrigés (1 décliné, cf. §5).
 - Correctifs matcher : `extract_aks_name` (noms marketing), R39 (mot plateforme = bruit
@@ -177,12 +177,32 @@ Tout est poussé sur `origin/main`, suite verte (**1353 tests**). Travaux récen
   Blade, Aliens Dark Descent, Dragon Quest III HD-2D Remake — pas à corriger) : « des fois,
   les titres n'ont pas de marqueur et sont des DLC » (AGENTS.md « Reviewed decisions »).
 - **MMOGA** (2026-09-10) : nouveau marchand porté par `src/merchants/mmoga.py` via les
-  **hooks de config marchand** `[R32e]` (`precheck` / `title_region` / `resolve_name` —
+  **hooks de config marchand** `[R32e]` (`precheck` / `title_region` / `resolve_name` / `url_platform` `[R46]` —
   un fichier marchand peut ajouter ou surcharger le générique). Store id feed **12** (page
   AKS : 40) ; dans le sélecteur console ET dans l'allowlist safe-auto (décision Romain
   2026-09-10, sans run supervisé préalable). **`[R42]`** : chiffres romains II–XV ≡ chiffres
   (identité, slugs, recherche feed by-urls) — « Crusader Kings III » = page AKS « Crusader
   Kings 3 ».
+- **Consoles `[R45]` — préparé, verrouillé, désactivé par défaut** (2026-09-12). Romain :
+  l'outil AKS feed va overwriter la région (= région/plateforme) et l'édition PAR page cible
+  (clé PS5 → pages PS5 + PS4 ; clé Xbox → Xbox One + Xbox Series X + PC seulement en Play
+  Anywhere). Faits vérifiés : AKS a des **pages produit consoles séparées**
+  `buy-<slug>-<kind>-compare-prices/` (kind `ps4` / `ps5` / `xbox-one` / `xbox-series` /
+  `nintendo-switch` / `nintendo-switch-2` — le constat « pas de page console » du 11/09 venait
+  d'une mauvaise grammaire d'URL), barre d'onglets = plateformes du jeu, Play Anywhere lisible
+  dans `official platforms` de la page PC, buckets du modal par famille × base région
+  (EXECUTOR_RULES §10 ; pas de Switch 2, pas de PS5 EU/US/UK). Code : `src/console_keys.py`
+  (`classify_console`, titre ET URL, grammaire par marchand), `Candidate.targets` (`Target`,
+  toujours ≥ 1 ; empreinte étendue au-delà d'une cible), `scripts/03_match.py --consoles` /
+  `scripts/10 --consoles` (**défaut OFF** : les sweeps ne changent pas), submitter : une cible =
+  chemin actuel, **> 1 cible = blocker `multi_target_unsupported_until_modal_verified`** tant
+  que le nouveau modal n'a pas été observé avec `--inspect` — jamais « la première cible
+  seulement » (une saisie consomme la ligne du feed). **Fuite corrigée** : le garde console ne
+  lisait que le titre → un Xbox One/Series US Gamivo (« Riders Republic Premium Edition United
+  States », run `20260911-162100-auto-gamivo-s51-p28`) est entré PUBLISHER GLOBAL Premium sur la
+  page PC (AKS 50562) — à corriger à la main ; `console_marker_in_url` scanne l'URL dans tous
+  les modes. Règle complète : EXECUTOR_RULES §4.12 ; contrats : DATA_CONTRACTS ; grammaire par
+  marchand et volumes : MERCHANTS.md.
 
 ## 4. Backlog / prochaines étapes
 
@@ -199,6 +219,34 @@ Tout est poussé sur `origin/main`, suite verte (**1353 tests**). Travaux récen
   le seul qui augmente le débit de requêtes AKS (→ risque de re-ban OVH ; le ban historique
   était sous charge navigateur, pas débit de probes). À sortir seulement sur go de Romain,
   avec un rate-limiter et un rodage prudent.
+- **Consoles `[R45]` — prochaines étapes** (dans l'ordre) :
+  0. **Corriger d'abord les findings confirmés de la revue adverse du 12/09** (liste dans
+     `docs/CHANGELOG.md`, entrée « Consoles R45 ») — en tête : la lecture de la région dans la
+     branche console (codes Kinguin/K4G « US / CA / AU … » avant la phrase plateforme →
+     GLOBAL implicite), les comptes Difmark classés clés Switch, R44 mort sur les consoles, la
+     gate multi-cibles comptée comme échec (10 entrées gated = halte du sweep). **Aucun run
+     `--consoles`, même dry-run, avant ce correctif** ; le flag reste OFF par défaut.
+  1. **Observer le nouveau modal** de Romain en lecture seule : `python3 scripts/05_submit.py
+     runs/<id>/approved.json --merchant MMOGA --store-id 12 --inspect` sur un candidat console
+     (`modal_inspection.json` : contrôles d'overwrite région / édition PAR cible, nom des
+     selects, `offer[targets][]`) — aucun fill tant que ce n'est pas fait.
+  2. **Ajouter le remplissage par cible** dans `submit_session` / `submitter` (lever le blocker
+     `multi_target_unsupported_until_modal_verified` seulement pour la forme observée), tests,
+     canary sur GO explicite.
+  3. **Dry-run consoles** pour mesurer : `scripts/10_data_entry_auto.py --targets "MMOGA:12"
+     --dry-run --consoles` puis `"Kinguin:58"` (388 et 365 lignes consoles dans le dernier
+     lot) ; lire `candidates.json` (`targets`) et `skipped.json` (motifs `console: … (R45)`).
+  4. **Corriger Riders Republic à la main** sur AKS (produit 50562 : l'offre Gamivo Xbox
+     One/Series US saisie PUBLISHER GLOBAL Premium le 2026-09-11).
+- **Questions pour Romain (R45, à confirmer — EXECUTOR_RULES §12)** : P1 « déclaration
+  marchande ∧ page AKS » (clé « PS5 » seule → page PS5 seulement ; « PS4 / PS5 » → PS5 + PS4) ou
+  « page seule » (toutes les plateformes du jeu) ; P2 Play Anywhere = vérité de la page PC
+  (marchand « + PC/Windows » sans PA sur la page → skip ; PA sur la page sans mention marchande →
+  cibles PA) ; P3 PS5 hors GLOBAL → skip (créer des buckets PS5 EU/US/UK dans l'outil ?) ; P4 les
+  704 lignes Eneba « XBOX LIVE Key » sans génération → skip ; P5 DLC / season pass console → skip
+  en v1 ; sémantique de l'overwrite par cible dans le nouveau modal (un Create avec N cibles
+  portant chacune sa région / édition, ou N Creates ?) ; le bucket 88 « Playstation Game Code »
+  est-il bien PS4 (le label ne dit jamais PS4).
 
 ## 5. Décisions revues — NE PAS re-durcir/re-défaire (un audit les re-signalera)
 
@@ -284,6 +332,14 @@ python3 scripts/10_data_entry_auto.py --targets "Kinguin:58,Eneba:19" --run-id <
 python3 scripts/10_data_entry_auto.py --targets "Kinguin:58" --max-pages 30 --triage            # + plan Move-to-List des skips (WRITE) — sur GO
 # Cap atteint = champ coverage du recap (pas une halte) ; le lot continue.
 # Recap live : runs/<run-id>/recap.json (par page, incrémental).
+```
+
+**Consoles (R45 — lecture seule tant que le nouveau modal n'est pas observé) :**
+```sh
+python3 scripts/03_match.py runs/<id>/offers.json --consoles                                    # match read-only : lignes consoles classées, candidats multi-cibles (targets)
+python3 scripts/10_data_entry_auto.py --targets "MMOGA:12" --run-id <id> --dry-run --consoles   # APERÇU d'un sweep consoles (rien d'écrit)
+# Sans --consoles (défaut) : toute ligne console (titre OU URL) est skippée « console ».
+# Un candidat > 1 cible est refusé par 05 (blocker multi_target_unsupported_until_modal_verified) — d'abord --inspect sur le nouveau modal.
 ```
 
 **Saisie par liste d'URLs AKS (by-urls, onglet /games) :**

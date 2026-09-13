@@ -98,10 +98,25 @@ state and cannot be argued away by a language model.
   (Kinguin) or an offer-page platform resolver (Instant Gaming lists Steam keys
   under token-less titles → the real platform is read from the IG offer page, not
   defaulted to Publisher). Since 2026-09-10 a merchant file (`src/merchants/<name>.py`)
-  can also **add or override generic behaviour** through three optional hooks —
-  `precheck`, `title_region`, `resolve_name` (MMOGA's "`<Product> <CODE> Key`" grammar
-  lives entirely in `src/merchants/mmoga.py`). No config → generic behaviour. See
-  **§4.10**.
+  can also **add or override generic behaviour** through four optional hooks —
+  `precheck`, `title_region`, `resolve_name`, `url_platform` (MMOGA's "`<Product> <CODE>
+  Key`" grammar lives entirely in `src/merchants/mmoga.py`; Gamivo's title-tail + URL-run
+  grammar in `src/merchants/gamivo.py`, `[R46]` 2026-09-12). No config → generic
+  behaviour. See **§4.10**.
+- **Console keys — multi-target candidates, gated** `[R45]` (2026-09-12). AKS has
+  separate console product pages (`buy-<slug>-<kind>-compare-prices/`, kind = `ps4` /
+  `ps5` / `xbox-one` / `xbox-series` / `nintendo-switch(-2)`), and Romain's new feed tool
+  overwrites the region (= region/platform) and the edition **per target page**. Under
+  `--consoles` (default **off**) the matcher classifies a console row from its title AND
+  URL (`src/console_keys.py`), resolves one verified AKS page + bucket + edition **per
+  declared platform** (a "PS4 / PS5" key → the PS5 page and the PS4 page; an Xbox key →
+  Xbox One / Xbox Series, plus PC only when the PC page lists *Xbox Play Anywhere*) and
+  emits a candidate with several `targets` — or skips the whole row: **never a partial
+  entry**, since a creation consumes the feed row. The submitter enters single-target
+  candidates as today and **refuses** a multi-target one
+  (`multi_target_unsupported_until_modal_verified`) until the new modal's per-target
+  controls have been observed with `--inspect`. Policies P1-P5 await Romain's
+  confirmation. See [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) **§4.12** / §6.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full decision record.
 
@@ -159,6 +174,7 @@ executor/
 │   ├── contracts.py            # stage I/O data contracts (RawSnapshot / NormalizedOffer)
 │   ├── extractor.py            # Sprint 2 read-only feed extractor
 │   ├── matcher.py              # Sprint 3 read-only matcher (candidates + skipped)
+│   ├── console_keys.py         # R45 console classifier (families, page kinds, bucket table) — pure
 │   ├── validation.py           # Stage 3 validation gate (approve exact candidates)
 │   ├── submit_session.py       # read-only + narrow WriteSubmitSession (trusted picks/target/click)
 │   ├── submitter.py            # Stage 4 submitter — dry-run + real write path
@@ -309,6 +325,19 @@ manual_launch/run_executor.sh prepare --merchant Driffle --store-id 127 --pages 
 ```
 
 `--pages` creates a partial page slice; do not treat it as full-feed coverage.
+
+**Console keys — `--consoles`** `[R45]` (2026-09-12, default **off**). The read-only
+matcher and the safe-auto sweep accept `--consoles`: console rows are classified and
+resolved to their AKS console pages instead of being skipped `console`, and a key sold
+for several platforms becomes a **multi-target** candidate (`targets` in
+`candidates.json`, stamped `consoles: true` in `match_meta.json`). Measure with a dry-run
+first — the write of a multi-target candidate is blocked
+(`multi_target_unsupported_until_modal_verified`) until the new modal is observed:
+
+```bash
+python3 scripts/03_match.py runs/<id>/offers.json --consoles                    # read-only: console rows classified, multi-target candidates
+python3 scripts/10_data_entry_auto.py --targets "MMOGA:12" --run-id <id> --dry-run --consoles   # read-only preview of a console sweep
+```
 
 ---
 
@@ -589,6 +618,17 @@ the `aks-data-entry` skill maps onto a guard signal.
   2026-07-29** (a single 53-item Apply moved a page at once). Console toggles
   **Batché** / **Différé** on `/executor/tri`. See
   [`docs/CHANGELOG.md`](docs/CHANGELOG.md) (2026-07-28/29).
+- [ ] **Console keys `[R45]` — prepared, gated** (`src/console_keys.py`, matcher
+  `targets`, submitter gate, 2026-09-12; was "parked" on 2026-09-11). Console product
+  pages found (`buy-<slug>-<kind>-compare-prices/`), title + URL classifier per merchant,
+  one verified AKS page / bucket / edition per declared platform, Play Anywhere read from
+  the PC page, `--consoles` default off. **Waiting for the modal per-target overwrite**:
+  an `--inspect` pass on Romain's new feed modal, then the per-target fill; until then a
+  multi-target candidate is refused (`multi_target_unsupported_until_modal_verified`),
+  never entered partially. Policies P1-P5 to confirm with Romain; Riders Republic
+  (Gamivo Xbox key entered as PC on 2026-09-11) to correct by hand, like the five Gamivo
+  US Steam keys entered Publisher GLOBAL the same day (`[R46]`, `docs/MERCHANTS.md`). See
+  [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) §4.12.
 
 ---
 

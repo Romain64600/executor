@@ -36,9 +36,31 @@ class CategorizeReasonTests(unittest.TestCase):
             "region US read from 'UNITED STATES', which is part of the AKS product name — region ambiguous, not entered (R44)": "region_ambiguous",
             "dangerous qualifier absent from AKS name: REMASTERED": "qualifier",
             "something new": "other",
+            # R45 (2026-09-12): the console classifier's own fail-closed reasons and any
+            # other reason the console branch stamps "(R45)" file under consoles.
+            "console: no declared generation (R45)": "console",
+            "console: Switch 2 has no AKS bucket (R45)": "console",
+            "console: Xbox 360 (R45)": "console",
+            "console: PC-only Xbox Live key (R45)": "console",
+            "console: GAME PASS — not a game (R45)": "console",
+            "console: DLC / season pass on console — not entered yet (R45)": "console",
+            "console: merchant declares Xbox + PC but the AKS page does not list Xbox Play Anywhere — not entered (R45)": "console",
+            "console: AKS has no PS4 page for 'Hades' — declared platform unverifiable (R45)": "console",
+            "console page 'Elden Ring Tarnished Edition Nintendo Switch 2' is not 'Elden Ring' (R45)": "console",
+            "no region id for PS5/EU (R45)": "console",
+            "no AKS product page found (console) (R45)": "console",
+            "edition Deluxe(7) not sold on the PS4 page (R45)": "console",
+            "consoleer": "other",   # not the bare word, not "console:" — untouched
         }
         for reason, key in cases.items():
             self.assertEqual(categorize_reason(reason), key, reason)
+
+    def test_console_lever_names_r45(self):
+        from src.feed_status import _CATEGORIES
+        console = next(row for row in _CATEGORIES if row[0] == "console")
+        self.assertEqual(console[1], "Consoles (Xbox / PlayStation / Switch)")   # label pinned by the reports
+        self.assertEqual(console[3], "classifieur console R45 — cibles multiples en attente du nouveau modal")
+        self.assertIn("R45", console[2])
 
 
 class ReportTests(unittest.TestCase):
@@ -99,6 +121,7 @@ class ReportTests(unittest.TestCase):
         self.assertIn("**Total : 5 offres créées**", md)
         self.assertIn("Game E — create not confirmed", md)                # not created listed
         self.assertIn("| Consoles (Xbox / PlayStation / Switch) | 2 |", md)
+        self.assertIn("classifieur console R45 — cibles multiples en attente du nouveau modal", md)
         self.assertIn("| Sans page produit AKS | 1 |", md)
         self.assertIn("| Bundles / packs multi-jeux | 1 |", md)
         self.assertIn("Game D (DLC) → `game-d-cd-key-compare-prices`", md)

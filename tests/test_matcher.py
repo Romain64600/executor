@@ -1,5 +1,7 @@
 import json
+import re
 import unittest
+from unittest import mock
 
 from src.aks_env import HttpProbeResult
 from src.aks_lists import suggest_target_list
@@ -12,6 +14,10 @@ from src.matcher import (
     AksProbeUnreliable,
     AksResolution,
     Candidate,
+    CONSOLE_REGION_LABELS,
+    Target,
+    detect_region_base,
+    resolve_aks_url,
     DifmarkOfferAttributes,
     DifmarkPageUnreadable,
     SkippedOffer,
@@ -1077,7 +1083,7 @@ class MerchantConfigR32Tests(unittest.TestCase):
 
     def test_other_merchant_token_less_still_defaults_publisher(self):
         o = NormalizedOffer(offer_id="1", name="Tiny Tinas Wonderlands",
-                            url="https://m/x", merchant="Gamivo")   # no config
+                            url="https://m/x", merchant="Gamivo")   # R46 hooks silent: no tail, no URL run
         r = match_offer(o, resolver=lambda n: self.PAGE)
         self.assertIsInstance(r, Candidate)
         self.assertEqual(r.platform, "PUBLISHER")
@@ -4191,3 +4197,729 @@ class RegionIdentityPhraseR44Tests(unittest.TestCase):
         result = match_offer(offer, self._res)
         self.assertIsInstance(result, Candidate, getattr(result, "reason", None))
         self.assertEqual(result.region_label, "US")
+
+
+# ── [R45] console keys (2026-09-12) ──────────────────────────────────────────────────
+# The classifier grammar lives in src.console_keys and is tested there; these tests
+# inject ConsoleSignal-shaped objects through ``src.matcher.classify_console`` (and a
+# minimal ``console_page_identity``) so the matcher integration is grammar-independent.
+
+class _Sig:
+    """A ConsoleSignal-shaped stand-in (frozen dataclass in src.console_keys)."""
+
+    def __init__(self, families, resolve_name, pc_declared=False, skip_reason=None):
+        self.families = tuple(families)
+        self.resolve_name = resolve_name
+        self.pc_declared = pc_declared
+        self.skip_reason = skip_reason
+
+
+_PLATFORM_SUFFIX_RE = re.compile(r"\s+(?:Xbox One|Xbox Series|PS5|PS4|Nintendo Switch(?: 2)?)\s*$")
+
+
+def _identity(aks_name):
+    return _PLATFORM_SUFFIX_RE.sub("", aks_name).strip()
+
+
+AKS_BLOG = "https://www.allkeyshop.com/blog/"
+
+
+def _page(name, pid, url, editions=None, official_platforms=(), console_pages=None, slug="x"):
+    return AksResolution(
+        slug=slug, url=url, product_id=pid, aks_name=name,
+        editions=editions if editions is not None else {"1": {"name": "Standard"}},
+        official_platforms=official_platforms, console_pages=dict(console_pages or {}))
+
+
+class ConsolePrecheckR45Tests(unittest.TestCase):
+    GAMIVO_LEAK = "https://www.gamivo.com/product/riders-republic-xbox-xbox-one-series-us-premium"
+
+    def test_title_marker_still_console_with_consoles_off(self):
+        self.assertEqual(precheck_skip(_offer("Halo Xbox Series X")), "console")
+        self.assertEqual(precheck_skip(_offer("Halo Xbox Series X"), consoles=False), "console")
+
+    def test_url_marker_is_console_too_the_gamivo_leak(self):
+        # Run 20260911-162100-auto-gamivo-s51-p28: a platform-less TITLE hid an Xbox One /
+        # Series key (platform in the URL only) → entered on the PC page. Now "console".
+        offer = _offer("Riders Republic Premium Edition United States", url=self.GAMIVO_LEAK)
+        self.assertEqual(precheck_skip(offer), "console")
+        self.assertEqual(precheck_skip(offer, consoles=False), "console")
+        # Eneba's leading platform segment as well.
+        self.assertEqual(precheck_skip(_offer("Lets Sing 2025 Key EUROPE",
+                                              url="https://www.eneba.com/psn-lets-sing-2025-psn-key-europe")),
+                         "console")
+
+    def test_consoles_off_match_offer_never_resolves_a_console_row(self):
+        calls = []
+        r = match_offer(_offer("Riders Republic Premium Edition United States", url=self.GAMIVO_LEAK),
+                        resolver=lambda name, **kw: calls.append(name))
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, "console")
+        self.assertEqual(calls, [])
+
+    def test_difmark_console_account_boilerplate_is_not_a_url_marker(self):
+        offer = NormalizedOffer(offer_id="1", name="Elden Ring Steam Key GLOBAL",
+                                url="https://www.difmark.com/buy-console-account-elden-ring-steam-key",
+                                merchant="Difmark")
+        self.assertIsNone(precheck_skip(offer))
+        self.assertIsNone(precheck_skip(offer, consoles=True))
+
+    def test_consoles_on_returns_the_classifier_skip_reason(self):
+        sig = _Sig((), "Mario Kart", skip_reason="console: Switch 2 has no AKS bucket (R45)")
+        with mock.patch("src.matcher.classify_console", return_value=sig):
+            self.assertEqual(precheck_skip(_offer("Mario Kart World Nintendo Switch 2"), consoles=True),
+                             "console: Switch 2 has no AKS bucket (R45)")
+
+    def test_consoles_on_marker_but_unclassified_stays_console(self):
+        # A marker the scan saw but the classifier did not — never a PC entry.
+        with mock.patch("src.matcher.classify_console", return_value=None):
+            self.assertEqual(precheck_skip(_offer("Halo Xbox Series X"), consoles=True), "console")
+
+    def test_consoles_on_classified_row_continues_the_other_scans(self):
+        sig = _Sig(("XBOX_SERIES",), "Halo")
+        with mock.patch("src.matcher.classify_console", return_value=sig):
+            self.assertIsNone(precheck_skip(_offer("Halo Xbox Series X EU"), consoles=True))
+            self.assertEqual(precheck_skip(_offer("Halo Xbox Series X + Forza"), consoles=True),
+                             "possible multi-game bundle")
+            self.assertIn("forbidden region", precheck_skip(_offer("Halo Xbox Series X TURKEY"), consoles=True))
+            self.assertIn("GIFT CARD", precheck_skip(_offer("Xbox Gift Card 50 EUR"), consoles=True))
+
+    def test_consoles_on_pc_row_is_untouched(self):
+        with mock.patch("src.matcher.classify_console") as cc:
+            self.assertIsNone(precheck_skip(_offer("Elden Ring Steam Key GLOBAL"), consoles=True))
+            cc.assert_not_called()                        # no marker → classifier never asked
+
+
+class DetectRegionBaseR45Tests(unittest.TestCase):
+    def test_base_read_matches_detect_region(self):
+        cases = {
+            ("X", "https://g/game-steam-eu"): ("eu", "EU", False, False),
+            ("X", "https://g/game-pc-steam-global"): ("global", "GLOBAL", False, False),
+            ("Game PC Steam CD Key", "https://m.test/x"): ("global", "GLOBAL", True, False),
+            ("X (PC) - Steam Key - UNITED STATES", "https://m.test/x"): ("us", "US", False, False),
+            ("X (Europe) (PC) - Steam", "https://m.test/x"): ("eu", "EU", False, False),
+            ("Neon Beats Steam Gift GLOBAL", "https://m.test/x"): ("global", "GLOBAL", False, True),
+            ("Neon Beats (PC) - Green Gift Key - GLOBAL", "https://m.test/x"): ("global", "GLOBAL", False, True),
+        }
+        for (name, url), expected in cases.items():
+            self.assertEqual(detect_region_base(_offer(name, url=url)), expected, (name, url))
+
+    def test_detect_region_output_unchanged_for_existing_cases(self):
+        # The scan moved to _detect_region_parts — detect_region's outputs are the same.
+        self.assertEqual(detect_region(_offer("X", url="https://g/game-steam-eu"), "STEAM"), ("EU", "9", False))
+        self.assertEqual(detect_region(_offer("Game PC Steam CD Key"), "STEAM"), ("GLOBAL", "2", True))
+        self.assertEqual(detect_region(_offer("Neon Beats Steam Gift GLOBAL"), "STEAM"), ("GIFT", "25", False))
+        self.assertEqual(detect_region(_offer("Neon Beats Steam Gift EU"), "STEAM"), ("GIFT EU", "259", False))
+        self.assertEqual(detect_region(_offer("Neon Beats (PC) - Green Gift Key - GLOBAL"), "STEAM"),
+                         ("GMG GIFT", "386", False))
+        self.assertEqual(detect_region(_offer("Neon Beats (PC) - Green Gift Key - EUROPE"), "UBISOFT"),
+                         ("GMG GIFT EU", "58", False))
+        self.assertEqual(detect_region(_offer("X (PC) - Steam Key - UNITED STATES"), "GOG"), ("US", "63", False))
+        self.assertEqual(detect_region(_offer("X Steam Gift UK"), "STEAM"), ("GIFT UK", None, False))
+
+
+class ResolveAksUrlR45Tests(unittest.TestCase):
+    URL = AKS_BLOG + "buy-hades-ps5-compare-prices/"
+    BODY = (
+        '<html><head><meta property="og:title" content="Buy Hades PS5 Compare Prices"></head>'
+        '<body><ul class="aks-offer-tabulations">'
+        '<li><a href="https://www.allkeyshop.com/blog/buy-hades-cd-key-compare-prices/" class="inactive" title=" PC">PC</a></li>'
+        '<li><span class="active" title=" PS5"><meta data-itemprop="platform" content="PS5"/>PS5</span></li>'
+        '<li><a href="https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/" class="inactive" title=" PS4">PS4</a></li>'
+        '</ul><div data-product-id="85105"></div>'
+        '<script>var x={"editions":{"1":{"name":"Standard"}}};</script></body></html>'
+    )
+
+    def test_reads_a_known_page_by_url(self):
+        seen = []
+
+        def http(url, timeout=8, user_agent=None):
+            seen.append((url, user_agent))
+            return HttpProbeResult(url=url, ok=True, status=200, body=self.BODY)
+
+        res = resolve_aks_url(self.URL, http)
+        self.assertEqual((res.slug, res.url, res.product_id, res.aks_name), ("hades", self.URL, "85105", "Hades PS5"))
+        self.assertEqual(res.editions, {"1": {"name": "Standard"}})
+        self.assertEqual(res.console_pages.get("cd-key"), AKS_BLOG + "buy-hades-cd-key-compare-prices/")
+        self.assertEqual(res.console_pages.get("ps4"), AKS_BLOG + "buy-hades-ps4-compare-prices/")
+        self.assertEqual(res.page_platform, "PS5")
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0][1], "AKS/Staff")
+
+    def test_404_is_none_and_non_200_is_unreliable(self):
+        self.assertIsNone(resolve_aks_url(self.URL, lambda url, **k: HttpProbeResult(url=url, ok=False, status=404, body="")))
+        with self.assertRaises(AksProbeUnreliable) as ctx:
+            resolve_aks_url(self.URL, lambda url, **k: HttpProbeResult(url=url, ok=False, status=503, body=""))
+        self.assertEqual(ctx.exception.status, 503)
+        self.assertEqual(ctx.exception.slug, "hades")
+        with self.assertRaises(AksProbeUnreliable) as ctx:
+            resolve_aks_url(self.URL, lambda url, **k: HttpProbeResult(url=url, ok=False, status=429, body=""))
+        self.assertEqual(ctx.exception.status, 429)
+
+    def test_product_id_without_name_is_unreadable(self):
+        body = '<html><body><div data-product-id="85105"></div></body></html>'
+        with self.assertRaises(AksNameUnreadable):
+            resolve_aks_url(self.URL, lambda url, **k: HttpProbeResult(url=url, ok=True, status=200, body=body))
+
+    def test_unknown_url_grammar_is_none_without_a_request(self):
+        calls = []
+        self.assertIsNone(resolve_aks_url("https://www.allkeyshop.com/blog/some-article/",
+                                          lambda url, **k: calls.append(url)))
+        self.assertEqual(calls, [])
+
+
+class ConsoleMatchR45Tests(unittest.TestCase):
+    """End-to-end console branch with fake resolvers (design §3.5 a-i)."""
+
+    PC_URL = AKS_BLOG + "buy-nba-2k25-cd-key-compare-prices/"
+    ONE_URL = AKS_BLOG + "buy-nba-2k25-xbox-one-compare-prices/"
+    SERIES_URL = AKS_BLOG + "buy-nba-2k25-xbox-series-compare-prices/"
+    MMOGA_URL = ("https://www.mmoga.com/Xbox-Live/Xbox-One-Game-Keys/"
+                 "NBA-2K25-Xbox-One-Series-XS-Download-Code-EU.html?ref=615")
+
+    def _mmoga(self, name="NBA 2K25 (Xbox One / Series X|S Download Code) - EU", oid="77"):
+        return NormalizedOffer(offer_id=oid, merchant="MMOGA", name=name, url=self.MMOGA_URL)
+
+    def _run(self, offer, sig, pc=None, pages=None, console_pages_by_kind=None, calls=None):
+        """match_offer(consoles=True) with the grammar mocked: ``pc`` is the PC page (or
+        None), ``console_pages_by_kind`` {kind: page} answers the console-anchor probe,
+        ``pages`` {url: page} the page_resolver."""
+        pages = pages or {}
+        console_pages_by_kind = console_pages_by_kind or {}
+        calls = calls if calls is not None else []
+
+        def resolver(name, **kw):
+            calls.append((name, kw))
+            if "page_kind" in kw:
+                return console_pages_by_kind.get(kw["page_kind"])
+            return pc
+
+        with mock.patch("src.matcher.classify_console", return_value=sig), \
+                mock.patch("src.matcher.console_page_identity", side_effect=_identity):
+            return match_offer(offer, resolver, page_resolver=lambda url: pages.get(url), consoles=True)
+
+    def _nba_pages(self, one_editions=None, series_editions=None, pc_platforms=("Xbox", "Steam")):
+        pc = _page("NBA 2K25", "50001", self.PC_URL, official_platforms=pc_platforms,
+                   console_pages={"xbox-one": self.ONE_URL, "xbox-series": self.SERIES_URL})
+        pages = {self.ONE_URL: _page("NBA 2K25 Xbox One", "50002", self.ONE_URL, editions=one_editions),
+                 self.SERIES_URL: _page("NBA 2K25 Xbox Series", "50003", self.SERIES_URL, editions=series_editions)}
+        return pc, pages
+
+    # (i) MMOGA cross-gen: One + Series, EU
+    def test_cross_gen_xbox_key_targets_both_pages(self):
+        pc, pages = self._nba_pages()
+        r = self._run(self._mmoga(), _Sig(("XBOX_ONE", "XBOX_SERIES"), "NBA 2K25"), pc=pc, pages=pages)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.platform, r.region_id, r.aks_product_id), ("XBOX_ONE", "24eu", "50002"))
+        self.assertEqual(r.region_label, CONSOLE_REGION_LABELS["24eu"])
+        self.assertEqual((r.edition_label, r.edition_id), ("Standard", "1"))
+        self.assertEqual([(t.platform, t.aks_product_id, t.region_id, t.edition_id) for t in r.targets],
+                         [("XBOX_ONE", "50002", "24eu", "1"), ("XBOX_SERIES", "50003", "302", "1")])
+        self.assertEqual(r.fingerprint, "77|50002|24eu|1|+50003:302:1")
+        d = r.to_dict()
+        self.assertEqual(d["fingerprint"], r.fingerprint)
+        self.assertEqual([t["aks_product_id"] for t in d["targets"]], ["50002", "50003"])
+        self.assertEqual(d["targets"][1]["region"], {"label": CONSOLE_REGION_LABELS["302"], "id": "302"})
+        block = r.normalized_block(1)
+        self.assertIn("\u21B3 XBOX_SERIES 50003 — NBA 2K25 Xbox Series", block)
+        self.assertIn("Xbox One", block)                                  # PLATFORM_LABEL merged
+
+    # (ii) Play Anywhere: Series page + PC page under the XBOX/PC buckets
+    def test_play_anywhere_adds_the_pc_page_under_xbox_pc_buckets(self):
+        offer = NormalizedOffer(offer_id="9", merchant="Eneba", name="Hades (Xbox Series X|S) XBOX LIVE Key EUROPE",
+                                url="https://www.eneba.com/xbox-hades-xbox-series-x-s-xbox-live-key-europe")
+        pc_url, series_url = AKS_BLOG + "buy-hades-cd-key-compare-prices/", AKS_BLOG + "buy-hades-xbox-series-compare-prices/"
+        pc = _page("Hades", "26712", pc_url, official_platforms=("Steam", "Xbox Play Anywhere", "Xbox"),
+                   console_pages={"xbox-series": series_url, "xbox-one": AKS_BLOG + "buy-hades-xbox-one-compare-prices/"})
+        pages = {series_url: _page("Hades Xbox Series", "85103", series_url)}
+        r = self._run(offer, _Sig(("XBOX_SERIES",), "Hades"), pc=pc, pages=pages)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.platform, r.region_id, r.region_label), ("XBOX_SERIES", "241", "XBOX/PC EU"))
+        self.assertEqual([(t.platform, t.aks_product_id, t.region_id) for t in r.targets],
+                         [("XBOX_SERIES", "85103", "241"), ("XBOX_PC", "26712", "241")])
+        self.assertEqual(r.fingerprint, "9|85103|241|1|+26712:241:1")
+
+    def test_play_anywhere_without_merchant_pc_mention_still_targets_pa(self):
+        # P2: PA is the PC page's truth — the merchant need not say "PC".
+        pc_url, one_url = AKS_BLOG + "buy-hades-cd-key-compare-prices/", AKS_BLOG + "buy-hades-xbox-one-compare-prices/"
+        pc = _page("Hades", "26712", pc_url, official_platforms=("Xbox Play Anywhere",), console_pages={"xbox-one": one_url})
+        r = self._run(_offer("Hades Xbox One GLOBAL", oid="3"), _Sig(("XBOX_ONE",), "Hades"),
+                      pc=pc, pages={one_url: _page("Hades Xbox One", "85102", one_url)})
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual([(t.platform, t.region_id) for t in r.targets], [("XBOX_ONE", "306"), ("XBOX_PC", "306")])
+        self.assertEqual(r.region_label, CONSOLE_REGION_LABELS["306"])
+
+    # (iii) merchant says Xbox + PC but the page has no Play Anywhere
+    def test_pc_declared_without_play_anywhere_on_page_skips(self):
+        pc, pages = self._nba_pages()
+        r = self._run(self._mmoga("NBA 2K25 (Xbox Series X|S / Windows) - EU"),
+                      _Sig(("XBOX_SERIES",), "NBA 2K25", pc_declared=True), pc=pc, pages=pages)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("Xbox Play Anywhere", r.reason)
+        self.assertTrue(r.reason.startswith("console: "))
+
+    # (iv) declared family with no tab on the AKS page
+    def test_declared_platform_without_an_aks_page_skips(self):
+        pc = _page("Hades", "26712", AKS_BLOG + "buy-hades-cd-key-compare-prices/", console_pages={})
+        r = self._run(_offer("Hades PS5 GLOBAL"), _Sig(("PS5",), "Hades"), pc=pc)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("AKS has no PS5 page for 'Hades'", r.reason)
+        self.assertIn("(R45)", r.reason)
+
+    def test_tab_page_404_skips(self):
+        one_url = AKS_BLOG + "buy-hades-xbox-one-compare-prices/"
+        pc = _page("Hades", "26712", AKS_BLOG + "buy-hades-cd-key-compare-prices/", console_pages={"xbox-one": one_url})
+        r = self._run(_offer("Hades Xbox One GLOBAL"), _Sig(("XBOX_ONE",), "Hades"), pc=pc, pages={})
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("XBOX_ONE page", r.reason); self.assertIn("(R45)", r.reason)
+
+    # (v) the tab points to another product
+    def test_console_page_of_another_product_skips(self):
+        sw_url = AKS_BLOG + "buy-elden-ring-tarnished-edition-nintendo-switch-compare-prices/"
+        pc = _page("Elden Ring", "12345", AKS_BLOG + "buy-elden-ring-cd-key-compare-prices/",
+                   console_pages={"nintendo-switch": sw_url})
+        pages = {sw_url: _page("Elden Ring Tarnished Edition Nintendo Switch", "99999", sw_url)}
+        r = self._run(_offer("Elden Ring Nintendo Switch GLOBAL"), _Sig(("SWITCH",), "Elden Ring"), pc=pc, pages=pages)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, "console page 'Elden Ring Tarnished Edition Nintendo Switch' is not 'Elden Ring' (R45)")
+
+    # (vi) PS5 has a GLOBAL bucket only
+    def test_ps5_locked_region_has_no_bucket(self):
+        calls = []
+        r = self._run(_offer("Hades (PS5) - EU"), _Sig(("PS5",), "Hades"), calls=calls)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, "no region id for PS5/EU (R45)")
+        self.assertEqual(calls, [])                                       # refused before any probe
+
+    # (vii) Switch → a single target, family 99
+    def test_switch_key_is_a_single_target(self):
+        sw_url = AKS_BLOG + "buy-hades-nintendo-switch-compare-prices/"
+        pc = _page("Hades", "26712", AKS_BLOG + "buy-hades-cd-key-compare-prices/", console_pages={"nintendo-switch": sw_url})
+        r = self._run(_offer("Hades Nintendo Switch GLOBAL", oid="5"), _Sig(("SWITCH",), "Hades"),
+                      pc=pc, pages={sw_url: _page("Hades Nintendo Switch", "47979", sw_url)})
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.platform, r.region_id, r.region_label, r.aks_product_id),
+                         ("SWITCH", "99", CONSOLE_REGION_LABELS["99"], "47979"))
+        self.assertEqual(len(r.targets), 1)
+        self.assertEqual(r.fingerprint, "5|47979|99|1")                     # one target: formula unchanged
+        self.assertEqual(len(r.to_dict()["targets"]), 1)
+
+    def test_console_anchor_when_no_pc_page(self):
+        # No PC page: the primary family's console page is guessed by slug (page_kind),
+        # without the R30 search — it is its own target page.
+        sw_url = AKS_BLOG + "buy-hades-nintendo-switch-compare-prices/"
+        calls = []
+        r = self._run(_offer("Hades Nintendo Switch GLOBAL", oid="6"), _Sig(("SWITCH",), "Hades"), pc=None,
+                      console_pages_by_kind={"nintendo-switch": _page("Hades Nintendo Switch", "47979", sw_url)},
+                      calls=calls)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual(calls, [("Hades", {}), ("Hades", {"page_kind": "nintendo-switch"})])
+        self.assertEqual((r.platform, r.aks_product_id, r.aks_url), ("SWITCH", "47979", sw_url))
+
+    def test_no_page_at_all_skips(self):
+        r = self._run(_offer("Hades Nintendo Switch GLOBAL"), _Sig(("SWITCH",), "Hades"), pc=None)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, "no AKS product page found (console) (R45)")
+
+    # (viii) the secondary page does not sell the resolved edition
+    def test_secondary_page_lacking_the_edition_skips(self):
+        pc, pages = self._nba_pages(one_editions={"1": {"name": "Standard"}, "7": {"name": "Deluxe Edition"}})
+        r = self._run(self._mmoga("NBA 2K25 - Deluxe Edition (Xbox One / Series X|S Download Code) - EU"),
+                      _Sig(("XBOX_ONE", "XBOX_SERIES"), "NBA 2K25 - Deluxe Edition"), pc=pc, pages=pages)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, "edition Deluxe Edition(7) not sold on the XBOX_SERIES page (R45)")
+
+    def test_edition_sold_on_every_page_enters_it(self):
+        deluxe = {"1": {"name": "Standard"}, "7": {"name": "Deluxe Edition"}}
+        pc, pages = self._nba_pages(one_editions=deluxe, series_editions=deluxe)
+        r = self._run(self._mmoga("NBA 2K25 - Deluxe Edition (Xbox One / Series X|S Download Code) - EU"),
+                      _Sig(("XBOX_ONE", "XBOX_SERIES"), "NBA 2K25 - Deluxe Edition"), pc=pc, pages=pages)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual(r.fingerprint, "77|50002|24eu|7|+50003:302:7")
+
+    def test_gift_and_dlc_console_rows_skip(self):
+        pc, pages = self._nba_pages()
+        r = self._run(_offer("Hades Xbox One Gift GLOBAL"), _Sig(("XBOX_ONE",), "Hades"), pc=pc)
+        self.assertEqual(r.reason, "console: gift delivery has no console bucket (R45)")
+        r = self._run(_offer("Hades Xbox One - Season Pass GLOBAL"), _Sig(("XBOX_ONE",), "Hades - Season Pass"), pc=pc)
+        self.assertEqual(r.reason, "console: DLC / season pass on console — not entered yet (R45)")
+
+    def test_dlc_bucket_read_by_r18_on_a_console_page_skips_p5(self):
+        one_url = AKS_BLOG + "buy-hades-xbox-one-compare-prices/"
+        pc = _page("Hades", "26712", AKS_BLOG + "buy-hades-cd-key-compare-prices/", console_pages={"xbox-one": one_url})
+        pages = {one_url: _page("Hades Xbox One", "85102", one_url, editions={"1": {"name": "Standard"}, "16": {"name": "DLC"}})}
+        r = self._run(_offer("Hades Xbox One GLOBAL"), _Sig(("XBOX_ONE",), "Hades"), pc=pc, pages=pages)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, "console: DLC / season pass on console — not entered yet (R45)")
+
+    def test_guards_read_the_resolve_name_not_the_raw_title(self):
+        # R01 / R16 compare the classifier's resolve_name (markers removed): the raw title's
+        # "Xbox One / Series X|S Download Code" words are NOT extra words …
+        pc, pages = self._nba_pages()
+        r = self._run(self._mmoga(), _Sig(("XBOX_ONE", "XBOX_SERIES"), "NBA 2K25"), pc=pc, pages=pages)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        # … but a real different product still fails R16 / R01.
+        r = self._run(self._mmoga("NBA 2K25 Baller Pack (Xbox One / Series X|S Download Code) - EU"),
+                      _Sig(("XBOX_ONE", "XBOX_SERIES"), "NBA 2K25 Baller Pack"), pc=pc, pages=pages)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("extra words", r.reason)
+        r = self._run(self._mmoga("NBA 2K (Xbox One / Series X|S Download Code) - EU"),
+                      _Sig(("XBOX_ONE", "XBOX_SERIES"), "NBA 2K"), pc=pc, pages=pages)
+        self.assertIn("missing AKS words", r.reason)
+
+    def test_empty_families_or_bucket_family_skip(self):
+        pc, pages = self._nba_pages()
+        r = self._run(_offer("Hades Xbox One GLOBAL"), _Sig((), "Hades"), pc=pc)
+        self.assertEqual(r.reason, "console: no declared generation (R45)")
+        r = self._run(_offer("Hades Xbox One GLOBAL"), _Sig(("XBOX_PC",), "Hades"), pc=pc)
+        self.assertIn("unknown platform family", r.reason)
+
+    def test_probe_failures_stay_the_usual_fail_closed_skips(self):
+        def boom(name, **kw):
+            raise AksProbeUnreliable("nba-2k25 -> 503", status=503, slug="nba-2k25")
+        with mock.patch("src.matcher.classify_console", return_value=_Sig(("XBOX_ONE",), "NBA 2K25")):
+            r = match_offer(self._mmoga(), boom, consoles=True)
+        self.assertTrue(r.reason.startswith("AKS probe unreliable"))
+        one_url = AKS_BLOG + "buy-nba-2k25-xbox-one-compare-prices/"
+        pc = _page("NBA 2K25", "50001", self.PC_URL, console_pages={"xbox-one": one_url})
+
+        def page_boom(url):
+            raise AksProbeUnreliable("nba-2k25 -> 429", status=429, slug="nba-2k25")
+        with mock.patch("src.matcher.classify_console", return_value=_Sig(("XBOX_ONE",), "NBA 2K25")), \
+                mock.patch("src.matcher.console_page_identity", side_effect=_identity):
+            r = match_offer(self._mmoga(), lambda name, **kw: pc, page_resolver=page_boom, consoles=True)
+        self.assertTrue(r.reason.startswith("AKS probe unreliable"))
+
+    # (ix) PC candidates: one synthesized target, fingerprint unchanged
+    def test_pc_candidate_has_one_synthesized_target_and_the_old_fingerprint(self):
+        res = AksResolution("neon-beats", "https://aks/x", "205027", "Neon Beats", {"1": {"name": "Standard"}},
+                            official_platforms=("Steam",))
+        r = match_offer(_offer("Neon Beats - Full Version (PC) - Steam Key - GLOBAL"), lambda name: res)
+        self.assertIsInstance(r, Candidate)
+        self.assertEqual(r.targets, ())
+        self.assertEqual(r.fingerprint, "1|205027|2|1")
+        d = r.to_dict()
+        self.assertEqual(d["targets"], [{
+            "platform": "STEAM", "aks_product_id": "205027", "aks_url": "https://aks/x", "aks_name": "Neon Beats",
+            "region": {"label": "GLOBAL", "id": "2"}, "edition": {"label": "Standard", "id": "1"}}])
+        self.assertEqual(r.all_targets[0], Target("STEAM", "205027", "https://aks/x", "Neon Beats",
+                                                  "GLOBAL", "2", "Standard", "1"))
+        self.assertNotIn("\u21B3", r.normalized_block(1))
+
+    def test_region_ids_and_platform_labels_carry_the_console_families(self):
+        from src.matcher import PLATFORM_LABEL, REGION_IDS
+        self.assertEqual(REGION_IDS["XBOX_ONE"]["eu"], "24eu")
+        self.assertEqual(REGION_IDS["PS5"], {"global": "88ps5h"})
+        self.assertEqual(REGION_IDS["STEAM"]["global"], "2")                 # PC untouched
+        for fam in ("XBOX_ONE", "XBOX_SERIES", "XBOX_PC", "PS4", "PS5", "SWITCH"):
+            self.assertIn(fam, PLATFORM_LABEL)
+
+
+class ConsoleMatchFeedR45Tests(unittest.TestCase):
+    def _feed(self, *offers):
+        return NormalizedFeed(run_id="r", merchant="Test", fetched_at="t", offers=tuple(offers))
+
+    def test_consoles_off_by_default_console_rows_skip(self):
+        res = AksResolution("neon-beats", "https://aks/x", "205027", "Neon Beats", {"1": {"name": "Standard"}})
+        cands, skipped = match_feed(self._feed(_offer("Halo Xbox", oid="3")), lambda name, **kw: res)
+        self.assertEqual(cands, [])
+        self.assertEqual([s.reason for s in skipped], ["console"])
+
+    def test_injected_page_resolver_is_used_as_is(self):
+        one_url = AKS_BLOG + "buy-hades-xbox-one-compare-prices/"
+        pc = _page("Hades", "26712", AKS_BLOG + "buy-hades-cd-key-compare-prices/", console_pages={"xbox-one": one_url})
+        seen = []
+
+        def page_resolver(url):
+            seen.append(url)
+            return _page("Hades Xbox One", "85102", one_url)
+        with mock.patch("src.matcher.classify_console", return_value=_Sig(("XBOX_ONE",), "Hades")), \
+                mock.patch("src.matcher.console_page_identity", side_effect=_identity):
+            cands, skipped = match_feed(self._feed(_offer("Hades Xbox One GLOBAL", oid="1")),
+                                        lambda name, **kw: pc, page_resolver=page_resolver, consoles=True)
+        self.assertEqual(seen, [one_url])
+        self.assertEqual(len(cands), 1)
+        self.assertEqual(cands[0].platform, "XBOX_ONE")
+
+    def test_production_resolver_wraps_the_page_resolver_in_its_own_guard(self):
+        from src.matcher import _ThrottleGuard
+        captured = {}
+
+        def fake_match_offer(offer, resolver, difmark_offer_resolver, *, account_resolver, page_resolver, consoles):
+            captured.update(page_resolver=page_resolver, consoles=consoles)
+            page_resolver.stats["probe_unreliable"] += 2                  # counters summed
+            return SkippedOffer(offer, "x")
+        stats = {}
+        with mock.patch("src.matcher.match_offer", side_effect=fake_match_offer):
+            match_feed(self._feed(_offer("Halo Xbox", oid="3")), resolve_aks, stats=stats, consoles=True,
+                       page_resolver=lambda url: None)
+        self.assertIsInstance(captured["page_resolver"], _ThrottleGuard)
+        self.assertTrue(captured["consoles"])
+        self.assertEqual(stats["probe_unreliable"], 2)
+        for key in ("search_failures", "search_circuit_open_offers", "throttle_graces"):
+            self.assertEqual(stats[key], 0)
+
+
+class GamivoConfigR46Tests(unittest.TestCase):
+    """[R46] Gamivo grammar (2026-09-12, src/merchants/gamivo.py). Title
+    "<Game> [<Edition>] [<LANG>(/<LANG>)*] <Region>" (no separator, platform never named),
+    URL "gamivo.com/product/<slug>-<platform run>-<cc>[-<langs>]-<edition>" (edition AFTER
+    the region code, so the P2-6b trailing slot never fires). On 2026-09-11 six US-locked
+    Steam keys ("… United States", …-pc-steam-us-standard) were entered PUBLISHER GLOBAL(1)."""
+
+    G = "https://www.gamivo.com/product/"
+
+    def _o(self, name, url):
+        return NormalizedOffer(offer_id="1", name=name, url=url, merchant="Gamivo")
+
+    def _page(self, aks_name, official_platforms=("Steam",), pid="84896"):
+        res = AksResolution(slug="x", url="https://aks/buy-x", product_id=pid, aks_name=aks_name,
+                            editions={"1": {"name": "Standard"}}, official_platforms=official_platforms)
+        return lambda name, **kw: res
+
+    def test_registry_binds_the_four_hooks(self):
+        from src.merchants import gamivo
+        cfg = merchant_config("Gamivo")
+        self.assertIs(cfg.precheck, gamivo.precheck)
+        self.assertIs(cfg.title_region, gamivo.title_region)
+        self.assertIs(cfg.resolve_name, gamivo.resolve_name)
+        self.assertIs(cfg.url_platform, gamivo.url_platform)
+
+    def test_title_region_reads_the_trailing_region_phrase(self):
+        from src.merchants.gamivo import title_region
+        cases = {
+            "Ravenswatch EN United Kingdom": "uk",
+            "Tiny Tina's Wonderlands United States": "us",
+            "Age of Empires II Definitive Edition United States": "us",
+            "FIFA 23 EN/PL/CS/RU/TR EU": "eu",
+            "Silent Hill Townfall EN Global": "global",
+            "Some Game EN/DE/FR/IT Worldwide": "global",
+            "Final Fantasy XV Global": "global",            # XV is not a language code
+            "KIBORG EN Colombia": None,                     # forbidden → precheck's job
+            "Storebound ROW": None,
+            "Quantum Break EN North America": None,
+            "The Last of Us": None,                         # "Us" is not "US"
+            "Lowes Gift Card USD US $73": None,             # no trailing region
+            "Global": None,                                 # a lone region is no title
+        }
+        for name, base in cases.items():
+            self.assertEqual(title_region(name), base, name)
+
+    def test_resolve_name_peels_the_tail_only(self):
+        from src.merchants.gamivo import resolve_name
+        cases = {
+            "Ravenswatch EN United Kingdom": "Ravenswatch",
+            "Age of Empires II Definitive Edition United States": "Age of Empires II Definitive Edition",
+            "FIFA 23 EN/PL/CS/RU/TR EU": "FIFA 23",
+            "KIBORG EN Colombia": "KIBORG",
+            "Kingdom Come Deliverance II Royal Edition EN Canada": "Kingdom Come Deliverance II Royal Edition",
+            "The Last of Us": "The Last of Us",
+            "Lowes Gift Card USD US $73": "Lowes Gift Card USD US $73",
+        }
+        for name, expected in cases.items():
+            self.assertEqual(resolve_name(name), expected, name)
+
+    def test_precheck_forbidden_title_tail_routes_like_the_generic_scan(self):
+        from src.merchants.gamivo import precheck
+        cases = {
+            "KIBORG EN Colombia": "COLOMBIA",
+            "Some Game EN Netherlands": "NETHERLANDS",
+            "Storebound ROW": "ROW",
+            "Quantum Break EN North America": "NORTH AMERICA",
+            "Some Game Canada": "CANADA",
+            "Universe Sandbox Australia": "AUSTRALIA",
+            "Metro Exodus EN/DE/FR/IT CIS": "CIS",
+            "Ikenfell EN/JA Latin America": "LATIN AMERICA",
+            "System Shock EN SEA": "SOUTH EAST ASIA",
+            "NordPass Premium Password Manager DE Germany": "GERMANY",
+        }
+        for name, label in cases.items():
+            self.assertEqual(precheck(name, self.G + "x-pc-steam-global-standard"),
+                             f"forbidden region: {label}", name)
+        # the one router files them exactly like a title/URL forbidden region
+        self.assertEqual(suggest_target_list("forbidden region: COLOMBIA"), "8")
+        self.assertEqual(suggest_target_list("forbidden region: CANADA"), "33")
+        self.assertEqual(suggest_target_list("forbidden region: SOUTH EAST ASIA"), "8")
+        self.assertIsNone(suggest_target_list("forbidden region: NETHERLANDS"))
+
+    def test_precheck_url_code_when_the_title_has_no_tail(self):
+        from src.merchants.gamivo import precheck
+        # forbidden / unknown codes fail closed; the code is the slot AFTER the run,
+        # never a bare "-us-" ("among-us")
+        self.assertEqual(precheck("Some Game", self.G + "some-game-pc-steam-co-standard"),
+                         "forbidden region: COLOMBIA")
+        self.assertEqual(precheck("Some Game", self.G + "some-game-pc-ubisoft-connect-na-standard"),
+                         "forbidden region: NORTH AMERICA")
+        self.assertEqual(precheck("Some Game", self.G + "some-game-pc-steam-ch-standard"),
+                         "forbidden region: SWITZERLAND")
+        self.assertEqual(precheck("Some Game", self.G + "some-game-pc-steam-xq-standard"),
+                         "forbidden region: XQ")
+        self.assertEqual(precheck("Some Game", self.G + "some-game-pc-steam-latin-america-standard"),
+                         "forbidden region: LATIN AMERICA")
+        # eu / global: the generic -eu / -global URL scan reads them → None
+        self.assertIsNone(precheck("Some Game", self.G + "some-game-pc-steam-eu-standard"))
+        self.assertIsNone(precheck("Some Game", self.G + "some-game-pc-steam-global-standard"))
+        # us / uk mid-slug: the generic scan CANNOT read them (implicit GLOBAL = the
+        # 2026-09-11 failure) → fail-closed, explicit reason
+        for cc in ("us", "uk"):
+            r = precheck("Some Game", self.G + f"some-game-pc-steam-{cc}-standard")
+            self.assertIn(f"region {cc.upper()} declared only in the URL", r)
+            self.assertIn("(R46)", r)
+        # neither a tail nor a run → the generic scans decide
+        self.assertIsNone(precheck("Among Us", self.G + "among-us-pc-steam-global-standard"))
+        self.assertIsNone(precheck("Some Card 50 EUR", self.G + "some-card-50-eur"))
+        self.assertIsNone(precheck("Overwatch - Gift 30 Mythic Prisms",
+                                   self.G + "overwatch-battle-net-gift-30-mythic-prisms"))
+        # the query string never speaks for the product
+        self.assertIsNone(precheck("Some Game EN Global", self.G + "some-game-pc-steam-global-standard?region=co"))
+
+    def test_precheck_title_tail_vs_url_code_contradiction_fails_closed(self):
+        from src.merchants.gamivo import precheck
+        # sellable title, forbidden URL code → the lock wins
+        self.assertEqual(precheck("Some Game EN Global", self.G + "some-game-pc-steam-co-standard"),
+                         "forbidden region: COLOMBIA")
+        # two different sellable regions → never a guess between them
+        r = precheck("Some Game EN United Kingdom", self.G + "some-game-pc-steam-eu-standard")
+        self.assertIn("region contradiction", r)
+        self.assertIn("(R46)", r)
+        # agreement, or a URL without a readable code → the title tail stands
+        self.assertIsNone(precheck("Some Game EN United Kingdom", self.G + "some-game-pc-steam-uk-standard"))
+        self.assertIsNone(precheck("Some Game EN United Kingdom", self.G + "some-game"))
+        self.assertIsNone(precheck("Tiny Tina's Wonderlands United States",
+                                   self.G + "tiny-tinas-wonderlands-pc-steam-us-standard"))
+
+    def test_url_platform_reads_the_run_between_slug_and_code(self):
+        from src.merchants.gamivo import url_platform
+        cases = {
+            "tiny-tinas-wonderlands-pc-steam-us-standard": "STEAM",
+            "middle-earth-the-shadow-bundle-steam-eu-standard-pc": "STEAM",
+            "silent-hill-townfall-pc-steam-gift-global-standard": "STEAM",
+            "the-sims-4-carnaval-streetwear-kit-pc-ea-app-eu-standard": "EA",
+            "some-game-origin-global-standard": "EA",
+            "assassins-creed-brotherhood-pc-ubisoft-connect-na-standard": "UBISOFT",
+            "call-of-duty-black-ops-6-pc-battlenet-us-vault": "BATTLENET",
+            "doom-the-dark-ages-revelations-battle-net-gift-pc-global-standard": "BATTLENET",
+            "some-game-pc-gog-global-standard": "GOG",
+            "some-game-pc-epic-games-eu-standard": "EPIC",
+            "some-game-pc-rockstar-global-standard": "ROCKSTAR",
+            "metro-exodus-pc-steam-cis-en-de-fr-it-standard": "STEAM",
+            "epic-chef-pc-steam-us-standard": "STEAM",                # the LAST run wins
+            "neon-beats-steam-en-global": "STEAM",                    # old grammar, MA7 "-en-"
+            "cyberpunk-2077-steam-key-brazil": "STEAM",               # old "…-steam-key-…" grammar
+            "cyberpunk-2077-steam-key": "STEAM",
+            # consoles: the R45 classifier owns them
+            "riders-republic-xbox-xbox-one-series-us-premium": None,
+            "some-game-ps-ps5-eu-standard": None,
+            "some-game-nintendo-nintendo-switch-eu-standard": None,
+            "the-talos-principle-origin-bundle-xbox-xbox-one-series-co-standard": None,
+            # nothing recognised / no region slot after a bare name word
+            "epic-chef-standard": None,
+            "fortnite-save-the-world-standard-founders-pack-epic-games": None,
+            "overwatch-battle-net-gift-30-mythic-prisms": None,
+            "some-card-50-eur": None,
+        }
+        for path, plat in cases.items():
+            self.assertEqual(url_platform(self.G + path), plat, path)
+            self.assertEqual(explicit_platform_from_url(self.G + path, "Gamivo"), plat, path)
+
+    def test_existing_url_forbidden_region_behaviour_unchanged(self):
+        # P2-6 / P2-6b (old grammar) keep their reason strings and routing under the hooks
+        cases = {
+            "cyberpunk-2077-steam-key-brazil": ("BRAZIL", "8"),
+            "elden-ring-latam": ("LATAM", "8"),
+            "gta-v-south-america-steam-key": ("SOUTH AMERICA", "36"),
+            "cyberpunk-2077-steam-key-ru": ("RUSSIA", "8"),
+            "elden-ring-pc-br": ("BRAZIL", "8"),
+            "game-steam-key-canada": ("CANADA", "33"),
+        }
+        for path, (label, listid) in cases.items():
+            reason = precheck_skip(self._o("Some Game Steam Key", self.G + path))
+            self.assertEqual(reason, f"forbidden region: {label}", path)
+            self.assertEqual(suggest_target_list(reason), listid, path)
+        self.assertIsNone(precheck_skip(self._o("Cyberpunk 2077 Steam Key", self.G + "cyberpunk-2077-steam-key-global")))
+        self.assertIsNone(precheck_skip(self._o("Cyberpunk 2077 Steam Key", self.G + "cyberpunk-2077-steam-key?region=brazil")))
+        # MA7 retired: an "-en-" segment is a language marker, not a skip
+        self.assertIsNone(precheck_skip(self._o("Neon Beats (PC) Steam Key", self.G + "neon-beats-steam-en-global")))
+        self.assertIsNone(precheck_skip(self._o("Neon Beats EN Global", self.G + "neon-beats-pc-steam-global-en-standard")))
+
+    def test_gift_run_still_yields_the_steam_gift_bucket(self):
+        o = self._o("Silent Hill Townfall EN Global", self.G + "silent-hill-townfall-pc-steam-gift-global-standard")
+        self.assertIsNone(precheck_skip(o))
+        self.assertEqual(explicit_platform_from_url(o.url, "Gamivo"), "STEAM")
+        self.assertEqual(detect_region(o, "STEAM"), ("GIFT", "25", False))
+
+    def test_console_row_is_left_to_the_console_classifier(self):
+        o = self._o("Riders Republic Premium Edition United States",
+                    self.G + "riders-republic-xbox-xbox-one-series-us-premium")
+        self.assertEqual(precheck_skip(o), "console")
+        self.assertIsNone(explicit_platform_from_url(o.url, "Gamivo"))
+        # a forbidden title tail on a console row still files as a forbidden region
+        self.assertEqual(precheck_skip(self._o("KIBORG EN Colombia", self.G + "kiborg-xbox-xbox-series-co-standard")),
+                         "forbidden region: COLOMBIA")
+
+    def test_kingdom_is_noise_only_trailing_after_united(self):
+        # the trailing "United Kingdom" tail: UNITED/STATES were NOISE, KINGDOM was not
+        self.assertEqual(extra_significant_words("Ravenswatch", "Ravenswatch EN United Kingdom"), [])
+        self.assertEqual(extra_significant_words("Kingdom Come Deliverance",
+                                                 "Kingdom Come Deliverance EN United Kingdom"), [])
+        self.assertEqual(extra_significant_words("Total War Three Kingdoms",
+                                                 "Total War Three Kingdoms EN United Kingdom"), [])
+        # leading / mid position and a bare KINGDOM stay significant (different product)
+        self.assertEqual(extra_significant_words("Kingdom", "Kingdom Come Deliverance"),
+                         ["COME", "DELIVERANCE"])
+        self.assertEqual(extra_significant_words("Come Deliverance", "Kingdom Come Deliverance"), ["KINGDOM"])
+        self.assertEqual(extra_significant_words("Simulator", "United Kingdom Simulator"), ["KINGDOM"])
+        self.assertEqual(extra_significant_words("Ravenswatch", "Ravenswatch Kingdom"), ["KINGDOM"])
+        # after the full name, KINGDOM is the region phrase like a language code would be —
+        # the row still fails closed on the genuine extra that follows
+        self.assertEqual(extra_significant_words("Ravenswatch", "Ravenswatch United Kingdom Chronicles"),
+                         ["CHRONICLES"])
+
+    def test_match_offer_us_steam_key_enters_steam_us(self):
+        # the 2026-09-11 failure: entered PUBLISHER GLOBAL(1) implicit — now STEAM US(8)
+        o = self._o("Tiny Tina's Wonderlands United States", self.G + "tiny-tinas-wonderlands-pc-steam-us-standard")
+        seen = []
+
+        def resolver(name, **kw):
+            seen.append(name)
+            return self._page("Tiny Tina's Wonderlands")(name)
+
+        r = match_offer(o, resolver)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.platform, r.region_label, r.region_id, r.region_implicit), ("STEAM", "US", "8", False))
+        self.assertEqual((r.edition_label, r.edition_id), ("Standard", "1"))
+        self.assertEqual(seen, ["Tiny Tina's Wonderlands"])          # the tail never reaches the slug
+
+    def test_match_offer_uk_key_enters_steam_uk_without_kingdom_skip(self):
+        o = self._o("Ravenswatch EN United Kingdom", self.G + "ravenswatch-pc-steam-uk-standard")
+        r = match_offer(o, self._page("Ravenswatch"))
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.platform, r.region_label, r.region_id, r.region_implicit), ("STEAM", "UK", "71", False))
+
+    def test_match_offer_forbidden_tail_skips_before_resolution(self):
+        calls = []
+        for name, label in (("KIBORG EN Colombia", "COLOMBIA"), ("Some Game EN Netherlands", "NETHERLANDS")):
+            r = match_offer(self._o(name, self.G + "x-pc-steam-co-standard"), lambda n, **kw: calls.append(n))
+            self.assertIsInstance(r, SkippedOffer)
+            self.assertEqual(r.reason, f"forbidden region: {label}")
+        self.assertEqual(calls, [])
+
+    def test_direct_publisher_only_page_with_a_steam_url_is_r20_never_publisher(self):
+        o = self._o("Tiny Tina's Wonderlands United States", self.G + "tiny-tinas-wonderlands-pc-steam-us-standard")
+        r = match_offer(o, self._page("Tiny Tina's Wonderlands", official_platforms=("Direct Publisher",)))
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("says Steam but AKS official platforms exclude it (R20)", r.reason)
+        # a page listing both keeps the URL-declared Steam, not the R27 Publisher default
+        r = match_offer(o, self._page("Tiny Tina's Wonderlands", official_platforms=("Steam", "Direct Publisher")))
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.platform, r.region_id), ("STEAM", "8"))
+
+    def test_match_offer_ea_and_battlenet_runs(self):
+        o = self._o("The Sims 4 Carnaval Streetwear Kit EN EU", self.G + "the-sims-4-carnaval-streetwear-kit-pc-ea-app-eu-standard")
+        r = match_offer(o, self._page("The Sims 4 Carnaval Streetwear Kit", official_platforms=("EA app",)))
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.platform, r.region_label, r.region_id), ("EA", "EU", "3eu"))
+        o = self._o("Call of Duty Black Ops 6 United States", self.G + "call-of-duty-black-ops-6-pc-battlenet-us-vault")
+        r = match_offer(o, self._page("Call of Duty Black Ops 6", official_platforms=("Battle.net",)))
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.platform, r.region_label, r.region_id), ("BATTLENET", "US", "41"))

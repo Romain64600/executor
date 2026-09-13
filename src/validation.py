@@ -6,6 +6,14 @@ candidates. A candidate is identified by a fingerprint
 a region/edition invalidates a stale approval (skill rule S15: "a previous 'oui'
 never authorizes a new/changed batch").
 
+R45 (console keys, 2026-09-12): a candidate may carry several TARGETS (one AKS
+console page + region bucket + edition per declared platform, ``candidates.json``
+``"targets": [...]``). The fingerprint of a multi-target candidate appends
+``|+<pid>:<rid>:<eid>,...`` for every target after the primary one, so a re-match
+that adds/drops/changes a second platform invalidates the approval exactly like a
+region change does. One target = the historical formula, byte-identical; a
+candidates.json written before R45 (no ``targets`` key) is one target.
+
 Works on candidate dicts (as written to ``candidates.json`` by the matcher), so it
 has no heavy dependencies. Standard library only. Fail-closed: any problem raises
 ``ValidationError`` rather than silently approving.
@@ -26,14 +34,93 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _target_ids(target: Any) -> tuple[str, str, str]:
+    """``(aks_product_id, region_id, edition_id)`` of one ``targets[]`` entry.
+
+    Accepts the nested shape the matcher writes (``region: {label, id}``) and the
+    flat one of the validation template (``region_id``). Anything else raises
+    ``ValidationError`` — a fingerprint never carries a guessed id (R45, 2026-09-12).
+    """
+
+    if not isinstance(target, dict):
+        raise ValidationError(f"malformed target entry (R45): {target!r}")
+    try:
+        product_id = target["aks_product_id"]
+        region = target.get("region")
+        region_id = region["id"] if isinstance(region, dict) else target["region_id"]
+        edition = target.get("edition")
+        edition_id = edition["id"] if isinstance(edition, dict) else target["edition_id"]
+    except (KeyError, TypeError) as exc:
+        raise ValidationError(f"malformed target entry (R45): {target!r}") from exc
+    return str(product_id), str(region_id), str(edition_id)
+
+
+def _primary_ids(candidate: dict[str, Any]) -> tuple[str, str, str]:
+    return (
+        str(candidate["aks_product_id"]),
+        str(candidate["region"]["id"]),
+        str(candidate["edition"]["id"]),
+    )
+
+
+def candidate_targets(candidate: dict[str, Any]) -> list[dict[str, Any]]:
+    """The candidate's targets in the FLAT template shape
+    ``{platform, aks_product_id, region_id, edition_id}`` (R45, 2026-09-12).
+
+    A candidates.json without ``targets`` (pre-R45), or with a single one, yields
+    ONE target built from the PRIMARY fields — the primary is the validated
+    identity, and an operator override rewrites the primary (validation_io keeps
+    ``targets[0]`` mirrored). Several targets are flattened as they are.
+    """
+
+    raw = candidate.get("targets")
+    if not isinstance(raw, list) or len(raw) <= 1:
+        product_id, region_id, edition_id = _primary_ids(candidate)
+        return [{
+            "platform": candidate.get("platform"),
+            "aks_product_id": product_id,
+            "region_id": region_id,
+            "edition_id": edition_id,
+        }]
+    targets: list[dict[str, Any]] = []
+    for target in raw:
+        product_id, region_id, edition_id = _target_ids(target)
+        targets.append({
+            "platform": target.get("platform"),
+            "aks_product_id": product_id,
+            "region_id": region_id,
+            "edition_id": edition_id,
+        })
+    return targets
+
+
 def candidate_fingerprint(candidate: dict[str, Any]) -> str:
     """Compute the fingerprint from fields, so it works on any candidates.json
-    (robust to files written before the matcher stored a ``fingerprint`` key)."""
+    (robust to files written before the matcher stored a ``fingerprint`` key).
 
-    return (
+    One target (or no ``targets`` key at all — pre-R45 file):
+    ``offer_id|aks_product_id|region_id|edition_id``, unchanged.
+    Several targets (R45, 2026-09-12): the same primary identity plus
+    ``|+`` and ``pid:rid:eid`` of every EXTRA target joined by ``,`` — the same
+    formula as ``matcher.Candidate.fingerprint`` and ``app.js fp()``. ``targets[0]``
+    must mirror the primary fields (the matcher's contract); a file where it does
+    not is malformed and refused rather than fingerprinted on a guess.
+    """
+
+    primary = (
         f"{candidate['offer']['offer_id']}|{candidate['aks_product_id']}"
         f"|{candidate['region']['id']}|{candidate['edition']['id']}"
     )
+    raw = candidate.get("targets")
+    if not isinstance(raw, list) or len(raw) <= 1:
+        return primary
+    if _target_ids(raw[0]) != _primary_ids(candidate):
+        raise ValidationError(
+            "targets[0] does not mirror the primary aks_product_id/region/edition "
+            f"(R45) — re-run the match: {candidate['offer']['offer_id']}"
+        )
+    extra = ",".join(":".join(_target_ids(target)) for target in raw[1:])
+    return f"{primary}|+{extra}"
 
 
 def validation_template(
@@ -53,6 +140,10 @@ def validation_template(
                 "platform": candidate["platform"],
                 "region_id": candidate["region"]["id"],
                 "edition_id": candidate["edition"]["id"],
+                # R45 (2026-09-12): every target the approval covers (one for a PC /
+                # single-platform key; several for a console key declared on
+                # several platforms) — the operator sees what "approve" commits to.
+                "targets": candidate_targets(candidate),
                 "approve": False,
             }
         )

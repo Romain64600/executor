@@ -24,9 +24,12 @@ from typing import Any
 _CATEGORIES: list[tuple[str, str, str, str]] = [
     # key, label, why, lever
     ("console", "Consoles (Xbox / PlayStation / Switch)",
-     "l'outil AKS feed ne sait pas saisir une clé multi-plateforme (une ligne = une offre, "
-     "consommée à la création) ; chantier mis en attente (2026-09-11)",
-     "modification de l'outil AKS feed, puis classifieur console (EXECUTOR_RULES §4.3)"),
+     "clé console : sans le classifieur (`--consoles`) la ligne est écartée en bloc ; avec "
+     "lui, elle est écartée dès qu'un doute subsiste (génération non déclarée, Switch 2 sans "
+     "bucket, page console AKS absente, PS5 hors GLOBAL, DLC console) et une clé déclarée "
+     "sur PLUSIEURS plateformes reste fail-closed tant que l'overwrite par cible n'a pas "
+     "été observé dans le modal (R45, 2026-09-12)",
+     "classifieur console R45 — cibles multiples en attente du nouveau modal"),
     ("no_page", "Sans page produit AKS",
      "aucune page AKS trouvée sous les slugs devinés (et la recherche AKS était en panne "
      "pendant le passage)",
@@ -63,7 +66,12 @@ def categorize_reason(reason: str) -> str:
 
     r = (reason or "").strip()
     low = r.lower()
-    if low == "console":
+    # "console" = the pre-R45 blanket skip; "console: …" = the R45 classifier's own
+    # fail-closed reasons ("console: no declared generation (R45)", "console: Switch 2 has
+    # no AKS bucket (R45)", …); any other reason stamped "(R45)" comes from the console
+    # branch of the matcher too ("no region id for PS5/EU (R45)", "edition … not sold on
+    # the PS4 page (R45)") — all filed under the consoles category (2026-09-12).
+    if low == "console" or low.startswith("console:") or "(r45)" in low:
         return "console"
     if low.startswith("no aks") and "product page found" in low:
         return "no_page"

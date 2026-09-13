@@ -61,6 +61,10 @@ class SweepConfig:
     start_page: int = 1
     max_pages: int = 30       # shallow-index cap, same default as scripts/10 --max-pages (the
                               # submit index is only productive on the ~28-30 shallowest pages)
+    # [R45] (2026-09-12) match the pages WITH the console branch (03_match --consoles).
+    # Default OFF: console rows keep the 'console' skip. Recorded in the recap so an
+    # audit can tell a console sweep from a PC one.
+    consoles: bool = False
 
 
 @dataclass
@@ -173,6 +177,7 @@ def run_sweep(
         "merchant": cfg.merchant, "store_id": cfg.store_id,
         "pages": [], "total_created": 0, "total_moved": 0,
         "halted": None, "feed_last_page": None, "coverage": None,
+        "consoles": bool(cfg.consoles),        # [R45] matched with the console branch?
     }
 
     def finish_page(entry: dict[str, Any]) -> None:

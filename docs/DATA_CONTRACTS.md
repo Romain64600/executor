@@ -105,15 +105,71 @@ tables: one 5-line block per candidate, then a per-reason "Skipped summary".
   "aks_name": "Tower! Simulator 3",
   "platform": "STEAM",
   "region": { "label": "EU", "id": "9", "implicit": false },
-  "edition": { "label": "Standard", "id": "1" }
+  "edition": { "label": "Standard", "id": "1" },
+  "targets": [
+    { "platform": "STEAM", "aks_product_id": "12345", "aks_url": "https://www.allkeyshop.com/blog/...",
+      "aks_name": "Tower! Simulator 3", "region_label": "EU", "region_id": "9",
+      "edition_label": "Standard", "edition_id": "1" }
+  ]
 }
 ```
 
 `offer` is the full `NormalizedOffer` dict. `platform` is one of the
 `REGION_IDS` keys — STEAM, GOG, UBISOFT, EPIC, EA, BATTLENET or **PUBLISHER**
-(R20 revision: a token-less title whose AKS page lists `Direct Publisher`).
-`fingerprint` is `offer_id|aks_product_id|region_id|edition_id` — the exact
-submission identity Stage 3 keys on. A `SkippedOffer` is `{offer, reason}`.
+(R20 revision: a token-less title whose AKS page lists `Direct Publisher`) — or,
+since R45 (2026-09-12, `REGION_IDS.update(CONSOLE_REGION_IDS)`), a console family
+**XBOX_ONE / XBOX_SERIES / XBOX_PC / PS4 / PS5 / SWITCH** (only produced under
+`--consoles`). A `SkippedOffer` is `{offer, reason}`.
+
+**`targets` (R45) is ALWAYS present**, even on a PC candidate, where it holds exactly
+one entry synthesised from the primary fields (`platform`, `aks_product_id`,
+`aks_url`, `aks_name`, `region`, `edition`). Each entry is a `Target.to_dict()`
+(`src/matcher.py`, frozen dataclass): `{platform, aks_product_id, aks_url, aks_name,
+region_label, region_id, edition_label, edition_id}`. The first target IS the
+primary (same page / bucket / edition as the top-level fields); the following ones
+are the other AKS platform pages the same feed row must be filed on (Romain's
+per-target region/edition overwrite, EXECUTOR_RULES §4.12). Console region labels
+are the modal master label without its " (id)" suffix and without BOM
+(`CONSOLE_REGION_LABELS`: "PS5", "Xbox/PC GLOBAL", "Playstation Game Code
+EUROPE").
+
+**`fingerprint`** is `offer_id|aks_product_id|region_id|edition_id` — the exact
+submission identity Stage 3 keys on — **unchanged for a single target**. With more
+than one target (R45) it becomes
+`<primary>|+<id>:<region_id>:<edition_id>[,<id>:<region_id>:<edition_id>…]` over the
+secondary targets, in order (`src/matcher.py` and `validation.candidate_fingerprint`
+share the formula; the admin's `app.js` `fp()` mirrors it), so a change in ANY target
+invalidates the approval.
+
+A two-target console candidate (illustrative Kinguin row; the AKS ids are Hades'
+real page ids of 2026-09-12 — PS4 page 85104, PS5 page 85105; primary = the first
+declared family):
+
+```json
+{
+  "fingerprint": "101050001|85104|88|1|+85105:88ps5h:1",
+  "offer": { "offer_id": "101050001", "name": "Hades PS4/PS5 CD Key", "url": "https://www.kinguin.net/category/.../hades-ps4-ps5-cd-key", "merchant": "Kinguin", "store_id": "58", "price": "9.99", "stock": null },
+  "aks_product_id": "85104",
+  "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+  "aks_name": "Hades PS4",
+  "platform": "PS4",
+  "region": { "label": "Playstation Game Code GLOBAL", "id": "88", "implicit": true },
+  "edition": { "label": "Standard", "id": "1" },
+  "targets": [
+    { "platform": "PS4", "aks_product_id": "85104", "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+      "aks_name": "Hades PS4", "region_label": "Playstation Game Code GLOBAL", "region_id": "88",
+      "edition_label": "Standard", "edition_id": "1" },
+    { "platform": "PS5", "aks_product_id": "85105", "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+      "aks_name": "Hades PS5", "region_label": "PS5", "region_id": "88ps5h",
+      "edition_label": "Standard", "edition_id": "1" }
+  ]
+}
+```
+
+A console candidate is emitted only when EVERY declared platform resolved to a
+verified AKS page, bucket and edition — never a partial `targets` list (EXECUTOR_RULES
+§4.12 "Never partial"). `report.txt` prints one extra "↳" line per secondary target
+("↳ PS5 85105 — Hades PS5 · PS5(88ps5h)").
 
 ## match_meta.json (FC5 — matched-mode stamp)
 
@@ -125,13 +181,19 @@ validation triple's shape is load-bearing (FC5, audit 2026-07-17).
 {
   "run_id": "2026-07-02-driffle-01",
   "data_entry_mode": "safe",
-  "matched_at": "2026-07-02T09:15:00Z"
+  "matched_at": "2026-07-02T09:15:00Z",
+  "consoles": false
 }
 ```
 
 - `data_entry_mode`: `safe` | `learning` | `advanced` (the matcher has no mode
   profiles yet — behaviour is identical, only the stamp differs).
 - `matched_at` is the **feed's** `fetched_at`, not the match wall-clock time.
+- `consoles` (R45, 2026-09-12): whether the batch was matched with
+  `03_match --consoles` (console rows classified and resolved to their AKS console
+  pages, multi-target candidates possible) or not (`false` / absent = the default:
+  every console row skipped `console`). Stamped by `scripts/03_match.py`; the
+  safe-auto sweep passes its own `--consoles` flag through (default off).
 
 Consumers: `scripts/05_submit.py` and the admin's `SubmitManager` refuse a REAL
 submit whose declared mode implies a **wider** batch than the matched mode — a
@@ -147,7 +209,11 @@ abort. Narrower-or-equal submits stay allowed.
 - **`validation.template.json`** (`template` subcommand): `{run_id,
   generated_at, validated_by: "", validated_at: "", instructions, candidates}`
   where each `candidates[]` entry is `{fingerprint, offer_id, merchant_title,
-  aks_product_id, aks_name, platform, region_id, edition_id, approve: false}`.
+  aks_product_id, aks_name, platform, region_id, edition_id, targets, approve: false}`
+  — `targets` (R45) is the candidate's target list reduced to `{platform,
+  aks_product_id, region_id, edition_id}` per entry, so the operator sees every page
+  the row will be filed on; `fingerprint` follows the same single-/multi-target
+  formula as `candidates.json`.
 - **`validation.json`**: the operator's filled copy — `approve: true` on the
   offers to submit, `validated_by` / `validated_at` filled in.
 - **`approved.json`** (`check` subcommand): the list of the **exact current
@@ -163,6 +229,15 @@ submit) and the admin re-derive the approval from `candidates.json` +
 `validation.json` via `verify_approved_against_source` and require an exact
 match — a fabricated, hand-edited or stale `approved.json` refuses to load
 (P1, Romain's audit 2026-07-08).
+
+An admin **override** (platform / region / edition changed in the validation UI,
+`validation_io._apply_override`) is refused on a candidate with more than one
+target: `ValidationIOError("bad_override", "candidat multi-cibles (R45) : pas de
+surcharge, relancer le match")` — the targets are derived together from the AKS
+pages, so a per-field override cannot be kept coherent; re-run the match instead.
+The UI shows such rows with a "N cibles (R45)" block (family · page id · region(id) per
+target) inside the « Produit AKS » cell and the platform / region / edition selects
+disabled.
 
 ## session_catalog.json (Stage 4 — `--catalog`)
 
@@ -196,6 +271,19 @@ the file is written either way; the CLI exits 2 when not ok. `region_select` /
 unambiguous label match first, then matcher-id validation with a whole-word
 label check — FC4; neither resolves → the offer is blocked, never forced).
 A write run without a usable catalog aborts (`aborted: "catalog_unavailable"`).
+
+Catalog facts that matter for the console buckets (R45, 2026-09-12; the 867-entry
+region list was byte-identical in the 9 catalogs fetched 10-12/09): every `key` is a
+**string**, and 182 region keys are non-numeric (`24eu`, `24us`, `88eu`, `88ps5h`,
+`99eu`…) — `_norm_option_text` strips only a numeric `(\d+)` suffix, so those labels
+(and `306`, below) resolve **through the id path only** (verified live:
+`('Xbox/PC GLOBAL', '306')` → source `id`, `('PS5', '88ps5h')` → `id`,
+`('Xbox Game Code EUROPE', '24eu')` → `id`; the same label with a wrong id → `None`,
+blocked). The `306` master label is `"\ufeffXbox/PC GLOBAL (306)"` — a leading U+FEFF
+(the `rendered_options` text has none, JS `trim()` strips it, yet it sorts last);
+edition `480` carries one too. Consumers therefore keep `region_text` verbatim in
+the plan but type the Selectize query WITHOUT U+FEFF (`region_query` /
+`edition_query`, `src/submitter.py`).
 
 ## submit_plan.json (Stage 4 — dry-run and `--submit`)
 
@@ -257,10 +345,22 @@ Each `plan[]` entry (fields appear as the flow reaches them):
   2026-07-08); `id_mismatches` when the by-id row contradicted the candidate;
   `row_checked` / `fresh_row_checked` list the fields verified (P1 / SC5).
 - Not processable: `blocker` (string) with `ready: false`.
+- `targets` (R45, 2026-09-12): the candidate's normalised target list (an older
+  `candidates.json` without the key → one entry, the primary target); on the write
+  path every target's region / edition is resolved against the live catalog (any
+  failure → blocker, as for a single target). **More than one target →
+  `ready: false`, `blocker: "multi_target_unsupported_until_modal_verified"`** ("la
+  saisie multi-cibles / overwrite par cible attend l'observation du nouveau modal
+  (--inspect) — R45"): the per-target overwrite controls of Romain's new feed modal
+  have not been observed yet, and a partial entry ("first target only") is
+  forbidden because the creation consumes the feed row. One target = today's path,
+  unchanged. A dry-run's `would_submit` lists every target.
 - Modal: `page_url`, `modal`, `select_names`, `region_select`, `edition_select`.
 - Write-path catalog resolution: `region_text` / `edition_text` and
   `region_resolution` / `edition_resolution` —
-  `{id, text, source: "label"|"id", matcher_id, changed}`.
+  `{id, text, source: "label"|"id", matcher_id, changed}` (`region_text` is the
+  catalog master label verbatim — BOM included for bucket `306`; the typed query is
+  the same text without U+FEFF, see `session_catalog.json` above).
 - Dry-run: `would_submit` (human string, nothing clicked).
 - Write: `create` (the fill+click diagnostic dict from the session: `status`,
   set/target read-backs, option counts, `form_validity`, `target_add`,

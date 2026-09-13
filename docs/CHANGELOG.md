@@ -3,6 +3,150 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-12 — Consoles R45 — préparation (pages consoles, classifieur, cibles multiples, gate submit)
+
+Romain : l'outil AKS feed va permettre d'**overwriter la région (= région/plateforme) et
+l'édition par page cible** — une clé PS5 ajoutée sur la page PS5 ET sur la page PS4 (région
+overwritée → PS4), une clé Xbox sur Xbox One, Xbox Series X et PC (PC SEULEMENT pour les jeux
+Xbox Play Anywhere). Le chantier « PARKED » du 11/09 est rouvert : **préparé, verrouillé,
+désactivé par défaut**. Rien ne change pour les sweeps safe-auto sans `--consoles`.
+
+**Mesure réelle (2026-09-12, lecture seule, `03_match --consoles` sur les 388 lignes consoles
+MMOGA du lot 20260912-020001) : 182 candidats / 206 skips.** Candidats : One+Series 42,
+Switch 41, Series 32, One+Series+PC (Play Anywhere) 27, Series+PC 22, One 10, One+PC 6, PS5 2 ;
+buckets EU majoritaires (302 ×53, 241 ×39, 24eu ×37, 99eu ×30). Skips : 37 catégories
+(monnaies, bundles), 22 DLC console (P5), 30 non-jeu (PSN/Game Pass/eShop/Plus/Live), 17 sondes
+AKS instables, 14 sans page AKS, 27 « pas de page AKS pour une famille déclarée » (P1 :
+Skull & Bones, Starfield… déclarés One/Series par MMOGA alors qu'AKS n'a pas la page One),
+13 mots en trop (packs de monnaie, éditions « Vault »/« Champions »), 4 PS5 EU sans bucket
+(P3), 2 éditions absentes d'une page cible, 2 identités (« System Shock Remake Xbox One »,
+apostrophe « Lucky's »/« Luckys » — faux skip à plier).
+
+**Revue adverse (2026-09-12, 4 lentilles, réfutation partielle — session Max coupée avant le
+lot de correctifs) — findings CONFIRMÉS, NON corrigés à ce commit ; le chemin `--consoles` est
+OFF par défaut et documenté « dry-run seulement » tant qu'ils ne sont pas traités :**
+- **[critique — chemin `--consoles` seulement]** la branche console lit la région avec le
+  scan générique : les codes Kinguin/K4G placés AVANT la phrase plateforme (« … US Xbox One /
+  Xbox Series X|S CD Key ») ne sont pas lus (implicit GLOBAL : 37 lignes US du dernier lot) et
+  les codes CA/AU/TR/AR/ZA/NA/CO ne sont pas des skips « forbidden region » (150 lignes CA/AU
+  → GLOBAL implicite) ; Driffle « (Hong Kong) », « European Union » idem. Gamivo est couvert
+  par R46 (hook `title_region`, vérifié par le réfuteur). Correctif prévu : le classifieur
+  expose `region_base` / `region_label` (lus dans le slot région de chaque grammaire) et le
+  matcher refuse une lecture implicite quand un mot de région a été retiré du titre.
+- **[haut]** Difmark « <Jeu> (Account) Standard Edition » (URL `buy-console-account-…-account-<id>`)
+  classé comme clé Switch (compte entré comme clé) — `_non_game_marker` doit lire « Account »
+  n'importe où dans le titre et le préfixe d'URL Difmark.
+- **[moyen]** R44 (phrase de région = identité) est mort sur la branche console (le label de
+  bucket n'est pas un label de région) — garder le label de base dans le plan.
+- **[moyen]** une entrée gated `multi_target_unsupported_until_modal_verified` compte comme un
+  échec : 10 entrées gated consécutives arrêtent le run et le sweep (`ten_consecutive_failures`),
+  y compris en dry-run ; correctif prévu : skip conçu (compteur `gated_multi_target`) et
+  `scripts/10 --consoles` refusé sans `--dry-run`.
+- **[bas]** « Xbox One/Series » sans « X|S » → seule XBOX_ONE (résidu « /Series » → skip R16 par
+  accident) ; jeton de tête faisant partie du nom (« Nintendo World Championships ») retiré du
+  `resolve_name` (faux skip R01) ; « 1 Random Xbox Game » échappe au pré-skip RANDOM ; un id
+  `None` dans une cible secondaire donne un fingerprint « None » (à refuser) ; deux gardes
+  throttle indépendants doublent le budget de sondes instables avant `AksThrottled` ;
+  candidats console : override région seule vers un bucket console avec plateforme STEAM
+  accepté (asymétrie préexistante).
+- **[docs]** DATA_CONTRACTS décrit les cibles de candidates.json à plat alors que
+  `Target.to_dict()` les écrit imbriquées (`region: {label, id}`) ; « les sweeps se
+  comportent exactement comme avant sans `--consoles` » est faux (le scan console de l'URL
+  reclasse 569 lignes Gamivo par lot en « console ») ; HANDOFF « 1353 tests » périmé ; P1 est
+  plus étroit que l'exemple littéral de Romain (clé PS5 seule → PS5 seulement) et
+  `SECOND_PLATFORM_POLICY` n'existe pas dans le code ; motif R19 console classé `stub_page`.
+
+- **Pages consoles découvertes** (lecture seule, UA AKS/Staff) : le constat (a) du 11/09 était
+  faux — la sonde avait utilisé une mauvaise grammaire d'URL (`…-xbox-series-x-…-cd-key-…`). AKS
+  a des pages produit consoles séparées `buy-<slug>-<kind>-compare-prices/` (kind `ps4` / `ps5`
+  / `xbox-one` / `xbox-series` / `nintendo-switch` / `nintendo-switch-2` ; PC = `cd-key`),
+  chacune avec son `data-product-id`, son nom (« Hades PS5 »), sa carte des régions, ses éditions
+  (Hades : PC 26712, PS5 85105, PS4 85104, Xbox Series 85103, Xbox One 85102, Switch 47979). La
+  barre d'onglets `aks-offer-tabulations` de chaque page liste les plateformes du jeu (un onglet
+  peut pointer vers un AUTRE produit : Elden Ring → « Elden Ring Tarnished Edition Nintendo
+  Switch 2 »). Play Anywhere est vérifiable sur la page PC (« Xbox Play Anywhere » dans
+  `official platforms` : Forza Horizon 5 et Hades oui ; Street Fighter 6 et Elden Ring non) ;
+  les offres PA vivent sous les buckets XBOX/PC (306/241/242/240) sur la page PC ET sur les
+  pages Xbox One / Series (Hades : 306×4 sur les trois). Catalogue du modal (867 buckets,
+  identiques sur les 9 catalogues des 10-12/09) : table famille × base région dans
+  EXECUTOR_RULES §10 ; pas de bucket Switch 2, pas de PS5 EU/US/UK, pas de gift console ; ids
+  non numériques (`88ps5h`, `24eu`) résolus par le chemin id de `resolve_catalog_id` (vérifié) ;
+  label 306 avec BOM U+FEFF en tête (requête Selectize tapée sans BOM).
+- **Classifieur `src/console_keys.py`** (pur, sans import du matcher) :
+  `classify_console(name, url, merchant) -> ConsoleSignal | None` — familles DÉCLARÉES
+  (XBOX_ONE / XBOX_SERIES / PS4 / PS5 / SWITCH), `pc_declared`, `resolve_name` (titre sans
+  marqueurs console / store / région, édition conservée), `skip_reason` « console: … (R45) » ;
+  grammaire titre (mot entier, `X|S` ≡ `X/S` ≡ `XS`, cross-gen « Xbox One / Series X|S »,
+  « PS4 / PS5 ») et grammaire URL par marchand (catégories MMOGA, run Gamivo après le slug,
+  segments Eneba, générique ailleurs) ; skips fail-closed : Switch 2 (pas de bucket), Xbox 360,
+  non-jeu (Game Pass, cartes, abonnements, Account / Access), clé PC-only via Xbox Live, console
+  sans génération déclarée. Aussi `console_page_identity`, `extract_console_pages` (barre
+  d'onglets → {kind: url}), `extract_page_platform`, `console_marker_in_url` ; tables
+  `CONSOLE_REGION_IDS` / `CONSOLE_REGION_LABELS` / `CONSOLE_PLATFORM_LABEL` / `CONSOLE_PAGE_KIND`.
+- **Matcher — candidats multi-cibles** : `REGION_IDS` / `PLATFORM_LABEL` étendus aux familles
+  console ; `precheck_skip(consoles=…)` ; `AksResolution.console_pages` / `page_platform` ;
+  `resolve_aks_url` (GET cadencé d'une page connue) ; branche console de `match_offer` : région
+  de base (`detect_region_base`), page ancre (PC, sinon page console de la famille primaire),
+  identité par le suffixe du nom de page, Play Anywhere = vérité de la page PC, une page cible
+  vérifiée PAR famille déclarée (déclaration marchande ∧ page AKS — **jamais partiel**),
+  édition vendue sur chaque page ; `Candidate.targets` (`Target`, toujours présent, une cible
+  pour le PC), empreinte `primaire|+id:région:édition,…` au-delà d'une cible, ligne « ↳ » par
+  cible dans le rapport ; `scripts/03_match.py --consoles` → `match_meta.json["consoles"]` ;
+  `scripts/10_data_entry_auto.py --consoles` (défaut désactivé).
+- **Submitter — gate fail-closed** : `entry["targets"]` normalisé (ancien `candidates.json` →
+  cible primaire), résolution catalogue de CHAQUE cible ; **> 1 cible → `ready=False`, blocker
+  `multi_target_unsupported_until_modal_verified`** (« la saisie multi-cibles / overwrite par
+  cible attend l'observation du nouveau modal (--inspect) — R45 ») — jamais « la première cible
+  seulement » (une saisie partielle consomme la ligne et perd la 2e plateforme) ; une cible =
+  chemin actuel inchangé ; `region_query` / `edition_query` sans U+FEFF ; dry-run : `would_submit`
+  liste toutes les cibles ; validation : même empreinte, `targets` dans le template, surcharge
+  refusée sur un candidat multi-cibles (`bad_override`) ; console : bloc « N cibles (R45) »
+  dans la cellule produit, selects désactivés ; `feed_status` : `console`, `console: …` et toute
+  raison suffixée `(R45)` dans la famille consoles.
+- **Fuite Riders Republic + fix URL** : le garde console ne lisait que le TITRE ; Gamivo (569 des
+  572 lignes consoles) et Eneba portent la plateforme dans l'URL seule. Run
+  `20260911-162100-auto-gamivo-s51-p28` : « Riders Republic Premium Edition United States »
+  (`gamivo.com/product/riders-republic-xbox-xbox-one-series-us-premium`) saisi PUBLISHER GLOBAL(1)
+  Premium(34), `created: 1` — une clé Xbox One/Series US est en ligne sur la page PC de Riders
+  Republic (AKS 50562), **à corriger à la main**. Fix : `console_marker_in_url` dans
+  `precheck_skip`, **actif dans tous les modes** (`--consoles` ou non).
+- **Docs** : EXECUTOR_RULES §4.3 (correction du constat (a), renvoi), **§4.12** (règle complète,
+  politiques P1-P5 à confirmer par Romain), §6 (cibles multiples), §10 (buckets consoles), §12
+  (questions) ; DATA_CONTRACTS (`targets`, empreinte, `match_meta.consoles`, blocker, chemin id +
+  BOM) ; MERCHANTS (grammaire console par marchand, volumes du dernier lot : MMOGA 388/723,
+  Kinguin 365/940, Gamivo 572/762, K4G 135, Driffle 112, G2A 42, Eneba 1 376/1 659 dont 704 sans
+  génération) ; README (`--consoles`, roadmap) ; HANDOFF (état, prochaines étapes, questions).
+- **Reste à faire** : `--inspect` sur le nouveau modal de Romain → ajout du remplissage par cible
+  (overwrite région / édition) ; dry-run consoles MMOGA / Kinguin (`--consoles --dry-run`) pour
+  mesurer ; correction manuelle de Riders Republic ; réponses de Romain sur P1-P5.
+- **Gamivo `[R46]` — grammaire titre + URL, quatre hooks de config marchand** (même jour, après
+  le lot `20260912-020000`) : les 6 offres Gamivo créées le 11/09 sont TOUTES des `… United
+  States` saisies **Publisher (1) GLOBAL implicite / Standard** — cinq clés Steam verrouillées US
+  (`…-pc-steam-us-…`) : 101042269 → 84896 Tiny Tina's Wonderlands, 100395414 → 31894 My Hero
+  One's Justice 2, 100398623 → 29681 Age of Empires II Definitive Edition, 100398639 → 3021
+  Farming Simulator 15, 100398707 → 2614 Stronghold HD (**à corriger à la main : Steam / US**) ;
+  la sixième, 100728683 → 50562 Riders Republic, est la clé Xbox de la fuite console ci-dessus.
+  Cause : la grammaire actuelle de Gamivo met l'ÉDITION après le code région
+  (`…-pc-steam-us-standard` — le slot final P2-6b ne se déclenche jamais), la région du titre est
+  une queue sans séparateur (`Ravenswatch EN United Kingdom`) que `detect_region` ne lit pas, et
+  le titre ne nomme jamais la plateforme (R27 → Publisher dès que la page liste Direct
+  Publisher). Fix : `src/merchants/gamivo.py` — `title_region` (United Kingdom / United States /
+  EU / Global → uk / us / eu / global), `precheck` (autre queue → `forbidden region: <LABEL>` ;
+  sans queue, le code URL après le run : interdit / inconnu → skip, `us` / `uk` seulement dans
+  l'URL → skip explicite R46, `eu` / `global` → générique ; contradiction titre / URL → skip),
+  `resolve_name` (queue retirée avant le slug) et le nouveau hook `url_platform` de
+  `MerchantConfig` (run d'URL → STEAM / EA / UBISOFT / BATTLENET / GOG / EPIC / ROCKSTAR, run
+  console → None), consulté en premier par `explicit_platform_from_url` ; garde d'identité :
+  `KINGDOM` en fin de titre après `UNITED`, nom AKS couvert, n'est plus un mot en trop. Mesure
+  sur le lot du 12/09 (1 000 lignes, `gamivo_measure.py` du scratchpad) : 95 lignes passent le
+  precheck (plateforme URL Steam 61, Battle.net 4, EA 2, GOG 1, 27 sans run = abonnements /
+  logiciels / packs sans slot) ; régions EU 34, GLOBAL 35, US 11, gift 15 ; verrous filés
+  Colombia 310, ROW 46, Canada 18, Netherlands 12, Australia 8, North America 6, Turkey 6, CIS 3,
+  Poland 3, Asia 2, Mexico 2… ; consoles 419 (une queue interdite sur une ligne console est
+  filée `forbidden region` avant `console`, comme sous `--consoles`) ; 0 contradiction titre /
+  URL, 0 code `us` / `uk` sans queue de titre. Tests `GamivoConfigR46Tests` (16) ; docs
+  EXECUTOR_RULES §4.4 / §4.10 / §11, MERCHANTS (section Gamivo + contrat), README, HANDOFF.
+
 ## 2026-09-12 — `docs/MERCHANTS.md` : la référence par marchand ; dry-run Eneba
 
 Romain : « On a bien un doc avec chaque config marchand expliquée ? » — non, c'était réparti

@@ -155,6 +155,28 @@ class CliSeamTests(unittest.TestCase):
         self.assertEqual(m_argv[m_argv.index("--search-circuit-file") + 1], str(sweep_dir / "search_circuit.json"))
         self.assertEqual(s_argv[s_argv.index("--catalog-cache") + 1], str(sweep_dir / "catalog.json"))
 
+    def test_consoles_flag_reaches_03_match_and_the_config(self):
+        # [R45] (2026-09-12): --consoles → SweepConfig.consoles + "--consoles" on the 03 argv;
+        # default off (no flag on the argv).
+        recap = {"pages": [], "total_created": 0, "halted": None}
+        code, captured = self._run(["--targets", "Kinguin:58", "--run-id", "t-con", "--consoles"], recap)
+        self.assertEqual(code, 0)
+        self.assertTrue(captured["cfg"].consoles)
+        rec = json.loads((self.MOD.ROOT / "runs" / "t-con" / "recap.json").read_text())
+        self.assertIs(rec["consoles"], True)
+        code, captured = self._run(["--targets", "Kinguin:58", "--run-id", "t-nocon"], recap)
+        self.assertFalse(captured["cfg"].consoles)
+        for consoles in (False, True):
+            argvs = []
+            stages = self.MOD._make_stages("Kinguin", "58", "all", None, consoles=consoles)
+            run_dir = self.MOD.ROOT / "runs" / f"t-con{int(consoles)}-p2"
+            run_dir.mkdir(parents=True, exist_ok=True)
+            (run_dir / "offers.json").write_text("{}")
+            with mock.patch.object(self.MOD, "_run_child", side_effect=lambda argv: argvs.append(argv) or 0):
+                stages.match(f"t-con{int(consoles)}-p2")
+            self.assertEqual("--consoles" in argvs[0], consoles, consoles)
+            self.assertTrue(str(argvs[0][1]).endswith("03_match.py"))
+
     def test_main_multi_target(self):
         # P2-2: stores must be the CANONICAL allowlist stores (Eneba is 19, not 70).
         recap = {"pages": [], "total_created": 1, "halted": None}

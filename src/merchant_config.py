@@ -88,10 +88,18 @@ class MerchantConfig:
     #       merchant's title grammar declares; wins over the generic title/URL scan.
     #   resolve_name(name) -> str — the text handed to AKS resolution (slug guessing +
     #       site search) instead of the raw title; e.g. a grammar tail peeled off.
-    # MMOGA uses all three ("<Product> <CODE> Key", src/merchants/mmoga.py).
+    #   url_platform(url) -> platform token | None — the platform the merchant's URL
+    #       grammar declares (our token STEAM/GOG/EPIC/UBISOFT/EA/BATTLENET/ROCKSTAR/
+    #       MICROSOFT) or None; consulted FIRST by ``explicit_platform_from_url``, before
+    #       the ``url_platform_prefixes`` / ``url_platform_scan`` modes ([R46], 2026-09-12:
+    #       Gamivo "…-pc-steam-us-standard" — the platform run sits between the game slug
+    #       and the region code, neither a leading segment nor collocated with "key").
+    # MMOGA uses the first three ("<Product> <CODE> Key", src/merchants/mmoga.py); Gamivo
+    # uses all four (src/merchants/gamivo.py).
     precheck: Optional[Callable[[str, str], Optional[str]]] = None
     title_region: Optional[Callable[[str], Optional[str]]] = None
     resolve_name: Optional[Callable[[str], str]] = None
+    url_platform: Optional[Callable[[str], Optional[str]]] = None
     # Free-form notes / extension point for future per-merchant knobs.
     notes: str = ""
     extra: dict[str, Any] = field(default_factory=dict)

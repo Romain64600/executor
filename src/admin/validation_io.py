@@ -12,6 +12,14 @@ Operator overrides (region/edition/platform) rewrite the candidate entry in
 pick is never lost. Region/edition choices must come from the run's own
 ``session_catalog.json``; without a catalog the save is refused (no free-text
 ids — fail-closed). Standard library only.
+
+R45 (console keys, 2026-09-12): a candidate with SEVERAL targets (one AKS console
+page + bucket per declared platform) accepts NO override from the page — the
+primary fields alone cannot describe a per-target change, and a half-edited
+target list would be entered partially (the feed row is consumed by the first
+write, the second platform silently lost). The fix is a re-match, so the save is
+refused whole with ``bad_override``. A single-target candidate keeps the current
+override path, and its ``targets[0]`` is kept mirrored on the primary fields.
 """
 
 from __future__ import annotations
@@ -36,6 +44,10 @@ from src.validation import (
 )
 
 OVERRIDE_FIELDS = ("region_id", "edition_id", "platform")
+# R45 (2026-09-12) — verbatim refusal for an override on a multi-target candidate.
+MULTI_TARGET_OVERRIDE_MESSAGE = (
+    "candidat multi-cibles (R45) : pas de surcharge, relancer le match"
+)
 
 
 def _utc_now_iso() -> str:
@@ -76,6 +88,37 @@ def _catalog_entry(options: list[dict[str, str]], key: str) -> dict[str, str] | 
     return None
 
 
+def _is_multi_target(candidate: dict[str, Any]) -> bool:
+    """R45: more than one entry under ``candidate["targets"]`` (absent key or a
+    single entry = the historical one-target candidate)."""
+
+    targets = candidate.get("targets")
+    return isinstance(targets, list) and len(targets) > 1
+
+
+def _mirror_primary_target(candidate: dict[str, Any]) -> None:
+    """After an override on a SINGLE-target candidate, keep ``targets[0]`` equal to
+    the (now rewritten) primary fields, so candidates.json stays self-consistent
+    (R45, 2026-09-12: the matcher writes ``targets[0]`` as a mirror of the primary;
+    the submitter and the validation template read the primary as the authority
+    for one target, this only keeps the file honest). A pre-R45 candidate without
+    ``targets`` is left without it — no key invented."""
+
+    targets = candidate.get("targets")
+    if not isinstance(targets, list) or len(targets) != 1:
+        return
+    base = targets[0] if isinstance(targets[0], dict) else {}
+    targets[0] = {
+        **base,
+        "platform": candidate.get("platform"),
+        "aks_product_id": candidate.get("aks_product_id"),
+        "aks_url": candidate.get("aks_url"),
+        "aks_name": candidate.get("aks_name"),
+        "region": {"label": candidate["region"]["label"], "id": candidate["region"]["id"]},
+        "edition": {"label": candidate["edition"]["label"], "id": candidate["edition"]["id"]},
+    }
+
+
 def _apply_override(
     candidate: dict[str, Any],
     override: dict[str, Any],
@@ -91,6 +134,11 @@ def _apply_override(
         raise ValidationIOError(
             "bad_override", f"unknown override fields: {sorted(unknown)}", http_status=400
         )
+    if override and _is_multi_target(candidate):
+        # R45 (2026-09-12): no per-target override exists on the page and none is
+        # accepted here — even a same-value "override" is refused: the only honest
+        # change to a multi-target candidate is a re-match (never a partial entry).
+        raise ValidationIOError("bad_override", MULTI_TARGET_OVERRIDE_MESSAGE, http_status=400)
 
     changes: dict[str, Any] = {}
     region_id = override.get("region_id")
@@ -162,6 +210,7 @@ def _apply_override(
                 )
         candidate["platform"] = new_platform
 
+    _mirror_primary_target(candidate)
     candidate["fingerprint"] = candidate_fingerprint(candidate)
     audit = candidate.get("operator_override")
     if not isinstance(audit, dict) or "original" not in audit:

@@ -347,22 +347,46 @@ async function loadValidation(runId) {
       }));
     }
     row.appendChild(offerCell);
-    row.appendChild(el('td', {}, [
+    // R45 (2026-09-12) : une clé console déclarée sur plusieurs plateformes porte une
+    // cible par page console AKS (candidate.targets). Résumé « famille · id page ·
+    // région(id) » dans la cellule produit ; les selects de la ligne sont désactivés —
+    // aucune surcharge par cible depuis la page (le serveur la refuse aussi :
+    // validation_io « candidat multi-cibles (R45) »), le remède est un re-match.
+    const targets = candidate.targets || [];
+    const multi = targets.length > 1;
+    const productCell = el('td', {}, [
       el('div', { class: 'title', text: `${candidate.aks_product_id} — ${candidate.aks_name}` }),
       el('a', { href: candidate.aks_url, target: '_blank', rel: 'noreferrer', text: candidate.aks_url }),
-    ]));
-    row.appendChild(el('td', {}, [
-      select('platform', META.platforms.map((p) => ({ key: p, text: META.platform_labels[p] || p })),
-        candidate.platform, !isCreated),
-    ]));
-    row.appendChild(el('td', {}, [
-      select('region', catalog.regions, candidate.region.id, catalog.present && !isCreated,
-        `${candidate.region.label} (${candidate.region.id})`),
-    ]));
-    row.appendChild(el('td', {}, [
-      select('edition', catalog.editions, candidate.edition.id, catalog.present && !isCreated,
-        `${candidate.edition.label} (${candidate.edition.id})`),
-    ]));
+    ]);
+    if (multi) {
+      const box = el('div', {
+        class: 'targets',
+        title: 'Cibles multiples (R45) — pas de surcharge, relancer le match',
+      });
+      box.appendChild(el('div', { class: 'override-tag', text: `${targets.length} cibles (R45)` }));
+      for (const target of targets) {
+        const region = targetRegion(target);
+        box.appendChild(el('div', {
+          class: 'target',
+          text: `${target.platform} · ${target.aks_product_id} · ${region.label}(${region.id})`,
+        }));
+      }
+      productCell.appendChild(box);
+    }
+    row.appendChild(productCell);
+    const editable = !isCreated && !multi;
+    const multiTitle = multi ? 'Cibles multiples (R45) — pas de surcharge, relancer le match' : '';
+    const platformSelect = select('platform',
+      META.platforms.map((p) => ({ key: p, text: META.platform_labels[p] || p })),
+      candidate.platform, editable);
+    const regionSelect = select('region', catalog.regions, candidate.region.id,
+      catalog.present && editable, `${candidate.region.label} (${candidate.region.id})`);
+    const editionSelect = select('edition', catalog.editions, candidate.edition.id,
+      catalog.present && editable, `${candidate.edition.label} (${candidate.edition.id})`);
+    for (const sel of [platformSelect, regionSelect, editionSelect]) sel.title = multiTitle;
+    row.appendChild(el('td', {}, [platformSelect]));
+    row.appendChild(el('td', {}, [regionSelect]));
+    row.appendChild(el('td', {}, [editionSelect]));
 
     const actionCell = el('td', { class: 'action-cell' });
     if (!isCreated) {
@@ -379,7 +403,7 @@ async function loadValidation(runId) {
         approve.disabled = marked;
         for (const kind of ['platform', 'region', 'edition']) {
           const sel = row.querySelector(`select.${kind}`);
-          sel.disabled = marked || (kind !== 'platform' && !catalog.present);
+          sel.disabled = marked || multi || (kind !== 'platform' && !catalog.present);
         }
         trash.textContent = marked ? '↩' : '🗑';
         trash.title = marked
@@ -402,8 +426,27 @@ async function loadValidation(runId) {
   DIRTY = false; // le tableau vient d'être rendu depuis l'état serveur
 }
 
+// Une cible (candidates.json) porte region/edition imbriqués ({label, id}) ; le
+// gabarit de validation les aplatit (region_id) — on accepte les deux formes.
+function targetRegion(target) {
+  return target.region || { label: target.region_label, id: target.region_id };
+}
+
+function targetEdition(target) {
+  return target.edition || { label: target.edition_label, id: target.edition_id };
+}
+
+// Miroir exact de validation.candidate_fingerprint (R45, 2026-09-12) : identité
+// primaire, puis « |+ » et « pid:rid:eid » de chaque cible SUPPLÉMENTAIRE (targets[0]
+// reflète la primaire) jointes par « , ». Une cible = formule historique inchangée.
 function fp(candidate) {
-  return `${candidate.offer.offer_id}|${candidate.aks_product_id}|${candidate.region.id}|${candidate.edition.id}`;
+  const primary = `${candidate.offer.offer_id}|${candidate.aks_product_id}|${candidate.region.id}|${candidate.edition.id}`;
+  const targets = candidate.targets || [];
+  if (targets.length <= 1) return primary;
+  const extra = targets.slice(1)
+    .map((t) => `${t.aks_product_id}:${targetRegion(t).id}:${targetEdition(t).id}`)
+    .join(',');
+  return `${primary}|+${extra}`;
 }
 
 function select(kind, options, currentKey, enabled, currentLabel) {

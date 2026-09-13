@@ -29,6 +29,21 @@ from typing import Any, Callable
 from urllib.parse import quote, urlparse
 
 from src.aks_env import AKS_STAFF_UA, REQUIRED_USER_AGENT, http_get
+# [R45] (2026-09-12) console keys — the pure classifier / page grammar lives in its own
+# module (no matcher import there); the matcher only wires it in (design §3).
+from src.console_keys import (
+    CONSOLE_PAGE_KIND,
+    CONSOLE_PAGE_KINDS,
+    CONSOLE_PLATFORM_LABEL,
+    CONSOLE_REGION_IDS,
+    CONSOLE_REGION_LABELS,
+    ConsoleSignal,
+    classify_console,
+    console_marker_in_url,
+    console_page_identity,
+    extract_console_pages,
+    extract_page_platform,
+)
 from src.contracts import NormalizedFeed, NormalizedOffer
 from src.merchant_config import MerchantConfig, MerchantOfferSignals
 from src.merchants.instant_gaming import (  # noqa: F401 — re-exported for tests/back-compat
@@ -493,6 +508,12 @@ REGION_IDS = {
     # and 2026-07-08 (identical). No gift mapping — publisher gifts fail closed.
     "PUBLISHER": {"global": "1", "eu": "12", "us": "13", "uk": "266"},
 }
+# [R45] (2026-09-12) console FAMILIES are platforms like the PC ones: XBOX_ONE /
+# XBOX_SERIES / XBOX_PC (Play Anywhere) / PS4 / PS5 / SWITCH → {base: modal bucket id}
+# (catalog.json, 867 entries, identical on 9 catalogs 10-12/09 — design §0). A base a
+# family lacks (PS5 has GLOBAL only) is absent → the usual "no region id" fail-closed skip.
+# Merged here so validation_io / the console /api/meta accept the families automatically.
+REGION_IDS.update(CONSOLE_REGION_IDS)
 # Tokens that do NOT count as a "significant extra" word (platform / region /
 # format / edition / stopwords). Used by the different-product guard.
 NOISE_TOKENS = {
@@ -532,6 +553,7 @@ PLATFORM_LABEL = {
     "STEAM": "Steam", "GOG": "GOG", "EPIC": "Epic", "EA": "EA App",
     "UBISOFT": "Ubisoft", "BATTLENET": "Battle.net", "PUBLISHER": "Publisher",
 }
+PLATFORM_LABEL.update(CONSOLE_PLATFORM_LABEL)     # [R45] console families (report labels)
 # AKS page "official platforms:" vocabulary for our platform tokens, used by
 # the R20 cross-check. Observed live 2026-07-08 across all 27 created-offer
 # pages: Steam, GoG, Epic Store, Direct Publisher, Xbox Play Anywhere,
@@ -699,6 +721,14 @@ def extra_significant_words(aks_name: str, merchant_title: str, *, dlc_page: boo
         # THE/A are NOISE — which an article could trip).
         if token in LANGUAGE_TOKENS and token not in _REGION_LOCK_LANG_CODES and aks_seen == aks:
             continue
+        # [R46] (2026-09-12, Gamivo "Ravenswatch EN United Kingdom"): UNITED and STATES are
+        # NOISE, KINGDOM is not — it is a game-name word ("Kingdom Come Deliverance",
+        # "Total War Three Kingdoms"). It is the region phrase ONLY in the same trailing
+        # position as a language code: every AKS-name token already covered AND directly
+        # preceded by UNITED. A leading "United Kingdom …" with name words still to come
+        # stays a significant extra (different product), exactly like a leading code.
+        if token == "KINGDOM" and aks_seen == aks and i > 0 and toks[i - 1] == "UNITED":
+            continue
         # "Green Gift" is G2A's Steam-gift delivery label (Romain 2026-08-27), NOT a
         # product differentiator — GIFT is already noise, so drop the GREEN that forms
         # the phrase (only when it directly precedes GIFT, so a real "…Green…" name
@@ -780,8 +810,15 @@ def dangerous_qualifier(merchant_title: str, aks_name: str, *, dlc_page: bool = 
     return None
 
 
-def precheck_skip(offer: NormalizedOffer) -> str | None:
-    """Categorical SKIPs from the merchant title/URL, before any AKS lookup."""
+def precheck_skip(offer: NormalizedOffer, *, consoles: bool = False) -> str | None:
+    """Categorical SKIPs from the merchant title/URL, before any AKS lookup.
+
+    ``consoles`` ([R45], 2026-09-12): False (default, every existing caller) keeps the
+    historical behaviour — any console marker → ``"console"``; True routes a console-
+    marked row through :func:`classify_console` — its fail-closed ``skip_reason`` is
+    returned as is, otherwise the row CONTINUES through the remaining scans (forbidden
+    regions, categories, bundles, skins…) exactly like a PC row, and :func:`match_offer`
+    takes the console branch."""
 
     cfg = merchant_config(offer.merchant)
     domain = cfg.domain if cfg else None
@@ -799,8 +836,23 @@ def precheck_skip(offer: NormalizedOffer) -> str | None:
     # Gamivo '-en-' URL segment used to skip as an EN-only language restriction;
     # a language variant is now entered as the same product (see LANGUAGE_TOKENS).
     padded = " " + re.sub(r"[^A-Z0-9]+", " ", offer.name.upper()) + " "
-    if any(f" {t} " in padded for t in CONSOLE_TOKENS):
-        return "console"
+    # [R45] (2026-09-12) the console scan reads the TITLE tokens (unchanged) OR the URL
+    # PATH (console_marker_in_url) — the Gamivo leak fix: Gamivo (569/572 console rows)
+    # and Eneba carry the platform in the URL only, so "Riders Republic Premium Edition
+    # United States" (gamivo …/riders-republic-xbox-xbox-one-series-us-premium) escaped
+    # the title-only scan and was entered on the PC page (run 20260911-162100, AKS
+    # 50562). Active even with consoles=False (→ the historical "console" skip).
+    if any(f" {t} " in padded for t in CONSOLE_TOKENS) or console_marker_in_url(offer.url):
+        if not consoles:
+            return "console"
+        sig = classify_console(offer.name, offer.url, offer.merchant)
+        if sig is None:
+            # A marker we saw but the classifier did not — grammar disagreement, never a
+            # PC entry: the historical skip (fail-closed).
+            return "console"
+        if sig.skip_reason:
+            return sig.skip_reason
+        # A classified console row keeps going through the remaining categorical scans.
     for region in FORBIDDEN_REGIONS:
         if f" {region} " in padded:
             return f"forbidden region: {region}"
@@ -1023,11 +1075,18 @@ def explicit_platform_from_url(url: str, merchant: str = "") -> str | None:
     → the URL's LEADING path segment maps to a platform (Eneba, ``eneba.com/steam-…``);
     ``url_platform_scan`` → the platform token collocated with the key marker anywhere in
     the path (G2A, ``…-steam-key-…``; a token-less ``…-green-gift-key-…`` → None). A
-    merchant with neither knob (or no config) → None, unchanged."""
+    merchant with neither knob (or no config) → None, unchanged.
+    [R46] (2026-09-12): a merchant's ``url_platform`` hook — its own URL grammar — is
+    consulted FIRST; its non-None answer wins, None falls through to the two modes
+    (Gamivo "…-pc-steam-us-standard": the run sits mid-slug, after the game slug)."""
 
     cfg = merchant_config(merchant)
     if cfg is None:
         return None
+    if cfg.url_platform is not None:
+        hooked = cfg.url_platform(url)
+        if hooked is not None:
+            return hooked
     path = urlparse(url).path.strip("/").lower()
     if cfg.url_platform_prefixes:
         return cfg.url_platform_prefixes.get(path.split("-", 1)[0])
@@ -1057,13 +1116,13 @@ def is_green_gift(name: str, url: str) -> bool:
     return re.search(r"\bGREEN[\s-]+GIFT\b", (name or "").upper()) is not None
 
 
-def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | None, bool]:
-    """Return (label, region_id, implicit). URL wins over title (rule Ga01).
-
-    Gift is layered on top of the base region (Steam 25/259, Battle.net 570/567).
-    Region may sit in the first parens (Driffle: "X (Europe) (PC) - …") or in a
-    trailing " - REGION" suffix (G2A: "X (PC) - Steam Key - EUROPE").
-    """
+def _detect_region_parts(offer: NormalizedOffer) -> tuple[str, str, bool, bool, bool]:
+    """The region scan shared by :func:`detect_region` and :func:`detect_region_base`
+    ([R45] extraction, 2026-09-12 — behaviour byte-identical to the pre-R45 detect_region
+    body): ``(base, label, implicit, is_gift, is_green_gift)``. ``base`` ∈ global/eu/us/uk,
+    ``label`` its uppercase label, ``implicit`` the Kinguin-style default, the two gift
+    flags the plain-gift / Green-Man-Gaming-gift signals the platform-specific layering
+    in detect_region needs."""
 
     # Query strings carry campaign junk (COM_GLOBAL_PB, ___currency=EUR…) that
     # would false-hit region tokens — only the path speaks for the product.
@@ -1141,7 +1200,32 @@ def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | Non
             base, label = "us", "US"
         else:
             implicit = True  # Kinguin-style implicit GLOBAL
+    return base, label, implicit, is_gift, is_green_gift(offer.name, offer.url)
 
+
+def detect_region_base(offer: NormalizedOffer) -> tuple[str, str, bool, bool]:
+    """[R45] (2026-09-12) the platform-INDEPENDENT region read of a merchant row:
+    ``(base, label, implicit, gift)`` — ``base`` ∈ global/eu/us/uk, ``label`` its label,
+    ``implicit`` when nothing declared it, ``gift`` when the row is a (green-)gift
+    delivery. The console branch maps ``base`` per declared family (``REGION_IDS[fam]``)
+    and refuses gifts (no console gift bucket exists); :func:`detect_region` is the
+    PC path layering the per-platform gift buckets on top of the same read."""
+
+    base, label, implicit, is_gift, green = _detect_region_parts(offer)
+    return base, label, implicit, (is_gift or green)
+
+
+def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | None, bool]:
+    """Return (label, region_id, implicit). URL wins over title (rule Ga01).
+
+    Gift is layered on top of the base region (Steam 25/259, Battle.net 570/567).
+    Region may sit in the first parens (Driffle: "X (Europe) (PC) - …") or in a
+    trailing " - REGION" suffix (G2A: "X (PC) - Steam Key - EUROPE").
+    ([R45] 2026-09-12: the scan itself moved to ``_detect_region_parts`` so the console
+    branch can read the base region without a platform — output unchanged.)
+    """
+
+    base, label, implicit, is_gift, green = _detect_region_parts(offer)
     # A Green Man Gaming ("Green Gift") delivery is NOT a plain (Steam) gift — it maps to
     # the platform's dedicated gmg_gift region (R32c). Checked BEFORE and INDEPENDENT of
     # the plain is_gift branch: is_gift's title test is the space-delimited " GIFT ", but a
@@ -1161,7 +1245,7 @@ def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | Non
     # was only fixed for the gmg 'us'/'eu' cases). A base the platform lacks a bucket for
     # (gift_us/gift_uk/gmg_gift_uk exist on no platform) → gid None → the existing
     # "no region id" fail-closed skip, and the label carries the base so id and label agree.
-    if is_green_gift(offer.name, offer.url):
+    if green:
         key = {"eu": "gmg_gift_eu", "us": "gmg_gift_us", "uk": "gmg_gift_uk"}.get(base, "gmg_gift")
         gid = _region_id(platform, key)
         return ("GMG GIFT" + {"eu": " EU", "us": " US", "uk": " UK"}.get(base, ""), gid, implicit)
@@ -1575,6 +1659,14 @@ class AksResolution:
     regions: dict[str, str] = field(default_factory=dict)
     official_platforms: tuple[str, ...] = ()
     prices: tuple[dict[str, Any], ...] = ()
+    # [R45] (2026-09-12) the page's platform tab bar (`<ul class="aks-offer-tabulations">`):
+    # {kind: url} for every platform page of the game (kind ∈ CONSOLE_PAGE_KINDS — ps4 /
+    # ps5 / xbox-one / xbox-series / nintendo-switch / nintendo-switch-2 / cd-key). A tab
+    # may point to ANOTHER product (Elden Ring → "Elden Ring Tarnished Edition Nintendo
+    # Switch 2"), so every target page is re-read and identity-checked before use.
+    console_pages: dict[str, str] = field(default_factory=dict)
+    # `<meta data-itemprop="platform" content="PC">` of the active tab ("" when absent).
+    page_platform: str = ""
 
 
 class AksProbeUnreliable(Exception):
@@ -1760,7 +1852,42 @@ def _resolution_from_body(slug: str, url: str, body: str) -> AksResolution | Non
         regions=extract_regions(body),
         official_platforms=extract_official_platforms(body),
         prices=extract_prices(body),
+        console_pages=extract_console_pages(body),      # [R45] platform tab bar
+        page_platform=extract_page_platform(body),      # [R45] active tab platform
     )
+
+
+# [R45] the slug of a KNOWN AKS page URL (a tab-bar link): `buy-<slug>-<kind>-compare-prices/`.
+_AKS_PAGE_URL_RE = re.compile(
+    r"/blog/buy-(.+?)-(?:" + "|".join(re.escape(k) for k in CONSOLE_PAGE_KINDS) + r")-compare-prices/?$"
+)
+
+
+def resolve_aks_url(url: str, http_get_fn: Callable[..., Any] = http_get) -> AksResolution | None:
+    """[R45] (2026-09-12) read ONE known AKS product page by URL — a console page linked
+    from the anchor page's tab bar — with the same pacing / retry / fail-closed reading as
+    a guessed slug (:func:`_probe_guessed_page`): a clean 404/410 → None, anything else
+    non-200 → :class:`AksProbeUnreliable`, a 200 with a product id but no readable name →
+    :class:`AksNameUnreadable`. No slug guessing, no site search: the URL IS the page. A
+    URL outside the known page grammar (``buy-<slug>-<kind>-compare-prices/``) → None
+    (fail-closed: not a page we know how to read)."""
+
+    match = _AKS_PAGE_URL_RE.search(url.split("?", 1)[0])
+    if not match:
+        return None
+    slug = match.group(1)
+    probe = _probe_guessed_page(url, http_get_fn)
+    if probe is None:
+        return None                                    # clean 404/410
+    if not (probe.ok and probe.status == 200 and probe.body):
+        raise AksProbeUnreliable(f"{slug} -> {probe.status or probe.error}",
+                                 status=probe.status, slug=slug)
+    resolution = _resolution_from_body(slug, url, probe.body)
+    if resolution is None:
+        if not extract_product_id(probe.body):
+            return None                                # a 200 that is not a product page
+        raise AksNameUnreadable(slug)                  # never fall back to the offer title
+    return resolution
 
 
 def search_aks_slugs(
@@ -1902,6 +2029,35 @@ def resolve_aks(
 
 # -- results ----------------------------------------------------------------
 @dataclass(frozen=True)
+class Target:
+    """[R45] (2026-09-12) ONE entry of a candidate: a (family, AKS product page, region
+    bucket, edition) tuple. A PC candidate has exactly one (synthesized from its primary
+    fields); a console candidate has one per declared platform page ("PS4 / PS5" → the PS5
+    page + the PS4 page; Play Anywhere → the Xbox page(s) + the PC page under the XBOX/PC
+    buckets). The submitter enters ALL of them or NONE (a consumed feed row loses its
+    second platform) — until the per-target modal is observed it fails closed on > 1."""
+
+    platform: str
+    aks_product_id: str
+    aks_url: str
+    aks_name: str
+    region_label: str
+    region_id: str
+    edition_label: str
+    edition_id: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "platform": self.platform,
+            "aks_product_id": self.aks_product_id,
+            "aks_url": self.aks_url,
+            "aks_name": self.aks_name,
+            "region": {"label": self.region_label, "id": self.region_id},
+            "edition": {"label": self.edition_label, "id": self.edition_id},
+        }
+
+
+@dataclass(frozen=True)
 class Candidate:
     """One matcher-approved offer, serialized to ``candidates.json``.
 
@@ -1922,12 +2078,32 @@ class Candidate:
     edition_label: str
     edition_id: str
     region_implicit: bool = False
+    # [R45] every entry of this candidate, primary first. () (the PC default) means the
+    # single target synthesized from the primary fields — see ``all_targets``.
+    targets: tuple[Target, ...] = ()
+
+    @property
+    def all_targets(self) -> tuple[Target, ...]:
+        """The targets, never empty: the explicit ones, or the one synthesized from the
+        primary fields (every PC candidate, and any console candidate with one page)."""
+
+        if self.targets:
+            return self.targets
+        return (Target(self.platform, self.aks_product_id, self.aks_url, self.aks_name,
+                       self.region_label, self.region_id, self.edition_label, self.edition_id),)
 
     @property
     def fingerprint(self) -> str:
-        """Exact submission identity — a stale approval fails if any part changes."""
+        """Exact submission identity — a stale approval fails if any part changes.
+        [R45]: unchanged for one target; extra targets append ``|+<pid>:<region>:<edition>``
+        per target (validation.candidate_fingerprint / app.js mirror the formula)."""
 
-        return f"{self.offer.offer_id}|{self.aks_product_id}|{self.region_id}|{self.edition_id}"
+        primary = f"{self.offer.offer_id}|{self.aks_product_id}|{self.region_id}|{self.edition_id}"
+        extra = self.all_targets[1:]
+        if not extra:
+            return primary
+        return primary + "|+" + ",".join(
+            f"{t.aks_product_id}:{t.region_id}:{t.edition_id}" for t in extra)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1939,12 +2115,15 @@ class Candidate:
             "platform": self.platform,
             "region": {"label": self.region_label, "id": self.region_id, "implicit": self.region_implicit},
             "edition": {"label": self.edition_label, "id": self.edition_id},
+            # [R45] ALWAYS present (one synthesized target for a PC candidate) so the
+            # submitter / validation read one shape for every candidates.json.
+            "targets": [t.to_dict() for t in self.all_targets],
         }
 
     def normalized_block(self, index: int) -> str:
         platform = PLATFORM_LABEL.get(self.platform, self.platform)
         implicit = " [region implicit]" if self.region_implicit else ""
-        return (
+        block = (
             f"#{index} — {self.offer.name}\n"
             f"\U0001F3AF {self.aks_product_id} — {self.aks_name}\n"
             f"\U0001F517 {self.offer.url}\n"
@@ -1952,6 +2131,11 @@ class Candidate:
             f"{platform} {self.region_label}({self.region_id}), "
             f"{self.edition_label}({self.edition_id}){implicit}"
         )
+        # [R45] one line per EXTRA target: "↳ PS4 85104 — Hades PS4 · Playstation Game Code GLOBAL(88)"
+        for t in self.all_targets[1:]:
+            block += (f"\n\u21B3 {t.platform} {t.aks_product_id} — {t.aks_name} · "
+                      f"{t.region_label}({t.region_id})")
+        return block
 
 
 def _edition_entry_name(value: Any) -> str:
@@ -2226,15 +2410,46 @@ def resolve_software_region(
     return None
 
 
-def match_offer(
+
+@dataclass(frozen=True)
+class _Plan:
+    """[R45] (2026-09-12) what the resolution step hands to the common guard / edition
+    flow of :func:`match_offer` — produced by :func:`_pc_plan` (the historical PC / account
+    / software path, unchanged) or :func:`_console_plan` (the console branch)."""
+
+    resolution: AksResolution
+    platform: str
+    region_label: str
+    region_id: str
+    implicit: bool
+    declared_platform: str | None
+    difmark_platform_verified: bool
+    dlc_page: bool
+    identity_name: str
+    # The merchant text the R01 / R16 / R01b guards and detect_edition read: the raw
+    # title for PC (unchanged), the console classifier's resolve_name (platform / store /
+    # region markers removed, edition words kept) for a console row.
+    guard_name: str
+    # Console only: (family, page, bucket label, bucket id) per declared platform page,
+    # primary first (the page `resolution` IS). () for PC.
+    console_targets: tuple[tuple[str, AksResolution, str, str], ...] = ()
+
+    @property
+    def console(self) -> bool:
+        return bool(self.console_targets)
+
+
+def _pc_plan(
     offer: NormalizedOffer,
-    resolver: Callable[[str], AksResolution | None] = resolve_aks,
-    difmark_offer_resolver: Callable[[str], DifmarkOfferAttributes] = resolve_difmark_offer,
-    account_resolver: Callable[..., AksResolution | None] = resolve_aks,
-) -> Candidate | SkippedOffer:
-    reason = precheck_skip(offer)
-    if reason:
-        return SkippedOffer(offer, reason)
+    resolver: Callable[..., AksResolution | None],
+    difmark_offer_resolver: Callable[[str], DifmarkOfferAttributes],
+    account_resolver: Callable[..., AksResolution | None],
+) -> _Plan | SkippedOffer:
+    """The PC / account / software resolution path of :func:`match_offer` — platform,
+    region, AKS page ([R43] DLC checks included) and the identity name the guards compare
+    against. Moved out of match_offer verbatim for [R45] (2026-09-12) so the console
+    branch (:func:`_console_plan`) can share the guard / edition flow that follows;
+    behaviour unchanged."""
 
     is_difmark = offer.merchant.strip().upper() == "DIFMARK"
     _cfg = merchant_config(offer.merchant)
@@ -2456,18 +2671,6 @@ def match_offer(
             "own page, not entered (R43)",
         )
 
-    # [R44] a region phrase that is part of the resolved product name is identity, not
-    # a lock (see _REGION_IDENTITY_PHRASES) — fail-closed skip unless the merchant's
-    # title grammar itself declared the region (hook = authoritative, R32e).
-    hook_region = _cfg.title_region(offer.name) if _cfg is not None and _cfg.title_region else None
-    identity_phrase = region_phrase_in_aks_name(region_label, resolution.aks_name)
-    if identity_phrase is not None and hook_region is None:
-        return SkippedOffer(
-            offer,
-            f"region {region_label} read from {identity_phrase!r}, which is part of the AKS "
-            f"product name {resolution.aks_name!r} — region ambiguous, not entered (R44)",
-        )
-
     # R01 / different-product guards compare against the game-identity name.
     # For an account page that means stripping the "<platform> Account" suffix;
     # a suffix-less account page (None) is a fail-closed "not really an account
@@ -2483,21 +2686,81 @@ def match_offer(
     else:
         identity_name = resolution.aks_name
 
+    return _Plan(
+        resolution=resolution,
+        platform=platform,
+        region_label=region_label,
+        region_id=region_id,
+        implicit=implicit,
+        declared_platform=declared_platform,
+        difmark_platform_verified=difmark_platform_verified,
+        dlc_page=dlc_page,
+        identity_name=identity_name,
+        guard_name=offer.name,
+    )
+
+
+def match_offer(
+    offer: NormalizedOffer,
+    resolver: Callable[..., AksResolution | None] = resolve_aks,
+    difmark_offer_resolver: Callable[[str], DifmarkOfferAttributes] = resolve_difmark_offer,
+    account_resolver: Callable[..., AksResolution | None] = resolve_aks,
+    *,
+    page_resolver: Callable[[str], AksResolution | None] = resolve_aks_url,
+    consoles: bool = False,
+) -> Candidate | SkippedOffer:
+    reason = precheck_skip(offer, consoles=consoles)
+    if reason:
+        return SkippedOffer(offer, reason)
+
+    # [R45] (2026-09-12) console branch: a classified console row (consoles=True, no
+    # skip_reason — precheck_skip already returned one otherwise) resolves its platform
+    # PAGES and buckets in _console_plan; every other row takes the historical PC path.
+    # Both rejoin the common flow below (R44 → R01/R16/R01b → R19 → platform → edition).
+    console_sig = classify_console(offer.name, offer.url, offer.merchant) if consoles else None
+    if console_sig is not None:
+        plan = _console_plan(offer, console_sig, resolver, page_resolver)
+    else:
+        plan = _pc_plan(offer, resolver, difmark_offer_resolver, account_resolver)
+    if isinstance(plan, SkippedOffer):
+        return plan
+    _cfg = merchant_config(offer.merchant)
+    resolution, platform = plan.resolution, plan.platform
+    region_label, region_id, implicit = plan.region_label, plan.region_id, plan.implicit
+    declared_platform, difmark_platform_verified = plan.declared_platform, plan.difmark_platform_verified
+    dlc_page, identity_name, guard_name = plan.dlc_page, plan.identity_name, plan.guard_name
+
+    # [R44] a region phrase that is part of the resolved product name is identity, not
+    # a lock (see _REGION_IDENTITY_PHRASES) — fail-closed skip unless the merchant's
+    # title grammar itself declared the region (hook = authoritative, R32e).
+    hook_region = _cfg.title_region(offer.name) if _cfg is not None and _cfg.title_region else None
+    identity_phrase = region_phrase_in_aks_name(region_label, resolution.aks_name)
+    if identity_phrase is not None and hook_region is None:
+        return SkippedOffer(
+            offer,
+            f"region {region_label} read from {identity_phrase!r}, which is part of the AKS "
+            f"product name {resolution.aks_name!r} — region ambiguous, not entered (R44)",
+        )
+
     # R31: is this a software/app? (page + title classifier — see is_software).
     # Software still gets the STRICT missing-words gate (the offer must contain the
     # AKS product name → no wrong-product match), but NOT the game-tuned
     # extra-words / dangerous-qualifier gates: a software title legitimately adds
     # version + licence words the concise AKS name omits ("Windows 11 Pro OEM Key"
     # vs page "Windows 11 Pro"), which those gates read as a "different product".
-    sw = is_software(offer, resolution)
+    # [R45] never for a console row (design §3.5.h: sw=False — a console game page carries
+    # no software licence labels, and the software path has no console buckets).
+    sw = False if plan.console else is_software(offer, resolution)
 
-    missing = missing_aks_words(identity_name, offer.name)
+    # [R45] the guards read ``guard_name``: the raw title for PC (unchanged), the console
+    # classifier's resolve_name (platform / store / region markers removed) for consoles.
+    missing = missing_aks_words(identity_name, guard_name)
     if missing:
         return SkippedOffer(offer, f"name mismatch, missing AKS words: {missing}")
 
     edition_from_extras: tuple[str, str] | None = None
     if not sw:
-        extras = extra_significant_words(identity_name, offer.name, dlc_page=dlc_page)
+        extras = extra_significant_words(identity_name, guard_name, dlc_page=dlc_page)
         if extras:
             # Page-verified rescue: extras that ALL name one page edition are that
             # edition's qualifier ("Knight's Edition" → page "Knights Editon" 2723),
@@ -2506,7 +2769,7 @@ def match_offer(
             if edition_from_extras is None:
                 return SkippedOffer(offer, f"different/expanded product — extra words: {extras}")
 
-        qualifier = dangerous_qualifier(offer.name, resolution.aks_name, dlc_page=dlc_page)
+        qualifier = dangerous_qualifier(guard_name, resolution.aks_name, dlc_page=dlc_page)
         if qualifier:
             return SkippedOffer(offer, f"dangerous qualifier absent from AKS name: {qualifier}")
 
@@ -2640,7 +2903,7 @@ def match_offer(
         # above from the different-product guard (e.g. Knights Editon 2723).
         edition_id, edition_label = edition_from_extras
     else:
-        edition_label, edition_id = detect_edition(offer.name, offer.url, offer.merchant)
+        edition_label, edition_id = detect_edition(guard_name, offer.url, offer.merchant)
         # CORE rule 4 / E05: an edition word that is part of the AKS game name is not
         # an edition — fall back to Standard. Label match alone misses hint synonyms
         # ("Trilogy" resolves to label "Bundle"), so also compare via re-detection on
@@ -2769,6 +3032,31 @@ def match_offer(
                     f"AKS page — guessed edition unverified (audit P1-1)",
                 )
 
+    # [R45] (2026-09-12) console targets — after the edition block so every page enters
+    # the ONE edition the primary page resolved (P1-1 reconciled it against the primary's
+    # own map). Every target page must sell that edition id, else the WHOLE offer skips:
+    # never a partial entry (a consumed feed row loses its second platform, design §4).
+    # P5 (v1): no console DLC — the title marker was refused in _console_plan; a DLC
+    # bucket read by R18 on a markerless title lands here as edition 16 → same skip.
+    targets: tuple[Target, ...] = ()
+    if plan.console:
+        if edition_id == "16":
+            return SkippedOffer(
+                offer, "console: DLC / season pass on console — not entered yet (R45)")
+        built: list[Target] = []
+        for fam, page, bucket_label, bucket_id in plan.console_targets:
+            if edition_id not in page.editions:
+                return SkippedOffer(
+                    offer,
+                    f"edition {edition_label}({edition_id}) not sold on the {fam} page (R45)",
+                )
+            built.append(Target(
+                platform=fam, aks_product_id=page.product_id, aks_url=page.url,
+                aks_name=page.aks_name, region_label=bucket_label, region_id=bucket_id,
+                edition_label=edition_label, edition_id=edition_id,
+            ))
+        targets = tuple(built)
+
     # R25 duplicate guard RETIRED (Romain 2026-09-08). It was added 2026-07-15
     # (Kinguin/Darkwood escape) to skip a candidate whose merchant already had a price
     # on the AKS page for this exact region/edition — the concern was a STALE matched
@@ -2793,6 +3081,177 @@ def match_offer(
         edition_label=edition_label,
         edition_id=edition_id,
         region_implicit=implicit,
+        targets=targets,
+    )
+
+
+def _console_plan(
+    offer: NormalizedOffer,
+    sig: ConsoleSignal,
+    resolver: Callable[..., AksResolution | None],
+    page_resolver: Callable[[str], AksResolution | None],
+) -> _Plan | SkippedOffer:
+    """[R45] (2026-09-12) the CONSOLE resolution branch of :func:`match_offer` — Romain
+    2026-09-12: the AKS feed tool overwrites the region/PLATFORM per target page, so a
+    console key is entered on EVERY platform page the merchant declares AND AKS has
+    (policy P1 "merchant declaration ∧ AKS page" — never partial):
+
+    a. ``families`` = the merchant-declared platforms (classifier), ``guard_name`` = the
+       title without platform / store / region markers (edition kept) — the text the
+       R01 / R16 / R01b guards and detect_edition read, AND the slug source;
+    b. a DLC / season-pass title → skip (P5, v1);
+    c. the base region (detect_region_base) → one bucket per family (REGION_IDS[fam]);
+       a gift → skip (no console gift bucket); a missing bucket (PS5 EU/US/UK) → skip;
+    d. the ANCHOR page: the PC page when it exists (slug tiers + R30 search, unchanged),
+       else the console page of the primary family by slug (``page_kind``, no search —
+       like account pages); none → skip;
+    e. ``identity_name`` = the anchor name without its platform suffix ("Hades PS5" →
+       "Hades") — R01 / R16 / R01b compare guard_name against it (common flow);
+    f. Play Anywhere (P2) = the PC page's ``official platforms`` lists "Xbox Play
+       Anywhere": every Xbox target then takes the XBOX/PC bucket and the PC page becomes
+       an extra target; a merchant "+ PC/Windows" on a page WITHOUT PA → skip
+       (contradiction);
+    g. one target page per declared family from the anchor's tab bar (the console anchor
+       is its own page); no tab → skip; the page is re-read (``page_resolver``) and its
+       identity must equal the anchor's (a tab can point to another product — Elden Ring
+       → "Tarnished Edition Nintendo Switch 2") else skip; an empty editions map → R19;
+    h. the primary family's page / bucket become the plan's resolution / region — the
+       common flow (R44 → guards → R19 → edition block, untouched) runs on them, then
+       match_offer builds one :class:`Target` per page (edition checked on each)."""
+
+    families = tuple(sig.families)
+    if not families:
+        return SkippedOffer(offer, "console: no declared generation (R45)")
+    for fam in families:
+        if fam == "XBOX_PC" or fam not in CONSOLE_PAGE_KIND or fam not in REGION_IDS:
+            # XBOX_PC is a BUCKET family (Play Anywhere target), never a declared one.
+            return SkippedOffer(offer, f"console: unknown platform family {fam!r} — not entered (R45)")
+    guard_name = (sig.resolve_name or "").strip()
+    if not guard_name:
+        return SkippedOffer(
+            offer, "console: no product name left once the platform markers are removed (R45)")
+
+    # (b) P5 — console DLC / season passes are not entered in v1 (own pages, buckets and
+    # the per-page edition overwrite are unobserved on console pages).
+    if dlc_title_marker(offer.name) is not None:
+        return SkippedOffer(offer, "console: DLC / season pass on console — not entered yet (R45)")
+
+    # (c) region: the platform-independent base, then one bucket per declared family.
+    base, label, implicit, gift = detect_region_base(offer)
+    if gift:
+        return SkippedOffer(offer, "console: gift delivery has no console bucket (R45)")
+    for fam in families:
+        if REGION_IDS.get(fam, {}).get(base) is None:
+            return SkippedOffer(offer, f"no region id for {fam}/{label} (R45)")
+
+    # (d) anchor page — the PC page first (existing resolution: slug tiers + R30 search),
+    # else the console page of the primary family (slug only, like account pages).
+    primary = families[0]
+    anchor_kind = "cd-key"
+    try:
+        pc_res = resolver(guard_name)
+        anchor = pc_res
+        if anchor is None:
+            anchor_kind = CONSOLE_PAGE_KIND[primary]
+            anchor = resolver(guard_name, page_kind=anchor_kind)
+    except AksProbeUnreliable as exc:
+        return SkippedOffer(offer, f"AKS probe unreliable (throttled?): {exc}")
+    except AksNameUnreadable as exc:
+        return SkippedOffer(offer, f"AKS page name unreadable — cannot verify product (R01): {exc}")
+    except AksPageUnparseable as exc:
+        return SkippedOffer(offer, f"AKS page markup drifted — guard input unreadable (MA6): {exc}")
+    if anchor is None:
+        return SkippedOffer(offer, "no AKS product page found (console) (R45)")
+
+    # (e) identity = the anchor name without its platform suffix.
+    identity_name = console_page_identity(anchor.aks_name).strip()
+    if not identity_name:
+        return SkippedOffer(
+            offer, f"console: AKS page name {anchor.aks_name!r} has no product identity (R45)")
+
+    # (f) Play Anywhere is the PC page's truth (P2).
+    pa = pc_res is not None and "XBOX PLAY ANYWHERE" in {p.upper() for p in pc_res.official_platforms}
+    if sig.pc_declared and not pa:
+        return SkippedOffer(
+            offer,
+            "console: merchant declares Xbox + PC but the AKS page does not list Xbox Play "
+            "Anywhere — not entered (R45)",
+        )
+    xbox_declared = any(f in ("XBOX_ONE", "XBOX_SERIES") for f in families)
+    pa_targets = pa and xbox_declared
+
+    def _bucket(fam: str) -> tuple[str, str] | SkippedOffer:
+        bucket_family = "XBOX_PC" if pa_targets and fam in ("XBOX_ONE", "XBOX_SERIES") else fam
+        rid = REGION_IDS.get(bucket_family, {}).get(base)
+        if rid is None:
+            return SkippedOffer(offer, f"no region id for {bucket_family}/{label} (R45)")
+        return CONSOLE_REGION_LABELS.get(rid, label), rid
+
+    # (g) one page per declared family, identity-checked; every page or nothing.
+    pages: list[tuple[str, AksResolution, str, str]] = []
+    for fam in families:
+        kind = CONSOLE_PAGE_KIND[fam]
+        if anchor_kind == kind:
+            page = anchor
+        else:
+            url = anchor.console_pages.get(kind)
+            if not url:
+                return SkippedOffer(
+                    offer,
+                    f"console: AKS has no {fam} page for '{identity_name}' — declared platform "
+                    "unverifiable (R45)",
+                )
+            try:
+                page = page_resolver(url)
+            except AksProbeUnreliable as exc:
+                return SkippedOffer(offer, f"AKS probe unreliable (throttled?): {exc}")
+            except AksNameUnreadable as exc:
+                return SkippedOffer(
+                    offer, f"AKS page name unreadable — cannot verify product (R01): {exc}")
+            except AksPageUnparseable as exc:
+                return SkippedOffer(
+                    offer, f"AKS page markup drifted — guard input unreadable (MA6): {exc}")
+            if page is None:
+                return SkippedOffer(
+                    offer,
+                    f"console: AKS {fam} page {url} not found (404) — declared platform "
+                    "unverifiable (R45)",
+                )
+        if tokenize(console_page_identity(page.aks_name)) != tokenize(identity_name):
+            return SkippedOffer(
+                offer, f"console page '{page.aks_name}' is not '{identity_name}' (R45)")
+        if not page.editions:
+            return SkippedOffer(
+                offer, f"AKS {fam} page carries no editions map — edition unverifiable (R19)")
+        bucket = _bucket(fam)
+        if isinstance(bucket, SkippedOffer):
+            return bucket
+        pages.append((fam, page, bucket[0], bucket[1]))
+    if pa_targets:
+        # The PC page is an extra Play Anywhere target under the XBOX/PC bucket (the
+        # anchor IS the PC page here, so its identity is the identity by construction).
+        if not pc_res.editions:
+            return SkippedOffer(
+                offer, "AKS XBOX_PC page carries no editions map — edition unverifiable (R19)")
+        bucket = _bucket("XBOX_PC")
+        if isinstance(bucket, SkippedOffer):
+            return bucket
+        pages.append(("XBOX_PC", pc_res, bucket[0], bucket[1]))
+
+    # (h) the primary page is the plan's resolution; the common flow runs on it.
+    fam0, page0, label0, rid0 = pages[0]
+    return _Plan(
+        resolution=page0,
+        platform=fam0,
+        region_label=label0,
+        region_id=rid0,
+        implicit=implicit,
+        declared_platform=fam0,          # no PAGE_PLATFORM_NAMES entry → no R20/R27 check
+        difmark_platform_verified=False,
+        dlc_page=False,
+        identity_name=identity_name,
+        guard_name=guard_name,
+        console_targets=tuple(pages),
     )
 
 
@@ -2806,6 +3265,8 @@ def match_feed(
     progress_every: int = 5,
     stats: dict[str, int] | None = None,
     search_circuit_open: bool = False,
+    page_resolver: Callable[[str], AksResolution | None] = resolve_aks_url,
+    consoles: bool = False,
 ) -> tuple[list[Candidate], list[SkippedOffer]]:
     """Match every offer. ``on_progress`` (2026-07-20), when given, is called
     every ``progress_every`` offers and once at the end with
@@ -2817,7 +3278,12 @@ def match_feed(
     on THROTTLE_MAX_CONSECUTIVE_UNRELIABLE consecutive unreliable probes (audit
     2026-09-09, one 30 s grace first) — a per-offer unreliable probe below that stays a
     SkippedOffer. ``stats`` (optional dict) receives the guard's counters
-    (probe_unreliable, search_failures, search_circuit_open_offers, throttle_graces)."""
+    (probe_unreliable, search_failures, search_circuit_open_offers, throttle_graces).
+
+    [R45] ``consoles`` (default off) routes classified console rows through the console
+    branch; ``page_resolver`` reads the console target pages by URL — under the production
+    resolver it is wrapped in its OWN throttle guard (same 429 / consecutive-unreliable
+    abort; counters summed into ``stats``), an injected one is used as is."""
 
     candidates: list[Candidate] = []
     skipped: list[SkippedOffer] = []
@@ -2828,8 +3294,15 @@ def match_feed(
     # Account-page resolutions (Difmark accounts) go through the same guard when the
     # production resolver is in use; an injected test resolver keeps the default.
     account_resolver = guard if resolver is resolve_aks else resolve_aks
+    # [R45] console page reads: production → own guard (same fail-closed abort), else as is.
+    page_guard: Callable[[str], AksResolution | None] = page_resolver
+    if resolver is resolve_aks:
+        page_guard = _ThrottleGuard(
+            page_resolver,
+            sleep=time.sleep if page_resolver is resolve_aks_url else (lambda s: None))
     for i, offer in enumerate(feed.offers, 1):
-        result = match_offer(offer, guard, difmark_offer_resolver, account_resolver=account_resolver)
+        result = match_offer(offer, guard, difmark_offer_resolver, account_resolver=account_resolver,
+                             page_resolver=page_guard, consoles=consoles)
         if isinstance(result, Candidate):
             if len(candidates) < max_candidates:
                 candidates.append(result)
@@ -2842,4 +3315,7 @@ def match_feed(
                          "candidates": len(candidates), "skipped": len(skipped)})
     if stats is not None:
         stats.update(guard.stats)
+        if page_guard is not page_resolver:
+            for key, value in page_guard.stats.items():    # [R45] both guards' counters
+                stats[key] = int(stats.get(key, 0)) + int(value)
     return candidates, skipped

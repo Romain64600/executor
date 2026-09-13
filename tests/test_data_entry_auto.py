@@ -225,6 +225,16 @@ def _run(fs, *, start=1, max_pages=400, should_stop=lambda: False, with_move=Tru
 
 
 class SweepEngineTests(unittest.TestCase):
+    def test_recap_records_the_consoles_switch(self):
+        # [R45] (2026-09-12): the recap says whether the pages were matched with the
+        # console branch; default off.
+        fs = FakeStages(1, {1: {"candidates": 0}})
+        self.assertIs(_run(fs)["consoles"], False)
+        cfg = SweepConfig(merchant="Kinguin", store_id="58", consoles=True)
+        r = run_sweep(cfg, Stages(fs.extract, fs.match, fs.approve, fs.submit),
+                      page_run_id=lambda p: f"sweep-p{p}")
+        self.assertIs(r["consoles"], True)
+
     def test_highest_first_order_reflow_safe(self):
         fs = FakeStages(3, {1: {"candidates": 1}, 2: {"candidates": 2}, 3: {"candidates": 3}})
         r = _run(fs)

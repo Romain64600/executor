@@ -89,7 +89,7 @@ def _clock() -> str:
 def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
                  *, triage: bool = False, move_execute: bool = False,
                  dry_run: bool = False, prove_gone_scan: bool = False,
-                 sweep_dir: Path | None = None) -> Stages:
+                 sweep_dir: Path | None = None, consoles: bool = False) -> Stages:
     py = sys.executable
     # A fully read-only preview (Romain: "teste le dry-run"): extract (browser read)
     # + match (AKS read) + triage plan, but NEVER a real write — the ADD submit is
@@ -125,6 +125,10 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
             # Romain GO 2026-09-10: the R30 breaker state travels across the sweep's pages
             # (no 3 × timeout tax per page while AKS search is down; expires on its own).
             argv += ["--search-circuit-file", str(sweep_dir / "search_circuit.json")]
+        if consoles:
+            # [R45] (2026-09-12) console branch of the matcher — default OFF (the
+            # multi-target submit is still fail-closed in 05 until the modal is observed).
+            argv.append("--consoles")
         rc = _run_child(argv)
         cands = _load_json(ROOT / "runs" / run_id / "candidates.json")
         n = len(cands) if isinstance(cands, list) else 0
@@ -376,6 +380,13 @@ def main() -> int:
                     help="Fully READ-ONLY preview: extract + match + triage plan, "
                          "NO submit and NO move (nothing written). ADDs are counted "
                          "from candidates.json, not created.")
+    ap.add_argument("--consoles", action="store_true",
+                    help="[R45] (2026-09-12) match with the CONSOLE branch (03_match "
+                         "--consoles): console keys resolve their AKS platform pages "
+                         "(Xbox One / Series, PS4 / PS5, Switch) instead of the 'console' "
+                         "skip. Default OFF. NB: a multi-target candidate is still refused "
+                         "by 05_submit (fail-closed) until the per-target modal is observed — "
+                         "pair with --dry-run to preview.")
     args = ap.parse_args()
     if args.max_pages < 1 or args.start_page < 1:
         # Review 2026-09-09: with the cap now benign coverage (not a halt), a zero/negative
@@ -433,7 +444,8 @@ def main() -> int:
     sweep_dir.mkdir(parents=True, exist_ok=True)
     recap = {"run_id": run_id, "started_at": _clock(), "targets": [], "halted": None,
              "halted_merchants": [],
-             "coverage_incomplete": [], "total_created": 0, "total_moved": 0}
+             "coverage_incomplete": [], "total_created": 0, "total_moved": 0,
+             "consoles": bool(args.consoles)}          # [R45] console branch on?
     recap_path = sweep_dir / "recap.json"
 
     def persist():
@@ -454,11 +466,11 @@ def main() -> int:
             break
         slug = re.sub(r"[^a-z0-9]+", "-", merchant.lower()).strip("-") or "merchant"
         cfg = SweepConfig(merchant=merchant, store_id=store_id, start_page=args.start_page,
-                          max_pages=args.max_pages)
+                          max_pages=args.max_pages, consoles=args.consoles)
         stages = _make_stages(merchant, store_id, args.available, args.pace,
                               triage=args.triage, move_execute=args.move_execute,
                               dry_run=args.dry_run, prove_gone_scan=args.prove_gone_scan,
-                              sweep_dir=sweep_dir)
+                              sweep_dir=sweep_dir, consoles=args.consoles)
         target_entry = {"merchant": merchant, "store_id": store_id, "recap": None}
         recap["targets"].append(target_entry)
 

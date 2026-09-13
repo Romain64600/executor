@@ -992,6 +992,217 @@ class InspectSubmitterTests(unittest.TestCase):
         self.assertIsNone(result["created"])
 
 
+# ---------------------------------------------------------------------------
+# R45 (console keys, 2026-09-12): targets, the multi-target fail-closed gate, the
+# id-path resolution of console buckets and the BOM-free typed query.
+# ---------------------------------------------------------------------------
+def _target(pid, region_id, *, platform, region_label, edition_id="1"):
+    """One candidates.json target (nested region/edition, as the matcher writes it)."""
+    return {
+        "platform": platform, "aks_product_id": pid, "aks_url": f"https://aks/{pid}",
+        "aks_name": f"Hades {platform}",
+        "region": {"label": region_label, "id": region_id},
+        "edition": {"label": "Standard", "id": edition_id},
+    }
+
+
+PS5_TARGET = _target("85105", "88ps5h", platform="PS5", region_label="PS5")
+PS4_TARGET = _target("85104", "88", platform="PS4", region_label="Playstation Game Code GLOBAL")
+XBOX_PC_TARGET = _target("26712", "306", platform="XBOX_PC", region_label="Xbox/PC GLOBAL")
+
+
+def _console_cand(offer_id, targets):
+    """A console candidate whose primary fields mirror targets[0] (the matcher's contract)."""
+    first = targets[0]
+    cand = _cand(offer_id, region_id=first["region"]["id"], edition_id=first["edition"]["id"])
+    cand["aks_product_id"] = first["aks_product_id"]
+    cand["aks_url"] = first["aks_url"]
+    cand["aks_name"] = first["aks_name"]
+    cand["platform"] = first["platform"]
+    cand["region"] = {"label": first["region"]["label"], "id": first["region"]["id"], "implicit": False}
+    cand["targets"] = [json.loads(json.dumps(t)) for t in targets]
+    return cand
+
+
+class ConsoleCatalogWriteSession(FakeWriteSession):
+    """FakeWriteSession whose live region catalog also carries console buckets (R45):
+    PS5 88ps5h, PS4 GLOBAL 88, and the BOM-prefixed Xbox/PC GLOBAL 306 — the one master
+    label with a leading U+FEFF on the live modal (catalog.json, 2026-09-12)."""
+
+    def probe_select_options(self, select_name):
+        probe = super().probe_select_options(select_name)
+        if "region" in select_name:
+            probe["master_options"] = probe["master_options"] + [
+                {"key": "88ps5h", "text": "PS5 (88ps5h)"},
+                {"key": "88", "text": "Playstation Game Code GLOBAL (88)"},
+                {"key": "306", "text": "\ufeffXbox/PC GLOBAL (306)"},
+            ]
+        return probe
+
+
+class MultiTargetGateTests(unittest.TestCase):
+    """R45: more than one target = not ready, blocker
+    ``multi_target_unsupported_until_modal_verified`` — and NO write, ever."""
+
+    BLOCKER = "multi_target_unsupported_until_modal_verified"
+
+    def test_dry_run_two_targets_not_ready_with_r45_blocker_and_lists_targets(self):
+        cand = _console_cand("1", [PS5_TARGET, PS4_TARGET])
+        result = _run(FakeSubmitSession([["1"]]), [cand])
+        entry = result["plan"][0]
+        self.assertFalse(entry["ready"])
+        self.assertEqual(entry["blocker"], self.BLOCKER)
+        self.assertIn("--inspect", entry["blocker_message"])
+        self.assertIn("R45", entry["blocker_message"])
+        # The gate sits AFTER the read-only modal/context checks: the plan shows them.
+        self.assertEqual(entry["modal"], "OPENED")
+        self.assertEqual(entry["region_select"], "offer[region]")
+        self.assertEqual([t["aks_product_id"] for t in entry["targets"]], ["85105", "85104"])
+        self.assertEqual([t["region_id"] for t in entry["targets"]], ["88ps5h", "88"])
+        self.assertEqual([t["platform"] for t in entry["targets"]], ["PS5", "PS4"])
+        # would_submit lists every target and says it is NOT ready.
+        self.assertIn("NOT ready", entry["would_submit"])
+        self.assertIn("PS5 page 85105 region=88ps5h edition=1", entry["would_submit"])
+        self.assertIn("PS4 page 85104 region=88 edition=1", entry["would_submit"])
+        self.assertIsNone(result["aborted"])
+
+    def test_real_submit_two_targets_resolves_every_target_but_never_writes(self):
+        session = ConsoleCatalogWriteSession([["1"]])
+        cand = _console_cand("1", [PS5_TARGET, PS4_TARGET])
+        result = _real(session, [cand], limit=1)
+        entry = result["plan"][0]
+        self.assertFalse(entry["ready"])
+        self.assertEqual(entry["blocker"], self.BLOCKER)
+        self.assertEqual(session.fill_calls, [])                       # no write
+        self.assertIsNone(session.last_target_value)
+        self.assertEqual((result["write_attempts"], result["created"]), (0, 0))
+        self.assertNotIn("submitted", entry)
+        self.assertEqual(session.page_offer_ids(), ["1"])              # row not consumed
+        # Every target went through the live catalog; the primary also fills the
+        # historical top-level fields.
+        self.assertEqual(entry["targets"][0]["region_resolution"]["source"], "id")
+        self.assertEqual(entry["targets"][0]["region_text"], "PS5 (88ps5h)")
+        self.assertEqual(entry["targets"][1]["region_text"], "Playstation Game Code GLOBAL (88)")
+        self.assertEqual(entry["targets"][1]["edition_text"], "Standard")
+        self.assertEqual(entry["targets"][1]["edition_resolution"]["source"], "label")
+        self.assertEqual(entry["region_id"], "88ps5h")
+        self.assertEqual(entry["region_text"], "PS5 (88ps5h)")
+        self.assertEqual(entry["edition_id"], "1")
+        self.assertEqual(entry["edition_text"], "Standard")
+
+    def test_second_target_unresolvable_blocks_with_its_index_and_no_write(self):
+        session = ConsoleCatalogWriteSession([["1"]])
+        ps4_eu = _target("85104", "88eu", platform="PS4", region_label="Playstation Game Code EUROPE")
+        cand = _console_cand("1", [PS5_TARGET, ps4_eu])
+        result = _real(session, [cand], limit=1)
+        entry = result["plan"][0]
+        self.assertFalse(entry["ready"])
+        self.assertTrue(entry["blocker"].startswith("region not in session catalog"), entry["blocker"])
+        self.assertIn("target 2/2 PS4 85104 (R45)", entry["blocker"])
+        self.assertNotIn("blocker_message", entry)    # the specific blocker wins over the gate
+        self.assertEqual(session.fill_calls, [])
+
+    def test_ten_multi_target_entries_stop_the_run_like_any_blocked_batch(self):
+        ids = [str(i) for i in range(12)]
+        result = _run(FakeSubmitSession([ids]), [_console_cand(i, [PS5_TARGET, PS4_TARGET]) for i in ids])
+        self.assertEqual(result["stopped"], "ten_consecutive_failures")
+        self.assertTrue(all(p["blocker"] == self.BLOCKER for p in result["plan"]))
+
+    def test_process_refuses_a_multi_target_entry_even_if_marked_ready(self):
+        # Defence in depth: the write _process never enters "the first target only".
+        session = ConsoleCatalogWriteSession([["1"]])
+        sub = Submitter(session)
+        entry = {
+            "offer_id": "1", "ready": True, "aks_product_id": "85105",
+            "region_select": "offer[region]", "region_id": "88ps5h", "region_text": "PS5 (88ps5h)",
+            "edition_select": "offer[edition]", "edition_id": "1", "edition_text": "Standard",
+            "targets": [dict(PS5_TARGET), dict(PS4_TARGET)],
+        }
+        self.assertFalse(sub._process(entry, _console_cand("1", [PS5_TARGET, PS4_TARGET]), {}))
+        self.assertFalse(entry["ready"])
+        self.assertEqual(entry["blocker"], self.BLOCKER)
+        self.assertEqual(session.fill_calls, [])
+
+    def test_inspect_still_dumps_the_modal_of_a_gated_multi_target_entry(self):
+        # The blocker points to --inspect: the read-only dump of exactly this modal is
+        # the observation the gate waits for, so inspect does not skip it.
+        session = FakeInspectSession([["1"]])
+        result = _inspect(session, [_console_cand("1", [PS5_TARGET, PS4_TARGET])])
+        entry = result["plan"][0]
+        self.assertEqual(session.inspect_calls, 1)
+        self.assertIn("inspection", entry)
+        self.assertIn("targets_probe", entry)
+        self.assertFalse(entry["ready"])
+        self.assertEqual(entry["blocker"], self.BLOCKER)
+        self.assertIsNone(result["write_attempts"])
+
+    def test_inspect_skips_an_entry_blocked_for_another_reason(self):
+        session = FakeInspectSession([["1"]], select_names=("offer[edition]",))
+        result = _inspect(session, [_console_cand("1", [PS5_TARGET, PS4_TARGET])])
+        self.assertEqual(session.inspect_calls, 0)
+        self.assertIn("select not found", result["plan"][0]["blocker"])
+
+
+class ConsoleSingleTargetTests(unittest.TestCase):
+    """R45: ONE console target = the current write path, the bucket resolved by id."""
+
+    def test_ps5_key_resolves_through_the_id_path_and_creates(self):
+        session = ConsoleCatalogWriteSession([["1"]])
+        cand = _console_cand("1", [PS5_TARGET])
+        result = _real(session, [cand], limit=1)
+        entry = result["plan"][0]
+        self.assertTrue(entry["ready"])
+        self.assertTrue(entry["submitted"])
+        self.assertEqual((result["write_attempts"], result["created"]), (1, 1))
+        # "PS5" never label-matches "PS5 (88ps5h)" (the suffix is not numeric) → id path.
+        self.assertEqual(entry["region_resolution"]["source"], "id")
+        self.assertFalse(entry["region_resolution"]["changed"])
+        self.assertEqual(entry["region_text"], "PS5 (88ps5h)")
+        self.assertEqual(session.fill_calls, [("offer[region]", "88ps5h", "offer[edition]", "1", "trusted")])
+        self.assertEqual(session.last_region_query, "PS5 (88ps5h)")
+        self.assertEqual(session.last_edition_query, "Standard")
+        self.assertEqual(session.last_target_value, "85105")
+        # The single target mirrors the primary and carries its own resolution too.
+        self.assertEqual(len(entry["targets"]), 1)
+        self.assertEqual(entry["targets"][0]["region_id"], "88ps5h")
+        self.assertEqual(entry["targets"][0]["region_resolution"]["source"], "id")
+
+    def test_bom_is_stripped_from_the_typed_query_but_kept_in_the_plan_text(self):
+        session = ConsoleCatalogWriteSession([["1"]])
+        cand = _console_cand("1", [XBOX_PC_TARGET])
+        result = _real(session, [cand], limit=1)
+        entry = result["plan"][0]
+        self.assertTrue(entry["submitted"])
+        self.assertEqual(entry["region_id"], "306")
+        self.assertEqual(entry["region_text"], "\ufeffXbox/PC GLOBAL (306)")   # catalog text verbatim
+        self.assertEqual(session.last_region_query, "Xbox/PC GLOBAL (306)")    # typed without U+FEFF
+        self.assertNotIn("\ufeff", session.last_region_query)
+        self.assertEqual(session.last_edition_query, "Standard")
+
+    def test_pre_r45_candidate_seeds_one_target_from_the_primary(self):
+        result = _run(FakeSubmitSession([["1"]]), [_cand("1")])
+        entry = result["plan"][0]
+        self.assertTrue(entry["ready"])
+        self.assertEqual(entry["targets"], [{
+            "platform": "STEAM", "aks_product_id": "1", "aks_url": "https://aks/x",
+            "aks_name": "Game 1", "region_label": "GLOBAL", "region_id": "2",
+            "edition_label": "Standard", "edition_id": "1",
+        }])
+        self.assertNotIn("blocker", entry)
+        self.assertIn("offer[region]=2", entry["would_submit"])
+
+    def test_single_entry_targets_list_defers_to_the_primary(self):
+        # A one-entry targets list whose content drifted from the primary (a hand edit)
+        # never wins over the validated primary fields — the fingerprint keys on those.
+        cand = _cand("1")
+        cand["targets"] = [dict(PS4_TARGET)]
+        result = _run(FakeSubmitSession([["1"]]), [cand])
+        entry = result["plan"][0]
+        self.assertTrue(entry["ready"])
+        self.assertEqual(entry["targets"][0]["aks_product_id"], "1")
+        self.assertEqual(entry["targets"][0]["region_id"], "2")
+
+
 class TrustedClickTests(unittest.TestCase):
     """Unit tests on the real WriteSubmitSession, mocking the CDP transport."""
 
