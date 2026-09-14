@@ -8,7 +8,10 @@ select names.
 - `Submitter` (real) additionally fills region/edition and clicks "Create offer",
   then verifies post-save that the offer **disappeared** from the refreshed
   feed, in the same ``available`` mode the run scans — success = gone (skill
-  S18; never `[data-success]`).
+  S18; never `[data-success]`). The fill is routed by the modal SHAPE read from
+  the open modal (2026-09-14): ``targets_v2`` (the current tool — one row per
+  target, ``fill_targets_v2_trusted``), ``targets_v1`` (the historical chip
+  field, ``fill_then_click_trusted``), anything else is refused.
 
 Fail-closed per Romain's decisions (SUBMITTER_SPEC §6): one attempt per offer; on
 failure log + skip + continue; stop the run after 10 consecutive failures. An entry
@@ -40,6 +43,7 @@ from src.extractor import (
 from src.pacing import Pacer
 from src.run_log import RunLogger
 from src.step_guard import StepGuard
+from src.submit_session import MODAL_SHAPE_UNKNOWN, MODAL_SHAPE_V1, MODAL_SHAPE_V2
 
 
 class FeedScanError(RuntimeError):
@@ -59,18 +63,46 @@ FEED_UNREADABLE_EXCS = (NotLoggedInError, FeedScanError, CdpCommandError)
 
 # R45 (console keys, 2026-09-12). A console key declared on several platforms carries
 # one TARGET per AKS console page (``candidates.json`` ``"targets": [...]`` — page id,
-# region bucket, edition). The per-target region overwrite Romain announced for the
-# AKS feed tool has NOT been observed in the modal yet (``--inspect``), so a plan entry
-# with more than one target is refused fail-closed BEFORE any write. Never "the first
-# target only": a feed row is consumed by its first creation, so a partial entry would
-# silently lose the second platform — the one outcome the design forbids. One target
-# (every PC key, a single-platform console key, any pre-R45 candidates.json) = the
-# current write path, byte-identical.
+# region bucket, edition). Since 2026-09-14 the modal takes region/edition PER TARGET
+# ROW (shape ``targets_v2``, observed by ``--inspect`` run 20260914-inspect-consoles and
+# confirmed by hand by Romain): a multi-target entry is written through
+# ``fill_targets_v2_trusted`` — every row filled and proven, ONE Create click. On any
+# OTHER shape (the old ``targets_v1`` chip field) a plan entry with more than one target
+# is still refused fail-closed BEFORE any write. Never "the first target only": a feed
+# row is consumed by its first creation, so a partial entry would silently lose the
+# second platform — the one outcome the design forbids.
 MULTI_TARGET_BLOCKER = "multi_target_unsupported_until_modal_verified"
 MULTI_TARGET_BLOCKER_MESSAGE = (
     "la saisie multi-cibles / overwrite par cible attend l'observation du nouveau "
     "modal (--inspect) — R45"
 )
+
+# Modal shape gate (2026-09-14): the open modal must read ``targets_v2`` (current tool)
+# or ``targets_v1`` (historical chip field). Anything else = a tool we have not observed
+# → every entry is blocked, nothing is filled (fail-closed). A real blocker: it feeds
+# the StepGuard streak, so a changed tool stops a sweep after 10 entries instead of
+# opening hundreds of modals for nothing.
+MODAL_SHAPE_BLOCKER = "modal_shape_unknown"
+MODAL_SHAPE_BLOCKER_MESSAGE = (
+    "la forme du modal Create offer n'est ni targets_v1 ni targets_v2 — rien n'est "
+    "saisi (fail-closed) ; --inspect pour observer le DOM"
+)
+
+# Hard cap on the targets of ONE candidate (Romain, 2026-09-14: the modal takes "3 ou 4
+# pour le moment" targets). A candidate with more is blocked in ``_prepare`` BEFORE its
+# row is located or its modal opened — nothing is filled, the row is untouched. A
+# designed skip (like the R45 gate): it is counted in ``gated_too_many_targets`` and
+# does not feed the failure streak.
+MAX_TARGETS_PER_OFFER = 3
+TOO_MANY_TARGETS_BLOCKER = "too_many_targets"
+TOO_MANY_TARGETS_BLOCKER_MESSAGE = (
+    "plus de 3 cibles — plafond du modal AKS (Romain 2026-09-14)"
+)
+
+# Blockers that are DESIGNED skips (no write attempted, row untouched): reported and
+# counted, never recorded in the StepGuard (review fix 2026-09-14 for R45; extended to
+# the cap the same day).
+DESIGNED_SKIP_BLOCKERS = (MULTI_TARGET_BLOCKER, TOO_MANY_TARGETS_BLOCKER)
 
 
 def _strip_bom(text: Any) -> str | None:
@@ -1219,6 +1251,12 @@ class _SubmitterBase:
             entry["id_mismatches"] = located["id_mismatches"]
         if located.get("row_checked"):
             entry["row_checked"] = located["row_checked"]
+        if len(entry["targets"]) > MAX_TARGETS_PER_OFFER:
+            # Cap (Romain, 2026-09-14): BEFORE any navigate / re-locate / modal open —
+            # nothing is filled, the row is untouched, no feed scan is spent on it.
+            entry["blocker"] = TOO_MANY_TARGETS_BLOCKER
+            entry["blocker_message"] = TOO_MANY_TARGETS_BLOCKER_MESSAGE
+            return entry
         if located.get("blocker"):
             # An index-scan MISS is not a proven absence. The bulk _index_by_search
             # runs one rapid search per candidate at start-up; a transient incomplete
@@ -1312,6 +1350,11 @@ class _SubmitterBase:
         context = self._wait_for_modal_context(offer_id)
         names = set(context.get("select_names", []))
         entry["select_names"] = sorted(names)
+        # Modal shape (2026-09-14): read from the open modal, never assumed. A session
+        # that does not report it (or reports anything but v1/v2) reads 'unknown'.
+        entry["modal_shape"] = str(context.get("modal_shape") or MODAL_SHAPE_UNKNOWN)
+        if context.get("modal_shape_detail") is not None:
+            entry["modal_shape_detail"] = context.get("modal_shape_detail")
         if not context.get("ok"):
             entry["blocker"] = "modal context missing (#TB_ajaxContent)"
             return entry
@@ -1328,12 +1371,21 @@ class _SubmitterBase:
         entry["ready"] = True
         if self.catalog is not None:
             self._resolve_from_catalog(entry, candidate)
-        if len(entry["targets"]) > 1:
-            # R45 fail-closed gate (2026-09-12) — AFTER the read-only modal/context
-            # checks and the per-target catalog resolution (so the dry-run plan shows
-            # the modal state and every target's live ids) and BEFORE any write: the
-            # per-target overwrite is unobserved, a partial entry would consume the
-            # row. A resolution blocker set above is more specific and is kept.
+        shape = entry["modal_shape"]
+        if shape not in (MODAL_SHAPE_V1, MODAL_SHAPE_V2):
+            # Shape gate (2026-09-14) — AFTER the read-only modal/context checks and the
+            # catalog resolution (the plan shows what was seen) and BEFORE any write: a
+            # modal we have not observed is never filled. A resolution blocker set
+            # above is more specific and is kept.
+            if entry["ready"]:
+                entry["blocker"] = MODAL_SHAPE_BLOCKER
+                entry["blocker_message"] = MODAL_SHAPE_BLOCKER_MESSAGE
+            entry["ready"] = False
+        elif len(entry["targets"]) > 1 and shape != MODAL_SHAPE_V2:
+            # R45 fail-closed gate (2026-09-12), now shape-aware (2026-09-14): only the
+            # per-row modal (targets_v2) can take several targets; on the historical
+            # chip field a partial entry would consume the row. A resolution blocker
+            # set above is more specific and is kept.
             if entry["ready"]:
                 entry["blocker"] = MULTI_TARGET_BLOCKER
                 entry["blocker_message"] = MULTI_TARGET_BLOCKER_MESSAGE
@@ -1500,8 +1552,10 @@ class _SubmitterBase:
         write_attempts = 0
         created = 0
         # [R45] review fix (2026-09-14): entries gated only by MULTI_TARGET_BLOCKER (no
-        # write attempted, row untouched) — reported, never counted as failures.
+        # write attempted, row untouched) — reported, never counted as failures. Same
+        # for the MAX_TARGETS_PER_OFFER cap (Romain 2026-09-14).
         gated_multi_target = 0
+        gated_too_many_targets = 0
         for candidate in approved:
             # Cooperative stop at an OFFER BOUNDARY only (before locating/opening
             # the next offer) — never mid-Create/post-save. A SIGTERM (console
@@ -1569,10 +1623,14 @@ class _SubmitterBase:
             # gated entries stopped the run (`ten_consecutive_failures`), halted the
             # safe-auto sweep and recorded a guard block — `--consoles` was self-halting
             # on the very merchants it targets, dry-run included.
-            gated = (not success and feed_unreadable is None
-                     and entry.get("blocker") == MULTI_TARGET_BLOCKER)
-            if gated:
+            gated_by = entry.get("blocker") if (
+                not success and feed_unreadable is None
+                and entry.get("blocker") in DESIGNED_SKIP_BLOCKERS
+            ) else None
+            if gated_by == MULTI_TARGET_BLOCKER:
                 gated_multi_target += 1
+            elif gated_by == TOO_MANY_TARGETS_BLOCKER:
+                gated_too_many_targets += 1
             else:
                 self.guard.record_result(
                     "submit", signature, success, detail=entry.get("blocker", "") or entry.get("post_save", "")
@@ -1581,7 +1639,9 @@ class _SubmitterBase:
                 self.event_name,
                 offer_id=offer_id, ready=entry["ready"], success=success,
                 blocker=entry.get("blocker"), post_save=entry.get("post_save"),
-                gated_multi_target=gated,
+                modal_shape=entry.get("modal_shape"),
+                gated_multi_target=gated_by == MULTI_TARGET_BLOCKER,
+                gated_too_many_targets=gated_by == TOO_MANY_TARGETS_BLOCKER,
             )
             if not success:
                 self._log("skip", offer_id=offer_id, reason=entry.get("blocker") or entry.get("post_save"))
@@ -1613,6 +1673,7 @@ class _SubmitterBase:
             "write_attempts": write_attempts if self.write_mode else None,
             "created": created if self.write_mode else None,
             "gated_multi_target": gated_multi_target,        # [R45] designed skips
+            "gated_too_many_targets": gated_too_many_targets,  # cap (Romain 2026-09-14)
             "plan": plan,
         }
         if self.catalog is not None:
@@ -1632,17 +1693,32 @@ class DryRunSubmitter(_SubmitterBase):
 
     def _process(self, entry, candidate, ctx):
         if entry.get("ready"):
+            if entry.get("modal_shape") == MODAL_SHAPE_V2:
+                # Modal v2 (2026-09-14): one row per target, overrides set explicitly.
+                rows = "; ".join(
+                    f"row {i}: target={t.get('aks_product_id')} "
+                    f"region={t.get('region_id')} edition={t.get('edition_id')}"
+                    for i, t in enumerate(entry.get("targets") or [])
+                )
+                entry["would_submit"] = (
+                    f"set {entry['region_select']}={entry['region_id']}, "
+                    f"{entry['edition_select']}={entry['edition_id']}, "
+                    f"targets_v2 rows [{rows}], "
+                    "click .button-primary (NOT clicked — dry-run)"
+                )
+            else:
+                entry["would_submit"] = (
+                    f"set {entry['region_select']}={entry['region_id']}, "
+                    f"{entry['edition_select']}={entry['edition_id']}, "
+                    "click .button-primary (NOT clicked — dry-run)"
+                )
+        elif entry.get("blocker") in (MULTI_TARGET_BLOCKER, TOO_MANY_TARGETS_BLOCKER,
+                                      MODAL_SHAPE_BLOCKER):
+            # R45 (2026-09-12) / cap + shape (2026-09-14): the rehearsal of a gated
+            # entry lists EVERY target (what a write would set) — nothing is ready,
+            # nothing would be clicked.
             entry["would_submit"] = (
-                f"set {entry['region_select']}={entry['region_id']}, "
-                f"{entry['edition_select']}={entry['edition_id']}, "
-                "click .button-primary (NOT clicked — dry-run)"
-            )
-        elif entry.get("blocker") == MULTI_TARGET_BLOCKER:
-            # R45 (2026-09-12): the rehearsal of a multi-target entry lists EVERY
-            # target (what a future per-target write would set) — nothing is
-            # ready, nothing would be clicked.
-            entry["would_submit"] = (
-                f"NOT ready ({MULTI_TARGET_BLOCKER}) — targets: "
+                f"NOT ready ({entry['blocker']}) — targets: "
                 + "; ".join(_target_summary(t) for t in entry.get("targets") or [])
                 + " (NOT clicked — dry-run)"
             )
@@ -1661,11 +1737,13 @@ class InspectSubmitter(_SubmitterBase):
     event_name = "inspect_offer"
 
     def _process(self, entry, candidate, ctx):
-        # R45 (2026-09-12): an entry gated ONLY by the multi-target blocker has its
-        # modal open and verified — inspecting it is exactly the read-only
-        # observation the gate waits for, so dump it too (the entry stays
-        # ``ready: False`` with its blocker; inspect never writes).
-        if not entry.get("ready") and entry.get("blocker") != MULTI_TARGET_BLOCKER:
+        # R45 (2026-09-12) / shape gate (2026-09-14): an entry gated ONLY by the
+        # multi-target or the modal-shape blocker has its modal open and verified —
+        # inspecting it is exactly the read-only observation the gate waits for, so
+        # dump it too (the entry stays ``ready: False`` with its blocker; inspect
+        # never writes).
+        if not entry.get("ready") and entry.get("blocker") not in (
+                MULTI_TARGET_BLOCKER, MODAL_SHAPE_BLOCKER):
             return False
         entry["inspection"] = self.session.inspect_modal_dom()
         # Read-only HTML5 validity summary (covers input/select/textarea — the
@@ -1713,30 +1791,57 @@ class Submitter(_SubmitterBase):
     def _process(self, entry, candidate, ctx):
         if not entry.get("ready"):
             return False
-        if len(entry.get("targets") or ()) > 1:
-            # Defence in depth (R45, 2026-09-12): _prepare's gate already made such an
-            # entry not-ready; should any path ever hand a multi-target entry here
-            # marked ready, refuse the write rather than enter the first target.
+        targets = entry.get("targets") or []
+        shape = entry.get("modal_shape")
+        # Defence in depth — _prepare's gates already made such entries not-ready;
+        # should any path ever hand one here marked ready, refuse the write rather
+        # than enter a partial / unobserved entry.
+        if len(targets) > MAX_TARGETS_PER_OFFER:
+            entry["ready"] = False
+            entry["blocker"] = TOO_MANY_TARGETS_BLOCKER
+            entry["blocker_message"] = TOO_MANY_TARGETS_BLOCKER_MESSAGE
+            return False
+        if len(targets) > 1 and shape != MODAL_SHAPE_V2:
+            # R45 (2026-09-12): never "the first target only".
             entry["ready"] = False
             entry["blocker"] = MULTI_TARGET_BLOCKER
             entry["blocker_message"] = MULTI_TARGET_BLOCKER_MESSAGE
             return False
-        diag = self.session.fill_then_click_trusted(
-            entry["region_select"], entry["region_id"],
-            entry["edition_select"], entry["edition_id"],
-            target_value=entry.get("aks_product_id"),
-            # Typed queries = catalog text without U+FEFF (R45); the plan's
-            # region_text / edition_text stay verbatim.
-            region_query=_strip_bom(entry.get("region_text")),
-            edition_query=_strip_bom(entry.get("edition_text")),
-        )
+        if shape == MODAL_SHAPE_V2:
+            # Modal v2 (2026-09-14): one row per target — the ONLY working path for
+            # every offer (PC included) since the tool change. Typed queries = catalog
+            # text without U+FEFF (R45); the plan's *_text stay verbatim.
+            diag = self.session.fill_targets_v2_trusted(
+                [{
+                    "aks_product_id": t.get("aks_product_id"),
+                    "region_id": t.get("region_id"),
+                    "edition_id": t.get("edition_id"),
+                    "region_query": _strip_bom(t.get("region_text")),
+                    "edition_query": _strip_bom(t.get("edition_text")),
+                } for t in targets],
+                entry["region_select"], entry["edition_select"],
+            )
+        elif shape == MODAL_SHAPE_V1:
+            diag = self.session.fill_then_click_trusted(
+                entry["region_select"], entry["region_id"],
+                entry["edition_select"], entry["edition_id"],
+                target_value=entry.get("aks_product_id"),
+                region_query=_strip_bom(entry.get("region_text")),
+                edition_query=_strip_bom(entry.get("edition_text")),
+            )
+        else:
+            entry["ready"] = False
+            entry["blocker"] = MODAL_SHAPE_BLOCKER
+            entry["blocker_message"] = MODAL_SHAPE_BLOCKER_MESSAGE
+            return False
         entry["create"] = diag  # dict: status + read-back values + options + signal
         status = diag.get("status") if isinstance(diag, dict) else diag
         # Only a settled click (success signal, or no signal but no error) proceeds to
         # the real post-save proof. ERROR / NO_SELECTS / NO_BUTTON / NO_ELEMENT /
-        # NO_TRUSTED_CLICK / NO_ELEMENT_AFTER_SCROLL / FORM_INVALID is a hard fail.
+        # NO_TRUSTED_CLICK / NO_ELEMENT_AFTER_SCROLL / FORM_INVALID / the v2 row
+        # statuses (TARGET_ROW_NOT_ADDED, TARGETS_COUNT_MISMATCH, …) is a hard fail.
         if status not in ("SUCCESS", "NO_SIGNAL"):
-            reason = diag.get("signal") if isinstance(diag, dict) else ""
+            reason = (diag.get("signal") or diag.get("reason")) if isinstance(diag, dict) else ""
             if status == "FORM_INVALID" and isinstance(diag, dict):
                 fields = [
                     x.get("name") for x in (diag.get("form_validity") or {}).get("invalid_required", [])

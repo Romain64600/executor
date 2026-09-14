@@ -399,6 +399,51 @@ Each `plan[]` entry (fields appear as the flow reaches them):
 (mode, batch, counters, aborted/stopped) then one `[SKIP (…)]` / `[READY]` /
 `[CREATED (…)]` / `[FAILED (…)]` line per plan entry with its diagnostics.
 
+### Modal v2 (2026-09-14) — plan entry, statuses, counters
+
+**`submit_plan.json` plan entry (2026-09-14):**
+
+- `modal_shape` (string): `"targets_v2"` | `"targets_v1"` | `"unknown"` — read from
+  the open modal; absent when the entry was blocked before its modal opened
+  (`too_many_targets`, row not located).
+- `modal_shape_detail` (object, when the session reports it):
+  `{v2_target0, v2_region0, v2_edition0, v1_input}` booleans — which shape probes
+  hit.
+- `blocker` new values: `"modal_shape_unknown"`, `"too_many_targets"` — both with
+  a French `blocker_message`.
+- `would_submit` (dry-run, v2): `set offer[region]=<id>, offer[edition]=<id>,
+  targets_v2 rows [row 0: target=<pid> region=<id> edition=<id>; row 1: …],
+  click .button-primary (NOT clicked — dry-run)`; gated entries:
+  `NOT ready (<blocker>) — targets: …`.
+- `create` (write path, v2) — `fill_targets_v2_trusted`'s diag: `status`,
+  `modal_shape: "targets_v2"`, `targets_count`, `region_target` / `edition_target`
+  (primary ids), `region_pick` / `edition_pick`, `region_set` / `edition_set`,
+  `rows: [{row, add?: {row, add_button, scroll, click, readback, status, reason?},
+  fill: {row, aks_product_id, region_id, edition_id, focus, typed, readback,
+  region_pick, edition_pick, status, reason?}}]`, `form_validity`, `click_path`,
+  `pre_click_readback: {region, edition, targets}`, `click`, then the poll fields
+  (`polls`, `requests`, `signal`). `reason` accompanies every fail-closed status.
+- `create.status` new values: `MODAL_SHAPE_MISMATCH`, `NO_TARGETS`, `NO_TARGET_ID`,
+  `NO_TARGET_INPUT`, `TARGET_VALUE_MISMATCH`, `NO_ROW_REGION_PICK`,
+  `NO_ROW_EDITION_PICK`, `NO_ADD_BUTTON`, `ADD_BUTTON_UNSAFE`,
+  `TARGET_ROW_NOT_ADDED`, `TARGETS_COUNT_MISMATCH`, `TARGETS_READBACK_UNREADABLE`;
+  `VALUE_DRIFTED_BEFORE_CLICK` may now name a row (`row <i> <field> reads …`).
+  Row-level statuses: `ROW_ADDED`, `ROW_FILLED`.
+- `post_save` on a refused create: `create not confirmed: <STATUS> — <reason>`.
+
+**Run result (`submit_plan.json` top level / `05_submit` summary):**
+`gated_too_many_targets` (int) next to `gated_multi_target` — designed skips,
+never failures.
+
+**JSONL `submit_offer` / `dry_run_offer` / `inspect_offer` events:** new fields
+`modal_shape`, `gated_too_many_targets` (bool) next to `gated_multi_target`.
+
+**`--inspect` (`modal_inspection.json`):** `targets_probe.targets[]` entries gain
+`next_sib_button: {tag, type_prop, type_attr, klass, data_attrs, text}` when the
+control is followed by a `<button>` (the add-row button); `modal_context` reports
+`modal_shape` + `modal_shape_detail`; entries blocked by `modal_shape_unknown`
+are inspected too.
+
 ## modal_inspection.json (Stage 4 — `--inspect`, brief)
 
 Read-only S18 forensics (`InspectSubmitter`): same result envelope as

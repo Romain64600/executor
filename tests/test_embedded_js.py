@@ -69,6 +69,7 @@ TEMPLATES = {
     ),
     "submit._TRUSTED_CLEANUP_JS": (submit_session._TRUSTED_CLEANUP_JS, None),
     "submit._TARGETS_READBACK_JS": (submit_session._TARGETS_READBACK_JS, None),
+    "submit._ADD_ROW_BUTTON_PROBE_JS": (submit_session._ADD_ROW_BUTTON_PROBE_JS, None),
     "login._DASHBOARD_MARKER_JS": (login_session._DASHBOARD_MARKER_JS, None),
 }
 

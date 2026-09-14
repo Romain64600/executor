@@ -22,13 +22,16 @@ def _cand(offer_id, region_id="2", edition_id="1"):
 
 
 class FakeSubmitSession:
+    # ``modal_shape`` defaults to the CURRENT live modal (targets_v2, 2026-09-14); the
+    # historical chip-field tests pass ``modal_shape="targets_v1"`` explicitly.
     def __init__(self, pages, *, login=False, modal_status="OPENED",
                  select_names=("offer[region]", "offer[edition]"), ctx_ok=True, fail_ids=(),
-                 rows=None):
+                 rows=None, modal_shape="targets_v2"):
         self.pages = pages
         self.login = login
         self.modal_status = modal_status
         self.select_names = list(select_names)
+        self.modal_shape = modal_shape
         self.ctx_ok = ctx_ok
         self.fail_ids = set(fail_ids)
         self.rows = dict(rows or {})  # per-id {url, name} overrides
@@ -83,7 +86,8 @@ class FakeSubmitSession:
         return "ROW_NOT_FOUND" if offer_id in self.fail_ids else self.modal_status
 
     def modal_context(self):
-        return {"ok": self.ctx_ok, "select_names": list(self.select_names)}
+        return {"ok": self.ctx_ok, "select_names": list(self.select_names),
+                "modal_shape": self.modal_shape}
 
     def probe_select_options(self, select_name):
         # A minimal live "master catalog" so the write path's catalog resolution
@@ -164,6 +168,7 @@ class FakeWriteSession(FakeSubmitSession):
         self.form_validity = form_validity
         self.created = set()
         self.fill_calls = []
+        self.v2_calls = []            # the target lists handed to fill_targets_v2_trusted
         self.last_target_value = None
         self.last_region_query = None
         self.last_edition_query = None
@@ -206,6 +211,22 @@ class FakeWriteSession(FakeSubmitSession):
             diag["signal"] = self.create_signal
         if self.form_validity is not None:
             diag["form_validity"] = self.form_validity
+        return diag
+
+    def fill_targets_v2_trusted(self, targets, region_select, edition_select):
+        # Modal v2 (2026-09-14): the submitter hands EVERY target; this run-loop fake
+        # records them and reuses the v1 mock for the create outcome (the primary
+        # target's ids/queries land in the same fields the historical tests read).
+        # The real row mechanics are exercised on V2DomWriteSession below.
+        self.v2_calls.append([dict(t) for t in targets])
+        primary = targets[0]
+        diag = self.fill_then_click_trusted(
+            region_select, primary["region_id"], edition_select, primary["edition_id"],
+            target_value=primary.get("aks_product_id"),
+            region_query=primary.get("region_query"), edition_query=primary.get("edition_query"),
+        )
+        diag["modal_shape"] = "targets_v2"
+        diag["targets_count"] = len(targets)
         return diag
 
 
@@ -1041,15 +1062,18 @@ class ConsoleCatalogWriteSession(FakeWriteSession):
 
 
 class MultiTargetGateTests(unittest.TestCase):
-    """R45: more than one target = not ready, blocker
-    ``multi_target_unsupported_until_modal_verified`` — and NO write, ever."""
+    """R45: more than one target on the historical chip-field modal (``targets_v1``)
+    = not ready, blocker ``multi_target_unsupported_until_modal_verified`` — and NO
+    write, ever. (On ``targets_v2`` — the live modal since 2026-09-14 — a multi-target
+    entry IS ready: see ModalV2WriteTests / ModalShapeTests.)"""
 
     BLOCKER = "multi_target_unsupported_until_modal_verified"
 
     def test_dry_run_two_targets_not_ready_with_r45_blocker_and_lists_targets(self):
         cand = _console_cand("1", [PS5_TARGET, PS4_TARGET])
-        result = _run(FakeSubmitSession([["1"]]), [cand])
+        result = _run(FakeSubmitSession([["1"]], modal_shape="targets_v1"), [cand])
         entry = result["plan"][0]
+        self.assertEqual(entry["modal_shape"], "targets_v1")
         self.assertFalse(entry["ready"])
         self.assertEqual(entry["blocker"], self.BLOCKER)
         self.assertIn("--inspect", entry["blocker_message"])
@@ -1067,13 +1091,14 @@ class MultiTargetGateTests(unittest.TestCase):
         self.assertIsNone(result["aborted"])
 
     def test_real_submit_two_targets_resolves_every_target_but_never_writes(self):
-        session = ConsoleCatalogWriteSession([["1"]])
+        session = ConsoleCatalogWriteSession([["1"]], modal_shape="targets_v1")
         cand = _console_cand("1", [PS5_TARGET, PS4_TARGET])
         result = _real(session, [cand], limit=1)
         entry = result["plan"][0]
         self.assertFalse(entry["ready"])
         self.assertEqual(entry["blocker"], self.BLOCKER)
         self.assertEqual(session.fill_calls, [])                       # no write
+        self.assertEqual(session.v2_calls, [])
         self.assertIsNone(session.last_target_value)
         self.assertEqual((result["write_attempts"], result["created"]), (0, 0))
         self.assertNotIn("submitted", entry)
@@ -1107,7 +1132,7 @@ class MultiTargetGateTests(unittest.TestCase):
         # (`ten_consecutive_failures`), halt the sweep and record a guard block — the
         # gate is a DESIGNED skip: not a StepGuard failure, counted in gated_multi_target.
         ids = [str(i) for i in range(12)]
-        session = FakeSubmitSession([ids + ["pc"]])
+        session = FakeSubmitSession([ids + ["pc"]], modal_shape="targets_v1")
         approved = [_console_cand(i, [PS5_TARGET, PS4_TARGET]) for i in ids] + [_cand("pc")]
         sub = DryRunSubmitter(session)
         sub.feed_ui_render_waits = (); sub.modal_ctx_waits = ()
@@ -1131,31 +1156,36 @@ class MultiTargetGateTests(unittest.TestCase):
         self.assertEqual(result["stopped"], "ten_consecutive_failures")
         self.assertEqual(result["gated_multi_target"], 0)
         # Real write path: gated entries never touch the guard either (write_attempts 0).
-        session = ConsoleCatalogWriteSession([ids])
+        session = ConsoleCatalogWriteSession([ids], modal_shape="targets_v1")
         result = _real(session, [_console_cand(i, [PS5_TARGET, PS4_TARGET]) for i in ids], limit=5)
         self.assertIsNone(result["stopped"])
         self.assertEqual((result["gated_multi_target"], result["write_attempts"], result["created"]), (12, 0, 0))
         self.assertEqual(session.fill_calls, [])
 
     def test_process_refuses_a_multi_target_entry_even_if_marked_ready(self):
-        # Defence in depth: the write _process never enters "the first target only".
+        # Defence in depth: the write _process never enters "the first target only" —
+        # a multi-target entry without a proven targets_v2 shape is refused.
         session = ConsoleCatalogWriteSession([["1"]])
         sub = Submitter(session)
-        entry = {
-            "offer_id": "1", "ready": True, "aks_product_id": "85105",
-            "region_select": "offer[region]", "region_id": "88ps5h", "region_text": "PS5 (88ps5h)",
-            "edition_select": "offer[edition]", "edition_id": "1", "edition_text": "Standard",
-            "targets": [dict(PS5_TARGET), dict(PS4_TARGET)],
-        }
-        self.assertFalse(sub._process(entry, _console_cand("1", [PS5_TARGET, PS4_TARGET]), {}))
-        self.assertFalse(entry["ready"])
-        self.assertEqual(entry["blocker"], self.BLOCKER)
+        for shape in (None, "targets_v1", "unknown"):
+            entry = {
+                "offer_id": "1", "ready": True, "aks_product_id": "85105",
+                "region_select": "offer[region]", "region_id": "88ps5h", "region_text": "PS5 (88ps5h)",
+                "edition_select": "offer[edition]", "edition_id": "1", "edition_text": "Standard",
+                "targets": [dict(PS5_TARGET), dict(PS4_TARGET)],
+            }
+            if shape is not None:
+                entry["modal_shape"] = shape
+            self.assertFalse(sub._process(entry, _console_cand("1", [PS5_TARGET, PS4_TARGET]), {}))
+            self.assertFalse(entry["ready"])
+            self.assertEqual(entry["blocker"], self.BLOCKER)
         self.assertEqual(session.fill_calls, [])
+        self.assertEqual(session.v2_calls, [])
 
     def test_inspect_still_dumps_the_modal_of_a_gated_multi_target_entry(self):
         # The blocker points to --inspect: the read-only dump of exactly this modal is
         # the observation the gate waits for, so inspect does not skip it.
-        session = FakeInspectSession([["1"]])
+        session = FakeInspectSession([["1"]], modal_shape="targets_v1")
         result = _inspect(session, [_console_cand("1", [PS5_TARGET, PS4_TARGET])])
         entry = result["plan"][0]
         self.assertEqual(session.inspect_calls, 1)
@@ -1562,6 +1592,25 @@ class FillThenClickTrustedTests(unittest.TestCase):
         self.assertEqual(called, [])
         self.assertNotIn("target_add", result)
 
+    def test_no_add_button_stops_the_v1_flow_before_the_click(self):
+        # 2026-09-14: on the chip-field modal an uncommitted target (no add-button, no
+        # Enter fallback any more) must NOT reach the validity gate / the Create click.
+        prep = {"status": "PREPARED", "region_options": ["9"], "edition_options": ["1"],
+                "button": {}, "pre_existing": {"success": 0, "error": 0}}
+        click = {"status": "CLICKED", "mode": "trusted"}
+        sess = self._sess(prep, self._pick("9"), self._pick("1"), click, {"status": "SUCCESS"})
+        sess.add_target_trusted = lambda val: {"status": "NO_ADD_BUTTON", "value": val,
+                                               "reason": "add-button not found — no Enter fallback"}
+        clicked = []
+        sess.click_trusted_at_element = lambda selector=None: clicked.append(selector) or click
+        result = sess.fill_then_click_trusted(
+            "offer[region]", "9", "offer[edition]", "1", target_value="210529")
+        self.assertEqual(result["status"], "NO_ADD_BUTTON")
+        self.assertIn("no Enter fallback", result["reason"])
+        self.assertEqual(clicked, [])
+        self.assertNotIn("form_validity", result)
+        self.assertEqual(len(sess._cleanup_called), 1)
+
 
 class SelectViaTrustedTests(unittest.TestCase):
     def _sess(self, evaluate_readonly_results):
@@ -1864,15 +1913,21 @@ class AddTargetTrustedTests(unittest.TestCase):
             sess._calls["clicks"], ["#TB_ajaxContent input[name=\"offer[targets][]\"]"]
         )
 
-    def test_enter_fallback_when_no_add_button(self):
+    def test_no_add_button_fails_closed_without_enter(self):
+        # 2026-09-14: the trusted-Enter commit fallback is REMOVED — the modal form
+        # (method=get, no action) submits natively on Enter = an uncontrolled write.
+        # No add-button → NO_ADD_BUTTON, no key event of any kind, no readback claim.
         sess = self._sess(add_button_status="NO_ELEMENT")
         diag = sess.add_target_trusted("210529")
-        self.assertEqual(diag["status"], "ADDED")
-        self.assertEqual(diag["commit"], "enter")
-        # Enter fallback is a trusted keyDown + keyUp (keyCode 13).
-        keys = [c for c in sess._calls["cmds"] if c[0] == "Input.dispatchKeyEvent"]
-        self.assertEqual([k[1]["type"] for k in keys], ["keyDown", "keyUp"])
-        self.assertTrue(all(k[1]["windowsVirtualKeyCode"] == 13 for k in keys))
+        self.assertEqual(diag["status"], "NO_ADD_BUTTON")
+        self.assertNotIn("commit", diag)
+        self.assertIn("no Enter fallback", diag["reason"])
+        self.assertFalse(any(c[0] == "Input.dispatchKeyEvent" for c in sess._calls["cmds"]))
+        self.assertEqual([c[0] for c in sess._calls["cmds"]], ["Input.insertText"])
+
+    def test_no_enter_primitive_exists_on_the_write_session(self):
+        from src.submit_session import WriteSubmitSession
+        self.assertFalse(hasattr(WriteSubmitSession, "_press_enter"))
 
     def test_only_trusted_input_primitives_used(self):
         sess = self._sess()
@@ -2613,7 +2668,8 @@ class _SearchFake:
         return "OPENED"
 
     def modal_context(self):
-        return {"ok": True, "select_names": ["offer[region]", "offer[edition]"]}
+        return {"ok": True, "select_names": ["offer[region]", "offer[edition]"],
+                "modal_shape": "targets_v2"}
 
 
 class SearchLocateTests(unittest.TestCase):
@@ -2875,7 +2931,7 @@ class SweepProveGoneBySearchTests(unittest.TestCase):
         sub._verify_gone = lambda *a, **k: (calls.append(k) or (True, {}, {}))
         ctx = self._ctx()
         entry = {"ready": True, "offer_id": "1", "region_select": "offer[region]", "region_id": "2",
-                 "edition_select": "offer[edition]", "edition_id": "1"}
+                 "edition_select": "offer[edition]", "edition_id": "1", "modal_shape": "targets_v1"}
         ok = sub._process(entry, {"offer": {"offer_id": "1", "name": "A", "url": "https://m/a"}}, ctx)
         self.assertTrue(ok)
         self.assertTrue(calls[0]["search_locate"])              # the proof went through the SEARCH
@@ -2888,7 +2944,7 @@ class SweepProveGoneBySearchTests(unittest.TestCase):
         sub._verify_gone = lambda *a, **k: (True, {"9": {"offer_id": "9"}}, {"https://m/z": {"offer_id": "9"}})
         ctx = self._ctx(search_locate=True)
         entry = {"ready": True, "offer_id": "1", "region_select": "offer[region]", "region_id": "2",
-                 "edition_select": "offer[edition]", "edition_id": "1"}
+                 "edition_select": "offer[edition]", "edition_id": "1", "modal_shape": "targets_v1"}
         sub._process(entry, {"offer": {"offer_id": "1", "name": "A", "url": "https://m/a"}}, ctx)
         self.assertEqual(set(ctx["index"]), {"9"})              # unchanged by-urls behaviour
 
@@ -3078,7 +3134,7 @@ class PostSaveProofRetryTests(unittest.TestCase):
                "index": {"1": {"offer_id": "1"}, "2": {"offer_id": "2"}}, "by_url": {"https://m/a": {"offer_id": "1"}},
                "window_pages": [30], "search_locate": False, "prove_gone_by_search": True}
         entry = {"ready": True, "offer_id": "1", "region_select": "offer[region]", "region_id": "2",
-                 "edition_select": "offer[edition]", "edition_id": "1"}
+                 "edition_select": "offer[edition]", "edition_id": "1", "modal_shape": "targets_v1"}
         ok = sub._process(entry, {"offer": {"offer_id": "1", "name": "A", "url": "https://m/a"}}, ctx)
         self.assertTrue(ok)
         self.assertEqual([k["search_locate"] for k in calls], [True, True])
@@ -3086,3 +3142,617 @@ class PostSaveProofRetryTests(unittest.TestCase):
         self.assertIn("no response within 45s", entry["post_save_proof_retry"])
         self.assertEqual(entry["post_save"], "gone from feed (available=all)")
 
+
+
+# ---------------------------------------------------------------------------
+# Modal v2 (2026-09-14): region + edition PER TARGET ROW. Romain's confirmations of
+# 2026-09-14: the button next to the target input ADDS a row; empty overrides inherit
+# the globals (still set explicitly); at most "3 ou 4" targets → MAX_TARGETS_PER_OFFER=3.
+# The DOM fake below is driven by the REAL WriteSubmitSession.fill_targets_v2_trusted
+# (borrowed unbound), so the add-row click, the per-row fill, the readbacks and the
+# drift / count gates under test are the production code.
+# ---------------------------------------------------------------------------
+from src.submit_session import (  # noqa: E402
+    _TRUSTED_CLEANUP_JS, _TRUSTED_POLL_JS, WriteSubmitSession,
+)
+from src.submitter import (  # noqa: E402
+    MAX_TARGETS_PER_OFFER, MODAL_SHAPE_BLOCKER, TOO_MANY_TARGETS_BLOCKER,
+    TOO_MANY_TARGETS_BLOCKER_MESSAGE,
+)
+
+
+class V2ModalDom:
+    """Pure-state emulation of the v2 Create-offer modal: the two global selects, a
+    list of target rows (target input + region/edition override selects), the add-row
+    button after the LAST row's input, HTML5 validity computed from the filled rows."""
+
+    TARGET_PATTERN = re.compile(r"^(?:\d+|https?://.+)$")
+
+    def __init__(self, *, add_row_works=True, add_button_type="button", rows_per_add=1):
+        self.globals = {"offer[region]": "", "offer[edition]": ""}
+        self.rows = [self._row(0)]
+        self.focused = None
+        self.add_row_works = add_row_works
+        self.add_button_type = add_button_type   # the <button> `type` property
+        self.rows_per_add = rows_per_add
+        self.add_clicks = 0
+        self.create_clicks = 0
+        self.enter_presses = 0
+
+    @staticmethod
+    def _row(index):
+        return {"index": index, "target": "", "region": "", "edition": ""}
+
+    def _locate(self, name):
+        if name in self.globals:
+            return ("global", name)
+        m = re.fullmatch(r"offer\[targets\]\[(\d+)\]\[(region|edition)\]", name)
+        if m and int(m.group(1)) < len(self.rows):
+            return ("row", (int(m.group(1)), m.group(2)))
+        return None
+
+    def set_select(self, name, value):
+        where = self._locate(name)
+        if where is None:
+            return False
+        if where[0] == "global":
+            self.globals[name] = value
+        else:
+            index, kind = where[1]
+            self.rows[index][kind] = value
+        return True
+
+    def get_select(self, name):
+        where = self._locate(name)
+        if where is None:
+            return None
+        if where[0] == "global":
+            return self.globals[name]
+        index, kind = where[1]
+        return self.rows[index][kind]
+
+    def readback_select(self, name):
+        value = self.get_select(name)
+        if value is None:
+            return {"ok": False}
+        return {"ok": True, "select_value": value, "selectize_value": value,
+                "is_open": False, "validity_valid": True}
+
+    def _sel(self, value):
+        return {"present": True, "select_value": value, "selectize_value": value, "is_open": False}
+
+    def readback_targets(self):
+        rows = [{
+            "index": r["index"], "target_value": r["target"], "target_visible": True,
+            "target_required": True,
+            "target_valid": bool(self.TARGET_PATTERN.match(r["target"])),
+            "region": self._sel(r["region"]), "edition": self._sel(r["edition"]),
+        } for r in self.rows]
+        return {"ok": True, "count": 0, "inputs": [], "row_count": len(rows), "rows": rows}
+
+    def form_validity(self):
+        invalid = []
+        for name, value in self.globals.items():
+            if not value:       # Selectize's own required text input stays empty
+                invalid.append({"name": None, "type": "text", "required": True,
+                                "visible": True, "valueMissing": True})
+        for r in self.rows:
+            if not self.TARGET_PATTERN.match(r["target"]):
+                invalid.append({"name": f"offer[targets][{r['index']}][target]", "type": "text",
+                                "required": True, "visible": True,
+                                "valueMissing": not r["target"],
+                                "patternMismatch": bool(r["target"])})
+        return {"ok": True, "form_valid": not invalid,
+                "checked": 2 + 3 * len(self.rows), "invalid_required": invalid}
+
+    def add_row_probe(self):
+        return {"ok": True, "last_row": len(self.rows) - 1, "tag": "BUTTON",
+                "type_prop": self.add_button_type,
+                "type_attr": None if self.add_button_type == "submit" else self.add_button_type,
+                "klass": "button", "attrs": ["class", "type"], "text": "+", "visible": True,
+                "submit_like": self.add_button_type != "button",
+                "x": 10, "y": 10, "width": 20, "height": 20,
+                "top": 10, "left": 10, "bottom": 30, "right": 30,
+                "viewport": {"w": 1280, "h": 720}, "add_row": True}
+
+    def click_add(self):
+        self.add_clicks += 1
+        if self.add_row_works:
+            for _ in range(self.rows_per_add):
+                self.rows.append(self._row(len(self.rows)))
+
+    def focus(self, index):
+        if index < len(self.rows):
+            self.focused = index
+            return True
+        return False
+
+    def insert_text(self, text):
+        assert self.focused is not None, "insertText with no focused target input"
+        self.rows[self.focused]["target"] += text
+
+
+class V2DomWriteSession(ConsoleCatalogWriteSession):
+    """Feed fake + the REAL v2 fill flow over a V2ModalDom: the production
+    ``fill_targets_v2_trusted`` / ``_fill_target_row_trusted`` /
+    ``_add_target_row_trusted`` run against CDP primitives stubbed on the DOM."""
+
+    fill_targets_v2_trusted = WriteSubmitSession.fill_targets_v2_trusted
+    _fill_target_row_trusted = WriteSubmitSession._fill_target_row_trusted
+    _add_target_row_trusted = WriteSubmitSession._add_target_row_trusted
+    _scroll_rect_into_viewport = WriteSubmitSession._scroll_rect_into_viewport
+
+    def __init__(self, pages, *, dom=None, pick_failures=None, on_validity=None, **kw):
+        super().__init__(pages, **kw)
+        self.dom = dom or V2ModalDom()
+        self.pick_failures = dict(pick_failures or {})
+        self.on_validity = on_validity        # hook run right before the validity probe
+        self.cmds = []
+        self.cleanups = 0
+        self.prep_calls = 0
+        self.picks = []
+        # FakeWriteSession stores a `form_validity` ATTRIBUTE (its v1 mock's canned
+        # verdict); the real v2 flow calls form_validity() — bind the DOM one instead.
+        self.form_validity = self._dom_form_validity
+
+    def _evaluate(self, js):
+        if js == _TRUSTED_CLEANUP_JS:
+            self.cleanups += 1
+            return True
+        if js == _TRUSTED_POLL_JS:
+            return {"status": self.create_status, "polls": 1, "requests": [],
+                    "signal": self.create_signal or ""}
+        if "__s18taps" in js and "PREPARED" in js:
+            self.prep_calls += 1
+            return {"status": "PREPARED", "region_options": [], "edition_options": [],
+                    "button": {"disabled": False, "visible": True, "text": "Create offer"},
+                    "pre_existing": {"success": 1, "error": 1}}
+        raise AssertionError("unexpected _evaluate: " + js[:60])
+
+    def evaluate_readonly(self, js):
+        raise AssertionError("every read path is stubbed on the DOM: " + js[:60])
+
+    def _cmd(self, method, params=None):
+        self.cmds.append((method, params))
+        if method == "Input.insertText":
+            self.dom.insert_text(params["text"])
+        elif method == "Input.dispatchKeyEvent" and (params or {}).get("key") == "Enter":
+            self.dom.enter_presses += 1
+        return {}
+
+    def _trusted_click_at_rect(self, rect):
+        if rect.get("add_row"):
+            self.dom.click_add()
+        return {"cx": 20.0, "cy": 20.0, "delay_ms": 0}
+
+    def _add_row_button_probe(self):
+        return self.dom.add_row_probe()
+
+    def _readback_targets(self):
+        return self.dom.readback_targets()
+
+    def _readback_select(self, name):
+        return self.dom.readback_select(name)
+
+    def _dom_form_validity(self):
+        if self.on_validity is not None:
+            self.on_validity(self.dom)
+        return self.dom.form_validity()
+
+    def click_target_probe(self, selector="#TB_ajaxContent .button-primary"):
+        return {"ok": True, "is_target": True, "at": "BUTTON.modal-choice.button",
+                "any_selectize_dropdown_open": False}
+
+    def select_via_trusted(self, select_name, value_id, query=None):
+        self.picks.append((select_name, str(value_id), query))
+        if select_name in self.pick_failures:
+            return {"status": self.pick_failures[select_name], "select_name": select_name,
+                    "value_id": str(value_id)}
+        if not self.dom.set_select(select_name, str(value_id)):
+            return {"status": "NO_SELECTIZE_INPUT", "select_name": select_name,
+                    "reason": "no_select"}
+        return {"status": "SELECTED", "select_name": select_name, "value_id": str(value_id),
+                "query": query, "readback": self.dom.readback_select(select_name)}
+
+    def click_trusted_at_element(self, selector="#TB_ajaxContent .button-primary"):
+        m = re.search(r"offer\[targets\]\[(\d+)\]\[target\]", selector)
+        if m:
+            ok = self.dom.focus(int(m.group(1)))
+            return {"status": "CLICKED" if ok else "NO_ELEMENT", "selector": selector,
+                    "mode": "trusted"}
+        if selector.endswith(".button-primary"):
+            self.dom.create_clicks += 1
+            if self.create_status in ("SUCCESS", "NO_SIGNAL") and self.create_removes:
+                self.created.add(self._last_opened)
+            return {"status": "CLICKED", "selector": selector, "mode": "trusted"}
+        return {"status": "NO_ELEMENT", "selector": selector, "mode": "trusted"}
+
+
+class ModalV2WriteTests(unittest.TestCase):
+    """The v2 write end-to-end (run loop → real fill flow → DOM fake → post-save proof)."""
+
+    def setUp(self):
+        import unittest.mock as mock
+        mock.patch("src.submit_session.time.sleep").start()
+        self.addCleanup(mock.patch.stopall)
+
+    def _rows(self, dom):
+        return [(r["target"], r["region"], r["edition"]) for r in dom.rows]
+
+    def test_single_target_fills_row_0_and_overrides_then_one_create_click(self):
+        session = V2DomWriteSession([["1", "2"]])
+        result = _real(session, [_cand("1")], limit=1)
+        entry = result["plan"][0]
+        self.assertEqual(entry["modal_shape"], "targets_v2")
+        self.assertTrue(entry["ready"]); self.assertTrue(entry["submitted"])
+        self.assertEqual((result["write_attempts"], result["created"]), (1, 1))
+        self.assertEqual(entry["post_save"], "gone from feed (available=all)")
+        dom = session.dom
+        self.assertEqual(dom.globals, {"offer[region]": "2", "offer[edition]": "1"})
+        self.assertEqual(self._rows(dom), [("1", "2", "1")])           # row 0 = the PC page
+        self.assertEqual((dom.add_clicks, dom.create_clicks, dom.enter_presses), (0, 1, 0))
+        # Order: globals (primary ids) first, then row 0's overrides — set EXPLICITLY.
+        self.assertEqual(session.picks, [
+            ("offer[region]", "2", "Steam (2)"), ("offer[edition]", "1", "Standard"),
+            ("offer[targets][0][region]", "2", "Steam (2)"),
+            ("offer[targets][0][edition]", "1", "Standard"),
+        ])
+        # The id is typed with Input.insertText only — no key event, no Enter.
+        self.assertEqual(session.cmds, [("Input.insertText", {"text": "1"})])
+        create = entry["create"]
+        self.assertEqual(create["status"], "SUCCESS")
+        self.assertEqual(create["modal_shape"], "targets_v2")
+        self.assertEqual(create["targets_count"], 1)
+        self.assertEqual(create["rows"][0]["fill"]["status"], "ROW_FILLED")
+        self.assertNotIn("add", create["rows"][0])
+        self.assertEqual(create["pre_click_readback"]["targets"]["row_count"], 1)
+        self.assertEqual(session.cleanups, 0)
+
+    def test_two_targets_add_one_row_fill_both_click_once(self):
+        session = V2DomWriteSession([["1"]])
+        result = _real(session, [_console_cand("1", [PS5_TARGET, PS4_TARGET])], limit=1)
+        entry = result["plan"][0]
+        self.assertTrue(entry["ready"]); self.assertTrue(entry["submitted"])
+        self.assertEqual(result["gated_multi_target"], 0)
+        dom = session.dom
+        self.assertEqual((dom.add_clicks, dom.create_clicks, dom.enter_presses), (1, 1, 0))
+        self.assertEqual(self._rows(dom), [("85105", "88ps5h", "1"), ("85104", "88", "1")])
+        self.assertEqual(dom.globals["offer[region]"], "88ps5h")        # primary = row 0
+        create = entry["create"]
+        self.assertEqual(create["rows"][1]["add"]["status"], "ROW_ADDED")
+        self.assertEqual(create["rows"][1]["add"]["add_button"]["type_prop"], "button")
+        self.assertEqual([r["fill"]["status"] for r in create["rows"]], ["ROW_FILLED"] * 2)
+        self.assertEqual(session.picks[2:], [
+            ("offer[targets][0][region]", "88ps5h", "PS5 (88ps5h)"),
+            ("offer[targets][0][edition]", "1", "Standard"),
+            ("offer[targets][1][region]", "88", "Playstation Game Code GLOBAL (88)"),
+            ("offer[targets][1][edition]", "1", "Standard"),
+        ])
+        self.assertEqual([c[1]["text"] for c in session.cmds], ["85105", "85104"])
+
+    def test_three_targets_is_the_cap_and_writes_three_rows(self):
+        session = V2DomWriteSession([["1"]])
+        cand = _console_cand("1", [PS5_TARGET, PS4_TARGET, XBOX_PC_TARGET])
+        result = _real(session, [cand], limit=1)
+        self.assertTrue(result["plan"][0]["submitted"])
+        dom = session.dom
+        self.assertEqual(dom.add_clicks, 2)
+        self.assertEqual(self._rows(dom),
+                         [("85105", "88ps5h", "1"), ("85104", "88", "1"), ("26712", "306", "1")])
+        # The BOM-prefixed catalog text is typed without U+FEFF on the row too.
+        self.assertIn(("offer[targets][2][region]", "306", "Xbox/PC GLOBAL (306)"), session.picks)
+
+    def test_add_row_failure_is_target_row_not_added_and_no_click(self):
+        session = V2DomWriteSession([["1"]], dom=V2ModalDom(add_row_works=False))
+        result = _real(session, [_console_cand("1", [PS5_TARGET, PS4_TARGET])], limit=1)
+        entry = result["plan"][0]
+        self.assertEqual(entry["create"]["status"], "TARGET_ROW_NOT_ADDED")
+        self.assertIn("row 1 absent", entry["create"]["reason"])
+        self.assertFalse(entry.get("submitted"))
+        self.assertIn("create not confirmed: TARGET_ROW_NOT_ADDED", entry["post_save"])
+        dom = session.dom
+        self.assertEqual((dom.add_clicks, dom.create_clicks), (1, 0))     # clicked add, NEVER Create
+        self.assertEqual(self._rows(dom), [("85105", "88ps5h", "1")])     # row 0 filled, no partial write
+        self.assertEqual(session.cleanups, 1)
+        self.assertEqual(session.page_offer_ids(), ["1"])                # row not consumed
+        self.assertEqual((result["write_attempts"], result["created"]), (1, 0))
+
+    def test_submit_like_add_button_is_never_clicked(self):
+        # UNVERIFIED live: the add-row button's type. A <button> whose type is not
+        # 'button' would natively submit the method=get form — refuse to click it.
+        session = V2DomWriteSession([["1"]], dom=V2ModalDom(add_button_type="submit"))
+        result = _real(session, [_console_cand("1", [PS5_TARGET, PS4_TARGET])], limit=1)
+        entry = result["plan"][0]
+        self.assertEqual(entry["create"]["status"], "ADD_BUTTON_UNSAFE")
+        self.assertIn("type='submit'", entry["create"]["reason"])
+        self.assertEqual((session.dom.add_clicks, session.dom.create_clicks), (0, 0))
+        self.assertEqual(session.cleanups, 1)
+
+    def test_add_row_producing_two_rows_is_a_count_mismatch(self):
+        session = V2DomWriteSession([["1"]], dom=V2ModalDom(rows_per_add=2))
+        result = _real(session, [_console_cand("1", [PS5_TARGET, PS4_TARGET])], limit=1)
+        self.assertEqual(result["plan"][0]["create"]["status"], "TARGETS_COUNT_MISMATCH")
+        self.assertEqual(session.dom.create_clicks, 0)
+
+    def test_row_drift_before_click_fails_closed(self):
+        def drift(dom):
+            dom.rows[1]["region"] = "999"       # something re-picked row 1's region
+        session = V2DomWriteSession([["1"]], on_validity=drift)
+        result = _real(session, [_console_cand("1", [PS5_TARGET, PS4_TARGET])], limit=1)
+        entry = result["plan"][0]
+        self.assertEqual(entry["create"]["status"], "VALUE_DRIFTED_BEFORE_CLICK")
+        self.assertIn("row 1 region reads ['999']", entry["create"]["reason"])
+        self.assertEqual(session.dom.create_clicks, 0)
+        self.assertEqual(session.cleanups, 1)
+        self.assertFalse(entry.get("submitted"))
+
+    def test_target_value_drift_and_global_drift_fail_closed(self):
+        def drift_target(dom):
+            dom.rows[0]["target"] = "42"
+        session = V2DomWriteSession([["1"]], on_validity=drift_target)
+        entry = _real(session, [_cand("1")], limit=1)["plan"][0]
+        self.assertEqual(entry["create"]["status"], "VALUE_DRIFTED_BEFORE_CLICK")
+        self.assertIn("row 0 target reads '42'", entry["create"]["reason"])
+        self.assertEqual(session.dom.create_clicks, 0)
+
+        def drift_global(dom):
+            dom.globals["offer[edition]"] = "7"
+        session = V2DomWriteSession([["1"]], on_validity=drift_global)
+        entry = _real(session, [_cand("1")], limit=1)["plan"][0]
+        self.assertEqual(entry["create"]["status"], "VALUE_DRIFTED_BEFORE_CLICK")
+        self.assertIn("edition reads '7'", entry["create"]["reason"])
+        self.assertEqual(session.dom.create_clicks, 0)
+
+    def test_row_override_pick_failure_stops_before_the_click(self):
+        session = V2DomWriteSession([["1"]], pick_failures={"offer[targets][1][edition]": "NO_OPTION"})
+        entry = _real(session, [_console_cand("1", [PS5_TARGET, PS4_TARGET])], limit=1)["plan"][0]
+        self.assertEqual(entry["create"]["status"], "NO_ROW_EDITION_PICK")
+        self.assertEqual(entry["create"]["rows"][1]["fill"]["edition_pick"]["status"], "NO_OPTION")
+        self.assertEqual(session.dom.create_clicks, 0)
+        self.assertEqual(session.cleanups, 1)
+
+    def test_form_invalid_after_the_rows_blocks_the_click(self):
+        def wipe(dom):
+            dom.rows[0]["target"] = ""          # the page cleared the target (whatever reason)
+        session = V2DomWriteSession([["1"]], on_validity=wipe)
+        entry = _real(session, [_cand("1")], limit=1)["plan"][0]
+        self.assertEqual(entry["create"]["status"], "FORM_INVALID")
+        self.assertIn("offer[targets][0][target]", entry["post_save"])
+        self.assertEqual(session.dom.create_clicks, 0)
+
+    def test_direct_call_refuses_a_non_v2_modal_and_an_empty_target_list(self):
+        session = V2DomWriteSession([["1"]], modal_shape="targets_v1")
+        target = {"aks_product_id": "1", "region_id": "2", "edition_id": "1"}
+        diag = session.fill_targets_v2_trusted([target], "offer[region]", "offer[edition]")
+        self.assertEqual(diag["status"], "MODAL_SHAPE_MISMATCH")
+        self.assertEqual(session.prep_calls, 0)
+        session = V2DomWriteSession([["1"]])
+        self.assertEqual(session.fill_targets_v2_trusted([], "offer[region]", "offer[edition]")["status"],
+                         "NO_TARGETS")
+        self.assertEqual(session.prep_calls, 0)
+
+    def test_empty_row_id_is_never_guessed(self):
+        session = V2DomWriteSession([["1"]])
+        diag = session.fill_targets_v2_trusted(
+            [{"aks_product_id": "", "region_id": "2", "edition_id": "1"}],
+            "offer[region]", "offer[edition]")
+        self.assertEqual(diag["status"], "NO_TARGET_ID")
+        self.assertEqual(session.dom.create_clicks, 0)
+        self.assertEqual(session.cleanups, 1)
+
+    def test_still_in_feed_after_a_v2_create_is_a_failure(self):
+        session = V2DomWriteSession([["1"]], create_removes=False)
+        entry = _real(session, [_cand("1")], limit=1)["plan"][0]
+        self.assertEqual(session.dom.create_clicks, 1)
+        self.assertFalse(entry["submitted"])
+        self.assertIn("STILL in feed", entry["post_save"])
+
+
+class ModalShapeTests(unittest.TestCase):
+    """Shape detection (read-only) and the shape-aware gates in _prepare / _process."""
+
+    def _session_with_ctx(self, raw):
+        from src.submit_session import SubmitSession
+        sess = SubmitSession.__new__(SubmitSession)
+        sess.evaluate_readonly = lambda js: raw
+        return sess
+
+    def test_modal_context_reports_shape_and_detail(self):
+        raw = json.dumps({"ok": True, "select_names": ["offer[edition]", "offer[region]",
+                                                        "offer[targets][0][edition]",
+                                                        "offer[targets][0][region]"],
+                          "modal_shape": "targets_v2",
+                          "modal_shape_detail": {"v2_target0": True, "v2_region0": True,
+                                                 "v2_edition0": True, "v1_input": False}})
+        ctx = self._session_with_ctx(raw).modal_context()
+        self.assertEqual(ctx["modal_shape"], "targets_v2")
+        self.assertTrue(ctx["modal_shape_detail"]["v2_target0"])
+        self.assertEqual(self._session_with_ctx("").modal_context(), {"ok": False, "select_names": []})
+
+    def test_shape_js_and_v2_probes_are_readonly_safe(self):
+        from src.cdp_session import is_readonly_expression
+        from src.submit_session import (
+            _ADD_ROW_BUTTON_PROBE_JS, _MODAL_CTX_JS, _TARGETS_PROBE_JS, _TARGETS_READBACK_JS,
+        )
+        for js in (_MODAL_CTX_JS, _ADD_ROW_BUTTON_PROBE_JS, _TARGETS_READBACK_JS, _TARGETS_PROBE_JS):
+            self.assertTrue(is_readonly_expression(js))
+        # The shape probe names exactly the observed controls (run 20260914-inspect-consoles).
+        for name in ("offer[targets][0][target]", "offer[targets][0][region]",
+                     "offer[targets][0][edition]", "offer[targets][]"):
+            self.assertIn(name, _MODAL_CTX_JS)
+        self.assertIn("next_sib_button", _TARGETS_PROBE_JS)      # --inspect exposes the add button
+        self.assertIn("data-action-submit", _ADD_ROW_BUTTON_PROBE_JS)
+
+    def test_targets_readback_parses_both_shapes(self):
+        sess = WriteSubmitSession.__new__(WriteSubmitSession)
+        sess.evaluate_readonly = lambda js: json.dumps({
+            "ok": True, "count": 0, "inputs": [], "row_count": 1,
+            "rows": [{"index": 0, "target_value": "169678", "target_visible": True,
+                      "target_required": True, "target_valid": True,
+                      "region": {"present": True, "select_value": "24eu", "selectize_value": "24eu",
+                                 "is_open": False},
+                      "edition": {"present": True, "select_value": "1", "selectize_value": "1",
+                                  "is_open": False}}]})
+        rb = sess._readback_targets()
+        self.assertEqual(rb["rows"][0]["target_value"], "169678")
+        sess.evaluate_readonly = lambda js: ""
+        self.assertFalse(sess._readback_targets()["ok"])
+        self.assertFalse(sess._add_row_button_probe()["ok"])
+
+    def test_unknown_shape_blocks_every_entry_in_dry_run(self):
+        result = _run(FakeSubmitSession([["1", "2"]], modal_shape="unknown"), [_cand("1"), _cand("2")])
+        for entry in result["plan"]:
+            self.assertFalse(entry["ready"])
+            self.assertEqual(entry["modal_shape"], "unknown")
+            self.assertEqual(entry["blocker"], MODAL_SHAPE_BLOCKER)
+            self.assertIn("--inspect", entry["blocker_message"])
+            self.assertEqual(entry["modal"], "OPENED")            # the gate sits after the read-only checks
+            self.assertIn("NOT ready (modal_shape_unknown)", entry["would_submit"])
+
+    def test_session_without_a_shape_reads_unknown(self):
+        class _NoShape(FakeSubmitSession):
+            def modal_context(self):
+                return {"ok": True, "select_names": ["offer[region]", "offer[edition]"]}
+        entry = _run(_NoShape([["1"]]), [_cand("1")])["plan"][0]
+        self.assertEqual(entry["modal_shape"], "unknown")
+        self.assertEqual(entry["blocker"], MODAL_SHAPE_BLOCKER)
+
+    def test_unknown_shape_real_path_fills_nothing_and_feeds_the_streak(self):
+        ids = [str(i) for i in range(12)]
+        session = FakeWriteSession([ids], modal_shape="unknown")
+        result = _real(session, [_cand(i) for i in ids], limit=None)
+        self.assertEqual(session.fill_calls, []); self.assertEqual(session.v2_calls, [])
+        self.assertEqual((result["write_attempts"], result["created"]), (0, 0))
+        self.assertEqual(session.created, set())                            # nothing consumed
+        # A real blocker (unobserved tool): the streak stops the sweep after 10.
+        self.assertEqual(result["stopped"], "ten_consecutive_failures")
+        self.assertEqual(len(result["plan"]), 10)
+
+    def test_inspect_dumps_a_shape_unknown_entry(self):
+        session = FakeInspectSession([["1"]], modal_shape="unknown")
+        entry = _inspect(session, [_cand("1")])["plan"][0]
+        self.assertEqual(session.inspect_calls, 1)
+        self.assertEqual(entry["blocker"], MODAL_SHAPE_BLOCKER)
+        self.assertIn("targets_probe", entry)
+
+    def test_v1_single_target_routes_to_the_chip_field_flow(self):
+        session = FakeWriteSession([["1"]], modal_shape="targets_v1")
+        result = _real(session, [_cand("1")], limit=1)
+        self.assertEqual(session.fill_calls, [("offer[region]", "2", "offer[edition]", "1", "trusted")])
+        self.assertEqual(session.v2_calls, [])
+        self.assertEqual(session.last_target_value, "1")
+        self.assertTrue(result["plan"][0]["submitted"])
+        self.assertEqual(result["plan"][0]["modal_shape"], "targets_v1")
+
+    def test_v2_single_target_routes_to_the_row_flow_with_resolved_ids_and_queries(self):
+        session = FakeWriteSession([["1"]])
+        result = _real(session, [_cand("1")], limit=1)
+        self.assertEqual(session.v2_calls, [[{
+            "aks_product_id": "1", "region_id": "2", "edition_id": "1",
+            "region_query": "Steam (2)", "edition_query": "Standard",
+        }]])
+        self.assertTrue(result["plan"][0]["submitted"])
+        self.assertEqual(result["plan"][0]["create"]["modal_shape"], "targets_v2")
+
+    def test_v2_two_targets_are_ready_and_handed_whole_to_the_write(self):
+        session = ConsoleCatalogWriteSession([["1"]])
+        result = _real(session, [_console_cand("1", [PS5_TARGET, XBOX_PC_TARGET])], limit=1)
+        entry = result["plan"][0]
+        self.assertTrue(entry["ready"]); self.assertNotIn("blocker", entry)
+        self.assertEqual(result["gated_multi_target"], 0)
+        self.assertEqual(session.v2_calls, [[
+            {"aks_product_id": "85105", "region_id": "88ps5h", "edition_id": "1",
+             "region_query": "PS5 (88ps5h)", "edition_query": "Standard"},
+            {"aks_product_id": "26712", "region_id": "306", "edition_id": "1",
+             "region_query": "Xbox/PC GLOBAL (306)", "edition_query": "Standard"},   # BOM stripped
+        ]])
+        self.assertTrue(entry["submitted"])
+
+    def test_v2_second_target_unresolvable_still_blocks_with_no_write(self):
+        session = ConsoleCatalogWriteSession([["1"]])
+        ps4_eu = _target("85104", "88eu", platform="PS4", region_label="Playstation Game Code EUROPE")
+        entry = _real(session, [_console_cand("1", [PS5_TARGET, ps4_eu])], limit=1)["plan"][0]
+        self.assertFalse(entry["ready"])
+        self.assertIn("target 2/2 PS4 85104 (R45)", entry["blocker"])
+        self.assertEqual(session.v2_calls, [])
+
+    def test_v2_dry_run_would_submit_lists_the_rows(self):
+        entry = _run(FakeSubmitSession([["1"]]), [_console_cand("1", [PS5_TARGET, PS4_TARGET])])["plan"][0]
+        self.assertTrue(entry["ready"])
+        self.assertIn("targets_v2 rows [row 0: target=85105 region=88ps5h edition=1; "
+                      "row 1: target=85104 region=88 edition=1]", entry["would_submit"])
+        self.assertIn("NOT clicked — dry-run", entry["would_submit"])
+        pc = _run(FakeSubmitSession([["1"]]), [_cand("1")])["plan"][0]
+        self.assertIn("offer[region]=2", pc["would_submit"])
+        self.assertIn("row 0: target=1 region=2 edition=1", pc["would_submit"])
+
+    def test_plan_entry_carries_the_shape_detail_when_reported(self):
+        class _Detail(FakeSubmitSession):
+            def modal_context(self):
+                ctx = super().modal_context()
+                ctx["modal_shape_detail"] = {"v2_target0": True, "v2_region0": True,
+                                             "v2_edition0": True, "v1_input": False}
+                return ctx
+        entry = _run(_Detail([["1"]]), [_cand("1")])["plan"][0]
+        self.assertEqual(entry["modal_shape"], "targets_v2")
+        self.assertFalse(entry["modal_shape_detail"]["v1_input"])
+
+
+class TooManyTargetsTests(unittest.TestCase):
+    """MAX_TARGETS_PER_OFFER (Romain 2026-09-14: "3 ou 4 pour le moment" → 3)."""
+
+    FOUR = [PS5_TARGET, PS4_TARGET, XBOX_PC_TARGET,
+            _target("99999", "302", platform="XBOX_SERIES", region_label="Xbox Series EU Game Code")]
+
+    def test_cap_is_three(self):
+        self.assertEqual(MAX_TARGETS_PER_OFFER, 3)
+        self.assertEqual(TOO_MANY_TARGETS_BLOCKER, "too_many_targets")
+        self.assertEqual(TOO_MANY_TARGETS_BLOCKER_MESSAGE,
+                         "plus de 3 cibles — plafond du modal AKS (Romain 2026-09-14)")
+
+    def test_four_targets_blocked_before_the_modal_dry_run(self):
+        session = FakeSubmitSession([["1", "pc"]])
+        result = _run(session, [_console_cand("1", self.FOUR), _cand("pc")])
+        entry = result["plan"][0]
+        self.assertFalse(entry["ready"])
+        self.assertEqual(entry["blocker"], TOO_MANY_TARGETS_BLOCKER)
+        self.assertEqual(entry["blocker_message"], TOO_MANY_TARGETS_BLOCKER_MESSAGE)
+        self.assertNotIn("modal", entry); self.assertNotIn("page_url", entry)   # never opened
+        self.assertEqual(len(entry["targets"]), 4)
+        self.assertIn("NOT ready (too_many_targets)", entry["would_submit"])
+        self.assertIn("XBOX_SERIES page 99999", entry["would_submit"])
+        self.assertEqual(result["gated_too_many_targets"], 1)
+        self.assertEqual(result["gated_multi_target"], 0)
+        self.assertTrue(result["plan"][1]["ready"])                    # the PC one proceeds
+
+    def test_four_targets_real_path_fills_nothing_and_does_not_feed_the_streak(self):
+        ids = [str(i) for i in range(12)]
+        session = ConsoleCatalogWriteSession([ids])
+        sub = Submitter(session)
+        sub.feed_ui_render_waits = (); sub.modal_ctx_waits = ()
+        sub.empty_retry_wait_s = 0; sub.empty_confirm_waits = (0,)
+        result = sub.run(run_id="r", merchant="Driffle", store_id="127",
+                         approved=[_console_cand(i, self.FOUR) for i in ids])
+        self.assertIsNone(result["stopped"])
+        self.assertEqual(result["gated_too_many_targets"], 12)
+        self.assertEqual((result["write_attempts"], result["created"]), (0, 0))
+        self.assertEqual(session.fill_calls, []); self.assertEqual(session.v2_calls, [])
+        self.assertFalse(sub.guard.blocked)
+        self.assertEqual(sub.guard.snapshot()["counters"]["consecutive_failures"], 0)
+        self.assertEqual(session.created, set())                     # nothing consumed
+        self.assertTrue(all("modal" not in e for e in result["plan"]))   # no entry opened a modal
+
+    def test_three_targets_pass_the_cap(self):
+        entry = _run(FakeSubmitSession([["1"]]), [_console_cand("1", self.FOUR[:3])])["plan"][0]
+        self.assertTrue(entry["ready"])
+
+    def test_process_refuses_an_over_cap_entry_even_if_marked_ready(self):
+        session = ConsoleCatalogWriteSession([["1"]])
+        sub = Submitter(session)
+        entry = {"offer_id": "1", "ready": True, "modal_shape": "targets_v2",
+                 "region_select": "offer[region]", "region_id": "88ps5h",
+                 "edition_select": "offer[edition]", "edition_id": "1",
+                 "targets": [dict(t) for t in self.FOUR]}
+        self.assertFalse(sub._process(entry, _console_cand("1", self.FOUR), {}))
+        self.assertEqual(entry["blocker"], TOO_MANY_TARGETS_BLOCKER)
+        self.assertEqual(session.v2_calls, [])

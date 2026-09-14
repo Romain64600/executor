@@ -160,6 +160,156 @@ invalide` **even when the form is valid** (seen on Serious Sam HD Double Pack,
 GLOBAL/Bundle). Fail-closed handles it: `status=ERROR` → not submitted, no false
 success, batch continues. Not a regression.
 
+> **§4b step 2 is the `targets_v1` shape only.** Since the AKS feed-tool change
+> of 2026-09-14 the live modal is `targets_v2` (§4c) and `offer[targets][]` no
+> longer exists; the chip-field flow is kept as the old fallback, **minus its
+> trusted-Enter commit** (an Enter in this form submits it natively — removed,
+> `NO_ADD_BUTTON` fails closed instead).
+
+---
+
+## 4c. Modal v2 (2026-09-14): targets per row
+
+Romain changed the AKS feed tool on 2026-09-14: the "Create offer" modal now takes
+**region and edition PER TARGET PAGE**. Observed read-only by `scripts/05_submit.py
+--inspect` (run `20260914-inspect-consoles`, 3 plan entries — the DOM facts below
+come from `inspection.form_inputs`, `inspection.modal_selects`,
+`targets_probe.targets`, `form_validity`, `select_names`) and **confirmed by hand
+by Romain on 2026-09-14** (three confirmations, cited where they apply).
+
+### Observed DOM
+
+- **Global selects, unchanged:** `select[name="offer[region]"]` and
+  `select[name="offer[edition]"]` — Selectize, `required` through Selectize's own
+  text input (the two unnamed `selectize-input items required invalid` inputs).
+  Hidden prefilled `offer[merchant]` (number) and `offer[buy_url]` (url).
+- **Target row 0 (NEW):**
+  - `input[name="offer[targets][0][target]"]` — `type=text`, **required**,
+    `pattern="(\d+)|(https?://.+)"`, attribute `data-target-input`, visible;
+    its **next sibling is `button.button` — the add-row button**;
+  - `select[name="offer[targets][0][region]"]` — Selectize,
+    `data-target-override="region"`, **not** required;
+  - `select[name="offer[targets][0][edition]"]` — Selectize,
+    `data-target-override="edition"`, **not** required.
+- The old `input[name="offer[targets][]"]` **no longer exists**.
+- **Create button, unchanged:** `div#TB_window > div#TB_ajaxContent > div > form >
+  div.modal-choices > button.modal-choice.button.button-primary`
+  (`data-action-submit`, text "Create offer").
+- **The `<form>` has `method=get` and no `action`.** Pressing **Enter** inside one
+  of its text inputs would **submit the form natively = an uncontrolled write**.
+  No method of `submit_session.py` presses Enter in the modal any more
+  (`_press_enter` deleted; v1's Enter commit fallback → `NO_ADD_BUTTON`).
+- `select_names` now read `['offer[edition]', 'offer[region]',
+  'offer[targets][0][edition]', 'offer[targets][0][region]']` — `_prepare`'s
+  preference for `offer[region]` / `offer[edition]` still holds.
+
+**Romain's confirmations (2026-09-14):**
+1. the button next to the target input **adds a new target row** (works by hand)
+   — the code still **proves** row *i* exists after the click (readback), never
+   assumes it;
+2. **empty per-target region/edition inherit** the global `offer[region]` /
+   `offer[edition]` (tested by him) — the overrides are nevertheless **always set
+   explicitly** on every row; inheritance is never relied on;
+3. the modal takes **"3 ou 4 pour le moment"** targets — the submitter enforces a
+   hard cap **`MAX_TARGETS_PER_OFFER = 3`** per candidate (`src/submitter.py`).
+
+### Shape detection (read-only, every modal)
+
+`SubmitSession.modal_context()` (`_MODAL_CTX_JS`) reports `modal_shape`:
+`targets_v2` when row 0's three controls all exist in `#TB_ajaxContent`,
+`targets_v1` when `input[name="offer[targets][]"]` exists, else `unknown`
+(`modal_shape_detail` says which probes hit). `_prepare` stores it on the plan
+entry (`entry["modal_shape"]`) and gates on it **after** the read-only checks and
+the catalog resolution, **before** any write:
+
+- `unknown` → blocker **`modal_shape_unknown`** for **every** entry (nothing is
+  filled; message « la forme du modal Create offer n'est ni targets_v1 ni
+  targets_v2 — rien n'est saisi (fail-closed) ; --inspect pour observer le DOM »).
+  A **real** blocker: it feeds the StepGuard streak, so a changed tool stops a
+  sweep after 10 entries. `--inspect` still dumps such an entry's modal.
+- `targets_v1` + more than one target → the R45 blocker
+  `multi_target_unsupported_until_modal_verified` (unchanged message; a designed
+  skip, `gated_multi_target`).
+- `targets_v2` → **ready** once every target's region/edition resolved in the
+  live catalog (`_resolve_from_catalog`, per target; the per-target `*_text` is
+  the Selectize query, BOM-stripped). Single-target candidates (every PC offer)
+  follow the same v2 path with one row — **the only working path since the tool
+  change**.
+- more than `MAX_TARGETS_PER_OFFER` targets → blocker **`too_many_targets`**
+  (message « plus de 3 cibles — plafond du modal AKS (Romain 2026-09-14) »),
+  set **before** the row is located or its modal opened; a designed skip
+  (`gated_too_many_targets`, no guard streak).
+
+Dry-run `would_submit` for v2 lists the rows: `set offer[region]=…,
+offer[edition]=…, targets_v2 rows [row 0: target=<id> region=<id>
+edition=<id>; row 1: …], click .button-primary (NOT clicked — dry-run)`.
+
+### Fill order (`WriteSubmitSession.fill_targets_v2_trusted`, trusted CDP only)
+
+0. Read-only shape check on the open modal → `MODAL_SHAPE_MISMATCH` if it does
+   not read `targets_v2`; an empty target list → `NO_TARGETS`.
+1. Prep JS (network taps + pre-existing signal snapshot; NO fill).
+2. **Global `offer[region]` / `offer[edition]`** via `select_via_trusted` with the
+   **primary** (first) target's ids and typed catalog text — SC3 readback inside
+   → `NO_REGION_PICK` / `NO_EDITION_PICK`.
+3. **Row 0** (`_fill_target_row_trusted`): trusted focus click on
+   `input[name="offer[targets][0][target]"]` (`NO_TARGET_INPUT`),
+   `Input.insertText(aks_product_id)` — **no add-row click, no Enter** — readback:
+   the row's target value must **equal** the id (`TARGET_VALUE_MISMATCH`; an
+   empty id is never guessed: `NO_TARGET_ID`); then the two overrides
+   **explicitly**: `select_via_trusted("offer[targets][0][region]", region_id,
+   query=text)` and `…[edition]` → `NO_ROW_REGION_PICK` / `NO_ROW_EDITION_PICK`.
+4. **Each extra target *i* ≥ 1** (`_add_target_row_trusted(i)`): read-only probe
+   of the `<button>` that is the **next sibling of the LAST row's target input**
+   (DOM relation, never text) — it must follow row *i-1* exactly
+   (`NO_ADD_BUTTON`) and must **not be submit-like** — `type` ≠ `button`,
+   `data-action-submit`, `button-primary` → `ADD_BUTTON_UNSAFE`, not clicked (a
+   submit-type click would natively submit the form). Trusted click, then a
+   readback must show **exactly** *i+1* rows and row *i* with its target input
+   **and both** override selects, else `TARGET_ROW_NOT_ADDED` (missing /
+   incomplete) or `TARGETS_COUNT_MISMATCH` (more rows than one added). Then row
+   *i* is filled like row 0.
+5. `form_validity()` hard gate (`FORM_INVALID` / `FORM_VALIDITY_UNREADABLE`),
+   pre-click obstruction probe (`CLICK_PATH_OBSTRUCTED`).
+6. **Last gate before the click — full readback** (`pre_click_readback`): both
+   global selects (`select.value`) **and every row** — target value, region and
+   edition override through both channels (`select.value` +
+   `selectize.getValue()`) — must still equal the wanted ids →
+   `VALUE_DRIFTED_BEFORE_CLICK` (reason names the row and field); the row count
+   must equal `len(targets)` → `TARGETS_COUNT_MISMATCH`.
+7. ONE trusted click on "Create offer" (`NO_TRUSTED_CLICK`), poll
+   (`SUCCESS` / `ERROR` / `NO_SIGNAL`).
+
+Every failure cleans the taps up and returns **without clicking** — "never a
+partial console entry": either every row is proven filled or nothing is created.
+Post-save (§5) remains the **only** success proof; `Submitter._process` treats
+any status outside `SUCCESS` / `NO_SIGNAL` as `create not confirmed: <STATUS> —
+<reason>`.
+
+### Statuses added on 2026-09-14
+
+Session (`create.status`): `MODAL_SHAPE_MISMATCH`, `NO_TARGETS`, `NO_TARGET_ID`,
+`NO_TARGET_INPUT`, `TARGET_VALUE_MISMATCH`, `NO_ROW_REGION_PICK`,
+`NO_ROW_EDITION_PICK`, `NO_ADD_BUTTON` (v1 and v2), `ADD_BUTTON_UNSAFE`,
+`TARGET_ROW_NOT_ADDED`, `TARGETS_COUNT_MISMATCH`, `TARGETS_READBACK_UNREADABLE`;
+row-level `ROW_ADDED` / `ROW_FILLED`; `VALUE_DRIFTED_BEFORE_CLICK` generalised to
+the rows. Plan blockers: `modal_shape_unknown`, `too_many_targets`. Run result:
+`gated_too_many_targets` (next to `gated_multi_target`).
+
+### UNVERIFIED live (the code fails closed on each)
+
+- the **add-row button's `type`**: the 2026-09-14 inspection did not record it.
+  A type-less `<button>` inside a form is a submit button; the write path
+  refuses a submit-like button (`ADD_BUTTON_UNSAFE`) and `--inspect` now exposes
+  it (`targets_probe.targets[].next_sib_button`) — read it before the first
+  multi-target write; Romain's by-hand confirmation says the click adds a row,
+  which the readback still proves;
+- whether the appended rows carry **their own** add-row button (the probe always
+  uses the LAST row's sibling; a missing one → `NO_ADD_BUTTON` for the 3rd
+  target);
+- the inheritance of empty overrides (confirmed by Romain) is **never used** —
+  every row's overrides are set and read back.
+
 ---
 
 ## 5. Deterministic success (the whole point) `[S18]` `[DB-proof]`

@@ -15,6 +15,22 @@ Two classes, one strict boundary:
   (``scripts/05_submit.py``), behind the validation file and the green
   authoritative gate. No ``form.submit()``, no direct XHR (S09); post-save
   (offer gone from the refreshed pending feed) stays the only success proof.
+
+Modal shapes (2026-09-14, ``modal_context()['modal_shape']``):
+
+- ``targets_v2`` — the CURRENT AKS feed tool: region and edition are taken PER
+  TARGET PAGE. Row 0 = ``input[name="offer[targets][0][target]"]`` (required,
+  ``pattern="(\\d+)|(https?://.+)"``, ``data-target-input``) + the NOT-required
+  Selectize overrides ``select[name="offer[targets][0][region]"]`` /
+  ``[edition]`` (``data-target-override``); the button right after the target
+  input ADDS a row (Romain, 2026-09-14). Written by ``fill_targets_v2_trusted``.
+- ``targets_v1`` — the historical single ``input[name="offer[targets][]"]``
+  chip field, kept for the old fallback (``fill_then_click_trusted``).
+- ``unknown`` — neither: the submitter fails closed, nothing is filled.
+
+The modal ``<form>`` has ``method=get`` and no ``action``: an Enter keypress
+inside one of its text inputs would SUBMIT THE FORM natively — an uncontrolled
+write. No method of this module ever presses Enter in the modal.
 """
 
 from __future__ import annotations
@@ -71,12 +87,27 @@ _PAGE_SCRIPTS_JS = (
     "jq:typeof window.jQuery})"
 )
 
+# Read-only modal context: the select names (S17) + the MODAL SHAPE (2026-09-14).
+# ``targets_v2`` when row 0's three controls all exist (the target input and both
+# override selects), ``targets_v1`` when the old ``offer[targets][]`` input exists,
+# else ``unknown``. v2 wins if both are present. ``modal_shape_detail`` says which
+# of the four probes hit so an ``unknown`` shape is diagnosable from the plan.
 _MODAL_CTX_JS = (
     "JSON.stringify((function(){var c=document.querySelector('#TB_ajaxContent');"
-    "if(!c){return {ok:false,select_names:[]};}"
+    "if(!c){return {ok:false,select_names:[],modal_shape:'unknown'};}"
+    "var t0=!!c.querySelector('input[name=\"offer[targets][0][target]\"]');"
+    "var r0=!!c.querySelector('select[name=\"offer[targets][0][region]\"]');"
+    "var e0=!!c.querySelector('select[name=\"offer[targets][0][edition]\"]');"
+    "var v1=!!c.querySelector('input[name=\"offer[targets][]\"]');"
+    "var shape=(t0&&r0&&e0)?'targets_v2':(v1?'targets_v1':'unknown');"
     "return {ok:true,select_names:Array.from(c.querySelectorAll('select'))"
-    ".map(function(s){return s.name;})};})())"
+    ".map(function(s){return s.name;}),modal_shape:shape,"
+    "modal_shape_detail:{v2_target0:t0,v2_region0:r0,v2_edition0:e0,v1_input:v1}};})())"
 )
+
+MODAL_SHAPE_V1 = "targets_v1"
+MODAL_SHAPE_V2 = "targets_v2"
+MODAL_SHAPE_UNKNOWN = "unknown"
 
 # Deterministic feed-page markers — the SAME probe fields the extractor
 # trusts, imported verbatim (AR3 partial, audit 2026-07-17) so the two
@@ -250,6 +281,15 @@ _TARGETS_PROBE_JS = (
     "data_attrs:dataAttrs(el),label:labelFor(el,form),"
     "parents:chain(el,function(x){return x.parentElement;}),"
     "next_sibs:chain(el,function(x){return x.nextElementSibling;})};"
+    # Modal v2 (2026-09-14): describe the BUTTON right after a target input — the
+    # add-row button. Its `type` decides whether a click could natively submit the
+    # form (a type-less <button> in a form is a submit button): the write path
+    # refuses a submit-like add-row button, so --inspect must expose the type.
+    "var nb=el.nextElementSibling;"
+    "if(nb&&nb.tagName==='BUTTON'){rec.next_sib_button={tag:nb.tagName,"
+    "type_prop:String(nb.type||''),type_attr:nb.getAttribute('type'),"
+    "klass:nb.className||null,data_attrs:dataAttrs(nb),"
+    "text:(nb.textContent||'').trim().slice(0,40)};}"
     "if(rec.list_attr){var dl=document.getElementById(rec.list_attr);"
     "if(dl){rec.datalist=Array.prototype.slice.call(dl.querySelectorAll('option'))"
     ".slice(0,50).map(function(o){return {value:o.value,"
@@ -802,11 +842,16 @@ _TRUSTED_CLEANUP_JS = (
     "delete window.__s18orig;}delete window.__s18taps;return true;})()"
 )
 
-# Read-only readback of the ``offer[targets][]`` control(s) after a target-add
-# (S18, 2026-07-06). Reports how many such inputs exist and, per input, its
-# value_len (never the value), visibility, required flag and HTML5 validity — the
-# deterministic signal that a target chip was committed (the field goes valid /
-# a hidden holder input appears). S02-safe: no ``.value=`` / click / fetch.
+# Read-only readback of the modal's target controls, BOTH shapes (S18 2026-07-06;
+# modal v2 2026-09-14).
+# - v1: ``inputs`` — every ``offer[targets][]`` input with its value_len (never the
+#   value), visibility, required flag and HTML5 validity (chip committed = valid).
+# - v2: ``rows`` — for each row i (``offer[targets][i][target]`` present, i = 0, 1,
+#   …, gap-free), the target VALUE (an AKS product id — compared to the wanted id,
+#   the "never a guessed id" gate), its visibility/required/validity, and both
+#   override selects read through both channels (``select.value`` +
+#   ``selectize.getValue()``) + open state; a missing select reads ``null``.
+# S02-safe: no ``.value=`` / click / fetch.
 _TARGETS_READBACK_JS = (
     "JSON.stringify((function(){"
     "var content=document.querySelector('#TB_ajaxContent');"
@@ -817,18 +862,97 @@ _TARGETS_READBACK_JS = (
     "vals.push({value_len:(el.value||'').length,visible:el.offsetParent!==null,"
     "type:el.type||null,required:!!el.required,"
     "valid:el.validity?el.validity.valid:null});}"
-    "return {ok:true,count:inputs.length,inputs:vals};"
+    "function sel(s){if(!s)return null;return {present:true,"
+    "select_value:String(s.value||''),"
+    "selectize_value:s.selectize?String(s.selectize.getValue()):null,"
+    "is_open:s.selectize?!!s.selectize.isOpen:null};}"
+    "var rows=[];"
+    "for(var n=0;n<50;n++){"
+    "var t=content.querySelector('input[name=\"offer[targets]['+n+'][target]\"]');"
+    "if(!t)break;"
+    "var r=content.querySelector('select[name=\"offer[targets]['+n+'][region]\"]');"
+    "var e=content.querySelector('select[name=\"offer[targets]['+n+'][edition]\"]');"
+    "rows.push({index:n,target_value:String(t.value||''),"
+    "target_visible:t.offsetParent!==null,target_required:!!t.required,"
+    "target_valid:t.validity?t.validity.valid:null,"
+    "region:sel(r),edition:sel(e)});}"
+    "return {ok:true,count:inputs.length,inputs:vals,row_count:rows.length,rows:rows};"
     "})())"
 )
+
+# Read-only probe of the modal v2 ADD-ROW button (2026-09-14): the element right
+# after the LAST row's target input (``input[name="offer[targets][i][target]"]``,
+# highest i) — located by DOM relation only, never by text. Returns its tag, its
+# ``type`` (property AND attribute: a <button> without type= is a SUBMIT button
+# inside a form), class, attribute names, text, visibility, its rect + the
+# viewport, and ``submit_like`` = not a BUTTON, or type ≠ 'button', or carrying
+# ``data-action-submit`` / ``button-primary`` (the Create button's marks). The
+# write path clicks it ONLY when ``submit_like`` is false — a submit-type click
+# would natively submit the ``method=get`` form = an uncontrolled write.
+# S02-safe: no mutation.
+_ADD_ROW_BUTTON_PROBE_JS = (
+    "JSON.stringify((function(){"
+    "var content=document.querySelector('#TB_ajaxContent');"
+    "if(!content)return {ok:false,reason:'no_modal'};"
+    "var last=null,idx=-1;"
+    "for(var n=0;n<50;n++){"
+    "var t=content.querySelector('input[name=\"offer[targets]['+n+'][target]\"]');"
+    "if(!t)break;last=t;idx=n;}"
+    "if(!last)return {ok:false,reason:'no_target_rows'};"
+    "var b=last.nextElementSibling;"
+    "if(!b)return {ok:false,reason:'no_next_sibling',last_row:idx};"
+    "var attrs=[];for(var i=0;i<b.attributes.length;i++){attrs.push(b.attributes[i].name);}"
+    "var cls=(b.className&&typeof b.className==='string')?b.className:'';"
+    "var isButton=b.tagName==='BUTTON';"
+    "var typeProp=isButton?String(b.type||''):null;"
+    "var submitLike=!isButton||typeProp!=='button'||"
+    "b.hasAttribute('data-action-submit')||/\\bbutton-primary\\b/.test(cls);"
+    "var r=b.getBoundingClientRect();"
+    "return {ok:true,last_row:idx,tag:b.tagName,type_prop:typeProp,"
+    "type_attr:b.getAttribute('type'),klass:cls,attrs:attrs,"
+    "text:(b.textContent||'').trim().slice(0,40),"
+    "visible:b.offsetParent!==null,submit_like:submitLike,"
+    "x:r.x,y:r.y,width:r.width,height:r.height,"
+    "top:r.top,left:r.left,bottom:r.bottom,right:r.right,"
+    "viewport:{w:window.innerWidth,h:window.innerHeight}};"
+    "})())"
+)
+
+# The rect keys of a probe result — stripped from diags so the plan stays readable.
+_RECT_KEYS = ("x", "y", "width", "height", "top", "left", "bottom", "right", "viewport")
+
+
+def _v2_row_complete(row: Any) -> bool:
+    """A v2 readback row carrying its target input AND both override selects."""
+
+    if not isinstance(row, dict):
+        return False
+    region = row.get("region") or {}
+    edition = row.get("edition") or {}
+    return bool(region.get("present")) and bool(edition.get("present"))
+
+
+def _readback_values(state: Any) -> set[str]:
+    """The value(s) a select readback reports, through both channels, as a set —
+    ``select.value`` always, ``selectize.getValue()`` when the plugin answered."""
+
+    if not isinstance(state, dict):
+        return set()
+    got = {str(state.get("select_value") or "")}
+    if state.get("selectize_value") is not None:
+        got.add(str(state.get("selectize_value")))
+    return got
 
 
 class WriteSubmitSession(SubmitSession):
     """SubmitSession + the single mutating op. Instantiated ONLY under ``--submit``.
 
-    ``fill_and_create`` (native/dispatch) and ``fill_then_click_trusted`` (Chantier
-    n°1 trusted) are the only methods that write: they set region/edition on the
-    verified select names and cause a click on the visible "Create offer" button.
-    No direct XHR, no ``form.submit()`` (S09). Three click_modes are supported:
+    ``fill_and_create`` (native/dispatch), ``fill_then_click_trusted`` (Chantier
+    n°1 trusted, ``targets_v1`` shape) and ``fill_targets_v2_trusted`` (modal v2,
+    2026-09-14 — one row per target) are the only methods that write: they set
+    region/edition on the verified select names and cause a click on the visible
+    "Create offer" button. No direct XHR, no ``form.submit()`` (S09), never an
+    Enter keypress in the modal. Three click_modes are supported:
 
     - ``native``: DOM ``b.click()`` — the original path, ``isTrusted:false``,
       proven NOT to persist on Driffle; kept only as a documented diagnostic.
@@ -1160,17 +1284,10 @@ class WriteSubmitSession(SubmitSession):
         diag["status"] = "SELECTED"
         return diag
 
-    def _press_enter(self) -> None:
-        """Trusted Enter keypress via CDP ``Input.dispatchKeyEvent`` (keyDown +
-        keyUp). ``event.isTrusted`` is true. Used as the fallback commit for the
-        ``offer[targets][]`` chip field when its add-button can't be located."""
-
-        for kind in ("keyDown", "keyUp"):
-            self._cmd(
-                "Input.dispatchKeyEvent",
-                {"type": kind, "key": "Enter", "code": "Enter",
-                 "windowsVirtualKeyCode": 13, "nativeVirtualKeyCode": 13},
-            )
+    # ``_press_enter`` (the v1 chip-commit fallback) was REMOVED on 2026-09-14: the
+    # modal <form> has method=get and no action, so a trusted Enter inside one of its
+    # text inputs can natively submit the form — an uncontrolled write. No method of
+    # this class synthesizes an Enter keypress in the modal.
 
     def _type_text_trusted(self, text: str) -> dict[str, Any]:
         """Type ``text`` into the focused element the human way: one trusted
@@ -1221,15 +1338,18 @@ class WriteSubmitSession(SubmitSession):
         2. ``Input.insertText`` types ``value`` — a real ``input`` event, no
            ``.value=`` / setValue.
         3. Commit the chip: trusted click on the adjacent add-button
-           (``… + button``); if that element isn't found, fall back to a trusted
-           Enter keypress.
+           (``… + button``). If that element isn't found → ``NO_ADD_BUTTON``,
+           fail-closed: the historical trusted-Enter fallback was REMOVED
+           (2026-09-14) because the modal form (method=get, no action) submits
+           natively on Enter — an uncontrolled write.
         4. Read back the ``offer[targets][]`` input state (read-only).
 
-        Returns a diag: ``value, focus, typed, add_button, commit
-        ('button'|'enter'), readback, status ('ADDED' | 'NO_TARGETS_FIELD')``.
+        Returns a diag: ``value, focus, typed, add_button, commit ('button'),
+        readback, status ('ADDED' | 'NO_TARGETS_FIELD' | 'NO_ADD_BUTTON')``.
         NOT a success proof — the caller's ``form_validity()`` gate + post-save
         decide. ``NO_TARGETS_FIELD`` (field absent) is non-fatal: some products
         may not require a target, and the validity gate is the backstop.
+        ``NO_ADD_BUTTON`` IS fatal for the caller (the typed id sits uncommitted).
         """
 
         field_sel = "#TB_ajaxContent input[name=\"offer[targets][]\"]"
@@ -1244,16 +1364,349 @@ class WriteSubmitSession(SubmitSession):
         time.sleep(0.2)
         add_button = self.click_trusted_at_element(field_sel + " + button")
         diag["add_button"] = add_button
-        if add_button.get("status") == "CLICKED":
-            diag["commit"] = "button"
-        else:
-            self._press_enter()
-            diag["commit"] = "enter"
+        if add_button.get("status") != "CLICKED":
+            diag["status"] = "NO_ADD_BUTTON"
+            diag["reason"] = "add-button not found next to offer[targets][] — no Enter fallback"
+            return diag
+        diag["commit"] = "button"
         time.sleep(0.3)
-        raw = self.evaluate_readonly(_TARGETS_READBACK_JS)
-        diag["readback"] = json.loads(raw) if raw else {"ok": False}
+        diag["readback"] = self._readback_targets()
         diag["status"] = "ADDED"
         return diag
+
+    # ------------------------------------------------------------------
+    # Modal v2 (2026-09-14) — region + edition PER TARGET PAGE. Romain's three
+    # confirmations (2026-09-14): (1) the button next to the target input ADDS a
+    # new target row (works by hand) — the readback that row i exists after the
+    # click stays the gate; (2) empty per-target region/edition INHERIT the global
+    # offer[region]/offer[edition] (tested by him) — the overrides are still set
+    # EXPLICITLY on every row, inheritance is never relied on; (3) the modal takes
+    # "3 ou 4 pour le moment" targets — the submitter caps a candidate at
+    # MAX_TARGETS_PER_OFFER = 3 before anything is filled.
+    # ------------------------------------------------------------------
+    def _readback_targets(self) -> dict[str, Any]:
+        """Read-only readback of the target controls, both shapes (see
+        ``_TARGETS_READBACK_JS``): ``{ok, count, inputs, row_count, rows}``."""
+
+        raw = self.evaluate_readonly(_TARGETS_READBACK_JS)
+        return json.loads(raw) if raw else {"ok": False, "reason": "no_result"}
+
+    def _add_row_button_probe(self) -> dict[str, Any]:
+        """Read-only probe of the add-row button (``_ADD_ROW_BUTTON_PROBE_JS``)."""
+
+        raw = self.evaluate_readonly(_ADD_ROW_BUTTON_PROBE_JS)
+        return json.loads(raw) if raw else {"ok": False, "reason": "no_result"}
+
+    def _add_target_row_trusted(self, index: int) -> dict[str, Any]:
+        """Add target row ``index`` (≥ 1) to the v2 modal with a trusted click on
+        the add-row button, then PROVE the row exists (fail-closed).
+
+        1. Probe the button after the LAST row's target input (DOM relation, never
+           text). Must be a ``<button>`` following row ``index - 1`` exactly, else
+           ``NO_ADD_BUTTON``. Must NOT be submit-like (``type`` ≠ 'button',
+           ``data-action-submit``, ``button-primary``) else ``ADD_BUTTON_UNSAFE``
+           — a submit-type click would natively submit the ``method=get`` form.
+           UNVERIFIED live: the 2026-09-14 inspection did not record the button's
+           type; ``--inspect`` now exposes it (``targets_probe … next_sib_button``).
+        2. Scroll it into the viewport if needed (re-probe), trusted click.
+        3. Read back the rows: exactly ``index + 1`` rows must exist, and row
+           ``index`` must carry its target input AND both override selects —
+           else ``TARGET_ROW_NOT_ADDED`` (missing) / ``TARGETS_COUNT_MISMATCH``
+           (the click produced more rows than one).
+
+        Returns ``{row, add_button, scroll, click, readback, status
+        ('ROW_ADDED' | 'NO_ADD_BUTTON' | 'ADD_BUTTON_UNSAFE' |
+        'TARGET_ROW_NOT_ADDED' | 'TARGETS_COUNT_MISMATCH' |
+        'TARGETS_READBACK_UNREADABLE'), reason?}``. No Enter, ever.
+        """
+
+        diag: dict[str, Any] = {"row": index}
+        probe = self._add_row_button_probe()
+        diag["add_button"] = {k: v for k, v in probe.items() if k not in _RECT_KEYS}
+        if not probe.get("ok") or probe.get("tag") != "BUTTON" or probe.get("last_row") != index - 1:
+            diag["status"] = "NO_ADD_BUTTON"
+            diag["reason"] = (
+                f"no <button> right after the target input of row {index - 1} "
+                f"(probe: {probe.get('reason') or probe.get('tag')!r}, "
+                f"last_row={probe.get('last_row')!r})"
+            )
+            return diag
+        if probe.get("submit_like"):
+            diag["status"] = "ADD_BUTTON_UNSAFE"
+            diag["reason"] = (
+                f"add-row button reads type={probe.get('type_prop')!r} "
+                f"(attr {probe.get('type_attr')!r}, class {probe.get('klass')!r}) — "
+                "a submit-type click would natively submit the modal form; not clicked"
+            )
+            return diag
+        scroll = self._scroll_rect_into_viewport(probe)
+        diag["scroll"] = scroll
+        if scroll["scrolled"]:
+            probe = self._add_row_button_probe()
+            if (not probe.get("ok") or probe.get("tag") != "BUTTON"
+                    or probe.get("last_row") != index - 1 or probe.get("submit_like")):
+                diag["status"] = "NO_ADD_BUTTON"
+                diag["reason"] = "add-row button not re-found after the scroll"
+                return diag
+        diag["click"] = self._trusted_click_at_rect(probe)
+        time.sleep(0.3)  # the row is appended by the page's own handler
+        readback = self._readback_targets()
+        diag["readback"] = readback
+        if not readback.get("ok"):
+            diag["status"] = "TARGETS_READBACK_UNREADABLE"
+            return diag
+        rows = readback.get("rows") or []
+        if len(rows) > index + 1:
+            diag["status"] = "TARGETS_COUNT_MISMATCH"
+            diag["reason"] = f"{len(rows)} rows after adding row {index} (expected {index + 1})"
+            return diag
+        if len(rows) < index + 1 or not _v2_row_complete(rows[index]):
+            diag["status"] = "TARGET_ROW_NOT_ADDED"
+            diag["reason"] = (
+                f"row {index} absent or incomplete after the add-row click "
+                f"({len(rows)} row(s) read back)"
+            )
+            return diag
+        diag["status"] = "ROW_ADDED"
+        return diag
+
+    def _fill_target_row_trusted(self, index: int, target: dict[str, Any]) -> dict[str, Any]:
+        """Fill v2 row ``index``: the target id + BOTH overrides, explicitly.
+
+        1. Trusted focus click on ``input[name="offer[targets][index][target]"]``
+           → ``NO_TARGET_INPUT`` if it can't be clicked (fatal in v2).
+        2. ``Input.insertText`` of ``target['aks_product_id']`` (a real ``input``
+           event; no ``.value=``). NO add-row click, NO Enter.
+        3. Readback: the row's target value must EQUAL the id (``never a guessed
+           id``) else ``TARGET_VALUE_MISMATCH``.
+        4. ``select_via_trusted`` on the row's region then edition override
+           (typed catalog text as the query, SC3 readback inside) →
+           ``NO_ROW_REGION_PICK`` / ``NO_ROW_EDITION_PICK``. Always set, even
+           though an empty override inherits the global select (Romain,
+           2026-09-14) — inheritance is never relied on.
+
+        Returns ``{row, aks_product_id, region_id, edition_id, focus, typed,
+        readback, region_pick, edition_pick, status ('ROW_FILLED' | …)}``.
+        """
+
+        pid = str(target.get("aks_product_id") or "")
+        region_id = str(target.get("region_id") or "")
+        edition_id = str(target.get("edition_id") or "")
+        diag: dict[str, Any] = {
+            "row": index, "aks_product_id": pid,
+            "region_id": region_id, "edition_id": edition_id,
+        }
+        if not pid or not region_id or not edition_id:
+            diag["status"] = "NO_TARGET_ID"
+            diag["reason"] = f"row {index}: empty target/region/edition id — never guessed"
+            return diag
+        field_sel = f"#TB_ajaxContent input[name=\"offer[targets][{index}][target]\"]"
+        focus = self.click_trusted_at_element(field_sel)
+        diag["focus"] = focus
+        if focus.get("status") != "CLICKED":
+            diag["status"] = "NO_TARGET_INPUT"
+            diag["reason"] = f"row {index}: target input not clickable ({focus.get('status')})"
+            return diag
+        self._cmd("Input.insertText", {"text": pid})
+        diag["typed"] = True
+        time.sleep(0.2)
+        readback = self._readback_targets()
+        diag["readback"] = readback
+        if not readback.get("ok"):
+            diag["status"] = "TARGETS_READBACK_UNREADABLE"
+            return diag
+        rows = readback.get("rows") or []
+        if index >= len(rows) or not _v2_row_complete(rows[index]):
+            diag["status"] = "TARGET_ROW_NOT_ADDED"
+            diag["reason"] = f"row {index} absent or incomplete after typing its target"
+            return diag
+        got = str(rows[index].get("target_value") or "")
+        if got != pid:
+            diag["status"] = "TARGET_VALUE_MISMATCH"
+            diag["reason"] = f"row {index} target reads {got!r} after typing {pid!r}"
+            return diag
+        region_pick = self.select_via_trusted(
+            f"offer[targets][{index}][region]", region_id, query=target.get("region_query"),
+        )
+        diag["region_pick"] = region_pick
+        if region_pick.get("status") != "SELECTED":
+            diag["status"] = "NO_ROW_REGION_PICK"
+            diag["reason"] = f"row {index} region override: {region_pick.get('status')}"
+            return diag
+        edition_pick = self.select_via_trusted(
+            f"offer[targets][{index}][edition]", edition_id, query=target.get("edition_query"),
+        )
+        diag["edition_pick"] = edition_pick
+        if edition_pick.get("status") != "SELECTED":
+            diag["status"] = "NO_ROW_EDITION_PICK"
+            diag["reason"] = f"row {index} edition override: {edition_pick.get('status')}"
+            return diag
+        diag["status"] = "ROW_FILLED"
+        return diag
+
+    def fill_targets_v2_trusted(
+        self,
+        targets: list[dict[str, Any]],
+        region_select: str,
+        edition_select: str,
+    ) -> dict[str, Any]:
+        """The v2 write: fill every target row, then ONE trusted Create click.
+
+        ``targets`` = ``[{aks_product_id, region_id, edition_id, region_query,
+        edition_query}, …]`` in row order; the FIRST is the primary target whose
+        ids also go to the global selects. Fail-closed at every step — a failure
+        cleans the taps up and returns WITHOUT clicking; "never a partial console
+        entry": either every row is proven filled or nothing is created.
+
+        0. Read-only shape check: the open modal must read ``targets_v2``, else
+           ``MODAL_SHAPE_MISMATCH``.
+        1. Prep JS (taps + pre-existing signal state; NO fill).
+        2. Global ``offer[region]`` / ``offer[edition]`` via ``select_via_trusted``
+           with the PRIMARY target's ids (SC3 readback) → ``NO_REGION_PICK`` /
+           ``NO_EDITION_PICK``.
+        3. Row 0: ``_fill_target_row_trusted`` (target id, then the two overrides
+           explicitly). Rows i ≥ 1: ``_add_target_row_trusted(i)`` (trusted click on
+           the add-row button, row proven present) then the same fill. Any row
+           status ≠ ROW_ADDED / ROW_FILLED stops the flow under that status.
+        4. ``form_validity()`` hard gate (``FORM_INVALID`` /
+           ``FORM_VALIDITY_UNREADABLE``), pre-click obstruction probe
+           (``CLICK_PATH_OBSTRUCTED``).
+        5. LAST gate before the click — a full readback: both global selects and
+           EVERY row (target value, both override selects through both channels)
+           must still equal the wanted ids (``VALUE_DRIFTED_BEFORE_CLICK``), and
+           the row count must equal ``len(targets)`` (``TARGETS_COUNT_MISMATCH``).
+        6. Trusted click on "Create offer" (``NO_TRUSTED_CLICK``), poll.
+
+        Post-save (offer gone from the refreshed pending feed) remains the ONLY
+        success proof — this method's ``status`` is diagnostic only. No Enter, no
+        ``form.submit()``, no XHR, no ``setValue``.
+        """
+
+        targets = [dict(t) for t in (targets or [])]
+        base: dict[str, Any] = {
+            "click_mode": "trusted", "modal_shape": MODAL_SHAPE_V2,
+            "targets_count": len(targets),
+        }
+        if not targets:
+            return {**base, "status": "NO_TARGETS"}
+        shape = self.modal_context()
+        if shape.get("modal_shape") != MODAL_SHAPE_V2:
+            return {**base, "status": "MODAL_SHAPE_MISMATCH",
+                    "reason": f"open modal reads shape {shape.get('modal_shape')!r}, "
+                              f"expected {MODAL_SHAPE_V2!r}"}
+
+        prep = self._evaluate(
+            _TRUSTED_PREP_JS % (json.dumps(region_select), json.dumps(edition_select))
+        )
+        if not isinstance(prep, dict) or prep.get("status") != "PREPARED":
+            return prep if isinstance(prep, dict) else {"status": "NO_RESULT", "raw": prep}
+        prep.update(base)
+        primary = targets[0]
+        prep["region_target"] = str(primary.get("region_id") or "")
+        prep["edition_target"] = str(primary.get("edition_id") or "")
+
+        def stop(status: str, reason: str | None = None) -> dict[str, Any]:
+            self._evaluate(_TRUSTED_CLEANUP_JS)
+            prep["status"] = status
+            if reason:
+                prep["reason"] = reason
+            return prep
+
+        region_pick = self.select_via_trusted(
+            region_select, prep["region_target"], query=primary.get("region_query"),
+        )
+        prep["region_pick"] = region_pick
+        if region_pick.get("status") != "SELECTED":
+            return stop("NO_REGION_PICK")
+        edition_pick = self.select_via_trusted(
+            edition_select, prep["edition_target"], query=primary.get("edition_query"),
+        )
+        prep["edition_pick"] = edition_pick
+        if edition_pick.get("status") != "SELECTED":
+            return stop("NO_EDITION_PICK")
+        prep["region_set"] = str((region_pick.get("readback") or {}).get("selectize_value", ""))
+        prep["edition_set"] = str((edition_pick.get("readback") or {}).get("selectize_value", ""))
+
+        rows: list[dict[str, Any]] = []
+        prep["rows"] = rows
+        for index, target in enumerate(targets):
+            row_diag: dict[str, Any] = {"row": index}
+            rows.append(row_diag)
+            if index >= 1:
+                added = self._add_target_row_trusted(index)
+                row_diag["add"] = added
+                if added.get("status") != "ROW_ADDED":
+                    return stop(str(added.get("status")), added.get("reason"))
+            filled = self._fill_target_row_trusted(index, target)
+            row_diag["fill"] = filled
+            if filled.get("status") != "ROW_FILLED":
+                return stop(str(filled.get("status")), filled.get("reason"))
+
+        # Hard validity gate (audit P1b) — unchanged from the v1 flow.
+        validity = self.form_validity()
+        prep["form_validity"] = validity
+        if not validity.get("ok"):
+            return stop("FORM_VALIDITY_UNREADABLE")
+        if validity.get("form_valid") is not True:
+            return stop("FORM_INVALID")
+
+        path_probe = self.click_target_probe("#TB_ajaxContent .button-primary")
+        prep["click_path"] = path_probe
+        if path_probe.get("ok") and not path_probe.get("is_target"):
+            return stop("CLICK_PATH_OBSTRUCTED")
+
+        # Last gate before the ONE write: everything must STILL read the wanted
+        # ids — the globals (SC3) and every row (VALUE_DRIFTED_BEFORE_CLICK
+        # generalised to the v2 rows), and no row appeared or vanished.
+        drift: dict[str, Any] = {}
+        prep["pre_click_readback"] = drift
+        for kind, name, wanted in (
+            ("region", region_select, prep["region_target"]),
+            ("edition", edition_select, prep["edition_target"]),
+        ):
+            final = self._readback_select(name)
+            drift[kind] = final
+            if not final.get("ok") or str(final.get("select_value") or "") != wanted:
+                return stop(
+                    "VALUE_DRIFTED_BEFORE_CLICK",
+                    f"{kind} reads {final.get('select_value')!r} (target {wanted!r}) at click time",
+                )
+        final_rows = self._readback_targets()
+        drift["targets"] = final_rows
+        if not final_rows.get("ok"):
+            return stop("TARGETS_READBACK_UNREADABLE")
+        read_rows = final_rows.get("rows") or []
+        if len(read_rows) != len(targets):
+            return stop(
+                "TARGETS_COUNT_MISMATCH",
+                f"{len(read_rows)} row(s) in the modal at click time, {len(targets)} target(s) wanted",
+            )
+        for index, (row, target) in enumerate(zip(read_rows, targets)):
+            wanted_pid = str(target.get("aks_product_id") or "")
+            got_pid = str(row.get("target_value") or "")
+            if got_pid != wanted_pid:
+                return stop(
+                    "VALUE_DRIFTED_BEFORE_CLICK",
+                    f"row {index} target reads {got_pid!r} (target {wanted_pid!r}) at click time",
+                )
+            for kind in ("region", "edition"):
+                wanted_id = str(target.get(f"{kind}_id") or "")
+                got = _readback_values(row.get(kind))
+                if got != {wanted_id}:
+                    return stop(
+                        "VALUE_DRIFTED_BEFORE_CLICK",
+                        f"row {index} {kind} reads {sorted(got)!r} (target {wanted_id!r}) at click time",
+                    )
+
+        click = self.click_trusted_at_element("#TB_ajaxContent .button-primary")
+        prep["click"] = click
+        if click.get("status") != "CLICKED":
+            return stop("NO_TRUSTED_CLICK")
+
+        poll = self._evaluate(_TRUSTED_POLL_JS)
+        if isinstance(poll, dict):
+            prep.update(poll)
+        return prep
 
     def fill_then_click_trusted(
         self,
@@ -1278,7 +1731,11 @@ class WriteSubmitSession(SubmitSession):
            same.
         4. ``add_target_trusted(target_value)`` (when supplied): trusted type of
            the AKS product id / URL into ``offer[targets][]`` + commit — the last
-           required field the Selectize picks don't populate.
+           required field the Selectize picks don't populate. ``NO_ADD_BUTTON``
+           (no add-button next to the field) STOPS the flow — no Enter fallback
+           since 2026-09-14 (Enter natively submits the modal form).
+           This is the ``targets_v1`` shape only; ``targets_v2`` (the current
+           tool) goes through ``fill_targets_v2_trusted``.
         5. ``form_validity()``: read-only HTML5 validity gate — HARD (audit
            P1b, 2026-07-08). Form positively invalid → STOP with
            ``status='FORM_INVALID'`` (+ the offending field names); probe
@@ -1334,6 +1791,14 @@ class WriteSubmitSession(SubmitSession):
         # simply leaves the form invalid, which FORM_INVALID reports.
         if target_value:
             prep["target_add"] = self.add_target_trusted(str(target_value))
+            if prep["target_add"].get("status") == "NO_ADD_BUTTON":
+                # The typed id sits UNCOMMITTED in the chip field and the Enter
+                # fallback is gone (2026-09-14: Enter natively submits the modal
+                # form). No click on a half-entered form.
+                self._evaluate(_TRUSTED_CLEANUP_JS)
+                prep["status"] = "NO_ADD_BUTTON"
+                prep["reason"] = prep["target_add"].get("reason")
+                return prep
 
         # Fail-closed validity gate — HARD (Romain's audit P1b, 2026-07-08): a
         # submit button whose form is invalid swallows the trusted click (the
