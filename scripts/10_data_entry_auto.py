@@ -383,11 +383,19 @@ def main() -> int:
     ap.add_argument("--consoles", action="store_true",
                     help="[R45] (2026-09-12) match with the CONSOLE branch (03_match "
                          "--consoles): console keys resolve their AKS platform pages "
-                         "(Xbox One / Series, PS4 / PS5, Switch) instead of the 'console' "
-                         "skip. Default OFF. NB: a multi-target candidate is still refused "
-                         "by 05_submit (fail-closed) until the per-target modal is observed — "
-                         "pair with --dry-run to preview.")
+                         "(Xbox One / Series, PS4 / PS5, Switch / Switch 2) instead of the "
+                         "'console' skip. Default OFF. REQUIRES --dry-run (review fix "
+                         "2026-09-14): the per-target modal has not been observed, so the "
+                         "console branch is read-only — a multi-target candidate is refused "
+                         "by 05_submit (fail-closed) and a real sweep must not auto-approve "
+                         "it.")
     args = ap.parse_args()
+    if args.consoles and not args.dry_run:
+        # [R45] review fix (2026-09-14): the console branch is READ-ONLY until the
+        # per-target modal is observed (--inspect). A real sweep would auto-approve every
+        # matcher candidate (approve() below) and hand multi-target ones to 05_submit,
+        # which gates them one by one — refuse the launch instead (argparse → exit 2).
+        ap.error("--consoles requires --dry-run until the per-target modal is observed (R45)")
     if args.max_pages < 1 or args.start_page < 1:
         # Review 2026-09-09: with the cap now benign coverage (not a halt), a zero/negative
         # cap would be a silent exit-0 "done" run that processes NO page. Fail loud instead.

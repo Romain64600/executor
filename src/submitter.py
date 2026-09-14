@@ -11,7 +11,10 @@ select names.
   S18; never `[data-success]`).
 
 Fail-closed per Romain's decisions (SUBMITTER_SPEC §6): one attempt per offer; on
-failure log + skip + continue; stop the run after 10 consecutive failures.
+failure log + skip + continue; stop the run after 10 consecutive failures. An entry
+gated ONLY by the R45 multi-target blocker is a DESIGNED skip (no write attempted): it
+is counted in ``gated_multi_target`` and feeds neither that streak nor the StepGuard
+(review fix 2026-09-14).
 
 ``run(limit=None)`` means the full approved batch. The batch size is NOT decided
 here: it is the data-entry mode's call, applied by ``scripts/05_submit.py``
@@ -1496,6 +1499,9 @@ class _SubmitterBase:
         # was the attempt counter but read like a creation count.
         write_attempts = 0
         created = 0
+        # [R45] review fix (2026-09-14): entries gated only by MULTI_TARGET_BLOCKER (no
+        # write attempted, row untouched) — reported, never counted as failures.
+        gated_multi_target = 0
         for candidate in approved:
             # Cooperative stop at an OFFER BOUNDARY only (before locating/opening
             # the next offer) — never mid-Create/post-save. A SIGTERM (console
@@ -1554,13 +1560,28 @@ class _SubmitterBase:
                 write_attempts += 1
                 if entry.get("submitted"):
                     created += 1
-            self.guard.record_result(
-                "submit", signature, success, detail=entry.get("blocker", "") or entry.get("post_save", "")
-            )
+            # [R45] review fix (2026-09-14): an entry gated ONLY by the multi-target
+            # blocker is a DESIGNED skip (the gate sits after the read-only checks, no
+            # write was attempted, the row is untouched) — NOT a failure. It feeds neither
+            # the StepGuard (10-consecutive-failures streak, repeated-signature / budget
+            # blocks, the per-run BlockLedger) nor the run's failure accounting; it is
+            # counted in ``gated_multi_target`` instead. Before this fix ten consecutive
+            # gated entries stopped the run (`ten_consecutive_failures`), halted the
+            # safe-auto sweep and recorded a guard block — `--consoles` was self-halting
+            # on the very merchants it targets, dry-run included.
+            gated = (not success and feed_unreadable is None
+                     and entry.get("blocker") == MULTI_TARGET_BLOCKER)
+            if gated:
+                gated_multi_target += 1
+            else:
+                self.guard.record_result(
+                    "submit", signature, success, detail=entry.get("blocker", "") or entry.get("post_save", "")
+                )
             self._log(
                 self.event_name,
                 offer_id=offer_id, ready=entry["ready"], success=success,
                 blocker=entry.get("blocker"), post_save=entry.get("post_save"),
+                gated_multi_target=gated,
             )
             if not success:
                 self._log("skip", offer_id=offer_id, reason=entry.get("blocker") or entry.get("post_save"))
@@ -1591,6 +1612,7 @@ class _SubmitterBase:
             "feed_offers": len(index),
             "write_attempts": write_attempts if self.write_mode else None,
             "created": created if self.write_mode else None,
+            "gated_multi_target": gated_multi_target,        # [R45] designed skips
             "plan": plan,
         }
         if self.catalog is not None:

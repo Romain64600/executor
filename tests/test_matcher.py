@@ -4205,13 +4205,20 @@ class RegionIdentityPhraseR44Tests(unittest.TestCase):
 # minimal ``console_page_identity``) so the matcher integration is grammar-independent.
 
 class _Sig:
-    """A ConsoleSignal-shaped stand-in (frozen dataclass in src.console_keys)."""
+    """A ConsoleSignal-shaped stand-in (frozen dataclass in src.console_keys). The
+    review-fix fields of 2026-09-14: ``region_base`` (the grammar's region slot, a
+    sellable base or None), ``region_label`` (a forbidden / unknown declared region) and
+    ``region_words`` (the region words the classifier removed from resolve_name)."""
 
-    def __init__(self, families, resolve_name, pc_declared=False, skip_reason=None):
+    def __init__(self, families, resolve_name, pc_declared=False, skip_reason=None,
+                 region_base=None, region_label=None, region_words=()):
         self.families = tuple(families)
         self.resolve_name = resolve_name
         self.pc_declared = pc_declared
         self.skip_reason = skip_reason
+        self.region_base = region_base
+        self.region_label = region_label
+        self.region_words = tuple(region_words)
 
 
 _PLATFORM_SUFFIX_RE = re.compile(r"\s+(?:Xbox One|Xbox Series|PS5|PS4|Nintendo Switch(?: 2)?)\s*$")
@@ -4641,23 +4648,340 @@ class ConsoleMatchFeedR45Tests(unittest.TestCase):
         self.assertEqual(len(cands), 1)
         self.assertEqual(cands[0].platform, "XBOX_ONE")
 
-    def test_production_resolver_wraps_the_page_resolver_in_its_own_guard(self):
+    def test_production_resolver_wraps_the_page_resolver_in_a_guard_sharing_the_main_state(self):
+        # Review fix 2026-09-14: one throttle state (and ONE stats dict) for both resolvers.
         from src.matcher import _ThrottleGuard
         captured = {}
 
         def fake_match_offer(offer, resolver, difmark_offer_resolver, *, account_resolver, page_resolver, consoles):
-            captured.update(page_resolver=page_resolver, consoles=consoles)
-            page_resolver.stats["probe_unreliable"] += 2                  # counters summed
+            captured.update(resolver=resolver, page_resolver=page_resolver, consoles=consoles)
+            page_resolver.stats["probe_unreliable"] += 2                  # the shared dict
             return SkippedOffer(offer, "x")
         stats = {}
         with mock.patch("src.matcher.match_offer", side_effect=fake_match_offer):
             match_feed(self._feed(_offer("Halo Xbox", oid="3")), resolve_aks, stats=stats, consoles=True,
                        page_resolver=lambda url: None)
         self.assertIsInstance(captured["page_resolver"], _ThrottleGuard)
+        self.assertIsInstance(captured["resolver"], _ThrottleGuard)
+        self.assertIs(captured["page_resolver"].shared, captured["resolver"])
+        self.assertIs(captured["page_resolver"].stats, captured["resolver"].stats)
         self.assertTrue(captured["consoles"])
-        self.assertEqual(stats["probe_unreliable"], 2)
+        self.assertEqual(stats["probe_unreliable"], 2)                   # counted once, never summed twice
         for key in ("search_failures", "search_circuit_open_offers", "throttle_graces"):
             self.assertEqual(stats[key], 0)
+
+    def test_shared_guard_aborts_at_the_combined_consecutive_limit(self):
+        # Two independent guards tolerated 2 × THROTTLE_MAX_CONSECUTIVE_UNRELIABLE probes
+        # (anchor / page failures alternating) before AksThrottled; shared, the limit is
+        # the audited one (2026-09-09: 5 consecutive unreliable probes on distinct pages).
+        from src.matcher import (THROTTLE_MAX_CONSECUTIVE_UNRELIABLE, AksThrottled, _ThrottleGuard)
+        n = {"i": 0}
+
+        def anchor(name, **kw):
+            n["i"] += 1
+            raise AksProbeUnreliable(f"a{n['i']} -> 503", status=503, slug=f"a{n['i']}")
+
+        def page(url):
+            n["i"] += 1
+            raise AksProbeUnreliable(f"p{n['i']} -> 503", status=503, slug=f"p{n['i']}")
+        main = _ThrottleGuard(anchor, sleep=lambda s: None)
+        page_guard = _ThrottleGuard(page, shared=main, sleep=lambda s: None)
+        probes = 0
+        with self.assertRaises(AksThrottled):
+            for k in range(4 * THROTTLE_MAX_CONSECUTIVE_UNRELIABLE):
+                probes += 1
+                try:
+                    if k % 2 == 0:
+                        main("x")
+                    else:
+                        page_guard("https://aks/p")
+                except AksProbeUnreliable:
+                    pass
+        self.assertEqual(probes, THROTTLE_MAX_CONSECUTIVE_UNRELIABLE)     # the limit-th probe (+ its grace) raises
+        self.assertEqual(main.consecutive, THROTTLE_MAX_CONSECUTIVE_UNRELIABLE)
+        self.assertEqual(page_guard.consecutive, main.consecutive)         # one counter
+        self.assertEqual(main.stats["throttle_graces"], 1)
+        self.assertEqual(main.stats["probe_unreliable"], THROTTLE_MAX_CONSECUTIVE_UNRELIABLE)   # one dict, both guards
+        # A clean resolution on EITHER guard resets the shared count.
+        ok = AksResolution("x", "https://aks/x", "1", "X", {"1": {"name": "Standard"}})
+        page_ok = _ThrottleGuard(lambda url: ok, shared=main, sleep=lambda s: None)
+        page_ok("https://aks/x")
+        self.assertEqual((main.consecutive, page_guard.consecutive), (0, 0))
+
+
+def _console_match(offer, sig, pc=None, pages=None, console_pages_by_kind=None, calls=None):
+    """match_offer(consoles=True) with the grammar mocked (same shape as
+    ConsoleMatchR45Tests._run): ``pc`` = the PC page (or None), ``console_pages_by_kind``
+    {kind: page} answers the console-anchor probe, ``pages`` {url: page} the page_resolver."""
+    pages = pages or {}
+    console_pages_by_kind = console_pages_by_kind or {}
+    calls = calls if calls is not None else []
+
+    def resolver(name, **kw):
+        calls.append((name, kw))
+        if "page_kind" in kw:
+            return console_pages_by_kind.get(kw["page_kind"])
+        return pc
+
+    with mock.patch("src.matcher.classify_console", return_value=sig), \
+            mock.patch("src.matcher.console_page_identity", side_effect=_identity):
+        return match_offer(offer, resolver, page_resolver=lambda url: pages.get(url), consoles=True)
+
+
+class ConsoleReviewFixesR45Tests(unittest.TestCase):
+    """Adversarial review of R45 (2026-09-12) → fixes of 2026-09-14 (grammar mocked
+    through _Sig, so these do not depend on src.console_keys' grammar): the console branch
+    never files a region-locked key under an implicit GLOBAL, R44 runs on the base label,
+    the page identity folds apostrophes, the console R19 is stamped (R19, R45), the RANDOM
+    scan tolerates a console word, and SWITCH2 is a family (page kind nintendo-switch-2,
+    NINTENDO bucket family — Romain 2026-09-14: Switch 2 pages exist, ids 188436 / 188441)."""
+
+    PC_URL = AKS_BLOG + "buy-hades-cd-key-compare-prices/"
+    ONE_URL = AKS_BLOG + "buy-hades-xbox-one-compare-prices/"
+    SERIES_URL = AKS_BLOG + "buy-hades-xbox-series-compare-prices/"
+    KINGUIN = "https://www.kinguin.net/category/1/hades-us-xbox-one-xbox-series-x-s-cd-key"
+
+    def _hades(self, editions=None):
+        pc = _page("Hades", "26712", self.PC_URL,
+                   console_pages={"xbox-one": self.ONE_URL, "xbox-series": self.SERIES_URL})
+        pages = {self.ONE_URL: _page("Hades Xbox One", "85102", self.ONE_URL, editions=editions),
+                 self.SERIES_URL: _page("Hades Xbox Series", "85103", self.SERIES_URL, editions=editions)}
+        return pc, pages
+
+    def _kinguin(self, name, url=KINGUIN):
+        return NormalizedOffer(offer_id="1", merchant="Kinguin", name=name, url=url)
+
+    XONE = ("XBOX_ONE", "XBOX_SERIES")
+
+    # ── (1) region ───────────────────────────────────────────────────────────────
+    def test_generic_read_is_implicit_for_the_kinguin_mid_slug_code(self):
+        # The pre-fix state: "-us-" mid-slug and "US" before the platform phrase are
+        # invisible to the generic scan (P2-6b trailing slot) → implicit.
+        self.assertEqual(detect_region_base(self._kinguin("Hades US Xbox One / Xbox Series X|S CD Key")),
+                         ("global", "GLOBAL", True, False))
+
+    def test_grammar_region_base_is_authoritative_over_an_implicit_generic_read(self):
+        pc, pages = self._hades()
+        r = _console_match(self._kinguin("Hades US Xbox One / Xbox Series X|S CD Key"),
+                           _Sig(self.XONE, "Hades", region_base="us"), pc=pc, pages=pages)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.region_id, r.region_label, r.region_implicit),
+                         ("24us", CONSOLE_REGION_LABELS["24us"], False))
+        self.assertEqual([(t.platform, t.region_id) for t in r.targets], [("XBOX_ONE", "24us"), ("XBOX_SERIES", "303")])
+
+    def test_implicit_read_with_a_removed_region_word_is_refused(self):
+        # Kinguin "Puyo Puyo Tetris 2 CA Xbox One / Xbox Series X|S CD Key": the classifier
+        # stripped "CA" from resolve_name but mapped it to no base → never GLOBAL.
+        calls = []
+        r = _console_match(self._kinguin("Hades CA Xbox One / Xbox Series X|S CD Key",
+                                         "https://www.kinguin.net/category/1/hades-ca-xbox-one-xbox-series-x-s-cd-key"),
+                           _Sig(self.XONE, "Hades", region_words=("CA",)), calls=calls)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, "console: merchant region 'CA' not mapped to a sellable base — not entered (R45)")
+        self.assertEqual(calls, [])                                        # refused before any probe
+
+    def test_no_region_word_at_all_stays_implicit_global(self):
+        pc, pages = self._hades()
+        r = _console_match(self._kinguin("Hades Xbox One / Xbox Series X|S CD Key",
+                                         "https://www.kinguin.net/category/1/hades-xbox-one-xbox-series-x-s-cd-key"),
+                           _Sig(self.XONE, "Hades"), pc=pc, pages=pages)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.region_id, r.region_implicit), ("24", True))
+        self.assertEqual([t.region_id for t in r.targets], ["24", "300"])
+
+    def test_non_implicit_generic_read_is_used_when_the_grammar_is_silent(self):
+        pc, pages = self._hades()
+        r = _console_match(self._kinguin("Hades EU Xbox One / Xbox Series X|S CD Key",
+                                         "https://www.kinguin.net/category/1/hades-eu-xbox-one-xbox-series-x-s-cd-key"),
+                           _Sig(self.XONE, "Hades"), pc=pc, pages=pages)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.region_id, r.region_implicit), ("24eu", False))
+
+    def test_grammar_and_generic_read_agreeing_enter(self):
+        pc, pages = self._hades()
+        r = _console_match(self._kinguin("Hades EU Xbox One / Xbox Series X|S CD Key",
+                                         "https://www.kinguin.net/category/1/hades-eu-xbox-one-xbox-series-x-s-cd-key"),
+                           _Sig(self.XONE, "Hades", region_base="eu"), pc=pc, pages=pages)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual(r.region_id, "24eu")
+
+    def test_grammar_contradicting_a_non_implicit_generic_read_skips(self):
+        calls = []
+        r = _console_match(self._kinguin("Hades EU Xbox One / Xbox Series X|S CD Key",
+                                         "https://www.kinguin.net/category/1/hades-eu-xbox-one-xbox-series-x-s-cd-key"),
+                           _Sig(self.XONE, "Hades", region_base="us"), calls=calls)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, "console: region contradiction (title/grammar vs URL) — not entered (R45)")
+        self.assertEqual(calls, [])
+
+    def test_grammar_base_without_a_bucket_skips_the_whole_offer(self):
+        r = _console_match(self._kinguin("Hades EU PS5 CD Key", "https://www.kinguin.net/category/1/hades-eu-ps5-cd-key"),
+                           _Sig(("PS5",), "Hades", region_base="eu"))
+        self.assertEqual(r.reason, "no region id for PS5/EU (R45)")
+
+    def test_gamivo_title_tail_reads_uk_through_the_r46_hook(self):
+        # Refuted half of the review: Gamivo's "EN United Kingdom" tail IS read (R46
+        # title_region hook inside detect_region_base) — a UK-locked One/Series key takes
+        # the UK buckets 226 / 305, never an implicit GLOBAL.
+        offer = NormalizedOffer(offer_id="7", merchant="Gamivo", name="Ravenswatch EN United Kingdom",
+                                url="https://www.gamivo.com/product/ravenswatch-xbox-xboxoneseries-uk-standard")
+        self.assertEqual(detect_region_base(offer), ("uk", "UK", False, False))
+        self.assertEqual(precheck_skip(offer), "console")                   # flag off: unchanged
+        one_url, series_url = AKS_BLOG + "buy-ravenswatch-xbox-one-compare-prices/", AKS_BLOG + "buy-ravenswatch-xbox-series-compare-prices/"
+        pc = _page("Ravenswatch", "1", AKS_BLOG + "buy-ravenswatch-cd-key-compare-prices/",
+                   console_pages={"xbox-one": one_url, "xbox-series": series_url})
+        pages = {one_url: _page("Ravenswatch Xbox One", "90", one_url),
+                 series_url: _page("Ravenswatch Xbox Series", "91", series_url)}
+        r = _console_match(offer, _Sig(self.XONE, "Ravenswatch"), pc=pc, pages=pages)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.region_id, r.region_label, r.region_implicit), ("226", CONSOLE_REGION_LABELS["226"], False))
+        self.assertEqual([(t.platform, t.aks_product_id, t.region_id) for t in r.targets],
+                         [("XBOX_ONE", "90", "226"), ("XBOX_SERIES", "91", "305")])
+        self.assertEqual(r.fingerprint, "7|90|226|1|+91:305:1")
+
+    def test_precheck_returns_the_grammar_forbidden_region(self):
+        sig = _Sig(self.XONE, "Puyo Puyo Tetris 2", region_label="CANADA", region_words=("CA",))
+        offer = self._kinguin("Puyo Puyo Tetris 2 CA Xbox One / Xbox Series X|S CD Key",
+                              "https://www.kinguin.net/category/1/puyo-puyo-tetris-2-ca-xbox-one-xbox-series-x-s-cd-key")
+        with mock.patch("src.matcher.classify_console", return_value=sig):
+            self.assertEqual(precheck_skip(offer, consoles=True), "forbidden region: CANADA")
+        self.assertEqual(precheck_skip(offer), "console")                  # flag off: unchanged
+
+    # ── (2) R44 on the console branch ────────────────────────────────────────────
+    AIR = "Air Force United States Pacific"
+    AIR_URL = "https://www.kinguin.net/category/1/air-force-united-states-pacific-xbox-one-cd-key"
+
+    def _air_pages(self):
+        one_url = AKS_BLOG + "buy-air-force-united-states-pacific-xbox-one-compare-prices/"
+        pc = _page(self.AIR, "1", AKS_BLOG + "buy-air-force-united-states-pacific-cd-key-compare-prices/",
+                   console_pages={"xbox-one": one_url})
+        return pc, {one_url: _page(self.AIR + " Xbox One", "2", one_url)}
+
+    def test_r44_fires_on_a_console_row_whose_region_is_the_product_name(self):
+        pc, pages = self._air_pages()
+        offer = self._kinguin(self.AIR + " Xbox One CD Key", self.AIR_URL)
+        self.assertEqual(detect_region_base(offer)[:3], ("us", "US", False))   # slug "-united-states-"
+        r = _console_match(offer, _Sig(("XBOX_ONE",), self.AIR), pc=pc, pages=pages)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("(R44)", r.reason); self.assertIn("UNITED STATES", r.reason); self.assertIn("region US", r.reason)
+
+    def test_r44_is_not_second_guessed_when_the_grammar_declared_the_region(self):
+        pc, pages = self._air_pages()
+        r = _console_match(self._kinguin(self.AIR + " US Xbox One CD Key", self.AIR_URL),
+                           _Sig(("XBOX_ONE",), self.AIR, region_base="us"), pc=pc, pages=pages)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual(r.region_id, "24us")
+
+    def test_plan_keeps_the_base_label_for_r44(self):
+        from src.matcher import _console_plan
+        pc, pages = self._hades()
+        offer = self._kinguin("Hades EU Xbox One / Xbox Series X|S CD Key",
+                              "https://www.kinguin.net/category/1/hades-eu-xbox-one-xbox-series-x-s-cd-key")
+        with mock.patch("src.matcher.console_page_identity", side_effect=_identity):
+            plan = _console_plan(offer, _Sig(self.XONE, "Hades"), lambda name, **kw: pc, lambda url: pages.get(url))
+        self.assertEqual((plan.base_label, plan.region_label), ("EU", CONSOLE_REGION_LABELS["24eu"]))
+
+    # ── (3) identity apostrophes ─────────────────────────────────────────────────
+    def test_page_identity_folds_apostrophes(self):
+        from src.matcher import _identity_tokens
+        self.assertEqual(_identity_tokens("DreamWorks Spirit Lucky’s Big Adventure"),
+                         _identity_tokens("DreamWorks Spirit Luckys Big Adventure"))
+        self.assertEqual(_identity_tokens("Lucky's"), ["LUCKYS"])
+        sw_url = AKS_BLOG + "buy-dreamworks-spirit-luckys-big-adventure-nintendo-switch-compare-prices/"
+        pc = _page("DreamWorks Spirit Lucky's Big Adventure", "1", AKS_BLOG + "buy-dreamworks-spirit-luckys-big-adventure-cd-key-compare-prices/",
+                   console_pages={"nintendo-switch": sw_url})
+        pages = {sw_url: _page("DreamWorks Spirit Luckys Big Adventure Nintendo Switch", "2", sw_url)}
+        offer = _offer("DreamWorks Spirit Lucky’s Big Adventure Nintendo Switch EU", oid="4")
+        r = _console_match(offer, _Sig(("SWITCH",), "DreamWorks Spirit Lucky’s Big Adventure"), pc=pc, pages=pages)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.platform, r.aks_product_id, r.region_id), ("SWITCH", "2", "99eu"))
+        # A really different page still fails the identity check.
+        pages[sw_url] = _page("DreamWorks Spirit Luckys Big Adventure Deluxe Nintendo Switch", "3", sw_url)
+        r = _console_match(offer, _Sig(("SWITCH",), "DreamWorks Spirit Lucky’s Big Adventure"), pc=pc, pages=pages)
+        self.assertEqual(r.reason, "console page 'DreamWorks Spirit Luckys Big Adventure Deluxe Nintendo Switch' "
+                                   "is not 'DreamWorks Spirit Lucky's Big Adventure' (R45)")
+
+    # ── (4) R19 stamped (R19, R45) ────────────────────────────────────────────────
+    def test_console_r19_reason_is_filed_under_consoles(self):
+        from src.feed_status import categorize_reason
+        pc, pages = self._hades(editions={})
+        r = _console_match(self._kinguin("Hades Xbox One / Xbox Series X|S CD Key",
+                                         "https://www.kinguin.net/category/1/hades-xbox-one-xbox-series-x-s-cd-key"),
+                           _Sig(self.XONE, "Hades"), pc=pc, pages=pages)
+        self.assertEqual(r.reason, "AKS XBOX_ONE page carries no editions map — edition unverifiable (R19, R45)")
+        self.assertEqual(categorize_reason(r.reason), "console")
+        pa_pc = _page("Hades", "26712", self.PC_URL, editions={}, official_platforms=("Xbox Play Anywhere",),
+                      console_pages={"xbox-one": self.ONE_URL})
+        r = _console_match(_offer("Hades Xbox One GLOBAL"), _Sig(("XBOX_ONE",), "Hades"), pc=pa_pc,
+                           pages={self.ONE_URL: _page("Hades Xbox One", "85102", self.ONE_URL)})
+        self.assertEqual(r.reason, "AKS XBOX_PC page carries no editions map — edition unverifiable (R19, R45)")
+        self.assertEqual(categorize_reason(r.reason), "console")
+
+    # ── (5) RANDOM lootbox with a console word ───────────────────────────────────
+    def test_random_console_game_is_a_lootbox(self):
+        reason = "skip category: RANDOM (random/lootbox, not a game)"
+        driffle = NormalizedOffer(
+            offer_id="1", merchant="Driffle",
+            name="1 Random Xbox Game (Global) (Xbox One / Xbox Series X|S) - Xbox Live - Digital Key",
+            url="https://www.driffle.com/1-random-xbox-game-global-xbox-one-xbox-series-xs-xbox-live-digital-key-p1")
+        with mock.patch("src.matcher.classify_console", return_value=_Sig(self.XONE, "1 Random Game")):
+            self.assertEqual(precheck_skip(driffle, consoles=True), reason)
+            for name in ("Random PlayStation Key", "5 Random Nintendo Games", "Random PS5 Item"):
+                self.assertEqual(precheck_skip(_offer(name), consoles=True), reason, name)
+            # A real game keeps its name: "CD" sits between the console word and KEY.
+            self.assertIsNone(precheck_skip(self._kinguin("Lost in Random PS5 CD Key",
+                                                          "https://www.kinguin.net/category/1/lost-in-random-ps5-cd-key"),
+                                            consoles=True))
+        self.assertEqual(precheck_skip(driffle), "console")               # flag off: console first
+        self.assertIsNone(precheck_skip(_offer("Lost in Random Steam Key GLOBAL")))   # never a PC word
+
+    # ── (9) SWITCH2 family ───────────────────────────────────────────────────────
+    SF6_PC = AKS_BLOG + "buy-street-fighter-6-cd-key-compare-prices/"
+    SF6_SW2 = AKS_BLOG + "buy-street-fighter-6-nintendo-switch-2-compare-prices/"
+
+    def test_switch2_family_uses_the_nintendo_switch_2_page_kind_and_the_nintendo_buckets(self):
+        from src.matcher import CONSOLE_PAGE_KIND, PLATFORM_LABEL, REGION_IDS
+        self.assertEqual(CONSOLE_PAGE_KIND["SWITCH2"], "nintendo-switch-2")
+        self.assertEqual(REGION_IDS["SWITCH2"], REGION_IDS["SWITCH"])      # 99 / 99eu / 99us / 992
+        self.assertIn("SWITCH2", PLATFORM_LABEL)
+        pc = _page("Street Fighter 6", "1", self.SF6_PC, console_pages={"nintendo-switch-2": self.SF6_SW2})
+        pages = {self.SF6_SW2: _page("Street Fighter 6 Nintendo Switch 2", "188436", self.SF6_SW2)}
+        r = _console_match(self._kinguin("Street Fighter 6 Nintendo Switch 2 CD Key",
+                                         "https://www.kinguin.net/category/1/street-fighter-6-nintendo-switch-2-cd-key"),
+                           _Sig(("SWITCH2",), "Street Fighter 6"), pc=pc, pages=pages)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.platform, r.aks_product_id, r.aks_url, r.region_id, r.region_label),
+                         ("SWITCH2", "188436", self.SF6_SW2, "99", CONSOLE_REGION_LABELS["99"]))
+        self.assertEqual([(t.platform, t.aks_product_id, t.region_id) for t in r.targets], [("SWITCH2", "188436", "99")])
+        self.assertEqual(r.fingerprint, "1|188436|99|1")
+        # An EU Switch 2 key → the NINTENDO EU bucket 99eu (same family ids as SWITCH).
+        r = _console_match(self._kinguin("Street Fighter 6 EU Nintendo Switch 2 CD Key",
+                                         "https://www.kinguin.net/category/1/street-fighter-6-eu-nintendo-switch-2-cd-key"),
+                           _Sig(("SWITCH2",), "Street Fighter 6"), pc=pc, pages=pages)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual(r.region_id, "99eu")
+
+    def test_switch2_console_anchor_when_no_pc_page(self):
+        calls = []
+        r = _console_match(_offer("Street Fighter 6 Nintendo Switch 2 GLOBAL", oid="6"), _Sig(("SWITCH2",), "Street Fighter 6"),
+                           pc=None, console_pages_by_kind={"nintendo-switch-2": _page("Street Fighter 6 Nintendo Switch 2", "188436", self.SF6_SW2)},
+                           calls=calls)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual(calls, [("Street Fighter 6", {}), ("Street Fighter 6", {"page_kind": "nintendo-switch-2"})])
+        self.assertEqual((r.platform, r.aks_product_id), ("SWITCH2", "188436"))
+
+    def test_elden_ring_switch_2_tab_is_another_product(self):
+        # The PC page's nintendo-switch-2 tab points to "ELDEN RING Tarnished Edition
+        # Nintendo Switch 2" (AKS 188441) — not Elden Ring: identity skip, never entered.
+        sw2 = AKS_BLOG + "buy-elden-ring-tarnished-edition-nintendo-switch-2-compare-prices/"
+        pc = _page("Elden Ring", "12345", AKS_BLOG + "buy-elden-ring-cd-key-compare-prices/",
+                   console_pages={"nintendo-switch-2": sw2})
+        pages = {sw2: _page("ELDEN RING Tarnished Edition Nintendo Switch 2", "188441", sw2)}
+        r = _console_match(self._kinguin("Elden Ring Nintendo Switch 2 CD Key",
+                                         "https://www.kinguin.net/category/1/elden-ring-nintendo-switch-2-cd-key"),
+                           _Sig(("SWITCH2",), "Elden Ring"), pc=pc, pages=pages)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, "console page 'ELDEN RING Tarnished Edition Nintendo Switch 2' is not 'Elden Ring' (R45)")
 
 
 class GamivoConfigR46Tests(unittest.TestCase):

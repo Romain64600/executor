@@ -1102,11 +1102,40 @@ class MultiTargetGateTests(unittest.TestCase):
         self.assertNotIn("blocker_message", entry)    # the specific blocker wins over the gate
         self.assertEqual(session.fill_calls, [])
 
-    def test_ten_multi_target_entries_stop_the_run_like_any_blocked_batch(self):
+    def test_gated_entries_do_not_feed_the_failure_streak(self):
+        # Review fix 2026-09-14: ten consecutive gated entries used to stop the run
+        # (`ten_consecutive_failures`), halt the sweep and record a guard block — the
+        # gate is a DESIGNED skip: not a StepGuard failure, counted in gated_multi_target.
         ids = [str(i) for i in range(12)]
-        result = _run(FakeSubmitSession([ids]), [_console_cand(i, [PS5_TARGET, PS4_TARGET]) for i in ids])
+        session = FakeSubmitSession([ids + ["pc"]])
+        approved = [_console_cand(i, [PS5_TARGET, PS4_TARGET]) for i in ids] + [_cand("pc")]
+        sub = DryRunSubmitter(session)
+        sub.feed_ui_render_waits = (); sub.modal_ctx_waits = ()
+        result = sub.run(run_id="r", merchant="Driffle", store_id="127", approved=approved)
+        self.assertIsNone(result["stopped"])
+        self.assertIsNone(result["aborted"])
+        self.assertEqual(result["gated_multi_target"], 12)
+        self.assertEqual(len(result["plan"]), 13)
+        self.assertTrue(all(p["blocker"] == self.BLOCKER for p in result["plan"][:12]))
+        pc_entry = result["plan"][12]
+        self.assertEqual(pc_entry["offer_id"], "pc")
+        self.assertTrue(pc_entry["ready"])                                 # the PC one IS processed
+        self.assertFalse(sub.guard.blocked)
+        self.assertEqual(sub.guard.snapshot()["counters"]["consecutive_failures"], 0)
+
+    def test_gated_entries_are_not_recorded_in_the_guard_but_real_blockers_still_are(self):
+        # A real blocker (select missing) keeps feeding the streak: 10 of them still stop.
+        ids = [str(i) for i in range(12)]
+        session = FakeSubmitSession([ids], select_names=("offer[edition]",))
+        result = _run(session, [_cand(i) for i in ids])
         self.assertEqual(result["stopped"], "ten_consecutive_failures")
-        self.assertTrue(all(p["blocker"] == self.BLOCKER for p in result["plan"]))
+        self.assertEqual(result["gated_multi_target"], 0)
+        # Real write path: gated entries never touch the guard either (write_attempts 0).
+        session = ConsoleCatalogWriteSession([ids])
+        result = _real(session, [_console_cand(i, [PS5_TARGET, PS4_TARGET]) for i in ids], limit=5)
+        self.assertIsNone(result["stopped"])
+        self.assertEqual((result["gated_multi_target"], result["write_attempts"], result["created"]), (12, 0, 0))
+        self.assertEqual(session.fill_calls, [])
 
     def test_process_refuses_a_multi_target_entry_even_if_marked_ready(self):
         # Defence in depth: the write _process never enters "the first target only".

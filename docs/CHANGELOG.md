@@ -3,6 +3,107 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-14 — Consoles R45 : correctifs de la revue adverse, famille Switch 2, décision P1
+
+**Décision de Romain (14/09) — P1 tranchée** : « clé PS5 seule = page PS5 seulement, pareil
+pour Xbox Series, PS4, Xbox One, Switch et Switch 2 ». La politique « déclaration marchande ∧
+page AKS » est donc DÉFINITIVE : une plateforme déclarée seule → sa page seulement, une
+déclaration cross-gen (« PS4 / PS5 », « Xbox One / Series X|S ») → les deux pages ; jamais de
+page sœur ajoutée (AGENTS.md « Reviewed decisions », EXECUTOR_RULES §4.12 P1 / §12). Le
+commutateur « page seule » (`SECOND_PLATFORM_POLICY`) est retiré des docs — il n'a jamais
+existé dans le code. P2-P5 restent ouvertes.
+
+**Switch 2 saisissable — famille `SWITCH2`.** Les pages produit AKS Switch 2 existent (kind
+`nintendo-switch-2` : « Street Fighter 6 Nintendo Switch 2 » id 188436, « ELDEN RING Tarnished
+Edition Nintendo Switch 2 » id 188441 ; corps sauvegardés dans le scratchpad R45) et leurs
+offres utilisent le **bucket de la famille NINTENDO** (carte des régions `{99: GLOBAL}`, prix en
+région 99, `activationPlatform nintendo-eshop`) : la page porte la plateforme, le bucket la
+région. `SWITCH2` devient une famille (`CONSOLE_PAGE_KIND['SWITCH2'] = 'nintendo-switch-2'`,
+mêmes ids de bucket que SWITCH : 99 / 99eu / 99us / 992 ; `REGION_IDS` / `PLATFORM_LABEL` la
+reçoivent par les merges existants) ; le skip « console: Switch 2 has no AKS bucket (R45) » est
+retiré. Les lignes Switch 2 du dernier lot (Kinguin 12, K4G 12, G2A 1, Driffle 1) deviennent
+saisissables sur leur page `nintendo-switch-2`. Tests : cible SWITCH2 → page
+`nintendo-switch-2`, bucket 99 / 99eu ; l'onglet Switch 2 d'Elden Ring pointe vers « ELDEN RING
+Tarnished Edition Nintendo Switch 2 » → skip d'identité, jamais saisi.
+
+**Correctifs de la revue adverse du 12/09 (4 lentilles) — tous traités :**
+- **[critique] Région de la branche console** (`src/matcher.py`). La moitié Gamivo du finding
+  était RÉFUTÉE (le hook `title_region` R46 est porté par `detect_region_base` : « Ravenswatch
+  EN United Kingdom » + `…-xbox-xboxoneseries-uk-standard` → UK, buckets 226 / 305 — test) ; la
+  moitié Kinguin / K4G / Driffle / G2A / Eneba tenait (« Hades US Xbox One / Xbox Series X|S CD
+  Key » → GLOBAL implicite : 37 lignes US, 150 lignes CA/AU passaient). Le classifieur expose
+  désormais le SLOT région de chaque grammaire (`ConsoleSignal.region_base` /
+  `region_label` / `region_words`) et le matcher applique, dans l'ordre : `precheck_skip` →
+  `forbidden region: <LABEL>` dès qu'une région déclarée n'est pas vendable (CA, AU, TR, AR, ZA,
+  Hong Kong…) ; `_console_plan` → la base grammaticale fait autorité ; sinon la lecture
+  générique quand elle n'est PAS implicite ; les deux existent et diffèrent → skip « console:
+  region contradiction (title/grammar vs URL) — not entered (R45) » ; lecture implicite alors
+  qu'un mot de région a été retiré du titre → skip « console: merchant region '<mot>' not
+  mapped to a sellable base — not entered (R45) » ; aucun mot de région → GLOBAL implicite comme
+  avant. Jamais un GLOBAL implicite pour une clé verrouillée.
+- **[moyen] R44 sur la branche console** : le plan garde le label de BASE (`_Plan.base_label`) et
+  `match_offer` lance `region_phrase_in_aks_name` dessus, contre l'identité de page (suffixe
+  plateforme retiré) ; la base grammaticale vaut hook marchand (pas de second-guess). « Air Force
+  United States Pacific Xbox One » → skip R44 ; avec « US » déclaré → 24us.
+- **[moyen] Gate multi-cibles ≠ échec** (`src/submitter.py`) : une entrée gated
+  `multi_target_unsupported_until_modal_verified` seule n'appelle plus `guard.record_result`,
+  n'alimente ni la série des 10 échecs consécutifs ni le StepGuard / BlockLedger, et est comptée
+  dans `gated_multi_target` (nouveau compteur du résultat / `submit_plan.json`). 12 candidats
+  bi-cibles puis un PC → le PC est traité, `stopped` None, `gated_multi_target` 12 (test ; un
+  blocker réel — select absent — arrête toujours à 10). `scripts/10_data_entry_auto.py` refuse
+  `--consoles` sans `--dry-run` (`parser.error("--consoles requires --dry-run until the
+  per-target modal is observed (R45)")`).
+- **[bas] Identité de page** : la comparaison plie les apostrophes (`_identity_tokens`) — « DreamWorks
+  Spirit Lucky's Big Adventure » (page PC) = « DreamWorks Spirit Luckys Big Adventure Nintendo
+  Switch » (faux skip réel du dry-run MMOGA du 12/09).
+- **[bas] Motif R19 console** stampé « (R19, R45) » → `feed_status` le classe consoles, plus
+  `stub_page` (regex `_R45_STAMP_RE`).
+- **[bas] RANDOM** : un mot de plateforme CONSOLE (XBOX / PLAYSTATION / PSN / NINTENDO / SWITCH /
+  PS4 / PS5) toléré entre RANDOM et GAME / KEY / ITEM (« 1 Random Xbox Game … » Driffle → pré-skip
+  RANDOM) ; jamais STEAM / PC (« Lost in Random Steam Key » reste un jeu).
+- **[bas] Gardes throttle** : le garde des pages consoles est `_ThrottleGuard(shared=<garde
+  principal>)` — un seul compteur consécutif, une seule grâce, un seul `stats` : le sweep
+  s'arrête après THROTTLE_MAX_CONSECUTIVE_UNRELIABLE sondes instables toutes sources confondues
+  (avant : 2×).
+- **[bas] Validation** : un id `None` dans une cible → `ValidationError("malformed target entry
+  (R45): …")`, jamais « None » dans l'empreinte.
+- **[haut] Comptes Difmark** et **[bas] « Xbox One/Series » sans X|S / jeton de tête faisant
+  partie du nom** : corrigés dans le classifieur (`src/console_keys.py`, seconde session — voir
+  MERCHANTS « Difmark » ; le compte n'est jamais une clé Switch). Détail : ACCOUNT mot entier
+  n'importe où dans le titre, chemin `/buy-console-account-` ou suffixe `-account(-<id>)` →
+  « console: ACCOUNT — not a game (R45) » ; « Xbox One/Series » (aussi « & », « , », « and »,
+  entre parenthèses) normalisé en « Series X|S » avant l'analyse → (XBOX_ONE, XBOX_SERIES) ;
+  un jeton SERIES / ONE encore collé à un séparateur après retrait de la phrase → nouveau skip
+  « console: unparsed platform residue (R45) » (« (Series) » seul et équilibré = nom, « Get Them
+  Out! (Series) ») ; un run console qui OUVRE le titre suivi d'un mot ordinaire = nom du jeu
+  (« Nintendo World Championships », « Nintendo Switch Sports » : gardé dans `resolve_name`,
+  jamais une déclaration ; seule la grammaire d'URL décide, les jetons du nom retirés du début
+  du slug) ; « <Jeu> - Nintendo Switch 2 Edition » = suffixe de NOM, et s'il contredit la
+  plateforme déclarée → nouveau skip « console: product name suffix '<Plateforme> Edition'
+  contradicts the declared platform <FAM> — not entered (R45) » ; slot région lu depuis les
+  mêmes runs que `resolve_name` (`resolve_name_and_regions`), deux bases vendables différentes
+  dans un slot → `region_words` seul renseigné → skip côté matcher. 64 tests
+  `tests/test_console_keys.py` (36 avant). Les deux nouveaux motifs portent le préfixe
+  `console:` → famille consoles dans `feed_status`.
+- **Mesure R46 Gamivo (14/09)** : 95 lignes passent le précheck — STEAM 61 / BATTLENET 4 / EA 2 /
+  GOG 1 ; 24 lignes butent encore sur le skip générique « language restriction » (préexistant).
+- **Docs** : DATA_CONTRACTS — les `targets` de `candidates.json` sont IMBRIQUÉES (`region:
+  {label, id}`, `edition: {label, id}` ; les deux exemples JSON corrigés ; la forme à plat n'existe
+  que dans `submit_plan.json` / `validation.template.json`), faits BOM (région 306 seule ;
+  éditions 337, 452, 480, 573, 1155, 1448, 1583, 4bo, 5bo + clé `"\ufeff1380"`),
+  `gated_multi_target`, SWITCH2 ; EXECUTOR_RULES §4.12 (P1 tranchée, Switch 2, règles région,
+  série gate, `--consoles` ⇒ `--dry-run`, « aucune SAISIE console sans le flag » mais le scan
+  d'URL reclasse 569 lignes Gamivo par lot en `console`, placeholder `<FAMILY>/<LABEL>`,
+  `extract_page_platform` = plateforme de l'onglet actif, `detect_region` /
+  `detect_region_base` lisent tous deux `_detect_region_parts`, carve-out `InspectSubmitter`
+  en §6, §10 ligne SWITCH2, §12 P1 fermée) ; AGENTS.md « Reviewed decisions » (cibles console =
+  plateformes déclarées seulement) ; MERCHANTS (slot région lu par le classifieur pour Kinguin /
+  K4G / Driffle / G2A / Eneba, règle compte Difmark, Switch 2 saisissable, mesure R46) ; README ;
+  HANDOFF (état, prochaines étapes, 1629 tests).
+- **Reste à faire** : observer le nouveau modal (`--inspect`) → remplissage par cible ; réponses
+  de Romain sur P2-P5 ; correction manuelle de Riders Republic ; dry-run consoles MMOGA / Kinguin
+  (`--consoles --dry-run`) pour mesurer.
+
 ## 2026-09-12 — Consoles R45 — préparation (pages consoles, classifieur, cibles multiples, gate submit)
 
 Romain : l'outil AKS feed va permettre d'**overwriter la région (= région/plateforme) et

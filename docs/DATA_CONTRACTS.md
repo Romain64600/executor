@@ -108,8 +108,8 @@ tables: one 5-line block per candidate, then a per-reason "Skipped summary".
   "edition": { "label": "Standard", "id": "1" },
   "targets": [
     { "platform": "STEAM", "aks_product_id": "12345", "aks_url": "https://www.allkeyshop.com/blog/...",
-      "aks_name": "Tower! Simulator 3", "region_label": "EU", "region_id": "9",
-      "edition_label": "Standard", "edition_id": "1" }
+      "aks_name": "Tower! Simulator 3",
+      "region": { "label": "EU", "id": "9" }, "edition": { "label": "Standard", "id": "1" } }
   ]
 }
 ```
@@ -118,14 +118,20 @@ tables: one 5-line block per candidate, then a per-reason "Skipped summary".
 `REGION_IDS` keys — STEAM, GOG, UBISOFT, EPIC, EA, BATTLENET or **PUBLISHER**
 (R20 revision: a token-less title whose AKS page lists `Direct Publisher`) — or,
 since R45 (2026-09-12, `REGION_IDS.update(CONSOLE_REGION_IDS)`), a console family
-**XBOX_ONE / XBOX_SERIES / XBOX_PC / PS4 / PS5 / SWITCH** (only produced under
+**XBOX_ONE / XBOX_SERIES / XBOX_PC / PS4 / PS5 / SWITCH / SWITCH2** (SWITCH2 since
+2026-09-14 — page kind `nintendo-switch-2`, the Nintendo bucket ids; only produced under
 `--consoles`). A `SkippedOffer` is `{offer, reason}`.
 
 **`targets` (R45) is ALWAYS present**, even on a PC candidate, where it holds exactly
 one entry synthesised from the primary fields (`platform`, `aks_product_id`,
 `aks_url`, `aks_name`, `region`, `edition`). Each entry is a `Target.to_dict()`
 (`src/matcher.py`, frozen dataclass): `{platform, aks_product_id, aks_url, aks_name,
-region_label, region_id, edition_label, edition_id}`. The first target IS the
+region: {label, id}, edition: {label, id}}` — **NESTED** `region` / `edition` dicts,
+the same shape as the top-level fields (`validation_io._mirror_primary_target` writes the
+same). The FLAT shape `{platform, aks_product_id, region_id, edition_id}` exists only in
+`validation.template.json` (`candidate_targets`) and in `submit_plan.json` `targets`
+(`normalize_targets`, plus `region_label` / `edition_label`) — never in
+`candidates.json` (doc fix 2026-09-14). The first target IS the
 primary (same page / bucket / edition as the top-level fields); the following ones
 are the other AKS platform pages the same feed row must be filed on (Romain's
 per-target region/edition overwrite, EXECUTOR_RULES §4.12). Console region labels
@@ -157,14 +163,20 @@ declared family):
   "edition": { "label": "Standard", "id": "1" },
   "targets": [
     { "platform": "PS4", "aks_product_id": "85104", "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
-      "aks_name": "Hades PS4", "region_label": "Playstation Game Code GLOBAL", "region_id": "88",
-      "edition_label": "Standard", "edition_id": "1" },
+      "aks_name": "Hades PS4",
+      "region": { "label": "Playstation Game Code GLOBAL", "id": "88" }, "edition": { "label": "Standard", "id": "1" } },
     { "platform": "PS5", "aks_product_id": "85105", "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
-      "aks_name": "Hades PS5", "region_label": "PS5", "region_id": "88ps5h",
-      "edition_label": "Standard", "edition_id": "1" }
+      "aks_name": "Hades PS5",
+      "region": { "label": "PS5", "id": "88ps5h" }, "edition": { "label": "Standard", "id": "1" } }
   ]
 }
 ```
+
+(P1, decided by Romain on 2026-09-14: the two targets exist because the merchant declared
+BOTH generations — a lone "Hades PS5 CD Key" yields the PS5 target only, never a PS4
+sibling.) A null `aks_product_id` / `region.id` / `edition.id` in any target is refused
+by `validation._target_ids` (`ValidationError("malformed target entry (R45): …")`) —
+never the literal "None" in a fingerprint (fix 2026-09-14).
 
 A console candidate is emitted only when EVERY declared platform resolved to a
 verified AKS page, bucket and edition — never a partial `targets` list (EXECUTOR_RULES
@@ -280,10 +292,13 @@ region list was byte-identical in the 9 catalogs fetched 10-12/09): every `key` 
 `('Xbox/PC GLOBAL', '306')` → source `id`, `('PS5', '88ps5h')` → `id`,
 `('Xbox Game Code EUROPE', '24eu')` → `id`; the same label with a wrong id → `None`,
 blocked). The `306` master label is `"\ufeffXbox/PC GLOBAL (306)"` — a leading U+FEFF
-(the `rendered_options` text has none, JS `trim()` strips it, yet it sorts last);
-edition `480` carries one too. Consumers therefore keep `region_text` verbatim in
-the plan but type the Selectize query WITHOUT U+FEFF (`region_query` /
-`edition_query`, `src/submitter.py`).
+(the `rendered_options` text has none, JS `trim()` strips it, yet it sorts last) — and
+region `306` is the ONLY region label with a BOM; ten edition labels (`337`, `452`,
+`480`, `573`, `1155`, `1448`, `1583`, `4bo`, `5bo`) and one edition KEY
+(`"\ufeff1380"`) carry one too (catalog `20260912-080120-auto`, checked 2026-09-14).
+Consumers therefore keep `region_text` verbatim in the plan but type the Selectize
+query WITHOUT U+FEFF (`region_query` / `edition_query`, `src/submitter.py`, stripped
+the same way for both selects).
 
 ## submit_plan.json (Stage 4 — dry-run and `--submit`)
 
@@ -302,6 +317,7 @@ it) — the append-only JSONL run log is the durable per-offer history the admin
   "feed_offers": 297,
   "write_attempts": 3,
   "created": 3,
+  "gated_multi_target": 0,
   "plan": [ { "…": "one entry per processed offer, see below" } ],
   "catalog": { "offer_id": "92015031", "regions_count": 71, "editions_count": 34 },
   "data_entry_mode": "safe",
@@ -324,6 +340,10 @@ Top-level fields:
   integers on a completed write run — `write_attempts` counts every ready offer
   a write was attempted on, `created` only post-save-**proven** creations;
   `null` on a completed dry-run; the pre-loop aborted shapes carry `0`.
+- `gated_multi_target` (R45 review fix, 2026-09-14): entries gated ONLY by the
+  `multi_target_unsupported_until_modal_verified` blocker — designed skips (no write
+  attempted, row untouched) that feed neither the 10-consecutive-failures streak nor
+  the StepGuard, so a batch of them never yields `stopped: "ten_consecutive_failures"`.
 - `catalog`: present only when a session catalog was loaded (write runs) —
   a summary, not the full catalog (that lives in `session_catalog.json`).
 - `data_entry_mode` / `matched_mode` / `limit` (stamped by the CLI, R24/FC5):

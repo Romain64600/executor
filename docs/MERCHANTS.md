@@ -70,12 +70,18 @@ sous `--consoles`), preuve de succès = disparition du feed.
 - **Config** : générique (pas de module).
 - **Consoles (R45)** : plateforme dans le titre, juste avant `CD Key` (`Xbox One / Xbox Series
   X|S`, `Xbox Series X|S / PC`, `PS5`, `PS4/PS5`, `Nintendo Switch`, `Nintendo Switch 2`) ; la
-  région (code 2 lettres) est AVANT la plateforme ; `… Account` / `… Access` (URL `-account` /
+  région (code 2 lettres) est AVANT la plateforme et **c'est le classifieur qui la lit**
+  (slot région → `region_base` : EU / US / UK / GB ; CA / AU / TR / AR / ZA / NA… →
+  `forbidden region: <LABEL>` en précheck — correctif du 14/09 : le scan générique ne voyait
+  ni « … US Xbox One … » ni le `-us-` en milieu de slug, 150 lignes CA/AU et 37 lignes US
+  passaient en GLOBAL implicite) ; `… Account` / `… Access` (URL `-account` /
   `-online-account-activation`) = non-jeu → skip. Le slug de l'URL reflète le titre
   (`-eu-xbox-one-xbox-series-x-s-cd-key`), sans segment de catégorie. Dernier lot : **365
   consoles / 940 lignes** — One+Series 211, Series 79, PS5 16, PS4/PS5 15, Switch 13, Switch 2
-  12 (pas de bucket AKS → skip) ; **CA 83 / AU 77** en région interdite (skip avant toute
-  résolution).
+  12 (**saisissables depuis le 14/09** : famille SWITCH2, page `nintendo-switch-2`, buckets
+  NINTENDO 99 / 99eu / 99us / 992) ; **CA 83 / AU 77** en région interdite (skip avant toute
+  résolution, effectif depuis le 14/09). P1 (Romain 14/09) : « clé PS5 seule = page PS5
+  seulement » — une ligne `PS5` ne cible jamais la page PS4, `PS4/PS5` cible les deux.
 - **Résiduel** : consoles, bundles, monnaies, titres sans page AKS, variantes d'édition.
 
 ## Gamivo (store 51)
@@ -129,9 +135,14 @@ sous `--consoles`), preuve de succès = disparition du feed.
   `xbox-series` / `xbox-xboxseries` → Series ; `xbox-xbox-one-series` / `xbox-xboxoneseries` /
   `xbox-one-series` → One+Series ; `xbox-xboxone` → One ; suffixe `-pc` / `-windows` / `…windows`
   fusionné → PC déclaré ; `xbox-pc` seul → skip « PC-only Xbox Live key » ; `ps-ps5` / `psn-ps5`
-  → PS5 ; `nintendo-nintendo-switch` → Switch ; région = queue « EN <Pays> » du titre / code pays
-  de l'URL avant le jeton d'édition. Dernier lot : **572 / 762** — Series 333, One+Series 207 ;
-  **United Kingdom 258, Colombia 203**. **Fuite corrigée (2026-09-12)** : le garde console ne
+  → PS5 ; `nintendo-nintendo-switch` → Switch ; région = queue « EN <Pays> » du titre, lue par
+  le hook `title_region` (R46) que `detect_region_base` porte aussi dans la branche console
+  (vérifié le 14/09 : « Ravenswatch EN United Kingdom » + `…-xbox-xboxoneseries-uk-standard` →
+  UK, buckets 226 / 305 — la moitié Gamivo du finding « région jamais lue » de la revue est
+  réfutée) ; queue non vendue → `forbidden region` (précheck R46). Mesure R46 (14/09) : 95
+  lignes passent le précheck — STEAM 61 / BATTLENET 4 / EA 2 / GOG 1 ; 24 lignes butent encore
+  sur le skip générique « language restriction » (préexistant). Dernier lot : **572 / 762** —
+  Series 333, One+Series 207 ; **United Kingdom 258, Colombia 203**. **Fuite corrigée (2026-09-12)** : le garde console ne
   lisait que le titre → « Riders Republic Premium Edition United States »
   (`…/riders-republic-xbox-xbox-one-series-us-premium`, run
   `20260911-162100-auto-gamivo-s51-p28`) a été saisi PUBLISHER GLOBAL Premium sur la page PC
@@ -151,7 +162,9 @@ sous `--consoles`), preuve de succès = disparition du feed.
   invérifiable → skip fail-closed `[R32c]`.
 - **Consoles (R45)** : écrit « X/S » (`(Xbox Series X/S)`, `(Xbox Series X/S, PC)`, `Xbox One,
   PC` sans parenthèses, `(PS5)`, `(Nintendo Switch 2)`), magasin ` - Xbox Live Key - ` / ` - PSN
-  Key - ` / ` - Nintendo eShop Key - `, région en queue (` - EUROPE`, ` - UNITED KINGDOM`…) ;
+  Key - ` / ` - Nintendo eShop Key - `, région en queue (` - EUROPE`, ` - UNITED KINGDOM`…),
+  lue par la queue générique ET le slot région du classifieur (pays non vendu → `forbidden
+  region`, 14/09) ; `(Nintendo Switch 2)` → famille SWITCH2 (saisissable) ;
   **One et Series sont des lignes séparées** (One+Series : 1 ligne sur 1 544 toutes runs). URL
   `<slug>-xbox-series-x-s[-pc]-xbox-live-key-<région>-i<id>` (`url_platform_scan` déjà actif
   pour le PC). Dernier lot : **42 / 806**.
@@ -197,8 +210,11 @@ sous `--consoles`), preuve de succès = disparition du feed.
 - **Config** : générique. Pagination `&p=N`.
 - **Consoles (R45)** : `<Jeu> [Édition] <Région> <Plateforme> CD Key` — `XBOX One/Series X|S`
   45, `XBOX Series X|S` 25, `PC/XBOX One/Series X|S` 9, `PC/XBOX Series X|S` 5, `PS5` 8,
-  `PS4/PS5` 1, `Nintendo Switch` 13, `Nintendo Switch 2` 13 (dernier lot) ; région en toutes
-  lettres avant la plateforme (Europe 75, United States 31) ; URL
+  `PS4/PS5` 1, `Nintendo Switch` 13, `Nintendo Switch 2` 13 (dernier lot ; **Switch 2
+  saisissable depuis le 14/09**, page `nintendo-switch-2`, buckets NINTENDO) ; région en toutes
+  lettres avant la plateforme (Europe 75, United States 31), lue par le slot région du
+  classifieur (`region_base` ; pays non vendu → `forbidden region: <LABEL>` en précheck, 14/09 —
+  jamais un GLOBAL implicite pour un mot de région retiré du titre) ; URL
   `/product/<slug>-<plateforme>-<région>-…-cd-key-<8 car.>` (`xbox-one-series-x-s`,
   `xbox-series-x-s`, `pc-xbox-one-series-x-s`, `nintendo-switch(-2)`, `playstation-5`,
   `ps4-ps5`). Dernier lot : **135 / 592**.
@@ -213,7 +229,8 @@ sous `--consoles`), preuve de succès = disparition du feed.
   Xbox Series X|S)` 28, `(Xbox One)` 10, `(PS4 / PS5)` 8 + `(PS4/PS5)` 2, `(PS5)` 5, `(PS4)` 5,
   `(Nintendo Switch)` 5, `(Nintendo Switch 2)` 1, `(PC / Xbox …)` = PC déclaré — magasin ` - Xbox
   Live - ` / ` - PSN - ` / ` - Nintendo - ` ; région dans la 1re parenthèse (Global 42, Europe 41,
-  United States 16). L'URL écrit **`xbox-series-xs`**
+  United States 16), lue par le slot région du classifieur (`(Europe)` → eu ; `(Hong Kong)` →
+  `forbidden region: HONG KONG`, 14/09) ; « 1 Random Xbox Game … » → pré-skip RANDOM (14/09). L'URL écrit **`xbox-series-xs`**
   (`-europe-xbox-one-xbox-series-xs-xbox-live-digital-key-p…`, `-ps4-ps5-psn-digital-key-`).
   Dernier lot : **112 / 464**.
 - **Résiduel** : sans page AKS, consoles, bundles, monnaies, DLC sans page propre.
@@ -242,7 +259,10 @@ sous `--consoles`), preuve de succès = disparition du feed.
   avec caractères Unicode compatibilité (« Ⅱ ») → NFKC avant identité.
 - **Config** : `eneba.py` — `url_platform_prefixes`.
 - **Consoles (R45)** : `<Jeu> [(<Plateforme>)] XBOX LIVE Key <RÉGION>` — la région vient APRÈS
-  le marqueur de clé (EUROPE 730, UNITED STATES 626) ; `(Xbox Series X|S)` 299,
+  le marqueur de clé (EUROPE 730, UNITED STATES 626 — lue par la queue générique et le slot
+  région du classifieur ; un mot de région retiré du titre sans base vendable → skip, jamais
+  GLOBAL implicite, 14/09) ; `-nintendo-switch-2-` → famille SWITCH2 (saisissable, 14/09) ;
+  `(Xbox Series X|S)` 299,
   `(Windows/Xbox Series X|S)` 179 (PC déclaré), `PC/XBOX LIVE Key` 172 (clé PC vendue via Xbox
   Live → skip « PC-only ») ; URL : segment de tête `xbox-` / `psn-` / `nintendo-` (préfixe de
   magasin, PAS une génération : `xbox-one-last-breath-…`), puis `-xbox-series-x-s-xbox-live-key-`,
@@ -266,6 +286,12 @@ sous `--consoles`), preuve de succès = disparition du feed.
   `buy-console-account-` boilerplate, retiré avant tout signal (`url_ignore_substrings`),
   jamais un motif de skip. Plateforme et région lues sur la page de l'offre
   (`resolve_difmark_offer`). Hors liste blanche safe-auto.
+- **Consoles (R45, règle du 14/09)** : les lignes « <Jeu> (Account) Standard Edition » (URL
+  `buy-console-account-<slug>-nintendo-switch-account-<id>`, 393 lignes sur les runs
+  sauvegardés) sont des **COMPTES**, jamais des clés — le classifieur les skippe « console:
+  ACCOUNT — not a game (R45) » (« Account » n'importe où dans le titre, préfixe d'URL
+  `buy-console-account-` + suffixe `-account-<id>`). La revue du 12/09 les avait vues classées
+  clés Switch (compte saisi comme clé) ; un compte Difmark ne prend jamais la branche console.
 
 ## Ce qui n'est pas propre à un marchand
 

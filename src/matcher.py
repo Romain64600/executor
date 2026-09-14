@@ -410,8 +410,14 @@ NON_GAME_CONTENT_TOKENS = (
 # "Random … Skin" lootboxes are caught downstream by the SKIN cosmetic rule.
 _LOOT_NOUN_COMMON = r"GAMES?|KEYS?|ITEMS?"
 _LOOT_NOUN_STRONG = r"CASES?|CRATES?|DROPS?|SPINNERS?|LOOT|BUNDLES?|GACHA|MYSTERY|BOX(?:ES)?"
+# [R45] review fix (2026-09-14): ONE console platform word may sit between RANDOM and the
+# common noun — Driffle "1 Random Xbox Game (Global) (Xbox One / Xbox Series X|S) …" escaped
+# the scan (under --consoles it reached resolution as "1 Random Game"). Console words ONLY:
+# never STEAM / PC — "Lost in Random Steam Key" is a real game (test pinned).
+_LOOT_CONSOLE_WORD = r"XBOX|PLAYSTATION|PSN|NINTENDO|SWITCH|PS4|PS5"
 _RANDOM_LOOT_RE = re.compile(
     rf"\bRANDOM\s+(?:{_LOOT_NOUN_COMMON})\b"                         # Random <common noun>
+    rf"|\bRANDOM\s+(?:{_LOOT_CONSOLE_WORD})\s+(?:{_LOOT_NOUN_COMMON})\b"  # Random Xbox Game (R45)
     rf"|\bRANDOM\b(?:\s+\w+){{0,2}}\s+(?:{_LOOT_NOUN_STRONG})\b"     # Random [adj adj] <strong noun>
     rf"|\b\d+\s*[xX]\s*(?:PREMIUM\s+)?RANDOM\b"                      # <N>x Random …
 )
@@ -852,6 +858,13 @@ def precheck_skip(offer: NormalizedOffer, *, consoles: bool = False) -> str | No
             return "console"
         if sig.skip_reason:
             return sig.skip_reason
+        # [R45] review fix (2026-09-14): the region SLOT of the merchant's console grammar
+        # (Kinguin / K4G "<Game> CA Xbox One …", Driffle "(Hong Kong)", Gamivo "EN
+        # Singapore") names a region AKS does not sell → the same "forbidden region" path
+        # as PC, BEFORE any resolution. Before this fix 150 Kinguin CA / AU console rows
+        # passed the precheck and read an implicit GLOBAL.
+        if sig.region_label:
+            return f"forbidden region: {sig.region_label}"
         # A classified console row keeps going through the remaining categorical scans.
     for region in FORBIDDEN_REGIONS:
         if f" {region} " in padded:
@@ -1729,31 +1742,82 @@ class _ThrottleGuard:
       Search failures never count toward the throttle abort.
 
     ``stats`` (dict) is filled for match_meta: probe_unreliable, search_failures,
-    search_circuit_open_offers, throttle_graces."""
+    search_circuit_open_offers, throttle_graces.
+
+    ``shared`` ([R45] review fix, 2026-09-14): this guard DELEGATES its throttle state
+    (consecutive count, last failed page, graces, limit, ``stats``) to another guard, so
+    the anchor probes (main guard) and the console tab-page reads (page guard) of one
+    run form ONE stream of probes — the sweep aborts after
+    THROTTLE_MAX_CONSECUTIVE_UNRELIABLE unreliable probes across BOTH resolvers, not 2×
+    (two independent guards doubled the budget and the graces). The R30 search breaker
+    stays per instance (page reads never hit the search endpoint)."""
 
     def __init__(self, resolver: Callable[..., AksResolution | None],
                  limit: int = THROTTLE_MAX_CONSECUTIVE_UNRELIABLE, *,
                  sleep: Callable[[float], None] = time.sleep,
                  grace_s: float = THROTTLE_GRACE_S, max_graces: int = THROTTLE_MAX_GRACES,
                  search_breaker: int = SEARCH_CIRCUIT_BREAKER_FAILURES,
-                 search_open: bool = False) -> None:
+                 search_open: bool = False,
+                 shared: "_ThrottleGuard | None" = None) -> None:
         self._resolver = resolver
-        self._limit = limit
         self._sleep = sleep
-        self._grace_s = grace_s
-        self._max_graces = max_graces
         self._search_breaker = search_breaker
         self._accepts_search = _accepts_kwarg(resolver, "search")
-        self.consecutive = 0
-        self.graces = 0
         self.search_failures_consecutive = 0
         # A sweep may START with the circuit open (persisted from the previous page,
         # Romain GO 2026-09-10) — no 3 × timeout tax on every page while AKS search is down.
         self.search_open = bool(search_open)
-        self._last_failed: str | None = None
+        self.shared = shared
+        if shared is not None:
+            # One throttle state for the run: limits and counters are the shared guard's.
+            self._limit = shared._limit
+            self._grace_s = shared._grace_s
+            self._max_graces = shared._max_graces
+            self.stats = shared.stats
+            return
+        self._limit = limit
+        self._grace_s = grace_s
+        self._max_graces = max_graces
+        self._consecutive = 0
+        self._graces = 0
+        self._last_failed_key: str | None = None
         self.stats: dict[str, int] = {"probe_unreliable": 0, "search_failures": 0,
                                       "search_circuit_open_offers": 0, "throttle_graces": 0,
                                       "search_circuit_preopened": int(bool(search_open))}
+
+    # Throttle state — the shared guard's when delegated, else this instance's.
+    @property
+    def consecutive(self) -> int:
+        return self.shared.consecutive if self.shared is not None else self._consecutive
+
+    @consecutive.setter
+    def consecutive(self, value: int) -> None:
+        if self.shared is not None:
+            self.shared.consecutive = value
+        else:
+            self._consecutive = value
+
+    @property
+    def graces(self) -> int:
+        return self.shared.graces if self.shared is not None else self._graces
+
+    @graces.setter
+    def graces(self, value: int) -> None:
+        if self.shared is not None:
+            self.shared.graces = value
+        else:
+            self._graces = value
+
+    @property
+    def _last_failed(self) -> str | None:
+        return self.shared._last_failed if self.shared is not None else self._last_failed_key
+
+    @_last_failed.setter
+    def _last_failed(self, value: str | None) -> None:
+        if self.shared is not None:
+            self.shared._last_failed = value
+        else:
+            self._last_failed_key = value
 
     def _call(self, name: str, kwargs: dict[str, Any]) -> AksResolution | None:
         if self.search_open and self._accepts_search:
@@ -2433,6 +2497,11 @@ class _Plan:
     # Console only: (family, page, bucket label, bucket id) per declared platform page,
     # primary first (the page `resolution` IS). () for PC.
     console_targets: tuple[tuple[str, AksResolution, str, str], ...] = ()
+    # Console only ([R45] review fix, 2026-09-14): the BASE region label ("US" / "EU" /
+    # "UK" / "GLOBAL") the buckets were derived from — `region_label` is the bucket text
+    # ("Xbox Game Code US"), which R44 cannot look up. None for PC (region_label is the
+    # base label there already).
+    base_label: str | None = None
 
     @property
     def console(self) -> bool:
@@ -2734,11 +2803,21 @@ def match_offer(
     # a lock (see _REGION_IDENTITY_PHRASES) — fail-closed skip unless the merchant's
     # title grammar itself declared the region (hook = authoritative, R32e).
     hook_region = _cfg.title_region(offer.name) if _cfg is not None and _cfg.title_region else None
-    identity_phrase = region_phrase_in_aks_name(region_label, resolution.aks_name)
-    if identity_phrase is not None and hook_region is None:
+    # [R45] review fix (2026-09-14): a console plan's region_label is the BUCKET text
+    # ("Xbox Game Code US"), which R44 cannot look up — it reads the BASE label the plan
+    # kept (plan.base_label, "US") against the page IDENTITY (platform suffix removed:
+    # "Air Force United States Pacific Xbox One" → "… Pacific"); the console grammar's own
+    # region slot (sig.region_base) is authoritative like a merchant hook. PC rows: the
+    # same call as before (base label = region_label, raw page name).
+    r44_label = plan.base_label or region_label
+    r44_name = identity_name if plan.console else resolution.aks_name
+    grammar_region = hook_region is not None or (
+        console_sig is not None and console_sig.region_base is not None)
+    identity_phrase = region_phrase_in_aks_name(r44_label, r44_name)
+    if identity_phrase is not None and not grammar_region:
         return SkippedOffer(
             offer,
-            f"region {region_label} read from {identity_phrase!r}, which is part of the AKS "
+            f"region {r44_label} read from {identity_phrase!r}, which is part of the AKS "
             f"product name {resolution.aks_name!r} — region ambiguous, not entered (R44)",
         )
 
@@ -3085,6 +3164,16 @@ def match_offer(
     )
 
 
+def _identity_tokens(name: str) -> list[str]:
+    """[R45] review fix (2026-09-14): the per-page identity comparison folds apostrophes.
+    AKS names a console page without them ("DreamWorks Spirit Luckys Big Adventure
+    Nintendo Switch") while the PC page keeps "Lucky's" — a real false skip of the MMOGA
+    dry-run of 2026-09-12. ``tokenize`` already folds curly quotes to "'"
+    (normalize_apostrophes); the ASCII apostrophe is removed here, empty tokens dropped."""
+
+    return [t for t in (tok.replace("'", "") for tok in tokenize(name)) if t]
+
+
 def _console_plan(
     offer: NormalizedOffer,
     sig: ConsoleSignal,
@@ -3100,8 +3189,16 @@ def _console_plan(
        title without platform / store / region markers (edition kept) — the text the
        R01 / R16 / R01b guards and detect_edition read, AND the slug source;
     b. a DLC / season-pass title → skip (P5, v1);
-    c. the base region (detect_region_base) → one bucket per family (REGION_IDS[fam]);
-       a gift → skip (no console gift bucket); a missing bucket (PS5 EU/US/UK) → skip;
+    c. the base region → one bucket per family (REGION_IDS[fam]) — review fix
+       2026-09-14: the merchant grammar's region slot (``sig.region_base``, read by the
+       classifier: Kinguin / K4G "<Game> US Xbox One …", Driffle "(Europe)") is
+       authoritative; the generic title/URL scan (detect_region_base, which carries the
+       R46 Gamivo ``title_region`` hook: "Ravenswatch EN United Kingdom" → uk) speaks
+       only when NOT implicit; the two must agree (else skip); an implicit read while
+       the classifier removed a region word (``sig.region_words``) is refused — a
+       region-locked console key is NEVER filed under an implicit GLOBAL (Gamivo 254/264
+       and Kinguin 37 real rows did before); a gift → skip (no console gift bucket); a
+       missing bucket (PS5 EU/US/UK) → skip;
     d. the ANCHOR page: the PC page when it exists (slug tiers + R30 search, unchanged),
        else the console page of the primary family by slug (``page_kind``, no search —
        like account pages); none → skip;
@@ -3137,9 +3234,30 @@ def _console_plan(
         return SkippedOffer(offer, "console: DLC / season pass on console — not entered yet (R45)")
 
     # (c) region: the platform-independent base, then one bucket per declared family.
-    base, label, implicit, gift = detect_region_base(offer)
+    # [R45] review fix (2026-09-14) — never an implicit GLOBAL for a region word the
+    # merchant wrote (see the docstring): grammar slot > non-implicit generic read >
+    # refusal when a region word was seen but not mapped > implicit GLOBAL (no region
+    # word at all, the Kinguin-style default).
+    generic_base, generic_label, generic_implicit, gift = detect_region_base(offer)
     if gift:
         return SkippedOffer(offer, "console: gift delivery has no console bucket (R45)")
+    grammar_base = sig.region_base
+    if grammar_base is not None:
+        if not generic_implicit and generic_base != grammar_base:
+            return SkippedOffer(
+                offer, "console: region contradiction (title/grammar vs URL) — not entered (R45)")
+        base, implicit = grammar_base, False
+        label = "GLOBAL" if grammar_base == "global" else str(grammar_base).upper()
+    elif not generic_implicit:
+        base, label, implicit = generic_base, generic_label, False
+    elif sig.region_words:
+        return SkippedOffer(
+            offer,
+            f"console: merchant region {sig.region_words[0]!r} not mapped to a sellable base "
+            "— not entered (R45)",
+        )
+    else:
+        base, label, implicit = "global", "GLOBAL", True
     for fam in families:
         if REGION_IDS.get(fam, {}).get(base) is None:
             return SkippedOffer(offer, f"no region id for {fam}/{label} (R45)")
@@ -3217,12 +3335,13 @@ def _console_plan(
                     f"console: AKS {fam} page {url} not found (404) — declared platform "
                     "unverifiable (R45)",
                 )
-        if tokenize(console_page_identity(page.aks_name)) != tokenize(identity_name):
+        if _identity_tokens(console_page_identity(page.aks_name)) != _identity_tokens(identity_name):
             return SkippedOffer(
                 offer, f"console page '{page.aks_name}' is not '{identity_name}' (R45)")
         if not page.editions:
+            # "(R19, R45)": feed_status files the console branch's R19 under consoles.
             return SkippedOffer(
-                offer, f"AKS {fam} page carries no editions map — edition unverifiable (R19)")
+                offer, f"AKS {fam} page carries no editions map — edition unverifiable (R19, R45)")
         bucket = _bucket(fam)
         if isinstance(bucket, SkippedOffer):
             return bucket
@@ -3232,7 +3351,7 @@ def _console_plan(
         # anchor IS the PC page here, so its identity is the identity by construction).
         if not pc_res.editions:
             return SkippedOffer(
-                offer, "AKS XBOX_PC page carries no editions map — edition unverifiable (R19)")
+                offer, "AKS XBOX_PC page carries no editions map — edition unverifiable (R19, R45)")
         bucket = _bucket("XBOX_PC")
         if isinstance(bucket, SkippedOffer):
             return bucket
@@ -3252,6 +3371,7 @@ def _console_plan(
         identity_name=identity_name,
         guard_name=guard_name,
         console_targets=tuple(pages),
+        base_label=label,
     )
 
 
@@ -3282,8 +3402,9 @@ def match_feed(
 
     [R45] ``consoles`` (default off) routes classified console rows through the console
     branch; ``page_resolver`` reads the console target pages by URL — under the production
-    resolver it is wrapped in its OWN throttle guard (same 429 / consecutive-unreliable
-    abort; counters summed into ``stats``), an injected one is used as is."""
+    resolver it is wrapped in a throttle guard that SHARES the main guard's state (review
+    fix 2026-09-14: one consecutive-unreliable count, one grace budget and one ``stats``
+    across both resolvers), an injected one is used as is."""
 
     candidates: list[Candidate] = []
     skipped: list[SkippedOffer] = []
@@ -3294,12 +3415,14 @@ def match_feed(
     # Account-page resolutions (Difmark accounts) go through the same guard when the
     # production resolver is in use; an injected test resolver keeps the default.
     account_resolver = guard if resolver is resolve_aks else resolve_aks
-    # [R45] console page reads: production → own guard (same fail-closed abort), else as is.
+    # [R45] console page reads: production → a guard sharing the main guard's throttle
+    # state (same fail-closed abort, ONE consecutive count across both), else as is.
     page_guard: Callable[[str], AksResolution | None] = page_resolver
     if resolver is resolve_aks:
         page_guard = _ThrottleGuard(
             page_resolver,
-            sleep=time.sleep if page_resolver is resolve_aks_url else (lambda s: None))
+            sleep=time.sleep if page_resolver is resolve_aks_url else (lambda s: None),
+            shared=guard)
     for i, offer in enumerate(feed.offers, 1):
         result = match_offer(offer, guard, difmark_offer_resolver, account_resolver=account_resolver,
                              page_resolver=page_guard, consoles=consoles)
@@ -3314,8 +3437,5 @@ def match_feed(
             on_progress({"done": i, "total": total,
                          "candidates": len(candidates), "skipped": len(skipped)})
     if stats is not None:
-        stats.update(guard.stats)
-        if page_guard is not page_resolver:
-            for key, value in page_guard.stats.items():    # [R45] both guards' counters
-                stats[key] = int(stats.get(key, 0)) + int(value)
+        stats.update(guard.stats)          # [R45] the page guard shares this very dict
     return candidates, skipped

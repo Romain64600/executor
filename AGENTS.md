@@ -163,3 +163,13 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   R18 as is. (Titles that DO carry a DLC / Season Pass marker are governed by R43's stricter
   own-page + unnamed-DLC rules — those are not the same decision.)
 
+- **Console targets = merchant-declared platforms only (R45 P1, Romain 2026-09-14) — do NOT
+  add a sibling page (PS4 for a lone PS5 key, Xbox One for a lone Series key).** Romain's
+  ruling: « clé PS5 seule = page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch
+  et Switch 2 ». The console branch (`_console_plan`, EXECUTOR_RULES §4.12 P1) files a key on
+  the AKS page of every platform the merchant DECLARES and AKS has — a lone declared platform
+  → that page only; a cross-gen declaration ("PS4 / PS5", "Xbox One / Series X|S") → both
+  pages; the PC page only as a page-verified Xbox Play Anywhere target (P2). An audit will
+  "find" the missing PS4 / Xbox One sibling ("the game exists on that page too") — there is
+  no "page alone" policy and no switch for it; leave it out.
+

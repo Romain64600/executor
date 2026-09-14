@@ -52,6 +52,11 @@ def _target_ids(target: Any) -> tuple[str, str, str]:
         edition_id = edition["id"] if isinstance(edition, dict) else target["edition_id"]
     except (KeyError, TypeError) as exc:
         raise ValidationError(f"malformed target entry (R45): {target!r}") from exc
+    # Review fix (2026-09-14): a PRESENT but null id is as malformed as a missing one —
+    # str(None) would stamp the literal "None" into the fingerprint (app.js fp() renders
+    # "null" for the same JSON), a guessed identity that then fails as unknown_fingerprint.
+    if product_id is None or region_id is None or edition_id is None:
+        raise ValidationError(f"malformed target entry (R45): {target!r}")
     return str(product_id), str(region_id), str(edition_id)
 
 

@@ -48,6 +48,13 @@ class CategorizeReasonTests(unittest.TestCase):
             "console: AKS has no PS4 page for 'Hades' — declared platform unverifiable (R45)": "console",
             "console page 'Elden Ring Tarnished Edition Nintendo Switch 2' is not 'Elden Ring' (R45)": "console",
             "no region id for PS5/EU (R45)": "console",
+            # Review fix 2026-09-14: the console branch stamps its R19 "(R19, R45)" so it
+            # lands here, not in stub_page; the region refusals of the fix land here too.
+            "AKS PS4 page carries no editions map — edition unverifiable (R19, R45)": "console",
+            "AKS XBOX_PC page carries no editions map — edition unverifiable (R19, R45)": "console",
+            "console: merchant region 'CA' not mapped to a sellable base — not entered (R45)": "console",
+            "console: region contradiction (title/grammar vs URL) — not entered (R45)": "console",
+            "AKS PS4 page carries no editions map — edition unverifiable (R19)": "stub_page",   # pre-fix wording
             "no AKS product page found (console) (R45)": "console",
             "edition Deluxe(7) not sold on the PS4 page (R45)": "console",
             "consoleer": "other",   # not the bare word, not "console:" — untouched

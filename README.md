@@ -105,18 +105,24 @@ state and cannot be argued away by a language model.
   behaviour. See **§4.10**.
 - **Console keys — multi-target candidates, gated** `[R45]` (2026-09-12). AKS has
   separate console product pages (`buy-<slug>-<kind>-compare-prices/`, kind = `ps4` /
-  `ps5` / `xbox-one` / `xbox-series` / `nintendo-switch(-2)`), and Romain's new feed tool
-  overwrites the region (= region/platform) and the edition **per target page**. Under
-  `--consoles` (default **off**) the matcher classifies a console row from its title AND
-  URL (`src/console_keys.py`), resolves one verified AKS page + bucket + edition **per
-  declared platform** (a "PS4 / PS5" key → the PS5 page and the PS4 page; an Xbox key →
-  Xbox One / Xbox Series, plus PC only when the PC page lists *Xbox Play Anywhere*) and
-  emits a candidate with several `targets` — or skips the whole row: **never a partial
+  `ps5` / `xbox-one` / `xbox-series` / `nintendo-switch` / `nintendo-switch-2`), and
+  Romain's new feed tool overwrites the region (= region/platform) and the edition **per
+  target page**. Under `--consoles` (default **off**; the sweep requires `--dry-run` with
+  it) the matcher classifies a console row from its title AND URL (`src/console_keys.py`,
+  the region slot of each merchant grammar included — never an implicit GLOBAL for a
+  region-locked key, review fix 2026-09-14), resolves one verified AKS page + bucket +
+  edition **per DECLARED platform** — **P1, decided by Romain on 2026-09-14: « clé PS5
+  seule = page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch et Switch 2 »**,
+  so a lone "PS5" key → the PS5 page only, a "PS4 / PS5" key → both pages, an Xbox key →
+  the declared Xbox generation(s) plus PC only when the PC page lists *Xbox Play Anywhere*;
+  Switch 2 keys → the `nintendo-switch-2` page under the Nintendo buckets — and emits a
+  candidate with one or several `targets`, or skips the whole row: **never a partial
   entry**, since a creation consumes the feed row. The submitter enters single-target
   candidates as today and **refuses** a multi-target one
-  (`multi_target_unsupported_until_modal_verified`) until the new modal's per-target
-  controls have been observed with `--inspect`. Policies P1-P5 await Romain's
-  confirmation. See [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) **§4.12** / §6.
+  (`multi_target_unsupported_until_modal_verified`, a designed skip that never feeds the
+  10-failures streak) until the new modal's per-target controls have been observed with
+  `--inspect`. Policies P2-P5 await Romain's confirmation. See
+  [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) **§4.12** / §6.
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full decision record.
 
@@ -330,8 +336,9 @@ manual_launch/run_executor.sh prepare --merchant Driffle --store-id 127 --pages 
 matcher and the safe-auto sweep accept `--consoles`: console rows are classified and
 resolved to their AKS console pages instead of being skipped `console`, and a key sold
 for several platforms becomes a **multi-target** candidate (`targets` in
-`candidates.json`, stamped `consoles: true` in `match_meta.json`). Measure with a dry-run
-first — the write of a multi-target candidate is blocked
+`candidates.json`, stamped `consoles: true` in `match_meta.json`). The sweep REFUSES
+`--consoles` without `--dry-run` (2026-09-14: "--consoles requires --dry-run until the
+per-target modal is observed (R45)") — the write of a multi-target candidate is blocked
 (`multi_target_unsupported_until_modal_verified`) until the new modal is observed:
 
 ```bash
@@ -622,10 +629,14 @@ the `aks-data-entry` skill maps onto a guard signal.
   `targets`, submitter gate, 2026-09-12; was "parked" on 2026-09-11). Console product
   pages found (`buy-<slug>-<kind>-compare-prices/`), title + URL classifier per merchant,
   one verified AKS page / bucket / edition per declared platform, Play Anywhere read from
-  the PC page, `--consoles` default off. **Waiting for the modal per-target overwrite**:
-  an `--inspect` pass on Romain's new feed modal, then the per-target fill; until then a
-  multi-target candidate is refused (`multi_target_unsupported_until_modal_verified`),
-  never entered partially. Policies P1-P5 to confirm with Romain; Riders Republic
+  the PC page, `--consoles` default off and dry-run only. The 2026-09-12 adversarial
+  review is fixed (2026-09-14: region slot of each grammar, R44 on consoles, identity
+  apostrophes, gate ≠ failure, shared throttle guard…), P1 is decided (declared platforms
+  only) and Switch 2 is the `SWITCH2` family. **Waiting for the modal per-target
+  overwrite**: an `--inspect` pass on Romain's new feed modal, then the per-target fill;
+  until then a multi-target candidate is refused
+  (`multi_target_unsupported_until_modal_verified`), never entered partially. Policies
+  P2-P5 to confirm with Romain; Riders Republic
   (Gamivo Xbox key entered as PC on 2026-09-11) to correct by hand, like the five Gamivo
   US Steam keys entered Publisher GLOBAL the same day (`[R46]`, `docs/MERCHANTS.md`). See
   [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) §4.12.

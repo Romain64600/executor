@@ -1,8 +1,10 @@
-"""tests for src/console_keys.py — R45 console keys (2026-09-12).
+"""tests for src/console_keys.py — R45 console keys (2026-09-12, review fixes 2026-09-14).
 
 Fixtures = the 40 representative feed rows of the 2026-09-12 read-only extraction
-(docs/feeds study §7) plus the design examples (DESIGN_consoles_R45 §2) and SMALL
-excerpts of real AKS page bodies (the ``<ul class="aks-offer-tabulations">`` block)."""
+(docs/feeds study §7) plus the design examples (DESIGN_consoles_R45 §2), the real rows
+quoted by the 2026-09-14 adversarial review (region slot, Switch 2 family, accounts, bare
+"Xbox One/Series", leading name token) and SMALL excerpts of real AKS page bodies (the
+``<ul class="aks-offer-tabulations">`` block)."""
 
 import unittest
 
@@ -13,20 +15,26 @@ from src.console_keys import (
     CONSOLE_PLATFORM_LABEL,
     CONSOLE_REGION_IDS,
     CONSOLE_REGION_LABELS,
+    SKIP_RESIDUE,
+    SKIP_SWITCH_2,
     ConsoleSignal,
     classify_console,
     console_marker_in_url,
     console_page_identity,
     extract_console_pages,
     extract_page_platform,
+    resolve_name_and_regions,
     resolve_name_of,
 )
 
 ONE_SERIES = ("XBOX_ONE", "XBOX_SERIES")
 NO_GEN = "console: no declared generation (R45)"
+# RETIRED 2026-09-14 (Switch 2 pages exist, Nintendo bucket): kept only to assert that the
+# classifier never emits it any more.
 SWITCH_2 = "console: Switch 2 has no AKS bucket (R45)"
 XBOX_360 = "console: Xbox 360 (R45)"
 PC_ONLY = "console: PC-only Xbox Live key (R45)"
+RESIDUE = "console: unparsed platform residue (R45)"
 
 
 def _not_a_game(marker: str) -> str:
@@ -85,7 +93,7 @@ ROWS = [
      "Eneba", ("PS4", "PS5"), False, None, "Let's Sing 2025 - International Hits (DLC)"),
     ("Split Fiction (Nintendo Switch 2) eShop Key HONG KONG",
      "https://www.eneba.com/nintendo-split-fiction-nintendo-switch-2-eshop-key-hong-kong",
-     "Eneba", (), False, SWITCH_2, "Split Fiction"),
+     "Eneba", ("SWITCH2",), False, None, "Split Fiction"),           # 2026-09-14: a family
     ("Fortnite: Deep Freeze Bundle + 1000 V-Bucks XBOX LIVE Key SOUTH AFRICA",
      "https://www.eneba.com/xbox-fortnite-deep-freeze-bundle-1000-v-bucks-xbox-live-key-south-africa",
      "Eneba", (), False, NO_GEN, "Fortnite: Deep Freeze Bundle + 1000 V-Bucks"),
@@ -104,7 +112,7 @@ ROWS = [
      "Kinguin", ("PS4", "PS5"), False, None, "Life is Strange Remastered Collection"),
     ("CloverPit EU Nintendo Switch 2 CD Key",
      "https://www.kinguin.net/category/764730/cloverpit-eu-nintendo-switch-2-cd-key",
-     "Kinguin", (), False, SWITCH_2, "CloverPit"),
+     "Kinguin", ("SWITCH2",), False, None, "CloverPit"),             # 2026-09-14: a family
     ("Blocky Farm XBOX One / Xbox Series X|S Account",
      "https://www.kinguin.net/category/523387/blocky-farm-xbox-one-xbox-series-x-s-account",
      "Kinguin", (), False, _not_a_game("ACCOUNT"), "Blocky Farm"),
@@ -139,7 +147,7 @@ ROWS = [
      "K4G", ONE_SERIES, False, None, "Home Sweet Home"),
     ("Pokémon Scarlet Europe Nintendo Switch 2 CD Key",
      "https://k4g.com/product/pokemon-scarlet-nintendo-switch-2-europe-cd-key-cd-key-3FWB2QK5",
-     "K4G", (), False, SWITCH_2, "Pokémon Scarlet"),
+     "K4G", ("SWITCH2",), False, None, "Pokémon Scarlet"),           # 2026-09-14: a family
     ("Borderlands 3 Ultimate Edition Europe PS4/PS5 CD Key",
      "https://k4g.com/product/borderlands-3-ps4-ps5-europe-instant-cd-key-ultimate-edition-cd-key-QF8DZERN",
      "K4G", ("PS4", "PS5"), False, None, "Borderlands 3 Ultimate Edition"),
@@ -169,10 +177,12 @@ ROWS = [
 
 class BucketTableTests(unittest.TestCase):
     def test_families_and_page_kinds(self):
-        self.assertEqual(CONSOLE_FAMILIES, ("XBOX_ONE", "XBOX_SERIES", "XBOX_PC", "PS4", "PS5", "SWITCH"))
+        # SWITCH2 (2026-09-14): its own AKS page kind (Street Fighter 6 Nintendo Switch 2
+        # id 188436, ELDEN RING Tarnished Edition Nintendo Switch 2 id 188441)
+        self.assertEqual(CONSOLE_FAMILIES, ("XBOX_ONE", "XBOX_SERIES", "XBOX_PC", "PS4", "PS5", "SWITCH", "SWITCH2"))
         self.assertEqual(CONSOLE_PAGE_KIND, {
             "XBOX_ONE": "xbox-one", "XBOX_SERIES": "xbox-series", "XBOX_PC": "cd-key",
-            "PS4": "ps4", "PS5": "ps5", "SWITCH": "nintendo-switch"})
+            "PS4": "ps4", "PS5": "ps5", "SWITCH": "nintendo-switch", "SWITCH2": "nintendo-switch-2"})
         self.assertEqual(CONSOLE_PAGE_KINDS, ("ps4", "ps5", "xbox-one", "xbox-series",
                                               "nintendo-switch", "nintendo-switch-2", "cd-key"))
         for fam in CONSOLE_FAMILIES:
@@ -190,9 +200,13 @@ class BucketTableTests(unittest.TestCase):
             ("PS4", "global"): "88", ("PS4", "eu"): "88eu", ("PS4", "us"): "88us", ("PS4", "uk"): "88uk",
             ("PS5", "global"): "88ps5h",
             ("SWITCH", "global"): "99", ("SWITCH", "eu"): "99eu", ("SWITCH", "us"): "99us", ("SWITCH", "uk"): "992",
+            # Switch 2 offers use the NINTENDO family bucket (2026-09-14: prices region 99,
+            # regions map {99: GLOBAL}, activationPlatform nintendo-eshop on both saved pages)
+            ("SWITCH2", "global"): "99", ("SWITCH2", "eu"): "99eu", ("SWITCH2", "us"): "99us", ("SWITCH2", "uk"): "992",
         }
         flat = {(fam, base): rid for fam, bases in CONSOLE_REGION_IDS.items() for base, rid in bases.items()}
         self.assertEqual(flat, expected)
+        self.assertEqual(CONSOLE_REGION_IDS["SWITCH2"], CONSOLE_REGION_IDS["SWITCH"])
         # PS5 has ONE bucket — no EU/US/UK (fail-closed in the matcher), no gift anywhere
         self.assertEqual(CONSOLE_REGION_IDS["PS5"], {"global": "88ps5h"})
         for bases in CONSOLE_REGION_IDS.values():
@@ -223,7 +237,7 @@ class BucketTableTests(unittest.TestCase):
         self.assertEqual(CONSOLE_PLATFORM_LABEL, {
             "XBOX_ONE": "Xbox One", "XBOX_SERIES": "Xbox Series X|S",
             "XBOX_PC": "Xbox / PC (Play Anywhere)", "PS4": "PS4", "PS5": "PS5",
-            "SWITCH": "Nintendo Switch"})
+            "SWITCH": "Nintendo Switch", "SWITCH2": "Nintendo Switch 2"})
 
 
 class ClassifyRowsTests(unittest.TestCase):
@@ -240,6 +254,7 @@ class ClassifyRowsTests(unittest.TestCase):
                 if name is not None:
                     self.assertEqual(sig.resolve_name, name)
                 self.assertNotIn("XBOX_PC", sig.families)
+                self.assertNotEqual(sig.skip_reason, SWITCH_2)     # retired 2026-09-14
                 if skip is None:
                     self.assertTrue(sig.families)
                     self.assertTrue(sig.resolve_name)
@@ -293,7 +308,7 @@ class ClassifyGrammarTests(unittest.TestCase):
             "https://www.eneba.com/psn-x-ps5-psn-key-europe": (("PS5",), False, None),
             "https://www.eneba.com/psn-x-ps4-psn-key-europe": (("PS4",), False, None),
             "https://www.eneba.com/nintendo-x-nintendo-switch-eshop-key-europe": (("SWITCH",), False, None),
-            "https://www.eneba.com/nintendo-x-nintendo-switch-2-eshop-key-europe": ((), False, SWITCH_2),
+            "https://www.eneba.com/nintendo-x-nintendo-switch-2-eshop-key-europe": (("SWITCH2",), False, None),
             "https://www.eneba.com/xbox-x-pc-xbox-live-key-europe": ((), False, PC_ONLY),
             "https://www.eneba.com/xbox-x-xbox-live-key-europe": ((), False, NO_GEN),
         }
@@ -329,7 +344,7 @@ class ClassifyGrammarTests(unittest.TestCase):
             "psn-ps5": (("PS5",), False, None),
             "ps-ps4-ps5": (("PS4", "PS5"), False, None),
             "nintendo-nintendo-switch": (("SWITCH",), False, None),
-            "nintendo-nintendo-switch-2": ((), False, SWITCH_2),
+            "nintendo-nintendo-switch-2": (("SWITCH2",), False, None),
         }
         for run, (families, pc, skip) in cases.items():
             with self.subTest(run=run):
@@ -376,7 +391,7 @@ class ClassifyGrammarTests(unittest.TestCase):
             "ps4-ps5": (("PS4", "PS5"), False, None),
             "playstation-4": (("PS4",), False, None), "playstation-5": (("PS5",), False, None),
             "nintendo-switch": (("SWITCH",), False, None),
-            "nintendo-switch-2": ((), False, SWITCH_2),
+            "nintendo-switch-2": (("SWITCH2",), False, None),
             "xbox-360": ((), False, XBOX_360),
             "xbox-live": ((), False, NO_GEN),
         }
@@ -426,19 +441,20 @@ class ClassifyGrammarTests(unittest.TestCase):
                                "https://www.eneba.com/xbox-sokmeal-time-xbox-windows-pack-xbox-live-key-europe", "Eneba")
         self.assertEqual(sig.skip_reason, NO_GEN)
 
-    def test_switch_2_and_xbox_360_skip_even_next_to_a_valid_family(self):
+    def test_xbox_360_skips_even_next_to_a_valid_family(self):
         sig = classify_console("Rabbids Invasion (Xbox 360 / Xbox One) Xbox Live Key - UNITED STATES",
                                "https://gameseal.com/rabbids-invasion-xbox-360-xbox-one-xbox-live-key-united-states", "GameSeal")
         self.assertEqual(sig.skip_reason, XBOX_360)
+
+    def test_switch_2_is_a_declared_family_since_2026_09_14(self):
+        # the Switch 2 skip is retired: the G2A row declares SWITCH2 (region EU)
         sig = classify_console("Sonic Superstars (Nintendo Switch 2) - Nintendo eShop Key - EUROPE",
                                "https://www.g2a.com/sonic-superstars-nintendo-switch-2-nintendo-eshop-key-europe-i1", "G2A")
-        self.assertEqual(sig.skip_reason, SWITCH_2)
-        self.assertEqual(sig.resolve_name, "Sonic Superstars")
-        sig = classify_console("Xenoblade Chronicles X: Definitive Edition - Nintendo Switch 2 Edition",
-                               "https://www.instant-gaming.com/en/21871-/", "Instant Gaming")
-        self.assertEqual(sig.skip_reason, SWITCH_2)
+        self.assertEqual((sig.families, sig.skip_reason, sig.resolve_name), (("SWITCH2",), None, "Sonic Superstars"))
+        self.assertEqual((sig.region_base, sig.region_label, sig.region_words), ("eu", None, ("EUROPE",)))
         sig = classify_console("Game (PS5 / Nintendo Switch 2)", "https://example.com/x", "Shop")
-        self.assertEqual(sig.skip_reason, SWITCH_2)
+        self.assertEqual((sig.families, sig.skip_reason), (("PS5", "SWITCH2"), None))
+        self.assertEqual(SKIP_SWITCH_2, SWITCH_2)      # the constant survives for importers only
 
     def test_non_game_markers(self):
         cases = [
@@ -581,6 +597,9 @@ class PageIdentityTests(unittest.TestCase):
             "Elden Ring Tarnished Edition Nintendo Switch 2": "Elden Ring Tarnished Edition",
             "Street Fighter 6 Xbox Series X|S": "Street Fighter 6",
             "Forza Horizon 5 Switch 2": "Forza Horizon 5",
+            # the real Switch 2 page names (2026-09-14: ids 188436 / 188441)
+            "Street Fighter 6 Nintendo Switch 2": "Street Fighter 6",
+            "ELDEN RING Tarnished Edition Nintendo Switch 2": "ELDEN RING Tarnished Edition",
         }
         for name, expected in cases.items():
             with self.subTest(name=name):
@@ -701,6 +720,508 @@ class ExtractConsolePagesTests(unittest.TestCase):
     def test_page_platform_absent(self):
         self.assertEqual(extract_page_platform("<html><body>x</body></html>"), "")
         self.assertEqual(extract_page_platform('<meta data-itemprop="platform" content="Switch" />'), "Switch")
+        # the Switch 2 pages' own meta (Street Fighter 6 / ELDEN RING Tarnished Edition, 2026-09-14)
+        self.assertEqual(extract_page_platform('<meta data-itemprop="platform" content="Switch 2" />'), "Switch 2")
+
+
+# ── 2026-09-14 review fixes ──────────────────────────────────────────────────────────
+KINGUIN = "https://www.kinguin.net/category/1/x"
+K4G = "https://k4g.com/product/x"
+DRIFFLE = "https://www.driffle.com/x-p1"
+G2A = "https://www.g2a.com/x-i1"
+
+
+def _slot(sig):
+    return sig.region_base, sig.region_label, sig.region_words
+
+
+class RegionSlotTests(unittest.TestCase):
+    """The region the merchant writes NEXT TO the platform phrase (review finders 2/3,
+    critical: 456 region-locked rows fell to implicit GLOBAL because resolve_name stripped
+    the word the matcher never mapped). Every stripped region word is reported; a sellable
+    base maps to eu/us/uk/global, anything else to the matcher's forbidden label."""
+
+    def test_kinguin_two_letter_codes_before_the_platform_phrase(self):
+        # real rows of the 2026-09-12 Kinguin batch (CA 83 / AU 77 / US 48 / NA 2 / TR 2 / AR 3 / CO 1 / ZA 1)
+        cases = [
+            ("Hobo: Tough Life US Xbox One / Xbox Series X|S CD Key", ("us", None, ("US",)), ONE_SERIES),
+            ("Star Wars Zero Company Deluxe Edition US PS5 CD Key", ("us", None, ("US",)), ("PS5",)),
+            ("Onimusha: Way of the Sword EU PS5 CD Key", ("eu", None, ("EU",)), ("PS5",)),
+            ("The Quarry Deluxe Edition UK XBOX One / Xbox Series X|S CD Key", ("uk", None, ("UK",)), ONE_SERIES),
+            ("Hades UK Xbox Series X|S CD Key", ("uk", None, ("UK",)), ("XBOX_SERIES",)),
+            ("Puyo Puyo Tetris 2 CA Xbox One / Xbox Series X|S CD Key", (None, "CANADA", ("CA",)), ONE_SERIES),
+            ("Planet Coaster: Console Edition AU Xbox One / Xbox Series X|S CD Key", (None, "AUSTRALIA", ("AU",)), ONE_SERIES),
+            ("MotoGP 26 AU Xbox Series X|S / PC CD Key", (None, "AUSTRALIA", ("AU",)), ("XBOX_SERIES",)),
+            ("Destiny 2 - The Collection Bundle DLC AU XBOX One / Xbox Series X|S CD Key", (None, "AUSTRALIA", ("AU",)), ONE_SERIES),
+            ("Onimusha: Way of the Sword NA PS5 CD Key", (None, "NORTH AMERICA", ("NA",)), ("PS5",)),
+            ("Onimusha: Way of the Sword Premium Deluxe Edition NA PS5 CD Key", (None, "NORTH AMERICA", ("NA",)), ("PS5",)),
+            ("Fortnite - Witching Wing Quest Pack TR XBOX One / Xbox Series X|S CD Key", (None, "TURKEY", ("TR",)), ONE_SERIES),
+            ("Bus Simulator 21 EN Language Only AR XBOX One / Xbox Series X|S CD Key", (None, "ARGENTINA", ("AR",)), ONE_SERIES),
+            ("Snufkin: Melody of Moominvalley CO Xbox Series X|S / PC CD Key", (None, "COLOMBIA", ("CO",)), ("XBOX_SERIES",)),
+            ("Dynasty Warriors: Origins ZA Xbox Series X|S CD Key", (None, "SOUTH AFRICA", ("ZA",)), ("XBOX_SERIES",)),
+            ("EA SPORTS Madden NFL 27 NA Nintendo Switch 2 CD Key", (None, "NORTH AMERICA", ("NA",)), ("SWITCH2",)),
+        ]
+        for title, slot, families in cases:
+            with self.subTest(title=title):
+                sig = classify_console(title, KINGUIN, "Kinguin")
+                self.assertIsNone(sig.skip_reason)
+                self.assertEqual(sig.families, families)
+                self.assertEqual(_slot(sig), slot)
+                for word in sig.region_words:
+                    self.assertNotIn(word, sig.resolve_name.split())
+
+    def test_kinguin_full_names_before_the_platform_phrase(self):
+        sig = classify_console("Wrap House Simulator European Union XBOX One / Xbox Series X|S / PC CD Key", KINGUIN, "Kinguin")
+        self.assertEqual((_slot(sig), sig.pc_declared, sig.resolve_name), (("eu", None, ("European Union",)), True, "Wrap House Simulator"))
+        # Kinguin's own "RoW" spelling (2 real rows) — a forbidden lock, "Row" stays a name word
+        sig = classify_console("NARUTO SHIPPUDEN: Ultimate Ninja STORM Trilogy RoW Xbox One / Xbox Series X|S CD Key", KINGUIN, "Kinguin")
+        self.assertEqual(_slot(sig), (None, "ROW", ("RoW",)))
+        self.assertEqual(sig.resolve_name, "NARUTO SHIPPUDEN: Ultimate Ninja STORM Trilogy")
+        sig = classify_console("THE GAME OF LIFE 2 RoW Xbox One / Xbox Series X|S CD Key", KINGUIN, "Kinguin")
+        self.assertEqual(_slot(sig), (None, "ROW", ("RoW",)))
+        self.assertEqual(resolve_name_of("Death Row Xbox One CD Key"), "Death Row")
+        for title, slot in {
+            "Game Europe PS5 CD Key": ("eu", None, ("Europe",)),
+            "Game United States PS5 CD Key": ("us", None, ("United States",)),
+            "Game United Kingdom PS5 CD Key": ("uk", None, ("United Kingdom",)),
+            "Game Global PS5 CD Key": ("global", None, ("Global",)),
+            "Game Worldwide PS5 CD Key": ("global", None, ("Worldwide",)),
+            "Game North America PS5 CD Key": (None, "NORTH AMERICA", ("North America",)),
+            "Game Canada PS5 CD Key": (None, "CANADA", ("Canada",)),
+            "Game Australia PS5 CD Key": (None, "AUSTRALIA", ("Australia",)),
+            "Game Mexico PS5 CD Key": (None, "MEXICO", ("Mexico",)),
+            "Game United Arab Emirates PS5 CD Key": (None, "UNITED ARAB EMIRATES", ("United Arab Emirates",)),
+            "Game Latin America PS5 CD Key": (None, "LATIN AMERICA", ("Latin America",)),
+            "Game Netherlands PS5 CD Key": (None, "NETHERLANDS", ("Netherlands",)),
+            "Game EU West PS5 CD Key": (None, "EU WEST", ("EU West",)),   # unknown word → its text
+        }.items():
+            with self.subTest(title=title):
+                sig = classify_console(title, KINGUIN, "Kinguin")
+                self.assertEqual((_slot(sig), sig.resolve_name, sig.skip_reason), (slot, "Game", None))
+
+    def test_k4g_grammar(self):
+        cases = {
+            "Icarus Console Edition Europe XBOX Series X|S CD Key": (("eu", None, ("Europe",)), "Icarus Console Edition"),
+            "Trepang2 Standard Edition Europe PC/XBOX Series X|S CD Key": (("eu", None, ("Europe",)), "Trepang2 Standard Edition"),
+            "Mortal Kombat 11 Ultimate Add-On Bundle United States XBOX Series X|S CD Key": (("us", None, ("United States",)), "Mortal Kombat 11 Ultimate Add-On Bundle"),
+            "Persona 5 Royal United Kingdom XBOX One/PC/XBOX Series X|S CD Key": (("uk", None, ("United Kingdom",)), "Persona 5 Royal"),
+            "Persona 5 Royal Canada XBOX One/PC/XBOX Series X|S CD Key": ((None, "CANADA", ("Canada",)), "Persona 5 Royal"),
+            "Tom Clancy's Ghost Recon Breakpoint Gold Edition Global XBOX One/Series X|S CD Key": (("global", None, ("Global",)), "Tom Clancy's Ghost Recon Breakpoint Gold Edition"),
+            "Stardew Valley United States Nintendo Switch 2 CD Key": (("us", None, ("United States",)), "Stardew Valley"),
+        }
+        for title, (slot, name) in cases.items():
+            with self.subTest(title=title):
+                sig = classify_console(title, K4G, "K4G")
+                self.assertIsNone(sig.skip_reason)
+                self.assertEqual((_slot(sig), sig.resolve_name), (slot, name))
+        # "SIEE" is NOT a region word of any vocabulary: stays in the name (R16 blocks it, as before)
+        sig = classify_console("Far Cry 6 - Jungle Expedition SIEE PS5 CD Key", K4G, "K4G")
+        self.assertEqual((_slot(sig), sig.resolve_name), ((None, None, ()), "Far Cry 6 - Jungle Expedition SIEE"))
+
+    def test_driffle_bracket(self):
+        cases = {
+            "Sniper Ghost Warrior Contracts 1 and 2 Double Pack (Europe) (Xbox One / Xbox Series X|S) - Xbox Live - Digital Key": ("eu", None, ("Europe",)),
+            "NBA 2K27 - 15000 VC (Global) (Xbox Series X|S) - Xbox Live - Digital Key": ("global", None, ("Global",)),
+            "Fortnite - Fresh Aura Outfits + 1,000 V-Bucks DLC (United States) (Xbox One / Xbox Series X|S) - Xbox Live - Digital Key": ("us", None, ("United States",)),
+            "SMITE 2 Ultimate Founder's Edition (United Kingdom) (Xbox Series X|S) - Xbox Live - Digital Key": ("uk", None, ("United Kingdom",)),
+            "Mario Kart 8 Deluxe - Booster Course Pass DLC (Hong Kong) (Nintendo Switch) - Nintendo - Digital Key": (None, "HONG KONG", ("Hong Kong",)),
+            "Fortnite - Shaka Surfin' Pack DLC (South Africa) (PC / Xbox One / Xbox Series X|S) - Xbox Live - Digital Key": (None, "SOUTH AFRICA", ("South Africa",)),
+            "Game (Turkey) (PS5) - PSN - Digital Key": (None, "TURKEY", ("Turkey",)),
+            "Game (Romania) (PS5) - PSN - Digital Key": (None, "ROMANIA", ("Romania",)),
+            "Everspace 2 Galactic Edition (Europe) (Nintendo Switch 2) - Nintendo - Digital Key": ("eu", None, ("Europe",)),
+        }
+        for title, slot in cases.items():
+            with self.subTest(title=title):
+                sig = classify_console(title, DRIFFLE, "Driffle")
+                self.assertIsNone(sig.skip_reason)
+                self.assertEqual(_slot(sig), slot)
+        # the (Turkey) of a gift card is reported too — on a non-game skip
+        sig = classify_console("Xbox 500 TRY Gift Card (Turkey) - Digital Key",
+                               "https://www.driffle.com/xbox-500-try-gift-card-turkey-digital-key-p10001137", "Driffle")
+        self.assertEqual((sig.skip_reason, _slot(sig)), (_not_a_game("GIFT CARD"), (None, "TURKEY", ("Turkey",))))
+
+    def test_g2a_tail(self):
+        cases = {
+            "Shadowrun Trilogy (Xbox Series X/S) - Xbox Live Key - EUROPE": ("eu", None, ("EUROPE",)),
+            "Train Sim World 6 | Deluxe Edition (Xbox Series X/S, PC) - Xbox Live Key - UNITED KINGDOM": ("uk", None, ("UNITED KINGDOM",)),
+            "Grand Theft Auto VI | Standard Edition (Xbox Series X/S) - Xbox Live Key - GLOBAL": ("global", None, ("GLOBAL",)),
+            "Game (Xbox Series X/S) - Xbox Live Key - UNITED STATES": ("us", None, ("UNITED STATES",)),
+            "Madden NFL 27 (Xbox Series X/S) - Xbox Live Key - CANADA": (None, "CANADA", ("CANADA",)),
+            "Diablo IV: Lord of Hatred (Xbox Series X/S) - Xbox Live Key - JAPAN": (None, "JAPAN", ("JAPAN",)),
+            "Microsoft Flight Simulator 2024 (Xbox Series X/S, PC) - Xbox Live Key - POLAND": (None, "POLAND", ("POLAND",)),
+            "Sonic Superstars (Nintendo Switch 2) - Nintendo eShop Key - EUROPE": ("eu", None, ("EUROPE",)),
+        }
+        for title, slot in cases.items():
+            with self.subTest(title=title):
+                sig = classify_console(title, G2A, "G2A")
+                self.assertIsNone(sig.skip_reason)
+                self.assertEqual(_slot(sig), slot)
+
+    def test_eneba_region_after_the_key_marker(self):
+        cases = {
+            "Barn Finders and Treasure Hunter Simulator Bundle (Xbox Series X|S) XBOX LIVE Key EUROPE": ("eu", None, ("EUROPE",)),
+            "Lou's Lagoon Deluxe Edition (Xbox Series X|S) XBOX LIVE Key UNITED STATES": ("us", None, ("UNITED STATES",)),
+            "Gnomes Garden 3: The thief of castles (Xbox Series X|S) XBOX LIVE Key UNITED KINGDOM": ("uk", None, ("UNITED KINGDOM",)),
+            "LocoCycle (Xbox Series X|S) XBOX LIVE Key GLOBAL": ("global", None, ("GLOBAL",)),
+            "Halloween - Digital Deluxe Edition (Xbox Series X|S) XBOX LIVE Key POLAND": (None, "POLAND", ("POLAND",)),
+            "Crypt of the NecroDancer (Xbox Series X|S) XBOX LIVE Key MEXICO": (None, "MEXICO", ("MEXICO",)),
+            "Assassin's Creed Origins (Xbox One) Xbox Live Key GERMANY": (None, "GERMANY", ("GERMANY",)),
+            "Game (Xbox One) Xbox Live Key AUSTRIA": (None, "AUSTRIA", ("AUSTRIA",)),
+            "Game (Xbox One) Xbox Live Key TURKEY": (None, "TURKEY", ("TURKEY",)),
+            "Game (Xbox One) Xbox Live Key SOUTH AFRICA": (None, "SOUTH AFRICA", ("SOUTH AFRICA",)),
+            "Split Fiction (Nintendo Switch 2) eShop Key HONG KONG": (None, "HONG KONG", ("HONG KONG",)),
+        }
+        for title, slot in cases.items():
+            with self.subTest(title=title):
+                sig = classify_console(title, "https://www.eneba.com/xbox-x", "Eneba")
+                self.assertIsNone(sig.skip_reason)
+                self.assertEqual(_slot(sig), slot)
+        # a region on a no-generation row is still reported (skip set, slot filled)
+        sig = classify_console("POLSKA GUROM XBOX LIVE Key UNITED STATES",
+                               "https://www.eneba.com/xbox-polska-gurom-xbox-live-key-united-states", "Eneba")
+        self.assertEqual((sig.skip_reason, _slot(sig)), (NO_GEN, ("us", None, ("UNITED STATES",))))
+
+    def test_mmoga_tails_exposed_like_the_merchant_hook(self):
+        mm = "https://www.mmoga.com/Xbox-Live/Xbox-One-Game-Keys/x.html?ref=615"
+        cases = {
+            "NBA 2K25 (Xbox One / Series X|S Download Code) - EU": ("eu", None, ("EU",)),
+            "Medieval Dynasty - PS5 Download Code [EU]": ("eu", None, ("EU",)),
+            "Overwatch - Legendary Edition (Xbox One Download Code) - EU Key": ("eu", None, ("EU",)),
+            "Game (Xbox Series X|S Key EU)": ("eu", None, ("EU",)),
+            "Game - Xbox One Download Code [US]": ("us", None, ("US",)),
+            "Game - Xbox One Download Code - US Key": ("us", None, ("US",)),
+            "Game - Xbox One Download Code [DE]": (None, "GERMANY", ("DE",)),
+            "Game - Xbox One Download Code [AT]": (None, "AUSTRIA", ("AT",)),
+        }
+        for title, slot in cases.items():
+            with self.subTest(title=title):
+                sig = classify_console(title, mm, "MMOGA")
+                self.assertIsNone(sig.skip_reason)
+                self.assertEqual(_slot(sig), slot)
+                # the tail is gone from the name, whatever its spelling
+                self.assertFalse(set(sig.resolve_name.split()) & {"EU", "US", "DE", "AT", "[EU]", "[US]"})
+                self.assertNotIn("Key", sig.resolve_name)
+
+    def test_gamivo_tail_exposed_like_the_r46_hook(self):
+        cases = {
+            ("Ravenswatch EN United Kingdom", "https://www.gamivo.com/product/ravenswatch-xbox-xboxoneseries-uk-standard"): (("uk", None, ("United Kingdom",)), "Ravenswatch"),
+            ("Riders Republic Premium Edition United States", "https://www.gamivo.com/product/riders-republic-xbox-xbox-one-series-us-premium"): (("us", None, ("United States",)), "Riders Republic Premium Edition"),
+            ("Tiny Tina's Wonderlands EN United States", "https://www.gamivo.com/product/tiny-tinas-wonderlands-xbox-xbox-one-series-us-standard"): (("us", None, ("United States",)), "Tiny Tina's Wonderlands"),
+            ("KIBORG EN Colombia", "https://www.gamivo.com/product/kiborg-xbox-xbox-one-series-co-standard"): ((None, "COLOMBIA", ("Colombia",)), "KIBORG"),
+            ("Kingdom Come Deliverance II Royal Edition EN Canada", "https://www.gamivo.com/product/x-xbox-xbox-series-ca-royal"): ((None, "CANADA", ("Canada",)), "Kingdom Come Deliverance II Royal Edition"),
+            ("FIFA 23 EN/PL/CS/RU/TR EU", "https://www.gamivo.com/product/fifa-23-ps-ps5-eu-en-pl-cz-tr-ru-standard"): (("eu", None, ("EU",)), "FIFA 23"),
+            ("The Blood of Dawnwalker - Pre-Order Bonus DLC EN Global", "https://www.gamivo.com/product/x-xbox-xbox-series-global-standard"): (("global", None, ("Global",)), "The Blood of Dawnwalker - Pre-Order Bonus DLC"),
+            ("Storebound ROW", "https://www.gamivo.com/product/storebound-xbox-xbox-series-row-standard"): ((None, "ROW", ("ROW",)), "Storebound"),
+            ("Game EN Singapore", "https://www.gamivo.com/product/game-xbox-xbox-series-sg-standard"): ((None, "SINGAPORE", ("Singapore",)), "Game"),
+        }
+        for (title, url), (slot, name) in cases.items():
+            with self.subTest(title=title):
+                sig = classify_console(title, url, "Gamivo")
+                self.assertIsNone(sig.skip_reason)
+                self.assertEqual((_slot(sig), sig.resolve_name), (slot, name))
+
+    def test_two_letter_codes_are_uppercase_only(self):
+        # "Us" / "Uk" / "Ca" in a name are never region words — nothing stripped, nothing read
+        for title in ("Hell is Us Xbox Series X|S CD Key", "The Last of Us Part I PS5 CD Key",
+                      "After Us (PS5) - PSN Key - EUROPE", "Devil Inside Us Xbox One CD Key"):
+            with self.subTest(title=title):
+                sig = classify_console(title, KINGUIN, "Kinguin")
+                self.assertIn("Us", sig.resolve_name)
+                self.assertNotIn("Us", sig.region_words)
+        sig = classify_console("The Last of Us Part I EU PS5 CD Key", KINGUIN, "Kinguin")
+        self.assertEqual((_slot(sig), sig.resolve_name), (("eu", None, ("EU",)), "The Last of Us Part I"))
+        sig = classify_console("After Us (PS5) - PSN Key - EUROPE", G2A, "G2A")
+        self.assertEqual(_slot(sig), ("eu", None, ("EUROPE",)))
+
+    def test_no_slot_read_when_the_region_word_is_not_in_the_slot(self):
+        # "UK" mid-name (Kinguin real row): kept in resolve_name, not a slot read — the
+        # matcher's generic scan still sees " UK " in the original title
+        sig = classify_console("NHL 27 UK Deluxe Edition Xbox Series X|S CD Key", KINGUIN, "Kinguin")
+        self.assertEqual((_slot(sig), sig.resolve_name), ((None, None, ()), "NHL 27 UK Deluxe Edition"))
+        # no region anywhere
+        sig = classify_console("Hoomanz! Xbox Series X|S / PC CD Key", KINGUIN, "Kinguin")
+        self.assertEqual(_slot(sig), (None, None, ()))
+        sig = classify_console("Assassin's Creed Odyssey - Ultimate Edition (Xbox One Download Code)",
+                               "https://www.mmoga.com/Xbox-Live/Xbox-One-Game-Keys/x.html", "MMOGA")
+        self.assertEqual(_slot(sig), (None, None, ()))
+
+    def test_two_different_sellable_bases_is_not_a_base(self):
+        # "EU (European Union + UK)": three words stripped, EU and UK disagree → neither a
+        # base nor a forbidden label; region_words tells the matcher the slot was read
+        sig = classify_console("Kingdom Rush Origins EU (European Union + UK) XBOX One / Xbox Series X|S / PC CD Key", KINGUIN, "Kinguin")
+        self.assertEqual(_slot(sig), (None, None, ("EU", "European Union", "UK")))
+        self.assertEqual(sig.resolve_name, "Kingdom Rush Origins")
+        # the same base twice is fine
+        sig = classify_console("Game EU (Europe) Xbox One CD Key", KINGUIN, "Kinguin")
+        self.assertEqual(_slot(sig), ("eu", None, ("EU", "Europe")))
+        # a forbidden word wins over a sellable one (a lock is a lock)
+        sig = classify_console("Game (EU/NA) Xbox One CD Key", KINGUIN, "Kinguin")
+        self.assertEqual(_slot(sig), (None, "EU NA", ("EU/NA",)))
+
+    def test_resolve_name_and_regions_is_the_public_pair(self):
+        self.assertEqual(resolve_name_and_regions("Hobo: Tough Life US Xbox One / Xbox Series X|S CD Key"),
+                         ("Hobo: Tough Life", ("US",)))
+        self.assertEqual(resolve_name_and_regions("Ravenswatch EN United Kingdom"), ("Ravenswatch", ("United Kingdom",)))
+        self.assertEqual(resolve_name_and_regions("Hoomanz! Xbox Series X|S / PC CD Key"), ("Hoomanz!", ()))
+        self.assertEqual(resolve_name_and_regions(""), ("", ()))
+        for title, url, merchant, *_ in ROWS:
+            sig = classify_console(title, url, merchant)
+            self.assertEqual((sig.resolve_name, sig.region_words), resolve_name_and_regions(title))
+
+    def test_signal_defaults_keep_the_four_positional_fields(self):
+        sig = ConsoleSignal((), False, "x", None)
+        self.assertEqual((sig.region_base, sig.region_label, sig.region_words), (None, None, ()))
+
+
+class Switch2FamilyTests(unittest.TestCase):
+    """2026-09-14: AKS Switch 2 product pages exist (kind nintendo-switch-2) and their offers
+    use the Nintendo family bucket — SWITCH2 is a declared family, the old skip is retired."""
+
+    def test_real_switch_2_rows_declare_the_family(self):
+        rows = [
+            ("CloverPit EU Nintendo Switch 2 CD Key", "https://www.kinguin.net/category/764730/cloverpit-eu-nintendo-switch-2-cd-key", "Kinguin", "eu", "CloverPit"),
+            ("Splatoon Raiders US Nintendo Switch 2 CD Key", "https://www.kinguin.net/category/633361/splatoon-raiders-us-nintendo-switch-2-cd-key", "Kinguin", "us", "Splatoon Raiders"),
+            ("Fallout 4: Anniversary Edition US Nintendo Switch 2 CD Key", "https://www.kinguin.net/category/803577/fallout-4-anniversary-edition-us-nintendo-switch-2-cd-key", "Kinguin", "us", "Fallout 4: Anniversary Edition"),
+            ("Super Mario Odyssey EU Nintendo Switch 2 CD Key", "https://www.kinguin.net/category/797452/super-mario-odyssey-eu-nintendo-switch-2-cd-key", "Kinguin", "eu", "Super Mario Odyssey"),
+            ("Pokémon Scarlet Europe Nintendo Switch 2 CD Key", "https://k4g.com/product/pokemon-scarlet-nintendo-switch-2-europe-cd-key-cd-key-3FWB2QK5", "K4G", "eu", "Pokémon Scarlet"),
+            ("Sonic Superstars Standard Edition Europe Nintendo Switch 2 CD Key", "https://k4g.com/product/sonic-superstars-nintendo-switch-2-global-cd-key-standard-edition-cd-key-KSBAYQ1V", "K4G", "eu", "Sonic Superstars Standard Edition"),
+            ("Stardew Valley United States Nintendo Switch 2 CD Key", "https://k4g.com/product/stardew-valley-nintendo-switch-2-united-states-instant-cd-key-cd-key-A4BN20IC", "K4G", "us", "Stardew Valley"),
+            ("Sonic Superstars (Nintendo Switch 2) - Nintendo eShop Key - EUROPE", "https://www.g2a.com/sonic-superstars-nintendo-switch-2-nintendo-eshop-key-europe-i10000500318030", "G2A", "eu", "Sonic Superstars"),
+            ("Everspace 2 Galactic Edition (Europe) (Nintendo Switch 2) - Nintendo - Digital Key", "https://www.driffle.com/everspace-2-galactic-edition-europe-nintendo-switch-2-nintendo-digital-key-p9999690", "Driffle", "eu", "Everspace 2 Galactic Edition"),
+        ]
+        for title, url, merchant, base, name in rows:
+            with self.subTest(title=title):
+                sig = classify_console(title, url, merchant)
+                self.assertEqual((sig.families, sig.skip_reason, sig.region_base, sig.resolve_name),
+                                 (("SWITCH2",), None, base, name))
+                self.assertEqual(CONSOLE_PAGE_KIND[sig.families[0]], "nintendo-switch-2")
+        # Eneba HONG KONG row: family declared, region forbidden (the matcher skips on the label)
+        sig = classify_console("Split Fiction (Nintendo Switch 2) eShop Key HONG KONG",
+                               "https://www.eneba.com/nintendo-split-fiction-nintendo-switch-2-eshop-key-hong-kong", "Eneba")
+        self.assertEqual((sig.families, sig.skip_reason, sig.region_label), (("SWITCH2",), None, "HONG KONG"))
+
+    def test_title_spellings_and_url_runs(self):
+        for title in ("Game Nintendo Switch 2", "Game Switch 2", "Game (Nintendo Switch 2)", "Game (Switch 2) - EU",
+                      "Game Nintendo Switch 2 CD Key", "Game (Nintendo Switch 2) eShop Key EUROPE"):
+            with self.subTest(title=title):
+                sig = classify_console(title, "https://example.com/x", "Shop")
+                self.assertEqual((sig.families, sig.skip_reason, sig.resolve_name), (("SWITCH2",), None, "Game"))
+        # URL-only declarations (title carries no generation)
+        for url, merchant in (("https://example.com/game-nintendo-switch-2-cd-key", "SomeShop"),
+                              ("https://www.gamivo.com/product/game-nintendo-nintendo-switch-2-uk-standard", "Gamivo"),
+                              ("https://www.eneba.com/nintendo-game-nintendo-switch-2-eshop-key-europe", "Eneba")):
+            with self.subTest(url=url):
+                sig = classify_console("Game eShop Key" if merchant != "Gamivo" else "Game EN United Kingdom", url, merchant)
+                self.assertEqual((sig.families, sig.skip_reason), (("SWITCH2",), None))
+        # Switch (1) is untouched
+        sig = classify_console("Game (Nintendo Switch)", "https://example.com/x", "Shop")
+        self.assertEqual(sig.families, ("SWITCH",))
+        sig = classify_console("Game", "https://www.gamivo.com/product/game-nintendo-nintendo-switch-uk-standard", "Gamivo")
+        self.assertEqual(sig.families, ("SWITCH",))
+
+    def test_switch_2_edition_name_suffix_is_not_a_declaration(self):
+        # Instant Gaming: "<Game> - Nintendo Switch 2 Edition" is the product name; no
+        # platform phrase, no URL grammar → fail-closed "no declared generation", the
+        # name keeps its suffix
+        sig = classify_console("Xenoblade Chronicles X: Definitive Edition - Nintendo Switch 2 Edition",
+                               "https://www.instant-gaming.com/en/21871-/", "Instant Gaming")
+        self.assertEqual((sig.families, sig.skip_reason), ((), NO_GEN))
+        self.assertEqual(sig.resolve_name, "Xenoblade Chronicles X: Definitive Edition - Nintendo Switch 2 Edition")
+        # K4G: the same suffix AND a platform phrase saying Switch 2 → declared, suffix kept in the name
+        sig = classify_console("The Legend of Zelda: Breath of the Wild – Nintendo Switch 2 Edition Upgrade Pack Europe Nintendo Switch 2 CD Key",
+                               "https://k4g.com/product/the-legend-of-zelda-breath-of-the-wild-nintendo-switch-2-edition-upgrade-pack-nintendo-switch-2-europe-instant-cd-key-cd-key-WZFPMKTR", "K4G")
+        self.assertEqual((sig.families, sig.skip_reason, sig.region_base), (("SWITCH2",), None, "eu"))
+        self.assertEqual(sig.resolve_name, "The Legend of Zelda: Breath of the Wild – Nintendo Switch 2 Edition Upgrade Pack")
+        # a Switch 2 Edition filed under another platform (MMOGA /Nintendo/Switch/ category,
+        # "(Switch Download Code)") → fail-closed contradiction, never a Switch (1) entry
+        sig = classify_console("Some Game - Nintendo Switch 2 Edition (Switch Download Code) - EU",
+                               "https://www.mmoga.com/Nintendo/Switch/x.html?ref=615", "MMOGA")
+        self.assertEqual(sig.families, ("SWITCH",))
+        self.assertEqual(sig.skip_reason, "console: product name suffix 'Nintendo Switch 2 Edition' contradicts "
+                                          "the declared platform SWITCH — not entered (R45)")
+        sig = classify_console("Game - PS5 Edition (Xbox One) - Xbox Live Key - EUROPE", G2A, "G2A")
+        self.assertEqual(sig.skip_reason, "console: product name suffix 'PS5 Edition' contradicts "
+                                          "the declared platform XBOX_ONE — not entered (R45)")
+        # the same platform in the suffix and the phrase → fine
+        sig = classify_console("Game - PS5 Edition (PS5) - PSN Key - EUROPE", G2A, "G2A")
+        self.assertEqual((sig.families, sig.skip_reason, sig.resolve_name), (("PS5",), None, "Game - PS5 Edition"))
+
+    def test_switch_2_non_game_rows_still_skip_first(self):
+        sig = classify_console("Hello Kitty Island Adventure Nintendo Switch 2 Access",
+                               "https://www.kinguin.net/category/450231/hello-kitty-island-adventure-nintendo-switch-2-access", "Kinguin")
+        self.assertEqual(sig.skip_reason, _not_a_game("ACCESS"))
+        sig = classify_console("Divinity: Original Sin 2 Definitive Edition Nintendo Switch 2 Access",
+                               "https://www.kinguin.net/category/447356/divinity-original-sin-2-definitive-edition-nintendo-switch-2-access", "Kinguin")
+        self.assertEqual(sig.skip_reason, _not_a_game("ACCESS"))
+
+    def test_retired_skip_is_never_emitted(self):
+        titles = ["Game Nintendo Switch 2", "Game (PS5 / Nintendo Switch 2)", "Game Switch 2 Edition",
+                  "Xenoblade Chronicles X: Definitive Edition - Nintendo Switch 2 Edition"]
+        for title in titles:
+            self.assertNotEqual(classify_console(title, "https://example.com/x", "Shop").skip_reason, SWITCH_2)
+        for url in ("https://example.com/game-nintendo-switch-2-cd-key",
+                    "https://www.gamivo.com/product/game-nintendo-nintendo-switch-2-uk-standard",
+                    "https://www.eneba.com/nintendo-game-nintendo-switch-2-eshop-key-europe"):
+            self.assertNotEqual(classify_console("Game eShop Key", url, "Shop").skip_reason, SWITCH_2)
+
+
+class AccountRowsTests(unittest.TestCase):
+    """Review finder 3 [high]: Difmark '(Account)' console rows classified as Switch KEYS."""
+
+    def test_difmark_account_row(self):
+        sig = classify_console("Madness Beverage (Account) Standard Edition",
+                               "https://difmark.com/en/buy-console-account-madness-beverage-nintendo-switch-account-185025?referal=allkeyshop&marketplace_id=9&edition_id=780&region_product_id=1",
+                               "Difmark")
+        self.assertEqual((sig.families, sig.skip_reason), ((), _not_a_game("ACCOUNT")))
+
+    def test_account_word_anywhere_and_url_forms(self):
+        cases = [
+            ("Game (Account) Standard Edition", "https://difmark.com/en/buy-console-account-game-nintendo-switch-account-1?x=1"),
+            ("Game Account Xbox One", "https://example.com/x"),                       # word mid-title
+            ("Game (Account) PS5", "https://example.com/x"),                          # parenthesised
+            ("Game Standard Edition", "https://difmark.com/en/buy-console-account-game-ps5-account-185025"),   # URL only
+            ("Game PS5", "https://example.com/game-ps5-account-185025"),              # "-account-<digits>" suffix
+            ("Game PS5", "https://example.com/game-ps5-account/"),                    # "-account/" suffix
+            ("Blocky Farm XBOX One / Xbox Series X|S Account", "https://www.kinguin.net/category/523387/blocky-farm-xbox-one-xbox-series-x-s-account"),
+        ]
+        for title, url in cases:
+            with self.subTest(title=title, url=url):
+                sig = classify_console(title, url, "Shop")
+                self.assertEqual((sig.families, sig.skip_reason), ((), _not_a_game("ACCOUNT")))
+
+    def test_accounts_is_not_account_and_access_is_unchanged(self):
+        # "(ONLY FOR NEW ACCOUNTS)" is not the ACCOUNT word — the PLAYSTATION PLUS marker rules
+        sig = classify_console("PlayStation Plus Premium 14 Days TRIAL Subscription US (ONLY FOR NEW ACCOUNTS)",
+                               "https://www.kinguin.net/category/299561/playstation-plus-premium-14-days-trial-subscription-us-only-for-new-accounts", "Kinguin")
+        self.assertEqual(sig.skip_reason, _not_a_game("PLAYSTATION PLUS"))
+        sig = classify_console("The Accountant PS5 CD Key", KINGUIN, "Kinguin")
+        self.assertEqual((sig.families, sig.skip_reason), (("PS5",), None))
+        sig = classify_console("NHL 22 PS4 Access", "https://www.kinguin.net/category/366235/nhl-22-ps4-access", "Kinguin")
+        self.assertEqual(sig.skip_reason, _not_a_game("ACCESS"))
+        sig = classify_console("Nioh 2 Remastered – The Complete Edition PS4/PS5 Access",
+                               "https://www.kinguin.net/category/359969/nioh-2-remastered-the-complete-edition-ps4-ps5-online-account-activation", "Kinguin")
+        self.assertEqual(sig.skip_reason, _not_a_game("ACCESS"))
+
+
+class BareSeriesTests(unittest.TestCase):
+    """Review finder 2 [low]: 'Xbox One/Series' (no X|S) declared XBOX_ONE only with a
+    '/Series' residue — a partial console entry path."""
+
+    def test_bare_series_after_xbox_one_is_xbox_series(self):
+        cases = {
+            "Hades Xbox One/Series Global": ("global", "Hades"),
+            "Hades (Xbox One / Series) - EU": ("eu", "Hades"),
+            "Hades Xbox One & Series Global": ("global", "Hades"),
+            "Hades Xbox One, Series X - EU": ("eu", "Hades"),
+            "Hades Xbox One / Series S": (None, "Hades"),
+            "Hades (Xbox One / Series X) - Xbox Live Key - EUROPE": ("eu", "Hades"),
+            "Hades Xbox One and Series X|S": (None, "Hades"),
+        }
+        for title, (base, name) in cases.items():
+            with self.subTest(title=title):
+                sig = classify_console(title, "https://gameseal.com/x", "GameSeal")
+                self.assertEqual((sig.families, sig.skip_reason, sig.region_base, sig.resolve_name),
+                                 (ONE_SERIES, None, base, name))
+        # the real GameSeal row (a POINTS row — CATEGORY_SKIP upstream — but both generations declared)
+        sig = classify_console("EA Sports: FC 25 XBOX GLOBAL 1050 FC Points Xbox One/Series Global",
+                               "https://gameseal.com/ea-sports-fc-25-xbox-global-1050-fc-points-xbox-one-series-global", "GameSeal")
+        self.assertEqual((sig.families, sig.skip_reason), (ONE_SERIES, None))
+        self.assertNotIn("Series", sig.resolve_name)
+
+    def test_bare_series_elsewhere_stays_a_name_word(self):
+        sig = classify_console("World Series of Poker PS4 CD Key", KINGUIN, "Kinguin")
+        self.assertEqual((sig.families, sig.skip_reason, sig.resolve_name), (("PS4",), None, "World Series of Poker"))
+        self.assertEqual(resolve_name_of("The Dark Pictures Anthology Series (Xbox One) - EU"), "The Dark Pictures Anthology Series")
+
+    def test_residue_guard(self):
+        # an "Xbox One Series" phrase the grammar cannot parse whole leaves "Series)" glued
+        # to a bracket → fail-closed skip, never a One-only entry
+        sig = classify_console("Hades (Xbox One Series)", "https://example.com/x", "Shop")
+        self.assertEqual((sig.families, sig.skip_reason), ((), RESIDUE))
+        self.assertEqual(SKIP_RESIDUE, RESIDUE)
+        for name in ("Hades /Series", "Hades & Series", "Hades / Series)", "Hades (Series", "Hades, One", "Hades / One"):
+            with self.subTest(name=name):
+                sig = classify_console(name + " Xbox Live Key", "https://example.com/x", "Shop")
+                self.assertEqual(sig.skip_reason, RESIDUE)
+        # ordinary names with ONE / SERIES between words or after "-" / ":" are not residue
+        for title in ("The Walking Dead: Season One (Xbox One) - Xbox Live Key - EUROPE",
+                      "Killer Instinct: Season One - Ultra Edition (Xbox One) - Xbox Live Key - EUROPE",
+                      "One Piece: Pirate Warriors 4 EU PS4 CD Key",
+                      "Formula One - PS5 Download Code [EU]"):
+            with self.subTest(title=title):
+                sig = classify_console(title, G2A, "G2A")
+                self.assertIsNone(sig.skip_reason)
+        # a BALANCED standalone "(Series)" is a name element (2 real Eneba rows)
+        for region, base in (("UNITED STATES", "us"), ("EUROPE", "eu")):
+            sig = classify_console(f"Get Them Out! (Series) (Xbox Series X|S) XBOX LIVE Key {region}",
+                                   f"https://www.eneba.com/xbox-get-them-out-series-xbox-series-x-s-xbox-live-key-{base}", "Eneba")
+            self.assertEqual((sig.families, sig.skip_reason, sig.resolve_name, sig.region_base),
+                             (("XBOX_SERIES",), None, "Get Them Out! (Series)", base))
+
+
+class LeadingNameTokenTests(unittest.TestCase):
+    """Review finder 3 [low]: a console run that OPENS the title and is followed by a plain
+    word is part of the game name — kept in resolve_name, not a family declaration."""
+
+    def test_real_rows_keep_the_leading_word(self):
+        cases = [
+            ("Nintendo World Championships: NES Edition US Nintendo Switch CD Key",
+             "https://www.kinguin.net/category/1/nintendo-world-championships-nes-edition-us-nintendo-switch-cd-key", "Kinguin",
+             ("SWITCH",), "us", "Nintendo World Championships: NES Edition"),
+            ("Nintendo World Championships - NES Edition (Switch Download Code) - EU",
+             "https://www.mmoga.com/Nintendo/Switch/Nintendo-World-Championships-NES-Edition-Switch-Download-Code-EU.html?ref=615", "MMOGA",
+             ("SWITCH",), "eu", "Nintendo World Championships - NES Edition"),
+            ("Xbox Fitness (Xbox One Download Code) - EU",
+             "https://www.mmoga.com/Xbox-Live/Xbox-One-Game-Keys/Xbox-Fitness-Xbox-One-Download-Code-EU.html?ref=615", "MMOGA",
+             ("XBOX_ONE",), "eu", "Xbox Fitness"),
+            ("PlayStation All-Stars Battle Royale EU PS4 CD Key",
+             "https://www.kinguin.net/category/1/playstation-all-stars-battle-royale-eu-ps4-cd-key", "Kinguin",
+             ("PS4",), "eu", "PlayStation All-Stars Battle Royale"),
+            ("Nintendo Switch Sports EU Nintendo Switch CD Key",
+             "https://www.kinguin.net/category/1/nintendo-switch-sports-eu-nintendo-switch-cd-key", "Kinguin",
+             ("SWITCH",), "eu", "Nintendo Switch Sports"),
+        ]
+        for title, url, merchant, families, base, name in cases:
+            with self.subTest(title=title):
+                sig = classify_console(title, url, merchant)
+                self.assertEqual((sig.families, sig.skip_reason, sig.region_base, sig.resolve_name),
+                                 (families, None, base, name))
+                self.assertEqual(resolve_name_of(title), name)
+
+    def test_leading_run_as_the_only_marker_is_no_declaration(self):
+        # Instant Gaming (URL carries nothing) / a slug that only mirrors the name
+        for url, merchant in (("https://www.instant-gaming.com/en/1-/", "Instant Gaming"),
+                              ("https://www.kinguin.net/category/1/nintendo-switch-sports-cd-key", "Kinguin"),
+                              ("https://www.eneba.com/nintendo-nintendo-switch-sports-eshop-key-europe", "Eneba")):
+            with self.subTest(url=url):
+                sig = classify_console("Nintendo Switch Sports", url, merchant)
+                self.assertEqual((sig.families, sig.skip_reason, sig.resolve_name), ((), NO_GEN, "Nintendo Switch Sports"))
+        sig = classify_console("Nintendo Switch Sports eShop Key EUROPE",
+                               "https://www.eneba.com/nintendo-nintendo-switch-sports-eshop-key-europe", "Eneba")
+        self.assertEqual((sig.families, sig.skip_reason), ((), NO_GEN))
+        # a real platform slot AFTER the mirrored name still declares
+        sig = classify_console("Nintendo Switch Sports", "https://www.kinguin.net/category/1/nintendo-switch-sports-nintendo-switch-cd-key", "Kinguin")
+        self.assertEqual((sig.families, sig.skip_reason), (("SWITCH",), None))
+        sig = classify_console("Nintendo Switch Sports (Nintendo Switch) eShop Key EUROPE",
+                               "https://www.eneba.com/nintendo-nintendo-switch-sports-nintendo-switch-eshop-key-europe", "Eneba")
+        self.assertEqual((sig.families, sig.resolve_name), (("SWITCH",), "Nintendo Switch Sports"))
+        sig = classify_console("Xbox Fitness", "https://www.eneba.com/xbox-fitness-xbox-one-xbox-live-key-europe", "Eneba")
+        self.assertEqual((sig.families, sig.resolve_name), (("XBOX_ONE",), "Xbox Fitness"))
+        sig = classify_console("Nintendo Switch Sports EN United Kingdom",
+                               "https://www.gamivo.com/product/nintendo-switch-sports-nintendo-nintendo-switch-uk-standard", "Gamivo")
+        self.assertEqual((sig.families, sig.region_base, sig.resolve_name), (("SWITCH",), "uk", "Nintendo Switch Sports"))
+
+    def test_bracketed_or_separated_opening_run_is_a_declaration(self):
+        sig = classify_console("(Xbox One) Game - EU", "https://example.com/x", "Shop")
+        self.assertEqual((sig.families, sig.resolve_name), (("XBOX_ONE",), "Game"))
+        sig = classify_console("PS5 - Game Name [EU]", "https://example.com/x", "Shop")
+        self.assertEqual((sig.families, sig.resolve_name), (("PS5",), "Game Name"))
+        # the non-game markers still win over a leading name run
+        sig = classify_console("Xbox Game Pass Ultimate 1 Month [EU]",
+                               "https://www.mmoga.com/Xbox-Live/Xbox-One-Game-Keys/x.html?ref=615", "MMOGA")
+        self.assertEqual(sig.skip_reason, _not_a_game("GAME PASS"))
+        sig = classify_console("Nintendo Switch Online 12 Months", "https://example.com/x", "Shop")
+        self.assertEqual(sig.skip_reason, _not_a_game("NINTENDO SWITCH ONLINE"))
 
 
 if __name__ == "__main__":

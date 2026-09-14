@@ -61,6 +61,10 @@ _CATEGORIES: list[tuple[str, str, str, str]] = [
 _CATEGORY_INDEX = {k: i for i, (k, *_rest) in enumerate(_CATEGORIES)}
 
 
+# "(r45)" or a combined stamp ending in r45 — "(r19, r45)".
+_R45_STAMP_RE = re.compile(r"\((?:[a-z0-9]+,\s*)*r45\)")
+
+
 def categorize_reason(reason: str) -> str:
     """Map a raw skip reason (matcher wording) to a taxonomy key."""
 
@@ -70,8 +74,10 @@ def categorize_reason(reason: str) -> str:
     # fail-closed reasons ("console: no declared generation (R45)", "console: Switch 2 has
     # no AKS bucket (R45)", …); any other reason stamped "(R45)" comes from the console
     # branch of the matcher too ("no region id for PS5/EU (R45)", "edition … not sold on
-    # the PS4 page (R45)") — all filed under the consoles category (2026-09-12).
-    if low == "console" or low.startswith("console:") or "(r45)" in low:
+    # the PS4 page (R45)") — all filed under the consoles category (2026-09-12). The
+    # combined stamp "(R19, R45)" (review fix 2026-09-14: the console branch's empty
+    # editions map) lands here too, never in stub_page.
+    if low == "console" or low.startswith("console:") or _R45_STAMP_RE.search(low):
         return "console"
     if low.startswith("no aks") and "product page found" in low:
         return "no_page"

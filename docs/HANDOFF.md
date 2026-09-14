@@ -102,7 +102,9 @@ veux que l'executor + sa page.
 
 ## 3. État courant (2026-09-09)
 
-Tout est poussé sur `origin/main`, suite verte (**1579 tests**, 2026-09-13). Travaux récents (voir
+Tout est poussé sur `origin/main`, suite verte (**1629 tests** découverts le 2026-09-14 après les
+correctifs de la revue R45, classifieur de la seconde session inclus). Travaux
+récents (voir
 `docs/CHANGELOG.md` pour le détail) :
 - Campagne d'audit Fable : 38/39 findings corrigés (1 décliné, cf. §5).
 - Correctifs matcher : `extract_aks_name` (noms marketing), R39 (mot plateforme = bruit
@@ -194,10 +196,22 @@ Tout est poussé sur `origin/main`, suite verte (**1579 tests**, 2026-09-13). Tr
   (EXECUTOR_RULES §10 ; pas de Switch 2, pas de PS5 EU/US/UK). Code : `src/console_keys.py`
   (`classify_console`, titre ET URL, grammaire par marchand), `Candidate.targets` (`Target`,
   toujours ≥ 1 ; empreinte étendue au-delà d'une cible), `scripts/03_match.py --consoles` /
-  `scripts/10 --consoles` (**défaut OFF** : les sweeps ne changent pas), submitter : une cible =
+  `scripts/10 --consoles` (**défaut OFF**, et **`--dry-run` obligatoire** avec le flag depuis le
+  14/09 ; sans flag : aucune SAISIE console, mais le scan console de l'URL reclasse les lignes
+  consoles URL-seules en `console` — 569 lignes Gamivo par lot), submitter : une cible =
   chemin actuel, **> 1 cible = blocker `multi_target_unsupported_until_modal_verified`** tant
   que le nouveau modal n'a pas été observé avec `--inspect` — jamais « la première cible
-  seulement » (une saisie consomme la ligne du feed). **Fuite corrigée** : le garde console ne
+  seulement » (une saisie consomme la ligne du feed) ; une entrée gated est un skip conçu
+  (`gated_multi_target`), jamais un échec du StepGuard. **Revue adverse du 12/09 corrigée le
+  14/09** (CHANGELOG « Consoles R45 : correctifs ») : région de la branche console lue dans le
+  slot de chaque grammaire (`region_base` / `region_label` / `region_words`, jamais un GLOBAL
+  implicite pour une clé verrouillée ; Gamivo via le hook R46), R44 sur le label de base,
+  identité de page sans apostrophes, R19 stampé « (R19, R45) », RANDOM + mot console, gardes
+  throttle partagés, ids `None` refusés. **P1 tranchée par Romain (14/09)** : « clé PS5 seule =
+  page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch et Switch 2 » — jamais de
+  page sœur (AGENTS.md). **Switch 2 saisissable** : famille `SWITCH2`, page
+  `nintendo-switch-2` (SF6 188436, Elden Ring Tarnished 188441), buckets NINTENDO (99…).
+  **Fuite corrigée** : le garde console ne
   lisait que le titre → un Xbox One/Series US Gamivo (« Riders Republic Premium Edition United
   States », run `20260911-162100-auto-gamivo-s51-p28`) est entré PUBLISHER GLOBAL Premium sur la
   page PC (AKS 50562) — à corriger à la main ; `console_marker_in_url` scanne l'URL dans tous
@@ -220,12 +234,11 @@ Tout est poussé sur `origin/main`, suite verte (**1579 tests**, 2026-09-13). Tr
   était sous charge navigateur, pas débit de probes). À sortir seulement sur go de Romain,
   avec un rate-limiter et un rodage prudent.
 - **Consoles `[R45]` — prochaines étapes** (dans l'ordre) :
-  0. **Corriger d'abord les findings confirmés de la revue adverse du 12/09** (liste dans
-     `docs/CHANGELOG.md`, entrée « Consoles R45 ») — en tête : la lecture de la région dans la
-     branche console (codes Kinguin/K4G « US / CA / AU … » avant la phrase plateforme →
-     GLOBAL implicite), les comptes Difmark classés clés Switch, R44 mort sur les consoles, la
-     gate multi-cibles comptée comme échec (10 entrées gated = halte du sweep). **Aucun run
-     `--consoles`, même dry-run, avant ce correctif** ; le flag reste OFF par défaut.
+  0. ~~Corriger les findings de la revue adverse du 12/09~~ — **FAIT le 14/09** (CHANGELOG
+     « Consoles R45 : correctifs de la revue adverse ») : région de la branche console, comptes
+     Difmark, R44, gate multi-cibles, identité, R19, RANDOM, throttle, validation ; P1 tranchée ;
+     Switch 2 = famille SWITCH2. Le flag reste OFF par défaut et **dry-run seulement**
+     (`scripts/10` refuse `--consoles` sans `--dry-run`).
   1. **Observer le nouveau modal** de Romain en lecture seule : `python3 scripts/05_submit.py
      runs/<id>/approved.json --merchant MMOGA --store-id 12 --inspect` sur un candidat console
      (`modal_inspection.json` : contrôles d'overwrite région / édition PAR cible, nom des
@@ -238,9 +251,10 @@ Tout est poussé sur `origin/main`, suite verte (**1579 tests**, 2026-09-13). Tr
      lot) ; lire `candidates.json` (`targets`) et `skipped.json` (motifs `console: … (R45)`).
   4. **Corriger Riders Republic à la main** sur AKS (produit 50562 : l'offre Gamivo Xbox
      One/Series US saisie PUBLISHER GLOBAL Premium le 2026-09-11).
-- **Questions pour Romain (R45, à confirmer — EXECUTOR_RULES §12)** : P1 « déclaration
-  marchande ∧ page AKS » (clé « PS5 » seule → page PS5 seulement ; « PS4 / PS5 » → PS5 + PS4) ou
-  « page seule » (toutes les plateformes du jeu) ; P2 Play Anywhere = vérité de la page PC
+- **Questions pour Romain (R45, à confirmer — EXECUTOR_RULES §12)** : ~~P1~~ **tranchée le
+  14/09** (« clé PS5 seule = page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch
+  et Switch 2 » — déclaration marchande ∧ page AKS, jamais de page sœur) ; restent **P2-P5** :
+  P2 Play Anywhere = vérité de la page PC
   (marchand « + PC/Windows » sans PA sur la page → skip ; PA sur la page sans mention marchande →
   cibles PA) ; P3 PS5 hors GLOBAL → skip (créer des buckets PS5 EU/US/UK dans l'outil ?) ; P4 les
   704 lignes Eneba « XBOX LIVE Key » sans génération → skip ; P5 DLC / season pass console → skip
@@ -337,7 +351,7 @@ python3 scripts/10_data_entry_auto.py --targets "Kinguin:58" --max-pages 30 --tr
 **Consoles (R45 — lecture seule tant que le nouveau modal n'est pas observé) :**
 ```sh
 python3 scripts/03_match.py runs/<id>/offers.json --consoles                                    # match read-only : lignes consoles classées, candidats multi-cibles (targets)
-python3 scripts/10_data_entry_auto.py --targets "MMOGA:12" --run-id <id> --dry-run --consoles   # APERÇU d'un sweep consoles (rien d'écrit)
+python3 scripts/10_data_entry_auto.py --targets "MMOGA:12" --run-id <id> --dry-run --consoles   # APERÇU d'un sweep consoles (rien d'écrit) — --dry-run OBLIGATOIRE avec --consoles (refus sinon, 14/09)
 # Sans --consoles (défaut) : toute ligne console (titre OU URL) est skippée « console ».
 # Un candidat > 1 cible est refusé par 05 (blocker multi_target_unsupported_until_modal_verified) — d'abord --inspect sur le nouveau modal.
 ```

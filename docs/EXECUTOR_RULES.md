@@ -409,9 +409,10 @@ own-page and unnamed-DLC rules above apply to MARKED titles only.
 sur les consoles après modification de l'outil AKS feed") was reopened the next day:
 Romain's new AKS feed tool OVERWRITES the region (= region/PLATFORM) and the edition PER
 TARGET PAGE, so one feed row can be filed on several AKS pages. The full rule — page
-model, classifier, multi-target candidates, policies P1-P5 (à confirmer par Romain), the
-fail-closed submit gate — lives in §4.12; the code is prepared behind `--consoles`
-(default OFF). **Correction of finding (a) (2026-09-12):** the 11/09 probe used a WRONG
+model, classifier, multi-target candidates, policies (P1 DECIDED by Romain on 2026-09-14,
+P2-P5 à confirmer), the fail-closed submit gate — lives in §4.12; the code is prepared
+behind `--consoles` (default OFF; the sweep requires `--dry-run` with it). **Correction of
+finding (a) (2026-09-12):** the 11/09 probe used a WRONG
 URL grammar (`…-xbox-series-x-…-cd-key-…`). Console product pages DO exist, at
 `buy-<slug>-<kind>-compare-prices/` with kind ∈ `ps4` / `ps5` / `xbox-one` /
 `xbox-series` / `nintendo-switch` / `nintendo-switch-2` (PC = `cd-key`), each its own
@@ -423,7 +424,8 @@ feed modal's region catalog (867 buckets) has the console families: Xbox One `24
 `24eu` / US `24us` / UK `226`, Xbox Series `300` / EU `302` / US `303` / UK `305`,
 Xbox+Windows (Play Anywhere) `306` / EU `241` / US `242` / UK `240`, PlayStation 4 `88` /
 EU `88eu` / US `88us` / UK `88uk`, PS5 `88ps5h` (single bucket), Nintendo `99` / EU
-`99eu` / US `99us` / UK `992` — **no Switch 2 bucket exists** (table in §10); (c) MMOGA
+`99eu` / US `99us` / UK `992` — Switch 2 pages use the SAME Nintendo family buckets (no
+separate Switch 2 bucket — 2026-09-14, table in §10); (c) MMOGA
 grammar: URL categories `Xbox-Live/Xbox-One-Game-Keys`,
 `Xbox-Live/Xbox-Series-XS-Game-Keys`, `Nintendo/Switch`, `Playstation-Network`, platform in
 a bracket of the title, region tail " - EU" / "[EU]", non-games among the console rows
@@ -1030,8 +1032,15 @@ overwriting the region to PS4; an Xbox key goes on Xbox One, Xbox Series X and �
 Xbox Play Anywhere games ONLY — PC. This section supersedes the 2026-09-11 "PARKED" study
 (§4.3). The code is **prepared behind an opt-in flag** (`--consoles`, default OFF); the
 write of a multi-target candidate stays **fail-closed** until the new modal is observed
-(§6 "Multi-target candidates"). The policies P1-P5 below are **à confirmer par Romain**
-(listed in §12).
+(§6 "Multi-target candidates"). **P1 is DECIDED** (Romain 2026-09-14: « clé PS5 seule =
+page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch et Switch 2 »); P2-P5
+below are still **à confirmer par Romain** (listed in §12). The adversarial review of
+2026-09-12 (four lenses) was fixed on 2026-09-14 — region read of the console branch, R44
+on consoles, identity apostrophes, the R19 stamp, RANDOM with a console word, the shared
+throttle guard, the submit-gate streak, null target ids — and Switch 2 became the
+`SWITCH2` family (CHANGELOG 2026-09-14). Until the per-target modal is observed the
+console branch is READ-ONLY: `scripts/10_data_entry_auto.py` refuses `--consoles`
+without `--dry-run`.
 
 **4.12.1 Page model — verified read-only 2026-09-12 (UA `AKS/Staff`).** AKS has SEPARATE
 console product pages: `buy-<slug>-<kind>-compare-prices/`, kind ∈ `ps4` / `ps5` /
@@ -1049,7 +1058,8 @@ wrong grammar (`…-xbox-series-x-…-cd-key-…`) — corrected in §4.3.
   `<a href="https://www.allkeyshop.com/blog/buy-<slug>-<kind>-compare-prices/"
   class="inactive" title=" PS5">`; the game-info "Platforms" table
   (`game-info-table-label`) lists the same set. `extract_console_pages(body) -> {kind:
-  url}` and `extract_page_platform(body) -> "PC" | ""` read them into
+  url}` and `extract_page_platform(body)` → the ACTIVE tab's platform ("PC", "PS4",
+  "PS5", "Xbox One", "Xbox Series X", "Switch") or "" read them into
   `AksResolution.console_pages` / `AksResolution.page_platform`. A tab can point to ANOTHER
   product (Elden Ring → "Elden Ring Tarnished Edition Nintendo Switch 2") — hence the
   identity check of 4.12.4 (g).
@@ -1068,25 +1078,37 @@ wrong grammar (`…-xbox-series-x-…-cd-key-…`) — corrected in §4.3.
   write "/ Windows", "PC/XBOX …", "(Windows/Xbox Series X|S)", "Xbox One, PC".
 - **Modal buckets** (867-entry catalog, byte-identical in the 9 catalogs of 10-12/09):
   the family × base-region table is in §10 (`CONSOLE_REGION_IDS`). Absent = fail-closed:
-  **no Switch 2 bucket, no PS5 EU/US/UK** (PS5 = the single `88ps5h`), no console gift
-  bucket. Ids are strings and 182 keys are non-numeric (`24eu`, `88ps5h`, `99eu`…):
-  `resolve_catalog_id` resolves them through the **id path** (verified on the live
-  catalog: `('GLOBAL','306')`, `('PS5','88ps5h')`, `('EU','24eu')`). The `306` master
-  label carries a leading U+FEFF (`"\ufeffXbox/PC GLOBAL (306)"` — the rendered option has none
-  and sorts last) — the Selectize query is typed WITHOUT the BOM (§6).
+  **no PS5 EU/US/UK** (PS5 = the single `88ps5h`), no console gift bucket. Ids are
+  strings and 182 keys are non-numeric (`24eu`, `88ps5h`, `99eu`…): `resolve_catalog_id`
+  resolves them through the **id path** (verified on the live catalog:
+  `('GLOBAL','306')`, `('PS5','88ps5h')`, `('EU','24eu')`). **BOM facts** (catalog
+  `20260912-080120-auto`): the `306` master label carries a leading U+FEFF
+  (`"\ufeffXbox/PC GLOBAL (306)"` — the rendered option has none and sorts last) and it is
+  the ONLY region label with one; ten edition labels (`337`, `452`, `480`, `573`,
+  `1155`, `1448`, `1583`, `4bo`, `5bo`) and one edition KEY (`"\ufeff1380"`) carry one
+  too — the Selectize `region_query` / `edition_query` are typed WITHOUT the BOM (§6).
+- **Switch 2 (2026-09-14).** AKS Switch 2 product pages EXIST (kind `nintendo-switch-2`:
+  "Street Fighter 6 Nintendo Switch 2" id **188436**, "ELDEN RING Tarnished Edition
+  Nintendo Switch 2" id **188441**, bodies saved in the R45 scratchpad) and their offers
+  use the **Nintendo family bucket** (regions map `{99: GLOBAL}`, prices region `99`,
+  `activationPlatform nintendo-eshop`): the PAGE carries the platform, the BUCKET the
+  region. `SWITCH2` is therefore a family of its own (page kind `nintendo-switch-2`)
+  with the SAME bucket ids as SWITCH (`99` / `99eu` / `99us` / `992`); the 2026-09-12
+  "console: Switch 2 has no AKS bucket (R45)" skip is retired.
 
 **4.12.2 Vocabulary.** **Family** = a console platform, a `REGION_IDS` key like the PC
 platforms: `XBOX_ONE`, `XBOX_SERIES`, `XBOX_PC` (the Play Anywhere target), `PS4`, `PS5`,
-`SWITCH` (`CONSOLE_FAMILIES`). Switch 2 and Xbox 360 are recognised by the classifier →
-skip (no bucket). **Region base** = global / eu / us / uk; forbidden regions take the
+`SWITCH`, `SWITCH2` (`CONSOLE_FAMILIES`; SWITCH2 since 2026-09-14). Xbox 360 is recognised
+by the classifier → skip (no bucket). **Region base** = global / eu / us / uk; forbidden regions take the
 same paths as PC (§4.11). **Bucket** = the modal "region" id = region/platform.
 **Target** = (family, AKS product page (id, url, name), bucket (label, id), edition
 (label, id)). **Anchor page** = the PC page when it exists (existing resolution: slug
 tiers + R30 search), else the console page of the primary declared family guessed by slug
 (`page_kind` = kind; no R30 search for console kinds — like accounts).
 `CONSOLE_PAGE_KIND`: XBOX_ONE → `xbox-one`, XBOX_SERIES → `xbox-series`, XBOX_PC →
-`cd-key`, PS4 → `ps4`, PS5 → `ps5`, SWITCH → `nintendo-switch`. `CONSOLE_PLATFORM_LABEL`:
-"Xbox One", "Xbox Series X|S", "Xbox / PC (Play Anywhere)", "PS4", "PS5", "Nintendo Switch".
+`cd-key`, PS4 → `ps4`, PS5 → `ps5`, SWITCH → `nintendo-switch`, SWITCH2 →
+`nintendo-switch-2`. `CONSOLE_PLATFORM_LABEL`: "Xbox One", "Xbox Series X|S", "Xbox / PC
+(Play Anywhere)", "PS4", "PS5", "Nintendo Switch", "Nintendo Switch 2".
 
 **4.12.3 Classifier — `src/console_keys.py`** (pure: `re`, `dataclasses`,
 `urllib.parse`; NO import of `src.matcher`). `classify_console(name, url, merchant) ->
@@ -1094,8 +1116,8 @@ ConsoleSignal | None` returns `None` when the row carries NO console marker at a
 tokens XBOX / PLAYSTATION / PS4 / PS5 / PSN / NINTENDO / SWITCH, or
 `console_marker_in_url(url)`), else a frozen `ConsoleSignal`:
 - `families`: the families DECLARED by the merchant, in order of appearance,
-  deduplicated, among XBOX_ONE / XBOX_SERIES / PS4 / PS5 / SWITCH (never XBOX_PC, never
-  Switch 2);
+  deduplicated, among XBOX_ONE / XBOX_SERIES / PS4 / PS5 / SWITCH / SWITCH2 (never
+  XBOX_PC);
 - `pc_declared`: the platform phrase names PC / Windows( 10| 11)? next to an Xbox family
   ("Xbox Series X|S / Windows", "PC/XBOX One/Series X|S", "(Xbox Series X/S, PC)",
   "(Windows/Xbox Series X|S)", "Xbox One, PC");
@@ -1109,7 +1131,23 @@ tokens XBOX / PLAYSTATION / PS4 / PS5 / PSN / NINTENDO / SWITCH, or
   "(Europe)", "EU Key", "Europe" before the platform, Gamivo "EN United Kingdom"), then
   separators are normalised ("Game - - EU" → "Game"). Verified on the 40 raw rows of the
   feed study (tests);
-- `skip_reason`: a fail-closed "console: … (R45)" string, or `None`.
+- `skip_reason`: a fail-closed "console: … (R45)" string, or `None`;
+- `region_base` / `region_label` / `region_words` (review fix 2026-09-14) — the REGION
+  SLOT of the merchant's console grammar: `region_base` a sellable base (global / eu /
+  us / uk) or `None`; `region_label` the label of a declared region AKS does not sell
+  (CA → "CANADA", AU, TR, AR, ZA, "Hong Kong"…) or `None`; `region_words` the region
+  words the classifier removed from `resolve_name`, so the matcher can refuse an
+  implicit read that would silently drop them (4.12.4 (c)). The slot is read from the
+  SAME furniture runs `resolve_name` strips (`resolve_name_and_regions(name) -> (name,
+  words)`): EU / EUROPE / EUROPEAN UNION → eu, US / USA / UNITED STATES → us, UK / GB /
+  UNITED KINGDOM → uk, GLOBAL / WORLDWIDE / WW → global; the 2-letter codes mirror MMOGA
+  `FORBIDDEN_CODES` (+ CA / AU / ZA / NA / CO / SG / HK / IN / DE / AT / NL / RO; `EU/NA`
+  → "EU NA", the matcher spelling); a full or unknown name → its upper-cased text
+  (CANADA, NORTH AMERICA, HONG KONG, ROW, EU WEST, EU/UK…). Any forbidden / unknown
+  word wins the label; two DIFFERENT sellable bases in one slot ("EU (European Union +
+  UK)", "… - USA (…) Key EUROPE") → both `None` with `region_words` set — the matcher
+  skips (never a guessed base). 2-letter codes are UPPERCASE-only ("Hell is Us", "The
+  Last of Us Part I EU PS5" → eu).
 
 *Title grammar* (whole-word, case-insensitive, `X|S` ≡ `X/S` ≡ `XS`): XBOX_SERIES ← "Xbox
 Series X|S", "Xbox Series X/S", "Xbox Series X", "Xbox Series", "Series X|S" (after "Xbox
@@ -1117,7 +1155,20 @@ One /"); XBOX_ONE ← "Xbox One" / "XBOX One"; cross-gen "Xbox One / Series X|S"
 / Xbox Series X|S", "XBOX One/Series X|S", "Xbox One & Xbox Series X|S", "Xbox One, Xbox
 Series X/S" → (XBOX_ONE, XBOX_SERIES); PS5 ← "PS5", "PlayStation 5"; PS4 ← "PS4",
 "PlayStation 4"; "PS4 / PS5", "PS4/PS5", "PS4 & PS5" → (PS4, PS5); SWITCH ← "Nintendo
-Switch" not followed by "2".
+Switch" not followed by "2"; SWITCH2 ← "Switch 2" / "Nintendo Switch 2" (2026-09-14).
+Review fixes 2026-09-14 (R45): a BARE "Series" (optionally "X" / "S") right after "Xbox
+One" + separator ("Xbox One/Series", "Xbox One & Series", "(Xbox One / Series)") is
+normalised to the canonical "Series X|S" BEFORE parsing → (XBOX_ONE, XBOX_SERIES) with a
+clean `resolve_name` (a bare "Series" anywhere else stays a name word — "World Series of
+Poker"); a console run that OPENS the title and is followed by a plain word is part of
+the GAME NAME ("Nintendo World Championships: NES Edition …", "Nintendo Switch Sports
+…", "Xbox Fitness (…)", "PlayStation All-Stars Battle Royale …") — kept in
+`resolve_name`, never a declaration; when it is the ONLY title run the URL grammar
+decides, with the mirrored name tokens dropped from the slug start
+(`nintendo-switch-sports-cd-key` → "no declared generation", `…-nintendo-switch-cd-key`
+→ SWITCH); "<Game> - Nintendo Switch 2 Edition" (ONE platform item immediately followed
+by "Edition") is a product-NAME suffix kept in `resolve_name`, not a declaration (the
+R01 / R16 guards compare it with the AKS page name as usual).
 *URL grammar* (ONLY when the title declares no family):
 - MMOGA (`mmoga.com`) category segment: `Xbox-Live/Xbox-One-Game-Keys` → XBOX_ONE,
   `Xbox-Live/Xbox-Series-XS-Game-Keys` → XBOX_SERIES,
@@ -1136,7 +1187,8 @@ Switch" not followed by "2".
   `nintendo-nintendo-switch` → SWITCH;
 - Eneba (`eneba.com`): `-xbox-series-x-s-` → XBOX_SERIES, `-windows-xbox-series-x-s-` →
   + `pc_declared`, `-ps4-ps5-` → (PS4, PS5), `-ps5-` / `-ps4-`, `-nintendo-switch-2-` →
-  skip, `-nintendo-switch-` → SWITCH; `-pc-xbox-live-key-` → skip PC-only; an
+  SWITCH2 (2026-09-14; was a skip), `-nintendo-switch-` → SWITCH; `-pc-xbox-live-key-` →
+  skip PC-only; an
   `xbox-…-xbox-live-key-` WITHOUT a generation → skip "console: no declared generation
   (R45)". The leading `xbox-` / `psn-` / `nintendo-` segment is a STORE prefix, never a
   generation (`xbox-one-last-breath-…` is not an Xbox One row);
@@ -1148,21 +1200,37 @@ PLAYSTATION / PSN / NINTENDO / PS4 / PS5 as hyphen- or slash-delimited segments;
 SWITCH alone) — the fix of the Gamivo leak below.
 
 *Fail-closed skips of the classifier* (`skip_reason`), all of the form "console: … (R45)":
-- "console: Switch 2 has no AKS bucket (R45)" — "Switch 2" / "Nintendo Switch 2" /
-  `-nintendo-switch-2-` (Kinguin 12, K4G 12, G2A 1, Driffle 1 rows in the latest batches);
+- ~~"console: Switch 2 has no AKS bucket (R45)"~~ — RETIRED 2026-09-14: "Switch 2" /
+  "Nintendo Switch 2" / `-nintendo-switch-2-` declare the `SWITCH2` family (Kinguin 12,
+  K4G 12, G2A 1, Driffle 1 rows of the latest batches become enterable on their
+  `nintendo-switch-2` page, Nintendo buckets);
 - "console: Xbox 360 (R45)" — "Xbox 360", MMOGA `Xbox-Live/Xbox-360-Game-Keys`;
 - "console: <marker> — not a game (R45)" — whole-word GAME PASS, XBOX LIVE GOLD, XBOX
   LIVE CARD, XBOX GIFT CARD, PSN CARD, PLAYSTATION (NETWORK )?(CARD|CREDIT|PLUS|STORE
   CARD), PS PLUS, PLAYSTATION PLUS, (NINTENDO )?ESHOP CARD, NINTENDO SWITCH ONLINE, "<x>
-  Account" / "<x> Access" (Kinguin, URL `-account` / `-online-account-activation`), the
-  MMOGA card / subscription categories. V-BUCKS / VC / POINTS etc. stay covered by
-  `CATEGORY_SKIP` upstream (§4.3);
+  Access" (Kinguin, URL `-online-account-activation`), ACCOUNT as a whole word ANYWHERE
+  in the title ("Madness Beverage (Account) Standard Edition") or a URL path carrying
+  `/buy-console-account-` / a `-account` / `-account-<digits>` suffix (Kinguin "<x>
+  Account", Difmark console accounts — 2026-09-14: an account is never a console key, the
+  console branch runs BEFORE the Difmark account plan), the MMOGA card / subscription
+  categories. V-BUCKS / VC / POINTS etc. stay covered by `CATEGORY_SKIP` upstream (§4.3);
 - "console: PC-only Xbox Live key (R45)" — Gamivo `xbox-pc` alone, Eneba
   `-pc-xbox-live-key-` (a PC key sold through Xbox Live / Microsoft Store is neither a
   console offer nor a proven Play Anywhere one);
 - "console: no declared generation (R45)" — a console marker without any family: Eneba
   "<Game> XBOX LIVE Key <REGION>" (**704** of its 1 376 console rows carry no generation
-  in title OR URL), bare "PSN", bare "Nintendo" **[P4]**.
+  in title OR URL), bare "PSN", bare "Nintendo" **[P4]**;
+- "console: unparsed platform residue (R45)" (2026-09-14, `SKIP_RESIDUE`) — a SERIES /
+  ONE token still glued to a separator once the platform phrase is removed ("/Series",
+  "& Series", "(Series", "Series)", "One /"): the grammar did not parse the whole phrase
+  → never a partial console entry. A balanced standalone "(Series)" / "(One)" is a name
+  ("Get Them Out! (Series)", 2 real Eneba rows) and "-" / ":" / plain-word neighbours are
+  exempt (0 residue rows in the latest batches);
+- "console: product name suffix '<Platform label> Edition' contradicts the declared
+  platform <FAMILY[/FAMILY]> — not entered (R45)" (2026-09-14) — a "<Game> - Nintendo
+  Switch 2 Edition" name suffix filed under ANOTHER declared platform (MMOGA
+  `/Nintendo/Switch/` category, a title run naming another family): the declaration and
+  the name disagree → skip, never resolved in either's favour.
 
 `console_page_identity(aks_name) -> str` strips the page-name suffix ("Hades Xbox Series"
 → "Hades", "Hades PS5" → "Hades") so a console page can be compared to the anchor.
@@ -1175,15 +1243,22 @@ SWITCH alone) — the fix of the Gamivo leak below.
    (`CONSOLE_TOKENS`, as before) OR `console_marker_in_url(offer.url)` — **the URL scan is
    active in EVERY mode**. `consoles=False` → `"console"` (byte-identical for titles; new
    for URL-only rows — the Gamivo / Eneba leak fix). `consoles=True` → `sig =
-   classify_console(...)`: its `skip_reason` is returned; otherwise the remaining scans
-   (forbidden regions, categories, bundles, skins…) CONTINUE as usual and `None` is
-   returned. Position: that of the current console scan.
+   classify_console(...)`: its `skip_reason` is returned; then a declared region the
+   grammar could not map to a sellable base (`sig.region_label`) returns "forbidden
+   region: <LABEL>" — the PC wording, same router (review fix 2026-09-14: 150 Kinguin
+   CA / AU console rows used to pass and read an implicit GLOBAL); otherwise the
+   remaining scans (forbidden regions, categories, bundles, skins…) CONTINUE as usual
+   and `None` is returned. Position: that of the current console scan.
 3. `AksResolution` gains `console_pages: dict[str, str]` (kind → url, from the tab bar)
    and `page_platform: str` (filled in `_resolution_from_body`). `resolve_aks_url(url,
    http_get_fn=http_get) -> AksResolution | None`: a throttled GET of one KNOWN page URL
    through `_probe_guessed_page` (404/410 → `None`; unreliable → `AksProbeUnreliable`;
    the slug is read from `buy-(.+?)-(?:<kinds>)-compare-prices`). `match_feed` wraps it in
-   its own `_ThrottleGuard` when the production resolver is used (stats summed).
+   a `_ThrottleGuard(shared=<main guard>)` when the production resolver is used — ONE
+   consecutive-unreliable count, one grace budget and one `stats` dict across anchor
+   probes and page reads, so the sweep aborts after THROTTLE_MAX_CONSECUTIVE_UNRELIABLE
+   unreliable probes on distinct pages whichever resolver they hit (review fix
+   2026-09-14: two independent guards doubled the budget before `AksThrottled`).
 4. `match_offer(..., page_resolver=resolve_aks_url, consoles=False)` — the console branch
    (consoles=True, `classify_console` not `None`, no `skip_reason`), at the AKS-resolution
    point:
@@ -1192,11 +1267,23 @@ SWITCH alone) — the fix of the Gamivo leak below.
       offer.name`, unchanged);
    b. `dlc_title_marker(offer.name)` → skip "console: DLC / season pass on console — not
       entered yet (R45)" **[P5]**;
-   c. region: `detect_region_base(offer) -> (base, label, implicit, gift)`, extracted from
-      `detect_region` (which now uses it); gift → skip "console: gift delivery has no
-      console bucket (R45)"; per family `REGION_IDS[fam].get(base)` — `None` → skip "no
-      region id for <family>/<base> (R45)" for the WHOLE offer ("PS5 … [EU]" skips: no PS5
-      EU/US/UK bucket exists **[P3]**);
+   c. region (review fix 2026-09-14 — NEVER an implicit GLOBAL for a region word the
+      merchant wrote; Gamivo 254/264 and Kinguin 37 real rows read GLOBAL before):
+      `detect_region_base(offer) -> (base, label, implicit, gift)` is the generic
+      title/URL read (`detect_region` and `detect_region_base` both read the shared
+      `_detect_region_parts` scan, which carries the merchant `title_region` hooks — R46
+      Gamivo: "Ravenswatch EN United Kingdom" + `…-xbox-xboxoneseries-uk-standard` → uk,
+      buckets `226` / `305`); gift → skip "console: gift delivery has no console bucket
+      (R45)". Then, in order: the grammar slot `sig.region_base`, when set, is
+      authoritative (if the generic read is NOT implicit and differs → skip "console:
+      region contradiction (title/grammar vs URL) — not entered (R45)"); else the generic
+      read when it is not implicit; else, if the classifier removed a region word
+      (`sig.region_words`) → skip "console: merchant region '<word>' not mapped to a
+      sellable base — not entered (R45)"; else implicit GLOBAL (no region word at all —
+      the Kinguin-style default, as before). The BASE label is kept in the plan
+      (`_Plan.base_label`) for R44. Per family `REGION_IDS[fam].get(base)` — `None` →
+      skip "no region id for <FAMILY>/<LABEL> (R45)" (e.g. `PS5/EU`) for the WHOLE offer
+      ("PS5 … [EU]" skips: no PS5 EU/US/UK bucket exists **[P3]**);
    d. anchor: `pc_res = resolver(guard_name)`; if `None`: `resolver(guard_name,
       page_kind=CONSOLE_PAGE_KIND[primary])` (no R30 search for console kinds); `None` →
       "no AKS product page found (console) (R45)";
@@ -1213,12 +1300,21 @@ SWITCH alone) — the fix of the Gamivo leak below.
       `url = anchor.console_pages.get(kind)` (a console anchor is its own page); absent →
       skip "console: AKS has no <family> page for '<identity>' — declared platform
       unverifiable (R45)"; `page_resolver(url)` → `None` → skip; identity
-      `tokenize(console_page_identity(page.aks_name)) == tokenize(identity_name)`, else
-      skip "console page '<name>' is not '<identity>' (R45)" (the Elden Ring Tarnished
-      Edition case); `page.editions` empty → R19;
+      `_identity_tokens(console_page_identity(page.aks_name)) ==
+      _identity_tokens(identity_name)` — tokens with apostrophes FOLDED (review fix
+      2026-09-14: the AKS Switch page "DreamWorks Spirit Luckys Big Adventure" vs the PC
+      page "Lucky's" was a real false skip on the MMOGA dry-run), else skip "console page
+      '<name>' is not '<identity>' (R45)" (the Elden Ring Tarnished Edition case — also on
+      the `nintendo-switch-2` tab: "ELDEN RING Tarnished Edition Nintendo Switch 2", AKS
+      188441, is not Elden Ring); `page.editions` empty → skip "AKS <FAMILY> page carries
+      no editions map — edition unverifiable (R19, R45)";
    h. `resolution` = the primary page (first declared family), `platform` = the primary
       family, `region_label` / `region_id` = the primary bucket; then the common flow
-      (R44, R19, the edition block R18 / E05 / R23 / P1-1 unchanged);
+      (R44 — on the BASE label `plan.base_label` against the page IDENTITY, the grammar's
+      `region_base` authoritative like a merchant hook (review fix 2026-09-14: the bucket
+      text "Xbox Game Code US" made R44 dead on consoles — "Air Force United States
+      Pacific Xbox One" was entered US-locked) —, R19, the edition block R18 / E05 / R23 /
+      P1-1 unchanged);
    i. after the edition block: every secondary target must sell the resolved edition
       (`edition_id in page.editions`), else skip "edition <label>(<id>) not sold on the
       <family> page (R45)"; then `targets` and the `Candidate` are built.
@@ -1235,8 +1331,15 @@ SWITCH alone) — the fix of the Gamivo leak below.
    [`DATA_CONTRACTS.md`](DATA_CONTRACTS.md).
 6. `match_feed(..., consoles=False)`; `scripts/03_match.py --consoles` stamps
    `match_meta.json["consoles"]`; `scripts/10_data_entry_auto.py` / `src/data_entry_auto.py`
-   pass `--consoles` to the match (**default OFF**); the admin page changes nothing. The
-   safe-auto sweeps behave exactly as before unless the flag is given.
+   pass `--consoles` to the match (**default OFF**; since 2026-09-14 `scripts/10` REFUSES
+   `--consoles` without `--dry-run` — `parser.error("--consoles requires --dry-run until
+   the per-target modal is observed (R45)")`); the admin page changes nothing. **No
+   console ENTRY without the flag** — but the URL console scan (`console_marker_in_url`)
+   is active in EVERY mode and changes the skip reasons of URL-only console rows: on the
+   latest Gamivo batch 569 rows previously filed "no AKS product page found" (241),
+   "forbidden region: COLOMBIA" (206), "skip category: BUNDLE" (26), "forbidden region:
+   ROW" (26) / CANADA (17), "extra words: ['KINGDOM']" (11) now all skip `console`
+   (feed_status: category consoles).
 
 **Never partial.** A console candidate exists ONLY when EVERY declared family resolved to
 a verified page + bucket + edition; any failing family skips the WHOLE offer with the
@@ -1245,11 +1348,15 @@ reason above. A feed row is consumed by its first creation (§4.3 finding (d)), 
 (no partial `targets`) and at submit time (§6 gate). No region, edition or platform is ever
 guessed: doubt → skip with an explicit reason string.
 
-**Policies — à confirmer par Romain (also listed in §12).**
-- **P1 "merchant declaration ∧ AKS page"**: a target is added only if the merchant
-  DECLARES the platform AND the AKS page of the game exists for it. A lone "PS5" key →
-  the PS5 page only; "PS4 / PS5" → PS5 + PS4. The alternative ("page alone": every
-  platform page of the game gets the key) is a single switch, `SECOND_PLATFORM_POLICY`.
+**Policies (P1 decided; P2-P5 à confirmer par Romain — also listed in §12).**
+- **P1 "merchant declaration ∧ AKS page" — DECIDED (Romain 2026-09-14: « clé PS5 seule =
+  page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch et Switch 2 »)**: a
+  target is added only if the merchant DECLARES the platform AND the AKS page of the game
+  exists for it. A lone declared platform → that page ONLY (a lone "PS5" key → the PS5
+  page, never PS4 as well; a lone "Xbox Series X|S" key → the Series page, never Xbox
+  One); a cross-gen declaration ("PS4 / PS5", "Xbox One / Series X|S") → both pages. No
+  sibling page is ever added (AGENTS.md "Reviewed decisions"); there is no "page alone"
+  switch.
 - **P2 Play Anywhere = the PC page's truth** ("Xbox Play Anywhere" in `official
   platforms`): merchant "+ PC/Windows" WITHOUT PA on the page → skip (contradiction); PA on
   the page WITHOUT a merchant mention → PA targets (XBOX/PC bucket on PC + One + Series).
@@ -1271,28 +1378,36 @@ a row now skips `console` (flag off) or is classified (flag on).
 
 **Reason-string vocabulary.** `console` — flag off, any console marker in title OR URL
 (unchanged text for titles). `console: … (R45)` — flag on, the classifier's and the
-branch's fail-closed skips (Switch 2, Xbox 360, not a game, PC-only Xbox Live key, no
-declared generation, DLC on console, gift delivery, Play Anywhere contradiction, missing
-family page, and the branch's defensive refusals: "console: unknown platform family
+branch's fail-closed skips (Xbox 360, not a game, PC-only Xbox Live key, no declared
+generation, "console: unparsed platform residue (R45)" and "console: product name suffix
+'<Platform label> Edition' contradicts the declared platform <FAMILY> — not entered
+(R45)" — the two classifier skips of 2026-09-14 (4.12.3) — DLC on console, gift delivery, Play Anywhere contradiction, missing family
+page, the region refusals of 2026-09-14 — "console: merchant region '<word>' not mapped
+to a sellable base — not entered (R45)", "console: region contradiction (title/grammar
+vs URL) — not entered (R45)" — and the branch's defensive refusals: "console: unknown platform family
 '<family>' — not entered (R45)" (a declared XBOX_PC / unknown key), "console: no product
 name left once the platform markers are removed (R45)", "console: AKS page name '<name>'
 has no product identity (R45)", "console: AKS <family> page <url> not found (404) —
 declared platform unverifiable (R45)" — the tab URL answered 404/410). The remaining R45
-skips keep their page-level wording: "no region id for <family>/<base> (R45)", "no AKS
-product page found (console) (R45)", "console page '<name>' is not '<identity>' (R45)",
-"edition <label>(<id>) not sold on the <family> page (R45)". A target page without an
-editions map skips as "AKS <family> page carries no editions map — edition unverifiable
-(R19)" (the PC R19 wording, family-qualified). `feed_status.categorize_reason` files
-`console`, `console: …` AND any reason carrying the `(R45)` suffix under the consoles
-family (lever text updated for R45) — so the page-level R45 wordings above land there too,
-never in `no_page` / `other`; `aks_lists.suggest_target_list` keeps them all in place (no
-list). The `<family>` placeholder is the family KEY (`XBOX_SERIES`, `PS5`, …), not the
-`CONSOLE_PLATFORM_LABEL` text.
+skips keep their page-level wording: "no region id for <FAMILY>/<LABEL> (R45)" (e.g.
+`PS5/EU` — the uppercase LABEL, not the lowercase base), "no AKS product page found
+(console) (R45)", "console page '<name>' is not '<identity>' (R45)", "edition
+<label>(<id>) not sold on the <FAMILY> page (R45)". A target page without an editions map
+skips as "AKS <FAMILY> page carries no editions map — edition unverifiable (R19, R45)"
+(the PC R19 wording, family-qualified and stamped R45 since 2026-09-14). A declared
+region the grammar cannot sell skips in `precheck_skip` as "forbidden region: <LABEL>"
+(the PC wording — the same router files it). `feed_status.categorize_reason` files
+`console`, `console: …` AND any reason carrying an `(R45)` or `(R19, R45)` stamp under the
+consoles family (lever text updated for R45) — so the page-level R45 wordings above land
+there too, never in `no_page` / `stub_page` / `other`; `aks_lists.suggest_target_list`
+keeps them all in place (no list). The `<FAMILY>` placeholder is the family KEY
+(`XBOX_SERIES`, `PS5`, …), not the `CONSOLE_PLATFORM_LABEL` text.
 
 **Volumes (latest batch per merchant, 2026-09-12 — grammar per merchant in
 [`MERCHANTS.md`](MERCHANTS.md)).** MMOGA 388 console rows / 723 (One+Series 149, Series
 89, Switch 63, One 35, PS5 10, non-game 85; EU tail 240); Kinguin 365 / 940 (One+Series
-211, Series 79, PS5 16, PS4/PS5 15, Switch 13, Switch 2 12; CA 83 / AU 77 forbidden);
+211, Series 79, PS5 16, PS4/PS5 15, Switch 13, Switch 2 12 — enterable since 2026-09-14;
+CA 83 / AU 77 forbidden — skipped in `precheck_skip` since 2026-09-14);
 Gamivo 572 / 762, URL-only (Series 333, One+Series 207; United Kingdom 258, Colombia 203);
 K4G 135 / 592; Driffle 112 / 464; G2A 42 / 806 (spells "X/S", One and Series as separate
 rows); Eneba 1 376 / 1 659 of which 704 generation-less; Instant Gaming: the platform is
@@ -1514,7 +1629,15 @@ new feed tool overwrites region / edition PER target page, but its controls have
 observed yet. The per-target fill is added ONLY after an `--inspect` pass on the new modal
 has shown the per-target region / edition overwrite controls (`modal_inspection.json`),
 never before, and never as "the first target only": a creation consumes the feed row
-(§4.3 (d)), so a partial entry would silently lose the second platform. `DryRunSubmitter`
+(§4.3 (d)), so a partial entry would silently lose the second platform. **The gate is a
+DESIGNED skip, not a failure** (review fix 2026-09-14): an entry gated ONLY by this
+blocker feeds neither the 10-consecutive-failures streak nor the StepGuard / BlockLedger
+accounting (`guard.record_result` is not called for it) and is counted in the run
+result's `gated_multi_target`, so a batch of multi-target candidates never stops the run
+(`ten_consecutive_failures`) nor halts the safe-auto sweep — the single-target and PC
+entries after it are processed. `InspectSubmitter` (`--inspect`) still opens and dumps the
+modal of an entry gated only by this blocker (read-only; `ready` stays false) — exactly
+the observation the gate waits for (HANDOFF step 1). `DryRunSubmitter`
 lists every target in `would_submit`; the admin validation refuses an override on a
 multi-target candidate (`ValidationIOError("bad_override", "candidat multi-cibles (R45) :
 pas de surcharge, relancer le match")`) and its row shows a "N cibles (R45)" block
@@ -1750,6 +1873,7 @@ are the master text without the " (id)" suffix (`CONSOLE_REGION_LABELS`):
 | PS4 | 88 "Playstation Game Code GLOBAL" | 88eu "Playstation Game Code EUROPE" | 88us "Playstation Game Code US" | 88uk "Playstation Game Code UK" |
 | PS5 | 88ps5h "PS5" | — | — | — |
 | SWITCH (Nintendo Switch) | 99 "NINTENDO GAME CODE GLOBAL" | 99eu "Nintendo GAME CODE EU" | 99us "Nintendo GAME CODE US" | 992 "Nintendo GAME CODE UK" |
+| SWITCH2 (Nintendo Switch 2 — page kind `nintendo-switch-2`, 2026-09-14) | 99 (same Nintendo family) | 99eu | 99us | 992 |
 
 Notes: **known, NOT entered** — every other game-code bucket of these families (104 in
 the catalog: NA / ROW / EMEA / English-only / country buckets such as `227` "Xbox Game
@@ -1758,7 +1882,8 @@ NA Game Code", `345` "Xbox series ROW", `470` "Xbox Series Game Code EU English 
 `400` "Playstation Code ROW", `448` "NINTENDO GAME CODE ROW", `496` "nintendo game code
 north america", the per-country ids) is never selected: a non-base region takes the PC
 dispositions of §4.11 (blacklist / skip), never a "nearest" bucket. Refused as well:
-**no Switch 2 bucket, no PS5 EU/US/UK, no console gift bucket**; subscriptions, PSN /
+**no PS5 EU/US/UK, no console gift bucket** (Switch 2 pages use the Nintendo family
+buckets — there is no separate Switch 2 bucket, 2026-09-14); subscriptions, PSN /
 eShop cards, accounts (`24ac`, `88ac`, `454` "PS4 Account", `301`…) and Xbox 360 (`23`,
 `23eu`, `23us`). Label facts: the PS4 family never says "PS4" (only "PS4 Account (454)",
 an account); `24`, `300` and `88ps5h` carry no region word; ids are strings and the
@@ -1970,10 +2095,12 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167, MMOGA 12 (its AKS page merchant i
   resolve from the live dropdown at runtime, not from tables.
 - Full `references/*.md` may add merchant rules; fold them into §11 as they land.
 - **Console keys `[R45]` — questions for Romain (2026-09-12, §4.12; the code is prepared
-  behind `--consoles`, default OFF, and the multi-target write is gated in §6):**
-  - **P1** target policy: "merchant declaration ∧ AKS page" (a lone "PS5" key → the PS5
-    page only; "PS4 / PS5" → PS5 + PS4) — or "page alone" (every platform page of the game
-    gets the key; one switch, `SECOND_PLATFORM_POLICY`)?
+  behind `--consoles`, default OFF and dry-run only — `scripts/10` refuses it without
+  `--dry-run` —, and the multi-target write is gated in §6):**
+  - ~~**P1**~~ **CLOSED 2026-09-14** — Romain: « clé PS5 seule = page PS5 seulement, pareil
+    pour Xbox Series, PS4, Xbox One, Switch et Switch 2 » = "merchant declaration ∧ AKS
+    page", a lone declared platform → that page only, cross-gen → both (§4.12 P1,
+    AGENTS.md "Reviewed decisions"). No "page alone" switch.
   - **P2** Play Anywhere = the PC page's truth: merchant "+ PC/Windows" WITHOUT PA on the
     page → skip; PA on the page WITHOUT a merchant mention → PA targets (XBOX/PC bucket on
     PC + One + Series). Confirm both directions.

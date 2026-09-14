@@ -112,6 +112,22 @@ class TargetsFingerprintTests(unittest.TestCase):
         cand["targets"][1] = "PS4"
         with self.assertRaises(ValidationError):
             candidate_fingerprint(cand)
+        # Review fix 2026-09-14: a PRESENT but null id is refused too — never the literal
+        # "None" (app.js fp() would render "null") stamped into the fingerprint.
+        for key in ("aks_product_id", "region", "edition"):
+            cand = _console_cand("1")
+            if key == "aks_product_id":
+                cand["targets"][1][key] = None
+            else:
+                cand["targets"][1][key] = {"label": "x", "id": None}
+            with self.assertRaises(ValidationError, msg=key) as ctx:
+                candidate_fingerprint(cand)
+            self.assertIn("malformed target entry (R45)", str(ctx.exception))
+        cand = _console_cand("1")
+        cand["targets"][1]["region_id"] = None
+        del cand["targets"][1]["region"]
+        with self.assertRaises(ValidationError):
+            candidate_fingerprint(cand)
 
     def test_candidate_targets_flattens_and_defaults_to_the_primary(self):
         self.assertEqual(candidate_targets(_cand("1")), [
