@@ -15,13 +15,15 @@ entry — fold it in when next touched. The consuming code keeps each rule's sco
 (e.g. Eneba prefixes apply only on eneba.com) and reads the DATA from here.
 
 This module is pure data (no matcher import) to stay circular-import free — the
-registry that binds resolvers lives in ``src.matcher``.
+registry that binds resolvers lives in ``src.merchants.registry`` (relocated from
+``src.matcher`` on 2026-09-14 so that ``src.console_keys`` can consult the merchant hooks
+without importing the matcher).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Pattern, Union
 
 
 @dataclass(frozen=True)
@@ -100,6 +102,41 @@ class MerchantConfig:
     title_region: Optional[Callable[[str], Optional[str]]] = None
     resolve_name: Optional[Callable[[str], str]] = None
     url_platform: Optional[Callable[[str], Optional[str]]] = None
+    # Console-side hooks (R32 / R45, 2026-09-14 — Romain: « pour la détection région /
+    # édition / plateforme, tu as un fichier de config par marchand. Et si tu ne l'as pas,
+    # tu dois l'avoir. »). The shared classifier ``src.console_keys.classify_console`` owns
+    # the SHARED vocabulary only (platform phrase grammar, families, buckets, non-game and
+    # store/delivery markers, region text → base/label mapping); everything a merchant
+    # writes in its OWN way is declared here. All optional, all pure functions of the feed
+    # row (no network, no matcher import); a merchant without them gets the shared reading.
+    #   console_url_families(url) -> tuple of families | skip reason | None — the
+    #       families the merchant's URL grammar declares, in order (a subset of XBOX_ONE /
+    #       XBOX_SERIES / PS4 / PS5 / SWITCH / SWITCH2 — never XBOX_PC), or a fail-closed
+    #       "console: … (R45)" skip reason ("console: Xbox 360 (R45)", "console: PC-only
+    #       Xbox Live key (R45)", "console: <MARKER> — not a game (R45)"), or None when the
+    #       URL says nothing. Consulted ONLY when the title declares no family; it REPLACES
+    #       the shared hyphen-run slug reading for that merchant (MMOGA category segment,
+    #       Gamivo fused runs, Eneba slot before the store-key marker).
+    #   console_pc_declared(name, url) -> bool — the merchant declares PC / Windows NEXT TO
+    #       the console platform in its own grammar (Gamivo "-pc" / "-windows" runs, Eneba
+    #       "-windows-" before the run); OR-ed with the shared title phrase check
+    #       ("/ Windows", "PC/XBOX …"), which stays generic.
+    #   console_region_slot(name) -> str | None — the region TEXT the merchant writes next
+    #       to the platform phrase, verbatim ("US", "CA", "Europe", "United Kingdom",
+    #       "Hong Kong", "EUROPE"); the mapping text → base (eu/us/uk/global) or forbidden
+    #       label stays in ``src.console_keys`` (shared vocabulary). None → the classifier
+    #       falls back to its shared tail / bracket reads.
+    #   console_noise — merchant phrases stripped from ``resolve_name`` in addition to the
+    #       shared store / delivery markers ("Download Code" MMOGA, "Digital Key" /
+    #       "Digital Code" Driffle, "(valid until <Month> <Year>)" Kinguin). A ``str`` is a
+    #       LITERAL phrase (case-insensitive, whole words, any whitespace between the
+    #       words); a compiled ``re.Pattern`` is used as written (its own flags) — for the
+    #       forms a literal cannot spell (Gamivo's "EN" / "EN/PL/CS" language tail).
+    # MMOGA / Gamivo / Eneba declare theirs in src/merchants/<name>.py.
+    console_url_families: Optional[Callable[[str], Optional[Union[tuple[str, ...], str]]]] = None
+    console_pc_declared: Optional[Callable[[str, str], bool]] = None
+    console_region_slot: Optional[Callable[[str], Optional[str]]] = None
+    console_noise: tuple[Union[str, Pattern[str]], ...] = ()
     # Free-form notes / extension point for future per-merchant knobs.
     notes: str = ""
     extra: dict[str, Any] = field(default_factory=dict)

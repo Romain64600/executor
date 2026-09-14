@@ -3,6 +3,186 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-14 — Un fichier de config par marchand (règle de Romain) : hooks consoles, six nouveaux fichiers marchands
+
+**Règle de Romain (répétée depuis le 2026-08-11, ultimatum du 14/09)** : « pour la détection
+région / édition / plateforme, tu as un fichier de config par marchand. Et si tu ne l'as pas,
+tu dois l'avoir. » Traduction dans le repo : **chaque marchand a son fichier ; la grammaire
+marchande ne vit jamais dans un module générique.** Tout marchand de la liste blanche
+safe-auto (`src/admin/auto_merchants.py` : Kinguin 58, Gamivo 51, G2A 38, MMOGA 12, K4G 92,
+Driffle 127, Instant Gaming 28, Eneba 19, Allyouplay 17, GameSeal 126, CJS-CDKeys 30 ; plus
+Difmark 167 parqué) a son `src/merchants/<marchand>.py` qui expose un `MerchantConfig`
+DÉCLARANT sa grammaire et ses hooks ; `src/matcher.py` et `src/console_keys.py` ne gardent
+que le vocabulaire partagé et le pipeline. Le classifieur R45 embarquait encore les
+grammaires d'URL MMOGA / Gamivo / Eneba (segments de catégorie, runs, segment de magasin en
+tête) et des contrôles d'hôte (`mmoga.com` / `gamivo.com` / `eneba.com`) : cela sort.
+
+- **Contrat** (`src/merchant_config.py`, `[R32]` / `[R45]`) — quatre membres optionnels de
+  plus, fonctions pures de la ligne de feed, sans réseau, sans import du matcher :
+  `console_url_families(url)` → familles déclarées par l'URL dans l'ordre (sous-ensemble de
+  XBOX_ONE / XBOX_SERIES / PS4 / PS5 / SWITCH / SWITCH2), ou une chaîne de skip (« console:
+  Xbox 360 (R45) », « console: PC-only Xbox Live key (R45) », « console: <MARKER> — not a
+  game (R45) »), ou None (l'URL ne dit rien) — consulté SEULEMENT quand le titre ne déclare
+  aucune famille ; `console_pc_declared(name, url)` → le marchand déclare PC / Windows à
+  côté de la plateforme console (runs Gamivo `-pc` / `-windows`, run Eneba `-windows-`) —
+  la phrase générique du titre (`/ Windows`, `PC/XBOX …`) reste générique ;
+  `console_region_slot(name)` → le TEXTE de région écrit à côté de la phrase plateforme, tel
+  quel (« US », « CA », « Europe », « United Kingdom », « Hong Kong », « EUROPE ») — la
+  correspondance texte → base (uk / us / eu / global) ou label interdit reste dans
+  `console_keys` (vocabulaire partagé) ; hook absent → lectures partagées de queue /
+  crochets ; `console_noise: tuple[str, ...] = ()` → phrases marchandes retirées de
+  `resolve_name` en plus des marqueurs partagés (« Download Code » MMOGA, « Digital Key » /
+  « Digital Code » Driffle, « CD Key » Kinguin — la note « (valid until <Month> <Year>) »
+  de Kinguin n'est PAS un bruit : question ouverte `kinguin.OPEN_QUESTION_VALID_UNTIL`). Le
+  CONTRAT des hooks PC (`precheck` / `title_region` / `resolve_name` / `url_platform` +
+  `url_platform_prefixes`, `url_platform_scan`, `offer_page_resolver`, `domain`,
+  `url_ignore_substrings`) ne change pas ; les nouveaux fichiers en DÉCLARENT (ci-dessous).
+- **Registre** — la liaison nom → module (`merchant_config()`) passe dans
+  `src/merchants/registry.py`, importé par `src/matcher.py` (qui continue de l'exposer) ET
+  par `src/console_keys.py`, sans import circulaire (`python3 -c "import src.matcher,
+  src.console_keys, src.merchants.registry"` passe). L'entrée inline `"KINGUIN":
+  MerchantConfig("Kinguin", domain="kinguin.net")` du matcher disparaît au profit de
+  `kinguin.py`.
+- **Classifieur** (`src/console_keys.py`) — sortent : `_parse_url_mmoga` /
+  `_MMOGA_CATEGORY_RULES` / `_MMOGA_NON_GAME_CATEGORY_RE` (→ `mmoga.py`), `_parse_url_gamivo`
+  et `_GAMIVO_LANG_TAIL_RE` (→ `gamivo.py`), `_parse_url_eneba` + le retrait du segment de
+  magasin en tête (→ `eneba.py`), la sélection par hôte / nom du marchand dans `_parse_url`.
+  Restent (vocabulaire partagé) : familles, pages, buckets, grammaire de TITRE (phrases
+  entières, `X|S` ≡ `X/S` ≡ `XS`, « Series » nu, run de tête = nom, suffixe « Nintendo
+  Switch 2 Edition »), marqueurs partagés de magasin / livraison et non-jeu (GAME PASS,
+  cartes, ACCOUNT mot entier), table texte de région → base / label, lecture partagée des
+  runs à tirets (`xbox-one`, `xbox-series-x-s`, `ps4-ps5`, `nintendo-switch(-2)`),
+  `console_marker_in_url`, `console_page_identity`, `extract_console_pages`.
+- **Six nouveaux fichiers + `common.py`** — `kinguin.py` (`domain` sorti du registre ;
+  PC : `precheck` (code de région avant la phrase plateforme hors vocabulaire vendable →
+  `forbidden region: <LABEL>` avant tout sondage ; `Account` / `Access` → skip catégoriel),
+  `title_region` (le code « US » nu → Steam US explicite au lieu d'un GLOBAL implicite + slug
+  `…-us` en 404), `resolve_name` (code + phrase + livraison + « (valid until …) » retirés →
+  slug du jeu) — **pas de `url_platform`** (R32b, « ça marche aujourd'hui ») ; console :
+  `console_url_families` (`-account` / `-online-account-activation` → non-jeu, runs
+  partagés), `console_region_slot` (code majuscule avant la phrase plateforme),
+  `console_noise = ("CD Key",)` — la note « (valid until <Month> <Year>) » n'est PAS un
+  bruit, question ouverte `kinguin.OPEN_QUESTION_VALID_UNTIL`), `k4g.py` (PC : `precheck`
+  dont « Steam Altergift » → `skip category: ALTERGIFT` explicite (216 / 592, 0 candidat
+  jamais, `k4g.OPEN_QUESTION_ALTERGIFT`), `title_region`, `resolve_name` ; console :
+  `console_url_families` (run suivi d'un slug de région connu), `console_region_slot` (mot
+  de région en toutes lettres avant la plateforme)), `driffle.py` (PC : `precheck` (pays
+  entre parenthèses hors vocabulaire générique), `title_region` (1re parenthèse) ; console :
+  `console_url_families` avec l'orthographe `xbox-series-xs`, `console_region_slot`,
+  `console_noise` « Digital Key » / « Digital Code »), `gameseal.py` (`domain="gameseal.com"`,
+  PC : `precheck` / `title_region` sur la queue ` - <RÉGION>` (NA / AU / BELGIUM), console :
+  `console_url_families` (`xbox-360` → skip R45), `console_region_slot`), `allyouplay.py` et
+  `cjs.py` (identité seule : `domain` `allyouplay.com` / `cjs-cdkeys.com` à confirmer au
+  premier dry-run — un hôte faux échoue fermé —, `CONFIG.name = "CJS-CDKeys"` ; jamais
+  balayés, aucun hook de grammaire inventé). `src/merchants/common.py` (nouveau) porte ce
+  que plusieurs fichiers marchands partagent sans module générique : vocabulaire des mots de
+  région (texte → base / label interdit, miroir des tables de `console_keys` et `gamivo.py`),
+  chaînes de skip R45 (miroirs byte-exacts) et `make_config`. Fichiers existants
+  complétés : `mmoga.py` (`console_url_families` catégories + Xbox 360 + cartes /
+  abonnements, `console_region_slot` ` - EU` / `[EU]` / `(Steam Key EU)` / `EU Key`,
+  `console_noise` « Download Code »), `gamivo.py` (`console_url_families` runs + `xbox-pc`
+  seul → PC-only, `console_pc_declared`, `console_region_slot` queue `[<LANGS>] <Région>`,
+  `console_noise` = la regex de queue de langue construite sur la liste ISO de Gamivo —
+  sortie de `console_keys`), `eneba.py` (`console_url_families` = le slot juste avant le
+  dernier marqueur `-xbox-live-key` / `-psn-key` / `-eshop-key`, segment de magasin en tête
+  jamais une génération, `-pc-` avant le marqueur → PC-only, sans marqueur → None ;
+  `console_pc_declared` ; `console_region_slot` = mot après « Key »), `g2a.py` (PC :
+  `precheck` / `title_region` — la queue ` - <RÉGION>` est TOUJOURS un slot, hors vocabulaire
+  → fail-closed ; console : `console_url_families`, `console_region_slot`),
+  `instant_gaming.py` (`console_url_families` → None, documenté : une plateforme console lue
+  sur la page IG → plateforme None → skip R32), `difmark.py` (`console_url_families` : chemin
+  `/buy-console-account-…-account-<id>` → compte, non-jeu). Détail par marchand :
+  `docs/MERCHANTS.md`.
+- **Comportement** — classifieur consoles : mêmes familles, mêmes skips, même ordre (titre
+  partagé → hook URL du marchand → lecture partagée), fail-closed partout (un hook qui
+  renvoie None ne fait jamais deviner une famille ; un résultat de hook hors contrat →
+  skip « merchant URL hook … — not entered (R45) »). Deux changements de LECTURE assumés :
+  (1) le slot région Eneba est le texte après « Key » (2 lignes corrigées, voir Mesure) ;
+  (2) la queue de langue Gamivo (« EN », « EN/PL/CS/RU/TR ») n'est plus un vocabulaire
+  partagé : `resolve_name_of("Ravenswatch EN United Kingdom")` sans marchand donne
+  « Ravenswatch EN », avec `Gamivo` « Ravenswatch » (le matcher n'utilise que la version
+  avec marchand ; « Final Fantasy XV Global » garde « XV », l'ancienne regex partagée
+  IGNORECASE retirait 2 lettres quelconques). Les hooks PC des fichiers Kinguin / K4G /
+  Driffle / G2A / GameSeal changent des SORTIES (mesurées ci-dessous) : toujours un skip
+  rendu explicite / plus tôt (aucun sondage AKS) ou une région plus étroite, jamais une
+  ligne skippée qui devient saisissable sauf la classe Kinguin « <Jeu> US PC Steam » (Steam
+  US sur le vrai slug au lieu d'un 404) et les DLC « … EU » (slug du jeu). Tests existants
+  qui épinglaient l'EMPLACEMENT de la grammaire ou l'état « Kinguin générique », ajustés :
+  `tests/test_matcher.py` `ConsoleReviewFixesR45Tests.test_generic_read_is_implicit_for_the_kinguin_mid_slug_code`,
+  `…test_implicit_read_with_a_removed_region_word_is_refused`,
+  `…test_precheck_returns_the_grammar_forbidden_region` (la branche console du matcher est
+  exercée sur un marchand sans hook « Shop » ; une ligne Kinguin garde la réponse du fichier
+  marchand, plus tôt et tout aussi fail-closed : `forbidden region: CANADA` avant la porte
+  console, « US » explicite) et `MerchantConfigR32Tests.test_config_reads_migrated_flags`
+  (« Kinguin n'a pas de precheck » → `MerchantConfig("Plain")`) ; `tests/test_console_keys.py`
+  restructuré (18 lignes partagées, hooks via un faux marchand, test `tokenize` « aucun nom
+  de marchand dans le code », ordres d'import, `SlugRead`) — les 5 exemples Gamivo de
+  `ResolveNameTests` déménagent dans `tests/test_merchants_gamivo.py`.
+- **Mesure** (14/09, lecture seule, sur les derniers lots sauvegardés : `runs/20260912-02000*`
+  Kinguin / K4G / Driffle / G2A / Gamivo / MMOGA, `20260912-080120` Eneba,
+  `20260715-151202` GameSeal ; aucune requête réseau) —
+  *Classifieur consoles* : comptages par marchand et par motif IDENTIQUES avant / après
+  (2 990 lignes consoles, 0 anomalie — MMOGA 388, Kinguin 365, Gamivo 572, K4G 135, Driffle
+  112, G2A 42, Eneba 1 376 ; `diff` vide entre la mesure de référence prise AVANT la refonte
+  et la mesure post-intégration, registre câblé). Signaux complets (familles, PC, skip,
+  `resolve_name`, slot région) : 5 lignes / 2 990 diffèrent — 2 corrections Eneba par le
+  slot région (« Dying Light Essentials Edition (Without DE) … EUROPE » : DE → GERMANY
+  interdit devient eu ; « Truck Simulator Cargo Driver 2025 - USA (Windows/Xbox Series X|S)
+  … EUROPE » : « not mapped » devient eu) et 3 slots K4G / Driffle (Luxembourg, Latvia,
+  Lithuania) sur des lignes déjà non-jeu — aucune saisie ne change.
+  *Lignes PC* — `precheck_skip` + `explicit_platform_from_url` / `explicit_platform` +
+  `detect_region` + 1er slug, code du 14/09 vs code committé b6c96be (effet de cette
+  entrée) et vs l'outcome enregistré du run :
+
+  | Marchand | lignes (PC / consoles) | précheck | région | 1er slug seul | candidats touchés |
+  |---|---|---|---|---|---|
+  | Kinguin | 940 (575 / 365) | 34 — 30 régions interdites avant sondage (TR 10, SEA 7, NA 6, AU 2, DE 2, CA 1, ANZ 1, EU/UK 1, UAE 1, ZA 1, BR 1 : toutes finissaient en 404 / « no region id » / garde DLC) ; 1 relabel AFRICA → NORTH AMERICA ; 3 autres | 2 (« Metro Awakening US PC Steam CD Key » : GLOBAL implicite (2) → US (8), slug `metro-awakening` au lieu du 404 `metro-awakening-us`) | 30 (21 DLC EU en 404 `…-dlc-eu` → `…-dlc`, 5 garde DLC, 4 pré-skips) | 0 |
+  | K4G | 592 (457 / 135) | 216 « skip category: ALTERGIFT » (143 étaient des 404, 35 mots en trop, 29 NORTH AMERICA, 3 BUNDLE, 2 AMERICAS, 2 DLC, 1 PASS, 1 no region id) | 0 | 12 | 0 |
+  | Driffle | 464 (352 / 112) | 8 (2 V-Bucks (France) → FRANCE ; 6 Tinder SUBSCRIPTION → AUSTRIA / NETHERLANDS / BELGIUM / EGYPT) | 0 | 0 | 0 |
+  | G2A | 806 (764 / 42) | 2 (GIFT CARD → SINGAPORE ; AFRICA → SOUTH AFRICA) | 1 (« Big Adventure: Trip to Europe 6 … Steam Gift - GLOBAL » : GIFT EU 259 lu dans le nom → GIFT 25) | 0 | 0 |
+  | GameSeal (07/2026) | 1 610 (1 577 / 33) | 30 (NORTH AMERICA 27, AUSTRALIA 1, BELGIUM 2 — 404 / mots en trop / DLC / throttled avant) | 0 | 0 | 0 |
+  | Gamivo | 762 (190 / 572) | 0 | 0 | 0 | 0 |
+  | MMOGA | 723 (335 / 388) | 0 | 0 | 0 | 0 |
+  | Eneba | 1 659 (283 / 1 376) | 0 | 0 | 0 | 0 |
+
+  **0 candidat enregistré ne change de classe** (aucun « candidat → skip », aucun changement
+  de région ou de plateforme sur un candidat). Lignes consoles en mode PAR DÉFAUT (sans
+  `--consoles`) : le précheck marchand précède la porte console, « console » devient un
+  motif explicite — Kinguin 211 (CANADA 84, AUSTRALIA 77, ACCOUNT 37, ARGENTINA 3, NORTH
+  AMERICA 2, ROW 2, TURKEY 2, EU/UK 2, COLOMBIA 1, SOUTH AFRICA 1), K4G 7, Driffle 8, G2A 5,
+  GameSeal 4 — même fail-closed, listes routées par `suggest_target_list` (le plan R35
+  proposera ces déplacements ; à montrer à Romain). Écart vs l'outcome ENREGISTRÉ (ce que le
+  prochain sweep verra en plus) = la dérive du code générique depuis le run : GameSeal 742
+  lignes dont 674 « TOP-UP » → « TOP UP » (orthographe du motif) et 14 skips logiciels levés
+  (R31), Gamivo 16 lignes PC (Tinder NL, NordPass FR / IT / ES, System Shock SEA → régions
+  interdites, R46 du 12/09) et 307 lignes consoles (fuite corrigée le 12/09 après le run).
+  *Tests* : 1 629 → 1 750 découverts (+121) ; modules ajoutés
+  `tests/test_merchants_{mmoga,gamivo,eneba,kinguin,k4g,driffle,g2a,gameseal,misc,registry_expectations}.py`
+  : « Ran 114 tests / OK » ; `tests.test_console_keys` (70) + `tests.test_matcher` (434) :
+  « Ran 504 tests / OK » ; suite complète `python3 -m unittest discover -s tests -t .` :
+  « Ran 1750 tests in 357.788s / OK (skipped=2) ». Preuves e2e (classifieur réel, corps de
+  pages AKS sauvegardés, aucun réseau) : Kinguin « Hades US Xbox One / Xbox Series X|S CD
+  Key » → XBOX/PC US 242 sur One 85102 + Series 85103 + PC 26712 ; « Hades CA … » →
+  `forbidden region: CANADA` ; Gamivo « Hades EN United Kingdom » `…-xbox-series-pc-uk-standard`
+  → XBOX/PC UK 240 (Series + PC) ; MMOGA « NBA 2K25 (Xbox One / Series X|S Download Code) -
+  EU » sur pages simulées sans carte de régions → 24eu + 302 (avec la carte réelle de Hades →
+  XBOX/PC EU 241 ×3) ; Eneba « Hades (Xbox Series X|S) XBOX LIVE Key EUROPE » → Series 241 +
+  PC 241 ; Difmark « (Account) » → skip ACCOUNT ; Kinguin « Street Fighter 6 EU Nintendo
+  Switch 2 CD Key » → SWITCH2 188436 / 99eu ; `src/console_keys.py` ne nomme aucun marchand
+  hors docstring (test `tokenize`).
+- **Docs** — MERCHANTS (règle en tête, table du contrat + 4 hooks consoles, une section par
+  marchand : fichier / grammaire PC / grammaire console / hooks / statut, six nouveaux
+  fichiers, table de statut au 14/09), EXECUTOR_RULES §4.10 (« Console hooks », registre,
+  chaque marchand a son fichier) et §4.12.3 (« vocabulaire partagé dans `console_keys` +
+  hooks par marchand » — le bloc *URL grammar* réattribué aux fichiers marchands, slot
+  région et `console_noise`), README (layout `src/merchants/`, principe « one config file
+  per merchant », liste des docs, roadmap R45), HANDOFF (état, règle, backlog).
+- **Reste à faire** — dry-run des nouveaux fichiers (`scripts/10 --targets "Kinguin:58"
+  --dry-run --consoles`, puis K4G / Driffle ; Allyouplay / CJS / GameSeal en `--dry-run` PC
+  d'abord, jamais balayés), relever les grammaires manquantes (Allyouplay, CJS, GameSeal PC)
+  et les déclarer dans leur fichier ; trancher les questions ouvertes des fichiers marchands
+  (Kinguin `OPEN_QUESTION_VALID_UNTIL`, K4G `OPEN_QUESTION_ALTERGIFT`, queue « EU/UK » = skip).
+
 ## 2026-09-14 — Consoles R45 : correctifs de la revue adverse, famille Switch 2, décision P1
 
 **Décision de Romain (14/09) — P1 tranchée** : « clé PS5 seule = page PS5 seulement, pareil

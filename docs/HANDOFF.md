@@ -4,7 +4,7 @@ Ce document est le **point d'entrée de reprise** (migration serveur / nouvelle 
 Claude). Il capture l'ÉTAT, les DÉCISIONS et les GOTCHAS qui, jusqu'ici, vivaient dans la
 mémoire hors-repo de Claude et **ne voyagent donc PAS avec un `git clone`**. Lis-le en
 premier, puis `AGENTS.md` + `CLAUDE.md` (les règles), puis `docs/EXECUTOR_RULES.md` (les
-règles par étage). Dernière mise à jour : **2026-09-12** (voir `git log` pour le commit courant).
+règles par étage). Dernière mise à jour : **2026-09-14** (voir `git log` pour le commit courant).
 
 > ⚠️ Aucun secret ici (cookies WP, mots de passe, codes 2FA n'entrent jamais dans le repo).
 
@@ -100,7 +100,7 @@ permission). Reste : le transfert des cookies WP (profil vierge). L'ancien VPS �
 (`hermes-cdp-proxy`) partage le préfixe de nom mais EST requis. Ne pas réinstaller si tu ne
 veux que l'executor + sa page.
 
-## 3. État courant (2026-09-09)
+## 3. État courant (2026-09-14)
 
 Tout est poussé sur `origin/main`, suite verte (**1629 tests** découverts le 2026-09-14 après les
 correctifs de la revue R45, classifieur de la seconde session inclus). Travaux
@@ -194,7 +194,9 @@ récents (voir
   d'une mauvaise grammaire d'URL), barre d'onglets = plateformes du jeu, Play Anywhere lisible
   dans `official platforms` de la page PC, buckets du modal par famille × base région
   (EXECUTOR_RULES §10 ; pas de Switch 2, pas de PS5 EU/US/UK). Code : `src/console_keys.py`
-  (`classify_console`, titre ET URL, grammaire par marchand), `Candidate.targets` (`Target`,
+  (`classify_console`, titre ET URL — vocabulaire partagé ; la grammaire par marchand vient
+  des hooks consoles de `src/merchants/<marchand>.py` depuis le 14/09, bullet suivant),
+  `Candidate.targets` (`Target`,
   toujours ≥ 1 ; empreinte étendue au-delà d'une cible), `scripts/03_match.py --consoles` /
   `scripts/10 --consoles` (**défaut OFF**, et **`--dry-run` obligatoire** avec le flag depuis le
   14/09 ; sans flag : aucune SAISIE console, mais le scan console de l'URL reclasse les lignes
@@ -217,6 +219,28 @@ récents (voir
   page PC (AKS 50562) — à corriger à la main ; `console_marker_in_url` scanne l'URL dans tous
   les modes. Règle complète : EXECUTOR_RULES §4.12 ; contrats : DATA_CONTRACTS ; grammaire par
   marchand et volumes : MERCHANTS.md.
+- **Un fichier de config par marchand — règle de Romain (répétée depuis le 2026-08-11,
+  ultimatum du 2026-09-14)** : « pour la détection région / édition / plateforme, tu as un
+  fichier de config par marchand. Et si tu ne l'as pas, tu dois l'avoir. » → **chaque
+  marchand a son fichier ; la grammaire marchande ne vit jamais dans un module générique.**
+  État : tout marchand de la liste blanche safe-auto a son `src/merchants/<marchand>.py`
+  exposant un `MerchantConfig` (six fichiers créés le 14/09 : `kinguin.py`, `k4g.py`,
+  `driffle.py`, `gameseal.py`, `allyouplay.py`, `cjs.py` — Allyouplay et CJS en
+  déclaration seule, jamais balayés, aucun hook inventé) ; le contrat gagne quatre hooks
+  consoles `[R45]` (`console_url_families`, `console_pc_declared`, `console_region_slot`,
+  `console_noise`) et le classifieur `src/console_keys.py` ne garde que le vocabulaire
+  partagé (les grammaires d'URL MMOGA / Gamivo / Eneba et les contrôles d'hôte en sortent) ;
+  le registre nom → module est `src/merchants/registry.py`, importé par le matcher ET le
+  classifieur sans import circulaire. Référence : `docs/MERCHANTS.md` (fichier, grammaire PC,
+  grammaire console, hooks, statut par marchand), EXECUTOR_RULES §4.10 « Console hooks » et
+  §4.12.3, CHANGELOG 2026-09-14. Mesure avant / après (14/09, lecture seule sur les lots du
+  12/09) : classifieur consoles IDENTIQUE (2 990 lignes, 0 écart de comptage) ; lignes PC dont
+  le précheck / la région / le slug changent vs le code committé : Kinguin 66, K4G 228, Driffle
+  8, G2A 3, GameSeal 30, Gamivo / MMOGA / Eneba 0 ; 0 candidat touché ; 211 lignes consoles
+  Kinguin passent de « console » à un motif explicite en mode par défaut (CANADA 84,
+  AUSTRALIA 77, ACCOUNT 37…) — détail dans le CHANGELOG. **Quand tu ajoutes un marchand ou une règle marchande : le fichier
+  marchand d'abord, jamais un `if merchant == …` ni une regex marchande dans `matcher.py` /
+  `console_keys.py`.**
 
 ## 4. Backlog / prochaines étapes
 
@@ -251,6 +275,13 @@ récents (voir
      lot) ; lire `candidates.json` (`targets`) et `skipped.json` (motifs `console: … (R45)`).
   4. **Corriger Riders Republic à la main** sur AKS (produit 50562 : l'offre Gamivo Xbox
      One/Series US saisie PUBLISHER GLOBAL Premium le 2026-09-11).
+- **Un fichier par marchand — suite (règle du 14/09)** : dry-run des nouveaux fichiers
+  (`scripts/10 --targets "Kinguin:58" --dry-run --consoles`, puis K4G / Driffle) et lecture
+  des `skipped.json` (motifs `console: … (R45)` inchangés attendus) ; Allyouplay / CJS-CDKeys /
+  GameSeal en `--dry-run` PC d'abord (jamais balayés) pour relever leur grammaire et la
+  déclarer dans leur fichier (`domain` déclaré, à confirmer) ; trancher les questions
+  ouvertes des fichiers marchands (Kinguin `OPEN_QUESTION_VALID_UNTIL` — 79 lignes / lot —,
+  K4G `OPEN_QUESTION_ALTERGIFT` — 216 / 592 —, queue « EU/UK » = skip).
 - **Questions pour Romain (R45, à confirmer — EXECUTOR_RULES §12)** : ~~P1~~ **tranchée le
   14/09** (« clé PS5 seule = page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch
   et Switch 2 » — déclaration marchande ∧ page AKS, jamais de page sœur) ; restent **P2-P5** :
@@ -391,6 +422,11 @@ python3 -m json.tool runs/<run-id>/recap.json        # état / prove-gone par of
   d'une autre étape = STOP fail-closed.
 - **À chaque changement** : mettre à jour `/docs` + `README` + **`git push`** (pas seulement
   commit local). Consigne répétée de Romain.
+- **Un fichier de config par marchand** (Romain, 2026-09-14) : toute détection région /
+  édition / plateforme propre à un marchand (PC comme console) se déclare dans
+  `src/merchants/<marchand>.py` via les hooks de `MerchantConfig` ; `matcher.py` et
+  `console_keys.py` ne portent que le vocabulaire partagé et le pipeline. Pas de fichier →
+  on le crée, même en déclaration seule.
 - **La mémoire de Claude vit HORS du repo** (`~/.claude/projects/.../memory/`) et **ne migre
   pas**. Ce document est le pont ; sur le nouveau serveur, Claude repart sans mémoire — d'où
   ce HANDOFF.

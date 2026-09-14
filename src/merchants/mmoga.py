@@ -19,12 +19,27 @@ US Key" (US) is US-locked. A code that maps to no AKS bucket (DE, FR, …) fails
 safety is a rare false skip on a title ending with an uppercase acronym + Key ("Deus Ex GO
 Key"). ``?ref=`` is affiliate noise: kept verbatim in artifacts (R21), ignored by every
 matching signal. No matcher import (the registry imports this module).
+
+Console grammar (R32 / R45, 2026-09-14 — Romain: « un fichier de config par marchand »):
+the platform is the URL CATEGORY segment (``/Xbox-Live/Xbox-One-Game-Keys/``,
+``/Xbox-Live/Xbox-Series-XS-Game-Keys/``, ``/Playstation-Network/Playstation-5-Game-Keys/``,
+``/Nintendo/Switch/``; ``/Xbox-Live/Xbox-360-Game-Keys/`` → skip; the card / subscription
+categories ``/PSN-Cards-<CC>/``, ``/Nintendo-eShop-Cards/``, ``/Playstation-Plus/``,
+``/Xbox-Live-Cards/``, ``/Xbox-Live-Gold/`` → non-game skip) — read by the shared
+classifier ONLY when the title phrase ("(Xbox One / Series X|S Download Code)") declares
+no generation (a cross-gen title filed under Xbox-One-Game-Keys: the title wins). The
+region next to the platform phrase is the same "<CODE> Key" / "[EU]" / "(… Key EU)"
+grammar as the PC rows (``console_region_slot``); the " - EU" dash tail is the shared
+read. "Download Code" is MMOGA's delivery phrase (``console_noise``). Declared through
+the ``MerchantConfig`` console hooks — ``src/console_keys.py`` names no merchant.
 """
 
 from __future__ import annotations
 
 import re
+from urllib.parse import urlsplit
 
+from src.console_keys import SKIP_XBOX_360, skip_not_a_game
 from src.merchant_config import MerchantConfig
 
 # URL category segment (lowercased, before the first "-") → platform token. Only prefixes
@@ -109,6 +124,53 @@ def resolve_name(name: str) -> str:
     return REGION_CODE_TAIL_RE.sub("", REGION_CODE_KEY_RE.sub("", name)).rstrip()
 
 
+# ── console hooks (R45, 2026-09-14) ──────────────────────────────────────────────────
+# (regex on the lower-cased URL path, families, skip). The category names the LOWER
+# generation only — a cross-gen title is filed under Xbox-One-Game-Keys, so the shared
+# title phrase wins whenever it declares a generation. No Switch 2 category observed on
+# MMOGA as of 2026-09-14 — a "Nintendo Switch 2" title phrase declares it; a category-only
+# row under /Nintendo/Switch/ is a SWITCH declaration (the shared name-suffix guard refuses
+# a "… - Nintendo Switch 2 Edition" filed there).
+CONSOLE_CATEGORY_RULES: tuple[tuple[str, tuple[str, ...], str | None], ...] = (
+    (r"/xbox-live/xbox-360-game-keys/", (), SKIP_XBOX_360),
+    (r"/xbox-live/xbox-one-game-keys/", ("XBOX_ONE",), None),
+    (r"/xbox-live/xbox-series-xs-game-keys/", ("XBOX_SERIES",), None),
+    (r"/playstation-network/playstation-5-game-keys/", ("PS5",), None),
+    (r"/playstation-network/playstation-4-game-keys/", ("PS4",), None),
+    (r"/nintendo/switch/", ("SWITCH",), None),
+)
+# Card / subscription CATEGORY segments: the title may look like a game ("PSN Card 80 Euro
+# [Austria] - Playstation Network Credit" — the shared title markers catch most; these
+# catch the rest by category). "Xbox Game Pass Ultimate 1 Month [EU]" is filed under the
+# Xbox-One / Xbox-360 GAME categories: the shared GAME PASS title marker catches it first.
+NON_GAME_CATEGORY_RE = re.compile(
+    r"/(psn-cards(?:-[a-z]+)?|nintendo-eshop-cards|playstation-plus|xbox-live-cards|xbox-live-gold)/"
+)
+
+
+def console_url_families(url: str) -> tuple[str, ...] | str | None:
+    """The console platform the URL category declares — ("XBOX_ONE",), ("XBOX_SERIES",),
+    ("PS5",), ("PS4",), ("SWITCH",) — or a skip ("console: Xbox 360 (R45)", "console: PSN
+    CARDS AT — not a game (R45)"), or None when the category is not a console one."""
+
+    path = urlsplit(url or "").path.lower()
+    m = NON_GAME_CATEGORY_RE.search(path)
+    if m:
+        return skip_not_a_game(m.group(1).upper().replace("-", " "))
+    for rx, families, skip in CONSOLE_CATEGORY_RULES:
+        if re.search(rx, path):
+            return skip if skip else families
+    return None
+
+
+def console_region_slot(name: str) -> str | None:
+    """The region code MMOGA writes with its key word — "Medieval Dynasty - PS5 Download
+    Code [EU]" → "EU", "Game (Xbox Series X|S Key EU)" → "EU", "… - US Key" → "US";
+    None when there is no such code (the " - EU" dash tail is the shared read)."""
+
+    return region_code(name)
+
+
 CONFIG = MerchantConfig(
     "MMOGA",
     domain="mmoga.com",
@@ -116,5 +178,9 @@ CONFIG = MerchantConfig(
     precheck=precheck,
     title_region=title_region,
     resolve_name=resolve_name,
+    # console grammar (R45, 2026-09-14): category segment, "<CODE> Key" slot, delivery phrase
+    console_url_families=console_url_families,
+    console_region_slot=console_region_slot,
+    console_noise=("Download Code",),
     notes="feed store id 12 (&store=12); AKS page merchant id 40 (Romain 2026-09-10)",
 )

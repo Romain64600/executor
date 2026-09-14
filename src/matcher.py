@@ -79,6 +79,11 @@ from src.merchants import (  # noqa: F401
     instant_gaming as _ig,
     mmoga as _mmoga,
 )
+# The merchant registry moved to src/merchants/registry.py (2026-09-14, R32 / R45): the
+# shared console classifier consults the merchant hooks through it, without importing the
+# matcher. Re-exported here — same dict object, same function — so every caller and every
+# test patching ``src.matcher.MERCHANT_CONFIGS`` in place keeps working.
+from src.merchants.registry import MERCHANT_CONFIGS, merchant_config  # noqa: F401
 
 AKS_BUY_URL = "https://www.allkeyshop.com/blog/buy-{slug}-cd-key-compare-prices/"
 # Legacy page shape (pages created around 2021 — "Minecraft" & co, Romain 2026-09-10):
@@ -1293,24 +1298,9 @@ def account_identity(aks_name: str, page_kind: str) -> str | None:
 # ── Per-merchant configuration registry (R32, 2026-08-11) ────────────────────
 # The pipeline "starts from the merchant config": match_offer reads
 # merchant_config(offer.merchant) and applies its rules. A merchant with no
-# config keeps the generic behaviour. Simple flags migrated here from the old
-# scattered dicts; Difmark's complex offer-page branch stays as-is for now and is
-# just REPRESENTED here (its url-ignore already lives in the config).
-MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
-    # Trivial (config-only) merchants stay inline; merchants with real specifics
-    # live in their own src/merchants/<name>.py and export a CONFIG (R32d refactor).
-    "KINGUIN": MerchantConfig("Kinguin", domain="kinguin.net"),
-    "G2A": _g2a.CONFIG,
-    "DIFMARK": _difmark.CONFIG,
-    "INSTANT GAMING": _ig.CONFIG,
-    "GAMIVO": _gamivo.CONFIG,
-    "ENEBA": _eneba.CONFIG,
-    "MMOGA": _mmoga.CONFIG,
-}
-
-
-def merchant_config(merchant: str) -> MerchantConfig | None:
-    return MERCHANT_CONFIGS.get((merchant or "").strip().upper())
+# config keeps the generic behaviour. The registry itself (``MERCHANT_CONFIGS`` /
+# ``merchant_config``) lives in src/merchants/registry.py since 2026-09-14 and is
+# re-exported above; register a new merchant module THERE.
 
 
 def strip_merchant_url_noise(url: str, merchant: str) -> str:

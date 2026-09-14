@@ -901,9 +901,10 @@ list via `is_software_title` (no page fetch). Doubt still goes to skip `[G02]`.
 
 **Override hooks `[R32e]` (Romain 2026-09-10 — « un fichier de config marchand par
 marchand, qui peut ajouter, overwrite, modifier des comportements génériques »).** Besides
-its data fields, a `MerchantConfig` may carry four optional pure functions of the feed
-row; the matcher calls each FIRST and falls through to the generic rule when it returns
-`None`, so the matcher stays merchant-agnostic:
+its data fields, a `MerchantConfig` may carry optional pure functions of the feed row
+(no network, no `src.matcher` import) — four PC-side hooks and, since 2026-09-14, four
+console-side hooks; the matcher / classifier calls each FIRST and falls through to the
+generic rule when it returns `None`, so the generic modules stay merchant-agnostic:
 - `precheck(name, url) -> reason | None` — an extra categorical skip, evaluated right after
   the domain check and before the generic console / forbidden-region / category scans;
 - `title_region(name) -> "eu" | "us" | "uk" | "global" | None` — the region the merchant's
@@ -920,6 +921,57 @@ First user: MMOGA (`src/merchants/mmoga.py`, §11 — the first three). Gamivo u
 (`src/merchants/gamivo.py`, §4.4 `[R46]`). Tests: `MerchantHookTests` (throwaway merchant) +
 `MmogaRulesTests` + `GamivoConfigR46Tests`.
 
+**Console hooks `[R45]` (2026-09-14 — Romain's rule, repeated since 2026-08-11, ultimatum
+2026-09-14: « pour la détection région / édition / plateforme, tu as un fichier de config
+par marchand. Et si tu ne l'as pas, tu dois l'avoir »).** The R45 classifier
+(`src/console_keys.py`, §4.12.3) used to embed the MMOGA / Gamivo / Eneba URL grammars
+(category segments, URL runs, leading store segment) and merchant host checks. That is
+merchant grammar, so it moves into the merchant files; `console_keys` keeps ONLY the shared
+vocabulary (families, title phrases, store / delivery markers, the region-text → base
+table, the shared hyphen-run read, `console_marker_in_url`) and consults the merchant
+config through the registry. Four more optional members of `MerchantConfig`, all pure
+functions of the feed row:
+- `console_url_families(url) -> tuple[family, ...] | str | None` — the families the URL
+  DECLARES, in order (a subset of XBOX_ONE / XBOX_SERIES / PS4 / PS5 / SWITCH / SWITCH2),
+  or a fail-closed skip-reason string (`"console: Xbox 360 (R45)"`, `"console: PC-only
+  Xbox Live key (R45)"`, `"console: <MARKER> — not a game (R45)"`), or `None` (the URL
+  says nothing); the generic classifier consults it ONLY when the title declares no
+  family (MMOGA category segments, Gamivo runs, Eneba store prefix + runs, Kinguin /
+  Difmark account URLs);
+- `console_pc_declared(name, url) -> bool` — the merchant declares PC / Windows next to
+  the console platform (Gamivo `-pc` / `-windows` runs, Eneba `-windows-` run); the
+  generic title-phrase check (`/ Windows`, `PC/XBOX …`, `(Xbox Series X/S, PC)`) stays
+  generic and is OR-ed with it;
+- `console_region_slot(name) -> str | None` — the region TEXT the merchant writes next to
+  the platform phrase, verbatim (`"US"`, `"CA"`, `"Europe"`, `"United Kingdom"`, `"Hong
+  Kong"`, `"EUROPE"`); the mapping text → base (uk / us / eu / global) or forbidden label
+  stays in `console_keys` (shared vocabulary). When absent, the classifier falls back to
+  its shared tail / bracket reads;
+- `console_noise: tuple[str, ...] = ()` — merchant phrases stripped from `resolve_name` in
+  addition to the shared store / delivery markers (`"Download Code"` MMOGA, `"Digital
+  Key"` / `"Digital Code"` Driffle, `"CD Key"` Kinguin — Kinguin's "(valid until <Month> <Year>)"
+  note is deliberately NOT noise: `kinguin.OPEN_QUESTION_VALID_UNTIL`, 79 rows / batch stay
+  an "extra words" skip until Romain rules).
+**Registry.** The binding merchant name → module (`merchant_config()`) lives in
+`src/merchants/registry.py`, imported by both `src/matcher.py` (which keeps re-exporting
+`merchant_config`) and `src/console_keys.py` — no circular import (`python3 -c "import
+src.matcher, src.console_keys, src.merchants.registry"` must pass); `console_keys` never
+imports `src.matcher`, a merchant file never imports either. **Every merchant of the
+safe-auto allowlist has its file** — `kinguin.py` (the inline `domain="kinguin.net"`
+registry entry moves there), `k4g.py`, `driffle.py`, `gameseal.py`, `allyouplay.py`,
+`cjs.py` are created on 2026-09-14 next to `mmoga.py`, `gamivo.py`, `eneba.py`,
+`g2a.py`, `instant_gaming.py` (`difmark.py` parked); a file that declares no hook yet
+(Allyouplay, CJS-CDKeys: never swept, no data) is the documented statement "no data, dry-run
+first", never an omission. Per-merchant grammar and hooks: [`MERCHANTS.md`](MERCHANTS.md).
+Measurement (2026-09-14, read-only, on the last saved batches of 2026-09-12; GameSeal:
+the July 2026 sweep): console rows classified per merchant and per reason are IDENTICAL
+before / after the move (2 990 console rows, 0 oddity — MMOGA 388, Kinguin 365, Gamivo 572,
+K4G 135, Driffle 112, G2A 42, Eneba 1 376); 5 / 2 990 full-signal diffs, all region-slot
+corrections on non-game or Eneba rows (no entry changes). PC rows whose precheck / region /
+first slug differ from the committed code: Kinguin 66, K4G 228, Driffle 8, G2A 3, GameSeal
+30, Gamivo / MMOGA / Eneba 0 — every one a skip made explicit / earlier or a narrower
+region, **0 recorded candidate changes class**. Per-merchant table: CHANGELOG 2026-09-14.
+
 Merchant-specific handling was scattered (Kinguin's domain rule, Difmark's
 offer-page resolver + maps, Eneba's URL prefixes; Gamivo's `-en-` language lock
 was here too until MA7 was retired 2026-09-01).
@@ -927,7 +979,9 @@ Romain: **each merchant should start from its own config** — its specific
 instructions. `src/merchant_config.py` `MerchantConfig` is the single declarative
 place; `match_offer` reads `merchant_config(offer.merchant)` and applies it. A
 merchant with **no** config keeps the generic behaviour (platform/region/edition
-from the feed title + URL).
+from the feed title + URL) — since 2026-09-14 that is only the fallback for a merchant
+OUTSIDE the safe-auto allowlist: every allowlisted merchant has its file (Romain's rule
+above), and « la grammaire marchande ne vit jamais dans un module générique ».
 
 Trigger: a whole **Instant Gaming** safe-auto sweep entered every offer as
 **PUBLISHER** although they were **STEAM**. IG lists Steam keys under **token-less**
@@ -1111,7 +1165,10 @@ tiers + R30 search), else the console page of the primary declared family guesse
 (Play Anywhere)", "PS4", "PS5", "Nintendo Switch", "Nintendo Switch 2".
 
 **4.12.3 Classifier — `src/console_keys.py`** (pure: `re`, `dataclasses`,
-`urllib.parse`; NO import of `src.matcher`). `classify_console(name, url, merchant) ->
+`urllib.parse`; NO import of `src.matcher`; since 2026-09-14 it reaches the merchant
+config through `src/merchants/registry.py` — **shared vocabulary in `console_keys` +
+per-merchant hooks**, §4.10 "Console hooks": the module holds no merchant grammar and no
+merchant host / name check any more). `classify_console(name, url, merchant) ->
 ConsoleSignal | None` returns `None` when the row carries NO console marker at all (title
 tokens XBOX / PLAYSTATION / PS4 / PS5 / PSN / NINTENDO / SWITCH, or
 `console_marker_in_url(url)`), else a frozen `ConsoleSignal`:
@@ -1120,26 +1177,37 @@ tokens XBOX / PLAYSTATION / PS4 / PS5 / PSN / NINTENDO / SWITCH, or
   XBOX_PC);
 - `pc_declared`: the platform phrase names PC / Windows( 10| 11)? next to an Xbox family
   ("Xbox Series X|S / Windows", "PC/XBOX One/Series X|S", "(Xbox Series X/S, PC)",
-  "(Windows/Xbox Series X|S)", "Xbox One, PC");
+  "(Windows/Xbox Series X|S)", "Xbox One, PC") — the shared title-phrase read — OR the
+  merchant's `console_pc_declared(name, url)` hook says so (Gamivo `-pc` / `-windows`
+  runs, Eneba `-windows-` run — merchant grammar, in the merchant file since 2026-09-14);
 - `resolve_name`: the title without its platform / store / region markers, **edition
   KEPT** ("FIFA 23 - Ultimate Edition ( Xbox One / Series X|S Download Code ) - EU" →
   "FIFA 23 - Ultimate Edition") — it feeds the slug guess AND the R01 / R16 / R01b guards
   and `detect_edition` (PC rows keep `offer.name`). Removed: the platform phrase and its
   brackets ("(Xbox One / Series X|S Download Code)", "[PS5]", "(PS4 / PS5)"), the
-  store / delivery markers (XBOX LIVE, PSN, NINTENDO ESHOP, MICROSOFT STORE, DOWNLOAD
-  CODE, DIGITAL KEY, DIGITAL CODE, CD KEY, KEY, GIFT), the region tails (" - EU", "[EU]",
-  "(Europe)", "EU Key", "Europe" before the platform, Gamivo "EN United Kingdom"), then
-  separators are normalised ("Game - - EU" → "Game"). Verified on the 40 raw rows of the
-  feed study (tests);
+  shared store / delivery markers (XBOX LIVE, PSN, NINTENDO ESHOP, MICROSOFT STORE, CD
+  KEY, KEY, GIFT) plus the merchant's own `console_noise` phrases ("Download Code" MMOGA,
+  "Digital Key" / "Digital Code" Driffle, "CD Key" Kinguin — declared
+  in the merchant file since 2026-09-14), the region tails (" - EU", "[EU]", "(Europe)",
+  "EU Key", "Europe" before the platform; Gamivo's "EN United Kingdom" tail — language
+  codes included — is Gamivo grammar, peeled by `gamivo.py`'s `resolve_name` hook, no
+  Gamivo regex left here), then separators are normalised ("Game - - EU" → "Game").
+  Verified on the 40 raw rows of the feed study (tests);
 - `skip_reason`: a fail-closed "console: … (R45)" string, or `None`;
 - `region_base` / `region_label` / `region_words` (review fix 2026-09-14) — the REGION
   SLOT of the merchant's console grammar: `region_base` a sellable base (global / eu /
   us / uk) or `None`; `region_label` the label of a declared region AKS does not sell
   (CA → "CANADA", AU, TR, AR, ZA, "Hong Kong"…) or `None`; `region_words` the region
   words the classifier removed from `resolve_name`, so the matcher can refuse an
-  implicit read that would silently drop them (4.12.4 (c)). The slot is read from the
-  SAME furniture runs `resolve_name` strips (`resolve_name_and_regions(name) -> (name,
-  words)`): EU / EUROPE / EUROPEAN UNION → eu, US / USA / UNITED STATES → us, UK / GB /
+  implicit read that would silently drop them (4.12.4 (c)). The slot TEXT comes from the
+  merchant's `console_region_slot(name)` hook when the file declares one (verbatim —
+  Kinguin / K4G the word before the platform phrase, Driffle the first parenthesis, G2A /
+  GameSeal the " - <REGION>" tail, Eneba the word after "<STORE> Key", MMOGA " - EU" /
+  "[EU]" / "(… Key EU)" / "EU Key", Gamivo the "[<LANGS>] <Region>" tail — 2026-09-14),
+  else from the shared tail / bracket reads on the SAME furniture runs `resolve_name`
+  strips (`resolve_name_and_regions(name) -> (name, words)`); the mapping text → base is
+  SHARED vocabulary and stays here: EU / EUROPE / EUROPEAN UNION → eu, US / USA / UNITED
+  STATES → us, UK / GB /
   UNITED KINGDOM → uk, GLOBAL / WORLDWIDE / WW → global; the 2-letter codes mirror MMOGA
   `FORBIDDEN_CODES` (+ CA / AU / ZA / NA / CO / SG / HK / IN / DE / AT / NL / RO; `EU/NA`
   → "EU NA", the matcher spelling); a full or unknown name → its upper-cased text
@@ -1169,32 +1237,49 @@ decides, with the mirrored name tokens dropped from the slug start
 → SWITCH); "<Game> - Nintendo Switch 2 Edition" (ONE platform item immediately followed
 by "Edition") is a product-NAME suffix kept in `resolve_name`, not a declaration (the
 R01 / R16 guards compare it with the AKS page name as usual).
-*URL grammar* (ONLY when the title declares no family):
-- MMOGA (`mmoga.com`) category segment: `Xbox-Live/Xbox-One-Game-Keys` → XBOX_ONE,
+*URL grammar* (ONLY when the title declares no family) — **shared vocabulary in
+`console_keys` + per-merchant hooks (2026-09-14, R32 / R45).** The classifier asks the
+registry for the merchant's `MerchantConfig` and calls `console_url_families(url)`: a
+tuple → the declared families; a `"console: … (R45)"` string → that skip; `None` → the URL
+says nothing (→ "console: no declared generation (R45)" when the title declared nothing
+either); hook absent → the shared hyphen-run read below. The module no longer tests the
+host (`mmoga.com` / `gamivo.com` / `eneba.com`) nor the merchant name — the grammars
+that used to live here (`_parse_url_mmoga` / `_MMOGA_CATEGORY_RULES` /
+`_MMOGA_NON_GAME_CATEGORY_RE`, `_parse_url_gamivo`, `_parse_url_eneba` + the leading
+store-segment drop, `_GAMIVO_LANG_TAIL_RE`) are declared by the merchant files
+([`MERCHANTS.md`](MERCHANTS.md)):
+- shared (`console_keys`, every merchant): hyphen-delimited runs `xbox-one`,
+  `xbox-series-x-s` / `xbox-series-xs` / `xbox-series`, `ps4`, `ps5`, `ps4-ps5`,
+  `playstation-4/5`, `nintendo-switch(-2)?` — never a "one" followed by a game word; a
+  merchant hook may apply this shared read to its own cleaned path (Eneba after dropping
+  its store prefix; Kinguin / K4G / Driffle / G2A / GameSeal slugs mirror the title);
+- `mmoga.py` — category segment: `Xbox-Live/Xbox-One-Game-Keys` → XBOX_ONE,
   `Xbox-Live/Xbox-Series-XS-Game-Keys` → XBOX_SERIES,
   `Playstation-Network/Playstation-5-Game-Keys` → PS5, `…/Playstation-4-Game-Keys` → PS4,
   `Nintendo/Switch` → SWITCH. The category gives the LOWER generation only — a cross-gen
   "Xbox One / Series X|S" row is filed under `Xbox-One-Game-Keys`; the title phrase is
-  what declares both. `Xbox-Live/Xbox-360-Game-Keys` → skip Xbox 360; card / subscription
-  categories (`PSN-Cards-*`, `Nintendo-eShop-Cards`, `Playstation-Plus`,
-  `Xbox-Live-Cards`, `Xbox-Live-Gold`) → skip non-game;
-- Gamivo (`gamivo.com`) URL run after the slug: `xbox-xbox-series`, `xbox-series`,
+  what declares both. `Xbox-Live/Xbox-360-Game-Keys` → "console: Xbox 360 (R45)"; card /
+  subscription categories (`PSN-Cards-*`, `Nintendo-eShop-Cards`, `Playstation-Plus`,
+  `Xbox-Live-Cards`, `Xbox-Live-Gold`) → "console: <MARKER> — not a game (R45)";
+- `gamivo.py` — URL run after the slug: `xbox-xbox-series`, `xbox-series`,
   `xbox-xboxseries` → XBOX_SERIES; `xbox-xbox-one-series`, `xbox-xboxoneseries`,
   `xbox-one-series` → (XBOX_ONE, XBOX_SERIES); `xbox-xboxone`, `xbox-one` → XBOX_ONE;
-  suffixes `-pc`, `-windows`, fused `windows` (`xboxserieswindows`,
-  `xboxoneserieswindows`) → `pc_declared`; `xbox-pc` alone → skip "console: PC-only Xbox
-  Live key (R45)"; `ps-ps5`, `psn-ps5` → PS5; `ps4-ps5` → (PS4, PS5);
-  `nintendo-nintendo-switch` → SWITCH;
-- Eneba (`eneba.com`): `-xbox-series-x-s-` → XBOX_SERIES, `-windows-xbox-series-x-s-` →
-  + `pc_declared`, `-ps4-ps5-` → (PS4, PS5), `-ps5-` / `-ps4-`, `-nintendo-switch-2-` →
-  SWITCH2 (2026-09-14; was a skip), `-nintendo-switch-` → SWITCH; `-pc-xbox-live-key-` →
-  skip PC-only; an
-  `xbox-…-xbox-live-key-` WITHOUT a generation → skip "console: no declared generation
-  (R45)". The leading `xbox-` / `psn-` / `nintendo-` segment is a STORE prefix, never a
-  generation (`xbox-one-last-breath-…` is not an Xbox One row);
-- generic (other merchants): hyphen-delimited runs `xbox-one`, `xbox-series-x-s` /
-  `xbox-series-xs` / `xbox-series`, `ps4`, `ps5`, `ps4-ps5`, `playstation-4/5`,
-  `nintendo-switch(-2)?` — never a "one" followed by a game word.
+  `ps-ps5`, `psn-ps5` → PS5; `ps4-ps5` → (PS4, PS5); `nintendo-nintendo-switch` → SWITCH;
+  `xbox-pc` alone → "console: PC-only Xbox Live key (R45)"; suffixes `-pc`, `-windows`,
+  fused `windows` (`xboxserieswindows`, `xboxoneserieswindows`) → `console_pc_declared`;
+- `eneba.py` — the leading `xbox-` / `psn-` / `nintendo-` segment is a STORE prefix,
+  never a generation (`xbox-one-last-breath-…` is not an Xbox One row) and is dropped
+  first; then `-xbox-series-x-s-` → XBOX_SERIES, `-ps4-ps5-` → (PS4, PS5), `-ps5-` /
+  `-ps4-`, `-nintendo-switch-2-` → SWITCH2 (2026-09-14; was a skip), `-nintendo-switch-`
+  → SWITCH; `-windows-xbox-series-x-s-` → `console_pc_declared`; `-pc-xbox-live-key-` →
+  "console: PC-only Xbox Live key (R45)"; an `xbox-…-xbox-live-key-` WITHOUT a generation
+  → `None` → "console: no declared generation (R45)";
+- `kinguin.py` — `-account` / `-online-account-activation` → "console: ACCOUNT — not a
+  game (R45)" / ACCESS; `difmark.py` — `/buy-console-account-…-account-<id>` → "console:
+  ACCOUNT — not a game (R45)" (the ACCOUNT title word itself is a shared marker);
+- `k4g.py`, `driffle.py` (`xbox-series-xs` spelling, `-p<id>` ignored), `g2a.py`
+  (`-i<id>` ignored), `gameseal.py` — the shared runs on their slug; `allyouplay.py`,
+  `cjs.py` — identity only (`domain`, to confirm at the first dry-run; never swept, no data).
 `console_marker_in_url(url) -> bool` = a console token in the URL PATH (XBOX /
 PLAYSTATION / PSN / NINTENDO / PS4 / PS5 as hyphen- or slash-delimited segments; not
 SWITCH alone) — the fix of the Gamivo leak below.
@@ -1204,7 +1289,8 @@ SWITCH alone) — the fix of the Gamivo leak below.
   "Nintendo Switch 2" / `-nintendo-switch-2-` declare the `SWITCH2` family (Kinguin 12,
   K4G 12, G2A 1, Driffle 1 rows of the latest batches become enterable on their
   `nintendo-switch-2` page, Nintendo buckets);
-- "console: Xbox 360 (R45)" — "Xbox 360", MMOGA `Xbox-Live/Xbox-360-Game-Keys`;
+- "console: Xbox 360 (R45)" — "Xbox 360" (shared title read), MMOGA
+  `Xbox-Live/Xbox-360-Game-Keys` (`mmoga.py` `console_url_families`);
 - "console: <marker> — not a game (R45)" — whole-word GAME PASS, XBOX LIVE GOLD, XBOX
   LIVE CARD, XBOX GIFT CARD, PSN CARD, PLAYSTATION (NETWORK )?(CARD|CREDIT|PLUS|STORE
   CARD), PS PLUS, PLAYSTATION PLUS, (NINTENDO )?ESHOP CARD, NINTENDO SWITCH ONLINE, "<x>
@@ -1213,10 +1299,14 @@ SWITCH alone) — the fix of the Gamivo leak below.
   `/buy-console-account-` / a `-account` / `-account-<digits>` suffix (Kinguin "<x>
   Account", Difmark console accounts — 2026-09-14: an account is never a console key, the
   console branch runs BEFORE the Difmark account plan), the MMOGA card / subscription
-  categories. V-BUCKS / VC / POINTS etc. stay covered by `CATEGORY_SKIP` upstream (§4.3);
-- "console: PC-only Xbox Live key (R45)" — Gamivo `xbox-pc` alone, Eneba
-  `-pc-xbox-live-key-` (a PC key sold through Xbox Live / Microsoft Store is neither a
-  console offer nor a proven Play Anywhere one);
+  categories. Since 2026-09-14 the title markers are shared vocabulary while the URL
+  markers are merchant grammar returned as "console: <MARKER> — not a game (R45)" by
+  `console_url_families` (`kinguin.py`, `difmark.py`, `mmoga.py`). V-BUCKS / VC / POINTS
+  etc. stay covered by `CATEGORY_SKIP` upstream (§4.3);
+- "console: PC-only Xbox Live key (R45)" — Gamivo `xbox-pc` alone (`gamivo.py`), Eneba
+  `-pc-xbox-live-key-` (`eneba.py`) — both through `console_url_families` (a PC key sold
+  through Xbox Live / Microsoft Store is neither a console offer nor a proven Play
+  Anywhere one);
 - "console: no declared generation (R45)" — a console marker without any family: Eneba
   "<Game> XBOX LIVE Key <REGION>" (**704** of its 1 376 console rows carry no generation
   in title OR URL), bare "PSN", bare "Nintendo" **[P4]**;

@@ -15,22 +15,39 @@ pareil pour Xbox Series, PS4, Xbox One, Switch et Switch 2 » — a lone declare
 entered on THAT page only; a cross-gen declaration ("PS4 / PS5", "Xbox One / Series X|S")
 on both pages. This module only DECLARES what the merchant row says; the matcher applies P1.
 
+Shared vocabulary ONLY (R32 / R45, 2026-09-14 — Romain: « pour la détection région /
+édition / plateforme, tu as un fichier de config par marchand. Et si tu ne l'as pas, tu
+dois l'avoir. »). This module holds what every merchant shares: the platform phrase
+grammar ("Xbox One / Series X|S", "PS4 / PS5", "Nintendo Switch 2", …), the families,
+buckets and page kinds, the non-game markers, the store / delivery markers, the region
+text → base / forbidden-label mapping, ``resolve_name``, the plain slug runs (xbox-one /
+xbox-series(-x-s|-xs) / ps4 / ps5 / ps4-ps5 / nintendo-switch(-2) — slug vocabulary, not
+a merchant grammar), the AKS tab-bar / page-platform extraction and the page identity.
+Everything a merchant writes in its OWN way (a URL category segment, a fused run, a
+leading store segment, a region tail, a language tail, a delivery phrase) is declared by
+that merchant's ``MerchantConfig`` console hooks (``src/merchant_config.py``:
+``console_url_families`` / ``console_pc_declared`` / ``console_region_slot`` /
+``console_noise``, implemented in ``src/merchants/<merchant>.py``). This module names NO
+merchant in code (tests/test_console_keys.py pins that) and reaches the registry
+(``src.merchants.registry``) through a function-level import only — the merchant modules
+import the shared vocabulary from here, never ``src.matcher`` (which imports us).
+
 This module is PURE (``re`` / ``dataclasses`` / ``typing`` / ``urllib.parse`` only; NO
-``src.matcher`` import — the matcher imports us). It answers four questions, all
-deterministic, all fail-closed (doubt → an explicit ``console: … (R45)`` skip reason,
-never a guessed platform, never a guessed region, never a partial family list):
+``src.matcher`` import). It answers four questions, all deterministic, all fail-closed
+(doubt → an explicit ``console: … (R45)`` skip reason, never a guessed platform, never a
+guessed region, never a partial family list):
 
 1. ``classify_console(name, url, merchant)`` — what platform(s) does the MERCHANT declare
-   for this feed row (title grammar first, URL grammar only when the title declares no
-   generation), does it also name PC/Windows (Play Anywhere candidate), what is the title
-   once the console/store/region furniture is removed (``resolve_name`` — used for the
-   AKS slug AND the R01/R16 identity guards; edition words are KEPT), and WHAT REGION the
-   merchant wrote next to the platform phrase (``region_base`` / ``region_label`` /
-   ``region_words`` — the region slot, 2026-09-14: the adversarial review showed 456
-   region-locked rows falling to implicit GLOBAL because the region word was stripped
-   from the name and never mapped).
-2. ``console_marker_in_url(url)`` — the fix for the real leak of 2026-09-11 (Gamivo
-   "Riders Republic Premium Edition United States", platform ONLY in the URL
+   for this feed row (shared title grammar first; the merchant's URL hook — or the shared
+   slug runs when it has none — only when the title declares no generation), does it also
+   name PC/Windows (Play Anywhere candidate), what is the title once the console/store/
+   region furniture is removed (``resolve_name`` — used for the AKS slug AND the R01/R16
+   identity guards; edition words are KEPT), and WHAT REGION the merchant wrote next to
+   the platform phrase (``region_base`` / ``region_label`` / ``region_words`` — the region
+   slot, 2026-09-14: the adversarial review showed 456 region-locked rows falling to
+   implicit GLOBAL because the region word was stripped from the name and never mapped).
+2. ``console_marker_in_url(url)`` — the fix for the real leak of 2026-09-11 (a Gamivo
+   row "Riders Republic Premium Edition United States", platform ONLY in the URL
    ``…/riders-republic-xbox-xbox-one-series-us-premium``, entered as a PC PUBLISHER GLOBAL
    offer): the ``precheck_skip`` console gate read the TITLE only.
 3. ``extract_console_pages(body)`` / ``extract_page_platform(body)`` — the tab bar of an
@@ -52,7 +69,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING, Pattern, Sequence
 from urllib.parse import urlparse
+
+if TYPE_CHECKING:  # the registry is imported at call time only (see _config_of)
+    from src.merchant_config import MerchantConfig
 
 # ── §2 tables ────────────────────────────────────────────────────────────────────────
 # Platform families = keys of REGION_IDS like the PC platforms. XBOX_PC is the Play
@@ -113,10 +134,13 @@ CONSOLE_PLATFORM_LABEL = {
     "SWITCH": "Nintendo Switch", "SWITCH2": "Nintendo Switch 2",
 }
 
-# The families a MERCHANT can declare (never XBOX_PC — the matcher's target bucket).
-_DECLARABLE = ("XBOX_ONE", "XBOX_SERIES", "PS4", "PS5", "SWITCH", "SWITCH2")
+# The families a MERCHANT can declare (never XBOX_PC — the matcher's target bucket). A
+# merchant's ``console_url_families`` hook may only return these (validated, fail-closed).
+DECLARABLE_FAMILIES = ("XBOX_ONE", "XBOX_SERIES", "PS4", "PS5", "SWITCH", "SWITCH2")
+_DECLARABLE = DECLARABLE_FAMILIES
 
-# Reason strings (§2). Byte-exact — feed_status routes on the "console:" prefix.
+# Reason strings (§2). Byte-exact — feed_status routes on the "console:" prefix. The
+# merchant modules import these for their ``console_url_families`` hook (2026-09-14).
 # SKIP_SWITCH_2 is RETIRED (2026-09-14: Switch 2 pages exist and use the Nintendo
 # bucket) — the constant stays for importers, it is never emitted any more.
 SKIP_SWITCH_2 = "console: Switch 2 has no AKS bucket (R45)"
@@ -129,8 +153,14 @@ SKIP_PC_ONLY = "console: PC-only Xbox Live key (R45)"
 SKIP_RESIDUE = "console: unparsed platform residue (R45)"
 
 
-def _skip_not_a_game(marker: str) -> str:
+def skip_not_a_game(marker: str) -> str:
+    """The non-game skip reason for ``marker`` ("PSN CARD", "GAME PASS", "ACCOUNT", …) —
+    shared by the title / URL markers here and the merchant category hooks."""
+
     return f"console: {marker} — not a game (R45)"
+
+
+_skip_not_a_game = skip_not_a_game
 
 
 def _skip_edition_platform(phrase: str, families: tuple[str, ...]) -> str:
@@ -140,6 +170,12 @@ def _skip_edition_platform(phrase: str, families: tuple[str, ...]) -> str:
             f"platform {'/'.join(families)} — not entered (R45)")
 
 
+def _skip_hook_result(detail: str) -> str:
+    """A merchant hook answered something outside its contract — never a guess."""
+
+    return f"console: merchant URL hook {detail} — not entered (R45)"
+
+
 @dataclass(frozen=True)
 class ConsoleSignal:
     """What the merchant row declares about its console platform(s) and region.
@@ -147,25 +183,27 @@ class ConsoleSignal:
     ``families``: families DECLARED by the merchant, order of appearance, deduplicated,
     among XBOX_ONE / XBOX_SERIES / PS4 / PS5 / SWITCH / SWITCH2 (never XBOX_PC).
     ``pc_declared``: the platform phrase names PC / Windows next to a console family
-    ("Xbox Series X|S / Windows", "PC/XBOX One/Series X|S", "(Xbox Series X/S, PC)").
+    ("Xbox Series X|S / Windows", "PC/XBOX One/Series X|S", "(Xbox Series X/S, PC)"), or
+    the merchant's own ``console_pc_declared`` hook says so.
     ``resolve_name``: the title without its console/store/region markers (edition KEPT)
     — the slug source AND the text the R01/R16 identity guards read.
     ``skip_reason``: a fail-closed "console: … (R45)" skip, or None (families may be
     empty or not when a skip is set).
 
     Region slot (2026-09-14, R45 review): the region the merchant writes NEXT TO the
-    platform phrase — Kinguin/K4G "<Game> [Edition] <REGION> <Platform phrase> CD Key",
-    Driffle "(<Region>)", G2A " - <REGION>" tail, Eneba "<STORE> Key <REGION>", MMOGA
-    " - EU" / "[EU]" / "(… Key EU)" / "EU Key", Gamivo "EN <Region>" tail — read from
-    the SAME furniture runs ``resolve_name`` strips, so every stripped region word is
+    platform phrase — "<Game> [Edition] <REGION> <Platform phrase> CD Key", "(<Region>)",
+    " - <REGION>" tail, "<STORE> Key <REGION>", " - EU" / "[EU]" / "(… Key EU)" /
+    "EU Key", "EN <Region>" tail. The merchant's ``console_region_slot`` hook speaks
+    FIRST (its own grammar, verbatim text); otherwise the shared tail / bracket reads
+    report every region word ``resolve_name`` strips, so every stripped word is
     accounted for:
-    ``region_words``: every region word/phrase stripped from the title, verbatim, in
-    order ("US", "Europe", "United Kingdom", "Hong Kong"); () when none.
-    ``region_base``: "eu" / "us" / "uk" / "global" when the stripped words all map to
-    ONE sellable base; None otherwise.
+    ``region_words``: the region word(s), verbatim, in order ("US", "Europe", "United
+    Kingdom", "Hong Kong"); () when none.
+    ``region_base``: "eu" / "us" / "uk" / "global" when the words all map to ONE
+    sellable base; None otherwise.
     ``region_label``: the FORBIDDEN region label (matcher vocabulary: CANADA, AUSTRALIA,
     TURKEY, NORTH AMERICA, HONG KONG, ROW, …; an unknown word → its upper-cased text)
-    when a stripped word is not sellable; None otherwise.
+    when a word is not sellable; None otherwise.
     Fail-closed contract for the matcher: ``region_base`` set → that bucket;
     ``region_label`` set → forbidden skip; ``region_words`` non-empty with NEITHER set
     (two different sellable bases, e.g. "EU (European Union + UK)") → the slot is not a
@@ -182,12 +220,44 @@ class ConsoleSignal:
     region_words: tuple[str, ...] = ()
 
 
+# ── merchant hooks (2026-09-14) ──────────────────────────────────────────────────────
+def _config_of(merchant: str) -> "MerchantConfig | None":
+    """The merchant's ``MerchantConfig`` (console hooks live there), or None.
+
+    Function-level import on purpose: ``src.merchants.registry`` imports the merchant
+    modules, which import THIS module's shared vocabulary — a module-level import here
+    would be circular. ``src.matcher`` is never imported."""
+
+    if not (merchant or "").strip():
+        return None
+    from src.merchants.registry import merchant_config
+
+    return merchant_config(merchant)
+
+
+def _compile_noise(noise: Sequence["str | Pattern[str]"]) -> tuple["Pattern[str]", ...]:
+    """``console_noise`` entries → patterns: a str is a LITERAL phrase (case-insensitive,
+    whole words, any whitespace between the words); a compiled pattern is used as is."""
+
+    out: list["Pattern[str]"] = []
+    for item in noise:
+        if isinstance(item, str):
+            words = [re.escape(w) for w in item.split()]
+            if not words:
+                continue
+            out.append(re.compile(r"(?<![A-Za-z0-9])" + r"\s+".join(words) + r"(?![A-Za-z0-9])",
+                                  re.IGNORECASE))
+        else:
+            out.append(item)
+    return tuple(out)
+
+
 # ── title tokens ─────────────────────────────────────────────────────────────────────
 # Same whole-word console tokens as matcher.CONSOLE_TOKENS (kept in sync by hand — this
 # module must not import the matcher).
 _TITLE_MARKER_TOKENS = ("XBOX", "PLAYSTATION", "PS4", "PS5", "PSN", "NINTENDO", "SWITCH")
 # URL PATH tokens that prove a console row (dash/slash-delimited). SWITCH alone is NOT one
-# (Kinguin "switch-galaxy-ultra-steam-cd-key" is a Steam game); NINTENDO/PSN/XBOX/… are.
+# ("switch-galaxy-ultra-steam-cd-key" is a Steam game); NINTENDO/PSN/XBOX/… are.
 _URL_MARKER_TOKENS = frozenset({"xbox", "playstation", "psn", "nintendo", "ps4", "ps5"})
 
 
@@ -207,9 +277,15 @@ def _path_tokens(url: str) -> list[str]:
     return [t for t in re.split(r"[^a-z0-9]+", path.lower()) if t]
 
 
+def path_tokens(url: str) -> list[str]:
+    """Public alias of the slug tokenizer for the merchant modules (2026-09-14)."""
+
+    return _path_tokens(url)
+
+
 def console_marker_in_url(url: str) -> bool:
     """A console token in the URL PATH (XBOX / PLAYSTATION / PSN / NINTENDO / PS4 / PS5 as
-    dash/slash segments; NOT a bare SWITCH) — the Gamivo/Eneba leak fix: those merchants
+    dash/slash segments; NOT a bare SWITCH) — the 2026-09-11 leak fix: some merchants
     carry the platform in the URL only ("…/riders-republic-xbox-xbox-one-series-us-premium").
     Hosts are irrelevant; the query string is ignored."""
 
@@ -218,19 +294,20 @@ def console_marker_in_url(url: str) -> bool:
 
 # ── region vocabulary (2026-09-14) ───────────────────────────────────────────────────
 # Sellable bases = the CONSOLE_REGION_IDS keys. Keys are the upper-cased, space-normalised
-# region words of the title grammar (``_REGION_ALT`` below).
+# region words of the title grammar (``_REGION_ALT`` below) — and whatever verbatim text a
+# merchant's ``console_region_slot`` hook hands over.
 _REGION_BASE_OF = {
     "EU": "eu", "EUROPE": "eu", "EUROPEAN UNION": "eu",
     "US": "us", "USA": "us", "UNITED STATES": "us",
     "UK": "uk", "GB": "uk", "UNITED KINGDOM": "uk",
     "GLOBAL": "global", "WORLDWIDE": "global", "WW": "global",
 }
-# 2-letter codes → the matcher's FORBIDDEN_REGIONS / _URL_FORBIDDEN_CODES labels (mirror
-# of src/merchants/mmoga.py FORBIDDEN_CODES, extended with the codes the console feeds
-# write before the platform phrase: Kinguin CA 83 / AU 77 / NA / TR / AR / CO / ZA on the
-# 2026-09-12 batch). A full name maps to its own upper-cased text, which IS the matcher
-# vocabulary (CANADA, NORTH AMERICA, HONG KONG, SOUTH AFRICA, …); an unknown word too, so
-# the one router (aks_lists.suggest_target_list) files every label the same way.
+# 2-letter codes → the matcher's FORBIDDEN_REGIONS / _URL_FORBIDDEN_CODES labels (the
+# same 2-letter vocabulary the merchant "<CODE> Key" grammars use, extended with the codes
+# the console feeds write before the platform phrase: CA 83 / AU 77 / NA / TR / AR / CO /
+# ZA on the 2026-09-12 batch). A full name maps to its own upper-cased text, which IS the
+# matcher vocabulary (CANADA, NORTH AMERICA, HONG KONG, SOUTH AFRICA, …); an unknown word
+# too, so the one router (aks_lists.suggest_target_list) files every label the same way.
 _REGION_CODE_LABEL = {
     "RU": "RUSSIA", "TR": "TURKEY", "BR": "BRAZIL", "AR": "ARGENTINA", "CN": "CHINA",
     "KR": "KOREA", "JP": "JAPAN", "PL": "POLAND", "UA": "UKRAINE", "MX": "MEXICO",
@@ -242,10 +319,11 @@ _REGION_CODE_LABEL = {
 }
 
 
-def _region_slot(words: tuple[str, ...]) -> tuple[str | None, str | None]:
-    """``(region_base, region_label)`` from the stripped region words — see
+def region_slot_of(words: Sequence[str]) -> tuple[str | None, str | None]:
+    """``(region_base, region_label)`` from region words / phrases — see
     :class:`ConsoleSignal`. A forbidden / unknown word wins (its label); one sellable
-    base → that base; two different sellable bases or nothing → (None, None)."""
+    base → that base; two different sellable bases or nothing → (None, None). The shared
+    text → base / label mapping: the merchant hooks return TEXT, this maps it."""
 
     bases: list[str] = []
     labels: list[str] = []
@@ -263,23 +341,28 @@ def _region_slot(words: tuple[str, ...]) -> tuple[str | None, str | None]:
     return None, None
 
 
+_region_slot = region_slot_of
+
+
 # ── title grammar ────────────────────────────────────────────────────────────────────
 # One tokenizer for BOTH family extraction and resolve_name: a "furniture run" is a
 # maximal sequence of platform / store / delivery / region items separated by
 # " / , & + | - – — : ( ) [ ]" or spaces. Items are matched case-insensitively, EXCEPT the
 # 2-letter region codes which must be UPPERCASE ("The Last of Us" must never lose "Us";
-# Kinguin writes "US", "EU", "CA"). Longer alternatives come first (regex alternation).
+# the feeds write "US", "EU", "CA"). Longer alternatives come first (regex alternation).
 #
 # Every item alternative is a NAMED group so the parser knows what it hit:
 #   xone / xseries / x360 / xbare / ps5 / ps4 / sw2 / switch / nbare / swbare / pc
 #   store (XBOX LIVE, PSN, NINTENDO ESHOP, MICROSOFT STORE, PLAYSTATION NETWORK, NINTENDO…)
 #   deliv (DOWNLOAD CODE, DIGITAL KEY, DIGITAL CODE, CD KEY)   weak (KEY, GIFT, ACCOUNT…)
-#   region (EU, EUROPE, UNITED STATES, …)   lang ("EN", "EN/PL/CS" — Gamivo tails)
+#   region (EU, EUROPE, UNITED STATES, …)
+# A merchant's own furniture (a language tail, a delivery phrase) is declared by its
+# ``console_noise`` hook and stripped BEFORE this grammar runs (2026-09-14).
 _XS = r"(?:\s*X\s*[|/]\s*S|\s*XS)"                       # "X|S" ≡ "X/S" ≡ "XS"
 # Region words of the merchant grammars (long names case-insensitive; the 2-letter codes
-# UPPERCASE only — "The Last of Us" must never lose "Us", Kinguin writes "US" / "EU" / "CA";
-# "RoW" is Kinguin's own spelling, "Row" stays a name word). Multi-word names first.
-# Every word here is mapped by ``_region_slot`` (base, forbidden label or its own text).
+# UPPERCASE only — "The Last of Us" must never lose "Us", the feeds write "US" / "EU" /
+# "CA"; "RoW" is one feed's own spelling, "Row" stays a name word). Multi-word names first.
+# Every word here is mapped by ``region_slot_of`` (base, forbidden label or its own text).
 _REGION_ALT = (
     r"EUROPEAN\s+UNION|UNITED\s+STATES|UNITED\s+KINGDOM|UNITED\s+ARAB\s+EMIRATES|"
     r"NORTH\s+AMERICA|SOUTH\s+AMERICA|LATIN\s+AMERICA|SOUTH\s+AFRICA|SOUTH\s+KOREA|"
@@ -308,7 +391,6 @@ _ITEM = (
     r"|(?P<deliv>DOWNLOAD\s+CODE|DIGITAL\s+(?:KEY|CODE)|CD\s*KEY|OFFICIAL\s+KEY)"
     r"|(?P<weak>KEYS?|GIFT|ACCOUNT|ACCESS)"
     r"|(?P<region>" + _REGION_ALT + r")"
-    r"|(?P<lang>(?-i:[A-Z]{2}(?:/[A-Z]{2})+))"           # "EN/PL/CS/RU/TR" (before a region)
 )
 _SEP = r"(?:\s*(?:[/,&+|:()\[\]]|-|–|—|\bAND\b|\bOR\b)\s*|\s+)"
 # The run = optional opening bracket, an item, then (separator + item)*, optional closing
@@ -344,7 +426,7 @@ _BARE_SERIES_RE = re.compile(
 
 
 def _normalise_title(name: str) -> str:
-    text = name.replace(" ", " ")
+    text = name.replace(" ", " ")
     return _BARE_SERIES_RE.sub(r"\1Series X|S", text)
 
 
@@ -372,10 +454,10 @@ def _leading_name_run(run: "re.Match[str]", text: str) -> bool:
 
 
 def _edition_name_run(run: "re.Match[str]", text: str) -> str | None:
-    """2026-09-14: "<Game> - Nintendo Switch 2 Edition" (Instant Gaming, K4G) — a single
-    platform item immediately followed by "Edition" is a PRODUCT NAME suffix, not a
-    platform declaration: kept in resolve_name, not a family. Returns the family the
-    suffix names (the declaration elsewhere must agree — fail-closed otherwise)."""
+    """2026-09-14: "<Game> - Nintendo Switch 2 Edition" — a single platform item
+    immediately followed by "Edition" is a PRODUCT NAME suffix, not a platform
+    declaration: kept in resolve_name, not a family. Returns the family the suffix names
+    (the declaration elsewhere must agree — fail-closed otherwise)."""
 
     if not re.match(r"\s+EDITION\b", text[run.end():], re.IGNORECASE):
         return None
@@ -435,6 +517,8 @@ def _parse_title(name: str) -> _TitleParse:
 # ── non-game markers ─────────────────────────────────────────────────────────────────
 # Whole-word on the padded upper title. Currencies (V-BUCKS / VC / POINTS …) stay with
 # CATEGORY_SKIP upstream; here only the console-store cards / subscriptions / accounts.
+# A merchant's card / subscription URL CATEGORY (a title that may look like a game) is
+# its own grammar: declared by its ``console_url_families`` hook (2026-09-14).
 _NON_GAME_TITLE_RES = tuple(re.compile(p) for p in (
     r" GAME PASS ",
     r" XBOX LIVE GOLD ",
@@ -447,17 +531,11 @@ _NON_GAME_TITLE_RES = tuple(re.compile(p) for p in (
     r" NINTENDO SWITCH ONLINE ",
     r" GIFT CARDS? ",                   # any gift card on a console row is a card
 ))
-# MMOGA card / subscription CATEGORY segments (title may look like a game: "Xbox Game
-# Pass Ultimate 1 Month [EU]" is filed under the Xbox-One / Xbox-360 GAME categories, the
-# title marker catches those; these catch "PSN Card 80 Euro [Austria] - …").
-_MMOGA_NON_GAME_CATEGORY_RE = re.compile(
-    r"/(psn-cards(?:-[a-z]+)?|nintendo-eshop-cards|playstation-plus|xbox-live-cards|xbox-live-gold)/"
-)
-# ACCOUNT listings (2026-09-14, review finder 3 [high]): Kinguin "<x> Account" (title tail,
-# URL "-account"), Difmark "<Game> (Account) Standard Edition" with URL
-# "/buy-console-account-<slug>-nintendo-switch-account-<id>" — the word ANYWHERE in the
-# title (parenthesised too), a "/buy-console-account-" path, or an "-account" / "-account-
-# <digits>" path suffix. Never a key.
+# ACCOUNT listings (2026-09-14, review finder 3 [high]): "<x> Account" (title tail, URL
+# "-account"), "<Game> (Account) Standard Edition" with a "/buy-console-account-<slug>-
+# nintendo-switch-account-<id>" URL — the word ANYWHERE in the title (parenthesised too),
+# a "/buy-console-account-" path, or an "-account" / "-account-<digits>" path suffix.
+# Never a key. Plain-English delivery words, shared by every feed.
 _ACCOUNT_PATH_RE = re.compile(r"(?:^|-)account(?:-\d+)?/?$")
 
 
@@ -468,101 +546,42 @@ def _non_game_marker(name: str, url: str) -> str | None:
         if m:
             return m.group(0).strip()
     path = urlparse(url).path.lower()
-    m = _MMOGA_NON_GAME_CATEGORY_RE.search(path)
-    if m:
-        return m.group(1).upper().replace("-", " ")
     if "gift-card" in path:
         return "GIFT CARD"
     if (" ACCOUNT " in padded or "/buy-console-account-" in path
             or _ACCOUNT_PATH_RE.search(path)):
         return "ACCOUNT"
-    # Kinguin console ACCESS listings (URL "-online-account-activation"; title
-    # "<Game> <Platform> Access") — never a key either.
+    # Console ACCESS listings (URL "-online-account-activation"; title "<Game> <Platform>
+    # Access") — never a key either.
     if "online-account-activation" in path or re.search(r" ACCESS $", padded):
         return "ACCESS"          # "<Game> <Platform> Access" — the platform precedes the word
     return None
 
 
-# ── URL grammar (only when the title declares no family) ─────────────────────────────
+# ── shared slug runs (only when the title declares no family) ────────────────────────
 @dataclass(frozen=True)
-class _UrlParse:
+class SlugRead:
+    """What the plain slug runs of a hyphenated URL declare — the SHARED slug vocabulary
+    (xbox-one, xbox-series(-x-s|-xs), xbox-one-series(-x-s), xbox-one-xbox-series-x-s,
+    ps4, ps5, ps4-ps5, playstation-4/5, nintendo-switch(-2), xbox-360). ``span`` is the
+    ``(start, end)`` token index range covering every family run (None when none) —
+    a merchant hook uses it to check the run sits in ITS platform slot."""
+
     families: tuple[str, ...] = ()
     pc_declared: bool = False
     skip_reason: str | None = None
+    span: tuple[int, int] | None = None
 
 
-_MMOGA_CATEGORY_RULES = (
-    # (regex on the lower path, families, skip). No Switch 2 category observed on MMOGA
-    # as of 2026-09-14 — a "Nintendo Switch 2" title phrase declares it; a category-only
-    # row under /Nintendo/Switch/ is a SWITCH declaration (the name-suffix guard in
-    # classify_console refuses a "… - Nintendo Switch 2 Edition" filed there).
-    (r"/xbox-live/xbox-360-game-keys/", (), SKIP_XBOX_360),
-    (r"/xbox-live/xbox-one-game-keys/", ("XBOX_ONE",), None),
-    (r"/xbox-live/xbox-series-xs-game-keys/", ("XBOX_SERIES",), None),
-    (r"/playstation-network/playstation-5-game-keys/", ("PS5",), None),
-    (r"/playstation-network/playstation-4-game-keys/", ("PS4",), None),
-    (r"/nintendo/switch/", ("SWITCH",), None),
-)
+_UrlParse = SlugRead
 
 
-def _parse_url_mmoga(path: str) -> _UrlParse:
-    """MMOGA: the platform CATEGORY segment (lower generation only — a cross-gen title is
-    filed under Xbox-One-Game-Keys; the title phrase wins when present)."""
-
-    for rx, families, skip in _MMOGA_CATEGORY_RULES:
-        if re.search(rx, path):
-            return _UrlParse(families=families, skip_reason=skip)
-    return _UrlParse()
-
-
-_GAMIVO_RUN_RE = re.compile(
-    r"-xbox-(?:"
-    r"(?P<oneseries>(?:xbox-)?one-series|xboxoneseries)(?P<pcw1>windows|-pc|-windows|-xbox-pc)?"
-    r"|(?P<series>(?:xbox-)?series|xboxseries)(?P<pcw2>windows|-pc|-windows|-xbox-pc)?"
-    r"|(?P<one>xboxone|one)(?P<pcw3>-pc|-windows)?"
-    r"|(?P<pconly>pc)"
-    r"|(?P<nogen>xbox-windows|xboxwindows)"
-    r")-"
-)
-_GAMIVO_PS_RE = re.compile(r"-(?:ps|psn)-(?P<gen>ps4-ps5|ps5|ps4)-|-(?P<gen2>ps4-ps5)-")
-_GAMIVO_NINTENDO_RE = re.compile(r"-nintendo-nintendo-switch(?P<two>-2)?-")
-
-
-def _parse_url_gamivo(path: str) -> _UrlParse:
-    """Gamivo: ``/product/<slug>-<platform run>-<cc>[-<langs>]-<edition>`` — the title
-    NEVER carries the platform (569/572 console rows detected from the URL only). The
-    region code after the run is read by the R46 hook (src/merchants/gamivo.py) and the
-    title tail by the region slot here."""
-
-    seg = "-" + path.rstrip("/").rsplit("/", 1)[-1] + "-"
-    m = _GAMIVO_RUN_RE.search(seg)
-    if m:
-        if m.group("pconly"):
-            return _UrlParse(skip_reason=SKIP_PC_ONLY)
-        if m.group("nogen"):
-            return _UrlParse()                    # "xbox-xbox-windows": Xbox + Windows, no generation
-        pc = bool(m.group("pcw1") or m.group("pcw2") or m.group("pcw3"))
-        if m.group("oneseries"):
-            return _UrlParse(("XBOX_ONE", "XBOX_SERIES"), pc)
-        if m.group("series"):
-            return _UrlParse(("XBOX_SERIES",), pc)
-        return _UrlParse(("XBOX_ONE",), pc)
-    m = _GAMIVO_PS_RE.search(seg)
-    if m:
-        gen = m.group("gen") or m.group("gen2")
-        return _UrlParse({"ps4-ps5": ("PS4", "PS5"), "ps5": ("PS5",), "ps4": ("PS4",)}[gen])
-    m = _GAMIVO_NINTENDO_RE.search(seg)
-    if m:
-        if m.group("two"):
-            return _UrlParse(("SWITCH2",))        # 2026-09-14: Switch 2 pages exist
-        return _UrlParse(("SWITCH",))
-    return _UrlParse()
-
-
-def _parse_url_generic(tokens: list[str]) -> _UrlParse:
-    """Dash-delimited runs: xbox-one, xbox-series(-x-s|-xs)?, xbox-one-series(-x-s)?,
-    ps4, ps5, ps4-ps5, playstation-4/5, nintendo-switch(-2)?, xbox-360; a pc / windows
-    token IMMEDIATELY before or after the run (same phrase) → pc_declared."""
+def slug_families(tokens: Sequence[str]) -> SlugRead:
+    """Dash-delimited runs over lower-case tokens: xbox-one, xbox-series(-x-s|-xs)?,
+    xbox-one-series(-x-s)?, ps4, ps5, ps4-ps5, playstation-4/5, nintendo-switch(-2)?,
+    xbox-360 (→ skip); a pc / windows token IMMEDIATELY before or after the run (same
+    phrase) → pc_declared. Shared slug vocabulary — the merchant modules call it on the
+    slot their own grammar locates (2026-09-14)."""
 
     families: list[str] = []
     xbox_360 = False
@@ -578,7 +597,7 @@ def _parse_url_generic(tokens: list[str]) -> _UrlParse:
         if t == "xbox" and nxt == "one":
             found.append("XBOX_ONE")
             i += 2
-            # "xbox-one-series-x-s" (K4G) / "xbox-one-xbox-series-x-s" (Kinguin, Driffle)
+            # "xbox-one-series-x-s" / "xbox-one-xbox-series-x-s"
             if i < n and tokens[i] == "xbox" and i + 1 < n and tokens[i + 1] == "series":
                 found.append("XBOX_SERIES")
                 i += 2
@@ -614,6 +633,7 @@ def _parse_url_generic(tokens: list[str]) -> _UrlParse:
             if fam not in families:
                 families.append(fam)
         run_positions.append((start, i))
+    span: tuple[int, int] | None = None
     if families:
         # merge contiguous family runs (…-pc-ps5-ps4-xbox-series-x-s-xbox-one-…) and look
         # ONE token before the first / after the last for pc / windows.
@@ -622,16 +642,20 @@ def _parse_url_generic(tokens: list[str]) -> _UrlParse:
         before = tokens[first - 1] if first > 0 else ""
         after = tokens[last] if last < n else ""
         pc_adjacent = before in ("pc", "windows") or after in ("pc", "windows")
+        span = (first, last)
     if xbox_360:
-        return _UrlParse(tuple(families), pc_adjacent, SKIP_XBOX_360)
-    return _UrlParse(tuple(families), pc_adjacent)
+        return SlugRead(tuple(families), pc_adjacent, SKIP_XBOX_360, span)
+    return SlugRead(tuple(families), pc_adjacent, None, span)
+
+
+_parse_url_generic = slug_families
 
 
 def _drop_mirrored_name(tokens: list[str], leading: tuple[str, ...]) -> list[str]:
     """A merchant slug mirrors the title: when the title OPENS with a console run that is
     part of the game name ("Nintendo Switch Sports"), the slug opens with the same tokens
-    ("nintendo-switch-sports-…") — drop them so the URL grammar reads only a real
-    platform slot ("…-nintendo-switch-cd-key"), never the name (2026-09-14)."""
+    ("nintendo-switch-sports-…") — drop them so the slug runs read only a real platform
+    slot ("…-nintendo-switch-cd-key"), never the name (2026-09-14)."""
 
     n = len(leading)
     if n and tuple(tokens[:n]) == leading:
@@ -639,55 +663,57 @@ def _drop_mirrored_name(tokens: list[str], leading: tuple[str, ...]) -> list[str
     return tokens
 
 
-def _parse_url_eneba(path: str, leading: tuple[str, ...] = ()) -> _UrlParse:
-    """Eneba: ``eneba.com/<store>-<slug>-<platform>-<store>-key-<region>``. The LEADING
-    segment (``xbox-`` / ``psn-`` / ``nintendo-``) is the STORE, never a generation —
-    ``xbox-one-last-breath-xbox-live-key-europe`` is the game "One Last Breath", not an
-    Xbox One key (13/16 "Xbox One" rows of the 2026-09-12 batch were this artefact)."""
+def _generic_url_read(url: str, leading: tuple[str, ...] = ()) -> SlugRead:
+    """The shared slug reading for a merchant WITHOUT a ``console_url_families`` hook:
+    the slug is the LAST path segment ("/category/<id>/<slug>"), the mirrored leading
+    name dropped, then the plain slug runs. Hosts are irrelevant."""
 
-    tokens = _path_tokens(path)
-    if tokens and tokens[0] in ("xbox", "psn", "nintendo"):
-        tokens = tokens[1:]
-    tokens = _drop_mirrored_name(tokens, leading)
-    parsed = _parse_url_generic(tokens)
-    if parsed.families or parsed.skip_reason:
-        return parsed
-    joined = "-" + "-".join(tokens) + "-"
-    if "-pc-xbox-live-key-" in joined:
-        return _UrlParse(skip_reason=SKIP_PC_ONLY)   # a PC key sold through Xbox Live / MS Store
-    return _UrlParse()
-
-
-def _parse_url(url: str, merchant: str, leading: tuple[str, ...] = ()) -> _UrlParse:
     try:
-        parsed = urlparse(url)
+        path = urlparse(url).path.lower()
     except ValueError:
-        return _UrlParse()
-    host = parsed.netloc.lower()
-    path = parsed.path.lower()
-    merchant_key = (merchant or "").strip().upper()
-    if host.endswith("mmoga.com") or merchant_key == "MMOGA":
-        return _parse_url_mmoga(path)
-    if host.endswith("gamivo.com") or merchant_key == "GAMIVO":
-        return _parse_url_gamivo(path)
-    if host.endswith("eneba.com") or merchant_key == "ENEBA":
-        return _parse_url_eneba(path, leading)
-    # generic: the slug is the LAST path segment (Kinguin "/category/<id>/<slug>")
+        return SlugRead()
     tokens = _path_tokens(path)
     seg_tokens = _path_tokens(path.rstrip("/").rsplit("/", 1)[-1])
     head = tokens[:len(tokens) - len(seg_tokens)] if seg_tokens else tokens
-    return _parse_url_generic(head + _drop_mirrored_name(seg_tokens, leading))
+    return slug_families(head + _drop_mirrored_name(seg_tokens, leading))
+
+
+def _hook_url_read(cfg: "MerchantConfig", url: str) -> tuple[tuple[str, ...], str | None]:
+    """``(families, skip_reason)`` from the merchant's ``console_url_families`` hook,
+    validated: a None → nothing declared; a "console: …" string → that skip; families
+    must be declarable (never XBOX_PC, never an unknown token) — anything else is a
+    fail-closed skip, never a guess (2026-09-14)."""
+
+    declared = cfg.console_url_families(url)  # type: ignore[misc]
+    if declared is None:
+        return (), None
+    if isinstance(declared, str):
+        if declared.startswith("console:"):
+            return (), declared
+        return (), _skip_hook_result(f"returned {declared!r}")
+    families: list[str] = []
+    for fam in declared:
+        if fam not in _DECLARABLE:
+            return (), _skip_hook_result(f"declared unknown platform {fam!r}")
+        if fam not in families:
+            families.append(fam)
+    return tuple(families), None
+
+
+def _hook_pc_declared(cfg: "MerchantConfig | None", name: str, url: str) -> bool:
+    if cfg is None or cfg.console_pc_declared is None:
+        return False
+    return bool(cfg.console_pc_declared(name, url))
+
+
+def _hook_region_slot(cfg: "MerchantConfig | None", name: str) -> str | None:
+    if cfg is None or cfg.console_region_slot is None:
+        return None
+    text = cfg.console_region_slot(name)
+    return text.strip() if isinstance(text, str) and text.strip() else None
 
 
 # ── resolve_name ─────────────────────────────────────────────────────────────────────
-# Gamivo "<Game> [<Edition>] EN[/DE/FR…] <Region>" tail: the language code(s) are dropped
-# ONLY when a region word closes the title ("Kingdom Come Deliverance II Royal Edition EN
-# Canada" keeps its "II"; "FIFA 23 EN/PL/CS/RU/TR EU" → "FIFA 23"). The region word itself
-# is a tail run — stripped AND reported in region_words like every other grammar.
-_GAMIVO_LANG_TAIL_RE = re.compile(
-    r"\s+(?<![A-Za-z0-9])[A-Z]{2}(?:/[A-Z]{2})*(?=\s+(?:" + _REGION_ALT + r")\s*$)",
-    re.IGNORECASE,
-)
 _EMPTY_BRACKETS_RE = re.compile(r"[(\[]\s*[)\]]")
 _DANGLING_SEP_RE = re.compile(r"^\s*(?:[-–—:|,/&+]\s*)+|(?:\s*[-–—:|,/&+])+\s*$")
 _DOUBLE_SEP_RE = re.compile(r"\s*([-–—:|])\s*(?:[-–—:|]\s*)+")
@@ -695,8 +721,8 @@ _DOUBLE_SEP_RE = re.compile(r"\s*([-–—:|])\s*(?:[-–—:|]\s*)+")
 # "Series)", "One /") once the furniture is gone = an unparsed platform phrase. "-" and
 # ":" are ordinary name punctuation ("Season One - Ultra Edition"), a token between
 # plain words is a name ("One Piece", "World Series of Poker") and so is a BALANCED
-# standalone bracket ("Get Them Out! (Series)", 2 real Eneba rows) — only an unbalanced
-# or separator-glued token is a residue.
+# standalone bracket ("Get Them Out! (Series)", 2 real rows) — only an unbalanced or
+# separator-glued token is a residue.
 _BALANCED_TOKEN_RE = re.compile(r"[(\[]\s*(?:SERIES|ONE)(?:\s+[XS])?\s*[)\]]", re.IGNORECASE)
 _RESIDUE_RE = re.compile(
     r"[/&+|,(\[]\s*(?:SERIES|ONE)(?:\s+[XS])?(?![A-Z0-9])"
@@ -712,8 +738,8 @@ def _has_platform_residue(resolve_name: str) -> bool:
 def _run_is_furniture(run: "re.Match[str]", text: str) -> bool:
     """Remove this run? Name runs (leading name, "<Platform> Edition" suffix) never;
     anchored runs (a console/store/delivery item) always; weak-only runs (region / PC /
-    KEY / language) only when bracketed or at the tail — "The Last of Us" (mixed-case
-    "Us" is not a code anyway) and "PC Building Simulator" survive."""
+    KEY) only when bracketed or at the tail — "The Last of Us" (mixed-case "Us" is not a
+    code anyway) and "PC Building Simulator" survive."""
 
     if _leading_name_run(run, text) or _edition_name_run(run, text) is not None:
         return False
@@ -742,14 +768,24 @@ def _strip_furniture_runs(text: str) -> tuple[str, list[str]]:
     return _RUN_RE.sub(repl, text), regions
 
 
-def resolve_name_and_regions(name: str) -> tuple[str, tuple[str, ...]]:
+def _merchant_noise(merchant: str) -> tuple["Pattern[str]", ...]:
+    cfg = _config_of(merchant)
+    if cfg is None or not cfg.console_noise:
+        return ()
+    return _compile_noise(cfg.console_noise)
+
+
+def resolve_name_and_regions(name: str, merchant: str = "") -> tuple[str, tuple[str, ...]]:
     """``(resolve_name, region_words)``: the merchant title without its platform phrase
-    (+ brackets), store / delivery markers, region tails and Gamivo language tail; edition
-    words KEPT; separators normalised ("Game - - EU" → "Game"); never empty (falls back to
-    the input) — and every region word the strip removed, verbatim, in order."""
+    (+ brackets), store / delivery markers and region tails; the merchant's own
+    ``console_noise`` (a language tail, a delivery phrase) stripped FIRST when
+    ``merchant`` names a configured merchant; edition words KEPT; separators normalised
+    ("Game - - EU" → "Game"); never empty (falls back to the input) — and every region
+    word the shared strip removed, verbatim, in order."""
 
     text = _normalise_title(name)
-    text = _GAMIVO_LANG_TAIL_RE.sub(" ", text)          # "Ravenswatch EN United Kingdom"
+    for rx in _merchant_noise(merchant):
+        text = rx.sub(" ", text)
     regions: list[str] = []
     for _ in range(4):                                  # tails uncover more tails
         stripped, found = _strip_furniture_runs(text)
@@ -765,10 +801,10 @@ def resolve_name_and_regions(name: str) -> tuple[str, tuple[str, ...]]:
     return (text or name), tuple(regions)
 
 
-def resolve_name_of(name: str) -> str:
+def resolve_name_of(name: str, merchant: str = "") -> str:
     """The merchant title without its furniture — see :func:`resolve_name_and_regions`."""
 
-    return resolve_name_and_regions(name)[0]
+    return resolve_name_and_regions(name, merchant)[0]
 
 
 # ── classify ─────────────────────────────────────────────────────────────────────────
@@ -777,24 +813,33 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
     NO console marker at all (title tokens XBOX / PLAYSTATION / PS4 / PS5 / PSN / NINTENDO
     / SWITCH, or ``console_marker_in_url``) — a PC row.
 
-    Order (all fail-closed): non-game marker → skip; unparsed platform residue → skip;
-    title grammar (Xbox 360 → skip; a leading name run / "<Platform> Edition" suffix is
-    not a declaration); URL grammar ONLY when the title declares no family (MMOGA
-    category, Gamivo run, Eneba run + leading segment, generic runs — may skip: Xbox 360,
-    PC-only); still no family → "console: no declared generation (R45)" (Eneba's 704
-    "XBOX LIVE Key" rows, bare "PSN" / "Nintendo", a name-only "Nintendo Switch 2
-    Edition"); a name suffix naming another platform than the declaration → skip. The
-    region slot (``region_base`` / ``region_label`` / ``region_words``) is filled on every
-    signal, skip or not. A skip never guesses: families may be partial there.
+    Order (all fail-closed): shared non-game marker → skip; unparsed platform residue →
+    skip; shared title grammar (Xbox 360 → skip; a leading name run / "<Platform>
+    Edition" suffix is not a declaration); the URL ONLY when the title declares no
+    family — the merchant's ``console_url_families`` hook when it has one (may skip:
+    Xbox 360, PC-only, a card / subscription category), else the shared slug runs;
+    still no family → "console: no declared generation (R45)" (bare "PSN" /
+    "Nintendo", a name-only "Nintendo Switch 2 Edition"); a name suffix naming another
+    platform than the declaration → skip. ``pc_declared`` = the shared title phrase
+    check OR the merchant's ``console_pc_declared`` hook (OR, for a merchant without
+    hooks, a pc / windows token next to the shared slug run). The region slot
+    (``region_base`` / ``region_label`` / ``region_words``) is filled on every signal,
+    skip or not: the merchant's ``console_region_slot`` hook first, else the shared
+    tail / bracket reads. ``resolve_name`` strips the merchant's ``console_noise``
+    first. A skip never guesses: families may be partial there. The merchant is looked
+    up by NAME in the registry — the URL host is irrelevant (2026-09-14).
     """
 
     padded = _padded_upper(name)
     title_marker = any(f" {t} " in padded for t in _TITLE_MARKER_TOKENS)
     if not title_marker and not console_marker_in_url(url):
         return None
+    cfg = _config_of(merchant)
     text = _normalise_title(name)
-    resolve_name, region_words = resolve_name_and_regions(name)
-    region_base, region_label = _region_slot(region_words)
+    resolve_name, stripped_words = resolve_name_and_regions(name, merchant)
+    slot_text = _hook_region_slot(cfg, name)
+    region_words = (slot_text,) if slot_text is not None else stripped_words
+    region_base, region_label = region_slot_of(region_words)
 
     def signal(families: tuple[str, ...], pc: bool, skip: str | None) -> ConsoleSignal:
         return ConsoleSignal(families, pc, resolve_name, skip, region_base, region_label,
@@ -802,7 +847,7 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
 
     marker = _non_game_marker(name, url)
     if marker:
-        return signal((), False, _skip_not_a_game(marker))
+        return signal((), False, skip_not_a_game(marker))
     if _has_platform_residue(resolve_name):
         return signal((), False, SKIP_RESIDUE)
     title = _parse_title(text)
@@ -811,12 +856,18 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
     if title.xbox_360:
         return signal(tuple(families), pc_declared, SKIP_XBOX_360)
     if not families:
-        from_url = _parse_url(url, merchant, title.leading_tokens)
-        if from_url.skip_reason:
-            return signal(from_url.families, pc_declared or from_url.pc_declared,
-                          from_url.skip_reason)
-        families = list(from_url.families)
-        pc_declared = pc_declared or from_url.pc_declared
+        if cfg is not None and cfg.console_url_families is not None:
+            declared, skip = _hook_url_read(cfg, url)
+            if skip:
+                return signal(declared, pc_declared or _hook_pc_declared(cfg, name, url), skip)
+            families = list(declared)
+        else:
+            read = _generic_url_read(url, title.leading_tokens)
+            if read.skip_reason:
+                return signal(read.families, pc_declared or read.pc_declared, read.skip_reason)
+            families = list(read.families)
+            pc_declared = pc_declared or read.pc_declared
+    pc_declared = pc_declared or _hook_pc_declared(cfg, name, url)
     if not families:
         return signal((), pc_declared, SKIP_NO_GENERATION)
     for fam in title.edition_families:

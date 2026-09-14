@@ -14,7 +14,9 @@ Grammar seen live on the 2026-09-12 feed (1 000 rows, ``runs/20260912-020000-aut
   ``metro-exodus-pc-steam-cis-en-de-fr-it-standard``; a second form puts ``-pc`` at the
   very end: ``middle-earth-the-shadow-bundle-steam-eu-standard-pc``,
   ``…-steam-gift-global-en-october-2012-pc``. Console runs (``-xbox-…``, ``-ps-…``,
-  ``-nintendo-…``) belong to the R45 classifier (``src/console_keys.py``).
+  ``-nintendo-…``) are Gamivo's own fused grammar too — declared below through the
+  ``MerchantConfig`` console hooks (R32 / R45, 2026-09-14) and read by the shared
+  classifier ``src/console_keys.py``, which names no merchant.
 
 Why this module exists: the generic rules read none of that. The P2-6b trailing-slot
 rule never fires (the edition token follows the code), ``detect_region`` reads no
@@ -38,6 +40,17 @@ or all caps ("EU", "ROW", "CIS"). A language code is only recognised from the kn
 ISO 639-1 list, so a trailing Roman numeral or acronym ("Final Fantasy XV Global") is not
 mistaken for one. The MA7 ruling stands: an ``-en-`` URL segment / "EN" title code is a
 language variant, never a skip.
+
+Console grammar (R45, 2026-09-14 — 569/572 console rows of the 2026-09-12 batch carried
+the platform in the URL only): ``…-xbox-<run>-<cc>-…`` with the fused runs
+``xboxoneseries`` / ``xbox-one-series`` / ``one-series`` (Xbox One + Series),
+``xboxseries`` / ``xbox-series`` / ``series``, ``xboxone`` / ``one``, each optionally
+fused with ``windows`` / ``-pc`` / ``-windows`` / ``-xbox-pc`` (PC declared next to the
+console: Play Anywhere candidate); ``-xbox-pc-`` alone is a PC-only Xbox Live key (skip);
+``-xbox-xbox-windows-`` is Xbox + Windows with no generation (the URL says nothing);
+``-ps-ps5-`` / ``-psn-ps5-`` / ``-ps-ps4-ps5-``; ``-nintendo-nintendo-switch(-2)-``. The
+region is the title tail (``console_region_slot`` = ``title_tail``); the language code(s)
+before it ("EN", "EN/PL/CS/RU/TR") are Gamivo's furniture (``console_noise``).
 """
 
 from __future__ import annotations
@@ -45,6 +58,7 @@ from __future__ import annotations
 import re
 from urllib.parse import urlsplit
 
+from src.console_keys import SKIP_PC_ONLY
 from src.merchant_config import MerchantConfig
 
 # ── title tail ───────────────────────────────────────────────────────────────────────
@@ -247,11 +261,86 @@ def resolve_name(name: str) -> str:
     return TITLE_TAIL_RE.sub("", name or "").rstrip() or name
 
 
+# ── console hooks (R45, 2026-09-14) ──────────────────────────────────────────────────
+# The fused Xbox run between the game slug and the region code (see the module docstring).
+CONSOLE_XBOX_RUN_RE = re.compile(
+    r"-xbox-(?:"
+    r"(?P<oneseries>(?:xbox-)?one-series|xboxoneseries)(?P<pcw1>windows|-pc|-windows|-xbox-pc)?"
+    r"|(?P<series>(?:xbox-)?series|xboxseries)(?P<pcw2>windows|-pc|-windows|-xbox-pc)?"
+    r"|(?P<one>xboxone|one)(?P<pcw3>-pc|-windows)?"
+    r"|(?P<pconly>pc)"
+    r"|(?P<nogen>xbox-windows|xboxwindows)"
+    r")-"
+)
+CONSOLE_PS_RUN_RE = re.compile(r"-(?:ps|psn)-(?P<gen>ps4-ps5|ps5|ps4)-|-(?P<gen2>ps4-ps5)-")
+CONSOLE_NINTENDO_RUN_RE = re.compile(r"-nintendo-nintendo-switch(?P<two>-2)?-")
+# The language code(s) Gamivo writes before the region tail ("Ravenswatch EN United
+# Kingdom", "FIFA 23 EN/PL/CS/RU/TR EU") — stripped from the console resolve_name ONLY
+# when a region word closes the title ("Kingdom Come Deliverance II Royal Edition EN
+# Canada" keeps its "II"; "Final Fantasy XV Global" keeps "XV": only the ISO 639-1 list).
+CONSOLE_LANG_TAIL_RE = re.compile(
+    r"\s+(?:" + _LANG + r"(?:/" + _LANG + r")*)(?=\s+(?:" + _REGION_ALT + r")\s*$)"
+)
+
+
+def _console_run(url: str) -> tuple[tuple[str, ...] | str | None, bool]:
+    """``(declaration, pc)`` of the console run in the LAST path segment: families,
+    a skip reason, or None (no console run / Xbox + Windows without a generation)."""
+
+    seg = "-" + urlsplit(url or "").path.rstrip("/").rsplit("/", 1)[-1].lower() + "-"
+    m = CONSOLE_XBOX_RUN_RE.search(seg)
+    if m:
+        if m.group("pconly"):
+            return SKIP_PC_ONLY, False
+        if m.group("nogen"):
+            return None, False                    # "xbox-xbox-windows": Xbox + Windows, no generation
+        pc = bool(m.group("pcw1") or m.group("pcw2") or m.group("pcw3"))
+        if m.group("oneseries"):
+            return ("XBOX_ONE", "XBOX_SERIES"), pc
+        if m.group("series"):
+            return ("XBOX_SERIES",), pc
+        return ("XBOX_ONE",), pc
+    m = CONSOLE_PS_RUN_RE.search(seg)
+    if m:
+        gen = m.group("gen") or m.group("gen2")
+        return {"ps4-ps5": ("PS4", "PS5"), "ps5": ("PS5",), "ps4": ("PS4",)}[gen], False
+    m = CONSOLE_NINTENDO_RUN_RE.search(seg)
+    if m:
+        return (("SWITCH2",) if m.group("two") else ("SWITCH",)), False
+    return None, False
+
+
+def console_url_families(url: str) -> tuple[str, ...] | str | None:
+    """The families the URL run declares ("…-xbox-xboxoneseries-uk-standard" → Xbox One +
+    Series), "console: PC-only Xbox Live key (R45)" for "-xbox-pc-", None otherwise."""
+
+    return _console_run(url)[0]
+
+
+def console_pc_declared(name: str, url: str) -> bool:
+    """PC / Windows fused to the Xbox run ("xboxserieswindows", "-xbox-series-pc",
+    "-one-series-windows", "-xbox-one-series-xbox-pc") — a Play Anywhere candidate."""
+
+    return _console_run(url)[1]
+
+
+def console_region_slot(name: str) -> str | None:
+    """The region tail, verbatim ("United Kingdom", "EU", "Colombia", "ROW") — the
+    shared classifier maps it to a base / forbidden label; None when there is no tail."""
+
+    return title_tail(name)
+
+
 CONFIG = MerchantConfig(
     "Gamivo",
     precheck=precheck,
     title_region=title_region,
     resolve_name=resolve_name,
     url_platform=url_platform,
+    # console grammar (R45, 2026-09-14): fused URL runs, title-tail region, language tail
+    console_url_families=console_url_families,
+    console_pc_declared=console_pc_declared,
+    console_region_slot=console_region_slot,
+    console_noise=(CONSOLE_LANG_TAIL_RE,),
     notes="feed store id 51 (&store=51); title tail = region, URL run = platform (R46)",
 )

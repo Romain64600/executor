@@ -1014,7 +1014,32 @@ class MerchantConfigR32Tests(unittest.TestCase):
         self.assertEqual(mm.url_platform_prefixes.get("steam"), "STEAM")
         self.assertEqual(mm.url_platform_prefixes.get("ea"), "EA")
         self.assertIsNotNone(mm.precheck); self.assertIsNotNone(mm.title_region); self.assertIsNotNone(mm.resolve_name)
-        self.assertIsNone(merchant_config("Kinguin").precheck)
+        # a config without hooks falls through (Kinguin got its own file on 2026-09-14)
+        from src.merchant_config import MerchantConfig
+        self.assertIsNone(MerchantConfig("Plain").precheck)
+
+    def test_registry_lives_in_src_merchants_registry(self):
+        # 2026-09-14 (R32 / R45, Romain: « un fichier de config par marchand »): the registry
+        # moved to src/merchants/registry.py so the shared console classifier reads the
+        # merchant hooks without importing the matcher — the matcher re-exports the SAME
+        # objects, so an in-place patch of src.matcher.MERCHANT_CONFIGS is seen everywhere.
+        import src.matcher as M
+        from src.console_keys import classify_console
+        from src.merchant_config import MerchantConfig
+        from src.merchants import registry
+        self.assertIs(M.MERCHANT_CONFIGS, registry.MERCHANT_CONFIGS)
+        self.assertIs(M.merchant_config, registry.merchant_config)
+        self.assertIs(merchant_config, registry.merchant_config)
+        for name in ("MMOGA", "GAMIVO", "ENEBA"):
+            self.assertIsNotNone(registry.MERCHANT_CONFIGS[name].console_url_families, name)
+            self.assertIsNotNone(registry.MERCHANT_CONFIGS[name].console_region_slot, name)
+        self.assertIsNone(merchant_config("Some Random Merchant"))
+        cfg = MerchantConfig("Hookshop", console_url_families=lambda url: ("PS5",))
+        with mock.patch.dict(M.MERCHANT_CONFIGS, {"HOOKSHOP": cfg}):
+            sig = classify_console("Game PSN Key", "https://example.com/game-psn-key", "Hookshop")
+            self.assertEqual((sig.families, sig.skip_reason), (("PS5",), None))
+        sig = classify_console("Game PSN Key", "https://example.com/game-psn-key", "Hookshop")
+        self.assertEqual(sig.skip_reason, "console: no declared generation (R45)")
 
     # ---- IG platform + region from the offer page ----
     def test_ig_enters_real_platform_from_page(self):
@@ -4751,14 +4776,29 @@ class ConsoleReviewFixesR45Tests(unittest.TestCase):
     def _kinguin(self, name, url=KINGUIN):
         return NormalizedOffer(offer_id="1", merchant="Kinguin", name=name, url=url)
 
+    # 2026-09-14 (R32 / R45, Romain: « un fichier de config par marchand »): Kinguin now has
+    # src/merchants/kinguin.py — its precheck / title_region read the "<REGION>" code before
+    # the platform phrase BEFORE the matcher's own console branch runs. The tests about the
+    # matcher's OWN reads (generic scan, region_words refusal, flag-off gate) use a merchant
+    # WITHOUT a config so they keep exercising that branch; the Kinguin lines assert the
+    # merchant file's earlier, equally fail-closed answer.
+    GENERIC = "https://example.com/hades-us-xbox-one-xbox-series-x-s-cd-key"
+
+    def _generic(self, name, url=GENERIC):
+        return NormalizedOffer(offer_id="1", merchant="Shop", name=name, url=url)
+
     XONE = ("XBOX_ONE", "XBOX_SERIES")
 
     # ── (1) region ───────────────────────────────────────────────────────────────
     def test_generic_read_is_implicit_for_the_kinguin_mid_slug_code(self):
         # The pre-fix state: "-us-" mid-slug and "US" before the platform phrase are
-        # invisible to the generic scan (P2-6b trailing slot) → implicit.
-        self.assertEqual(detect_region_base(self._kinguin("Hades US Xbox One / Xbox Series X|S CD Key")),
+        # invisible to the generic scan (P2-6b trailing slot) → implicit (a merchant
+        # without a config).
+        self.assertEqual(detect_region_base(self._generic("Hades US Xbox One / Xbox Series X|S CD Key")),
                          ("global", "GLOBAL", True, False))
+        # Kinguin's own file (2026-09-14) reads the code before the platform phrase: US, not implicit
+        self.assertEqual(detect_region_base(self._kinguin("Hades US Xbox One / Xbox Series X|S CD Key"))[:3],
+                         ("us", "US", False))
 
     def test_grammar_region_base_is_authoritative_over_an_implicit_generic_read(self):
         pc, pages = self._hades()
@@ -4773,12 +4813,18 @@ class ConsoleReviewFixesR45Tests(unittest.TestCase):
         # Kinguin "Puyo Puyo Tetris 2 CA Xbox One / Xbox Series X|S CD Key": the classifier
         # stripped "CA" from resolve_name but mapped it to no base → never GLOBAL.
         calls = []
-        r = _console_match(self._kinguin("Hades CA Xbox One / Xbox Series X|S CD Key",
-                                         "https://www.kinguin.net/category/1/hades-ca-xbox-one-xbox-series-x-s-cd-key"),
+        r = _console_match(self._generic("Hades CA Xbox One / Xbox Series X|S CD Key",
+                                         "https://example.com/hades-ca-xbox-one-xbox-series-x-s-cd-key"),
                            _Sig(self.XONE, "Hades", region_words=("CA",)), calls=calls)
         self.assertIsInstance(r, SkippedOffer)
         self.assertEqual(r.reason, "console: merchant region 'CA' not mapped to a sellable base — not entered (R45)")
         self.assertEqual(calls, [])                                        # refused before any probe
+        # the Kinguin file refuses the same lock even earlier (its precheck), never GLOBAL either
+        r = _console_match(self._kinguin("Hades CA Xbox One / Xbox Series X|S CD Key",
+                                         "https://www.kinguin.net/category/1/hades-ca-xbox-one-xbox-series-x-s-cd-key"),
+                           _Sig(self.XONE, "Hades", region_words=("CA",)), calls=calls)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual((r.reason, calls), ("forbidden region: CANADA", []))
 
     def test_no_region_word_at_all_stays_implicit_global(self):
         pc, pages = self._hades()
@@ -4845,7 +4891,14 @@ class ConsoleReviewFixesR45Tests(unittest.TestCase):
                               "https://www.kinguin.net/category/1/puyo-puyo-tetris-2-ca-xbox-one-xbox-series-x-s-cd-key")
         with mock.patch("src.matcher.classify_console", return_value=sig):
             self.assertEqual(precheck_skip(offer, consoles=True), "forbidden region: CANADA")
-        self.assertEqual(precheck_skip(offer), "console")                  # flag off: unchanged
+        # flag off: the Kinguin file's precheck (2026-09-14) names the lock before the console
+        # gate — a skip either way; a merchant without a config keeps the historical "console"
+        self.assertEqual(precheck_skip(offer), "forbidden region: CANADA")
+        generic = self._generic("Puyo Puyo Tetris 2 CA Xbox One / Xbox Series X|S CD Key",
+                                "https://example.com/puyo-puyo-tetris-2-ca-xbox-one-xbox-series-x-s-cd-key")
+        with mock.patch("src.matcher.classify_console", return_value=sig):
+            self.assertEqual(precheck_skip(generic, consoles=True), "forbidden region: CANADA")
+        self.assertEqual(precheck_skip(generic), "console")
 
     # ── (2) R44 on the console branch ────────────────────────────────────────────
     AIR = "Air Force United States Pacific"

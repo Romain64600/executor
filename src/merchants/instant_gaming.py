@@ -17,7 +17,8 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from src.aks_env import REQUIRED_USER_AGENT, http_get
-from src.merchant_config import MerchantConfig, MerchantOfferSignals
+from src.merchant_config import MerchantOfferSignals
+from src.merchants.common import make_config
 
 IG_PROBE_DELAY_S = 0.3  # Instant Gaming offer-page probe courtesy (R32), like Difmark
 
@@ -170,8 +171,24 @@ def ig_offer_signals(url: str) -> MerchantOfferSignals:
     )
 
 
-CONFIG = MerchantConfig(
+def console_url_families(url: str) -> None:
+    """R45 console contract (2026-09-14): an Instant Gaming URL (``/en/<id>-/``) declares
+    NOTHING — no platform, no console family. The console platform of an IG offer lives on
+    the IG page only (``_IG_TITLE_PLATFORM_KEYWORDS`` name Xbox / PlayStation / Nintendo /
+    Switch in the page ``<title>`` parens); when the page reads a console platform,
+    ``IG_PLATFORM_TEXT_MAP`` maps it to nothing → ``MerchantOfferSignals.platform`` None →
+    the R32 resolver path SKIPS the row ("offer page names an unrecognized platform").
+    So there is NO console entry from Instant Gaming until a page-based console hook is
+    designed (the feed rows are not even identifiable as consoles: bare titles, 8 marker
+    rows in the 2026-09-12 batch, 7 of them Game Pass). Always None."""
+
+    return None
+
+
+CONFIG = make_config(
     "Instant Gaming",
     offer_page_resolver=ig_offer_signals,
-    notes="token-less titles — platform (data-platform) + region (<title> suffix) on the offer page",
+    console_url_families=console_url_families,      # the URL says nothing (2026-09-14)
+    notes=("token-less titles — platform (data-platform) + region (<title> suffix) on the offer "
+           "page; consoles not identifiable in the feed → no console entry (2026-09-14)"),
 )

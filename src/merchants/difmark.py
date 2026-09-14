@@ -10,13 +10,14 @@ AKS-account-page helper ``account_identity`` stays in ``src.matcher`` (not Difma
 from __future__ import annotations
 
 import json
-import re  # noqa: F401 — kept for parity / future Difmark parsing; harmless if unused
+import re
 import time
 from dataclasses import dataclass
 from typing import Any, Callable
+from urllib.parse import urlsplit
 
 from src.aks_env import http_get
-from src.merchant_config import MerchantConfig
+from src.merchants.common import make_config, skip_not_a_game
 
 DIFMARK_PROBE_DELAY_S = 0.3
 
@@ -190,8 +191,31 @@ def resolve_difmark_offer(
     )
 
 
-CONFIG = MerchantConfig(
+# R45 console contract (2026-09-14, Romain's rule R32 / R45): Difmark console rows are
+# ACCOUNTS, never keys — "<Game> (Account) Standard Edition", URL
+# "/buy-console-account-<slug>-nintendo-switch-account-<id>" (393 rows on the saved runs;
+# the 2026-08-06 runs: 360 / 362 rows end in "-account-<id>", Epic / Windows / Switch
+# tabs). The 2026-09-12 review had seen them classified as Switch keys — an account entered
+# as a key. The URL alone proves it: the boilerplate prefix AND the "-account-<id>" suffix.
+_ACCOUNT_URL_RE = re.compile(r"(?:^|-)account(?:-\d+)?/?$")
+
+
+def console_url_families(url: str) -> str | None:
+    """"console: ACCOUNT — not a game (R45)" for a Difmark account URL
+    (``/buy-console-account-…`` prefix or ``-account[-<id>]`` suffix), else None — a
+    Difmark URL never declares a console family (the platform is read on the offer page
+    for the PC path; console accounts take no console branch)."""
+
+    path = urlsplit(url or "").path.lower()
+    if "/buy-console-account-" in path or _ACCOUNT_URL_RE.search(path):
+        return skip_not_a_game("ACCOUNT")
+    return None
+
+
+CONFIG = make_config(
     "Difmark",
     url_ignore_substrings=("buy-console-account-", "buy-console-account"),
-    notes="offer-page resolver (resolve_difmark_offer) still handled in match_offer",
+    console_url_families=console_url_families,      # accounts, never console keys (2026-09-14)
+    notes=("offer-page resolver (resolve_difmark_offer) still handled in match_offer; parked "
+           "(store 167, outside the safe-auto allowlist); console rows are accounts (2026-09-14)"),
 )

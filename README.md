@@ -101,16 +101,27 @@ state and cannot be argued away by a language model.
   can also **add or override generic behaviour** through four optional hooks —
   `precheck`, `title_region`, `resolve_name`, `url_platform` (MMOGA's "`<Product> <CODE>
   Key`" grammar lives entirely in `src/merchants/mmoga.py`; Gamivo's title-tail + URL-run
-  grammar in `src/merchants/gamivo.py`, `[R46]` 2026-09-12). No config → generic
-  behaviour. See **§4.10**.
+  grammar in `src/merchants/gamivo.py`, `[R46]` 2026-09-12). **One config file per
+  merchant — Romain's rule (repeated since 2026-08-11, ultimatum 2026-09-14):** « pour la
+  détection région / édition / plateforme, tu as un fichier de config par marchand. Et si
+  tu ne l'as pas, tu dois l'avoir » — **every merchant of the safe-auto allowlist has its
+  file** (Kinguin, K4G, Driffle, GameSeal, Allyouplay, CJS-CDKeys added on 2026-09-14),
+  merchant grammar never lives in a generic module, and four **console hooks** `[R45]` —
+  `console_url_families`, `console_pc_declared`, `console_region_slot`, `console_noise` —
+  moved the MMOGA / Gamivo / Eneba URL grammars out of `src/console_keys.py`, which keeps
+  only the shared vocabulary. The name → module registry is `src/merchants/registry.py`
+  (imported by the matcher and the classifier, no circular import). Per-merchant grammar
+  and hooks: [`docs/MERCHANTS.md`](docs/MERCHANTS.md). See **§4.10**.
 - **Console keys — multi-target candidates, gated** `[R45]` (2026-09-12). AKS has
   separate console product pages (`buy-<slug>-<kind>-compare-prices/`, kind = `ps4` /
   `ps5` / `xbox-one` / `xbox-series` / `nintendo-switch` / `nintendo-switch-2`), and
   Romain's new feed tool overwrites the region (= region/platform) and the edition **per
   target page**. Under `--consoles` (default **off**; the sweep requires `--dry-run` with
-  it) the matcher classifies a console row from its title AND URL (`src/console_keys.py`,
-  the region slot of each merchant grammar included — never an implicit GLOBAL for a
-  region-locked key, review fix 2026-09-14), resolves one verified AKS page + bucket +
+  it) the matcher classifies a console row from its title AND URL (`src/console_keys.py`
+  = the shared vocabulary, the merchant grammar — URL families, PC/Windows, region slot,
+  noise — declared by each `src/merchants/<name>.py` through the console hooks since
+  2026-09-14; never an implicit GLOBAL for a region-locked key, review fix 2026-09-14),
+  resolves one verified AKS page + bucket +
   edition **per DECLARED platform** — **P1, decided by Romain on 2026-09-14: « clé PS5
   seule = page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch et Switch 2 »**,
   so a lone "PS5" key → the PS5 page only, a "PS4 / PS5" key → both pages, an Xbox key →
@@ -179,8 +190,15 @@ executor/
 │   ├── invariants.py           # invariant report builder — probes run through the StepGuard
 │   ├── contracts.py            # stage I/O data contracts (RawSnapshot / NormalizedOffer)
 │   ├── extractor.py            # Sprint 2 read-only feed extractor
-│   ├── matcher.py              # Sprint 3 read-only matcher (candidates + skipped)
-│   ├── console_keys.py         # R45 console classifier (families, page kinds, bucket table) — pure
+│   ├── matcher.py              # Sprint 3 read-only matcher (candidates + skipped) — generic pipeline only
+│   ├── merchant_config.py      # MerchantConfig contract: data fields + PC hooks (R32e) + console hooks (R45, 2026-09-14)
+│   ├── merchants/              # ONE FILE PER MERCHANT (Romain's rule, 2026-09-14) — grammar + hooks, never in a generic module
+│   │   ├── registry.py         #   merchant name → module CONFIG (imported by matcher AND console_keys, no cycle)
+│   │   ├── common.py           #   shared by the merchant files ONLY (region words, R45 skip strings, make_config) — never imports matcher / console_keys
+│   │   ├── kinguin.py  k4g.py  driffle.py  gameseal.py  allyouplay.py  cjs.py   # new 2026-09-14
+│   │   ├── mmoga.py  gamivo.py  eneba.py  g2a.py  instant_gaming.py                     # existing
+│   │   └── difmark.py          #   parked merchant (outside the safe-auto allowlist)
+│   ├── console_keys.py         # R45 console classifier — SHARED vocabulary only (families, title phrases, page kinds, bucket table); merchant grammar via hooks — pure
 │   ├── validation.py           # Stage 3 validation gate (approve exact candidates)
 │   ├── submit_session.py       # read-only + narrow WriteSubmitSession (trusted picks/target/click)
 │   ├── submitter.py            # Stage 4 submitter — dry-run + real write path
@@ -518,11 +536,16 @@ the `aks-data-entry` skill maps onto a guard signal.
   audit, 2026-07-02, fully resolved). The **2026-09-02** multi-agent audit
   (P1 + P2 fixes) is logged in [`docs/CHANGELOG.md`](docs/CHANGELOG.md), with the
   per-stage rules in [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md).
+- [`docs/MERCHANTS.md`](docs/MERCHANTS.md) — one section per merchant: store ids, its
+  file (`src/merchants/<name>.py` — one per allowlisted merchant, Romain's rule of
+  2026-09-14), PC grammar (platform / region / edition sources), console grammar
+  (families, PC/Windows, region slot), merchant-config hooks (R32 / R45), merchant-specific
+  rules, safe-auto status, residual feed profile; the live feed state is in
+  `docs/feeds/<Merchant>.md`.
 - [`AGENTS.md`](AGENTS.md) / [`CLAUDE.md`](CLAUDE.md) — builder rules for Codex
   and Claude.
 
 ---
-- [`docs/MERCHANTS.md`](docs/MERCHANTS.md) — one section per merchant: store ids, feed grammar, merchant-config hooks (R32), merchant-specific rules, safe-auto status, residual feed profile; the live feed state is in `docs/feeds/<Merchant>.md`.
 
 ## Roadmap
 
@@ -627,7 +650,8 @@ the `aks-data-entry` skill maps onto a guard signal.
   [`docs/CHANGELOG.md`](docs/CHANGELOG.md) (2026-07-28/29).
 - [ ] **Console keys `[R45]` — prepared, gated** (`src/console_keys.py`, matcher
   `targets`, submitter gate, 2026-09-12; was "parked" on 2026-09-11). Console product
-  pages found (`buy-<slug>-<kind>-compare-prices/`), title + URL classifier per merchant,
+  pages found (`buy-<slug>-<kind>-compare-prices/`), title + URL classifier (shared
+  vocabulary in `console_keys` + the console hooks of each merchant file, 2026-09-14),
   one verified AKS page / bucket / edition per declared platform, Play Anywhere read from
   the PC page, `--consoles` default off and dry-run only. The 2026-09-12 adversarial
   review is fixed (2026-09-14: region slot of each grammar, R44 on consoles, identity
