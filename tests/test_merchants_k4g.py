@@ -14,7 +14,9 @@ from src.matcher import (
     AksResolution,
     Candidate,
     NormalizedOffer,
+    SkippedOffer,
     build_slug_candidates,
+    detect_region,
     detect_region_base,
     match_offer,
     precheck_skip,
@@ -23,19 +25,32 @@ from src.merchant_config import MerchantConfig
 from src.merchants import k4g
 from src.merchants.k4g import (
     CONFIG,
-    OPEN_QUESTION_ALTERGIFT,
-    SKIP_ALTERGIFT,
+    altergift_verdict,
     console_region_slot,
     console_url_families,
+    drop_altergift,
+    gift_delivery,
+    guard_name,
     is_altergift,
+    is_steam_altergift,
     parse_title,
     precheck,
     region_text,
     resolve_name,
     title_region,
+    url_delivery,
 )
 
-URL = "https://k4g.com/product/x-steam-global-instant-cd-key-cd-key-AE3VLW0N"
+URL = "https://k4g.com/product/x-steam-global-instant-cd-key-cd-key-AE3VLW0N"          # a CD Key slug
+GIFT_URL = "https://k4g.com/product/x-steam-global-instant-altergift-alter-gift-AE3VLW0N"   # an Altergift slug
+# the ONE Altergift row of the 2026-09-12 batch whose slug says cd-key (offer 101030313, p3)
+TRINE_TITLE = "Trine 5: A Clockwork Conspiracy Steam Altergift"
+TRINE_URL = "https://k4g.com/product/trine-5-a-clockwork-conspiracy-steam-global-instant-cd-key-48V2PFDZ"
+CONFLICT_KEY = "K4G delivery conflict: title Altergift but URL says cd-key (no altergift segment) — not entered (2026-09-14)"
+CONFLICT_NONE = "K4G delivery conflict: title Altergift but URL carries no altergift segment — not entered (2026-09-14)"
+CONFLICT_REVERSE = "K4G delivery conflict: title CD Key but URL says altergift — not entered (2026-09-14)"
+NOT_STEAM = ("K4G Altergift outside the Steam collocation (title's store phrase is not Steam) — not entered "
+             "(Romain 2026-09-14: « Steam Altergift = Steam Gift »)")
 
 
 def _offer(name, url=URL):
@@ -141,17 +156,47 @@ class HooksTests(_Registry):
                 self.assertEqual(precheck(title, URL), f"forbidden region: {label}")
         self.assertIsNone(precheck("Monster Hunter Wilds Gold Edition Europe Steam CD Key", URL))
 
-    def test_altergift_is_an_explicit_skip_until_romain_rules(self):
-        for title in ("Seafrog Steam Altergift", "Mato Anomalies North America Steam Altergift",
-                      "Middle-earth: The Shadow Bundle Europe Steam Altergift"):
+    def test_altergift_is_a_steam_gift_romain_2026_09_14(self):
+        # Romain's ruling (2026-09-14): « Steam Altergift = Steam Gift on rentre sous gift tous
+        # les altergifts » — no precheck skip, the merchant's own gift verdict (the slug agrees:
+        # "-altergift-alter-gift-"), the word dropped from the guard and the slug (and nothing else).
+        for title, guard, resolved in (
+            ("Seafrog Steam Altergift", "Seafrog Steam", "Seafrog"),
+            ("Thief Simulator Europe Steam Altergift", "Thief Simulator Europe Steam", "Thief Simulator"),
+            ("Middle-earth: The Shadow Bundle Europe Steam Altergift", "Middle-earth: The Shadow Bundle Europe Steam", "Middle-earth: The Shadow Bundle"),
+            ("Kingdom Eighties Rad Deluxe Edition Steam Altergift", "Kingdom Eighties Rad Deluxe Edition Steam", "Kingdom Eighties Rad Deluxe Edition"),
+        ):
             with self.subTest(title=title):
                 self.assertTrue(is_altergift(title))
-                self.assertEqual(precheck(title, URL), SKIP_ALTERGIFT)
-        self.assertFalse(is_altergift("Thief Simulator Europe Steam CD Key"))
-        self.assertTrue(SKIP_ALTERGIFT.startswith("skip category: ALTERGIFT"))
-        self.assertIn("Altergift", OPEN_QUESTION_ALTERGIFT)
-        from src.aks_lists import suggest_target_list
-        self.assertIsNone(suggest_target_list(SKIP_ALTERGIFT))       # garder, never a list move
+                self.assertTrue(is_steam_altergift(title))
+                self.assertEqual(altergift_verdict(title, GIFT_URL), "gift")
+                self.assertIs(gift_delivery(title, GIFT_URL), True)
+                self.assertIsNone(precheck(title, GIFT_URL))
+                self.assertEqual(guard_name(title), guard)
+                self.assertEqual(drop_altergift(title), guard)
+                self.assertEqual(resolve_name(title), resolved)
+                self.assertEqual(build_slug_candidates(resolve_name(title))[0], build_slug_candidates(resolved)[0])
+        # outside the grammar and without a Steam phrase: the word still goes from the guard /
+        # slug (pure text), but the row is NOT vouched for — the Steam-collocation gate (below)
+        title = "Some ALTERGIFT Thing"
+        self.assertTrue(is_altergift(title))
+        self.assertFalse(is_steam_altergift(title))
+        self.assertEqual((guard_name(title), drop_altergift(title), resolve_name(title)), ("Some Thing", "Some Thing", "Some Thing"))
+        self.assertIsNone(gift_delivery(title, GIFT_URL))
+        self.assertEqual(precheck(title, GIFT_URL), NOT_STEAM)
+        # a forbidden region stays the precheck skip, Altergift or not
+        self.assertEqual(precheck("Mato Anomalies North America Steam Altergift", GIFT_URL), "forbidden region: NORTH AMERICA")
+        # the K4G region-slot rule is unchanged: "Americas" right before the store phrase is the slot
+        # (fail-closed, the same outcome the 2026-09-12 run recorded for these 2 rows)
+        self.assertEqual(precheck("Strategic Command: American Civil War - Wars in the Americas Steam Altergift", GIFT_URL), "forbidden region: AMERICAS")
+        # not an Altergift: the generic gift read decides (None), the guard is untouched
+        for title in ("Thief Simulator Europe Steam CD Key", "Game Steam Gift", "Altergifted Steam CD Key"):
+            with self.subTest(title=title):
+                self.assertFalse(is_altergift(title))
+                self.assertIsNone(altergift_verdict(title, URL))
+                self.assertIsNone(gift_delivery(title, URL))
+                self.assertEqual(guard_name(title), title)
+                self.assertEqual(drop_altergift(title), title)
 
     def test_pipeline_europe_row_enters_eu_on_the_peeled_name(self):
         page = AksResolution(slug="monster-hunter-wilds", url="https://aks/buy-monster-hunter-wilds-cd-key-compare-prices/",
@@ -177,12 +222,233 @@ class HooksTests(_Registry):
 
     def test_pipeline_precheck(self):
         self._use(CONFIG)
-        self.assertEqual(precheck_skip(_offer("Seafrog Steam Altergift")), SKIP_ALTERGIFT)
+        self.assertIsNone(precheck_skip(_offer("Seafrog Steam Altergift", GIFT_URL)))   # 2026-09-14: entered as a Steam gift
+        self.assertEqual(precheck_skip(_offer("Seafrog Steam Altergift")), CONFLICT_KEY)  # …when the slug agrees (review fix)
         self.assertEqual(precheck_skip(_offer("Persona 5 Royal Canada XBOX One/PC/XBOX Series X|S CD Key",
                                               "https://k4g.com/product/persona-5-royal-pc-xbox-one-series-x-s-canada-cd-key-cd-key-IY4ZKGPV")),
                          "forbidden region: CANADA")
         self.assertEqual(precheck_skip(_offer("Wirm Steam Account")), "skip category: STEAM ACCOUNT")   # generic, unchanged
         self.assertIn("merchant-domain mismatch", precheck_skip(_offer("Game Steam CD Key", "https://www.g2a.com/x")))
+
+
+class AltergiftPipelineTests(_Registry):
+    """Romain 2026-09-14: « Steam Altergift = Steam Gift on rentre sous gift tous les
+    altergifts ». Real rows of the 2026-09-12 batch (216 Altergift rows, never a candidate:
+    149 404 slugs "…-steam-altergift", 37 "extra words: […'ALTERGIFT']", 30 NORTH AMERICA…)."""
+
+    def _page(self, slug, name, editions=None):
+        return AksResolution(slug=slug, url=f"https://aks/buy-{slug}-cd-key-compare-prices/", product_id="1",
+                             aks_name=name, editions=editions or {"1": {"name": "Standard"}}, official_platforms=("Steam",))
+
+    def test_europe_row_is_steam_gift_eu(self):
+        offer = _offer("Thief Simulator Europe Steam Altergift",
+                       "https://k4g.com/product/thief-simulator-steam-europe-instant-altergift-alter-gift-AAAAAAAA")
+        asked = []
+
+        def resolver(name, **kw):
+            asked.append(name)
+            return self._page("thief-simulator", "Thief Simulator")
+
+        self._use(None)                                 # generic: the URL "alter-gift" segment already read gift…
+        self.assertEqual(detect_region(offer, "STEAM"), ("GIFT EU", "259", False))
+        r = match_offer(offer, resolver=resolver)
+        self.assertIsInstance(r, SkippedOffer)          # …but the raw guard counted the word
+        self.assertEqual(r.reason, "different/expanded product — extra words: ['ALTERGIFT']")
+        self._use(CONFIG)
+        self.assertEqual(detect_region(offer, "STEAM"), ("GIFT EU", "259", False))
+        r = match_offer(offer, resolver=resolver)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.platform, r.region_label, r.region_id, r.region_implicit, r.edition_label, r.edition_id),
+                         ("STEAM", "GIFT EU", "259", False, "Standard", "1"))
+        self.assertEqual(asked[-1], "Thief Simulator")
+
+    def test_no_region_row_is_steam_gift_global(self):
+        self._use(CONFIG)
+        # no region anywhere (title or URL) → GIFT (25), implicit like any region-less row
+        offer = _offer("Game Steam Altergift", "https://k4g.com/product/game-steam-altergift-alter-gift-AAAAAAAA")
+        self.assertEqual(detect_region(offer, "STEAM"), ("GIFT", "25", True))
+        r = match_offer(offer, resolver=lambda name, **kw: self._page("game", "Game"))
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.platform, r.region_label, r.region_id, r.region_implicit), ("STEAM", "GIFT", "25", True))
+        # the batch's real shape: the URL carries "-steam-global-" → GIFT (25), explicit
+        seafrog = _offer("Seafrog Steam Altergift", "https://k4g.com/product/seafrog-steam-global-altergift-alter-gift-QU67G9P5")
+        self.assertEqual(detect_region(seafrog, "STEAM"), ("GIFT", "25", False))
+        r = match_offer(seafrog, resolver=lambda name, **kw: self._page("seafrog", "Seafrog"))
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.region_label, r.region_id, r.region_implicit), ("GIFT", "25", False))
+        # review fix (2026-09-14, finding [1]): the hook reads the slug too — a slug WITHOUT any
+        # delivery segment is outside the K4G URL grammar → the merchant does not vouch (None →
+        # the generic plain-key read) and the precheck refuses the row before that read matters
+        wirm = _offer("Wirm Steam Altergift", "https://k4g.com/product/wirm-steam-global-K0SYH8QV")
+        self.assertIsNone(gift_delivery(wirm.name, wirm.url))
+        self.assertEqual(detect_region(wirm, "STEAM"), ("GLOBAL", "2", False))
+        self.assertEqual(precheck_skip(wirm), CONFLICT_NONE)
+        r = match_offer(wirm, resolver=lambda name, **kw: self._page("wirm", "Wirm"))
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, CONFLICT_NONE)
+
+    def test_us_and_uk_rows_have_no_steam_gift_bucket(self):
+        self._use(CONFIG)
+        # REGION_IDS STEAM has gift (25) and gift_eu (259) only — a US / UK base fails closed
+        for title, url, label in (
+            ("Game United States Steam Altergift", "https://k4g.com/product/game-steam-united-states-altergift-alter-gift-AAAAAAAA", "GIFT US"),
+            ("Game United Kingdom Steam Altergift", "https://k4g.com/product/game-steam-united-kingdom-altergift-alter-gift-AAAAAAAA", "GIFT UK"),
+        ):
+            with self.subTest(title=title):
+                offer = _offer(title, url)
+                self.assertIsNone(precheck_skip(offer))
+                self.assertEqual(detect_region(offer, "STEAM"), (label, None, False))
+                r = match_offer(offer, resolver=lambda name, **kw: self._page("game", "Game"))
+                self.assertIsInstance(r, SkippedOffer)
+                self.assertEqual(r.reason, f"no region id for STEAM/{label}")
+
+    def test_batch_rows_sampled(self):
+        # rows of runs/20260912-020000-auto-k4g-s92-p1..7 (scratchpad measure_m2.out): what each gets now
+        self._use(CONFIG)
+        entered = {
+            # title, url → (region label, id, implicit, resolver name)
+            ("Kingdom of Night Europe Steam Altergift", "https://k4g.com/product/kingdom-of-night-steam-europe-instant-altergift-alter-gift-KW9D1Y63"): ("GIFT EU", "259", False, "Kingdom of Night"),
+            ("True Fear: Forsaken Souls Part 3 Steam Altergift", "https://k4g.com/product/true-fear-forsaken-souls-part-3-steam-global-instant-altergift-alter-gift-YJXNQAOB"): ("GIFT", "25", False, "True Fear: Forsaken Souls Part 3"),
+            ("Mato Anomalies - Treasure from Heaven Europe Steam Altergift", "https://k4g.com/product/mato-anomalies-treasure-from-heaven-steam-europe-cd-key-alter-gift-8Z9GIX0E"): ("GIFT EU", "259", False, "Mato Anomalies - Treasure from Heaven"),
+            ("Wirm Steam Altergift", "https://k4g.com/product/wirm-steam-global-altergift-alter-gift-K0SYH8QV"): ("GIFT", "25", False, "Wirm"),
+        }
+        for (title, url), (label, rid, implicit, name) in entered.items():
+            with self.subTest(title=title):
+                offer = _offer(title, url)
+                self.assertIsNone(precheck_skip(offer))
+                r = match_offer(offer, resolver=lambda n, **kw: self._page(build_slug_candidates(name)[0], name))
+                self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+                self.assertEqual((r.platform, r.region_label, r.region_id, r.region_implicit), ("STEAM", label, rid, implicit))
+                self.assertEqual(build_slug_candidates(resolve_name(title))[0], build_slug_candidates(name)[0])
+        # every other K4G rule is kept: forbidden regions, bundles, passes, season pass on a base page
+        still_skipped = {
+            ("Sonic Origins - Plus Expansion Pack North America Steam Altergift", "https://k4g.com/product/sonic-origins-plus-expansion-pack-steam-north-america-altergift-alter-gift-EDVT5Z29"): "forbidden region: NORTH AMERICA",
+            ("Middle-earth: The Shadow Bundle Europe Steam Altergift", "https://k4g.com/product/middle-earth-the-shadow-bundle-steam-europe-altergift-alter-gift-AAAAAAAA"): "skip category: BUNDLE (no bundles/skins)",
+            ("Far Cry 6 Game of the Year Upgrade Pass Steam Altergift", "https://k4g.com/product/far-cry-6-game-of-the-year-upgrade-pass-steam-global-altergift-alter-gift-AAAAAAAA"): "skip category: PASS (in-game/battle pass)",
+        }
+        for (title, url), reason in still_skipped.items():
+            with self.subTest(title=title):
+                self.assertEqual(precheck_skip(_offer(title, url)), reason)
+        r = match_offer(_offer("Watch Dogs: Legion - Season pass Europe Steam Altergift",
+                               "https://k4g.com/product/watch-dogs-legion-season-pass-steam-europe-altergift-alter-gift-AAAAAAAA"),
+                        resolver=lambda n, **kw: self._page("watch-dogs-legion", "Watch Dogs: Legion"))
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("carries no DLC edition", r.reason)          # R43, unchanged
+
+
+class AltergiftGatesTests(_Registry):
+    """Review fixes of 2026-09-14 on Romain's Altergift ruling — fail-closed (AGENTS.md: "if
+    anything is uncertain, stop"): (1) the slug must agree with the title's "Altergift";
+    (4) the Steam collocation is part of the ruling (« Steam Altergift = Steam Gift »)."""
+
+    def _page(self, slug, name, official=("Steam",)):
+        return AksResolution(slug=slug, url=f"https://aks/buy-{slug}-cd-key-compare-prices/", product_id="1",
+                             aks_name=name, editions={"1": {"name": "Standard"}}, official_platforms=official)
+
+    def test_url_delivery(self):
+        for url, said in {
+            "https://k4g.com/product/seafrog-steam-global-altergift-alter-gift-QU67G9P5": "gift",
+            "https://k4g.com/product/kingdom-of-night-steam-europe-instant-altergift-alter-gift-KW9D1Y63": "gift",
+            "https://k4g.com/product/mato-anomalies-treasure-from-heaven-steam-europe-cd-key-alter-gift-8Z9GIX0E": "gift",   # both: gift wins (3 rows)
+            TRINE_URL: "key",
+            URL: "key",
+            "https://k4g.com/product/wirm-steam-global-K0SYH8QV": None,
+            "https://k4g.com/product/x-steam-global-altergift-alter-gift-AAAAAAAA?ref=cd-key": "gift",   # the query never speaks
+            "": None,
+        }.items():
+            with self.subTest(url=url):
+                self.assertEqual(url_delivery(url), said)
+
+    def test_trine_5_title_url_delivery_conflict_is_refused(self):
+        # offer 101030313 (runs/20260912-020000-auto-k4g-s92-p3): title "Steam Altergift", slug
+        # "…-steam-global-instant-cd-key-48V2PFDZ" — the ONLY such row of the batch (217 / 218
+        # slugs carry "-alter-gift-"). Gift (25) or key (GLOBAL 2) cannot be known from the row.
+        offer = _offer(TRINE_TITLE, TRINE_URL)
+        self.assertEqual(altergift_verdict(TRINE_TITLE, TRINE_URL), CONFLICT_KEY)
+        self.assertIsNone(gift_delivery(TRINE_TITLE, TRINE_URL))          # the merchant does not vouch
+        self._use(None)                                                    # generic: a plain key…
+        self.assertEqual(detect_region(offer, "STEAM"), ("GLOBAL", "2", False))
+        self._use(CONFIG)                                                  # …and the hooks never turn it into GIFT (25)
+        self.assertEqual(detect_region(offer, "STEAM"), ("GLOBAL", "2", False))
+        self.assertEqual(precheck_skip(offer), CONFLICT_KEY)
+        self.assertEqual(precheck_skip(offer, consoles=True), CONFLICT_KEY)
+        asked = []
+
+        def resolver(name, **kw):
+            asked.append(name)
+            return self._page("trine-5-a-clockwork-conspiracy", "Trine 5: A Clockwork Conspiracy")
+
+        r = match_offer(offer, resolver=resolver)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, CONFLICT_KEY)
+        self.assertEqual(asked, [])                                        # refused before any AKS probe
+        # the same title on the batch's usual slug is the gift it says it is (unchanged class)
+        agreed = _offer(TRINE_TITLE, "https://k4g.com/product/trine-5-a-clockwork-conspiracy-steam-global-instant-altergift-alter-gift-48V2PFDZ")
+        self.assertIsNone(precheck_skip(agreed))
+        self.assertEqual(detect_region(agreed, "STEAM"), ("GIFT", "25", False))
+        r = match_offer(agreed, resolver=resolver)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.platform, r.region_label, r.region_id), ("STEAM", "GIFT", "25"))
+
+    def test_reverse_conflict_title_cd_key_url_altergift_is_refused(self):
+        # 0 rows in the batch — the mirror of Trine 5: the generic "-gift-" segment read would
+        # have filed a CD Key title under GIFT (25)
+        offer = _offer("Game Steam CD Key", "https://k4g.com/product/game-steam-global-instant-cd-key-alter-gift-AAAAAAAA")
+        self._use(None)
+        self.assertEqual(detect_region(offer, "STEAM"), ("GIFT", "25", False))
+        self._use(CONFIG)
+        self.assertEqual(precheck_skip(offer), CONFLICT_REVERSE)
+        r = match_offer(offer, resolver=lambda name, **kw: self._page("game", "Game"))
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, CONFLICT_REVERSE)
+        # a "… Steam Gift" title is not the mirror (it says gift too): the generic read, unchanged
+        self.assertIsNone(precheck_skip(_offer("Game Steam Gift", "https://k4g.com/product/game-steam-global-gift-AAAAAAAA")))
+
+    def test_non_steam_altergift_is_refused_never_another_gift_bucket(self):
+        # « Steam Altergift = Steam Gift »: 216 / 216 grammar rows say "Steam". A Battle.net /
+        # Epic / GOG / no-platform "Altergift" is a grammar never seen → fail-closed, never
+        # BATTLENET GIFT (570 / 567), never a plain key.
+        self._use(CONFIG)
+        for title in (
+            "Seafrog Battle.net Altergift",
+            "Seafrog Europe Battle.net Altergift",
+            "Seafrog Epic Games Altergift",
+            "Seafrog GOG Altergift",
+            "Seafrog Steam / Epic Games Altergift",       # ambiguous run
+            "Seafrog Altergift",                          # no store phrase at all
+        ):
+            with self.subTest(title=title):
+                self.assertTrue(is_altergift(title))
+                self.assertFalse(is_steam_altergift(title))
+                self.assertEqual(altergift_verdict(title, GIFT_URL), NOT_STEAM)
+                self.assertIsNone(gift_delivery(title, GIFT_URL))
+                offer = _offer(title, GIFT_URL)
+                self.assertEqual(precheck_skip(offer), NOT_STEAM)
+                r = match_offer(offer, resolver=lambda name, **kw: self._page("seafrog", "Seafrog", ("Battle.net", "Epic Games", "GOG", "Steam")))
+                self.assertIsInstance(r, SkippedOffer)
+                self.assertEqual(r.reason, NOT_STEAM)
+        # a console-marked Altergift is refused by the same gate in both precheck modes
+        console = _offer("Seafrog Europe PS5 Altergift", "https://k4g.com/product/seafrog-playstation-5-europe-altergift-alter-gift-AAAAAAAA")
+        self.assertEqual(precheck_skip(console), NOT_STEAM)
+        self.assertEqual(precheck_skip(console, consoles=True), NOT_STEAM)
+
+    def test_out_of_grammar_steam_europe_altergift_rows_still_enter(self):
+        # the batch's 2 rows outside the grammar (region AFTER the store phrase): Steam is the
+        # only store phrase → still a Steam gift (GIFT EU 259 from the generic " EUROPE " read)
+        self._use(CONFIG)
+        for title, url in (
+            ("Warhammer: Chaosbane - Witch Hunter Steam Europe Altergift",
+             "https://k4g.com/product/warhammer-chaosbane-witch-hunter-steam-europe-instant-altergift-alter-gift-I7P1URAW"),
+            ("Life Is Strange Complete Season (Episodes 1-5) Steam Europe Altergift",
+             "https://k4g.com/product/life-is-strange-complete-season-episodes-1-5-steam-europe-instant-altergift-alter-gift-ESMQ2T8D"),
+        ):
+            with self.subTest(title=title):
+                self.assertIsNone(parse_title(title))
+                self.assertTrue(is_steam_altergift(title))
+                self.assertEqual(altergift_verdict(title, url), "gift")
+                offer = _offer(title, url)
+                self.assertIsNone(precheck_skip(offer))
+                self.assertEqual(detect_region(offer, "STEAM"), ("GIFT EU", "259", False))
 
 
 class ConsoleHooksTests(unittest.TestCase):
@@ -231,6 +497,8 @@ class ConfigTests(unittest.TestCase):
         self.assertIs(CONFIG.precheck, precheck)
         self.assertIs(CONFIG.title_region, title_region)
         self.assertIs(CONFIG.resolve_name, resolve_name)
+        self.assertIs(CONFIG.guard_name, guard_name)            # 2026-09-14: "Altergift" is not a product word
+        self.assertIs(CONFIG.gift_delivery, gift_delivery)      # 2026-09-14: Altergift = Steam gift (when the slug agrees)
         self.assertTrue(CONFIG.title_is_platform_source)
         fields = {f.name for f in dataclasses.fields(MerchantConfig)}
         if "console_region_slot" in fields:

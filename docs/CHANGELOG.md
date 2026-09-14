@@ -3,6 +3,71 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-14 — submitter: modal v2 (region/edition per target row), cap 3, no Enter
+
+- **AKS feed tool change (Romain, 2026-09-14):** the "Create offer" modal now takes
+  region and edition PER TARGET PAGE. Read-only inspection (run
+  `20260914-inspect-consoles`): row 0 = `input[name="offer[targets][0][target]"]`
+  (required, `pattern="(\d+)|(https?://.+)"`, `data-target-input`, next sibling
+  `button.button` = add-row) + Selectize overrides `offer[targets][0][region]` /
+  `[edition]` (`data-target-override`, not required); the old `offer[targets][]`
+  no longer exists; global `offer[region]` / `offer[edition]` and the Create button
+  unchanged; the form has `method=get`, no `action`.
+- **Consequence before this change:** `add_target_trusted` looked for
+  `offer[targets][]` → `NO_TARGETS_FIELD` → required target input empty →
+  `FORM_INVALID` → no click. Fail-closed, but ZERO creations for EVERY merchant (PC
+  included) since the tool change.
+- **`src/submit_session.py`:** `modal_context()` now reports `modal_shape`
+  (`targets_v2` / `targets_v1` / `unknown`, `_MODAL_CTX_JS`) + `modal_shape_detail`;
+  `_TARGETS_READBACK_JS` reads both shapes (v1 inputs; v2 rows with target value +
+  both override selects through both channels); new read-only
+  `_ADD_ROW_BUTTON_PROBE_JS` (the `<button>` after the LAST row's target input, by
+  DOM relation, with its `type` and a `submit_like` verdict); `_TARGETS_PROBE_JS`
+  exposes `next_sib_button` so `--inspect` shows the add-row button's type. New
+  write flow `WriteSubmitSession.fill_targets_v2_trusted(targets, region_select,
+  edition_select)`: globals with the primary target's ids → row 0 (focus click +
+  `Input.insertText`, readback == id, overrides set EXPLICITLY) → for each extra
+  row: trusted add-row click proven by readback (`TARGET_ROW_NOT_ADDED` /
+  `TARGETS_COUNT_MISMATCH`), fill like row 0 → validity gate → obstruction probe →
+  full pre-click readback of both globals + every row (`VALUE_DRIFTED_BEFORE_CLICK`
+  generalised) → ONE trusted Create click → poll. **`_press_enter` deleted**; the
+  v1 `add_target_trusted` Enter commit fallback is now a fail-closed
+  `NO_ADD_BUTTON` (Enter natively submits the `method=get` form).
+- **`src/submitter.py`:** plan entry `modal_shape` (+ `modal_shape_detail`); shape
+  gate: `unknown` → blocker `modal_shape_unknown` for every entry (real blocker,
+  feeds the streak); R45 multi-target gate now shape-aware (`targets_v1` only);
+  `targets_v2` entries ready with every target resolved in the catalog;
+  `Submitter._process` routes v2 → `fill_targets_v2_trusted` (all targets, BOM-free
+  queries), v1 → `fill_then_click_trusted`, anything else refused. **Cap
+  `MAX_TARGETS_PER_OFFER = 3`** (Romain 2026-09-14: "3 ou 4 pour le moment") →
+  blocker `too_many_targets` « plus de 3 cibles — plafond du modal AKS (Romain
+  2026-09-14) » BEFORE locate/modal open; designed skip counted in
+  `gated_too_many_targets` (no guard streak). Dry-run `would_submit` lists the v2
+  rows; `--inspect` also dumps `modal_shape_unknown` entries.
+- **Romain's three confirmations (2026-09-14), cited in code + SUBMITTER_SPEC §4c:**
+  (1) the button next to the target input ADDS a row (readback still proves it);
+  (2) empty per-target region/edition INHERIT the globals (overrides still set
+  explicitly); (3) at most "3 ou 4" targets → cap 3.
+- **Statuses added:** `MODAL_SHAPE_MISMATCH`, `NO_TARGETS`, `NO_TARGET_ID`,
+  `NO_TARGET_INPUT`, `TARGET_VALUE_MISMATCH`, `NO_ROW_REGION_PICK`,
+  `NO_ROW_EDITION_PICK`, `NO_ADD_BUTTON`, `ADD_BUTTON_UNSAFE`,
+  `TARGET_ROW_NOT_ADDED`, `TARGETS_COUNT_MISMATCH`, `TARGETS_READBACK_UNREADABLE`
+  (+ row-level `ROW_ADDED` / `ROW_FILLED`); blockers `modal_shape_unknown`,
+  `too_many_targets`.
+- **Tests:** `tests/test_submitter.py` — `V2ModalDom` + `V2DomWriteSession` (the
+  REAL `fill_targets_v2_trusted` over a DOM fake: single-target end-to-end, two and
+  three targets, add-row failure, submit-like button, count mismatch, row/global
+  drift, row pick failure, FORM_INVALID, shape mismatch, empty id, still-in-feed);
+  `ModalShapeTests`; `TooManyTargetsTests`; v1 fake without Enter; fakes default to
+  `targets_v2`. `tests/test_embedded_js.py` registers `_ADD_ROW_BUTTON_PROBE_JS`.
+  246 tests OK (submitter + embedded_js + submit_cli).
+- **UNVERIFIED live, fail-closed:** the add-row button's `type` (refused if
+  submit-like → run `--inspect` on a console candidate and read
+  `targets_probe.targets[0].next_sib_button` before the first multi-target write);
+  whether appended rows carry their own add button; inheritance is never used.
+
+---
+
 ## 2026-09-14 — Un fichier de config par marchand (règle de Romain) : hooks consoles, six nouveaux fichiers marchands
 
 **Règle de Romain (répétée depuis le 2026-08-11, ultimatum du 14/09)** : « pour la détection
@@ -33,8 +98,8 @@ tête) et des contrôles d'hôte (`mmoga.com` / `gamivo.com` / `eneba.com`) : ce
   crochets ; `console_noise: tuple[str, ...] = ()` → phrases marchandes retirées de
   `resolve_name` en plus des marqueurs partagés (« Download Code » MMOGA, « Digital Key » /
   « Digital Code » Driffle, « CD Key » Kinguin — la note « (valid until <Month> <Year>) »
-  de Kinguin n'est PAS un bruit : question ouverte `kinguin.OPEN_QUESTION_VALID_UNTIL`). Le
-  CONTRAT des hooks PC (`precheck` / `title_region` / `resolve_name` / `url_platform` +
+  de Kinguin n'était PAS un bruit le matin : question ouverte, tranchée le soir même — voir
+  « Décisions de Romain (14/09, soir) » en fin d'entrée). Le CONTRAT des hooks PC (`precheck` / `title_region` / `resolve_name` / `url_platform` +
   `url_platform_prefixes`, `url_platform_scan`, `offer_page_resolver`, `domain`,
   `url_ignore_substrings`) ne change pas ; les nouveaux fichiers en DÉCLARENT (ci-dessous).
 - **Registre** — la liaison nom → module (`merchant_config()`) passe dans
@@ -61,10 +126,11 @@ tête) et des contrôles d'hôte (`mmoga.com` / `gamivo.com` / `eneba.com`) : ce
   slug du jeu) — **pas de `url_platform`** (R32b, « ça marche aujourd'hui ») ; console :
   `console_url_families` (`-account` / `-online-account-activation` → non-jeu, runs
   partagés), `console_region_slot` (code majuscule avant la phrase plateforme),
-  `console_noise = ("CD Key",)` — la note « (valid until <Month> <Year>) » n'est PAS un
-  bruit, question ouverte `kinguin.OPEN_QUESTION_VALID_UNTIL`), `k4g.py` (PC : `precheck`
-  dont « Steam Altergift » → `skip category: ALTERGIFT` explicite (216 / 592, 0 candidat
-  jamais, `k4g.OPEN_QUESTION_ALTERGIFT`), `title_region`, `resolve_name` ; console :
+  `console_noise = ("CD Key",)` — la note « (valid until <Month> <Year>) » n'était PAS un
+  bruit le matin, question ouverte tranchée le soir : saisie, voir en fin d'entrée),
+  `k4g.py` (PC : `precheck` dont, le matin, « Steam Altergift » → `skip category:
+  ALTERGIFT` explicite (216 / 592, 0 candidat jamais — tranché le soir : Altergift = Steam
+  Gift, saisi, voir en fin d'entrée), `title_region`, `resolve_name` ; console :
   `console_url_families` (run suivi d'un slug de région connu), `console_region_slot` (mot
   de région en toutes lettres avant la plateforme)), `driffle.py` (PC : `precheck` (pays
   entre parenthèses hors vocabulaire générique), `title_region` (1re parenthèse) ; console :
@@ -180,8 +246,135 @@ tête) et des contrôles d'hôte (`mmoga.com` / `gamivo.com` / `eneba.com`) : ce
 - **Reste à faire** — dry-run des nouveaux fichiers (`scripts/10 --targets "Kinguin:58"
   --dry-run --consoles`, puis K4G / Driffle ; Allyouplay / CJS / GameSeal en `--dry-run` PC
   d'abord, jamais balayés), relever les grammaires manquantes (Allyouplay, CJS, GameSeal PC)
-  et les déclarer dans leur fichier ; trancher les questions ouvertes des fichiers marchands
-  (Kinguin `OPEN_QUESTION_VALID_UNTIL`, K4G `OPEN_QUESTION_ALTERGIFT`, queue « EU/UK » = skip).
+  et les déclarer dans leur fichier ; trancher la question ouverte restante (queue « EU/UK »
+  = skip) — Kinguin « valid until » et K4G Altergift sont tranchées ci-dessous.
+- **Décisions de Romain (14/09, soir) — « Kinguin valid until juin 2027 on rentre, Steam
+  Altergift = Steam Gift on rentre sous gift tous les altergifts. »** Les deux questions
+  ouvertes du matin sont tranchées : deux hooks R32e de plus dans le contrat
+  (`src/merchant_config.py`), plomberie seule dans `src/matcher.py`, la grammaire dans les
+  fichiers marchands (`src/merchants/kinguin.py`, `src/merchants/k4g.py`).
+  - `guard_name(name) -> str` — le titre lu par les gardes d'identité (R01 mots AKS
+    manquants, R16 mots en trop, R01b qualificatif dangereux) et `detect_edition` pour une
+    ligne PC ; titre brut par défaut (aucun autre marchand ne change). `_pc_plan` l'appelle
+    à la place de `offer.name` ; une réponse vide → titre brut ; le hook ne blanchit jamais
+    un titre (les mots qu'il laisse sont comparés comme avant — `MerchantHookTests`).
+  - `gift_delivery(name, url) -> bool | None` — le verdict « livraison gift » du marchand,
+    consulté en premier par `_detect_region_parts` ; True / False l'emporte, None → lecture
+    générique (segment d'URL `gift`, « GIFT » dans le titre). `detect_region` superpose
+    comme avant le bucket GIFT de la plateforme (Steam 25 / gift_eu 259, Battle.net 570 /
+    567) ; pas de gift_us / gift_uk → skip « no region id » inchangé ; green gift intact.
+  - **Kinguin** : la note « (valid until <Month> <Year>) » est une date limite
+    d'activation, pas un mot de produit — `guard_name` la retire (et elle seule) du titre
+    des gardes, `resolve_name` la pèle (déjà), `console_noise = ("CD Key", VALID_UNTIL_RE)`
+    (un `re.Pattern` : les lignes consoles avec la note résolvent aussi).
+    `OPEN_QUESTION_VALID_UNTIL` retiré, décision dans la docstring. Seule la forme
+    « (valid until <Month>[,] <Year>) » existe dans le corpus (89 / 89 lignes) ; toute autre
+    orthographe reste dans la garde (fail-closed).
+  - **K4G** : le précheck `skip category: ALTERGIFT` du matin est retiré ; `gift_delivery`
+    → True pour le mot entier ALTERGIFT (insensible à la casse) ; `guard_name` et
+    `resolve_name` retirent le mot « Altergift » (et lui seul) — R16 ne le compte plus, le
+    slug est celui du jeu (`seafrog`, plus `seafrog-steam-altergift`) ; plateforme STEAM
+    (`explicit_platform` colloque déjà STEAM et ALTERGIFT) ; région = bucket GIFT Steam sur
+    la base du titre / de l'URL : GIFT (25) sans région ou Global, GIFT EU (259) pour
+    Europe, base US / UK → « no region id for STEAM/GIFT US » (fail-closed, inchangé), North
+    America / Americas → `forbidden region` inchangé ; bundles, pass, R43 inchangés.
+    `OPEN_QUESTION_ALTERGIFT` / `SKIP_ALTERGIFT` retirés.
+  - **Rejeu** (lecture seule, sans réseau, `runs/20260912-020001-auto-kinguin-s58-p1..10`
+    et `20260912-020000-auto-k4g-s92-p1..7`, lignes dédoublonnées par offer_id ;
+    `precheck_skip` + plateforme + `detect_region` + 1er slug du code du soir ; l'outcome
+    AKS est celui enregistré par le run) :
+
+    | Lignes | total | passent précheck + bucket | plateforme / région / 1er slug | restent en skip | attendu côté AKS (run enregistré) |
+    |---|---|---|---|---|---|
+    | Kinguin « (valid until …) » | 79 | 76 | STEAM GLOBAL (2) implicite ×76, slug du jeu (inchangé : `resolve_name` pelait déjà la note) | 3 — ROW ×2, BUNDLE ×1 | **61 candidates** (page résolue, la note pour seuls mots en trop) ; 13 restent en 404 (même slug) ; 1 garde DLC (R43) ; 1 « missing AKS words: ['VR'] » |
+    | K4G « Steam Altergift » | 218 | 182 | STEAM GIFT (25) ×120 explicite (URL `-steam-global-`), STEAM GIFT EU (259) ×62 ; slug du jeu (183 / 183 slugs des lignes non pré-skippées changent vs le run du 12/09, slug générique : `…-steam-altergift` → jeu ; vs le fichier K4G du matin — 90378a6 —, 2 slugs seulement) | 36 — NORTH AMERICA 29, BUNDLE 3, AMERICAS 2, PASS 1, GIFT UK sans bucket 1 | 144 étaient des 404 sur `…-steam-altergift` → slug du jeu **à sonder au prochain dry-run** ; 36 gardent d'autres mots en trop (R16 : « Plus Expansion Pack », « Treasure from Heaven », « Episode 3 »…) ; 2 garde SEASON PASS (R43) ; 0 candidate immédiate (aucune ligne n'avait « ALTERGIFT » pour seul mot en trop) |
+
+    Exemples Kinguin (→ STEAM GLOBAL 2 implicite, slug) : GreedFall (`greedfall`), Time to
+    Morp, Factory Town, Vampyr, Eldest Souls, Idle Colony, MR FARMBOY, Soulstice Deluxe
+    Edition (`soulstice-deluxe-edition`, Deluxe réconciliée sur la page), For The King II,
+    Keylocker | Turn Based Cyberpunk Action (404 avant, même slug) ; skips : Dead Cells RoW
+    ×2 (`forbidden region: ROW`), SUPERHOT ONE OF US BUNDLE (BUNDLE). Exemples K4G (→ STEAM,
+    bucket, slug) : Seafrog (GIFT 25, `seafrog`), True Fear: Forsaken Souls Part 3 (GIFT 25),
+    Wirm (GIFT 25), Kingdom of Night Europe (GIFT EU 259, `kingdom-of-night`), Stronghold:
+    Warlords Special Edition / … Europe (GIFT 25 / GIFT EU 259), Mato Anomalies - Treasure
+    from Heaven / … Europe (GIFT 25 / 259 ; R16 « TREASURE FROM HEAVEN » sur la page Mato
+    Anomalies), Sonic Origins - Plus Expansion Pack / … Europe (R16) ; skips : Mato Anomalies
+    North America, Kingdom of Night North America, Cardaclysm North America, Deathbound
+    Ultimate Edition North America… (`forbidden region: NORTH AMERICA`), Middle-earth: The
+    Shadow Bundle Europe (BUNDLE), Far Cry 6 Game of the Year Upgrade Pass (PASS). **0
+    candidate enregistrée ne change** sur les deux lots.
+  - Tests : `tests/test_merchants_kinguin.py` (garde / slug / bruit console sur lignes
+    réelles ; pipeline Vampyr → STEAM GLOBAL (2) Standard (1) implicite, Soulstice → Deluxe
+    (10), contraste avec l'entrée générique d'avant ; R01b / R16 intacts),
+    `tests/test_merchants_k4g.py` (`AltergiftPipelineTests` : Thief Simulator Europe → GIFT
+    EU 259, sans région → GIFT 25 implicite, `-steam-global-` → GIFT 25 explicite, US / UK →
+    « no region id », lignes du lot, règles conservées), `tests/test_matcher.py`
+    `MerchantHookTests` (les deux hooks sur un faux marchand : blanchiment impossible,
+    réponse vide, False l'emporte, green gift intact). `python3 -m unittest
+    tests.test_merchants_kinguin tests.test_merchants_k4g tests.test_matcher
+    tests.test_console_keys tests.test_merchants_registry_expectations` : « Ran 541 tests /
+    OK ».
+  - Docs : MERCHANTS (contrat + Kinguin + K4G + statut), EXECUTOR_RULES §4.4 / §4.10 / §11,
+    README (six hooks), AGENTS « Reviewed decisions » (deux puces — un audit ne doit pas
+    re-signaler ces saisies).
+- **Correctifs de revue sur les deux décisions (14/09, soir — revue adverse de leur mise en
+  œuvre ; fail-closed partout, la grammaire reste dans `src/merchants/<marchand>.py`)** :
+  - **[1, haut] K4G — le slug doit être d'accord avec « Altergift »** : `gift_delivery`
+    ignorait son argument `url`. Une ligne du lot (offre 101030313, `…-k4g-s92-p3`, « Trine
+    5: A Clockwork Conspiracy Steam Altergift » sur `…-steam-global-instant-cd-key-48V2PFDZ`
+    — 217 / 218 autres slugs Altergift portent `-alter-gift-`) serait passée en STEAM GIFT
+    (25) alors que son URL dit clé (GLOBAL 2) : la classe de bucket ne se lit pas sur la
+    ligne. Désormais `k4g.altergift_verdict(name, url)` (lu par `precheck` ET
+    `gift_delivery`) : slug `-altergift-` / `-alter-gift-` → « gift » (le hook vaut True) ;
+    slug `cd-key` sans segment altergift → « K4G delivery conflict: title Altergift but URL
+    says cd-key (no altergift segment) — not entered (2026-09-14) », avant tout sondage ; slug
+    sans aucun segment de livraison (hors grammaire d'URL) → même refus ; conflit miroir
+    (titre « CD Key », slug `-alter-gift-`, 0 ligne) → refus aussi (la lecture générique
+    `-gift-` aurait rangé une clé sous GIFT 25). Un Altergift refusé n'est jamais lu GIFT
+    par `detect_region` (le hook répond None : le marchand ne s'en porte pas garant).
+  - **[2, bas] Kinguin — `VALID_UNTIL_RE` ancré en fin de titre** (`\s*$`, comme le motif
+    d'avant la décision ; 158 / 158 lignes du corpus, doublons compris, sont en fin de titre)
+    : « Vampyr (Valid Until March 2027) PC Steam CD Key » n'est plus tronqué au milieu — la
+    note reste dans la garde → « extra words: ['VALID', 'UNTIL', 'MARCH', '2027'] »
+    (fail-closed). `TITLE_RE` était déjà ancré ; `console_noise` inchangé (le classifieur
+    applique le motif au titre brut, note encore en fin).
+  - **[3, bas] Kinguin — « on rentre sous gift tous les altergifts » vaut aussi pour la
+    livraison « Altergift » de Kinguin** (1 ligne / lot, « Sons Of The Forest DE PC Steam
+    Altergift » — GERMANY de toute façon ; une ligne non interdite lisait STEAM GLOBAL (2)
+    puis R16 « extra words: ['ALTERGIFT'] ») : `kinguin.gift_delivery` → True pour « <Jeu>
+    [<CODE>] PC Steam Altergift » (GIFT 25 / GIFT EU 259 ; US / UK → « no region id »),
+    `guard_name` / `resolve_name` retirent le mot ; mêmes garde-fous que K4G — le slug (souvent
+    tronqué → silence accepté) ne doit pas contredire (`-cd-key` / `-key` / compte → « Kinguin
+    delivery conflict »), Altergift hors Steam → refus ; les lignes « Steam Gift » gardent la
+    lecture générique (hook None).
+  - **[4, bas] K4G / Kinguin — « Steam Altergift = Steam Gift » est Steam seulement** :
+    `gift_delivery` était agnostique de la plateforme (« Seafrog Battle.net Altergift » →
+    BATTLENET GIFT 570 / 567). 216 / 216 lignes en grammaire disent « Steam » (les 2 hors
+    grammaire « … Steam Europe Altergift » aussi, toujours saisies GIFT EU 259) ; un Altergift
+    dont la phrase magasin n'est pas Steam, est ambiguë (« Steam / Epic Games Altergift ») ou
+    absente → « … Altergift outside the Steam collocation (title's store phrase is not
+    Steam) — not entered (Romain 2026-09-14: « Steam Altergift = Steam Gift ») », jamais le
+    bucket gift d'une autre plateforme, jamais une clé simple.
+  - **[5, info]** la phrase « 183 / 183 slugs … changent » ci-dessus est relative au run du
+    12/09 (slug générique) — vs le fichier K4G du matin (90378a6), 2 slugs seulement (les deux
+    lignes hors grammaire). `docs/HANDOFF.md` (l. 283-284, `OPEN_QUESTION_VALID_UNTIL` /
+    `OPEN_QUESTION_ALTERGIFT` encore listées ouvertes) reste à corriger par son propriétaire :
+    les deux sont tranchées, les symboles retirés.
+  - **Rejeu** (lecture seule, 6 314 lignes de tous les lots du 12/09, code du soir avant /
+    après correctifs) : **2 lignes changent, 0 candidate** — K4G 101030313 Trine 5 (précheck
+    None → conflit ; le run avait enregistré un 404) et Kinguin 101042255 Sons Of The Forest
+    DE (bucket lu GLOBAL 2 → GIFT 25, garde sans « Altergift » ; précheck GERMANY inchangé).
+  - Tests (une régression par constat) : `tests/test_merchants_k4g.py`
+    `AltergiftGatesTests` (Trine 5 : refus avant sondage, jamais GIFT 25 ; même titre sur le
+    slug habituel → GIFT 25 ; conflit miroir ; Battle.net / Epic / GOG / sans plateforme /
+    PS5 → refus ; les 2 lignes « Steam Europe Altergift » entrent ; `url_delivery`),
+    `tests/test_merchants_kinguin.py` `AltergiftTests` (GENERIC → R16 « ALTERGIFT », CONFIG →
+    STEAM GIFT 25 implicite ; EU → 259 ; US → no region id ; DE → GERMANY ; « Steam Gift »
+    inchangé ; conflit `-cd-key`, slug tronqué accepté, hors Steam) + note au milieu du titre
+    non retirée (garde, `strip_valid_until`, pipeline R16), `tests/test_matcher.py`
+    `RulingGatesLiveRegistryTests` (registre réel). `python3 -m unittest
+    tests.test_merchants_kinguin tests.test_merchants_k4g tests.test_matcher
+    tests.test_console_keys` : « Ran 548 tests / OK » (536 avant).
 
 ## 2026-09-14 — Consoles R45 : correctifs de la revue adverse, famille Switch 2, décision P1
 

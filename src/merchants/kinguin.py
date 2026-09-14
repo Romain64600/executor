@@ -19,7 +19,8 @@ Grammar (title)::
   ``Xbox One / Xbox Series X|S``, ``XBOX One / Xbox Series X|S / PC``, ``Xbox Series X|S``,
   ``PS5``, ``PS4/PS5``, ``Nintendo Switch``, ``Nintendo Switch 2`` — read by the shared
   console grammar (``src/console_keys.py``); here the phrase only anchors the region slot.
-* ``<Delivery>`` — ``CD Key`` (the norm), ``Key``, ``Steam Gift`` (5), ``Altergift`` (1),
+* ``<Delivery>`` — ``CD Key`` (the norm), ``Key``, ``Steam Gift`` (5), ``Altergift`` (1 —
+  a Steam gift, entered as the Steam GIFT bucket: Romain 2026-09-14, see below),
   ``Account`` (8) / ``Access`` (29 — URL ``-online-account-activation``): account listings,
   never keys; ``Activation Link``.
 * ``<REGION>`` — an UPPERCASE 2-letter code (or ``RoW`` / ``NA`` / ``SEA`` / ``UAE`` /
@@ -34,9 +35,11 @@ Real rows::
     Crusader Kings III - Royal Court DLC RoW PC Steam CD Key      → forbidden region: ROW
     Call of Duty: World at War SEA PC Steam Gift                  → forbidden region: SOUTH EAST ASIA
     Sons Of The Forest DE PC Steam Altergift                      → forbidden region: GERMANY
+    Sons Of The Forest PC Steam Altergift  (hypothetical, no code) → STEAM, GIFT (25), "Sons Of The Forest"
     Rocket League UAE PC Steam Gift                               → forbidden region: UNITED ARAB EMIRATES
     Shardstorm PC Steam CD Key                                    → no code, name "Shardstorm"
     Project MIKHAIL: A Muv-Luv War Story PC Steam CD Key (valid until May 2027)
+                                                                  → entered, note stripped from the guard (2026-09-14)
     Blocky Farm XBOX One / Xbox Series X|S Account                → account listing (skip)
     NHL 22 PS4 Access  (…/nhl-22-ps4-access)                      → access listing (skip)
 
@@ -55,10 +58,36 @@ Why the hooks (measured on the batch, see the 2026-09-14 report):
   404 skip by luck of the slug. Now an explicit ``forbidden region: <LABEL>`` (routed by
   ``aks_lists.suggest_target_list``), before any AKS probe. ``Account`` / ``Access`` rows
   are account listings → categorical skip.
-* ``resolve_name`` — the code and the platform phrase peeled so the slug is the game's.
-  The ``(valid until <Month> <Year>)`` note is peeled too (the generic parens strip
-  already drops it) — but the R01b guard reads the RAW title, so those 79 rows/batch
-  STAY skipped "extra words: ['VALID', 'UNTIL', …]" — see OPEN_QUESTION_VALID_UNTIL.
+* ``resolve_name`` — the code and the platform phrase peeled so the slug is the game's;
+  the ``(valid until <Month> <Year>)`` note too.
+* ``guard_name`` — **Romain's ruling (2026-09-14): « Kinguin valid until juin 2027 on
+  rentre »** — the note is an ACTIVATION DEADLINE, not a product word. It is stripped from
+  the title the identity guards (R01 missing words / R16 extras / R01b qualifier) and
+  ``detect_edition`` read (with the delivery word "Altergift", below — nothing else);
+  before, the guards read the raw title and the 79 rows/batch carrying the note were
+  skipped "different/expanded product — extra words: ['VALID', 'UNTIL', 'MARCH', '2027']"
+  (61 of them — rows de-duplicated by offer id — had resolved their page with NO other
+  extra word: candidates now — 2026-09-12 batch). The same phrase is in ``console_noise``
+  so a console row with the note resolves too. Only the TRAILING "(valid until <Month>[,]
+  <Year>)" form exists in the corpus (89 / 89 rows of the batch, 158 / 158 with the
+  duplicates; ``VALID_UNTIL_RE`` is anchored to the title end — review fix 2026-09-14); any
+  other spelling or position stays in the guard → the usual extra-words skip (fail-closed,
+  never a wider strip).
+* ``gift_delivery`` / ``altergift_verdict`` — **Romain (2026-09-14): « Steam Altergift =
+  Steam Gift on rentre sous gift tous les altergifts »** applies to Kinguin's own
+  "Altergift" delivery too (review fix 2026-09-14, finding [3]: the ruling was K4G-only at
+  first): a "<Game> [<REGION>] PC Steam Altergift" row is the Steam GIFT bucket layered on
+  the base region (GIFT 25 / GIFT EU 259; a US / UK code has no Steam gift bucket → the
+  fail-closed "no region id for STEAM/GIFT US" skip; a forbidden code keeps its precheck
+  skip — the batch's one row, "Sons Of The Forest DE …", is GERMANY). The same two gates as
+  K4G: the store phrase must be Steam (a non-Steam Altergift is a grammar never seen →
+  fail-closed precheck skip, never another platform's gift bucket), and the slug must not
+  contradict — Kinguin's slug mirrors the title (``…-pc-steam-altergift``) but is often
+  TRUNCATED (~80 chars), so a slug that says nothing is accepted, while a ``-cd-key`` /
+  ``-key`` / account tail against an Altergift title is the "Kinguin delivery conflict"
+  skip. "Altergift" is never a product word: ``guard_name`` drops it, ``resolve_name`` too
+  (the grammar already peels the delivery). "Steam Gift" rows are untouched (the generic
+  " GIFT " read, ``gift_delivery`` → None).
 * ``console_region_slot`` — the same code read, handed to the R45 classifier verbatim.
 * ``console_url_families`` — the slug's console run and the account / access markers.
 
@@ -81,18 +110,12 @@ from src.merchants.common import (
     skip_not_a_game,
 )
 
-# OPEN QUESTION for Romain (2026-09-14): 79 rows of the 2026-09-12 batch carry a Kinguin
-# activation-deadline note "(valid until <Month> <Year>)" (60 of them end as "different/
-# expanded product — extra words: ['VALID', 'UNTIL', 'MAY', '2027']"). No ruling is recorded
-# (docs/feeds/Kinguin.md lists them among the skips). Until Romain says such keys are
-# wanted, the note stays an extra-words SKIP: resolve_name peels it (slug), the identity
-# guard keeps the raw title, and it is deliberately NOT in console_noise (that would make
-# console rows with the note enterable). To enter them once ruled: add "VALID"/"UNTIL"
-# handling in the guard (generic) — not here.
-OPEN_QUESTION_VALID_UNTIL = (
-    "Kinguin '(valid until <Month> <Year>)' keys: enterable? (79 rows/batch, skipped as "
-    "extra words until Romain rules — 2026-09-14)"
-)
+# DECIDED (Romain 2026-09-14): « Kinguin valid until juin 2027 on rentre ». The
+# "(valid until <Month> <Year>)" activation-deadline note (79 rows of the 2026-09-12 batch)
+# is entered: ``guard_name`` strips the note — and nothing else — from the title the
+# identity guards read, ``resolve_name`` peels it for the slug, ``console_noise`` carries
+# it for console rows. Formerly the open question OPEN_QUESTION_VALID_UNTIL (skipped as
+# "extra words: ['VALID', 'UNTIL', …]").
 
 # ── title grammar ────────────────────────────────────────────────────────────────────
 _PC_ITEM = (
@@ -129,9 +152,35 @@ TITLE_RE = re.compile(
     rf"(?P<delivery>{_DELIVERY})(?:\s+(?P<hub>{_BY_HUB}))?(?:\s*(?P<valid>{_VALID_UNTIL}))?\s*$",
     re.IGNORECASE,
 )
-_VALID_UNTIL_RE = re.compile(rf"\s*{_VALID_UNTIL}\s*$", re.IGNORECASE)
+# The note alone, TRAILING (anchored ``\s*$`` — review fix 2026-09-14, finding [2]: the
+# pre-ruling pattern was anchored too, and the note is trailing in every corpus row, 158 /
+# 158; a note in the middle of a title is a spelling never seen and stays in the guard →
+# the usual extra-words skip, fail-closed): used by ``guard_name`` / ``resolve_name`` here
+# and declared as Kinguin's ``console_noise`` for the shared console classifier (a compiled
+# pattern — a literal cannot spell the month / year; the classifier applies it to the raw
+# title first, where the note is still trailing).
+VALID_UNTIL_RE = re.compile(_VALID_UNTIL + r"\s*$", re.IGNORECASE)
 _ACCOUNT_DELIVERIES = frozenset({"ACCOUNT", "ACCESS"})
 _ACCOUNT_URL_RE = re.compile(r"(?:-account|-access)/?$|online-account-activation")
+# DECIDED (Romain 2026-09-14): « Steam Altergift = Steam Gift on rentre sous gift tous les
+# altergifts » — Kinguin's own "Altergift" delivery too (review fix 2026-09-14). The word,
+# whole and case-insensitive; the slug tails that AGREE ("-altergift", "-gift": the same
+# GIFT bucket class) and the tails that CONTRADICT it ("-cd-key", "-key", "-activation-
+# link", the account / access markers); a truncated slug says nothing (accepted).
+_ALTERGIFT_RE = re.compile(r"\bAltergift\b", re.IGNORECASE)
+_URL_GIFT_TAIL_RE = re.compile(r"-(?:altergift|gift)/?$")
+_URL_KEY_TAIL_RE = re.compile(r"-(?:cd-key|key|activation-link)/?$")
+_STEAM_RE = re.compile(r"\bSteam\b", re.IGNORECASE)
+# A store / console phrase that is NOT Steam (the bare "PC" / "Mac" / "Windows" items are not
+# stores; a bare "Origin" is a name word for the matcher too, R14).
+_STORE_ITEM = (
+    r"GOG(?:\.com)?|Epic\s+Games(?:\s+Store)?|EA\s+App|EA\s+Origin|Ubisoft\s+Connect|Uplay|"
+    r"Rockstar(?:\s+Games)?(?:\s+Launcher)?|Battle\.net|Microsoft\s+Store|Official\s+Website"
+)
+_OTHER_PLATFORM_RE = re.compile(
+    rf"\b(?:{_STORE_ITEM}|Xbox|PS4|PS5|PlayStation|Nintendo)\b", re.IGNORECASE
+)
+_NOT_A_STORE_RE = re.compile(r"\b(?:PC|Mac|Windows(?:\s+1[01])?)\b", re.IGNORECASE)
 
 
 def parse_title(name: str) -> "re.Match[str] | None":
@@ -161,18 +210,107 @@ def is_account_listing(name: str, url: str) -> bool:
     return _ACCOUNT_URL_RE.search(path) is not None
 
 
+def is_altergift(name: str) -> bool:
+    """The title carries the whole word ALTERGIFT (case-insensitive) — Kinguin's Steam-gift
+    delivery ("Sons Of The Forest DE PC Steam Altergift"); "… PC Steam Gift" does not."""
+
+    return _ALTERGIFT_RE.search(name or "") is not None
+
+
+def drop_altergift(name: str) -> str:
+    """``name`` without the word "Altergift" — and nothing else (whitespace collapsed);
+    unchanged when the word is absent."""
+
+    if not is_altergift(name):
+        return name or ""
+    return re.sub(r"\s+", " ", _ALTERGIFT_RE.sub(" ", name)).strip()
+
+
+def is_steam_altergift(name: str) -> bool:
+    """The title is an Altergift AND its platform phrase is Steam — Romain's « Steam
+    Altergift = Steam Gift » (2026-09-14). In the grammar: the run before "Altergift", its
+    PC / Mac / Windows items removed, is exactly "Steam" ("PC Steam Altergift", "Steam
+    Altergift"; "PC Epic Games Altergift" is not). Outside the grammar: the whole word Steam
+    is present and no other store / console phrase is."""
+
+    if not is_altergift(name):
+        return False
+    m = parse_title(name)
+    if m is not None:
+        run = re.sub(r"\s+", " ", _NOT_A_STORE_RE.sub(" ", m.group("run")).replace("/", " ")).strip()
+        return m.group("delivery").upper() == "ALTERGIFT" and run.upper() == "STEAM"
+    return _STEAM_RE.search(name) is not None and _OTHER_PLATFORM_RE.search(name) is None
+
+
+def url_delivery(url: str) -> str | None:
+    """What the Kinguin slug tail says about the delivery: ``"gift"`` for ``-altergift`` /
+    ``-gift``, ``"key"`` for ``-cd-key`` / ``-key`` / ``-activation-link`` or an account /
+    access marker, None when the (often truncated) slug says nothing. Path only — the
+    ``?params`` never speak for the product (§4.6)."""
+
+    path = urlsplit(url or "").path.lower()
+    if _URL_GIFT_TAIL_RE.search(path):
+        return "gift"
+    if _URL_KEY_TAIL_RE.search(path) or _ACCOUNT_URL_RE.search(path):
+        return "key"
+    return None
+
+
+def altergift_verdict(name: str, url: str) -> str | None:
+    """The one Altergift decision of the Kinguin grammar, shared by ``precheck`` and
+    ``gift_delivery`` (Romain 2026-09-14: « Steam Altergift = Steam Gift on rentre sous gift
+    tous les altergifts » + the fail-closed rule — review fix of the same day):
+
+    * ``"gift"`` — a Steam Altergift whose slug agrees or says nothing (truncated):
+      entered as the Steam GIFT bucket;
+    * a skip reason (str) — the store phrase is not Steam (never seen — never another
+      platform's gift bucket, never a plain key), or the slug tail contradicts the title
+      ("-cd-key" / "-key" / account marker against "Altergift"; 0 rows);
+    * None — not an Altergift row: the generic read decides ("… PC Steam Gift" keeps its
+      " GIFT " reading).
+    """
+
+    if not is_altergift(name):
+        return None
+    if not is_steam_altergift(name):
+        return ("Kinguin Altergift outside the Steam collocation (title's platform phrase is "
+                "not Steam) — not entered (Romain 2026-09-14: « Steam Altergift = Steam Gift »)")
+    if url_delivery(url) == "key":
+        return ("Kinguin delivery conflict: title Altergift but URL says key / account (no "
+                "altergift tail) — not entered (2026-09-14)")
+    return "gift"
+
+
 # ── hooks (PC pipeline) ──────────────────────────────────────────────────────────────
 def precheck(name: str, url: str) -> str | None:
     """Categorical skips of the Kinguin grammar, before the generic scans:
     1. an account / access listing → ``skip category: ACCOUNT (…)`` (never a key);
     2. a region code that is not sellable → ``forbidden region: <LABEL>`` (the matcher
-       vocabulary: CA → CANADA, AU → AUSTRALIA, RoW → ROW, SEA → SOUTH EAST ASIA …).
-    A sellable code (EU / US / UK / GB / European Union) or no code → None."""
+       vocabulary: CA → CANADA, AU → AUSTRALIA, RoW → ROW, SEA → SOUTH EAST ASIA …);
+    3. the Altergift gates of :func:`altergift_verdict` — a non-Steam Altergift or a
+       title / URL delivery conflict → its fail-closed reason (review fix 2026-09-14).
+    A sellable code (EU / US / UK / GB / European Union) or no code, and a Steam Altergift
+    whose slug agrees → None."""
 
     if is_account_listing(name, url):
         return "skip category: ACCOUNT (Kinguin account / access listing — not a key)"
     text = region_text(name)
-    return forbidden_reason(text) if text else None
+    reason = forbidden_reason(text) if text else None
+    if reason:
+        return reason
+    verdict = altergift_verdict(name, url)
+    return verdict if verdict not in (None, "gift") else None
+
+
+def gift_delivery(name: str, url: str) -> bool | None:
+    """Kinguin's own gift-delivery verdict for ``detect_region`` (Romain 2026-09-14: « on
+    rentre sous gift tous les altergifts »): True when :func:`altergift_verdict` says
+    ``"gift"`` → the Steam GIFT bucket layered on the base region (25 / 259); None
+    otherwise → the generic read decides ("… PC Steam Gift" keeps its " GIFT " reading; a
+    refused Altergift row was already stopped by ``precheck`` — the merchant does not vouch
+    for it)."""
+
+    return True if altergift_verdict(name, url) == "gift" else None
 
 
 def title_region(name: str) -> str | None:
@@ -183,16 +321,39 @@ def title_region(name: str) -> str | None:
     return sellable_base(text) if text else None
 
 
+def strip_valid_until(name: str) -> str:
+    """``name`` without its TRAILING "(valid until <Month> <Year>)" note — and nothing else
+    (the whitespace it leaves is collapsed). Unchanged when there is no note, or when the
+    note sits elsewhere in the title (a spelling never seen: it stays, fail-closed —
+    review fix 2026-09-14)."""
+
+    if not name or VALID_UNTIL_RE.search(name) is None:
+        return name or ""
+    return re.sub(r"\s+", " ", VALID_UNTIL_RE.sub(" ", name)).strip()
+
+
+def guard_name(name: str) -> str:
+    """The title the identity guards (R01 / R16 / R01b) and ``detect_edition`` read
+    (Romain 2026-09-14: « Kinguin valid until juin 2027 on rentre », « … on rentre sous gift
+    tous les altergifts »): the raw title with the trailing "(valid until …)" note stripped
+    and the delivery word "Altergift" dropped — nothing else is touched ("Vampyr PC Steam CD
+    Key (valid until March 2027)" → "Vampyr PC Steam CD Key"; "Sons Of The Forest PC Steam
+    Altergift" → "Sons Of The Forest PC Steam"; every other word, platform / delivery /
+    region / edition included, stays for the guards to weigh as before)."""
+
+    return drop_altergift(strip_valid_until(name)) or name
+
+
 def resolve_name(name: str) -> str:
     """The text handed to AKS resolution: the region code, the platform phrase, the
     delivery word, the "by Digital Distribution Hub" note and the "(valid until …)" note
     peeled ("Hobo: Tough Life US Xbox One / Xbox Series X|S CD Key" → "Hobo: Tough Life").
-    A title outside the grammar is returned unchanged (only a trailing validity note is
-    dropped)."""
+    A title outside the grammar is returned unchanged but for a trailing validity note and
+    the word "Altergift" (2026-09-14)."""
 
     m = parse_title(name)
     if m is None:
-        return _VALID_UNTIL_RE.sub("", name or "") or name
+        return drop_altergift(strip_valid_until(name)) or name
     return m.group("head").strip() or name
 
 
@@ -244,11 +405,15 @@ CONFIG = make_config(
     precheck=precheck,
     title_region=title_region,
     resolve_name=resolve_name,
+    guard_name=guard_name,                # the "(valid until …)" note / "Altergift" are not product words (Romain 2026-09-14)
+    gift_delivery=gift_delivery,          # "… PC Steam Altergift" = Steam GIFT bucket (Romain 2026-09-14, « tous les altergifts »)
     console_region_slot=console_region_slot,
     console_url_families=console_url_families,
-    console_noise=("CD Key",),            # NOT the "(valid until …)" note — see OPEN_QUESTION_VALID_UNTIL
+    console_noise=("CD Key", VALID_UNTIL_RE),   # the note is noise for console rows too (Romain 2026-09-14)
     notes=("feed store 58 (&store=58); AKS page merchant 47; title '<Game> [Edition] [<REGION>] "
-           "<Platform> CD Key' — region = uppercase code before the platform phrase (2026-09-14)"),
+           "<Platform> CD Key [(valid until <Month> <Year>)]' — region = uppercase code before "
+           "the platform phrase; the validity note is entered, 'PC Steam Altergift' = Steam gift "
+           "(2026-09-14)"),
 )
 
 

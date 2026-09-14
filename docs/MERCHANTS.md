@@ -46,10 +46,12 @@ Champs disponibles :
 | `title_region(name)` | région déclarée par la grammaire du titre, autoritaire `[R32e]` | — |
 | `resolve_name(name)` | texte remis à la résolution AKS (slug), les contrôles d'identité gardent le titre brut `[R32e]` | — |
 | `url_platform(url)` | plateforme déclarée par la grammaire d'URL du marchand (Gamivo : run `-pc-steam-` entre le slug et le code région), consultée en premier par `explicit_platform_from_url` `[R46]` | — |
+| `guard_name(name)` | **`[R32e]` (2026-09-14)** — le titre lu par les gardes d'identité (R01 mots AKS manquants, R16 mots en trop, R01b qualificatif dangereux) et par `detect_edition` pour une ligne PC : le titre brut par défaut (aucun marchand sans le hook ne change) ; un marchand dont la grammaire ajoute une note qui n'est PAS un mot de produit la retire ici — et elle seule (Kinguin « (valid until <Month> <Year>) » en FIN de titre seulement — correctif de revue 14/09 —, le mot de livraison « Altergift » chez K4G et Kinguin — décisions de Romain du 14/09 : « Kinguin valid until juin 2027 on rentre », « Steam Altergift = Steam Gift on rentre »). Le hook ne blanchit jamais un titre : les mots qu'il laisse sont toujours comparés au nom AKS, une réponse vide → titre brut | titre brut |
+| `gift_delivery(name, url)` | **`[R32e]` (2026-09-14)** — le verdict « livraison gift » propre au marchand, superposé par `detect_region` comme bucket GIFT de la plateforme (Steam 25 / gift_eu 259, Battle.net 570 / 567 ; pas de gift_us / gift_uk → skip fail-closed « no region id ») : True / False l'emporte, None → lecture générique (segment d'URL `gift`, « GIFT » dans le titre). K4G / Kinguin « … Steam Altergift » dont le slug est d'accord → True (Romain 14/09 : « on rentre sous gift tous les altergifts ») ; le hook lit ses DEUX arguments : un conflit titre / URL (titre Altergift, slug `-cd-key`) ou un Altergift hors Steam n'est jamais un verdict — c'est le skip fail-closed du `precheck` marchand (correctifs de revue 14/09) | lecture générique |
 | `console_url_families(url)` | **console `[R45]` (2026-09-14)** — les familles que l'URL déclare, dans l'ordre (sous-ensemble de XBOX_ONE / XBOX_SERIES / PS4 / PS5 / SWITCH / SWITCH2), OU une chaîne de skip (`"console: Xbox 360 (R45)"`, `"console: PC-only Xbox Live key (R45)"`, `"console: <MARKER> — not a game (R45)"`), OU `None` (l'URL ne dit rien) ; consulté par le classifieur générique SEULEMENT quand le titre ne déclare aucune famille | — |
 | `console_pc_declared(name, url)` | **console `[R45]` (2026-09-14)** — True quand le marchand déclare PC / Windows à côté de la plateforme console (Gamivo : runs `-pc` / `-windows` ; Eneba : run `-windows-`) ; la lecture générique des phrases de titre (`/ Windows`, `PC/XBOX …`) reste générique | — |
 | `console_region_slot(name)` | **console `[R45]` (2026-09-14)** — le TEXTE de région que le marchand écrit à côté de la phrase plateforme, tel quel (`"US"`, `"CA"`, `"Europe"`, `"United Kingdom"`, `"Hong Kong"`, `"EUROPE"`) ; la correspondance texte → base (uk / us / eu / global) ou label interdit reste générique dans `console_keys` (vocabulaire partagé) ; hook absent → le classifieur retombe sur ses lectures partagées de queue / crochets | — |
-| `console_noise` | **console `[R45]` (2026-09-14)** — `tuple[str, ...]` de phrases marchandes à retirer de `resolve_name` EN PLUS des marqueurs partagés de magasin / livraison (`"Download Code"` MMOGA, `"Digital Key"` / `"Digital Code"` Driffle, `"CD Key"` Kinguin — la note `(valid until <Month> <Year>)` de Kinguin n'est PAS un bruit : question ouverte `kinguin.OPEN_QUESTION_VALID_UNTIL`) | `()` |
+| `console_noise` | **console `[R45]` (2026-09-14)** — `tuple[str, ...]` de phrases marchandes à retirer de `resolve_name` EN PLUS des marqueurs partagés de magasin / livraison (`"Download Code"` MMOGA, `"Digital Key"` / `"Digital Code"` Driffle, `"CD Key"` Kinguin) ; un `re.Pattern` compilé est accepté pour les formes qu'un littéral ne sait pas écrire — la note `(valid until <Month> <Year>)` de Kinguin (`kinguin.VALID_UNTIL_RE`, un bruit depuis la décision de Romain du 14/09 : « Kinguin valid until juin 2027 on rentre ») | `()` |
 
 **Consoles `[R45]` — ce qui est partagé et ce qui est marchand (2026-09-14).** Le
 classifieur `src/console_keys.py` (`classify_console`, `console_marker_in_url`,
@@ -103,11 +105,11 @@ multiples — sous `--consoles`), preuve de succès = disparition du feed.
 
 | Marchand | Store id feed | Fichier (`src/merchants/`) | Hooks déclarés (14/09) | Éprouvé en safe-auto | Feed (pages) |
 |---|---|---|---|---|---|
-| Kinguin | 58 | `kinguin.py` (**nouveau**, `domain` sorti du registre) | PC : `precheck`, `title_region`, `resolve_name` (pas de `url_platform` — R32b) ; console : `console_url_families`, `console_region_slot`, `console_noise=("CD Key",)` | oui (142 pages d'historique + nuit du 11/09) | 67 |
+| Kinguin | 58 | `kinguin.py` (**nouveau**, `domain` sorti du registre) | PC : `precheck`, `title_region`, `resolve_name`, `guard_name`, `gift_delivery` (note « valid until » saisie — en fin de titre —, « PC Steam Altergift » = Steam Gift, 14/09 soir) — pas de `url_platform` (R32b) ; console : `console_url_families`, `console_region_slot`, `console_noise=("CD Key", VALID_UNTIL_RE)` | oui (142 pages d'historique + nuit du 11/09) | 67 |
 | Gamivo | 51 | `gamivo.py` (4 hooks PC `[R46]` depuis le 12/09) | `console_url_families`, `console_pc_declared`, `console_region_slot` | oui — 6 saisies fausses du 11/09 à corriger | 56 |
 | G2A | 38 | `g2a.py` | PC : `precheck`, `title_region` (queue ` - <RÉGION>`) + flags R32b ; console : `console_url_families`, `console_region_slot` | oui | 37 |
 | MMOGA | 12 (page AKS : marchand 40) | `mmoga.py` | `console_url_families`, `console_region_slot`, `console_noise` | oui (1 265 créées les 10-12/09) | 8-10 |
-| K4G | 92 | `k4g.py` (**nouveau**) | PC : `precheck` (dont « ALTERGIFT » explicite), `title_region`, `resolve_name` ; console : `console_url_families`, `console_region_slot` | oui | 7 |
+| K4G | 92 | `k4g.py` (**nouveau**) | PC : `precheck`, `title_region`, `resolve_name`, `guard_name`, `gift_delivery` (Altergift = Steam Gift quand le slug est d'accord, 14/09 soir) ; console : `console_url_families`, `console_region_slot` | oui | 7 |
 | Driffle | 127 | `driffle.py` (**nouveau**) | PC : `precheck`, `title_region` (1re parenthèse) ; console : `console_url_families`, `console_region_slot`, `console_noise` | oui | 6 |
 | Instant Gaming | 28 | `instant_gaming.py` | PC : `offer_page_resolver` ; console : `console_url_families` → toujours None (déclaré : l'URL ne dit rien ; une plateforme console lue sur la page IG → plateforme None → skip R32) | oui | 4-5 |
 | Eneba | 19 | `eneba.py` | `console_url_families`, `console_pc_declared`, `console_region_slot` | **dry-run du 12/09 en cours** | ≥ 30 |
@@ -164,14 +166,41 @@ matcher et le classifieur importent le registre.
   → `skip category: ACCOUNT`), `title_region` (le code « US » nu, invisible du scan générique,
   devient Steam US explicite au lieu d'un GLOBAL implicite + slug `…-us` en 404),
   `resolve_name` (code + phrase plateforme + livraison + « by Digital Distribution Hub » +
-  « (valid until …) » retirés → slug du jeu : `…-dlc-eu` → `…-dlc`) ; **pas de
-  `url_platform`** : la plateforme reste lue dans le TITRE (R32b, Romain : « ça marche
+  « (valid until …) » retirés → slug du jeu : `…-dlc-eu` → `…-dlc`), `guard_name` (la note
+  « (valid until …) » retirée — et elle seule — du titre lu par les gardes, 14/09 soir,
+  ci-dessous) ; **pas de `url_platform`** : la plateforme reste lue dans le TITRE (R32b, Romain : « ça marche
   aujourd'hui »), `title_is_platform_source` inchangé. Console — `console_url_families`
   (marqueurs `-account` / `-online-account-activation` → non-jeu ; runs à tirets du slug =
   vocabulaire partagé) ; `console_region_slot` (code majuscule avant la phrase plateforme) ;
-  `console_noise = ("CD Key",)` — la note « (valid until <Month> <Year>) » n'est PAS un bruit
-  (79 lignes / lot restent en skip « extra words » tant que Romain n'a pas tranché :
-  `kinguin.OPEN_QUESTION_VALID_UNTIL`). Mesure sur le lot du 12/09 (lignes PC, vs code
+  `console_noise = ("CD Key", VALID_UNTIL_RE)`. **Note « (valid until <Month> <Year>) » —
+  décision de Romain (14/09) : « Kinguin valid until juin 2027 on rentre »** — une date
+  limite d'activation, pas un mot de produit : `guard_name` retire la note — et elle seule —
+  du titre lu par les gardes d'identité (R01 / R16 / R01b) et `detect_edition` ;
+  `resolve_name` la pèle pour le slug ; `console_noise` la porte (un `re.Pattern`) pour que
+  les lignes consoles avec la note résolvent aussi. Avant : 79 lignes / lot en skip
+  « different/expanded product — extra words: ['VALID', 'UNTIL', 'MARCH', '2027'] ». Rejeu
+  (lecture seule, lot du 12/09, 79 lignes) : 76 passent le précheck, toutes STEAM GLOBAL (2)
+  implicite sur le slug du jeu (inchangé) ; 61 avaient résolu leur page avec la note pour
+  seuls mots en trop → **candidates désormais** ; 13 restent en 404 (même slug) ; 1 garde
+  DLC (R43), 1 « missing AKS words: ['VR'] », 3 skips inchangés (ROW ×2, BUNDLE ×1). Seule
+  la forme « (valid until <Month>[,] <Year>) » existe dans le corpus (89 / 89 lignes) ; toute
+  autre orthographe reste dans la garde (fail-closed) ; **correctif de revue (14/09 soir) : la
+  note n'est retirée qu'en FIN de titre** (`VALID_UNTIL_RE` ancré `\s*$`, comme le motif
+  d'avant la décision ; 158 / 158 lignes du corpus, doublons compris, la portent en fin de
+  titre) — une note au milieu du titre est une orthographe jamais vue : elle reste dans la
+  garde (skip « extra words », fail-closed), jamais un retrait au milieu du nom. **Altergift
+  Kinguin — correctif de revue (14/09 soir)** : « on rentre sous gift tous les altergifts »
+  vaut aussi pour la livraison « Altergift » de Kinguin (1 ligne / lot, « Sons Of The Forest
+  DE PC Steam Altergift » — GERMANY de toute façon ; avant, une ligne Altergift non interdite
+  lisait STEAM GLOBAL (2) puis R16 « extra words: ['ALTERGIFT'] ») : `gift_delivery` → True
+  pour « <Jeu> [<CODE>] PC Steam Altergift » quand le slug ne contredit pas (le slug Kinguin
+  reflète le titre mais est souvent tronqué → silence accepté ; queue `-cd-key` / `-key` /
+  compte contre un titre Altergift → « Kinguin delivery conflict », fail-closed) ; Altergift
+  hors Steam → « Kinguin Altergift outside the Steam collocation », jamais le bucket gift
+  d'une autre plateforme ; `guard_name` / `resolve_name` retirent le mot ; les lignes « Steam
+  Gift » gardent la lecture générique (`gift_delivery` → None). Rejeu (lot du 12/09) : 1 ligne
+  change (Sons Of The Forest DE : bucket GIFT 25 lu, précheck GERMANY inchangé), 0 candidate.
+  Mesure du matin sur le lot du 12/09 (lignes PC, vs code
   committé) : 34 prechecks explicites (30 régions interdites qui finissaient en 404, 1
   relabel AFRICA → NORTH AMERICA, …), 2 régions (« Metro Awakening US PC Steam CD Key » :
   GLOBAL implicite → US), 30 slugs (21 DLC EU en 404 `…-dlc-eu` → `…-dlc`) ; 0 candidat
@@ -352,17 +381,52 @@ matcher et le classifieur importent le registre.
   `xbox-series-x-s`, `pc-xbox-one-series-x-s`, `nintendo-switch(-2)`, `playstation-5`,
   `ps4-ps5` — runs du vocabulaire partagé). Dernier lot : **135 / 592**.
 - **Hooks (14/09)** : `domain` ; PC — `precheck` (nom de région en toutes lettres avant
-  la phrase magasin hors vocabulaire vendable → `forbidden region: <LABEL>` ; « Steam
-  Altergift » → `skip category: ALTERGIFT` explicite — 216 / 592 lignes du lot, 0 candidat
-  jamais, aucun bucket AKS confirmé : `k4g.OPEN_QUESTION_ALTERGIFT`), `title_region` (Europe /
-  United States / Global — lecture identique au générique, désormais déclarée),
-  `resolve_name` (région + magasin + livraison retirés, « Altergift » compris) ; console —
+  la phrase magasin hors vocabulaire vendable → `forbidden region: <LABEL>`), `title_region`
+  (Europe / United States / Global — lecture identique au générique, désormais déclarée),
+  `resolve_name` (région + magasin + livraison retirés, « Altergift » compris),
+  `gift_delivery` et `guard_name` (Altergift = Steam Gift, ci-dessous) ; console —
   `console_url_families` (runs partagés sur le slug `/product/…`, exigés suivis d'un slug de
   région connu ; suffixe `-cd-key-<8 car.>` ignoré) ; `console_region_slot` (mot de région
   entre l'édition et la phrase plateforme, vocabulaire plus large que le partagé :
-  Luxembourg, Mexico, UAE…). Mesure (lot du 12/09, vs code committé) : 216 prechecks
-  ALTERGIFT (143 étaient des 404, 35 des mots en trop, 29 NORTH AMERICA, 3 BUNDLE, 2
-  AMERICAS, 2 DLC, 1 PASS, 1 no region id), 12 slugs ; 0 candidat touché.
+  Luxembourg, Mexico, UAE…). Mesure du matin (lot du 12/09, vs code committé) : 12 slugs ;
+  0 candidat touché.
+- **« Steam Altergift » = Steam Gift — décision de Romain (14/09) : « Steam Altergift =
+  Steam Gift on rentre sous gift tous les altergifts »** (216 / 592 lignes du lot, jamais
+  candidates avant ; le skip explicite `skip category: ALTERGIFT` du matin est retiré) :
+  `gift_delivery` répond True pour le mot entier ALTERGIFT (insensible à la casse) et
+  `detect_region` superpose le bucket GIFT Steam à la région de base du titre / de l'URL —
+  GIFT (25) sans région ou Global, GIFT EU (259) pour Europe ; base US / UK sans bucket gift
+  Steam → skip fail-closed « no region id for STEAM/GIFT US » (inchangé) ; région interdite
+  (North America, Americas) → précheck inchangé ; plateforme STEAM (le titre colloque STEAM
+  et ALTERGIFT). « Altergift » n'est jamais un mot de produit : `guard_name` retire ce mot —
+  et lui seul — du titre des gardes (R16 comptait « extra words: ['ALTERGIFT'] »),
+  `resolve_name` le retire du slug (`seafrog`, plus `seafrog-steam-altergift`). Rejeu
+  (lecture seule, lot du 12/09, 218 lignes Altergift dédoublonnées) : 182 passent (STEAM
+  GIFT 25 ×120, GIFT EU 259 ×62 ; 183 / 183 slugs des lignes non pré-skippées changent vers
+  le slug du jeu — vs le run du 12/09, slug générique ; vs le fichier K4G du matin, 90378a6,
+  2 slugs seulement, les deux lignes hors grammaire « … Steam Europe Altergift »), 36 skips (NORTH AMERICA 29, BUNDLE 3, AMERICAS 2, PASS 1, GIFT UK sans
+  bucket 1) ; côté AKS (run enregistré) : 144 étaient des 404 sur `…-steam-altergift` →
+  slug du jeu **à sonder au prochain dry-run**, 36 gardent d'autres mots en trop (R16 :
+  « Plus Expansion Pack », « Treasure from Heaven », « Episode 3 »…), 2 garde SEASON PASS
+  (R43) ; aucune ligne n'avait « ALTERGIFT » pour seul mot en trop → 0 candidate
+  immédiate, 0 candidate enregistrée touchée. **Deux garde-fous fail-closed sur cette
+  décision (correctifs de revue, 14/09 soir — `k4g.altergift_verdict`, lu par `precheck` et
+  `gift_delivery`)** : (1) **le slug doit être d'accord** — K4G écrit la livraison dans le
+  slug (`-altergift-` / `-alter-gift-`, 217 / 218 lignes Altergift du lot) ; UNE ligne disait
+  le contraire, l'offre 101030313 « Trine 5: A Clockwork Conspiracy Steam Altergift » sur
+  `…-steam-global-instant-cd-key-48V2PFDZ` (titre gift, URL clé — la classe de bucket, GIFT
+  25 ou GLOBAL 2, ne se lit pas sur la ligne) → « K4G delivery conflict: title Altergift but
+  URL says cd-key (no altergift segment) — not entered », avant tout sondage ; un slug sans
+  aucun segment de livraison (hors grammaire d'URL) → même refus ; le conflit miroir (titre
+  « CD Key », slug `-alter-gift-`, 0 ligne) est refusé aussi — la lecture générique `-gift-`
+  aurait rangé une clé sous GIFT (25). (2) **Steam seulement** — « Steam Altergift = Steam
+  Gift » nomme le mécanisme (216 / 216 lignes en grammaire disent « Steam », les 2 lignes
+  hors grammaire « … Steam Europe Altergift » aussi) : un Altergift dont la phrase magasin
+  n'est pas Steam (« Battle.net Altergift », « Steam / Epic Games Altergift ») ou absente est
+  une grammaire jamais vue → « K4G Altergift outside the Steam collocation … — not
+  entered », jamais le bucket gift d'une autre plateforme (Battle.net 570 / 567 existent),
+  jamais une clé simple. Rejeu (lot du 12/09, 6 314 lignes tous marchands) : 1 seule ligne
+  K4G change — Trine 5 (404 enregistré, désormais refus explicite) ; 0 candidate.
 - **Statut live** : éprouvé en safe-auto.
 - **Résiduel** : ~25 % de consoles, sans page AKS.
 

@@ -1146,18 +1146,25 @@ def _detect_region_parts(offer: NormalizedOffer) -> tuple[str, str, bool, bool, 
     # would false-hit region tokens — only the path speaks for the product.
     url = strip_merchant_url_noise(offer.url, offer.merchant).lower().split("?", 1)[0]
     padded = " " + offer.name.upper() + " "
-    # 'gift' must be its own URL segment (audit 2026-07-17, MA4): the bare
-    # substring matched slug words like "the-gifted-rabbit" and proposed
-    # GIFT(25) for a regular key.
-    is_gift = (
-        re.search(r"(?:^|[-/])gift(?:[-/]|$)", url) is not None
-        or " GIFT " in padded
-        or "GIFT)" in padded
-    )
+    cfg = merchant_config(offer.merchant)
+    # Merchant-config override hook (R32e, 2026-09-14 — Romain: « Steam Altergift = Steam
+    # Gift on rentre sous gift tous les altergifts »): the merchant's OWN gift-delivery
+    # verdict (K4G "… Steam Altergift" → True) wins over the generic read; None → generic.
+    hook_gift = cfg.gift_delivery(offer.name, offer.url) if cfg is not None and cfg.gift_delivery else None
+    if hook_gift is not None:
+        is_gift = bool(hook_gift)
+    else:
+        # 'gift' must be its own URL segment (audit 2026-07-17, MA4): the bare
+        # substring matched slug words like "the-gifted-rabbit" and proposed
+        # GIFT(25) for a regular key.
+        is_gift = (
+            re.search(r"(?:^|[-/])gift(?:[-/]|$)", url) is not None
+            or " GIFT " in padded
+            or "GIFT)" in padded
+        )
     tail = offer.name.rsplit(" - ", 1)[-1].strip().upper() if " - " in offer.name else ""
     # Merchant-config override hook (R32e, 2026-09-10): the region the merchant's title
     # grammar declares wins over the generic title/URL scan below (MMOGA "… US Key").
-    cfg = merchant_config(offer.merchant)
     hook_base = cfg.title_region(offer.name) if cfg is not None and cfg.title_region else None
 
     base, label, implicit = "global", "GLOBAL", False
@@ -2745,6 +2752,14 @@ def _pc_plan(
     else:
         identity_name = resolution.aks_name
 
+    # Merchant-config override hook (R32e, 2026-09-14 — Romain: « Kinguin valid until juin
+    # 2027 on rentre », « Steam Altergift = Steam Gift on rentre »): the merchant may hand
+    # the identity guards (R01 / R16 / R01b) and detect_edition its title with its own
+    # NON-PRODUCT note stripped — and only that (Kinguin "(valid until <Month> <Year>)",
+    # K4G "Altergift"). The raw title for every merchant without the hook (unchanged); an
+    # empty answer falls back to the raw title (the stricter read — never an empty guard).
+    guard_name = (_cfg.guard_name(offer.name) if _cfg is not None and _cfg.guard_name else "") or offer.name
+
     return _Plan(
         resolution=resolution,
         platform=platform,
@@ -2755,7 +2770,7 @@ def _pc_plan(
         difmark_platform_verified=difmark_platform_verified,
         dlc_page=dlc_page,
         identity_name=identity_name,
-        guard_name=offer.name,
+        guard_name=guard_name,
     )
 
 

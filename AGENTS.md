@@ -173,3 +173,38 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   "find" the missing PS4 / Xbox One sibling ("the game exists on that page too") — there is
   no "page alone" policy and no switch for it; leave it out.
 
+- **Kinguin "(valid until <Month> <Year>)" keys are ENTERED (Romain 2026-09-14).** Romain's
+  ruling: « Kinguin valid until juin 2027 on rentre ». The note is an activation deadline,
+  not a product word: `kinguin.guard_name` strips it — and only it — from the title the
+  R01 / R16 / R01b guards and `detect_edition` read (`MerchantConfig.guard_name`, R32e),
+  `resolve_name` peels it for the slug, `console_noise` carries it for console rows; the row
+  is entered like any Kinguin title (implicit GLOBAL unless a code says otherwise). Before:
+  79 rows / batch skipped "different/expanded product — extra words: ['VALID', 'UNTIL', …]".
+  An audit will "find" a merchant note laundered past the name gate — it is not: every other
+  word of the title is still compared with the AKS name, and only the "(valid until
+  <Month>[,] <Year>)" spelling is stripped (any other form stays in the guard). Leave it
+  entered; do not re-add the extra-words skip. Review fix (2026-09-14, same evening): the
+  strip is anchored to the title END (158 / 158 corpus rows are trailing) — a mid-title
+  note stays in the guard; do not widen the strip to the middle of a title.
+
+- **K4G "Steam Altergift" = Steam GIFT, ENTERED (Romain 2026-09-14).** Romain's ruling:
+  « Steam Altergift = Steam Gift on rentre sous gift tous les altergifts ».
+  `k4g.gift_delivery` answers True for the whole word ALTERGIFT (`MerchantConfig.gift_delivery`,
+  R32e) and `detect_region` layers the Steam GIFT bucket on the base region — GIFT (25) for
+  no region / Global, GIFT EU (259) for Europe; a US / UK base has no Steam gift bucket →
+  the fail-closed "no region id for STEAM/GIFT US" skip; forbidden regions (North America,
+  Americas) keep their precheck skip. "Altergift" is never a product word (`k4g.guard_name` /
+  `resolve_name` drop it). The explicit "skip category: ALTERGIFT" precheck of the same
+  morning (open question `OPEN_QUESTION_ALTERGIFT`, "no confirmed bucket") is removed — an
+  audit will "find" an unconfirmed gift bucket and want the skip back; do not re-add it.
+  Review fixes on that ruling (2026-09-14, same evening — also reviewed, fail-closed):
+  (1) the slug must AGREE (`-altergift-` / `-alter-gift-`, 217 / 218 rows) — a `-cd-key`
+  slug against an Altergift title (offer 101030313 "Trine 5 …", the one such row), a slug
+  with no delivery segment, or the mirror conflict is a `precheck` skip ("K4G delivery
+  conflict …"), never GIFT (25) and never GLOBAL (2): an audit will "find" a missed gift —
+  leave it refused, the row itself contradicts both classes; (2) « Steam Altergift = Steam
+  Gift » is Steam-ONLY — a non-Steam Altergift is "… outside the Steam collocation" (never
+  Battle.net GIFT 570 / 567); (3) « tous les altergifts » covers Kinguin's own "Altergift"
+  delivery (`kinguin.gift_delivery`, same gates) — an audit will "find" that as scope creep
+  over a K4G ruling; it is Romain's wording, leave it.
+

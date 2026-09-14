@@ -279,9 +279,11 @@ récents (voir
   (`scripts/10 --targets "Kinguin:58" --dry-run --consoles`, puis K4G / Driffle) et lecture
   des `skipped.json` (motifs `console: … (R45)` inchangés attendus) ; Allyouplay / CJS-CDKeys /
   GameSeal en `--dry-run` PC d'abord (jamais balayés) pour relever leur grammaire et la
-  déclarer dans leur fichier (`domain` déclaré, à confirmer) ; trancher les questions
-  ouvertes des fichiers marchands (Kinguin `OPEN_QUESTION_VALID_UNTIL` — 79 lignes / lot —,
-  K4G `OPEN_QUESTION_ALTERGIFT` — 216 / 592 —, queue « EU/UK » = skip).
+  déclarer dans leur fichier (`domain` déclaré, à confirmer). Les deux questions des fichiers
+  marchands sont **tranchées le 14/09 (soir)** : Kinguin « (valid until <mois> <année>) » =
+  note de validité, on entre (hook `guard_name`, 79 lignes / lot) ; K4G « Steam Altergift » =
+  Steam Gift, on entre sous le bucket GIFT (hook `gift_delivery`, 216 / 592 ; gift US/UK sans
+  bucket → skip). Reste ouverte : la queue « EU/UK » = skip.
 - **Questions pour Romain (R45, à confirmer — EXECUTOR_RULES §12)** : ~~P1~~ **tranchée le
   14/09** (« clé PS5 seule = page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch
   et Switch 2 » — déclaration marchande ∧ page AKS, jamais de page sœur) ; restent **P2-P5** :

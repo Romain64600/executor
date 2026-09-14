@@ -461,6 +461,39 @@ Derive region from the offer URL when the merchant encodes it there
 (e.g. Gamivo `…-steam-global` / `-eu` / `-gift-eu`; look for
 `-gift-`) `[GAMIVO]`. Kinguin Steam titles often omit the region → accept as
 **GLOBAL implicit** unless a forbidden region is present `[KINGUIN]`.
+**Kinguin "(valid until <Month> <Year>)" and K4G "Steam Altergift" — Romain's rulings
+(2026-09-14): « Kinguin valid until juin 2027 on rentre, Steam Altergift = Steam Gift on
+rentre sous gift tous les altergifts ».** The Kinguin note is an activation deadline, not a
+product word: `kinguin.guard_name` strips it — and only it — from the title the `[R01]` /
+`[R16]` / `[R01b]` guards and `detect_edition` read (`guard_name` hook, §4.10; before, 79
+rows / batch were skipped "extra words: ['VALID', 'UNTIL', …]"); `resolve_name` peels it
+for the slug, `console_noise` carries it for console rows; the row is entered like any
+Kinguin title (implicit GLOBAL unless a code says otherwise; only the "(valid until
+<Month>[,] <Year>)" spelling is stripped — 89 / 89 rows of the corpus — any other form stays
+in the guard). A K4G Altergift is a Steam GIFT: `k4g.gift_delivery` → True for the whole
+word ALTERGIFT (`gift_delivery` hook, §4.10), `detect_region` layers the Steam GIFT bucket on
+the base region the title / URL declare — GIFT (25) for no region / Global, GIFT EU (259)
+for Europe; a US / UK base has no Steam gift bucket → the fail-closed "no region id for
+STEAM/GIFT US" skip, unchanged; forbidden regions (North America, Americas) keep their
+precheck skip — and `k4g.guard_name` / `resolve_name` drop the word "Altergift" (never a
+product word; before, an explicit "skip category: ALTERGIFT" precheck, removed). **Review
+fixes on the two rulings (2026-09-14, same evening — fail-closed):** the Kinguin strip is
+anchored to the title END (`kinguin.VALID_UNTIL_RE`, `\s*$`; 158 / 158 corpus rows are
+trailing) — a mid-title note stays in the guard (extra-words skip); a K4G / Kinguin Altergift
+is entered ONLY when the slug agrees (`k4g.altergift_verdict`: `-altergift-` / `-alter-gift-`
+in the K4G slug, 217 / 218 rows; Kinguin's often-truncated slug may be silent but must not
+carry a `-cd-key` / `-key` / account tail) — the one row that disagreed, offer 101030313
+"Trine 5: A Clockwork Conspiracy Steam Altergift" on `…-instant-cd-key-48V2PFDZ`, is the
+precheck skip "K4G delivery conflict: title Altergift but URL says cd-key (no altergift
+segment) — not entered" (gift 25 or key GLOBAL 2 cannot be known from the row), and the
+mirror (title "CD Key", slug `-alter-gift-`) is refused too; « Steam Altergift = Steam Gift »
+is Steam-only — an Altergift whose store phrase is not Steam is "… outside the Steam
+collocation — not entered", never another platform's GIFT bucket, never a plain key; and the
+ruling covers Kinguin's own "Altergift" delivery (`kinguin.gift_delivery`: "<Game> [<CODE>] PC
+Steam Altergift" → GIFT 25 / GIFT EU 259, the word dropped from the guard / slug; "Steam
+Gift" rows keep the generic read). Both are reviewed decisions (AGENTS.md) — an audit must
+not re-flag them. Replay on the 2026-09-12 batches: CHANGELOG 2026-09-14 (« Décisions de
+Romain (14/09, soir) » and its « Correctifs de revue »).
 **Gamivo grammar `[R46]` (2026-09-12).** Gamivo's CURRENT grammar defeats every generic
 read: the title is `<Game> [<Edition>] [<LANG>(/<LANG>)*] <Region>` — a trailing region
 phrase with no separator ("Ravenswatch EN United Kingdom", "Tiny Tina's Wonderlands United
@@ -916,10 +949,31 @@ generic rule when it returns `None`, so the generic modules stay merchant-agnost
 - `url_platform(url) -> platform token | None` — the platform the merchant's URL grammar
   declares; consulted FIRST by `explicit_platform_from_url`, before the
   `url_platform_prefixes` / `url_platform_scan` modes (Gamivo `…-pc-steam-us-standard`,
-  `[R46]` 2026-09-12); None falls through.
-First user: MMOGA (`src/merchants/mmoga.py`, §11 — the first three). Gamivo uses all four
-(`src/merchants/gamivo.py`, §4.4 `[R46]`). Tests: `MerchantHookTests` (throwaway merchant) +
-`MmogaRulesTests` + `GamivoConfigR46Tests`.
+  `[R46]` 2026-09-12); None falls through;
+- `guard_name(name) -> str` (2026-09-14) — the title the identity guards (`[R01]` missing
+  AKS words, `[R16]` extra words, `[R01b]` dangerous qualifier) and `detect_edition` read for
+  a PC row: the RAW title by default (every merchant without the hook, unchanged); a merchant
+  whose grammar appends a note that is NOT a product word strips that note — and only it.
+  The hook never launders a title: the words it leaves are still compared with the AKS
+  name, an empty answer falls back to the raw title. Romain's rulings of 2026-09-14: Kinguin
+  "(valid until <Month> <Year>)" — « Kinguin valid until juin 2027 on rentre » (trailing
+  only, review fix); the delivery word "Altergift", K4G and Kinguin — « Steam Altergift =
+  Steam Gift on rentre »;
+- `gift_delivery(name, url) -> bool | None` (2026-09-14) — the merchant's OWN gift-delivery
+  verdict, consulted first by the region scan and layered by `detect_region` as the
+  platform's GIFT bucket (Steam 25 / gift_eu 259, Battle.net 570 / 567; no gift_us /
+  gift_uk exists → the fail-closed "no region id" skip); True / False wins, None → the
+  generic read (a `gift` URL segment, " GIFT " / "GIFT)" in the title). K4G / Kinguin: a
+  "… Steam Altergift" row whose slug agrees → True (Romain: « on rentre sous gift tous les
+  altergifts »). The hook reads BOTH arguments — a title / URL delivery conflict (title
+  Altergift, slug `-cd-key`) or a non-Steam Altergift is never a verdict: it is the merchant
+  `precheck`'s fail-closed skip (review fixes 2026-09-14, §4.4), so no row is filed under a
+  bucket class the row itself contradicts.
+First user: MMOGA (`src/merchants/mmoga.py`, §11 — the first three). Gamivo uses the first
+four (`src/merchants/gamivo.py`, §4.4 `[R46]`); Kinguin and K4G add `guard_name` +
+`gift_delivery` (2026-09-14). Tests: `MerchantHookTests` (throwaway merchant, the six
+hooks) + `RulingGatesLiveRegistryTests` + `MmogaRulesTests` + `GamivoConfigR46Tests` +
+`tests/test_merchants_{kinguin,k4g}.py`.
 
 **Console hooks `[R45]` (2026-09-14 — Romain's rule, repeated since 2026-08-11, ultimatum
 2026-09-14: « pour la détection région / édition / plateforme, tu as un fichier de config
@@ -949,9 +1003,9 @@ functions of the feed row:
   its shared tail / bracket reads;
 - `console_noise: tuple[str, ...] = ()` — merchant phrases stripped from `resolve_name` in
   addition to the shared store / delivery markers (`"Download Code"` MMOGA, `"Digital
-  Key"` / `"Digital Code"` Driffle, `"CD Key"` Kinguin — Kinguin's "(valid until <Month> <Year>)"
-  note is deliberately NOT noise: `kinguin.OPEN_QUESTION_VALID_UNTIL`, 79 rows / batch stay
-  an "extra words" skip until Romain rules).
+  Key"` / `"Digital Code"` Driffle, `"CD Key"` Kinguin); a compiled pattern is accepted for
+  the forms a literal cannot spell — Kinguin's "(valid until <Month> <Year>)" note
+  (`kinguin.VALID_UNTIL_RE`), noise since Romain's ruling of 2026-09-14 (§4.4).
 **Registry.** The binding merchant name → module (`merchant_config()`) lives in
 `src/merchants/registry.py`, imported by both `src/matcher.py` (which keeps re-exporting
 `merchant_config`) and `src/console_keys.py` — no circular import (`python3 -c "import
@@ -1788,6 +1842,49 @@ and overstated creations.
 
 ---
 
+**Modal v2 — region / edition per target row (2026-09-14):**
+
+**Modal shape (2026-09-14).** Before any fill the submitter reads the open modal's
+shape (`modal_context().modal_shape`, read-only): `targets_v2` = the current AKS
+tool (row 0 `offer[targets][0][target]` + override selects `…[0][region]` /
+`…[0][edition]`), `targets_v1` = the historical `offer[targets][]` chip field,
+`unknown` = anything else. `unknown` blocks EVERY entry (`modal_shape_unknown`,
+nothing filled; feeds the 10-consecutive-failures stop). The plan entry carries
+`modal_shape`.
+
+**Targets per row (v2).** One row per target of the candidate, in order; the FIRST
+target is the primary whose ids also go to the global `offer[region]` /
+`offer[edition]`. Row 0 exists; each extra row is added with a trusted click on the
+button right after the LAST row's target input (DOM relation, never text) and is
+PROVEN present by readback before it is filled. Per row: the AKS product id typed
+with `Input.insertText` (readback must equal the id — never a guessed id), then
+the region and edition overrides set EXPLICITLY through the trusted Selectize pick
+(empty overrides inherit the globals — Romain 2026-09-14 — but inheritance is
+never relied on). Before the ONE Create click: HTML5 validity gate, obstruction
+probe, then a full readback of both globals and every row (values and row count)
+— any drift or count mismatch → no click. Never a partial console entry: either
+every row is proven filled or nothing is created; post-save (gone from the
+refreshed feed, same `available`) stays the only success proof.
+
+**Never Enter.** The modal form has `method=get` and no `action`: an Enter
+keypress in one of its text inputs submits it natively. No stage synthesizes an
+Enter in the modal; the v1 chip field's Enter commit fallback is gone
+(`NO_ADD_BUTTON` fails closed). A submit-like add-row button (`type` ≠ `button`,
+`data-action-submit`, `button-primary`) is never clicked (`ADD_BUTTON_UNSAFE`).
+
+**Cap.** `MAX_TARGETS_PER_OFFER = 3` (Romain 2026-09-14, "3 ou 4 pour le
+moment"): a candidate with more targets is blocked (`too_many_targets`) before its
+row is located or its modal opened — a designed skip (`gated_too_many_targets`),
+like the R45 gate.
+
+**R45 gate (updated).** `multi_target_unsupported_until_modal_verified` now applies
+only when the modal is NOT `targets_v2` (i.e. the v1 chip field) and the candidate
+has more than one target. On v2 a multi-target candidate is written whole.
+
+---
+
+---
+
 ## 7. Stage 5 — Post-save verification (the deterministic success signal)
 
 This is THE rule of the skill `[DB proof override][S10][S18]`.
@@ -1995,7 +2092,10 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167, MMOGA 12 (its AKS page merchant i
   Turkey/Germany/currency/gift cards/skins.
 - **Kinguin**: filter by URL `&store=58`, not dropdown; candidate URL must
   contain `kinguin.net`; URLs carry `?params` (`nosalesbooster`, `currency`) —
-  report them as-is (§4.6); Steam region often implicit GLOBAL.
+  report them as-is (§4.6); Steam region often implicit GLOBAL; the "(valid until <Month>
+  <Year>)" activation note is entered — stripped from the guard only, trailing only
+  (`kinguin.guard_name`, Romain 2026-09-14, §4.4); "… PC Steam Altergift" = a Steam GIFT
+  (25 / 259) when the slug does not contradict the title (`kinguin.gift_delivery`, §4.4).
 - **MMOGA** (2026-09-10, `src/merchants/mmoga.py`; feed store id **12** — `&store=12`, the id
   every stage uses; the AKS product-page merchant id is 40, like Kinguin 58/47): URL
   `mmoga.com/<Platform>-Games/<Product>[-<REGION>-Key].html?ref=<affid>`.
@@ -2031,7 +2131,12 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167, MMOGA 12 (its AKS page merchant i
   Key` with NO parens/dash separators → slug building must peel trailing
   platform/region phrases (matcher `_TRAILING_NOISE_PHRASES`), and dashes
   inside product names are real ("Endless Space - Disharmony"); heavy
-  console share (~25%); pagination `&p=N`, sweep until 0 new offers.
+  console share (~25%); pagination `&p=N`, sweep until 0 new offers; "… Steam Altergift"
+  = a Steam GIFT (Romain 2026-09-14: `k4g.gift_delivery` → GIFT 25 / GIFT EU 259, the word
+  dropped from the guard and the slug, §4.4) WHEN the slug agrees (`-altergift-` /
+  `-alter-gift-`) — a `-cd-key` slug against an Altergift title (Trine 5, offer 101030313),
+  a slug without any delivery segment, the mirror conflict, or a non-Steam Altergift is the
+  precheck's fail-closed skip (review fixes 2026-09-14).
 - **Difmark**: store id 167. Every product URL carries a literal
   `buy-console-account-` path segment regardless of what's actually sold —
   boilerplate, not a signal. **Never a skip reason**; it is stripped

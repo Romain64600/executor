@@ -3797,6 +3797,102 @@ class MerchantHookTests(unittest.TestCase):
         self.assertIsInstance(r, SkippedOffer)
         self.assertIn("extra words: ['ZZ']", r.reason)
 
+    def test_guard_name_hook_strips_only_the_merchant_note_for_the_guards(self):
+        # 2026-09-14 (Romain: « Kinguin valid until juin 2027 on rentre », « Steam Altergift =
+        # Steam Gift on rentre »): a merchant may hand the R01 / R16 / R01b guards and
+        # detect_edition its title with its OWN non-product note stripped — and only that.
+        res = AksResolution("neon-beats", "https://aks/x", "205027", "Neon Beats", {"1": {"name": "Standard"}})
+        off = NormalizedOffer(offer_id="1", name="Neon Beats ZZ - Steam GLOBAL", url="https://h.test/x", merchant="Hooky")
+        with self._with_cfg(resolve_name=lambda name: name.replace(" ZZ", "")):
+            r = match_offer(off, lambda name: res)
+        self.assertIsInstance(r, SkippedOffer)                          # without the hook: unchanged
+        self.assertIn("extra words: ['ZZ']", r.reason)
+        with self._with_cfg(resolve_name=lambda name: name.replace(" ZZ", ""),
+                            guard_name=lambda name: name.replace(" ZZ", "")):
+            r = match_offer(off, lambda name: res)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.platform, r.region_label, r.region_id, r.edition_id), ("STEAM", "GLOBAL", "2", "1"))
+        # the hook cannot launder a title: the words it leaves are still compared (R01 / R16)
+        plain = NormalizedOffer(offer_id="1", name="Neon Beats - Steam GLOBAL", url="https://h.test/x", merchant="Hooky")
+        with self._with_cfg(guard_name=lambda name: "Other Game"):
+            r = match_offer(plain, lambda name: res)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("missing AKS words", r.reason)
+        with self._with_cfg(guard_name=lambda name: name + " Remastered"):
+            r = match_offer(plain, lambda name: res)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("REMASTERED", r.reason)
+        # an empty answer falls back to the raw title (never an empty guard)
+        with self._with_cfg(guard_name=lambda name: ""):
+            r = match_offer(plain, lambda name: res)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+
+    def test_gift_delivery_hook_layers_the_platform_gift_bucket(self):
+        # 2026-09-14 (Romain: « on rentre sous gift tous les altergifts »): the merchant's own
+        # gift verdict wins (True / False); None → the generic " GIFT " / URL-segment read.
+        def o(name, url="https://h.test/x"):
+            return NormalizedOffer(offer_id="1", name=name, url=url, merchant="Hooky")
+
+        with self._with_cfg(gift_delivery=lambda name, url: True if "ALTERGIFT" in name.upper() else None):
+            self.assertEqual(detect_region(o("Neon Beats Steam Altergift"), "STEAM"), ("GIFT", "25", True))
+            self.assertEqual(detect_region(o("Neon Beats Europe Steam Altergift"), "STEAM"), ("GIFT EU", "259", False))
+            self.assertEqual(detect_region(o("Neon Beats Steam Altergift", "https://h.test/neon-beats-steam-global"), "STEAM"), ("GIFT", "25", False))
+            self.assertEqual(detect_region(o("Neon Beats Steam Altergift"), "BATTLENET"), ("GIFT", "570", True))
+            # no gift_us / gift_uk on any platform, no gift bucket on GOG → id None → the "no region id" skip
+            self.assertEqual(detect_region(o("Neon Beats Steam Altergift", "https://h.test/neon-beats-steam-key-us"), "STEAM"), ("GIFT US", None, False))
+            self.assertEqual(detect_region(o("Neon Beats Steam Altergift"), "GOG"), ("GIFT", None, True))
+            self.assertEqual(detect_region_base(o("Neon Beats Steam Altergift")), ("global", "GLOBAL", True, True))
+            # None → the generic read, unchanged
+            self.assertEqual(detect_region(o("Neon Beats Steam Gift"), "STEAM"), ("GIFT", "25", True))
+            self.assertEqual(detect_region(o("Neon Beats Steam Key"), "STEAM"), ("GLOBAL", "2", True))
+            self.assertEqual(detect_region(o("Neon Beats Steam Key", "https://h.test/gift/neon-beats"), "STEAM"), ("GIFT", "25", True))
+        # an explicit False wins over the generic title / URL read
+        with self._with_cfg(gift_delivery=lambda name, url: False):
+            self.assertEqual(detect_region(o("Neon Beats Steam Gift", "https://h.test/gift/neon-beats"), "STEAM"), ("GLOBAL", "2", True))
+        # a green gift is not the merchant's plain-gift verdict: the GMG branch is untouched
+        with self._with_cfg(gift_delivery=lambda name, url: False):
+            self.assertEqual(detect_region(o("Neon Beats Steam Green Gift"), "STEAM"), ("GMG GIFT", "386", True))
+
+
+class RulingGatesLiveRegistryTests(unittest.TestCase):
+    """The 2026-09-14 review fixes on Romain's rulings, through the LIVE registry (no patching
+    — src/merchants/kinguin.py and k4g.py as wired): the hooks' answers reach precheck_skip /
+    detect_region / the guards exactly as tests/test_merchants_{kinguin,k4g}.py pin them."""
+
+    def _o(self, merchant, name, url):
+        return NormalizedOffer(offer_id="1", name=name, url=url, merchant=merchant)
+
+    def test_k4g_altergift_needs_the_slug_to_agree(self):
+        # finding [1]: offer 101030313 "Trine 5 … Steam Altergift" on a "-instant-cd-key-" slug —
+        # refused before any probe; the batch's usual slug is GIFT (25)
+        trine = self._o("K4G", "Trine 5: A Clockwork Conspiracy Steam Altergift",
+                        "https://k4g.com/product/trine-5-a-clockwork-conspiracy-steam-global-instant-cd-key-48V2PFDZ")
+        self.assertEqual(precheck_skip(trine),
+                         "K4G delivery conflict: title Altergift but URL says cd-key (no altergift segment) — not entered (2026-09-14)")
+        self.assertEqual(detect_region(trine, "STEAM"), ("GLOBAL", "2", False))     # never GIFT (25) on that row
+        seafrog = self._o("K4G", "Seafrog Steam Altergift", "https://k4g.com/product/seafrog-steam-global-altergift-alter-gift-QU67G9P5")
+        self.assertIsNone(precheck_skip(seafrog))
+        self.assertEqual(detect_region(seafrog, "STEAM"), ("GIFT", "25", False))
+        # finding [4]: not Steam → never another platform's gift bucket
+        self.assertIn("outside the Steam collocation",
+                      precheck_skip(self._o("K4G", "Seafrog Battle.net Altergift", seafrog.url)))
+
+    def test_kinguin_altergift_is_a_steam_gift_too(self):
+        # finding [3]: « on rentre sous gift tous les altergifts » — Kinguin's own delivery word
+        sons = self._o("Kinguin", "Sons Of The Forest PC Steam Altergift",
+                       "https://www.kinguin.net/category/713973/sons-of-the-forest-pc-steam-altergift")
+        self.assertIsNone(precheck_skip(sons))
+        self.assertEqual(detect_region(sons, "STEAM"), ("GIFT", "25", True))
+        self.assertEqual(merchant_config("Kinguin").guard_name(sons.name), "Sons Of The Forest PC Steam")
+        self.assertEqual(precheck_skip(self._o("Kinguin", sons.name, "https://www.kinguin.net/category/1/sons-of-the-forest-pc-steam-cd-key")),
+                         "Kinguin delivery conflict: title Altergift but URL says key / account (no altergift tail) — not entered (2026-09-14)")
+
+    def test_kinguin_valid_until_strip_is_trailing_only(self):
+        # finding [2]: the note is stripped from the END of the title only
+        guard = merchant_config("Kinguin").guard_name
+        self.assertEqual(guard("Vampyr PC Steam CD Key (valid until March 2027)"), "Vampyr PC Steam CD Key")
+        self.assertEqual(guard("Vampyr (Valid Until March 2027) PC Steam CD Key"), "Vampyr (Valid Until March 2027) PC Steam CD Key")
+
 
 class MmogaRulesTests(unittest.TestCase):
     """MMOGA grammar (src/merchants/mmoga.py, Romain 2026-09-10):

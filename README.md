@@ -98,10 +98,13 @@ state and cannot be argued away by a language model.
   (Kinguin) or an offer-page platform resolver (Instant Gaming lists Steam keys
   under token-less titles → the real platform is read from the IG offer page, not
   defaulted to Publisher). Since 2026-09-10 a merchant file (`src/merchants/<name>.py`)
-  can also **add or override generic behaviour** through four optional hooks —
-  `precheck`, `title_region`, `resolve_name`, `url_platform` (MMOGA's "`<Product> <CODE>
+  can also **add or override generic behaviour** through six optional hooks —
+  `precheck`, `title_region`, `resolve_name`, `url_platform`, `guard_name`, `gift_delivery`
+  (MMOGA's "`<Product> <CODE>
   Key`" grammar lives entirely in `src/merchants/mmoga.py`; Gamivo's title-tail + URL-run
-  grammar in `src/merchants/gamivo.py`, `[R46]` 2026-09-12). **One config file per
+  grammar in `src/merchants/gamivo.py`, `[R46]` 2026-09-12; Kinguin's "(valid until <Month>
+  <Year>)" note entered and K4G's "Steam Altergift" = Steam Gift — Romain's rulings of
+  2026-09-14 — in `src/merchants/kinguin.py` / `k4g.py`, §4.4). **One config file per
   merchant — Romain's rule (repeated since 2026-08-11, ultimatum 2026-09-14):** « pour la
   détection région / édition / plateforme, tu as un fichier de config par marchand. Et si
   tu ne l'as pas, tu dois l'avoir » — **every merchant of the safe-auto allowlist has its

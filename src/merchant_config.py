@@ -96,12 +96,35 @@ class MerchantConfig:
     #       the ``url_platform_prefixes`` / ``url_platform_scan`` modes ([R46], 2026-09-12:
     #       Gamivo "…-pc-steam-us-standard" — the platform run sits between the game slug
     #       and the region code, neither a leading segment nor collocated with "key").
+    #   guard_name(name) -> str — the merchant title the IDENTITY guards read for a PC row
+    #       (R01 missing AKS words, R16 extra words, R01b dangerous qualifier) and
+    #       ``detect_edition``: the RAW title by default (every merchant without the hook,
+    #       unchanged). A merchant whose grammar appends a note that is NOT a product word
+    #       strips that note here — and ONLY it (Romain's rulings of 2026-09-14: « Kinguin
+    #       valid until juin 2027 on rentre » → Kinguin "(valid until <Month> <Year>)",
+    #       trailing only; « Steam Altergift = Steam Gift on rentre » → the delivery word
+    #       "Altergift", K4G and Kinguin). The hook can never launder a title past the name
+    #       gate: the game words it leaves are still compared with the AKS name, and an
+    #       empty answer falls back to the raw title.
+    #   gift_delivery(name, url) -> bool | None — the merchant's OWN gift-delivery verdict,
+    #       layered by ``detect_region`` as the platform's GIFT bucket (Steam 25 / gift_eu
+    #       259, Battle.net 570 / 567; no gift_us / gift_uk exists → the fail-closed "no
+    #       region id" skip). True / False wins; None → the generic read (a "gift" URL
+    #       segment, " GIFT " / "GIFT)" in the title). K4G / Kinguin: a "… Steam Altergift"
+    #       row whose URL agrees → True (Romain 2026-09-14: « on rentre sous gift tous les
+    #       altergifts »). The hook reads BOTH arguments: a title / URL delivery conflict
+    #       (title Altergift, slug "-cd-key") or a non-Steam Altergift is never a verdict —
+    #       it is the merchant ``precheck``'s fail-closed skip (review fixes 2026-09-14), so
+    #       no row is filed under a bucket class the row itself contradicts.
     # MMOGA uses the first three ("<Product> <CODE> Key", src/merchants/mmoga.py); Gamivo
-    # uses all four (src/merchants/gamivo.py).
+    # uses the first four (src/merchants/gamivo.py); Kinguin and K4G add guard_name +
+    # gift_delivery (2026-09-14).
     precheck: Optional[Callable[[str, str], Optional[str]]] = None
     title_region: Optional[Callable[[str], Optional[str]]] = None
     resolve_name: Optional[Callable[[str], str]] = None
     url_platform: Optional[Callable[[str], Optional[str]]] = None
+    guard_name: Optional[Callable[[str], str]] = None
+    gift_delivery: Optional[Callable[[str, str], Optional[bool]]] = None
     # Console-side hooks (R32 / R45, 2026-09-14 — Romain: « pour la détection région /
     # édition / plateforme, tu as un fichier de config par marchand. Et si tu ne l'as pas,
     # tu dois l'avoir. »). The shared classifier ``src.console_keys.classify_console`` owns
@@ -128,10 +151,11 @@ class MerchantConfig:
     #       falls back to its shared tail / bracket reads.
     #   console_noise — merchant phrases stripped from ``resolve_name`` in addition to the
     #       shared store / delivery markers ("Download Code" MMOGA, "Digital Key" /
-    #       "Digital Code" Driffle, "(valid until <Month> <Year>)" Kinguin). A ``str`` is a
-    #       LITERAL phrase (case-insensitive, whole words, any whitespace between the
-    #       words); a compiled ``re.Pattern`` is used as written (its own flags) — for the
-    #       forms a literal cannot spell (Gamivo's "EN" / "EN/PL/CS" language tail).
+    #       "Digital Code" Driffle, "(valid until <Month> <Year>)" Kinguin — a Pattern,
+    #       entered since Romain's ruling of 2026-09-14). A ``str`` is a LITERAL phrase
+    #       (case-insensitive, whole words, any whitespace between the words); a compiled
+    #       ``re.Pattern`` is used as written (its own flags) — for the forms a literal
+    #       cannot spell (Gamivo's "EN" / "EN/PL/CS" language tail, Kinguin's note).
     # MMOGA / Gamivo / Eneba declare theirs in src/merchants/<name>.py.
     console_url_families: Optional[Callable[[str], Optional[Union[tuple[str, ...], str]]]] = None
     console_pc_declared: Optional[Callable[[str, str], bool]] = None

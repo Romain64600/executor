@@ -16,6 +16,7 @@ from src.matcher import (
     AksResolution,
     Candidate,
     NormalizedOffer,
+    SkippedOffer,
     build_slug_candidates,
     detect_region_base,
     extra_significant_words,
@@ -26,20 +27,32 @@ from src.merchant_config import MerchantConfig
 from src.merchants import kinguin
 from src.merchants.kinguin import (
     CONFIG,
-    OPEN_QUESTION_VALID_UNTIL,
+    VALID_UNTIL_RE,
+    altergift_verdict,
     console_region_slot,
     console_url_families,
+    drop_altergift,
+    gift_delivery,
+    guard_name,
     is_account_listing,
+    is_altergift,
+    is_steam_altergift,
     parse_title,
     precheck,
     region_text,
     resolve_name,
+    strip_valid_until,
     title_region,
+    url_delivery,
 )
 
 URL = "https://www.kinguin.net/category/1/x"
 GENERIC = MerchantConfig("Kinguin", domain="kinguin.net")     # the pre-2026-09-14 registry entry
 ACCOUNT_SKIP = "skip category: ACCOUNT (Kinguin account / access listing — not a key)"
+ALTERGIFT_CONFLICT = ("Kinguin delivery conflict: title Altergift but URL says key / account (no altergift tail) "
+                      "— not entered (2026-09-14)")
+ALTERGIFT_NOT_STEAM = ("Kinguin Altergift outside the Steam collocation (title's platform phrase is not Steam) "
+                       "— not entered (Romain 2026-09-14: « Steam Altergift = Steam Gift »)")
 
 
 def _offer(name, url=URL):
@@ -182,20 +195,103 @@ class RegionHooksTests(_Registry):
         self.assertEqual(console_url_families(rows["NHL 22 PS4 Access"]), "console: ACCESS — not a game (R45)")
         self.assertEqual(console_url_families(rows["Resident Evil 3 PS4/PS5 Access"]), "console: ACCESS — not a game (R45)")
 
-    def test_valid_until_note_stays_an_extra_words_skip_until_romain_rules(self):
+    def test_valid_until_note_is_stripped_from_the_guard_only(self):
+        # Romain's ruling (2026-09-14): « Kinguin valid until juin 2027 on rentre » — the note
+        # is an activation deadline, not a product word. guard_name strips it and NOTHING else.
+        rows = {
+            "Vampyr PC Steam CD Key (valid until March 2027)": ("Vampyr PC Steam CD Key", "Vampyr"),
+            "Soulstice Deluxe Edition PC Steam CD Key (valid until June 2027)": ("Soulstice Deluxe Edition PC Steam CD Key", "Soulstice Deluxe Edition"),
+            "Project MIKHAIL: A Muv-Luv War Story PC Steam CD Key (valid until May 2027)": ("Project MIKHAIL: A Muv-Luv War Story PC Steam CD Key", "Project MIKHAIL: A Muv-Luv War Story"),
+            "The Invincible PC Steam CD Key (valid until May, 2027)": ("The Invincible PC Steam CD Key", "The Invincible"),    # the comma variant (5 rows)
+            "Dead Cells - The Bad Seed DLC RoW PC Steam CD Key (valid until March 2027)": ("Dead Cells - The Bad Seed DLC RoW PC Steam CD Key", "Dead Cells - The Bad Seed DLC"),
+            "Bitdefender Total Security Key (valid until December 2026)": ("Bitdefender Total Security Key", "Bitdefender Total Security Key"),   # outside the grammar: only the note goes
+        }
+        for raw, (guard, resolved) in rows.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(guard_name(raw), guard)
+                self.assertEqual(strip_valid_until(raw), guard)
+                self.assertEqual(resolve_name(raw), resolved)
+                self.assertIsNotNone(VALID_UNTIL_RE.search(raw))
         raw = "Project MIKHAIL: A Muv-Luv War Story PC Steam CD Key (valid until May 2027)"
-        self.assertEqual(resolve_name(raw), "Project MIKHAIL: A Muv-Luv War Story")
-        self.assertEqual(resolve_name("The Invincible PC Steam CD Key (valid until May, 2027)"), "The Invincible")
         self.assertIsNone(precheck(raw, URL))
         self.assertIsNone(title_region(raw))
-        # the slug is the game's …
         self.assertEqual(build_slug_candidates(resolve_name(raw))[0], "project-mikhail-a-muv-luv-war-story")
-        # … but the R01b guard reads the RAW title: the note is still extra words → skip
-        self.assertEqual(extra_significant_words("Project MIKHAIL: A Muv-Luv War Story", raw),
-                         ["VALID", "UNTIL", "MAY", "2027"])
-        # and it is deliberately NOT console noise (that would make console rows enterable)
-        self.assertEqual(CONFIG.console_noise, ("CD Key",))
-        self.assertIn("valid until", OPEN_QUESTION_VALID_UNTIL)
+        # the raw title still counts the note as extra words (the generic guard is untouched);
+        # the guard_name hook is what removes them — and only them
+        self.assertEqual(extra_significant_words("Project MIKHAIL: A Muv-Luv War Story", raw), ["VALID", "UNTIL", "MAY", "2027"])
+        self.assertEqual(extra_significant_words("Project MIKHAIL: A Muv-Luv War Story", guard_name(raw)), [])
+        self.assertEqual(extra_significant_words("Vampyr", guard_name("Vampyr Chronicles PC Steam CD Key (valid until March 2027)")), ["CHRONICLES"])
+        # a title without the note is returned untouched; the regex is the only strip
+        self.assertEqual(guard_name("Shardstorm PC Steam CD Key"), "Shardstorm PC Steam CD Key")
+        self.assertEqual(guard_name("Valid Until Dawn PC Steam CD Key"), "Valid Until Dawn PC Steam CD Key")    # not the note
+        # review fix (2026-09-14, finding [2]): the strip is anchored to the title END — the note
+        # is trailing in 158 / 158 corpus rows; a note in the MIDDLE is a spelling never seen and
+        # stays in the guard (→ the usual extra-words skip, fail-closed), never a mid-title strip
+        for raw in ("Vampyr (Valid Until March 2027) PC Steam CD Key",
+                    "Vampyr PC Steam CD Key (valid until March 2027) EU",
+                    "(valid until March 2027) Vampyr PC Steam CD Key"):
+            with self.subTest(raw=raw):
+                self.assertIsNone(VALID_UNTIL_RE.search(raw))
+                self.assertEqual(strip_valid_until(raw), raw)
+                self.assertEqual(guard_name(raw), raw)
+        self.assertEqual(guard_name("Vampyr PC Steam CD Key (valid until March 2027) "), "Vampyr PC Steam CD Key")   # trailing blank is fine
+        # the same phrase is console noise now: a console row with the note resolves to the game
+        self.assertEqual(CONFIG.console_noise, ("CD Key", VALID_UNTIL_RE))
+        from src.console_keys import classify_console as _classify
+        sig = _classify("Hades EU PS5 CD Key (valid until March 2027)",
+                        "https://www.kinguin.net/category/1/hades-eu-ps5-cd-key-valid-until-march-2027", "Kinguin")
+        self.assertEqual((sig.families, sig.resolve_name, sig.region_base, sig.skip_reason), (("PS5",), "Hades", "eu", None))
+
+    def test_pipeline_valid_until_rows_are_entered(self):
+        # 2026-09-12 batch: 79 rows carried the note, 69 of them skipped "different/expanded
+        # product — extra words: ['VALID', 'UNTIL', '<Month>', '2027']" with the page resolved.
+        vampyr = AksResolution(slug="vampyr", url="https://aks/buy-vampyr-cd-key-compare-prices/",
+                               product_id="1", aks_name="Vampyr",
+                               editions={"1": {"name": "Standard"}}, official_platforms=("Steam",))
+        offer = _offer("Vampyr PC Steam CD Key (valid until March 2027)",
+                       "https://www.kinguin.net/category/495887/vampyr-pc-steam-cd-key-valid-until-march-2027")
+        asked = []
+
+        def resolver(name, **kw):
+            asked.append(name)
+            return vampyr
+
+        self._use(GENERIC)                  # the pre-2026-09-14 registry entry: the note was extra words
+        r = match_offer(offer, resolver=resolver)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, "different/expanded product — extra words: ['VALID', 'UNTIL', 'MARCH', '2027']")
+        self._use(CONFIG)
+        r = match_offer(offer, resolver=resolver)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        # implicit GLOBAL, as for any Kinguin title without a region code
+        self.assertEqual((r.platform, r.region_label, r.region_id, r.region_implicit, r.edition_label, r.edition_id),
+                         ("STEAM", "GLOBAL", "2", True, "Standard", "1"))
+        self.assertEqual(asked[-1], "Vampyr")
+        # a Deluxe row reconciles its edition against the page that carries it
+        soulstice = AksResolution(slug="soulstice", url="https://aks/buy-soulstice-cd-key-compare-prices/",
+                                  product_id="2", aks_name="Soulstice",
+                                  editions={"1": {"name": "Standard"}, "10": {"name": "Deluxe"}},
+                                  official_platforms=("Steam",))
+        r = match_offer(_offer("Soulstice Deluxe Edition PC Steam CD Key (valid until June 2027)",
+                               "https://www.kinguin.net/category/835949/soulstice-deluxe-edition-pc-steam-cd-key-valid-until-june-2027"),
+                        resolver=lambda name, **kw: soulstice)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.platform, r.region_label, r.region_id, r.edition_label, r.edition_id), ("STEAM", "GLOBAL", "2", "Deluxe", "10"))
+        # every other guard is untouched: a forbidden code, a DLC on a base page, a real extra word
+        self.assertEqual(precheck_skip(_offer("Dead Cells RoW PC Steam CD Key (valid until March 2027)")), "forbidden region: ROW")
+        r = match_offer(_offer("Vampyr Remastered PC Steam CD Key (valid until March 2027)"), resolver=resolver)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, "dangerous qualifier absent from AKS name: REMASTERED")     # R01b
+        r = match_offer(_offer("Vampyr Chronicles PC Steam CD Key (valid until March 2027)"), resolver=resolver)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, "different/expanded product — extra words: ['CHRONICLES']")   # R16
+        # review fix (2026-09-14, finding [2]): a mid-title note is NOT stripped — the guard reads
+        # it as extra words (fail-closed), exactly the pre-ruling outcome for that spelling
+        r = match_offer(_offer("Vampyr (Valid Until March 2027) PC Steam CD Key",
+                               "https://www.kinguin.net/category/495887/vampyr-valid-until-march-2027-pc-steam-cd-key"),
+                        resolver=resolver)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, "different/expanded product — extra words: ['VALID', 'UNTIL', 'MARCH', '2027']")
 
     def test_pipeline_us_row_is_steam_us_on_the_game_slug(self):
         # Before: implicit GLOBAL + slug "metro-awakening-us" (404 → "no AKS product page
@@ -234,6 +330,127 @@ class RegionHooksTests(_Registry):
                          "forbidden region: BRAZIL")
         # the domain rule moved with the config
         self.assertIn("merchant-domain mismatch", precheck_skip(_offer("Elden Ring", "https://www.g2a.com/elden-ring")))
+
+
+class AltergiftTests(_Registry):
+    """Romain (2026-09-14): « Steam Altergift = Steam Gift on rentre sous gift tous les
+    altergifts » — Kinguin's own "Altergift" delivery too (review fix 2026-09-14, finding
+    [3]: the ruling was implemented for K4G only; a Kinguin Altergift row reached the plain
+    STEAM GLOBAL (2) read and was R16-skipped "extra words: ['ALTERGIFT']"). The batch's one
+    row, "Sons Of The Forest DE PC Steam Altergift", is a forbidden region anyway."""
+
+    SONS = "Sons Of The Forest PC Steam Altergift"
+    SONS_URL = "https://www.kinguin.net/category/713973/sons-of-the-forest-pc-steam-altergift"
+
+    def _page(self, slug="sons-of-the-forest", name="Sons Of The Forest", official=("Steam",)):
+        return AksResolution(slug=slug, url=f"https://aks/buy-{slug}-cd-key-compare-prices/", product_id="1",
+                             aks_name=name, editions={"1": {"name": "Standard"}}, official_platforms=official)
+
+    def test_text_hooks(self):
+        for title, guard, resolved in (
+            (self.SONS, "Sons Of The Forest PC Steam", "Sons Of The Forest"),
+            ("Sons Of The Forest DE PC Steam Altergift", "Sons Of The Forest DE PC Steam", "Sons Of The Forest"),
+            ("Sons Of The Forest EU Steam Altergift (valid until June 2027)", "Sons Of The Forest EU Steam", "Sons Of The Forest"),
+            ("Some ALTERGIFT Thing", "Some Thing", "Some Thing"),           # outside the grammar: only the word goes
+        ):
+            with self.subTest(title=title):
+                self.assertTrue(is_altergift(title))
+                self.assertEqual(guard_name(title), guard)
+                self.assertEqual(drop_altergift(strip_valid_until(title)), guard)
+                self.assertEqual(resolve_name(title), resolved)
+        for title in ("Call of Duty: World at War SEA PC Steam Gift", "F1 2013 Classic Edition Upgrade Steam Gift",
+                      "Altergifted PC Steam CD Key", "Shardstorm PC Steam CD Key"):
+            with self.subTest(title=title):
+                self.assertFalse(is_altergift(title))
+                self.assertIsNone(altergift_verdict(title, URL))
+                self.assertIsNone(gift_delivery(title, URL))
+                self.assertEqual(guard_name(title), title)
+
+    def test_url_delivery(self):
+        for url, said in {
+            self.SONS_URL: "gift",
+            "https://www.kinguin.net/category/7921/f1-2013-classic-edition-upgrade-steam-gift": "gift",
+            "https://www.kinguin.net/category/1/sons-of-the-forest-pc-steam-cd-key": "key",
+            "https://www.kinguin.net/category/1/sons-of-the-forest-pc-steam-key?nosalesbooster=1": "key",
+            "https://www.kinguin.net/category/523387/blocky-farm-xbox-one-xbox-series-x-s-account": "key",
+            "https://www.kinguin.net/category/363986/resident-evil-3-ps4-ps5-online-account-activation": "key",
+            "https://www.kinguin.net/category/440591/world-of-warcraft-burning-crusade-classic-anniversary-edition-upgrade-outland-ep": None,   # truncated
+            "https://www.kinguin.net/category/1/sons-of-the-forest-pc-st": None,
+            URL: None,
+        }.items():
+            with self.subTest(url=url):
+                self.assertEqual(url_delivery(url), said)
+
+    def test_pipeline_altergift_row_is_steam_gift(self):
+        offer = _offer(self.SONS, self.SONS_URL)
+        asked = []
+
+        def resolver(name, **kw):
+            asked.append(name)
+            return self._page()
+
+        self._use(GENERIC)                    # before: plain key read + R16 on the word
+        self.assertEqual(detect_region_base(offer)[:3], ("global", "GLOBAL", True))
+        r = match_offer(offer, resolver=resolver)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, "different/expanded product — extra words: ['ALTERGIFT']")
+        self._use(CONFIG)
+        self.assertTrue(is_steam_altergift(self.SONS))
+        self.assertEqual(altergift_verdict(self.SONS, self.SONS_URL), "gift")
+        self.assertIs(gift_delivery(self.SONS, self.SONS_URL), True)
+        self.assertIsNone(precheck_skip(offer))
+        r = match_offer(offer, resolver=resolver)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.platform, r.region_label, r.region_id, r.region_implicit, r.edition_id),
+                         ("STEAM", "GIFT", "25", True, "1"))
+        self.assertEqual(asked[-1], "Sons Of The Forest")
+        # the code before the platform phrase layers the Steam gift bucket: EU → GIFT EU (259);
+        # US / UK have no Steam gift bucket → the fail-closed "no region id" skip (unchanged rule)
+        r = match_offer(_offer("Sons Of The Forest EU PC Steam Altergift",
+                               "https://www.kinguin.net/category/1/sons-of-the-forest-eu-pc-steam-altergift"), resolver=resolver)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.region_label, r.region_id, r.region_implicit), ("GIFT EU", "259", False))
+        r = match_offer(_offer("Sons Of The Forest US PC Steam Altergift",
+                               "https://www.kinguin.net/category/1/sons-of-the-forest-us-pc-steam-altergift"), resolver=resolver)
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, "no region id for STEAM/GIFT US")
+        # the batch's real row: the forbidden code wins, Altergift or not
+        self.assertEqual(precheck_skip(_offer("Sons Of The Forest DE PC Steam Altergift",
+                                              "https://www.kinguin.net/category/713973/sons-of-the-forest-de-pc-steam-altergift")),
+                         "forbidden region: GERMANY")
+        # "Steam Gift" rows are untouched: the generic " GIFT " read (hook None)
+        f1 = _offer("F1 2013 Classic Edition Upgrade Steam Gift",
+                    "https://www.kinguin.net/category/7921/f1-2013-classic-edition-upgrade-steam-gift")
+        self.assertIsNone(gift_delivery(f1.name, f1.url))
+        self.assertEqual(detect_region_base(f1), ("global", "GLOBAL", True, True))
+
+    def test_gates_are_fail_closed(self):
+        # the slug must not CONTRADICT the title (Kinguin's slug is often truncated → a silent slug
+        # is accepted); a non-Steam Altergift is a grammar never seen → never another gift bucket
+        self._use(CONFIG)
+        conflict = _offer(self.SONS, "https://www.kinguin.net/category/1/sons-of-the-forest-pc-steam-cd-key")
+        self.assertEqual(altergift_verdict(conflict.name, conflict.url), ALTERGIFT_CONFLICT)
+        self.assertIsNone(gift_delivery(conflict.name, conflict.url))
+        self.assertEqual(precheck_skip(conflict), ALTERGIFT_CONFLICT)
+        r = match_offer(conflict, resolver=lambda name, **kw: self._page())
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, ALTERGIFT_CONFLICT)
+        truncated = _offer(self.SONS, "https://www.kinguin.net/category/1/sons-of-the-forest-pc-st")
+        self.assertEqual(altergift_verdict(truncated.name, truncated.url), "gift")
+        self.assertIsNone(precheck_skip(truncated))
+        # an account marker in the slug is the account skip first (unchanged order)
+        self.assertEqual(precheck_skip(_offer(self.SONS, "https://www.kinguin.net/category/1/sons-of-the-forest-pc-steam-account")), ACCOUNT_SKIP)
+        for title in ("Sons Of The Forest PC Epic Games Altergift", "Sons Of The Forest PC Battle.net Altergift",
+                      "Sons Of The Forest GOG Altergift", "Sons Of The Forest Altergift", "Some ALTERGIFT Thing"):
+            with self.subTest(title=title):
+                self.assertFalse(is_steam_altergift(title))
+                self.assertEqual(altergift_verdict(title, self.SONS_URL), ALTERGIFT_NOT_STEAM)
+                self.assertIsNone(gift_delivery(title, self.SONS_URL))
+                offer = _offer(title, self.SONS_URL)
+                self.assertEqual(precheck_skip(offer), ALTERGIFT_NOT_STEAM)
+                r = match_offer(offer, resolver=lambda name, **kw: self._page(official=("Steam", "Epic Games", "Battle.net", "GOG")))
+                self.assertIsInstance(r, SkippedOffer)
+                self.assertEqual(r.reason, ALTERGIFT_NOT_STEAM)
 
 
 class ConsoleHooksTests(unittest.TestCase):
@@ -283,6 +500,8 @@ class ConfigTests(unittest.TestCase):
         self.assertIs(CONFIG.precheck, precheck)
         self.assertIs(CONFIG.title_region, title_region)
         self.assertIs(CONFIG.resolve_name, resolve_name)
+        self.assertIs(CONFIG.guard_name, guard_name)            # 2026-09-14: the validity note / "Altergift" are not product words
+        self.assertIs(CONFIG.gift_delivery, gift_delivery)      # 2026-09-14: "PC Steam Altergift" = Steam gift; "Steam Gift" rows keep the generic read
         # platform stays title-sourced (R32b — Romain: it works today)
         self.assertTrue(CONFIG.title_is_platform_source)
         self.assertIsNone(CONFIG.url_platform)
@@ -291,7 +510,7 @@ class ConfigTests(unittest.TestCase):
         if "console_region_slot" in fields:
             self.assertIs(CONFIG.console_region_slot, console_region_slot)
             self.assertIs(CONFIG.console_url_families, console_url_families)
-            self.assertEqual(CONFIG.console_noise, ("CD Key",))
+            self.assertEqual(CONFIG.console_noise, ("CD Key", VALID_UNTIL_RE))
             self.assertNotIn("console_hooks_pending", CONFIG.extra)
         else:   # the contract not landed yet: the hooks are declared under extra
             pending = CONFIG.extra["console_hooks_pending"]
