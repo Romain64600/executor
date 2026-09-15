@@ -798,6 +798,25 @@ class DataEntryAutoTests(ManagerTestCase):
         r = m.start_data_entry_auto([("Kinguin", "58"), ("Eneba", "70")], by="Romain", continue_on_halt=True)
         self.assertIn("--continue-on-halt", r["argv"])
         self.assertTrue(m.wait_idle(timeout=10))
+    def test_argv_consoles_default_and_opt_out(self):
+        # [R45] Romain's decision « 1 » (2026-09-15): consoles BY DEFAULT — the argv carries
+        # an EXPLICIT "--consoles" and the run meta (admin_submit.json) records consoles:
+        # true; consoles=False → "--no-consoles" / false. Never both flags, never neither.
+        m = self._m()
+        r = m.start_data_entry_auto([("Kinguin", "58")], by="Romain")
+        self.assertIn("--consoles", r["argv"])
+        self.assertNotIn("--no-consoles", r["argv"])
+        self.assertTrue(m.wait_idle(timeout=10))
+        state = json.loads((self.runs / r["run_id"] / "admin_submit.json").read_text(encoding="utf-8"))
+        self.assertIs(state["consoles"], True)
+        m.clock = lambda: "2026-09-15T20:00:00Z"                   # a distinct run id
+        r = m.start_data_entry_auto([("Kinguin", "58")], by="Romain", consoles=False)
+        self.assertIn("--no-consoles", r["argv"])
+        self.assertNotIn("--consoles", r["argv"])
+        self.assertTrue(m.wait_idle(timeout=10))
+        state = json.loads((self.runs / r["run_id"] / "admin_submit.json").read_text(encoding="utf-8"))
+        self.assertIs(state["consoles"], False)
+
     def test_non_numeric_store_refused(self):
         m = self._m()
         with self.assertRaises(SubmitStartError) as ctx:
@@ -838,6 +857,28 @@ class DataEntryAutoTests(ManagerTestCase):
             m.start_data_entry_by_urls(["  ", ""], by="Romain")
         self.assertEqual(ctx.exception.code, "bad_urls")
 
+    def test_by_urls_argv_consoles_default_and_opt_out(self):
+        # [R45] (2026-09-15) the by-urls preview gets the same explicit --consoles /
+        # --no-consoles pair as the sweep (scripts/11 contract: default True), meta.consoles.
+        script = self.root / "fake_by_urls.py"
+        script.write_text("import sys; sys.exit(0)\n", encoding="utf-8")
+        m = SubmitManager(self.root, log_dir=self.logs, clock=CLOCK)
+        m.by_urls_script = script
+        url = "https://www.allkeyshop.com/blog/buy-neon-beats-cd-key-compare-prices/"
+        r = m.start_data_entry_by_urls([url], by="Romain")
+        self.assertIn("--consoles", r["argv"])
+        self.assertNotIn("--no-consoles", r["argv"])
+        self.assertTrue(m.wait_idle(timeout=10))
+        state = json.loads((self.runs / r["run_id"] / "admin_submit.json").read_text(encoding="utf-8"))
+        self.assertIs(state["consoles"], True)
+        m.clock = lambda: "2026-09-15T20:00:00Z"
+        r = m.start_data_entry_by_urls([url], by="Romain", consoles=False)
+        self.assertIn("--no-consoles", r["argv"])
+        self.assertNotIn("--consoles", r["argv"])
+        self.assertTrue(m.wait_idle(timeout=10))
+        state = json.loads((self.runs / r["run_id"] / "admin_submit.json").read_text(encoding="utf-8"))
+        self.assertIs(state["consoles"], False)
+
     # ---- stage 2: submit the by-urls dry-run (the "Saisir" button) ----
     def _byurls_submit_mgr(self):
         script = self.root / "fake_by_urls_submit.py"
@@ -847,7 +888,7 @@ class DataEntryAutoTests(ManagerTestCase):
         return m
 
     def _from_run(self, name="20260825-000000-by-urls", *, candidates=3, aborted=None,
-                  games=None, total_games=None):
+                  games=None, total_games=None, consoles=None):
         from src.admin.runs import sha256_file
         d = self.root / "runs" / name
         d.mkdir(parents=True, exist_ok=True)
@@ -855,9 +896,10 @@ class DataEntryAutoTests(ManagerTestCase):
         totals = {"candidates": candidates}
         if total_games is not None:
             totals["games"] = total_games
-        recap.write_text(json.dumps({"available": "all", "aborted": aborted,
-                                     "totals": totals, "games": games or []}),
-                         encoding="utf-8")
+        data = {"available": "all", "aborted": aborted, "totals": totals, "games": games or []}
+        if consoles is not None:
+            data["consoles"] = consoles          # [R45] the preview's console-mode stamp
+        recap.write_text(json.dumps(data), encoding="utf-8")
         return name, sha256_file(recap)
 
     def test_by_urls_submit_argv_and_sha_binding(self):
@@ -869,6 +911,46 @@ class DataEntryAutoTests(ManagerTestCase):
         self.assertTrue(r["run_id"].endswith("-by-urls-submit"))
         self.assertEqual(a[a.index("--from-run") + 1], name)
         self.assertEqual(a[a.index("--mode") + 1], "safe")
+        self.assertTrue(m.wait_idle(timeout=10))
+
+    def test_by_urls_submit_argv_consoles_default_and_opt_out(self):
+        # [R45] (2026-09-15) the by-urls SUBMIT gets the same explicit --consoles /
+        # --no-consoles pair (scripts/12 contract: default True) and meta.consoles.
+        m = self._byurls_submit_mgr()
+        name, sha = self._from_run()
+        r = m.start_data_entry_by_urls_submit(name, by="Romain", expected_recap_sha=sha)
+        self.assertIn("--consoles", r["argv"])
+        self.assertNotIn("--no-consoles", r["argv"])
+        self.assertTrue(m.wait_idle(timeout=10))
+        state = json.loads((self.runs / r["run_id"] / "admin_submit.json").read_text(encoding="utf-8"))
+        self.assertIs(state["consoles"], True)
+        m.clock = lambda: "2026-09-15T20:00:00Z"
+        r = m.start_data_entry_by_urls_submit(name, by="Romain", expected_recap_sha=sha, consoles=False)
+        self.assertIn("--no-consoles", r["argv"])
+        self.assertNotIn("--consoles", r["argv"])
+        self.assertTrue(m.wait_idle(timeout=10))
+        state = json.loads((self.runs / r["run_id"] / "admin_submit.json").read_text(encoding="utf-8"))
+        self.assertIs(state["consoles"], False)
+
+    def test_by_urls_submit_refuses_consoles_mismatch_with_the_preview(self):
+        # [R45] (2026-09-15) fail-closed: a preview whose recap stamps consoles: false must
+        # not be submitted as a console batch (default True), nor a console preview as a
+        # PC-only batch; an agreeing stamp launches; an UNSTAMPED preview is not checked
+        # here (older runs — covered by test_by_urls_submit_argv_consoles_default_and_opt_out).
+        m = self._byurls_submit_mgr()
+        name_pc, sha_pc = self._from_run("20260915-000001-by-urls", consoles=False)
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_data_entry_by_urls_submit(name_pc, by="Romain", expected_recap_sha=sha_pc)
+        self.assertEqual(ctx.exception.code, "consoles_mismatch")
+        name_con, sha_con = self._from_run("20260915-000002-by-urls", consoles=True)
+        with self.assertRaises(SubmitStartError) as ctx:
+            m.start_data_entry_by_urls_submit(name_con, by="Romain", expected_recap_sha=sha_con,
+                                              consoles=False)
+        self.assertEqual(ctx.exception.code, "consoles_mismatch")
+        self.assertFalse(list(self.runs.glob("*-by-urls-submit")))   # nothing spawned
+        r = m.start_data_entry_by_urls_submit(name_pc, by="Romain", expected_recap_sha=sha_pc,
+                                              consoles=False)
+        self.assertIn("--no-consoles", r["argv"])
         self.assertTrue(m.wait_idle(timeout=10))
 
     def test_by_urls_submit_hands_child_immutable_snapshot(self):

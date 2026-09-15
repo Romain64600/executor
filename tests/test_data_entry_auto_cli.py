@@ -159,34 +159,56 @@ class CliSeamTests(unittest.TestCase):
         # [R45] Romain's GO 2026-09-15: the "--consoles requires --dry-run" guard of 2026-09-14
         # is lifted — the modal v2 was observed and proven by two canaries. A real sweep with
         # --consoles is launched like any other (05_submit gates each entry by shape / cap).
+        # Since Romain's decision « 1 » (same day) the flag is the DEFAULT: an explicit
+        # --consoles is a kept no-op and reads exactly like no flag at all.
         recap = {"pages": [], "total_created": 0, "halted": None}
-        code, captured = self._run(["--targets", "Kinguin:58", "--run-id", "t-con-real", "--consoles"], recap)
-        self.assertEqual(code, 0)
-        self.assertTrue(captured["cfg"].consoles)
-        rec = json.loads((self.MOD.ROOT / "runs" / "t-con-real" / "recap.json").read_text())
-        self.assertIs(rec["consoles"], True)
+        for run_id, flags in (("t-con-real", ["--consoles"]), ("t-con-implicit", [])):
+            code, captured = self._run(["--targets", "Kinguin:58", "--run-id", run_id] + flags, recap)
+            self.assertEqual(code, 0, run_id)
+            self.assertIs(captured["cfg"].consoles, True, run_id)
+            rec = json.loads((self.MOD.ROOT / "runs" / run_id / "recap.json").read_text())
+            self.assertIs(rec["consoles"], True, run_id)
 
-    def test_consoles_flag_reaches_03_match_and_the_config(self):
-        # [R45] (2026-09-12): --consoles → SweepConfig.consoles + "--consoles" on the 03 argv;
-        # default off (no flag on the argv); --dry-run optional (guard lifted 2026-09-15).
+    def test_consoles_default_on_and_no_consoles_opts_out(self):
+        # [R45] Romain's decision « 1 » (2026-09-15, after the two canaries and the MMOGA
+        # console dry-run: 174 candidates): consoles BY DEFAULT everywhere — no flag →
+        # SweepConfig.consoles True + recap consoles True; --no-consoles → False / False,
+        # with or without --dry-run (a PC-only preview stays possible).
         recap = {"pages": [], "total_created": 0, "halted": None}
-        code, captured = self._run(["--targets", "Kinguin:58", "--run-id", "t-con", "--consoles", "--dry-run"], recap)
+        code, captured = self._run(["--targets", "Kinguin:58", "--run-id", "t-con-default"], recap)
         self.assertEqual(code, 0)
-        self.assertTrue(captured["cfg"].consoles)
-        rec = json.loads((self.MOD.ROOT / "runs" / "t-con" / "recap.json").read_text())
+        self.assertIs(captured["cfg"].consoles, True)
+        rec = json.loads((self.MOD.ROOT / "runs" / "t-con-default" / "recap.json").read_text())
         self.assertIs(rec["consoles"], True)
-        code, captured = self._run(["--targets", "Kinguin:58", "--run-id", "t-nocon"], recap)
-        self.assertFalse(captured["cfg"].consoles)
-        for consoles in (False, True):
+        for run_id, flags in (("t-nocon", ["--no-consoles"]), ("t-nocon-dry", ["--no-consoles", "--dry-run"])):
+            code, captured = self._run(["--targets", "Kinguin:58", "--run-id", run_id] + flags, recap)
+            self.assertEqual(code, 0, run_id)
+            self.assertIs(captured["cfg"].consoles, False, run_id)
+            rec = json.loads((self.MOD.ROOT / "runs" / run_id / "recap.json").read_text())
+            self.assertIs(rec["consoles"], False, run_id)
+
+    def test_consoles_mode_is_explicit_on_the_03_match_argv(self):
+        # [R45] (2026-09-15): the 03 argv carries "--consoles" when True and "--no-consoles"
+        # when False — explicit EITHER way so a run dir shows the mode; never both, never
+        # neither. _make_stages' own default is the CLI default (consoles on).
+        def match_argv(**kw):
             argvs = []
-            stages = self.MOD._make_stages("Kinguin", "58", "all", None, consoles=consoles)
-            run_dir = self.MOD.ROOT / "runs" / f"t-con{int(consoles)}-p2"
+            stages = self.MOD._make_stages("Kinguin", "58", "all", None, **kw)
+            tag = "d" if not kw else str(int(kw["consoles"]))
+            run_dir = self.MOD.ROOT / "runs" / f"t-con{tag}-p2"
             run_dir.mkdir(parents=True, exist_ok=True)
             (run_dir / "offers.json").write_text("{}")
             with mock.patch.object(self.MOD, "_run_child", side_effect=lambda argv: argvs.append(argv) or 0):
-                stages.match(f"t-con{int(consoles)}-p2")
-            self.assertEqual("--consoles" in argvs[0], consoles, consoles)
+                stages.match(f"t-con{tag}-p2")
             self.assertTrue(str(argvs[0][1]).endswith("03_match.py"))
+            return argvs[0]
+        for consoles in (False, True):
+            argv = match_argv(consoles=consoles)
+            self.assertEqual("--consoles" in argv, consoles, consoles)
+            self.assertEqual("--no-consoles" in argv, not consoles, consoles)
+        argv = match_argv()
+        self.assertIn("--consoles", argv)
+        self.assertNotIn("--no-consoles", argv)
 
     def test_main_multi_target(self):
         # P2-2: stores must be the CANONICAL allowlist stores (Eneba is 19, not 70).

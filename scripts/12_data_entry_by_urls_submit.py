@@ -130,7 +130,7 @@ def _make_submit_merchant(available: str, logger: RunLogger):
     return submit_merchant
 
 
-def main(argv: list[str] | None = None) -> int:
+def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description="Submit a by-urls dry-run's candidates (safe).")
     ap.add_argument("--from-run", required=True, help="The *-by-urls run whose recap to submit.")
     ap.add_argument("--from-recap-file", default=None,
@@ -141,7 +141,21 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--run-id", required=True, help="This submit run id (holds recap.json).")
     ap.add_argument("--available", default="all", choices=["all", "pending"])
     ap.add_argument("--mode", default="safe", choices=["safe"])  # R24: ADD path is safe only
-    args = ap.parse_args(argv)
+    # [R45] Romain 2026-09-15: the admin launcher passes the SAME --consoles / --no-consoles
+    # it gave the preview (scripts/11). Accepted for symmetry and stamped in the log /
+    # summary only — it is passed to NOTHING downstream: the preview's candidates carry
+    # their ``targets`` (one per platform page) and 05_submit reads them from approved.json;
+    # a multi-target candidate travels WHOLE (grouped by store, never split per target).
+    ap.add_argument("--consoles", dest="consoles", action="store_true", default=True,
+                    help="Console candidates are part of the preview (DEFAULT; informational "
+                         "here — 05_submit reads the targets from approved.json).")
+    ap.add_argument("--no-consoles", dest="consoles", action="store_false",
+                    help="The preview was a PC-only run (informational — see --consoles).")
+    return ap
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_parser().parse_args(argv)
 
     _RUNNER.install()
 
@@ -172,7 +186,9 @@ def main(argv: list[str] | None = None) -> int:
     def make_sub_run(store_id: str) -> Path:
         return ROOT / "runs" / f"{args.run_id}-s{store_id}"
 
-    logger.log("submit_run_start", from_run=args.from_run, available=available)
+    logger.log("submit_run_start", from_run=args.from_run, available=available,
+               consoles=bool(args.consoles),
+               preview_consoles=from_recap.get("consoles"))   # [R45] what the preview ran with
     recap = run_by_urls_submit(
         from_recap, available=available,
         submit_merchant=_make_submit_merchant(available, logger),
@@ -184,7 +200,7 @@ def main(argv: list[str] | None = None) -> int:
         logger.log("submit_run_done", created=recap["totals"]["created"],
                    merchants=recap["totals"]["merchants"])
 
-    print(json.dumps({"run_id": args.run_id, "mode": "submit",
+    print(json.dumps({"run_id": args.run_id, "mode": "submit", "consoles": bool(args.consoles),
                       "created": recap["totals"]["created"],
                       "attempted": recap["totals"]["attempted"],
                       "merchants": recap["totals"]["merchants"],

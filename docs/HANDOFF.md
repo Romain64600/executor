@@ -100,12 +100,20 @@ permission). Reste : le transfert des cookies WP (profil vierge). L'ancien VPS �
 (`hermes-cdp-proxy`) partage le préfixe de nom mais EST requis. Ne pas réinstaller si tu ne
 veux que l'executor + sa page.
 
-## 3. État courant (2026-09-14)
+## 3. État courant (2026-09-15)
 
 Tout est poussé sur `origin/main`, suite verte (**1629 tests** découverts le 2026-09-14 après les
 correctifs de la revue R45, classifieur de la seconde session inclus). Travaux
 récents (voir
 `docs/CHANGELOG.md` pour le détail) :
+- **Consoles par défaut partout (15/09, décision Romain « 1 »)** : après les deux canaries du
+  modal v2 et le dry-run consoles MMOGA (663 offres → 174 candidats consoles : 89 à une cible,
+  59 à deux, 26 à trois ; 489 skips), `scripts/10` / `scripts/03` / le lanceur `/auto` / l'aperçu
+  et la saisie by-urls prennent les consoles en compte **sans flag** ; **`--no-consoles`** (ou
+  `"consoles": false` dans le corps JSON de la console, case « Consoles » décochée) = PC seul.
+  `--consoles` reste accepté (no-op explicite) ; le mode est toujours écrit sur l'argv de
+  `03_match` (`--consoles` / `--no-consoles`), dans `match_meta.json`, `recap.json` et
+  `admin_submit.json` (`consoles`).
 - Campagne d'audit Fable : 38/39 findings corrigés (1 décliné, cf. §5).
 - Correctifs matcher : `extract_aks_name` (noms marketing), R39 (mot plateforme = bruit
   d'édition), « Key » nu retiré par le slug, URL `compare-and-buy`.
@@ -145,7 +153,9 @@ récents (voir
   toujours `-A AKS/Staff`. Le pipeline l'a toujours fait ; la règle vaut pour les diagnostics.
   **Nuit multi-marchands : `python3 scripts/10_data_entry_auto.py --targets "Gamivo:51,K4G:92,…"
   --max-pages 30 --continue-on-halt`** (2026-09-11, Romain : « tu continues jusqu'à demain
-  matin ») — une halte fail-closed sur un marchand (offre UNKNOWN, feed illisible, 10 échecs)
+  matin » ; **consoles incluses par défaut depuis le 15/09** — aucun `--consoles` à ajouter,
+  `--no-consoles` pour un sweep PC seul) — une halte fail-closed sur un marchand (offre
+  UNKNOWN, feed illisible, 10 échecs)
   est consignée dans `recap.halted_merchants` et le marchand suivant est quand même balayé ;
   une session expirée (« not logged in ») arrête tout ; exit 2 s'il y a eu au moins une halte.
   Sans le flag, la première halte arrête le lot (comportement historique). Via la console :
@@ -185,7 +195,8 @@ récents (voir
   2026-09-10, sans run supervisé préalable). **`[R42]`** : chiffres romains II–XV ≡ chiffres
   (identité, slugs, recherche feed by-urls) — « Crusader Kings III » = page AKS « Crusader
   Kings 3 ».
-- **Consoles `[R45]` — préparé, verrouillé, désactivé par défaut** (2026-09-12). Romain :
+- **Consoles `[R45]` — en production, ACTIVÉ PAR DÉFAUT depuis le 15/09** (préparé le
+  2026-09-12, verrouillé jusqu'aux canaries du 15/09). Romain :
   l'outil AKS feed va overwriter la région (= région/plateforme) et l'édition PAR page cible
   (clé PS5 → pages PS5 + PS4 ; clé Xbox → Xbox One + Xbox Series X + PC seulement en Play
   Anywhere). Faits vérifiés : AKS a des **pages produit consoles séparées**
@@ -198,13 +209,18 @@ récents (voir
   des hooks consoles de `src/merchants/<marchand>.py` depuis le 14/09, bullet suivant),
   `Candidate.targets` (`Target`,
   toujours ≥ 1 ; empreinte étendue au-delà d'une cible), `scripts/03_match.py --consoles` /
-  `scripts/10 --consoles` (**défaut OFF** ; le `--dry-run` obligatoire du 14/09 est **levé le 15/09** sur GO de Romain après les deux canaries — écriture consoles autorisée, `05_submit` garde chaque entrée ; historique : `--dry-run` obligatoire avec le flag depuis le
-  14/09 ; sans flag : aucune SAISIE console, mais le scan console de l'URL reclasse les lignes
-  consoles URL-seules en `console` — 569 lignes Gamivo par lot), submitter : une cible =
-  chemin actuel, **> 1 cible = blocker `multi_target_unsupported_until_modal_verified`** tant
-  que le nouveau modal n'a pas été observé avec `--inspect` — jamais « la première cible
-  seulement » (une saisie consomme la ligne du feed) ; une entrée gated est un skip conçu
-  (`gated_multi_target`), jamais un échec du StepGuard. **Revue adverse du 12/09 corrigée le
+  `scripts/10 --consoles` (**défaut ON depuis le 15/09**, décision Romain « 1 » — le flag est un
+  no-op explicite, **`--no-consoles`** = PC seul ; le `--dry-run` obligatoire du 14/09 est **levé
+  le 15/09** sur GO de Romain après les deux canaries — écriture consoles autorisée, `05_submit`
+  garde chaque entrée ; historique : flag OFF par défaut du 12/09 au 14/09, `--dry-run`
+  obligatoire avec le flag le 14/09 ; avec `--no-consoles` : aucune SAISIE console, mais le scan
+  console de l'URL reclasse les lignes consoles URL-seules en `console` — 569 lignes Gamivo par
+  lot), submitter v2 : une cible = chemin PC, plusieurs cibles = lignes `offer[targets][]` du
+  modal v2 (plafond 3, relectures, un seul clic — prouvé par les canaries du 15/09 ; historique :
+  **> 1 cible = blocker `multi_target_unsupported_until_modal_verified`** tant que le modal
+  n'avait pas été observé avec `--inspect`, jamais « la première cible seulement » — une saisie
+  consomme la ligne du feed ; une entrée gated est un skip conçu (`gated_multi_target`), jamais
+  un échec du StepGuard). **Revue adverse du 12/09 corrigée le
   14/09** (CHANGELOG « Consoles R45 : correctifs ») : région de la branche console lue dans le
   slot de chaque grammaire (`region_base` / `region_label` / `region_words`, jamais un GLOBAL
   implicite pour une clé verrouillée ; Gamivo via le hook R46), R44 sur le label de base,
@@ -261,22 +277,26 @@ récents (voir
   0. ~~Corriger les findings de la revue adverse du 12/09~~ — **FAIT le 14/09** (CHANGELOG
      « Consoles R45 : correctifs de la revue adverse ») : région de la branche console, comptes
      Difmark, R44, gate multi-cibles, identité, R19, RANDOM, throttle, validation ; P1 tranchée ;
-     Switch 2 = famille SWITCH2. Le flag reste OFF par défaut et **dry-run seulement**
-     (`scripts/10` refuse `--consoles` sans `--dry-run`).
-  1. **Observer le nouveau modal** de Romain en lecture seule : `python3 scripts/05_submit.py
-     runs/<id>/approved.json --merchant MMOGA --store-id 12 --inspect` sur un candidat console
-     (`modal_inspection.json` : contrôles d'overwrite région / édition PAR cible, nom des
-     selects, `offer[targets][]`) — aucun fill tant que ce n'est pas fait.
-  2. **Ajouter le remplissage par cible** dans `submit_session` / `submitter` (lever le blocker
-     `multi_target_unsupported_until_modal_verified` seulement pour la forme observée), tests,
-     canary sur GO explicite.
-  3. **Dry-run consoles** pour mesurer : `scripts/10_data_entry_auto.py --targets "MMOGA:12"
-     --dry-run --consoles` puis `"Kinguin:58"` (388 et 365 lignes consoles dans le dernier
-     lot) ; lire `candidates.json` (`targets`) et `skipped.json` (motifs `console: … (R45)`).
+     Switch 2 = famille SWITCH2. (Historique : le flag est resté OFF par défaut et **dry-run
+     seulement** jusqu'au 15/09.)
+  1. ~~**Observer le nouveau modal** de Romain en lecture seule~~ — **FAIT le 14/09**
+     (`--inspect`, run `20260914-inspect-consoles` : lignes `offer[targets][i][target|region|
+     edition]`, bouton `[data-add-target]`).
+  2. ~~**Ajouter le remplissage par cible**~~ — **FAIT le 14/09 → 15/09** : submitter v2
+     (plafond 3, relectures, un seul clic), canaries 1 cible (Legend of Mana Switch) et 2 cibles
+     (Diablo 2 Resurrected One + Series) OK ; garde « `--consoles` exige `--dry-run` » levé.
+  3. ~~**Dry-run consoles** pour mesurer~~ — **FAIT le 15/09** sur MMOGA (run
+     `20260915-081607-dryrun-consoles` : 663 offres → **174 candidats consoles** — 89 à une
+     cible, 59 à deux, 26 à trois — et 489 skips) ; sur ce chiffre Romain a tranché « 1 » :
+     **consoles par défaut partout**, `--no-consoles` pour un sweep PC seul. Reste à mesurer
+     Kinguin (`scripts/10 --targets "Kinguin:58" --dry-run`, consoles incluses ; 365 lignes
+     consoles dans le dernier lot) ; lire `candidates.json` (`targets`) et `skipped.json`
+     (motifs `console: … (R45)`).
   4. **Corriger Riders Republic à la main** sur AKS (produit 50562 : l'offre Gamivo Xbox
      One/Series US saisie PUBLISHER GLOBAL Premium le 2026-09-11).
 - **Un fichier par marchand — suite (règle du 14/09)** : dry-run des nouveaux fichiers
-  (`scripts/10 --targets "Kinguin:58" --dry-run --consoles`, puis K4G / Driffle) et lecture
+  (`scripts/10 --targets "Kinguin:58" --dry-run` — consoles incluses par défaut depuis le
+  15/09 —, puis K4G / Driffle) et lecture
   des `skipped.json` (motifs `console: … (R45)` inchangés attendus) ; Allyouplay / CJS-CDKeys /
   GameSeal en `--dry-run` PC d'abord (jamais balayés) pour relever leur grammaire et la
   déclarer dans leur fichier (`domain` déclaré, à confirmer). Les deux questions des fichiers
@@ -381,12 +401,15 @@ python3 scripts/10_data_entry_auto.py --targets "Kinguin:58" --max-pages 30 --tr
 # Recap live : runs/<run-id>/recap.json (par page, incrémental).
 ```
 
-**Consoles (R45 — lecture seule tant que le nouveau modal n'est pas observé) :**
+**Consoles (R45 — PAR DÉFAUT depuis le 15/09, décision Romain « 1 ») :**
 ```sh
-python3 scripts/03_match.py runs/<id>/offers.json --consoles                                    # match read-only : lignes consoles classées, candidats multi-cibles (targets)
-python3 scripts/10_data_entry_auto.py --targets "MMOGA:12" --run-id <id> --dry-run --consoles   # APERÇU d'un sweep consoles (rien d'écrit) — --dry-run OBLIGATOIRE avec --consoles (refus sinon, 14/09)
-# Sans --consoles (défaut) : toute ligne console (titre OU URL) est skippée « console ».
-# Un candidat > 1 cible est refusé par 05 (blocker multi_target_unsupported_until_modal_verified) — d'abord --inspect sur le nouveau modal.
+python3 scripts/03_match.py runs/<id>/offers.json                                  # match read-only, consoles INCLUSES : lignes consoles classées, candidats multi-cibles (targets)
+python3 scripts/03_match.py runs/<id>/offers.json --no-consoles                    # match read-only PC seul : toute ligne console (titre OU URL) skippée « console »
+python3 scripts/10_data_entry_auto.py --targets "MMOGA:12" --run-id <id> --dry-run # APERÇU d'un sweep, consoles incluses (rien d'écrit)
+python3 scripts/10_data_entry_auto.py --targets "MMOGA:12" --run-id <id>           # WRITE consoles + PC (sur GO) ; --no-consoles = PC seul
+# --consoles reste accepté (no-op explicite). Le mode est écrit sur l'argv de 03 (--consoles / --no-consoles),
+# dans match_meta.json et recap.json (« consoles »), et dans admin_submit.json pour un run lancé par la console.
+# Historique : flag OFF par défaut du 12/09 au 14/09 ; --dry-run obligatoire avec le flag le 14/09 (levé le 15/09 après les deux canaries).
 ```
 
 **Saisie par liste d'URLs AKS (by-urls, onglet /games) :**

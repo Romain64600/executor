@@ -119,8 +119,9 @@ tables: one 5-line block per candidate, then a per-reason "Skipped summary".
 (R20 revision: a token-less title whose AKS page lists `Direct Publisher`) — or,
 since R45 (2026-09-12, `REGION_IDS.update(CONSOLE_REGION_IDS)`), a console family
 **XBOX_ONE / XBOX_SERIES / XBOX_PC / PS4 / PS5 / SWITCH / SWITCH2** (SWITCH2 since
-2026-09-14 — page kind `nintendo-switch-2`, the Nintendo bucket ids; only produced under
-`--consoles`). A `SkippedOffer` is `{offer, reason}`.
+2026-09-14 — page kind `nintendo-switch-2`, the Nintendo bucket ids; only produced by the
+console branch — `--consoles`, the default since 2026-09-15; `--no-consoles` opts out). A
+`SkippedOffer` is `{offer, reason}`.
 
 **`targets` (R45) is ALWAYS present**, even on a PC candidate, where it holds exactly
 one entry synthesised from the primary fields (`platform`, `aks_product_id`,
@@ -194,18 +195,31 @@ validation triple's shape is load-bearing (FC5, audit 2026-07-17).
   "run_id": "2026-07-02-driffle-01",
   "data_entry_mode": "safe",
   "matched_at": "2026-07-02T09:15:00Z",
-  "consoles": false
+  "consoles": true
 }
 ```
 
 - `data_entry_mode`: `safe` | `learning` | `advanced` (the matcher has no mode
   profiles yet — behaviour is identical, only the stamp differs).
 - `matched_at` is the **feed's** `fetched_at`, not the match wall-clock time.
-- `consoles` (R45, 2026-09-12): whether the batch was matched with
-  `03_match --consoles` (console rows classified and resolved to their AKS console
-  pages, multi-target candidates possible) or not (`false` / absent = the default:
-  every console row skipped `console`). Stamped by `scripts/03_match.py`; the
-  safe-auto sweep passes its own `--consoles` flag through (default off).
+- `consoles` (R45, 2026-09-12): whether the batch was matched with the console branch
+  (console rows classified and resolved to their AKS console pages, multi-target
+  candidates possible). **`true` is the default since 2026-09-15** (Romain's decision
+  « 1 »: `03_match --consoles` is the default, kept as an explicit no-op); `false` = an
+  explicit `03_match --no-consoles` (PC-only: every console row skipped `console`). A
+  sidecar written before 2026-09-15 without the key was a PC-only match. Stamped by
+  `scripts/03_match.py`; the safe-auto sweep always passes its own mode through
+  (`--consoles` / `--no-consoles`, explicit either way).
+
+## recap.json (safe-auto sweep, `scripts/10_data_entry_auto.py`)
+
+`runs/<run-id>/recap.json` (per-page, incremental) carries, next to `targets`,
+`total_created`, `halted`, `halted_merchants`, `coverage_incomplete`:
+
+- `consoles` (bool, R45): the console mode of the WHOLE sweep — `true` (the default
+  since 2026-09-15, `SweepConfig.consoles`) or `false` (`--no-consoles`, PC-only). Every
+  page of the sweep was matched in that mode; the per-target `recap` dicts written by
+  `run_sweep` repeat the same `consoles` stamp.
 
 Consumers: `scripts/05_submit.py` and the admin's `SubmitManager` refuse a REAL
 submit whose declared mode implies a **wider** batch than the matched mode — a
@@ -540,17 +554,66 @@ child and its outcome.
   dead — plus a French `note` telling the operator to inspect the feed and
   `submit_plan.json` before any resumption) or `orphaned` (pid still alive —
   should not happen with the cgroup kill; new runs are refused while it lives).
-- `kind`: `submit` | `dry_run` | `catalog` | `extract`.
+- `kind`: `submit` | `dry_run` | `catalog` | `extract` | `data_entry_auto` |
+  `data_entry_by_urls` | `data_entry_by_urls_submit` (| the sort kinds).
 - `pid` / `argv` / `started_at` / `finished_at` / `exit_code`: the supervised
   child, verbatim.
 - Per-kind `meta` keys are flattened at top level: submit/dry-run →
   `{mode, limit, dry_run, by, approved_count, max_pages}`; catalog →
-  `{by, max_pages}`; extract → `{merchant, store_id, by}`.
+  `{by, max_pages}`; extract → `{merchant, store_id, by}`; data_entry_auto →
+  `{targets: [{merchant, store_id}], by, run_id, max_pages, continue_on_halt, consoles}`;
+  data_entry_by_urls → `{by, run_id, urls, mode: "dry-run", consoles}`;
+  data_entry_by_urls_submit → `{by, from_run, run_id, candidates, consoles}`.
+  `consoles` (bool, R45, 2026-09-15) is the console mode the manager put on the child's
+  argv (`--consoles` / `--no-consoles`, explicit either way) — `true` by default.
+- **Admin API bodies (JSON) that carry `consoles`** — Romain's decision « 1 » of
+  2026-09-15 (consoles by default everywhere, explicit opt-out):
+  - `POST /api/data-entry/auto` — `{targets: [{merchant, store_id}], confirm: "GO",
+    max_pages?, start_page?, continue_on_halt?, consoles?}`;
+  - `POST /api/data-entry/by-urls` — `{urls: [...] | "u1 u2", consoles?}`;
+  - `POST /api/data-entry/by-urls/submit` — `{from_run, recap_sha256, confirm: "GO",
+    consoles?}`.
+
+  `consoles` is a JSON **boolean**; **absent = `true`** (the UI checkbox « Consoles
+  (pages Xbox / PlayStation / Switch) » is checked by default and sends `false` when
+  unticked). Anything else (`"false"`, `0`, `"yes"`) is refused `400 bad_consoles`
+  before any launch — the mode of a real-write launch is never guessed. A by-urls submit
+  whose `consoles` disagrees with the boolean `consoles` stamped in the preview's
+  `recap.json` (when that stamp exists) is refused `409 consoles_mismatch`.
 - On finish the supervisor adds `stdout_tail` (last 64 KiB of the child's
   merged stdout/stderr).
 
 The admin's status endpoint serves this file re-`redact()`-ed (same key-name
 redaction as the run log).
+
+## by-urls preview — pages consoles (2026-09-15)
+
+Ajouts `[R45]` (2026-09-15), tous rétro-compatibles (nouvelles clés seulement) :
+
+- `recap.consoles` (bool) — le mode de l'aperçu (`--consoles` défaut true).
+- `recap.games[].page_kind` — `"cd-key"` | `"account"` | `"ps4"` | `"ps5"` | `"xbox-one"` |
+  `"xbox-series"` | `"nintendo-switch"` | `"nintendo-switch-2"` (kind de l'URL demandée).
+- `recap.games[].search.page_kind` — idem ; `search.name_term` est l'identité de la page
+  pour une page console (« Hades »), `search.url_term` le slug du jeu.
+- `recap.games[].reason` (URL non résolue) peut valoir `"ConsolePageRefused: console page
+  (<kind>) refused under --no-consoles — …"` (aucun fetch effectué).
+- `recap.games[].error` peut valoir `"aks_throttled"` (429 / lectures de pages cibles non
+  fiables pendant le match ; `recap.aborted = "aks_throttled"`, `detail` = message).
+- `recap.games[].merchants[].skipped[].reason` peut valoir `"not on the requested page
+  <pid>: this offer targets <PLATFORM> <pid>[, …] — not entered from this page (R45)"`
+  (candidat valide du matcher dont aucune cible n'est la page demandée).
+- `recap.games[].merchants[].candidates[]` — forme inchangée (`Candidate.to_dict`, §Candidate) :
+  `targets[]` toujours présent, plusieurs entrées pour une clé cross-gen / Play Anywhere,
+  `fingerprint` étendu `…|+<pid>:<rid>:<eid>`. Jamais scindé par l'aperçu ni par la saisie.
+- `report.txt` : suffixe `[page <kind>]` sur la ligne 🎯 d'une page console ; lignes
+  `↳ <PLATFORM> <pid> — <nom> · <label>(<id>)` par cible supplémentaire ; note
+  « (N cibles : une clé cross-gen … écrite sur toutes ses pages déclarées) ».
+- Log JSONL (`logs/<id>.jsonl`) : `run_start.consoles`, `game_start.page_kind`,
+  `candidate.targets` (nombre de cibles) ; saisie : `submit_run_start.consoles` (flag reçu)
+  et `submit_run_start.preview_consoles` (`recap.consoles` de l'aperçu, `null` si absent).
+- Sortie JSON de `scripts/11` et `scripts/12` : clé `consoles` (bool).
+
+---
 
 ## Run log (JSONL)
 

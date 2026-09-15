@@ -76,7 +76,8 @@ $("#launch").addEventListener("click", async () => {
   $("#launch").disabled = true;
   $("#launch-msg").textContent = "Lancement de l'aperçu…";
   try {
-    const r = await api("api/data-entry/by-urls", { method: "POST", body: JSON.stringify({ urls }) });
+    // [R45] consoles by default (Romain 2026-09-15); unticked = PC-only preview (--no-consoles).
+    const r = await api("api/data-entry/by-urls", { method: "POST", body: JSON.stringify({ urls, consoles: $("#consoles").checked }) });
     $("#launch-msg").textContent = "▶ aperçu lancé : " + (r.run_id || "");
     RUNNING = true;
     setStatus("Aperçu en cours…", true);
@@ -355,7 +356,8 @@ $("#confirm-submit").addEventListener("click", async () => {
   try {
     const r = await api("api/data-entry/by-urls/submit", {
       method: "POST",
-      body: JSON.stringify({ from_run: RECAP_RUN, recap_sha256: RECAP_SHA, confirm: "GO" }),
+      // [R45] same "Consoles" setting as the preview (the server refuses a mismatch, 409).
+      body: JSON.stringify({ from_run: RECAP_RUN, recap_sha256: RECAP_SHA, confirm: "GO", consoles: $("#consoles").checked }),
     });
     $("#confirm-modal").close();
     SUBMIT_RUNNING = true;

@@ -61,10 +61,12 @@ class SweepConfig:
     start_page: int = 1
     max_pages: int = 30       # shallow-index cap, same default as scripts/10 --max-pages (the
                               # submit index is only productive on the ~28-30 shallowest pages)
-    # [R45] (2026-09-12) match the pages WITH the console branch (03_match --consoles).
-    # Default OFF: console rows keep the 'console' skip. Recorded in the recap so an
+    # [R45] match the pages WITH the console branch (03_match --consoles). Default ON since
+    # Romain's decision « 1 » of 2026-09-15 (consoles by default everywhere, after the two
+    # modal-v2 canaries and the MMOGA console dry-run); False = a PC-only sweep (scripts/10
+    # --no-consoles: console rows keep the 'console' skip). Recorded in the recap so an
     # audit can tell a console sweep from a PC one.
-    consoles: bool = False
+    consoles: bool = True
 
 
 @dataclass

@@ -137,7 +137,9 @@ class SearchCircuitFileTests(MatchCliTests):
 
 
 class ConsolesFlagTests(MatchCliTests):
-    """[R45] (2026-09-12): --consoles reaches match_feed and is stamped into match_meta."""
+    """[R45] --consoles reaches match_feed and is stamped into match_meta. Since Romain's
+    decision « 1 » of 2026-09-15 the console branch is the DEFAULT (an explicit --consoles is
+    a kept no-op) and --no-consoles is the PC-only opt-out."""
 
     def _main_flags(self, flags, stub):
         with mock.patch.object(self.MOD, "match_feed", side_effect=stub), \
@@ -154,12 +156,25 @@ class ConsolesFlagTests(MatchCliTests):
         meta = json.loads((self.run / "match_meta.json").read_text())
         self.assertIs(meta["consoles"], True)
 
-    def test_consoles_off_by_default(self):
+    def test_consoles_on_by_default(self):
+        # Romain's decision « 1 » (2026-09-15): no flag = the console branch, stamped true.
         seen = {}
 
         def stub(feed, resolver, **kw):
             seen.update(kw); return ([], [])
         self.assertEqual(self._main_flags([], stub), 0)
-        self.assertFalse(seen["consoles"])
+        self.assertIs(seen["consoles"], True)
+        meta = json.loads((self.run / "match_meta.json").read_text())
+        self.assertIs(meta["consoles"], True)
+
+    def test_no_consoles_opts_out(self):
+        # --no-consoles = the pre-2026-09-15 PC-only match: console rows keep the 'console'
+        # skip (match_feed(consoles=False)) and the stamp says false.
+        seen = {}
+
+        def stub(feed, resolver, **kw):
+            seen.update(kw); return ([], [])
+        self.assertEqual(self._main_flags(["--no-consoles"], stub), 0)
+        self.assertIs(seen["consoles"], False)
         meta = json.loads((self.run / "match_meta.json").read_text())
         self.assertIs(meta["consoles"], False)

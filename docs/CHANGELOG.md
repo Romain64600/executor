@@ -3,6 +3,73 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-15 — saisie par page : consoles par défaut (`scripts/11` / `scripts/12`, Romain)
+
+- **Saisie par URLs de pages et consoles `[R45]`** — Romain : « les consoles sont prises en
+  compte par défaut partout, y compris travailler sur une page de jeu ». `scripts/11` et
+  `scripts/12` acceptent `--consoles` (**défaut**) / `--no-consoles`, passé à chaque
+  `match_offer`. `scripts/11` accepte les **URLs de pages console** (`buy-<slug>-<kind>-
+  compare-prices/`, kind ∈ ps4 / ps5 / xbox-one / xbox-series / nintendo-switch /
+  nintendo-switch-2 ; `parse_page_url`, `PageRef`), les lit comme la page PC, les **refuse**
+  sous `--no-consoles` avant tout fetch (`ConsolePageRefused`, par URL) ; recherche par
+  l'**identité** de la page (« Hades PS5 » → « Hades ») ; résolution épinglée `PinnedPage`
+  (ancre PC / pages sœurs lues depuis la barre d'onglets de la page épinglée, cache par jeu,
+  garde anti-throttle partagée → `aborted: aks_throttled`) ; **qualification par cible** : un
+  candidat est retenu ssi l'une de ses `targets` est la page demandée, gardé **entier** —
+  une clé cross-gen demandée depuis une page console est écrite sur toutes ses pages
+  déclarées, une clé Play Anywhere depuis la page PC qualifie par sa cible XBOX_PC, une clé
+  d'une autre plateforme seule est ignorée avec raison explicite. Aperçu : `[page <kind>]`,
+  lignes `↳` par cible, note cross-gen. `scripts/12` : flag informatif (log / JSON),
+  transmis à rien — les candidats multi-cibles traversent le groupement par store entiers,
+  empreinte étendue R45, `05_submit` lit `targets` dans `approved.json`. Tests :
+  `tests/test_data_entry_by_urls.py` (69), `tests/test_data_entry_by_urls_submit.py` (7).
+  **Non exercé sans navigateur/réseau** : la lecture réelle des pages console AKS par
+  `scripts/11` (barre d'onglets live), le lancement admin avec le flag.
+
+## 2026-09-15 — consoles par défaut partout (décision Romain « 1 »)
+
+Après les deux canaries du modal v2 (1 cible, 2 cibles) et le dry-run consoles MMOGA du matin
+(run `20260915-081607-dryrun-consoles` : 663 offres → **174 candidats consoles** — 89 à une
+cible, 59 à deux cibles, 26 à trois cibles — et 489 skips), Romain a tranché « 1 » : les
+consoles sont prises en compte **par défaut partout** — sweep safe-auto, lanceur de la console
+admin, CLI du match, aperçu / saisie by-urls — avec un **opt-out explicite**.
+
+- **`scripts/10_data_entry_auto.py`** : `--consoles` devient le **défaut** (le flag reste
+  accepté, no-op explicite) ; nouveau **`--no-consoles`** (`dest=consoles`, `store_false`) pour
+  un sweep PC seul ; `SweepConfig.consoles` par défaut `True` (`src/data_entry_auto.py`) ;
+  le stamp `recap.json["consoles"]` est inchangé ; l'argv de `03_match` porte **toujours** le
+  mode — `--consoles` ou `--no-consoles` — pour qu'un dossier de run montre le réglage
+  (`_make_stages(consoles=True)` par défaut).
+- **`scripts/03_match.py`** : `--consoles` par défaut `True` + `--no-consoles` ;
+  `match_meta.json["consoles"]` et `match_feed(consoles=…)` inchangés (défaut de la
+  bibliothèque toujours `False`).
+- **Console admin** (`src/admin/app.py`, `src/admin/submit_manager.py`) :
+  `POST /api/data-entry/auto` lit `consoles` (booléen JSON, **absent = true** ; autre chose
+  qu'un booléen → 400 `bad_consoles`, rien de lancé — `_parse_consoles`) ;
+  `SubmitManager.start_data_entry_auto(consoles=True)` ajoute `--consoles` / `--no-consoles` à
+  l'argv de `scripts/10` et l'enregistre dans le meta (`admin_submit.json["consoles"]`). Même
+  champ et même paire de flags pour l'aperçu by-urls (`start_data_entry_by_urls` →
+  `scripts/11`) et la saisie by-urls (`start_data_entry_by_urls_submit` → `scripts/12`) —
+  contrat avec le chantier parallèle sur 11 / 12 : flags aux mêmes orthographes, défaut `True`.
+  Garde fail-closed : un submit by-urls dont le réglage contredit le stamp booléen `consoles`
+  de l'aperçu (quand il existe dans `recap.json`) est refusé 409 `consoles_mismatch`.
+- **UI** : case « Consoles (pages Xbox / PlayStation / Switch) » **cochée par défaut** dans le
+  formulaire `/auto` (`auto.html` / `auto.js`) et dans le formulaire by-urls `/games`
+  (`urls.html` / `urls.js` — envoyée à l'aperçu ET à la saisie, même réglage), transmise en
+  `consoles` dans le corps JSON ; indication « décochez pour un sweep PC seulement ».
+- **Tests** (+9 ; 262 verts sur les cinq modules `test_data_entry_auto_cli`,
+  `test_data_entry_auto`, `test_match_cli`, `test_admin_app`, `test_admin_submit_manager`) :
+  CLI 10 (défaut ON, `--no-consoles` avec / sans `--dry-run`, argv 03 explicite dans les deux
+  sens, `--consoles` explicite = no-op), moteur (recap `consoles` true par défaut), CLI 03
+  (défaut ON / `--no-consoles`), manager (argv + meta pour auto / by-urls / by-urls submit,
+  garde `consoles_mismatch`), routes admin (auto / by-urls / by-urls submit avec et sans
+  `"consoles": false`, valeur non booléenne refusée sans lancement).
+- **Docs** : README (commandes + principes), HANDOFF (état + commandes : la ligne de nuit n'a
+  plus besoin de `--consoles` ; backlog consoles 1-3 faits), EXECUTOR_RULES §4.3 / §4.12
+  (item 6 : défaut ON, opt-out) / §12, DATA_CONTRACTS (`match_meta.consoles`,
+  `recap.consoles`, corps de l'API admin, meta `admin_submit.json`), ce CHANGELOG. La phrase
+  « `--consoles` exige `--dry-run` » du 14/09 reste en historique seulement.
+
 ## 2026-09-15 — écriture consoles ouverte : le garde « `--consoles` exige `--dry-run` » est levé (GO Romain)
 
 Après les deux canaries (1 cible, 2 cibles), Romain : « go pour l'étape suivante » puis

@@ -703,9 +703,11 @@ class DataEntryAutoAllowlistTests(AppTestCase):
 
     def test_suggested_merchant_accepted(self):
         seen = {}
-        def fake(targets, *, by, max_pages=None, start_page=None, continue_on_halt=False):
+        def fake(targets, *, by, max_pages=None, start_page=None, continue_on_halt=False,
+                 consoles=True):
             seen["targets"] = targets
             seen["continue_on_halt"] = continue_on_halt
+            seen["consoles"] = consoles
             return {"run_id": "20260807-000000-auto", "started": True}
         self.manager.start_data_entry_auto = fake
         response, body = self._json(
@@ -716,6 +718,7 @@ class DataEntryAutoAllowlistTests(AppTestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(body["run_id"], "20260807-000000-auto")
         self.assertEqual(seen["targets"], [("Kinguin", "58")])
+        self.assertIs(seen["consoles"], True)     # [R45] absent from the body = consoles on
 
 
 class DataEntryRecapRouteTests(AppTestCase):
@@ -762,8 +765,9 @@ class DataEntryByUrlsRouteTests(AppTestCase):
 
     def test_launch_passes_urls_to_manager(self):
         seen = {}
-        def fake(urls, *, by, targets_spec=None):
+        def fake(urls, *, by, targets_spec=None, consoles=True):
             seen["urls"] = urls
+            seen["consoles"] = consoles
             return {"run_id": "20260824-000000-by-urls", "started": True}
         self.manager.start_data_entry_by_urls = fake
         url = "https://www.allkeyshop.com/blog/buy-neon-beats-cd-key-compare-prices/"
@@ -772,6 +776,25 @@ class DataEntryByUrlsRouteTests(AppTestCase):
         self.assertEqual(response.status, 200)
         self.assertEqual(body["run_id"], "20260824-000000-by-urls")
         self.assertEqual(seen["urls"], [url])
+        self.assertIs(seen["consoles"], True)     # [R45] absent from the body = consoles on
+
+    def test_launch_consoles_opt_out_and_bad_value(self):
+        # [R45] (2026-09-15) "consoles": false reaches the manager; a non-boolean is
+        # refused (400 bad_consoles) rather than guessed — nothing launched.
+        seen = {}
+        self.manager.start_data_entry_by_urls = (
+            lambda urls, **k: seen.update(k) or {"run_id": "r", "started": True})
+        response, _ = self._json("POST", "/api/data-entry/by-urls",
+                                 body={"urls": ["u1"], "consoles": False})
+        self.assertEqual(response.status, 200)
+        self.assertIs(seen["consoles"], False)
+        calls = []
+        self.manager.start_data_entry_by_urls = lambda *a, **k: calls.append(1) or {}
+        response, body = self._json("POST", "/api/data-entry/by-urls",
+                                    body={"urls": ["u1"], "consoles": "false"})
+        self.assertEqual(response.status, 400)
+        self.assertEqual(body["error"]["code"], "bad_consoles")
+        self.assertEqual(calls, [])
 
     def test_urls_as_string_are_split(self):
         seen = {}
@@ -854,8 +877,8 @@ class DataEntryByUrlsRouteTests(AppTestCase):
     # ---- stage 2: the "Saisir" (submit) route ----
     def test_submit_route_passes_from_run_and_sha(self):
         seen = {}
-        def fake(from_run, *, by, expected_recap_sha=None):
-            seen.update(from_run=from_run, sha=expected_recap_sha)
+        def fake(from_run, *, by, expected_recap_sha=None, consoles=True):
+            seen.update(from_run=from_run, sha=expected_recap_sha, consoles=consoles)
             return {"run_id": "20260825-000000-by-urls-submit", "started": True}
         self.manager.start_data_entry_by_urls_submit = fake
         response, body = self._json(
@@ -863,6 +886,27 @@ class DataEntryByUrlsRouteTests(AppTestCase):
             body={"from_run": "20260825-000000-by-urls", "recap_sha256": "abc", "confirm": "GO"})
         self.assertEqual(response.status, 200)
         self.assertEqual((seen["from_run"], seen["sha"]), ("20260825-000000-by-urls", "abc"))
+        self.assertIs(seen["consoles"], True)     # [R45] absent from the body = consoles on
+
+    def test_submit_route_consoles_opt_out_and_bad_value(self):
+        # [R45] (2026-09-15) the Saisir POST carries "consoles" too (same checkbox as the
+        # preview); false reaches the manager, a non-boolean is refused before any launch.
+        seen = {}
+        self.manager.start_data_entry_by_urls_submit = (
+            lambda from_run, **k: seen.update(k) or {"run_id": "r", "started": True})
+        response, _ = self._json(
+            "POST", "/api/data-entry/by-urls/submit",
+            body={"from_run": "x", "recap_sha256": "y", "confirm": "GO", "consoles": False})
+        self.assertEqual(response.status, 200)
+        self.assertIs(seen["consoles"], False)
+        calls = []
+        self.manager.start_data_entry_by_urls_submit = lambda *a, **k: calls.append(1) or {}
+        response, body = self._json(
+            "POST", "/api/data-entry/by-urls/submit",
+            body={"from_run": "x", "recap_sha256": "y", "confirm": "GO", "consoles": 1})
+        self.assertEqual(response.status, 400)
+        self.assertEqual(body["error"]["code"], "bad_consoles")
+        self.assertEqual(calls, [])
 
     def test_submit_route_requires_from_run(self):
         calls = []
@@ -985,6 +1029,28 @@ class SortMoveRouteTests(AppTestCase):
                                     body={"targets": [], "confirm": "GO"})
         self.assertEqual(response.status, 400)
         self.assertEqual(data["error"]["code"], "targets_required")
+
+    def test_data_entry_auto_consoles_default_true_and_opt_out(self):
+        # [R45] Romain's decision « 1 » (2026-09-15): consoles by default — a body WITHOUT
+        # "consoles" launches with consoles=True; "consoles": false opts out (PC-only sweep);
+        # a non-boolean ("false", 0, "yes") is refused 400 bad_consoles, nothing launched —
+        # the mode of a real-write launch is never guessed.
+        from unittest import mock
+        base = {"targets": [{"merchant": "Kinguin", "store_id": "58"}], "confirm": "GO"}
+        for body, expected in ((base, True), (dict(base, consoles=True), True),
+                               (dict(base, consoles=False), False)):
+            with mock.patch.object(self.manager, "start_data_entry_auto",
+                                   return_value={"started": True, "run_id": "r"}) as m:
+                response, _ = self._json("POST", "/api/data-entry/auto", body=body)
+            self.assertEqual(response.status, 200, body)
+            self.assertIs(m.call_args.kwargs["consoles"], expected, body)
+        for bad in ("false", 0, "yes"):
+            with mock.patch.object(self.manager, "start_data_entry_auto") as m:
+                response, data = self._json("POST", "/api/data-entry/auto",
+                                            body=dict(base, consoles=bad))
+            self.assertEqual(response.status, 400, bad)
+            self.assertEqual(data["error"]["code"], "bad_consoles", bad)
+            m.assert_not_called()
 
     def test_write_trigger_by_is_authenticated_not_body_spoof(self):
         # [35] (Fable re-audit 2026-09-06): the write-attribution `by` is the AUTHENTICATED

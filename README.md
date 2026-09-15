@@ -119,8 +119,10 @@ state and cannot be argued away by a language model.
   separate console product pages (`buy-<slug>-<kind>-compare-prices/`, kind = `ps4` /
   `ps5` / `xbox-one` / `xbox-series` / `nintendo-switch` / `nintendo-switch-2`), and
   Romain's new feed tool overwrites the region (= region/platform) and the edition **per
-  target page**. Under `--consoles` (default **off**; the sweep requires `--dry-run` with
-  it) the matcher classifies a console row from its title AND URL (`src/console_keys.py`
+  target page**. Under the console branch (`--consoles` — the **default since 2026-09-15**,
+  Romain's decision « 1 » after the two modal-v2 canaries and the MMOGA console dry-run;
+  `--no-consoles` opts out for a PC-only run) the matcher classifies a console row from its
+  title AND URL (`src/console_keys.py`
   = the shared vocabulary, the merchant grammar — URL families, PC/Windows, region slot,
   noise — declared by each `src/merchants/<name>.py` through the console hooks since
   2026-09-14; never an implicit GLOBAL for a region-locked key, review fix 2026-09-14),
@@ -353,19 +355,86 @@ manual_launch/run_executor.sh prepare --merchant Driffle --store-id 127 --pages 
 
 `--pages` creates a partial page slice; do not treat it as full-feed coverage.
 
-**Console keys — `--consoles`** `[R45]` (2026-09-12, default **off**). The read-only
-matcher and the safe-auto sweep accept `--consoles`: console rows are classified and
-resolved to their AKS console pages instead of being skipped `console`, and a key sold
+**Console keys — consoles by DEFAULT, `--no-consoles` to opt out** `[R45]` (2026-09-12;
+default **on** since 2026-09-15). The read-only matcher, the safe-auto sweep, the admin
+launcher (`/auto` checkbox « Consoles », checked) and the by-urls preview / « Saisir » all
+take consoles into account by default — Romain's decision « 1 » of 2026-09-15, after the
+two modal-v2 canaries and the MMOGA console dry-run (663 offers → 174 console candidates:
+89 single-target, 59 two-target, 26 three-target; 489 skips). Console rows are classified
+and resolved to their AKS console pages instead of being skipped `console`, and a key sold
 for several platforms becomes a **multi-target** candidate (`targets` in
-`candidates.json`, stamped `consoles: true` in `match_meta.json`). Real writes with
-`--consoles` are allowed since Romain's GO of 2026-09-15 (the modal v2 was observed with
-`--inspect` and proven by two canaries — one target, then two targets); `05_submit` still
-gates every entry (shape `targets_v2`, cap 3 targets, per-row readbacks). Until then the
-sweep refused `--consoles` without `--dry-run`:
+`candidates.json`, stamped `consoles: true` in `match_meta.json` / `recap.json`).
+`--consoles` is still accepted as an explicit no-op; **`--no-consoles`** (03, 10, and the
+admin body field `"consoles": false`) restores the PC-only behaviour (console rows keep the
+`console` skip, stamped `consoles: false`). The mode is written on the child argv either
+way (`--consoles` / `--no-consoles`), so a run dir always shows it. `05_submit` gates
+every entry (shape `targets_v2`, cap 3 targets, per-row readbacks). History: real writes
+with `--consoles` were allowed on Romain's GO of 2026-09-15 (the modal v2 observed with
+`--inspect` and proven by two canaries — one target, then two); before that (2026-09-14)
+the sweep refused `--consoles` without `--dry-run`, and from 2026-09-12 to 14 the flag was
+off by default.
+
+**Saisir depuis une page console** `[R45]` (Romain 2026-09-15 : « les consoles sont prises
+en compte par défaut partout, y compris travailler sur une page de jeu »). L'aperçu par
+URLs (`scripts/11_data_entry_by_urls.py`, bouton « Aperçu » → « Saisir ») accepte désormais
+les **pages console** AKS en plus de la page PC : `buy-<slug>-<kind>-compare-prices/` avec
+`kind` ∈ `ps4` / `ps5` / `xbox-one` / `xbox-series` / `nintendo-switch` /
+`nintendo-switch-2` (chaque page a son propre product id). La page est lue en lecture seule
+exactement comme la page PC (pas de ligne « official platforms » sur une page console —
+normal). Règles :
+
+- **`--consoles` est le défaut** (sur `scripts/11` ET `scripts/12` ; `--no-consoles` =
+  l'ancien run PC seul). Le flag est passé à chaque `match_offer` (branche console du
+  matcher, §4.12). Sous `--no-consoles`, une URL de page console est **refusée** avant tout
+  fetch, par URL, avec un message explicite (`ConsolePageRefused: console page (ps5) refused
+  under --no-consoles — re-run with --consoles …`) : rien n'est fait pour cette URL, les
+  URLs PC de la même liste sont traitées ; les lignes console gardent le skip « console ».
+- **Recherche** : pour une page console, le terme « nom » est l'**identité** de la page
+  (`console_page_identity` : « Hades PS5 » → « Hades », « Hades Xbox Series » → « Hades »)
+  et le terme « url » est le slug du jeu — jamais le suffixe plateforme AKS (le titre marchand
+  porte sa propre phrase plateforme, « Hades (PS4 / PS5) »). Page PC : inchangé.
+- **Page épinglée = page demandée**. La page épinglée répond au protocole de pages du
+  matcher (`PinnedPage`) : sa propre kind depuis la mémoire ; l'ancre PC et les pages sœurs
+  sont lues **depuis la barre d'onglets de la page épinglée** (les liens que AKS pose
+  lui-même), en lecture seule, garde anti-throttle partagée avec la résolution des URLs (un
+  429 ou 5 lectures non fiables consécutives → `aborted: aks_throttled`, jamais un skip
+  « error: » par ligne), cache d'une lecture par page sœur et par jeu. Play Anywhere reste
+  la vérité de la page PC, comme dans un sweep.
+- **Qualification** : un candidat est retenu pour la page demandée **ssi l'une de ses
+  cibles (`targets[].aks_product_id`) est cette page**. Conséquences : **une clé cross-gen
+  demandée depuis une page console est écrite sur toutes ses pages déclarées** (« Xbox One /
+  Series X|S » demandée depuis la page Xbox Series → cibles Xbox One + Xbox Series, jamais
+  scindée ; « PS4 / PS5 » depuis la page PS5 → PS4 + PS5) ; une clé PS4 seule demandée
+  depuis la page PS5 est ignorée avec la raison explicite `not on the requested page 85105:
+  this offer targets PS4 85104 — not entered from this page (R45)` ; depuis la **page PC**
+  avec `--consoles`, les candidats PC comme avant PLUS les clés Xbox **Play Anywhere** (leur
+  cible XBOX_PC est la page PC : Xbox One + Xbox Series + PC sous le bucket Xbox/PC) ; une
+  clé console sans PA trouvée depuis la page PC est ignorée (`not on the requested page`).
+  Un jeu console-only (pas d'onglet PC) s'ancre sur la page épinglée.
+- **Aperçu** (`report.txt`) : `🎯 85105 — Hades PS5 [page ps5]`, puis par candidat les cibles
+  supplémentaires `↳ PS5 85105 — Hades PS5 · PS5(88ps5h)` et la note « (2 cibles : une clé
+  cross-gen demandée depuis une page console est écrite sur toutes ses pages déclarées) ».
+- **Saisie** (`scripts/12`) : `--consoles` / `--no-consoles` acceptés (le lanceur admin passe
+  le même flag qu'à l'aperçu), **informatif seulement** (log `submit_run_start.consoles` +
+  `preview_consoles`, JSON de sortie) — transmis à rien : les candidats de l'aperçu portent
+  leurs `targets`, le groupement par store les garde **entiers** (jamais scindés par cible),
+  l'empreinte d'approbation est l'empreinte étendue R45 (`…|+<pid>:<région>:<édition>`), et
+  `05_submit --mode safe` (inchangé, sans flag) lit les cibles dans `approved.json` (modal
+  v2, plafond 3 cibles, preuve = disparition du feed).
 
 ```bash
-python3 scripts/03_match.py runs/<id>/offers.json --consoles                    # read-only: console rows classified, multi-target candidates
-python3 scripts/10_data_entry_auto.py --targets "MMOGA:12" --run-id <id> --dry-run --consoles   # read-only preview of a console sweep
+python3 scripts/11_data_entry_by_urls.py --run-id <id> --urls "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/"                # consoles par défaut
+python3 scripts/11_data_entry_by_urls.py --run-id <id> --urls "<url>" --no-consoles     # run PC seul (une URL console est refusée)
+python3 scripts/12_data_entry_by_urls_submit.py --from-run <id> --run-id <id>-submit    # --consoles / --no-consoles acceptés, informatifs
+```
+
+---
+
+```bash
+python3 scripts/03_match.py runs/<id>/offers.json                                # read-only, consoles INCLUDED: console rows classified, multi-target candidates
+python3 scripts/03_match.py runs/<id>/offers.json --no-consoles                  # read-only, PC only (console rows skipped `console`)
+python3 scripts/10_data_entry_auto.py --targets "MMOGA:12" --run-id <id> --dry-run   # read-only preview of a sweep, consoles included
+python3 scripts/10_data_entry_auto.py --targets "MMOGA:12" --run-id <id> --no-consoles   # real PC-only sweep (on GO)
 ```
 
 ---
@@ -652,18 +721,20 @@ the `aks-data-entry` skill maps onto a guard signal.
   2026-07-29** (a single 53-item Apply moved a page at once). Console toggles
   **Batché** / **Différé** on `/executor/tri`. See
   [`docs/CHANGELOG.md`](docs/CHANGELOG.md) (2026-07-28/29).
-- [ ] **Console keys `[R45]` — prepared, gated** (`src/console_keys.py`, matcher
-  `targets`, submitter gate, 2026-09-12; was "parked" on 2026-09-11). Console product
+- [x] **Console keys `[R45]` — live, ON by default** (`src/console_keys.py`, matcher
+  `targets`, submitter v2, 2026-09-12 → 15; was "parked" on 2026-09-11). Console product
   pages found (`buy-<slug>-<kind>-compare-prices/`), title + URL classifier (shared
   vocabulary in `console_keys` + the console hooks of each merchant file, 2026-09-14),
   one verified AKS page / bucket / edition per declared platform, Play Anywhere read from
-  the PC page, `--consoles` default off and dry-run only. The 2026-09-12 adversarial
+  the PC page. The 2026-09-12 adversarial
   review is fixed (2026-09-14: region slot of each grammar, R44 on consoles, identity
   apostrophes, gate ≠ failure, shared throttle guard…), P1 is decided (declared platforms
-  only) and Switch 2 is the `SWITCH2` family. **Waiting for the modal per-target
-  overwrite**: an `--inspect` pass on Romain's new feed modal, then the per-target fill;
-  until then a multi-target candidate is refused
-  (`multi_target_unsupported_until_modal_verified`), never entered partially. Policies
+  only) and Switch 2 is the `SWITCH2` family. The per-target modal v2 was observed
+  (`--inspect`, 2026-09-14) and proven by two canaries (2026-09-15: one target, then two
+  via `[data-add-target]`); the "`--consoles` requires `--dry-run`" guard was lifted the
+  same day, and Romain's decision « 1 » made **consoles the default everywhere**
+  (`--no-consoles` / `"consoles": false` to opt out; MMOGA dry-run: 174 console
+  candidates). Policies
   P2-P5 to confirm with Romain; Riders Republic
   (Gamivo Xbox key entered as PC on 2026-09-11) to correct by hand, like the five Gamivo
   US Steam keys entered Publisher GLOBAL the same day (`[R46]`, `docs/MERCHANTS.md`). See

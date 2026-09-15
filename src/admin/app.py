@@ -93,6 +93,19 @@ def _parse_int(value: Any) -> int | None:
     return value
 
 
+def _parse_consoles(body: dict[str, Any]) -> bool:
+    """[R45] The admin body field ``consoles`` — ABSENT = ``True`` (Romain's decision « 1 »
+    of 2026-09-15: consoles are taken into account by default everywhere; the UI checkbox
+    is checked by default, unticking it sends ``false`` for a PC-only run). Only a JSON
+    boolean is accepted: a string like ``"false"`` is refused (400) rather than guessed, so
+    the mode of a real-write launch is never ambiguous."""
+
+    value = body.get("consoles", True)
+    if not isinstance(value, bool):
+        raise ApiError(400, "bad_consoles", "consoles doit être un booléen JSON (true / false)")
+    return value
+
+
 class ApiError(Exception):
     def __init__(self, http_status: int, code: str, message: str, detail=None) -> None:
         super().__init__(message)
@@ -574,7 +587,8 @@ class AdminHandler(BaseHTTPRequestHandler):
         result = self.state.manager.start_data_entry_auto(
             targets, by=by, max_pages=_parse_int(body.get("max_pages")),
             start_page=_parse_int(body.get("start_page")),
-            continue_on_halt=bool(body.get("continue_on_halt")))
+            continue_on_halt=bool(body.get("continue_on_halt")),
+            consoles=_parse_consoles(body))   # [R45] default True (Romain 2026-09-15)
         self._send_json(200, result)
 
     def _post_data_entry_by_urls(self) -> None:
@@ -593,7 +607,8 @@ class AdminHandler(BaseHTTPRequestHandler):
         if len(urls) > 200:
             raise ApiError(400, "too_many_urls",
                            f"{len(urls)} URLs — plafonné à 200 par run (relance en lots)")
-        result = self.state.manager.start_data_entry_by_urls(urls, by=by)
+        result = self.state.manager.start_data_entry_by_urls(
+            urls, by=by, consoles=_parse_consoles(body))   # [R45] default True (2026-09-15)
         self._send_json(200, result)
 
     def _get_by_urls_log(self, run_id: str, offset_raw: str) -> None:
@@ -661,7 +676,8 @@ class AdminHandler(BaseHTTPRequestHandler):
         # translates it to the right HTTP status. This is a WRITE — the manager binds
         # the GO to recap_sha256 (AS1) and spawns a supervised orchestrator.
         result = self.state.manager.start_data_entry_by_urls_submit(
-            from_run, by=by, expected_recap_sha=body.get("recap_sha256"))
+            from_run, by=by, expected_recap_sha=body.get("recap_sha256"),
+            consoles=_parse_consoles(body))   # [R45] default True (2026-09-15)
         self._send_json(200, result)
 
     def _post_catalog(self, run_dir: Path) -> None:

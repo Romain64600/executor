@@ -696,7 +696,7 @@ class SubmitManager:
     def start_data_entry_auto(
         self, targets: list[tuple[str, str]], *, by: str,
         max_pages: int | None = None, start_page: int | None = None,
-        continue_on_halt: bool = False,
+        continue_on_halt: bool = False, consoles: bool = True,
     ) -> dict[str, Any]:
         """Launch the safe-auto data-entry sweep (Romain's explicit go, 2026-08-04):
         for each ``(merchant, store_id)`` target, sweep the feed page by page —
@@ -740,15 +740,20 @@ class SubmitManager:
                 argv += ["--start-page", str(int(start_page))]
             if continue_on_halt:
                 argv.append("--continue-on-halt")   # unattended multi-merchant batch (2026-09-11)
+            # [R45] consoles by DEFAULT (Romain's decision « 1 », 2026-09-15); the flag is
+            # explicit either way so the run's argv / meta show the mode of the sweep.
+            argv.append("--consoles" if consoles else "--no-consoles")
             return self._spawn(
                 run_dir, kind="data_entry_auto", argv=argv,
                 meta={"targets": [{"merchant": m, "store_id": s} for m, s in clean],
                       "by": by, "run_id": run_id, "max_pages": max_pages,
-                      "continue_on_halt": bool(continue_on_halt)},
+                      "continue_on_halt": bool(continue_on_halt),
+                      "consoles": bool(consoles)},
             )
 
     def start_data_entry_by_urls(
         self, urls: list[str], *, by: str, targets_spec: str | None = None,
+        consoles: bool = True,
     ) -> dict[str, Any]:
         """Launch the DRY-RUN data-entry planner from a list of AKS page URLs
         (stage 1, Romain 2026-08-24). For each pasted AKS product page we pin that
@@ -775,13 +780,18 @@ class SubmitManager:
                     "--urls-file", str(urls_file), "--dry-run"]
             if targets_spec:
                 argv += ["--targets", targets_spec]
+            # [R45] consoles by DEFAULT (Romain 2026-09-15) — scripts/11 accepts the same
+            # --consoles / --no-consoles pair (default True); explicit either way.
+            argv.append("--consoles" if consoles else "--no-consoles")
             return self._spawn(
                 run_dir, kind="data_entry_by_urls", argv=argv,
-                meta={"by": by, "run_id": run_id, "urls": len(clean), "mode": "dry-run"},
+                meta={"by": by, "run_id": run_id, "urls": len(clean), "mode": "dry-run",
+                      "consoles": bool(consoles)},
             )
 
     def start_data_entry_by_urls_submit(
         self, from_run: str, *, by: str, expected_recap_sha: str | None = None,
+        consoles: bool = True,
     ) -> dict[str, Any]:
         """SUBMIT the candidates of a finished ``*-by-urls`` dry-run (the "Saisir"
         button, Romain 2026-08-25). ONE supervised orchestrator
@@ -874,6 +884,18 @@ class SubmitManager:
                 "recap_changed",
                 "l'aperçu a changé depuis l'affichage — recharger, re-vérifier le lot, retaper GO",
                 http_status=409)
+        # [R45] (2026-09-15) the submit must run in the SAME console mode the preview was
+        # matched with: when the preview's recap stamps a boolean ``consoles`` (scripts/11)
+        # and it disagrees with the requested mode, refuse fail-closed — a PC-only preview
+        # must not be submitted as a console batch nor the reverse. A preview without the
+        # stamp (older run) is not checked here; scripts/12 gates each entry anyway.
+        stamped = recap.get("consoles")
+        if isinstance(stamped, bool) and stamped != bool(consoles):
+            raise SubmitStartError(
+                "consoles_mismatch",
+                "l'aperçu a été matché " + ("avec" if stamped else "sans") + " les consoles — "
+                "relancer la saisie avec le même réglage « Consoles » que l'aperçu",
+                http_status=409)
         available = str(recap.get("available") or "all")
         with self._mutex:
             self._ensure_free()
@@ -890,11 +912,14 @@ class SubmitManager:
             source_copy.write_bytes(raw)
             argv = [self.python, str(self.by_urls_submit_script),
                     "--from-run", from_run, "--from-recap-file", str(source_copy),
-                    "--run-id", run_id, "--available", available, "--mode", "safe"]
+                    "--run-id", run_id, "--available", available, "--mode", "safe",
+                    # [R45] consoles by DEFAULT (Romain 2026-09-15); scripts/12 accepts the
+                    # same --consoles / --no-consoles pair (default True); explicit either way.
+                    "--consoles" if consoles else "--no-consoles"]
             return self._spawn(
                 run_dir, kind="data_entry_by_urls_submit", argv=argv,
                 meta={"by": by, "from_run": from_run, "run_id": run_id,
-                      "candidates": candidates})
+                      "candidates": candidates, "consoles": bool(consoles)})
 
     def start_match(
         self, run_dir: Path, *, by: str, max_candidates: int | None = None

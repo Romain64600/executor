@@ -116,5 +116,102 @@ class SubmitMerchantTests(unittest.TestCase):
         self.assertEqual(out.created, 0)
 
 
+def _console_cand(oid="7"):
+    """A 2-target console candidate exactly as the by-urls preview stores it (matcher
+    Candidate.to_dict: targets[0] mirrors the primary fields, R45)."""
+    return {"offer": {"offer_id": oid, "name": "Hades (PS4 / PS5)", "url": f"https://m/{oid}",
+                      "merchant": "G2A", "store_id": "38"},
+            "aks_product_id": "85104", "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+            "aks_name": "Hades PS4", "platform": "PS4",
+            "region": {"label": "Playstation Game Code GLOBAL", "id": "88", "implicit": True},
+            "edition": {"label": "Standard", "id": "1"},
+            "targets": [
+                {"platform": "PS4", "aks_product_id": "85104", "aks_url": "https://aks/ps4", "aks_name": "Hades PS4",
+                 "region": {"label": "Playstation Game Code GLOBAL", "id": "88"}, "edition": {"label": "Standard", "id": "1"}},
+                {"platform": "PS5", "aks_product_id": "85105", "aks_url": "https://aks/ps5", "aks_name": "Hades PS5",
+                 "region": {"label": "PS5", "id": "88ps5h"}, "edition": {"label": "Standard", "id": "1"}},
+            ]}
+
+
+class ConsoleFlagTests(unittest.TestCase):
+    """[R45] Romain 2026-09-15: the admin launcher passes --consoles / --no-consoles to
+    the submit as well; accepted (default ON), informational only — 05_submit reads the
+    targets from approved.json, no flag is forwarded."""
+
+    def test_flags(self):
+        p = M.build_parser()
+        base = ["--from-run", "r", "--run-id", "s"]
+        self.assertTrue(p.parse_args(base).consoles)
+        self.assertTrue(p.parse_args(base + ["--consoles"]).consoles)
+        self.assertFalse(p.parse_args(base + ["--no-consoles"]).consoles)
+
+
+class MultiTargetWholeTests(unittest.TestCase):
+    def test_submit_merchant_writes_the_candidate_whole_with_the_extended_fingerprint(self):
+        # The triple carries the 2-target candidate AS IS (targets never split / trimmed)
+        # and the approval decision is keyed on the R45 extended fingerprint; 05_submit
+        # is spawned UNMODIFIED (no console flag — it reads the targets from approved.json).
+        import json
+        from src.validation import candidate_fingerprint
+        captured = {}
+
+        def fake_apply(sub_run, payload, repo_root=None, created_offer_ids=None):
+            captured["payload"] = payload
+
+        def fake_child(argv):
+            captured["argv"] = argv
+            (Path(argv[2]).parent / "submit_plan.json").write_text(json.dumps({"plan": [
+                {"merchant_title": "Hades (PS4 / PS5)", "submitted": True, "post_save": "gone"}]}),
+                encoding="utf-8")
+            return 0
+
+        orig_apply, orig_child = M.apply_overrides_and_validate, M._run_child
+        M.apply_overrides_and_validate, M._run_child = fake_apply, fake_child
+        self.addCleanup(lambda: setattr(M, "apply_overrides_and_validate", orig_apply))
+        self.addCleanup(lambda: setattr(M, "_run_child", orig_child))
+
+        cand = _console_cand()
+        sm = M._make_submit_merchant("all", _Log())
+        with tempfile.TemporaryDirectory() as d:
+            sub = Path(d) / "sub"
+            out = sm("G2A", "38", [cand], sub)
+            written = json.loads((sub / "candidates.json").read_text(encoding="utf-8"))
+        self.assertTrue(out.clean())
+        self.assertEqual(out.created, 1)
+        self.assertEqual(written, [cand])                                   # whole, untouched
+        self.assertEqual([t["aks_product_id"] for t in written[0]["targets"]], ["85104", "85105"])
+        fp = captured["payload"]["decisions"][0]["fingerprint"]
+        self.assertEqual(fp, candidate_fingerprint(cand))
+        self.assertEqual(fp, "7|85104|88|1|+85105:88ps5h:1")                # R45 extended formula
+        self.assertNotIn("--consoles", captured["argv"])
+        self.assertNotIn("--no-consoles", captured["argv"])
+        self.assertIn("--mode", captured["argv"])
+
+    def test_store_grouping_keeps_multi_target_candidates_whole(self):
+        # run_by_urls_submit groups by store and hands each candidate dict through
+        # untouched — a 2-target candidate reaches submit_merchant with both targets.
+        seen = []
+
+        def submit_merchant(merchant, store_id, candidates, sub_run):
+            seen.append((merchant, store_id, candidates))
+            return M.SubmitOutcome(ok=True, created=len(candidates))
+
+        recap = {"available": "all", "consoles": True,
+                 "games": [{"url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+                            "resolved": True, "aks_product_id": "85105", "page_kind": "ps5",
+                            "search": {"truncated": False},
+                            "merchants": [{"merchant": "G2A", "store_id": "38",
+                                           "candidates": [_console_cand()], "skipped": []}]}],
+                 "totals": {"games": 1, "resolved": 1, "candidates": 1}}
+        with tempfile.TemporaryDirectory() as d:
+            out = M.run_by_urls_submit(recap, available="all", submit_merchant=submit_merchant,
+                                       make_sub_run=lambda sid: Path(d) / f"s{sid}")
+        self.assertIsNone(out["aborted"])
+        self.assertEqual(len(seen), 1)
+        (_m, _s, cands) = seen[0]
+        self.assertEqual(cands, [_console_cand()])
+        self.assertEqual(len(cands[0]["targets"]), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -226,14 +226,16 @@ def _run(fs, *, start=1, max_pages=400, should_stop=lambda: False, with_move=Tru
 
 class SweepEngineTests(unittest.TestCase):
     def test_recap_records_the_consoles_switch(self):
-        # [R45] (2026-09-12): the recap says whether the pages were matched with the
-        # console branch; default off.
+        # [R45] the recap says whether the pages were matched with the console branch.
+        # Default ON since Romain's decision « 1 » of 2026-09-15 (was off from 2026-09-12
+        # to 14); consoles=False = a PC-only sweep (scripts/10 --no-consoles).
         fs = FakeStages(1, {1: {"candidates": 0}})
-        self.assertIs(_run(fs)["consoles"], False)
-        cfg = SweepConfig(merchant="Kinguin", store_id="58", consoles=True)
+        self.assertIs(_run(fs)["consoles"], True)
+        self.assertIs(SweepConfig(merchant="Kinguin", store_id="58").consoles, True)
+        cfg = SweepConfig(merchant="Kinguin", store_id="58", consoles=False)
         r = run_sweep(cfg, Stages(fs.extract, fs.match, fs.approve, fs.submit),
                       page_run_id=lambda p: f"sweep-p{p}")
-        self.assertIs(r["consoles"], True)
+        self.assertIs(r["consoles"], False)
 
     def test_highest_first_order_reflow_safe(self):
         fs = FakeStages(3, {1: {"candidates": 1}, 2: {"candidates": 2}, 3: {"candidates": 3}})

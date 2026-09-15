@@ -109,11 +109,17 @@ def main() -> int:
              "trips the breaker the file is (re)written with a fresh expiry; a run whose "
              "search worked clears it.")
     parser.add_argument(
-        "--consoles", action="store_true",
-        help="[R45] (2026-09-12) enter CONSOLE keys (Xbox One / Series, PS4 / PS5, Switch) on "
+        "--consoles", dest="consoles", action="store_true", default=True,
+        help="[R45] enter CONSOLE keys (Xbox One / Series, PS4 / PS5, Switch / Switch 2) on "
              "their AKS platform pages, one target per declared platform page (design "
-             "EXECUTOR_RULES §4.12). Default OFF: console rows keep the 'console' skip. "
-             "Stamped into match_meta.json['consoles'].")
+             "EXECUTOR_RULES §4.12). This is the DEFAULT since Romain's decision « 1 » of "
+             "2026-09-15 (after the two modal-v2 canaries and the MMOGA console dry-run) — "
+             "the flag is kept as an explicit no-op; --no-consoles opts out. Stamped into "
+             "match_meta.json['consoles'].")
+    parser.add_argument(
+        "--no-consoles", dest="consoles", action="store_false",
+        help="[R45] PC-only match: console rows keep the 'console' skip (the pre-2026-09-15 "
+             "behaviour); match_meta.json['consoles'] = false.")
     args = parser.parse_args()
 
     # Fail-closed: never mass-skip because AKS itself is unreachable. Staff UA
@@ -141,7 +147,7 @@ def main() -> int:
             feed, resolve_aks, max_candidates=args.max_candidates,
             on_progress=lambda d: logger.log("match_progress", **d), stats=stats,
             search_circuit_open=circuit_open,
-            consoles=bool(args.consoles),          # [R45] console branch (default off)
+            consoles=bool(args.consoles),          # [R45] console branch (default ON since 2026-09-15)
         )
     except AksThrottled as exc:
         # Audit 2026-09-09 (critic): AKS is pushing back (429 / consecutive unreliable
@@ -186,7 +192,8 @@ def main() -> int:
             "search_circuit_open_offers": int(stats.get("search_circuit_open_offers", 0)),
             "throttle_graces": int(stats.get("throttle_graces", 0)),
             # [R45] whether this batch was matched WITH the console branch — a console
-            # candidate (multi-target) can only come from a --consoles match.
+            # candidate (multi-target) can only come from a --consoles match. True by
+            # default since 2026-09-15; false = an explicit --no-consoles (PC-only) match.
             "consoles": bool(args.consoles),
         }, indent=2),
         encoding="utf-8",

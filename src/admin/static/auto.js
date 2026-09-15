@@ -85,6 +85,8 @@ $("#launch").addEventListener("click", async () => {
   const body = { targets, confirm: "GO" };
   const mp = parseInt($("#max-pages").value, 10); if (mp > 0) body.max_pages = mp;
   const sp = parseInt($("#start-page").value, 10); if (sp > 0) body.start_page = sp;
+  // [R45] consoles by default (Romain 2026-09-15); unticked = PC-only sweep (--no-consoles).
+  body.consoles = $("#consoles").checked;
   $("#launch").disabled = true;
   $("#launch-msg").textContent = "Lancement…";
   try {

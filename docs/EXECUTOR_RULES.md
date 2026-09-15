@@ -241,7 +241,8 @@ remaster `[critical learned rule]`.
 
 ### 4.3 Immediate SKIP list `[CORE_RULES][P04]`
 Console (Xbox/PS/Nintendo — the `console` skip fires on a title OR URL marker; lifted
-only under `--consoles`, §4.12 `[R45]`); forbidden regions
+by the console branch — `--consoles`, the DEFAULT since 2026-09-15, `--no-consoles`
+restores the skip — §4.12 `[R45]`); forbidden regions
 (RoW/AMERICAS/ASIA/OTHER/North America/EU-NA/EMEA/NA/Eastern Europe/SEA/Middle
 East/Turkey/Germany); Country Gift (CZ/RU/TR/BR/AR/IN/CN);
 Prepaid/Subscription/Voucher/Gift Card/Wallet/in-game currency
@@ -410,8 +411,9 @@ sur les consoles après modification de l'outil AKS feed") was reopened the next
 Romain's new AKS feed tool OVERWRITES the region (= region/PLATFORM) and the edition PER
 TARGET PAGE, so one feed row can be filed on several AKS pages. The full rule — page
 model, classifier, multi-target candidates, policies (P1 DECIDED by Romain on 2026-09-14,
-P2-P5 à confirmer), the fail-closed submit gate — lives in §4.12; the code is prepared
-behind `--consoles` (default OFF; the sweep requires `--dry-run` with it). **Correction of
+P2-P5 à confirmer), the fail-closed submit gate — lives in §4.12; the code runs under
+`--consoles`, the DEFAULT since Romain's decision « 1 » of 2026-09-15 (`--no-consoles`
+opts out; the 2026-09-14 "requires `--dry-run`" guard is lifted). **Correction of
 finding (a) (2026-09-12):** the 11/09 probe used a WRONG
 URL grammar (`…-xbox-series-x-…-cd-key-…`). Console product pages DO exist, at
 `buy-<slug>-<kind>-compare-prices/` with kind ∈ `ps4` / `ps5` / `xbox-one` /
@@ -1138,17 +1140,21 @@ region (and the edition — "pas nécessaire mais ajoutée") PER TARGET PAGE, wh
 means region/PLATFORM: a PS5 key is added on the PS5 page and also on the PS4 page by
 overwriting the region to PS4; an Xbox key goes on Xbox One, Xbox Series X and — for
 Xbox Play Anywhere games ONLY — PC. This section supersedes the 2026-09-11 "PARKED" study
-(§4.3). The code is **prepared behind an opt-in flag** (`--consoles`, default OFF); the
-write of a multi-target candidate stays **fail-closed** until the new modal is observed
-(§6 "Multi-target candidates"). **P1 is DECIDED** (Romain 2026-09-14: « clé PS5 seule =
+(§4.3). The code runs under `--consoles` — **the DEFAULT since 2026-09-15** (Romain's
+decision « 1 », after the two modal-v2 canaries and the MMOGA console dry-run; it was an
+opt-in flag, default OFF, from 2026-09-12 to 14); `--no-consoles` is the PC-only opt-out.
+The write of a multi-target candidate was **fail-closed** until the new modal was observed
+(§6 "Multi-target candidates" — observed 2026-09-14, proven by the canaries of
+2026-09-15). **P1 is DECIDED** (Romain 2026-09-14: « clé PS5 seule =
 page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch et Switch 2 »); P2-P5
 below are still **à confirmer par Romain** (listed in §12). The adversarial review of
 2026-09-12 (four lenses) was fixed on 2026-09-14 — region read of the console branch, R44
 on consoles, identity apostrophes, the R19 stamp, RANDOM with a console word, the shared
 throttle guard, the submit-gate streak, null target ids — and Switch 2 became the
-`SWITCH2` family (CHANGELOG 2026-09-14). Until the per-target modal is observed the
-console branch is READ-ONLY: `scripts/10_data_entry_auto.py` refuses `--consoles`
-without `--dry-run`.
+`SWITCH2` family (CHANGELOG 2026-09-14). History: until the per-target modal was observed
+the console branch was READ-ONLY (`scripts/10_data_entry_auto.py` refused `--consoles`
+without `--dry-run`, 2026-09-14); the guard was lifted on Romain's GO of 2026-09-15 and
+the branch became the default the same day.
 
 **4.12.1 Page model — verified read-only 2026-09-12 (UA `AKS/Staff`).** AKS has SEPARATE
 console product pages: `buy-<slug>-<kind>-compare-prices/`, kind ∈ `ps4` / `ps5` /
@@ -1473,13 +1479,24 @@ SWITCH alone) — the fix of the Gamivo leak below.
    " (id)" suffix and without BOM ("PS5", "Xbox/PC GLOBAL", "Playstation Game Code
    EUROPE"); `resolve_catalog_id` falls back to the id path (verified). Shapes:
    [`DATA_CONTRACTS.md`](DATA_CONTRACTS.md).
-6. `match_feed(..., consoles=False)`; `scripts/03_match.py --consoles` stamps
-   `match_meta.json["consoles"]`; `scripts/10_data_entry_auto.py` / `src/data_entry_auto.py`
-   pass `--consoles` to the match (**default OFF**; the 2026-09-14 "`--consoles` requires `--dry-run`" guard
-   was LIFTED on Romain's GO of 2026-09-15 after the modal v2 was observed and proven by
-   two canaries — `05_submit` gates every entry by shape / cap / readbacks, §6); the admin
-   page changes nothing. **No
-   console ENTRY without the flag** — but the URL console scan (`console_marker_in_url`)
+6. `match_feed(..., consoles=False)` (the library default is unchanged); the CLIs and the
+   admin are **console-ON by default** — Romain's decision « 1 » of 2026-09-15, after the
+   two modal-v2 canaries and the MMOGA console dry-run (663 offers → 174 console
+   candidates: 89 single-target, 59 two-target, 26 three-target; 489 skips):
+   `scripts/03_match.py` (`--consoles` default `True`, kept as an explicit no-op;
+   **`--no-consoles`** opts out) stamps `match_meta.json["consoles"]`;
+   `scripts/10_data_entry_auto.py` / `src/data_entry_auto.py` (`SweepConfig.consoles`
+   default `True`, `--no-consoles` opts out) stamp `recap.json["consoles"]` and ALWAYS
+   write the mode on the 03 argv — `--consoles` or `--no-consoles` — so a run dir shows
+   it; the admin (`POST /api/data-entry/auto`, by-urls preview and « Saisir ») reads the
+   JSON boolean body field `consoles` (absent = `true`; a non-boolean is refused 400
+   `bad_consoles`), the UI checkbox « Consoles » is checked by default, and the manager
+   appends the same flag pair to `scripts/10` / `11` / `12` and records `consoles` in
+   `admin_submit.json`. History: default OFF from 2026-09-12 to 14; the 2026-09-14
+   "`--consoles` requires `--dry-run`" guard was LIFTED on Romain's GO of 2026-09-15
+   after the modal v2 was observed and proven by two canaries — `05_submit` gates every
+   entry by shape / cap / readbacks (§6). **No console ENTRY under `--no-consoles`** —
+   but the URL console scan (`console_marker_in_url`)
    is active in EVERY mode and changes the skip reasons of URL-only console rows: on the
    latest Gamivo batch 569 rows previously filed "no AKS product page found" (241),
    "forbidden region: COLOMBIA" (206), "skip category: BUNDLE" (26), "forbidden region:
@@ -1556,8 +1573,11 @@ CA 83 / AU 77 forbidden — skipped in `precheck_skip` since 2026-09-14);
 Gamivo 572 / 762, URL-only (Series 333, One+Series 207; United Kingdom 258, Colombia 203);
 K4G 135 / 592; Driffle 112 / 464; G2A 42 / 806 (spells "X/S", One and Series as separate
 rows); Eneba 1 376 / 1 659 of which 704 generation-less; Instant Gaming: the platform is
-not in the feed. A dry-run under `--consoles` on MMOGA / Kinguin is the next measurement
-(HANDOFF).
+not in the feed. The MMOGA console dry-run of 2026-09-15 (run
+`20260915-081607-dryrun-consoles`, 663 offers): **174 console candidates** — 89
+single-target, 59 two-target, 26 three-target — and 489 skips; this is the measurement
+behind Romain's decision « 1 » (consoles by default everywhere, `--no-consoles` to opt
+out). Kinguin is the next dry-run (HANDOFF).
 
 ---
 
@@ -2290,9 +2310,9 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167, MMOGA 12 (its AKS page merchant i
 - Merchant id inconsistencies in the skill (e.g. Gamivo merchant `—` vs `218`) —
   resolve from the live dropdown at runtime, not from tables.
 - Full `references/*.md` may add merchant rules; fold them into §11 as they land.
-- **Console keys `[R45]` — questions for Romain (2026-09-12, §4.12; the code is prepared
-  behind `--consoles`, default OFF and dry-run only — `scripts/10` refuses it without
-  `--dry-run` —, and the multi-target write is gated in §6):**
+- **Console keys `[R45]` — questions for Romain (2026-09-12, §4.12; the code runs under
+  `--consoles`, the DEFAULT since 2026-09-15 — `--no-consoles` opts out —, and the
+  multi-target write is proven by the canaries of 2026-09-15, §6):**
   - ~~**P1**~~ **CLOSED 2026-09-14** — Romain: « clé PS5 seule = page PS5 seulement, pareil
     pour Xbox Series, PS4, Xbox One, Switch et Switch 2 » = "merchant declaration ∧ AKS
     page", a lone declared platform → that page only, cross-gen → both (§4.12 P1,
@@ -2532,3 +2552,47 @@ L'orchestrateur (`scripts/10`) : liste ≥2 offres → canary `--batch --limit 2
 défauts corrigés — la garde R24 « widening » rejetait le `--limit 2` batché (exemptée pour
 `--batch`), et un `move_plan.json` stale double-comptait sur abort précoce (unlink avant
 chaque invocation).
+
+**Saisie par page = consoles par défaut `[R45]` (Romain 2026-09-15).** « Travailler sur une
+page de jeu » (`scripts/11` aperçu → `scripts/12` saisie, console admin « Saisir ») suit la
+même décision que le sweep : `--consoles` est le **défaut** sur les deux scripts,
+`--no-consoles` = l'ancien run PC seul. Règles déterministes, fail-closed :
+
+1. **URL** : `buy-<slug>-<kind>-compare-prices/`, `kind` ∈ `ps4 ps5 xbox-one xbox-series
+   nintendo-switch nintendo-switch-2` (`parse_page_url` → `PageRef(slug, kind)` ; les formes
+   PC `cd-key` / `-key-` / `compare-and-buy-…` et `<plateforme>-account` gardent leur
+   lecture ; l'alternative KEY passe en premier — un slug PC contenant « ps4 » reste la page
+   PC ; `nintendo-switch-2` est reconnu avant `nintendo-switch`). Une page console est lue
+   comme la page PC (`resolve_pinned`, mêmes retries bornés, jamais de devinette de slug).
+   Sous `--no-consoles` une URL console est **refusée avant tout fetch** (`ConsolePageRefused`),
+   rapportée par URL (`resolved: false`), les autres URLs continuent.
+2. **Recherche** : page console → terme nom = `console_page_identity(aks_name)` (« Hades
+   Xbox Series » → « Hades »), terme url = slug du jeu ; jamais le suffixe plateforme (le
+   marchand écrit « Hades (PS4 / PS5) », pas « Hades Xbox Series »). R42 (chiffres romains)
+   s'applique à l'identité.
+3. **Résolution épinglée** (`PinnedPage`) : le matcher demande `resolver(name)` (page PC,
+   ancre du plan console) et `resolver(name, page_kind=k)` (page console de kind `k`, ancre
+   sans page PC), puis `page_resolver(url)` par onglet déclaré. La page épinglée répond sa
+   propre kind (et, si elle n'est pas console — PC ou account — la demande PC nue, comme
+   avant) ; toute autre kind est servie depuis **sa barre d'onglets** (`console_pages`) via
+   le lecteur de pages (lecture seule, `resolve_aks_url`), `None` sans onglet (→ le skip
+   fail-closed du matcher « no AKS product page found (console) » / « AKS has no <fam>
+   page »). Cache d'une lecture par page sœur et par jeu ; la page épinglée n'est jamais
+   relue ; une erreur de probe n'est jamais mise en cache. Le lecteur de pages est enveloppé
+   dans un `_ThrottleGuard` **partageant** l'état de la garde de résolution des URLs (un
+   flux de probes, un abort : 429 ou 5 non-fiables consécutives → `aborted: aks_throttled`,
+   `game.error: aks_throttled`, jamais un skip « error: » par ligne).
+4. **Qualification** : un candidat est retenu **ssi l'une de ses `targets` est la page
+   demandée** (`_off_page_reason`) ; il est gardé **entier** (toutes ses pages), jamais
+   réduit à la page demandée. « Une clé cross-gen demandée depuis une page console est
+   écrite sur toutes ses pages déclarées » (P1 inchangé : jamais de page sœur ajoutée).
+   Page PC + `--consoles` : candidats PC comme avant + clés Xbox Play Anywhere (cible
+   XBOX_PC = page PC) ; une clé console sans PA depuis la page PC → skip explicite `not on
+   the requested page <pid>: this offer targets <fam> <pid> …`. Page PC + `--no-consoles` :
+   strictement l'ancien comportement (skip « console »).
+5. **Saisie** (`scripts/12`) : flag accepté, transmis à rien ; groupement par store inchangé
+   (dicts candidats entiers, empreinte étendue R45) ; `05_submit` lit `targets` dans
+   `approved.json`.
+
+---
+

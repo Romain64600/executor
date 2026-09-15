@@ -89,7 +89,7 @@ def _clock() -> str:
 def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
                  *, triage: bool = False, move_execute: bool = False,
                  dry_run: bool = False, prove_gone_scan: bool = False,
-                 sweep_dir: Path | None = None, consoles: bool = False) -> Stages:
+                 sweep_dir: Path | None = None, consoles: bool = True) -> Stages:
     py = sys.executable
     # A fully read-only preview (Romain: "teste le dry-run"): extract (browser read)
     # + match (AKS read) + triage plan, but NEVER a real write — the ADD submit is
@@ -125,10 +125,11 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
             # Romain GO 2026-09-10: the R30 breaker state travels across the sweep's pages
             # (no 3 × timeout tax per page while AKS search is down; expires on its own).
             argv += ["--search-circuit-file", str(sweep_dir / "search_circuit.json")]
-        if consoles:
-            # [R45] (2026-09-12) console branch of the matcher — default OFF (the
-            # multi-target submit is still fail-closed in 05 until the modal is observed).
-            argv.append("--consoles")
+        # [R45] console branch of the matcher — the DEFAULT since Romain's decision « 1 » of
+        # 2026-09-15 (after the two modal-v2 canaries and the MMOGA console dry-run: 174
+        # candidates). Explicit either way so a run dir's argv shows the mode; --no-consoles
+        # = PC-only match (console rows keep the 'console' skip).
+        argv.append("--consoles" if consoles else "--no-consoles")
         rc = _run_child(argv)
         cands = _load_json(ROOT / "runs" / run_id / "candidates.json")
         n = len(cands) if isinstance(cands, list) else 0
@@ -380,14 +381,21 @@ def main() -> int:
                     help="Fully READ-ONLY preview: extract + match + triage plan, "
                          "NO submit and NO move (nothing written). ADDs are counted "
                          "from candidates.json, not created.")
-    ap.add_argument("--consoles", action="store_true",
-                    help="[R45] (2026-09-12) match with the CONSOLE branch (03_match "
-                         "--consoles): console keys resolve their AKS platform pages "
-                         "(Xbox One / Series, PS4 / PS5, Switch / Switch 2) instead of the "
-                         "'console' skip. Default OFF. Real writes allowed since Romain's GO "
-                         "of 2026-09-15 (the per-target modal v2 was observed with --inspect "
-                         "and proven by two canaries: one target, then two targets); the "
-                         "--dry-run-only guard of 2026-09-14 is lifted.")
+    ap.add_argument("--consoles", dest="consoles", action="store_true", default=True,
+                    help="[R45] match with the CONSOLE branch (03_match --consoles): console "
+                         "keys resolve their AKS platform pages (Xbox One / Series, PS4 / PS5, "
+                         "Switch / Switch 2) instead of the 'console' skip. This is the DEFAULT "
+                         "since Romain's decision « 1 » of 2026-09-15 (after the two modal-v2 "
+                         "canaries and the MMOGA console dry-run: 663 offers -> 174 console "
+                         "candidates) — the flag is kept as an explicit no-op; --no-consoles "
+                         "opts out. Real writes allowed since Romain's GO of 2026-09-15 (the "
+                         "per-target modal v2 was observed with --inspect and proven by two "
+                         "canaries: one target, then two targets); the --dry-run-only guard of "
+                         "2026-09-14 is lifted.")
+    ap.add_argument("--no-consoles", dest="consoles", action="store_false",
+                    help="[R45] PC-only sweep: console rows keep the 'console' skip (the "
+                         "pre-2026-09-15 behaviour). Recorded as recap.json['consoles'] = false "
+                         "and passed to 03_match as --no-consoles.")
     args = ap.parse_args()
     # [R45] the "--consoles requires --dry-run" guard (review fix 2026-09-14) was LIFTED on
     # Romain's GO of 2026-09-15: the per-target modal v2 was observed (--inspect, run
@@ -451,7 +459,7 @@ def main() -> int:
     recap = {"run_id": run_id, "started_at": _clock(), "targets": [], "halted": None,
              "halted_merchants": [],
              "coverage_incomplete": [], "total_created": 0, "total_moved": 0,
-             "consoles": bool(args.consoles)}          # [R45] console branch on?
+             "consoles": bool(args.consoles)}          # [R45] console branch on? (default since 2026-09-15)
     recap_path = sweep_dir / "recap.json"
 
     def persist():
