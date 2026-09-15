@@ -281,10 +281,11 @@ _TARGETS_PROBE_JS = (
     "data_attrs:dataAttrs(el),label:labelFor(el,form),"
     "parents:chain(el,function(x){return x.parentElement;}),"
     "next_sibs:chain(el,function(x){return x.nextElementSibling;})};"
-    # Modal v2 (2026-09-14): describe the BUTTON right after a target input — the
-    # add-row button. Its `type` decides whether a click could natively submit the
-    # form (a type-less <button> in a form is a submit button): the write path
-    # refuses a submit-like add-row button, so --inspect must expose the type.
+    # Modal v2 (2026-09-14): describe the BUTTON right after a target input. Canary
+    # 2 (2026-09-15) proved it is the row's REMOVE button (`data-remove-target`,
+    # "×"), NOT the add button — kept as evidence; the add button is read from
+    # `inspection.modal_buttons` (`_MODAL_BUTTONS_JS`) and located by
+    # `_ADD_ROW_BUTTON_PROBE_JS`.
     "var nb=el.nextElementSibling;"
     "if(nb&&nb.tagName==='BUTTON'){rec.next_sib_button={tag:nb.tagName,"
     "type_prop:String(nb.type||''),type_attr:nb.getAttribute('type'),"
@@ -500,7 +501,26 @@ class SubmitSession(ReadOnlyCdpSession):
         """
 
         raw = self.evaluate_readonly(_INSPECT_MODAL_JS)
-        return json.loads(raw) if raw else {"modal_ok": False}
+        if not raw:
+            return {"modal_ok": False}
+        result = json.loads(raw)
+        # Canary 2 (2026-09-15): the add-row locator was wrong once because the
+        # inspection never listed the modal's buttons — every --inspect now
+        # carries them (``inspection.modal_buttons``), read-only.
+        result["modal_buttons"] = self.probe_modal_buttons()
+        return result
+
+    def probe_modal_buttons(self) -> dict[str, Any]:
+        """Read-only dump of every ``<button>`` / ``<a role=button>`` in the open
+        modal (``_MODAL_BUTTONS_JS``): ``{ok, count, row_count, container,
+        buttons: [{tag, type_prop, type_attr, id, klass, href, role, text,
+        data_attrs, visible, in_form, in_targets_container, in_row, path}]}`` —
+        the way to READ the real add-row button before a multi-target write
+        (canary 2, 2026-09-15: the sibling of the target input is the REMOVE
+        button). ``{ok: False, reason, buttons: []}`` without a modal / result."""
+
+        raw = self.evaluate_readonly(_MODAL_BUTTONS_JS)
+        return json.loads(raw) if raw else {"ok": False, "reason": "no_result", "buttons": []}
 
     def form_validity(self) -> dict[str, Any]:
         """Read-only HTML5 validity summary of the modal's "Create offer" form.
@@ -880,41 +900,142 @@ _TARGETS_READBACK_JS = (
     "})())"
 )
 
-# Read-only probe of the modal v2 ADD-ROW button (2026-09-14): the element right
-# after the LAST row's target input (``input[name="offer[targets][i][target]"]``,
-# highest i) — located by DOM relation only, never by text. Returns its tag, its
-# ``type`` (property AND attribute: a <button> without type= is a SUBMIT button
-# inside a form), class, attribute names, text, visibility, its rect + the
-# viewport, and ``submit_like`` = not a BUTTON, or type ≠ 'button', or carrying
-# ``data-action-submit`` / ``button-primary`` (the Create button's marks). The
-# write path clicks it ONLY when ``submit_like`` is false — a submit-type click
-# would natively submit the ``method=get`` form = an uncontrolled write.
+# Read-only probe of the modal v2 ADD button (2026-09-14; locator rewritten
+# 2026-09-15 after canary 2). CANARY-2 FINDING (run 20260914-canary-two-targets,
+# NBA 2K25 Xbox One + Series): the <button> that is the next sibling of the LAST
+# row's target input is the row's REMOVE button — `button.button
+# [data-remove-target]`, text "×"; the trusted click on it added nothing (1 row
+# read back → TARGET_ROW_NOT_ADDED, no write). The DOM-relation locator is gone.
+# Locator rule, fail-closed:
+#   1. NEVER an element carrying `data-remove-target`.
+#   2. `#TB_ajaxContent form [data-add-target]` (a <button> or an <a>) — exactly
+#      one → chosen, `matched_by: '[data-add-target]'` (UNVERIFIED live: inferred
+#      from the tool's `data-target-input` / `data-target-override` /
+#      `data-remove-target` naming); several → `ambiguous_add_button`.
+#   3. Otherwise the fallback: every <button> of the form whose `type` property
+#      is 'button', not `[data-remove-target]`, not submit-like, and whose data-*
+#      attribute NAMES or text match /add|ajout|plus|\+/i — chosen ONLY when
+#      exactly one exists (`matched_by: 'fallback:data-attr:<name>'` /
+#      `'fallback:text'`); 0 → `no_add_button_candidate`, >1 →
+#      `ambiguous_add_button`. Every <button> considered is listed in
+#      `candidates` with its `rejected` reason so the plan explains itself.
+# `submit_like` = not a BUTTON/A, or a BUTTON whose `type` ≠ 'button' (a
+# type-less <button> in a form is a submit button), or an <a> whose href
+# navigates, or `data-action-submit` / `button-primary` (the Create button's
+# marks). The write path clicks the chosen element ONLY when `submit_like` is
+# false, then proves the row count went UP by one (ROW_REMOVED if it went down).
 # S02-safe: no mutation.
 _ADD_ROW_BUTTON_PROBE_JS = (
     "JSON.stringify((function(){"
     "var content=document.querySelector('#TB_ajaxContent');"
     "if(!content)return {ok:false,reason:'no_modal'};"
-    "var last=null,idx=-1;"
+    "var first=null,idx=-1;"
     "for(var n=0;n<50;n++){"
     "var t=content.querySelector('input[name=\"offer[targets]['+n+'][target]\"]');"
-    "if(!t)break;last=t;idx=n;}"
-    "if(!last)return {ok:false,reason:'no_target_rows'};"
-    "var b=last.nextElementSibling;"
-    "if(!b)return {ok:false,reason:'no_next_sibling',last_row:idx};"
-    "var attrs=[];for(var i=0;i<b.attributes.length;i++){attrs.push(b.attributes[i].name);}"
-    "var cls=(b.className&&typeof b.className==='string')?b.className:'';"
-    "var isButton=b.tagName==='BUTTON';"
-    "var typeProp=isButton?String(b.type||''):null;"
-    "var submitLike=!isButton||typeProp!=='button'||"
-    "b.hasAttribute('data-action-submit')||/\\bbutton-primary\\b/.test(cls);"
-    "var r=b.getBoundingClientRect();"
-    "return {ok:true,last_row:idx,tag:b.tagName,type_prop:typeProp,"
-    "type_attr:b.getAttribute('type'),klass:cls,attrs:attrs,"
-    "text:(b.textContent||'').trim().slice(0,40),"
-    "visible:b.offsetParent!==null,submit_like:submitLike,"
-    "x:r.x,y:r.y,width:r.width,height:r.height,"
-    "top:r.top,left:r.left,bottom:r.bottom,right:r.right,"
-    "viewport:{w:window.innerWidth,h:window.innerHeight}};"
+    "if(!t)break;if(!first)first=t;idx=n;}"
+    "if(!first)return {ok:false,reason:'no_target_rows'};"
+    "var form=first.closest('form')||content;"
+    "var ADDISH=/add|ajout|plus|\\+/i;"
+    "function dataAttrs(el){var o={};for(var i=0;i<el.attributes.length;i++){"
+    "var a=el.attributes[i];if(a.name.indexOf('data-')!==0)continue;"
+    "o[a.name]=String(a.value).slice(0,40);}return o;}"
+    "function attrNames(el){var out=[];for(var i=0;i<el.attributes.length;i++){"
+    "out.push(el.attributes[i].name);}return out;}"
+    "function desc(el){"
+    "var cls=(el.className&&typeof el.className==='string')?el.className:'';"
+    "var isButton=el.tagName==='BUTTON',isAnchor=el.tagName==='A';"
+    "var typeProp=isButton?String(el.type||''):null;"
+    "var href=isAnchor?(el.getAttribute('href')||''):null;"
+    "var navigates=isAnchor&&href!==''&&href!=='#'&&!/^javascript:/i.test(href);"
+    "var submitLike=(!isButton&&!isAnchor)||(isButton&&typeProp!=='button')||navigates||"
+    "el.hasAttribute('data-action-submit')||/\\bbutton-primary\\b/.test(cls);"
+    "return {tag:el.tagName,type_prop:typeProp,type_attr:el.getAttribute('type'),"
+    "id:el.id||null,klass:cls,href:href,attrs:attrNames(el),data_attrs:dataAttrs(el),"
+    "text:(el.textContent||'').trim().slice(0,40),visible:el.offsetParent!==null,"
+    "is_remove:el.hasAttribute('data-remove-target'),submit_like:submitLike};}"
+    "function addish(d){var names=Object.keys(d.data_attrs);"
+    "for(var i=0;i<names.length;i++){if(ADDISH.test(names[i]))return 'data-attr:'+names[i];}"
+    "return ADDISH.test(d.text)?'text':null;}"
+    "var chosen=null,matchedBy=null,candidates=[];"
+    "var explicit=Array.prototype.slice.call(form.querySelectorAll('[data-add-target]'))"
+    ".filter(function(el){return (el.tagName==='BUTTON'||el.tagName==='A')&&"
+    "!el.hasAttribute('data-remove-target');});"
+    "if(explicit.length===1){chosen=explicit[0];matchedBy='[data-add-target]';}"
+    "else if(explicit.length>1){return {ok:false,reason:'ambiguous_add_button',last_row:idx,"
+    "matched_by:'[data-add-target]',candidates:explicit.map(desc)};}"
+    "else{var all=Array.prototype.slice.call(form.querySelectorAll('button'));"
+    "var eligible=[];"
+    "for(var j=0;j<all.length;j++){var d=desc(all[j]);var why=null;"
+    "if(d.is_remove)why='remove';"
+    "else if(d.submit_like)why='submit_like';"
+    "else{var m=addish(d);if(m)d.matched_by='fallback:'+m;else why='not_addish';}"
+    "d.rejected=why;candidates.push(d);if(!why)eligible.push(j);}"
+    "if(eligible.length!==1){return {ok:false,"
+    "reason:eligible.length?'ambiguous_add_button':'no_add_button_candidate',"
+    "last_row:idx,candidates:candidates};}"
+    "chosen=all[eligible[0]];matchedBy=candidates[eligible[0]].matched_by;}"
+    "var out=desc(chosen);out.ok=true;out.last_row=idx;out.matched_by=matchedBy;"
+    "out.candidates_count=candidates.length;"
+    "var r=chosen.getBoundingClientRect();"
+    "out.x=r.x;out.y=r.y;out.width=r.width;out.height=r.height;"
+    "out.top=r.top;out.left=r.left;out.bottom=r.bottom;out.right=r.right;"
+    "out.viewport={w:window.innerWidth,h:window.innerHeight};"
+    "return out;"
+    "})())"
+)
+
+# Read-only dump of EVERY <button> / <a role=button> (+ <a data-add-target> /
+# <a data-remove-target>) in the open modal (2026-09-15, canary 2): the write
+# path's add-row locator was wrong once because the inspection never showed the
+# buttons — this makes --inspect show them all (`inspection.modal_buttons`) so
+# the real add button is READ before the next multi-target write. Per button:
+# tag, type (property + attribute), id, class, text (60), every data-* attribute
+# (values cut to 40), visibility, whether it sits inside the form, inside the
+# targets container (the parent of row 0's wrapper — the closest ancestor of row
+# 0's target input that also holds its two override selects), the row wrapper it
+# sits in (`in_row`), and its ancestor path. S02-safe: no mutation.
+_MODAL_BUTTONS_JS = (
+    "JSON.stringify((function(){"
+    "var content=document.querySelector('#TB_ajaxContent');"
+    "if(!content)return {ok:false,reason:'no_modal',buttons:[]};"
+    "function dataAttrs(el){var o={};for(var i=0;i<el.attributes.length;i++){"
+    "var a=el.attributes[i];if(a.name.indexOf('data-')!==0)continue;"
+    "o[a.name]=String(a.value).slice(0,40);}return o;}"
+    "function path(el,md){var p=[],c=el,d=0;"
+    "while(c&&c!==document.body&&d<md){"
+    "var s=c.tagName.toLowerCase();if(c.id)s+='#'+c.id;"
+    "else if(c.className&&typeof c.className==='string')"
+    "s+='.'+c.className.trim().split(/\\s+/).slice(0,2).join('.');"
+    "p.unshift(s);c=c.parentElement;d++;}return p.join(' > ');}"
+    "var rows=[];"
+    "for(var n=0;n<50;n++){"
+    "var t=content.querySelector('input[name=\"offer[targets]['+n+'][target]\"]');"
+    "if(!t)break;"
+    "var r=content.querySelector('select[name=\"offer[targets]['+n+'][region]\"]');"
+    "var e=content.querySelector('select[name=\"offer[targets]['+n+'][edition]\"]');"
+    "var w=t.parentElement;"
+    "while(w&&w!==content&&!((!r||w.contains(r))&&(!e||w.contains(e))))w=w.parentElement;"
+    "rows.push({input:t,wrapper:w});}"
+    "var container=(rows.length&&rows[0].wrapper&&rows[0].wrapper!==content)?"
+    "rows[0].wrapper.parentElement:null;"
+    "var form=content.querySelector('form');"
+    "var els=Array.prototype.slice.call(content.querySelectorAll("
+    "'button,a[role=\"button\"],a[data-add-target],a[data-remove-target]'));"
+    "var buttons=els.map(function(el){"
+    "var cls=(el.className&&typeof el.className==='string')?el.className:'';"
+    "var inRow=null;for(var i=0;i<rows.length;i++){"
+    "if(rows[i].wrapper&&rows[i].wrapper!==content&&rows[i].wrapper.contains(el)){inRow=i;break;}}"
+    "return {tag:el.tagName,type_prop:el.tagName==='BUTTON'?String(el.type||''):null,"
+    "type_attr:el.getAttribute('type'),id:el.id||null,klass:cls,"
+    "href:el.tagName==='A'?el.getAttribute('href'):null,role:el.getAttribute('role'),"
+    "text:(el.textContent||'').trim().slice(0,60),data_attrs:dataAttrs(el),"
+    "visible:el.offsetParent!==null,in_form:!!(form&&form.contains(el)),"
+    "in_targets_container:!!(container&&container.contains(el)),in_row:inRow,"
+    "path:path(el,6)};});"
+    "return {ok:true,count:buttons.length,row_count:rows.length,"
+    "container:container?{tag:container.tagName,id:container.id||null,"
+    "klass:(container.className&&typeof container.className==='string')?container.className:'',"
+    "path:path(container,6)}:null,buttons:buttons};"
     "})())"
 )
 
@@ -930,6 +1051,39 @@ def _v2_row_complete(row: Any) -> bool:
     region = row.get("region") or {}
     edition = row.get("edition") or {}
     return bool(region.get("present")) and bool(edition.get("present"))
+
+
+def _add_button_refusal(probe: dict[str, Any], index: int) -> tuple[str, str] | None:
+    """Why the probed add button must NOT be clicked for row ``index`` —
+    ``(status, reason)`` or ``None`` when it may. Defence in depth over the
+    JS locator: a ``data-remove-target`` mark is refused HERE too (canary 2,
+    2026-09-15 — the sibling button of the target input is the remove one)."""
+
+    if not probe.get("ok"):
+        return ("NO_ADD_BUTTON", (
+            f"no unique add button in the modal form ({probe.get('reason')!r}; "
+            f"{len(probe.get('candidates') or [])} candidate(s) listed in add_button.candidates)"
+        ))
+    attrs = list(probe.get("attrs") or []) + list((probe.get("data_attrs") or {}).keys())
+    if probe.get("is_remove") or "data-remove-target" in attrs:
+        return ("NO_ADD_BUTTON", (
+            "the located button carries data-remove-target — the row's REMOVE button "
+            "(canary 2, 2026-09-15); not clicked"
+        ))
+    if probe.get("tag") not in ("BUTTON", "A"):
+        return ("NO_ADD_BUTTON", f"add button is a {probe.get('tag')!r}, not a <button>/<a>")
+    if probe.get("last_row") != index - 1:
+        return ("NO_ADD_BUTTON", (
+            f"target rows moved: last row {probe.get('last_row')!r}, expected {index - 1}"
+        ))
+    if probe.get("submit_like"):
+        return ("ADD_BUTTON_UNSAFE", (
+            f"add button reads type={probe.get('type_prop')!r} "
+            f"(attr {probe.get('type_attr')!r}, class {probe.get('klass')!r}"
+            f"{', href ' + repr(probe.get('href')) if probe.get('tag') == 'A' else ''}) — "
+            "a submit-type click would natively submit the modal form; not clicked"
+        ))
+    return None
 
 
 def _readback_values(state: Any) -> set[str]:
@@ -1376,9 +1530,12 @@ class WriteSubmitSession(SubmitSession):
 
     # ------------------------------------------------------------------
     # Modal v2 (2026-09-14) — region + edition PER TARGET PAGE. Romain's three
-    # confirmations (2026-09-14): (1) the button next to the target input ADDS a
-    # new target row (works by hand) — the readback that row i exists after the
-    # click stays the gate; (2) empty per-target region/edition INHERIT the global
+    # confirmations (2026-09-14): (1) a button of the row block ADDS a new target
+    # row (works by hand) — canary 2 (2026-09-15) proved the button NEXT TO the
+    # target input is the row's REMOVE button (`data-remove-target`, "×"); the add
+    # button is located by `_ADD_ROW_BUTTON_PROBE_JS`'s rule and the readback that
+    # row i exists after the click stays the gate (row count down → ROW_REMOVED);
+    # (2) empty per-target region/edition INHERIT the global
     # offer[region]/offer[edition] (tested by him) — the overrides are still set
     # EXPLICITLY on every row, inheritance is never relied on; (3) the modal takes
     # "3 ou 4 pour le moment" targets — the submitter caps a candidate at
@@ -1399,54 +1556,66 @@ class WriteSubmitSession(SubmitSession):
 
     def _add_target_row_trusted(self, index: int) -> dict[str, Any]:
         """Add target row ``index`` (≥ 1) to the v2 modal with a trusted click on
-        the add-row button, then PROVE the row exists (fail-closed).
+        the ADD button, then PROVE the row exists (fail-closed).
 
-        1. Probe the button after the LAST row's target input (DOM relation, never
-           text). Must be a ``<button>`` following row ``index - 1`` exactly, else
-           ``NO_ADD_BUTTON``. Must NOT be submit-like (``type`` ≠ 'button',
-           ``data-action-submit``, ``button-primary``) else ``ADD_BUTTON_UNSAFE``
-           — a submit-type click would natively submit the ``method=get`` form.
-           UNVERIFIED live: the 2026-09-14 inspection did not record the button's
-           type; ``--inspect`` now exposes it (``targets_probe … next_sib_button``).
-        2. Scroll it into the viewport if needed (re-probe), trusted click.
-        3. Read back the rows: exactly ``index + 1`` rows must exist, and row
-           ``index`` must carry its target input AND both override selects —
-           else ``TARGET_ROW_NOT_ADDED`` (missing) / ``TARGETS_COUNT_MISMATCH``
-           (the click produced more rows than one).
+        CANARY 2 (2026-09-15, run ``20260914-canary-two-targets``, NBA 2K25): the
+        button that is the next sibling of the last row's target input is the
+        row's REMOVE button (``button.button[data-remove-target]``, text "×") —
+        clicking it added nothing (``TARGET_ROW_NOT_ADDED``, nothing written). The
+        locator is now ``_ADD_ROW_BUTTON_PROBE_JS``'s rule: never a
+        ``[data-remove-target]`` element; ``form [data-add-target]`` first, else
+        the UNIQUE add-ish ``<button type=button>`` fallback (0 or several →
+        nothing clicked). ``add_button.matched_by`` records which rule matched.
 
-        Returns ``{row, add_button, scroll, click, readback, status
-        ('ROW_ADDED' | 'NO_ADD_BUTTON' | 'ADD_BUTTON_UNSAFE' |
-        'TARGET_ROW_NOT_ADDED' | 'TARGETS_COUNT_MISMATCH' |
-        'TARGETS_READBACK_UNREADABLE'), reason?}``. No Enter, ever.
+        0. Readback BEFORE anything: exactly ``index`` rows must exist
+           (``TARGETS_COUNT_MISMATCH``; unreadable → ``TARGETS_READBACK_UNREADABLE``).
+        1. Probe the add button (``_add_button_refusal``): no unique candidate,
+           a wrong tag, moved rows, or ANY ``data-remove-target`` mark →
+           ``NO_ADD_BUTTON``; submit-like (``type`` ≠ 'button', navigating <a>,
+           ``data-action-submit``, ``button-primary``) → ``ADD_BUTTON_UNSAFE`` — a
+           submit-type click would natively submit the ``method=get`` form.
+        2. Scroll it into the viewport if needed (re-probe: same verdicts, same
+           ``matched_by``), trusted click.
+        3. Readback AFTER: fewer rows than before → ``ROW_REMOVED`` (the click was
+           a remove — the flow stops, no Create click); more than ``index + 1``
+           rows → ``TARGETS_COUNT_MISMATCH``; row ``index`` absent or without its
+           target input + both override selects → ``TARGET_ROW_NOT_ADDED``.
+
+        Returns ``{row, rows_before, add_button (matched_by, candidates…), scroll,
+        click, readback, status ('ROW_ADDED' | 'NO_ADD_BUTTON' |
+        'ADD_BUTTON_UNSAFE' | 'ROW_REMOVED' | 'TARGET_ROW_NOT_ADDED' |
+        'TARGETS_COUNT_MISMATCH' | 'TARGETS_READBACK_UNREADABLE'), reason?}``.
+        No Enter, ever.
         """
 
         diag: dict[str, Any] = {"row": index}
-        probe = self._add_row_button_probe()
-        diag["add_button"] = {k: v for k, v in probe.items() if k not in _RECT_KEYS}
-        if not probe.get("ok") or probe.get("tag") != "BUTTON" or probe.get("last_row") != index - 1:
-            diag["status"] = "NO_ADD_BUTTON"
+        before = self._readback_targets()
+        if not before.get("ok"):
+            diag["status"] = "TARGETS_READBACK_UNREADABLE"
+            diag["reason"] = f"target rows unreadable before adding row {index}"
+            return diag
+        rows_before = len(before.get("rows") or [])
+        diag["rows_before"] = rows_before
+        if rows_before != index:
+            diag["status"] = "TARGETS_COUNT_MISMATCH"
             diag["reason"] = (
-                f"no <button> right after the target input of row {index - 1} "
-                f"(probe: {probe.get('reason') or probe.get('tag')!r}, "
-                f"last_row={probe.get('last_row')!r})"
+                f"{rows_before} row(s) in the modal before adding row {index} (expected {index})"
             )
             return diag
-        if probe.get("submit_like"):
-            diag["status"] = "ADD_BUTTON_UNSAFE"
-            diag["reason"] = (
-                f"add-row button reads type={probe.get('type_prop')!r} "
-                f"(attr {probe.get('type_attr')!r}, class {probe.get('klass')!r}) — "
-                "a submit-type click would natively submit the modal form; not clicked"
-            )
+        probe = self._add_row_button_probe()
+        diag["add_button"] = {k: v for k, v in probe.items() if k not in _RECT_KEYS}
+        refusal = _add_button_refusal(probe, index)
+        if refusal:
+            diag["status"], diag["reason"] = refusal
             return diag
         scroll = self._scroll_rect_into_viewport(probe)
         diag["scroll"] = scroll
         if scroll["scrolled"]:
+            matched_by = probe.get("matched_by")
             probe = self._add_row_button_probe()
-            if (not probe.get("ok") or probe.get("tag") != "BUTTON"
-                    or probe.get("last_row") != index - 1 or probe.get("submit_like")):
+            if _add_button_refusal(probe, index) or probe.get("matched_by") != matched_by:
                 diag["status"] = "NO_ADD_BUTTON"
-                diag["reason"] = "add-row button not re-found after the scroll"
+                diag["reason"] = "add button not re-found identically after the scroll"
                 return diag
         diag["click"] = self._trusted_click_at_rect(probe)
         time.sleep(0.3)  # the row is appended by the page's own handler
@@ -1456,6 +1625,13 @@ class WriteSubmitSession(SubmitSession):
             diag["status"] = "TARGETS_READBACK_UNREADABLE"
             return diag
         rows = readback.get("rows") or []
+        if len(rows) < rows_before:
+            diag["status"] = "ROW_REMOVED"
+            diag["reason"] = (
+                f"the click REMOVED a row ({rows_before} → {len(rows)}): the located button "
+                f"(matched_by {probe.get('matched_by')!r}) is a remove button — no Create click"
+            )
+            return diag
         if len(rows) > index + 1:
             diag["status"] = "TARGETS_COUNT_MISMATCH"
             diag["reason"] = f"{len(rows)} rows after adding row {index} (expected {index + 1})"

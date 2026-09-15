@@ -29,6 +29,7 @@ TEMPLATES = {
     "submit._OPEN_MODAL_JS": (submit_session._OPEN_MODAL_JS, (json.dumps("123"),)),
     "submit._PAGE_IDS_JS": (submit_session._PAGE_IDS_JS, None),
     "submit._PAGE_ROWS_JS": (submit_session._PAGE_ROWS_JS, None),
+    "submit._PAGE_SCRIPTS_JS": (submit_session._PAGE_SCRIPTS_JS, None),
     "submit._MODAL_CTX_JS": (submit_session._MODAL_CTX_JS, None),
     "submit._FEED_STATE_JS": (submit_session._FEED_STATE_JS, None),
     "submit._INSPECT_MODAL_JS": (submit_session._INSPECT_MODAL_JS, None),
@@ -70,6 +71,7 @@ TEMPLATES = {
     "submit._TRUSTED_CLEANUP_JS": (submit_session._TRUSTED_CLEANUP_JS, None),
     "submit._TARGETS_READBACK_JS": (submit_session._TARGETS_READBACK_JS, None),
     "submit._ADD_ROW_BUTTON_PROBE_JS": (submit_session._ADD_ROW_BUTTON_PROBE_JS, None),
+    "submit._MODAL_BUTTONS_JS": (submit_session._MODAL_BUTTONS_JS, None),
     "login._DASHBOARD_MARKER_JS": (login_session._DASHBOARD_MARKER_JS, None),
 }
 
@@ -94,6 +96,11 @@ class EmbeddedJsSyntaxTests(unittest.TestCase):
         self.assertFalse(
             failures, "embedded JS template(s) no longer parse:\n" + "\n".join(failures)
         )
+
+
+class EmbeddedJsInventoryTests(unittest.TestCase):
+    """Needs no node: runs everywhere (the gap `_PAGE_SCRIPTS_JS` hid for days
+    because this check used to be skipped with the syntax check, 2026-09-15)."""
 
     def test_inventory_is_complete(self):
         # A NEW *_JS constant must be added to TEMPLATES (or explicitly

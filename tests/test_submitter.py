@@ -1966,6 +1966,47 @@ class InspectModalDomParsingTests(unittest.TestCase):
 
         self.assertTrue(is_readonly_expression(_INSPECT_MODAL_JS))
 
+    def test_inspection_carries_the_modal_buttons_dump(self):
+        # Canary 2 (2026-09-15): --inspect lists EVERY button of the modal so the real
+        # add button is read (the sibling of the target input is the remove button).
+        from src.submit_session import SubmitSession, _MODAL_BUTTONS_JS
+
+        remove = {"tag": "BUTTON", "type_prop": "button", "type_attr": "button", "id": None,
+                  "klass": "button", "href": None, "role": None, "text": "\u00d7",
+                  "data_attrs": {"data-remove-target": ""}, "visible": True, "in_form": True,
+                  "in_targets_container": True, "in_row": 0,
+                  "path": "div#TB_ajaxContent > div > form > td > div > div > button.button"}
+        add = {"tag": "BUTTON", "type_prop": "button", "type_attr": "button", "id": None,
+               "klass": "button", "href": None, "role": None, "text": "+ Add target",
+               "data_attrs": {"data-add-target": ""}, "visible": True, "in_form": True,
+               "in_targets_container": True, "in_row": None,
+               "path": "div#TB_ajaxContent > div > form > td > div > button.button"}
+        create = {"tag": "BUTTON", "type_prop": "submit", "type_attr": None, "id": None,
+                  "klass": "modal-choice button button-primary", "href": None, "role": None,
+                  "text": "Create offer", "data_attrs": {"data-action-submit": ""},
+                  "visible": True, "in_form": True, "in_targets_container": False,
+                  "in_row": None, "path": "form > div.modal-choices > button.modal-choice.button"}
+        dump = {"ok": True, "count": 3, "row_count": 1,
+                "container": {"tag": "DIV", "id": None, "klass": "", "path": "form > td > div"},
+                "buttons": [remove, add, create]}
+        sess = SubmitSession.__new__(SubmitSession)
+        sess.evaluate_readonly = (
+            lambda js: json.dumps(dump) if js == _MODAL_BUTTONS_JS
+            else '{"modal_ok": true, "button": null}'
+        )
+        result = sess.inspect_modal_dom()
+        self.assertTrue(result["modal_ok"])
+        buttons = result["modal_buttons"]["buttons"]
+        self.assertEqual([list(b["data_attrs"]) for b in buttons],
+                         [["data-remove-target"], ["data-add-target"], ["data-action-submit"]])
+        self.assertEqual([b["in_row"] for b in buttons], [0, None, None])
+        self.assertEqual(result["modal_buttons"]["row_count"], 1)
+        # No modal at all → the envelope is unchanged and no dump is claimed.
+        sess.evaluate_readonly = lambda js: ""
+        self.assertEqual(sess.inspect_modal_dom(), {"modal_ok": False})
+        self.assertEqual(sess.probe_modal_buttons(),
+                         {"ok": False, "reason": "no_result", "buttons": []})
+
 
 class FormValidityTests(unittest.TestCase):
     def test_form_validity_js_is_readonly(self):
@@ -3161,21 +3202,33 @@ from src.submitter import (  # noqa: E402
 )
 
 
+_ADDISH = re.compile(r"add|ajout|plus|\+", re.I)     # the fallback locator's regex
+
+
 class V2ModalDom:
     """Pure-state emulation of the v2 Create-offer modal: the two global selects, a
-    list of target rows (target input + region/edition override selects), the add-row
-    button after the LAST row's input, HTML5 validity computed from the filled rows."""
+    list of target rows (target input + region/edition override selects), a REMOVE
+    button next to EVERY row's input (``data-remove-target``, "×" — the canary-2 fact,
+    2026-09-15), an ADD button elsewhere in the form (``data-add-target`` by default;
+    ``"fallback"`` = a plain ``<button type=button>`` reading "Add target"; ``None`` =
+    no add button at all), the Create submit button, HTML5 validity computed from the
+    filled rows. ``add_row_probe`` mirrors ``_ADD_ROW_BUTTON_PROBE_JS``'s selection."""
 
     TARGET_PATTERN = re.compile(r"^(?:\d+|https?://.+)$")
 
-    def __init__(self, *, add_row_works=True, add_button_type="button", rows_per_add=1):
+    def __init__(self, *, add_row_works=True, add_button_type="button", rows_per_add=1,
+                 add_button="data-add-target", extra_addish_buttons=0, add_click_removes=False):
         self.globals = {"offer[region]": "", "offer[edition]": ""}
         self.rows = [self._row(0)]
         self.focused = None
         self.add_row_works = add_row_works
-        self.add_button_type = add_button_type   # the <button> `type` property
+        self.add_button_type = add_button_type   # the add <button> `type` property
         self.rows_per_add = rows_per_add
+        self.add_button = add_button
+        self.extra_addish_buttons = extra_addish_buttons   # more add-ish plain buttons
+        self.add_click_removes = add_click_removes         # the "add" click removes a row
         self.add_clicks = 0
+        self.remove_clicks = 0
         self.create_clicks = 0
         self.enter_presses = 0
 
@@ -3245,21 +3298,104 @@ class V2ModalDom:
         return {"ok": True, "form_valid": not invalid,
                 "checked": 2 + 3 * len(self.rows), "invalid_required": invalid}
 
+    @staticmethod
+    def _button(ref, *, text, attrs, data_attrs, type_prop="button", klass="button"):
+        return {"tag": "BUTTON", "type_prop": type_prop,
+                "type_attr": None if type_prop == "submit" else type_prop, "id": None,
+                "klass": klass, "href": None, "attrs": attrs, "data_attrs": data_attrs,
+                "text": text, "visible": True,
+                "is_remove": "data-remove-target" in data_attrs,
+                "submit_like": type_prop != "button" or "data-action-submit" in data_attrs
+                or "button-primary" in klass,
+                "_ref": ref}
+
+    def buttons(self):
+        """Every <button> of the fake form, in DOM order, the way the JS ``desc()`` reports
+        them: per row its remove button (next sibling of the target input), then the add
+        button (when any), then the Create submit button."""
+
+        out = []
+        for r in self.rows:
+            out.append(self._button(
+                f"remove:{r['index']}", text="\u00d7",
+                attrs=["type", "class", "data-remove-target", "style"],
+                data_attrs={"data-remove-target": ""}))
+        if self.add_button == "data-add-target":
+            out.append(self._button("add", text="+ Add target",
+                                    attrs=["type", "class", "data-add-target"],
+                                    data_attrs={"data-add-target": ""},
+                                    type_prop=self.add_button_type))
+        elif self.add_button == "fallback":
+            out.append(self._button("add", text="Add target", attrs=["type", "class"],
+                                    data_attrs={}, type_prop=self.add_button_type))
+        for k in range(self.extra_addish_buttons):
+            out.append(self._button(f"extra:{k}", text="Add something else",
+                                    attrs=["type", "class"], data_attrs={}))
+        out.append(self._button("create", text="Create offer", attrs=["class", "data-action-submit"],
+                                data_attrs={"data-action-submit": ""}, type_prop="submit",
+                                klass="modal-choice button button-primary"))
+        return out
+
     def add_row_probe(self):
-        return {"ok": True, "last_row": len(self.rows) - 1, "tag": "BUTTON",
-                "type_prop": self.add_button_type,
-                "type_attr": None if self.add_button_type == "submit" else self.add_button_type,
-                "klass": "button", "attrs": ["class", "type"], "text": "+", "visible": True,
-                "submit_like": self.add_button_type != "button",
+        """Mirror of ``_ADD_ROW_BUTTON_PROBE_JS``: ``[data-add-target]`` first (exactly one),
+        else the unique add-ish non-remove non-submit-like ``<button type=button>``."""
+
+        descs = self.buttons()
+        last_row = len(self.rows) - 1
+        explicit = [d for d in descs if "data-add-target" in d["data_attrs"] and not d["is_remove"]]
+        if len(explicit) == 1:
+            chosen, matched_by = explicit[0], "[data-add-target]"
+        elif explicit:
+            return {"ok": False, "reason": "ambiguous_add_button", "last_row": last_row,
+                    "matched_by": "[data-add-target]", "candidates": explicit}
+        else:
+            eligible = []
+            for d in descs:
+                why = "remove" if d["is_remove"] else "submit_like" if d["submit_like"] else None
+                if why is None:
+                    names = [n for n in d["data_attrs"] if _ADDISH.search(n)]
+                    if names:
+                        d["matched_by"] = "fallback:data-attr:" + names[0]
+                    elif _ADDISH.search(d["text"]):
+                        d["matched_by"] = "fallback:text"
+                    else:
+                        why = "not_addish"
+                d["rejected"] = why
+                if why is None:
+                    eligible.append(d)
+            if len(eligible) != 1:
+                return {"ok": False, "last_row": last_row, "candidates": descs,
+                        "reason": "ambiguous_add_button" if eligible else "no_add_button_candidate"}
+            chosen, matched_by = eligible[0], eligible[0]["matched_by"]
+        return {**chosen, "ok": True, "last_row": last_row, "matched_by": matched_by,
+                "candidates_count": len(descs),
                 "x": 10, "y": 10, "width": 20, "height": 20,
                 "top": 10, "left": 10, "bottom": 30, "right": 30,
-                "viewport": {"w": 1280, "h": 720}, "add_row": True}
+                "viewport": {"w": 1280, "h": 720}}
 
-    def click_add(self):
-        self.add_clicks += 1
-        if self.add_row_works:
-            for _ in range(self.rows_per_add):
-                self.rows.append(self._row(len(self.rows)))
+    def click_button(self, ref):
+        """What the page does when the button ``ref`` receives a trusted click."""
+
+        if ref == "add":
+            self.add_clicks += 1
+            if self.add_click_removes:
+                if self.rows:
+                    self.rows.pop()
+            elif self.add_row_works:
+                for _ in range(self.rows_per_add):
+                    self.rows.append(self._row(len(self.rows)))
+        elif ref and ref.startswith("remove:"):
+            # Live (canary 2): the sole row's remove click left 1 row — a no-op.
+            self.remove_clicks += 1
+            index = int(ref.split(":")[1])
+            if len(self.rows) > 1:
+                del self.rows[index]
+                for k, r in enumerate(self.rows):
+                    r["index"] = k
+        elif ref == "create":
+            self.create_clicks += 1
+        else:
+            raise AssertionError(f"trusted click on an unmodelled button: {ref!r}")
 
     def focus(self, index):
         if index < len(self.rows):
@@ -3321,8 +3457,7 @@ class V2DomWriteSession(ConsoleCatalogWriteSession):
         return {}
 
     def _trusted_click_at_rect(self, rect):
-        if rect.get("add_row"):
-            self.dom.click_add()
+        self.dom.click_button(rect.get("_ref"))
         return {"cx": 20.0, "cy": 20.0, "delay_ms": 0}
 
     def _add_row_button_probe(self):
@@ -3419,8 +3554,16 @@ class ModalV2WriteTests(unittest.TestCase):
         self.assertEqual(self._rows(dom), [("85105", "88ps5h", "1"), ("85104", "88", "1")])
         self.assertEqual(dom.globals["offer[region]"], "88ps5h")        # primary = row 0
         create = entry["create"]
-        self.assertEqual(create["rows"][1]["add"]["status"], "ROW_ADDED")
-        self.assertEqual(create["rows"][1]["add"]["add_button"]["type_prop"], "button")
+        add = create["rows"][1]["add"]
+        self.assertEqual(add["status"], "ROW_ADDED")
+        self.assertEqual(add["add_button"]["type_prop"], "button")
+        # Canary 2 (2026-09-15): the clicked element is the [data-add-target] button —
+        # never the row's remove button (data-remove-target, "×") next to the input.
+        self.assertEqual(add["add_button"]["matched_by"], "[data-add-target]")
+        self.assertNotIn("data-remove-target", add["add_button"]["attrs"])
+        self.assertFalse(add["add_button"]["is_remove"])
+        self.assertEqual(dom.remove_clicks, 0)
+        self.assertEqual((add["rows_before"], add["readback"]["row_count"]), (1, 2))
         self.assertEqual([r["fill"]["status"] for r in create["rows"]], ["ROW_FILLED"] * 2)
         self.assertEqual(session.picks[2:], [
             ("offer[targets][0][region]", "88ps5h", "PS5 (88ps5h)"),
@@ -3467,6 +3610,90 @@ class ModalV2WriteTests(unittest.TestCase):
         self.assertIn("type='submit'", entry["create"]["reason"])
         self.assertEqual((session.dom.add_clicks, session.dom.create_clicks), (0, 0))
         self.assertEqual(session.cleanups, 1)
+
+    def test_only_remove_buttons_is_no_add_button_and_nothing_is_clicked(self):
+        # A form with the per-row remove buttons and the Create button only: the
+        # locator must NOT fall back to the sibling "×" (canary 2) — 0 candidates.
+        session = V2DomWriteSession([["1"]], dom=V2ModalDom(add_button=None))
+        result = _real(session, [_console_cand("1", [PS5_TARGET, PS4_TARGET])], limit=1)
+        entry = result["plan"][0]
+        self.assertEqual(entry["create"]["status"], "NO_ADD_BUTTON")
+        self.assertIn("no_add_button_candidate", entry["create"]["reason"])
+        dom = session.dom
+        self.assertEqual((dom.add_clicks, dom.remove_clicks, dom.create_clicks), (0, 0, 0))
+        add = entry["create"]["rows"][1]["add"]
+        self.assertEqual(add["rows_before"], 1)
+        self.assertNotIn("click", add)
+        self.assertEqual([c["rejected"] for c in add["add_button"]["candidates"]],
+                         ["remove", "submit_like"])
+        self.assertEqual(self._rows(dom), [("85105", "88ps5h", "1")])   # row 0 only, no write
+        self.assertEqual(session.cleanups, 1)
+        self.assertFalse(entry.get("submitted"))
+        self.assertIn("create not confirmed: NO_ADD_BUTTON", entry["post_save"])
+
+    def test_live_canary_2_remove_button_descriptor_is_refused_before_any_click(self):
+        # Defence in depth: the EXACT `add_button` the canary-2 plan recorded (run
+        # 20260914-canary-two-targets) — a JS that picked it again must still be refused.
+        session = V2DomWriteSession([["1"]])
+        live = {"ok": True, "last_row": 0, "tag": "BUTTON", "type_prop": "button",
+                "type_attr": "button", "klass": "button",
+                "attrs": ["type", "class", "data-remove-target", "style"], "text": "\u00d7",
+                "visible": True, "submit_like": False, "matched_by": "fallback:text",
+                "x": 1232.2, "y": 322.5, "width": 40, "height": 40, "top": 322.5, "left": 1232.2,
+                "bottom": 362.5, "right": 1272.2, "viewport": {"w": 1920, "h": 993}}
+        session._add_row_button_probe = lambda: live
+        clicks = []
+        session._trusted_click_at_rect = lambda rect: clicks.append(rect)
+        diag = session._add_target_row_trusted(1)
+        self.assertEqual(diag["status"], "NO_ADD_BUTTON")
+        self.assertIn("data-remove-target", diag["reason"])
+        self.assertEqual(clicks, [])
+        self.assertEqual(diag["rows_before"], 1)
+        self.assertNotIn("viewport", diag["add_button"])
+
+    def test_add_click_that_removes_a_row_is_row_removed_and_no_create_click(self):
+        # The located "add" button actually removes a row: the before/after row count
+        # catches it (1 → 0) — fail-closed, cleanup, never a Create click.
+        session = V2DomWriteSession([["1"]], dom=V2ModalDom(add_click_removes=True))
+        result = _real(session, [_console_cand("1", [PS5_TARGET, PS4_TARGET])], limit=1)
+        entry = result["plan"][0]
+        self.assertEqual(entry["create"]["status"], "ROW_REMOVED")
+        self.assertIn("REMOVED a row (1 → 0)", entry["create"]["reason"])
+        dom = session.dom
+        self.assertEqual((dom.add_clicks, dom.create_clicks), (1, 0))
+        self.assertEqual(entry["create"]["rows"][1]["add"]["readback"]["row_count"], 0)
+        self.assertEqual(session.cleanups, 1)
+        self.assertFalse(entry.get("submitted"))
+        self.assertIn("create not confirmed: ROW_REMOVED", entry["post_save"])
+        self.assertEqual(session.page_offer_ids(), ["1"])                # row not consumed
+
+    def test_fallback_addish_button_is_used_only_when_unique(self):
+        # No [data-add-target]: a single plain <button type=button> reading "Add target"
+        # is the fallback (matched_by fallback:text) …
+        session = V2DomWriteSession([["1"]], dom=V2ModalDom(add_button="fallback"))
+        entry = _real(session, [_console_cand("1", [PS5_TARGET, PS4_TARGET])], limit=1)["plan"][0]
+        self.assertTrue(entry["submitted"])
+        add = entry["create"]["rows"][1]["add"]
+        self.assertEqual((add["status"], add["add_button"]["matched_by"]),
+                         ("ROW_ADDED", "fallback:text"))
+        self.assertEqual((session.dom.add_clicks, session.dom.remove_clicks), (1, 0))
+        # … and two add-ish candidates → ambiguous → NO_ADD_BUTTON, nothing clicked.
+        session = V2DomWriteSession([["1"]], dom=V2ModalDom(add_button="fallback",
+                                                            extra_addish_buttons=1))
+        entry = _real(session, [_console_cand("1", [PS5_TARGET, PS4_TARGET])], limit=1)["plan"][0]
+        self.assertEqual(entry["create"]["status"], "NO_ADD_BUTTON")
+        self.assertIn("ambiguous_add_button", entry["create"]["reason"])
+        self.assertEqual((session.dom.add_clicks, session.dom.remove_clicks,
+                          session.dom.create_clicks), (0, 0, 0))
+
+    def test_row_count_drift_before_the_add_click_fails_closed(self):
+        # The readback BEFORE the click must show exactly `index` rows.
+        session = V2DomWriteSession([["1"]])
+        session.dom.rows.append(V2ModalDom._row(1))          # a row appeared on its own
+        diag = session._add_target_row_trusted(1)
+        self.assertEqual(diag["status"], "TARGETS_COUNT_MISMATCH")
+        self.assertIn("2 row(s) in the modal before adding row 1", diag["reason"])
+        self.assertEqual(session.dom.add_clicks, 0)
 
     def test_add_row_producing_two_rows_is_a_count_mismatch(self):
         session = V2DomWriteSession([["1"]], dom=V2ModalDom(rows_per_add=2))
@@ -3580,8 +3807,20 @@ class ModalShapeTests(unittest.TestCase):
         for name in ("offer[targets][0][target]", "offer[targets][0][region]",
                      "offer[targets][0][edition]", "offer[targets][]"):
             self.assertIn(name, _MODAL_CTX_JS)
-        self.assertIn("next_sib_button", _TARGETS_PROBE_JS)      # --inspect exposes the add button
+        self.assertIn("next_sib_button", _TARGETS_PROBE_JS)      # --inspect exposes the sibling
         self.assertIn("data-action-submit", _ADD_ROW_BUTTON_PROBE_JS)
+        # Canary 2 (2026-09-15): [data-add-target] first, never [data-remove-target],
+        # the add-ish fallback regex, uniqueness (ambiguous / no candidate), matched_by.
+        for token in ("[data-add-target]", "data-remove-target", "/add|ajout|plus|\\+/i",
+                      "ambiguous_add_button", "no_add_button_candidate", "matched_by",
+                      "candidates"):
+            self.assertIn(token, _ADD_ROW_BUTTON_PROBE_JS, token)
+        self.assertNotIn("nextElementSibling", _ADD_ROW_BUTTON_PROBE_JS)
+        from src.submit_session import _MODAL_BUTTONS_JS
+        self.assertTrue(is_readonly_expression(_MODAL_BUTTONS_JS))
+        for token in ("a[role=\"button\"]", "in_targets_container", "in_row", "data_attrs",
+                      "slice(0,60)", "slice(0,40)"):
+            self.assertIn(token, _MODAL_BUTTONS_JS, token)
 
     def test_targets_readback_parses_both_shapes(self):
         sess = WriteSubmitSession.__new__(WriteSubmitSession)

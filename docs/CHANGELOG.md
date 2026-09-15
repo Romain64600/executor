@@ -65,6 +65,46 @@ Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
   submit-like → run `--inspect` on a console candidate and read
   `targets_probe.targets[0].next_sib_button` before the first multi-target write);
   whether appended rows carry their own add button; inheritance is never used.
+- **2026-09-15 — the two canaries + add-row locator fixed (canary 2).** Canary 1
+  (Legend of Mana, Switch, MMOGA, mode `learning`) → **created**: offer 101039824
+  on page 64915, 99 €, signal « Offer created for locale en_EU and merchant 40 » —
+  the single-row v2 path works live end to end. Canary 2 (NBA 2K25 Xbox One +
+  Series, two targets, run `20260914-canary-two-targets`) → **failed closed
+  `TARGET_ROW_NOT_ADDED`**: the `<button>` that is the next sibling of the last
+  row's target input is the row's **REMOVE button** (`button.button
+  [data-remove-target]`, "×", `type=button`) — the trusted click added nothing
+  (1 row read back), nothing was written. **Locator fixed** (`src/submit_session.py`,
+  `_ADD_ROW_BUTTON_PROBE_JS`): never a `[data-remove-target]` element;
+  `#TB_ajaxContent form [data-add-target]` (`<button>`/`<a>`) first, else the
+  UNIQUE add-ish `<button type=button>` (data-\* names or text ~
+  `/add|ajout|plus|\+/i`, not remove, not submit-like) — 0 or several →
+  `NO_ADD_BUTTON`, no click; the diag records `add_button.matched_by`
+  (`[data-add-target]` / `fallback:data-attr:<name>` / `fallback:text`) and, on
+  refusal, every `<button>` considered in `add_button.candidates` with its
+  `rejected` reason; `_add_button_refusal` refuses `data-remove-target` again on the
+  Python side (defence in depth). `_add_target_row_trusted` now reads the row count
+  **before** the click (`add.rows_before`, must equal the row index) and a count that
+  went **down** after the click is the new status **`ROW_REMOVED`** (cleanup, no
+  Create click). New read-only `_MODAL_BUTTONS_JS` / `SubmitSession.probe_modal_buttons()`,
+  merged into `inspect_modal_dom()` → **`inspection.modal_buttons`** in
+  `modal_inspection.json` (every `<button>` / `<a role=button>`: tag, type
+  property + attribute, id, class, text ≤ 60, all data-\* attributes ≤ 40, visible,
+  in_form, in_targets_container, in_row, path) so the next `--inspect` shows the real
+  add button. **Tests** (`tests/test_submitter.py`): `V2ModalDom` models the per-row
+  remove buttons (next to each input), a separate add button (`data-add-target` /
+  plain fallback / none) and the Create button, `add_row_probe` mirrors the JS rule;
+  new: only remove buttons → `NO_ADD_BUTTON` and nothing clicked, the live canary-2
+  descriptor refused before any click, an "add" click that removes a row →
+  `ROW_REMOVED` and no Create click, the fallback used only when unique (ambiguous →
+  `NO_ADD_BUTTON`), row-count drift before the click, `inspection.modal_buttons`
+  merge; `_MODAL_BUTTONS_JS` registered in `tests/test_embedded_js.py`. 223 tests OK
+  (submitter + embedded_js; node absent on the dev box → the JS syntax check is
+  skipped, brackets/quotes/read-only tokens checked by hand). Docs: SUBMITTER_SPEC
+  §4c (locator rule, statuses table, verified/unverified), DATA_CONTRACTS modal v2
+  (`create.rows[].add.rows_before` / `add_button.matched_by` / `candidates`,
+  `inspection.modal_buttons`). **Still UNVERIFIED live:** `[data-add-target]` is an
+  inference from the tool's naming — run `--inspect` on a multi-target candidate and
+  read `inspection.modal_buttons` before the next multi-target canary.
 
 ---
 

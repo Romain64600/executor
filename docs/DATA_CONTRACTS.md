@@ -418,17 +418,35 @@ Each `plan[]` entry (fields appear as the flow reaches them):
 - `create` (write path, v2) — `fill_targets_v2_trusted`'s diag: `status`,
   `modal_shape: "targets_v2"`, `targets_count`, `region_target` / `edition_target`
   (primary ids), `region_pick` / `edition_pick`, `region_set` / `edition_set`,
-  `rows: [{row, add?: {row, add_button, scroll, click, readback, status, reason?},
-  fill: {row, aks_product_id, region_id, edition_id, focus, typed, readback,
-  region_pick, edition_pick, status, reason?}}]`, `form_validity`, `click_path`,
-  `pre_click_readback: {region, edition, targets}`, `click`, then the poll fields
-  (`polls`, `requests`, `signal`). `reason` accompanies every fail-closed status.
+  `rows: [{row, add?: {row, rows_before, add_button, scroll?, click?, readback?,
+  status, reason?}, fill: {row, aks_product_id, region_id, edition_id, focus,
+  typed, readback, region_pick, edition_pick, status, reason?}}]`,
+  `form_validity`, `click_path`, `pre_click_readback: {region, edition, targets}`,
+  `click`, then the poll fields (`polls`, `requests`, `signal`). `reason`
+  accompanies every fail-closed status.
+- `create.rows[].add` (2026-09-15, canary 2 — the add-button locator):
+  - `rows_before` (int): the row count read back BEFORE any click (must equal the
+    row index);
+  - `add_button` — `_ADD_ROW_BUTTON_PROBE_JS`'s result minus the rect keys: `ok`,
+    `last_row`, `tag`, `type_prop`, `type_attr`, `id`, `klass`, `href`, `attrs`
+    (attribute names), `data_attrs` (`{name: value≤40}`), `text` (≤ 40), `visible`,
+    `is_remove` (carries `data-remove-target` — never clicked), `submit_like`,
+    **`matched_by`**: `"[data-add-target]"` | `"fallback:data-attr:<name>"` |
+    `"fallback:text"` — which locator rule selected the element; `candidates_count`.
+    On `ok: false`: `reason` ∈ `no_modal` | `no_target_rows` |
+    `no_add_button_candidate` | `ambiguous_add_button`, plus `candidates:
+    [{…same descriptor…, rejected: "remove" | "submit_like" | "not_addish" | null,
+    matched_by?}]` — every `<button>` of the form the fallback considered;
+  - `click` / `readback` present only when the button was clicked; `readback` is
+    the row readback AFTER the click (`row_count` compared to `rows_before`).
 - `create.status` new values: `MODAL_SHAPE_MISMATCH`, `NO_TARGETS`, `NO_TARGET_ID`,
   `NO_TARGET_INPUT`, `TARGET_VALUE_MISMATCH`, `NO_ROW_REGION_PICK`,
   `NO_ROW_EDITION_PICK`, `NO_ADD_BUTTON`, `ADD_BUTTON_UNSAFE`,
-  `TARGET_ROW_NOT_ADDED`, `TARGETS_COUNT_MISMATCH`, `TARGETS_READBACK_UNREADABLE`;
-  `VALUE_DRIFTED_BEFORE_CLICK` may now name a row (`row <i> <field> reads …`).
-  Row-level statuses: `ROW_ADDED`, `ROW_FILLED`.
+  `TARGET_ROW_NOT_ADDED`, `TARGETS_COUNT_MISMATCH`, `TARGETS_READBACK_UNREADABLE`,
+  **`ROW_REMOVED`** (2026-09-15: the add click made the row count go down — no
+  Create click); `VALUE_DRIFTED_BEFORE_CLICK` may now name a row (`row <i>
+  <field> reads …`). Row-level statuses: `ROW_ADDED`, `ROW_FILLED` (and the same
+  fail-closed values on `add.status` / `fill.status`).
 - `post_save` on a refused create: `create not confirmed: <STATUS> — <reason>`.
 
 **Run result (`submit_plan.json` top level / `05_submit` summary):**
@@ -440,9 +458,23 @@ never failures.
 
 **`--inspect` (`modal_inspection.json`):** `targets_probe.targets[]` entries gain
 `next_sib_button: {tag, type_prop, type_attr, klass, data_attrs, text}` when the
-control is followed by a `<button>` (the add-row button); `modal_context` reports
+control is followed by a `<button>` (live: the row's REMOVE button —
+`data-remove-target`, "×"; canary 2, 2026-09-15); `modal_context` reports
 `modal_shape` + `modal_shape_detail`; entries blocked by `modal_shape_unknown`
 are inspected too.
+
+**`inspection.modal_buttons`** (2026-09-15, `_MODAL_BUTTONS_JS`, read-only) — every
+`<button>`, `<a role="button">`, `<a data-add-target>` and `<a data-remove-target>`
+of `#TB_ajaxContent`, in DOM order, so the real add button is READ before a
+multi-target write: `{ok, count, row_count, container: {tag, id, klass, path} |
+null, buttons: [{tag, type_prop (BUTTON only), type_attr, id, klass, href (A only),
+role, text (≤ 60), data_attrs ({name: value≤40}, ALL data-\* attributes), visible,
+in_form, in_targets_container, in_row (index of the target row whose wrapper holds
+the button, else null), path (≤ 6 ancestors)}]}`. The **targets container** is the
+parent of row 0's wrapper, the wrapper being the closest ancestor of
+`input[name="offer[targets][0][target]"]` that also holds the row's two override
+selects. `{ok: false, reason, buttons: []}` when the modal / result is missing;
+absent altogether when `inspection.modal_ok` is false with no result.
 
 ## modal_inspection.json (Stage 4 — `--inspect`, brief)
 
@@ -450,9 +482,10 @@ Read-only S18 forensics (`InspectSubmitter`): same result envelope as
 `submit_plan.json` (`aborted` / `stopped` / `feed_offers` / `plan`;
 `write_attempts` / `created` null; no CLI-stamped mode keys — written directly
 by the `--inspect` branch), where each ready entry additionally carries
-`inspection` (`inspect_modal_dom` DOM dump), `form_validity` (HTML5 validity
-inventory) and `targets_probe` (the `offer[targets][]` field dump). No fill, no
-clicks on Create. Defaults to a canary of 1.
+`inspection` (`inspect_modal_dom` DOM dump, including `modal_buttons` — every
+button of the modal, 2026-09-15), `form_validity` (HTML5 validity inventory) and
+`targets_probe` (the `offer[targets][]` field dump). No fill, no clicks on Create.
+Defaults to a canary of 1.
 
 ## guard_ledger.json (FC3 — cross-process block ledger)
 

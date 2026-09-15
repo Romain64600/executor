@@ -186,7 +186,14 @@ by Romain on 2026-09-14** (three confirmations, cited where they apply).
 - **Target row 0 (NEW):**
   - `input[name="offer[targets][0][target]"]` — `type=text`, **required**,
     `pattern="(\d+)|(https?://.+)"`, attribute `data-target-input`, visible;
-    its **next sibling is `button.button` — the add-row button**;
+    its **next sibling is `button.button[data-remove-target]` — the row's REMOVE
+    button** (text "×"; `type=button`). **Canary 2 (2026-09-15, run
+    `20260914-canary-two-targets`, NBA 2K25 Xbox One + Series) proved it:** the
+    first locator clicked that sibling as "add-row", nothing was added (1 row read
+    back → `TARGET_ROW_NOT_ADDED`, no write). The real **add button lives
+    elsewhere in the form** — markup UNVERIFIED (most likely `data-add-target`
+    by the tool's naming; read `inspection.modal_buttons` on the next
+    `--inspect`);
   - `select[name="offer[targets][0][region]"]` — Selectize,
     `data-target-override="region"`, **not** required;
   - `select[name="offer[targets][0][edition]"]` — Selectize,
@@ -204,9 +211,11 @@ by Romain on 2026-09-14** (three confirmations, cited where they apply).
   preference for `offer[region]` / `offer[edition]` still holds.
 
 **Romain's confirmations (2026-09-14):**
-1. the button next to the target input **adds a new target row** (works by hand)
-   — the code still **proves** row *i* exists after the click (readback), never
-   assumes it;
+1. a button of the row block **adds a new target row** (works by hand) — canary
+   2 (2026-09-15) showed the one **next to** the input is the REMOVE button, so
+   the add button is located by the §4c locator rule below; the code still
+   **proves** row *i* exists after the click (readback), never assumes it, and
+   a row count that went DOWN is `ROW_REMOVED`;
 2. **empty per-target region/edition inherit** the global `offer[region]` /
    `offer[edition]` (tested by him) — the overrides are nevertheless **always set
    explicitly** on every row; inheritance is never relied on;
@@ -259,16 +268,38 @@ edition=<id>; row 1: …], click .button-primary (NOT clicked — dry-run)`.
    empty id is never guessed: `NO_TARGET_ID`); then the two overrides
    **explicitly**: `select_via_trusted("offer[targets][0][region]", region_id,
    query=text)` and `…[edition]` → `NO_ROW_REGION_PICK` / `NO_ROW_EDITION_PICK`.
-4. **Each extra target *i* ≥ 1** (`_add_target_row_trusted(i)`): read-only probe
-   of the `<button>` that is the **next sibling of the LAST row's target input**
-   (DOM relation, never text) — it must follow row *i-1* exactly
-   (`NO_ADD_BUTTON`) and must **not be submit-like** — `type` ≠ `button`,
-   `data-action-submit`, `button-primary` → `ADD_BUTTON_UNSAFE`, not clicked (a
-   submit-type click would natively submit the form). Trusted click, then a
-   readback must show **exactly** *i+1* rows and row *i* with its target input
-   **and both** override selects, else `TARGET_ROW_NOT_ADDED` (missing /
-   incomplete) or `TARGETS_COUNT_MISMATCH` (more rows than one added). Then row
-   *i* is filled like row 0.
+4. **Each extra target *i* ≥ 1** (`_add_target_row_trusted(i)`):
+   - **readback BEFORE anything**: exactly *i* rows must exist
+     (`TARGETS_COUNT_MISMATCH`; unreadable → `TARGETS_READBACK_UNREADABLE`) —
+     `add.rows_before`;
+   - **add-button locator** (`_ADD_ROW_BUTTON_PROBE_JS`, read-only, rewritten
+     2026-09-15 after canary 2 — **never by DOM relation to the input any more**):
+     1. **never** an element carrying `data-remove-target` (the JS excludes it
+        AND `_add_button_refusal` refuses it again on the Python side);
+     2. `#TB_ajaxContent form [data-add-target]` (`<button>` or `<a>`) — exactly
+        one → chosen, `add_button.matched_by = "[data-add-target]"`; several →
+        `NO_ADD_BUTTON` (`ambiguous_add_button`);
+     3. otherwise the fallback: every `<button>` of the form whose `type`
+        property is `button`, not `[data-remove-target]`, not submit-like, whose
+        **data-\* attribute names or text match `/add|ajout|plus|\+/i`** —
+        chosen **only when exactly one** exists (`matched_by =
+        "fallback:data-attr:<name>"` / `"fallback:text"`); 0 → `NO_ADD_BUTTON`
+        (`no_add_button_candidate`), >1 → `NO_ADD_BUTTON` (`ambiguous_add_button`).
+        Every `<button>` considered is listed in `add_button.candidates` with its
+        `rejected` reason (`remove` / `submit_like` / `not_addish`) so the plan
+        explains itself without a new `--inspect`;
+   - the chosen element must **not be submit-like** — `<button>` with `type` ≠
+     `button`, an `<a>` whose `href` navigates, `data-action-submit`,
+     `button-primary` → `ADD_BUTTON_UNSAFE`, not clicked (a submit-type click
+     would natively submit the form); it must still follow row *i-1* exactly
+     (`NO_ADD_BUTTON`); after a scroll it must be re-found with the same
+     `matched_by`;
+   - trusted click, then a **readback AFTER**: **fewer rows than before →
+     `ROW_REMOVED`** (the click was a remove — the flow stops, cleanup, no Create
+     click; defence in depth over the locator); more than *i+1* rows →
+     `TARGETS_COUNT_MISMATCH`; row *i* absent or without its target input **and
+     both** override selects → `TARGET_ROW_NOT_ADDED`. Then row *i* is filled
+     like row 0.
 5. `form_validity()` hard gate (`FORM_INVALID` / `FORM_VALIDITY_UNREADABLE`),
    pre-click obstruction probe (`CLICK_PATH_OBSTRUCTED`).
 6. **Last gate before the click — full readback** (`pre_click_readback`): both
@@ -296,17 +327,38 @@ row-level `ROW_ADDED` / `ROW_FILLED`; `VALUE_DRIFTED_BEFORE_CLICK` generalised t
 the rows. Plan blockers: `modal_shape_unknown`, `too_many_targets`. Run result:
 `gated_too_many_targets` (next to `gated_multi_target`).
 
+**Added 2026-09-15 (canary 2):** `ROW_REMOVED` (`create.status` and row-level
+`add.status`). The add-row statuses, precisely:
+
+| status | meaning | clicked? |
+|---|---|---|
+| `NO_ADD_BUTTON` | no unique add button (`no_add_button_candidate` / `ambiguous_add_button`), the candidate carries `data-remove-target`, is not a `<button>`/`<a>`, the rows moved, or it was not re-found after a scroll | no |
+| `ADD_BUTTON_UNSAFE` | the unique candidate is submit-like (`type` ≠ `button`, navigating `<a>`, `data-action-submit`, `button-primary`) | no |
+| `ROW_REMOVED` | the click made the row count go DOWN (the located button removed a row) | add only — never Create |
+| `TARGET_ROW_NOT_ADDED` | the click left row *i* absent or incomplete (canary 2's outcome with the sibling remove button) | add only — never Create |
+
+### Verified live (2026-09-15)
+
+- **Canary 1** (Legend of Mana, Switch, MMOGA) → **created** (offer 101039824 on
+  page 64915, 99 €, signal « Offer created for locale en_EU and merchant 40 »):
+  the single-row v2 path (globals + row 0 + explicit overrides + one Create click)
+  works end to end.
+- **Canary 2** (NBA 2K25 Xbox One + Series, two targets) → **failed closed**
+  `TARGET_ROW_NOT_ADDED`: the sibling `<button>` of the target input is
+  `button.button[data-remove-target]` ("×", `type=button`); its click added nothing
+  (1 row read back), nothing was written. The locator is rewritten (above).
+
 ### UNVERIFIED live (the code fails closed on each)
 
-- the **add-row button's `type`**: the 2026-09-14 inspection did not record it.
-  A type-less `<button>` inside a form is a submit button; the write path
-  refuses a submit-like button (`ADD_BUTTON_UNSAFE`) and `--inspect` now exposes
-  it (`targets_probe.targets[].next_sib_button`) — read it before the first
-  multi-target write; Romain's by-hand confirmation says the click adds a row,
-  which the readback still proves;
-- whether the appended rows carry **their own** add-row button (the probe always
-  uses the LAST row's sibling; a missing one → `NO_ADD_BUTTON` for the 3rd
-  target);
+- the **real add button's markup**: `[data-add-target]` is an inference from the
+  tool's naming; if it is absent, the fallback needs a UNIQUE add-ish
+  `<button type=button>` — otherwise `NO_ADD_BUTTON` with the `candidates` list.
+  Run `--inspect` on a multi-target candidate and read
+  `inspection.modal_buttons` before the next multi-target write;
+- the add button's `type`: a type-less `<button>` inside a form is a submit
+  button → refused (`ADD_BUTTON_UNSAFE`); `modal_buttons[].type_prop` shows it;
+- whether the appended rows (and their remove buttons) change the button set
+  (the locator re-runs before every extra row; ambiguity → `NO_ADD_BUTTON`);
 - the inheritance of empty overrides (confirmed by Romain) is **never used** —
   every row's overrides are set and read back.
 
