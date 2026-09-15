@@ -3,6 +3,32 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-15 — canaries consoles sur le modal v2 : 1 cible OK, 2 cibles OK (bouton `+ Add another page`)
+
+- **Canary 1 (1 cible)** — Legend of Mana (Nintendo Switch Download Code) - EU Key (offre
+  MMOGA 101039824) → page « Legend of Mana Nintendo Switch » 64915, bucket `99eu`,
+  Standard(1) : `create.status SUCCESS`, `created 1`, signal AKS « [product 64915] Offer
+  created for locale en_EU and merchant 40 », ligne disparue du feed (667 → 666).
+- **Canary 2, 1ʳᵉ tentative** — NBA 2K25 (Xbox One / Series X|S) - EU : échec fermé
+  `TARGET_ROW_NOT_ADDED`, rien d'écrit : le `<button>` voisin du champ cible est le « × »
+  `data-remove-target`, pas l'ajout de ligne → localisateur corrigé (`f0beee5`) ; à la
+  relance la ligne n'était plus dans le feed (« offer not in current feed (by id and by URL) »,
+  feed dynamique : 666 → 615 → 664 en une heure).
+- **Canary 2, 2ᵉ tentative** — Diablo 2 - Resurrected [Xbox One / Series X|S Download Code]
+  (offre 101039808) → page Xbox One 70479 `24` + page Xbox Series 70802 `300`, Standard(1) :
+  ligne 1 ajoutée via `[data-add-target]` (« + Add another page », `type=button`), deux lignes
+  relues avant le clic, formulaire valide (16 champs), un seul clic Create, `created 1`,
+  ligne disparue du feed. Signal AKS capturé : « [product 70479] Offer created for locale
+  en_EU and merchant 40 … » (texte tronqué à 160 caractères : la création sur la 2ᵉ page
+  70802 reste à confirmer dans le back-office AKS ou sur la page une fois le cache
+  rafraîchi — les pages AKS n'affichaient encore aucune des trois offres 1 h après).
+- Le modal v2 est donc **prouvé en écriture** pour une cible (chemin PC identique) et pour deux
+  cibles ; la saisie consoles peut reprendre en dry-run puis en sweep sur go.
+- Boutons observés dans le modal (`--inspect`, `inspection.modal_buttons`) : « × »
+  (`data-remove-target`, par ligne), « + Add another page » (`data-add-target`, hors lignes),
+  Close (`data-action-close`, caché), Cancel (`data-action-cancel`), Create offer
+  (`data-action-submit`, `button-primary`) — les trois derniers sont `type=submit`.
+
 ## 2026-09-14 — submitter: modal v2 (region/edition per target row), cap 3, no Enter
 
 - **AKS feed tool change (Romain, 2026-09-14):** the "Create offer" modal now takes

@@ -728,12 +728,12 @@ _TRUSTED_POLL_JS = (
     "delete window.__s18taps;resolve(out);}"
     # NEW node → SUCCESS/ERROR
     "if(cs>t.pre_s){var ns=document.querySelectorAll('[data-success]');"
-    "var els=ns[ns.length-1];fin('SUCCESS',els?(els.textContent||'').trim().slice(0,150):'');}"
+    "var els=ns[ns.length-1];fin('SUCCESS',els?(els.textContent||'').trim().slice(0,1500):'');}"
     "else if(ce>t.pre_er){var ne=document.querySelectorAll('[data-error]');"
-    "var ele=ne[ne.length-1];fin('ERROR',ele?(ele.textContent||'').trim().slice(0,150):'');}"
+    "var ele=ne[ne.length-1];fin('ERROR',ele?(ele.textContent||'').trim().slice(0,1500):'');}"
     # TEXT CHANGE on pre-existing template node → SUCCESS/ERROR (Driffle pattern)
-    "else if(s_txt){fin('SUCCESS',s_txt.slice(0,150));}"
-    "else if(e_txt){fin('ERROR',e_txt.slice(0,150));}"
+    "else if(s_txt){fin('SUCCESS',s_txt.slice(0,1500));}"
+    "else if(e_txt){fin('ERROR',e_txt.slice(0,1500));}"
     "else if(n>=40){fin('NO_SIGNAL','');}"
     "},200);"
     "});})()"
