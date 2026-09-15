@@ -17,13 +17,21 @@ candidates.json written before R45 (no ``targets`` key) is one target.
 Works on candidate dicts (as written to ``candidates.json`` by the matcher), so it
 has no heavy dependencies. Standard library only. Fail-closed: any problem raises
 ``ValidationError`` rather than silently approving.
+
+Lot 2 (2026-09-15): the identity itself — target normalisation and the fingerprint
+formula — is defined ONCE in ``src/candidate_contract.py``; ``candidate_fingerprint``
+and ``candidate_targets`` below are thin aliases kept for their callers (scripts,
+the admin I/O, the safe-auto sweep, tests) that translate the contract's refusals
+into ``ValidationError``.
 """
 
 from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
+
+from src import candidate_contract
 
 
 class ValidationError(ValueError):
@@ -34,98 +42,41 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _target_ids(target: Any) -> tuple[str, str, str]:
-    """``(aks_product_id, region_id, edition_id)`` of one ``targets[]`` entry.
+def _contract(call: Callable[..., Any], *args: Any) -> Any:
+    """Run a ``candidate_contract`` helper, re-raising its refusal as
+    ``ValidationError`` (same message — "malformed target entry (R45): …",
+    "targets[0] does not mirror …") so every caller of this module is unchanged."""
 
-    Accepts the nested shape the matcher writes (``region: {label, id}``) and the
-    flat one of the validation template (``region_id``). Anything else raises
-    ``ValidationError`` — a fingerprint never carries a guessed id (R45, 2026-09-12).
-    """
-
-    if not isinstance(target, dict):
-        raise ValidationError(f"malformed target entry (R45): {target!r}")
     try:
-        product_id = target["aks_product_id"]
-        region = target.get("region")
-        region_id = region["id"] if isinstance(region, dict) else target["region_id"]
-        edition = target.get("edition")
-        edition_id = edition["id"] if isinstance(edition, dict) else target["edition_id"]
-    except (KeyError, TypeError) as exc:
-        raise ValidationError(f"malformed target entry (R45): {target!r}") from exc
-    # Review fix (2026-09-14): a PRESENT but null id is as malformed as a missing one —
-    # str(None) would stamp the literal "None" into the fingerprint (app.js fp() renders
-    # "null" for the same JSON), a guessed identity that then fails as unknown_fingerprint.
-    if product_id is None or region_id is None or edition_id is None:
-        raise ValidationError(f"malformed target entry (R45): {target!r}")
-    return str(product_id), str(region_id), str(edition_id)
-
-
-def _primary_ids(candidate: dict[str, Any]) -> tuple[str, str, str]:
-    return (
-        str(candidate["aks_product_id"]),
-        str(candidate["region"]["id"]),
-        str(candidate["edition"]["id"]),
-    )
+        return call(*args)
+    except candidate_contract.CandidateContractError as exc:
+        raise ValidationError(str(exc)) from exc
 
 
 def candidate_targets(candidate: dict[str, Any]) -> list[dict[str, Any]]:
     """The candidate's targets in the FLAT template shape
-    ``{platform, aks_product_id, region_id, edition_id}`` (R45, 2026-09-12).
+    ``{platform, aks_product_id, region_id, edition_id}`` (R45, 2026-09-12) —
+    ``candidate_contract.template_targets``: a candidates.json without ``targets``
+    (pre-R45), or with a single one, yields ONE target built from the PRIMARY
+    fields (the validated identity — an operator override rewrites the primary,
+    validation_io keeps ``targets[0]`` mirrored); several targets are flattened as
+    they are, a malformed one refused (``ValidationError``)."""
 
-    A candidates.json without ``targets`` (pre-R45), or with a single one, yields
-    ONE target built from the PRIMARY fields — the primary is the validated
-    identity, and an operator override rewrites the primary (validation_io keeps
-    ``targets[0]`` mirrored). Several targets are flattened as they are.
-    """
-
-    raw = candidate.get("targets")
-    if not isinstance(raw, list) or len(raw) <= 1:
-        product_id, region_id, edition_id = _primary_ids(candidate)
-        return [{
-            "platform": candidate.get("platform"),
-            "aks_product_id": product_id,
-            "region_id": region_id,
-            "edition_id": edition_id,
-        }]
-    targets: list[dict[str, Any]] = []
-    for target in raw:
-        product_id, region_id, edition_id = _target_ids(target)
-        targets.append({
-            "platform": target.get("platform"),
-            "aks_product_id": product_id,
-            "region_id": region_id,
-            "edition_id": edition_id,
-        })
-    return targets
+    return _contract(candidate_contract.template_targets, candidate)
 
 
 def candidate_fingerprint(candidate: dict[str, Any]) -> str:
     """Compute the fingerprint from fields, so it works on any candidates.json
-    (robust to files written before the matcher stored a ``fingerprint`` key).
+    (robust to files written before the matcher stored a ``fingerprint`` key) —
+    ``candidate_contract.fingerprint``, the ONE formula shared with
+    ``matcher.Candidate.fingerprint`` and the admin page's ``app.js fp()``:
+    ``offer_id|aks_product_id|region_id|edition_id`` for one target (or no
+    ``targets`` key — pre-R45 file), plus ``|+pid:rid:eid,…`` over the EXTRA
+    targets (R45). ``targets[0]`` must mirror the primary fields; a file where it
+    does not, or a target with a missing / null id, raises ``ValidationError``
+    rather than fingerprinting on a guess."""
 
-    One target (or no ``targets`` key at all — pre-R45 file):
-    ``offer_id|aks_product_id|region_id|edition_id``, unchanged.
-    Several targets (R45, 2026-09-12): the same primary identity plus
-    ``|+`` and ``pid:rid:eid`` of every EXTRA target joined by ``,`` — the same
-    formula as ``matcher.Candidate.fingerprint`` and ``app.js fp()``. ``targets[0]``
-    must mirror the primary fields (the matcher's contract); a file where it does
-    not is malformed and refused rather than fingerprinted on a guess.
-    """
-
-    primary = (
-        f"{candidate['offer']['offer_id']}|{candidate['aks_product_id']}"
-        f"|{candidate['region']['id']}|{candidate['edition']['id']}"
-    )
-    raw = candidate.get("targets")
-    if not isinstance(raw, list) or len(raw) <= 1:
-        return primary
-    if _target_ids(raw[0]) != _primary_ids(candidate):
-        raise ValidationError(
-            "targets[0] does not mirror the primary aks_product_id/region/edition "
-            f"(R45) — re-run the match: {candidate['offer']['offer_id']}"
-        )
-    extra = ",".join(":".join(_target_ids(target)) for target in raw[1:])
-    return f"{primary}|+{extra}"
+    return _contract(candidate_contract.fingerprint, candidate)
 
 
 def validation_template(

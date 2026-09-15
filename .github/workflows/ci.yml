@@ -34,6 +34,13 @@ jobs:
       - name: Run unit tests
         run: python -m unittest discover -s tests -v
 
+      # Lot 2 (2026-09-15): the admin page's candidate-contract block (app.js) is a literal
+      # port of src/candidate_contract.py — check it against the shared fixture with node
+      # (ubuntu runners ship it; the VPS does not, so this cannot run in the Python suite).
+      - name: Candidate contract — app.js mirror (node)
+        if: hashFiles('tests/js/candidate_contract_check.js') != ''
+        run: node tests/js/candidate_contract_check.js
+
       - name: Secret scan (code dirs only)
         run: |
           # Scan source dirs only, so this workflow's own patterns don't self-match.

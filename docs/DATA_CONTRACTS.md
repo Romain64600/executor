@@ -123,30 +123,77 @@ since R45 (2026-09-12, `REGION_IDS.update(CONSOLE_REGION_IDS)`), a console famil
 console branch — `--consoles`, the default since 2026-09-15; `--no-consoles` opts out). A
 `SkippedOffer` is `{offer, reason}`.
 
-**`targets` (R45) is ALWAYS present**, even on a PC candidate, where it holds exactly
-one entry synthesised from the primary fields (`platform`, `aks_product_id`,
-`aks_url`, `aks_name`, `region`, `edition`). Each entry is a `Target.to_dict()`
-(`src/matcher.py`, frozen dataclass): `{platform, aks_product_id, aks_url, aks_name,
-region: {label, id}, edition: {label, id}}` — **NESTED** `region` / `edition` dicts,
-the same shape as the top-level fields (`validation_io._mirror_primary_target` writes the
-same). The FLAT shape `{platform, aks_product_id, region_id, edition_id}` exists only in
-`validation.template.json` (`candidate_targets`) and in `submit_plan.json` `targets`
-(`normalize_targets`, plus `region_label` / `edition_label`) — never in
-`candidates.json` (doc fix 2026-09-14). The first target IS the
-primary (same page / bucket / edition as the top-level fields); the following ones
-are the other AKS platform pages the same feed row must be filed on (Romain's
-per-target region/edition overwrite, EXECUTOR_RULES §4.12). Console region labels
-are the modal master label without its " (id)" suffix and without BOM
-(`CONSOLE_REGION_LABELS`: "PS5", "Xbox/PC GLOBAL", "Playstation Game Code
-EUROPE").
+### Candidate identity — the shared contract (`src/candidate_contract.py`)
 
-**`fingerprint`** is `offer_id|aks_product_id|region_id|edition_id` — the exact
-submission identity Stage 3 keys on — **unchanged for a single target**. With more
-than one target (R45) it becomes
+Since Lot 2 (2026-09-15, Romain's go) the identity of a candidate — its **target
+list** and its **fingerprint** — is defined ONCE, in `src/candidate_contract.py`
+(standard library only; it imports nothing from the stages, the stages import it).
+Every stage reads that module, never a second copy of the formula:
+
+- `src/matcher.py` — `Candidate.fingerprint` = `candidate_contract.fingerprint(to_dict()
+  without the key)`, `Candidate.to_dict()` stamps it; `Target.to_dict()` =
+  `to_nested_target(asdict(target))` (the dataclass fields ARE the canonical flat target).
+- `src/validation.py` — `candidate_fingerprint` / `candidate_targets` are thin aliases of
+  `fingerprint` / `template_targets`; a contract refusal is re-raised as
+  `ValidationError` (same message), so `scripts/04_validate.py`, `scripts/10` / `12`,
+  `src/data_entry_auto.py` and `src/admin/app.py` are unchanged.
+- `src/submitter.py` — `normalize_targets` is a thin alias of the contract's;
+  `MAX_TARGETS_PER_OFFER` (3, Romain 2026-09-14) is defined in the contract and imported.
+- `src/admin/validation_io.py` — `_mirror_primary_target` = `to_nested_target(primary_target(c))`,
+  `_is_multi_target` = `is_multi_target`.
+- `src/admin/static/app.js` — `fp()` / `normalizeTargets()` / `primaryTarget()` are a
+  **literal port** between the `// candidate-contract:begin` / `:end` markers, verified
+  against the same examples by `tests/js/candidate_contract_check.js` (node, CI step
+  guarded by `hashFiles`; the VPS has no node — `tests/test_candidate_contract.py` guards
+  the block's presence there).
+
+The shared examples are **`tests/fixtures/candidate_contract_examples.json`** — a list of
+`{name, candidate, expected_fingerprint | expect_error, expected_targets |
+expect_targets_error}` (PC / software / console 1-2-3 targets, pre-R45 file, degenerate
+`targets`, flat plan shape, null id, mirror mismatch, verbatim labels…). To change the
+identity: change the module AND the fixture first, then the `app.js` block.
+
+**Three target shapes**, all produced / consumed through the module:
+
+- **nested** — `candidates.json` `targets[]` entry (`matcher.Target.to_dict()`,
+  `to_nested_target`): `{platform, aks_product_id, aks_url, aks_name, region: {label, id},
+  edition: {label, id}}` — the same shape as the top-level fields;
+- **flat** — the canonical form, `submit_plan.json` `targets[]` (`normalize_targets`,
+  `TARGET_KEYS`): `{platform, aks_product_id, aks_url, aks_name, region_label, region_id,
+  edition_label, edition_id}`, ids as strings;
+- **template** — `validation.template.json` `targets[]` (`template_targets`,
+  `TEMPLATE_TARGET_KEYS`): `{platform, aks_product_id, region_id, edition_id}`.
+
+**`targets` (R45) is ALWAYS present** in a `candidates.json` written by the matcher, even
+on a PC candidate, where it holds exactly one entry synthesised from the primary fields.
+The FLAT shape never appears in `candidates.json` (doc fix 2026-09-14). The first target IS
+the primary (same page / bucket / edition as the top-level fields — the validated identity,
+what an operator override rewrites; `validation_io` keeps `targets[0]` mirrored); the
+following ones are the other AKS platform pages the same feed row must be filed on
+(Romain's per-target region/edition overwrite, EXECUTOR_RULES §4.12). Console region labels
+are the modal master label without its " (id)" suffix and without BOM
+(`CONSOLE_REGION_LABELS`: "PS5", "Xbox/PC GLOBAL", "Playstation Game Code EUROPE"); the
+contract carries labels verbatim (they never enter the fingerprint).
+
+**`normalize_targets(candidate)`** — no `targets` key (pre-R45 file), `null`, a non-list,
+an empty list or a SINGLE entry (whatever it holds: `[{}]`, `["x"]`, a drifted hand edit)
+→ ONE flat target built from the PRIMARY fields; two or more entries → each flattened as
+written (nested or flat form, in order). An entry that is not an object, or whose
+`aks_product_id` / region id / edition id is missing or `null`, is refused —
+`CandidateContractError("malformed target entry (R45): …")` (a `ValueError`;
+`ValidationError` through the validation aliases) — never the literal "None" / "null" in
+an identity (review fix 2026-09-14). A target is never dropped and never guessed.
+
+**`fingerprint(candidate)`** is `offer_id|aks_product_id|region_id|edition_id` from the
+primary fields — the exact submission identity Stage 3 keys on — **unchanged for zero /
+one target**. With more than one target (R45) it becomes
 `<primary>|+<id>:<region_id>:<edition_id>[,<id>:<region_id>:<edition_id>…]` over the
-secondary targets, in order (`src/matcher.py` and `validation.candidate_fingerprint`
-share the formula; the admin's `app.js` `fp()` mirrors it), so a change in ANY target
-invalidates the approval.
+secondary targets, in order, so a change in ANY target invalidates the approval.
+`targets[0]` must mirror the primary ids — otherwise
+`CandidateContractError("targets[0] does not mirror the primary … (R45) — re-run the
+match: <offer_id>")`. The candidate's own `fingerprint` key is informational: always
+recomputed from the fields, never read. A missing primary key raises `KeyError` (the
+safe-auto sweep turns it into a stage error).
 
 A two-target console candidate (illustrative Kinguin row; the AKS ids are Hades'
 real page ids of 2026-09-12 — PS4 page 85104, PS5 page 85105; primary = the first
@@ -176,8 +223,9 @@ declared family):
 (P1, decided by Romain on 2026-09-14: the two targets exist because the merchant declared
 BOTH generations — a lone "Hades PS5 CD Key" yields the PS5 target only, never a PS4
 sibling.) A null `aks_product_id` / `region.id` / `edition.id` in any target is refused
-by `validation._target_ids` (`ValidationError("malformed target entry (R45): …")`) —
-never the literal "None" in a fingerprint (fix 2026-09-14).
+by the shared contract (`candidate_contract.CandidateContractError("malformed target entry
+(R45): …")`, `ValidationError` through `validation.candidate_fingerprint`) — never the
+literal "None" in a fingerprint (fix 2026-09-14).
 
 A console candidate is emitted only when EVERY declared platform resolved to a
 verified AKS page, bucket and edition — never a partial `targets` list (EXECUTOR_RULES
@@ -237,9 +285,10 @@ abort. Narrower-or-equal submits stay allowed.
   where each `candidates[]` entry is `{fingerprint, offer_id, merchant_title,
   aks_product_id, aks_name, platform, region_id, edition_id, targets, approve: false}`
   — `targets` (R45) is the candidate's target list reduced to `{platform,
-  aks_product_id, region_id, edition_id}` per entry, so the operator sees every page
-  the row will be filed on; `fingerprint` follows the same single-/multi-target
-  formula as `candidates.json`.
+  aks_product_id, region_id, edition_id}` per entry (`candidate_contract.template_targets`),
+  so the operator sees every page the row will be filed on; `fingerprint` is
+  `candidate_contract.fingerprint` — the same single-/multi-target formula as
+  `candidates.json` (see "Candidate identity — the shared contract").
 - **`validation.json`**: the operator's filled copy — `approve: true` on the
   offers to submit, `validated_by` / `validated_at` filled in.
 - **`approved.json`** (`check` subcommand): the list of the **exact current
@@ -379,8 +428,9 @@ Each `plan[]` entry (fields appear as the flow reaches them):
   2026-07-08); `id_mismatches` when the by-id row contradicted the candidate;
   `row_checked` / `fresh_row_checked` list the fields verified (P1 / SC5).
 - Not processable: `blocker` (string) with `ready: false`.
-- `targets` (R45, 2026-09-12): the candidate's normalised target list (an older
-  `candidates.json` without the key → one entry, the primary target); on the write
+- `targets` (R45, 2026-09-12): the candidate's normalised target list — the canonical
+  FLAT shape of `candidate_contract.normalize_targets` (an older `candidates.json`
+  without the key → one entry, the primary target); on the write
   path every target's region / edition is resolved against the live catalog (any
   failure → blocker, as for a single target). **More than one target →
   `ready: false`, `blocker: "multi_target_unsupported_until_modal_verified"`** ("la

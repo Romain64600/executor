@@ -32,6 +32,7 @@ import time
 import urllib.parse
 from typing import Any
 
+from src.candidate_contract import MAX_TARGETS_PER_OFFER, normalize_targets as _contract_normalize_targets
 from src.cdp_session import CdpCommandError, CdpTimeoutError
 from src.extractor import (
     AKS_ADMIN_URL,
@@ -92,8 +93,9 @@ MODAL_SHAPE_BLOCKER_MESSAGE = (
 # pour le moment" targets). A candidate with more is blocked in ``_prepare`` BEFORE its
 # row is located or its modal opened — nothing is filled, the row is untouched. A
 # designed skip (like the R45 gate): it is counted in ``gated_too_many_targets`` and
-# does not feed the failure streak.
-MAX_TARGETS_PER_OFFER = 3
+# does not feed the failure streak. The value lives with the identity in
+# ``src/candidate_contract.py`` (Lot 2, 2026-09-15) and is imported above —
+# ``submitter.MAX_TARGETS_PER_OFFER`` stays the public name.
 TOO_MANY_TARGETS_BLOCKER = "too_many_targets"
 TOO_MANY_TARGETS_BLOCKER_MESSAGE = (
     "plus de 3 cibles — plafond du modal AKS (Romain 2026-09-14)"
@@ -120,58 +122,23 @@ def _strip_bom(text: Any) -> str | None:
     return str(text).replace("\ufeff", "")
 
 
-def _primary_target(candidate: dict[str, Any]) -> dict[str, Any]:
-    """The candidate's primary fields as one flat plan target (R45)."""
-
-    region = candidate.get("region") or {}
-    edition = candidate.get("edition") or {}
-    return {
-        "platform": candidate.get("platform"),
-        "aks_product_id": candidate.get("aks_product_id"),
-        "aks_url": candidate.get("aks_url"),
-        "aks_name": candidate.get("aks_name"),
-        "region_label": region.get("label"),
-        "region_id": region.get("id"),
-        "edition_label": edition.get("label"),
-        "edition_id": edition.get("id"),
-    }
-
-
 def normalize_targets(candidate: dict[str, Any]) -> list[dict[str, Any]]:
-    """The plan's flat target list for one candidate (R45, 2026-09-12).
+    """The plan's flat target list for one candidate (R45, 2026-09-12) — a thin alias
+    of ``candidate_contract.normalize_targets`` (Lot 2, 2026-09-15; the public name is
+    kept for callers and tests):
 
     - no ``targets`` key (pre-R45 candidates.json), an empty list or a single
       entry → ONE target built from the PRIMARY fields (the validated identity —
       what the fingerprint keys on and what the operator saw/overrode);
     - several entries → each flattened as written (nested ``region``/``edition``
-      dicts, or flat ``region_id``/``edition_id`` keys). A malformed entry is kept
-      with ``None`` ids so the catalog resolution blocks it EXPLICITLY — a target
-      is never dropped on the way to the modal.
+      dicts, or flat ``region_id``/``edition_id`` keys). A malformed entry (not a
+      dict, or a missing / ``None`` id) raises ``CandidateContractError`` — the same
+      refusal validation applies when it fingerprints the batch, so an approved
+      candidate can never reach the modal with a guessed target and a target is
+      never dropped on the way to it.
     """
 
-    raw = candidate.get("targets")
-    if not isinstance(raw, list) or len(raw) <= 1:
-        return [_primary_target(candidate)]
-    targets: list[dict[str, Any]] = []
-    for item in raw:
-        target = item if isinstance(item, dict) else {}
-        region = target.get("region")
-        if not isinstance(region, dict):
-            region = {"label": target.get("region_label"), "id": target.get("region_id")}
-        edition = target.get("edition")
-        if not isinstance(edition, dict):
-            edition = {"label": target.get("edition_label"), "id": target.get("edition_id")}
-        targets.append({
-            "platform": target.get("platform"),
-            "aks_product_id": target.get("aks_product_id"),
-            "aks_url": target.get("aks_url"),
-            "aks_name": target.get("aks_name"),
-            "region_label": region.get("label"),
-            "region_id": region.get("id"),
-            "edition_label": edition.get("label"),
-            "edition_id": edition.get("id"),
-        })
-    return targets
+    return _contract_normalize_targets(candidate)
 
 
 def _target_summary(target: dict[str, Any]) -> str:

@@ -24,11 +24,12 @@ import json
 import re
 import time
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any, Callable
 from urllib.parse import quote, urlparse
 
 from src.aks_env import AKS_STAFF_UA, REQUIRED_USER_AGENT, http_get
+from src import candidate_contract
 # [R45] (2026-09-12) console keys — the pure classifier / page grammar lives in its own
 # module (no matcher import there); the matcher only wires it in (design §3).
 from src.console_keys import (
@@ -2108,14 +2109,11 @@ class Target:
     edition_id: str
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "platform": self.platform,
-            "aks_product_id": self.aks_product_id,
-            "aks_url": self.aks_url,
-            "aks_name": self.aks_name,
-            "region": {"label": self.region_label, "id": self.region_id},
-            "edition": {"label": self.edition_label, "id": self.edition_id},
-        }
+        """The nested ``candidates.json`` entry — the shape is defined ONCE in
+        ``src/candidate_contract.py`` (Lot 2, 2026-09-15); the dataclass fields ARE the
+        canonical flat target (``candidate_contract.TARGET_KEYS``)."""
+
+        return candidate_contract.to_nested_target(asdict(self))
 
 
 @dataclass(frozen=True)
@@ -2153,22 +2151,11 @@ class Candidate:
         return (Target(self.platform, self.aks_product_id, self.aks_url, self.aks_name,
                        self.region_label, self.region_id, self.edition_label, self.edition_id),)
 
-    @property
-    def fingerprint(self) -> str:
-        """Exact submission identity — a stale approval fails if any part changes.
-        [R45]: unchanged for one target; extra targets append ``|+<pid>:<region>:<edition>``
-        per target (validation.candidate_fingerprint / app.js mirror the formula)."""
+    def _identity_dict(self) -> dict[str, Any]:
+        """``to_dict()`` without the ``fingerprint`` key — the candidate dict the shared
+        contract (``src/candidate_contract.py``) fingerprints and normalises."""
 
-        primary = f"{self.offer.offer_id}|{self.aks_product_id}|{self.region_id}|{self.edition_id}"
-        extra = self.all_targets[1:]
-        if not extra:
-            return primary
-        return primary + "|+" + ",".join(
-            f"{t.aks_product_id}:{t.region_id}:{t.edition_id}" for t in extra)
-
-    def to_dict(self) -> dict[str, Any]:
         return {
-            "fingerprint": self.fingerprint,
             "offer": self.offer.to_dict(),
             "aks_product_id": self.aks_product_id,
             "aks_url": self.aks_url,
@@ -2180,6 +2167,19 @@ class Candidate:
             # submitter / validation read one shape for every candidates.json.
             "targets": [t.to_dict() for t in self.all_targets],
         }
+
+    @property
+    def fingerprint(self) -> str:
+        """Exact submission identity — a stale approval fails if any part changes.
+        [R45]: unchanged for one target; extra targets append ``|+<pid>:<region>:<edition>``
+        per target. ONE definition since Lot 2 (2026-09-15): ``candidate_contract.fingerprint``
+        over the serialized dict — validation, the submitter and app.js read the same
+        module (or its verified port), never a second copy of the formula."""
+
+        return candidate_contract.fingerprint(self._identity_dict())
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"fingerprint": self.fingerprint, **self._identity_dict()}
 
     def normalized_block(self, index: int) -> str:
         platform = PLATFORM_LABEL.get(self.platform, self.platform)

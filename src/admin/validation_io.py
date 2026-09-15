@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from src.admin.runs import load_catalog_options, run_file, sha256_file
+from src.candidate_contract import is_multi_target, primary_target, to_nested_target
 from src.matcher import REGION_IDS
 from src.run_log import RunLogger
 from src.validation import (
@@ -90,10 +91,10 @@ def _catalog_entry(options: list[dict[str, str]], key: str) -> dict[str, str] | 
 
 def _is_multi_target(candidate: dict[str, Any]) -> bool:
     """R45: more than one entry under ``candidate["targets"]`` (absent key or a
-    single entry = the historical one-target candidate)."""
+    single entry = the historical one-target candidate) —
+    ``candidate_contract.is_multi_target`` (Lot 2, 2026-09-15)."""
 
-    targets = candidate.get("targets")
-    return isinstance(targets, list) and len(targets) > 1
+    return is_multi_target(candidate)
 
 
 def _mirror_primary_target(candidate: dict[str, Any]) -> None:
@@ -101,22 +102,16 @@ def _mirror_primary_target(candidate: dict[str, Any]) -> None:
     the (now rewritten) primary fields, so candidates.json stays self-consistent
     (R45, 2026-09-12: the matcher writes ``targets[0]`` as a mirror of the primary;
     the submitter and the validation template read the primary as the authority
-    for one target, this only keeps the file honest). A pre-R45 candidate without
-    ``targets`` is left without it — no key invented."""
+    for one target, this only keeps the file honest). The nested entry is built by
+    the shared contract (``primary_target`` → ``to_nested_target``, the
+    ``matcher.Target.to_dict`` shape — Lot 2, 2026-09-15). A pre-R45 candidate
+    without ``targets`` is left without it — no key invented."""
 
     targets = candidate.get("targets")
     if not isinstance(targets, list) or len(targets) != 1:
         return
     base = targets[0] if isinstance(targets[0], dict) else {}
-    targets[0] = {
-        **base,
-        "platform": candidate.get("platform"),
-        "aks_product_id": candidate.get("aks_product_id"),
-        "aks_url": candidate.get("aks_url"),
-        "aks_name": candidate.get("aks_name"),
-        "region": {"label": candidate["region"]["label"], "id": candidate["region"]["id"]},
-        "edition": {"label": candidate["edition"]["label"], "id": candidate["edition"]["id"]},
-    }
+    targets[0] = {**base, **to_nested_target(primary_target(candidate))}
 
 
 def _apply_override(

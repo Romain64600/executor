@@ -1,0 +1,1581 @@
+[
+  {
+    "name": "pc_one_target_nested",
+    "candidate": {
+      "fingerprint": "92015031|12345|9|1",
+      "offer": {
+        "offer_id": "92015031",
+        "name": "Tower! Simulator 3",
+        "url": "https://www.driffle.com/tower-simulator-3",
+        "merchant": "Driffle",
+        "store_id": "127",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "12345",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-tower-simulator-3-cd-key-compare-prices/",
+      "aks_name": "Tower! Simulator 3",
+      "platform": "STEAM",
+      "region": {
+        "label": "EU",
+        "id": "9",
+        "implicit": false
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {
+          "platform": "STEAM",
+          "aks_product_id": "12345",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-tower-simulator-3-cd-key-compare-prices/",
+          "aks_name": "Tower! Simulator 3",
+          "region": {
+            "label": "EU",
+            "id": "9"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        }
+      ]
+    },
+    "expected_fingerprint": "92015031|12345|9|1",
+    "expected_targets": [
+      {
+        "platform": "STEAM",
+        "aks_product_id": "12345",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-tower-simulator-3-cd-key-compare-prices/",
+        "aks_name": "Tower! Simulator 3",
+        "region_label": "EU",
+        "region_id": "9",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      }
+    ]
+  },
+  {
+    "name": "software_publisher_one_target",
+    "candidate": {
+      "fingerprint": "101040100|190001|1|1",
+      "offer": {
+        "offer_id": "101040100",
+        "name": "Microsoft Office 2024 Home & Business (PC) Key",
+        "url": "https://www.kinguin.net/category/office-2024-hb",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "190001",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-microsoft-office-2024-home-business-cd-key-compare-prices/",
+      "aks_name": "Microsoft Office 2024 Home & Business",
+      "platform": "PUBLISHER",
+      "region": {
+        "label": "Publisher",
+        "id": "1",
+        "implicit": true
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {
+          "platform": "PUBLISHER",
+          "aks_product_id": "190001",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-microsoft-office-2024-home-business-cd-key-compare-prices/",
+          "aks_name": "Microsoft Office 2024 Home & Business",
+          "region": {
+            "label": "Publisher",
+            "id": "1"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        }
+      ]
+    },
+    "expected_fingerprint": "101040100|190001|1|1",
+    "expected_targets": [
+      {
+        "platform": "PUBLISHER",
+        "aks_product_id": "190001",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-microsoft-office-2024-home-business-cd-key-compare-prices/",
+        "aks_name": "Microsoft Office 2024 Home & Business",
+        "region_label": "Publisher",
+        "region_id": "1",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      }
+    ]
+  },
+  {
+    "name": "console_one_target_88ps5h",
+    "candidate": {
+      "fingerprint": "3|85105|88ps5h|1",
+      "offer": {
+        "offer_id": "3",
+        "name": "Hades PS5 CD Key",
+        "url": "https://www.kinguin.net/category/hades-ps5",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "85105",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+      "aks_name": "Hades PS5",
+      "platform": "PS5",
+      "region": {
+        "label": "PS5",
+        "id": "88ps5h",
+        "implicit": true
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {
+          "platform": "PS5",
+          "aks_product_id": "85105",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+          "aks_name": "Hades PS5",
+          "region": {
+            "label": "PS5",
+            "id": "88ps5h"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        }
+      ]
+    },
+    "expected_fingerprint": "3|85105|88ps5h|1",
+    "expected_targets": [
+      {
+        "platform": "PS5",
+        "aks_product_id": "85105",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+        "aks_name": "Hades PS5",
+        "region_label": "PS5",
+        "region_id": "88ps5h",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      }
+    ]
+  },
+  {
+    "name": "console_two_targets_ps4_ps5",
+    "candidate": {
+      "fingerprint": "101050001|85104|88|1|+85105:88ps5h:1",
+      "offer": {
+        "offer_id": "101050001",
+        "name": "Hades PS4/PS5 CD Key",
+        "url": "https://www.kinguin.net/category/hades-ps4-ps5-cd-key",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "85104",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+      "aks_name": "Hades PS4",
+      "platform": "PS4",
+      "region": {
+        "label": "Playstation Game Code GLOBAL",
+        "id": "88",
+        "implicit": true
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {
+          "platform": "PS4",
+          "aks_product_id": "85104",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+          "aks_name": "Hades PS4",
+          "region": {
+            "label": "Playstation Game Code GLOBAL",
+            "id": "88"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        },
+        {
+          "platform": "PS5",
+          "aks_product_id": "85105",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+          "aks_name": "Hades PS5",
+          "region": {
+            "label": "PS5",
+            "id": "88ps5h"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        }
+      ]
+    },
+    "expected_fingerprint": "101050001|85104|88|1|+85105:88ps5h:1",
+    "expected_targets": [
+      {
+        "platform": "PS4",
+        "aks_product_id": "85104",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+        "aks_name": "Hades PS4",
+        "region_label": "Playstation Game Code GLOBAL",
+        "region_id": "88",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      },
+      {
+        "platform": "PS5",
+        "aks_product_id": "85105",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+        "aks_name": "Hades PS5",
+        "region_label": "PS5",
+        "region_id": "88ps5h",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      }
+    ]
+  },
+  {
+    "name": "three_targets_play_anywhere",
+    "candidate": {
+      "fingerprint": "101039971|107207|306|1|+107208:306:1,107206:306:1",
+      "offer": {
+        "offer_id": "101039971",
+        "name": "Example Game (Xbox One / Series X|S / PC) XBOX LIVE Key GLOBAL",
+        "url": "https://www.kinguin.net/category/example-game-xbox",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "107207",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-example-game-xbox-one-compare-prices/",
+      "aks_name": "Example Game Xbox One",
+      "platform": "XBOX_ONE",
+      "region": {
+        "label": "Xbox/PC GLOBAL",
+        "id": "306",
+        "implicit": true
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {
+          "platform": "XBOX_ONE",
+          "aks_product_id": "107207",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-example-game-xbox-one-compare-prices/",
+          "aks_name": "Example Game Xbox One",
+          "region": {
+            "label": "Xbox/PC GLOBAL",
+            "id": "306"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        },
+        {
+          "platform": "XBOX_SERIES",
+          "aks_product_id": "107208",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-example-game-xbox-series-compare-prices/",
+          "aks_name": "Example Game Xbox Series",
+          "region": {
+            "label": "Xbox/PC GLOBAL",
+            "id": "306"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        },
+        {
+          "platform": "XBOX_PC",
+          "aks_product_id": "107206",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-example-game-cd-key-compare-prices/",
+          "aks_name": "Example Game",
+          "region": {
+            "label": "Xbox/PC GLOBAL",
+            "id": "306"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        }
+      ]
+    },
+    "expected_fingerprint": "101039971|107207|306|1|+107208:306:1,107206:306:1",
+    "expected_targets": [
+      {
+        "platform": "XBOX_ONE",
+        "aks_product_id": "107207",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-example-game-xbox-one-compare-prices/",
+        "aks_name": "Example Game Xbox One",
+        "region_label": "Xbox/PC GLOBAL",
+        "region_id": "306",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      },
+      {
+        "platform": "XBOX_SERIES",
+        "aks_product_id": "107208",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-example-game-xbox-series-compare-prices/",
+        "aks_name": "Example Game Xbox Series",
+        "region_label": "Xbox/PC GLOBAL",
+        "region_id": "306",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      },
+      {
+        "platform": "XBOX_PC",
+        "aks_product_id": "107206",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-example-game-cd-key-compare-prices/",
+        "aks_name": "Example Game",
+        "region_label": "Xbox/PC GLOBAL",
+        "region_id": "306",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      }
+    ]
+  },
+  {
+    "name": "old_candidates_json_without_targets",
+    "candidate": {
+      "offer": {
+        "offer_id": "5",
+        "name": "Stardew Valley Steam Key GLOBAL",
+        "url": "https://www.kinguin.net/category/stardew-valley",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "47979",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-stardew-valley-cd-key-compare-prices/",
+      "aks_name": "Stardew Valley",
+      "platform": "STEAM",
+      "region": {
+        "label": "GLOBAL",
+        "id": "2",
+        "implicit": false
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      }
+    },
+    "expected_fingerprint": "5|47979|2|1",
+    "expected_targets": [
+      {
+        "platform": "STEAM",
+        "aks_product_id": "47979",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-stardew-valley-cd-key-compare-prices/",
+        "aks_name": "Stardew Valley",
+        "region_label": "GLOBAL",
+        "region_id": "2",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      }
+    ]
+  },
+  {
+    "name": "targets_empty_list",
+    "candidate": {
+      "fingerprint": "6|47979|2|1",
+      "offer": {
+        "offer_id": "6",
+        "name": "Stardew Valley Steam Key GLOBAL",
+        "url": "https://www.kinguin.net/category/stardew-valley",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "47979",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-stardew-valley-cd-key-compare-prices/",
+      "aks_name": "Stardew Valley",
+      "platform": "STEAM",
+      "region": {
+        "label": "GLOBAL",
+        "id": "2",
+        "implicit": false
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": []
+    },
+    "expected_fingerprint": "6|47979|2|1",
+    "expected_targets": [
+      {
+        "platform": "STEAM",
+        "aks_product_id": "47979",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-stardew-valley-cd-key-compare-prices/",
+        "aks_name": "Stardew Valley",
+        "region_label": "GLOBAL",
+        "region_id": "2",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      }
+    ]
+  },
+  {
+    "name": "targets_null",
+    "candidate": {
+      "fingerprint": "6|47979|2|1",
+      "offer": {
+        "offer_id": "6",
+        "name": "Stardew Valley Steam Key GLOBAL",
+        "url": "https://www.kinguin.net/category/stardew-valley",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "47979",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-stardew-valley-cd-key-compare-prices/",
+      "aks_name": "Stardew Valley",
+      "platform": "STEAM",
+      "region": {
+        "label": "GLOBAL",
+        "id": "2",
+        "implicit": false
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": null
+    },
+    "expected_fingerprint": "6|47979|2|1",
+    "expected_targets": [
+      {
+        "platform": "STEAM",
+        "aks_product_id": "47979",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-stardew-valley-cd-key-compare-prices/",
+        "aks_name": "Stardew Valley",
+        "region_label": "GLOBAL",
+        "region_id": "2",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      }
+    ]
+  },
+  {
+    "name": "targets_single_empty_dict",
+    "candidate": {
+      "fingerprint": "6|47979|2|1",
+      "offer": {
+        "offer_id": "6",
+        "name": "Stardew Valley Steam Key GLOBAL",
+        "url": "https://www.kinguin.net/category/stardew-valley",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "47979",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-stardew-valley-cd-key-compare-prices/",
+      "aks_name": "Stardew Valley",
+      "platform": "STEAM",
+      "region": {
+        "label": "GLOBAL",
+        "id": "2",
+        "implicit": false
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {}
+      ]
+    },
+    "expected_fingerprint": "6|47979|2|1",
+    "expected_targets": [
+      {
+        "platform": "STEAM",
+        "aks_product_id": "47979",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-stardew-valley-cd-key-compare-prices/",
+        "aks_name": "Stardew Valley",
+        "region_label": "GLOBAL",
+        "region_id": "2",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      }
+    ]
+  },
+  {
+    "name": "targets_single_string",
+    "candidate": {
+      "fingerprint": "6|47979|2|1",
+      "offer": {
+        "offer_id": "6",
+        "name": "Stardew Valley Steam Key GLOBAL",
+        "url": "https://www.kinguin.net/category/stardew-valley",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "47979",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-stardew-valley-cd-key-compare-prices/",
+      "aks_name": "Stardew Valley",
+      "platform": "STEAM",
+      "region": {
+        "label": "GLOBAL",
+        "id": "2",
+        "implicit": false
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        "x"
+      ]
+    },
+    "expected_fingerprint": "6|47979|2|1",
+    "expected_targets": [
+      {
+        "platform": "STEAM",
+        "aks_product_id": "47979",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-stardew-valley-cd-key-compare-prices/",
+        "aks_name": "Stardew Valley",
+        "region_label": "GLOBAL",
+        "region_id": "2",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      }
+    ]
+  },
+  {
+    "name": "flat_submit_plan_shape",
+    "candidate": {
+      "fingerprint": "101050001|85104|88|1",
+      "offer": {
+        "offer_id": "101050001",
+        "name": "Hades PS4/PS5 CD Key",
+        "url": "https://www.kinguin.net/category/hades-ps4-ps5-cd-key",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "85104",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+      "aks_name": "Hades PS4",
+      "platform": "PS4",
+      "region": {
+        "label": "Playstation Game Code GLOBAL",
+        "id": "88",
+        "implicit": true
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {
+          "platform": "PS4",
+          "aks_product_id": "85104",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+          "aks_name": "Hades PS4",
+          "region_label": "Playstation Game Code GLOBAL",
+          "region_id": "88",
+          "edition_label": "Standard",
+          "edition_id": "1"
+        },
+        {
+          "platform": "PS5",
+          "aks_product_id": "85105",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+          "aks_name": "Hades PS5",
+          "region_label": "PS5",
+          "region_id": "88ps5h",
+          "edition_label": "Standard",
+          "edition_id": "1"
+        }
+      ]
+    },
+    "expected_fingerprint": "101050001|85104|88|1|+85105:88ps5h:1",
+    "expected_targets": [
+      {
+        "platform": "PS4",
+        "aks_product_id": "85104",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+        "aks_name": "Hades PS4",
+        "region_label": "Playstation Game Code GLOBAL",
+        "region_id": "88",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      },
+      {
+        "platform": "PS5",
+        "aks_product_id": "85105",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+        "aks_name": "Hades PS5",
+        "region_label": "PS5",
+        "region_id": "88ps5h",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      }
+    ]
+  },
+  {
+    "name": "mixed_nested_and_flat_entries",
+    "candidate": {
+      "fingerprint": "101050001|85104|88|1",
+      "offer": {
+        "offer_id": "101050001",
+        "name": "Hades PS4/PS5 CD Key",
+        "url": "https://www.kinguin.net/category/hades-ps4-ps5-cd-key",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "85104",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+      "aks_name": "Hades PS4",
+      "platform": "PS4",
+      "region": {
+        "label": "Playstation Game Code GLOBAL",
+        "id": "88",
+        "implicit": true
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {
+          "platform": "PS4",
+          "aks_product_id": "85104",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+          "aks_name": "Hades PS4",
+          "region": {
+            "label": "Playstation Game Code GLOBAL",
+            "id": "88"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        },
+        {
+          "platform": "PS5",
+          "aks_product_id": "85105",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+          "aks_name": "Hades PS5",
+          "region_label": "PS5",
+          "region_id": "88ps5h",
+          "edition_label": "Standard",
+          "edition_id": "1"
+        }
+      ]
+    },
+    "expected_fingerprint": "101050001|85104|88|1|+85105:88ps5h:1",
+    "expected_targets": [
+      {
+        "platform": "PS4",
+        "aks_product_id": "85104",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+        "aks_name": "Hades PS4",
+        "region_label": "Playstation Game Code GLOBAL",
+        "region_id": "88",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      },
+      {
+        "platform": "PS5",
+        "aks_product_id": "85105",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+        "aks_name": "Hades PS5",
+        "region_label": "PS5",
+        "region_id": "88ps5h",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      }
+    ]
+  },
+  {
+    "name": "null_region_id_is_refused",
+    "candidate": {
+      "fingerprint": "101050001|85104|88|1",
+      "offer": {
+        "offer_id": "101050001",
+        "name": "Hades PS4/PS5 CD Key",
+        "url": "https://www.kinguin.net/category/hades-ps4-ps5-cd-key",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "85104",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+      "aks_name": "Hades PS4",
+      "platform": "PS4",
+      "region": {
+        "label": "Playstation Game Code GLOBAL",
+        "id": "88",
+        "implicit": true
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {
+          "platform": "PS4",
+          "aks_product_id": "85104",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+          "aks_name": "Hades PS4",
+          "region": {
+            "label": "Playstation Game Code GLOBAL",
+            "id": "88"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        },
+        {
+          "platform": "PS5",
+          "aks_product_id": "85105",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+          "aks_name": "Hades PS5",
+          "region": {
+            "label": "PS5",
+            "id": null
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        }
+      ]
+    },
+    "expect_error": "malformed target entry (R45)",
+    "expect_targets_error": "malformed target entry (R45)"
+  },
+  {
+    "name": "null_product_id_is_refused",
+    "candidate": {
+      "fingerprint": "101050001|85104|88|1",
+      "offer": {
+        "offer_id": "101050001",
+        "name": "Hades PS4/PS5 CD Key",
+        "url": "https://www.kinguin.net/category/hades-ps4-ps5-cd-key",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "85104",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+      "aks_name": "Hades PS4",
+      "platform": "PS4",
+      "region": {
+        "label": "Playstation Game Code GLOBAL",
+        "id": "88",
+        "implicit": true
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {
+          "platform": "PS4",
+          "aks_product_id": "85104",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+          "aks_name": "Hades PS4",
+          "region": {
+            "label": "Playstation Game Code GLOBAL",
+            "id": "88"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        },
+        {
+          "platform": "PS5",
+          "aks_product_id": null,
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+          "aks_name": "Hades PS5",
+          "region": {
+            "label": "PS5",
+            "id": "88ps5h"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        }
+      ]
+    },
+    "expect_error": "malformed target entry (R45)",
+    "expect_targets_error": "malformed target entry (R45)"
+  },
+  {
+    "name": "null_flat_edition_id_is_refused",
+    "candidate": {
+      "fingerprint": "101050001|85104|88|1",
+      "offer": {
+        "offer_id": "101050001",
+        "name": "Hades PS4/PS5 CD Key",
+        "url": "https://www.kinguin.net/category/hades-ps4-ps5-cd-key",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "85104",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+      "aks_name": "Hades PS4",
+      "platform": "PS4",
+      "region": {
+        "label": "Playstation Game Code GLOBAL",
+        "id": "88",
+        "implicit": true
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {
+          "platform": "PS4",
+          "aks_product_id": "85104",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+          "aks_name": "Hades PS4",
+          "region_label": "Playstation Game Code GLOBAL",
+          "region_id": "88",
+          "edition_label": "Standard",
+          "edition_id": "1"
+        },
+        {
+          "platform": "PS5",
+          "aks_product_id": "85105",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+          "aks_name": "Hades PS5",
+          "region_label": "PS5",
+          "region_id": "88ps5h",
+          "edition_label": "Standard",
+          "edition_id": null
+        }
+      ]
+    },
+    "expect_error": "malformed target entry (R45)",
+    "expect_targets_error": "malformed target entry (R45)"
+  },
+  {
+    "name": "missing_product_id_is_refused",
+    "candidate": {
+      "fingerprint": "101050001|85104|88|1",
+      "offer": {
+        "offer_id": "101050001",
+        "name": "Hades PS4/PS5 CD Key",
+        "url": "https://www.kinguin.net/category/hades-ps4-ps5-cd-key",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "85104",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+      "aks_name": "Hades PS4",
+      "platform": "PS4",
+      "region": {
+        "label": "Playstation Game Code GLOBAL",
+        "id": "88",
+        "implicit": true
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {
+          "platform": "PS4",
+          "aks_product_id": "85104",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+          "aks_name": "Hades PS4",
+          "region": {
+            "label": "Playstation Game Code GLOBAL",
+            "id": "88"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        },
+        {
+          "platform": "PS5",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+          "aks_name": "Hades PS5",
+          "region": {
+            "label": "PS5",
+            "id": "88ps5h"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        }
+      ]
+    },
+    "expect_error": "malformed target entry (R45)",
+    "expect_targets_error": "malformed target entry (R45)"
+  },
+  {
+    "name": "target_without_any_id_is_refused",
+    "candidate": {
+      "fingerprint": "101050001|85104|88|1",
+      "offer": {
+        "offer_id": "101050001",
+        "name": "Hades PS4/PS5 CD Key",
+        "url": "https://www.kinguin.net/category/hades-ps4-ps5-cd-key",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "85104",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+      "aks_name": "Hades PS4",
+      "platform": "PS4",
+      "region": {
+        "label": "Playstation Game Code GLOBAL",
+        "id": "88",
+        "implicit": true
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {
+          "platform": "PS4",
+          "aks_product_id": "85104",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+          "aks_name": "Hades PS4",
+          "region": {
+            "label": "Playstation Game Code GLOBAL",
+            "id": "88"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        },
+        {
+          "platform": "PS5"
+        }
+      ]
+    },
+    "expect_error": "malformed target entry (R45)",
+    "expect_targets_error": "malformed target entry (R45)"
+  },
+  {
+    "name": "non_dict_second_entry_is_refused",
+    "candidate": {
+      "fingerprint": "101050001|85104|88|1",
+      "offer": {
+        "offer_id": "101050001",
+        "name": "Hades PS4/PS5 CD Key",
+        "url": "https://www.kinguin.net/category/hades-ps4-ps5-cd-key",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "85104",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+      "aks_name": "Hades PS4",
+      "platform": "PS4",
+      "region": {
+        "label": "Playstation Game Code GLOBAL",
+        "id": "88",
+        "implicit": true
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {
+          "platform": "PS4",
+          "aks_product_id": "85104",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+          "aks_name": "Hades PS4",
+          "region": {
+            "label": "Playstation Game Code GLOBAL",
+            "id": "88"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        },
+        "PS5"
+      ]
+    },
+    "expect_error": "malformed target entry (R45)",
+    "expect_targets_error": "malformed target entry (R45)"
+  },
+  {
+    "name": "targets0_mirror_mismatch_is_refused",
+    "candidate": {
+      "fingerprint": "101050001|85104|88|1",
+      "offer": {
+        "offer_id": "101050001",
+        "name": "Hades PS4/PS5 CD Key",
+        "url": "https://www.kinguin.net/category/hades-ps4-ps5-cd-key",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "85104",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+      "aks_name": "Hades PS4",
+      "platform": "PS4",
+      "region": {
+        "label": "Playstation Game Code GLOBAL",
+        "id": "88",
+        "implicit": true
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {
+          "platform": "PS4",
+          "aks_product_id": "85104",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+          "aks_name": "Hades PS4",
+          "region": {
+            "label": "Playstation Game Code GLOBAL",
+            "id": "88eu"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        },
+        {
+          "platform": "PS5",
+          "aks_product_id": "85105",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+          "aks_name": "Hades PS5",
+          "region": {
+            "label": "PS5",
+            "id": "88ps5h"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        }
+      ]
+    },
+    "expect_error": "targets[0] does not mirror the primary aks_product_id/region/edition (R45)",
+    "expected_targets": [
+      {
+        "platform": "PS4",
+        "aks_product_id": "85104",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+        "aks_name": "Hades PS4",
+        "region_label": "Playstation Game Code GLOBAL",
+        "region_id": "88eu",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      },
+      {
+        "platform": "PS5",
+        "aks_product_id": "85105",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+        "aks_name": "Hades PS5",
+        "region_label": "PS5",
+        "region_id": "88ps5h",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      }
+    ]
+  },
+  {
+    "name": "numeric_ids_are_stringified",
+    "candidate": {
+      "offer": {
+        "offer_id": 8,
+        "name": "Numeric Ids Game",
+        "url": "https://m/8",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": 123,
+      "aks_url": "https://www.allkeyshop.com/blog/buy-numeric-cd-key-compare-prices/",
+      "aks_name": "Numeric Ids Game",
+      "platform": "PS4",
+      "region": {
+        "label": "Playstation Game Code GLOBAL",
+        "id": 88,
+        "implicit": true
+      },
+      "edition": {
+        "label": "Standard",
+        "id": 1
+      },
+      "targets": [
+        {
+          "platform": "PS4",
+          "aks_product_id": 123,
+          "aks_url": "https://www.allkeyshop.com/blog/buy-numeric-cd-key-compare-prices/",
+          "aks_name": "Numeric Ids Game",
+          "region": {
+            "label": "Playstation Game Code GLOBAL",
+            "id": 88
+          },
+          "edition": {
+            "label": "Standard",
+            "id": 1
+          }
+        },
+        {
+          "platform": "PS5",
+          "aks_product_id": 124,
+          "aks_url": "https://www.allkeyshop.com/blog/buy-numeric-ps5-compare-prices/",
+          "aks_name": "Numeric Ids Game PS5",
+          "region": {
+            "label": "PS5",
+            "id": "88ps5h"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": 1
+          }
+        }
+      ]
+    },
+    "expected_fingerprint": "8|123|88|1|+124:88ps5h:1",
+    "expected_targets": [
+      {
+        "platform": "PS4",
+        "aks_product_id": "123",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-numeric-cd-key-compare-prices/",
+        "aks_name": "Numeric Ids Game",
+        "region_label": "Playstation Game Code GLOBAL",
+        "region_id": "88",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      },
+      {
+        "platform": "PS5",
+        "aks_product_id": "124",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-numeric-ps5-compare-prices/",
+        "aks_name": "Numeric Ids Game PS5",
+        "region_label": "PS5",
+        "region_id": "88ps5h",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      }
+    ]
+  },
+  {
+    "name": "single_drifted_entry_defers_to_the_primary",
+    "candidate": {
+      "fingerprint": "1|1|2|1",
+      "offer": {
+        "offer_id": "1",
+        "name": "Game 1",
+        "url": "https://m/1",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "1",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-game-1-cd-key-compare-prices/",
+      "aks_name": "Game 1",
+      "platform": "STEAM",
+      "region": {
+        "label": "GLOBAL",
+        "id": "2",
+        "implicit": false
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {
+          "platform": "PS4",
+          "aks_product_id": "85104",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+          "aks_name": "Hades PS4",
+          "region": {
+            "label": "Playstation Game Code GLOBAL",
+            "id": "88"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        }
+      ]
+    },
+    "expected_fingerprint": "1|1|2|1",
+    "expected_targets": [
+      {
+        "platform": "STEAM",
+        "aks_product_id": "1",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-game-1-cd-key-compare-prices/",
+        "aks_name": "Game 1",
+        "region_label": "GLOBAL",
+        "region_id": "2",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      }
+    ]
+  },
+  {
+    "name": "labels_verbatim_bom_free_and_bom",
+    "candidate": {
+      "fingerprint": "9|85103|306|1|+26712:306:1",
+      "offer": {
+        "offer_id": "9",
+        "name": "Hades (Xbox Series X|S) XBOX LIVE Key GLOBAL",
+        "url": "https://www.eneba.com/xbox-hades",
+        "merchant": "Eneba",
+        "store_id": "19",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "85103",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-hades-xbox-series-compare-prices/",
+      "aks_name": "Hades Xbox Series",
+      "platform": "XBOX_SERIES",
+      "region": {
+        "label": "Xbox/PC GLOBAL",
+        "id": "306",
+        "implicit": true
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {
+          "platform": "XBOX_SERIES",
+          "aks_product_id": "85103",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-xbox-series-compare-prices/",
+          "aks_name": "Hades Xbox Series",
+          "region": {
+            "label": "Xbox/PC GLOBAL",
+            "id": "306"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        },
+        {
+          "platform": "XBOX_PC",
+          "aks_product_id": "26712",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-cd-key-compare-prices/",
+          "aks_name": "Hades",
+          "region": {
+            "label": "﻿Xbox/PC GLOBAL (306)",
+            "id": "306"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        }
+      ]
+    },
+    "expected_fingerprint": "9|85103|306|1|+26712:306:1",
+    "expected_targets": [
+      {
+        "platform": "XBOX_SERIES",
+        "aks_product_id": "85103",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-hades-xbox-series-compare-prices/",
+        "aks_name": "Hades Xbox Series",
+        "region_label": "Xbox/PC GLOBAL",
+        "region_id": "306",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      },
+      {
+        "platform": "XBOX_PC",
+        "aks_product_id": "26712",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-hades-cd-key-compare-prices/",
+        "aks_name": "Hades",
+        "region_label": "﻿Xbox/PC GLOBAL (306)",
+        "region_id": "306",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      }
+    ]
+  },
+  {
+    "name": "flat_keys_win_when_nested_region_is_not_a_dict",
+    "candidate": {
+      "fingerprint": "101050001|85104|88|1",
+      "offer": {
+        "offer_id": "101050001",
+        "name": "Hades PS4/PS5 CD Key",
+        "url": "https://www.kinguin.net/category/hades-ps4-ps5-cd-key",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "85104",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+      "aks_name": "Hades PS4",
+      "platform": "PS4",
+      "region": {
+        "label": "Playstation Game Code GLOBAL",
+        "id": "88",
+        "implicit": true
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {
+          "platform": "PS4",
+          "aks_product_id": "85104",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+          "aks_name": "Hades PS4",
+          "region": {
+            "label": "Playstation Game Code GLOBAL",
+            "id": "88"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        },
+        {
+          "platform": "PS5",
+          "aks_product_id": "85105",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+          "aks_name": "Hades PS5",
+          "region_label": "PS5",
+          "region_id": "88ps5h",
+          "edition_label": "Standard",
+          "edition_id": "1",
+          "region": "PS5"
+        }
+      ]
+    },
+    "expected_fingerprint": "101050001|85104|88|1|+85105:88ps5h:1",
+    "expected_targets": [
+      {
+        "platform": "PS4",
+        "aks_product_id": "85104",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+        "aks_name": "Hades PS4",
+        "region_label": "Playstation Game Code GLOBAL",
+        "region_id": "88",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      },
+      {
+        "platform": "PS5",
+        "aks_product_id": "85105",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+        "aks_name": "Hades PS5",
+        "region_label": "PS5",
+        "region_id": "88ps5h",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      }
+    ]
+  },
+  {
+    "name": "stored_fingerprint_key_is_ignored",
+    "candidate": {
+      "fingerprint": "stale|value",
+      "offer": {
+        "offer_id": "101050001",
+        "name": "Hades PS4/PS5 CD Key",
+        "url": "https://www.kinguin.net/category/hades-ps4-ps5-cd-key",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "85104",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+      "aks_name": "Hades PS4",
+      "platform": "PS4",
+      "region": {
+        "label": "Playstation Game Code GLOBAL",
+        "id": "88",
+        "implicit": true
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {
+          "platform": "PS4",
+          "aks_product_id": "85104",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+          "aks_name": "Hades PS4",
+          "region": {
+            "label": "Playstation Game Code GLOBAL",
+            "id": "88"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        },
+        {
+          "platform": "PS5",
+          "aks_product_id": "85105",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+          "aks_name": "Hades PS5",
+          "region": {
+            "label": "PS5",
+            "id": "88ps5h"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        }
+      ]
+    },
+    "expected_fingerprint": "101050001|85104|88|1|+85105:88ps5h:1",
+    "expected_targets": [
+      {
+        "platform": "PS4",
+        "aks_product_id": "85104",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/",
+        "aks_name": "Hades PS4",
+        "region_label": "Playstation Game Code GLOBAL",
+        "region_id": "88",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      },
+      {
+        "platform": "PS5",
+        "aks_product_id": "85105",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/",
+        "aks_name": "Hades PS5",
+        "region_label": "PS5",
+        "region_id": "88ps5h",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      }
+    ]
+  },
+  {
+    "name": "operator_override_single_target_mirrored",
+    "candidate": {
+      "fingerprint": "2|207861|9|1",
+      "offer": {
+        "offer_id": "2",
+        "name": "Game 2",
+        "url": "https://m/2",
+        "merchant": "Kinguin",
+        "store_id": "58",
+        "price": "9.99",
+        "stock": null
+      },
+      "aks_product_id": "207861",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-game-2-cd-key-compare-prices/",
+      "aks_name": "Game 2",
+      "platform": "STEAM",
+      "region": {
+        "label": "Steam EU (9)",
+        "id": "9",
+        "implicit": false
+      },
+      "edition": {
+        "label": "Standard",
+        "id": "1"
+      },
+      "targets": [
+        {
+          "platform": "STEAM",
+          "aks_product_id": "207861",
+          "aks_url": "https://www.allkeyshop.com/blog/buy-game-2-cd-key-compare-prices/",
+          "aks_name": "Game 2",
+          "region": {
+            "label": "Steam EU (9)",
+            "id": "9"
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          }
+        }
+      ],
+      "operator_override": {
+        "by": "Romain",
+        "at": "2026-09-15T10:00:00Z",
+        "via": "admin-page",
+        "original": {
+          "fingerprint": "2|207861|2|1",
+          "region": {
+            "label": "GLOBAL",
+            "id": "2",
+            "implicit": false
+          },
+          "edition": {
+            "label": "Standard",
+            "id": "1"
+          },
+          "platform": "STEAM"
+        }
+      }
+    },
+    "expected_fingerprint": "2|207861|9|1",
+    "expected_targets": [
+      {
+        "platform": "STEAM",
+        "aks_product_id": "207861",
+        "aks_url": "https://www.allkeyshop.com/blog/buy-game-2-cd-key-compare-prices/",
+        "aks_name": "Game 2",
+        "region_label": "Steam EU (9)",
+        "region_id": "9",
+        "edition_label": "Standard",
+        "edition_id": "1"
+      }
+    ]
+  }
+]

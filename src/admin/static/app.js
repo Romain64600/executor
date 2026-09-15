@@ -292,7 +292,23 @@ async function loadValidation(runId) {
   let createdCount = 0;
   let failedCount = 0;
   payload.candidates.forEach((candidate, index) => {
-    const fingerprint = fp(candidate);
+    let fingerprint;
+    let targets;
+    try {
+      fingerprint = fp(candidate);
+      targets = normalizeTargets(candidate);
+    } catch (err) {
+      // Contrat non respecté (cible sans id, targets[0] ≠ primaire) : le serveur
+      // refuserait toute décision sur ce candidat (unknown_fingerprint / ValidationError)
+      // — ligne verrouillée avec la raison, jamais une empreinte devinée ni un tableau cassé.
+      const cell = el('td', {
+        class: 'contract-error',
+        text: `#${index + 1} — candidat malformé (src/candidate_contract.py) : ${err.message} — relancer le match`,
+      });
+      cell.colSpan = 9;
+      tbody.appendChild(el('tr', { class: 'contract-error' }, [cell]));
+      return;
+    }
     const outcome = history[String(candidate.offer.offer_id)] || null;
     const isCreated = Boolean(outcome && outcome.status === 'created');
     const isFailed = Boolean(outcome && outcome.status === 'failed');
@@ -352,7 +368,6 @@ async function loadValidation(runId) {
     // région(id) » dans la cellule produit ; les selects de la ligne sont désactivés —
     // aucune surcharge par cible depuis la page (le serveur la refuse aussi :
     // validation_io « candidat multi-cibles (R45) »), le remède est un re-match.
-    const targets = candidate.targets || [];
     const multi = targets.length > 1;
     const productCell = el('td', {}, [
       el('div', { class: 'title', text: `${candidate.aks_product_id} — ${candidate.aks_name}` }),
@@ -365,10 +380,9 @@ async function loadValidation(runId) {
       });
       box.appendChild(el('div', { class: 'override-tag', text: `${targets.length} cibles (R45)` }));
       for (const target of targets) {
-        const region = targetRegion(target);
         box.appendChild(el('div', {
           class: 'target',
-          text: `${target.platform} · ${target.aks_product_id} · ${region.label}(${region.id})`,
+          text: `${target.platform} · ${target.aks_product_id} · ${target.region_label}(${target.region_id})`,
         }));
       }
       productCell.appendChild(box);
@@ -426,28 +440,105 @@ async function loadValidation(runId) {
   DIRTY = false; // le tableau vient d'être rendu depuis l'état serveur
 }
 
-// Une cible (candidates.json) porte region/edition imbriqués ({label, id}) ; le
-// gabarit de validation les aplatit (region_id) — on accepte les deux formes.
-function targetRegion(target) {
-  return target.region || { label: target.region_label, id: target.region_id };
+// ---------------------------------------------------------------- candidate contract
+// mirror of src/candidate_contract.py — verified against
+// tests/fixtures/candidate_contract_examples.json (tests/js/candidate_contract_check.js,
+// node, en CI). Port LITTÉRAL du Python (Lot 2, 2026-09-15) : mêmes formes acceptées
+// (cible imbriquée {region: {label, id}} ou aplatie region_id ; targets absent / null /
+// vide / à une entrée → la cible PRIMAIRE), mêmes refus (une cible sans id ou qui n'est
+// pas un objet, un targets[0] qui ne reflète pas la primaire → throw, jamais « null »
+// tamponné dans une empreinte). Toute modification se fait D'ABORD dans le module
+// Python et la fixture, puis ici. Les marqueurs begin/end délimitent le bloc chargé
+// par le vérificateur node — ne pas les déplacer.
+// candidate-contract:begin
+function contractError(message) {
+  return new Error(message);
 }
 
-function targetEdition(target) {
-  return target.edition || { label: target.edition_label, id: target.edition_id };
+function strOrNull(value) {
+  return value === null || value === undefined ? null : String(value);
 }
 
-// Miroir exact de validation.candidate_fingerprint (R45, 2026-09-12) : identité
-// primaire, puis « |+ » et « pid:rid:eid » de chaque cible SUPPLÉMENTAIRE (targets[0]
-// reflète la primaire) jointes par « , ». Une cible = formule historique inchangée.
+function orNull(value) {
+  return value === undefined ? null : value;
+}
+
+// (label, id) de region / edition : le dict imbriqué {label, id} gagne, sinon les
+// clés aplaties <kind>_label / <kind>_id.
+function nestedOrFlat(target, kind) {
+  const nested = target[kind];
+  if (nested !== null && typeof nested === 'object' && !Array.isArray(nested)) {
+    return [orNull(nested.label), orNull(nested.id)];
+  }
+  return [orNull(target[`${kind}_label`]), orNull(target[`${kind}_id`])];
+}
+
+function flattenTarget(target) {
+  if (target === null || typeof target !== 'object' || Array.isArray(target)) {
+    throw contractError(`malformed target entry (R45): ${JSON.stringify(target)}`);
+  }
+  const productId = orNull(target.aks_product_id);
+  const [regionLabel, regionId] = nestedOrFlat(target, 'region');
+  const [editionLabel, editionId] = nestedOrFlat(target, 'edition');
+  if (productId === null || regionId === null || editionId === null) {
+    throw contractError(`malformed target entry (R45): ${JSON.stringify(target)}`);
+  }
+  return {
+    platform: orNull(target.platform),
+    aks_product_id: String(productId),
+    aks_url: orNull(target.aks_url),
+    aks_name: orNull(target.aks_name),
+    region_label: regionLabel,
+    region_id: String(regionId),
+    edition_label: editionLabel,
+    edition_id: String(editionId),
+  };
+}
+
+function targetIds(target) {
+  const flat = flattenTarget(target);
+  return [flat.aks_product_id, flat.region_id, flat.edition_id];
+}
+
+function primaryIds(candidate) {
+  return [String(candidate.aks_product_id), String(candidate.region.id), String(candidate.edition.id)];
+}
+
+function primaryTarget(candidate) {
+  const region = candidate.region !== null && typeof candidate.region === 'object' ? candidate.region : {};
+  const edition = candidate.edition !== null && typeof candidate.edition === 'object' ? candidate.edition : {};
+  return {
+    platform: orNull(candidate.platform),
+    aks_product_id: strOrNull(candidate.aks_product_id),
+    aks_url: orNull(candidate.aks_url),
+    aks_name: orNull(candidate.aks_name),
+    region_label: orNull(region.label),
+    region_id: strOrNull(region.id),
+    edition_label: orNull(edition.label),
+    edition_id: strOrNull(edition.id),
+  };
+}
+
+function normalizeTargets(candidate) {
+  const raw = candidate.targets;
+  if (!Array.isArray(raw) || raw.length <= 1) return [primaryTarget(candidate)];
+  return raw.map(flattenTarget);
+}
+
 function fp(candidate) {
   const primary = `${candidate.offer.offer_id}|${candidate.aks_product_id}|${candidate.region.id}|${candidate.edition.id}`;
-  const targets = candidate.targets || [];
-  if (targets.length <= 1) return primary;
-  const extra = targets.slice(1)
-    .map((t) => `${t.aks_product_id}:${targetRegion(t).id}:${targetEdition(t).id}`)
-    .join(',');
+  const raw = candidate.targets;
+  if (!Array.isArray(raw) || raw.length <= 1) return primary;
+  if (targetIds(raw[0]).join(':') !== primaryIds(candidate).join(':')) {
+    throw contractError(
+      'targets[0] does not mirror the primary aks_product_id/region/edition (R45) — '
+      + `re-run the match: ${candidate.offer.offer_id}`,
+    );
+  }
+  const extra = raw.slice(1).map((t) => targetIds(t).join(':')).join(',');
   return `${primary}|+${extra}`;
 }
+// candidate-contract:end
 
 function select(kind, options, currentKey, enabled, currentLabel) {
   const node = el('select', { class: kind, disabled: !enabled });
