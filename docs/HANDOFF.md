@@ -368,6 +368,11 @@ Ces décisions sont dans `AGENTS.md` § « Reviewed decisions ». Rappel :
   commit / push via la clé de déploiement SSH) et le clone live `/home/debian/executor`
   (`git pull` seulement, celui que les services exécutent) — ne jamais `cd` dans le clone
   live avant une écriture relative ou une commande git.
+- **Ancien VPS (`51.38.37.254`, vps-9ee9f9cf) tenu à jour** (Romain 2026-09-15) : à chaque
+  déploiement du VPS courant, le clone `/home/debian/executor` de l'ancien VPS est aussi
+  ramené au même commit (SSH `debian` + clé de déploiement, `git pull --ff-only origin main`,
+  `sudo -n systemctl restart aks-admin`) et la suite de tests y est rejouée (Python 3.11).
+  Sa session AKS reste expirée : transfert de cookies dans SA console avant tout run.
 - **Un seul onglet Chrome + verrou `state/browser.lock`** (flock machine-wide, non-bloquant,
   fail-closed) : pas de vrai parallèle browser. Swap marchand ET data-entry se disputent ce
   verrou → séquentiel.
