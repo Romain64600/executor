@@ -15,6 +15,11 @@ from the refreshed feed, 10-consecutive-failure breaker, NotLoggedInError = STOP
 SIGTERM (console "Arrêter") stops cooperatively — the current 05_submit child is
 signalled (it stops at an offer boundary, never mid-Create) and the batch halts
 BETWEEN merchants. Never fire-and-forget: run supervised by the admin manager.
+
+[R45] The requested console mode (``--consoles`` / ``--no-consoles``) must agree with
+the preview it submits (``consoles_mode_refusal``: the recap's ``consoles`` stamp, and
+under ``--no-consoles`` no console / multi-target candidate) — else exit 2 before
+anything is prepared (audit 2026-09-15).
 """
 from __future__ import annotations
 
@@ -29,9 +34,15 @@ sys.path.insert(0, str(ROOT))
 from src.admin.runs import sha256_file  # noqa: E402
 from src.admin.validation_io import apply_overrides_and_validate  # noqa: E402
 from src.child_runner import CooperativeChildRunner  # noqa: E402
+from src.console_keys import CONSOLE_FAMILIES  # noqa: E402
 from src.data_entry_auto import SubmitOutcome, run_by_urls_submit  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
 from src.validation import candidate_fingerprint  # noqa: E402
+
+# [R45] the platforms a target may carry ONLY when the run was matched with the console
+# branch (XBOX_ONE / XBOX_SERIES / XBOX_PC / PS4 / PS5 / SWITCH / SWITCH2 — the shared
+# vocabulary of src/console_keys.py, never a local copy).
+CONSOLE_PLATFORMS = frozenset(CONSOLE_FAMILIES)
 
 # Cooperative SIGTERM: forward to the current 05_submit child (it stops at an offer
 # boundary — never mid-Create), then the batch halts between merchants; a child that
@@ -130,6 +141,59 @@ def _make_submit_merchant(available: str, logger: RunLogger):
     return submit_merchant
 
 
+def _mode_word(consoles: bool) -> str:
+    return "--consoles" if consoles else "--no-consoles"
+
+
+def consoles_mode_refusal(from_recap: dict, consoles: bool) -> tuple[str, list[dict]] | None:
+    """[R45] Audit 2026-09-15 (finding 2): the submit must run in the SAME console mode
+    the preview was matched with — checked HERE too, not only by the admin manager's
+    ``consoles_mismatch`` guard, because the direct CLI launch has no manager in front
+    of it. Fail-closed, BEFORE any validation triple is prepared. Returns
+    ``(reason, offenders)`` when the batch must be refused, else ``None``.
+
+    1. The preview recap's ``consoles`` stamp (a bool written by scripts/11; absent on
+       older previews) must agree with the requested mode — either direction refuses.
+    2. Under ``--no-consoles`` (defence in depth for un-stamped previews): refuse any
+       candidate whose targets (or primary ``platform``) carry a console platform, or
+       that carries more than one target — a PC-only batch never writes a console page
+       and never a multi-target candidate.
+    """
+    stamped = from_recap.get("consoles")
+    if isinstance(stamped, bool) and stamped != bool(consoles):
+        return (f"consoles_mismatch: mode consoles de l'aperçu ({str(stamped).lower()} = "
+                f"{_mode_word(stamped)}) ≠ mode demandé ({str(bool(consoles)).lower()} = "
+                f"{_mode_word(bool(consoles))}) — relancer l'aperçu ou le submit avec le "
+                "même mode", [])
+    if consoles:
+        return None
+    offenders: list[dict] = []
+    for game in from_recap.get("games") or []:
+        for per in game.get("merchants") or []:
+            for c in per.get("candidates") or []:
+                if not isinstance(c, dict):
+                    continue
+                targets = [t for t in (c.get("targets") or []) if isinstance(t, dict)]
+                plats = {str(t.get("platform") or "") for t in targets}
+                if c.get("platform"):
+                    plats.add(str(c["platform"]))
+                hit = sorted(p for p in plats if p in CONSOLE_PLATFORMS)
+                if hit or len(targets) > 1:
+                    offer = c.get("offer") or {}
+                    offenders.append({"merchant": per.get("merchant"), "store_id": per.get("store_id"),
+                                      "offer_id": offer.get("offer_id"), "name": offer.get("name"),
+                                      "platforms": hit, "targets": len(targets)})
+    if not offenders:
+        return None
+    shown = "; ".join(
+        f"[{o['merchant']}] {o['name'] or o['offer_id']} ({', '.join(o['platforms']) or 'PC'}"
+        f", {o['targets']} cible(s))" for o in offenders[:5])
+    more = f" …(+{len(offenders) - 5})" if len(offenders) > 5 else ""
+    return (f"consoles_mismatch: --no-consoles demandé mais l'aperçu porte {len(offenders)} "
+            f"candidat(s) console / multi-cibles : {shown}{more} — relancer l'aperçu ou le "
+            "submit avec le même mode", offenders)
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description="Submit a by-urls dry-run's candidates (safe).")
     ap.add_argument("--from-run", required=True, help="The *-by-urls run whose recap to submit.")
@@ -142,15 +206,19 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--available", default="all", choices=["all", "pending"])
     ap.add_argument("--mode", default="safe", choices=["safe"])  # R24: ADD path is safe only
     # [R45] Romain 2026-09-15: the admin launcher passes the SAME --consoles / --no-consoles
-    # it gave the preview (scripts/11). Accepted for symmetry and stamped in the log /
-    # summary only — it is passed to NOTHING downstream: the preview's candidates carry
-    # their ``targets`` (one per platform page) and 05_submit reads them from approved.json;
-    # a multi-target candidate travels WHOLE (grouped by store, never split per target).
+    # it gave the preview (scripts/11). It is passed to NOTHING downstream: the preview's
+    # candidates carry their ``targets`` (one per platform page) and 05_submit reads them
+    # from approved.json; a multi-target candidate travels WHOLE (grouped by store, never
+    # split per target). Audit 2026-09-15 (finding 2): the flag is CHECKED against the
+    # preview (``consoles_mode_refusal``) — a mismatch refuses the batch before anything
+    # is prepared (exit 2), it is no longer informational.
     ap.add_argument("--consoles", dest="consoles", action="store_true", default=True,
-                    help="Console candidates are part of the preview (DEFAULT; informational "
-                         "here — 05_submit reads the targets from approved.json).")
+                    help="The preview was matched WITH the console branch (DEFAULT). Must "
+                         "agree with the preview's `consoles` stamp — else exit 2.")
     ap.add_argument("--no-consoles", dest="consoles", action="store_false",
-                    help="The preview was a PC-only run (informational — see --consoles).")
+                    help="The preview was a PC-only run. Must agree with the preview's "
+                         "`consoles` stamp; any console / multi-target candidate refuses "
+                         "the batch (exit 2).")
     return ap
 
 
@@ -189,6 +257,23 @@ def main(argv: list[str] | None = None) -> int:
     logger.log("submit_run_start", from_run=args.from_run, available=available,
                consoles=bool(args.consoles),
                preview_consoles=from_recap.get("consoles"))   # [R45] what the preview ran with
+
+    # [R45] Audit 2026-09-15 (finding 2): the requested console mode must agree with the
+    # preview — refused fail-closed BEFORE any validation triple / sub-run exists, logged
+    # in the run JSONL like the other refusals (submit_run_aborted), recap.json aborted.
+    refusal = consoles_mode_refusal(from_recap, bool(args.consoles))
+    if refusal is not None:
+        reason, offenders = refusal
+        logger.log("submit_run_aborted", reason=reason, consoles=bool(args.consoles),
+                   preview_consoles=from_recap.get("consoles"), offenders=offenders)
+        recap = {"mode": "submit", "available": available, "aborted": reason[:400],
+                 "merchants": [], "totals": {"merchants": 0, "attempted": 0, "created": 0}}
+        flush(recap)
+        print(json.dumps({"run_id": args.run_id, "mode": "submit", "consoles": bool(args.consoles),
+                          "preview_consoles": from_recap.get("consoles"),
+                          "aborted": recap["aborted"]}, ensure_ascii=False))
+        return 2
+
     recap = run_by_urls_submit(
         from_recap, available=available,
         submit_merchant=_make_submit_merchant(available, logger),

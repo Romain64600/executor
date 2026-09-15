@@ -135,8 +135,9 @@ def _console_cand(oid="7"):
 
 class ConsoleFlagTests(unittest.TestCase):
     """[R45] Romain 2026-09-15: the admin launcher passes --consoles / --no-consoles to
-    the submit as well; accepted (default ON), informational only — 05_submit reads the
-    targets from approved.json, no flag is forwarded."""
+    the submit as well; accepted (default ON). 05_submit reads the targets from
+    approved.json, no flag is forwarded — but the flag IS checked against the preview
+    (ConsolesModeRefusalTests / ConsolesModeMainTests, audit 2026-09-15)."""
 
     def test_flags(self):
         p = M.build_parser()
@@ -211,6 +212,223 @@ class MultiTargetWholeTests(unittest.TestCase):
         (_m, _s, cands) = seen[0]
         self.assertEqual(cands, [_console_cand()])
         self.assertEqual(len(cands[0]["targets"]), 2)
+
+
+
+# ---------------------------------------------------------------------------
+# [R45] Audit 2026-09-15 (finding 2): the requested console mode must agree with the
+# preview — checked by scripts/12 itself (the direct CLI launch has no admin manager
+# guard in front of it), fail-closed BEFORE anything is prepared.
+# ---------------------------------------------------------------------------
+
+def _pc_target_cand(oid="3", platform="STEAM"):
+    """A single-target PC candidate as a current preview stores it (targets[0] mirrors
+    the primary fields)."""
+    c = _cand(oid)
+    c["platform"] = platform
+    c["targets"] = [{"platform": platform, "aks_product_id": "205027", "aks_url": "https://aks/pc",
+                     "aks_name": "X", "region": {"label": "GLOBAL", "id": "2"},
+                     "edition": {"label": "Standard", "id": "1"}}]
+    return c
+
+
+def _switch_cand(oid="9"):
+    """A SINGLE-target console candidate (lone declared Switch key, P1)."""
+    return {"offer": {"offer_id": oid, "name": "Legend of Mana (Switch)", "url": f"https://m/{oid}"},
+            "aks_product_id": "77001", "aks_name": "Legend of Mana Switch", "platform": "SWITCH",
+            "region": {"label": "Nintendo GLOBAL", "id": "99"}, "edition": {"label": "Standard", "id": "1"},
+            "targets": [{"platform": "SWITCH", "aks_product_id": "77001", "aks_url": "https://aks/switch",
+                         "aks_name": "Legend of Mana Switch",
+                         "region": {"label": "Nintendo GLOBAL", "id": "99"},
+                         "edition": {"label": "Standard", "id": "1"}}]}
+
+
+def _preview(candidates, stamp=...):
+    """A finished by-urls preview recap with ONE resolved game / ONE merchant group.
+    ``stamp``: the recap's ``consoles`` bool; Ellipsis = key absent (older preview)."""
+    recap = {"available": "all",
+             "games": [{"url": "https://www.allkeyshop.com/blog/buy-x-cd-key-compare-prices/",
+                        "resolved": True, "aks_product_id": "205027", "aks_name": "X",
+                        "search": {"truncated": False},
+                        "merchants": [{"merchant": "G2A", "store_id": "38",
+                                       "candidates": list(candidates), "skipped": []}]}],
+             "totals": {"games": 1, "resolved": 1, "candidates": len(candidates)}}
+    if stamp is not ...:
+        recap["consoles"] = stamp
+    return recap
+
+
+class ConsolesModeRefusalTests(unittest.TestCase):
+    """The pure decision (``consoles_mode_refusal``)."""
+
+    def test_stamp_mismatch_both_directions(self):
+        r = M.consoles_mode_refusal(_preview([_cand()], stamp=True), False)
+        self.assertIsNotNone(r)
+        self.assertTrue(r[0].startswith("consoles_mismatch:"), r[0])
+        self.assertIn("mode consoles de l'aperçu (true = --consoles)", r[0])
+        self.assertIn("mode demandé (false = --no-consoles)", r[0])
+        self.assertIn("relancer l'aperçu ou le submit avec le même mode", r[0])
+        r = M.consoles_mode_refusal(_preview([_cand()], stamp=False), True)
+        self.assertIsNotNone(r)
+        self.assertIn("(false = --no-consoles) ≠ mode demandé (true = --consoles)", r[0])
+
+    def test_agreeing_stamp_is_accepted(self):
+        self.assertIsNone(M.consoles_mode_refusal(_preview([_console_cand()], stamp=True), True))
+        self.assertIsNone(M.consoles_mode_refusal(_preview([_cand(), _pc_target_cand()], stamp=False), False))
+
+    def test_no_stamp_no_consoles_refuses_console_or_multi_target_candidates(self):
+        # multi-target (PS4 / PS5) → refused, the offender named with its platforms
+        r = M.consoles_mode_refusal(_preview([_cand(), _console_cand()]), False)
+        self.assertIsNotNone(r)
+        reason, offenders = r
+        self.assertTrue(reason.startswith("consoles_mismatch:"), reason)
+        self.assertIn("--no-consoles demandé", reason)
+        self.assertIn("Hades (PS4 / PS5)", reason)
+        self.assertIn("PS4, PS5", reason)
+        self.assertIn("2 cible(s)", reason)
+        self.assertEqual([o["offer_id"] for o in offenders], ["7"])   # the PC one is not listed
+        self.assertEqual(offenders[0]["platforms"], ["PS4", "PS5"])
+        self.assertEqual(offenders[0]["targets"], 2)
+        # a SINGLE-target console key (lone Switch, P1) → refused too
+        r = M.consoles_mode_refusal(_preview([_switch_cand()]), False)
+        self.assertIsNotNone(r)
+        self.assertEqual(r[1][0]["platforms"], ["SWITCH"])
+        # a 2-target candidate with no console platform at all (defensive) → refused (>1 target)
+        odd = _pc_target_cand("5")
+        odd["targets"] = odd["targets"] + [dict(odd["targets"][0], aks_product_id="205028")]
+        r = M.consoles_mode_refusal(_preview([odd]), False)
+        self.assertIsNotNone(r)
+        self.assertEqual(r[1][0]["platforms"], [])
+        self.assertEqual(r[1][0]["targets"], 2)
+
+    def test_no_stamp_pc_only_proceeds_and_consoles_mode_never_scans(self):
+        self.assertIsNone(M.consoles_mode_refusal(_preview([_cand(), _pc_target_cand()]), False))
+        # the scan only bites under --no-consoles: an un-stamped console preview under
+        # --consoles (the default) proceeds
+        self.assertIsNone(M.consoles_mode_refusal(_preview([_console_cand()]), True))
+
+    def test_non_bool_stamp_is_not_a_stamp(self):
+        # a non-bool value (string / null) is NOT compared — the candidate scan decides
+        rec = _preview([_cand()], stamp="true")
+        self.assertIsNone(M.consoles_mode_refusal(rec, False))
+        rec = _preview([_console_cand()], stamp=None)
+        self.assertIsNotNone(M.consoles_mode_refusal(rec, False))
+
+
+class ConsolesModeMainTests(unittest.TestCase):
+    """main(): a refusal exits 2 with NOTHING prepared (no sub-run, no triple, the
+    orchestrator never called), recap.json aborted, the decision in the run JSONL."""
+
+    def _launch(self, recap, flags):
+        import json
+        calls = []
+
+        def fake_run(from_recap, **k):
+            calls.append(from_recap)
+            return {"totals": {"created": 0, "attempted": 0, "merchants": 0}, "aborted": None}
+
+        orig_run, orig_root, orig_install = M.run_by_urls_submit, M.ROOT, M._RUNNER.install
+        M.run_by_urls_submit = fake_run
+        M._RUNNER.install = lambda: None
+        self.addCleanup(lambda: setattr(M, "run_by_urls_submit", orig_run))
+        self.addCleanup(lambda: setattr(M, "ROOT", orig_root))
+        self.addCleanup(lambda: setattr(M._RUNNER, "install", orig_install))
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            M.ROOT = root
+            copy = root / "runs" / "S" / "source_recap.json"
+            copy.parent.mkdir(parents=True)
+            copy.write_text(json.dumps(recap, ensure_ascii=False), encoding="utf-8")
+            rc = M.main(["--from-run", "P", "--from-recap-file", str(copy), "--run-id", "S"] + flags)
+            out = root / "runs" / "S" / "recap.json"
+            out_recap = json.loads(out.read_text(encoding="utf-8")) if out.exists() else None
+            events = [json.loads(line) for line in
+                      (root / "logs" / "S.jsonl").read_text(encoding="utf-8").splitlines()]
+            prepared = sorted(str(p.relative_to(root)) for p in root.rglob("*")
+                              if p.name in ("candidates.json", "approved.json", "offers.json",
+                                            "match_meta.json") or p.name.startswith("S-s"))
+        return rc, calls, out_recap, events, prepared
+
+    def _assert_refused(self, rc, calls, out_recap, events, prepared):
+        self.assertEqual(rc, 2)
+        self.assertEqual(calls, [])                       # orchestrator never entered
+        self.assertEqual(prepared, [])                    # no sub-run, no triple
+        self.assertTrue(out_recap["aborted"].startswith("consoles_mismatch"), out_recap["aborted"])
+        self.assertEqual(out_recap["mode"], "submit")
+        self.assertEqual(out_recap["merchants"], [])
+        self.assertEqual(out_recap["totals"], {"merchants": 0, "attempted": 0, "created": 0})
+        aborted = [e for e in events if e["event"] == "submit_run_aborted"]
+        self.assertEqual(len(aborted), 1)
+        self.assertTrue(aborted[0]["reason"].startswith("consoles_mismatch"))
+        self.assertIn("offenders", aborted[0])
+        return aborted[0]
+
+    def test_stamp_true_but_no_consoles_requested_is_refused(self):
+        res = self._launch(_preview([_cand()], stamp=True), ["--no-consoles"])
+        ev = self._assert_refused(*res)
+        self.assertIs(ev["consoles"], False)
+        self.assertIs(ev["preview_consoles"], True)
+        self.assertEqual(ev["offenders"], [])
+
+    def test_stamp_false_but_consoles_requested_is_refused(self):
+        for flags in ([], ["--consoles"]):                # default AND explicit
+            res = self._launch(_preview([_cand()], stamp=False), flags)
+            ev = self._assert_refused(*res)
+            self.assertIs(ev["consoles"], True)
+            self.assertIs(ev["preview_consoles"], False)
+
+    def test_agreeing_stamp_proceeds(self):
+        rc, calls, _out, events, _p = self._launch(_preview([_console_cand()], stamp=True), ["--consoles"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual([e["event"] for e in events if e["event"] == "submit_run_aborted"], [])
+        rc, calls, _out, events, _p = self._launch(_preview([_cand(), _pc_target_cand()], stamp=False),
+                                                   ["--no-consoles"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(calls), 1)
+
+    def test_no_stamp_no_consoles_console_or_multi_target_candidate_is_refused(self):
+        res = self._launch(_preview([_cand(), _console_cand()]), ["--no-consoles"])
+        ev = self._assert_refused(*res)
+        self.assertIsNone(ev["preview_consoles"])
+        self.assertEqual([o["offer_id"] for o in ev["offenders"]], ["7"])
+        self.assertIn("Hades (PS4 / PS5)", res[2]["aborted"])
+        res = self._launch(_preview([_switch_cand()]), ["--no-consoles"])
+        ev = self._assert_refused(*res)
+        self.assertEqual(ev["offenders"][0]["platforms"], ["SWITCH"])
+
+    def test_no_stamp_pc_only_candidates_proceed_under_no_consoles(self):
+        rc, calls, _out, _ev, prepared = self._launch(_preview([_cand(), _pc_target_cand()]), ["--no-consoles"])
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(calls), 1)
+
+
+class UrlsPreviewTargetsTests(unittest.TestCase):
+    """[R45] Audit 2026-09-15 (finding 1): the by-urls web preview renders EVERY target
+    of a candidate (class ``target-row``) and the Saisir confirmation lists them with the
+    total (« N offres sur T pages »). A static-text check (no JS engine on the box); the
+    admin app serves these files verbatim (``/games`` → urls.html, ``/urls.js``)."""
+
+    STATIC = Path(__file__).resolve().parents[1] / "src" / "admin" / "static"
+
+    def test_urls_js_renders_every_target(self):
+        js = (self.STATIC / "urls.js").read_text(encoding="utf-8")
+        self.assertIn('"off ok target-row"', js)            # preview rows, one per target
+        self.assertIn('"logline ok target-row"', js)        # confirm-modal lines, one per target
+        self.assertIn("function candTargets", js)
+        self.assertIn("function fmtTarget", js)
+        self.assertIn('" · page "', js)                     # « <platform> · page <id> (<name>) · … »
+        self.assertIn('"region_label"', js)                 # flat shape tolerated
+        self.assertIn('"edition_label"', js)
+        self.assertIn("#confirm-targets", js)
+        self.assertIn("#confirm-t", js)
+        self.assertIn('"page(s) cible(s) à écrire"', js)   # the preview KPI
+
+    def test_urls_html_confirm_modal_carries_the_target_list(self):
+        html = (self.STATIC / "urls.html").read_text(encoding="utf-8")
+        self.assertIn('id="confirm-targets"', html)
+        self.assertIn('id="confirm-t"', html)
+        self.assertLess(html.index('id="confirm-targets"'), html.index('id="confirm-go"'))  # before the GO field
 
 
 if __name__ == "__main__":

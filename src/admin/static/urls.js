@@ -47,7 +47,71 @@ let RUNNING = false;         // a by-urls dry-run (aperçu) is active
 let SUBMIT_RUNNING = false;  // a by-urls SUBMIT (Saisir) is active
 let RECAP_SHA = null;        // sha of the dry-run recap shown (binds the Saisir GO, AS1)
 let RECAP_RUN = null;        // the dry-run run id to submit from
+let RECAP_DATA = null;       // the dry-run recap shown (the Saisir summary lists ITS targets)
 let SUBMIT_MERCHANTS = 0;    // distinct merchants with candidates in the shown recap
+
+// ---- targets [R45] ----
+// Every page / region / edition a candidate WILL be written on. A preview candidate
+// carries targets[] = [{platform, aks_product_id, aks_url, aks_name, region:{label,id},
+// edition:{label,id}}] (targets[0] mirrors the primary fields); a cross-gen key has one
+// target per declared platform page and is written on ALL of them (never split).
+// Tolerated: the flat shape {region_label, region_id, edition_label, edition_id} and a
+// missing list (older previews → the primary fields as the sole target). Nothing the
+// submit will write is hidden from the operator (audit 2026-09-15, finding 1).
+function labelId(obj, key, flatLabel, flatId) {
+  const nested = obj ? obj[key] : null;
+  if (nested && typeof nested === "object") {
+    return { label: nested.label || "", id: nested.id != null ? String(nested.id) : "" };
+  }
+  return { label: (obj && obj[flatLabel]) || "", id: (obj && obj[flatId] != null) ? String(obj[flatId]) : "" };
+}
+function normTarget(t) {
+  const o = t || {};
+  return {
+    platform: o.platform || "",
+    aks_product_id: o.aks_product_id != null ? String(o.aks_product_id) : "",
+    aks_url: o.aks_url || "",
+    aks_name: o.aks_name || "",
+    region: labelId(o, "region", "region_label", "region_id"),
+    edition: labelId(o, "edition", "edition_label", "edition_id"),
+  };
+}
+function candTargets(c) {
+  const list = (c && Array.isArray(c.targets)) ? c.targets.filter((t) => t && typeof t === "object") : [];
+  return (list.length ? list : [c || {}]).map(normTarget);
+}
+// "<platform> · page <id> (<aks_name>) · <region_label> (<region_id>) · <edition_label> (<edition_id>)"
+function fmtTarget(t) {
+  return (t.platform || "?") + " · page " + (t.aks_product_id || "?") + (t.aks_name ? " (" + t.aks_name + ")" : "")
+    + " · " + (t.region.label || "?") + " (" + (t.region.id || "?") + ")"
+    + " · " + (t.edition.label || "?") + " (" + (t.edition.id || "?") + ")";
+}
+// One preview line per target (class target-row), with the AKS page URL when known.
+function targetRow(t, i, n) {
+  const txt = fmtTarget(t);
+  return el("div", { class: "off ok target-row" }, [
+    el("span", { class: "off-name", text: "↳ " + txt, title: txt }),
+    el("span", { class: "off-id", text: "cible " + (i + 1) + "/" + n }),
+    el("span", { class: "off-st", text: "à saisir" }),
+    offLink(t.aks_url),
+  ]);
+}
+// Every (candidate → targets) the submit would write, in preview order.
+function collectTargets(rec) {
+  const rows = [];
+  for (const g of ((rec && rec.games) || [])) {
+    for (const per of (g.merchants || [])) {
+      for (const c of (per.candidates || [])) {
+        rows.push({ merchant: per.merchant || "", name: (c.offer || {}).name || "", targets: candTargets(c) });
+      }
+    }
+  }
+  return rows;
+}
+function countTargets(rec) {
+  return collectTargets(rec).reduce((s, r) => s + r.targets.length, 0);
+}
+function plural(n, one, many) { return n + " " + (n > 1 ? many : one); }
 
 // ---- URL input ----
 function parseUrls() {
@@ -220,15 +284,18 @@ function renderRecap(d) {
   // ---- dry-run (aperçu) recap ----
   RECAP_SHA = d.recap_sha256 || null;
   RECAP_RUN = d.run_id || null;
+  RECAP_DATA = rec;
   SUBMIT_MERCHANTS = new Set((rec.games || []).flatMap((g) => (g.merchants || [])
     .filter((m) => (m.candidates || []).length).map((m) => m.store_id))).size;
   const t = rec.totals || {};
+  const nTargets = countTargets(rec);   // [R45] one write per target page
   const pill = $("#recap-status");
   const running = RUNNING;
   pill.textContent = rec.aborted ? ("ARRÊTÉ — " + rec.aborted) : (running ? "EN COURS" : "TERMINÉ");
   pill.className = "pill " + (rec.aborted ? "halted" : (running ? "running" : "done"));
   $("#recap-summary").replaceChildren(
     el("div", { class: "kpi" }, [el("div", { class: "kpi-n", text: String(t.candidates || 0) }), el("div", { class: "kpi-l", text: "offres à saisir" })]),
+    el("div", { class: "kpi" }, [el("div", { class: "kpi-n", text: String(nTargets) }), el("div", { class: "kpi-l", text: "page(s) cible(s) à écrire" })]),
     el("div", { class: "kpi" }, [el("div", { class: "kpi-n", text: (t.resolved || 0) + "/" + (t.games || 0) }), el("div", { class: "kpi-l", text: "jeu(x) résolu(s)" })]),
     el("div", { class: "kpi" }, [el("div", { class: "kpi-n", text: String((rec.merchants || []).length) }), el("div", { class: "kpi-l", text: "marchand(s)" })]),
   );
@@ -262,13 +329,23 @@ function renderRecap(d) {
       if (!cands.length && !skips.length) continue;   // merchant with nothing found — omit
       kids.push(el("div", { class: "m-title", text: per.merchant + " — " + cands.length + " à saisir" + (skips.length ? " · " + skips.length + " ignorée(s)" : "") }));
       for (const c of cands) {
-        const o = c.offer || {}, reg = c.region || {}, ed = c.edition || {};
+        const o = c.offer || {};
+        const reg = labelId(c, "region", "region_label", "region_id"), ed = labelId(c, "edition", "edition_label", "edition_id");
+        const targets = candTargets(c);
+        const multi = targets.length > 1;
         kids.push(el("div", { class: "off ok" }, [
           el("span", { class: "off-name", text: o.name || "", title: o.name || "" }),
-          el("span", { class: "off-id", text: reg.label ? reg.label + "(" + reg.id + ") · " + (ed.label || "") + "(" + (ed.id || "") + ")" : "" }),
-          el("span", { class: "off-st", text: "à saisir" }),
+          el("span", { class: "off-id", text: (reg.label ? reg.label + "(" + reg.id + ") · " + ed.label + "(" + ed.id + ")" : "") + (multi ? " · " + targets.length + " cibles" : "") }),
+          el("span", { class: "off-st", text: multi ? "à saisir ×" + targets.length : "à saisir" }),
           offLink(o.url),
         ]));
+        // [R45] every target page of a multi-target candidate (a cross-gen key is
+        // written on ALL its declared pages, never split) — and a lone target that is
+        // NOT the game's own page. A plain single-target candidate on the game's page
+        // keeps the one line above (its region/edition IS the target's).
+        const offPage = targets.length === 1 && targets[0].aks_product_id
+          && targets[0].aks_product_id !== String(g.aks_product_id);
+        if (multi || offPage) targets.forEach((tg, i) => kids.push(targetRow(tg, i, targets.length)));
       }
       // Skipped search results — shown WITH their source URL + reason so the operator
       // can eyeball what was ignored without asking (Romain 2026-08-25).
@@ -337,9 +414,21 @@ function renderSubmitRecap(d, rec) {
 
 // ---- Saisir (write) ----
 $("#saisir").addEventListener("click", () => {
-  if (!RECAP_RUN || !RECAP_SHA) return;
+  if (!RECAP_RUN || !RECAP_SHA || !RECAP_DATA) return;
   $("#confirm-n").textContent = $("#saisir-n").textContent;
   $("#confirm-m").textContent = String(SUBMIT_MERCHANTS || "?");
+  // [R45] the GO summary lists EVERY target the submit will write — per candidate, one
+  // line per page / region / edition — and states the total (« 3 offres sur 5 pages »).
+  const rows = collectTargets(RECAP_DATA);
+  const nOffers = Number($("#saisir-n").textContent) || rows.length;
+  const nTargets = rows.reduce((s, r) => s + r.targets.length, 0);
+  $("#confirm-t").textContent = plural(nOffers, "offre", "offres") + " sur " + plural(nTargets, "page", "pages");
+  const box = $("#confirm-targets");
+  box.replaceChildren();
+  for (const r of rows) {
+    box.append(el("div", { class: "logline", text: "[" + r.merchant + "] " + r.name + (r.targets.length > 1 ? " — " + r.targets.length + " cibles" : "") }));
+    for (const tg of r.targets) box.append(el("div", { class: "logline ok target-row", text: "   ↳ " + fmtTarget(tg) }));
+  }
   $("#confirm-go").value = "";
   $("#confirm-submit").disabled = true;
   $("#confirm-msg").textContent = "";
