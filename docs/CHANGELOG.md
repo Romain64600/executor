@@ -3,6 +3,46 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-15 — Lot 2 : contrat des candidats et des cibles centralisé (`src/candidate_contract.py`, go Romain)
+
+- **Une seule définition de l'identité d'un candidat.** L'empreinte de validation
+  (`offer_id|aks_product_id|region_id|edition_id`, étendue `|+pid:rid:eid,…` en R45) et la
+  normalisation des `targets` étaient écrites quatre fois — `matcher.Candidate.fingerprint` /
+  `Target.to_dict`, `validation.candidate_fingerprint` / `candidate_targets` / `_target_ids`,
+  `submitter.normalize_targets` / `_primary_target`, `app.js fp()` / `targetRegion()`. Elles
+  vivent désormais dans **`src/candidate_contract.py`** (stdlib seule, n'importe aucun étage :
+  `normalize_targets`, `fingerprint`, `primary_target`, `template_targets`, `to_nested_target`,
+  `is_multi_target`, `flatten_target`, `MAX_TARGETS_PER_OFFER`, `CandidateContractError`).
+  Les étages l'importent : le matcher (`Candidate.fingerprint` = `fingerprint(to_dict())`,
+  `Target.to_dict` = `to_nested_target(asdict)`), la validation (`candidate_fingerprint` /
+  `candidate_targets` = alias fins, refus re-levés en `ValidationError` — appelants inchangés :
+  `04_validate`, `10`, `12`, `data_entry_auto`, console admin), le submitter
+  (`normalize_targets` = alias fin, `MAX_TARGETS_PER_OFFER` importé), `validation_io`
+  (`_mirror_primary_target` / `_is_multi_target`). **`app.js`** porte un **port littéral**
+  du Python entre les marqueurs `// candidate-contract:begin` / `:end` (mêmes refus : cible
+  sans id ou `targets[0]` ≠ primaire → throw, la ligne s'affiche verrouillée « candidat
+  malformé » au lieu d'une empreinte `null`).
+- **Exemples partagés** : `tests/fixtures/candidate_contract_examples.json` (25 cas — PC /
+  logiciel / console 1-2-3 cibles, fichier pré-R45 sans `targets`, `targets` `[]` / `null` /
+  `[{}]` / `["x"]`, forme plate du plan, ids numériques, id null / manquant → refus,
+  `targets[0]` non miroir → refus, libellés verbatim avec / sans BOM, surcharge opérateur).
+  `tests/test_candidate_contract.py` (17 tests) les rejoue sur le module, sur les alias
+  validation / submitter, sur `validation_io` et sur des `Candidate` construits à 1 / 2 / 3
+  cibles ; `tests/js/candidate_contract_check.js` les rejoue sur le bloc `app.js` sous node
+  (nouvelle étape CI gardée par `hashFiles`, le VPS n'a pas node).
+- **Preuve avant / après** (`scratchpad/lot2_fingerprint_diff.py`, lecture seule de
+  `/home/debian/executor/runs/`) : **368 `candidates.json`, 1 941 candidats** (1 693 sans
+  `targets`, 128 à une cible, 84 à deux, 36 à trois) — empreinte ancienne (`validation.py`
+  de 5412136) = nouvelle = alias = clé `fingerprint` stockée par l'ancien matcher, cibles
+  gabarit et cibles plan identiques : **0 différence**, 0 refus de part et d'autre.
+- Comportement : identique octet pour octet sur tout le corpus. Seule nuance : une entrée
+  `targets[]` malformée d'un candidat multi-cibles lève désormais aussi côté submitter
+  (avant : conservée avec des ids `None` pour être bloquée à la résolution catalogue) — un
+  tel candidat était déjà refusé par la validation avant d'atteindre `_prepare`
+  (`verify_approved_against_source` re-dérive chaque empreinte), le chemin est inatteignable
+  en pratique et reste fail-closed.
+```
+
 ## 2026-09-15 — saisie par page : consoles par défaut (`scripts/11` / `scripts/12`, Romain)
 
 - **Saisie par URLs de pages et consoles `[R45]`** — Romain : « les consoles sont prises en
@@ -25,6 +65,66 @@ Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
   `tests/test_data_entry_by_urls.py` (69), `tests/test_data_entry_by_urls_submit.py` (7).
   **Non exercé sans navigateur/réseau** : la lecture réelle des pages console AKS par
   `scripts/11` (barre d'onglets live), le lancement admin avec le flag.
+
+- **Audit 0eb1e8e → 5412136 : aperçu web — chaque cible affichée `[R45]`** (finding 1, high).
+  L'aperçu « Saisie par jeux » (`urls.js`) n'affichait que la région/édition **primaire**
+  d'un candidat : une clé PS4 + PS5 (2 `targets`) montrait une seule ligne, et l'opérateur
+  confirmait le GO sans voir toutes les pages qui allaient être écrites. Désormais : (1) un
+  KPI « page(s) cible(s) à écrire » = somme des cibles ; (2) chaque candidat multi-cibles
+  affiche « à saisir ×N » puis **une ligne `target-row` par cible** — « `<plateforme> · page
+  <aks_product_id> (<aks_name>) · <région> (<id>) · <édition> (<id>)` », avec l'URL de la
+  page AKS cible cliquable ; une cible unique qui n'est **pas** la page du jeu est affichée
+  de la même façon ; un candidat mono-cible sur la page du jeu garde sa ligne d'aujourd'hui
+  (rien de caché : sa région/édition est celle de la cible) ; (3) le **modal « Saisir »** liste
+  **toutes** les cibles de chaque candidat (`#confirm-targets`, une ligne « ↳ » par écriture)
+  et annonce le total « **N offres sur T pages** » (`#confirm-t`) avant le champ GO. Lecture
+  tolérante : `targets[]` imbriqués (`region:{label,id}`), forme plate (`region_label` /
+  `region_id` / `edition_label` / `edition_id`) et **liste absente** (anciens aperçus → la
+  cible primaire seule). Aucune dépendance, pas de style inline (CSP `default-src 'self'`) :
+  les lignes réutilisent `.off` / `.logline` / `.log`.
+  **Récapitulatif aligné sur le lot réellement soumis** (Romain, même jour : « il reste à
+  aligner le récapitulatif sur le lot réellement soumis ») — les KPI « offres à saisir (lot) »
+  et « page(s) cible(s) à écrire », le bouton « Saisir les N offre(s) » et le modal GO comptent
+  le lot **tel que `scripts/12` le construit** (`urls.js submitBatch`, miroir de
+  `_candidates_by_store`) : jeux non résolus / en erreur ignorés, groupes marchands sans
+  `store_id` ignorés, et **par store une occurrence par empreinte complète** (`fingerprint` du
+  candidat, sinon la formule du contrat `offer_id|aks_product_id|region_id|edition_id`
+  + `|+pid:rid:eid,…` sur les cibles supplémentaires — `candFingerprint`). Cas Romain : deux
+  URLs collées (Hades PS4 + Hades PS5), une seule offre G2A « Hades (PS4 / PS5) » trouvée
+  par les deux recherches, deux cibles à chaque fois → avant « 2 offres sur 4 pages », le
+  moteur n'en gardait qu'une → désormais « **1 offre sur 2 pages** ». Le modal liste le lot par
+  marchand (store), chaque offre **une seule fois** (le doublon sous l'autre jeu est omis) ;
+  le KPI signale « N trouvée(s), X doublon(s) entre jeux » quand ils diffèrent ; le tableau
+  par jeu continue d'afficher l'offre sous chaque page cherchée. La clé du moteur est
+  vérifiée : `_candidates_by_store` groupe par `store_id` et son `_seen` d'empreintes vit
+  **par groupe store** — donc déjà `store_id + empreinte complète`, aucun changement de
+  `scripts/12`. Test : `BatchMirrorTests` (port Python de la règle JS comparé au moteur sur
+  la fixture Hades PS4/PS5 → 1 offre / 2 pages, sur une fixture mixte, et la formule de
+  repli égale à `candidate_fingerprint`).
+- **Audit 0eb1e8e → 5412136 : scripts/12 — cohérence du mode consoles avec l'aperçu `[R45]`**
+  (finding 2, medium). `scripts/12` acceptait `--consoles` / `--no-consoles` **sans le
+  comparer à l'aperçu** : lancé en CLI direct (sans le garde `consoles_mismatch` du manager
+  admin), un candidat à deux cibles console partait dans `05_submit` même sous
+  `--no-consoles`. Désormais `consoles_mode_refusal(from_recap, consoles)` tranche
+  **avant toute préparation** (aucun sous-run, aucun triple, `run_by_urls_submit` jamais
+  appelé) : (1) le **stamp `consoles`** du recap de l'aperçu (bool écrit par `scripts/11` ;
+  absent sur les anciens aperçus) doit être égal au mode demandé, **dans les deux sens** —
+  sinon exit 2 : « `consoles_mismatch: mode consoles de l'aperçu (true = --consoles) ≠ mode
+  demandé (false = --no-consoles) — relancer l'aperçu ou le submit avec le même mode` » ;
+  (2) **défense en profondeur** sous `--no-consoles` (aperçus sans stamp) : tout candidat dont
+  les `targets` (ou le `platform` primaire) portent une plateforme console (`XBOX_ONE` /
+  `XBOX_SERIES` / `XBOX_PC` / `PS4` / `PS5` / `SWITCH` / `SWITCH2` — `CONSOLE_FAMILIES` de
+  `src/console_keys.py`) **ou** plus d'une cible refuse le lot, exit 2, les fautifs listés
+  (`[marchand] nom (PS4, PS5, 2 cible(s))`, 5 max puis « …(+N) »). Le refus est écrit comme
+  les autres : `recap.json` du run submit (`mode: submit`, `aborted: consoles_mismatch: …`,
+  `merchants: []`), événement JSONL `submit_run_aborted` (`reason`, `consoles`,
+  `preview_consoles`, `offenders[]`), ligne JSON sur stdout. Un stamp non-booléen
+  (`"true"`, `null`) n'est **pas** un stamp : seul le scan des candidats décide. Sous
+  `--consoles` (défaut) un aperçu sans stamp n'est pas scanné (les cibles consoles y sont
+  légitimes). Le flag n'est toujours passé à **rien** en aval (05_submit lit les `targets`
+  dans `approved.json`).
+
+---
 
 ## 2026-09-15 — consoles par défaut partout (décision Romain « 1 »)
 
@@ -3743,3 +3843,430 @@ changed for submissions. **Test suite: 44 green (was 28).**
 P2 debt (C4, C5, C6, S2, S3, T5, T6) and the Sprint-2 foundations **G2** (data
 contracts) and **G3** (JSONL run logs) remain open — these are net-new modules
 rather than fixes, and are the recommended next increment.
+
+## Historique déplacé depuis EXECUTOR_RULES (2026-09-15)
+
+Lot 1 « remettre la documentation en cohérence » (Romain, 2026-09-15) : `docs/EXECUTOR_RULES.md` ne garde que les RÈGLES EN VIGUEUR ; les récits datés (audits, « avant ce correctif … », comptages de lots passés, incidents) sont déplacés ici, groupés par identifiant de règle, avec leur date d'origine et la section d'origine. Chaque règle garde un pointeur « historique : CHANGELOG <date> ». Aucun identifiant de règle n'a été retiré d'EXECUTOR_RULES (vérifié par script : ensemble des identifiants entre crochets conservé avant / après, titres de sections et lignes de tableaux inchangés, aucun U+FEFF).
+
+### R28
+
+- **2026-07-16 — EXECUTOR_RULES §4.1** (R28) : Eneba "Road to Empress" escape (2026-07-16): "Road to Empress Ⅱ" (U+2161, a single Unicode
+Roman numeral codepoint, not two ASCII `I`s) tokenized to just ROAD/TO/EMPRESS — `tokenize`'s
+regex silently dropped any character outside its class, so the sequel indicator vanished and
+the offer matched the unrelated base game "Road To Empress" (AKS has no page for the sequel —
+404). The same text fed `build_slug_candidates`, so the wrong page was being *probed* in the
+first place, not just wrongly approved after tokenizing. Fix: NFKC-normalize before both —
+standard-library, zero-dependency.
+
+### R01b
+
+- **2026-07-17 — EXECUTOR_RULES §4.2** (R01b / MA3) : Audit 2026-07-17 (MA3): `Anniversary` / `Definitive` were noise-whitelisted with no backstop,
+so "Skyrim Anniversary Edition" entered the base-game page as Standard(1). They became
+dangerous qualifiers of the different-product guard (R01b).
+
+### R43
+
+- **2026-09-11 — EXECUTOR_RULES §4.3** (R43) : Before R43 (until 2026-09-11) "DLC in title" (DLC / Add-On / Downloadable Content) and the
+`SEASON PASS` category were pre-skips, so a DLC that announces itself never reached resolution
+while a DLC that hides it ("Exoplanets Pack") was entered via R18. Measured 2026-09-11 on 12
+MMOGA "(DLC)" titles: 9 resolve, by plain slug guessing once the marker is stripped, to their
+OWN AKS page ("Northgard Svardilfari Clan of the Horse", "Railway Empire Great Britain &
+Ireland", "Ready or Not Home Invasion"…) and all 9 carry the DLC bucket (16); 3 have no page.
+
+- **2026-09-11 — EXECUTOR_RULES §4.3 (a) own-page rule** (R43) : Own-page rule measurement (adversarial review 2026-09-11): 204/205 dry-run DLC candidates
+resolve at tier 1; the one loss, "Destiny 2: Year of Prophecy Ultimate Edition DLC", is a
+fail-safe skip.
+
+### R18
+
+- **2026-09-11 — EXECUTOR_RULES §4.3** (R18) : R18 review (2026-09-11): the review found live base-game pages carrying bucket 16 (Stray
+Blade, Aliens Dark Descent, Dragon Quest III HD-2D Remake — entered DLC(16) on 2026-09-10) and
+no deterministic page-level nature signal (no product-type field; the "#basegame" related
+section and the editions-map order are both inconsistent across sampled DLC / base pages).
+Romain's ruling: "des fois, les titres n'ont pas de marqueur et sont des DLC" — the bucket
+keeps deciding for a markerless title, and those three entries are NOT to be corrected (now
+in AGENTS.md « Reviewed decisions »).
+
+### R45
+
+- **2026-09-11 / 2026-09-12 — EXECUTOR_RULES §4.3** (R45) : The 2026-09-11 study ("on reviendra sur les consoles après modification de l'outil AKS
+feed") was reopened the next day. **Correction of finding (a) (2026-09-12):** the 11/09 probe
+used a WRONG URL grammar (`…-xbox-series-x-…-cd-key-…`). Console product pages DO exist, at
+`buy-<slug>-<kind>-compare-prices/` (Hades: PC 26712, PS5 85105, PS4 85104, Xbox Series
+85103, Xbox One 85102, Switch 47979). Console offers therefore do NOT all live on the PC page
+— only the Xbox family (`300`, and the XBOX/PC Play Anywhere buckets) was ever seen there.
+Findings kept as history: (b) the feed modal's region catalog (867 buckets) has the console
+families: Xbox One `24` / EU `24eu` / US `24us` / UK `226`, Xbox Series `300` / EU `302` /
+US `303` / UK `305`, Xbox+Windows (Play Anywhere) `306` / EU `241` / US `242` / UK `240`,
+PlayStation 4 `88` / EU `88eu` / US `88us` / UK `88uk`, PS5 `88ps5h` (single bucket),
+Nintendo `99` / EU `99eu` / US `99us` / UK `992` — Switch 2 pages use the SAME Nintendo
+family buckets (no separate Switch 2 bucket — 2026-09-14, table in EXECUTOR_RULES §10); (c)
+MMOGA grammar: URL categories `Xbox-Live/Xbox-One-Game-Keys`,
+`Xbox-Live/Xbox-Series-XS-Game-Keys`, `Nintendo/Switch`, `Playstation-Network`, platform in a
+bracket of the title, region tail " - EU" / "[EU]", non-games among the console rows
+(currencies, Xbox Live / eShop cards, subscriptions) that stay skipped; (d) the BLOCKER of
+the pre-modal-v2 tool: one feed row = one offer, consumed by its creation, so a cross-gen key
+could not get its second platform from the feed as it was — exactly what the per-target
+overwrite of the new tool (modal v2, 2026-09-14) addresses.
+
+- **2026-09-12 → 2026-09-15 — EXECUTOR_RULES §4.12** (R45 (§4.12 intro)) : Romain's trigger wording (2026-09-12): the AKS feed tool is being changed to OVERWRITE the
+region (and the edition — "pas nécessaire mais ajoutée") PER TARGET PAGE: a PS5 key is added
+on the PS5 page and also on the PS4 page by overwriting the region to PS4; an Xbox key goes
+on Xbox One, Xbox Series X and — for Xbox Play Anywhere games ONLY — PC (P1 later narrowed
+this to the DECLARED platforms only, 2026-09-14). `--consoles` was an opt-in flag, default
+OFF, from 2026-09-12 to 14; the write of a multi-target candidate was fail-closed until the
+new modal was observed (observed 2026-09-14 with `--inspect`, proven by the canaries of
+2026-09-15). The adversarial review of 2026-09-12 (four lenses) was fixed on 2026-09-14 —
+region read of the console branch, R44 on consoles, identity apostrophes, the R19 stamp,
+RANDOM with a console word, the shared throttle guard, the submit-gate streak, null target
+ids — and Switch 2 became the `SWITCH2` family (CHANGELOG 2026-09-14). Until the per-target
+modal was observed the console branch was READ-ONLY (`scripts/10_data_entry_auto.py` refused
+`--consoles` without `--dry-run`, 2026-09-14); the guard was lifted on Romain's GO of
+2026-09-15 and the branch became the default the same day (decision « 1 »).
+
+- **2026-09-14 — EXECUTOR_RULES §4.12.3** (R45 (SWITCH2)) : Switch 2 (2026-09-14): the "console: Switch 2 has no AKS bucket (R45)" skip was retired —
+Kinguin 12, K4G 12, G2A 1, Driffle 1 rows of the latest batches became enterable on their
+`nintendo-switch-2` page.
+
+- **2026-09-14 — EXECUTOR_RULES §4.12.4** (R45 (review fixes 2026-09-14 — counts)) : Review fixes of 2026-09-14 (measurements behind them): 150 Kinguin CA / AU console rows used
+to pass `precheck_skip` and read an implicit GLOBAL; Gamivo 254/264 and Kinguin 37 real rows
+read GLOBAL in the console branch before the grammar region slot was authoritative; two
+independent throttle guards doubled the budget before `AksThrottled`; the AKS Switch page
+"DreamWorks Spirit Luckys Big Adventure" vs the PC page "Lucky's" was a real false skip on
+the MMOGA dry-run (apostrophes now folded); the bucket text "Xbox Game Code US" made R44 dead
+on consoles ("Air Force United States Pacific Xbox One" would have been entered US-locked).
+
+- **2026-09-15 — EXECUTOR_RULES §4.12.4 (6)** (R45 (item 6 — default ON)) : Decision « 1 » (2026-09-15) followed the two modal-v2 canaries and the MMOGA console dry-run
+(run `20260915-081607-dryrun-consoles`, 663 offers → 174 console candidates: 89
+single-target, 59 two-target, 26 three-target; 489 skips).
+
+- **2026-09-14 / 2026-09-15 — EXECUTOR_RULES §4.12.4 (6)** (R45 (item 6 — history / Gamivo count)) : URL console scan in every mode (2026-09-12): on the latest Gamivo batch 569 rows previously
+filed "no AKS product page found" (241), "forbidden region: COLOMBIA" (206), "skip category:
+BUNDLE" (26), "forbidden region: ROW" (26) / CANADA (17), "extra words: ['KINGDOM']" (11) now
+all skip `console` under `--no-consoles` (feed_status: category consoles).
+
+- **2026-09-12 — EXECUTOR_RULES §4.12** (R45 (the Riders Republic leak)) : The leak (found 2026-09-12): the console guard (`precheck_skip`) read the TITLE only; Gamivo
+(569 of its 572 console rows) and Eneba (URL segment) carry the platform in the URL alone.
+Run `20260911-162100-auto-gamivo-s51-p28`: "Riders Republic Premium Edition United States"
+(`gamivo.com/product/riders-republic-xbox-xbox-one-series-us-premium`) matched PUBLISHER /
+GLOBAL(1) implicit / Premium(34) through the token-less-title → Direct Publisher path and was
+created (`created: 1`, post-save "gone from feed") — an Xbox One/Series, US-locked key is
+live on the PC page of Riders Republic (AKS product 50562) as a Direct-Publisher GLOBAL
+Premium offer, to be corrected by hand on AKS (EXECUTOR_RULES §12, HANDOFF). Fix:
+`console_marker_in_url` in `precheck_skip`, active in every mode.
+
+- **2026-09-12 / 2026-09-15 — EXECUTOR_RULES §4.12** (R45 (volumes)) : Volumes (latest batch per merchant, 2026-09-12): MMOGA 388 console rows / 723 (One+Series
+149, Series 89, Switch 63, One 35, PS5 10, non-game 85; EU tail 240); Kinguin 365 / 940
+(One+Series 211, Series 79, PS5 16, PS4/PS5 15, Switch 13, Switch 2 12 — enterable since
+2026-09-14; CA 83 / AU 77 forbidden — skipped in `precheck_skip` since 2026-09-14); Gamivo
+572 / 762, URL-only (Series 333, One+Series 207; United Kingdom 258, Colombia 203); K4G 135 /
+592; Driffle 112 / 464; G2A 42 / 806 (spells "X/S", One and Series as separate rows); Eneba
+1 376 / 1 659 of which 704 generation-less; Instant Gaming: the platform is not in the feed.
+The MMOGA console dry-run of 2026-09-15 (run `20260915-081607-dryrun-consoles`, 663 offers):
+174 console candidates — 89 single-target, 59 two-target, 26 three-target — and 489 skips;
+this is the measurement behind Romain's decision « 1 ». Kinguin is the next dry-run.
+
+- **2026-09-12 → 2026-09-15 — EXECUTOR_RULES §6** (R45 (multi-target submit gate)) : Multi-target submit gate, 2026-09-12 → 14: more than one target was the fail-closed blocker
+`multi_target_unsupported_until_modal_verified` (`ready: false`, "la saisie multi-cibles /
+overwrite par cible attend l'observation du nouveau modal (--inspect) — R45") because Romain's
+new feed tool overwrote region / edition PER target page but its controls had not been
+observed; the per-target fill was to be added ONLY after an `--inspect` pass had shown the
+per-target controls (`modal_inspection.json`), never before. `InspectSubmitter` still opened
+and dumped the modal of a gated entry — exactly the observation the gate waited for (done
+2026-09-14, run `20260914-inspect-consoles`); the canaries of 2026-09-15 (Legend of Mana
+Switch, one target; Diablo 2 Resurrected Xbox One + Series, two targets via
+`[data-add-target]`) proved the write, and the gate now applies to the `targets_v1` shape
+only.
+
+- **2026-09-14 / 2026-09-15 — EXECUTOR_RULES §12** (R45 (§12 open item — modal semantics)) : Open item of 2026-09-12 (per-target overwrite semantics of the new modal: one Create with N
+targets each carrying its own region / edition, or N Creates from one row? which controls?)
+— answered by the `--inspect` pass of 2026-09-14 and the canaries of 2026-09-15.
+
+### MMOGA
+
+- **2026-09-11 — EXECUTOR_RULES §4.4** (MMOGA (second region grammar)) : Before the second MMOGA region grammar (2026-09-11), 9 of the 1 060 MMOGA offers created
+2026-09-10/11 carried an EU tail and were entered GLOBAL (to be corrected by hand on AKS;
+listed in CHANGELOG 2026-09-11).
+
+### R32e
+
+- **2026-09-14 — EXECUTOR_RULES §4.4** (R32e — Kinguin « valid until » / K4G Altergift) : Kinguin « (valid until …) » / K4G Altergift — history behind the 2026-09-14 rulings: before,
+79 Kinguin rows / batch were skipped "extra words: ['VALID', 'UNTIL', …]"; only the "(valid
+until <Month>[,] <Year>)" spelling exists in the corpus (89 / 89 rows) and 158 / 158 corpus
+rows (duplicates included) carry it at the END of the title — hence the end-anchored strip
+of the same-evening review fix. K4G: before, an explicit "skip category: ALTERGIFT" precheck
+(removed); 217 / 218 Altergift slugs carry `-altergift-` / `-alter-gift-` — the one row that
+disagreed, offer 101030313 "Trine 5: A Clockwork Conspiracy Steam Altergift" on
+`…-instant-cd-key-48V2PFDZ`, is the "K4G delivery conflict" precheck skip. Replay on the
+2026-09-12 batches: CHANGELOG 2026-09-14 (« Décisions de Romain (14/09, soir) » and its
+« Correctifs de revue »).
+
+### R46
+
+- **2026-09-11 / 2026-09-12 — EXECUTOR_RULES §4.4** (R46) : On 2026-09-11 six Gamivo "… United States" keys were entered PUBLISHER GLOBAL(1) implicit —
+the R27 default on a page listing Direct Publisher (list in `MERCHANTS.md`, to correct by
+hand). R46 (2026-09-12) added the Gamivo grammar hooks.
+
+- **2026-09-12 — EXECUTOR_RULES §4.4 (KINGDOM guard)** (R46) : The trailing-KINGDOM rule of the different-product guard removed 14 false `extra words:
+['KINGDOM']` skips on the 2026-09-12 Gamivo batch.
+
+### MA7
+
+- **2026-09-01 — EXECUTOR_RULES §4.4** (MA7 (retired)) : MA7 retirement, Romain audit 2026-09-01: an earlier version of the language-code rule armed on
+the FIRST common/noise token, so a leading article THE/A wrongly neutralized the code
+("The En Garde" read as a language variant of "Garde"). Fixed the same day: position after the
+FULL game name is the signal.
+
+### P2-6
+
+- **2026-09-02 — EXECUTOR_RULES §4.4** (P2-6) : Audit 2026-09-02 (P2-6): `precheck_skip` scanned `FORBIDDEN_REGIONS` on the TITLE only; a
+forbidden region encoded solely in the merchant URL (Gamivo `…-steam-key-brazil`, clean
+title) escaped and fell to `detect_region`, which knows only sellable buckets
+(eu/global/us/uk) → implicit GLOBAL = a region-locked key entered worldwide (Gamivo's empty
+config gave no R33 page-region rescue).
+
+### P2-8
+
+- **2026-09-02 — EXECUTOR_RULES §4.4** (P2-8 / R32c) : Audit 2026-09-02 (P2-8 / R32c): the old `_region_id(platform, key) or _region_id(platform,
+"gmg_gift")` silently substituted the GLOBAL id when the per-base bucket was missing, while
+the LABEL still read "GMG GIFT US"/"EU" — the label contradicted the id, the region was
+silently widened, and a US-restricted key became enterable worldwide (and the mislabel
+defeated the human validation gate).
+
+### R20
+
+- **2026-07-08 / 2026-07-15 — EXECUTOR_RULES §4.4** (R20 / R26 / R27) : R20 (2026-07-08, Su-27 escape): "Su-27 for DCS World Key GLOBAL" carried no platform token,
+was defaulted STEAM and entered Steam GLOBAL(2) when the product is publisher-direct (Eagle
+Dynamics); Romain had to fix the DB by hand. R26 (2026-07-15, DCS P-51D Mustang / A-10C
+Warthog escape): both DCS pages say "official platforms: Steam." with no `Direct Publisher`
+entry, yet Kinguin's own title omission was the real signal — R26 made any token-less title
+with *some* page platform signal default to PUBLISHER. R27 (same day, Gameboost escape): R26
+was too broad — hours later Gameboost proved the opposite failure mode (genuinely-Steam,
+token-less offers defaulted to Publisher, because Gameboost's own truth lives on its merchant
+page, unfetchable — Cloudflare blocks it). DCS and Gameboost are the identical page-signal
+shape with opposite ground truth, hence R27's Direct-Publisher-only auto-resolve; the ids
+(Publisher 1 / EU 12 / US 13 / UK 266) were read from the live session catalogs of
+07-07/07-08, identical. DCS itself reverted to skip; Su-27 (page: Steam, Direct Publisher —
+a genuine positive signal) stayed PUBLISHER.
+
+- **2026-07-08 — EXECUTOR_RULES §4.4** (R20 (page vocabulary sweep)) : Sweep 2026-07-08 over every offer ever created/attempted (48 offers, 27 AKS pages, stubs
+included): Su-27 was the only platform damage.
+
+### R29
+
+- **2026-07-16 — EXECUTOR_RULES §4.4** (R29) : R29 (2026-07-16): "Apothecarium: The Renaissance of Evil - Premium Edition" carried no
+platform word anywhere in its title — it fell into R27's token-less branch and correctly
+SKIPped there — but it is genuinely Steam, and Eneba says so in the URL prefix. The same case
+also exposed an R25 interaction: once correctly resolved to Steam GLOBAL(2)/Premium(34), it
+turned out to already be a duplicate on AKS (Eneba merchant id 272) — the wrong Publisher
+classification had been hiding it from the (since-retired) duplicate check too.
+
+### R19
+
+- **2026-07-08 — EXECUTOR_RULES §4.5** (R19) : R19 (2026-07-08, DCS A-10C Warthog escape): A-10C (empty editions map) was entered
+Standard(1) and Romain had to fix the DB by hand, while sibling DCS P-51D Mustang (populated
+map, DLC bucket) was correctly entered DLC(16) by R18 in the same run. Measured 2026-07-08:
+23/25 sampled candidate pages had a populated map — even mono-edition ones show
+`1:Standard`; the two empty ones split one hidden DLC / one legit standalone, so emptiness
+decides nothing.
+
+### R23
+
+- **2026-07-13 — EXECUTOR_RULES §4.5** (R23) : R23 (2026-07-13, Valve Complete Pack escape): the identity collapse had already mis-submitted
+an earlier offer of this exact product that morning; Romain deleted the bad AKS entry by
+hand.
+
+### R40
+
+- **2026-09-02 — EXECUTOR_RULES §4.5** (R40) : R40 (audit 2026-09-02, P1-1/P1-2): before the rule, `detect_edition`'s generic hardcoded id
+was emitted with NO proof the resolved page sells that tier — a wrong-edition write surviving
+human validation. Three adversarial-review rounds then closed a suffixed-label over-skip, a
+substring wrong-tier adoption, an id-coincidence hole, and the "Digital Deluxe" false-skip.
+
+### AKS/Staff UA
+
+- **2026-09-11 — EXECUTOR_RULES §4.6** (AKS/Staff UA (§4.6)) : IP ban of 2026-09-11: the pipeline always probed with `AKS/Staff`, but ~60 ad-hoc read-only
+diagnostics sent with the browser UA on 2026-09-11 got the VPS IP dropped at TCP level by the
+AKS anti-bot for hours — sweeps, browser and console included. `http_get` then took the staff
+UA by default towards allkeyshop.com.
+
+### R30
+
+- **2026-09-09 / 2026-09-10 — EXECUTOR_RULES §4.7** (R30 (search timeout)) : `AKS_SEARCH_TIMEOUT_S` went 20 → 8 s (2026-09-10). Measured 2026-09-09 on the new VPS: AKS
+search answered in 22-28 s with an EMPTY 200 body — 59 offers × 20 s on one Kinguin page.
+
+- **2026-07-16 — EXECUTOR_RULES §4.7** (R30) : R30 verified live (2026-07-16): Eneba "Worms Collection 2014 Steam Key (PC) EUROPE" (no
+guessable AKS page) search-resolved to an unrelated page ("Assassin's Creed Black Flag
+Resynced") — R01 correctly SKIPped it ("missing AKS words: ASSASSIN'S, CREED, BLACK, FLAG,
+RESYNCED"). Real-world yield on the same Eneba skip batch was low (most token-less/unusual
+titles still correctly resolve to nothing) but the mechanism is safe.
+
+### MA1
+
+- **2026-07-17 — EXECUTOR_RULES §4.7** (MA1) : MA1 (audit 2026-07-17): the docstring always promised the immediate fail-closed on a
+transient answer on a guessed slug; the code only did it from that audit on — before, the
+failure was collected and a less-specific tier's 200 could win.
+
+### R25
+
+- **2026-07-15 / 2026-09-08 — EXECUTOR_RULES §4.7** (R25 (retired)) : R25 was added 2026-07-15 (Kinguin/Darkwood escape): the resolve pass extracted the page's own
+`"prices":[…]` list and a candidate whose merchant already matched the resolved region AND
+edition was SKIPPED, to stop a STALE matched batch being re-submitted after the offer had
+since been entered. Retired 2026-09-08: (1) it matched by `merchantName`, but the page price
+can come from another channel / an AKS auto-sync — the page merchant id ≠ the operator's feed
+`store_id` (Phantom Blade Zero 2026-09-08: page `Kinguin` id 47 vs feed store 58) — so it
+false-skipped genuinely new offers; (2) staleness is now handled by the stable pending feed
+(offers are kept, ids no longer rotate) + submit-time prove-gone.
+
+### R32
+
+- **2026-09-14 — EXECUTOR_RULES §4.10** (R32 / R45 (merchant files — measurement)) : Measurement of the 2026-09-14 move of merchant grammar into the merchant files (read-only,
+on the last saved batches of 2026-09-12; GameSeal: the July 2026 sweep): console rows
+classified per merchant and per reason are IDENTICAL before / after (2 990 console rows, 0
+oddity — MMOGA 388, Kinguin 365, Gamivo 572, K4G 135, Driffle 112, G2A 42, Eneba 1 376); 5 /
+2 990 full-signal diffs, all region-slot corrections on non-game or Eneba rows (no entry
+changes). PC rows whose precheck / region / first slug differ from the committed code:
+Kinguin 66, K4G 228, Driffle 8, G2A 3, GameSeal 30, Gamivo / MMOGA / Eneba 0 — every one a
+skip made explicit / earlier or a narrower region, 0 recorded candidate changes class.
+Per-merchant table: CHANGELOG 2026-09-14. Before R32 (2026-08-11), merchant-specific handling
+was scattered (Kinguin's domain rule, Difmark's offer-page resolver + maps, Eneba's URL
+prefixes; Gamivo's `-en-` language lock was there too until MA7 was retired 2026-09-01).
+
+- **2026-08-11 — EXECUTOR_RULES §4.10** (R32 (Instant Gaming trigger)) : R32 trigger (2026-08-11): a whole Instant Gaming safe-auto sweep entered every offer as
+PUBLISHER although they were STEAM (R27 defaulted the token-less titles).
+
+### R33
+
+- **2026-08-13 — EXECUTOR_RULES §4.10** (R33) : R33 (2026-08-13): a whole Instant Gaming sweep had entered 32/54 region-locked offers as
+GLOBAL before the region was read from the IG page `<title>` / `og:title` suffix.
+
+### S — submitter (EXECUTOR_RULES §6 : identité de ligne, index, modale, gate de validité, compteurs)
+
+- **2026-07-07 / 2026-07-08 — EXECUTOR_RULES §6** (S — submitter row identity (§6 step 1)) : Row identity in the submitter: 2026-07-07 G2A — an offer drifted from page 2 to page 1 after
+8 creations → ROW_NOT_FOUND (hence the index refreshed by every verify scan). K4G 2026-07-08:
+0/212 ids survived 74 min; G2A: 0/716 in 24 h (hence ids are import-batch-scoped). Query
+params drift across G2A re-imports (`uuid=` changed on 26/716 rows in 24 h while the path
+held 716/716; unique in-feed for both merchants) — hence the merchant URL PATH as the stable
+identity.
+
+- **2026-09-01 — EXECUTOR_RULES §6** (S — index-scan miss (§6 step 1)) : Index-scan miss (hardened 2026-09-01): in a same-product multi-edition batch the bulk index
+build dropped all-but-one (Whiteout Survival's 7 Frost-Stars editions entered 1/7 per run
+while the other 6 sat in the feed). The Green Light Steam (2026-09-01): the "reflowing too
+fast to pin" skip lost a stably-pending offer over two runs because the fresh row was pinned
+by the scanned id instead of the stable URL.
+
+- **2026-09-01 / 2026-09-10 — EXECUTOR_RULES §6** (S — modal context (§6 step 3)) : Modal context poll: hardened 2026-09-01 — an immediate read skipped a genuinely-open Kinguin
+modal as "modal context missing (#TB_ajaxContent)" (Simpler Times); widened 2026-09-10 —
+9/24 MMOGA offers were refused at the old 7 s feed-style budget. Lost-click defense
+(2026-09-10, MMOGA): 3 rows were refused across two sweeps ("OPENED", no content ever) while
+a read-only re-open served the form at 0.0 s — the click had fired before the ThickBox
+handler was bound.
+
+- **2026-07-08 — EXECUTOR_RULES §6** (S — validity gate (§6 step 7, audit P1b)) : Audit P1b (2026-07-08): the old code continued to the Create click when the validity probe
+returned `ok:false` — an explicit degraded mode, removed.
+
+- **2026-07-08 — EXECUTOR_RULES §6** (S — write counters (§6)) : Audit P2 (2026-07-08): the old single `writes` counter of `submit_plan.json` conflated
+attempts and creations and overstated creations — split into `write_attempts` / `created`.
+
+### P2-1
+
+- **2026-09-02 — EXECUTOR_RULES §6 step 8** (P2-1 / A2) : Audit 2026-09-02 (P2-1 / A2): the old `native` (`button.click()`) and `dispatch` (MouseEvent)
+click modes routed to the UNGUARDED `fill_and_create` — no SC3 read-back, no
+`VALUE_DRIFTED_BEFORE_CLICK`, no `form_validity()` gate, no `NO_OPTION` guard — and produced
+`isTrusted:false`. The degraded write path was removed from the write `Submitter`.
+
+### R24
+
+- **2026-07-17 — EXECUTOR_RULES §6** (R24 / FC5 (mode binding)) : Until FC5 (audit 2026-07-17) the mode was only *declared* on `05_submit` and could not be
+cross-checked against the run ("open invariant, not yet enforceable"); FC5 made `03_match`
+stamp it into `match_meta.json` and both writers refuse a wider submit mode.
+
+### Post-save proof retry
+
+- **2026-09-10 — EXECUTOR_RULES §7** (Post-save proof retry (§7)) : Post-save proof retry (2026-09-10): twice in ~100 MMOGA creations the AKS admin page took
+longer than the 45 s command timeout to answer the proof navigation right after a successful
+Create (signal "Offer created …"), so a created offer was marked UNKNOWN and the whole sweep
+halted — hence the one bounded retry on `CdpTimeoutError`.
+
+### Difmark
+
+- **2026-07-17 — EXECUTOR_RULES §11** (Difmark (page-verified platform + region)) : Difmark batch 1 (2026-07-17, pages 1-10, 658 offers) showed the dominant failure mode:
+501/652 skips (77%) were R27 ("no platform in title and AKS page does not confirm Direct
+Publisher"). Live example: Afterlife VR (title has no platform word) used to default to
+PUBLISHER via R27's AKS-page inference; the merchant's own page confirms `marketplace:
+Steam` — entered as STEAM instead, the exact kind of silent mis-platforming R20/R26/R27 were
+written to catch for other merchants (DCS/Su-27, Gameboost).
+
+- **2026-07-17 / 2026-07-18 — EXECUTOR_RULES §11** (Difmark (account offers, rounds 1-3)) : Difmark account-vs-key escape, two rounds (Romain 2026-07-17, both caught from the normalized
+report). Round 1: "je vois que pour Difmark, au lieu de Steam account, tu as lancé des Steam
+dans ton rapport normalisé." — the pre-existing `STEAM ACCOUNT` categorical skip never fires
+for Difmark (titles like "Rogue Loops Standard Edition", boilerplate "steam-account" URL
+segment); the distinction only shows in the merchant's per-offer `offer_name` (e.g. `"Sekiro:
+Shadows Die Twice GOTY"` for a genuine key), confirmed live on real batch-1 offers. Round 2,
+immediate correction: "je voulais que tu renseignes la région Steam Account quand tu vois
+Steam Account. Pourquoi... tu les mets en Steam normal, alors que c'est des Steam Account
+aussi?" — the round-1 fix had treated an "ACCOUNT" `offer_name` as a skip; the Account
+buckets were confirmed via a cached live dropdown snapshot
+(`runs/20260708-081329-k4g/session_catalog.json`, `probe_select_options` on `offer[region]`,
+867 rendered options — a 9-day-old snapshot, hence the re-verify note). Round 3 (2026-07-18):
+rounds 1-2 got the region right (Account bucket 412/…) but still matched the game's
+`…-cd-key-…` page; every existing listing on the account page 187974, G2A included, uses
+region 412.
+
+- **2026-07-17 — EXECUTOR_RULES §11** (Difmark (operating cadence)) : Difmark cadence (2026-07-17): the feed had 382 pages; confirmed live that day, an
+`approved.json` built from one page fetch was already unusable by submit time, hitting first
+`catalog_unavailable`/`no_openable_offer` (feed mid-reimport), then `feed_unreadable`
+(coverage unproven at the default 40-page cap), then, once repopulated, 10 consecutive
+failures because every approved id had rotated out from under it. The one-page cadence
+superseded the earlier "batches of ~10 pages" guidance from the same day (itself a
+correction on "don't sweep all 382 pages at once").
+
+- **2026-07-20 — EXECUTOR_RULES §11** (Difmark (--max-pages auto-default)) : `--max-pages` auto-default (2026-07-20): the old 40-page floor always aborted on Difmark's
+~357-page feed unless the operator raised it by hand — the manual-ceiling footgun the
+auto-default removed.
+
+### P1.6
+
+- **2026-07-29 — EXECUTOR_RULES §13** (P1.6 (sort ledger)) : Revue P1.6 (2026-07-29) : la fenêtre différée par-store transformait un reflow bénin en
+`identity_blocked` permanent → une offre légitime perdue à jamais — d'où la règle « seul le
+TERMINAL est skippé » du ledger de tri.
+
+### P1-4
+
+- **2026-09-02 — EXECUTOR_RULES §13** (P1-4) : Audit 2026-09-02 (P1-4) : `_reverify_row` cherchait la ligne par id et ne relocalisait par
+URL que si l'id avait disparu ; un id présent mais réattribué à un autre produit filait donc
+direct en `identity_mismatch` TERMINAL sans jamais chercher l'URL stable ailleurs sur la page
+→ une offre encore présente (déplacée vers un nouvel id, souvent sur la MÊME page) skippée à
+jamais.
+
+### RV2
+
+- **2026-07-31 — EXECUTOR_RULES §13** (RV2 (target verify GLOBAL)) : RV2 scan cible GLOBAL (fix 2026-07-31) : le scoping par store donnait des faux « pas sur la
+cible » qui sous-comptaient les moves ET gonflaient les échecs → breaker guard / FC3 à tort
+(Gift cards 2026-07-31).
+
+### R37
+
+- **2026-08-17 — EXECUTOR_RULES §14** (R37) : R37 (2026-08-17) : sur un feed profond (Kinguin ~104 pages) la vérif RV2 unitaire coûtait
+~6 min/move et la charge CDP longue faisait échouer une navigation (`Page.navigate` → halt) —
+2 sweeps de suite calés ainsi. Revue adversariale (4 dimensions) : 2 défauts corrigés — la
+garde R24 « widening » rejetait le `--limit 2` batché (exemptée pour `--batch`), et un
+`move_plan.json` stale double-comptait sur abort précoce (unlink avant chaque invocation).
+
+### P2-2
+
+- **2026-09-02 — EXECUTOR_RULES §14** (P2-2) : Audit 2026-09-02 (P2-2) : `scripts/10` ne validait que `store_id.isdigit()` → `--targets
+'Difmark:167'` (parké, non-vetté) pouvait balayer et créer en contournant le gate allowlist
+que seul le handler HTTP re-vérifiait.
+
+### P2-3
+
+- **2026-09-02 — EXECUTOR_RULES §14** (P2-3) : Audit 2026-09-02 (P2-3) : `scripts/12` ne faisait que skipper les jeux non-résolus pour
+soumettre le reste (couverture partielle expédiée sans le 409 de la console).
+
+### P2-4
+
+- **2026-09-02 — EXECUTOR_RULES §14** (P2-4) : Audit 2026-09-02 (P2-4) : l'ancien match sous-chaîne de `suggest_target_list` sur la raison
+entière envoyait une offre « extra words: ['account'] » en MOVE→liste 30 sous
+`--move-execute` sur un simple mot de titre.
+

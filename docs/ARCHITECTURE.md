@@ -6,7 +6,8 @@ skill to this code); this file describes how the pieces fit together.
 Rewritten 2026-07-17 (audit DO2: the previous version predated Stage 0b and
 the admin page, and still attributed the validation UI to a hypothetical N8N).
 Re-auth updated 2026-07-30: password+2FA Stage 0b retired; cookie transfer
-via `/executor/tri` → Se reconnecter.
+via `/executor/tri` → Se reconnecter. Updated 2026-09-15: console keys (R45, modal v2),
+the merchant files, the safe-auto sweep and the by-URL entry added to the map.
 
 ## Roles
 
@@ -34,6 +35,11 @@ every event in the append-only `logs/<run_id>.jsonl`.
 | 3 validate | `scripts/04_validate.py` | `template` writes the fill-in file; `check` verifies it against the current candidates and writes `approved.json` — the only writer of that file, CLI and admin flows alike | `validation.template.json`, `validation.json`, `approved.json` |
 | 4 submit | `scripts/05_submit.py` | Default dry-run; `--catalog` / `--inspect` / `--submit` modes. Real writes fill region/edition/targets and click the visible "Create offer" via a trusted CDP click | `submit_plan.json`, `submit_report.txt`, `session_catalog.json`, `guard_ledger.json` |
 | 5 post-save verify | inside `src/submitter.py` | Success = the offer disappeared from the refreshed feed, same `available` mode as the run — never `[data-success]` | part of `submit_plan.json` |
+| 6 move | `scripts/06_move.py` | Move-to-List writer (learning-driven, per offer) — dry-run by default, `--execute` writes; RV2 proof (gone from the source AND present on the target list) | `move_plan.json`, `move_guard_ledger.json` |
+| 8 / 9 sort | `scripts/08_sort_plan.py`, `scripts/09_sort_move.py` | All-stores sort plan (read-only) and the batched sort-move writer (`--batch` / `--deferred`, canary-granted authorization) | `sort_plan.json`, `sort_ledger` |
+| sweep | `scripts/10_data_entry_auto.py` | Safe-auto sweep per merchant and per page (highest-first): extract → match → approve → submit (→ moves with `--triage`); consoles by default (`--no-consoles`); `--dry-run` = read-only preview | `runs/<sweep>/recap.json` + one run dir per page |
+| by-URL | `scripts/11_data_entry_by_urls.py` → `scripts/12_data_entry_by_urls_submit.py` | Entry from AKS page URLs (PC and console pages): read-only preview, then the validated preview's candidates submitted per store (`--mode safe` only) | `recap.json` per run |
+| probes | `scripts/13_aks_ping.py`, `scripts/14_feed_status.py` | The only sanctioned AKS reachability probe (AKS/Staff UA); the per-merchant feed-state report | JSON; `docs/feeds/<Merchant>.md` |
 
 ### The invariant gate (FC2)
 
@@ -50,14 +56,11 @@ never unlocks write stages.
 
 ### Data-entry modes (R24) and the mode binding (FC5)
 
-`--mode safe` (default) submits the **full validated batch**; `learning` /
-`advanced` do write but are capped at a **canary of 1** (`--limit` may narrow
-a canary, never widen it — refused, not clamped). Since FC5 (audit
-2026-07-17), `03_match --mode` stamps the mode into `match_meta.json`, and
-both `05_submit.py` and the admin's `SubmitManager` refuse a real submit whose
-declared mode is *wider* than the matched one (`mode_widens_match`): a run
-matched under a canary unlock can never take the full-batch `safe` path.
-Absent meta = pre-FC5 legacy run, accepted.
+One line: `--mode safe` (default) = the full validated batch, `learning` / `advanced` =
+a canary of 1 that `--limit` may narrow, never widen; `03_match` stamps the mode into
+`match_meta.json` and both writers (`05_submit.py`, the admin `SubmitManager`) refuse a
+wider submit mode (`mode_widens_match`). The rule: `EXECUTOR_RULES.md` §6 « Batch size =
+the data-entry mode `[R24]` » and « Mode binding (FC5) ».
 
 ## Module layering
 
@@ -104,14 +107,29 @@ Stage logic:
   page-state markers (`feed_ui`, `nav_max`, `is_login`), blank-page
   retry-once-then-classify discipline, `extract_pages` slice mode (always
   reported partial).
-- `src/matcher.py` — the rule pile (classification tables, `REGION_IDS`,
-  `EDITION_HINTS`, R01…R30). Pure except `resolve_aks`, whose HTTP client is
-  injectable. Every past live escape has a numbered rule and a regression
-  test.
+- `src/matcher.py` — the generic rule pipeline (classification tables, `REGION_IDS`,
+  `EDITION_HINTS`, R01…R46 — rule text in `EXECUTOR_RULES.md` §4). Pure except
+  `resolve_aks` / `resolve_aks_url`, whose HTTP client is injectable. Every past live
+  escape has a numbered rule and a regression test.
+- `src/merchant_config.py` + `src/merchants/<merchant>.py` (`registry.py`, `common.py`) —
+  ONE file per merchant (Romain 2026-09-14): data fields, the six PC hooks (R32e) and the
+  four console hooks (R45); merchant grammar never lives in a generic module
+  (`EXECUTOR_RULES.md` §4.10, `MERCHANTS.md`).
+- `src/console_keys.py` — the R45 console classifier: shared vocabulary only (families,
+  title phrases, page kinds, bucket table), merchant grammar through the hooks; pure
+  (`EXECUTOR_RULES.md` §4.12.3).
+- `src/data_entry_auto.py`, `src/triage.py` — the safe-auto sweep engine (per page:
+  extract → match → approve → submit → moves) and the R35 ADD / MOVE / SKIP classifier
+  (`EXECUTOR_RULES.md` §14); `src/feed_status.py` — the per-merchant feed report.
+- `src/mover.py`, `src/move_plan.py`, `src/move_auth.py`, `src/sort_plan.py`,
+  `src/sort_move.py`, `src/sort_ledger.py`, `src/aks_lists.py` — the Move-to-List family
+  (Stage 6 / 8 / 9: `EXECUTOR_RULES.md` §13, `AKS_LISTS.md`).
 - `src/validation.py` — fingerprints and the triple verification (see below).
 - `src/submitter.py` — `_SubmitterBase` (feed scan/index, row location under
   dual identity, modal prep) with `DryRunSubmitter`, `InspectSubmitter` and
-  `Submitter` (the only writer) on top; `fetch_session_catalog`.
+  `Submitter` (the only writer) on top; `fetch_session_catalog`. Since 2026-09-14 a
+  write fills the modal v2 (`fill_targets_v2_trusted`: one target row per AKS page,
+  cap 3, every row proven by readback — `SUBMITTER_SPEC.md` §4c).
 - `src/submit_session.py` — the CDP session split (see next section) plus all
   embedded page-probe JS.
 - `src/login_session.py` — `LoginSession`: cookie-transfer primitives
@@ -129,9 +147,10 @@ whole suite is hermetic — no browser, no network).
 ## The single browser tab (CDP)
 
 One headless Chromium runs on the VPS under systemd (`aks-chromium.service`,
-CDP on `127.0.0.1:9222`; the package is apt-held at 149 because Debian's 150
-build SIGTRAPs under this headless/CDP setup — the pinned Chrome/149 UA must
-match the running major as a consequence). A socat
+CDP on `127.0.0.1:9222`; the package is apt-held — 149 on Debian 12, where the 150
+build SIGTRAPped under this headless/CDP setup; 150 on the Debian 13 VPS, headless
+without SIGTRAP — and the unit forces the pinned Chrome/149 UA either way, see
+`HANDOFF.md` §2.1). A socat
 relay exposes it on the Docker bridge as `172.17.0.1:9223` — the **official
 endpoint** (`OFFICIAL_CDP_ENDPOINT`); nothing else is ever probed.
 
@@ -161,8 +180,9 @@ endpoint** (`OFFICIAL_CDP_ENDPOINT`); nothing else is ever probed.
 
 ## Fail-closed philosophy
 
-If anything is uncertain: stop, write an error report, never fall back.
-Concretely:
+If anything is uncertain: stop, write an error report, never fall back. The rules
+themselves are in `EXECUTOR_RULES.md` §6 (submitter) and §7 (post-save proof, the only
+success signal); this section only maps them onto the modules:
 
 - `success` always comes from deterministic code; the sole success proof for
   a write is **post-save disappearance**: the offer absent from the refreshed

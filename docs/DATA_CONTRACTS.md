@@ -665,6 +665,53 @@ Ajouts `[R45]` (2026-09-15), tous rétro-compatibles (nouvelles clés seulement)
 
 ---
 
+### Audit 2026-09-15 — `consoles` lu par `scripts/12`, cibles dans l'aperçu web
+
+#### `recap.json` (aperçu by-urls, `scripts/11`) : `consoles` est LU par `scripts/12`
+
+À ajouter au paragraphe du recap dry-run by-urls (clé `consoles`) :
+
+- `consoles` (bool, R45) n'est plus seulement informatif : **`scripts/12` le lit**
+  (`consoles_mode_refusal`) et refuse fail-closed, exit 2, un submit lancé dans l'autre mode
+  (`--consoles` vs `false`, `--no-consoles` vs `true`) — même garde que le
+  `consoles_mismatch` (409) du manager admin, mais appliquée aussi au lancement CLI direct.
+  **Absent** (aperçu antérieur au stamp) ou **non booléen** : pas de comparaison ; sous
+  `--no-consoles` le contenu décide (tout candidat à plateforme console dans `targets[]` /
+  `platform`, ou à plus d'une cible, refuse le lot). Le recap doit donc rester la **copie
+  immuable** du manager (`source_recap.json`, P1) : c'est elle qui porte le stamp comparé.
+
+#### `recap.json` (submit by-urls, `scripts/12`) : refus `consoles_mismatch`
+
+À ajouter à la liste des `aborted` du recap submit :
+
+- `aborted: "consoles_mismatch: …"` — le mode consoles demandé ne correspond pas à
+  l'aperçu (stamp `consoles` opposé, ou, sous `--no-consoles`, un candidat console /
+  multi-cibles). Écrit **avant** toute préparation : `merchants: []`, `totals`
+  `{merchants: 0, attempted: 0, created: 0}`, aucun sous-run `<run_id>-s<store>`. Tronqué à
+  400 caractères (les fautifs complets sont dans le JSONL).
+
+#### `logs/<run_id>.jsonl` (submit by-urls) : `submit_run_aborted` porte les fautifs
+
+- `submit_run_aborted` peut maintenant précéder tout `merchant_submit` : champs `reason`
+  (« consoles_mismatch: … »), `consoles` (bool demandé), `preview_consoles` (le stamp de
+  l'aperçu, `null` si absent), `offenders` (liste, vide pour un désaccord de stamp ; sinon
+  `{merchant, store_id, offer_id, name, platforms: [...], targets: n}` par candidat refusé).
+
+#### aperçu web (`api/data-entry/by-urls/recap`) : ce que l'UI lit
+
+- L'UI (`urls.js`) lit, par candidat, `targets[]` (`{platform, aks_product_id, aks_url,
+  aks_name, region:{label,id}, edition:{label,id}}`) pour afficher **chaque** cible et
+  compter les écritures (KPI « page(s) cible(s) à écrire », total « N offres sur T pages » du
+  modal Saisir). Tolérance : forme plate (`region_label`, `region_id`, `edition_label`,
+  `edition_id`) et `targets` absent (→ la cible primaire = les champs du candidat). Les
+  nombres annoncés (« offres à saisir (lot) », « page(s) cible(s) à écrire », « N offres sur
+  T pages » du modal Saisir, `#saisir-n`) sont ceux du **lot dédoublonné comme
+  `_candidates_by_store`** (par store, une occurrence par `fingerprint` — le champ écrit par le
+  matcher dans chaque candidat de l'aperçu, sinon la formule du contrat) ; le KPI
+  `totals.candidates` du recap reste le compte par jeu et n'est plus affiché qu'en complément
+  (« N trouvée(s), X doublon(s) entre jeux »). Le manager garde `totals.candidates` pour
+  `nothing_to_submit` / `meta.candidates` (compte par jeu, pas le lot).
+
 ## Run log (JSONL)
 
 `src/run_log.py`'s `RunLogger` writes one JSON object per line to

@@ -196,18 +196,13 @@ Tokenize the AKS product name (strip trademark/legal symbols
 `U+2019/U+2018 → '`). **Every meaningful word of the AKS name must be present
 in the merchant title.** One word missing → **SKIP**. (Necessary, not
 sufficient.)
-**NFKC first `[R28]` (2026-07-16, Eneba "Road to Empress" escape):** "Road to
-Empress Ⅱ" (U+2161, a single Unicode Roman numeral codepoint, not two ASCII
-`I`s) tokenized to just ROAD/TO/EMPRESS — `tokenize`'s `[A-Z0-9']+` regex
-silently drops any character outside that class, so the sequel indicator
-vanished and the offer matched the unrelated base game "Road To Empress"
-(AKS has no page for the sequel — 404). The same text feeds
-`build_slug_candidates`, so the wrong page was being *probed* in the first
-place, not just wrongly approved after tokenizing. Fix: NFKC-normalize
-before both — standard-library, zero-dependency, and specifically designed
-to decompose compatibility characters like Roman numerals into plain ASCII
-("Ⅱ" → "II"). Curly quotes stay a separate explicit replace (not an NFKC
-compatibility decomposition of `'`).
+**NFKC first `[R28]` (2026-07-16):** NFKC-normalize BEFORE both `tokenize` and
+`build_slug_candidates` — `tokenize`'s `[A-Z0-9']+` regex silently drops any character
+outside that class, and NFKC decomposes compatibility characters such as the single-codepoint
+Roman numeral "Ⅱ" (U+2161) into plain ASCII ("II"), so a sequel indicator never vanishes from
+the identity check nor from the probed slug. Curly quotes stay a separate explicit replace
+(not an NFKC compatibility decomposition of `'`). Historique : CHANGELOG 2026-07-16 (Eneba
+« Road to Empress » escape).
 **Symbol strip before NFKC (2026-09-08, Eneba `Company™`):** NFKC decomposes `™`
 into the letters `TM` glued to the word (`COMPANYTM`), so these symbols are
 replaced by a space BEFORE NFKC in `normalize_apostrophes` (covers tokenize /
@@ -231,11 +226,10 @@ qualifier absent from the AKS name: `Remaster(ed)`, `HD`, `Reboot`, `Remake`,
 `Redux`, `Season Pass`, `DLC` (both waived when the resolved page carries the DLC
 bucket — the page IS the DLC, §4.3 `[R43]`), `Upgrade`, `Skin`, `Soundtrack`,
 `Digital Book/Artbook`, and since the 2026-07-17 audit (`MA3`) `Anniversary` /
-`Definitive` — they were noise-whitelisted with no backstop, so "Skyrim
-Anniversary Edition" entered the base-game page as Standard(1); the live
-master catalog has no stable plain numeric id for either, so there is no safe
-EDITION_HINTS entry — doubt goes to skip, and dedicated "… Anniversary/
-Definitive Edition" AKS pages (name carries the word) are unaffected. Never
+`Definitive` — the live master catalog has no stable plain numeric id for either, so
+there is no safe EDITION_HINTS entry: doubt goes to skip, and dedicated "… Anniversary/
+Definitive Edition" AKS pages (name carries the word) are unaffected (historique :
+CHANGELOG 2026-07-17, MA3). Never
 add a remaster to a base-game page unless the AKS page explicitly matches the
 remaster `[critical learned rule]`.
 
@@ -341,14 +335,9 @@ it assigns platform PUBLISHER, §4.4 `[R20]` revision.)
 edition, §4.5 `[R18]`.)
 
 **DLC / Add-On / Season Pass titles are ENTERED, on their own AKS page `[R43]`
-(Romain GO 2026-09-11, "apprendre à ajouter les DLC … inclus les Season Pass").**
-Until then "DLC in title" (DLC / Add-On / Downloadable Content) and the `SEASON PASS`
-category were pre-skips, so a DLC that announces itself never reached resolution while
-a DLC that hides it ("Exoplanets Pack") was entered via `[R18]`. Measured 2026-09-11
-on 12 MMOGA "(DLC)" titles: 9 resolve, by plain slug guessing once the marker is
-stripped, to their OWN AKS page ("Northgard Svardilfari Clan of the Horse", "Railway
-Empire Great Britain & Ireland", "Ready or Not Home Invasion"…) and all 9 carry the DLC
-bucket (16); 3 have no page. The marker (`dlc_title_marker`: SEASON PASS, EXPANSION
+(Romain GO 2026-09-11, "apprendre à ajouter les DLC … inclus les Season Pass";
+historique — the former "DLC in title" / `SEASON PASS` pre-skips and the 2026-09-11
+measurement : CHANGELOG 2026-09-11).** The marker (`dlc_title_marker`: SEASON PASS, EXPANSION
 PASS, DOWNLOADABLE CONTENT, ADD ON, ADDON, DLC — word-boundary, plurals) is now a
 **classifier**: (1) the title is resolved with the DLC / Add-On / Downloadable Content
 words removed (`strip_dlc_marker`; Season / Expansion Pass words are KEPT — they are
@@ -372,9 +361,8 @@ the resolved slug is one of its OWN tier-1 slugs (`own_page_slugs` / `resolved_o
 the full cleaned name, apostrophe and [R42] numeral spellings, year-suffixed or legacy
 shape); a resolution reached through the edition-stripped or dash-split base-game tiers
 skips `"… resolved through a less specific slug tier ('hunt-showdown' is not the page of
-…) — not the DLC's own page, not entered (R43)"` (204/205 dry-run DLC candidates resolve
-at tier 1; the one loss, "Destiny 2: Year of Prophecy Ultimate Edition DLC", is a
-fail-safe skip); (b) the R16 marker waiver is **gated on the DLC-page proof**
+…) — not the DLC's own page, not entered (R43)"` (historique — dry-run counts :
+CHANGELOG 2026-09-11); (b) the R16 marker waiver is **gated on the DLC-page proof**
 (`extra_significant_words(..., dlc_page=True)` from `match_offer` only — any other
 caller still counts "DLC" as an extra word, the pre-R43 behaviour); (c) the classifier
 and the stripper are **NFKC-normalised like `tokenize`** (a fullwidth "ＤＬＣ" classifies
@@ -396,46 +384,24 @@ MONTHLY, WEEKLY PASS) stay the `PASS` skip even when tagged "(DLC)"; a tagged "<
 and the season / expansion passes (tagged or not) go to resolution; an untagged
 "<x> Pass" stays the `PASS` skip as before.
 
-**R18 for markerless titles — REVIEWED, KEPT AS IS (Romain 2026-09-11):** the review
-found live base-game pages carrying bucket 16 (Stray Blade, Aliens Dark Descent, Dragon
-Quest III HD-2D Remake — entered DLC(16) on 2026-09-10) and no deterministic page-level
-nature signal (no product-type field; the "#basegame" related section and the
-editions-map order are both inconsistent across sampled DLC / base pages). Romain's
-ruling: "des fois, les titres n'ont pas de marqueur et sont des DLC" — the bucket keeps
-deciding for a markerless title, and those three entries are NOT to be corrected. Do not
-re-tighten R18 (an audit will re-flag it — see AGENTS.md "Reviewed decisions"). R43's
-own-page and unnamed-DLC rules above apply to MARKED titles only.
+**R18 for markerless titles — reviewed decision, KEPT AS IS (Romain 2026-09-11):** the
+DLC bucket keeps deciding for a MARKERLESS title (no deterministic page-level nature signal
+exists); R43's own-page and unnamed-DLC rules above apply to MARKED titles only. Do not
+re-tighten R18 — the ruling and its rationale are in AGENTS.md « Reviewed decisions »
+(historique : CHANGELOG 2026-09-11).
 
-**Console keys — see §4.12 `[R45]` (2026-09-12).** The 2026-09-11 study ("on reviendra
-sur les consoles après modification de l'outil AKS feed") was reopened the next day:
-Romain's new AKS feed tool OVERWRITES the region (= region/PLATFORM) and the edition PER
-TARGET PAGE, so one feed row can be filed on several AKS pages. The full rule — page
-model, classifier, multi-target candidates, policies (P1 DECIDED by Romain on 2026-09-14,
-P2-P5 à confirmer), the fail-closed submit gate — lives in §4.12; the code runs under
-`--consoles`, the DEFAULT since Romain's decision « 1 » of 2026-09-15 (`--no-consoles`
-opts out; the 2026-09-14 "requires `--dry-run`" guard is lifted). **Correction of
-finding (a) (2026-09-12):** the 11/09 probe used a WRONG
-URL grammar (`…-xbox-series-x-…-cd-key-…`). Console product pages DO exist, at
-`buy-<slug>-<kind>-compare-prices/` with kind ∈ `ps4` / `ps5` / `xbox-one` /
-`xbox-series` / `nintendo-switch` / `nintendo-switch-2` (PC = `cd-key`), each its own
-product with its own `data-product-id`, name, region map and editions (Hades: PC 26712,
-PS5 85105, PS4 85104, Xbox Series 85103, Xbox One 85102, Switch 47979). Console offers
-therefore do NOT all live on the PC page — only the Xbox family (`300`, and the
-XBOX/PC Play Anywhere buckets) was ever seen there. Findings kept as history: (b) the
-feed modal's region catalog (867 buckets) has the console families: Xbox One `24` / EU
-`24eu` / US `24us` / UK `226`, Xbox Series `300` / EU `302` / US `303` / UK `305`,
-Xbox+Windows (Play Anywhere) `306` / EU `241` / US `242` / UK `240`, PlayStation 4 `88` /
-EU `88eu` / US `88us` / UK `88uk`, PS5 `88ps5h` (single bucket), Nintendo `99` / EU
-`99eu` / US `99us` / UK `992` — Switch 2 pages use the SAME Nintendo family buckets (no
-separate Switch 2 bucket — 2026-09-14, table in §10); (c) MMOGA
-grammar: URL categories `Xbox-Live/Xbox-One-Game-Keys`,
-`Xbox-Live/Xbox-Series-XS-Game-Keys`, `Nintendo/Switch`, `Playstation-Network`, platform in
-a bracket of the title, region tail " - EU" / "[EU]", non-games among the console rows
-(currencies, Xbox Live / eShop cards, subscriptions) that stay skipped; (d) the BLOCKER:
-one feed row = one offer, and creating it consumes the row (our proof), so a cross-gen
-key ("Xbox One / Series X|S"; "PS4 / PS5") cannot get its second platform from the feed
-as it was — exactly what the per-target overwrite of the new tool addresses, and what the
-`[R45]` "never partial" rule (§4.12, §6) refuses to work around in the meantime.
+**Console keys — see §4.12 `[R45]` (2026-09-12).** Romain's AKS feed tool OVERWRITES the
+region (= region/PLATFORM) and the edition PER TARGET PAGE, so one feed row can be filed on
+several AKS pages. The full rule — page model (§4.12.1: separate console product pages
+`buy-<slug>-<kind>-compare-prices/`, one product id per page), classifier, multi-target
+candidates, policies (P1 DECIDED by Romain on 2026-09-14, P2-P5 à confirmer), the submit
+path (§6, modal v2) — lives in §4.12; the code runs under `--consoles`, the DEFAULT since
+Romain's decision « 1 » of 2026-09-15 (`--no-consoles` opts out). Bucket table: §10.
+Invariant (d): **one feed row = one offer, and creating it consumes the row** (our proof), so
+a cross-gen key ("Xbox One / Series X|S"; "PS4 / PS5") is filed on ALL its declared pages in
+ONE creation or not at all — the `[R45]` "never partial" rule (§4.12, §6). Historique (the
+2026-09-11 "parked" study, the corrected finding (a) on the page URL grammar, findings
+(b)-(c)) : CHANGELOG 2026-09-11 / 2026-09-12.
 
 ### 4.4 Region & platform — **URL and AKS page decide, not the title** `[Ga01]`
 **MMOGA second region grammar (adversarial review 2026-09-11):** besides "<Product>
@@ -444,9 +410,9 @@ as it was — exactly what the per-target overwrite of the new tool addresses, a
 Key [EU]", "Wild West Dynasty - Ultimate Edition [EU]", "The Sims 4 - For Rent DLC (EA App
 Key EU)". `mmoga.region_code` now reads both (`REGION_CODE_TAIL_RE`; a bare "[XX]" / "(XX)"
 only for a KNOWN sellable / forbidden code, so "(PC)" is not a region; a "(… Key XX)" slot
-takes any code, unmapped → skip), `resolve_name` strips the tail before slug building.
-Before this, 9 of the 1 060 MMOGA offers created 2026-09-10/11 carried an EU tail and were
-entered GLOBAL (to be corrected by hand on AKS; listed in CHANGELOG 2026-09-11).
+takes any code, unmapped → skip), `resolve_name` strips the tail before slug building
+(historique — the 9 EU-tail offers entered GLOBAL before this rule, to correct by hand :
+CHANGELOG 2026-09-11).
 **A region phrase that is part of the AKS PRODUCT NAME is identity, not a lock
 `[R44]`** (R43 dry-run 2026-09-11): "Age of Empires III Definitive Edition - United
 States Civilization (DLC)" carries `-united-states-` in its merchant slug and the URL
@@ -463,49 +429,44 @@ Derive region from the offer URL when the merchant encodes it there
 (e.g. Gamivo `…-steam-global` / `-eu` / `-gift-eu`; look for
 `-gift-`) `[GAMIVO]`. Kinguin Steam titles often omit the region → accept as
 **GLOBAL implicit** unless a forbidden region is present `[KINGUIN]`.
-**Kinguin "(valid until <Month> <Year>)" and K4G "Steam Altergift" — Romain's rulings
-(2026-09-14): « Kinguin valid until juin 2027 on rentre, Steam Altergift = Steam Gift on
-rentre sous gift tous les altergifts ».** The Kinguin note is an activation deadline, not a
-product word: `kinguin.guard_name` strips it — and only it — from the title the `[R01]` /
-`[R16]` / `[R01b]` guards and `detect_edition` read (`guard_name` hook, §4.10; before, 79
-rows / batch were skipped "extra words: ['VALID', 'UNTIL', …]"); `resolve_name` peels it
-for the slug, `console_noise` carries it for console rows; the row is entered like any
-Kinguin title (implicit GLOBAL unless a code says otherwise; only the "(valid until
-<Month>[,] <Year>)" spelling is stripped — 89 / 89 rows of the corpus — any other form stays
-in the guard). A K4G Altergift is a Steam GIFT: `k4g.gift_delivery` → True for the whole
-word ALTERGIFT (`gift_delivery` hook, §4.10), `detect_region` layers the Steam GIFT bucket on
-the base region the title / URL declare — GIFT (25) for no region / Global, GIFT EU (259)
-for Europe; a US / UK base has no Steam gift bucket → the fail-closed "no region id for
-STEAM/GIFT US" skip, unchanged; forbidden regions (North America, Americas) keep their
-precheck skip — and `k4g.guard_name` / `resolve_name` drop the word "Altergift" (never a
-product word; before, an explicit "skip category: ALTERGIFT" precheck, removed). **Review
-fixes on the two rulings (2026-09-14, same evening — fail-closed):** the Kinguin strip is
-anchored to the title END (`kinguin.VALID_UNTIL_RE`, `\s*$`; 158 / 158 corpus rows are
-trailing) — a mid-title note stays in the guard (extra-words skip); a K4G / Kinguin Altergift
-is entered ONLY when the slug agrees (`k4g.altergift_verdict`: `-altergift-` / `-alter-gift-`
-in the K4G slug, 217 / 218 rows; Kinguin's often-truncated slug may be silent but must not
-carry a `-cd-key` / `-key` / account tail) — the one row that disagreed, offer 101030313
-"Trine 5: A Clockwork Conspiracy Steam Altergift" on `…-instant-cd-key-48V2PFDZ`, is the
-precheck skip "K4G delivery conflict: title Altergift but URL says cd-key (no altergift
-segment) — not entered" (gift 25 or key GLOBAL 2 cannot be known from the row), and the
-mirror (title "CD Key", slug `-alter-gift-`) is refused too; « Steam Altergift = Steam Gift »
-is Steam-only — an Altergift whose store phrase is not Steam is "… outside the Steam
-collocation — not entered", never another platform's GIFT bucket, never a plain key; and the
-ruling covers Kinguin's own "Altergift" delivery (`kinguin.gift_delivery`: "<Game> [<CODE>] PC
-Steam Altergift" → GIFT 25 / GIFT EU 259, the word dropped from the guard / slug; "Steam
-Gift" rows keep the generic read). Both are reviewed decisions (AGENTS.md) — an audit must
-not re-flag them. Replay on the 2026-09-12 batches: CHANGELOG 2026-09-14 (« Décisions de
-Romain (14/09, soir) » and its « Correctifs de revue »).
+**Kinguin "(valid until <Month> <Year>)" and K4G / Kinguin "Steam Altergift" — Romain's
+rulings (2026-09-14): « Kinguin valid until juin 2027 on rentre, Steam Altergift = Steam Gift
+on rentre sous gift tous les altergifts » — reviewed decisions (AGENTS.md « Reviewed
+decisions »: an audit must not re-flag them; historique, corpus counts and replays :
+CHANGELOG 2026-09-14).** Rules in force: (1) the Kinguin note is an activation deadline, not
+a product word — `kinguin.guard_name` strips it, and only it, from the title the `[R01]` /
+`[R16]` / `[R01b]` guards and `detect_edition` read (`guard_name` hook, §4.10), `resolve_name`
+peels it for the slug, `console_noise` carries it for console rows; the row is entered like
+any Kinguin title (implicit GLOBAL unless a code says otherwise); ONLY the "(valid until
+<Month>[,] <Year>)" spelling, anchored to the title END (`kinguin.VALID_UNTIL_RE`, `\s*$`),
+is stripped — a mid-title note or any other form stays in the guard and is the fail-closed
+`extra words: ['VALID', 'UNTIL', …]` skip. (2) An Altergift is a Steam GIFT:
+`k4g.gift_delivery` / `kinguin.gift_delivery` → True for the whole word ALTERGIFT
+(`gift_delivery` hook, §4.10) and `detect_region` layers the Steam GIFT bucket on the base
+region the title / URL declare — GIFT (25) for no region / Global, GIFT EU (259) for Europe;
+a US / UK base has no Steam gift bucket → the fail-closed "no region id for STEAM/GIFT US"
+skip; forbidden regions (North America, Americas) keep their precheck skip; `guard_name` /
+`resolve_name` drop the word "Altergift" (never a product word). Fail-closed gates on (2):
+the slug must AGREE (`k4g.altergift_verdict`: `-altergift-` / `-alter-gift-` in the K4G
+slug; Kinguin's often-truncated slug may be silent but must not carry a `-cd-key` / `-key` /
+account tail) — a `-cd-key` slug against an Altergift title is the precheck skip "K4G
+delivery conflict: title Altergift but URL says cd-key (no altergift segment) — not entered"
+(gift 25 or key GLOBAL 2 cannot be known from the row), a slug with no delivery segment and
+the mirror conflict (title "CD Key", slug `-alter-gift-`) are refused too; « Steam Altergift
+= Steam Gift » is Steam-ONLY — an Altergift whose store phrase is not Steam is "… outside
+the Steam collocation — not entered", never another platform's GIFT bucket, never a plain
+key; Kinguin's own "Altergift" delivery ("<Game> [<CODE>] PC Steam Altergift" → GIFT 25 /
+GIFT EU 259) is covered, "Steam Gift" rows keep the generic read.
 **Gamivo grammar `[R46]` (2026-09-12).** Gamivo's CURRENT grammar defeats every generic
 read: the title is `<Game> [<Edition>] [<LANG>(/<LANG>)*] <Region>` — a trailing region
 phrase with no separator ("Ravenswatch EN United Kingdom", "Tiny Tina's Wonderlands United
 States", "FIFA 23 EN/PL/CS/RU/TR EU"), never a platform — and the URL is
 `gamivo.com/product/<slug>-<platform run>-<cc>[-<langs>]-<edition>`: the EDITION token
 follows the region code (`…-pc-steam-us-standard`, so the P2-6b trailing slot never fires;
-a second form ends with `-pc`: `…-steam-eu-standard-pc`). On 2026-09-11 six "… United
-States" keys were entered PUBLISHER GLOBAL(1) implicit — the R27 default on a page listing
-Direct Publisher (list in `MERCHANTS.md`, to correct by hand). `src/merchants/gamivo.py`
-now carries the grammar through four hooks (§4.10): `title_region` (United Kingdom / United
+a second form ends with `-pc`: `…-steam-eu-standard-pc`). `src/merchants/gamivo.py`
+carries the grammar through four hooks (§4.10; historique — the six "… United States" keys
+entered PUBLISHER GLOBAL(1) on 2026-09-11 before this rule, to correct by hand, listed in
+`MERCHANTS.md` : CHANGELOG 2026-09-12): `title_region` (United Kingdom / United
 States / EU / Global tails → uk / us / eu / global, case-sensitive: "The Last of Us" is not
 US); `precheck` (any other tail → `forbidden region: <LABEL>` in the matcher's own label
 vocabulary — COLOMBIA, ROW, CANADA, NETHERLANDS, NORTH AMERICA, CIS, SOUTH EAST ASIA… — so
@@ -521,8 +482,8 @@ the R45 classifier owns the row; nothing recognised → None → the title / R27
 path). `-gift` in the run still yields the platform's gift bucket through `detect_region`.
 The different-product guard treats a trailing **KINGDOM** as the "United Kingdom" region
 phrase ONLY once every AKS-name token is covered AND UNITED precedes it — "Kingdom Come
-Deliverance" / "Total War Three Kingdoms" keep their name word (14 false `extra words:
-['KINGDOM']` skips on the 2026-09-12 batch). The old grammar (`…-steam-key-brazil`,
+Deliverance" / "Total War Three Kingdoms" keep their name word (never a false `extra words:
+['KINGDOM']` skip). The old grammar (`…-steam-key-brazil`,
 `…-steam-en-global`) keeps its P2-6 / P2-6b / MA7 behaviour. Tests: `GamivoConfigR46Tests`.
 **`MA7` RETIRED (2026-09-01, Romain: "EN = english only … on a quasi toutes les
 régions qui ont leur version EN only").** A Gamivo `-en-` URL segment used to skip
@@ -533,22 +494,21 @@ before it (nothing of the game name remains after it) — so "Hard Bullet VR Gif
 Global" / "Neon Beats FR Global" enter, while a code with a game-name token still to
 come stays a significant title word so a different (shorter) product is still caught:
 "En Garde" / "The En Garde" / "Legend En Garde" ≠ "Garde"-family, "No Man's Sky" / "A
-No Man's Sky" ≠ "Man's Sky" (Romain audit 2026-09-01 — an earlier rule armed on the
-FIRST common/noise token, so a leading article THE/A wrongly neutralized the code).
-Position after the FULL game name is the signal, never a global neutralization.
+No Man's Sky" ≠ "Man's Sky" (Romain audit 2026-09-01). Position after the FULL game name is
+the signal, never a global neutralization — never arm on the FIRST common/noise token (a
+leading article THE/A must not neutralize the code). Historique : CHANGELOG 2026-09-01.
 Audit 2026-07-17 hardenings: `gift` must be its own URL segment (`MA4` —
 `the-gifted-rabbit` no longer proposes GIFT(25)); title-side defense in
 depth for regions (`MA8`): bare `EUROPE` mid-title (K4G grammar) and a
 region in ANY parenthesised group (not only the first) now map to EU/…
 instead of implicit GLOBAL.
-**Forbidden region in the URL is a skip `[P2-6]` (audit 2026-09-02).** `precheck_skip`
-scanned `FORBIDDEN_REGIONS` on the TITLE only; a forbidden region encoded solely in the
-merchant URL (Gamivo `…-steam-key-brazil`, clean title) escaped and fell to
-`detect_region`, which knows only sellable buckets (eu/global/us/uk) → **implicit
-GLOBAL** = a region-locked key entered worldwide (Gamivo's empty config gives no R33
-page-region rescue). The FORBIDDEN_REGIONS scan now also runs on the URL **path**
-(query stripped, merchant noise removed, word-boundary, same normalization as the
-title) and returns the **same** `forbidden region: <label>` reason → identical routing.
+**Forbidden region in the URL is a skip `[P2-6]` (audit 2026-09-02).** The
+`FORBIDDEN_REGIONS` scan of `precheck_skip` runs on the TITLE **and** on the URL **path**
+(query stripped, merchant noise removed, word-boundary, same normalization as the title)
+and returns the **same** `forbidden region: <label>` reason → identical routing — a
+forbidden region encoded solely in the merchant URL (Gamivo `…-steam-key-brazil`, clean
+title) must never fall to `detect_region` (which knows only sellable buckets) and become an
+implicit GLOBAL. Historique : CHANGELOG 2026-09-02 (P2-6).
 **Bare 2-letter region codes + the `-us` base `[P2-6b]` (audit 2026-09-02).** A forbidden
 region also appears as a bare 2-letter slug code (`…-steam-key-ru`), and a US-locked key as
 `…-steam-key-us` (which `detect_region` didn't read → implicit GLOBAL). Both are now caught
@@ -566,14 +526,11 @@ special-cases EU; there is no `gift_us` id) — flagged for future hardening.
 **GMG green-gift resolves the EXACT per-base bucket, no silent global fallback `[P2-8,
 R32c]` (audit 2026-09-02).** A Green Man Gaming "Green Gift" maps to the platform's
 dedicated `gmg_gift` region. STEAM has `gmg_gift`+`gmg_gift_eu` (no `_us`); EPIC has
-`gmg_gift`+`gmg_gift_us` (no `_eu`). The old `_region_id(platform, key) or
-_region_id(platform, "gmg_gift")` silently substituted the GLOBAL id when the per-base
-bucket was missing, while the LABEL still read "GMG GIFT US"/"EU" — the label contradicted
-the id, the region was silently widened, and a US-restricted key became enterable
-worldwide (and the mislabel defeated the human validation gate). Now `detect_region`
-resolves ONLY the exact per-base bucket; a base the platform lacks → id `None` → clean
-fail-closed `no region id for <platform>/<label>` skip (label and id can never disagree),
-the same stance as a GOG plain gift → None.
+`gmg_gift`+`gmg_gift_us` (no `_eu`). `detect_region` resolves ONLY the exact per-base
+bucket; a base the platform lacks → id `None` → clean fail-closed `no region id for
+<platform>/<label>` skip (label and id can never disagree — never a silent GLOBAL
+substitution under a "GMG GIFT US"/"EU" label), the same stance as a GOG plain gift → None.
+Historique : CHANGELOG 2026-09-02 (P2-8).
 **Platform declaration is word-boundary + collocation (`MA2`):** the old raw
 substring, fixed-order checks let a game-name word override the merchant's
 declaration ("Epic Chef … Steam Key" → EPIC, "Gogol's Quest" → GOG).
@@ -594,44 +551,31 @@ ONLY when it is immediately preceded by `EA` (never universal `NOISE`, so a
 standalone "… Play …" stays a significant word). Anti-regression: "Foul Play" is
 not tagged EA; "Foo Play Steam Key" still flags `PLAY` as an extra.
 
-**Platform is page-verified, fail-closed `[R20]` (2026-07-08, Su-27 escape):**
-`detect_platform`'s STEAM is a **default**, not a detection — "Su-27 for DCS
-World Key GLOBAL" carries no platform token, was defaulted STEAM and entered
-Steam GLOBAL(2) when the product is publisher-direct (Eagle Dynamics); Romain
-had to fix the DB by hand. The only deterministic signal is the resolved AKS
-page's "official platforms:" line (extracted at resolve time, zero extra
-requests).
-**Revision `[R26]` (2026-07-15, DCS P-51D Mustang / A-10C Warthog escape):**
-a token-less title is no longer trusted as Steam even when that list is
-exactly `Steam` — both DCS pages say "official platforms: Steam." with no
-`Direct Publisher` entry, yet Kinguin's own title omission was the real
-signal. R26 made any token-less title with *some* page platform signal
-default to PUBLISHER.
-**Revision `[R27]` (same day, Gameboost escape):** R26 was too broad. Hours
-later, Gameboost proved the opposite failure mode — genuinely-Steam,
-token-less offers got defaulted to Publisher too, because Gameboost's own
-truth lives on its merchant page, which is unfetchable (Cloudflare blocks it
-— see the merchant's own notes). Romain: *"il y a des offres steam qu'on
-détecte en publisher, ça c'est seulement renseigné sur la page marchand."*
-DCS and Gameboost are the **identical page-signal shape** (token-less title,
-AKS page Steam-only) with **opposite ground truth** — neither a Steam default
-nor a Publisher default is safe there. The only signal strong enough to
-auto-resolve is a page that **explicitly confirms `Direct Publisher`**
-(region `Publisher (1)`, the dropdown's GLOBAL bucket; EU 12, US 13, UK 266 —
-ids read from the live session catalogs of 07-07/07-08, identical; no gift
-mapping → publisher gifts fail closed). Anything short of that —
-Steam-only, any other mix without Direct Publisher, or no platform info at
-all — now SKIPs ("platform unverifiable, not defaulted (R27)"). DCS itself
-reverts to skip; a human enters cases like it deliberately, same as the
-`R19` stub-page philosophy: absent a real signal, don't guess in either
-direction. Su-27 (page: Steam, Direct Publisher — a genuine positive signal)
-is unaffected, still PUBLISHER.
-**Eneba URL prefix `[R29]` (2026-07-16):** "Apothecarium: The Renaissance of
-Evil - Premium Edition" carries no platform word anywhere in its title — it
-fell into R27's token-less branch and correctly SKIPped there — but it's
-genuinely Steam, and Eneba says so, just not in the title: every Eneba
-listing URL is `eneba.com/<platform>-<slug>`, a leading platform-prefix path
-segment present regardless of what the title repeats. `explicit_platform_from_url`
+**Platform is page-verified, fail-closed `[R20]` (2026-07-08):** `detect_platform`'s
+STEAM is a **default**, not a detection — a token-less title must never be entered Steam
+on a publisher-direct product. The only deterministic signal is the resolved AKS page's
+"official platforms:" line (extracted at resolve time, zero extra requests). Historique
+(Su-27 escape) : CHANGELOG 2026-07-08.
+**Revision `[R26]` (2026-07-15):** a token-less title is not trusted as Steam even when the
+page list is exactly `Steam` (the merchant's own title omission is a signal); R26 defaulted
+such titles to PUBLISHER and was superseded the same day by `[R27]` — historique (DCS
+P-51D Mustang / A-10C Warthog escape) : CHANGELOG 2026-07-15.
+**Revision `[R27]` (2026-07-15):** a token-less title with a Steam-only page has NO safe
+default in either direction (the same page-signal shape carries opposite ground truths —
+DCS is publisher-direct, Gameboost is genuinely Steam; Romain: *"il y a des offres steam
+qu'on détecte en publisher, ça c'est seulement renseigné sur la page marchand."*). The only
+signal strong enough to auto-resolve is a page that **explicitly confirms `Direct
+Publisher`** (region `Publisher (1)`, the dropdown's GLOBAL bucket; EU 12, US 13, UK 266;
+no gift mapping → publisher gifts fail closed). Anything short of that — Steam-only, any
+other mix without Direct Publisher, or no platform info at all — SKIPs ("platform
+unverifiable, not defaulted (R27)"); a human enters such cases deliberately, same as the
+`R19` stub-page philosophy: absent a real signal, don't guess in either direction.
+Historique (Gameboost escape, DCS revert) : CHANGELOG 2026-07-15.
+**Eneba URL prefix `[R29]` (2026-07-16):** every Eneba listing URL is
+`eneba.com/<platform>-<slug>`, a leading platform-prefix path segment present regardless
+of what the title repeats — a token-less Eneba title is therefore not left to R27's
+token-less branch when the URL declares the platform (historique — "Apothecarium" case :
+CHANGELOG 2026-07-16). `explicit_platform_from_url`
 checks this **only** for `eneba.com` URLs (no other merchant's URL has a
 title-word this could false-positive against) and only recognizes prefixes
 this codebase already has a platform constant for (`steam`, `gog`, `epic`,
@@ -641,33 +585,26 @@ console/currency/software prefixes (`nintendo`, `xbox`, `psn`, `top`,
 console/currency/software-app categorical skips before platform detection
 runs. Checked as a fallback after the title (`explicit_platform(offer.name)
 or explicit_platform_from_url(offer.url)`), so an explicit title token still
-wins when both are present. The same case also exposed an R25 interaction:
-once correctly resolved to Steam GLOBAL(2)/Premium(34), it turned out to
-already be a duplicate on AKS (Eneba merchant id 272) — the wrong Publisher
-classification had been hiding it from the duplicate check too.
+wins when both are present.
 An **explicit** title token is the merchant's declaration and is
 trusted — multi-platform pages are normal (an Osmos Steam+GoG page takes a
 Steam key) — **except** when the token has a known page vocabulary
 (STEAM→`Steam`, GOG→`GoG`, EPIC→`Epic Store`) and that name is totally absent
 from the page list: contradiction → SKIP. Tokens without a vocabulary entry
-(EA, UBISOFT, …) get no cross-check. Sweep 2026-07-08 over every offer ever
-created/attempted (48 offers, 27 AKS pages, stubs included): Su-27 was the
-only platform damage; page vocabulary observed live: Steam, GoG, Epic Store,
-Direct Publisher, Xbox Play Anywhere, Nintendo eShop, Xbox.
+(EA, UBISOFT, …) get no cross-check. Page vocabulary observed live (sweep 2026-07-08 over
+every offer ever created/attempted; historique : CHANGELOG 2026-07-08): Steam, GoG, Epic
+Store, Direct Publisher, Xbox Play Anywhere, Nintendo eShop, Xbox.
 
 ### 4.5 Edition detection (fallback hints — dropdown is truth) `[E0x]`
 **Stub guard first `[R19]` (2026-07-08, DCS A-10C Warthog escape):** an
 **empty** editions map on the resolved AKS page is a stub record —
 `"merchants":[],"editions":[],"prices":[],"regions":[]` in the page blob,
 zero offers (PHP serializes the empty map as `[]`, not `{}`). Such a page can
-vouch for no edition and can hide a DLC: A-10C (empty map) was entered
-Standard(1) and Romain had to fix the DB by hand, while sibling DCS P-51D
-Mustang (populated map, DLC bucket) was correctly entered DLC(16) by `[R18]`
-in the same run. Neither the feed row nor the page carries any other
-deterministic edition signal (measured 2026-07-08: 23/25 sampled candidate
-pages had a populated map — even mono-edition ones show `1:Standard`; the two
-empty ones split one hidden DLC / one legit standalone, so emptiness decides
-nothing). **SKIP with a distinct reason** ("AKS page carries no editions map —
+vouch for no edition and can hide a DLC; neither the feed row nor the page carries any
+other deterministic edition signal (even mono-edition pages show `1:Standard`, and an empty
+map splits hidden DLCs and legit standalones — emptiness decides nothing). Historique
+(A-10C Warthog escape, 2026-07-08 measurement) : CHANGELOG 2026-07-08. **SKIP with a
+distinct reason** ("AKS page carries no editions map —
 edition unverifiable (R19)"), whatever the title hints say. Trade-off accepted:
 a legit standalone on a stub page (e.g. K4G "Goblin Vyke") is skipped too and
 stays visible in `skipped.json` for manual entry.
@@ -702,8 +639,7 @@ own id — 92). Before collapsing to Standard, check the page's own editions map
 (already in hand, zero extra requests) for a non-Standard entry whose name
 contains the detected label; a page-verified match wins over both the
 collapse and the generic hint id. No match on the page → Standard(1) as
-before. The same mis-collapse had already mis-submitted an earlier offer of
-this exact product that morning; Romain deleted the bad AKS entry by hand.
+before. Historique (Valve Complete Pack escape) : CHANGELOG 2026-07-13.
 
 **Two P2 fixes on R23 (2026-07-13, Romain's review):** (1) **never
 page-verify a `Bundle` label** — "we never enter bundles, ever" is absolute,
@@ -723,10 +659,10 @@ whichever entry the page happened to list first.
 **Guessed game editions are page-verified too `[R40]` (audit 2026-09-02, P1-1/P1-2).**
 R23 above only fires when the edition word is IN the AKS name. The COMMON case — the
 edition is in the merchant TITLE or URL slug but NOT the AKS name — bypassed it, so
-`detect_edition`'s generic hardcoded id (Deluxe→7, Gold→10, GOTY→9, …) was emitted with
-NO proof the resolved page sells that tier → a wrong-edition write surviving human
-validation ("Sniper Elite 4 Deluxe" on a base-only page; a slug-parasite
-`…-complete-edition`). Now a non-Standard game edition is RECONCILED against the page's
+`detect_edition`'s generic hardcoded id (Deluxe→7, Gold→10, GOTY→9, …) must never be
+emitted without proof that the resolved page sells that tier (a wrong-edition write would
+survive human validation — "Sniper Elite 4 Deluxe" on a base-only page; a slug-parasite
+`…-complete-edition`). A non-Standard game edition is RECONCILED against the page's
 own map by **token-set equality modulo format noise** (`_edition_key`: strip
 `Edition`/`Pack`/`Digital`/`Version` + stopwords, expand `GOTY`→`Game of the Year`): the
 page edition whose distinctive tokens EXACTLY equal the guess is adopted **with the
@@ -737,9 +673,8 @@ equality (over-skips suffixed labels) and NOT substring (would enter a wrong tie
 trusted even when it coincidentally exists on the page — it must EARN its place via the
 label match, else a page listing that id under a different tier ("Winter Pack" at id 7)
 would be entered under the wrong label. Runs ONLY when R23 did not already verify.
-Standard(1) is the safe canonical fallback and is exempt. (Three adversarial-review
-rounds: closed a suffixed-label over-skip, a substring wrong-tier adoption, an
-id-coincidence hole, and the "Digital Deluxe" false-skip.)
+Standard(1) is the safe canonical fallback and is exempt. Historique (three
+adversarial-review rounds) : CHANGELOG 2026-09-02 (R40).
 
 ### 4.6 URL hygiene
 The merchant URL is kept **complete, exactly as the feed carries it** — never
@@ -758,11 +693,10 @@ URL domain matches the merchant (e.g. must contain `kinguin.net` for Kinguin)
 **Every HTTP request to allkeyshop.com carries the `AKS/Staff` User-Agent — by default
 (2026-09-11).** `http_get` switches to `AKS_STAFF_UA` for any allkeyshop.com host when no
 UA is given (an explicit UA is honoured; the staff UA stays forbidden on any other host,
-audit #4). Why: the pipeline always probed with `AKS/Staff`, but ~60 ad-hoc read-only
-diagnostics sent with the browser UA on 2026-09-11 got the VPS IP dropped at TCP level by
-the AKS anti-bot for hours — sweeps, browser and console included. Rule for humans and
-agents alike: **never send the Chrome UA to AKS over HTTP** (curl included: `-A AKS/Staff`);
-CDP browsing keeps the Chrome UA, that is a different channel.
+audit #4). Rule for humans and agents alike: **never send the Chrome UA to AKS over HTTP**
+(curl included: `-A AKS/Staff`; the official probe is `scripts/13_aks_ping.py`) — the AKS
+anti-bot bans the VPS IP for hours on browser-UA HTTP probes; CDP browsing keeps the Chrome
+UA, that is a different channel. Historique (IP ban of 2026-09-11) : CHANGELOG 2026-09-11.
 
 ### 4.7 AKS resolution
 
@@ -808,9 +742,9 @@ arms the file, the next pages start with the circuit OPEN (`search_circuit_preop
 it. **No expiry (Romain 2026-09-10):** once open, the breaker stays open for the REST OF THE
 SWEEP — the pages never re-probe the search mid-sweep; the offers left unresolved by the URL
 guesses stay in the pending feed and are simply picked up by the next sweep of that merchant.
-The file lives in the sweep directory, so a new sweep always starts with the search on. `AKS_SEARCH_TIMEOUT_S` 20 → 8 s (a slow answer was never a useful one).
-Measured 2026-09-09 on the new VPS: AKS search answered in 22-28 s with an EMPTY 200 body —
-59 offers × 20 s on one Kinguin page.
+The file lives in the sweep directory, so a new sweep always starts with the search on.
+`AKS_SEARCH_TIMEOUT_S` = 8 s (a slow answer was never a useful one; historique — the 20 s
+timeout and the 2026-09-09 measurement : CHANGELOG 2026-09-10).
 Build the slug from the AKS name (lowercase, `[^a-z0-9] → -`), verify
 `/blog/buy-{slug}-cd-key-compare-prices/` returns **200**, then extract
 `data-product-id` (the AKS_ID) and `<title>`. Extract available editions from
@@ -818,13 +752,12 @@ the embedded `"editions":{…}` JSON `[EDITIONS.md]`.
 **A transient (403/429/5xx/timeout) or name-unreadable answer on ANY guessed
 slug raises IMMEDIATELY (`MA1`, audit 2026-07-17):** slug tiers go from most
 to least specific, so collecting the failure and letting a less-specific
-tier's 200 win silently resolved the wrong product tier (a deluxe title
-landing on the base page). The docstring always promised the immediate
-fail-closed; now the code does it.
+tier's 200 win would silently resolve the wrong product tier (a deluxe title
+landing on the base page). Historique : CHANGELOG 2026-07-17 (MA1).
 **Markup drift is loud (`MA6`):** a `"prices"` block that is PRESENT but no
 longer parses raises `AksPageUnparseable` → distinct skip ("AKS page markup
-drifted"), never a silent empty tuple that would turn the R25 duplicate
-guard off. Absence stays soft — stub pages legitimately serialize
+drifted"), never a silent empty tuple (which would have disarmed the since-retired
+R25 duplicate guard). Absence stays soft — stub pages legitimately serialize
 `"prices":[]`, and absent editions/platform lines are already covered
 fail-closed by R19 (empty map → skip) and R20/R27 (no platform info →
 token-less skip).
@@ -832,21 +765,14 @@ token-less skip).
 SKIPPED with a distinct reason — never fall back to the offer title as the AKS
 name** (that turns the §4.1 identity check into a tautology; 2026-07-07 a
 Microsoft Store Key offer surfaced as a "Steam US" candidate this way) `[R15]`.
-**Duplicate guard `[R25]` — RETIRED (Romain 2026-09-08).** It was added
-2026-07-15 (Kinguin/Darkwood escape): the resolve pass extracts the page's own
-`"prices":[…]` list and a candidate whose merchant already matched the resolved
-region **and** edition was SKIPPED, to stop a STALE matched batch being
-re-submitted after the offer had since been entered. **Ruling reversed:** an
-offer that is still in the **pending feed is TO BE ADDED, period** — the matcher
-no longer second-guesses it against the page's price table. Two reasons the old
-guard was wrong: (1) it matched by `merchantName`, but the page price can come
-from another channel / an AKS auto-sync — the page merchant id ≠ the operator's
-feed `store_id` (Phantom Blade Zero 2026-09-08: page `Kinguin` id 47 vs feed
-store 58) — so it **false-skipped genuinely new offers**; (2) staleness is now
-handled by the **stable pending feed** (offers are kept, ids no longer rotate) +
-**submit-time prove-gone**, not this page check. `prices` is still extracted
-(price routing / diagnostics) but is no longer a skip source. Do **not** re-add
-the guard — see AGENTS.md "Reviewed decisions".
+**Duplicate guard `[R25]` — RETIRED (Romain 2026-09-08, reviewed decision).** An offer
+that is still in the **pending feed is TO BE ADDED, period** — the matcher never
+second-guesses it against the page's own `"prices":[…]` table (the page merchant id is not
+the feed `store_id`; staleness is covered by the stable pending feed + submit-time
+prove-gone). `prices` is still extracted (price routing / diagnostics) but is never a skip
+source. Do **not** re-add the guard — rationale in AGENTS.md « Reviewed decisions »
+(historique — the 2026-07-15 guard and the Phantom Blade Zero false skip : CHANGELOG
+2026-09-08).
 
 The extracted editions map doubles as a product-nature check: DLC bucket
 present → the product is a DLC → edition DLC(16) per §4.5 `[R18]`. Systematic
@@ -872,13 +798,8 @@ fails closed and never reaches search, same as before. Romain flagged the
 real risk directly: AKS pads a weak/no-match search with unrelated "top
 games" filler, so a search hit is **not** trusted on its own — it is just
 another candidate page, subject to the exact same R01/R01b identity checks as
-a guessed slug. Verified live: Eneba "Worms Collection 2014 Steam Key (PC)
-EUROPE" (no guessable AKS page) search-resolved to an unrelated page
-("Assassin's Creed Black Flag Resynced") — R01 correctly SKIPped it
-("missing AKS words: ASSASSIN'S, CREED, BLACK, FLAG, RESYNCED"). Real-world
-yield on the same Eneba skip batch was low (most token-less/unusual titles
-still correctly resolve to nothing) but the mechanism is safe: search only
-ever *proposes* a page, it never bypasses the identity gate.
+a guessed slug — search only ever *proposes* a page, it never bypasses the identity gate
+(historique — live verification on an Eneba batch : CHANGELOG 2026-07-16).
 
 ### 4.8 Limits & doubt
 Max **100** candidates by default unless Romain asks otherwise `[S26]`. Doubt
@@ -1019,18 +940,10 @@ registry entry moves there), `k4g.py`, `driffle.py`, `gameseal.py`, `allyouplay.
 `g2a.py`, `instant_gaming.py` (`difmark.py` parked); a file that declares no hook yet
 (Allyouplay, CJS-CDKeys: never swept, no data) is the documented statement "no data, dry-run
 first", never an omission. Per-merchant grammar and hooks: [`MERCHANTS.md`](MERCHANTS.md).
-Measurement (2026-09-14, read-only, on the last saved batches of 2026-09-12; GameSeal:
-the July 2026 sweep): console rows classified per merchant and per reason are IDENTICAL
-before / after the move (2 990 console rows, 0 oddity — MMOGA 388, Kinguin 365, Gamivo 572,
-K4G 135, Driffle 112, G2A 42, Eneba 1 376); 5 / 2 990 full-signal diffs, all region-slot
-corrections on non-game or Eneba rows (no entry changes). PC rows whose precheck / region /
-first slug differ from the committed code: Kinguin 66, K4G 228, Driffle 8, G2A 3, GameSeal
-30, Gamivo / MMOGA / Eneba 0 — every one a skip made explicit / earlier or a narrower
-region, **0 recorded candidate changes class**. Per-merchant table: CHANGELOG 2026-09-14.
+Historique (the before / after measurement of the 2026-09-14 move — 2 990 console rows
+identical, 0 recorded candidate changing class — and the per-merchant table) : CHANGELOG
+2026-09-14.
 
-Merchant-specific handling was scattered (Kinguin's domain rule, Difmark's
-offer-page resolver + maps, Eneba's URL prefixes; Gamivo's `-en-` language lock
-was here too until MA7 was retired 2026-09-01).
 Romain: **each merchant should start from its own config** — its specific
 instructions. `src/merchant_config.py` `MerchantConfig` is the single declarative
 place; `match_offer` reads `merchant_config(offer.merchant)` and applies it. A
@@ -1039,10 +952,10 @@ from the feed title + URL) — since 2026-09-14 that is only the fallback for a 
 OUTSIDE the safe-auto allowlist: every allowlisted merchant has its file (Romain's rule
 above), and « la grammaire marchande ne vit jamais dans un module générique ».
 
-Trigger: a whole **Instant Gaming** safe-auto sweep entered every offer as
-**PUBLISHER** although they were **STEAM**. IG lists Steam keys under **token-less**
-feed titles on multi-platform AKS pages, so R27 defaulted them to Publisher — but
-the real platform lives only on **the IG offer page** (`data-platform="Steam"`).
+Rationale: IG lists Steam keys under **token-less** feed titles on multi-platform AKS
+pages, so R27 alone would default them to Publisher — the real platform lives only on
+**the IG offer page** (`data-platform="Steam"`). Historique (the IG sweep entered
+PUBLISHER) : CHANGELOG 2026-08-11.
 
 `MerchantConfig` fields (migrated incrementally, no regression on Difmark/Gamivo/
 Eneba which keep their existing code, now *represented* in the config):
@@ -1073,8 +986,8 @@ IG feed titles/URLs carry no region, and the IG page's region *dropdown* is
 JavaScript-rendered (invisible to `http_get`). But the region IS in the page's
 static `<title>` / `og:title` **trailing segment** — `"… - PC (Steam) - Latin
 America"` (no suffix = worldwide). `extract_ig_region` reads that suffix, so **no
-CDP/headless is needed**. A whole IG sweep had entered 32/54 region-locked offers as
-GLOBAL before this; they now resolve their real region. The page is fetched ONCE per
+CDP/headless is needed** (historique — 32/54 region-locked IG offers entered GLOBAL before
+this rule : CHANGELOG 2026-08-13). The page is fetched ONCE per
 offer (same fetch that reads `data-platform`), with a normal browser UA (never the
 AKS staff UA off-AKS). Unreadable page → fail-closed skip.
 
@@ -1135,26 +1048,18 @@ a sweep, exactly like IG got one.
 
 ### 4.12 Console keys — region/platform, console pages, multi-target candidates `[R45]` (2026-09-12)
 
-**Trigger (Romain 2026-09-12).** The AKS feed tool is being changed to OVERWRITE the
-region (and the edition — "pas nécessaire mais ajoutée") PER TARGET PAGE, where "region"
-means region/PLATFORM: a PS5 key is added on the PS5 page and also on the PS4 page by
-overwriting the region to PS4; an Xbox key goes on Xbox One, Xbox Series X and — for
-Xbox Play Anywhere games ONLY — PC. This section supersedes the 2026-09-11 "PARKED" study
-(§4.3). The code runs under `--consoles` — **the DEFAULT since 2026-09-15** (Romain's
-decision « 1 », after the two modal-v2 canaries and the MMOGA console dry-run; it was an
-opt-in flag, default OFF, from 2026-09-12 to 14); `--no-consoles` is the PC-only opt-out.
-The write of a multi-target candidate was **fail-closed** until the new modal was observed
-(§6 "Multi-target candidates" — observed 2026-09-14, proven by the canaries of
-2026-09-15). **P1 is DECIDED** (Romain 2026-09-14: « clé PS5 seule =
-page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch et Switch 2 »); P2-P5
-below are still **à confirmer par Romain** (listed in §12). The adversarial review of
-2026-09-12 (four lenses) was fixed on 2026-09-14 — region read of the console branch, R44
-on consoles, identity apostrophes, the R19 stamp, RANDOM with a console word, the shared
-throttle guard, the submit-gate streak, null target ids — and Switch 2 became the
-`SWITCH2` family (CHANGELOG 2026-09-14). History: until the per-target modal was observed
-the console branch was READ-ONLY (`scripts/10_data_entry_auto.py` refused `--consoles`
-without `--dry-run`, 2026-09-14); the guard was lifted on Romain's GO of 2026-09-15 and
-the branch became the default the same day.
+**Trigger (Romain 2026-09-12).** The AKS feed tool OVERWRITES the region (and the edition)
+PER TARGET PAGE, where "region" means region/PLATFORM — one feed row can be filed on several
+AKS pages in ONE creation (modal v2, §6). This section supersedes the 2026-09-11 "PARKED"
+study (§4.3). The code runs under `--consoles` — **the DEFAULT since 2026-09-15** (Romain's
+decision « 1 »); `--no-consoles` is the PC-only opt-out. Real console writes are allowed
+(Romain's GO of 2026-09-15 after the modal v2 was observed with `--inspect` and proven by
+two canaries — one target, then two). **P1 is DECIDED** (Romain 2026-09-14: « clé PS5 seule
+= page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch et Switch 2 »); P2-P5
+below are still **à confirmer par Romain** (listed in §12). Historique (the opt-in / default
+OFF phase of 2026-09-12 → 14, the "`--consoles` requires `--dry-run`" guard of 2026-09-14,
+the adversarial review of 2026-09-12 fixed on 2026-09-14, the canaries) : CHANGELOG
+2026-09-12, 2026-09-14, 2026-09-15.
 
 **4.12.1 Page model — verified read-only 2026-09-12 (UA `AKS/Staff`).** AKS has SEPARATE
 console product pages: `buy-<slug>-<kind>-compare-prices/`, kind ∈ `ps4` / `ps5` /
@@ -1164,8 +1069,8 @@ Series", "Hades Nintendo Switch"), own region map and editions, and NO "official
 platforms" line (empty). Hades: PC **26712** · PS5 **85105** (regions `88ps5h` PS5,
 `88ac`) · PS4 **85104** (`88` GLOBAL, `454`) · Xbox Series **85103** (`300`, `302`,
 `470`, `306`, `241`, `471`, `301`) · Xbox One **85102** (`24`, `24eu`, `436`, `306`,
-`241`, `24ac`) · Switch **47979** (`99` GLOBAL). The 11/09 finding (a) had probed a
-wrong grammar (`…-xbox-series-x-…-cd-key-…`) — corrected in §4.3.
+`241`, `24ac`) · Switch **47979** (`99` GLOBAL). (Historique — the 11/09 probe with a wrong
+URL grammar : CHANGELOG 2026-09-12.)
 - **The tab bar is the platform list of the game.** Every page (PC and console) carries
   `<ul class="aks-offer-tabulations">`: the current page as `<span class="active"
   title=" PC"><meta data-itemprop="platform" content="PC"/>`, every other platform as
@@ -1346,9 +1251,8 @@ SWITCH alone) — the fix of the Gamivo leak below.
 
 *Fail-closed skips of the classifier* (`skip_reason`), all of the form "console: … (R45)":
 - ~~"console: Switch 2 has no AKS bucket (R45)"~~ — RETIRED 2026-09-14: "Switch 2" /
-  "Nintendo Switch 2" / `-nintendo-switch-2-` declare the `SWITCH2` family (Kinguin 12,
-  K4G 12, G2A 1, Driffle 1 rows of the latest batches become enterable on their
-  `nintendo-switch-2` page, Nintendo buckets);
+  "Nintendo Switch 2" / `-nintendo-switch-2-` declare the `SWITCH2` family (enterable on
+  the `nintendo-switch-2` page, Nintendo buckets; historique : CHANGELOG 2026-09-14);
 - "console: Xbox 360 (R45)" — "Xbox 360" (shared title read), MMOGA
   `Xbox-Live/Xbox-360-Game-Keys` (`mmoga.py` `console_url_families`);
 - "console: <marker> — not a game (R45)" — whole-word GAME PASS, XBOX LIVE GOLD, XBOX
@@ -1395,8 +1299,8 @@ SWITCH alone) — the fix of the Gamivo leak below.
    for URL-only rows — the Gamivo / Eneba leak fix). `consoles=True` → `sig =
    classify_console(...)`: its `skip_reason` is returned; then a declared region the
    grammar could not map to a sellable base (`sig.region_label`) returns "forbidden
-   region: <LABEL>" — the PC wording, same router (review fix 2026-09-14: 150 Kinguin
-   CA / AU console rows used to pass and read an implicit GLOBAL); otherwise the
+   region: <LABEL>" — the PC wording, same router (review fix 2026-09-14; historique :
+   CHANGELOG 2026-09-14); otherwise the
    remaining scans (forbidden regions, categories, bundles, skins…) CONTINUE as usual
    and `None` is returned. Position: that of the current console scan.
 3. `AksResolution` gains `console_pages: dict[str, str]` (kind → url, from the tab bar)
@@ -1408,7 +1312,7 @@ SWITCH alone) — the fix of the Gamivo leak below.
    consecutive-unreliable count, one grace budget and one `stats` dict across anchor
    probes and page reads, so the sweep aborts after THROTTLE_MAX_CONSECUTIVE_UNRELIABLE
    unreliable probes on distinct pages whichever resolver they hit (review fix
-   2026-09-14: two independent guards doubled the budget before `AksThrottled`).
+   2026-09-14 — never two independent guards; historique : CHANGELOG 2026-09-14).
 4. `match_offer(..., page_resolver=resolve_aks_url, consoles=False)` — the console branch
    (consoles=True, `classify_console` not `None`, no `skip_reason`), at the AKS-resolution
    point:
@@ -1418,7 +1322,7 @@ SWITCH alone) — the fix of the Gamivo leak below.
    b. `dlc_title_marker(offer.name)` → skip "console: DLC / season pass on console — not
       entered yet (R45)" **[P5]**;
    c. region (review fix 2026-09-14 — NEVER an implicit GLOBAL for a region word the
-      merchant wrote; Gamivo 254/264 and Kinguin 37 real rows read GLOBAL before):
+      merchant wrote; historique : CHANGELOG 2026-09-14):
       `detect_region_base(offer) -> (base, label, implicit, gift)` is the generic
       title/URL read (`detect_region` and `detect_region_base` both read the shared
       `_detect_region_parts` scan, which carries the merchant `title_region` hooks — R46
@@ -1452,8 +1356,8 @@ SWITCH alone) — the fix of the Gamivo leak below.
       unverifiable (R45)"; `page_resolver(url)` → `None` → skip; identity
       `_identity_tokens(console_page_identity(page.aks_name)) ==
       _identity_tokens(identity_name)` — tokens with apostrophes FOLDED (review fix
-      2026-09-14: the AKS Switch page "DreamWorks Spirit Luckys Big Adventure" vs the PC
-      page "Lucky's" was a real false skip on the MMOGA dry-run), else skip "console page
+      2026-09-14: "Luckys" on a Switch page equals "Lucky's" on the PC page; historique :
+      CHANGELOG 2026-09-14), else skip "console page
       '<name>' is not '<identity>' (R45)" (the Elden Ring Tarnished Edition case — also on
       the `nintendo-switch-2` tab: "ELDEN RING Tarnished Edition Nintendo Switch 2", AKS
       188441, is not Elden Ring); `page.editions` empty → skip "AKS <FAMILY> page carries
@@ -1461,10 +1365,10 @@ SWITCH alone) — the fix of the Gamivo leak below.
    h. `resolution` = the primary page (first declared family), `platform` = the primary
       family, `region_label` / `region_id` = the primary bucket; then the common flow
       (R44 — on the BASE label `plan.base_label` against the page IDENTITY, the grammar's
-      `region_base` authoritative like a merchant hook (review fix 2026-09-14: the bucket
-      text "Xbox Game Code US" made R44 dead on consoles — "Air Force United States
-      Pacific Xbox One" was entered US-locked) —, R19, the edition block R18 / E05 / R23 /
-      P1-1 unchanged);
+      `region_base` authoritative like a merchant hook (review fix 2026-09-14: R44 reads the
+      BASE label, never the bucket text "Xbox Game Code US" — "Air Force United States
+      Pacific Xbox One" skips R44; historique : CHANGELOG 2026-09-14) —, R19, the edition
+      block R18 / E05 / R23 / P1-1 unchanged);
    i. after the edition block: every secondary target must sell the resolved edition
       (`edition_id in page.editions`), else skip "edition <label>(<id>) not sold on the
       <family> page (R45)"; then `targets` and the `Candidate` are built.
@@ -1480,9 +1384,8 @@ SWITCH alone) — the fix of the Gamivo leak below.
    EUROPE"); `resolve_catalog_id` falls back to the id path (verified). Shapes:
    [`DATA_CONTRACTS.md`](DATA_CONTRACTS.md).
 6. `match_feed(..., consoles=False)` (the library default is unchanged); the CLIs and the
-   admin are **console-ON by default** — Romain's decision « 1 » of 2026-09-15, after the
-   two modal-v2 canaries and the MMOGA console dry-run (663 offers → 174 console
-   candidates: 89 single-target, 59 two-target, 26 three-target; 489 skips):
+   admin are **console-ON by default** — Romain's decision « 1 » of 2026-09-15 (historique
+   — the MMOGA console dry-run behind it : CHANGELOG 2026-09-15):
    `scripts/03_match.py` (`--consoles` default `True`, kept as an explicit no-op;
    **`--no-consoles`** opts out) stamps `match_meta.json["consoles"]`;
    `scripts/10_data_entry_auto.py` / `src/data_entry_auto.py` (`SweepConfig.consoles`
@@ -1492,16 +1395,13 @@ SWITCH alone) — the fix of the Gamivo leak below.
    JSON boolean body field `consoles` (absent = `true`; a non-boolean is refused 400
    `bad_consoles`), the UI checkbox « Consoles » is checked by default, and the manager
    appends the same flag pair to `scripts/10` / `11` / `12` and records `consoles` in
-   `admin_submit.json`. History: default OFF from 2026-09-12 to 14; the 2026-09-14
-   "`--consoles` requires `--dry-run`" guard was LIFTED on Romain's GO of 2026-09-15
-   after the modal v2 was observed and proven by two canaries — `05_submit` gates every
-   entry by shape / cap / readbacks (§6). **No console ENTRY under `--no-consoles`** —
-   but the URL console scan (`console_marker_in_url`)
-   is active in EVERY mode and changes the skip reasons of URL-only console rows: on the
-   latest Gamivo batch 569 rows previously filed "no AKS product page found" (241),
-   "forbidden region: COLOMBIA" (206), "skip category: BUNDLE" (26), "forbidden region:
-   ROW" (26) / CANADA (17), "extra words: ['KINGDOM']" (11) now all skip `console`
-   (feed_status: category consoles).
+   `admin_submit.json`. `05_submit` gates every entry by shape / cap / readbacks (§6).
+   **No console ENTRY under `--no-consoles`** — but the URL console scan
+   (`console_marker_in_url`) is active in EVERY mode, so a URL-only console row skips
+   `console` there instead of a page-level reason ("no AKS product page found", "forbidden
+   region: …", "extra words: ['KINGDOM']"…; feed_status: category consoles). Historique
+   (default OFF 2026-09-12 → 14, the `--dry-run` guard of 2026-09-14, the 569-row Gamivo
+   count) : CHANGELOG 2026-09-14 / 2026-09-15.
 
 **Never partial.** A console candidate exists ONLY when EVERY declared family resolved to
 a verified page + bucket + edition; any failing family skips the WHOLE offer with the
@@ -1527,16 +1427,13 @@ guessed: doubt → skip with an explicit reason string.
 - **P4 Eneba's 704 "XBOX LIVE Key" rows without a generation** → skip (no declaration).
 - **P5 console DLC / season pass** → skip in v1.
 
-**The leak (found 2026-09-12) and its fix.** The console guard (`precheck_skip`) read the
-TITLE only; Gamivo (569 of its 572 console rows) and Eneba (URL segment) carry the platform
-in the URL alone. Run `20260911-162100-auto-gamivo-s51-p28`: "Riders Republic Premium
-Edition United States" (`gamivo.com/product/riders-republic-xbox-xbox-one-series-us-premium`)
-matched PUBLISHER / GLOBAL(1) implicit / Premium(34) through the token-less-title → Direct
-Publisher path and was created (`created: 1`, post-save "gone from feed") — an Xbox
-One/Series, US-locked key is live on the PC page of Riders Republic (AKS product
-**50562**) as a Direct-Publisher GLOBAL Premium offer. **To be corrected by hand on AKS**
-(HANDOFF). Fix: `console_marker_in_url` in `precheck_skip`, **active in every mode** — such
-a row now skips `console` (flag off) or is classified (flag on).
+**URL-only console rows.** Gamivo and Eneba carry the platform in the URL alone (the title
+never names it), so the console guard of `precheck_skip` reads the TITLE **and** the URL
+(`console_marker_in_url`), **active in every mode** — such a row skips `console`
+(`--no-consoles`) or is classified (default); a console key must never reach the
+token-less-title → Direct Publisher path of the PC branch. Historique (the Riders Republic
+leak of 2026-09-11, AKS product 50562, to be corrected by hand — §12) : CHANGELOG
+2026-09-12.
 
 **Reason-string vocabulary.** `console` — flag off, any console marker in title OR URL
 (unchanged text for titles). `console: … (R45)` — flag on, the classifier's and the
@@ -1565,19 +1462,11 @@ there too, never in `no_page` / `stub_page` / `other`; `aks_lists.suggest_target
 keeps them all in place (no list). The `<FAMILY>` placeholder is the family KEY
 (`XBOX_SERIES`, `PS5`, …), not the `CONSOLE_PLATFORM_LABEL` text.
 
-**Volumes (latest batch per merchant, 2026-09-12 — grammar per merchant in
-[`MERCHANTS.md`](MERCHANTS.md)).** MMOGA 388 console rows / 723 (One+Series 149, Series
-89, Switch 63, One 35, PS5 10, non-game 85; EU tail 240); Kinguin 365 / 940 (One+Series
-211, Series 79, PS5 16, PS4/PS5 15, Switch 13, Switch 2 12 — enterable since 2026-09-14;
-CA 83 / AU 77 forbidden — skipped in `precheck_skip` since 2026-09-14);
-Gamivo 572 / 762, URL-only (Series 333, One+Series 207; United Kingdom 258, Colombia 203);
-K4G 135 / 592; Driffle 112 / 464; G2A 42 / 806 (spells "X/S", One and Series as separate
-rows); Eneba 1 376 / 1 659 of which 704 generation-less; Instant Gaming: the platform is
-not in the feed. The MMOGA console dry-run of 2026-09-15 (run
-`20260915-081607-dryrun-consoles`, 663 offers): **174 console candidates** — 89
-single-target, 59 two-target, 26 three-target — and 489 skips; this is the measurement
-behind Romain's decision « 1 » (consoles by default everywhere, `--no-consoles` to opt
-out). Kinguin is the next dry-run (HANDOFF).
+**Volumes.** Console rows per merchant and per grammar (latest batches) live in
+[`MERCHANTS.md`](MERCHANTS.md) and `docs/feeds/<Merchant>.md`; historique (the 2026-09-12
+batch counts, the MMOGA console dry-run of 2026-09-15 behind decision « 1 ») : CHANGELOG
+2026-09-12 / 2026-09-15. Instant Gaming: the platform is not in the feed (no console entry
+from IG, MERCHANTS.md).
 
 ---
 
@@ -1660,24 +1549,21 @@ For each validated candidate, in order, fail-closed:
 1. Refresh the current merchant feed again; locate the **exact current row**
    (feeds are dynamic — re-scan, never trust saved page numbers) `[DRIFFLE][GOG]`.
    In a batch, each creation shrinks the feed and **reflows the pagination**, so
-   a row index built at batch start goes stale (2026-07-07 G2A: offer drifted
-   from page 2 to page 1 after 8 creations → ROW_NOT_FOUND). The post-save
+   a row index built at batch start goes stale. The post-save
    verify scan walks the whole refreshed feed anyway — its result **replaces**
    the row index after every verified creation (zero extra page loads).
    **Offer ids are import-batch-scoped, not row identities**: AKS re-imports a
-   feed on its own schedule and re-ids EVERY row (K4G 2026-07-08: 0/212 ids
-   survived 74 min; G2A: 0/716 in 24 h). The stable row identity is the
-   **merchant URL path** — query params drift across G2A re-imports (`uuid=`
-   changed on 26/716 rows in 24 h while the path held 716/716; unique in-feed
-   for both merchants). A candidate absent by id is re-located by URL path +
+   feed on its own schedule and re-ids EVERY row. The stable row identity is the
+   **merchant URL path** — query params drift across re-imports while the path holds
+   (unique in-feed). Historique (G2A reflow 2026-07-07, K4G / G2A id-rotation
+   measurements 2026-07-08) : CHANGELOG 2026-07-08. A candidate absent by id is re-located by URL path +
    **exact-title check** (fail-closed on any drift) and adopts the row's
    current id (`row_relocated` in the log). Absent by id AND path = the offer
    genuinely left the feed (worked in parallel / delisted) — a correct SKIP.
    **An index-scan miss is NOT trusted as that SKIP** (hardened 2026-09-01): the
    bulk index build (`_index_by_search` for by-urls; `_scan_page_window` for a
-   sweep) can transiently drop a present offer — in a same-product multi-edition
-   batch it dropped all-but-one (Whiteout Survival's 7 Frost-Stars editions entered
-   1/7 per run while the other 6 sat in the feed). Before giving up, `_prepare`
+   sweep) can transiently drop a present offer (historique — the Whiteout Survival
+   same-product multi-edition batch : CHANGELOG 2026-09-01). Before giving up, `_prepare`
    RE-LOCATES that one candidate alone by its stable URL — via the feed SEARCH on
    the by-urls path, a bounded feed scan on a sweep (BOTH paths now, parity). Found
    → adopt + proceed; genuinely absent → keep the fail-closed blocker; **UNREADABLE
@@ -1705,9 +1591,9 @@ For each validated candidate, in order, fail-closed:
    after the index scan — re-find the row on the fresh DOM and re-match the
    candidate (name + URL path, `check_price=False`) before opening its modal.
    The row is pinned by its **stable URL first, NOT the scanned id** (`_pin_
-   fresh_row`): the feed rotates every id on each re-import, so an id-match reads
-   a still-present row as gone — the "reflowing too fast to pin" skip that lost a
-   stably-pending offer over two runs (The Green Light Steam, 2026-09-01). The
+   fresh_row`): the feed rotates every id on each re-import, so an id-match would read
+   a still-present row as gone (historique — the "reflowing too fast to pin" skip, The
+   Green Light Steam : CHANGELOG 2026-09-01). The
    URL-matched row yields its CURRENT id for the modal open, and a slow JS render
    is render-polled (re-read, no re-navigate) before concluding absence. A row
    genuinely absent by URL (worked in parallel / delisted), or a URL now pointing
@@ -1716,13 +1602,11 @@ For each validated candidate, in order, fail-closed:
    The click returns as soon as it fires — the ThickBox loads `#TB_ajaxContent`
    ASYNCHRONOUSLY — so the modal context is **render-polled** (re-read) with its own
    backoff `MODAL_CTX_WAITS` = 1/2/4/8/8 s (≈23 s) before concluding it is missing
-   (hardened 2026-09-01: an immediate read skipped a genuinely-open Kinguin modal as
-   "modal context missing (#TB_ajaxContent)" — Simpler Times; widened 2026-09-10: 9/24
-   MMOGA offers were refused at the old 7 s feed-style budget). **Lost-click defense
+   (hardened 2026-09-01, widened 2026-09-10 — never an immediate read, never the 7 s
+   feed-style budget; historique : CHANGELOG 2026-09-01 / 2026-09-10). **Lost-click defense
    (2026-09-10, MMOGA):** the click only works once the page scripts have bound the
    ThickBox handler, and under AKS slowness the 3 s navigate settle is not always enough
-   — a click fired earlier is silently lost ("OPENED", no content ever; 3 rows refused
-   across two sweeps while a read-only re-open served the form at 0.0 s). So (a) before
+   — a click fired earlier is silently lost ("OPENED", no content ever). So (a) before
    the click the submitter polls `page_scripts_state()` (readyState `complete` +
    `tb_show` defined, `PAGE_SCRIPTS_READY_WAITS` ≈15 s, read-only), and (b) after
    `MODAL_RECLICK_AFTER_POLLS` = 3 empty polls the click is re-issued **once** (opening a
@@ -1759,21 +1643,19 @@ For each validated candidate, in order, fail-closed:
 7. **HTML5 validity gate** (`form_validity()`, a hard gate): the `<form>` must be
    valid (`form_valid:true`) — else return `FORM_INVALID` and do **not** click.
    An **unreadable** probe (`ok:false`) blocks the same way — return
-   `FORM_VALIDITY_UNREADABLE`, clean up, never click (audit P1b, 2026-07-08:
-   the old code continued to the click on `ok:false` — explicit degraded mode,
-   now removed).
+   `FORM_VALIDITY_UNREADABLE`, clean up, never click (audit P1b, 2026-07-08 — no
+   degraded mode; historique : CHANGELOG 2026-07-08).
 8. Submit by a **trusted CDP click** (`isTrusted:true`) on the modal "Create offer"
    button — the only trigger Driffle's handler honours `[S09]`. It drives the
    modal's **own** `admin-ajax do=create_offer`; we never issue a direct XHR
    (the merchant id is auto-assigned by the modal).
-   **A real write is `trusted`-only `[P2-1, A2]` (audit 2026-09-02).** The old
-   `native` (`button.click()`) and `dispatch` (MouseEvent) click modes routed to the
-   UNGUARDED `fill_and_create` — no SC3 read-back, no `VALUE_DRIFTED_BEFORE_CLICK`, no
-   `form_validity()` gate, no `NO_OPTION` guard (the very guards steps 5–7 add) — and
-   produced `isTrusted:false` (proven not to persist). The degraded write path is
+   **A real write is `trusted`-only `[P2-1, A2]` (audit 2026-09-02).** The `native`
+   (`button.click()`) and `dispatch` (MouseEvent) click modes produce `isTrusted:false`
+   (proven not to persist) and bypass the guards of steps 5–7; the degraded write path is
    **REMOVED** from the write `Submitter` (A2): its `__init__` accepts ONLY `trusted`
    and raises on anything else — **no opt-in escape hatch** ("no degraded mode").
    `scripts/05 --submit` also refuses `native`/`dispatch` at the CLI (defense in depth).
+   Historique : CHANGELOG 2026-09-02 (P2-1 / A2).
 9. Verify post-save (§7), then close via `#TB_closeWindowButton`.
 10. Pacing ≥ 500 ms between submissions `[S03]` — implemented as bounded-random
     pacers (`src/pacing.py`): `--pace-offers` (default `5-15` s) between offers,
@@ -1782,37 +1664,37 @@ For each validated candidate, in order, fail-closed:
     every creation** for post-save verify. `0` disables either. Pacing is never
     a correctness mechanism.
 
-**Multi-target candidates `[R45]` (2026-09-12).** A candidate carries `targets` (always
-≥ 1 — [`DATA_CONTRACTS.md`](DATA_CONTRACTS.md); §4.12). `_prepare` normalises
-`entry["targets"]` (an older `candidates.json` without the key → the primary target) and
+**Multi-target candidates `[R45]` (2026-09-12; written whole on the modal v2 since
+2026-09-15).** A candidate carries `targets` (always ≥ 1 —
+[`DATA_CONTRACTS.md`](DATA_CONTRACTS.md); §4.12). `_prepare` normalises `entry["targets"]`
+(an older `candidates.json` without the key → the primary target) and
 `_resolve_from_catalog` resolves the region AND the edition of EVERY target against the
-live catalog (any target failing → blocker, as today). **One target = today's path,
-unchanged** (steps 1-10 above). **More than one target = fail-closed blocker
-`multi_target_unsupported_until_modal_verified`** (`ready: false`, "la saisie multi-cibles
-/ overwrite par cible attend l'observation du nouveau modal (--inspect) — R45"): Romain's
-new feed tool overwrites region / edition PER target page, but its controls have not been
-observed yet. The per-target fill is added ONLY after an `--inspect` pass on the new modal
-has shown the per-target region / edition overwrite controls (`modal_inspection.json`),
-never before, and never as "the first target only": a creation consumes the feed row
-(§4.3 (d)), so a partial entry would silently lose the second platform. **The gate is a
-DESIGNED skip, not a failure** (review fix 2026-09-14): an entry gated ONLY by this
-blocker feeds neither the 10-consecutive-failures streak nor the StepGuard / BlockLedger
-accounting (`guard.record_result` is not called for it) and is counted in the run
-result's `gated_multi_target`, so a batch of multi-target candidates never stops the run
-(`ten_consecutive_failures`) nor halts the safe-auto sweep — the single-target and PC
-entries after it are processed. `InspectSubmitter` (`--inspect`) still opens and dumps the
-modal of an entry gated only by this blocker (read-only; `ready` stays false) — exactly
-the observation the gate waits for (HANDOFF step 1). `DryRunSubmitter`
-lists every target in `would_submit`; the admin validation refuses an override on a
-multi-target candidate (`ValidationIOError("bad_override", "candidat multi-cibles (R45) :
-pas de surcharge, relancer le match")`) and its row shows a "N cibles (R45)" block
-(family · page id · region(id) per target) inside the « Produit AKS » cell, with the
-platform / region / edition selects disabled. **BOM (bucket 306):** the master label of
-"Xbox/PC GLOBAL (306)" starts with U+FEFF (the rendered option has none);
-`region_query` / `edition_query` are the catalog text WITHOUT U+FEFF —
-`_type_text_trusted` would otherwise dispatch the BOM as a key event — while `region_text`
-stays verbatim in the plan. Non-numeric ids (`88ps5h`, `24eu`, `99eu`…) and `306` resolve
-through `resolve_catalog_id`'s **id path** (verified on the live catalog, §4.12.1).
+live catalog (any target failing → blocker). **One target = the single-row v2 path** (every
+PC offer; steps 1-10 above with one target row). **Several targets = ONE creation with one
+target row per page** (the "Modal v2" rules below: cap `MAX_TARGETS_PER_OFFER` = 3, every
+row proven by readback, one Create click) — never "the first target only": a creation
+consumes the feed row (§4.3 (d)), so a partial entry would silently lose the second
+platform. **Designed skips, not failures** (review fix 2026-09-14): an entry gated ONLY by
+`multi_target_unsupported_until_modal_verified` (a multi-target candidate on a
+`targets_v1` modal — the historical chip field) or by `too_many_targets` feeds neither the
+10-consecutive-failures streak nor the StepGuard / BlockLedger accounting
+(`guard.record_result` is not called for it) and is counted in the run result's
+`gated_multi_target` / `gated_too_many_targets`, so such a batch never stops the run
+(`ten_consecutive_failures`) nor halts the safe-auto sweep — the entries after it are
+processed. `InspectSubmitter` (`--inspect`) opens and dumps the modal of a gated entry
+(read-only; `ready` stays false). `DryRunSubmitter` lists every target in `would_submit`;
+the admin validation refuses an override on a multi-target candidate
+(`ValidationIOError("bad_override", "candidat multi-cibles (R45) : pas de surcharge,
+relancer le match")`) and its row shows a "N cibles (R45)" block (family · page id ·
+region(id) per target) inside the « Produit AKS » cell, with the platform / region /
+edition selects disabled. **BOM (bucket 306):** the master label of "Xbox/PC GLOBAL (306)"
+starts with U+FEFF (the rendered option has none); `region_query` / `edition_query` are
+the catalog text WITHOUT U+FEFF — `_type_text_trusted` would otherwise dispatch the BOM as
+a key event — while `region_text` stays verbatim in the plan. Non-numeric ids (`88ps5h`,
+`24eu`, `99eu`…) and `306` resolve through `resolve_catalog_id`'s **id path** (verified on
+the live catalog, §4.12.1). Historique (the fail-closed gate "until the modal is observed",
+2026-09-12 → 14, the observation of 2026-09-14 and the canaries of 2026-09-15) : CHANGELOG
+2026-09-12 / 2026-09-14 / 2026-09-15.
 
 **Absolutely forbidden** `[SUBMISSION HARD OVERRIDE][S09][GOG]`: direct
 `admin-ajax` XHR; `form.dispatchEvent(...)`; `form.submit()`; any "fire and
@@ -1841,11 +1723,12 @@ above the cap is refused (exit 2), not silently clamped. The per-offer and
 10-consecutive-failure stop conditions above are unchanged and remain the actual
 safety net *during* a run.
 
-**Open invariant (not yet enforceable):** the matcher has no mode profiles yet,
-so the mode is *declared* on `05_submit` and cannot be cross-checked against the
-run. When `03_match` stamps a mode into `candidates.json`, `05_submit` MUST
-re-verify it and fail closed on a mismatch — a run matched under an unlock must
-never be submittable as `safe` and take the full-batch path.
+**Mode binding (FC5, audit 2026-07-17 — enforced):** `03_match --mode` stamps the mode
+into `match_meta.json`; `05_submit` and the admin `SubmitManager` refuse a real submit
+whose declared mode is *wider* than the matched one (`mode_widens_match`) — a run matched
+under an unlock can never take the full-batch `safe` path. Absent meta = pre-FC5 legacy
+run, accepted. (The matcher has no mode profiles: behaviour is identical for the three
+modes, only the stamp differs.)
 
 Both the DRY-RUN and the **real write path** are built in
 `src/submitter.py` + `src/submit_session.py` + `scripts/05_submit.py`; the real path
@@ -1858,8 +1741,7 @@ valid — fail-closed skips them, not a regression.
 `submit_plan.json` reports two write counters (audit P2, 2026-07-08):
 `write_attempts` (ready rows the write path attempted — the conservative count
 that drives `--limit`) and `created` (verified creations, i.e. post-save "gone
-from the refreshed feed"). The old single `writes` counter conflated the two
-and overstated creations.
+from the refreshed feed") — never a single counter conflating the two.
 
 ---
 
@@ -1977,11 +1859,11 @@ UNKNOWN, verify it by hand …"` (attempt counted, creation NOT), stops the run
 with `stopped="feed_unreadable"`, and still writes `submit_plan.json` + logs.
 At batch start they abort with `aborted="feed_unreadable"` before any write.
 
-**One bounded retry of the proof on a CDP command TIMEOUT (Romain GO 2026-09-10).**
-Twice in ~100 MMOGA creations the AKS admin page took longer than the 45 s command
-timeout to answer the proof navigation right after a successful Create (signal "Offer
-created …"), so a created offer was marked UNKNOWN and the whole sweep halted. The
-proof is read-only, so re-running it can never create: when `_verify_gone` raises
+**One bounded retry of the proof on a CDP command TIMEOUT (Romain GO 2026-09-10;
+historique — the two MMOGA halts behind it : CHANGELOG 2026-09-10).** The AKS admin page
+can take longer than the 45 s command timeout to answer the proof navigation right after
+a successful Create. The proof is read-only, so re-running it can never create: when
+`_verify_gone` raises
 `CdpTimeoutError` (the `_cmd` "no response within Ns" case — the WebSocket is intact, a
 late answer to the timed-out id is discarded by the next command's id match) the
 submitter logs `post_save_proof_retry`, waits `POST_SAVE_PROOF_RETRY_WAIT_S` = 5 s and
@@ -2170,14 +2052,12 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167, MMOGA 12 (its AKS page merchant i
   the `edition_id=780`/`region_product_id=1` query params are Difmark's own
   internal ids (no known mapping to AKS ids) and are not used as a signal;
   region/edition still come from the (cleaned) path text and the title.
-  - **Page-verified platform + region (Romain 2026-07-17).** Batch 1 (pages
-    1-10, 658 offers) showed the dominant Difmark failure mode: 501/652
-    skips (77%) were R27 ("no platform in title and AKS page does not
-    confirm Direct Publisher") because Difmark's AKS-feed titles are
-    typically bare `<Name> [Edition] Standard Edition` — no platform word at
-    all — on top of the region gap ("il y a des offres Steam EUROPE qui ne
-    sont pas indiquées dans l'URL"). For both signals, the merchant's own
-    page is strictly more reliable than inferring from AKS's page, so
+  - **Page-verified platform + region (Romain 2026-07-17).** Difmark's AKS-feed titles
+    are typically bare `<Name> [Edition] Standard Edition` — no platform word — and the
+    region is not in the URL either ("il y a des offres Steam EUROPE qui ne sont pas
+    indiquées dans l'URL"), so the generic path would R27-skip almost everything
+    (historique — batch 1 counts : CHANGELOG 2026-07-17). For both signals, the merchant's
+    own page is strictly more reliable than inferring from AKS's page, so
     `match_offer` fetches it directly for Difmark instead of falling through
     to the generic R20/R27 title/AKS-page logic: plain GETs only (no
     CDP/browser — "les pages marchand, tu peux les curl") to the product URL,
@@ -2190,11 +2070,7 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167, MMOGA 12 (its AKS page merchant i
     `Global`/`Europe`/`United States`/`United Kingdom`
     (`DIFMARK_REGION_TEXT_MAP`). Anything outside either map, or a
     page/API that can't be read, fails closed — SKIP, never a guess (G02).
-    Live example: Afterlife VR (title has no platform word) used to default
-    to PUBLISHER via R27's AKS-page inference; the merchant's own page
-    confirms `marketplace: Steam` — now entered as STEAM instead, the exact
-    kind of silent mis-platforming R20/R26/R27 were written to catch for
-    other merchants (DCS/Su-27, Gameboost). The R20 cross-check against the
+    (Historique — the Afterlife VR example : CHANGELOG 2026-07-17.) The R20 cross-check against the
     AKS page's own official-platforms list still applies on top (a
     page-verified Steam that the AKS page doesn't list under "official
     platforms" still fails closed) — its skip message says "Difmark
@@ -2207,55 +2083,35 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167, MMOGA 12 (its AKS page merchant i
     through that dropdown would have been silently wrong (id 1 = "Europe"
     there, but the real per-offer attribute for that same example was
     `region: Global`).
-  - **Account-vs-key escape, two rounds (Romain 2026-07-17, both caught from
-    the normalized report).** Round 1: "je vois que pour Difmark, au lieu de
-    Steam account, tu as lancé des Steam dans ton rapport normalisé." The
-    pre-existing `STEAM ACCOUNT` categorical skip (`CATEGORY_SKIP`, checks
-    `offer.name`) NEVER actually fires for Difmark — its AKS-feed titles
-    never carry the word "Account" at all ("Rogue Loops Standard Edition"),
-    and the URL's "steam-account" segment is boilerplate present on every
-    listing regardless of delivery type. The **only** place the distinction
-    shows up is the merchant's own per-offer `offer_name`
-    (`"Rogue Loops (Steam Account) / Region GLOBAL / Edition Standard"` vs a
-    genuine key's differently-shaped name, e.g. `"Sekiro: Shadows Die
-    Twice GOTY"` or `"RIMWORLD [STEAM/GLOBAL] [OFFLINE]"` — confirmed live
-    on real batch-1 offers) — so the merchant page is fetched
-    **unconditionally** for every Difmark offer, not only when
-    platform/region are ambiguous.
-    **Round 2, immediate correction: "je voulais que tu renseignes la région
-    Steam Account quand tu vois Steam Account. Pourquoi... tu les mets en
-    Steam normal, alors que c'est des Steam Account aussi?"** The round-1 fix
-    treated an "ACCOUNT" `offer_name` as a skip (reusing `CATEGORY_SKIP`'s
-    STEAM ACCOUNT reasoning, which really does mean "un-enterable" for other
-    merchants like G2A). Wrong for Difmark: AKS's own region dropdown
-    (`offer[region]` select) carries a **parallel "Account" bucket for many
-    platforms** — `Steam Account (412)`, `Steam EU Account (480)`, `Steam
-    Row Account (577)`, `steam account us (578)`, and equivalents for Epic/
-    Nintendo/PlayStation/Xbox/Windows/Ubisoft/Origin/Publisher/Subscription
-    — a legitimate, distinct region for account-delivery listings, not a
-    dead end. Confirmed via a cached live dropdown snapshot
-    (`runs/20260708-081329-k4g/session_catalog.json`, `probe_select_options`
-    on `offer[region]`, 867 rendered options). Fix: an `offer_name`
-    containing "ACCOUNT" no longer skips — it redirects the region lookup to
-    `DIFMARK_STEAM_ACCOUNT_REGION_IDS` (base key → id, Steam platform only,
-    no UK entry exists) instead of the normal `REGION_IDS["STEAM"]`; the
-    reported `region_label` becomes e.g. `"GLOBAL ACCOUNT"` /
-    `"EU ACCOUNT"` so the report visibly distinguishes them from plain
-    Steam. A platform other than Steam, or a region with no confirmed
-    Account variant (UK), still fails closed — SKIP, never a guessed id
-    (G02). **Ids came from a 9-day-old catalog snapshot — re-verify against
-    a fresh dropdown fetch (P06, "dropdown is truth") before Difmark's first
-    real submit.**
-    **Round 3 (Romain 2026-07-18): the account offer must resolve AKS's
-    dedicated account PAGE, not the game key page.** Rounds 1-2 got the
-    *region* right (Account bucket 412/…) but still matched the game's
-    `…-cd-key-…` page. AKS actually carries a SEPARATE product page per
-    account platform — `buy-<slug>-<platform>-account-compare-prices/` — a
-    distinct product with its own id/editions/prices (verified live:
-    `Final Knight Steam Account` = 187974, editions `{5:"Early Access"}`,
-    while the key page `Final Knight` = 171000; and every existing listing on
-    187974, G2A included, uses region 412 — so page-account + region-account
-    is internally consistent). Implementation: `aks_url(slug, page_kind)` +
+  - **Account offers (Romain 2026-07-17, rounds 1-2; historique — the two report
+    escapes and Romain's quotes : CHANGELOG 2026-07-17).** Difmark's AKS-feed titles
+    never carry the word "Account" and the URL's "steam-account" segment is boilerplate on
+    every listing, so the `STEAM ACCOUNT` categorical skip never fires for Difmark; the
+    **only** place the account-vs-key distinction shows up is the merchant's own per-offer
+    `offer_name` (`"Rogue Loops (Steam Account) / Region GLOBAL / Edition Standard"` vs a
+    genuine key's differently-shaped name, e.g. `"RIMWORLD [STEAM/GLOBAL] [OFFLINE]"`) —
+    so the merchant page is fetched **unconditionally** for every Difmark offer, not only
+    when platform/region are ambiguous. An "ACCOUNT" `offer_name` is NOT a skip: AKS's own
+    region dropdown (`offer[region]` select) carries a **parallel "Account" bucket for
+    many platforms** — `Steam Account (412)`, `Steam EU Account (480)`, `Steam Row Account
+    (577)`, `steam account us (578)`, and equivalents for Epic/Nintendo/PlayStation/Xbox/
+    Windows/Ubisoft/Origin/Publisher/Subscription — a legitimate, distinct region for
+    account-delivery listings. The region lookup is redirected to
+    `DIFMARK_STEAM_ACCOUNT_REGION_IDS` (base key → id, Steam platform only, no UK entry
+    exists) instead of the normal `REGION_IDS["STEAM"]`; the reported `region_label`
+    becomes e.g. `"GLOBAL ACCOUNT"` / `"EU ACCOUNT"` so the report visibly distinguishes
+    them from plain Steam. A platform other than Steam, or a region with no confirmed
+    Account variant (UK), fails closed — SKIP, never a guessed id (G02). **The ids came
+    from a catalog snapshot (`runs/20260708-081329-k4g/session_catalog.json`) — re-verify
+    against a fresh dropdown fetch (P06, "dropdown is truth") before Difmark's first real
+    submit.**
+    **Round 3 (Romain 2026-07-18): the account offer must resolve AKS's dedicated
+    account PAGE, not the game key page.** AKS carries a SEPARATE product page per
+    account platform — `buy-<slug>-<platform>-account-compare-prices/` — a distinct
+    product with its own id/editions/prices (verified live: `Final Knight Steam Account`
+    = 187974, editions `{5:"Early Access"}`, while the key page `Final Knight` = 171000;
+    every existing listing on 187974 uses region 412 — page-account + region-account is
+    internally consistent). Implementation: `aks_url(slug, page_kind)` +
     `resolve_aks(page_kind=…)` build `…-<kind>-compare-prices/`
     (`DIFMARK_ACCOUNT_PAGE_KINDS={"STEAM":"steam-account"}`, Steam-only
     confirmed); `match_offer` routes account offers through the injectable
@@ -2273,32 +2129,24 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167, MMOGA 12 (its AKS page merchant i
   - **Operating cadence — one page at a time (Romain 2026-07-17).** "Faut se
     rappeler que la prochaine fois, on fait page par page. On prend les 100
     offres de la page et on regarde. On envoie un rapport sur ce qu'on peut
-    entrer et on le rentre." Difmark's feed is large (382 pages) and
-    refreshes multiple times a day, deleting and recreating every offer id
-    on each refresh (confirmed live 2026-07-17: an `approved.json` built
-    from one page fetch was already unusable by submit time, hitting first
-    `catalog_unavailable`/`no_openable_offer` — feed mid-reimport — then
-    `feed_unreadable` — coverage unproven at the default 40-page cap — then,
-    once repopulated, 10 consecutive failures because every approved id had
-    rotated out from under it). The fix isn't only a bigger `--max-pages`;
-    it's cadence: **extract exactly ONE page (100 offers) → match → send the
+    entrer et on le rentre." Difmark's feed is large (hundreds of pages) and
+    refreshes multiple times a day, deleting and recreating every offer id on each
+    refresh, so a batch matched ahead of its submit is dead on arrival. Cadence:
+    **extract exactly ONE page (100 offers) → match → send the
     report → Romain validates what's enterable → submit that page's
     validated batch → only then move to the next page.** Never extract/match
-    several pages ahead of what's about to be validated+submitted — a batch
-    sitting unsubmitted while the feed refreshes again is dead on arrival.
-    This supersedes the earlier "batches of ~10 pages" guidance from the
-    same day (that was already a correction on "don't sweep all 382 pages at
-    once" — this narrows it further, to one page, once the id-rotation
-    frequency became clear).
+    several pages ahead of what's about to be validated+submitted. Historique (the
+    2026-07-17 dead-on-arrival batch, the earlier "~10 pages" guidance) : CHANGELOG
+    2026-07-17.
   - **`--max-pages` auto-defaults from the feed's own page count (2026-07-20).**
     The submit's batch-start coverage scan aborts (`feed_unreadable`) if it hits
-    the `--max-pages` ceiling while the feed advertises more pages (§7/SC4);
-    the old 40-page floor always aborted on Difmark's ~357-page feed unless the
-    operator raised it by hand. The extractor now persists the feed's advertised
+    the `--max-pages` ceiling while the feed advertises more pages (§7/SC4) — a fixed
+    40-page floor cannot cover a several-hundred-page feed (historique : CHANGELOG
+    2026-07-20). The extractor persists the feed's advertised
     page count (`feed_last_page` in `raw.json`/`offers.json`), and `05_submit`
     defaults `--max-pages` to `max(40, ceil(feed_last_page × 1.3))` (30% churn
     headroom) — an explicit `--max-pages` still overrides, and the effective
-    value + reason is printed. This removes the manual-ceiling footgun; it does
+    value + reason is printed. It does
     NOT change the cadence rule above (still one page at a time). NB: only runs
     extracted with this change carry `feed_last_page` — a pre-2026-07-20 run's
     `offers.json` lacks it and falls back to the 40 floor (re-extract to benefit).
@@ -2325,10 +2173,13 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167, MMOGA 12 (its AKS page merchant i
   - **P4** Eneba's 704 generation-less "XBOX LIVE Key" rows → skip (no declaration) — or
     read the Eneba page?
   - **P5** console DLC / season pass → skip in v1.
-  - **Per-target overwrite semantics of the new modal**: one Create with N targets each
-    carrying its own region / edition, or N Creates from one row? Which controls
-    (`offer[targets][]` + per-target region / edition selects?) — to be observed with
-    `--inspect` before any fill (§6 `multi_target_unsupported_until_modal_verified`).
+  - ~~**Per-target overwrite semantics of the new modal**~~ **CLOSED 2026-09-14/15** —
+    observed with `--inspect` (2026-09-14) and proven by the two canaries (2026-09-15):
+    ONE Create with N target rows (`offer[targets][i][target|region|edition]`, cap 3,
+    `[data-add-target]` adds a row), each row carrying its own region / edition — §6
+    "Modal v2", `SUBMITTER_SPEC.md` §4c. Still to confirm on AKS: the creation on the
+    second page of canary 2 (Diablo 2 Resurrected, Xbox Series 70802) once the page cache
+    refreshes (CHANGELOG 2026-09-15).
   - The "PS4" reading of the "Playstation Game Code …" family (`88` / `88eu` / `88us` /
     `88uk`): the labels never say PS4 — confirm `88` is the PS4 bucket, not a generic
     PlayStation one.
@@ -2414,31 +2265,28 @@ Règles de la vue Learning (audit `AUDIT_LEARNING_2026-07-21.md`) :
   réattribué à un AUTRE produit). Toute absence **transitoire** — row not-present /
   vanished au moment du move (un opérateur parallèle qui reflow le feed), glitch
   bulk/register/Apply, feed-error UNKNOWN, still-on-source, `apply_not_confirmed` —
-  reste **hors ledger** et est **réessayée** au run suivant. Règle née d'une revue
-  P1.6 (2026-07-29) : la fenêtre différée par-store transformait un reflow bénin en
-  `identity_blocked` permanent → une offre légitime perdue à jamais.
+  reste **hors ledger** et est **réessayée** au run suivant (règle issue de la revue
+  P1.6 du 2026-07-29 — un reflow bénin ne doit jamais devenir un blocage permanent ;
+  historique : CHANGELOG 2026-07-29).
   **`_reverify_row` : l'URL est l'identité, l'id ne l'est jamais `[P1-4]` (audit
   2026-09-02).** L'id est instable (chaque ré-import le fait tourner ET peut le
-  RÉATTRIBUER à un autre produit). `_reverify_row` cherchait la ligne par id et ne
-  relocalisait par URL que si l'id avait **disparu** ; un id **présent mais réattribué
-  à un autre produit** filait donc direct en `identity_mismatch` TERMINAL sans jamais
-  chercher l'URL stable ailleurs sur la page → une offre encore présente (déplacée
-  vers un nouvel id, souvent sur la MÊME page) skippée à jamais. Corrigé : quand l'id
+  RÉATTRIBUER à un autre produit). Règle : quand l'id
   est absent **ou** est un autre produit, RELOCALISER par l'URL ; trouvée → adopter son
   id courant et continuer ; URL absente de cette page → **retriable** (reflow/partie),
   jamais terminal. `identity_mismatch` reste réservé au vrai cas : l'URL est **présente**
   mais nomme un autre produit (slug réutilisé) ou store contradictoire. Vérifié en
   adverse : aucun move de mauvais produit possible (le `_row_check` final re-vérifie
-  name+url+store après relocalisation).
+  name+url+store après relocalisation). Historique (l'id réattribué filé en
+  `identity_mismatch` terminal) : CHANGELOG 2026-09-02 (P1-4).
 - **RV2 = scan cible GLOBAL, jamais par store (`_verify_on_target` /
   `_verify_group_on_target`, fix 2026-07-31)** : la présence sur la liste cible se
   prouve sur la vue **tous-stores** (`store_id=None`), pas sous le store source de
   l'offre. Une liste cible est inter-stores et une offre juste déplacée peut être
   ABSENTE de sa vue filtrée par store (rotation store/id au ré-import,
   [[feed-reimport-id-rotation]]) tout en étant sur la liste. L'URL marchande est
-  propre au store → un match global est sans ambiguïté (pas de faux positif). Le
-  scoping par store donnait des faux « pas sur la cible » qui sous-comptaient les
-  moves ET gonflaient les échecs → breaker guard / FC3 à tort (Gift cards 2026-07-31).
+  propre au store → un match global est sans ambiguïté (pas de faux positif) ; un
+  scoping par store donnerait des faux « pas sur la cible » (historique — Gift cards
+  2026-07-31 : CHANGELOG 2026-07-31).
 - **Store à feed source account-scale = HORS-SCOPE du pipeline batché (décision
   Romain 2026-08-03)** : la preuve fail-closed « parti de la source » exige un scan
   source full-coverage ; sur un feed de plusieurs **centaines de pages** (account
@@ -2478,30 +2326,29 @@ de fetch par offre).
 **Allowlist marchand = gate AUTORITATIF au cœur `[P2-2]` (audit 2026-09-02).**
 Safe-auto ÉCRIT sans validation humaine, donc la liste des marchands vettés
 (`auto_merchants.rejection_reason`) est un gate autoritatif, pas une suggestion UI.
-Le handler HTTP le re-vérifie déjà (`app.py _post_data_entry_auto`), mais l'entrypoint
-DÉTERMINISTE qui lance réellement les écritures (`scripts/10`) ne validait que
-`store_id.isdigit()` → `--targets 'Difmark:167'` (parké, non-vetté) pouvait balayer et
-créer en contournant le gate. `scripts/10` applique désormais **la même allowlist**,
-fail-closed (store canonique imposé), refusant tout le batch sur un miss.
+Le handler HTTP le re-vérifie (`app.py _post_data_entry_auto`) ET l'entrypoint
+DÉTERMINISTE qui lance réellement les écritures (`scripts/10`) applique **la même
+allowlist**, fail-closed (store canonique imposé), refusant tout le batch sur un miss — un
+marchand parqué (`Difmark:167`) ne peut pas balayer ni créer en contournant le gate
+(historique : CHANGELOG 2026-09-02, P2-2).
 
 **Aperçu incomplet = refus au cœur by-urls `[P2-3]` (audit 2026-09-02).** Un
 aperçu by-urls n'est saisissable que COMPLET. Le handler console refuse un aperçu
 partiel (`aborted`, un jeu non-résolu / `error` / `search.truncated`, ou
-`len(games) != totals.games`), mais `scripts/12` appelle `run_by_urls_submit`
-(`src/data_entry_auto`) DIRECTEMENT, hors handler — et ne faisait que **skipper**
-les jeux non-résolus pour soumettre le reste (couverture partielle expédiée sans le
-409 de la console). `preview_incomplete_reason` (mêmes conditions que le manager) est
-maintenant appliqué au cœur : `run_by_urls_submit` **abort fail-closed** (aucune
-saisie) sur un aperçu partiel.
+`len(games) != totals.games`), et comme `scripts/12` appelle `run_by_urls_submit`
+(`src/data_entry_auto`) DIRECTEMENT, hors handler, `preview_incomplete_reason` (mêmes
+conditions que le manager) est appliqué au cœur : `run_by_urls_submit` **abort
+fail-closed** (aucune saisie) sur un aperçu partiel — jamais « skipper les jeux
+non-résolus et soumettre le reste » (historique : CHANGELOG 2026-09-02, P2-3).
 
 **Routage MOVE ancré sur la CATÉGORIE, jamais un free-substring `[P2-4]` (audit
 2026-09-02, prolonge Audit L8).** `suggest_target_list` ne route **que** les raisons
 `skip category: …`, et uniquement sur le **token de catégorie** (texte après le
 « : », avant toute « (parenthèse) ») — jamais la raison entière ni la parenthèse. Le
 matcher émet des raisons hors-catégorie qui interpolent des tokens de titre bruts
-(`different/expanded product — extra words: ['account']`) : l'ancien match
-sous-chaîne sur la raison entière envoyait une telle offre en **MOVE→liste 30 sous
-`--move-execute`** sur un simple mot de titre. Les émetteurs `skip category:` réels
+(`different/expanded product — extra words: ['account']`) : un match sous-chaîne sur la
+raison entière enverrait une telle offre en **MOVE→liste 30 sous `--move-execute`** sur un
+simple mot de titre (historique : CHANGELOG 2026-09-02, P2-4). Les émetteurs `skip category:` réels
 n'interpolent que du vocabulaire fixe (`CATEGORY_SKIP`/`BUNDLE_SKIN_TOKENS`/…), donc
 l'ancrage sur le token conserve toutes les routes légitimes (SOFTWARE→16, GIFT
 CARD/STEAM GIFT CARD→21, STEAM ACCOUNT→30, skins/OST/artbooks→8) tout en fermant le
@@ -2541,17 +2388,17 @@ validé : le garde `moved>=1` ET le `batch_authorized` propre à 06_move.
 **Vérif BATCHÉE `[R37]` (2026-08-17).** La vérif RV2 unitaire fait un **scan feed-entier
 par move** (« parti de la source » exige une couverture complète — jamais une fenêtre
 page-hint, sinon fail-open sur re-import/opérateur parallèle, revue 2026-08-06). Sur un
-feed profond (Kinguin ~104 pages) c'est **~6 min/move** et la charge CDP longue fait
-échouer une navigation (`Page.navigate` → halt) — 2 sweeps de suite calés ainsi. Correctif :
+feed profond c'est plusieurs minutes par move et une charge CDP qui fait échouer des
+navigations (historique — Kinguin ~104 pages, 2 sweeps calés : CHANGELOG 2026-08-17).
 `06_move --batch/--deferred` (déjà côté tri) enregistre N offres → **un Apply + une vérif
 de groupe** (deferred : une fois par store), **~G× moins de scans**, sans affaiblir la
 couverture. Discipline : un batch batché exige un **canary MULTI-ITEM** (un Apply ≥2 offres
 prouve le mécanisme) — `move_auth.multi_item_proven`, `batch_authorized(require_multi_item)`.
 L'orchestrateur (`scripts/10`) : liste ≥2 offres → canary `--batch --limit 2` puis batch
-`--batch --deferred` ; liste à 1 offre → unitaire. Revue adversariale (4 dimensions) : 2
-défauts corrigés — la garde R24 « widening » rejetait le `--limit 2` batché (exemptée pour
-`--batch`), et un `move_plan.json` stale double-comptait sur abort précoce (unlink avant
-chaque invocation).
+`--batch --deferred` ; liste à 1 offre → unitaire. La garde R24 « widening » exempte le
+`--limit 2` batché (`--batch`) ; `move_plan.json` est supprimé (unlink) avant chaque
+invocation pour qu'un plan stale ne soit jamais compté (historique — revue adversariale :
+CHANGELOG 2026-08-17).
 
 **Saisie par page = consoles par défaut `[R45]` (Romain 2026-09-15).** « Travailler sur une
 page de jeu » (`scripts/11` aperçu → `scripts/12` saisie, console admin « Saisir ») suit la

@@ -1,4 +1,4 @@
-# SUBMITTER_SPEC.md — Stage 4 design (for approval, no code yet)
+# SUBMITTER_SPEC.md — Stage 4 submitter (design, as built and live-proven)
 
 **Status: BUILT & LIVE-PROVEN** (approved by Romain; dry-run validated end-to-end
 on the VPS first, then the real write path added with a canary default of 1;
@@ -43,11 +43,11 @@ It **never**:
 2. `approved.json` present, and it re-validates against the **current**
    `candidates.json` (Stage 3 `load_validation`, fingerprint-exact). A stale or
    mismatched approval → STOP.
-3. Mode is explicit: `--dry-run` is the **default**; real writes require
+3. Mode is explicit: dry-run is the **default** (no flag); real writes require
    `--submit`. There is no implicit submit.
 4. The WP session in the CDP Chrome is **already logged in** (the extractor's
    assumption). If the feed redirects to `wp-login.php` → STOP "not logged in"
-   (login is a later, separately-authorized sprint).
+   (re-auth = cookie transfer on Romain's explicit submit only — §8, `LOGIN_SPEC.md`).
 
 If any gate fails: STOP, write an error report, submit nothing.
 
@@ -59,9 +59,11 @@ If any gate fails: STOP, write an error report, submit nothing.
 purpose. Submitting requires real writes, so we introduce a **separate, narrowly
 scoped** session used **only** in the submit path, only after §2 gates pass:
 
-- proposed `src/submit_session.py: WriteCdpSession` exposing exactly three write
-  ops — `click(selector)`, `selectize_set(select_name, value)`, and
-  `read(expression)` (read-only eval for verification) — and nothing else.
+- as built: `src/submit_session.py` — `SubmitSession` (dry-run: read + open-modal +
+  read-only probes, **no** method that fills or clicks) and `WriteSubmitSession`, which
+  adds the single mutating flow (trusted Selectize picks, target rows, one trusted click
+  on "Create offer" — §4b / §4c) and nothing else (`ARCHITECTURE.md` « The single browser
+  tab »).
 - It is instantiated **only** inside the submitter, guarded by `--submit`. In
   `--dry-run` the submitter uses the **read-only** session and never constructs the
   write session at all.
@@ -187,13 +189,13 @@ by Romain on 2026-09-14** (three confirmations, cited where they apply).
   - `input[name="offer[targets][0][target]"]` — `type=text`, **required**,
     `pattern="(\d+)|(https?://.+)"`, attribute `data-target-input`, visible;
     its **next sibling is `button.button[data-remove-target]` — the row's REMOVE
-    button** (text "×"; `type=button`). **Canary 2 (2026-09-15, run
+    button** (text "×"; `type=button`). **Canary 2, first attempt (2026-09-15, run
     `20260914-canary-two-targets`, NBA 2K25 Xbox One + Series) proved it:** the
     first locator clicked that sibling as "add-row", nothing was added (1 row read
-    back → `TARGET_ROW_NOT_ADDED`, no write). The real **add button lives
-    elsewhere in the form** — markup UNVERIFIED (most likely `data-add-target`
-    by the tool's naming; read `inspection.modal_buttons` on the next
-    `--inspect`);
+    back → `TARGET_ROW_NOT_ADDED`, no write). The real add button is
+    **`button[data-add-target]`** (« + Add another page », `type=button`), outside the
+    rows — **verified live by the second attempt of canary 2** (Diablo 2 Resurrected,
+    Xbox One + Series; `inspection.modal_buttons`, CHANGELOG 2026-09-15);
   - `select[name="offer[targets][0][region]"]` — Selectize,
     `data-target-override="region"`, **not** required;
   - `select[name="offer[targets][0][edition]"]` — Selectize,
@@ -343,22 +345,32 @@ the rows. Plan blockers: `modal_shape_unknown`, `too_many_targets`. Run result:
   page 64915, 99 €, signal « Offer created for locale en_EU and merchant 40 »):
   the single-row v2 path (globals + row 0 + explicit overrides + one Create click)
   works end to end.
-- **Canary 2** (NBA 2K25 Xbox One + Series, two targets) → **failed closed**
-  `TARGET_ROW_NOT_ADDED`: the sibling `<button>` of the target input is
+- **Canary 2, first attempt** (NBA 2K25 Xbox One + Series, two targets) → **failed
+  closed** `TARGET_ROW_NOT_ADDED`: the sibling `<button>` of the target input is
   `button.button[data-remove-target]` ("×", `type=button`); its click added nothing
-  (1 row read back), nothing was written. The locator is rewritten (above).
+  (1 row read back), nothing was written. The locator was rewritten (above).
+- **Canary 2, second attempt** (Diablo 2 Resurrected, Xbox One / Series X|S, MMOGA offer
+  101039808 → Xbox One page 70479 bucket `24` + Xbox Series page 70802 bucket `300`,
+  Standard(1)) → **created**: row 1 added through `[data-add-target]` (« + Add another
+  page »), two rows read back before the click, form valid (16 fields), ONE Create click,
+  `created 1`, row gone from the feed. AKS signal « [product 70479] Offer created for
+  locale en_EU and merchant 40 … » (the signal is captured on 1 500 characters since); the
+  creation on the second page (70802) is to be confirmed in the AKS back-office once the
+  page cache refreshes. Buttons observed (`inspection.modal_buttons`): « × »
+  (`data-remove-target`, per row), « + Add another page » (`data-add-target`, outside the
+  rows), Close (`data-action-close`, hidden), Cancel (`data-action-cancel`), Create offer
+  (`data-action-submit`, `button-primary`) — the last three are `type=submit`.
 
-### UNVERIFIED live (the code fails closed on each)
+### Still UNVERIFIED live (the code fails closed on each)
 
-- the **real add button's markup**: `[data-add-target]` is an inference from the
-  tool's naming; if it is absent, the fallback needs a UNIQUE add-ish
-  `<button type=button>` — otherwise `NO_ADD_BUTTON` with the `candidates` list.
-  Run `--inspect` on a multi-target candidate and read
-  `inspection.modal_buttons` before the next multi-target write;
-- the add button's `type`: a type-less `<button>` inside a form is a submit
-  button → refused (`ADD_BUTTON_UNSAFE`); `modal_buttons[].type_prop` shows it;
-- whether the appended rows (and their remove buttons) change the button set
-  (the locator re-runs before every extra row; ambiguity → `NO_ADD_BUTTON`);
+- ~~the real add button's markup~~ — **verified 2026-09-15** (canary 2, second attempt):
+  `button[data-add-target]`, `type=button`; the fallback locator (a UNIQUE add-ish
+  `<button type=button>`, else `NO_ADD_BUTTON` with the `candidates` list) stays as
+  defence in depth should the tool change;
+- a **third target row** (cap 3): only one- and two-row creations have been proven; the
+  locator re-runs before every extra row and any ambiguity → `NO_ADD_BUTTON`;
+- the **second-page creation** of canary 2 (Xbox Series 70802): the AKS signal names the
+  first page only — confirm in the back-office / on the page once the cache refreshes;
 - the inheritance of empty overrides (confirmed by Romain) is **never used** —
   every row's overrides are set and read back.
 
@@ -381,28 +393,12 @@ rafraîchi, même available que le run)" — never
 "créé en base".
 
 **"Gone" requires a POSITIVELY complete, readable walk (audit 2026-07-17,
-FC1/SC1/SC2/SC4/SC6).** Absence of data is not absence of the offer. The
-verify scan (and the batch-start index) now prove their own coverage:
-
-- a **CDP timeout or protocol error raises** (`CdpCommandError`) instead of
-  flowing through as "0 rows" (`src/cdp_session.py`); `Page.navigate`'s
-  `errorText` is checked;
-- a **blank page** is re-fetched once, then only two blank states are
-  accepted — past-the-end (feed UI + nav advertising fewer pages) or an empty
-  queue on page 1 (feed UI, no pagination) — anything else raises
-  `FeedScanError` (the extractor's `EmptyPageAnomaly` discipline, carried
-  over via `SubmitSession.feed_page_state()`);
-- a **login bounce mid-scan** raises `NotLoggedInError`;
-- the browser's `location.href` must match the page navigated to (a wedged
-  tab re-serving the previous DOM is detected, not re-read as fresh pages);
-- exhausting `max_pages` while the feed's own nav advertises **more** pages
-  raises instead of silently truncating coverage.
-
-Mid-batch, any of these marks the current offer
-`post_save = "… offer state UNKNOWN, verify it by hand …"` (the attempt is
-counted, the creation is NOT), stops the run with
-`stopped="feed_unreadable"`, and still writes `submit_plan.json` + logs. At
-batch start they abort with `aborted="feed_unreadable"` before any write.
+FC1/SC1/SC2/SC4/SC6)** — absence of data is not absence of the offer: a CDP error, an
+unexplained blank page, a login bounce, a wedged tab or an exhausted `max_pages` raises
+and marks the offer UNKNOWN (`stopped="feed_unreadable"`), never a false "gone". Two
+accepted forms of the proof: the whole-feed walk, or the feed SEARCH filtered by the
+offer URL (the sweep default since 2026-09-10). The rule, its guards and the one bounded
+retry on a CDP timeout: `EXECUTOR_RULES.md` §7.
 
 ---
 
@@ -417,25 +413,18 @@ batch start they abort with `aborted="feed_unreadable"` before any write.
   "10 in a row" rule stops the run, not a cumulative budget).
 - A new instruction / interruption cancels the run (new `task_id`); leftover
   approved offers are **not** auto-submitted `[S15]`.
-- **Batch size = the data-entry mode `[R23b]` → `[R24]` (2026-07-13, Romain):**
-  once the normalized report is validated we submit, and `--mode` sets the batch:
-  - `safe` (**default**) — the **full validated batch, no canary**: validation
-    (`approved.json`) already is the safety gate for which offers submit.
-  - `learning` — exploring one (category × merchant) unlock. It **does write**
-    ("il ajoute les offres si le rapport normalisé est valide"), but is capped
-    at a **canary of 1** for now.
-  - `advanced` — validated unlocks; same canary cap for now.
-
-  In the canary modes the cap is enforced, not merely defaulted: `--limit N`
-  narrows it, never widens it (a wider `--limit` exits 2). The per-offer and
-  10-consecutive-failure stop conditions above are unchanged and remain the
-  actual safety net during a run.
+- **Batch size = the data-entry mode `[R23b]` → `[R24]` (2026-07-13, Romain):** `safe`
+  (default) = the full validated batch, `learning` / `advanced` = a canary of 1 that
+  `--limit` narrows, never widens (a wider `--limit` exits 2); the mode is bound to the
+  match (FC5). The table and the rationale: `EXECUTOR_RULES.md` §6 « Batch size = the
+  data-entry mode ». The per-offer and 10-consecutive-failure stop conditions above are
+  unchanged and remain the actual safety net during a run.
 
 ---
 
-## 7. Dry-run (the first thing I'll build)
+## 7. Dry-run (the default mode)
 
-`--dry-run` (default) runs steps 1–6 for every approved offer using the
+The default mode (no `--submit`) runs steps 1–6 for every approved offer using the
 **read-only** session: refresh, locate row, verify identity, open modal, verify
 context + select names, and report — per offer — exactly what it *would* set
 (region id, edition id) and click, plus any blocker found. **Zero writes.** Output:
@@ -466,13 +455,14 @@ self-triggered by another stage's `NotLoggedInError`.
 
 ---
 
-## 10. Proposed files (built only after you approve)
+## 10. Files (as built)
 
-- `src/submit_session.py` — the narrowly-scoped `WriteCdpSession` (§3).
+- `src/submit_session.py` — `SubmitSession` (read-only) + the narrowly-scoped
+  `WriteSubmitSession` (§3, §4b, §4c).
 - `src/submitter.py` — the per-candidate flow (§4–§6), dry-run + submit, pure
   orchestration testable with a fake session.
-- `scripts/05_submit.py` — CLI, `--dry-run` default, `--submit` explicit; requires
-  `approved.json`; enforces §2 gates.
+- `scripts/05_submit.py` — CLI, dry-run by default (no flag), `--submit` explicit
+  (`--inspect` / `--catalog` read-only modes); requires `approved.json`; enforces §2 gates.
 - `tests/test_submitter.py` — flow, gates, success determination, dry-run-vs-submit,
   anti-loop — all with a fake session (the live write path runs on the VPS).
 

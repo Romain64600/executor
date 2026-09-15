@@ -18,14 +18,36 @@ moves the risky work behind a scripted engine with a hard guardrail: the model
 > **New to the project?** Start with [`docs/NOOB.md`](docs/NOOB.md) — a
 > beginner-friendly, analogy-driven walkthrough of the whole system (in French).
 
-> **Status — full pipeline built; submitter live-proven.** Read-only foundations
-> (Sprints 1–3) complete, and the write stage created its **first real AKS offers on
-> 2026-07-06** (Driffle, `--submit --click-mode trusted`). All write stages stay
-> gated behind green + authoritative invariants on the Debian VPS target. A full
-> multi-agent audit ran on **2026-07-17** ([`docs/AUDIT_2026-07-17.md`](docs/AUDIT_2026-07-17.md));
-> a second multi-agent audit ran on **2026-09-02** — its P1 findings and the first
-> P2 hardenings are fixed (see [`docs/CHANGELOG.md`](docs/CHANGELOG.md)), remaining
-> P2s in progress. See [Roadmap](#roadmap).
+> **Status (2026-09-15) — full pipeline built and live; consoles entered by default.** The
+> write stage created its **first real AKS offers on 2026-07-06** (Driffle); the safe-auto
+> sweep runs on the proven merchants (460 offers created over one night on 2026-09-11/12);
+> **console keys** (multi-target submit on the AKS modal v2) were proven by two canaries on
+> **2026-09-15** and are ON by default everywhere since Romain's decision « 1 » of the same
+> day. All write stages stay gated behind green + authoritative invariants on the Debian VPS
+> target. Audits: **2026-07-17** ([`docs/AUDIT_2026-07-17.md`](docs/AUDIT_2026-07-17.md)),
+> **2026-09-02** and **2026-09-05/06** (P1 + P2 fixed, [`docs/CHANGELOG.md`](docs/CHANGELOG.md)).
+> See [Capability status](#capability-status-2026-09-15) and [Roadmap](#roadmap).
+
+---
+
+## Capability status (2026-09-15)
+
+What a newcomer may expect from the current code — one line per capability, its state
+(**disponible** / **expérimental** / **bloqué**), the condition under which it applies, and
+the rule that governs it. The rule text lives ONLY in
+[`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md); this table never restates it.
+
+| Capability | State | Condition | Rule |
+|---|---|---|---|
+| Safe-auto PC sweep (`scripts/10_data_entry_auto.py`, admin `/auto`) on the 7 proven merchants — Kinguin 58, Gamivo 51, Driffle 127, MMOGA 12, G2A 38, Instant Gaming 28, K4G 92 | **disponible** | Romain's go; invariants green + authoritative on the VPS; one merchant per VPS; `--mode safe` = the full validated batch, prove-gone by feed search | EXECUTOR_RULES §14 `[R35]`, §6 `[R24]`, §7; per-merchant status in [`docs/MERCHANTS.md`](docs/MERCHANTS.md) |
+| Console keys — matcher branch, multi-target submit on the AKS modal v2 (cap 3 targets), sweep / admin console / by-URL with **consoles ON by default**, `--no-consoles` to opt out | **disponible** since 2026-09-15 | Proven by two canaries (one target, then two via `[data-add-target]`); the first real MMOGA console sweep runs on 2026-09-15 — read its `recap.json` before the next merchant; P1 decided (declared platforms only), P2-P5 still to confirm with Romain | EXECUTOR_RULES §4.12 `[R45]`, §6 « Modal v2 », §10 (buckets); [`docs/SUBMITTER_SPEC.md`](docs/SUBMITTER_SPEC.md) §4c |
+| Entry from a **console page URL** (`scripts/11` preview → `scripts/12` « Saisir », admin `/games`): `buy-<slug>-<kind>-compare-prices/`, kind ∈ ps4 / ps5 / xbox-one / xbox-series / nintendo-switch / nintendo-switch-2 | **disponible, non encore exercé en réel** | Code landed 2026-09-15 (unit-tested; no live read of a console page's tab bar yet); a candidate qualifies iff one of its targets is the requested page and is entered WHOLE; a console URL is refused per URL under `--no-consoles` | EXECUTOR_RULES §14 « Saisie par page » `[R45]` |
+| Sweeps on Eneba 19, Allyouplay 17, GameSeal 126, CJS-CDKeys 30 | **expérimental** | Allowlisted but never swept for real — `--dry-run` first, read `skipped.json` / `candidates.json`, then Romain's go (Eneba dry-run of 2026-09-12: 32 candidates, 90 % console rows) | [`docs/MERCHANTS.md`](docs/MERCHANTS.md) (status table), EXECUTOR_RULES §4.10 `[R32]` |
+| PS5 keys outside GLOBAL ("PS5 … [EU]") | **bloqué** | Fail-closed skip `no region id for PS5/EU (R45)`: the modal has a single PS5 bucket (`88ps5h`), no PS5 EU / US / UK — policy P3 awaiting Romain (create the buckets in the tool, or keep skipping) | EXECUTOR_RULES §4.12 P3, §10 |
+| Eneba "XBOX LIVE Key" rows without a generation (title and URL silent) | **bloqué** | Fail-closed skip `console: no declared generation (R45)` — no declared platform, nothing to file (policy P4, awaiting Romain) | EXECUTOR_RULES §4.12.3 / P4 |
+| Console DLC / season passes | **bloqué** | Fail-closed skip `console: DLC / season pass on console — not entered yet (R45)` (policy P5, v1) — PC DLC ARE entered on their own DLC page `[R43]` | EXECUTOR_RULES §4.12.4 (b) / P5; §4.3 `[R43]` |
+| Instant Gaming console keys | **bloqué** | The platform is not in the IG feed (bare titles, `/en/<id>-/` URLs) and a console platform read on the IG page is not in `IG_PLATFORM_TEXT_MAP` → skip `[R32]` — no console entry from IG until a page-based hook exists | [`docs/MERCHANTS.md`](docs/MERCHANTS.md) « Instant Gaming », EXECUTOR_RULES §4.10 |
+| Difmark 167 | **bloqué** | Parked, outside the safe-auto allowlist (`scripts/10` and the admin refuse it fail-closed); its account rows are never console keys (`console: ACCOUNT — not a game (R45)`); a first real submit needs a fresh catalog re-verification | EXECUTOR_RULES §14 `[P2-2]`, §11 « Difmark »; [`docs/MERCHANTS.md`](docs/MERCHANTS.md) |
 
 ---
 
@@ -115,30 +137,21 @@ state and cannot be argued away by a language model.
   only the shared vocabulary. The name → module registry is `src/merchants/registry.py`
   (imported by the matcher and the classifier, no circular import). Per-merchant grammar
   and hooks: [`docs/MERCHANTS.md`](docs/MERCHANTS.md). See **§4.10**.
-- **Console keys — multi-target candidates, gated** `[R45]` (2026-09-12). AKS has
-  separate console product pages (`buy-<slug>-<kind>-compare-prices/`, kind = `ps4` /
-  `ps5` / `xbox-one` / `xbox-series` / `nintendo-switch` / `nintendo-switch-2`), and
-  Romain's new feed tool overwrites the region (= region/platform) and the edition **per
-  target page**. Under the console branch (`--consoles` — the **default since 2026-09-15**,
-  Romain's decision « 1 » after the two modal-v2 canaries and the MMOGA console dry-run;
-  `--no-consoles` opts out for a PC-only run) the matcher classifies a console row from its
-  title AND URL (`src/console_keys.py`
-  = the shared vocabulary, the merchant grammar — URL families, PC/Windows, region slot,
-  noise — declared by each `src/merchants/<name>.py` through the console hooks since
-  2026-09-14; never an implicit GLOBAL for a region-locked key, review fix 2026-09-14),
-  resolves one verified AKS page + bucket +
-  edition **per DECLARED platform** — **P1, decided by Romain on 2026-09-14: « clé PS5
-  seule = page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch et Switch 2 »**,
-  so a lone "PS5" key → the PS5 page only, a "PS4 / PS5" key → both pages, an Xbox key →
-  the declared Xbox generation(s) plus PC only when the PC page lists *Xbox Play Anywhere*;
-  Switch 2 keys → the `nintendo-switch-2` page under the Nintendo buckets — and emits a
-  candidate with one or several `targets`, or skips the whole row: **never a partial
-  entry**, since a creation consumes the feed row. The submitter enters single-target
-  candidates as today and **refuses** a multi-target one
-  (`multi_target_unsupported_until_modal_verified`, a designed skip that never feeds the
-  10-failures streak) until the new modal's per-target controls have been observed with
-  `--inspect`. Policies P2-P5 await Romain's confirmation. See
-  [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) **§4.12** / §6.
+- **Console keys — multi-target candidates, live** `[R45]` (2026-09-12 → 15). AKS has
+  separate console product pages (`buy-<slug>-<kind>-compare-prices/`), and the AKS feed
+  tool (modal v2) takes the region (= region/platform) and the edition **per target page**.
+  Under the console branch — the **default since 2026-09-15** (Romain's decision « 1 »),
+  `--no-consoles` for a PC-only run — the matcher classifies a console row from its title
+  AND URL (shared vocabulary in `src/console_keys.py`, merchant grammar in each
+  `src/merchants/<name>.py`), resolves one verified AKS page + bucket + edition **per
+  DECLARED platform** (P1, Romain 2026-09-14: a lone "PS5" key → the PS5 page only, a
+  "PS4 / PS5" key → both pages; PC only as page-verified *Xbox Play Anywhere*) and emits a
+  candidate with one or several `targets`, or skips the whole row — **never a partial
+  entry**, since a creation consumes the feed row. The submitter writes every target in
+  ONE creation (modal v2, cap 3 targets, each row proven by readback; proven by two
+  canaries on 2026-09-15). Policies P2-P5 await Romain's confirmation. Rules:
+  [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) **§4.12** / §6 « Modal v2 »; status
+  per merchant: [`docs/MERCHANTS.md`](docs/MERCHANTS.md).
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the full decision record.
 
@@ -154,6 +167,9 @@ executor/
 ├── .github/workflows/ci.yml    # CI: unittest suite + secret scan (push / PR)
 ├── docs/
 │   ├── NOOB.md                 # beginner-friendly guide to the whole project (French)
+│   ├── HANDOFF.md              # resume point: state, decisions, gotchas, backlog, reading order
+│   ├── MERCHANTS.md            # one section per merchant: file, grammar, hooks, safe-auto status
+│   ├── feeds/<Merchant>.md     # live feed state per merchant (scripts/14_feed_status.py)
 │   ├── ARCHITECTURE.md         # roles & target flow
 │   ├── INVARIANTS.md           # non-negotiable browser/network invariants
 │   ├── SPRINT_1_PLAN.md        # read-only foundation scope
@@ -178,7 +194,12 @@ executor/
 │   ├── 06_move.py              # Stage 6 Move-to-List writer — dry-run default; --execute = real move
 │   ├── 07_admin_server.py      # admin page server (loopback only, behind nginx basic auth)
 │   ├── 08_sort_plan.py         # Stage 9 sort classifier → move plan
-│   └── 09_sort_move.py         # Stage 9 sort-move writer (batched / deferred)
+│   ├── 09_sort_move.py         # Stage 9 sort-move writer (batched / deferred)
+│   ├── 10_data_entry_auto.py   # safe-auto sweep (extract → match → approve → submit per page; consoles by default)
+│   ├── 11_data_entry_by_urls.py         # entry from AKS page URLs — read-only preview (PC and console pages)
+│   ├── 12_data_entry_by_urls_submit.py  # entry from AKS page URLs — submit of a validated preview (safe)
+│   ├── 13_aks_ping.py          # the ONLY sanctioned AKS reachability probe (AKS/Staff UA)
+│   └── 14_feed_status.py       # per-merchant feed state → docs/feeds/<Merchant>.md (read-only on runs/)
 ├── manual_launch/
 │   └── run_executor.sh         # terminal-only launcher: prepare / check / dry-run / submit
 ├── ops/                        # admin page install: systemd unit, nginx vhost, runbook
@@ -204,11 +225,16 @@ executor/
 │   │   ├── mmoga.py  gamivo.py  eneba.py  g2a.py  instant_gaming.py                     # existing
 │   │   └── difmark.py          #   parked merchant (outside the safe-auto allowlist)
 │   ├── console_keys.py         # R45 console classifier — SHARED vocabulary only (families, title phrases, page kinds, bucket table); merchant grammar via hooks — pure
+│   ├── data_entry_auto.py      # safe-auto sweep engine (scripts/10) + by-urls submit core (scripts/12)
+│   ├── triage.py               # R35 per-page ADD / MOVE / SKIP classifier + page moves (--triage)
+│   ├── feed_status.py          # per-merchant feed state report (scripts/14) — pure functions on runs/
 │   ├── validation.py           # Stage 3 validation gate (approve exact candidates)
 │   ├── submit_session.py       # read-only + narrow WriteSubmitSession (trusted picks/target/click)
 │   ├── submitter.py            # Stage 4 submitter — dry-run + real write path
 │   ├── mover.py                # Stage 6 Move-to-List writer (the submitter's sibling)
 │   ├── move_plan.py            # Stage 6 plan builder — confirmed learning.json dispositions
+│   ├── move_auth.py            # RV3 canary-granted move authorization (scoped, versioned)
+│   ├── sort_plan.py  sort_move.py  sort_ledger.py   # Stage 8/9 all-stores sort plan, batched sort-move writer, incremental ledger
 │   ├── aks_lists.py            # merchant-feed list catalog + deterministic triage suggestions
 │   ├── login_session.py        # cookie-transfer primitives (set_cookies + verify_dashboard)
 │   ├── pacing.py               # bounded-random pacing between page loads / submissions
@@ -257,7 +283,7 @@ executor/
 # 2. Invariant gate (read-only). Must be authoritative:true AND ok:true on the VPS:
 python3 scripts/01_check_invariants.py
 
-# 3. Unit tests (pure — run anywhere):
+# 3. Unit tests (pure — run anywhere; 1846 tests on 2026-09-15, ~6 min, hermetic):
 python3 -m unittest discover -s tests
 ```
 
@@ -355,72 +381,37 @@ manual_launch/run_executor.sh prepare --merchant Driffle --store-id 127 --pages 
 
 `--pages` creates a partial page slice; do not treat it as full-feed coverage.
 
-**Console keys — consoles by DEFAULT, `--no-consoles` to opt out** `[R45]` (2026-09-12;
-default **on** since 2026-09-15). The read-only matcher, the safe-auto sweep, the admin
-launcher (`/auto` checkbox « Consoles », checked) and the by-urls preview / « Saisir » all
-take consoles into account by default — Romain's decision « 1 » of 2026-09-15, after the
-two modal-v2 canaries and the MMOGA console dry-run (663 offers → 174 console candidates:
-89 single-target, 59 two-target, 26 three-target; 489 skips). Console rows are classified
+**Console keys — consoles by DEFAULT, `--no-consoles` to opt out** `[R45]` (default **on**
+since 2026-09-15, Romain's decision « 1 »). The read-only matcher (03), the safe-auto sweep
+(10), the admin launcher (`/auto` checkbox « Consoles », checked) and the by-urls preview /
+« Saisir » (11 / 12) all take consoles into account by default: console rows are classified
 and resolved to their AKS console pages instead of being skipped `console`, and a key sold
 for several platforms becomes a **multi-target** candidate (`targets` in
 `candidates.json`, stamped `consoles: true` in `match_meta.json` / `recap.json`).
-`--consoles` is still accepted as an explicit no-op; **`--no-consoles`** (03, 10, and the
-admin body field `"consoles": false`) restores the PC-only behaviour (console rows keep the
-`console` skip, stamped `consoles: false`). The mode is written on the child argv either
-way (`--consoles` / `--no-consoles`), so a run dir always shows it. `05_submit` gates
-every entry (shape `targets_v2`, cap 3 targets, per-row readbacks). History: real writes
-with `--consoles` were allowed on Romain's GO of 2026-09-15 (the modal v2 observed with
-`--inspect` and proven by two canaries — one target, then two); before that (2026-09-14)
-the sweep refused `--consoles` without `--dry-run`, and from 2026-09-12 to 14 the flag was
-off by default.
+`--consoles` is still accepted as an explicit no-op; **`--no-consoles`** (03, 10, 11, 12,
+and the admin body field `"consoles": false`) restores the PC-only behaviour (stamped
+`consoles: false`); the mode is written on the child argv either way, so a run dir always
+shows it. `05_submit` gates every entry (shape `targets_v2`, cap 3 targets, per-row
+readbacks). Rules: [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) §4.12 (matcher) and
+§6 « Modal v2 » (submitter); history (opt-in phase, `--dry-run` guard, canaries):
+[`docs/CHANGELOG.md`](docs/CHANGELOG.md) 2026-09-12 → 15.
 
 **Saisir depuis une page console** `[R45]` (Romain 2026-09-15 : « les consoles sont prises
 en compte par défaut partout, y compris travailler sur une page de jeu »). L'aperçu par
-URLs (`scripts/11_data_entry_by_urls.py`, bouton « Aperçu » → « Saisir ») accepte désormais
-les **pages console** AKS en plus de la page PC : `buy-<slug>-<kind>-compare-prices/` avec
-`kind` ∈ `ps4` / `ps5` / `xbox-one` / `xbox-series` / `nintendo-switch` /
-`nintendo-switch-2` (chaque page a son propre product id). La page est lue en lecture seule
-exactement comme la page PC (pas de ligne « official platforms » sur une page console —
-normal). Règles :
-
-- **`--consoles` est le défaut** (sur `scripts/11` ET `scripts/12` ; `--no-consoles` =
-  l'ancien run PC seul). Le flag est passé à chaque `match_offer` (branche console du
-  matcher, §4.12). Sous `--no-consoles`, une URL de page console est **refusée** avant tout
-  fetch, par URL, avec un message explicite (`ConsolePageRefused: console page (ps5) refused
-  under --no-consoles — re-run with --consoles …`) : rien n'est fait pour cette URL, les
-  URLs PC de la même liste sont traitées ; les lignes console gardent le skip « console ».
-- **Recherche** : pour une page console, le terme « nom » est l'**identité** de la page
-  (`console_page_identity` : « Hades PS5 » → « Hades », « Hades Xbox Series » → « Hades »)
-  et le terme « url » est le slug du jeu — jamais le suffixe plateforme AKS (le titre marchand
-  porte sa propre phrase plateforme, « Hades (PS4 / PS5) »). Page PC : inchangé.
-- **Page épinglée = page demandée**. La page épinglée répond au protocole de pages du
-  matcher (`PinnedPage`) : sa propre kind depuis la mémoire ; l'ancre PC et les pages sœurs
-  sont lues **depuis la barre d'onglets de la page épinglée** (les liens que AKS pose
-  lui-même), en lecture seule, garde anti-throttle partagée avec la résolution des URLs (un
-  429 ou 5 lectures non fiables consécutives → `aborted: aks_throttled`, jamais un skip
-  « error: » par ligne), cache d'une lecture par page sœur et par jeu. Play Anywhere reste
-  la vérité de la page PC, comme dans un sweep.
-- **Qualification** : un candidat est retenu pour la page demandée **ssi l'une de ses
-  cibles (`targets[].aks_product_id`) est cette page**. Conséquences : **une clé cross-gen
-  demandée depuis une page console est écrite sur toutes ses pages déclarées** (« Xbox One /
-  Series X|S » demandée depuis la page Xbox Series → cibles Xbox One + Xbox Series, jamais
-  scindée ; « PS4 / PS5 » depuis la page PS5 → PS4 + PS5) ; une clé PS4 seule demandée
-  depuis la page PS5 est ignorée avec la raison explicite `not on the requested page 85105:
-  this offer targets PS4 85104 — not entered from this page (R45)` ; depuis la **page PC**
-  avec `--consoles`, les candidats PC comme avant PLUS les clés Xbox **Play Anywhere** (leur
-  cible XBOX_PC est la page PC : Xbox One + Xbox Series + PC sous le bucket Xbox/PC) ; une
-  clé console sans PA trouvée depuis la page PC est ignorée (`not on the requested page`).
-  Un jeu console-only (pas d'onglet PC) s'ancre sur la page épinglée.
-- **Aperçu** (`report.txt`) : `🎯 85105 — Hades PS5 [page ps5]`, puis par candidat les cibles
-  supplémentaires `↳ PS5 85105 — Hades PS5 · PS5(88ps5h)` et la note « (2 cibles : une clé
-  cross-gen demandée depuis une page console est écrite sur toutes ses pages déclarées) ».
-- **Saisie** (`scripts/12`) : `--consoles` / `--no-consoles` acceptés (le lanceur admin passe
-  le même flag qu'à l'aperçu), **informatif seulement** (log `submit_run_start.consoles` +
-  `preview_consoles`, JSON de sortie) — transmis à rien : les candidats de l'aperçu portent
-  leurs `targets`, le groupement par store les garde **entiers** (jamais scindés par cible),
-  l'empreinte d'approbation est l'empreinte étendue R45 (`…|+<pid>:<région>:<édition>`), et
-  `05_submit --mode safe` (inchangé, sans flag) lit les cibles dans `approved.json` (modal
-  v2, plafond 3 cibles, preuve = disparition du feed).
+URLs (`scripts/11_data_entry_by_urls.py`, bouton « Aperçu » → « Saisir ») accepte les
+**pages console** AKS (`buy-<slug>-<kind>-compare-prices/`, `kind` ∈ `ps4` / `ps5` /
+`xbox-one` / `xbox-series` / `nintendo-switch` / `nintendo-switch-2`) en plus de la page PC.
+En bref : `--consoles` est le défaut sur `scripts/11` ET `scripts/12` (`--no-consoles` =
+run PC seul, une URL console est alors **refusée** avant tout fetch) ; la recherche du feed
+se fait sur l'**identité** de la page (« Hades PS5 » → « Hades ») ; les pages sœurs sont
+lues depuis la barre d'onglets de la page épinglée (garde anti-throttle partagée) ; un
+candidat est retenu **ssi l'une de ses cibles est la page demandée** et il est gardé
+**entier** (une clé cross-gen demandée depuis une page console est écrite sur toutes ses
+pages déclarées — jamais scindée, jamais de page sœur ajoutée) ; `scripts/12` transmet les
+candidats entiers à `05_submit --mode safe` (modal v2, plafond 3 cibles, preuve =
+disparition du feed). Règle complète : [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md)
+§14 « Saisie par page » et §4.12. **État : code livré le 2026-09-15, pas encore exercé en
+réel** (lecture live d'une page console par `scripts/11` à faire sur le VPS).
 
 ```bash
 python3 scripts/11_data_entry_by_urls.py --run-id <id> --urls "https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/"                # consoles par défaut
@@ -585,6 +576,14 @@ the `aks-data-entry` skill maps onto a guard signal.
 
 ## Rules & docs
 
+**Reading order for a newcomer:** this README (what exists — the
+[capability status](#capability-status-2026-09-15)) →
+[`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) (the rules in force, per stage) →
+[`docs/MERCHANTS.md`](docs/MERCHANTS.md) (how each merchant is read, its status) →
+[`docs/HANDOFF.md`](docs/HANDOFF.md) (current state, decisions, gotchas, commands, backlog,
+coherence check). The rule text lives in EXECUTOR_RULES only; every other document links
+to its section.
+
 - [`docs/NOOB.md`](docs/NOOB.md) — beginner-friendly guide: what the project
   is, why it exists, and how the pipeline works, explained with analogies (French).
 - [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) — the deterministic,
@@ -615,8 +614,18 @@ the `aks-data-entry` skill maps onto a guard signal.
   (families, PC/Windows, region slot), merchant-config hooks (R32 / R45), merchant-specific
   rules, safe-auto status, residual feed profile; the live feed state is in
   `docs/feeds/<Merchant>.md`.
+- [`docs/HANDOFF.md`](docs/HANDOFF.md) — resume point (state, reviewed decisions,
+  gotchas, frequent commands, backlog, coherence check).
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — how the pieces fit (pipeline table,
+  module layering, the single CDP tab, the validation triple, the admin page).
+- [`docs/SUBMITTER_SPEC.md`](docs/SUBMITTER_SPEC.md) — the write stage as built: trusted
+  Selectize picks, modal v2 targets per row (§4c), statuses.
+- [`docs/DATA_CONTRACTS.md`](docs/DATA_CONTRACTS.md) — stage I/O JSON shapes + run-log
+  format.
+- [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) — developer guide (setup, tests, StepGuard
+  use, adding a stage or a merchant rule, commit rules).
 - [`AGENTS.md`](AGENTS.md) / [`CLAUDE.md`](CLAUDE.md) — builder rules for Codex
-  and Claude.
+  and Claude, including the « Reviewed decisions » an audit must not re-flag.
 
 ---
 
@@ -734,11 +743,16 @@ the `aks-data-entry` skill maps onto a guard signal.
   via `[data-add-target]`); the "`--consoles` requires `--dry-run`" guard was lifted the
   same day, and Romain's decision « 1 » made **consoles the default everywhere**
   (`--no-consoles` / `"consoles": false` to opt out; MMOGA dry-run: 174 console
-  candidates). Policies
+  candidates); entry from a **console page URL** (`scripts/11` / `12`, EXECUTOR_RULES §14)
+  landed the same day — not yet exercised live. Policies
   P2-P5 to confirm with Romain; Riders Republic
   (Gamivo Xbox key entered as PC on 2026-09-11) to correct by hand, like the five Gamivo
   US Steam keys entered Publisher GLOBAL the same day (`[R46]`, `docs/MERCHANTS.md`). See
   [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) §4.12.
+- [x] **Contrat des candidats** (`src/candidate_contract.py`, Lot 2 2026-09-15) — l'identité
+  d'un candidat (cibles normalisées + empreinte de validation) définie une seule fois ;
+  matcher, validation, submitter, `validation_io` et le port `app.js` la lisent, vérifiés
+  contre `tests/fixtures/candidate_contract_examples.json` (Python + node en CI).
 
 ---
 

@@ -2,9 +2,11 @@
 
 Ce document est le **point d'entrée de reprise** (migration serveur / nouvelle session
 Claude). Il capture l'ÉTAT, les DÉCISIONS et les GOTCHAS qui, jusqu'ici, vivaient dans la
-mémoire hors-repo de Claude et **ne voyagent donc PAS avec un `git clone`**. Lis-le en
-premier, puis `AGENTS.md` + `CLAUDE.md` (les règles), puis `docs/EXECUTOR_RULES.md` (les
-règles par étage). Dernière mise à jour : **2026-09-14** (voir `git log` pour le commit courant).
+mémoire hors-repo de Claude et **ne voyagent donc PAS avec un `git clone`**. Reprise de
+session : lis-le en premier, puis `AGENTS.md` + `CLAUDE.md` (les règles), puis
+`docs/EXECUTOR_RULES.md` (les règles par étage). Nouveau sur le projet : l'ordre est
+`README.md` → `docs/EXECUTOR_RULES.md` → `docs/MERCHANTS.md` → ce HANDOFF (voir §9).
+Dernière mise à jour : **2026-09-15** (voir `git log` pour le commit courant).
 
 > ⚠️ Aucun secret ici (cookies WP, mots de passe, codes 2FA n'entrent jamais dans le repo).
 
@@ -14,7 +16,7 @@ règles par étage). Dernière mise à jour : **2026-09-14** (voir `git log` pou
 
 Pipeline **déterministe et fail-closed** de saisie de données pour les feeds marchands
 d'AllKeyShop (AKS). Étapes : `02 extract` (scan feed via CDP) → `03 match` (résolution AKS
-read-only + règles R01…R40, écrit `candidates.json` / `skipped.json` / `match_meta.json` /
+read-only + règles R01…R46, écrit `candidates.json` / `skipped.json` / `match_meta.json` /
 `report.txt`) → `04 validate` (`check` → `approved.json`) → `05 submit` (écriture via la
 modale UI officielle) → prove-gone. Claude est **builder** (code/tests/docs/diagnostics read-only),
 pas exécuteur libre. Voir `README.md`, `docs/ARCHITECTURE.md`.
@@ -90,7 +92,7 @@ tourne headless **sans SIGTRAP**, `apt-mark hold` posé ; l'unité force toujour
 explicite de Romain, cf. RUNBOOK §1.1) ; `docker.io` 26 (paquet Debian, fournit `docker0`) ;
 socat 1.8 ; nginx 1.26 ; certbot 4.0 ; console `https://217.76.57.126.sslip.io/executor/`
 (mot de passe initial dans `/root/executor-admin.pass`, root-only — à faire tourner via
-`ops/INSTALL_ADMIN.md §1`) ; gate `ok:true` + `authoritative:true` ; suite 1579 OK (2026-09-13).
+`ops/INSTALL_ADMIN.md §1`) ; gate `ok:true` + `authoritative:true` ; suite 1579 OK (2026-09-13 ; 1 846 tests au 2026-09-15).
 `ufw` actif (OpenSSH, Nginx Full, 9223 restreint à `docker0` — posé par Romain, Claude n'a pas la
 permission). Reste : le transfert des cookies WP (profil vierge). L'ancien VPS était
 `vps-9ee9f9cf`.
@@ -102,8 +104,11 @@ veux que l'executor + sa page.
 
 ## 3. État courant (2026-09-15)
 
-Tout est poussé sur `origin/main`, suite verte (**1629 tests** découverts le 2026-09-14 après les
-correctifs de la revue R45, classifieur de la seconde session inclus). Travaux
+Tout est poussé sur `origin/main`, suite verte (**1 846 tests** découverts le 2026-09-15 —
+modal v2, consoles par défaut, saisie par page console, fichiers marchands inclus). **En
+cours le 15/09 : le premier sweep console RÉEL (MMOGA)** — lire son `recap.json` (créées,
+`gated_*`, halte) avant tout marchand suivant ; la table « Capability status » du README
+résume ce qui est disponible / expérimental / bloqué. Travaux
 récents (voir
 `docs/CHANGELOG.md` pour le détail) :
 - **Consoles par défaut partout (15/09, décision Romain « 1 »)** : après les deux canaries du
@@ -114,6 +119,15 @@ récents (voir
   `--consoles` reste accepté (no-op explicite) ; le mode est toujours écrit sur l'argv de
   `03_match` (`--consoles` / `--no-consoles`), dans `match_meta.json`, `recap.json` et
   `admin_submit.json` (`consoles`).
+- **Saisie depuis une page console (15/09)** : `scripts/11` accepte les URLs de pages
+  console (`buy-<slug>-<kind>-compare-prices/`), page épinglée + pages sœurs lues depuis sa
+  barre d'onglets, qualification « une des cibles = la page demandée », candidat gardé
+  entier ; `scripts/12` inchangé (candidats entiers → `05_submit --mode safe`). **Code livré,
+  pas encore exercé en réel** (lecture live d'une page console à faire). EXECUTOR_RULES §14.
+- **Documentation remise en cohérence (15/09, lot 1)** : EXECUTOR_RULES ne garde que les
+  règles en vigueur (l'historique daté est dans CHANGELOG « Historique déplacé depuis
+  EXECUTOR_RULES »), README porte la table d'état des capacités, les autres docs renvoient
+  aux sections d'EXECUTOR_RULES au lieu de recopier les règles (§9).
 - Campagne d'audit Fable : 38/39 findings corrigés (1 décliné, cf. §5).
 - Correctifs matcher : `extract_aks_name` (noms marketing), R39 (mot plateforme = bruit
   d'édition), « Key » nu retiré par le slug, URL `compare-and-buy`.
@@ -294,6 +308,11 @@ récents (voir
      (motifs `console: … (R45)`).
   4. **Corriger Riders Republic à la main** sur AKS (produit 50562 : l'offre Gamivo Xbox
      One/Series US saisie PUBLISHER GLOBAL Premium le 2026-09-11).
+  5. **Premier sweep console RÉEL (MMOGA, 15/09, en cours)** : lire le recap (créées,
+     `gated_too_many_targets`, `gated_multi_target`, halte éventuelle), vérifier sur AKS
+     quelques créations à 2-3 cibles (cache des pages AKS lent : plusieurs heures), puis
+     seulement enchaîner Kinguin ; **exercer la saisie depuis une page console** (`scripts/11`
+     sur une URL `…-ps5-compare-prices/`, aperçu seulement) avant le premier « Saisir » console.
 - **Un fichier par marchand — suite (règle du 14/09)** : dry-run des nouveaux fichiers
   (`scripts/10 --targets "Kinguin:58" --dry-run` — consoles incluses par défaut depuis le
   15/09 —, puis K4G / Driffle) et lecture
@@ -311,9 +330,12 @@ récents (voir
   (marchand « + PC/Windows » sans PA sur la page → skip ; PA sur la page sans mention marchande →
   cibles PA) ; P3 PS5 hors GLOBAL → skip (créer des buckets PS5 EU/US/UK dans l'outil ?) ; P4 les
   704 lignes Eneba « XBOX LIVE Key » sans génération → skip ; P5 DLC / season pass console → skip
-  en v1 ; sémantique de l'overwrite par cible dans le nouveau modal (un Create avec N cibles
-  portant chacune sa région / édition, ou N Creates ?) ; le bucket 88 « Playstation Game Code »
-  est-il bien PS4 (le label ne dit jamais PS4).
+  en v1 ; ~~sémantique de l'overwrite par cible dans le nouveau modal~~ **tranchée par
+  l'observation (14/09) et les canaries (15/09)** : UN Create avec N lignes cibles portant
+  chacune sa région / édition (SUBMITTER_SPEC §4c) — reste à confirmer côté AKS la création
+  sur la 2ᵉ page du canary 2 (Diablo 2 Resurrected, Xbox Series 70802) une fois le cache
+  rafraîchi ; le bucket 88 « Playstation Game Code » est-il bien PS4 (le label ne dit jamais
+  PS4).
 
 ## 5. Décisions revues — NE PAS re-durcir/re-défaire (un audit les re-signalera)
 
@@ -342,6 +364,10 @@ Ces décisions sont dans `AGENTS.md` § « Reviewed decisions ». Rappel :
 - **Index submit peu profond** : productif seulement sur ~28-30 premières pages → défaut
   `--max-pages 30` (safe-auto). Feed profond = software/obscur qui 404 (matching le plus lent,
   ~0 candidat).
+- **Deux clones sur le VPS** : le clone de dev `/root/aks-code/executor` (éditions + `git`
+  commit / push via la clé de déploiement SSH) et le clone live `/home/debian/executor`
+  (`git pull` seulement, celui que les services exécutent) — ne jamais `cd` dans le clone
+  live avant une écriture relative ou une commande git.
 - **Un seul onglet Chrome + verrou `state/browser.lock`** (flock machine-wide, non-bloquant,
   fail-closed) : pas de vrai parallèle browser. Swap marchand ET data-entry se disputent ce
   verrou → séquentiel.
@@ -455,3 +481,47 @@ python3 -m json.tool runs/<run-id>/recap.json        # état / prove-gone par of
 - **La mémoire de Claude vit HORS du repo** (`~/.claude/projects/.../memory/`) et **ne migre
   pas**. Ce document est le pont ; sur le nouveau serveur, Claude repart sans mémoire — d'où
   ce HANDOFF.
+
+## 9. Cohérence documentaire (vérifiée le 2026-09-15 — lot 1)
+
+**Ordre de lecture d'un nouvel arrivant** (un lecteur du README, des règles et du code doit
+recevoir les MÊMES consignes) :
+
+1. `README.md` — ce qui existe, la table « Capability status » (disponible / expérimental /
+   bloqué, avec la condition et la règle), le lancement manuel ;
+2. `docs/EXECUTOR_RULES.md` — les règles EN VIGUEUR par étage (le seul endroit où une règle
+   est écrite ; les autres docs renvoient à ses sections `§N.M`) ;
+3. `docs/MERCHANTS.md` — comment chaque marchand est lu (fichier, grammaire PC / console,
+   hooks, statut safe-auto) ; puis `docs/feeds/<Marchand>.md` pour l'état du feed ;
+4. ce `docs/HANDOFF.md` — état courant, décisions revues (§5 → `AGENTS.md`), gotchas,
+   commandes, backlog ; puis `AGENTS.md` / `CLAUDE.md` (règles du builder),
+   `docs/ARCHITECTURE.md`, `docs/SUBMITTER_SPEC.md`, `docs/DATA_CONTRACTS.md`.
+
+**Vérifications faites le 2026-09-15** :
+
+- EXECUTOR_RULES : l'historique daté (audits, « avant ce correctif … », comptages de lots,
+  incidents) a été déplacé dans `docs/CHANGELOG.md` § « Historique déplacé depuis
+  EXECUTOR_RULES (2026-09-15) », groupé par identifiant de règle avec sa date ; chaque règle
+  garde un pointeur « historique : CHANGELOG <date> ». Preuve par script : l'ensemble des
+  identifiants entre crochets (`[R…]`, `[P…]`, `[S…]`, `[MA…]`, `[FC…]`, `[CORE_RULES]`,
+  `[DB proof override]`…) est **conservé** (147 identifiants distincts avant, 150 après —
+  les 3 ajouts sont les références au modal v2 ; 0 perdu ; 245 occurrences avant et après),
+  titres de sections (`## N.`, `### N.M`) et lignes de tableaux **inchangés**, aucun U+FEFF ;
+  2 598 → 2 445 lignes.
+- Commandes : chaque flag cité dans README / HANDOFF / MERCHANTS / CONTRIBUTING /
+  ARCHITECTURE / SUBMITTER_SPEC a été vérifié contre l'`argparse` des scripts
+  (`--consoles` / `--no-consoles` sur 03 / 10 / 11 / 12, `--dry-run`, `--continue-on-halt`,
+  `--triage` / `--move-execute`, `--prove-gone-scan` / `--prove-gone-by-search`,
+  `--max-pages` / `--start-page`, `--mode` / `--limit`, `--inspect` / `--catalog` /
+  `--click-mode`, `--execute` / `--i-authorize-batch` / `--batch` / `--deferred` / `--full`,
+  `--pages` / `--pace` / `--max-sweeps`, `--search-circuit-file`, `--wait` / `--max`,
+  `--out`) et contre `manual_launch/run_executor.sh` (prepare / check / dry-run / submit ;
+  `--pages`, `--pace`, `--mode`, `--limit`).
+- Énoncés périmés corrigés : « `--consoles` exige `--dry-run` » et « défaut désactivé »
+  (MERCHANTS), « le submitter refuse un candidat multi-cibles » (README, EXECUTOR_RULES §6),
+  « open invariant (not yet enforceable) » du mode R24 (EXECUTOR_RULES §6 → FC5 appliqué),
+  `AKS_TARGET=vps` (CONTRIBUTING — retiré depuis FC2), « once G3 lands » (CONTRIBUTING),
+  `[data-add-target]` « UNVERIFIED » (SUBMITTER_SPEC → prouvé par le canary 2), tableau
+  ARCHITECTURE sans les scripts 06-14, comptes de tests (1 846 le 2026-09-15).
+- Suite de tests : `python3 -m unittest discover -s tests -t .` → 1 846 tests découverts
+  le 2026-09-15.

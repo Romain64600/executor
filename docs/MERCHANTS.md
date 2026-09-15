@@ -72,10 +72,10 @@ dans le titre, `console_url_families(url)` (tuple → familles ; chaîne → ski
 l'URL ne dit rien → « console: no declared generation (R45) » si le titre n'en déclarait pas
 non plus ; hook absent → lecture partagée des runs) → `console_pc_declared` en plus de la
 phrase générique → `console_region_slot` (texte) → correspondance partagée → base / label /
-mots ; `console_noise` retiré de `resolve_name` avec les marqueurs partagés. Activation par
-`--consoles` (défaut désactivé, `--dry-run` obligatoire) ; la saisie d'un candidat
-multi-cibles reste verrouillée dans le submitter tant que le nouveau modal n'est pas observé
-(`EXECUTOR_RULES.md` §4.10, §4.12 et §6).
+mots ; `console_noise` retiré de `resolve_name` avec les marqueurs partagés. La branche
+console est le **défaut depuis le 2026-09-15** (`--no-consoles` = PC seul) et un candidat
+multi-cibles est écrit entier sur le modal v2 (plafond 3 cibles) — règles dans
+`EXECUTOR_RULES.md` §4.10, §4.12 et §6 « Modal v2 ».
 
 Mesure du 14/09 (lecture seule, sur les derniers lots sauvegardés du 12/09 ; GameSeal :
 sweep du 15/07/2026) — **classifieur consoles** : comptages par marchand et par motif
@@ -99,20 +99,21 @@ prepaids, monnaies, bundles, skins, passes in-game, collections de DLC), résolu
 page AKS par devinette de slug puis recherche AKS (R30, disjoncteur), gardes d'identité
 R01 / R16 / R01b, DLC `[R43]`, éditions (R18, R39, R23), régions (§4.4, R44), plateformes
 (R20), logiciels (R31), clés consoles `[R45]` (classifieur partagé, pages consoles, cibles
-multiples — sous `--consoles`), preuve de succès = disparition du feed.
+multiples — par défaut, `--no-consoles` pour un run PC seul), preuve de succès = disparition
+du feed.
 
-## Statut au 2026-09-14
+## Statut au 2026-09-15
 
 | Marchand | Store id feed | Fichier (`src/merchants/`) | Hooks déclarés (14/09) | Éprouvé en safe-auto | Feed (pages) |
 |---|---|---|---|---|---|
 | Kinguin | 58 | `kinguin.py` (**nouveau**, `domain` sorti du registre) | PC : `precheck`, `title_region`, `resolve_name`, `guard_name`, `gift_delivery` (note « valid until » saisie — en fin de titre —, « PC Steam Altergift » = Steam Gift, 14/09 soir) — pas de `url_platform` (R32b) ; console : `console_url_families`, `console_region_slot`, `console_noise=("CD Key", VALID_UNTIL_RE)` | oui (142 pages d'historique + nuit du 11/09) | 67 |
 | Gamivo | 51 | `gamivo.py` (4 hooks PC `[R46]` depuis le 12/09) | `console_url_families`, `console_pc_declared`, `console_region_slot` | oui — 6 saisies fausses du 11/09 à corriger | 56 |
 | G2A | 38 | `g2a.py` | PC : `precheck`, `title_region` (queue ` - <RÉGION>`) + flags R32b ; console : `console_url_families`, `console_region_slot` | oui | 37 |
-| MMOGA | 12 (page AKS : marchand 40) | `mmoga.py` | `console_url_families`, `console_region_slot`, `console_noise` | oui (1 265 créées les 10-12/09) | 8-10 |
+| MMOGA | 12 (page AKS : marchand 40) | `mmoga.py` | `console_url_families`, `console_region_slot`, `console_noise` | oui (1 265 créées les 10-12/09 ; premier sweep console réel le 15/09) | 8-10 |
 | K4G | 92 | `k4g.py` (**nouveau**) | PC : `precheck`, `title_region`, `resolve_name`, `guard_name`, `gift_delivery` (Altergift = Steam Gift quand le slug est d'accord, 14/09 soir) ; console : `console_url_families`, `console_region_slot` | oui | 7 |
 | Driffle | 127 | `driffle.py` (**nouveau**) | PC : `precheck`, `title_region` (1re parenthèse) ; console : `console_url_families`, `console_region_slot`, `console_noise` | oui | 6 |
 | Instant Gaming | 28 | `instant_gaming.py` | PC : `offer_page_resolver` ; console : `console_url_families` → toujours None (déclaré : l'URL ne dit rien ; une plateforme console lue sur la page IG → plateforme None → skip R32) | oui | 4-5 |
-| Eneba | 19 | `eneba.py` | `console_url_families`, `console_pc_declared`, `console_region_slot` | **dry-run du 12/09 en cours** | ≥ 30 |
+| Eneba | 19 | `eneba.py` | `console_url_families`, `console_pc_declared`, `console_region_slot` | **non — dry-run du 12/09 fait (32 candidats, 90 % consoles), sweep réel sur go** | ≥ 30 |
 | Allyouplay | 17 | `allyouplay.py` (**nouveau**, identité seule) | `domain="allyouplay.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
 | GameSeal | 126 | `gameseal.py` (**nouveau**) | `domain` ; PC : `precheck`, `title_region` (queue ` - <RÉGION>`) ; console : `console_url_families`, `console_region_slot` | **non, dry-run d'abord** | ? |
 | CJS-CDKeys | 30 | `cjs.py` (**nouveau**, identité seule) | `domain="cjs-cdkeys.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
@@ -356,9 +357,9 @@ matcher et le classifieur importent le registre.
   `_parse_url_mmoga`) vivaient dans `console_keys` ; `console_region_slot` (` - EU`, `[EU]`,
   `(Steam Key EU)`, `EU Key` → `"EU"`) ; `console_noise = ("Download Code",)`.
 - **Statut live** : éprouvé en safe-auto (1 265 créées les 10-12/09).
-- **Résiduel** : 388 consoles (R45 préparé — `--consoles` désactivé par défaut, saisie
-  multi-cibles en attente du nouveau modal ; dry-run à faire), 157 sans page AKS, bundles,
-  monnaies, passes, variantes d'édition.
+- **Résiduel** : 388 consoles — traitées par défaut depuis le 15/09 (dry-run consoles du
+  15/09 : 663 offres → 174 candidats consoles, 489 skips ; premier sweep console réel le
+  15/09, cf. HANDOFF §4) —, 157 sans page AKS, bundles, monnaies, passes, variantes d'édition.
 
 ## K4G (store 92)
 
@@ -481,7 +482,8 @@ matcher et le classifieur importent le registre.
 - **Grammaire console (R45)** : la plateforme n'est PAS dans le feed (titres nus, URL
   `/en/<id>-/`) — elle vient de la page IG (`offer_page_resolver`) ; le classifieur R45 ne
   voit que les marqueurs du titre (dernier lot : 8 lignes, 7 Game Pass + 1 « Nintendo Switch
-  2 Edition »). Hors périmètre console en v1.
+  2 Edition »). Hors périmètre console en v1 — **bloqué** : aucune saisie console depuis IG
+  (README « Capability status »).
 - **Statut live** : éprouvé en safe-auto.
 
 ## Eneba (store 19)
@@ -521,8 +523,10 @@ matcher et le classifieur importent le registre.
   « Dying Light Essentials Edition (Without DE) XBOX LIVE Key EUROPE » (DE lu comme région →
   GERMANY interdit, désormais eu) et « Truck Simulator Cargo Driver 2025 - USA (Windows/Xbox
   Series X|S) XBOX LIVE Key EUROPE » (USA + EUROPE → « not mapped », désormais eu).
-- **Statut live** : dry-run du 2026-09-12 (voir CHANGELOG) ; très fort taux de consoles
-  (pages entières) et de régions interdites.
+- **Statut live** : **jamais balayé en réel** — dry-run du 2026-09-12 (32 candidats sur
+  3 000 offres, 2 698 lignes consoles, voir CHANGELOG) ; sweep réel sur go de Romain
+  seulement ; très fort taux de consoles (pages entières — les 704 lignes sans génération
+  restent skippées, politique P4) et de régions interdites.
 
 ## Allyouplay (store 17)
 
@@ -592,13 +596,12 @@ matcher et le classifieur importent le registre.
 
 ## Ce qui n'est pas propre à un marchand
 
-- Consoles (Xbox / PlayStation / Switch) `[R45]` (2026-09-12, hooks marchands le 14/09) :
-  classifieur partagé (`src/console_keys.py` — vocabulaire commun seulement, il interroge le
-  registre pour les hooks du marchand), pages consoles AKS `buy-<slug>-<kind>-compare-prices/`,
-  candidats multi-cibles (`targets`), activation `--consoles` (défaut désactivé, `--dry-run`
-  obligatoire), submit verrouillé (`multi_target_unsupported_until_modal_verified`) tant que
-  le nouveau modal de Romain n'a pas été observé avec `--inspect` ; politiques P2-P5 à
-  confirmer par Romain (EXECUTOR_RULES §4.12, §6, §10, §12).
+- Consoles (Xbox / PlayStation / Switch) `[R45]` (2026-09-12, hooks marchands le 14/09,
+  écriture ouverte et défaut ON le 15/09) : classifieur partagé (`src/console_keys.py` —
+  vocabulaire commun seulement, il interroge le registre pour les hooks du marchand), pages
+  consoles AKS `buy-<slug>-<kind>-compare-prices/`, candidats multi-cibles (`targets`)
+  écrits entiers sur le modal v2 (plafond 3 cibles) ; `--no-consoles` = run PC seul ;
+  politiques P2-P5 à confirmer par Romain (EXECUTOR_RULES §4.12, §6, §10, §12).
 - La correspondance texte de région → base vendable / label interdit (`EU` / `EUROPE` /
   `UNITED KINGDOM` / `Global`… ; `CA` → `CANADA`, `Hong Kong` → `HONG KONG`…) est du
   vocabulaire partagé : un fichier marchand fournit le TEXTE (`console_region_slot`), jamais

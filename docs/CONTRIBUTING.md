@@ -2,8 +2,11 @@
 
 How to build, test, and extend the AKS Controlled Executor. Read this with
 [`../AGENTS.md`](../AGENTS.md) / [`../CLAUDE.md`](../CLAUDE.md) (builder rules) and
-[`EXECUTOR_RULES.md`](EXECUTOR_RULES.md) (the deterministic per-stage spec). Known
-issues and priorities live in [`AUDIT.md`](AUDIT.md).
+[`EXECUTOR_RULES.md`](EXECUTOR_RULES.md) (the deterministic per-stage spec — the only
+place a rule is written; link to its `§N.M`, never copy it). Current state, gotchas and
+backlog live in [`HANDOFF.md`](HANDOFF.md); what is available / experimental / blocked is
+the « Capability status » table of the [README](../README.md); the Sprint-1 audit register
+[`AUDIT.md`](AUDIT.md) is fully resolved (history).
 
 ## Golden rule
 
@@ -53,8 +56,11 @@ python3 scripts/02_extract_feed.py --merchant Driffle --store-id 127
 
 **Environment classification.** Both tools detect where they run; only the real
 Debian VPS is `authoritative`. A red result on macOS/dev/sandbox is **not** a
-production failure and never unlocks write stages. Force detection with
-`AKS_TARGET=vps` or `AKS_TARGET=dev` (see `src/aks_env.py: current_environment`).
+production failure and never unlocks write stages. Authority comes ONLY from the
+root-installed marker `/etc/aks-executor.target` (FC2, audit 2026-07-17);
+`AKS_TARGET=dev` can force NON-authoritative for local work, and there is deliberately no
+override in the other direction (`src/aks_env.py: current_environment`,
+`marker_authorizes`; EXECUTOR_RULES §1).
 
 ---
 
@@ -72,7 +78,9 @@ production failure and never unlocks write stages. Force detection with
 - A test that asserts **behavior at a boundary** is worth more than one that
   restates the implementation. Example: assert the HTTP *method* used for the AKS
   probe, so the shell/Python gates can't silently diverge (AUDIT.md C1).
-- Run the whole suite before every commit; it must stay green. CI
+- Run the whole suite before every commit; it must stay green (hermetic — no browser, no
+  network; **1846 tests on 2026-09-15**, ~6 min single-process:
+  `python3 -m unittest discover -s tests -t .`). CI
   (`.github/workflows/ci.yml`) runs the suite + a source secret-scan on every
   push/PR, but still run it locally first (the sandbox builder can't push, so it
   won't trigger CI for you).
@@ -133,7 +141,7 @@ Rules of use:
   `offer_disappeared_from_refreshed_feed` (same `available` mode as the run), never `[data-success]`.
 - On a `StepGuardError`, stop and write an error report. Never retry the same
   signature, never switch browser/VPN/tool.
-- Persist `guard.snapshot()` to the JSONL run log (once G3 lands).
+- Persist `guard.snapshot()` to the JSONL run log (`src/run_log.py`, redacting).
 
 ---
 
@@ -154,6 +162,23 @@ Rules of use:
 
 ---
 
+## Adding or changing a merchant rule
+
+Romain's rule (repeated since 2026-08-11, ultimatum 2026-09-14): **one config file per
+merchant** — any merchant-specific region / edition / platform detection (PC or console)
+is declared in `src/merchants/<merchant>.py` through the `MerchantConfig` hooks;
+`src/matcher.py` and `src/console_keys.py` keep only the shared vocabulary and the
+pipeline. Never an `if merchant == …` or a merchant regex in a generic module. Steps: the
+merchant file first (create it even in declaration-only form), a pure test module
+`tests/test_merchants_<name>.py` on real feed rows, then the docs in the same commit —
+[`MERCHANTS.md`](MERCHANTS.md) (the merchant's section + status table) and
+[`EXECUTOR_RULES.md`](EXECUTOR_RULES.md) §4.10 / §11 for the rule text. Before
+re-tightening a behaviour an audit flags, read `AGENTS.md` « Reviewed decisions » — several
+are deliberate rulings of Romain (R25 retired, R18 kept, P1 declared platforms only,
+Kinguin « valid until », Altergift = Steam Gift).
+
+---
+
 ## Git / commit & push
 
 - **Never commit** `runs/`, `logs/`, `state/`, `.env`, cookies, 2FA codes,
@@ -161,8 +186,16 @@ Rules of use:
 - Commit messages: imperative, scoped (e.g. `Add read-only feed extractor`).
 - Keep the suite green before committing.
 
-Note for the Claude/Cowork builder: the sandbox **cannot** write to `.git` or
-authenticate to GitHub, so it cannot commit or push. Do that locally:
+- **Docs in the same commit** (Romain's rule): README / `docs/` are updated together with
+  the change they describe — a behaviour change without its doc change is incomplete.
+  Reading order and the coherence check: [`HANDOFF.md`](HANDOFF.md) §9.
+- **Two clones on the VPS**: edits and `git` happen in the dev clone
+  (`/root/aks-code/executor`); the live clone (`/home/debian/executor`) is pull-only —
+  never `cd` into it before a relative write or a git command ([`HANDOFF.md`](HANDOFF.md)
+  §6).
+
+Note for a sandboxed Claude/Cowork builder: a sandbox that **cannot** write to `.git` or
+authenticate to GitHub cannot commit or push. Do that from the dev clone:
 
 ```bash
 git add -A
