@@ -423,12 +423,178 @@ class UrlsPreviewTargetsTests(unittest.TestCase):
         self.assertIn("#confirm-targets", js)
         self.assertIn("#confirm-t", js)
         self.assertIn('"page(s) cible(s) à écrire"', js)   # the preview KPI
+        # Romain 2026-09-15 « aligner le récapitulatif sur le lot réellement soumis »: the
+        # counts / confirm list come from the batch as scripts/12 builds it — per store,
+        # one candidate per fingerprint (the candidate's own key, else the contract formula).
+        self.assertIn("function submitBatch", js)
+        self.assertIn("function candFingerprint", js)
+        self.assertIn("function batchCounts", js)
+        self.assertIn("c.fingerprint", js)
+        self.assertIn('"|+"', js)                           # the R45 extra-targets suffix
+        self.assertIn('"offres à saisir (lot)"', js)
+        self.assertIn("batchCounts(submitBatch(rec))", js)  # KPIs + Saisir button
+        self.assertIn("submitBatch(RECAP_DATA)", js)        # the GO summary
 
     def test_urls_html_confirm_modal_carries_the_target_list(self):
         html = (self.STATIC / "urls.html").read_text(encoding="utf-8")
         self.assertIn('id="confirm-targets"', html)
         self.assertIn('id="confirm-t"', html)
         self.assertLess(html.index('id="confirm-targets"'), html.index('id="confirm-go"'))  # before the GO field
+
+
+
+# ---------------------------------------------------------------------------
+# Romain 2026-09-15 « aligner le récapitulatif sur le lot réellement soumis »: a pure-
+# Python port of urls.js submitBatch / candFingerprint, checked against the engine
+# (src.data_entry_auto._candidates_by_store) — same key (store_id + FULL fingerprint,
+# the engine's _seen set lives per store group), same drops (unresolved / errored game,
+# merchant group without store_id), same order.
+# ---------------------------------------------------------------------------
+
+def _js_cand_fingerprint(c):
+    """Port of urls.js candFingerprint: the candidate's own ``fingerprint`` key, else
+    candidate_contract's formula (offer_id|aks_product_id|region_id|edition_id, plus
+    "|+pid:rid:eid,…" over the extra targets)."""
+    fp = c.get("fingerprint")
+    if isinstance(fp, str) and fp:
+        return fp
+
+    def s(v):
+        return "" if v is None else str(v)
+    o = c.get("offer") or {}
+    reg = c.get("region") if isinstance(c.get("region"), dict) else {"id": c.get("region_id")}
+    ed = c.get("edition") if isinstance(c.get("edition"), dict) else {"id": c.get("edition_id")}
+    primary = "|".join(s(v) for v in (o.get("offer_id"), c.get("aks_product_id"), reg.get("id"), ed.get("id")))
+    raw = c.get("targets") if isinstance(c.get("targets"), list) else []
+    if len(raw) <= 1:
+        return primary
+    extra = ",".join(":".join(s(v) for v in (t.get("aks_product_id"), (t.get("region") or {}).get("id"),
+                                                (t.get("edition") or {}).get("id"))) for t in raw[1:])
+    return primary + "|+" + extra
+
+
+def _js_submit_batch(recap):
+    """Port of urls.js submitBatch (rows keep the candidate dict for the comparison)."""
+    order, groups = [], {}
+    for g in recap.get("games") or []:
+        if not g.get("resolved") or g.get("error"):
+            continue
+        for per in g.get("merchants") or []:
+            sid = "" if per.get("store_id") is None else str(per.get("store_id"))
+            if not sid:
+                continue
+            grp = groups.get(sid)
+            if grp is None:
+                grp = groups[sid] = {"merchant": per.get("merchant") or "", "store_id": sid,
+                                     "rows": [], "seen": set()}
+                order.append(sid)
+            for c in per.get("candidates") or []:
+                key = _js_cand_fingerprint(c)
+                if key in grp["seen"]:
+                    continue
+                grp["seen"].add(key)
+                grp["rows"].append(c)
+    return [groups[sid] for sid in order if groups[sid]["rows"]]
+
+
+def _js_counts(groups):
+    offers = sum(len(g["rows"]) for g in groups)
+    targets = sum(max(1, len(c.get("targets") or [])) for g in groups for c in g["rows"])
+    return {"offers": offers, "targets": targets, "merchants": len(groups)}
+
+
+def _game(url, pid, merchants, resolved=True, error=None):
+    g = {"url": url, "resolved": resolved, "aks_product_id": pid, "aks_name": "X",
+         "search": {"truncated": False}, "merchants": merchants}
+    if error:
+        g["error"] = error
+    return g
+
+
+def _grp(merchant, store_id, cands):
+    g = {"merchant": merchant, "candidates": list(cands), "skipped": []}
+    if store_id is not None:
+        g["store_id"] = store_id
+    return g
+
+
+def _with_key(c):
+    """As the matcher stores a preview candidate (to_dict): with its fingerprint key."""
+    return dict(c, fingerprint=M.candidate_fingerprint(c))
+
+
+class BatchMirrorTests(unittest.TestCase):
+    def setUp(self):
+        from src.data_entry_auto import _candidates_by_store
+        self.engine = _candidates_by_store
+
+    def _same(self, recap):
+        got = [{"merchant": g["merchant"], "store_id": g["store_id"], "candidates": g["rows"]}
+               for g in _js_submit_batch(recap)]
+        self.assertEqual(got, self.engine(recap))
+        return got
+
+    def test_hades_ps4_ps5_double_search_is_one_offer_two_pages(self):
+        # Two pasted URLs (Hades PS4 + Hades PS5); ONE G2A offer « Hades (PS4 / PS5) »
+        # found by both searches, each occurrence carrying two targets. The naive count
+        # said « 2 offres sur 4 pages »; the engine keeps ONE candidate → « 1 offre sur
+        # 2 pages » — the summary must say the same.
+        cand = _with_key(_console_cand("7"))
+        recap = {"available": "all", "consoles": True,
+                 "games": [_game("https://www.allkeyshop.com/blog/buy-hades-ps4-compare-prices/", "85104",
+                                 [_grp("G2A", "38", [cand])]),
+                           _game("https://www.allkeyshop.com/blog/buy-hades-ps5-compare-prices/", "85105",
+                                 [_grp("G2A", "38", [cand])])],
+                 "totals": {"games": 2, "resolved": 2, "candidates": 2}}
+        naive_offers = sum(len(p["candidates"]) for g in recap["games"] for p in g["merchants"])
+        naive_targets = sum(len(c["targets"]) for g in recap["games"] for p in g["merchants"] for c in p["candidates"])
+        self.assertEqual((naive_offers, naive_targets), (2, 4))          # what the UI used to say
+        groups = self._same(recap)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(len(groups[0]["candidates"]), 1)
+        self.assertEqual(_js_counts(_js_submit_batch(recap)), {"offers": 1, "targets": 2, "merchants": 1})
+
+    def test_key_is_store_id_plus_full_fingerprint(self):
+        # Same fingerprint under TWO stores → both kept (engine and port agree: the seen
+        # set is per store). Same offer with a DIFFERENT target set → a different full
+        # fingerprint → both kept (the fingerprint encodes every target).
+        a = _with_key(_console_cand("7"))
+        b_other_targets = _console_cand("7")
+        b_other_targets["targets"] = b_other_targets["targets"][:1]     # lone PS4 target
+        b_other_targets = _with_key(b_other_targets)
+        self.assertNotEqual(a["fingerprint"], b_other_targets["fingerprint"])
+        recap = {"games": [_game("u1", "85104", [_grp("G2A", "38", [a]), _grp("Kinguin", "45", [a])]),
+                           _game("u2", "85104", [_grp("G2A", "38", [b_other_targets, a])])],
+                 "totals": {"games": 2, "resolved": 2, "candidates": 4}}
+        groups = self._same(recap)
+        self.assertEqual([(g["store_id"], len(g["candidates"])) for g in groups], [("38", 2), ("45", 1)])
+
+    def test_port_matches_engine_on_a_mixed_fixture_without_fingerprint_keys(self):
+        # No `fingerprint` key anywhere → the port's fallback formula must dedupe exactly
+        # like candidate_fingerprint: a PC offer under two games (once), an unresolved
+        # game and an errored game with candidates (dropped), a merchant group without
+        # store_id (dropped), a second store (kept, in first-seen order).
+        recap = {"games": [
+            _game("u1", "205027", [_grp("G2A", "38", [_cand("1"), _console_cand("7")]),
+                                   _grp("NoStore", None, [_cand("99")])]),
+            _game("u-unresolved", None, [_grp("G2A", "38", [_cand("50")])], resolved=False),
+            _game("u-error", "1", [_grp("G2A", "38", [_cand("51")])], error="aks_throttled"),
+            _game("u2", "205027", [_grp("Kinguin", "45", [_cand("2")]),
+                                   _grp("G2A", "38", [_cand("1"), _pc_target_cand("3"), _switch_cand("9")])]),
+        ], "totals": {"games": 4, "resolved": 3, "candidates": 9}}
+        groups = self._same(recap)
+        self.assertEqual([(g["merchant"], g["store_id"], [c["offer"]["offer_id"] for c in g["candidates"]])
+                          for g in groups],
+                         [("G2A", "38", ["1", "7", "3", "9"]), ("Kinguin", "45", ["2"])])
+        self.assertEqual(_js_counts(_js_submit_batch(recap)), {"offers": 5, "targets": 6, "merchants": 2})
+
+    def test_fallback_formula_equals_candidate_fingerprint(self):
+        for c in (_cand("1"), _pc_target_cand("3"), _console_cand("7"), _switch_cand("9")):
+            self.assertNotIn("fingerprint", c)                      # the fallback path is exercised
+            self.assertEqual(_js_cand_fingerprint(c), M.candidate_fingerprint(c))
+        self.assertEqual(_js_cand_fingerprint(_console_cand("7")), "7|85104|88|1|+85105:88ps5h:1")
+        # the candidate's own key wins when present (as the matcher writes it)
+        self.assertEqual(_js_cand_fingerprint(dict(_cand("1"), fingerprint="X")), "X")
 
 
 if __name__ == "__main__":

@@ -96,22 +96,55 @@ function targetRow(t, i, n) {
     offLink(t.aks_url),
   ]);
 }
-// Every (candidate → targets) the submit would write, in preview order.
-function collectTargets(rec) {
-  const rows = [];
+function plural(n, one, many) { return n + " " + (n > 1 ? many : one); }
+
+// ---- the batch scripts/12 REALLY submits [R45] ----
+// Mirror of src/data_entry_auto._candidates_by_store (Romain 2026-09-15: « aligner le
+// récapitulatif sur le lot réellement soumis »): games not resolved or in error are
+// dropped, merchant groups without a store_id are dropped, and within one STORE one
+// candidate per fingerprint (a merchant can appear under several pasted games — the same
+// offer found twice is submitted ONCE). The per-game table keeps showing what each page
+// found; the KPIs, the Saisir button and the GO summary count THIS batch.
+function candFingerprint(c) {
+  if (c && typeof c.fingerprint === "string" && c.fingerprint) return c.fingerprint;
+  // Fallback for a preview without the key = candidate_contract.fingerprint / app.js fp():
+  // offer_id|aks_product_id|region_id|edition_id, plus "|+pid:rid:eid,…" over the EXTRA
+  // targets (R45). Never throws here (display only) — a malformed row still counts once.
+  const o = (c && c.offer) || {};
+  const reg = labelId(c, "region", "region_label", "region_id"), ed = labelId(c, "edition", "edition_label", "edition_id");
+  const primary = [o.offer_id, c ? c.aks_product_id : null, reg.id, ed.id].map((v) => (v == null ? "" : String(v))).join("|");
+  const raw = (c && Array.isArray(c.targets)) ? c.targets : [];
+  if (raw.length <= 1) return primary;
+  const extra = raw.slice(1).map((t) => { const n = normTarget(t); return [n.aks_product_id, n.region.id, n.edition.id].join(":"); }).join(",");
+  return primary + "|+" + extra;
+}
+function submitBatch(rec) {
+  const order = [], groups = new Map();
   for (const g of ((rec && rec.games) || [])) {
+    if (!g.resolved || g.error) continue;
     for (const per of (g.merchants || [])) {
+      const sid = per.store_id == null ? "" : String(per.store_id);
+      if (!sid) continue;
+      let grp = groups.get(sid);
+      if (!grp) {
+        grp = { merchant: per.merchant || "", store_id: sid, rows: [], seen: new Set() };
+        groups.set(sid, grp); order.push(sid);
+      }
       for (const c of (per.candidates || [])) {
-        rows.push({ merchant: per.merchant || "", name: (c.offer || {}).name || "", targets: candTargets(c) });
+        const key = candFingerprint(c);
+        if (grp.seen.has(key)) continue;   // same offer under another pasted game → once
+        grp.seen.add(key);
+        grp.rows.push({ name: (c.offer || {}).name || "", targets: candTargets(c) });
       }
     }
   }
-  return rows;
+  return order.map((sid) => groups.get(sid)).filter((grp) => grp.rows.length);
 }
-function countTargets(rec) {
-  return collectTargets(rec).reduce((s, r) => s + r.targets.length, 0);
+function batchCounts(groups) {
+  let offers = 0, targets = 0;
+  for (const grp of groups) for (const r of grp.rows) { offers += 1; targets += r.targets.length; }
+  return { offers, targets, merchants: groups.length };
 }
-function plural(n, one, many) { return n + " " + (n > 1 ? many : one); }
 
 // ---- URL input ----
 function parseUrls() {
@@ -285,17 +318,20 @@ function renderRecap(d) {
   RECAP_SHA = d.recap_sha256 || null;
   RECAP_RUN = d.run_id || null;
   RECAP_DATA = rec;
-  SUBMIT_MERCHANTS = new Set((rec.games || []).flatMap((g) => (g.merchants || [])
-    .filter((m) => (m.candidates || []).length).map((m) => m.store_id))).size;
   const t = rec.totals || {};
-  const nTargets = countTargets(rec);   // [R45] one write per target page
+  // [R45] the batch as scripts/12 builds it (deduped per store by fingerprint) — the
+  // KPIs, the Saisir button and the GO summary count THIS, not the per-game finds.
+  const bc = batchCounts(submitBatch(rec));
+  SUBMIT_MERCHANTS = bc.merchants;
+  const found = Number(t.candidates || 0);
+  const dupes = Math.max(0, found - bc.offers);
   const pill = $("#recap-status");
   const running = RUNNING;
   pill.textContent = rec.aborted ? ("ARRÊTÉ — " + rec.aborted) : (running ? "EN COURS" : "TERMINÉ");
   pill.className = "pill " + (rec.aborted ? "halted" : (running ? "running" : "done"));
   $("#recap-summary").replaceChildren(
-    el("div", { class: "kpi" }, [el("div", { class: "kpi-n", text: String(t.candidates || 0) }), el("div", { class: "kpi-l", text: "offres à saisir" })]),
-    el("div", { class: "kpi" }, [el("div", { class: "kpi-n", text: String(nTargets) }), el("div", { class: "kpi-l", text: "page(s) cible(s) à écrire" })]),
+    el("div", { class: "kpi" }, [el("div", { class: "kpi-n", text: String(bc.offers) }), el("div", { class: "kpi-l", text: "offres à saisir (lot)" + (dupes ? " · " + found + " trouvée(s), " + dupes + " doublon(s) entre jeux" : "") })]),
+    el("div", { class: "kpi" }, [el("div", { class: "kpi-n", text: String(bc.targets) }), el("div", { class: "kpi-l", text: "page(s) cible(s) à écrire" })]),
     el("div", { class: "kpi" }, [el("div", { class: "kpi-n", text: (t.resolved || 0) + "/" + (t.games || 0) }), el("div", { class: "kpi-l", text: "jeu(x) résolu(s)" })]),
     el("div", { class: "kpi" }, [el("div", { class: "kpi-n", text: String((rec.merchants || []).length) }), el("div", { class: "kpi-l", text: "marchand(s)" })]),
   );
@@ -377,9 +413,9 @@ function renderRecap(d) {
     wrap.append(el("div", { class: "pg" }, kids));
   }
   // "Saisir" is offered only on a FINISHED, non-aborted dry-run with candidates.
-  const canSubmit = !RUNNING && !SUBMIT_RUNNING && !rec.aborted && (t.candidates > 0) && RECAP_SHA;
+  const canSubmit = !RUNNING && !SUBMIT_RUNNING && !rec.aborted && (t.candidates > 0) && (bc.offers > 0) && RECAP_SHA;
   $("#submit-bar").classList.toggle("hidden", !canSubmit);
-  $("#saisir-n").textContent = String(t.candidates || 0);
+  $("#saisir-n").textContent = String(bc.offers);   // the deduped batch, not the per-game finds
 }
 
 // ---- submit recap (Saisir) ----
@@ -415,19 +451,23 @@ function renderSubmitRecap(d, rec) {
 // ---- Saisir (write) ----
 $("#saisir").addEventListener("click", () => {
   if (!RECAP_RUN || !RECAP_SHA || !RECAP_DATA) return;
-  $("#confirm-n").textContent = $("#saisir-n").textContent;
-  $("#confirm-m").textContent = String(SUBMIT_MERCHANTS || "?");
-  // [R45] the GO summary lists EVERY target the submit will write — per candidate, one
-  // line per page / region / edition — and states the total (« 3 offres sur 5 pages »).
-  const rows = collectTargets(RECAP_DATA);
-  const nOffers = Number($("#saisir-n").textContent) || rows.length;
-  const nTargets = rows.reduce((s, r) => s + r.targets.length, 0);
-  $("#confirm-t").textContent = plural(nOffers, "offre", "offres") + " sur " + plural(nTargets, "page", "pages");
+  // [R45] the GO summary is the batch scripts/12 will really submit (per store, one
+  // candidate per fingerprint — a duplicate under another pasted game is omitted) and
+  // lists EVERY target it will write, one line per page / region / edition, with the
+  // total (« 3 offres sur 5 pages »).
+  const batch = submitBatch(RECAP_DATA);
+  const bc = batchCounts(batch);
+  $("#confirm-n").textContent = String(bc.offers);
+  $("#confirm-m").textContent = String(bc.merchants);
+  $("#confirm-t").textContent = plural(bc.offers, "offre", "offres") + " sur " + plural(bc.targets, "page", "pages");
   const box = $("#confirm-targets");
   box.replaceChildren();
-  for (const r of rows) {
-    box.append(el("div", { class: "logline", text: "[" + r.merchant + "] " + r.name + (r.targets.length > 1 ? " — " + r.targets.length + " cibles" : "") }));
-    for (const tg of r.targets) box.append(el("div", { class: "logline ok target-row", text: "   ↳ " + fmtTarget(tg) }));
+  for (const grp of batch) {
+    box.append(el("div", { class: "logline", text: "— " + grp.merchant + " (store " + grp.store_id + ") : " + plural(grp.rows.length, "offre", "offres") }));
+    for (const r of grp.rows) {
+      box.append(el("div", { class: "logline", text: "  " + r.name + (r.targets.length > 1 ? " — " + r.targets.length + " cibles" : "") }));
+      for (const tg of r.targets) box.append(el("div", { class: "logline ok target-row", text: "     ↳ " + fmtTarget(tg) }));
+    }
   }
   $("#confirm-go").value = "";
   $("#confirm-submit").disabled = true;
