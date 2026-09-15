@@ -485,6 +485,25 @@ phrase ONLY once every AKS-name token is covered AND UNITED precedes it — "Kin
 Deliverance" / "Total War Three Kingdoms" keep their name word (never a false `extra words:
 ['KINGDOM']` skip). The old grammar (`…-steam-key-brazil`,
 `…-steam-en-global`) keeps its P2-6 / P2-6b / MA7 behaviour. Tests: `GamivoConfigR46Tests`.
+**GameBoost grammar `[R47]` (2026-09-15).** GameBoost (feed store 157) writes its region
+at the END of the title, in full words, and leaves the slot EMPTY on the rows whose region
+is only on its own offer page — which is Cloudflare-blocked and is NEVER fetched (the
+blocker that got the 2026-07-15 batch cancelled, `[R27]`). So, unlike Kinguin / MMOGA where
+"no code" IS the merchant's way of writing GLOBAL, **a GameBoost title with no region word
+is a fail-closed `precheck` skip, never the implicit GLOBAL(2)** — 137 of the 821 rows of
+pages 1-10 (2026-09-15). `src/merchants/gameboost.py` carries the grammar through four
+hooks: `precheck` (non-game listings — the game-key URLs are flat `…-00-<id>`, gift cards
+and top-ups live under `/gift-cards/` and write middle dots, 175 / 821 → `console: GIFT CARD
+— not a game (R45)`; then a region LOCK → `forbidden region: <LABEL>` in the shared
+vocabulary; then the missing-slot skip); `title_region` (trailing `United States` / `EUROPE`
+/ `EU` / `GLOBAL` → us / eu / global, read from the END so "The Last of Us" and "Europa
+Universalis" keep their name words); `resolve_name` (the trailing region / platform /
+delivery runs peeled — `Gift` and `Nintendo eShop` included — anchored at the end, so
+"Stronghold 2: Steam Edition Steam Key EU" resolves "Stronghold 2: Steam Edition");
+`console_region_slot` (the console rows use the same trailing slot). The platform stays the
+generic TITLE read (`title_is_platform_source`, like Kinguin) with **no** `offer_page_resolver`
+— a token-less title keeps the `[R27]` fail-closed skip. GameBoost stays OFF the safe-auto
+allowlist: the file serves SUPERVISED runs only. Tests: `tests/test_merchants_gameboost.py`.
 **`MA7` RETIRED (2026-09-01, Romain: "EN = english only … on a quasi toutes les
 régions qui ont leur version EN only").** A Gamivo `-en-` URL segment used to skip
 as an EN-only *language restriction*; a language variant now ENTERS as the same

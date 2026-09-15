@@ -27,6 +27,7 @@ from src.merchants import (
     driffle,
     eneba,
     g2a,
+    gameboost,
     gameseal,
     gamivo,
     instant_gaming,
@@ -37,7 +38,10 @@ from src.merchants import (
 
 # Keys = the allowlist spelling (src/admin/auto_merchants.py AUTO_MERCHANTS) upper-cased;
 # every allowlisted merchant has its module (Romain 2026-09-14: « si tu ne l'as pas, tu
-# dois l'avoir »), Difmark (167) is parked but keeps its file.
+# dois l'avoir »), Difmark (167) is parked but keeps its file. GameBoost (157) is NOT on
+# the safe-auto allowlist either (R27, 2026-07-15 — batch cancelled live; R47, 2026-09-15 —
+# the region is missing from about a third of its titles): its file exists so a SUPERVISED
+# run (02 → 03 → 04 → 05) reads its grammar and fails closed on everything it cannot read.
 MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
     "KINGUIN": kinguin.CONFIG,
     "G2A": g2a.CONFIG,
@@ -51,6 +55,7 @@ MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
     "GAMESEAL": gameseal.CONFIG,
     "MMOGA": mmoga.CONFIG,
     "DIFMARK": difmark.CONFIG,
+    "GAMEBOOST": gameboost.CONFIG,
 }
 
 

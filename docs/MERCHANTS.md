@@ -118,6 +118,7 @@ du feed.
 | GameSeal | 126 | `gameseal.py` (**nouveau**) | `domain` ; PC : `precheck`, `title_region` (queue ` - <RÉGION>`) ; console : `console_url_families`, `console_region_slot` | **non, dry-run d'abord** | ? |
 | CJS-CDKeys | 30 | `cjs.py` (**nouveau**, identité seule) | `domain="cjs-cdkeys.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
 | Difmark | 167 | `difmark.py` | `console_url_families` (comptes) | parqué (hors liste blanche) | — |
+| GameBoost | 157 | `gameboost.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux + `[R47]` région obligatoire), `title_region`, `resolve_name` ; console : `console_region_slot` | **non — hors liste blanche safe-auto (R27, R47)** | 13 |
 
 Plus aucun marchand « générique » : la ligne `"KINGUIN": MerchantConfig("Kinguin",
 domain="kinguin.net")` inline du registre disparaît au profit de `kinguin.py`, et les six
@@ -593,6 +594,49 @@ matcher et le classifieur importent le registre.
 - **Hooks (cible 14/09)** : `url_ignore_substrings` ; `console_url_families` (chemin
   `/buy-console-account-…-account-<id>` → `"console: ACCOUNT — not a game (R45)"`).
 - **Statut live** : parqué (hors liste blanche).
+
+## GameBoost (store 157, hors liste blanche)
+
+- **Fichier** : `src/merchants/gameboost.py`. **Hors liste blanche safe-auto**
+  (`src/admin/auto_merchants.py`) : le fichier sert aux runs **supervisés** (02 → 03 → 04 →
+  05), jamais à `/auto`.
+- **Historique — pourquoi ce marchand avait été abandonné.** Un run GameBoost a été
+  **annulé en direct le 2026-07-15** (`[R27]`, CHANGELOG) : des offres Steam partaient en
+  Publisher parce que les titres de l'époque ne portaient aucun jeton de plateforme et que
+  la vérité est sur la page de l'offre — **inatteignable, Cloudflare la bloque**. Romain ce
+  jour-là : « il y a des offres steam qu'on détecte en publisher, ça c'est seulement
+  renseigné sur la page marchand. » Les 33 candidats ont été jetés avant validation.
+- **Ré-audit du 2026-09-15 (821 lignes uniques, pages 1-10 du feed, lecture seule).** Les
+  titres déclarent aujourd'hui la plateforme dans la grande majorité des lignes et la région
+  dans un peu plus de la moitié. La page marchand n'est **jamais** ouverte : ce qui n'est
+  pas lisible dans le titre est refusé.
+- **Grammaire PC** (lue depuis la FIN du titre) :
+  `<Jeu>[ | <Édition>][ (<Édition>)][ (DLC)] (<Plateforme>)[ (<RÉGION>)]`,
+  `<Jeu>[ (PC)] - <Plateforme> [CD ]Key[, PC][ - <RÉGION>]`,
+  `<Jeu> <Plateforme> Key[ <RÉGION>]`. Lignes réelles : « Wardogs | Supporter Edition (PC) -
+  Steam Key - United States » (us), « Sekiro: Shadows Die Twice (GOTY) (Xbox One) (EU) »
+  (eu), « Stronghold 2: Steam Edition Steam Key EU » (eu — « Steam Edition » reste dans le
+  nom, la découpe est ancrée à la fin), « METAL GEAR SOLID V: GROUND ZEROES Steam Gift
+  GLOBAL » (le mot de livraison `Gift` est épluché, le bucket GIFT reste la lecture
+  générique).
+- **`[R47]` la région est OBLIGATOIRE dans un titre GameBoost (2026-09-15).** Contrairement
+  à Kinguin ou MMOGA — où « pas de code » EST la façon d'écrire « global » — GameBoost écrit
+  ses lignes mondiales en toutes lettres (`GLOBAL`, `Global`, `ROW`) et laisse le slot VIDE
+  sur les lignes dont la région n'est que sur la page marchand : **137 des 821 lignes (17 %)**.
+  Les saisir sur le défaut générique « GLOBAL implicite » filerait des clés régionalisées en
+  monde entier — exactement le mode de panne de `[R27]`. Un titre sans slot région est donc
+  un skip `precheck` fail-closed, jamais GLOBAL(2). Lever la règle demande la page marchand :
+  même blocage qu'en juillet, ce n'est pas une règle à assouplir ici.
+- **Non-jeux** : GameBoost est d'abord une place de boosting / comptes. Les annonces de clés
+  sont des URL plates finissant par `-00-<id>` ; les cartes cadeaux et recharges vivent sous
+  un segment `/gift-cards/` et s'écrivent avec des points médians (« Razer · Chile · 500
+  CLP ») — **175 lignes sur 821 (21 %)**, skip catégoriel.
+- **Plateforme** : lecture générique du titre (comme Kinguin, `title_is_platform_source`),
+  aucun `offer_page_resolver` — la page n'est jamais lue. Un titre sans jeton de plateforme
+  reste le skip fail-closed `[R27]`.
+- **Verdicts sur les 821 lignes (2026-09-15)** : 430 passent le `precheck` (eu 258, us 115,
+  global 57), 175 non-jeux, 137 sans région `[R47]`, 79 régions interdites (ROW 37, EMEA 19,
+  NORTH AMERICA 6, TURKEY 4, CANADA 3, …). Tests : `tests/test_merchants_gameboost.py`.
 
 ## Ce qui n'est pas propre à un marchand
 

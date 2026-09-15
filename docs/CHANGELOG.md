@@ -3,6 +3,43 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-15 — R47 : fichier marchand GameBoost (store 157), la région est obligatoire
+
+Audit « nouveaux marchands potentiels » (Romain 2026-09-15 : « le but, c'est de trouver de
+nouveaux marchands potentiels qu'on pourrait ajouter comme les marchands actuels… On veut
+traiter en priorité ceux qui n'ont pas besoin d'avoir la page marchand »). GameBoost sort
+en tête du dépouillement des 140 boutiques du feed, et Romain a posé la bonne question :
+« on avait pas déjà essayé et dû ouvrir la page marchand car la région n'est pas toujours
+renseignée ? » — **oui**. Le run GameBoost du 2026-07-15 a été **annulé en direct**
+(`[R27]`) : titres sans jeton de plateforme, vérité sur la page de l'offre, page bloquée par
+Cloudflare ; les 33 candidats ont été jetés avant validation et la boutique est restée hors
+liste blanche.
+
+Ré-audit sur le feed vivant (821 lignes uniques, pages 1-10, extraction lecture seule
+`runs/20260915-gameboost-p2-10` + page 1 du dépouillement) : la grammaire a changé, les
+titres déclarent aujourd'hui la plateforme dans la grande majorité des lignes — mais la
+région reste absente d'une ligne sur six. D'où `src/merchants/gameboost.py` et la règle
+`[R47]` : **un titre GameBoost sans mot de région est un skip fail-closed, jamais le GLOBAL
+implicite générique.** C'est l'inverse de Kinguin / MMOGA, où « pas de code » EST la façon
+d'écrire « global » : GameBoost écrit `GLOBAL` / `Global` / `ROW` en toutes lettres quand la
+ligne est mondiale, donc un slot vide veut dire « seulement sur la page marchand ».
+
+Verdicts du fichier sur les 821 lignes : **430 passent** (eu 258, us 115, global 57), 175
+non-jeux (cartes cadeaux sous `/gift-cards/`, à points médians « Razer · Chile · 500 CLP » —
+les annonces de clés sont des URL plates `…-00-<id>`), 137 sans région `[R47]`, 79 régions
+interdites (ROW 37, EMEA 19, NORTH AMERICA 6, TURKEY 4, CANADA 3, MENA 2, GERMANY 2, …).
+Quatre hooks : `precheck`, `title_region`, `resolve_name`, `console_region_slot` ; plateforme
+laissée à la lecture générique du titre (`title_is_platform_source`, comme Kinguin) et
+**aucun** `offer_page_resolver` — la page marchand n'est jamais ouverte, un titre sans
+plateforme garde le skip `[R27]`. La découpe du nom est ancrée à la FIN du titre, donc
+« Stronghold 2: Steam Edition Steam Key EU » résout « Stronghold 2: Steam Edition » et
+« Nintendo Switch Sports (Switch) (EU) » résout « Nintendo Switch Sports ».
+
+GameBoost reste **hors liste blanche safe-auto** (`src/admin/auto_merchants.py`) : le fichier
+sert aux runs supervisés (02 → 03 → 04 → 05), pas à `/auto`. Registre
+(`src/merchants/registry.py`) + `docs/MERCHANTS.md` + `EXECUTOR_RULES.md` §4.4 `[R47]` mis à
+jour ; `tests/test_merchants_gameboost.py` (18 tests), 1 897 tests au total, tous verts.
+
 ## 2026-09-15 — Lot 2 : contrat des candidats et des cibles centralisé (`src/candidate_contract.py`, go Romain)
 
 - **Une seule définition de l'identité d'un candidat.** L'empreinte de validation

@@ -36,7 +36,10 @@ AUTO_MERCHANTS: list[tuple[str, str]] = [
 # Deliberately NOT suggested (enforcement is simply "absent from the list";
 # named here for humans):
 #   Difmark (167)  — parked 2026-08-07, feed is console/Epic/Windows (~0 enterable).
-#   Gameboost (157) — boosting/accounts, not vetted for unvalidated auto entry.
+#   Gameboost (157) — boosting/accounts, not vetted for unvalidated auto entry. It HAS a
+#     merchant file since 2026-09-15 (src/merchants/gameboost.py, R47) so a SUPERVISED run
+#     reads its grammar; staying off this list is deliberate (R27: the 2026-07-15 batch was
+#     cancelled live, and a third of its titles still carry no region).
 
 _BY_NAME: dict[str, tuple[str, str]] = {
     name.casefold(): (name, store) for name, store in AUTO_MERCHANTS
