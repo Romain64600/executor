@@ -3,6 +3,54 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-15 — R48 / R49 : fichiers marchands GamersOutlet (31) et Electronicfirst (70)
+
+Romain : « Fais GamersOutlet et Electronicfirst » — les deux marchands de tête de l'audit
+« nouveaux marchands » dont la région et la plateforme se lisent sans ouvrir la page.
+
+Méthode : extraction lecture seule des deux feeds complets (GamersOutlet 20 lignes, une page
+— `runs/20260915-gamersoutlet` ; Electronicfirst 323 lignes uniques, couverture prouvée —
+`runs/20260915-electronicfirst`), puis un workflow de 14 agents : trois lentilles
+indépendantes par marchand (région / plateforme-consoles / non-jeux-livraison-édition), une
+synthèse par marchand, et trois **contradicteurs adversariaux** par marchand chargés de
+RÉFUTER chaque décision de politique. Trois décisions sur six ont été réfutées avec preuves
+chiffrées, et les corrections sont intégrées.
+
+**GamersOutlet `[R48]`.** Grammaire à slot parenthésé `( <LIVRAISON> / <RÉGION> )`. Le slot
+est obligatoire (le marchand écrit « Global » explicitement 20/20 et ne laisse jamais le vide)
+et son vocabulaire est fermé des deux côtés. Correction du contradicteur : la liste des
+boutiques acceptées ne doit pas être recopiée à la main — `STORE_PLATFORM` est la table du
+fichier et `url_platform` la publie au matcher, donc la boutique acceptée et la plateforme
+lue sont la même donnée ; « PC EA Key » / « PC Blizzard Key » auraient sinon passé la porte
+puis résolu aucune plateforme. La porte ROBUX proposée était **inerte** (les 4 lignes Robux
+s'arrêtent déjà sur « unknown store ROBLOX ») : elle n'a pas été ajoutée. Verdicts : 16
+passent, 4 skips.
+
+**Electronicfirst `[R49]`.** Grammaire Kinguin (code MAJUSCULE avant la phrase plateforme),
+plus une forme où le code est en dernier. Le contradicteur a **réfuté « vide = mondial »**
+côté console, chiffres à l'appui : le slot ne porte JAMAIS de valeur mondiale (0/113 slots
+écrits), c'est un champ de RESTRICTION ; le marchand écrit la région sur 73 % de ses lignes
+console contre 14,5 % de ses lignes PC ; laissées au GLOBAL implicite, 7 lignes partaient en
+monde entier dont quatre jeux complets (Forza Motorsport, Forza Motorsport Premium, MSFS 2024
+Premium Deluxe, Horror Adventure PS4/PS5) — un code PSN/Xbox est lié au marché du store.
+D'où `[R49c]` : ligne console sans slot = skip fail-closed. S'y ajoutent `[R49a]` EU partielle
+(« EU (without DE) », 16 lignes — pas de bucket « EU moins un pays »), `[R49b]` mot de région
+épelé dans le nom avec slot vide, et les skips non-jeux / logiciels. Les lignes PC muettes
+gardent le GLOBAL implicite **à titre provisoire**, avec la condition de validité écrite et
+figée par un test : le jour où un slot EF résout à « global », le vide devient ambigu et
+`[R47]` s'applique. Verdicts : 247 passent (eu 55, us 10, uk 1, 181 sans code), 18 `[R49c]`,
+16 `[R49a]`, 21 non-jeux, 14 régions interdites, 6 logiciels, 1 `[R49b]`.
+
+Une règle « trou de template » (double espace à la position du slot) proposée par le
+contradicteur a été **mesurée puis écartée** : inerte et bruitée (2 des 5 lignes ont le trou
+dans le nom du produit, les autres sont déjà couvertes). Le refus est consigné dans le module
+et dans `docs/MERCHANTS.md` pour qu'un audit ne la repropose pas à l'aveugle.
+
+Les deux marchands restent **hors liste blanche safe-auto** : dry-run supervisé au premier
+passage. Registre + `docs/MERCHANTS.md` (deux sections) + `EXECUTOR_RULES.md` §4.4 `[R48]` /
+`[R49]` + README mis à jour ; `tests/test_merchants_gamersoutlet.py` (24 tests) et
+`tests/test_merchants_electronicfirst.py` (24 tests) ; 1 945 tests au total, tous verts.
+
 ## 2026-09-15 — R47 : fichier marchand GameBoost (store 157), la région est obligatoire
 
 Audit « nouveaux marchands potentiels » (Romain 2026-09-15 : « le but, c'est de trouver de

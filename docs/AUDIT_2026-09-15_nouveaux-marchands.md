@@ -22,8 +22,8 @@ priorité ceux qui n'ont pas besoin d'avoir la page marchand. »
 | Boutique | id | pages | ce qui se lit | exemple |
 |---|---|---|---|---|
 | **GameBoost** | 157 | 13 | plateforme, région en toutes lettres, édition | `Wardogs \| Supporter Edition (PC) - Steam Key - United States` |
-| GamersOutlet | 31 | 1 | plateforme, région, dans le titre ET l'URL | `Polylithic (PC Steam Key / Global)` |
-| Electronicfirst | 70 | 4 | plateforme, code région avant la plateforme (grammaire Kinguin) | `Warhammer 40,000: Dawn of War IV Commander Edition EU/NA PC Steam CD Key` |
+| **GamersOutlet** ✅ | 31 | 1 | plateforme, région, dans le titre ET l'URL | `Polylithic (PC Steam Key / Global)` |
+| **Electronicfirst** ✅ | 70 | 4 | plateforme, code région avant la plateforme (grammaire Kinguin) | `Warhammer 40,000: Dawn of War IV Commander Edition EU/NA PC Steam CD Key` |
 | Royalcdkeys | 85 | 1 | plateforme, région partielle | — |
 | My Nintendo Store FR / NL / UK | 153 / 154 / 155 | 2 | plateforme Switch et pays dans l'URL (boutiques officielles) | — |
 
@@ -37,6 +37,16 @@ une ligne sur six**. Le fichier marchand lit ce que le titre déclare et refuse 
 430 lignes passent (eu 258, us 115, global 57), 175 non-jeux (cartes cadeaux), 137 sans
 région, 79 régions interdites. GameBoost reste **hors liste blanche safe-auto** — runs
 supervisés seulement. Détail : `docs/MERCHANTS.md` § GameBoost.
+
+**FAIT le 2026-09-15 — GamersOutlet (`[R48]`) et Electronicfirst (`[R49]`).** Feeds complets
+extraits en lecture seule (20 et 323 lignes), grammaire analysée par trois lentilles
+indépendantes puis attaquée par trois contradicteurs adversariaux par marchand. GamersOutlet :
+slot `( <livraison> / <région> )` obligatoire, table des boutiques du fichier publiée au
+matcher — 16 lignes sur 20 passent. Electronicfirst : grammaire Kinguin, et la décision
+« vide = mondial » a été RÉFUTÉE côté console (aucun SKU PSN/Xbox mondial ; 7 lignes dont
+quatre jeux complets partaient en monde entier) → skip fail-closed `[R49c]` ; 247 lignes sur
+323 passent. Les deux restent hors liste blanche safe-auto, dry-run supervisé d'abord.
+Détail : `docs/MERCHANTS.md`.
 
 **Rang 2 — plateforme lisible, région implicite** (même situation que Kinguin et MMOGA : il
 faut arrêter une politique boutique une fois, puis c'est saisissable sans page marchand) :

@@ -130,7 +130,7 @@ state and cannot be argued away by a language model.
   merchant — Romain's rule (repeated since 2026-08-11, ultimatum 2026-09-14):** « pour la
   détection région / édition / plateforme, tu as un fichier de config par marchand. Et si
   tu ne l'as pas, tu dois l'avoir » — **every merchant of the safe-auto allowlist has its
-  file** (Kinguin, K4G, Driffle, GameSeal, Allyouplay, CJS-CDKeys added on 2026-09-14; GameBoost, store 157, on 2026-09-15 — `[R47]`: its region is MANDATORY in the title, a row without one is skipped, never entered GLOBAL, and it stays OFF the safe-auto allowlist),
+  file** (Kinguin, K4G, Driffle, GameSeal, Allyouplay, CJS-CDKeys added on 2026-09-14; GameBoost 157, GamersOutlet 31 and Electronicfirst 70 on 2026-09-15 — `[R47]` / `[R48]` / `[R49]`, the three new merchants of the discovery audit: each fails closed where its titles do not declare the region (a silent GameBoost or GamersOutlet row, a silent Electronicfirst CONSOLE row) and all three stay OFF the safe-auto allowlist),
   merchant grammar never lives in a generic module, and four **console hooks** `[R45]` —
   `console_url_families`, `console_pc_declared`, `console_region_slot`, `console_noise` —
   moved the MMOGA / Gamivo / Eneba URL grammars out of `src/console_keys.py`, which keeps

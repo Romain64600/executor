@@ -485,6 +485,51 @@ phrase ONLY once every AKS-name token is covered AND UNITED precedes it — "Kin
 Deliverance" / "Total War Three Kingdoms" keep their name word (never a false `extra words:
 ['KINGDOM']` skip). The old grammar (`…-steam-key-brazil`,
 `…-steam-en-global`) keeps its P2-6 / P2-6b / MA7 behaviour. Tests: `GamivoConfigR46Tests`.
+**GamersOutlet grammar `[R48]` (2026-09-15).** GamersOutlet (feed store 31) writes a
+parenthesised **delivery / region slot** on every row — `<Product> [ (<OS>) ] ( <DELIVERY> /
+<REGION> ) [ <qualifier> ]` — and the slot is the LAST parenthesised group containing a "/",
+not necessarily the end of the title. Two closed vocabularies follow. (1) **The region slot
+is mandatory**: the merchant writes the worldwide region EXPLICITLY ("Global" in the title
+20/20, "-global" as the last slug token 20/20) and never leaves it empty, so a silent title
+has no proven meaning and would take the generic implicit GLOBAL — absence of slot, or a
+value outside the shared vocabulary, is a fail-closed `precheck` skip (cost today: 0 rows of
+20). (2) **The delivery half's store vocabulary is this merchant file's own table**
+(`STORE_PLATFORM`), and `url_platform` publishes the SAME table to the matcher (the slug
+carries `-<store>-key-`, 12/12 key rows) so the accepted store and the read platform can
+never drift — a store outside it is "unknown store … never defaulted", which is where the
+four Robux rows stop ("PC Roblox Key") and where "PC EA Key" / "PC Blizzard Key" would stop.
+Software rows ("Lifetime License", 8/20) declare no store and keep the generic route (R20 /
+R27 page check, then the R31 software catch-all). A left half naming a console hands the row
+to the shared `[R45]` classifier — no console hook is declared. A title / URL region conflict
+is refused; a slug with no region run is tolerated (the merchant's slugs are not always
+faithful). Tests: `tests/test_merchants_gamersoutlet.py`.
+**Electronicfirst grammar `[R49]` (2026-09-15).** Electronicfirst (feed store 70) has the
+Kinguin shape — an UPPERCASE region code immediately before the final platform phrase,
+`<Game> [<Edition>] [DLC] [<REGION>[ (<note>)]] <Platform phrase> <Delivery>` — plus a second
+form that puts the code LAST, after the platform phrase and with no delivery word ("Mortal
+Kombat: Legacy Kollection PS4 / PS5 UK"). Slot vocabulary measured on 323 rows: EU 71, US 10,
+RoW 4, FR 3, EU/NA 2, NA 2, EU/US/JP 1, UK/US 1, UK 1, EMEA 1 — never a full name, never
+lower case. Four fail-closed sub-rules. `[R49a]` a **partial EU key** ("EU (without DE)",
+16 rows) is refused: AKS has no bucket for EU minus a country, so the row is neither EU nor
+global. `[R49b]` a region word **spelled out in the product NAME while the slot is empty** is
+refused — the slot is a CODE, and the generic scan would mine the name word ("Big Adventure:
+Trip to Europe 9"). `[R49c]` a **CONSOLE row with an empty slot** is refused: there is no
+worldwide PSN / Xbox SKU, the merchant writes the region on 73 % of its console rows against
+14.5 % of its PC rows, and the generic implicit GLOBAL would have filed 7 rows worldwide
+including four full games (Forza Motorsport, Forza Motorsport Premium, MSFS 2024 Premium
+Deluxe, Horror Adventure PS4/PS5). `[R49d]` non-game and software listings are categorical
+skips (monetary amount next to a number; "Game (e)Card" / "PSN Card" collocations, never a
+bare "Card" or "Game"; "PS Plus" / "<N> Month(s)"; a quantity of "Token(s)"; licence scope
+"(2 PCs)", "ISO Key" / "Bind Key", "MS <product>", a `-lifetime-` slug). **PC rows with an
+empty slot keep the generic implicit GLOBAL, PROVISIONALLY**: the merchant writes no explicit
+worldwide word (0 / 323), the Kinguin / MMOGA shape — but it has never been swept, so the
+validity condition is pinned by a test and re-measured on every corpus: the day a slot reads
+"global", the empty slot becomes ambiguous and `[R47]`'s skip applies to every silent row.
+Platform stays title-sourced; no console hook (the shared classifier reads the 75 console
+rows, 8 of them Xbox Play Anywhere). A "template gap" rule (double space at the slot
+position) was measured, found INERT and noisy, and deliberately NOT added — see
+`docs/MERCHANTS.md`. Both merchants stay OFF the safe-auto allowlist: supervised dry-run
+first. Tests: `tests/test_merchants_electronicfirst.py`.
 **GameBoost grammar `[R47]` (2026-09-15).** GameBoost (feed store 157) writes its region
 at the END of the title, in full words, and leaves the slot EMPTY on the rows whose region
 is only on its own offer page — which is Cloudflare-blocked and is NEVER fetched (the

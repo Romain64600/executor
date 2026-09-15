@@ -40,6 +40,10 @@ AUTO_MERCHANTS: list[tuple[str, str]] = [
 #     merchant file since 2026-09-15 (src/merchants/gameboost.py, R47) so a SUPERVISED run
 #     reads its grammar; staying off this list is deliberate (R27: the 2026-07-15 batch was
 #     cancelled live, and a third of its titles still carry no region).
+#   GamersOutlet (31) — merchant file since 2026-09-15 (R48). Supervised dry-run first: a
+#     single region value ("Global") and no console row observed on the whole feed yet.
+#   Electronicfirst (70) — merchant file since 2026-09-15 (R49). Supervised dry-run first:
+#     never swept, and its empty region slot is only PROVISIONALLY read as worldwide.
 
 _BY_NAME: dict[str, tuple[str, str]] = {
     name.casefold(): (name, store) for name, store in AUTO_MERCHANTS

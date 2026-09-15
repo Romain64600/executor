@@ -119,6 +119,8 @@ du feed.
 | CJS-CDKeys | 30 | `cjs.py` (**nouveau**, identité seule) | `domain="cjs-cdkeys.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
 | Difmark | 167 | `difmark.py` | `console_url_families` (comptes) | parqué (hors liste blanche) | — |
 | GameBoost | 157 | `gameboost.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux + `[R47]` région obligatoire), `title_region`, `resolve_name` ; console : `console_region_slot` | **non — hors liste blanche safe-auto (R27, R47)** | 13 |
+| GamersOutlet | 31 | `gamersoutlet.py` (**nouveau 15/09**) | PC : `precheck` (slot obligatoire + vocabulaire boutique fermé), `title_region`, `resolve_name`, `url_platform` | **non — hors liste blanche safe-auto (R48)** | 1 |
+| Electronicfirst | 70 | `electronicfirst.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux, logiciels, `[R49a]` EU partiel, `[R49b]` mot de région dans le nom, `[R49c]` console sans slot), `title_region`, `resolve_name` | **non — hors liste blanche safe-auto (R49)** | 4 |
 
 Plus aucun marchand « générique » : la ligne `"KINGUIN": MerchantConfig("Kinguin",
 domain="kinguin.net")` inline du registre disparaît au profit de `kinguin.py`, et les six
@@ -637,6 +639,88 @@ matcher et le classifieur importent le registre.
 - **Verdicts sur les 821 lignes (2026-09-15)** : 430 passent le `precheck` (eu 258, us 115,
   global 57), 175 non-jeux, 137 sans région `[R47]`, 79 régions interdites (ROW 37, EMEA 19,
   NORTH AMERICA 6, TURKEY 4, CANADA 3, …). Tests : `tests/test_merchants_gameboost.py`.
+
+## GamersOutlet (store 31, hors liste blanche)
+
+- **Fichier** : `src/merchants/gamersoutlet.py`. Audité sur **la totalité du feed en attente
+  du 2026-09-15** (20 lignes, une seule page — `runs/20260915-gamersoutlet`).
+- **Grammaire PC** : `<Produit> [ (<OS>) ] ( <LIVRAISON> / <RÉGION> ) [ <qualificatif> ]`.
+  Le slot est le **dernier groupe parenthésé contenant un `/`** — pas forcément en fin de
+  titre (« Autodesk AutoCAD 2022 (Windows) (Lifetime/ Global) Commercial Version »), donc
+  l'ancrage est le GROUPE. Livraison observée : « PC <Boutique> Key » 12/20 (Steam 6,
+  Roblox 4, Rockstar 2) et « Lifetime License » / « Lifetime » 8/20.
+- **`[R48]` le slot région est OBLIGATOIRE et son vocabulaire est fermé.** GamersOutlet écrit
+  le mondial EXPLICITEMENT — « Global » au titre 20/20 et `-global` en fin de slug 20/20 — et
+  ne laisse jamais le slot vide. Un titre muet n'a donc aucun sens prouvé chez ce marchand :
+  il prendrait le GLOBAL implicite générique. Absence de slot, ou valeur hors vocabulaire
+  partagé, = skip fail-closed. Coût aujourd'hui : 0 ligne sur 20 — la règle protège l'avenir.
+- **`[R48]` la boutique acceptée et la plateforme lue sont LA MÊME donnée.** `STORE_PLATFORM`
+  est la table du fichier ; `url_platform` la publie au matcher (le slug porte
+  `-<boutique>-key-`, 12/12 des lignes clé). Toute boutique hors table est un skip « unknown
+  store … never defaulted » — c'est là que s'arrêtent les 4 lignes Robux (`PC Roblox Key`), et
+  c'est là que s'arrêteraient « PC EA Key » ou « PC Blizzard Key ». La revue adversariale du
+  15/09 a montré qu'une liste recopiée à la main dérive de ce que `explicit_platform` rend
+  vraiment : d'où la table unique.
+- **Logiciels** (Adobe, CorelDRAW, Office, AutoCAD, Camtasia — 8/20) : livraison
+  « Lifetime License », aucune boutique déclarée → route générique (contrôle plateforme de
+  page R20/R27 puis le rattrapage logiciel `resolve_software_region`, R31). Jamais skippés ici.
+- **Consoles** : aucune ligne dans le corpus. La porte livraison rend la main au classifieur
+  partagé `[R45]` dès que la gauche nomme une console — **aucun hook console déclaré**.
+- **Verdicts sur les 20 lignes** : 16 passent (toutes `global`), 4 skips « unknown store
+  ROBLOX ». Tests : `tests/test_merchants_gamersoutlet.py`.
+- **Statut live** : hors liste blanche safe-auto, **dry-run supervisé d'abord** — une seule
+  valeur de région et zéro console observées, le corpus est trop petit pour conclure plus.
+
+## Electronicfirst (store 70, hors liste blanche)
+
+- **Fichier** : `src/merchants/electronicfirst.py`. Audité sur **323 lignes uniques**
+  (feed complet, couverture prouvée — `runs/20260915-electronicfirst`).
+- **Grammaire PC** — forme Kinguin, code région **en MAJUSCULES juste avant la phrase
+  plateforme finale** : `<Jeu> [<Édition>] [DLC] [<RÉGION>[ (<note>)]] <Plateforme> <Livraison>`.
+  Une seconde forme met le code en dernier, après la plateforme et sans mot de livraison
+  (« Mortal Kombat: Legacy Kollection PS4 / PS5 UK »). Slot écrit sur 96 lignes : EU 71,
+  US 10, RoW 4, FR 3, EU/NA 2, NA 2, EU/US/JP 1, UK/US 1, UK 1, EMEA 1. **Jamais un nom
+  complet, jamais de minuscules.**
+- **`[R49a]` clé EU partielle refusée** : 16 lignes portent une note collée au code — « EU
+  (without DE) » ×13, « (without DE/NL/PL/AT) », « (without DE/NL/PL) », « (without FR, RU) ».
+  AKS n'a pas de bucket « EU moins un pays » : la ligne n'est ni EU ni mondiale → skip.
+- **`[R49b]` mot de région ÉPELÉ dans le nom avec slot vide refusé** : le slot est un CODE ;
+  un titre qui écrit « Europe » dans son nom pendant que le slot est vide est ambigu et le
+  scan générique minerait le mot du nom (« Big Adventure: Trip to Europe 9 » — 1 ligne).
+- **`[R49c]` ligne CONSOLE sans slot refusée — il n'existe pas de SKU PSN / Xbox mondial.**
+  C'est la règle porteuse, sortie de la revue adversariale du 15/09. Electronicfirst écrit la
+  région sur **73 % de ses lignes console** contre 14,5 % de ses lignes PC : côté console le
+  slot porte un vrai verrou, donc une console muette est bien plus probablement un verrou non
+  écrit qu'un mondial. Laissées au GLOBAL implicite, 7 lignes partaient en monde entier, dont
+  quatre jeux complets (Forza Motorsport, Forza Motorsport Premium, MSFS 2024 Premium Deluxe,
+  Horror Adventure PS4/PS5). 18 lignes skippent aujourd'hui.
+- **Lignes PC sans slot : GLOBAL implicite générique, mais À TITRE PROVISOIRE.** 227 lignes
+  n'ont pas de code et le marchand n'écrit **aucun** mot mondial explicite (GLOBAL /
+  Worldwide / WW : 0/323) — c'est la forme Kinguin / MMOGA. Mais contrairement à eux,
+  Electronicfirst n'a **jamais été balayé**, donc la condition de validité est écrite et
+  re-vérifiée à chaque lot : **le jour où une seule ligne écrit un slot qui résout à
+  « global », le vide devient ambigu et le skip fail-closed `[R47]` s'applique à toutes les
+  lignes muettes.** Le test `test_the_validity_condition_of_the_implicit_global` fige la
+  mesure du 15/09 pour que ce jour-là la règle soit relue, pas conservée en silence.
+- **Non-jeux** (21 lignes) : montant monétaire collé à un nombre (bons Lieferando, cartes PSN,
+  recharges VALORANT), collocation « Game (e)Card » / « PSN Card » (jamais « Card » ni
+  « Game » seuls — « Cards and Towers » et « Parkour Game 2 » sont de vrais jeux),
+  abonnement (« PS Plus », « <N> Month(s) »), quantité de « Token(s) ». Logiciels (6) :
+  portée de licence entre parenthèses « (2 PCs) », livraison « ISO Key » / « Bind Key »,
+  préfixe « MS <produit> », segment d'URL `-lifetime-`.
+- **Plateforme** : lecture générique du titre (`title_is_platform_source`, comme Kinguin) ;
+  aucun hook console — la grammaire partagée lit seule les 75 lignes console, dont 8 Xbox
+  Play Anywhere (« Xbox Series X|S / PC », « XBOX One / Xbox Series X|S / Windows 10 »).
+- **Règle envisagée puis ÉCARTÉE** : un skip « trou de template » sur le double espace à la
+  position du slot. Mesurée, elle est **inerte et bruitée** — des 5 lignes à double espace,
+  2 portent déjà un slot, 2 ont le trou dans le NOM du produit (« Dakar Desert Rally-  Audi
+  RS Q E-Tron… ») et la dernière est déjà refusée par `[R49c]`. Consigné pour qu'un audit
+  ultérieur ne la repropose pas à l'aveugle.
+- **Verdicts sur les 323 lignes** : 247 passent (eu 55, us 10, uk 1, 181 sans code), 18
+  console sans slot `[R49c]`, 16 EU partielles `[R49a]`, 21 non-jeux, 14 régions interdites,
+  6 logiciels, 1 `[R49b]`. Tests : `tests/test_merchants_electronicfirst.py`.
+- **Statut live** : hors liste blanche safe-auto, **dry-run supervisé obligatoire au premier
+  passage**.
 
 ## Ce qui n'est pas propre à un marchand
 

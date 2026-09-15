@@ -25,9 +25,11 @@ from src.merchants import (
     cjs,
     difmark,
     driffle,
+    electronicfirst,
     eneba,
     g2a,
     gameboost,
+    gamersoutlet,
     gameseal,
     gamivo,
     instant_gaming,
@@ -56,6 +58,8 @@ MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
     "MMOGA": mmoga.CONFIG,
     "DIFMARK": difmark.CONFIG,
     "GAMEBOOST": gameboost.CONFIG,
+    "GAMERSOUTLET": gamersoutlet.CONFIG,
+    "ELECTRONICFIRST": electronicfirst.CONFIG,
 }
 
 
