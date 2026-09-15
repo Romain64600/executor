@@ -198,7 +198,7 @@ récents (voir
   des hooks consoles de `src/merchants/<marchand>.py` depuis le 14/09, bullet suivant),
   `Candidate.targets` (`Target`,
   toujours ≥ 1 ; empreinte étendue au-delà d'une cible), `scripts/03_match.py --consoles` /
-  `scripts/10 --consoles` (**défaut OFF**, et **`--dry-run` obligatoire** avec le flag depuis le
+  `scripts/10 --consoles` (**défaut OFF** ; le `--dry-run` obligatoire du 14/09 est **levé le 15/09** sur GO de Romain après les deux canaries — écriture consoles autorisée, `05_submit` garde chaque entrée ; historique : `--dry-run` obligatoire avec le flag depuis le
   14/09 ; sans flag : aucune SAISIE console, mais le scan console de l'URL reclasse les lignes
   consoles URL-seules en `console` — 569 lignes Gamivo par lot), submitter : une cible =
   chemin actuel, **> 1 cible = blocker `multi_target_unsupported_until_modal_verified`** tant

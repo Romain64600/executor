@@ -3,6 +3,14 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-15 — écriture consoles ouverte : le garde « `--consoles` exige `--dry-run` » est levé (GO Romain)
+
+Après les deux canaries (1 cible, 2 cibles), Romain : « go pour l'étape suivante » puis
+« 1 » (retirer le garde-fou). `scripts/10_data_entry_auto.py --consoles` lance désormais un
+sweep réel ; `05_submit` garde chaque entrée (forme `targets_v2`, plafond 3 cibles, relectures,
+un seul clic). Dry-run consoles MMOGA du matin (run `20260915-081607-dryrun-consoles`) : voir
+le bilan ci-dessous une fois terminé. Docs : README, EXECUTOR_RULES §4.12, HANDOFF.
+
 ## 2026-09-15 — canaries consoles sur le modal v2 : 1 cible OK, 2 cibles OK (bouton `+ Add another page`)
 
 - **Canary 1 (1 cible)** — Legend of Mana (Nintendo Switch Download Code) - EU Key (offre

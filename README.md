@@ -357,10 +357,11 @@ manual_launch/run_executor.sh prepare --merchant Driffle --store-id 127 --pages 
 matcher and the safe-auto sweep accept `--consoles`: console rows are classified and
 resolved to their AKS console pages instead of being skipped `console`, and a key sold
 for several platforms becomes a **multi-target** candidate (`targets` in
-`candidates.json`, stamped `consoles: true` in `match_meta.json`). The sweep REFUSES
-`--consoles` without `--dry-run` (2026-09-14: "--consoles requires --dry-run until the
-per-target modal is observed (R45)") — the write of a multi-target candidate is blocked
-(`multi_target_unsupported_until_modal_verified`) until the new modal is observed:
+`candidates.json`, stamped `consoles: true` in `match_meta.json`). Real writes with
+`--consoles` are allowed since Romain's GO of 2026-09-15 (the modal v2 was observed with
+`--inspect` and proven by two canaries — one target, then two targets); `05_submit` still
+gates every entry (shape `targets_v2`, cap 3 targets, per-row readbacks). Until then the
+sweep refused `--consoles` without `--dry-run`:
 
 ```bash
 python3 scripts/03_match.py runs/<id>/offers.json --consoles                    # read-only: console rows classified, multi-target candidates

@@ -384,18 +384,16 @@ def main() -> int:
                     help="[R45] (2026-09-12) match with the CONSOLE branch (03_match "
                          "--consoles): console keys resolve their AKS platform pages "
                          "(Xbox One / Series, PS4 / PS5, Switch / Switch 2) instead of the "
-                         "'console' skip. Default OFF. REQUIRES --dry-run (review fix "
-                         "2026-09-14): the per-target modal has not been observed, so the "
-                         "console branch is read-only — a multi-target candidate is refused "
-                         "by 05_submit (fail-closed) and a real sweep must not auto-approve "
-                         "it.")
+                         "'console' skip. Default OFF. Real writes allowed since Romain's GO "
+                         "of 2026-09-15 (the per-target modal v2 was observed with --inspect "
+                         "and proven by two canaries: one target, then two targets); the "
+                         "--dry-run-only guard of 2026-09-14 is lifted.")
     args = ap.parse_args()
-    if args.consoles and not args.dry_run:
-        # [R45] review fix (2026-09-14): the console branch is READ-ONLY until the
-        # per-target modal is observed (--inspect). A real sweep would auto-approve every
-        # matcher candidate (approve() below) and hand multi-target ones to 05_submit,
-        # which gates them one by one — refuse the launch instead (argparse → exit 2).
-        ap.error("--consoles requires --dry-run until the per-target modal is observed (R45)")
+    # [R45] the "--consoles requires --dry-run" guard (review fix 2026-09-14) was LIFTED on
+    # Romain's GO of 2026-09-15: the per-target modal v2 was observed (--inspect, run
+    # 20260914-inspect-consoles) and proven by two real canaries (Legend of Mana Switch, one
+    # target; Diablo 2 Resurrected Xbox One + Series, two targets via [data-add-target]).
+    # 05_submit still gates every entry one by one (shape targets_v2, cap 3, readbacks).
     if args.max_pages < 1 or args.start_page < 1:
         # Review 2026-09-09: with the cap now benign coverage (not a halt), a zero/negative
         # cap would be a silent exit-0 "done" run that processes NO page. Fail loud instead.

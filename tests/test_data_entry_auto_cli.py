@@ -155,28 +155,20 @@ class CliSeamTests(unittest.TestCase):
         self.assertEqual(m_argv[m_argv.index("--search-circuit-file") + 1], str(sweep_dir / "search_circuit.json"))
         self.assertEqual(s_argv[s_argv.index("--catalog-cache") + 1], str(sweep_dir / "catalog.json"))
 
-    def test_consoles_requires_dry_run(self):
-        # [R45] review fix (2026-09-14): the console branch is read-only until the
-        # per-target modal is observed — a real sweep with --consoles is refused at parse
-        # time (argparse error → SystemExit 2), before any run dir / recap is created.
-        import io
-        for argv in (["--targets", "Kinguin:58", "--run-id", "t-con-real", "--consoles"],
-                     ["--merchant", "MMOGA", "--store-id", "12", "--consoles", "--triage"]):
-            with self.subTest(argv=argv), \
-                    mock.patch.object(self.MOD, "run_sweep") as rs, \
-                    mock.patch.object(sys, "argv", ["10_data_entry_auto.py"] + argv), \
-                    mock.patch("sys.stderr", new_callable=io.StringIO) as err:
-                with self.assertRaises(SystemExit) as ctx:
-                    self.MOD.main()
-                self.assertEqual(ctx.exception.code, 2)
-                self.assertIn("--consoles requires --dry-run until the per-target modal is observed (R45)",
-                              err.getvalue())
-                rs.assert_not_called()
-        self.assertFalse((self.MOD.ROOT / "runs" / "t-con-real").exists())
+    def test_consoles_allowed_without_dry_run_since_the_canaries(self):
+        # [R45] Romain's GO 2026-09-15: the "--consoles requires --dry-run" guard of 2026-09-14
+        # is lifted — the modal v2 was observed and proven by two canaries. A real sweep with
+        # --consoles is launched like any other (05_submit gates each entry by shape / cap).
+        recap = {"pages": [], "total_created": 0, "halted": None}
+        code, captured = self._run(["--targets", "Kinguin:58", "--run-id", "t-con-real", "--consoles"], recap)
+        self.assertEqual(code, 0)
+        self.assertTrue(captured["cfg"].consoles)
+        rec = json.loads((self.MOD.ROOT / "runs" / "t-con-real" / "recap.json").read_text())
+        self.assertIs(rec["consoles"], True)
 
     def test_consoles_flag_reaches_03_match_and_the_config(self):
         # [R45] (2026-09-12): --consoles → SweepConfig.consoles + "--consoles" on the 03 argv;
-        # default off (no flag on the argv). Since 2026-09-14 the flag needs --dry-run.
+        # default off (no flag on the argv); --dry-run optional (guard lifted 2026-09-15).
         recap = {"pages": [], "total_created": 0, "halted": None}
         code, captured = self._run(["--targets", "Kinguin:58", "--run-id", "t-con", "--consoles", "--dry-run"], recap)
         self.assertEqual(code, 0)

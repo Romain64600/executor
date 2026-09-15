@@ -1475,9 +1475,10 @@ SWITCH alone) — the fix of the Gamivo leak below.
    [`DATA_CONTRACTS.md`](DATA_CONTRACTS.md).
 6. `match_feed(..., consoles=False)`; `scripts/03_match.py --consoles` stamps
    `match_meta.json["consoles"]`; `scripts/10_data_entry_auto.py` / `src/data_entry_auto.py`
-   pass `--consoles` to the match (**default OFF**; since 2026-09-14 `scripts/10` REFUSES
-   `--consoles` without `--dry-run` — `parser.error("--consoles requires --dry-run until
-   the per-target modal is observed (R45)")`); the admin page changes nothing. **No
+   pass `--consoles` to the match (**default OFF**; the 2026-09-14 "`--consoles` requires `--dry-run`" guard
+   was LIFTED on Romain's GO of 2026-09-15 after the modal v2 was observed and proven by
+   two canaries — `05_submit` gates every entry by shape / cap / readbacks, §6); the admin
+   page changes nothing. **No
    console ENTRY without the flag** — but the URL console scan (`console_marker_in_url`)
    is active in EVERY mode and changes the skip reasons of URL-only console rows: on the
    latest Gamivo batch 569 rows previously filed "no AKS product page found" (241),
