@@ -489,6 +489,40 @@ phrase ONLY once every AKS-name token is covered AND UNITED precedes it — "Kin
 Deliverance" / "Total War Three Kingdoms" keep their name word (never a false `extra words:
 ['KINGDOM']` skip). The old grammar (`…-steam-key-brazil`,
 `…-steam-en-global`) keeps its P2-6 / P2-6b / MA7 behaviour. Tests: `GamivoConfigR46Tests`.
+**Wyrel grammar `[R53]` (2026-09-16).** Wyrel (feed store 162, **60 pages**) writes a SLOT
+TEMPLATE that parses end-to-end from the title's END, with no residue on 100/100 rows:
+`<Product> [ "(" <TAG> ")" ] <EDITION> [ <PLATFORM> ] <REGION> [ "Steam Gift" ]`. The region
+is a FULL NAME (Global 53, Europe 19, United Kingdom 15, United States 12, Germany 1), never
+a code. `src/merchants/wyrel.py` carries five sub-rules, three of them written by the
+adversarial review. `[R53a]` a title that does not parse — no readable region slot at the end
+— is refused (the region is never implicit here). `[R53d]` **the two region sources must
+agree**: the URL repeats the region as `region=<id>`, in strict bijection with the title slot
+on the corpus (1↔Global, 4↔Europe, 8↔United States, 14↔United Kingdom, 19↔Germany, **zero
+disagreement**) — no other merchant gives us a second independent source, so a PROVEN
+disagreement is a fail-closed skip; the comparison is of MEANINGS, never spellings, and an
+unknown id is tolerated. `[R53b]` **the non-game gate needs THREE agreeing signals** (platform
+slot "Other", no `(<TAG>)` group, a `marketplace_id` outside the game ids {2, 8}): all three
+hold on 48/48 non-games and none on the 52 real keys. A single-signal gate was refused by the
+review — alone it would call a row written "(PS5) … Other" "not a game", a LIE about the row —
+so a CONTRADICTION between the three is its own fail-closed skip, and the reason names the
+PRODUCT (GIFT CARD / WALLET / VOUCHER / CURRENCY) so `suggest_target_list` routes it.
+`[R53e]` **the platform-slot vocabulary is OPEN** and an unknown word is refused BY NAME: page
+1 of 60 cannot enumerate a merchant's devices, and an unlisted "PS5" would be swallowed by the
+EDITION slot and change the parse — the second source (`edition_id`, also in bijection) tells
+a long edition name from an undeclared slot. `[R53c]` an edition slot other than Standard has
+no AKS bucket → skip. Verdicts on the corpus: 47 pass, 48 non-game, 5 edition. Store 162 is
+OFF the safe-auto allowlist. Tests: `tests/test_merchants_wyrel.py`.
+**Accents folded in the categorical scans (2026-09-16).** Every skip vocabulary here is ASCII
+English (`CATEGORY_SKIP`, `CURRENCY_TOKENS`, `BUNDLE_SKIN_TOKENS`, `FORBIDDEN_REGIONS`) while
+the normalisers replaced any non-ASCII letter by a SPACE — so on a localised storefront
+"CRÉDITS" became the junk tokens "CR" + "DITS" and the `CREDITS` entry that was already there
+never matched (found by the adversarial review of GamesPlanet FR; Romain: « ça ne coûte rien
+sur ce corpus mais c'est une faiblesse réelle sur toute boutique localisée »). `fold_accents`
+(NFKD, combining marks dropped) now runs in every one of those scans. Folding can only make a
+vocabulary word match text that MEANS it — it never invents a word, and an accented title with
+no vocabulary word is untouched. Blast radius measured before shipping: on the **397 rows
+carrying a non-ASCII character** across the saved runs, **0 verdict changes**. Tests:
+`tests/test_accent_folding.py`.
 **Microsoft game keys are no longer pre-skipped `[R52]` (2026-09-16).** Audit de Romain, le
 jour même de `[R50]` : « Les régions Microsoft sont ajoutées, mais deux formulations de clés
 restent bloquées avant leur résolution … Cause : ces expressions figurent encore dans

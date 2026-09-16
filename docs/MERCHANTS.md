@@ -118,6 +118,7 @@ du feed.
 | GameSeal | 126 | `gameseal.py` (**nouveau**) | `domain` ; PC : `precheck`, `title_region` (queue ` - <RÉGION>`) ; console : `console_url_families`, `console_region_slot` | **non, dry-run d'abord** | ? |
 | CJS-CDKeys | 30 | `cjs.py` (**nouveau**, identité seule) | `domain="cjs-cdkeys.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
 | Difmark | 167 | `difmark.py` | `console_url_families` (comptes) | parqué (hors liste blanche) | — |
+| Wyrel | 162 | `wyrel.py` (**nouveau 16/09**) | PC : `precheck` (`[R53a]` gabarit, `[R53b]` non-jeu à 3 signaux, `[R53c]` édition, `[R53d]` accord titre/URL, `[R53e]` fente plateforme inconnue), `title_region`, `resolve_name` ; console : `console_region_slot`, `console_noise` | **non — supervisé d'abord** | 60 |
 | GameBoost | 157 | `gameboost.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux + `[R47]` région obligatoire), `title_region`, `resolve_name` ; console : `console_region_slot` | **oui, allowlisté le 16/09** — 1er matching : 207 candidats / 992 lignes | 13 |
 | GamersOutlet | 31 | `gamersoutlet.py` (**nouveau 15/09**) | PC : `precheck` (slot obligatoire + vocabulaire boutique fermé), `title_region`, `resolve_name`, `url_platform` | **oui, allowlisté le 16/09** — 1re saisie : 2 / 2 créées | 1 |
 | Electronicfirst | 70 | `electronicfirst.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux, logiciels, `[R49a]` EU partiel, `[R49b]` mot de région dans le nom, `[R49c]` console sans slot), `title_region`, `resolve_name` | **oui, allowlisté le 16/09** — parqué puis dé-parqué, défaut PUBLISHER/STEAM fermé par `[R51]` | 4 |
@@ -746,6 +747,42 @@ matcher et le classifieur importent le registre.
   déclarer qu'il lit sa propre page (`publisher_from_merchant_page`, défaut False) et aucun ne
   le déclare. Vérifié : les deux lignes sortent en skip « (R51) ». La décision revue
   d'`AGENTS.md` est mise à jour. Détail dans `src/merchants/electronicfirst.py`.
+
+## Wyrel (store 162, supervisé)
+
+- **Fichier** : `src/merchants/wyrel.py`. Audité sur 100 lignes de la page 1 (16/09), trois
+  lentilles puis trois contradicteurs. **60 pages de feed** — le plus volumineux de l'audit,
+  et le plus lisible.
+- **Grammaire** : un GABARIT À FENTES qui se lit intégralement depuis la fin, sans résidu
+  (100/100) : `<Produit> [ "(" <TAG> ")" ] <ÉDITION> [ <PLATEFORME> ] <RÉGION> [ "Steam Gift" ]`.
+  Région en NOM COMPLET (Global 53, Europe 19, United Kingdom 15, United States 12,
+  Germany 1), édition obligatoire (Standard 95), fente plateforme (Other 48, Xbox One 7,
+  PC 6, Xbox Series X/S 1, absente 38 — absente exactement quand le TAG vaut « PC »).
+- **`[R53d]` les deux sources de région doivent CONCORDER.** L'URL répète la région en
+  identifiant (`region=`) : bijection stricte sur le corpus, 1↔Global, 4↔Europe,
+  8↔United States, 14↔United Kingdom, 19↔Germany, **zéro désaccord**. Aucun autre marchand
+  ne nous donne une seconde source indépendante ; elle sert donc de CONTRÔLE et un désaccord
+  prouvé est un skip. La comparaison porte sur les SENS, jamais sur les orthographes, et un
+  identifiant hors table est toléré (il ne prouve rien).
+- **`[R53b]` le filtre non-jeu exige TROIS signaux d'accord** : fente plateforme « Other »,
+  aucun groupe `(<TAG>)`, et un `marketplace_id` hors des identifiants de jeu {2, 8}. Les
+  trois tiennent sur 48/48 non-jeux et aucun sur les 52 vraies clés. La revue adversariale a
+  refusé une porte à un seul signal : seule, elle traiterait une ligne « (PS5) … Other » de
+  « pas un jeu », ce qui est un MENSONGE sur la ligne. Une CONTRADICTION entre les trois a
+  donc son propre skip fail-closed. Le motif nomme le PRODUIT (GIFT CARD / WALLET / VOUCHER /
+  CURRENCY), pas la fente, pour que le routage de listes fonctionne comme ailleurs.
+- **`[R53e]` le vocabulaire de la fente plateforme est OUVERT** (PC, Mac, Xbox One, Xbox
+  Series X/S, PS4, PS5, Nintendo Switch, Switch 2…) et un mot inconnu est refusé PAR SON NOM.
+  La page 1 sur 60 ne peut pas énumérer les appareils d'un marchand, et un « PS5 » non listé
+  serait avalé par la fente ÉDITION en changeant le parse. Le départage se fait avec la
+  seconde source : `edition_id` nomme l'édition, donc tout résidu que l'édition n'explique pas
+  est une fente non déclarée.
+- **Verdicts sur les 100 lignes** : 47 passent (global 35, eu 12), 48 non-jeux nommés
+  (GIFT CARD 20, valeur stockée 10, CURRENCY 7, WALLET 7, VOUCHER 4), 5 éditions sans
+  compartiment AKS (Collectors 2, Zero 2, Horizon Hobby 1). Tests :
+  `tests/test_merchants_wyrel.py` (21 tests).
+- **Statut live** : hors liste blanche safe-auto, **dry-run supervisé d'abord** — le corpus
+  ne couvre qu'une page sur soixante.
 
 ## Ce qui n'est pas propre à un marchand
 

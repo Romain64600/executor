@@ -36,6 +36,7 @@ from src.merchants import (
     k4g,
     kinguin,
     mmoga,
+    wyrel,
 )
 
 # Keys = the allowlist spelling (src/admin/auto_merchants.py AUTO_MERCHANTS) upper-cased;
@@ -60,6 +61,7 @@ MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
     "GAMEBOOST": gameboost.CONFIG,
     "GAMERSOUTLET": gamersoutlet.CONFIG,
     "ELECTRONICFIRST": electronicfirst.CONFIG,
+    "WYREL": wyrel.CONFIG,
 }
 
 

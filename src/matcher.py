@@ -290,7 +290,7 @@ def dlc_title_marker(name: str) -> str | None:
     ``tokenize`` (adversarial review 2026-09-11: a fullwidth "ＤＬＣ" must classify
     exactly as the token it becomes, else the R16 waiver and the R43 guard disagree)."""
 
-    padded = " " + re.sub(r"[^A-Z0-9]+", " ", normalize_apostrophes(name).upper()) + " "
+    padded = " " + re.sub(r"[^A-Z0-9]+", " ", fold_accents(normalize_apostrophes(name)).upper()) + " "
     if padded.startswith(" DLC ") and not padded.startswith(" DLC PACK ") and " DLC " not in padded[5:]:
         return None      # a LEADING "DLC" is a name ("DLC Quest", a real game), not a marker
     for marker in DLC_TITLE_MARKERS:
@@ -309,7 +309,7 @@ _DLC_COLLECTION_RE = re.compile(
 
 
 def dlc_collection_marker(name: str) -> str | None:
-    padded = re.sub(r"[^A-Z0-9]+", " ", normalize_apostrophes(name).upper())
+    padded = re.sub(r"[^A-Z0-9]+", " ", fold_accents(normalize_apostrophes(name)).upper())
     m = _DLC_COLLECTION_RE.search(padded)
     return m.group(0).strip() if m else None
 
@@ -848,7 +848,7 @@ def region_phrase_in_aks_name(region_label: str, aks_name: str) -> str | None:
     """The region phrase of ``region_label`` that also appears, as whole words, in the
     AKS product name — or None (the common case)."""
 
-    padded = " " + re.sub(r"[^A-Z0-9]+", " ", aks_name.upper()) + " "
+    padded = " " + re.sub(r"[^A-Z0-9]+", " ", fold_accents(aks_name).upper()) + " "
     for phrase in _REGION_IDENTITY_PHRASES.get(region_label, ()):
         if f" {phrase} " in padded:
             return phrase
@@ -901,7 +901,7 @@ def precheck_skip(offer: NormalizedOffer, *, consoles: bool = False) -> str | No
     # (MA7 retired 2026-09-01, Romain: "EN = english only … enterrable") — a
     # Gamivo '-en-' URL segment used to skip as an EN-only language restriction;
     # a language variant is now entered as the same product (see LANGUAGE_TOKENS).
-    padded = " " + re.sub(r"[^A-Z0-9]+", " ", offer.name.upper()) + " "
+    padded = " " + re.sub(r"[^A-Z0-9]+", " ", fold_accents(offer.name).upper()) + " "
     # [R45] (2026-09-12) the console scan reads the TITLE tokens (unchanged) OR the URL
     # PATH (console_marker_in_url) — the Gamivo leak fix: Gamivo (569/572 console rows)
     # and Eneba carry the platform in the URL only, so "Riders Republic Premium Edition
@@ -939,7 +939,7 @@ def precheck_skip(offer: NormalizedOffer, *, consoles: bool = False) -> str | No
     # string as the title path so the one router (suggest_target_list) sends
     # BRAZIL/LATAM/… → Blacklist and NA/ROW/… → garder, identically.
     url_path = urlparse(strip_merchant_url_noise(offer.url, offer.merchant)).path
-    url_padded = " " + re.sub(r"[^A-Z0-9]+", " ", url_path.upper()) + " "
+    url_padded = " " + re.sub(r"[^A-Z0-9]+", " ", fold_accents(url_path).upper()) + " "
     for region in FORBIDDEN_REGIONS:
         if f" {region} " in url_padded:
             return f"forbidden region: {region}"
@@ -966,7 +966,9 @@ def precheck_skip(offer: NormalizedOffer, *, consoles: bool = False) -> str | No
     # BUNDLE token in the same title ("…RANDOM CASE GIFT CARD…", "Random Bundle").
     if _RANDOM_LOOT_RE.search(padded):
         return "skip category: RANDOM (random/lootbox, not a game)"
-    upper = offer.name.upper()
+    # accents folded (2026-09-16): CATEGORY_SKIP is ASCII English, so "CRÉDITS" had to
+    # become "CREDITS" to meet the entry that was already there. See fold_accents.
+    upper = fold_accents(offer.name).upper()
     for cat, pat in _CATEGORY_SKIP_RES:      # word-boundary, not raw substring (P2-7)
         if pat.search(upper):
             return f"skip category: {cat}"
@@ -2333,10 +2335,26 @@ class SkippedOffer:
         return {"offer": self.offer.to_dict(), "reason": self.reason}
 
 
+def fold_accents(text: str) -> str:
+    """Strip diacritics: "CRÉDITS" → "CREDITS", "Abonnés" → "Abonnes".
+
+    NFKD decomposes an accented letter into its base letter + a combining mark, and the
+    marks are then dropped. Added 2026-09-16 after an adversarial review of a FRENCH
+    storefront (GamesPlanet FR): every categorical skip vocabulary here is ASCII English
+    (`CATEGORY_SKIP`, `CURRENCY_TOKENS`…) and `_norm_tokens` replaced any non-ASCII letter
+    by a SPACE, so "CRÉDITS" became the two junk tokens "CR" and "DITS" and the `CREDITS`
+    entry that already existed never matched. Folding can only make a vocabulary word
+    match text that means it — it never invents a new word (an accented word whose folded
+    form is NOT in the vocabulary still does not match)."""
+
+    return "".join(c for c in unicodedata.normalize("NFKD", text or "")
+                   if not unicodedata.combining(c))
+
+
 def _norm_tokens(s: str) -> str:
-    """Uppercase, non-alphanumerics → single spaces, trimmed — the shared shape
-    for word-boundary substring matching (padded with spaces at the call site)."""
-    return re.sub(r"[^A-Z0-9]+", " ", (s or "").upper()).strip()
+    """Uppercase, ACCENTS FOLDED, non-alphanumerics → single spaces, trimmed — the shared
+    shape for word-boundary substring matching (padded with spaces at the call site)."""
+    return re.sub(r"[^A-Z0-9]+", " ", fold_accents(s or "").upper()).strip()
 
 
 def is_software_title(offer: NormalizedOffer) -> bool:

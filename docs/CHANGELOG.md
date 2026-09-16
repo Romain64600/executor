@@ -3,6 +3,40 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-16 — R53 : fichier marchand Wyrel (162) + repli des accents dans les scans catégoriels
+
+Romain : « Skip gamesplanet FR, fais wyrel d'abord », puis « fix [le trou générique des
+accents] ».
+
+**Wyrel `[R53]`** — 60 pages de feed, le marchand le plus volumineux et le plus lisible de
+l'audit. Son titre est un GABARIT À FENTES qui se lit intégralement depuis la fin, sans
+résidu sur 100/100 lignes, et son URL répète les mêmes faits en identifiants numériques.
+Cinq sous-règles, dont trois écrites par les contradicteurs :
+* `[R53d]` **les deux sources de région doivent concorder** — bijection stricte titre ↔
+  `region=` sur le corpus, zéro désaccord ; un désaccord prouvé est un skip. Aucun autre
+  marchand ne nous offre une seconde source indépendante ;
+* `[R53b]` **le filtre non-jeu exige trois signaux d'accord** (fente « Other », pas de groupe
+  `(<TAG>)`, `marketplace_id` hors {2, 8}) : les trois tiennent sur 48/48 non-jeux et aucun
+  sur les 52 vraies clés. Une porte à un seul signal traiterait « (PS5) … Other » de « pas un
+  jeu » — un mensonge sur la ligne ; une contradiction a donc son propre skip, et le motif
+  nomme le PRODUIT pour que le routage de listes marche ;
+* `[R53e]` **le vocabulaire de la fente plateforme est OUVERT**, un mot inconnu est refusé par
+  son nom : une page sur soixante ne peut pas énumérer les appareils d'un marchand, et un
+  « PS5 » non listé serait avalé par la fente ÉDITION. Le départage utilise la seconde source,
+  `edition_id`, elle aussi en bijection.
+Verdicts : 47 passent, 48 non-jeux nommés, 5 éditions sans compartiment. Hors liste blanche.
+
+**Repli des accents** — trouvé par un contradicteur sur GamesPlanet FR : toutes nos
+exclusions catégorielles sont en ASCII anglais alors que les normaliseurs remplaçaient toute
+lettre non-ASCII par une ESPACE, donc « CRÉDITS » devenait « CR » + « DITS » et l'entrée
+`CREDITS` déjà présente ne matchait jamais. `fold_accents` (NFKD, marques combinantes
+retirées) tourne désormais dans chacun de ces scans. Le repli ne peut que faire matcher un mot
+du vocabulaire sur un texte qui le SIGNIFIE, il n'invente jamais de mot. **Rayon de souffle
+mesuré avant livraison : sur les 397 lignes réelles portant un caractère non-ASCII, ZÉRO
+verdict changé.** C'est un filet, pas un changement de comportement.
+
+2 034 tests, tous verts.
+
 ## 2026-09-16 — GameBoost (157) rejoint la liste blanche safe-auto
 
 Romain : « Ajoute Gameboost a la whiteliste ». `AUTO_MERCHANTS` passe de 13 à **14 marchands**.
