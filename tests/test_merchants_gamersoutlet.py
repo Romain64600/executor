@@ -97,6 +97,24 @@ class GamersOutletPrecheckTests(unittest.TestCase):
                              "https://www.gamers-outlet.net/en/game-pc-steam-key-global")
         self.assertIsNotNone(reason)
         self.assertIn("title/URL region conflict", reason)
+        reason = go.precheck("Game (PC Steam Key / Global)",
+                             "https://www.gamers-outlet.net/en/game-pc-steam-key-turkey")
+        self.assertIn("title/URL region conflict", reason or "")
+
+    def test_equivalent_spellings_are_not_a_conflict(self):
+        """Audit 2026-09-16: the two sides must MEAN the same region, not spell it the same
+        way — the merchant writes "Global" in the title and "-worldwide" in the slug, "EU"
+        and "-europe", "US" and "-united-states"."""
+
+        for title, slug in (
+            ("Game (PC Steam Key / Global)", "game-pc-steam-key-worldwide"),
+            ("Game (PC Steam Key / EU)", "game-pc-steam-key-europe"),
+            ("Game (PC Steam Key / US)", "game-pc-steam-key-united-states"),
+            ("Game (PC Steam Key / UK)", "game-pc-steam-key-united-kingdom"),
+        ):
+            with self.subTest(slug=slug):
+                self.assertIsNone(
+                    go.precheck(title, "https://www.gamers-outlet.net/en/" + slug))
 
     def test_a_slug_without_a_region_run_is_tolerated(self):
         # the merchant's slugs are not always faithful (one corpus slug drops "-mac-")

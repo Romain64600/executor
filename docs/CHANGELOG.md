@@ -3,6 +3,30 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-16 — Audit de Romain sur f96b969 : deux défauts corrigés
+
+Deux points remontés par l'audit de Romain, tous deux réels, tous deux corrigés.
+
+**1. GamersOutlet comparait l'ORTHOGRAPHE des régions, pas leur sens.** Le contrôle
+titre / URL opposait le texte du slot au slug (`region_slug(region) != url_run`), donc
+« Global » contre `-worldwide`, « EU » contre `-europe` et « US » contre `-united-states`
+déclenchaient un faux conflit. Les deux côtés passent désormais par le vocabulaire partagé
+(`compound_region_kind`) et ce sont les SENS qui sont comparés ; un slug illisible reste
+toléré (le titre est la déclaration), un désaccord réel refuse toujours. Aucune offre du
+corpus n'était touchée — le défaut n'attendait qu'une orthographe alternative.
+`src/merchants/gamersoutlet.py`.
+
+**2. L'aperçu « Saisir » pouvait diverger sur une empreinte enregistrée périmée.**
+`urls.js candFingerprint` lisait le champ `fingerprint` de la ligne quand il existait, alors
+que le moteur (`data_entry_auto._candidates_by_store`) le RECALCULE systématiquement. Deux
+offres différentes portant par accident la même empreinte enregistrée s'affichaient donc en
+1 ligne pendant que le moteur en soumettait 2. L'aperçu recalcule maintenant toujours depuis
+les champs, conformément au contrat commun (`src/candidate_contract.py`). Le port Python du
+test suit, et un test neuf vérifie qu'une clé enregistrée identique sur deux offres
+distinctes ne les fusionne plus. `src/admin/static/urls.js`.
+
+1 961 tests, tous verts.
+
 ## 2026-09-16 — R50 (2e passe) : les compartiments CADEAU US / UK existaient aussi
 
 Romain, après le premier correctif : « Tu as raison pour microsoft. Si ca existe le fichier

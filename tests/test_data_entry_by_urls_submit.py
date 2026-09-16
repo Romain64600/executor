@@ -425,11 +425,12 @@ class UrlsPreviewTargetsTests(unittest.TestCase):
         self.assertIn('"page(s) cible(s) à écrire"', js)   # the preview KPI
         # Romain 2026-09-15 « aligner le récapitulatif sur le lot réellement soumis »: the
         # counts / confirm list come from the batch as scripts/12 builds it — per store,
-        # one candidate per fingerprint (the candidate's own key, else the contract formula).
+        # one candidate per fingerprint, ALWAYS recomputed from the fields (audit 2026-09-16:
+        # a stored key could be stale and make the preview disagree with the engine).
         self.assertIn("function submitBatch", js)
         self.assertIn("function candFingerprint", js)
         self.assertIn("function batchCounts", js)
-        self.assertIn("c.fingerprint", js)
+        self.assertNotIn("c.fingerprint", js)
         self.assertIn('"|+"', js)                           # the R45 extra-targets suffix
         self.assertIn('"offres à saisir (lot)"', js)
         self.assertIn("batchCounts(submitBatch(rec))", js)  # KPIs + Saisir button
@@ -452,12 +453,13 @@ class UrlsPreviewTargetsTests(unittest.TestCase):
 # ---------------------------------------------------------------------------
 
 def _js_cand_fingerprint(c):
-    """Port of urls.js candFingerprint: the candidate's own ``fingerprint`` key, else
-    candidate_contract's formula (offer_id|aks_product_id|region_id|edition_id, plus
-    "|+pid:rid:eid,…" over the extra targets)."""
-    fp = c.get("fingerprint")
-    if isinstance(fp, str) and fp:
-        return fp
+    """Port of urls.js candFingerprint: candidate_contract's formula, ALWAYS recomputed from
+    the fields (offer_id|aks_product_id|region_id|edition_id, plus "|+pid:rid:eid,…" over the
+    extra targets) — never the stored ``fingerprint`` key.
+
+    Audit 2026-09-16: reading the stored key made the preview disagree with the engine, which
+    recomputes on every row — two different offers sharing one stale stored fingerprint
+    showed as 1 row while the engine submitted 2."""
 
     def s(v):
         return "" if v is None else str(v)
@@ -588,13 +590,24 @@ class BatchMirrorTests(unittest.TestCase):
                          [("G2A", "38", ["1", "7", "3", "9"]), ("Kinguin", "45", ["2"])])
         self.assertEqual(_js_counts(_js_submit_batch(recap)), {"offers": 5, "targets": 6, "merchants": 2})
 
-    def test_fallback_formula_equals_candidate_fingerprint(self):
+    def test_formula_equals_candidate_fingerprint(self):
         for c in (_cand("1"), _pc_target_cand("3"), _console_cand("7"), _switch_cand("9")):
-            self.assertNotIn("fingerprint", c)                      # the fallback path is exercised
             self.assertEqual(_js_cand_fingerprint(c), M.candidate_fingerprint(c))
         self.assertEqual(_js_cand_fingerprint(_console_cand("7")), "7|85104|88|1|+85105:88ps5h:1")
-        # the candidate's own key wins when present (as the matcher writes it)
-        self.assertEqual(_js_cand_fingerprint(dict(_cand("1"), fingerprint="X")), "X")
+
+    def test_a_stored_fingerprint_key_is_ignored(self):
+        """Audit 2026-09-16: the preview must RECOMPUTE, never trust a stored key.
+
+        The engine (``_candidates_by_store``) recomputes on every row, so a stale or
+        incoherent stored ``fingerprint`` made the preview and the submitted batch disagree —
+        two different offers sharing one stored key showed as 1 row while 2 were submitted."""
+
+        self.assertEqual(_js_cand_fingerprint(dict(_cand("1"), fingerprint="X")),
+                         M.candidate_fingerprint(_cand("1")))
+        # two DIFFERENT offers carrying the same stale key stay two rows
+        a = dict(_cand("1"), fingerprint="SAME")
+        b = dict(_cand("2"), fingerprint="SAME")
+        self.assertNotEqual(_js_cand_fingerprint(a), _js_cand_fingerprint(b))
 
 
 if __name__ == "__main__":

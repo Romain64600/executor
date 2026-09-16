@@ -106,10 +106,15 @@ function plural(n, one, many) { return n + " " + (n > 1 ? many : one); }
 // offer found twice is submitted ONCE). The per-game table keeps showing what each page
 // found; the KPIs, the Saisir button and the GO summary count THIS batch.
 function candFingerprint(c) {
-  if (c && typeof c.fingerprint === "string" && c.fingerprint) return c.fingerprint;
-  // Fallback for a preview without the key = candidate_contract.fingerprint / app.js fp():
-  // offer_id|aks_product_id|region_id|edition_id, plus "|+pid:rid:eid,…" over the EXTRA
-  // targets (R45). Never throws here (display only) — a malformed row still counts once.
+  // ALWAYS recomputed from the fields — never the stored `fingerprint` key (audit
+  // 2026-09-16). The engine (src/candidate_contract.fingerprint, via
+  // data_entry_auto._candidates_by_store) recomputes it on every row, so trusting a stored
+  // value made the preview and the submitted batch disagree the moment a preview carried a
+  // stale or incoherent one: two different offers sharing one stored fingerprint showed as
+  // 1 row while the engine kept 2. Same definition as candidate_contract.fingerprint /
+  // app.js fp(): offer_id|aks_product_id|region_id|edition_id, plus "|+pid:rid:eid,…" over
+  // the EXTRA targets (R45). Never throws here (display only) — a malformed row still
+  // counts once.
   const o = (c && c.offer) || {};
   const reg = labelId(c, "region", "region_label", "region_id"), ed = labelId(c, "edition", "edition_label", "edition_id");
   const primary = [o.offer_id, c ? c.aks_product_id : null, reg.id, ed.id].map((v) => (v == null ? "" : String(v))).join("|");

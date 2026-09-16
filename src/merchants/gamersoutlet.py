@@ -188,6 +188,19 @@ def _url_region(url: str) -> str | None:
     return None
 
 
+def _url_region_kind(url: str) -> tuple[str, str] | None:
+    """What the slug's trailing region run MEANS — ("base", "eu") / ("forbidden", "ROW") —
+    or None when the slug carries no readable region.
+
+    Read through the shared vocabulary, never as text: a slug has no case, so the run is
+    upper-cased before resolution ("eu" → "EU", "united-states" → "UNITED STATES")."""
+
+    run = _url_region(url)
+    if run is None:
+        return None
+    return compound_region_kind(run.replace("-", " ").upper())
+
+
 # ── hooks ────────────────────────────────────────────────────────────────────────────
 def precheck(name: str, url: str) -> str | None:
     """GamersOutlet's categorical skips, in order (every one fail-closed):
@@ -211,10 +224,15 @@ def precheck(name: str, url: str) -> str | None:
                 "vocabulary (R48)")
     if kind[0] == "forbidden":
         return forbidden_reason(region)
-    url_reg = _url_region(url)
-    if url_reg is not None and url_reg != region_slug(region):
-        return (f"GamersOutlet: title/URL region conflict ({region!r} vs {url_reg!r}) — "
-                "refusing to guess (R48)")
+    # The title and the slug must MEAN the same region, not spell it the same way: the
+    # merchant writes "Global" in the title and "-worldwide" in the slug, "EU" and "-europe",
+    # "US" and "-united-states" (audit 2026-09-16 — comparing the two spellings raised a
+    # false conflict). Only a genuine disagreement refuses; an unreadable slug run is
+    # tolerated, the title is the declaration.
+    url_kind = _url_region_kind(url)
+    if url_kind is not None and url_kind != kind:
+        return (f"GamersOutlet: title/URL region conflict ({region!r} says {kind[1]}, slug "
+                f"says {url_kind[1]}) — refusing to guess (R48)")
     up = _norm(delivery)
     if any(w in up.split() or w in up for w in _CONSOLE_WORDS):
         return None                      # the shared console classifier owns this row (R45)
