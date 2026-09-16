@@ -32,6 +32,9 @@ EXPECTED_MODULE = {
     "Allyouplay": "allyouplay.py",
     "GameSeal": "gameseal.py",
     "MMOGA": "mmoga.py",
+    # allowlistés le 2026-09-16 (Romain : « On va whitelist Eletronicfirst et Gamersoutlet »)
+    "Electronicfirst": "electronicfirst.py",
+    "GamersOutlet": "gamersoutlet.py",
 }
 
 

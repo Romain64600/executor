@@ -3,6 +3,29 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-16 — Electronicfirst et GamersOutlet passent en liste blanche safe-auto
+
+Romain : « On va whitelist Eletronicfirst et Gamersoutlet ». Les deux rejoignent
+`AUTO_MERCHANTS` — la liste passe de 11 à 13 marchands.
+
+**Electronicfirst (70) est dé-parqué le jour même de son parking** : la cause du parking — 2
+lignes entrées PUBLISHER au lieu de STEAM sur un titre nu — a été fermée de façon GÉNÉRIQUE
+par `[R51]` quelques heures plus tard. Vérifié : `Of Orcs and Men` et `RoboCop: Rogue City -
+Collection` sortent désormais en skip « (R51) », tandis que les lignes correctes du lot
+(`Ink. PC Steam CD Key`…) restent des candidats. Le diagnostic reste dans le module comme
+HISTORIQUE : c'est lui qui a produit `[R51]`.
+
+**GamersOutlet (31)** rejoint la liste avec sa petite file (~19 lignes, ~2 saisissables) ;
+le volume viendra avec le temps.
+
+**GameBoost (157) reste hors liste** : son fichier existe pour les runs supervisés.
+
+Docs tenues à jour dans le même commit (règle de Romain) : `README.md` (tableau des
+marchands + un bloc neuf sur `[R50]` / `[R51]`), `docs/MERCHANTS.md` (tableau d'état et les
+deux sections), `src/merchants/registry.py`, `src/admin/auto_merchants.py`, et les modules des
+deux marchands. Les 3 tests qui épinglaient « hors liste blanche » sont réécrits, et
+`test_merchants_registry_expectations` couvre les deux nouveaux modules.
+
 ## 2026-09-16 — R51 : la décision PUBLISHER exige la page du MARCHAND (sécurité par défaut)
 
 Romain, après avoir vérifié la saisie Electronicfirst puis reproduit le cas sur Gamivo :

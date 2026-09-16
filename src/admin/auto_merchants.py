@@ -27,6 +27,13 @@ AUTO_MERCHANTS: list[tuple[str, str]] = [
     ("CJS-CDKeys", "30"),
     ("Allyouplay", "17"),
     ("GameSeal", "126"),
+    ("Electronicfirst", "70"),  # Romain 2026-09-16 (« On va whitelist Eletronicfirst et
+                                # Gamersoutlet »): dé-parqué le même jour — le défaut qui
+                                # l'avait fait parquer (2 lignes entrées PUBLISHER au lieu de
+                                # STEAM sur un titre nu) est fermé par [R51], qui refuse
+                                # désormais ces lignes. Feed store 70.
+    ("GamersOutlet", "31"),     # Romain 2026-09-16, même message. Feed store 31. Petite file
+                                # (~19 lignes, ~2 saisissables) : le volume viendra avec le temps.
     ("MMOGA", "12"),            # Romain 2026-09-10 (« je préfère passer directement par /auto »):
                                 # authorised for safe-auto BEFORE a supervised validated run —
                                 # the merchant rules (src/merchants/mmoga.py) fail closed on any
@@ -40,14 +47,7 @@ AUTO_MERCHANTS: list[tuple[str, str]] = [
 #     merchant file since 2026-09-15 (src/merchants/gameboost.py, R47) so a SUPERVISED run
 #     reads its grammar; staying off this list is deliberate (R27: the 2026-07-15 batch was
 #     cancelled live, and a third of its titles still carry no region).
-#   GamersOutlet (31) — merchant file since 2026-09-15 (R48). Supervised dry-run first: a
-#     single region value ("Global") and no console row observed on the whole feed yet.
-#   Electronicfirst (70) — merchant file since 2026-09-15 (R49), PARQUÉ le 2026-09-16
-#     (Romain: « on mets ce marchant de cote pour le moment »): the first real batch entered
-#     2 of its 11 offers under PUBLISHER instead of STEAM — a NUDE title (no platform, no
-#     delivery, no region) that R27 resolved on the AKS page's "Direct Publisher" line, while
-#     the merchant's own page (the only truth) is Cloudflare-403. Details and the measured
-#     numbers are in src/merchants/electronicfirst.py.
+#     (Electronicfirst 70 and GamersOutlet 31 were moved INTO the list above on 2026-09-16.)
 
 _BY_NAME: dict[str, tuple[str, str]] = {
     name.casefold(): (name, store) for name, store in AUTO_MERCHANTS

@@ -62,12 +62,15 @@ slot becomes ambiguous and `[R47]`'s fail-closed skip applies to every silent ro
 ``tests/test_merchants_electronicfirst.py`` pins the 0-explicit-global measurement so the
 day it changes, the rule is re-read rather than silently kept.
 
-── PARQUÉ le 2026-09-16 (Romain) ────────────────────────────────────────────────────────
+── HISTORIQUE : parqué puis DÉ-PARQUÉ et allowlisté le 2026-09-16 ───────────────────────
 
-**Romain, 2026-09-16 : « on mets en commentaire les pb trouves sur electronicfirst dans sa
-config marchant et on mets ce marchant de cote pour le moment ».** Le fichier reste en place
-et le marchand reste HORS liste blanche safe-auto ; aucun nouveau lot ne doit être saisi
-jusqu'à une décision contraire de Romain.
+**Chronologie du jour.** Romain a d'abord parqué le marchand (« on mets en commentaire les pb
+trouves sur electronicfirst dans sa config marchant et on mets ce marchant de cote pour le
+moment ») après le défaut décrit ci-dessous. Le même jour, la cause a été fermée de façon
+GÉNÉRIQUE par `[R51]` — la décision PUBLISHER exige désormais la page du marchand et, à
+défaut, refuse la ligne — et Romain a allowlisté la boutique : « On va whitelist
+Eletronicfirst et Gamersoutlet ». Le marchand est donc dans `AUTO_MERCHANTS` (store 70) et le
+diagnostic ci-dessous est conservé comme HISTORIQUE : c'est lui qui a produit `[R51]`.
 
 **Le problème qui a décidé du parking — plateforme saisie en PUBLISHER au lieu de STEAM.**
 Romain, le même jour : « j ai trouve un exemple ou l on a ajoute l offre en publisher a la
@@ -76,7 +79,9 @@ Deux des 11 offres du premier lot réel (2026-09-16) sont parties en PUBLISHER G
 ``Of Orcs and Men`` (offer 100401235) et ``RoboCop: Rogue City - Collection`` (offer
 100401259). **Romain les a corrigées à la main sur AKS.**
 
-Mécanique exacte, vérifiée :
+**Corrigé depuis :** `[R51]` (le jour même) refuse toute ligne dont la plateforme n'est ni
+dans le titre ni dans l'URL, quel que soit le marchand — vérifié, les deux lignes ci-dessous
+sortent maintenant en skip « (R51) ». Mécanique exacte du défaut, conservée :
 1. le titre du feed est NU — "Of Orcs and Men", "RoboCop: Rogue City - Collection" : aucun mot
    de plateforme, aucun mot de livraison, aucune région. L'URL n'est que le slug du nom. Ces
    deux lignes font partie des 54 lignes nues du feed (bloc d'ids contigu) ;
@@ -107,11 +112,10 @@ modification du matcher, pas seulement une ligne de config : c'est le travail pa
   Electronicfirst 102, Instant Gaming 81, MMOGA 71, Kinguin 5, Eneba 4 ;
 * le trou n'est PAS propre à Electronicfirst : MMOGA et Gamivo l'ont aussi (6 lignes chacun).
 
-**Piste retenue pour la reprise (non implémentée, demande le go de Romain) :** faire lire
-``offer_page_readable`` par la branche `[R27]` elle-même — chez un marchand dont la page n'est
-pas ouvrable, un titre sans plateforme ne doit PAS être résolu en PUBLISHER sur la seule foi de
-la page AKS, il doit être refusé. `[R27]` étant une décision revue d'``AGENTS.md``, le
-changement doit y être consigné.
+**FAIT le 2026-09-16 — `[R51]`** (go de Romain) : la branche `[R27]` ne résout plus un titre
+nu en PUBLISHER sur la seule foi de la page AKS. Le marchand doit DÉCLARER qu'il lit sa propre
+page (``MerchantConfig.publisher_from_merchant_page``, défaut False) ; aucun ne le déclare,
+donc ces lignes sont refusées partout. La décision revue d'``AGENTS.md`` est mise à jour.
 
 **Le reste du fichier est valide et éprouvé** : le premier lot réel a créé 11 offres sur 11,
 dont 4 cross-gen Xbox, 1 Play Anywhere et 1 Rockstar EU, toutes prouvées par la disparition du
@@ -354,8 +358,8 @@ CONFIG = make_config(
         "feed store id 70. R49: UPPERCASE region code before the final platform phrase "
         "(Kinguin-shaped). Partial EU (R49a), spelled-out region word with an empty slot "
         "(R49b) and console row with an empty slot (R49c) all fail "
-        "closed. PARQUÉ le 2026-09-16 (Romain) — plateforme entrée PUBLISHER au lieu de "
-        "STEAM sur un titre nu, page marchand Cloudflare-403 : voir le module. "
+        "closed. Allowlisté safe-auto le 2026-09-16 après que [R51] a fermé le défaut "
+        "« titre nu entré PUBLISHER au lieu de STEAM » (voir l'historique du module). "
         "PC rows with an empty slot keep the generic implicit GLOBAL, PROVISIONALLY "
         "— the merchant writes no explicit worldwide word today (0/323); the day it does, "
         "R47 applies. Platform stays title-sourced; no console hook (the shared classifier "

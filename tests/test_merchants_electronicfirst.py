@@ -221,9 +221,14 @@ class ElectronicfirstRegistryTests(unittest.TestCase):
         self.assertIsNone(cfg.console_url_families)
         self.assertIsNone(cfg.console_region_slot)
 
-    def test_off_the_safe_auto_allowlist(self):
-        from src.admin.auto_merchants import AUTO_MERCHANTS
-        self.assertNotIn("Electronicfirst", [n for n, _ in AUTO_MERCHANTS])
+    def test_on_the_safe_auto_allowlist_since_2026_09_16(self):
+        """Romain, 2026-09-16 : « On va whitelist Eletronicfirst et Gamersoutlet ».
+        Dé-parqué le même jour : le défaut qui l'avait fait parquer — 2 lignes entrées
+        PUBLISHER au lieu de STEAM sur un titre nu — est fermé par [R51]."""
+
+        from src.admin.auto_merchants import AUTO_MERCHANTS, rejection_reason
+        self.assertIn(("Electronicfirst", "70"), AUTO_MERCHANTS)
+        self.assertIsNone(rejection_reason("Electronicfirst", "70"))
 
     # The distinct slot values measured on the WHOLE feed of 2026-09-15 (323 rows).
     CORPUS_SLOTS_2026_09_15 = ("EU", "US", "UK", "NA", "FR", "RoW", "EMEA",

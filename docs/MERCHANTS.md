@@ -119,8 +119,8 @@ du feed.
 | CJS-CDKeys | 30 | `cjs.py` (**nouveau**, identité seule) | `domain="cjs-cdkeys.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
 | Difmark | 167 | `difmark.py` | `console_url_families` (comptes) | parqué (hors liste blanche) | — |
 | GameBoost | 157 | `gameboost.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux + `[R47]` région obligatoire), `title_region`, `resolve_name` ; console : `console_region_slot` | **non — hors liste blanche safe-auto (R27, R47)** | 13 |
-| GamersOutlet | 31 | `gamersoutlet.py` (**nouveau 15/09**) | PC : `precheck` (slot obligatoire + vocabulaire boutique fermé), `title_region`, `resolve_name`, `url_platform` | **hors liste blanche** — 1re saisie supervisée le 16/09 : **2 / 2 créées** | 1 |
-| Electronicfirst | 70 | `electronicfirst.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux, logiciels, `[R49a]` EU partiel, `[R49b]` mot de région dans le nom, `[R49c]` console sans slot), `title_region`, `resolve_name` | **PARQUÉ le 16/09** — 11 / 11 créées, mais 2 en PUBLISHER au lieu de STEAM (titre nu + page Cloudflare) | 4 |
+| GamersOutlet | 31 | `gamersoutlet.py` (**nouveau 15/09**) | PC : `precheck` (slot obligatoire + vocabulaire boutique fermé), `title_region`, `resolve_name`, `url_platform` | **oui, allowlisté le 16/09** — 1re saisie : 2 / 2 créées | 1 |
+| Electronicfirst | 70 | `electronicfirst.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux, logiciels, `[R49a]` EU partiel, `[R49b]` mot de région dans le nom, `[R49c]` console sans slot), `title_region`, `resolve_name` | **oui, allowlisté le 16/09** — parqué puis dé-parqué, défaut PUBLISHER/STEAM fermé par `[R51]` | 4 |
 
 Plus aucun marchand « générique » : la ligne `"KINGUIN": MerchantConfig("Kinguin",
 domain="kinguin.net")` inline du registre disparaît au profit de `kinguin.py`, et les six
@@ -668,7 +668,7 @@ matcher et le classifieur importent le registre.
   partagé `[R45]` dès que la gauche nomme une console — **aucun hook console déclaré**.
 - **Verdicts sur les 20 lignes** : 16 passent (toutes `global`), 4 skips « unknown store
   ROBLOX ». Tests : `tests/test_merchants_gamersoutlet.py`.
-- **Statut live** : **1re saisie réelle le 2026-09-16 — 2 / 2 créées** (Grand Theft Auto V
+- **Statut live** : **allowlisté safe-auto le 2026-09-16**. 1re saisie le même jour — **2 / 2 créées** (Grand Theft Auto V
   Enhanced en Rockstar mondial 15, Polylithic en Steam mondial 2), prouvées par la disparition
   du feed. Reste hors liste blanche safe-auto. Volume : la file complète du marchand fait ~19
   lignes dont 2 saisissables — surtout des licences logicielles absentes d'AKS et des recharges
@@ -741,9 +741,11 @@ matcher et le classifieur importent le registre.
   issus d'un titre nu (MMOGA 6, Electronicfirst 6, Gamivo 6) ; 2 360 lignes skippent déjà en
   « not defaulted (R27) ». Le trou n'est donc pas propre à ce marchand, et le refermer coûte au
   plus 18 lignes — dont certaines sont de vraies clés éditeur (`Minecraft - Java & Bedrock
-  Edition` chez MMOGA). **Piste, non implémentée :** faire lire `offer_page_readable` par la
-  branche `[R27]` ; `[R27]` étant une décision revue, le changement doit être consigné dans
-  `AGENTS.md`. Détail complet dans `src/merchants/electronicfirst.py`.
+  Edition` chez MMOGA). **FAIT le même jour — `[R51]`** : la branche `[R27]` ne
+  résout plus un titre nu en PUBLISHER sur la seule foi de la page AKS ; le marchand doit
+  déclarer qu'il lit sa propre page (`publisher_from_merchant_page`, défaut False) et aucun ne
+  le déclare. Vérifié : les deux lignes sortent en skip « (R51) ». La décision revue
+  d'`AGENTS.md` est mise à jour. Détail dans `src/merchants/electronicfirst.py`.
 
 ## Ce qui n'est pas propre à un marchand
 

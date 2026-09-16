@@ -207,9 +207,12 @@ class GamersOutletRegistryTests(unittest.TestCase):
         self.assertIsNone(cfg.console_url_families)
         self.assertIsNone(cfg.console_region_slot)
 
-    def test_off_the_safe_auto_allowlist(self):
-        from src.admin.auto_merchants import AUTO_MERCHANTS
-        self.assertNotIn("GamersOutlet", [n for n, _ in AUTO_MERCHANTS])
+    def test_on_the_safe_auto_allowlist_since_2026_09_16(self):
+        """Romain, 2026-09-16 : « On va whitelist Eletronicfirst et Gamersoutlet »."""
+
+        from src.admin.auto_merchants import AUTO_MERCHANTS, rejection_reason
+        self.assertIn(("GamersOutlet", "31"), AUTO_MERCHANTS)
+        self.assertIsNone(rejection_reason("GamersOutlet", "31"))
 
 
 if __name__ == "__main__":

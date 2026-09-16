@@ -130,13 +130,25 @@ state and cannot be argued away by a language model.
   merchant — Romain's rule (repeated since 2026-08-11, ultimatum 2026-09-14):** « pour la
   détection région / édition / plateforme, tu as un fichier de config par marchand. Et si
   tu ne l'as pas, tu dois l'avoir » — **every merchant of the safe-auto allowlist has its
-  file** (Kinguin, K4G, Driffle, GameSeal, Allyouplay, CJS-CDKeys added on 2026-09-14; GameBoost 157, GamersOutlet 31 and Electronicfirst 70 on 2026-09-15 — `[R47]` / `[R48]` / `[R49]`, the three new merchants of the discovery audit: each fails closed where its titles do not declare the region (a silent GameBoost or GamersOutlet row, a silent Electronicfirst CONSOLE row) and all three stay OFF the safe-auto allowlist),
+  file** (Kinguin, K4G, Driffle, GameSeal, Allyouplay, CJS-CDKeys added on 2026-09-14; GameBoost 157, GamersOutlet 31 and Electronicfirst 70 on 2026-09-15 — `[R47]` / `[R48]` / `[R49]`, the three new merchants of the discovery audit: each fails closed where its titles do not declare the region (a silent GameBoost or GamersOutlet row, a silent Electronicfirst CONSOLE row); GamersOutlet and Electronicfirst joined the safe-auto allowlist on 2026-09-16, GameBoost stays off it),
   merchant grammar never lives in a generic module, and four **console hooks** `[R45]` —
   `console_url_families`, `console_pc_declared`, `console_region_slot`, `console_noise` —
   moved the MMOGA / Gamivo / Eneba URL grammars out of `src/console_keys.py`, which keeps
   only the shared vocabulary. The name → module registry is `src/merchants/registry.py`
   (imported by the matcher and the classifier, no circular import). Per-merchant grammar
   and hooks: [`docs/MERCHANTS.md`](docs/MERCHANTS.md). See **§4.10**.
+- **Region buckets + the PUBLISHER decision** `[R50]` / `[R51]` (2026-09-16). `REGION_IDS` is
+  read from the live AKS dropdown (`catalog.json`, 867 options, identical across the 11
+  catalogs saved 2026-09-10 → 15), and three platforms were missing buckets it had always
+  carried — Rockstar (global / eu / us / uk), Epic (us / uk), EA (us / uk) — plus the Steam /
+  Battle.net / Ubisoft gift buckets for US & UK, plus Microsoft, arbitrated by Romain
+  (« Windows 10 pour les jeux, microsoft software pour les logiciels »: games take the Windows
+  10 family 244-249 here, software resolves from the AKS PAGE via `[R31]`). 138 rows were
+  refused "no region id" by mistake. `[R51]`: the AKS page's `Direct Publisher` line describes
+  the GAME, not the merchant's key — a row whose platform is in NEITHER the title NOR the URL
+  is now REFUSED unless the merchant declares that it reads its own page
+  (`publisher_from_merchant_page`, default False, so the safety is on for every merchant).
+  See **§4.4**.
 - **Console keys — multi-target candidates, live** `[R45]` (2026-09-12 → 15). AKS has
   separate console product pages (`buy-<slug>-<kind>-compare-prices/`), and the AKS feed
   tool (modal v2) takes the region (= region/platform) and the edition **per target page**.

@@ -282,7 +282,7 @@ CONFIG = make_config(
         "feed store id 31. R48: the '(<delivery> / <region>)' slot is mandatory (the "
         "merchant writes 'Global' explicitly, 20/20), its region vocabulary is the shared "
         "one and its store vocabulary is STORE_PLATFORM — anything else fails closed. "
-        "Off the safe-auto allowlist: supervised dry-run first (one region value and no "
-        "console row observed so far)."
+        "On the safe-auto allowlist since 2026-09-16 (Romain). Small feed (~19 rows, ~2 "
+        "enterable): one region value and no console row observed so far."
     ),
 )
