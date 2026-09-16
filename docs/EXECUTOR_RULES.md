@@ -503,10 +503,17 @@ bases. **The mapping alone delivers nothing**: "ROCKSTAR" was already a trailing
 for slug building but not a noise TOKEN, so once the region gate stopped firing first every
 Rockstar row died one step later on "different/expanded product — extra words:
 ['ROCKSTAR']". The word joins `NOISE_TOKENS` alongside every other store word (safe: no AKS
-product name in the saved corpora contains it). The two edits are ONE fix. Still unmapped and
-still fail-closed on purpose: **MICROSOFT** (the dropdown has TWO candidate families,
-"Windows 10 …" 244-249 and "microsoft software …" 532-562 — picking one is a live decision,
-not a mapping), and the GIFT buckets of PUBLISHER / EPIC (the dropdown has none). Tests:
+product name in the saved corpora contains it). The two edits are ONE fix. **MICROSOFT, arbitrated 2026-09-16** (Romain: « Windows 10 pour les jeux, microsoft software
+pour les logiciels »): the dropdown carries TWO Microsoft families, and they split by NATURE,
+not by region. GAMES take the "Windows 10 …" family in `REGION_IDS` — Global 246 / EU 244 /
+US 245 / UK 249, locks EMEA 248 / ROW 247 / FR 404 / WINDOWS DE 356 / CANADA 663 out. SOFTWARE
+never reads `REGION_IDS` at all: the `[R31]` software path resolves its region from the AKS
+PAGE's own options (`resolve_software_region`), which is where the "microsoft software …"
+family (global 532 / eu 533 / us 534 / uk 548) already lives — the second half of the ruling
+needed no code, only the arbitration. This unblocks 73 rows, all Eneba, whose merchant file
+declares the platform from the `windows-store-` URL prefix. Still unmapped and still
+fail-closed on purpose: the GIFT buckets the dropdown genuinely has none of (PUBLISHER, EPIC,
+EA, GOG, ROCKSTAR plain gifts; a Battle.net or Ubisoft gift UK; `gmg_gift_uk`). Tests:
 `tests/test_region_ids_catalog.py`.
 **GamersOutlet grammar `[R48]` (2026-09-15).** GamersOutlet (feed store 31) writes a
 parenthesised **delivery / region slot** on every row — `<Product> [ (<OS>) ] ( <DELIVERY> /

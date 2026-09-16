@@ -539,6 +539,15 @@ REGION_IDS = {
     # GLOBAL" label); ids read from the live session catalogs of 2026-07-07
     # and 2026-07-08 (identical). No gift mapping — publisher gifts fail closed.
     "PUBLISHER": {"global": "1", "eu": "12", "us": "13", "uk": "266"},
+    # Microsoft Store: the dropdown carries TWO families and Romain ruled between them
+    # (2026-09-16): « Windows 10 pour les jeux, microsoft software pour les logiciels ».
+    # GAMES take the "Windows 10 …" family here (Global 246 / EU 244 / US 245 / UK 249;
+    # locks EMEA 248, ROW 247, FR 404, WINDOWS DE 356, Windows CANADA 663 stay out).
+    # SOFTWARE never reads this table: the R31 software path resolves its region from the
+    # AKS PAGE's own options (``resolve_software_region``), which is where the "microsoft
+    # software …" family (global 532 / eu 533 / us 534 / uk 548) already lives — so the
+    # second half of the ruling needs no mapping, only this comment.
+    "MICROSOFT": {"global": "246", "eu": "244", "us": "245", "uk": "249"},
 }
 # [R45] (2026-09-12) console FAMILIES are platforms like the PC ones: XBOX_ONE /
 # XBOX_SERIES / XBOX_PC (Play Anywhere) / PS4 / PS5 / SWITCH → {base: modal bucket id}

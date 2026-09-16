@@ -72,6 +72,39 @@ class EaRegionTests(unittest.TestCase):
         self.assertEqual(REGION_IDS["EA"]["eu"], "3eu")
 
 
+class MicrosoftRegionTests(unittest.TestCase):
+    """Romain, 2026-09-16: « Windows 10 pour les jeux, microsoft software pour les
+    logiciels ». The dropdown carries two Microsoft families and this is the arbitration.
+
+    GAMES take the "Windows 10 …" family in REGION_IDS. SOFTWARE never reads this table at
+    all: the R31 software path resolves its region from the AKS PAGE's own options
+    (``resolve_software_region``), which is where the "microsoft software …" family lives —
+    so the second half of the ruling is already the behaviour, and this test pins that the
+    game family is the one mapped here."""
+
+    GAME_IDS = {"global": "246", "eu": "244", "us": "245", "uk": "249"}
+    SOFTWARE_FAMILY_IDS = {"532", "533", "534", "548"}      # microsoft software global/eu/us/uk
+    LOCK_IDS = {"248": "Windows 10 EMEA", "247": "Windows 10 ROW", "404": "Windows 10 FR",
+                "356": "WINDOWS DE", "663": "Windows CANADA"}
+
+    def test_the_game_family_is_mapped(self):
+        self.assertEqual({k: v for k, v in REGION_IDS["MICROSOFT"].items()
+                          if k in self.GAME_IDS}, self.GAME_IDS)
+
+    def test_the_software_family_is_never_in_this_table(self):
+        mapped = set(REGION_IDS["MICROSOFT"].values())
+        for sid in self.SOFTWARE_FAMILY_IDS:
+            with self.subTest(id=sid):
+                self.assertNotIn(sid, mapped,
+                                 "the microsoft software family belongs to the R31 page path")
+
+    def test_no_lock_is_mapped_as_a_base(self):
+        mapped = set(REGION_IDS["MICROSOFT"].values())
+        for lock_id, label in self.LOCK_IDS.items():
+            with self.subTest(label=label):
+                self.assertNotIn(lock_id, mapped)
+
+
 class GiftBucketTests(unittest.TestCase):
     """R50, second pass (2026-09-16) — Romain: « si ça existe le fichier marchand ne devrait
     pas affirmer le contraire, fix la config marchand ». The merchant files stated that no
@@ -114,7 +147,7 @@ class GiftBucketTests(unittest.TestCase):
 
 class RegionTableShapeTests(unittest.TestCase):
     PC_PLATFORMS = ("STEAM", "GOG", "UBISOFT", "EPIC", "EA", "ROCKSTAR", "BATTLENET",
-                    "PUBLISHER")
+                    "PUBLISHER", "MICROSOFT")
 
     def test_every_pc_platform_now_carries_the_four_bases(self):
         """After the 2026-09-16 audit every PC platform we resolve has global / eu / us / uk
@@ -126,6 +159,17 @@ class RegionTableShapeTests(unittest.TestCase):
                     self.assertIn(base, REGION_IDS[platform],
                                   f"{platform} has no {base} bucket mapped — check the "
                                   "dropdown before assuming it does not exist")
+
+    def test_an_unmapped_platform_yields_no_id(self):
+        """The fail-closed mechanism itself: a platform token absent from the table gets no
+        region id, whatever the base. Every PC platform we DETECT is mapped since the
+        2026-09-16 audit, so this is checked on a synthetic token."""
+
+        from src.matcher import _region_id
+        self.assertNotIn("NOT_A_PLATFORM", REGION_IDS)
+        for base in ("global", "eu", "us", "uk", "gift"):
+            with self.subTest(base=base):
+                self.assertIsNone(_region_id("NOT_A_PLATFORM", base))
 
     def test_ids_are_non_empty_strings(self):
         for platform, buckets in REGION_IDS.items():

@@ -3045,12 +3045,15 @@ class G2ARulesTests(unittest.TestCase):
         self.assertEqual(detect_platform("GTA V (PC) - Rockstar Key - GLOBAL"), "ROCKSTAR")
         self.assertEqual(_REGION_IDS["ROCKSTAR"]["global"], "15")         # no longer unmapped
 
+        # MICROSOFT was the remaining unmapped PC platform until Romain arbitrated its two
+        # dropdown families on 2026-09-16 (« Windows 10 pour les jeux, microsoft software
+        # pour les logiciels ») — the GAME family is mapped now, so the fail-closed
+        # mechanism is checked on a token that is in no table at all.
         self.assertEqual(detect_platform("X (PC) - Microsoft Store Key - GLOBAL"), "MICROSOFT")
-        self.assertNotIn("MICROSOFT", _REGION_IDS)
-        label, region_id, _implicit = detect_region(
-            _offer("Neon Beats (PC) - Microsoft Store Key - GLOBAL"), "MICROSOFT")
-        self.assertEqual(label, "GLOBAL")
-        self.assertIsNone(region_id, "an unmapped platform must yield no region id")
+        self.assertEqual(_REGION_IDS["MICROSOFT"]["global"], "246")
+        from src.matcher import _region_id
+        self.assertIsNone(_region_id("NOT_A_PLATFORM", "global"),
+                          "an unmapped platform must yield no region id")
 
     def test_g2a_categorical_skips(self):
         cases = {

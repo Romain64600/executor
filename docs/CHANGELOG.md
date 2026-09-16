@@ -3,6 +3,31 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-16 — R50 (3e passe) : Microsoft tranché — Windows 10 aux jeux, microsoft software aux logiciels
+
+Romain : « Windows 10 pour les jeux, microsoft software pour les logiciels. » Le menu des
+régions porte deux familles Microsoft et elles se partagent par NATURE de produit, pas par
+région.
+
+Les **jeux** prennent la famille « Windows 10 … » dans `REGION_IDS` : Global 246, EU 244,
+US 245, UK 249 ; les verrous (EMEA 248, ROW 247, FR 404, WINDOWS DE 356, CANADA 663) restent
+hors table. Les **logiciels** ne lisent jamais cette table : le chemin logiciel `[R31]`
+résout sa région sur les options de la PAGE AKS (`resolve_software_region`), et c'est là que
+vit déjà la famille « microsoft software … » (global 532, eu 533, us 534, uk 548) — la
+seconde moitié de la décision ne demandait aucun code, seulement l'arbitrage.
+
+Débloque **73 lignes, toutes Eneba**, dont le fichier marchand déclare la plateforme depuis
+le préfixe d'URL `windows-store-` : « FINAL FANTASY VIII Remastered WINDOWS EDITION (PC)
+Windows Store Key EUROPE » devient candidat MICROSOFT EU(244) au lieu du refus « no region id
+for MICROSOFT/EU ». Eneba étant sur la liste blanche safe-auto, le prochain balayage les
+prendra.
+
+Restent volontairement non mappés, parce que le menu ne les propose vraiment pas : les
+cadeaux simples de Publisher / Epic / EA / GOG / Rockstar, un cadeau Battle.net ou Ubisoft UK,
+et `gmg_gift_uk`. Le test « unknown platform fails closed » vérifie désormais le mécanisme
+sur un jeton synthétique, puisque toute plateforme PC que l'on détecte est mappée.
+1 965 tests, tous verts.
+
 ## 2026-09-16 — Audit de Romain sur f96b969 : deux défauts corrigés
 
 Deux points remontés par l'audit de Romain, tous deux réels, tous deux corrigés.
