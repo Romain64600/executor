@@ -26,9 +26,15 @@ class AutoMerchantsAllowlistTests(unittest.TestCase):
         self.assertFalse(is_allowed("Bogus", "999"))
 
     def test_parked_and_unvetted_merchants_refused(self):
-        # Explicitly outside the allowlist (Romain 2026-08-07).
+        # Difmark reste explicitement hors liste (Romain 2026-08-07, feed console/Epic/Windows,
+        # ~0 ligne saisissable). GameBoost (157) l'a REJOINTE le 2026-09-16 (« Ajoute Gameboost
+        # a la whiteliste ») après son 1er matching réel — 207 candidats sur 992 lignes, zéro
+        # PUBLISHER — et sa 1re passe de saisie ; voir tests/test_merchants_gameboost.py.
         self.assertFalse(is_allowed("Difmark", "167"))
-        self.assertFalse(is_allowed("Gameboost", "157"))
+        self.assertTrue(is_allowed("GameBoost", "157"))
+        # une boutique jamais vettée reste refusée, quelle que soit son orthographe
+        self.assertFalse(is_allowed("Royalcdkeys", "85"))
+        self.assertFalse(is_allowed("Keycense", "130"))
 
     def test_store_must_match_canonical(self):
         # A suggested name with a tampered/stale store is refused (the UI derives
@@ -47,7 +53,6 @@ class AutoMerchantsAllowlistTests(unittest.TestCase):
         names = {r["name"] for r in rows}
         self.assertIn("Kinguin", names)
         self.assertNotIn("Difmark", names)
-        self.assertNotIn("Gameboost", names)
         # MMOGA (Romain 2026-09-10): allowed with its FEED store id only — the AKS page
         # merchant id (40) is not a store and must be refused like any tampered id.
         self.assertIn("MMOGA", names)

@@ -35,6 +35,7 @@ EXPECTED_MODULE = {
     # allowlistés le 2026-09-16 (Romain : « On va whitelist Eletronicfirst et Gamersoutlet »)
     "Electronicfirst": "electronicfirst.py",
     "GamersOutlet": "gamersoutlet.py",
+    "GameBoost": "gameboost.py",
 }
 
 

@@ -693,9 +693,11 @@ class DataEntryAutoAllowlistTests(AppTestCase):
         self.manager.start_data_entry_auto = lambda *a, **k: calls.append((a, k)) or {}
         response, _ = self._json(
             "POST", "/api/data-entry/auto",
+            # Difmark (167) reste hors liste ; GameBoost l'a rejointe le 2026-09-16, donc
+            # l'exemple d'un marchand refusé est désormais Difmark.
             body={"targets": [
                 {"merchant": "Kinguin", "store_id": "58"},
-                {"merchant": "Gameboost", "store_id": "157"},
+                {"merchant": "Difmark", "store_id": "167"},
             ]},
         )
         self.assertEqual(response.status, 403)

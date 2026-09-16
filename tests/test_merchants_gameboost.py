@@ -184,10 +184,13 @@ class GameBoostRegistryTests(unittest.TestCase):
         self.assertTrue(cfg.title_is_platform_source)
         self.assertFalse(cfg.url_platform_scan)
 
-    def test_gameboost_is_not_on_the_safe_auto_allowlist(self):
-        from src.admin.auto_merchants import AUTO_MERCHANTS
-        self.assertNotIn("GameBoost", [n for n, _ in AUTO_MERCHANTS])
-        self.assertNotIn("Gameboost", [n for n, _ in AUTO_MERCHANTS])
+    def test_gameboost_is_on_the_safe_auto_allowlist_since_2026_09_16(self):
+        """Romain, 2026-09-16 : « Ajoute Gameboost a la whiteliste », après son 1er matching
+        réel (207 candidats sur 992 lignes, zéro PUBLISHER) et sa 1re passe de saisie."""
+
+        from src.admin.auto_merchants import AUTO_MERCHANTS, rejection_reason
+        self.assertIn(("GameBoost", "157"), AUTO_MERCHANTS)
+        self.assertIsNone(rejection_reason("GameBoost", "157"))
 
 
 if __name__ == "__main__":

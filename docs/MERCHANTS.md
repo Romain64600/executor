@@ -118,7 +118,7 @@ du feed.
 | GameSeal | 126 | `gameseal.py` (**nouveau**) | `domain` ; PC : `precheck`, `title_region` (queue ` - <RÉGION>`) ; console : `console_url_families`, `console_region_slot` | **non, dry-run d'abord** | ? |
 | CJS-CDKeys | 30 | `cjs.py` (**nouveau**, identité seule) | `domain="cjs-cdkeys.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
 | Difmark | 167 | `difmark.py` | `console_url_families` (comptes) | parqué (hors liste blanche) | — |
-| GameBoost | 157 | `gameboost.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux + `[R47]` région obligatoire), `title_region`, `resolve_name` ; console : `console_region_slot` | **non — hors liste blanche safe-auto (R27, R47)** | 13 |
+| GameBoost | 157 | `gameboost.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux + `[R47]` région obligatoire), `title_region`, `resolve_name` ; console : `console_region_slot` | **oui, allowlisté le 16/09** — 1er matching : 207 candidats / 992 lignes | 13 |
 | GamersOutlet | 31 | `gamersoutlet.py` (**nouveau 15/09**) | PC : `precheck` (slot obligatoire + vocabulaire boutique fermé), `title_region`, `resolve_name`, `url_platform` | **oui, allowlisté le 16/09** — 1re saisie : 2 / 2 créées | 1 |
 | Electronicfirst | 70 | `electronicfirst.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux, logiciels, `[R49a]` EU partiel, `[R49b]` mot de région dans le nom, `[R49c]` console sans slot), `title_region`, `resolve_name` | **oui, allowlisté le 16/09** — parqué puis dé-parqué, défaut PUBLISHER/STEAM fermé par `[R51]` | 4 |
 

@@ -214,6 +214,7 @@ CONFIG = make_config(
     notes=(
         "feed store id 157. Platform stays TITLE-sourced (generic read, like Kinguin) — "
         "the offer page is Cloudflare-blocked (R27, 2026-07-15) and is never fetched. "
-        "R47: a title with no region word is skipped, never entered GLOBAL."
+        "R47: a title with no region word is skipped, never entered GLOBAL. "
+        "On the safe-auto allowlist since 2026-09-16."
     ),
 )

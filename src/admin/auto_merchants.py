@@ -27,6 +27,10 @@ AUTO_MERCHANTS: list[tuple[str, str]] = [
     ("CJS-CDKeys", "30"),
     ("Allyouplay", "17"),
     ("GameSeal", "126"),
+    ("GameBoost", "157"),       # Romain 2026-09-16 (« Ajoute Gameboost a la whiteliste »),
+                                # après son 1er matching réel : 207 candidats sur 992 lignes
+                                # (13 pages), zéro PUBLISHER, et la 1re passe de saisie. Son
+                                # fichier (R47) refuse toute ligne sans région. Feed store 157.
     ("Electronicfirst", "70"),  # Romain 2026-09-16 (« On va whitelist Eletronicfirst et
                                 # Gamersoutlet »): dé-parqué le même jour — le défaut qui
                                 # l'avait fait parquer (2 lignes entrées PUBLISHER au lieu de
@@ -43,10 +47,7 @@ AUTO_MERCHANTS: list[tuple[str, str]] = [
 # Deliberately NOT suggested (enforcement is simply "absent from the list";
 # named here for humans):
 #   Difmark (167)  — parked 2026-08-07, feed is console/Epic/Windows (~0 enterable).
-#   Gameboost (157) — boosting/accounts, not vetted for unvalidated auto entry. It HAS a
-#     merchant file since 2026-09-15 (src/merchants/gameboost.py, R47) so a SUPERVISED run
-#     reads its grammar; staying off this list is deliberate (R27: the 2026-07-15 batch was
-#     cancelled live, and a third of its titles still carry no region).
+#     (GameBoost 157 joined the list above on 2026-09-16.)
 #     (Electronicfirst 70 and GamersOutlet 31 were moved INTO the list above on 2026-09-16.)
 
 _BY_NAME: dict[str, tuple[str, str]] = {

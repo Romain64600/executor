@@ -130,7 +130,7 @@ state and cannot be argued away by a language model.
   merchant — Romain's rule (repeated since 2026-08-11, ultimatum 2026-09-14):** « pour la
   détection région / édition / plateforme, tu as un fichier de config par marchand. Et si
   tu ne l'as pas, tu dois l'avoir » — **every merchant of the safe-auto allowlist has its
-  file** (Kinguin, K4G, Driffle, GameSeal, Allyouplay, CJS-CDKeys added on 2026-09-14; GameBoost 157, GamersOutlet 31 and Electronicfirst 70 on 2026-09-15 — `[R47]` / `[R48]` / `[R49]`, the three new merchants of the discovery audit: each fails closed where its titles do not declare the region (a silent GameBoost or GamersOutlet row, a silent Electronicfirst CONSOLE row); GamersOutlet and Electronicfirst joined the safe-auto allowlist on 2026-09-16, GameBoost stays off it),
+  file** (Kinguin, K4G, Driffle, GameSeal, Allyouplay, CJS-CDKeys added on 2026-09-14; GameBoost 157, GamersOutlet 31 and Electronicfirst 70 on 2026-09-15 — `[R47]` / `[R48]` / `[R49]`, the three new merchants of the discovery audit: each fails closed where its titles do not declare the region (a silent GameBoost or GamersOutlet row, a silent Electronicfirst CONSOLE row); all three joined the safe-auto allowlist on 2026-09-16),
   merchant grammar never lives in a generic module, and four **console hooks** `[R45]` —
   `console_url_families`, `console_pc_declared`, `console_region_slot`, `console_noise` —
   moved the MMOGA / Gamivo / Eneba URL grammars out of `src/console_keys.py`, which keeps
@@ -471,12 +471,12 @@ instead of ending the sweep. The recap lands in `runs/<run-id>/recap.json`, one 
 merchant with `created` and any `halted` reason. Consoles are INCLUDED by default `[R45]`;
 add `--no-consoles` for a PC-only pass.
 
-**Allowlist as of 2026-09-16 (13 merchants)** — the command above derives this list itself,
+**Allowlist as of 2026-09-16 (14 merchants)** — the command above derives this list itself,
 it is reproduced only so a reader knows what a night sweep covers: Kinguin 58, G2A 38,
 Driffle 127, Eneba 19, K4G 92, Gamivo 51, Instant Gaming 28, CJS-CDKeys 30, Allyouplay 17,
-GameSeal 126, Electronicfirst 70, GamersOutlet 31, MMOGA 12. Four of them (Eneba, CJS-CDKeys,
-Allyouplay, GameSeal) have never had a real sweep — preview them with `--dry-run` before the
-first write pass.
+GameSeal 126, GameBoost 157, Electronicfirst 70, GamersOutlet 31, MMOGA 12. Four of them
+(Eneba, CJS-CDKeys, Allyouplay, GameSeal) have never had a real sweep — preview them with
+`--dry-run` before the first write pass.
 
 ---
 

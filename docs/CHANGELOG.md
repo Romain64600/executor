@@ -3,6 +3,26 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-16 — GameBoost (157) rejoint la liste blanche safe-auto
+
+Romain : « Ajoute Gameboost a la whiteliste ». `AUTO_MERCHANTS` passe de 13 à **14 marchands**.
+
+Décidé après son **premier matching réel** : 992 offres extraites sur 13 pages (couverture
+prouvée en 2 passes), **207 candidats** — Steam 131, Xbox Series 40, Xbox One 14, EA 11,
+Ubisoft 9, Battle.net 1, PS4 1 — dont 22 multi-cibles Xbox Play Anywhere, et 49 DLC. Contrôles
+qualité avant validation : **zéro PUBLISHER** (`[R51]` tient), zéro région implicite, zéro
+doublon d'empreinte, aucune offre au-delà du plafond de 3 cibles. Puis une première passe de
+saisie de 15 offres.
+
+Son fichier (`[R47]`, 2026-09-15) refuse toute ligne sans mot de région — 181 lignes du feed
+s'y arrêtent — ainsi que les cartes cadeaux (218) et les consoles sans génération déclarée
+(117). C'est ce qui rend la saisie sans validation acceptable ici.
+
+**Difmark (167) reste le seul marchand explicitement hors liste.** README (liste des 14 et
+commande du scan de nuit), `docs/MERCHANTS.md`, `src/merchants/gameboost.py` et les tests
+d'allowlist sont à jour dans le même commit ; la commande `--all-allowlisted` n'a PAS besoin
+d'être retouchée, c'est tout son intérêt.
+
 ## 2026-09-16 — Console : bouton « sweep de nuit » (tous les marchands whitelistés)
 
 Romain : « Dans l'onglet Data entry auto, je voudrais un bouton pour lancer un sweep sur tout
