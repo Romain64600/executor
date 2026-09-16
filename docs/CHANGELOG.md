@@ -3,6 +3,39 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-16 — R51 : la décision PUBLISHER exige la page du MARCHAND (sécurité par défaut)
+
+Romain, après avoir vérifié la saisie Electronicfirst puis reproduit le cas sur Gamivo :
+« avant de decider si publisher ou non on doit ouvrir la page marchant pour verifier la region
+et l edition, si on arrive pas a ouvrir la page marchant on skip l offre … on devrait ajouter
+cette securite par defaut pour tous les marchants ». Go donné le même jour.
+
+**Le trou.** `[R27]` refuse un titre sans jeton de plateforme SAUF si la page AKS confirme
+« Direct Publisher ». Or cette ligne décrit **le jeu** — le jeu existe aussi en version
+éditeur — et ne dit rien de ce que vend CE marchand. Vérifié sur le code vivant :
+`resident-evil-raccoon-city-edition` chez Gamivo, une clé Steam mondiale d'après Romain,
+ressortait en PUBLISHER GLOBAL(1).
+
+**La règle.** Une ligne dont la plateforme n'est NI dans le titre NI dans l'URL est refusée,
+sauf si le marchand DÉCLARE qu'il lit sa propre page
+(`MerchantConfig.publisher_from_merchant_page`, **défaut False** — la sécurité est active pour
+tous les marchands, avec ou sans fichier de config). Aucun marchand ne le déclare aujourd'hui :
+toutes les pages produit sondées le 16/09 sont Cloudflare-403 (Gamivo, Electronicfirst,
+GamersOutlet, Kinguin, Driffle) ou refusées (G2A) ; celles qui répondent 200 (Eneba, GameSeal,
+Instant Gaming, K4G, MMOGA) résolvent déjà la plateforme en amont ou n'ont pas de lecteur.
+
+**Coût mesuré avant changement** : 13 candidats distincts sur TOUS les runs sauvegardés —
+MMOGA 5, Gamivo 6, Electronicfirst 2 — contre 2 360 lignes déjà refusées par `[R27]`. Une
+partie des 13 sont de vraies clés éditeur (`Minecraft - Java & Bedrock Edition`, `Fallout 76`,
+MMOGA, page à 200) : elles redeviendront saisissables le jour où un lecteur de page marchand
+existera, en basculant le drapeau avec le lecteur.
+
+Inchangé : jeton de plateforme explicite, page Steam-only (toujours le skip `[R27]`, libellé
+distinct), skip `[R20]` « no official platforms », chemin logiciel `[R31]`. La décision revue
+d'`AGENTS.md` est mise à jour sur place. `tests/test_publisher_page_gate.py` (11 tests) ; les
+4 tests qui figeaient l'ancien défaut sont réécrits, dont 3 sous l'opt-in pour que le
+comportement `[R20]` reste épinglé. 1 976 tests, tous verts.
+
 ## 2026-09-16 — Electronicfirst PARQUÉ : plateforme entrée PUBLISHER au lieu de STEAM
 
 Romain, après vérification de la saisie : « j ai trouve un exemple ou l on a ajoute l offre en

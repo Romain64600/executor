@@ -1106,12 +1106,17 @@ class MerchantConfigR32Tests(unittest.TestCase):
         self.assertIsInstance(r, SkippedOffer)
         self.assertIn("unreadable", r.reason)
 
-    def test_other_merchant_token_less_still_defaults_publisher(self):
+    def test_other_merchant_token_less_is_refused_by_r51(self):
+        """[R51] (2026-09-16): this row used to be entered PUBLISHER. Romain's own example
+        — « Resident Evil Raccoon City Edition », a Gamivo Steam GLOBAL key — proved the
+        default wrong, so a title with no platform in the title NOR the URL is now refused
+        unless the merchant reads its own page."""
+
         o = NormalizedOffer(offer_id="1", name="Tiny Tinas Wonderlands",
                             url="https://m/x", merchant="Gamivo")   # R46 hooks silent: no tail, no URL run
         r = match_offer(o, resolver=lambda n: self.PAGE)
-        self.assertIsInstance(r, Candidate)
-        self.assertEqual(r.platform, "PUBLISHER")
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertIn("(R51)", r.reason)
 
     # ---- IG page parsing (fake http_get, no network) ----
     def test_resolve_ig_offer_reads_platform(self):
@@ -2113,6 +2118,23 @@ class ExplicitPlatformFromUrlTests(unittest.TestCase):
 
 
 class MatchOfferTests(unittest.TestCase):
+    def _use_publisher_page_reader(self, merchant="Test"):
+        """[R51] opt-in: declare that this merchant READS its own offer page, so the
+        token-less → PUBLISHER resolution of R20 still applies. Restored on tearDown."""
+
+        from src.matcher import MERCHANT_CONFIGS
+        from src.merchant_config import MerchantConfig
+        if not hasattr(self, "_r51_saved"):
+            self._r51_saved = dict(MERCHANT_CONFIGS)
+            self.addCleanup(self._restore_publisher_configs)
+        MERCHANT_CONFIGS[merchant.upper()] = MerchantConfig(
+            merchant, publisher_from_merchant_page=True)
+
+    def _restore_publisher_configs(self):
+        from src.matcher import MERCHANT_CONFIGS
+        MERCHANT_CONFIGS.clear()
+        MERCHANT_CONFIGS.update(self._r51_saved)
+
     def _resolver(self, aks_name="Neon Beats", editions=None, official_platforms=("Steam",),
                   prices=()):
         # {} must stay {} (R19 exercises a truly empty map) — only None
@@ -2669,6 +2691,13 @@ class MatchOfferTests(unittest.TestCase):
         # key. Revised same day (Romain: "Rentrons les en publisher"): such an
         # offer is entered as PUBLISHER — region "Publisher (1)" is the GLOBAL
         # bucket in the WP-admin dropdown — instead of skipped.
+        # SUPERSEDED by [R51] (2026-09-16, Romain): the AKS "Direct Publisher" line
+        # describes the GAME, not THIS merchant's key, so it can no longer carry the
+        # decision alone — the merchant's own page must be read, and no merchant declares
+        # it yet (MerchantConfig.publisher_from_merchant_page, default False). The
+        # resolution below is kept under the OPT-IN, so the R20 behaviour is still pinned
+        # for the day a merchant page reader lands. See tests/test_publisher_page_gate.py.
+        self._use_publisher_page_reader()
         for page in (("Steam", "Direct Publisher"), ("Direct Publisher",)):
             result = match_offer(
                 _offer("Neon Beats Key GLOBAL"),
@@ -2682,6 +2711,7 @@ class MatchOfferTests(unittest.TestCase):
             )
 
     def test_defaulted_publisher_maps_eu_region(self):
+        self._use_publisher_page_reader()          # [R51] opt-in, see the test above
         result = match_offer(
             _offer("Neon Beats (Europe)"),
             self._resolver(official_platforms=("Steam", "Direct Publisher")),
@@ -2695,6 +2725,7 @@ class MatchOfferTests(unittest.TestCase):
     def test_defaulted_publisher_gift_fails_closed(self):
         # PUBLISHER has no gift mapping in REGION_IDS — a token-less gift on a
         # publisher page must skip, not fall back to another platform's id.
+        self._use_publisher_page_reader()          # [R51] opt-in: this test owns the GIFT gate
         result = match_offer(
             _offer("Neon Beats Gift GLOBAL"),
             self._resolver(official_platforms=("Steam", "Direct Publisher")),

@@ -486,6 +486,32 @@ phrase ONLY once every AKS-name token is covered AND UNITED precedes it — "Kin
 Deliverance" / "Total War Three Kingdoms" keep their name word (never a false `extra words:
 ['KINGDOM']` skip). The old grammar (`…-steam-key-brazil`,
 `…-steam-en-global`) keeps its P2-6 / P2-6b / MA7 behaviour. Tests: `GamivoConfigR46Tests`.
+**The PUBLISHER decision needs the MERCHANT's own page `[R51]` (2026-09-16).** `[R27]`
+refuses a title with no platform token UNLESS the AKS page confirms `Direct Publisher`. That
+exception is the hole: the AKS line describes the **GAME** (the game also exists as a
+publisher key) and says nothing about what THIS merchant sells. Romain, after checking the
+first Electronicfirst batch: « j ai trouve un exemple ou l on a ajoute l offre en publisher a
+la place de Steam car on a pas la plateforme dans l url et du coup on aurait du ouvrir la
+page », then, reproducing it on Gamivo (`resident-evil-raccoon-city-edition`, a Steam GLOBAL
+key, entered PUBLISHER GLOBAL(1) by the live code): « avant de decider si publisher ou non on
+doit ouvrir la page marchant pour verifier la region et l edition, si on arrive pas a ouvrir
+la page marchant on skip l offre … on devrait ajouter cette securite par defaut pour tous les
+marchants ». So a row whose platform is in NEITHER the title NOR the URL is now refused —
+"no platform in title or URL — the AKS page's 'Direct Publisher' describes the game, not this
+merchant's key, and the merchant page is not read (R51)" — unless the merchant DECLARES that
+it reads its own page (`MerchantConfig.publisher_from_merchant_page`, **default False**, so
+the safety is on for every merchant, config or not). No merchant declares it today: every
+product page probed on 2026-09-16 is Cloudflare-403 (Gamivo, Electronicfirst, GamersOutlet,
+Kinguin, Driffle) or refused outright (G2A); the merchants whose page ANSWERS 200 (Eneba,
+GameSeal, Instant Gaming, K4G, MMOGA) either already resolve the platform upstream or have no
+reader yet. Measured cost over every saved run: **13 distinct candidates** — MMOGA 5, Gamivo 6,
+Electronicfirst 2 — against 2 360 rows that already skip on `[R27]`. Some of the 13 are
+plausibly REAL publisher keys (`Minecraft - Java & Bedrock Edition`, `Fallout 76`, both MMOGA,
+whose page answers 200): they become recoverable the day a merchant page reader lands, by
+flipping the flag together with the reader. What R51 does NOT touch: an explicit platform
+token, the Steam-only page (still the `[R27]` skip, distinct wording), the `[R20]` "no official
+platforms" skip, and the `[R31]` software path (which returns earlier). Tests:
+`tests/test_publisher_page_gate.py`.
 **Region buckets re-verified against the live dropdown `[R50]` (2026-09-16).** Romain:
 « pour les regions Rockstar on a toutes les regions dont tu as besoin meme la globale,
 verifie mieux, tu dois pouvoir aller chercher ca dans le drop down des regions sur l'outil

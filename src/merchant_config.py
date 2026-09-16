@@ -80,6 +80,18 @@ class MerchantConfig:
     # fail-closed skip, NOT a guess. Flip to True once page-opening via the browser (CDP)
     # lands. Default True (openable) preserves every other merchant.
     offer_page_readable: bool = True
+    # [R51] (2026-09-16, Romain: « avant de decider si publisher ou non on doit ouvrir la page
+    # marchant pour verifier la region et l'edition, si on arrive pas a ouvrir la page marchant
+    # on skip l'offre … on devrait ajouter cette securite par defaut pour tous les marchants »).
+    # True = this merchant's OWN offer page is opened and read to decide whether a key whose
+    # title AND url declare no platform is really a PUBLISHER key. Default **False**, i.e. the
+    # safety is ON for every merchant: the "Direct Publisher" line of the AKS page describes
+    # the GAME, not this merchant's key, so it can no longer carry the decision alone — such a
+    # row is refused (R51) instead of being entered PUBLISHER. Flip to True only together with
+    # a real page read; no merchant declares it today (every product page we probed on
+    # 2026-09-16 is either Cloudflare-403 — Gamivo, Electronicfirst, GamersOutlet, Kinguin,
+    # Driffle, G2A — or belongs to a merchant whose resolver already sets the platform upstream).
+    publisher_from_merchant_page: bool = False
     # Generic-behaviour OVERRIDE hooks (Romain 2026-09-10: « un fichier de config marchand
     # par marchand, qui peut ajouter, overwrite, modifier des comportements génériques »).
     # Each is optional; the matcher calls it FIRST and falls through to the generic rule

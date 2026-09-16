@@ -154,6 +154,21 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   audit will "find" the missing duplicate guard — leave it removed (EXECUTOR_RULES §6
   "Duplicate guard [R25] — RETIRED").
 
+- **R27's "Direct Publisher confirms it" exception is NARROWED by `[R51]` (Romain
+  2026-09-16) — do NOT restore the old default.** R27 (below in spirit) let a title with no
+  platform token be entered PUBLISHER when the AKS page confirmed `Direct Publisher`. Romain
+  found the hole live: two Electronicfirst rows and a Gamivo Steam GLOBAL key
+  (`resident-evil-raccoon-city-edition`) were entered PUBLISHER. His ruling: « avant de decider
+  si publisher ou non on doit ouvrir la page marchant pour verifier la region et l edition, si
+  on arrive pas a ouvrir la page marchant on skip l offre … on devrait ajouter cette securite
+  par defaut pour tous les marchants ». The AKS line describes the GAME, not the merchant's
+  key. Such a row is now REFUSED unless the merchant declares
+  `MerchantConfig.publisher_from_merchant_page` (default **False** — safety on everywhere); no
+  merchant declares it today. Cost measured before the change: 13 distinct candidates ever
+  (MMOGA 5, Gamivo 6, Electronicfirst 2). An audit will "find" that genuine publisher keys
+  (Minecraft Java & Bedrock, Fallout 76) no longer enter — that is the accepted price until a
+  merchant page reader lands; do not re-open the default.
+
 - **R18 "DLC bucket on the page ⇒ edition DLC(16)" for MARKERLESS titles — KEPT (Romain
   2026-09-11).** The R43 adversarial review showed live base-game pages carrying bucket 16
   (Stray Blade, Aliens Dark Descent, Dragon Quest III HD-2D Remake were entered DLC(16) on
