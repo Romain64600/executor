@@ -3,6 +3,40 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-16 — R50 : trois plateformes avaient des régions AKS jamais mappées (faux refus)
+
+Romain, après le dry-run des nouveaux marchands : « Pour les regions Rockstar on a toutes les
+regions dont tu as besoin meme la globale, verifie mieux, tu dois pouvoir aller chercher ca
+dans le drop down des regions sur l'outil AKS feed. » Vérification faite dans le catalogue de
+régions du feed (867 options, identiques sur les 11 catalogues sauvegardés du 10 au 15/09) :
+il avait raison, et la même lacune existait sur deux voisins.
+
+Mappages ajoutés : **Rockstar** global 15 (l'option nue « Rockstar (15) » EST le compartiment
+mondial — même forme que « Publisher (1) », le menu ne porte aucun libellé « Rockstar
+GLOBAL »), us 151, eu 152, uk 158 ; **Epic** us `80us`, uk `805` ; **EA** us `3us`, uk `3uk`.
+Comptés sur tous les runs sauvegardés, ces trous valaient **35 lignes Rockstar** (29 global,
+4 uk, 2 eu), **9 EA/US** et **8 EPIC/US** refusées à tort « no region id ». Les verrous de ces
+familles (Rockstar APAC / ASIA / EMEA / LATAM / ROW / France / Allemagne / Pays-Bas / Moyen-
+Orient) restent hors table : ce sont des régions interdites, pas des bases.
+
+**Le mappage seul ne suffisait pas.** « ROCKSTAR » était déjà une phrase de bruit pour la
+construction du slug mais pas un JETON de bruit pour le garde d'identité : la lacune était
+invisible parce que la porte région tirait avant. Une fois les compartiments mappés, chaque
+ligne Rockstar mourait un cran plus loin sur « different/expanded product — extra words:
+['ROCKSTAR'] ». Le mot rejoint `NOISE_TOKENS` avec tous les autres mots de boutique (sans
+risque : aucun nom de produit AKS des corpus sauvegardés ne le contient). Les deux
+modifications sont une seule correction — vérifié sur les vraies lignes des deux nouveaux
+marchands, qui deviennent des candidats GLOBAL(15), UK(158) et EU(152).
+
+Restent volontairement non mappés et fail-closed : **MICROSOFT** — le menu propose DEUX
+familles, « Windows 10 … » (244-249) et « microsoft software … » (532-562), choisir est une
+décision métier, pas un mappage (73 lignes en attente) — et les compartiments GIFT de
+PUBLISHER et EPIC, que le menu n'a pas (186 et 1 lignes, refus correct).
+
+`tests/test_region_ids_catalog.py` (9 tests) fige les ids et interdit qu'un verrou soit mappé
+comme base ; le test G2A « unknown platform fails closed » est réécrit sur MICROSOFT, le seul
+cas restant. 1 954 tests, tous verts.
+
 ## 2026-09-15 — R48 / R49 : fichiers marchands GamersOutlet (31) et Electronicfirst (70)
 
 Romain : « Fais GamersOutlet et Electronicfirst » — les deux marchands de tête de l'audit

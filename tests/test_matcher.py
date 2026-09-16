@@ -3023,11 +3023,26 @@ class G2ARulesTests(unittest.TestCase):
         self.assertTrue(implicit)
 
     def test_unknown_platform_fails_closed(self):
+        """A platform we DETECT but have no region bucket for must fail closed.
+
+        Rockstar used to be that example — wrongly: the audit of 2026-09-16 (Romain:
+        « pour les regions Rockstar on a toutes les regions dont tu as besoin meme la
+        globale, verifie mieux ») found the buckets in the live dropdown all along
+        (Rockstar 15 / US 151 / EU 152 / UK 158), so a Rockstar row is no longer refused
+        here — see tests/test_region_ids_catalog.py. MICROSOFT is the remaining unmapped PC
+        platform: its region id is None, which is what the fail-closed skip reads."""
+
+        from src.matcher import REGION_IDS as _REGION_IDS
+
         self.assertEqual(detect_platform("GTA V (PC) - Rockstar Key - GLOBAL"), "ROCKSTAR")
-        result = match_offer(
-            _offer("Neon Beats (PC) - Rockstar Key - GLOBAL"), self._resolver())
-        self.assertIsInstance(result, SkippedOffer)
-        self.assertIn("no region id", result.reason)
+        self.assertEqual(_REGION_IDS["ROCKSTAR"]["global"], "15")         # no longer unmapped
+
+        self.assertEqual(detect_platform("X (PC) - Microsoft Store Key - GLOBAL"), "MICROSOFT")
+        self.assertNotIn("MICROSOFT", _REGION_IDS)
+        label, region_id, _implicit = detect_region(
+            _offer("Neon Beats (PC) - Microsoft Store Key - GLOBAL"), "MICROSOFT")
+        self.assertEqual(label, "GLOBAL")
+        self.assertIsNone(region_id, "an unmapped platform must yield no region id")
 
     def test_g2a_categorical_skips(self):
         cases = {

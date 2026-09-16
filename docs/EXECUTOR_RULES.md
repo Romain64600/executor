@@ -485,6 +485,28 @@ phrase ONLY once every AKS-name token is covered AND UNITED precedes it — "Kin
 Deliverance" / "Total War Three Kingdoms" keep their name word (never a false `extra words:
 ['KINGDOM']` skip). The old grammar (`…-steam-key-brazil`,
 `…-steam-en-global`) keeps its P2-6 / P2-6b / MA7 behaviour. Tests: `GamivoConfigR46Tests`.
+**Region buckets re-verified against the live dropdown `[R50]` (2026-09-16).** Romain:
+« pour les regions Rockstar on a toutes les regions dont tu as besoin meme la globale,
+verifie mieux, tu dois pouvoir aller chercher ca dans le drop down des regions sur l'outil
+AKS feed. » He was right, and the same defect sat on two neighbours. `REGION_IDS` is read
+from the live session catalog (`catalog.json`, 867 options, IDENTICAL across the 11 catalogs
+saved 2026-09-10 → 15), and three platforms were missing buckets the dropdown has had all
+along — so the matcher refused rows with "no region id for <PLATFORM>/<BASE>", a **FALSE
+refusal**, not a missing bucket: **ROCKSTAR** global 15 ("Rockstar (15)", the plain option IS
+the global bucket — same shape as "Publisher (1)", the dropdown has no "Rockstar GLOBAL"
+label), us 151, eu 152, uk 158; **EPIC** us `80us`, uk `805`; **EA** us `3us`, uk `3uk`.
+Counted on every saved run: 35 Rockstar rows, 9 EA/US, 8 EPIC/US. Region LOCKS of those
+families (Rockstar APAC 157 / ASIA 155 / EMEA 153 / LATAM 154 / ROW 156 / FRANCE 335 /
+Germany 336 / Netherlands 337 / MIDDLE EAST 338) stay OUT — they are forbidden regions, not
+bases. **The mapping alone delivers nothing**: "ROCKSTAR" was already a trailing noise PHRASE
+for slug building but not a noise TOKEN, so once the region gate stopped firing first every
+Rockstar row died one step later on "different/expanded product — extra words:
+['ROCKSTAR']". The word joins `NOISE_TOKENS` alongside every other store word (safe: no AKS
+product name in the saved corpora contains it). The two edits are ONE fix. Still unmapped and
+still fail-closed on purpose: **MICROSOFT** (the dropdown has TWO candidate families,
+"Windows 10 …" 244-249 and "microsoft software …" 532-562 — picking one is a live decision,
+not a mapping), and the GIFT buckets of PUBLISHER / EPIC (the dropdown has none). Tests:
+`tests/test_region_ids_catalog.py`.
 **GamersOutlet grammar `[R48]` (2026-09-15).** GamersOutlet (feed store 31) writes a
 parenthesised **delivery / region slot** on every row — `<Product> [ (<OS>) ] ( <DELIVERY> /
 <REGION> ) [ <qualifier> ]` — and the slot is the LAST parenthesised group containing a "/",

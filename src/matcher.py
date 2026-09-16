@@ -504,15 +504,32 @@ def is_account_offer(name: str) -> bool:
 # A green-gift resolves to REGION_IDS[platform][gmg_gift…]; a platform with no gmg_gift
 # key (or a green-gift whose base region has no variant) fails closed. The submitter
 # re-resolves these ids against the live catalog (label), so drift is handled there.
+# Region buckets per platform, {base: modal option id}. The ids are read from the LIVE
+# session catalog (`catalog.json`, 867 options) and verified identical across the 11 catalogs
+# saved between 2026-09-10 and 2026-09-15. A base a platform lacks is ABSENT on purpose — the
+# matcher then fails closed ("no region id for <PLATFORM>/<BASE>") rather than guess a
+# neighbouring bucket. Audit 2026-09-16 (Romain: « verifie mieux ») closed three FALSE
+# refusals where the bucket did exist but was never mapped: ROCKSTAR (global / eu / us / uk),
+# EPIC (us / uk), EA (us / uk).
 REGION_IDS = {
     "STEAM": {"global": "2", "eu": "9", "us": "8", "uk": "71", "gift": "25", "gift_eu": "259",
               "gmg_gift": "386", "gmg_gift_eu": "387"},
     "GOG": {"global": "6", "eu": "62", "us": "63", "uk": "64"},
     "UBISOFT": {"global": "50", "eu": "54", "us": "55", "uk": "52",
                 "gmg_gift": "60", "gmg_gift_eu": "58", "gmg_gift_us": "59"},
-    "EPIC": {"global": "80", "eu": "80eu", "gmg_gift": "633", "gmg_gift_us": "635"},
-    "EA": {"global": "3", "eu": "3eu", "gmg_gift": "35", "gmg_gift_eu": "36", "gmg_gift_us": "37"},
-    "ROCKSTAR": {"gmg_gift": "159"},  # GMG gift only; a plain Rockstar key stays fail-closed
+    "EPIC": {"global": "80", "eu": "80eu", "us": "80us", "uk": "805",
+             "gmg_gift": "633", "gmg_gift_us": "635"},
+    "EA": {"global": "3", "eu": "3eu", "us": "3us", "uk": "3uk",
+           "gmg_gift": "35", "gmg_gift_eu": "36", "gmg_gift_us": "37"},
+    # Rockstar: the PLAIN "Rockstar (15)" option is the GLOBAL bucket — same shape as
+    # "Publisher (1)", the dropdown carries no "Rockstar GLOBAL" label (Romain 2026-09-16:
+    # « pour les regions Rockstar on a toutes les regions dont tu as besoin meme la globale,
+    # verifie mieux »). Before this the table held the GMG gift alone and 35 rows of the
+    # saved runs fail-closed on "no region id for ROCKSTAR/GLOBAL|UK|EU" — a FALSE refusal,
+    # the bucket existed all along. Locks (APAC 157, ASIA 155, EMEA 153, LATAM 154, ROW 156,
+    # FRANCE 335, Germany 336, Netherlands 337, MIDDLE EAST 338) stay out: they are
+    # forbidden regions, not bases.
+    "ROCKSTAR": {"global": "15", "eu": "152", "us": "151", "uk": "158", "gmg_gift": "159"},
     "BATTLENET": {"global": "45", "eu": "4", "us": "41", "uk": "47", "gift": "570", "gift_eu": "567",
                   "gmg_gift": "630", "gmg_gift_eu": "631", "gmg_gift_us": "632"},
     # "Publisher (1)" is the GLOBAL bucket (the dropdown has no "Publisher
@@ -531,7 +548,8 @@ REGION_IDS.update(CONSOLE_REGION_IDS)
 NOISE_TOKENS = {
     "PC", "MAC", "STEAM", "GOG", "EPIC", "EA", "APP", "ORIGIN", "UPLAY", "UBISOFT",
     "CONNECT", "GAMES", "LAUNCHER", "STORE",  # "Ubisoft Connect" / "Epic Games Store"
-    "BATTLE", "NET", "BATTLENET", "KEY", "KEYS", "CD", "CDKEY", "DIGITAL", "DOWNLOAD",
+    "BATTLE", "NET", "BATTLENET", "ROCKSTAR",   # ROCKSTAR added 2026-09-16, see below
+    "KEY", "KEYS", "CD", "CDKEY", "DIGITAL", "DOWNLOAD",
     "CODE", "GAME", "VERSION", "FULL", "PLATFORM", "WINDOWS", "ACTIVATION", "EDITION",
     "STANDARD", "GLOBAL", "WORLDWIDE", "WW", "EU", "EUROPE", "US", "USA", "UK", "ROW",
     "COM",  # "GOG.COM Key" tokenizes to GOG + COM
@@ -540,6 +558,14 @@ NOISE_TOKENS = {
     "ANNIVERSARY", "THE", "OF", "AND", "A", "AN", "FOR", "TO", "WITH", "VS",
     "UNITED", "STATES",
 }
+# ROCKSTAR (2026-09-16): every other store word was already noise here, and ROCKSTAR was
+# already a trailing noise PHRASE for slug building (_TRAILING_NOISE_PHRASES) — but not a
+# noise TOKEN, so the identity guard read it as a product word. It never showed because the
+# region gate fired first ("no region id for ROCKSTAR/…"); mapping the Rockstar buckets the
+# same day moved every Rockstar row one step further, onto "different/expanded product —
+# extra words: ['ROCKSTAR']". The two fixes are one fix: without this line the region
+# mapping delivers nothing. Safe on the saved corpora — no AKS product name contains the
+# word (0 of every candidates.json / skipped.json of the runs kept).
 # ISO 639-1 language codes. A store's language marker ("Hard Bullet VR Gift EN
 # Global", "… FR", …) is NOT a product differentiator (Romain 2026-09-01: "EN =
 # english only … enter every language variant as the SAME product"). But a code is
