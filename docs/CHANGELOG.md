@@ -3,6 +3,38 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-16 — Electronicfirst PARQUÉ : plateforme entrée PUBLISHER au lieu de STEAM
+
+Romain, après vérification de la saisie : « j ai trouve un exemple ou l on a ajoute l offre en
+publisher a la place de Steam car on a pas la plateforme dans l url et du coup on aurait du
+ouvrir la page », puis « on mets en commentaire les pb trouves sur electronicfirst dans sa
+config marchant et on mets ce marchant de cote pour le moment ».
+
+**Le défaut.** 2 des 11 offres du premier lot sont parties en PUBLISHER GLOBAL(1) au lieu de
+STEAM : `Of Orcs and Men` (100401235) et `RoboCop: Rogue City - Collection` (100401259) —
+Romain les a corrigées à la main. Leur titre de feed est NU (ni plateforme, ni livraison, ni
+région) et l'URL n'est que le slug du nom, donc `detect_platform` rend son défaut ; `[R27]`
+laisse alors passer parce que la page AKS confirme « Direct Publisher », ce qui ne dit rien de
+la clé de CE marchand. C'est le mode de panne de `[R27]` lui-même (GameBoost, 2026-07-15),
+dans la seule variante qu'il ne couvrait pas : titre muet + page qui confirme éditeur.
+
+**Pourquoi « ouvrir la page » n'est pas la réponse aujourd'hui.** electronicfirst.com est
+derrière Cloudflare : GET → 403 « Just a moment… », UA navigateur comme UA neutre (vérifié).
+Un `offer_page_resolver` HTTP est donc impossible. Le drapeau `offer_page_readable` (`[R32c]`)
+existe mais `src/matcher.py` ne le lit que pour les green gifts, pas dans la branche `[R27]`.
+
+**Chiffré pour la reprise.** 18 candidats PUBLISHER sur TOUS les runs sauvegardés, tous issus
+d'un titre nu — MMOGA 6, Electronicfirst 6, Gamivo 6 ; 2 360 lignes skippent déjà en « not
+defaulted (R27) » (G2A 1 909, Gamivo 188, Electronicfirst 102, Instant Gaming 81, MMOGA 71,
+Kinguin 5, Eneba 4). Le trou n'est donc pas propre à Electronicfirst et coûte au plus 18
+lignes à refermer, dont certaines sont de vraies clés éditeur.
+
+**Décision : marchand PARQUÉ**, fichier conservé, hors liste blanche, aucun nouveau lot. Le
+diagnostic complet, les chiffres et la piste de correction (faire lire `offer_page_readable`
+par la branche `[R27]`, à consigner dans `AGENTS.md` car `[R27]` est une décision revue) sont
+écrits dans `src/merchants/electronicfirst.py` et `docs/MERCHANTS.md`. Aucun code du matcher
+n'est modifié.
+
 ## 2026-09-16 — Première saisie réelle des deux nouveaux marchands : 13 / 13 créées
 
 Romain : « faudra que t ai ajoute entre 10 et 15 offres par nouveau marchant et j irais

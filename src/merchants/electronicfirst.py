@@ -62,7 +62,61 @@ slot becomes ambiguous and `[R47]`'s fail-closed skip applies to every silent ro
 ``tests/test_merchants_electronicfirst.py`` pins the 0-explicit-global measurement so the
 day it changes, the rule is re-read rather than silently kept.
 
-Store 70 stays OFF the safe-auto allowlist: first pass supervised, dry-run.
+── PARQUÉ le 2026-09-16 (Romain) ────────────────────────────────────────────────────────
+
+**Romain, 2026-09-16 : « on mets en commentaire les pb trouves sur electronicfirst dans sa
+config marchant et on mets ce marchant de cote pour le moment ».** Le fichier reste en place
+et le marchand reste HORS liste blanche safe-auto ; aucun nouveau lot ne doit être saisi
+jusqu'à une décision contraire de Romain.
+
+**Le problème qui a décidé du parking — plateforme saisie en PUBLISHER au lieu de STEAM.**
+Romain, le même jour : « j ai trouve un exemple ou l on a ajoute l offre en publisher a la
+place de Steam car on a pas la plateforme dans l url et du coup on aurait du ouvrir la page ».
+Deux des 11 offres du premier lot réel (2026-09-16) sont parties en PUBLISHER GLOBAL(1) :
+``Of Orcs and Men`` (offer 100401235) et ``RoboCop: Rogue City - Collection`` (offer
+100401259). **Romain les a corrigées à la main sur AKS.**
+
+Mécanique exacte, vérifiée :
+1. le titre du feed est NU — "Of Orcs and Men", "RoboCop: Rogue City - Collection" : aucun mot
+   de plateforme, aucun mot de livraison, aucune région. L'URL n'est que le slug du nom. Ces
+   deux lignes font partie des 54 lignes nues du feed (bloc d'ids contigu) ;
+2. ``detect_platform`` n'a donc rien à lire et rend le DÉFAUT (STEAM) ;
+3. la branche `[R27]` refuse de deviner un titre muet SAUF si la page AKS confirme
+   « Direct Publisher » — ce qui est le cas de ces deux jeux → la ligne est entrée PUBLISHER ;
+4. or « Direct Publisher » parmi les plateformes de la PAGE AKS dit seulement que le JEU
+   existe en version éditeur. Cela ne prouve rien sur la clé de CE marchand, qui vend du Steam.
+
+C'est le mode de panne pour lequel `[R27]` a été écrite (GameBoost, 2026-07-15 : « il y a des
+offres steam qu'on détecte en publisher, ça c'est seulement renseigné sur la page marchand ») —
+la règle couvre le titre muet + page muette, pas le titre muet + page qui confirme éditeur.
+
+**Pourquoi « ouvrir la page » n'est pas la réponse aujourd'hui.** La page produit
+d'electronicfirst.com est derrière Cloudflare : un GET rend **403 « Just a moment… »**, avec
+l'UA navigateur comme avec un UA neutre (vérifié le 2026-09-16). Un ``offer_page_resolver``
+HTTP à la Instant Gaming est donc impossible ; le contrat prévoit ce cas avec
+``offer_page_readable=False`` (`[R32c]`), mais ``src.matcher`` ne consulte ce drapeau que pour
+les GREEN GIFTS — la branche `[R27]` ne le lit pas. Fermer le trou demande donc une
+modification du matcher, pas seulement une ligne de config : c'est le travail parqué.
+
+**Chiffres mesurés (tous les runs sauvegardés, 2026-09-16), pour la reprise :**
+* 18 candidats PUBLISHER au total, tous issus d'un titre muet — MMOGA 6, Electronicfirst 6,
+  Gamivo 6. Le trou est donc étroit : le refermer coûte au plus 18 lignes, dont certaines sont
+  probablement de VRAIES clés éditeur (``Minecraft - Java & Bedrock Edition`` chez MMOGA en est
+  une candidate sérieuse, alors que ``My Hero One's Justice 2`` chez Gamivo est un jeu Steam) ;
+* 2 360 lignes SKIPPENT déjà en "not defaulted (R27)" — G2A 1 909, Gamivo 188,
+  Electronicfirst 102, Instant Gaming 81, MMOGA 71, Kinguin 5, Eneba 4 ;
+* le trou n'est PAS propre à Electronicfirst : MMOGA et Gamivo l'ont aussi (6 lignes chacun).
+
+**Piste retenue pour la reprise (non implémentée, demande le go de Romain) :** faire lire
+``offer_page_readable`` par la branche `[R27]` elle-même — chez un marchand dont la page n'est
+pas ouvrable, un titre sans plateforme ne doit PAS être résolu en PUBLISHER sur la seule foi de
+la page AKS, il doit être refusé. `[R27]` étant une décision revue d'``AGENTS.md``, le
+changement doit y être consigné.
+
+**Le reste du fichier est valide et éprouvé** : le premier lot réel a créé 11 offres sur 11,
+dont 4 cross-gen Xbox, 1 Play Anywhere et 1 Rockstar EU, toutes prouvées par la disparition du
+feed. Seules les 2 lignes ci-dessus étaient fausses. Les règles `[R49a]` / `[R49b]` / `[R49c]`
+ont tiré exactement comme mesuré.
 
 Self-contained: imports only ``src.merchant_config`` and ``src.merchants.common``.
 """
@@ -300,7 +354,9 @@ CONFIG = make_config(
         "feed store id 70. R49: UPPERCASE region code before the final platform phrase "
         "(Kinguin-shaped). Partial EU (R49a), spelled-out region word with an empty slot "
         "(R49b) and console row with an empty slot (R49c) all fail "
-        "closed. PC rows with an empty slot keep the generic implicit GLOBAL, PROVISIONALLY "
+        "closed. PARQUÉ le 2026-09-16 (Romain) — plateforme entrée PUBLISHER au lieu de "
+        "STEAM sur un titre nu, page marchand Cloudflare-403 : voir le module. "
+        "PC rows with an empty slot keep the generic implicit GLOBAL, PROVISIONALLY "
         "— the merchant writes no explicit worldwide word today (0/323); the day it does, "
         "R47 applies. Platform stays title-sourced; no console hook (the shared classifier "
         "reads the 75 console rows). Off the safe-auto allowlist: supervised dry-run first."

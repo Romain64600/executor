@@ -120,7 +120,7 @@ du feed.
 | Difmark | 167 | `difmark.py` | `console_url_families` (comptes) | parqué (hors liste blanche) | — |
 | GameBoost | 157 | `gameboost.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux + `[R47]` région obligatoire), `title_region`, `resolve_name` ; console : `console_region_slot` | **non — hors liste blanche safe-auto (R27, R47)** | 13 |
 | GamersOutlet | 31 | `gamersoutlet.py` (**nouveau 15/09**) | PC : `precheck` (slot obligatoire + vocabulaire boutique fermé), `title_region`, `resolve_name`, `url_platform` | **hors liste blanche** — 1re saisie supervisée le 16/09 : **2 / 2 créées** | 1 |
-| Electronicfirst | 70 | `electronicfirst.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux, logiciels, `[R49a]` EU partiel, `[R49b]` mot de région dans le nom, `[R49c]` console sans slot), `title_region`, `resolve_name` | **hors liste blanche** — 1re saisie supervisée le 16/09 : **11 / 11 créées** | 4 |
+| Electronicfirst | 70 | `electronicfirst.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux, logiciels, `[R49a]` EU partiel, `[R49b]` mot de région dans le nom, `[R49c]` console sans slot), `title_region`, `resolve_name` | **PARQUÉ le 16/09** — 11 / 11 créées, mais 2 en PUBLISHER au lieu de STEAM (titre nu + page Cloudflare) | 4 |
 
 Plus aucun marchand « générique » : la ligne `"KINGUIN": MerchantConfig("Kinguin",
 domain="kinguin.net")` inline du registre disparaît au profit de `kinguin.py`, et les six
@@ -726,7 +726,24 @@ matcher et le classifieur importent le registre.
   arrêt, chacune prouvée par la disparition du feed : 4 lignes cross-gen Xbox One + Series
   (24eu / 302, 24us / 303), 1 Xbox Play Anywhere (MSFS 2024 Deluxe, 241 sur la page console ET
   la page PC), 1 Rockstar EU(152) débloquée le jour même par `[R50]`, 1 DLC EA App EU(3eu), et
-  des lignes Steam / GOG / Publisher. Reste hors liste blanche safe-auto.
+  des lignes Steam / GOG / Publisher.
+- **PARQUÉ le 2026-09-16** (Romain : « on mets ce marchant de cote pour le moment »).
+  **Le défaut :** 2 des 11 offres sont parties en **PUBLISHER GLOBAL(1) au lieu de STEAM** —
+  `Of Orcs and Men` (100401235) et `RoboCop: Rogue City - Collection` (100401259), corrigées à
+  la main par Romain. Leur titre de feed est NU (ni plateforme, ni livraison, ni région) et
+  l'URL n'est que le slug du nom, donc `detect_platform` rend le défaut ; `[R27]` laisse alors
+  passer parce que la page AKS confirme « Direct Publisher » — ce qui ne dit rien de la clé de
+  CE marchand. La page produit du marchand, seule source de vérité, est **Cloudflare-403**
+  (UA navigateur comme UA neutre, vérifié le 16/09), donc aucun `offer_page_resolver` HTTP
+  n'est possible. Le drapeau `offer_page_readable` (`[R32c]`) existe mais `src/matcher.py` ne
+  le lit que pour les green gifts, pas dans la branche `[R27]`.
+  **Chiffres pour la reprise :** 18 candidats PUBLISHER sur TOUS les runs sauvegardés, tous
+  issus d'un titre nu (MMOGA 6, Electronicfirst 6, Gamivo 6) ; 2 360 lignes skippent déjà en
+  « not defaulted (R27) ». Le trou n'est donc pas propre à ce marchand, et le refermer coûte au
+  plus 18 lignes — dont certaines sont de vraies clés éditeur (`Minecraft - Java & Bedrock
+  Edition` chez MMOGA). **Piste, non implémentée :** faire lire `offer_page_readable` par la
+  branche `[R27]` ; `[R27]` étant une décision revue, le changement doit être consigné dans
+  `AGENTS.md`. Détail complet dans `src/merchants/electronicfirst.py`.
 
 ## Ce qui n'est pas propre à un marchand
 

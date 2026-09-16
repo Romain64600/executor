@@ -42,8 +42,12 @@ AUTO_MERCHANTS: list[tuple[str, str]] = [
 #     cancelled live, and a third of its titles still carry no region).
 #   GamersOutlet (31) — merchant file since 2026-09-15 (R48). Supervised dry-run first: a
 #     single region value ("Global") and no console row observed on the whole feed yet.
-#   Electronicfirst (70) — merchant file since 2026-09-15 (R49). Supervised dry-run first:
-#     never swept, and its empty region slot is only PROVISIONALLY read as worldwide.
+#   Electronicfirst (70) — merchant file since 2026-09-15 (R49), PARQUÉ le 2026-09-16
+#     (Romain: « on mets ce marchant de cote pour le moment »): the first real batch entered
+#     2 of its 11 offers under PUBLISHER instead of STEAM — a NUDE title (no platform, no
+#     delivery, no region) that R27 resolved on the AKS page's "Direct Publisher" line, while
+#     the merchant's own page (the only truth) is Cloudflare-403. Details and the measured
+#     numbers are in src/merchants/electronicfirst.py.
 
 _BY_NAME: dict[str, tuple[str, str]] = {
     name.casefold(): (name, store) for name, store in AUTO_MERCHANTS
