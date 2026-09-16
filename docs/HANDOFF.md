@@ -165,7 +165,7 @@ récents (voir
   ont fait bannir l'IP du VPS par l'anti-bot AKS (timeouts TCP pendant des heures, sweeps et
   console bloqués). `http_get` envoie `AKS/Staff` par défaut vers allkeyshop.com ; en `curl`,
   toujours `-A AKS/Staff`. Le pipeline l'a toujours fait ; la règle vaut pour les diagnostics.
-  **Nuit multi-marchands : `python3 scripts/10_data_entry_auto.py --targets "Gamivo:51,K4G:92,…"
+  **Nuit multi-marchands : `python3 scripts/10_data_entry_auto.py --all-allowlisted`
   --max-pages 30 --continue-on-halt`** (2026-09-11, Romain : « tu continues jusqu'à demain
   matin » ; **consoles incluses par défaut depuis le 15/09** — aucun `--consoles` à ajouter,
   `--no-consoles` pour un sweep PC seul) — une halte fail-closed sur un marchand (offre
@@ -425,6 +425,8 @@ python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-
 
 **Safe-auto sweep (multi-marchands, par page, highest-first) :**
 ```sh
+python3 scripts/10_data_entry_auto.py --all-allowlisted --run-id <id> --dry-run                # SCAN DE NUIT, aperçu read-only : TOUTE la liste blanche (cible lue dans AUTO_MERCHANTS — voir README « Night sweep »)
+python3 scripts/10_data_entry_auto.py --all-allowlisted --run-id <id> --max-pages 10 --continue-on-halt   # SCAN DE NUIT réel (WRITE) — sur GO
 python3 scripts/10_data_entry_auto.py --targets "Kinguin:58,Eneba:19" --run-id <id> --dry-run   # APERÇU read-only (extract + match + plan, rien d'écrit)
 python3 scripts/10_data_entry_auto.py --targets "Kinguin:58,Eneba:19" --run-id <id>             # WRITE auto-approuvé (safe, défaut --max-pages 30) — sur GO
 python3 scripts/10_data_entry_auto.py --targets "Kinguin:58" --max-pages 30 --triage            # + plan Move-to-List des skips (WRITE) — sur GO

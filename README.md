@@ -440,6 +440,44 @@ python3 scripts/10_data_entry_auto.py --targets "MMOGA:12" --run-id <id> --dry-r
 python3 scripts/10_data_entry_auto.py --targets "MMOGA:12" --run-id <id> --no-consoles   # real PC-only sweep (on GO)
 ```
 
+### Night sweep — every allowlisted merchant
+
+Romain, 2026-09-16: *« donne moi la commande a jour pour lancer tout les marchands whitelist
+(scan de nuit) et maintien la dans le readme a chaque whitelist de nouveaux marchands »*.
+`--all-allowlisted` READS its targets from `AUTO_MERCHANTS` (`src/admin/auto_merchants.py`),
+so **this command never has to be rewritten when a merchant joins the allowlist** — that is
+what keeps it up to date. Do not replace it with a hand-written `--targets` list: the
+2026-09-15 sweep ran 7 merchants while 11 were allowlisted, exactly that drift.
+
+Read-only preview first:
+
+```bash
+python3 scripts/10_data_entry_auto.py --all-allowlisted --run-id <id> --dry-run
+```
+
+The real night sweep (WRITES, on Romain's GO — never fire-and-forget, keep it supervised):
+
+```bash
+cd /home/debian/executor && setsid nohup python3 scripts/10_data_entry_auto.py \
+  --all-allowlisted \
+  --run-id "$(date -u +%Y%m%d-%H%M%S)-auto" \
+  --max-pages 10 --continue-on-halt \
+  > "logs/sweep-$(date -u +%Y%m%d)-night.stdout" 2>&1 < /dev/null &
+```
+
+`--max-pages 10` caps each merchant (Kinguin has 67 pages, G2A 38 — a full pass would take
+all night); `--continue-on-halt` makes one merchant's fail-closed stop skip to the next
+instead of ending the sweep. The recap lands in `runs/<run-id>/recap.json`, one entry per
+merchant with `created` and any `halted` reason. Consoles are INCLUDED by default `[R45]`;
+add `--no-consoles` for a PC-only pass.
+
+**Allowlist as of 2026-09-16 (13 merchants)** — the command above derives this list itself,
+it is reproduced only so a reader knows what a night sweep covers: Kinguin 58, G2A 38,
+Driffle 127, Eneba 19, K4G 92, Gamivo 51, Instant Gaming 28, CJS-CDKeys 30, Allyouplay 17,
+GameSeal 126, Electronicfirst 70, GamersOutlet 31, MMOGA 12. Four of them (Eneba, CJS-CDKeys,
+Allyouplay, GameSeal) have never had a real sweep — preview them with `--dry-run` before the
+first write pass.
+
 ---
 
 ## Learning (annotations)

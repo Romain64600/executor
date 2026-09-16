@@ -346,6 +346,15 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
 def main() -> int:
     ap = argparse.ArgumentParser(description="Safe-auto data-entry sweep (real writes).")
     ap.add_argument("--targets", help="Comma list 'Merchant:store_id[,Merchant:store_id...]'.")
+    ap.add_argument(
+        "--all-allowlisted", action="store_true",
+        help="Sweep EVERY merchant of the safe-auto allowlist (src/admin/auto_merchants.py "
+             "AUTO_MERCHANTS), in its order. This is the NIGHT SWEEP entrypoint (Romain "
+             "2026-09-16: « donne moi la commande a jour pour lancer tout les marchands "
+             "whitelist … et maintien la dans le readme a chaque whitelist de nouveaux "
+             "marchands »): the target list is READ from the allowlist, so it can never "
+             "drift from it and no command has to be rewritten when a merchant is added. "
+             "Mutually exclusive with --targets / --merchant.")
     ap.add_argument("--continue-on-halt", action="store_true",
                     help="Multi-merchant batch: a fail-closed halt on one merchant (UNKNOWN offer, "
                          "feed unreadable, 10 failures…) is recorded and the NEXT merchant is still "
@@ -419,8 +428,17 @@ def main() -> int:
             "que sous --triage). Ajoute --triage, ou retire --move-execute.")}))
         return 2
 
+    if args.all_allowlisted and (args.targets or args.merchant or args.store_id):
+        print(json.dumps({"aborted": True, "reason": (
+            "--all-allowlisted balaie déjà toute la liste blanche — ne le combine pas avec "
+            "--targets / --merchant / --store-id")}))
+        return 2
+
     targets: list[tuple[str, str]] = []
-    if args.targets:
+    if args.all_allowlisted:
+        from src.admin.auto_merchants import AUTO_MERCHANTS
+        targets = [(name, store) for name, store in AUTO_MERCHANTS]
+    elif args.targets:
         for tok in args.targets.split(","):
             tok = tok.strip()
             if not tok:

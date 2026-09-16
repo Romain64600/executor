@@ -3,6 +3,24 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-16 — `--all-allowlisted` : le scan de nuit lit sa cible dans la liste blanche
+
+Romain : « Donne moi la commande a jour pour lancer tout les marchands whitelist (scan de
+nuit) et maintien la dans le readme a chaque whitelist de nouveaux marchands ».
+
+Une liste `--targets "MMOGA:12,Kinguin:58,…"` écrite à la main dérive dès qu'un marchand
+rejoint la liste blanche — le sweep du 15/09 a tourné sur **7 marchands alors que 11 étaient
+allowlistés**. `scripts/10_data_entry_auto.py --all-allowlisted` lit désormais ses cibles dans
+`AUTO_MERCHANTS` : la commande documentée n'a plus jamais à être réécrite, c'est ce qui la
+maintient à jour. Le drapeau refuse d'être combiné à `--targets` / `--merchant`.
+
+La commande vit dans le **README**, section « Night sweep — every allowlisted merchant »,
+avec l'aperçu read-only, la version réelle (WRITE, sur GO), l'explication de `--max-pages 10`
+et `--continue-on-halt`, et l'état de la liste blanche au 16/09 (13 marchands, dont 4 jamais
+balayés en réel : Eneba, CJS-CDKeys, Allyouplay, GameSeal). `docs/HANDOFF.md` renvoie à la
+même commande. `tests/test_sweep_all_allowlisted.py` (6 tests) épingle le drapeau ET le fait
+que le README ne re-liste pas les marchands à la main.
+
 ## 2026-09-16 — R52 : les clés de jeu Microsoft ne sont plus pré-exclues
 
 Audit de Romain, le jour même de `[R50]` : « Les régions Microsoft sont ajoutées, mais deux
