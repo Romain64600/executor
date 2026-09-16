@@ -939,6 +939,12 @@ class DataEntryByUrlsRouteTests(AppTestCase):
 
 
 class SortMoveRouteTests(AppTestCase):
+    def _plan_digest(self):
+        """The identity a real move must carry back (audit de Romain 2026-09-16)."""
+        import hashlib
+        return hashlib.sha256(
+            self.run.joinpath("sort_plan.json").read_bytes()).hexdigest()[:16]
+
     def _sort_run(self):
         # a run carrying a sort_plan.json, readable by the console + sort routes
         self.run.joinpath("sort_plan.json").write_text(json.dumps({
@@ -1003,16 +1009,67 @@ class SortMoveRouteTests(AppTestCase):
                                return_value={"started": True, "run_id": self.run.name}) as m:
             response, data = self._json("POST", f"/api/runs/{self.run.name}/sort/move",
                                         body={"list_id": "8", "action": "batch", "confirm": "GO",
-                                              "batched": True, "deferred": True})
+                                              "batched": True, "deferred": True,
+                                              "plan_digest": self._plan_digest()})
         self.assertEqual(response.status, 200)
         m.assert_called_once()
         self.assertTrue(m.call_args.kwargs["batched"])
         self.assertTrue(m.call_args.kwargs["deferred"])
 
+    def test_a_real_move_without_the_plan_digest_is_refused(self):
+        """Audit de Romain 2026-09-16 — the operator approves WHAT IS ON SCREEN."""
+
+        self._sort_run()
+        response, data = self._json("POST", f"/api/runs/{self.run.name}/sort/move",
+                                    body={"list_id": "8", "action": "batch", "confirm": "GO"})
+        self.assertEqual(response.status, 400)
+        self.assertEqual(data["error"]["code"], "plan_digest_required")
+
+    def test_a_real_move_with_a_stale_plan_digest_is_refused(self):
+        self._sort_run()
+        response, data = self._json("POST", f"/api/runs/{self.run.name}/sort/move",
+                                    body={"list_id": "8", "action": "batch", "confirm": "GO",
+                                          "plan_digest": "0000000000000000"})
+        self.assertEqual(response.status, 409)
+        self.assertEqual(data["error"]["code"], "plan_changed")
+
+    def test_a_dry_run_move_needs_no_digest(self):
+        from unittest import mock
+        self._sort_run()
+        with mock.patch.object(self.manager, "start_sort_move",
+                               return_value={"started": True, "run_id": self.run.name}):
+            response, _ = self._json("POST", f"/api/runs/{self.run.name}/sort/move",
+                                     body={"list_id": "8", "action": "dry-run"})
+        self.assertEqual(response.status, 200)
+
     def test_sort_stop_when_idle(self):
         response, data = self._json("POST", "/api/sort/stop", body={})
         self.assertEqual(response.status, 200)
         self.assertIsNone(data["stopped"])
+
+    def test_all_allowlisted_refuses_a_non_boolean(self):
+        """Audit de Romain 2026-09-16 — the STRING "false" used to launch all 14 merchants."""
+
+        calls = []
+        self.manager.start_data_entry_auto = lambda *a, **k: calls.append((a, k)) or {}
+        for value in ("false", "true", 0, 1, None):
+            with self.subTest(value=value):
+                response, data = self._json(
+                    "POST", "/api/data-entry/auto",
+                    body={"all_allowlisted": value, "confirm": "GO"})
+                self.assertEqual(response.status, 400)
+                self.assertEqual(data["error"]["code"], "bad_all_allowlisted")
+        self.assertEqual(calls, [], "nothing may be launched by a mistyped flag")
+
+    def test_all_allowlisted_true_fills_the_targets_from_the_allowlist(self):
+        from src.admin.auto_merchants import AUTO_MERCHANTS
+        seen = {}
+        self.manager.start_data_entry_auto = (
+            lambda targets, **k: seen.update(targets=targets) or {"run_id": "x"})
+        response, _ = self._json("POST", "/api/data-entry/auto",
+                                 body={"all_allowlisted": True, "confirm": "GO"})
+        self.assertEqual(response.status, 200)
+        self.assertEqual(list(seen["targets"]), list(AUTO_MERCHANTS))
 
     def test_data_entry_auto_passes_targets(self):
         from unittest import mock

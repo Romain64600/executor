@@ -17,9 +17,12 @@ A plan classifies every offer into exactly one of:
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from collections.abc import Iterable
 
 from src.aks_lists import label_for, suggest_target_list
+from src.merchants.registry import merchant_for_store
 from src.contracts import NormalizedOffer
 from src.matcher import is_account_offer, is_software_title, precheck_skip
 
@@ -40,6 +43,16 @@ def _entry(offer: NormalizedOffer, reason: str) -> dict:
     }
 
 
+def _with_canonical_merchant(offer: NormalizedOffer) -> NormalizedOffer:
+    """The same offer with its MERCHANT restored from ``store_id`` when the feed label is
+    not a merchant name (the all-stores scan). Returns the offer untouched otherwise."""
+
+    canonical = merchant_for_store(getattr(offer, "store_id", None))
+    if canonical is None or canonical == offer.merchant:
+        return offer
+    return replace(offer, merchant=canonical)
+
+
 def build_sort_plan(
     offers: Iterable[NormalizedOffer],
     *,
@@ -54,6 +67,13 @@ def build_sort_plan(
     candidates = 0
 
     for offer in offers:
+        # The all-stores scan reads the feed WITHOUT a store filter, so every row is
+        # labelled "all-stores" and `merchant_config()` finds nothing — the merchant rules
+        # never fire (audit de Romain, 2026-09-16: an MMOGA "… RU Key" row routed Blacklist
+        # under its real merchant became an un-routed creation candidate here; same for BR
+        # and CN). Restore the canonical identity from the store id the feed DOES give.
+        # Unknown store → the row keeps its label and the generic behaviour applies.
+        offer = _with_canonical_merchant(offer)
         reason = precheck_skip(offer)
         if reason is None and is_software_title(offer):
             # R31: software is no longer pre-skipped for ENTRY (match_offer's

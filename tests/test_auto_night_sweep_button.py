@@ -50,7 +50,7 @@ class TargetsComeFromTheAllowlistTests(unittest.TestCase):
                          "the night sweep must not send a client-built merchant list")
 
     def test_the_server_reads_the_allowlist(self):
-        self.assertIn('body.get("all_allowlisted")', APP)
+        self.assertIn('body.get("all_allowlisted", False)', APP)
         self.assertIn("auto_allowed_list()", APP)
 
     def test_the_server_refuses_a_mixed_request(self):

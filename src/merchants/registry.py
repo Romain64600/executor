@@ -65,6 +65,33 @@ MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
 }
 
 
+# ── store id → canonical merchant name ───────────────────────────────────────────────
+# The FEED store id of every registered merchant (each module states it in its own notes;
+# ``src/admin/auto_merchants.py`` enforces the same pairing for the allowlist). Needed by
+# any stage that reads a feed WITHOUT a store filter — the all-stores "sort" scan labels
+# every row "all-stores", so without this map the merchant rules never fire (audit de
+# Romain, 2026-09-16: an MMOGA "… RU Key" row was routed Blacklist under its real merchant
+# and became an un-routed creation candidate in the all-stores scan).
+MERCHANT_STORE_IDS: dict[str, str] = {
+    "Kinguin": "58", "G2A": "38", "Driffle": "127", "Eneba": "19", "K4G": "92",
+    "Gamivo": "51", "Instant Gaming": "28", "CJS-CDKeys": "30", "Allyouplay": "17",
+    "GameSeal": "126", "GameBoost": "157", "Electronicfirst": "70",
+    "GamersOutlet": "31", "MMOGA": "12", "Difmark": "167", "Wyrel": "162",
+}
+_BY_STORE: dict[str, str] = {store: name for name, store in MERCHANT_STORE_IDS.items()}
+
+
+def merchant_for_store(store_id: str | int | None) -> str | None:
+    """The canonical merchant NAME of a feed store id ("12" → "MMOGA"), or None.
+
+    Used to restore a row's merchant identity when the feed was read without a store
+    filter. Returns None for an unknown store: the caller then keeps whatever label the
+    feed gave, and the generic behaviour applies — never a guessed merchant."""
+
+    key = str(store_id).strip() if store_id is not None else ""
+    return _BY_STORE.get(key)
+
+
 def merchant_config(merchant: str) -> MerchantConfig | None:
     """The config of ``merchant`` (case / whitespace-insensitive name), or None."""
 

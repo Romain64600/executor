@@ -106,6 +106,19 @@ def _parse_consoles(body: dict[str, Any]) -> bool:
     return value
 
 
+def _sort_plan_digest(run_dir: Path) -> str:
+    """A short content digest of the run's ``sort_plan.json``, or "" when it is absent.
+
+    Computed from the FILE BYTES, so it needs no change to the plans already on disk and
+    changes the moment the plan is re-scanned."""
+
+    path = run_dir / "sort_plan.json"
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()[:16]
+    except OSError:
+        return ""
+
+
 class ApiError(Exception):
     def __init__(self, http_status: int, code: str, message: str, detail=None) -> None:
         super().__init__(message)
@@ -345,7 +358,12 @@ class AdminHandler(BaseHTTPRequestHandler):
                 offers = read_run_json(run_dir, "offers.json") or {}
                 plan = dict(plan,
                             moved_tally=read_run_json(run_dir, "sort_move_tally.json") or {},
-                            fetched_at=offers.get("fetched_at"))
+                            fetched_at=offers.get("fetched_at"),
+                            # Identity of the plan the operator is LOOKING AT. A real move
+                            # must carry it back so the server can prove the two agree
+                            # (audit de Romain 2026-09-16: switching scans quickly could
+                            # leave plan A on screen while the move targeted run B).
+                            plan_digest=_sort_plan_digest(run_dir))
                 return self._send_json(200, plan)
             if sub == "/submit/status":
                 query = parse_qs(parsed.query)
@@ -499,6 +517,22 @@ class AdminHandler(BaseHTTPRequestHandler):
                 str(body.get("confirm") or "").strip().upper() != "GO":
             raise ApiError(400, "go_required",
                            "un déplacement réel exige confirm=GO (le go explicite de l'opérateur)")
+        # The operator approves WHAT IS ON SCREEN. A real move must name the plan it was
+        # approved against, and the server proves it is still this run's current plan
+        # (audit de Romain 2026-09-16: a slow response from a previously selected scan
+        # could leave plan A displayed while the move posted to run B — « un canary peut
+        # alors déplacer une offre d'un lot que tu n'as pas examiné »).
+        if action in ("canary", "batch"):
+            sent = str(body.get("plan_digest") or "").strip()
+            current = _sort_plan_digest(run_dir)
+            if not sent:
+                raise ApiError(400, "plan_digest_required",
+                               "un déplacement réel exige plan_digest (l'empreinte du plan "
+                               "affiché, rendue par GET …/sort)")
+            if not current or sent != current:
+                raise ApiError(409, "plan_changed",
+                               "le plan affiché n'est plus celui de ce scan (re-scanné, ou "
+                               "un autre scan est à l'écran) — recharge avant de déplacer")
         result = self.state.manager.start_sort_move(
             run_dir, list_id=list_id, action=action, store=store, by=by,
             limit=_parse_int(body.get("limit")), batched=bool(body.get("batched")),
@@ -570,7 +604,14 @@ class AdminHandler(BaseHTTPRequestHandler):
         # never drift from it — same source as the CLI's --all-allowlisted. "Already
         # running" is enforced by the manager's _ensure_free (one run at a time, whatever
         # its kind), which answers 409 — the UI greys the button out on top of that.
-        if body.get("all_allowlisted"):
+        all_allowlisted = body.get("all_allowlisted", False)
+        if not isinstance(all_allowlisted, bool):
+            # audit de Romain 2026-09-16 : la valeur de vérité Python acceptait la CHAÎNE
+            # "false" et lançait les 14 marchands. Même exigence que ``consoles`` : un vrai
+            # booléen JSON, jamais une valeur devinée — c'est un chemin d'écriture réelle.
+            raise ApiError(400, "bad_all_allowlisted",
+                           "all_allowlisted doit être un booléen JSON (true / false)")
+        if all_allowlisted:
             if raw:
                 raise ApiError(400, "targets_conflict",
                                "all_allowlisted balaie déjà toute la liste blanche — "

@@ -3,6 +3,38 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-16 — Audit de Romain : trois défauts de la console et du tri
+
+**1. Priorité haute — le GO pouvait viser un autre scan que celui affiché.** En sélectionnant
+deux scans rapidement, une réponse lente du premier repeignait l'écran par-dessus le second,
+alors que « Déplacer » postait sur l'identifiant du second : « un canary peut alors déplacer
+une offre d'un lot que tu n'as pas examiné ». Corrigé sur trois niveaux, comme Romain le
+prescrivait : un JETON DE SÉQUENCE fait ignorer toute réponse périmée (`LOAD_SEQ`) ; toutes
+les actions lisent désormais le run dont le plan est RÉELLEMENT à l'écran (`PLAN_RUN_ID`), plus
+jamais la valeur courante du sélecteur ; et un déplacement réel doit porter l'EMPREINTE du plan
+approuvé (`plan_digest`, rendue par le GET `…/sort`, digest des octets du fichier) que le
+serveur vérifie — absente → 400 `plan_digest_required`, différente → 409 `plan_changed`. Un
+dry-run n'en a pas besoin.
+
+**2. Priorité moyenne — le scan de tri perdait les règles marchandes.** Le scan tous-magasins
+lit le feed SANS filtre de magasin, donc chaque ligne est étiquetée « all-stores » et
+`merchant_config()` ne trouvait rien alors que le `store_id` était connu. Reproduction de
+Romain : une ligne MMOGA « Example Game RU Key » est routée Blacklist sous son vrai marchand et
+devenait un candidat création NON routé dans le scan ; idem BR et CN. `src/merchants/registry.py`
+publie maintenant `MERCHANT_STORE_IDS` et `merchant_for_store()` (cohérence avec
+`AUTO_MERCHANTS` vérifiée par test), et `build_sort_plan` restaure l'identité canonique avant
+classification. Vérifié : les 3 lignes passent de « 3 candidats, 0 routées » à « 0 candidat,
+3 routées vers Blacklist ». Un magasin inconnu garde l'étiquette du feed et le comportement
+générique — jamais un marchand deviné.
+
+**3. Priorité moyenne — le nouveau sweep acceptait « false » comme activation.**
+`all_allowlisted` était lu selon la valeur de vérité Python, donc la CHAÎNE `"false"` lançait
+les 14 marchands. Même exigence que `consoles` : un vrai booléen JSON, sinon 400
+`bad_all_allowlisted`, vérifié AVANT de remplir les cibles.
+
+`tests/test_sort_audit_2026_09_16.py` (14 tests) plus 5 tests de comportement dans
+`test_admin_app.py`. 2 053 tests, tous verts.
+
 ## 2026-09-16 — R53 : fichier marchand Wyrel (162) + repli des accents dans les scans catégoriels
 
 Romain : « Skip gamesplanet FR, fais wyrel d'abord », puis « fix [le trou générique des

@@ -90,16 +90,30 @@ async function loadRuns() {
   await loadPlan();
 }
 
+// The scan whose plan is ACTUALLY on screen, and a sequence token so a slow answer from a
+// previously selected scan can never repaint over a newer one (audit de Romain 2026-09-16:
+// « le GO peut viser un autre scan que celui affiché » — plan A displayed, move sent for B).
+// Every action reads PLAN_RUN_ID, never the picker's current value.
+let PLAN_RUN_ID = null;
+let LOAD_SEQ = 0;
+
 async function loadPlan() {
+  const seq = ++LOAD_SEQ;
+  const wanted = RUN_ID;
   setStatus("Chargement du plan…", true);
   banner("");
+  let plan;
   try {
-    PLAN = await getJSON(`api/runs/${encodeURIComponent(RUN_ID)}/sort`);
+    plan = await getJSON(`api/runs/${encodeURIComponent(wanted)}/sort`);
   } catch (e) {
+    if (seq !== LOAD_SEQ) return;            // a newer load owns the screen
     $("#empty").textContent = "Plan illisible : " + e.message;
     $("#empty").classList.remove("hidden"); $("#console").classList.add("hidden");
     setStatus("Erreur"); return;
   }
+  if (seq !== LOAD_SEQ) return;              // stale answer — drop it, never repaint
+  PLAN = plan;
+  PLAN_RUN_ID = wanted;
   render();
   setStatus(`Plan chargé — ${fmt(PLAN.counts?.total)} offres`);
 }
@@ -207,7 +221,7 @@ function renderCmds(id) {
   // many-offers-per-Apply path; its canary must fire a >=2-item Apply (--limit 2)
   // and its full list needs that multi-item proof. "Différé" (P1.6) only rides on
   // the batched FULL list — one verify per store — never the canary.
-  const base = `python3 scripts/09_sort_move.py runs/${RUN_ID} --list ${id}`;
+  const base = `python3 scripts/09_sort_move.py runs/${PLAN_RUN_ID} --list ${id}`;
   const canaryCmd = BATCHED
     ? `${base} --execute --mode learning --batch --limit 2`
     : `${base} --execute --mode learning`;
@@ -304,7 +318,7 @@ async function runAction(id, action, goInput, batched, deferred) {
   // reading from its CURRENT end so the pane shows only THIS action's events,
   // not replayed history from earlier canaries/dry-runs.
   try {
-    const base = await getJSON(`api/runs/${encodeURIComponent(RUN_ID)}/submit/status?offset=0`);
+    const base = await getJSON(`api/runs/${encodeURIComponent(PLAN_RUN_ID)}/submit/status?offset=0`);
     OFFSET = base.offset ?? 0;
   } catch (e) { OFFSET = 0; }
   const tag = action.replace("_", "-")
@@ -312,7 +326,10 @@ async function runAction(id, action, goInput, batched, deferred) {
   showStatusPane(`▶ ${tag} — liste ${id} — lancement…`);
   setStatus(`Lancement ${tag}…`, true);
   try {
-    await postJSON(`api/runs/${encodeURIComponent(RUN_ID)}/sort/move`, body);
+    // the run the DISPLAYED plan came from, plus its identity — the server refuses the
+    // move if the two no longer agree (409 plan_changed)
+    body.plan_digest = PLAN && PLAN.plan_digest;
+    await postJSON(`api/runs/${encodeURIComponent(PLAN_RUN_ID)}/sort/move`, body);
   } catch (e) {
     appendStatus("✖ refusé : " + e.message);
     setStatus("Refusé — " + e.message);
@@ -357,7 +374,7 @@ function startPoll() {
   stopPoll();
   const tick = async () => {
     let s;
-    try { s = await getJSON(`api/runs/${encodeURIComponent(RUN_ID)}/submit/status?offset=${OFFSET}`); }
+    try { s = await getJSON(`api/runs/${encodeURIComponent(PLAN_RUN_ID)}/submit/status?offset=${OFFSET}`); }
     catch (e) { return; }
     OFFSET = s.offset ?? OFFSET;
     for (const ev of (s.events || [])) { const line = fmtEvent(ev); if (line) appendStatus(line); }
