@@ -1,20 +1,21 @@
 """Wyrel grammar (R53, 2026-09-16) — src/merchants/wyrel.py.
 
-Rows are verbatim from page 1 of the live feed (store 162, 100 rows, 2026-09-15). The feed
-advertises 60 pages, so page 1 cannot enumerate the merchant — every rule here is written to
-fail closed on what it has not seen.
+Rows are verbatim from the live feed (store 162). Written against page 1 (100 rows), then
+CORRECTED on the first real slice (pages 1-10, **990 rows**) — page 1 of 60 could not
+enumerate this merchant, and the slice proved two of the first rules wrong:
 
-Three decisions carry the file, and all three come out of the adversarial review:
+* the non-game gate no longer needs three agreeing signals. ``marketplace_id`` separates
+  nothing (id 12 carries both "Other" rows and "PC" rows) and requiring it produced **98
+  false refusals**; a tag next to "Other" is not a contradiction either — those 4 rows are
+  in-game currency naming the device. The slot alone is 228/228 non-games `[R53b]`;
+* the edition slot no longer refuses everything but "Standard": "Deluxe Edition" and
+  "Digital Deluxe" DO map (Deluxe 7) and must enter; what is refused is a tier the generic
+  read would silently FLATTEN to Standard — Collectors, Zero, Anniversary, Classic `[R53c]`.
 
-* `[R53d]` the region is written in FULL in the title AND repeated as the URL's ``region=``
-  id — strict bijection on the corpus, 0 disagreement — so the second source is a
-  CROSS-CHECK: a proven disagreement is a skip, never a guess;
-* `[R53b]` the non-game gate needs THREE agreeing signals (platform slot "Other", no
-  ``(<TAG>)`` group, a marketplace id outside the game ids). A single signal would call a
-  row written "(PS5) … Other" "not a game", which is a LIE about the row — a contradiction
-  between the three gets its own fail-closed skip instead;
-* `[R53e]` the platform-slot vocabulary is OPEN and an unknown word is refused BY NAME,
-  never folded into the edition slot (which would silently change the parse)."""
+What held under both the review and the slice: `[R53d]` the region is written in FULL in the
+title AND repeated as the URL's ``region=`` id (strict bijection, 0 disagreement), so a
+proven disagreement is a skip; `[R53e]` the platform-slot vocabulary is OPEN and an unknown
+word is refused BY NAME rather than folded into the edition."""
 
 import unittest
 
@@ -59,7 +60,7 @@ class WyrelParseTests(unittest.TestCase):
 
 
 class WyrelNonGameGateTests(unittest.TestCase):
-    """`[R53b]` — three agreeing signals, and a contradiction is its own skip."""
+    """`[R53b]` — the platform slot "Other" IS the merchant's non-game marker."""
 
     def test_the_real_non_games_are_refused_and_NAMED(self):
         for name, marketplace, label in (
@@ -75,14 +76,31 @@ class WyrelNonGameGateTests(unittest.TestCase):
                 self.assertIn(label, reason,
                               "the reason must name the PRODUCT so the list router matches")
 
-    def test_a_contradiction_is_never_called_not_a_game(self):
-        """The reviewer's probe: a PS5 row written "(PS5) … Other". One signal alone would
-        lie about it; the three disagree, so it fails closed on its own reason."""
+    def test_a_tag_next_to_Other_is_still_a_non_game(self):
+        """The reviewer's probe on page 1 was "(PS5) … Other", feared to be a real game. The
+        990-row slice answered it: the 4 such rows are IN-GAME CURRENCY naming the device it
+        is for. The slot alone decides, and the three-signal gate is gone."""
 
-        reason = w.precheck("Some Game (PS5) Standard Other Global", _url(marketplace="2"))
-        self.assertIsNotNone(reason)
-        self.assertIn("contradictory non-game signals", reason)
-        self.assertNotIn("skip category", reason)
+        for name in (
+            "eFootball 2023 12000 Coins (Xbox One) Standard Other Global",
+            "Apex Legends Apex Coins 6700 Points (PC) Standard Other Global",
+            "PUBG 11200 G COIN (PC) Standard Other Global",
+        ):
+            with self.subTest(name=name):
+                reason = w.precheck(name, _url(marketplace="2"))
+                self.assertIsNotNone(reason)
+                self.assertIn("skip category", reason)
+
+    def test_the_marketplace_id_is_never_a_game_signal(self):
+        """Measured on 990 rows: id 12 carries BOTH "Other" rows and "PC" rows, so it
+        separates nothing. Requiring it produced 98 false refusals — it is gone."""
+
+        self.assertFalse(hasattr(w, "GAME_MARKETPLACE_IDS"))
+        # a real key on an id page 1 never showed must pass
+        self.assertIsNone(w.precheck("Some Game (PC) Standard Global",
+                                     _url(marketplace="588", region="1")))
+        self.assertIsNone(w.precheck("Super Luckys Tale (Nintendo) Standard Switch Europe",
+                                     _url(marketplace="9", region="4")))
 
     def test_a_real_key_is_never_caught(self):
         for name, marketplace in (
@@ -94,6 +112,24 @@ class WyrelNonGameGateTests(unittest.TestCase):
                 reason = w.precheck(name, _url(marketplace=marketplace, region="4"
                                                if "Europe" in name else "1"))
                 self.assertIsNone(reason, reason)
+
+
+class WyrelEditionSlotTests(unittest.TestCase):
+    """`[R53c]` — a tier the generic read MAPS enters; one it would flatten is refused."""
+
+    def test_mappable_editions_pass(self):
+        for slot in ("Standard", "Deluxe Edition", "Digital Deluxe", "Gold Edition"):
+            with self.subTest(slot=slot):
+                self.assertIsNone(
+                    w.precheck(f"Some Game (PC) {slot} Global", _url(edition="780")))
+
+    def test_a_tier_that_would_be_flattened_is_refused_by_name(self):
+        for slot in ("Collectors", "Zero", "Anniversary", "Classic", "Horizon Hobby"):
+            with self.subTest(slot=slot):
+                reason = w.precheck(f"Some Game (PC) {slot} Global", _url(edition="41"))
+                self.assertIsNotNone(reason)
+                self.assertIn("R53c", reason)
+                self.assertIn(slot, reason, "the refusal must name the tier")
 
 
 class WyrelRegionCrossCheckTests(unittest.TestCase):

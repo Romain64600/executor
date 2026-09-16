@@ -500,17 +500,21 @@ agree**: the URL repeats the region as `region=<id>`, in strict bijection with t
 on the corpus (1↔Global, 4↔Europe, 8↔United States, 14↔United Kingdom, 19↔Germany, **zero
 disagreement**) — no other merchant gives us a second independent source, so a PROVEN
 disagreement is a fail-closed skip; the comparison is of MEANINGS, never spellings, and an
-unknown id is tolerated. `[R53b]` **the non-game gate needs THREE agreeing signals** (platform
-slot "Other", no `(<TAG>)` group, a `marketplace_id` outside the game ids {2, 8}): all three
-hold on 48/48 non-games and none on the 52 real keys. A single-signal gate was refused by the
-review — alone it would call a row written "(PS5) … Other" "not a game", a LIE about the row —
-so a CONTRADICTION between the three is its own fail-closed skip, and the reason names the
-PRODUCT (GIFT CARD / WALLET / VOUCHER / CURRENCY) so `suggest_target_list` routes it.
+unknown id is tolerated. `[R53b]` **the platform slot "Other" IS the non-game marker** — the merchant's own word for
+"no device" — and the reason names the PRODUCT (GIFT CARD / WALLET / VOUCHER / CURRENCY) so
+`suggest_target_list` routes it. The rule was WIDER for a day and the data narrowed it: on
+page 1 the review required three agreeing signals (slot, no `(<TAG>)` group, a
+`marketplace_id` outside {2, 8}); the first real slice (pages 1-10, **990 rows**) showed
+`marketplace_id` separates nothing (id 12 carries both classes) and that requiring it cost
+**98 false refusals**, while a tag next to "Other" is in-game currency naming its device, not
+a contradiction. The slot alone is 228/228 non-games there and never touches a key.
 `[R53e]` **the platform-slot vocabulary is OPEN** and an unknown word is refused BY NAME: page
 1 of 60 cannot enumerate a merchant's devices, and an unlisted "PS5" would be swallowed by the
 EDITION slot and change the parse — the second source (`edition_id`, also in bijection) tells
-a long edition name from an undeclared slot. `[R53c]` an edition slot other than Standard has
-no AKS bucket → skip. Verdicts on the corpus: 47 pass, 48 non-game, 5 edition. Store 162 is
+a long edition name from an undeclared slot. `[R53c]` the edition slot passes when the shared vocabulary really
+MAPS it ("Standard" → Standard(1), "Deluxe Edition" / "Digital Deluxe" → Deluxe(7)) and is
+refused BY NAME when the generic read would silently FLATTEN it to Standard ("Collectors",
+"Zero", "Anniversary", "Classic") — filing a collector's edition on the base game. Verdicts on the corpus: 47 pass, 48 non-game, 5 edition. Store 162 is
 OFF the safe-auto allowlist. Tests: `tests/test_merchants_wyrel.py`.
 **Accents folded in the categorical scans (2026-09-16).** Every skip vocabulary here is ASCII
 English (`CATEGORY_SKIP`, `CURRENCY_TOKENS`, `BUNDLE_SKIN_TOKENS`, `FORBIDDEN_REGIONS`) while

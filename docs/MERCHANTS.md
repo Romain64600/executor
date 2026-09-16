@@ -764,23 +764,36 @@ matcher et le classifieur importent le registre.
   ne nous donne une seconde source indépendante ; elle sert donc de CONTRÔLE et un désaccord
   prouvé est un skip. La comparaison porte sur les SENS, jamais sur les orthographes, et un
   identifiant hors table est toléré (il ne prouve rien).
-- **`[R53b]` le filtre non-jeu exige TROIS signaux d'accord** : fente plateforme « Other »,
-  aucun groupe `(<TAG>)`, et un `marketplace_id` hors des identifiants de jeu {2, 8}. Les
-  trois tiennent sur 48/48 non-jeux et aucun sur les 52 vraies clés. La revue adversariale a
-  refusé une porte à un seul signal : seule, elle traiterait une ligne « (PS5) … Other » de
-  « pas un jeu », ce qui est un MENSONGE sur la ligne. Une CONTRADICTION entre les trois a
-  donc son propre skip fail-closed. Le motif nomme le PRODUIT (GIFT CARD / WALLET / VOUCHER /
-  CURRENCY), pas la fente, pour que le routage de listes fonctionne comme ailleurs.
+- **`[R53b]` la fente plateforme « Other » EST le marqueur non-jeu** — c'est le mot du
+  marchand pour « aucun appareil », donc le lire c'est lire sa déclaration, pas deviner. Le
+  motif nomme le PRODUIT (GIFT CARD / WALLET / VOUCHER / CURRENCY), pas la fente, pour que le
+  routage de listes fonctionne comme ailleurs. **Cette règle a été plus large pendant un
+  jour, et les données l'ont resserrée** : sur les 100 lignes de la page 1, la revue exigeait
+  TROIS signaux d'accord (fente « Other », pas de groupe `(<TAG>)`, `marketplace_id` hors
+  {2, 8}), par crainte qu'une ligne « (PS5) … Other » soit un vrai jeu. La première tranche
+  réelle (pages 1-10, **990 lignes**) a tranché les deux questions : `marketplace_id` ne
+  sépare RIEN — l'identifiant 12 porte des lignes « Other » ET des lignes « PC » — et
+  l'exiger produisait **98 faux refus** ; et un tag à côté de « Other » n'est pas une
+  contradiction, les 4 lignes concernées sont de la MONNAIE de jeu nommant l'appareil
+  (« eFootball 2023 12000 Coins (Xbox One) », « PUBG 11200 G COIN (PC) »). Sur 990 lignes la
+  fente seule fait 228/228 non-jeux et ne touche aucune clé. Un audit qui ne lirait que la
+  page 1 voudra rétablir la porte à trois signaux : elle a été mesurée fausse sur dix fois
+  plus de données.
 - **`[R53e]` le vocabulaire de la fente plateforme est OUVERT** (PC, Mac, Xbox One, Xbox
   Series X/S, PS4, PS5, Nintendo Switch, Switch 2…) et un mot inconnu est refusé PAR SON NOM.
   La page 1 sur 60 ne peut pas énumérer les appareils d'un marchand, et un « PS5 » non listé
   serait avalé par la fente ÉDITION en changeant le parse. Le départage se fait avec la
   seconde source : `edition_id` nomme l'édition, donc tout résidu que l'édition n'explique pas
   est une fente non déclarée.
-- **Verdicts sur les 100 lignes** : 47 passent (global 35, eu 12), 48 non-jeux nommés
-  (GIFT CARD 20, valeur stockée 10, CURRENCY 7, WALLET 7, VOUCHER 4), 5 éditions sans
-  compartiment AKS (Collectors 2, Zero 2, Horizon Hobby 1). Tests :
-  `tests/test_merchants_wyrel.py` (21 tests).
+- **`[R53c]` la fente ÉDITION passe si le vocabulaire partagé la MAPPE vraiment.** Mesuré sur
+  990 lignes : « Standard » 700 → Standard(1) et « Deluxe Edition » / « Digital Deluxe » →
+  Deluxe(7) doivent ENTRER ; « Collectors », « Zero », « Anniversary », « Classic » sont
+  silencieusement APLATIS en Standard(1) par la lecture générique, ce qui classerait une
+  édition collector sur le jeu de base — refusés en les NOMMANT.
+- **Verdicts sur la tranche de 990 lignes (pages 1-10)** : **713 passent** vers la résolution
+  AKS, 228 non-jeux nommés, 11 éditions non mappables. Le dry-run complet (matching AKS) sur
+  la version précédente du fichier donnait 74 candidats ; il sera rejoué sur ces règles.
+  Tests : `tests/test_merchants_wyrel.py` (24 tests).
 - **Statut live** : hors liste blanche safe-auto, **dry-run supervisé d'abord** — le corpus
   ne couvre qu'une page sur soixante.
 

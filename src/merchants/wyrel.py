@@ -43,16 +43,25 @@ it is used as a CROSS-CHECK: a proven disagreement is a fail-closed skip, never 
 comparison is of MEANINGS (``compound_region_kind``), never of spellings, and an id outside
 the known map is tolerated (it proves nothing).
 
-`[R53b]` **the non-game gate needs THREE agreeing signals.** 48 rows are gift cards, wallet
-top-ups and vouchers (Rituals, PayPal, Oura Ring, Honor of Kings, Bank Transfer, Crypto
-Voucher, IMO Card, Roblox, Homesense, TK Maxx, Ernest Jones, Valorant). All three of
-``<PLATFORM> == "Other"``, no ``(<TAG>)`` group, and a ``marketplace_id`` outside the game
-ids {2, 8} hold on 48/48, and none of them holds on any of the 52 real keys. The
-adversarial review refused a single-signal gate: with one predicate alone a PS5 row written
-"(PS5) … Other" would be called "not a game", which is a LIE about the row. So unanimity is
-required, and a CONTRADICTION between the three is its own fail-closed skip. The reason
-names the PRODUCT (GIFT CARD / WALLET / TOP-UP / VOUCHER), not the slot, so
+`[R53b]` **``<PLATFORM> == "Other"`` IS the non-game marker** — it is the merchant's own
+word for "no device", so reading it is reading Wyrel's declaration, not guessing. The reason
+names the PRODUCT (GIFT CARD / WALLET / VOUCHER / CURRENCY), not the slot, so
 ``aks_lists.suggest_target_list`` routes it like every other merchant's non-game.
+
+*This rule was WIDER for a day, and the data narrowed it.* On the 100 rows of page 1 the
+adversarial review required THREE agreeing signals — slot "Other", no ``(<TAG>)`` group, and
+a ``marketplace_id`` outside the game ids {2, 8} — because with one predicate alone a row
+written "(PS5) … Other" would have been called "not a game", a LIE about the row. The first
+real slice (pages 1-10, **990 rows**) answered both open questions:
+* ``marketplace_id`` is NOT enumerable and does not even separate the two classes — the
+  "Other" rows use 316, 651, 487, 1703, 12, 112…, the "PC" rows use 2, 588, 6, 12, 603… and
+  **id 12 appears on BOTH sides**. Requiring it produced **98 false refusals** on that slice;
+* a tag next to "Other" is not a contradiction: the 4 such rows are IN-GAME CURRENCY naming
+  the device it is for ("eFootball 2023 12000 Coins (Xbox One)", "Apex Legends Apex Coins
+  6700 Points (PC)", "PUBG 11200 G COIN (PC)") — still not a game.
+On 990 rows the slot alone is 228/228 non-games and never touches a key. So the marketplace
+predicate is GONE and the contradiction branch with it. An audit reading only page 1 will
+want the three-signal gate back — it was measured wrong on ten times the data; leave it out.
 
 `[R53e]` **the platform slot vocabulary is OPEN and an unknown word fails closed.** The
 first draft closed it to the four strings the corpus shows; the review refused that — page 1
@@ -104,8 +113,9 @@ _PLATFORM_SLOT_RE = re.compile(rf"\s+(?P<slot>{_SLOT_ALT})\s*$", re.IGNORECASE)
 # refused by name rather than swallowed into the edition (`[R53e]`).
 _UNKNOWN_SLOT_RE = re.compile(r"\)\s+\S+(?:\s+\S+)?\s+(?P<word>[A-Z][A-Za-z0-9/|+.-]*(?:\s+[A-Z][A-Za-z0-9/|+.-]*)?)\s*$")
 _TAG_RE = re.compile(r"\(([^()]*)\)")
-# Game marketplaces: 2 = the PC rows (Steam-named and silent alike), 8 = the Xbox rows.
-GAME_MARKETPLACE_IDS = frozenset({"2", "8"})
+# NOTE: there is deliberately NO game-marketplace id set here. `marketplace_id` looks like a
+# device partition on page 1 (2 = PC, 8 = Xbox) but the 990-row slice shows it is neither
+# enumerable nor separating — id 12 carries both "Other" rows and "PC" rows. See [R53b].
 # region= id → the region text Wyrel writes, measured 100/100 with zero disagreement.
 REGION_PARAM_TEXT: dict[str, str] = {
     "1": "Global", "4": "Europe", "8": "United States", "14": "United Kingdom",
@@ -118,6 +128,18 @@ REGION_PARAM_TEXT: dict[str, str] = {
 EDITION_PARAM_TEXT: dict[str, str] = {
     "780": "Standard", "41": "Collectors", "1589": "Zero", "1185": "Horizon Hobby",
 }
+# `[R53c]` the edition slot words the SHARED vocabulary really maps to an AKS bucket.
+# Measured on the 990-row slice: "Standard" 700 → Standard(1), "Deluxe Edition" 6 and
+# "Digital Deluxe" 2 → Deluxe(7) — those must ENTER. But "Collectors" 5, "Zero" 2 and
+# "Anniversary" 2 are silently FLATTENED to Standard(1) by the generic read, which would
+# file a collector's edition as the base game: they are refused BY NAME instead. The list
+# holds the tier words the generic read is known to resolve; "Edition" / "Digital" are
+# format words, dropped before the comparison.
+MAPPED_EDITION_WORDS = frozenset({
+    "STANDARD", "DELUXE", "GOLD", "ULTIMATE", "PREMIUM", "COMPLETE", "GOTY",
+    "GAME OF THE YEAR", "COLLECTION", "DEFINITIVE", "REMASTERED",
+})
+_EDITION_FORMAT_WORDS = frozenset({"EDITION", "DIGITAL", "THE", "OF", "AND"})
 # The product families behind the non-game rows, named so the list router recognises them.
 _NON_GAME_PRODUCT = (
     (re.compile(r"\bgift\s*cards?\b", re.I), "GIFT CARD"),
@@ -193,20 +215,9 @@ def precheck(name: str, url: str) -> str | None:
         return ("Wyrel: no region slot at the end of the title — the region is never "
                 "implicit here (R53a)")
 
-    slot, tag = parts["platform"], parts["tag"]
-    marketplace = params.get("marketplace_id", "")
-    says_other = slot.casefold() == "other"
-    no_tag = not tag
-    non_game_market = bool(marketplace) and marketplace not in GAME_MARKETPLACE_IDS
-    signals = (says_other, no_tag, non_game_market)
-    if all(signals):
+    slot = parts["platform"]
+    if slot.casefold() == "other":
         return f"skip category: {_non_game_product(name)} (Wyrel non-game listing) (R53b)"
-    if any(signals) and not all(signals):
-        # the three sources contradict each other — never call the row "not a game", and
-        # never enter it either (the adversarial review of 2026-09-16)
-        return ("Wyrel: contradictory non-game signals (platform slot "
-                f"{slot or '∅'!r}, tag {tag or '∅'!r}, marketplace {marketplace or '∅'!r}) "
-                "— grammar never observed (R53b)")
 
     kind = compound_region_kind(parts["region"])
     if kind is None:
@@ -234,9 +245,12 @@ def precheck(name: str, url: str) -> str | None:
             if residue:
                 return (f"Wyrel: unknown platform slot {residue!r} — not in the declared "
                         "vocabulary, refusing to fold it into the edition (R53e)")
-    if after_tag and not re.fullmatch(r"Standard", after_tag, re.I):
-        return (f"Wyrel: edition slot {after_tag!r} has no AKS bucket — only Standard is "
-                "mapped today (R53c)")
+    if after_tag:
+        words = [t for t in re.split(r"\s+", after_tag.upper()) if t]
+        tiers = [t for t in words if t not in _EDITION_FORMAT_WORDS]
+        if not tiers or any(t not in MAPPED_EDITION_WORDS for t in tiers):
+            return (f"Wyrel: edition slot {after_tag!r} maps to no AKS bucket — the generic "
+                    "read would flatten it to Standard (R53c)")
     return None
 
 
