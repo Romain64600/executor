@@ -3,6 +3,27 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-16 — Saisies réelles du jour : GameBoost 15/15, Wyrel en cours, et une limite du rejeu
+
+**GameBoost (157)** — 1er matching réel (992 lignes, 13 pages) → 207 candidats ; **1re passe
+de 15 offres : 15/15 créées**, zéro échec, chacune prouvée par la disparition du feed (un DLC
+Hunt Showdown, un Sekiro GOTY sur page Xbox One, un MSFS 2024 Premium en Play Anywhere
+multi-cibles, et des clés Steam Europe). Allowlisté safe-auto dans la foulée.
+
+**LIMITE TROUVÉE — ne jamais rejouer un lot validé après une passe partielle.** La relance du
+même `approved.json` pour « les 192 restantes » a créé **ZÉRO** offre : le lot repart du début,
+donc ses dix premières lignes étaient les 15 déjà créées, chacune revenant « offer not in
+current feed (by id and by URL) » — dix refus consécutifs, et le garde anti-emballement
+(`ten_consecutive_failures`) a arrêté le run. Le garde a bien fonctionné ; le lot, lui, était
+périmé. **La bonne marche à suivre est un matching frais** : refait le jour même (feed passé
+de 992 à 1032 lignes) → **198 candidats, les 15 déjà saisies absentes du lot**, vérifié.
+
+**Wyrel (162)** — 1re saisie réelle en cours sur le serveur secondaire, la 1re offre est
+créée et prouvée : la grammaire `[R53]` tient en écriture. Son feed fait 59 pages, donc la
+preuve par relecture complète coûte cher — 15 offres y prennent des heures là où GameBoost
+(13 pages) en prenait cinquante minutes. Piste pour plus tard : la preuve par recherche ciblée
+(`--prove-gone-by-search`), déjà utilisée par le sweep de nuit.
+
 ## 2026-09-16 — Audit de Romain : trois défauts de la console et du tri
 
 **1. Priorité haute — le GO pouvait viser un autre scan que celui affiché.** En sélectionnant
