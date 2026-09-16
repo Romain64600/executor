@@ -3,6 +3,33 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-16 — R50 (2e passe) : les compartiments CADEAU US / UK existaient aussi
+
+Romain, après le premier correctif : « Tu as raison pour microsoft. Si ca existe le fichier
+marchant ne devrait pas affirmer le contraire, fix la config marchant. »
+
+Les fichiers marchands (`k4g.py`, `kinguin.py`), le contrat `merchant_config.py`, `AGENTS.md`,
+`EXECUTOR_RULES.md`, `MERCHANTS.md` et `HANDOFF.md` AFFIRMAIENT qu'aucun compartiment
+`gift_us` / `gift_uk` n'existait sur aucune plateforme, et une ligne Altergift US ou UK
+partait donc en skip « no region id for STEAM/GIFT US ». C'était faux : le menu des régions
+porte **Steam Gift US (2577)**, **Steam Gift UK (2572)**, **Battlenet Gift US (568)** et
+toute la famille **Ubisoft Gift (501 / EU 504 / US 505)** — cette dernière n'était pas mappée
+du tout. Tout est mappé.
+
+La propriété de sécurité ne bouge pas : un cadeau verrouillé prend SON compartiment et ne
+s'élargit jamais au cadeau mondial de la plateforme (25). Ce qui n'existe vraiment pas reste
+absent et fail-closed : `gmg_gift_uk` (aucune plateforme), un cadeau Battle.net UK, un cadeau
+Ubisoft UK, et tout cadeau simple EA / Epic / GOG / Publisher / Rockstar.
+
+Conséquence métier : les lignes Altergift US et UK de K4G et Kinguin ENTRENT désormais sous
+leur propre compartiment au lieu d'être refusées (13 lignes comptées sur les runs
+sauvegardés). La décision revue d'AGENTS.md est corrigée sur place, avec la mention qu'un
+audit retrouvera l'ancienne phrase dans l'historique git et ne doit pas la restaurer.
+
+`tests/test_region_ids_catalog.py` passe à 14 tests (les compartiments cadeau figés, et
+l'absence vérifiée là où le menu ne propose rien) ; les trois tests qui figeaient l'ancienne
+affirmation sont réécrits sur le comportement corrigé. 1 959 tests, tous verts.
+
 ## 2026-09-16 — R50 : trois plateformes avaient des régions AKS jamais mappées (faux refus)
 
 Romain, après le dry-run des nouveaux marchands : « Pour les regions Rockstar on a toutes les

@@ -77,9 +77,11 @@ Why the hooks (measured on the batch, see the 2026-09-14 report):
   Steam Gift on rentre sous gift tous les altergifts »** applies to Kinguin's own
   "Altergift" delivery too (review fix 2026-09-14, finding [3]: the ruling was K4G-only at
   first): a "<Game> [<REGION>] PC Steam Altergift" row is the Steam GIFT bucket layered on
-  the base region (GIFT 25 / GIFT EU 259; a US / UK code has no Steam gift bucket → the
-  fail-closed "no region id for STEAM/GIFT US" skip; a forbidden code keeps its precheck
-  skip — the batch's one row, "Sons Of The Forest DE …", is GERMANY). The same two gates as
+  the base region (GIFT 25 / GIFT EU 259 / GIFT US 2577 / GIFT UK 2572 — the US / UK buckets
+  were mapped on 2026-09-16, `[R50]`: this file used to state they did not exist and that
+  such a row failed closed, which was false, the AKS dropdown has carried them all along;
+  a forbidden code keeps its precheck skip — the batch's one row, "Sons Of The Forest DE …",
+  is GERMANY). The same two gates as
   K4G: the store phrase must be Steam (a non-Steam Altergift is a grammar never seen →
   fail-closed precheck skip, never another platform's gift bucket), and the slug must not
   contradict — Kinguin's slug mirrors the title (``…-pc-steam-altergift``) but is often

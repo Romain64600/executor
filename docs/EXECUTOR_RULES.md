@@ -444,7 +444,8 @@ is stripped — a mid-title note or any other form stays in the guard and is the
 `k4g.gift_delivery` / `kinguin.gift_delivery` → True for the whole word ALTERGIFT
 (`gift_delivery` hook, §4.10) and `detect_region` layers the Steam GIFT bucket on the base
 region the title / URL declare — GIFT (25) for no region / Global, GIFT EU (259) for Europe;
-a US / UK base has no Steam gift bucket → the fail-closed "no region id for STEAM/GIFT US"
+a US / UK base takes GIFT US (2577) / GIFT UK (2572) since `[R50]` (2026-09-16 — the buckets
+were in the dropdown all along); a base a platform really lacks keeps the fail-closed "no region id"
 skip; forbidden regions (North America, Americas) keep their precheck skip; `guard_name` /
 `resolve_name` drop the word "Altergift" (never a product word). Fail-closed gates on (2):
 the slug must AGREE (`k4g.altergift_verdict`: `-altergift-` / `-alter-gift-` in the K4G
@@ -970,8 +971,9 @@ generic rule when it returns `None`, so the generic modules stay merchant-agnost
   Steam Gift on rentre »;
 - `gift_delivery(name, url) -> bool | None` (2026-09-14) — the merchant's OWN gift-delivery
   verdict, consulted first by the region scan and layered by `detect_region` as the
-  platform's GIFT bucket (Steam 25 / gift_eu 259, Battle.net 570 / 567; no gift_us /
-  gift_uk exists → the fail-closed "no region id" skip); True / False wins, None → the
+  platform's GIFT bucket (Steam 25 / 259 / 2577 / 2572, Battle.net 570 / 567 / 568, Ubisoft
+  501 / 504 / 505 — US / UK mapped by `[R50]` 2026-09-16; a base a platform really lacks keeps
+  the fail-closed "no region id" skip); True / False wins, None → the
   generic read (a `gift` URL segment, " GIFT " / "GIFT)" in the title). K4G / Kinguin: a
   "… Steam Altergift" row whose slug agrees → True (Romain: « on rentre sous gift tous les
   altergifts »). The hook reads BOTH arguments — a title / URL delivery conflict (title

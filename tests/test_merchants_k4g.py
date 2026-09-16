@@ -287,20 +287,26 @@ class AltergiftPipelineTests(_Registry):
         self.assertIsInstance(r, SkippedOffer)
         self.assertEqual(r.reason, CONFLICT_NONE)
 
-    def test_us_and_uk_rows_have_no_steam_gift_bucket(self):
+    def test_us_and_uk_rows_take_their_own_steam_gift_bucket(self):
+        """R50 (2026-09-16) — Romain: « si ça existe le fichier marchand ne devrait pas
+        affirmer le contraire, fix la config marchand ». The module used to state that
+        REGION_IDS["STEAM"] had gift (25) and gift_eu (259) ONLY, so a US / UK Altergift
+        failed closed. The live dropdown has carried Steam Gift US (2577) and Steam Gift UK
+        (2572) all along; they are mapped, and these rows now enter under their OWN bucket —
+        never widened to the global gift (25)."""
+
         self._use(CONFIG)
-        # REGION_IDS STEAM has gift (25) and gift_eu (259) only — a US / UK base fails closed
-        for title, url, label in (
-            ("Game United States Steam Altergift", "https://k4g.com/product/game-steam-united-states-altergift-alter-gift-AAAAAAAA", "GIFT US"),
-            ("Game United Kingdom Steam Altergift", "https://k4g.com/product/game-steam-united-kingdom-altergift-alter-gift-AAAAAAAA", "GIFT UK"),
+        for title, url, label, rid in (
+            ("Game United States Steam Altergift", "https://k4g.com/product/game-steam-united-states-altergift-alter-gift-AAAAAAAA", "GIFT US", "2577"),
+            ("Game United Kingdom Steam Altergift", "https://k4g.com/product/game-steam-united-kingdom-altergift-alter-gift-AAAAAAAA", "GIFT UK", "2572"),
         ):
             with self.subTest(title=title):
                 offer = _offer(title, url)
                 self.assertIsNone(precheck_skip(offer))
-                self.assertEqual(detect_region(offer, "STEAM"), (label, None, False))
+                self.assertEqual(detect_region(offer, "STEAM"), (label, rid, False))
                 r = match_offer(offer, resolver=lambda name, **kw: self._page("game", "Game"))
-                self.assertIsInstance(r, SkippedOffer)
-                self.assertEqual(r.reason, f"no region id for STEAM/{label}")
+                self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+                self.assertEqual((r.region_label, r.region_id), (label, rid))
 
     def test_batch_rows_sampled(self):
         # rows of runs/20260912-020000-auto-k4g-s92-p1..7 (scratchpad measure_m2.out): what each gets now

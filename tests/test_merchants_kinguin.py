@@ -404,16 +404,21 @@ class AltergiftTests(_Registry):
         self.assertEqual((r.platform, r.region_label, r.region_id, r.region_implicit, r.edition_id),
                          ("STEAM", "GIFT", "25", True, "1"))
         self.assertEqual(asked[-1], "Sons Of The Forest")
-        # the code before the platform phrase layers the Steam gift bucket: EU → GIFT EU (259);
-        # US / UK have no Steam gift bucket → the fail-closed "no region id" skip (unchanged rule)
-        r = match_offer(_offer("Sons Of The Forest EU PC Steam Altergift",
-                               "https://www.kinguin.net/category/1/sons-of-the-forest-eu-pc-steam-altergift"), resolver=resolver)
-        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
-        self.assertEqual((r.region_label, r.region_id, r.region_implicit), ("GIFT EU", "259", False))
-        r = match_offer(_offer("Sons Of The Forest US PC Steam Altergift",
-                               "https://www.kinguin.net/category/1/sons-of-the-forest-us-pc-steam-altergift"), resolver=resolver)
-        self.assertIsInstance(r, SkippedOffer)
-        self.assertEqual(r.reason, "no region id for STEAM/GIFT US")
+        # the code before the platform phrase layers the Steam gift bucket, per base:
+        # EU → GIFT EU (259), US → GIFT US (2577), UK → GIFT UK (2572). R50 (2026-09-16,
+        # Romain: « si ça existe le fichier marchand ne devrait pas affirmer le contraire ») —
+        # the US / UK buckets were in the AKS dropdown all along and are now mapped, so these
+        # rows enter instead of failing closed on "no region id for STEAM/GIFT US".
+        for code, label, rid in (("EU", "GIFT EU", "259"), ("US", "GIFT US", "2577"),
+                                 ("UK", "GIFT UK", "2572")):
+            with self.subTest(code=code):
+                r = match_offer(_offer(
+                    f"Sons Of The Forest {code} PC Steam Altergift",
+                    "https://www.kinguin.net/category/1/sons-of-the-forest-"
+                    f"{code.lower()}-pc-steam-altergift"), resolver=resolver)
+                self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+                self.assertEqual((r.region_label, r.region_id, r.region_implicit),
+                                 (label, rid, False))
         # the batch's real row: the forbidden code wins, Altergift or not
         self.assertEqual(precheck_skip(_offer("Sons Of The Forest DE PC Steam Altergift",
                                               "https://www.kinguin.net/category/713973/sons-of-the-forest-de-pc-steam-altergift")),

@@ -50,10 +50,13 @@ delivery so the slug is the game's without relying on the generic trailing-phras
 rentre sous gift tous les altergifts ».** A "… Steam Altergift" row (216 / 592 of the batch)
 is ENTERED as a Steam GIFT: ``gift_delivery`` answers True for a Steam Altergift whose URL
 agrees, and ``detect_region`` layers the Steam GIFT bucket on the base region the title /
-URL declare — GIFT (25) for no region / Global, GIFT EU (259) for Europe; a US / UK base has
-no Steam gift bucket (no ``gift_us`` / ``gift_uk`` in ``REGION_IDS``) → the fail-closed "no
-region id for STEAM/GIFT US" skip, unchanged; a forbidden region (North America, Americas…)
-is still the precheck skip. "Altergift" is never a product word: ``guard_name`` drops that
+URL declare — GIFT (25) for no region / Global, GIFT EU (259) for Europe, GIFT US (2577) and
+GIFT UK (2572) for those bases (`[R50]`, 2026-09-16 — Romain: « si ça existe le fichier
+marchand ne devrait pas affirmer le contraire, fix la config marchand »: this file used to
+state that no ``gift_us`` / ``gift_uk`` existed in ``REGION_IDS`` and that a US / UK row
+failed closed; the buckets were in the live AKS dropdown all along and are now mapped, so
+those rows ENTER — the safety property is untouched, a locked gift never widens to the
+global gift 25); a forbidden region (North America, Americas…) is still the precheck skip. "Altergift" is never a product word: ``guard_name`` drops that
 word — and nothing else — from the title the identity guards read (R16 used to count it:
 "extra words: ['ALTERGIFT']"), ``resolve_name`` drops it for the slug. The platform is STEAM
 (``explicit_platform`` already collocates STEAM with ALTERGIFT). Formerly the open question

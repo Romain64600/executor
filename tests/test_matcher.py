@@ -1269,16 +1269,24 @@ class DetectTests(unittest.TestCase):
         self.assertTrue(implicit)
 
     def test_reaudit_gift_us_uk_fail_closed_not_widened(self):
-        # Fable re-audit 2026-09-06 (P1): a US/UK-locked (green-)gift must NOT silently
-        # widen to the platform-global gift bucket under a region-less label. gift_us /
-        # gift_uk / gmg_gift_uk exist on NO platform → gid None → fail-closed skip, and
-        # the label carries the base so id and label can never disagree (the P2-8 class
-        # of mislabel, previously fixed only for the gmg us/eu cases).
+        """A US/UK-locked (green-)gift must NEVER widen to the platform-global gift bucket
+        under a region-less label (Fable re-audit 2026-09-06, P1 — the P2-8 mislabel class).
+
+        The SAFETY property is what this test owns, and it is unchanged. What changed on
+        2026-09-16 (Romain: « si ça existe le fichier marchand ne devrait pas affirmer le
+        contraire ») is the TABLE: the live dropdown does carry Steam Gift US (2577) and
+        Steam Gift UK (2572), so those bases now resolve their OWN bucket instead of failing
+        closed. A base that genuinely has no bucket still yields None."""
+
         def gr(name, url, plat="STEAM"):
             return detect_region(_offer(name, url=url), plat)
-        self.assertEqual(gr("Some Game", "https://g/game-steam-gift-us"), ("GIFT US", None, False))
-        self.assertEqual(gr("Some Game", "https://g/game-steam-gift-uk"), ("GIFT UK", None, False))
-        self.assertEqual(gr("Some Game (UK)", "https://g/game-steam-gift"), ("GIFT UK", None, False))
+        # the per-base bucket, never the global one (25)
+        self.assertEqual(gr("Some Game", "https://g/game-steam-gift-us"), ("GIFT US", "2577", False))
+        self.assertEqual(gr("Some Game", "https://g/game-steam-gift-uk"), ("GIFT UK", "2572", False))
+        self.assertEqual(gr("Some Game (UK)", "https://g/game-steam-gift"), ("GIFT UK", "2572", False))
+        # a platform without that gift base still fails closed
+        self.assertEqual(gr("Some Game", "https://g/game-gift-uk", "BATTLENET"),
+                         ("GIFT UK", None, False))
         # base 'uk' is now read explicitly from the "-uk" slug (implicit=False)
         self.assertEqual(gr("Some Game", "https://g/game-green-gift-key-uk"), ("GMG GIFT UK", None, False))
         self.assertEqual(gr("Some Game", "https://g/game-green-gift-key-uk", "BATTLENET"),
@@ -3853,8 +3861,10 @@ class MerchantHookTests(unittest.TestCase):
             self.assertEqual(detect_region(o("Neon Beats Europe Steam Altergift"), "STEAM"), ("GIFT EU", "259", False))
             self.assertEqual(detect_region(o("Neon Beats Steam Altergift", "https://h.test/neon-beats-steam-global"), "STEAM"), ("GIFT", "25", False))
             self.assertEqual(detect_region(o("Neon Beats Steam Altergift"), "BATTLENET"), ("GIFT", "570", True))
-            # no gift_us / gift_uk on any platform, no gift bucket on GOG → id None → the "no region id" skip
-            self.assertEqual(detect_region(o("Neon Beats Steam Altergift", "https://h.test/neon-beats-steam-key-us"), "STEAM"), ("GIFT US", None, False))
+            # R50 (2026-09-16): Steam Gift US (2577) is in the dropdown and now mapped —
+            # « si ça existe le fichier marchand ne devrait pas affirmer le contraire »
+            self.assertEqual(detect_region(o("Neon Beats Steam Altergift", "https://h.test/neon-beats-steam-key-us"), "STEAM"), ("GIFT US", "2577", False))
+            # GOG has no gift bucket at all → id None → the "no region id" skip
             self.assertEqual(detect_region(o("Neon Beats Steam Altergift"), "GOG"), ("GIFT", None, True))
             self.assertEqual(detect_region_base(o("Neon Beats Steam Altergift")), ("global", "GLOBAL", True, True))
             # None → the generic read, unchanged
@@ -4458,7 +4468,8 @@ class DetectRegionBaseR45Tests(unittest.TestCase):
         self.assertEqual(detect_region(_offer("Neon Beats (PC) - Green Gift Key - EUROPE"), "UBISOFT"),
                          ("GMG GIFT EU", "58", False))
         self.assertEqual(detect_region(_offer("X (PC) - Steam Key - UNITED STATES"), "GOG"), ("US", "63", False))
-        self.assertEqual(detect_region(_offer("X Steam Gift UK"), "STEAM"), ("GIFT UK", None, False))
+        # R50 (2026-09-16): Steam Gift UK (2572) exists in the dropdown and is now mapped
+        self.assertEqual(detect_region(_offer("X Steam Gift UK"), "STEAM"), ("GIFT UK", "2572", False))
 
 
 class ResolveAksUrlR45Tests(unittest.TestCase):

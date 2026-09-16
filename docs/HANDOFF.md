@@ -321,8 +321,8 @@ récents (voir
   déclarer dans leur fichier (`domain` déclaré, à confirmer). Les deux questions des fichiers
   marchands sont **tranchées le 14/09 (soir)** : Kinguin « (valid until <mois> <année>) » =
   note de validité, on entre (hook `guard_name`, 79 lignes / lot) ; K4G « Steam Altergift » =
-  Steam Gift, on entre sous le bucket GIFT (hook `gift_delivery`, 216 / 592 ; gift US/UK sans
-  bucket → skip). Reste ouverte : la queue « EU/UK » = skip.
+  Steam Gift, on entre sous le bucket GIFT (hook `gift_delivery`, 216 / 592 ; gift US 2577 /
+  UK 2572 mappés le 16/09, `[R50]` — la phrase « sans bucket → skip » était fausse). Reste ouverte : la queue « EU/UK » = skip.
 - **Questions pour Romain (R45, à confirmer — EXECUTOR_RULES §12)** : ~~P1~~ **tranchée le
   14/09** (« clé PS5 seule = page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch
   et Switch 2 » — déclaration marchande ∧ page AKS, jamais de page sœur) ; restent **P2-P5** :

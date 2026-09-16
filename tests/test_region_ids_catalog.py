@@ -72,6 +72,46 @@ class EaRegionTests(unittest.TestCase):
         self.assertEqual(REGION_IDS["EA"]["eu"], "3eu")
 
 
+class GiftBucketTests(unittest.TestCase):
+    """R50, second pass (2026-09-16) — Romain: « si ça existe le fichier marchand ne devrait
+    pas affirmer le contraire, fix la config marchand ». The merchant files stated that no
+    ``gift_us`` / ``gift_uk`` existed on any platform; the dropdown has carried them all
+    along. What genuinely does NOT exist stays absent, and stays fail-closed."""
+
+    def test_steam_gift_bases(self):
+        gifts = REGION_IDS["STEAM"]
+        self.assertEqual(gifts["gift"], "25")          # Steam Gift (25)
+        self.assertEqual(gifts["gift_eu"], "259")      # Steam Gift EU (259)
+        self.assertEqual(gifts["gift_us"], "2577")     # Steam Gift US (2577)
+        self.assertEqual(gifts["gift_uk"], "2572")     # Steam Gift UK (2572)
+
+    def test_battlenet_gift_bases(self):
+        gifts = REGION_IDS["BATTLENET"]
+        self.assertEqual(gifts["gift"], "570")         # Battlenet Gift Global (570)
+        self.assertEqual(gifts["gift_eu"], "567")      # Battlenet Gift EU (567)
+        self.assertEqual(gifts["gift_us"], "568")      # Battlenet Gift US (568)
+        self.assertNotIn("gift_uk", gifts, "the dropdown has no Battle.net gift UK")
+
+    def test_ubisoft_gift_bases(self):
+        gifts = REGION_IDS["UBISOFT"]
+        self.assertEqual(gifts["gift"], "501")         # Ubisoft Gift (501)
+        self.assertEqual(gifts["gift_eu"], "504")      # Ubisoft Gift EU (504)
+        self.assertEqual(gifts["gift_us"], "505")      # Ubisoft Gift US (505)
+        self.assertNotIn("gift_uk", gifts, "the dropdown has no Ubisoft gift UK")
+
+    def test_platforms_the_dropdown_gives_no_plain_gift_stay_unmapped(self):
+        for platform in ("EA", "EPIC", "GOG", "PUBLISHER", "ROCKSTAR"):
+            with self.subTest(platform=platform):
+                self.assertNotIn("gift", REGION_IDS[platform],
+                                 "no plain gift option for this platform in the dropdown — "
+                                 "the row must keep failing closed")
+
+    def test_gmg_gift_uk_exists_on_no_platform(self):
+        for platform, buckets in REGION_IDS.items():
+            with self.subTest(platform=platform):
+                self.assertNotIn("gmg_gift_uk", buckets)
+
+
 class RegionTableShapeTests(unittest.TestCase):
     PC_PLATFORMS = ("STEAM", "GOG", "UBISOFT", "EPIC", "EA", "ROCKSTAR", "BATTLENET",
                     "PUBLISHER")

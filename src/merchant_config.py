@@ -108,8 +108,11 @@ class MerchantConfig:
     #       empty answer falls back to the raw title.
     #   gift_delivery(name, url) -> bool | None — the merchant's OWN gift-delivery verdict,
     #       layered by ``detect_region`` as the platform's GIFT bucket (Steam 25 / gift_eu
-    #       259, Battle.net 570 / 567; no gift_us / gift_uk exists → the fail-closed "no
-    #       region id" skip). True / False wins; None → the generic read (a "gift" URL
+    #       259 / 2577 / 2572, Battle.net 570 / 567 / 568, Ubisoft 501 / 504 / 505 — the US /
+    #       UK buckets were mapped on 2026-09-16 ([R50], Romain: « si ça existe le fichier
+    #       marchand ne devrait pas affirmer le contraire »); a base a platform really lacks
+    #       (an EA / Epic / GOG / Publisher / Rockstar plain gift, a Battle.net gift UK) still
+    #       yields the fail-closed "no region id" skip). True / False wins; None → the generic read (a "gift" URL
     #       segment, " GIFT " / "GIFT)" in the title). K4G / Kinguin: a "… Steam Altergift"
     #       row whose URL agrees → True (Romain 2026-09-14: « on rentre sous gift tous les
     #       altergifts »). The hook reads BOTH arguments: a title / URL delivery conflict

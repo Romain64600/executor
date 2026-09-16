@@ -191,9 +191,16 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   « Steam Altergift = Steam Gift on rentre sous gift tous les altergifts ».
   `k4g.gift_delivery` answers True for the whole word ALTERGIFT (`MerchantConfig.gift_delivery`,
   R32e) and `detect_region` layers the Steam GIFT bucket on the base region — GIFT (25) for
-  no region / Global, GIFT EU (259) for Europe; a US / UK base has no Steam gift bucket →
-  the fail-closed "no region id for STEAM/GIFT US" skip; forbidden regions (North America,
-  Americas) keep their precheck skip. "Altergift" is never a product word (`k4g.guard_name` /
+  no region / Global, GIFT EU (259) for Europe, GIFT US (2577) and GIFT UK (2572) for those
+  bases; forbidden regions (North America, Americas) keep their precheck skip.
+  **Corrected 2026-09-16 (`[R50]`, Romain: « si ça existe le fichier marchand ne devrait pas
+  affirmer le contraire, fix la config marchand »):** this decision used to state that a US /
+  UK base "has no Steam gift bucket" and therefore failed closed. That premise was FALSE —
+  the live region dropdown has carried Steam Gift US (2577) and Steam Gift UK (2572) all
+  along, and they are now mapped, so those rows ENTER under their own bucket. The safety
+  property is untouched: a locked gift never widens to the platform-global gift (25). An
+  audit will re-derive the old "no gift_us/gift_uk" sentence from the git history — it is
+  obsolete, do not restore it. "Altergift" is never a product word (`k4g.guard_name` /
   `resolve_name` drop it). The explicit "skip category: ALTERGIFT" precheck of the same
   morning (open question `OPEN_QUESTION_ALTERGIFT`, "no confirmed bucket") is removed — an
   audit will "find" an unconfirmed gift bucket and want the skip back; do not re-add it.

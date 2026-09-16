@@ -512,10 +512,12 @@ def is_account_offer(name: str) -> bool:
 # refusals where the bucket did exist but was never mapped: ROCKSTAR (global / eu / us / uk),
 # EPIC (us / uk), EA (us / uk).
 REGION_IDS = {
-    "STEAM": {"global": "2", "eu": "9", "us": "8", "uk": "71", "gift": "25", "gift_eu": "259",
+    "STEAM": {"global": "2", "eu": "9", "us": "8", "uk": "71",
+              "gift": "25", "gift_eu": "259", "gift_us": "2577", "gift_uk": "2572",
               "gmg_gift": "386", "gmg_gift_eu": "387"},
     "GOG": {"global": "6", "eu": "62", "us": "63", "uk": "64"},
     "UBISOFT": {"global": "50", "eu": "54", "us": "55", "uk": "52",
+                "gift": "501", "gift_eu": "504", "gift_us": "505",
                 "gmg_gift": "60", "gmg_gift_eu": "58", "gmg_gift_us": "59"},
     "EPIC": {"global": "80", "eu": "80eu", "us": "80us", "uk": "805",
              "gmg_gift": "633", "gmg_gift_us": "635"},
@@ -530,7 +532,8 @@ REGION_IDS = {
     # FRANCE 335, Germany 336, Netherlands 337, MIDDLE EAST 338) stay out: they are
     # forbidden regions, not bases.
     "ROCKSTAR": {"global": "15", "eu": "152", "us": "151", "uk": "158", "gmg_gift": "159"},
-    "BATTLENET": {"global": "45", "eu": "4", "us": "41", "uk": "47", "gift": "570", "gift_eu": "567",
+    "BATTLENET": {"global": "45", "eu": "4", "us": "41", "uk": "47",
+                  "gift": "570", "gift_eu": "567", "gift_us": "568",
                   "gmg_gift": "630", "gmg_gift_eu": "631", "gmg_gift_us": "632"},
     # "Publisher (1)" is the GLOBAL bucket (the dropdown has no "Publisher
     # GLOBAL" label); ids read from the live session catalogs of 2026-07-07
@@ -1295,8 +1298,16 @@ def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | Non
     # NO silent default for a locked base — a US/UK-locked (green-)gift must NOT widen to
     # the platform-global gift bucket under a region-less label (the P2-8 mislabel, which
     # was only fixed for the gmg 'us'/'eu' cases). A base the platform lacks a bucket for
-    # (gift_us/gift_uk/gmg_gift_uk exist on no platform) → gid None → the existing
-    # "no region id" fail-closed skip, and the label carries the base so id and label agree.
+    # → gid None → the existing "no region id" fail-closed skip, and the label carries the
+    # base so id and label agree.
+    # Audit 2026-09-16 (Romain: « si ça existe le fichier marchand ne devrait pas affirmer le
+    # contraire, fix la config marchand »): the tables above USED to claim "gift_us / gift_uk
+    # exist on no platform". False — the live dropdown has Steam Gift US (2577) / Steam Gift
+    # UK (2572), Battlenet Gift US (568) and the whole Ubisoft Gift family (501 / EU 504 /
+    # US 505), all now mapped. The SAFETY property is unchanged: a locked gift still resolves
+    # its OWN per-base bucket and never widens to the platform-global one. Still absent for
+    # real, and still fail-closed: ``gmg_gift_uk`` (no platform has it), a Battle.net gift UK,
+    # an EA / EPIC / GOG / PUBLISHER / ROCKSTAR plain gift.
     if green:
         key = {"eu": "gmg_gift_eu", "us": "gmg_gift_us", "uk": "gmg_gift_uk"}.get(base, "gmg_gift")
         gid = _region_id(platform, key)
