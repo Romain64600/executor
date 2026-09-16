@@ -3037,15 +3037,22 @@ class G2ARulesTests(unittest.TestCase):
                "?___currency=EUR&utm_campaign=COM_GLOBAL_PB")
         self.assertEqual(detect_region(_offer("X", url=url), "STEAM"), ("EU", "9", False))
 
-    def test_microsoft_store_key_is_skipped(self):
-        # G2A.md skip list: Microsoft Key. "Microsoft STORE Key" dodged the
-        # MICROSOFT KEY substring on 2026-07-07 and surfaced as Steam US(8).
+    def test_microsoft_store_key_is_no_longer_pre_skipped(self):
+        """SUPERSEDED by `[R52]` (2026-09-16, audit de Romain). The G2A.md skip list carried
+        "Microsoft Key" / "Microsoft Store" because MICROSOFT had no region bucket
+        (`[R17]`) — `[R50]` mapped the Windows 10 family that morning, so a Microsoft Store
+        GAME key must now reach AKS resolution. What stays refused (accounts, Minecoins,
+        cards, bundles) is pinned in tests/test_microsoft_category_skip.py."""
+
         offer = _offer(
             "Call of Duty: Modern Warfare 3 (2011) (PC) - Microsoft Store Key - UNITED STATES"
         )
+        self.assertIsNone(precheck_skip(offer))
         result = match_offer(offer, self._resolver())
+        # the fake page is Steam-only, so the row now dies on the PAGE cross-check (R20),
+        # not on a categorical pre-skip — the point is that it got that far
         self.assertIsInstance(result, SkippedOffer)
-        self.assertIn("skip category", result.reason)
+        self.assertNotIn("skip category", result.reason)
 
     def test_microsoft_platform_fails_closed_but_flight_simulator_is_steam(self):
         self.assertEqual(detect_platform("X (PC) - Microsoft Store Key - GLOBAL"), "MICROSOFT")
@@ -3088,7 +3095,6 @@ class G2ARulesTests(unittest.TestCase):
 
     def test_g2a_categorical_skips(self):
         cases = {
-            "Forza Horizon 5 (PC) - Microsoft Key - GLOBAL": "MICROSOFT KEY",
             "CS2 AK-47 Redline (Field-Tested)": "no bundles/skins",
             "NBA 2K25: 200,000 VC (PC) - Steam Key - GLOBAL": "VC",
             "Path of Exile 100 Exalted Orbs (PC)": "ORBS",

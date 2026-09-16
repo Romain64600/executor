@@ -230,10 +230,26 @@ _URL_FORBIDDEN_CODES = (
 CATEGORY_SKIP = (
     "GIFT CARD", "WALLET", "CASH CARD", "SHARK CARD", "VOUCHER", "SUBSCRIPTION",
     "PREPAID", "ANTIVIRUS", "POINTS", "CREDITS",
-    "COINS", "GEMS", "DIAMONDS", "TOP UP", "MEMBERSHIP", "CURRENCY",
+    "COINS", "MINECOINS", "GEMS", "DIAMONDS", "TOP UP", "MEMBERSHIP", "CURRENCY",
     "ACTIVATION LINK", "STEAM ACCOUNT", "STEAM GIFT CARD",
-    "MICROSOFT KEY", "MICROSOFT STORE", "STEAM PLAYER TRADE",
+    "MICROSOFT STORE ACCOUNT", "MICROSOFT ACCOUNT", "STEAM PLAYER TRADE",
 )
+# [R52] (2026-09-16, audit de Romain) — "MICROSOFT KEY" / "MICROSOFT STORE" ONT QUITTÉ cette
+# liste. Elles y étaient pour une raison qui n'existe plus : §4.5 disait « MICROSOFT platform
+# has no region mapping → fail-closed » (`[R17]`), or `[R50]` a mappé la famille Windows 10
+# (Global 246 / EU 244 / US 245 / UK 249) le matin même sur l'arbitrage de Romain (« Windows 10
+# pour les jeux, microsoft software pour les logiciels »). Une clé de JEU du Microsoft Store
+# n'a donc plus de motif d'être pré-refusée. Mesuré sur tous les runs sauvegardés : 164 lignes
+# (34 distinctes) étaient bloquées là, dont des Call of Duty, GTA V Enhanced, Skyrim AE,
+# Fallout 76, Rise of the Tomb Raider… CE QUI RESTE REFUSÉ, et pourquoi les trois entrées
+# ci-dessus ont été ajoutées en échange (Romain : « en conservant les refus des cartes cadeaux,
+# abonnements et recharges ») : les COMPTES ("Mafia: Definitive Edition … - Microsoft Store
+# Account - GLOBAL" — le mot ACCOUNT seul n'est pas un marqueur ici, d'où les deux entrées
+# explicites, sur le modèle de "STEAM ACCOUNT") et la MONNAIE de jeu ("Minecraft - 1720
+# Minecoins …" — "COINS" ne matche pas le mot composé MINECOINS, les bornes de mot l'en
+# empêchent). Les bundles ("… x4 Bundle", "Project + Visio Pack Bundle") restaient déjà pris
+# par BUNDLE, et les logiciels Microsoft (Visual Studio, Project, Windows Enterprise) partent
+# sur le chemin LOGICIEL `[R31]`, page-dirigé.
 # ("SEASON PASS" left this list 2026-09-11 — it is a DLC marker now, see [R43].)
 
 

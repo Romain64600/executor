@@ -3,6 +3,29 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-16 — R52 : les clés de jeu Microsoft ne sont plus pré-exclues
+
+Audit de Romain, le jour même de `[R50]` : « Les régions Microsoft sont ajoutées, mais deux
+formulations de clés restent bloquées avant leur résolution … Cause : ces expressions figurent
+encore dans CATEGORY_SKIP. Correction : retirer ces exclusions générales pour les clés de jeux,
+en conservant les refus des cartes cadeaux, abonnements et recharges. »
+
+`MICROSOFT KEY` et `MICROSOFT STORE` quittent `CATEGORY_SKIP`. Elles y étaient pour un motif
+que `[R50]` a supprimé le matin même — §4.5 disait « MICROSOFT platform has no region mapping
+→ fail-closed » (`[R17]`), et la famille Windows 10 est maintenant mappée (Global 246, EU 244,
+US 245, UK 249). Mesuré sur tous les runs sauvegardés : **164 lignes (34 distinctes)** étaient
+bloquées là, très majoritairement de vraies clés de jeu — Call of Duty ×7, GTA V Enhanced,
+Skyrim Anniversary, Fallout 76, Rise of the Tomb Raider, Wasteland 3, Minecraft Dungeons II.
+
+**Ce qui devait rester refusé l'est**, par deux entrées explicites qui remplacent les deux
+retirées : `MICROSOFT STORE ACCOUNT` / `MICROSOFT ACCOUNT` (le mot ACCOUNT seul n'est pas un
+marqueur sur le chemin PC) et `MINECOINS` (les bornes de mot empêchent `COINS` de matcher le
+mot composé). Vérifié **ligne à ligne sur les 34** : 29 passent, 2 bundles, 2 Minecoins, 1
+compte — aucun non-jeu ne s'échappe.
+
+`[R17]` est marqué RETIRÉ dans `EXECUTOR_RULES.md` §4.5. `tests/test_microsoft_category_skip.py`
+(9 tests) ; les 2 tests G2A qui épinglaient l'ancienne exclusion sont réécrits. 1 985 tests.
+
 ## 2026-09-16 — Electronicfirst et GamersOutlet passent en liste blanche safe-auto
 
 Romain : « On va whitelist Eletronicfirst et Gamersoutlet ». Les deux rejoignent

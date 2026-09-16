@@ -320,9 +320,12 @@ tokens — never a guess by token count or dict order ("KNIGHTS" fits both "Knig
 Edition" and "Knights Deluxe Edition" → skip). An extra in NO page edition — a
 distinguishing subtitle like "… Valhalla Edition" on the base game's page, which
 has no Valhalla edition — stays a skip; a Bundle-named edition is never rescued (we
-never enter bundles); **Microsoft Store Key / Microsoft Key**
-(key-type marker only — "Microsoft Flight Simulator … Steam Key" stays Steam;
-MICROSOFT platform has no region mapping → fail-closed) `[R17]`;
+never enter bundles);
+(**`[R17]` RETIRÉ le 2026-09-16 par `[R52]`** — "Microsoft Store Key" / "Microsoft Key"
+n'excluent plus une clé de JEU : le motif invoqué, « MICROSOFT platform has no region
+mapping », a disparu avec `[R50]` qui a mappé la famille Windows 10. Voir `[R52]` ci-dessous ;
+le marqueur reste un signal de type de clé — "Microsoft Flight Simulator … Steam Key" reste
+Steam) ;
 year/version absent from AKS name; edition not present in the AKS dropdown;
 resolved AKS page whose **editions map is empty** (stub record, zero offers —
 edition unverifiable) `[R19]`; **platform unverified against the AKS page's
@@ -486,6 +489,25 @@ phrase ONLY once every AKS-name token is covered AND UNITED precedes it — "Kin
 Deliverance" / "Total War Three Kingdoms" keep their name word (never a false `extra words:
 ['KINGDOM']` skip). The old grammar (`…-steam-key-brazil`,
 `…-steam-en-global`) keeps its P2-6 / P2-6b / MA7 behaviour. Tests: `GamivoConfigR46Tests`.
+**Microsoft game keys are no longer pre-skipped `[R52]` (2026-09-16).** Audit de Romain, le
+jour même de `[R50]` : « Les régions Microsoft sont ajoutées, mais deux formulations de clés
+restent bloquées avant leur résolution … Cause : ces expressions figurent encore dans
+CATEGORY_SKIP. Correction : retirer ces exclusions générales pour les clés de jeux, en
+conservant les refus des cartes cadeaux, abonnements et recharges. » `MICROSOFT KEY` et
+`MICROSOFT STORE` quittent `CATEGORY_SKIP` : elles y étaient parce que « MICROSOFT platform has
+no region mapping » (`[R17]`, §4.5), motif supprimé par `[R50]` (famille Windows 10 — Global
+246 / EU 244 / US 245 / UK 249). Mesuré sur tous les runs sauvegardés : **164 lignes (34
+distinctes)** étaient bloquées là, très majoritairement de vraies clés de jeu (Call of Duty ×7,
+GTA V Enhanced, Skyrim Anniversary, Fallout 76, Rise of the Tomb Raider, Wasteland 3, Minecraft
+Dungeons II…). **Ce qui devait rester refusé l'est, par deux entrées explicites qui remplacent
+les deux retirées** (« en conservant les refus … ») : `MICROSOFT STORE ACCOUNT` / `MICROSOFT
+ACCOUNT` (le mot ACCOUNT seul n'est pas un marqueur sur le chemin PC — « Mafia: Definitive
+Edition … - Microsoft Store Account - GLOBAL ») et `MINECOINS` (les bornes de mot empêchent
+`COINS` de matcher le mot composé — « Minecraft - 1720 Minecoins … »). Les bundles restaient
+déjà pris par `BUNDLE`, et les logiciels Microsoft (Visual Studio, Project, Windows Enterprise)
+partent sur le chemin LOGICIEL `[R31]`, page-dirigé. Vérifié ligne à ligne sur les 34 : 29
+passent, 2 bundles, 2 Minecoins, 1 compte. Tests :
+`tests/test_microsoft_category_skip.py`.
 **The PUBLISHER decision needs the MERCHANT's own page `[R51]` (2026-09-16).** `[R27]`
 refuses a title with no platform token UNLESS the AKS page confirms `Direct Publisher`. That
 exception is the hole: the AKS line describes the **GAME** (the game also exists as a
