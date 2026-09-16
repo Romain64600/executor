@@ -114,3 +114,9 @@ footer#status.busy { color:var(--warn); }
 .doc-body h4 { margin:.2rem 0 .35rem; font-size:.9rem; color:var(--accent); }
 .doc-body p { margin:.15rem 0; font-size:.85rem; }
 .doc-body p.en { color:var(--dim); }
+
+/* Sweep de nuit — tous les marchands whitelistés (Romain 2026-09-16). Séparé du
+   lancement ciblé par un filet, pour qu'on ne clique pas l'un en croyant l'autre. */
+.allsweep { margin-top: 1.1rem; padding-top: .9rem; border-top: 1px dashed var(--line, #444); }
+.allsweep h3 { margin: 0 0 .35rem; font-size: 1rem; }
+.allsweep .dim { display: block; margin: .25rem 0; opacity: .75; }

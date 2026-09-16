@@ -76,7 +76,7 @@
       <button id="add-target" type="button" class="addrow">+ ajouter un marchand</button>
       <p class="restrict">Seuls les marchands <b>vettés</b> sont proposés — data-entry auto = écriture <b>sans validation</b>.
         <span lang="en" class="en">Only vetted merchants are offered (auto = unvalidated writes).</span>
-        Difmark (parké) et Gameboost sont exclus pour le moment.</p>
+        Difmark (parké) et GameBoost (supervisé seulement) sont exclus pour le moment.</p>
       <div class="opts">
         <label>Max pages <input id="max-pages" type="number" min="1" placeholder="30 (défaut)" class="num"></label>
         <label>Page de départ <input id="start-page" type="number" min="1" placeholder="1" class="num"></label>
@@ -89,6 +89,19 @@
         <button id="launch" type="button" class="danger" disabled>Lancer le sweep auto</button>
       </div>
       <p id="launch-msg" class="msg"></p>
+
+      <div class="allsweep">
+        <h3>Sweep de nuit — tous les marchands whitelistés</h3>
+        <p class="restrict">La cible est <b>lue dans la liste blanche</b> au moment du lancement :
+          rien à cocher, rien à tenir à jour quand un marchand est ajouté.
+          <span id="all-count" class="dim"></span>
+          Un seul run à la fois — le bouton est désactivé si un sweep (ou un submit) est déjà en cours.</p>
+        <div class="golaunch">
+          <span class="golabel">Tape <b>GO</b> ci-dessus, puis :</span>
+          <button id="launch-all" type="button" class="danger" disabled>Lancer le sweep de nuit (tous les marchands)</button>
+        </div>
+        <p id="launch-all-msg" class="msg"></p>
+      </div>
     </section>
 
     <section id="recap-card" class="card hidden">

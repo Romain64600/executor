@@ -564,7 +564,22 @@ class AdminHandler(BaseHTTPRequestHandler):
         by = str(self._basic_user() or body.get("by") or "operateur")  # [35] authed wins; body "by" cannot forge attribution
         raw = body.get("targets")
         targets: list[tuple[str, str]] = []
-        if isinstance(raw, list):
+        # "Sweep de nuit" button (Romain 2026-09-16: « je voudrais un bouton pour lancer un
+        # sweep sur tout les marchands whitelisted (sauf si ce sweep est deja en cours) »).
+        # The target list is READ from the allowlist here, server-side, so the button can
+        # never drift from it — same source as the CLI's --all-allowlisted. "Already
+        # running" is enforced by the manager's _ensure_free (one run at a time, whatever
+        # its kind), which answers 409 — the UI greys the button out on top of that.
+        if body.get("all_allowlisted"):
+            if raw:
+                raise ApiError(400, "targets_conflict",
+                               "all_allowlisted balaie déjà toute la liste blanche — "
+                               "n'envoie pas targets en plus")
+            targets = [(m["name"], m["store_id"]) for m in auto_allowed_list()]
+            if not targets:
+                raise ApiError(500, "allowlist_empty",
+                               "liste blanche vide — lancement refusé (fail-closed)")
+        elif isinstance(raw, list):
             for t in raw:
                 if isinstance(t, dict):
                     targets.append((str(t.get("merchant", "")), str(t.get("store_id", ""))))

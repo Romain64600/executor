@@ -70,7 +70,13 @@ function collectTargets() {
   return out;
 }
 function syncGo() {
-  const ok = SUGGEST_READY && !SWEEP_RUNNING && collectTargets().length > 0 && $("#go").value.trim().toUpperCase() === "GO";
+  const go = $("#go").value.trim().toUpperCase() === "GO";
+  const ok = SUGGEST_READY && !SWEEP_RUNNING && collectTargets().length > 0 && go;
+  // "Sweep de nuit": same typed GO, but no per-merchant row to fill — the server reads
+  // the allowlist itself. Disabled while any run is active (Romain 2026-09-16: « sauf si
+  // ce sweep est deja en cours »); the server refuses it too (409 submit_in_progress).
+  const all = $("#launch-all");
+  if (all) all.disabled = !(SUGGEST_READY && !SWEEP_RUNNING && go);
   $("#launch").disabled = !ok;
 }
 $("#add-target").addEventListener("click", () => { if (SUGGEST_READY) addTarget().focus(); });
@@ -99,6 +105,31 @@ $("#launch").addEventListener("click", async () => {
     startPolling(r.run_id);
   } catch (e) {
     $("#launch-msg").textContent = "✖ refusé : " + e.message;
+    setStatus("Refusé — " + e.message);
+    syncGo();
+  }
+});
+// ---- night sweep: every allowlisted merchant ----
+$("#launch-all").addEventListener("click", async () => {
+  if ($("#go").value.trim().toUpperCase() !== "GO" || SWEEP_RUNNING) return;
+  const body = { all_allowlisted: true, confirm: "GO" };
+  const mp = parseInt($("#max-pages").value, 10); if (mp > 0) body.max_pages = mp;
+  const sp = parseInt($("#start-page").value, 10); if (sp > 0) body.start_page = sp;
+  body.consoles = $("#consoles").checked;
+  body.continue_on_halt = true;   // one merchant's fail-closed stop must not end the night
+  $("#launch-all").disabled = true;
+  $("#launch-all-msg").textContent = "Lancement du sweep de nuit…";
+  try {
+    const r = await api("api/data-entry/auto", { method: "POST", body: JSON.stringify(body) });
+    $("#launch-all-msg").textContent = "▶ sweep de nuit lancé : " + (r.run_id || "")
+      + " · " + SUGGESTED.length + " marchand(s)";
+    SWEEP_RUNNING = true;
+    setStatus("Sweep de nuit en cours…", true);
+    $("#busy-ind").classList.remove("hidden");
+    $("#busy-text").textContent = "sweep de nuit · " + SUGGESTED.length + " marchands";
+    startPolling(r.run_id);
+  } catch (e) {
+    $("#launch-all-msg").textContent = "✖ refusé : " + e.message;
     setStatus("Refusé — " + e.message);
     syncGo();
   }
@@ -225,6 +256,9 @@ function renderRecap(d) {
   try {
     const d = await api("api/data-entry/merchants");
     SUGGESTED = (d && d.merchants) || [];
+    const cnt = $("#all-count");
+    if (cnt) cnt.textContent = "Aujourd'hui : " + SUGGESTED.length + " marchand(s) — "
+      + SUGGESTED.map((m) => m.name).join(", ") + ".";
   } catch (e) { SUGGESTED = []; }
   SUGGEST_READY = SUGGESTED.length > 0;
   if (!SUGGEST_READY) {

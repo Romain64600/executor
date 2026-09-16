@@ -3,6 +3,30 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-16 — Console : bouton « sweep de nuit » (tous les marchands whitelistés)
+
+Romain : « Dans l'onglet Data entry auto, je voudrais un bouton pour lancer un sweep sur tout
+les marchands whitelisted (sauf si ce sweep est deja en cours) ».
+
+Bouton **« Lancer le sweep de nuit (tous les marchands) »** dans la carte de lancement de
+l'onglet Data entry auto, sous le lancement ciblé, séparé par un filet pour qu'on ne clique
+pas l'un en croyant l'autre. Il affiche la liste blanche du jour (nom et compte) et n'exige
+que le **GO tapé**, comme tout chemin d'écriture réelle.
+
+Deux propriétés portent la fonctionnalité, toutes deux côté SERVEUR :
+* la cible est **lue dans la liste blanche** (`all_allowlisted: true` → `auto_allowed_list()`
+  dans `_post_data_entry_auto`) : le bouton n'envoie jamais de liste de marchands, donc il ne
+  peut pas dériver le jour où un marchand est ajouté — même source que `--all-allowlisted`
+  côté CLI. Une requête qui mélangerait `targets` est refusée (`targets_conflict`), une liste
+  blanche vide échoue fermé (`allowlist_empty`) ;
+* **« sauf si ce sweep est déjà en cours »** est tenu par le garde un-run-à-la-fois du manager
+  (`_ensure_free` → 409 `submit_in_progress`), quel que soit le genre du run en cours ; la page
+  grise le bouton en plus, mais ce n'est pas elle qui garantit la règle.
+
+`continue_on_halt` est activé pour ce bouton : l'arrêt fail-closed d'un marchand ne doit pas
+terminer la nuit. `tests/test_auto_night_sweep_button.py` (15 tests) épingle le bouton, la
+provenance des cibles, le refus du mélange, le garde d'unicité et le GO. 2 006 tests.
+
 ## 2026-09-16 — `--all-allowlisted` : le scan de nuit lit sa cible dans la liste blanche
 
 Romain : « Donne moi la commande a jour pour lancer tout les marchands whitelist (scan de
