@@ -119,8 +119,8 @@ du feed.
 | CJS-CDKeys | 30 | `cjs.py` (**nouveau**, identité seule) | `domain="cjs-cdkeys.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
 | Difmark | 167 | `difmark.py` | `console_url_families` (comptes) | parqué (hors liste blanche) | — |
 | GameBoost | 157 | `gameboost.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux + `[R47]` région obligatoire), `title_region`, `resolve_name` ; console : `console_region_slot` | **non — hors liste blanche safe-auto (R27, R47)** | 13 |
-| GamersOutlet | 31 | `gamersoutlet.py` (**nouveau 15/09**) | PC : `precheck` (slot obligatoire + vocabulaire boutique fermé), `title_region`, `resolve_name`, `url_platform` | **non — hors liste blanche safe-auto (R48)** | 1 |
-| Electronicfirst | 70 | `electronicfirst.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux, logiciels, `[R49a]` EU partiel, `[R49b]` mot de région dans le nom, `[R49c]` console sans slot), `title_region`, `resolve_name` | **non — hors liste blanche safe-auto (R49)** | 4 |
+| GamersOutlet | 31 | `gamersoutlet.py` (**nouveau 15/09**) | PC : `precheck` (slot obligatoire + vocabulaire boutique fermé), `title_region`, `resolve_name`, `url_platform` | **hors liste blanche** — 1re saisie supervisée le 16/09 : **2 / 2 créées** | 1 |
+| Electronicfirst | 70 | `electronicfirst.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux, logiciels, `[R49a]` EU partiel, `[R49b]` mot de région dans le nom, `[R49c]` console sans slot), `title_region`, `resolve_name` | **hors liste blanche** — 1re saisie supervisée le 16/09 : **11 / 11 créées** | 4 |
 
 Plus aucun marchand « générique » : la ligne `"KINGUIN": MerchantConfig("Kinguin",
 domain="kinguin.net")` inline du registre disparaît au profit de `kinguin.py`, et les six
@@ -668,8 +668,11 @@ matcher et le classifieur importent le registre.
   partagé `[R45]` dès que la gauche nomme une console — **aucun hook console déclaré**.
 - **Verdicts sur les 20 lignes** : 16 passent (toutes `global`), 4 skips « unknown store
   ROBLOX ». Tests : `tests/test_merchants_gamersoutlet.py`.
-- **Statut live** : hors liste blanche safe-auto, **dry-run supervisé d'abord** — une seule
-  valeur de région et zéro console observées, le corpus est trop petit pour conclure plus.
+- **Statut live** : **1re saisie réelle le 2026-09-16 — 2 / 2 créées** (Grand Theft Auto V
+  Enhanced en Rockstar mondial 15, Polylithic en Steam mondial 2), prouvées par la disparition
+  du feed. Reste hors liste blanche safe-auto. Volume : la file complète du marchand fait ~19
+  lignes dont 2 saisissables — surtout des licences logicielles absentes d'AKS et des recharges
+  Roblox ; il faut attendre que la file se remplisse pour un lot de 10-15.
 
 ## Electronicfirst (store 70, hors liste blanche)
 
@@ -719,8 +722,11 @@ matcher et le classifieur importent le registre.
 - **Verdicts sur les 323 lignes** : 247 passent (eu 55, us 10, uk 1, 181 sans code), 18
   console sans slot `[R49c]`, 16 EU partielles `[R49a]`, 21 non-jeux, 14 régions interdites,
   6 logiciels, 1 `[R49b]`. Tests : `tests/test_merchants_electronicfirst.py`.
-- **Statut live** : hors liste blanche safe-auto, **dry-run supervisé obligatoire au premier
-  passage**.
+- **Statut live** : **1re saisie réelle le 2026-09-16 — 11 / 11 créées**, zéro échec, zéro
+  arrêt, chacune prouvée par la disparition du feed : 4 lignes cross-gen Xbox One + Series
+  (24eu / 302, 24us / 303), 1 Xbox Play Anywhere (MSFS 2024 Deluxe, 241 sur la page console ET
+  la page PC), 1 Rockstar EU(152) débloquée le jour même par `[R50]`, 1 DLC EA App EU(3eu), et
+  des lignes Steam / GOG / Publisher. Reste hors liste blanche safe-auto.
 
 ## Ce qui n'est pas propre à un marchand
 

@@ -3,6 +3,29 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-16 — Première saisie réelle des deux nouveaux marchands : 13 / 13 créées
+
+Romain : « faudra que t ai ajoute entre 10 et 15 offres par nouveau marchant et j irais
+verifier le data entry », puis il a lancé les deux lignes d'écriture lui-même (le classifieur
+bloque `05_submit` côté Claude).
+
+**Electronicfirst (70) : 11 / 11 créées**, 11 tentatives d'écriture, zéro échec, zéro arrêt,
+chacune prouvée par la disparition de la ligne du feed rafraîchi. Le lot couvre volontairement
+toute la surface neuve : 4 lignes cross-gen Xbox One + Xbox Series (24eu / 302 et 24us / 303),
+1 Xbox Play Anywhere (Microsoft Flight Simulator 2024 Deluxe, région 241 écrite sur la page
+console ET sur la page PC, édition Deluxe), 1 Rockstar EU(152) débloquée le matin même par
+`[R50]`, 1 DLC EA App EU(3eu), et des lignes Steam(2) / GOG(6) / Publisher(1) dont une édition
+Collection. Cinq des onze sont multi-cibles, donc la fenêtre v2 a bien ajouté une seconde
+ligne à chaque fois.
+
+**GamersOutlet (31) : 2 / 2 créées** — Grand Theft Auto V Enhanced en Rockstar mondial (15) et
+Polylithic en Steam mondial (2). C'est tout ce que sa file contenait de saisissable : sur 19
+lignes, 7 sont des licences logicielles sans page AKS, 4 des recharges Roblox, 3 des timeouts
+de la recherche AKS. Le lot de 10-15 demandé n'est pas atteignable sur ce marchand aujourd'hui
+— sa file doit se remplir d'abord.
+
+Les deux marchands restent **hors liste blanche safe-auto** : la saisie reste supervisée.
+
 ## 2026-09-16 — R50 (3e passe) : Microsoft tranché — Windows 10 aux jeux, microsoft software aux logiciels
 
 Romain : « Windows 10 pour les jeux, microsoft software pour les logiciels. » Le menu des
