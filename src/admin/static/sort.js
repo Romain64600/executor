@@ -540,9 +540,16 @@ $("#stop-btn").addEventListener("click", async () => {
   setTimeout(() => { b.disabled = false; b.textContent = "Arrêter"; refreshBusy(); }, 1500);
 });
 setInterval(refreshBusy, 4000);   // keep the busy indicator live across tabs/runs
-function closeOffers(dlg) { MODAL_SEQ++; stopPoll(); MODAL_RUN_ID = null; MODAL_DIGEST = null; dlg.close(); }
-$("#modal-close").addEventListener("click", () => closeOffers($("#offers-modal")));
-$("#offers-modal").addEventListener("click", (e) => { if (e.target.id === "offers-modal") closeOffers(e.target); });
+// The cleanup hangs on the dialog's OWN close event, not on the buttons that trigger it
+// (audit de Romain, 4e passe). A <dialog> also closes on Échap, natively, without passing
+// through any of our handlers: the generation stayed live and the poll kept running, so a
+// POST could still leave after the window was gone. "close" fires for every ending — ✕,
+// backdrop click, Échap (which fires "cancel" then "close"), and any script close() — so one
+// listener covers them all, and it cannot double-fire the way listening to both would.
+function closeOffers() { MODAL_SEQ++; stopPoll(); MODAL_RUN_ID = null; MODAL_DIGEST = null; }
+$("#offers-modal").addEventListener("close", closeOffers);
+$("#modal-close").addEventListener("click", () => $("#offers-modal").close());
+$("#offers-modal").addEventListener("click", (e) => { if (e.target.id === "offers-modal") e.target.close(); });
 
 // ---- Reconnexion par transfert de cookies (AKS = social login only) ---------
 // L'opérateur remplit Nom + Valeur par cookie WP ; le JS assemble l'objet cookie

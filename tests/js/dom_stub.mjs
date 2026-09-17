@@ -42,7 +42,11 @@ export function makeEl(tag = "div") {
     remove() {},
     focus() {},
     showModal() { el.open = true; },
-    close() { el.open = false; },
+    // A real <dialog> emits "close" for EVERY ending — the ✕, the backdrop, Échap, a script
+    // close(). The stub must too, or a test cannot tell the paths apart.
+    close() { el.open = false; el.fire("close"); },
+    // Échap: the native sequence is "cancel" then "close".
+    pressEscape() { el.fire("cancel"); el.open = false; return el.fire("close"); },
     querySelector(sel) { return find(el, sel)[0] || null; },
     querySelectorAll(sel) { return find(el, sel); },
     options: [],

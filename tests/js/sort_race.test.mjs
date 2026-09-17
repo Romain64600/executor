@@ -311,5 +311,51 @@ await test("la lecture d'offset qui revient trop tard ne peint pas non plus", as
     "aucune requête ne doit partir pour une fenêtre qui n'existe plus");
 });
 
+await test("la fermeture par Échap nettoie comme le bouton ✕", async () => {
+  // Romain, 4e passe : un <dialog> se ferme nativement sur Échap, sans passer par nos
+  // gestionnaires. La génération restait vivante et le suivi tournait encore, si bien qu'un
+  // POST partait après la fermeture — contrairement au ✕.
+  const app = await planASeul();
+  await ouvrir(app, 0);
+  const go = app.$("#modal-actions").querySelector(".go-in");
+  const canary = app.$("#modal-actions").querySelector(".primary");
+  go.value = "GO";
+  await go.fire("input");
+  canary.fire("click").catch(() => {});
+  await tick();
+  assert.ok(app.net.waiting().some((u) => u.includes("submit/status?offset=0")),
+    "la lecture d'offset doit être en vol");
+
+  await app.$("#offers-modal").pressEscape();         // Échap, pas le bouton
+  assert.equal(app.$("#offers-modal").open, false);
+
+  const before = app.net.calls.length;
+  await app.net.release("submit/status?offset=0", { offset: 3 });
+  await tick();
+
+  assert.deepEqual(app.net.calls.slice(before).map((c) => `${c.method} ${c.url}`), [],
+    "après Échap, plus aucune requête ne doit partir — surtout pas le POST de déplacement");
+});
+
+await test("Échap pendant le suivi arrête aussi le sondage", async () => {
+  const app = await planASeul();
+  await ouvrir(app, 0);
+  await typeGoAndFire(app);
+  await app.net.release("/sort/move", { ok: true });
+  await tick();
+  assert.ok(app.net.waiting().some((u) => u.includes("submit/status?offset=7")),
+    `le suivi doit être en vol — en attente: ${app.net.waiting().join(", ")}`);
+
+  await app.$("#offers-modal").pressEscape();
+  const before = app.net.calls.length;
+  await app.net.release("submit/status?offset=7",
+    { state: "done", exit_code: 0, events: [], stdout_tail: "", offset: 9 });
+  await tick();
+
+  assert.equal(app.net.calls.filter((c) => c.url.includes("api/sort/runs")).length,
+    app.net.calls.slice(0, before).filter((c) => c.url.includes("api/sort/runs")).length,
+    "le tick retenu a conclu malgré Échap — finishStatus a rechargé la page");
+});
+
 console.log(failures ? `\n${failures} échec(s)` : "\ntout passe");
 process.exit(failures ? 1 : 0);

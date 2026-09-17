@@ -3,6 +3,31 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-17 (6e passe) — Échap fermait la fenêtre sans rien nettoyer
+
+Romain, sur `26d067e` : « seuls le bouton ✕ et le clic extérieur appellent `closeOffers`. La
+fermeture native du `<dialog>` ne retire donc pas la génération et n'arrête pas le suivi. En
+simulant cette fermeture pendant la lecture d'offset, le POST part encore après fermeture. »
+
+Exact, et c'est une leçon de conception : le nettoyage était accroché aux **déclencheurs** au
+lieu de l'**évènement**. Un `<dialog>` se ferme aussi sur Échap, nativement, sans passer par
+aucun de nos gestionnaires — la génération restait vivante, le sondage tournait, et une action
+lancée depuis cette fenêtre continuait comme si de rien n'était.
+
+**Correction :** le nettoyage est accroché à l'évènement `close` du dialogue lui-même.
+`close` est émis pour TOUTES les fins — le ✕, le clic extérieur, Échap (qui émet `cancel` puis
+`close`), et tout `close()` appelé par le script — donc un seul écouteur les couvre, sans le
+double déclenchement qu'aurait provoqué l'écoute simultanée de `cancel`. Les deux chemins
+explicites se contentent désormais de DEMANDER la fermeture ; c'est l'écouteur qui travaille.
+
+Le bouchon de test a dû apprendre la différence : `close()` émet maintenant l'évènement, et
+`pressEscape()` rejoue la séquence native `cancel` puis `close`. Sans cela aucun test ne
+pouvait distinguer les deux chemins — c'est le simulateur qui manquait, pas l'idée.
+
+Deux scénarios de plus, tous deux morts sous mutation (retour au câblage sur les boutons) :
+Échap pendant la lecture d'offset ne laisse plus partir le POST, et Échap pendant le suivi
+arrête bien le sondage. Le harnais passe à 13 scénarios.
+
 ## 2026-09-17 (5e passe) — Une génération PAR OUVERTURE de fenêtre, erreurs comprises
 
 Romain a audité `fdfcd10` et repris le garde en défaut sur deux cas, tous deux reproduits :

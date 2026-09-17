@@ -124,8 +124,22 @@ class TheOpenModalOwnsThatIdentityTests(unittest.TestCase):
         self.assertIn("MODAL_RUN_ID = null", close)
         self.assertIn("MODAL_DIGEST = null", close)
         self.assertIn("stopPoll()", close)
-        self.assertEqual(len(re.findall(r"closeOffers\(", JS)), 3,
-                         "both close paths plus the definition must go through it")
+        self.assertIn("MODAL_SEQ++", close)
+
+    def test_the_cleanup_hangs_on_the_dialog_not_on_the_buttons(self):
+        """Romain, 4e passe: « la fermeture par Échap contourne le nettoyage ». A <dialog>
+        closes natively on Escape without passing through any handler of ours. The cleanup is
+        now bound to the dialog's own "close" event, which fires for EVERY ending — ✕,
+        backdrop, Escape (cancel then close), script close() — so one listener covers them
+        all. Exercised live, and it dies under mutation."""
+
+        self.assertIn('$("#offers-modal").addEventListener("close", closeOffers);', JS)
+        self.assertTrue(_body("closeOffers").startswith("function closeOffers()"),
+                        "it is an event handler now — it must not take, nor close, a dialog")
+        self.assertNotIn("dlg.close()", JS)
+        # the two explicit paths just ASK the dialog to close; the listener does the work
+        self.assertIn('$("#modal-close").addEventListener("click", () => $("#offers-modal").close());', JS)
+        self.assertIn('if (e.target.id === "offers-modal") e.target.close();', JS)
 
 
 class TheActionReadsTheModalNotThePageTests(unittest.TestCase):
