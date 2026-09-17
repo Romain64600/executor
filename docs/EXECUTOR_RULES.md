@@ -387,11 +387,15 @@ MONTHLY, WEEKLY PASS) stay the `PASS` skip even when tagged "(DLC)"; a tagged "<
 and the season / expansion passes (tagged or not) go to resolution; an untagged
 "<x> Pass" stays the `PASS` skip as before.
 
-**R18 for markerless titles — reviewed decision, KEPT AS IS (Romain 2026-09-11):** the
-DLC bucket keeps deciding for a MARKERLESS title (no deterministic page-level nature signal
-exists); R43's own-page and unnamed-DLC rules above apply to MARKED titles only. Do not
-re-tighten R18 — the ruling and its rationale are in AGENTS.md « Reviewed decisions »
-(historique : CHANGELOG 2026-09-11).
+**R18 for markerless titles — DURCI le 2026-09-17 (Romain : « go pour le durcissement, seul
+seau DLC decide »).** Pour un titre SANS marqueur, le seau DLC ne décide QUE s'il est le SEUL
+que la page propose (`len(editions) == 1`). Déclencheur : une clé Rockstar de JEU DE BASE,
+« Grand Theft Auto Vice City », est entrée DLC(16) parce que sa page porte un seau DLC à côté
+de Standard. Un vrai DLC caché (« Exoplanets Pack ») garde sa page mono-seau et entre juste ;
+un jeu de base dont la page offre aussi Standard repart en Standard. « Standard + DLC » est un
+AUTRE seau (id 518) et n'a jamais déclenché R18. Les titres MARQUÉS restent gouvernés par R43
+(own-page, DLC anonyme), inchangés. Ceci REMPLACE la décision « ne pas durcir » du 2026-09-11
+(historique : AGENTS.md et CHANGELOG).
 
 **Console keys — see §4.12 `[R45]` (2026-09-12).** Romain's AKS feed tool OVERWRITES the
 region (= region/PLATFORM) and the edition PER TARGET PAGE, so one feed row can be filed on

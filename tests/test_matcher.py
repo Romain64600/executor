@@ -2536,21 +2536,35 @@ class MatchOfferTests(unittest.TestCase):
         result = match_offer(_offer("Neon Beats - Steam"), lambda name: None)
         self.assertIsInstance(result, SkippedOffer)
 
-    def test_dlc_bucket_on_aks_page_sets_dlc_edition(self):
-        # R18 revised (Romain 2026-07-08, replacing the 07-07 skip): titles
-        # hide DLC-ness ("Exoplanets Pack"); the resolved page's editions map
-        # is the truth. DLC bucket → the product IS a DLC → entered with the
-        # DLC edition, even when a Standard bucket coexists (Brotato:
-        # Abyssal Terrors).
-        for editions in (
-            {"16": {"name": "DLC"}},
-            {"1": {"name": "Standard"}, "16": {"name": "DLC"}},
-        ):
-            result = match_offer(
-                _offer("Neon Beats - Steam GLOBAL"), self._resolver(editions=editions)
-            )
-            self.assertIsInstance(result, Candidate, editions)
-            self.assertEqual((result.edition_label, result.edition_id), ("DLC", "16"))
+    def test_a_LONE_dlc_bucket_still_sets_the_dlc_edition(self):
+        """R18 (Romain 2026-07-08): a title can hide its DLC nature ("Exoplanets Pack") and
+        the page's editions map tells the truth. Kept for a page whose ONLY bucket is DLC."""
+
+        result = match_offer(
+            _offer("Neon Beats - Steam GLOBAL"), self._resolver(editions={"16": {"name": "DLC"}})
+        )
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual((result.edition_label, result.edition_id), ("DLC", "16"))
+
+    def test_a_markerless_title_is_NOT_dlc_when_the_page_also_offers_standard(self):
+        """DURCI le 2026-09-17 sur GO de Romain (« seul seau DLC decide »).
+
+        Before, the mere PRESENCE of a DLC bucket decided, Standard or not — and that is how
+        a Rockstar BASE-GAME key, "Grand Theft Auto Vice City", a title with no marker at all,
+        was entered DLC(16) that very night. A markerless title now needs the DLC bucket to be
+        the page's ONLY bucket. ("Standard + DLC" is a different bucket, id 518, and never
+        triggered R18 — verified on the live catalogue the same day.)
+
+        MARKED titles are untouched by this: they are governed by R43 (own-page rule, unnamed
+        DLC) and covered by its own suite — a "(DLC)" title with no DLC name of its own, on a
+        page that also sells Standard, is SKIPPED there, not entered."""
+
+        result = match_offer(
+            _offer("Neon Beats - Steam GLOBAL"),
+            self._resolver(editions={"1": {"name": "Standard"}, "16": {"name": "DLC"}}),
+        )
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual((result.edition_label, result.edition_id), ("Standard", "1"))
 
     def test_dlc_bucket_matched_by_name_when_id_moves(self):
         result = match_offer(
@@ -4741,7 +4755,9 @@ class ConsoleMatchR45Tests(unittest.TestCase):
     def test_dlc_bucket_read_by_r18_on_a_console_page_skips_p5(self):
         one_url = AKS_BLOG + "buy-hades-xbox-one-compare-prices/"
         pc = _page("Hades", "26712", AKS_BLOG + "buy-hades-cd-key-compare-prices/", console_pages={"xbox-one": one_url})
-        pages = {one_url: _page("Hades Xbox One", "85102", one_url, editions={"1": {"name": "Standard"}, "16": {"name": "DLC"}})}
+        # DURCI 2026-09-17: a MARKERLESS title needs the DLC bucket to be the page's only
+        # one, so the console page here offers DLC alone (the P5 skip is what is under test).
+        pages = {one_url: _page("Hades Xbox One", "85102", one_url, editions={"16": {"name": "DLC"}})}
         r = self._run(_offer("Hades Xbox One GLOBAL"), _Sig(("XBOX_ONE",), "Hades"), pc=pc, pages=pages)
         self.assertIsInstance(r, SkippedOffer)
         self.assertEqual(r.reason, "console: DLC / season pass on console — not entered yet (R45)")

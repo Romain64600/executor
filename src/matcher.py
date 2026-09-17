@@ -3081,7 +3081,18 @@ def match_offer(
     # Standard bucket coexists (Brotato: Abyssal Terrors). The page overrides
     # every title hint, so the E05 fallback and the bundle-resolution guard
     # below don't apply ("Pack" in a DLC's own name is identity, not a bundle).
-    if _dlc_edition_on_page(resolution.editions):
+    # DURCI le 2026-09-17 sur GO de Romain (« go pour le durcissement, seul seau DLC
+    # decide »). Avant, la seule PRÉSENCE d'un seau DLC décidait, même avec un Standard à
+    # côté — c'est ainsi qu'une clé Rockstar de JEU DE BASE, "Grand Theft Auto Vice City",
+    # titre sans le moindre marqueur, est entrée en DLC(16) ce jour-là. Désormais, pour un
+    # titre SANS marqueur, le seau DLC ne décide que s'il est le SEUL que la page propose :
+    # un vrai DLC caché ("Exoplanets Pack") garde sa page mono-seau et entre juste, un jeu de
+    # base dont la page offre aussi Standard repart en Standard. Un titre MARQUÉ reste
+    # gouverné par R43 (own-page, DLC anonyme) et garde l'ancien comportement.
+    # NB : "Standard + DLC" est un AUTRE seau (518) que "DLC" (16) et n'a jamais déclenché
+    # R18 — vérifié sur le catalogue vivant du 2026-09-17.
+    if _dlc_edition_on_page(resolution.editions) and (
+            dlc_title_marker(offer.name) is not None or len(resolution.editions) == 1):
         edition_label, edition_id = "DLC", "16"
     elif edition_from_extras is not None:
         # A page-verified edition named by the merchant's "extra" tokens, rescued

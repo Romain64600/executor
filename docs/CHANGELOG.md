@@ -3,6 +3,31 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-17 — R18 durci : seul un seau DLC SOLITAIRE décide d'un titre sans marqueur
+
+Romain, en voyant une offre du sweep de la nuit : « Pourquoi l'executor a rentré cette offre
+en DLC ? » — une clé Rockstar de **jeu de base**, « Grand Theft Auto Vice City », titre sans
+le moindre marqueur, entrée en DLC(16).
+
+**Diagnostic.** R18 décidait sur la seule PRÉSENCE d'un seau DLC dans le menu de la page, et
+le code le disait explicitement : « even when a Standard bucket coexists ». Romain a d'abord
+soupçonné une confusion d'étiquettes, ayant vu « Standard + DLC » dans l'admin ; le catalogue
+vivant capturé par le sweep a tranché : « DLC » est l'id 16, « Standard + DLC » est l'id 518,
+deux seaux distincts parmi la quarantaine contenant le mot DLC, et le détecteur ne retient que
+la clé 16 ou le nom exactement égal à « DLC ». Ce n'était donc pas une confusion : la page
+porte bien un vrai seau DLC, et R18 a fait ce pour quoi elle était écrite.
+
+**Durcissement, sur son GO.** Pour un titre SANS marqueur, le seau DLC ne décide plus que s'il
+est le SEUL de la page. Un vrai DLC caché garde sa page mono-seau et entre juste ; un jeu de
+base dont la page offre aussi Standard repart en Standard. Les titres MARQUÉS sont inchangés
+(R43). **Ceci remplace la décision « ne pas durcir » du 2026-09-11** — `AGENTS.md` porte
+désormais la nouvelle règle, l'ancienne restant en note historique pour qu'un audit lisant le
+git ne la restaure pas.
+
+**Coût mesuré sur le sweep en cours** avant le changement : 6 offres entrées en DLC, dont 4
+au titre marqué (correctes) et 2 décidées par R18 seule — Vice City (fausse) et un Hunt:
+Showdown (probablement juste). Le durcissement ne touche que ces deux-là.
+
 ## 2026-09-17 — Un run lancé en ligne de commande est enfin visible dans la console
 
 Romain : « On peut faire en sorte d'avoir un monitoring sur l'admin même lorsqu'on lance en

@@ -176,8 +176,19 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   (Minecraft Java & Bedrock, Fallout 76) no longer enter — that is the accepted price until a
   merchant page reader lands; do not re-open the default.
 
-- **R18 "DLC bucket on the page ⇒ edition DLC(16)" for MARKERLESS titles — KEPT (Romain
-  2026-09-11).** The R43 adversarial review showed live base-game pages carrying bucket 16
+- **R18 for MARKERLESS titles — DURCI le 2026-09-17 (Romain : « go pour le durcissement,
+  seul seau DLC decide ») : le seau DLC ne décide QUE s'il est le SEUL de la page.** Le
+  déclencheur : une clé Rockstar de JEU DE BASE, « Grand Theft Auto Vice City », titre sans
+  aucun marqueur, est entrée DLC(16) parce que sa page porte un seau DLC à côté de Standard.
+  Désormais un titre sans marqueur exige `len(editions) == 1` ; un vrai DLC caché
+  («Exoplanets Pack ») garde sa page mono-seau et entre juste. « Standard + DLC » est un
+  AUTRE seau (id 518) et n'a jamais déclenché R18 — vérifié sur le catalogue vivant.
+  Les titres MARQUÉS sont inchangés (R43 : own-page, DLC anonyme). Ceci REMPLACE la décision
+  du 2026-09-11 ci-dessous, qui reste en note pour l'historique : un audit qui relirait le
+  git y verrait « ne pas durcir » — c'est périmé, Romain a tranché l'inverse le 17.
+
+- **[HISTORIQUE, SUPERSÉDÉ LE 2026-09-17] R18 "DLC bucket on the page ⇒ edition DLC(16)" for
+  MARKERLESS titles — KEPT (Romain 2026-09-11).** The R43 adversarial review showed live base-game pages carrying bucket 16
   (Stray Blade, Aliens Dark Descent, Dragon Quest III HD-2D Remake were entered DLC(16) on
   2026-09-10) and no deterministic page-level nature signal exists. Romain's ruling: "des
   fois, les titres n'ont pas de marqueur et sont des DLC" — the bucket keeps deciding, the
