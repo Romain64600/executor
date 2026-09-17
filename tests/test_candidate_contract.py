@@ -7,8 +7,10 @@ Three guarantees, all driven by the shared examples
 1. the contract itself reproduces every example (fingerprint, flat targets, refusals);
 2. every stage AGREES with it — ``matcher.Candidate`` built with 1 / 2 / 3 targets,
    the ``validation`` aliases, the ``submitter`` alias, ``validation_io``'s mirror;
-3. the ``app.js`` mirror block is present and points at the fixture (a Python-side
-   guard so the port cannot silently disappear when node is absent, as on the VPS).
+3. the ``app.js`` mirror block is present and points at the fixture — and, since node became
+   an approved TEST dependency on 2026-09-17, the runner is EXECUTED here too instead of only
+   in CI, so a drifted port is caught locally and on the VPS. The text guard stays as the
+   fallback wherever node is absent.
 """
 
 from __future__ import annotations
@@ -297,6 +299,22 @@ class AppJsMirrorTests(unittest.TestCase):
         self.assertIn("candidate_contract_examples.json", js)
         self.assertIn("candidate-contract:begin", js)
         self.assertIn("src/admin/static/app.js", js)
+
+    def test_the_app_js_port_actually_agrees_with_the_contract(self):
+        """Runs the mirror check instead of merely asserting it exists. Before 2026-09-17 this
+        could only happen in CI, after a push; node being an approved test dependency, a
+        drifted port now fails on the developer's machine and on the VPS."""
+
+        import shutil
+        import subprocess
+        node = shutil.which("node") or shutil.which("nodejs")
+        if node is None:
+            self.skipTest("node absent — le garde textuel ci-dessus reste le filet")
+        proc = subprocess.run([node, str(JS_CHECK)], cwd=ROOT, capture_output=True,
+                              text=True, timeout=120)
+        self.assertEqual(proc.returncode, 0,
+                         f"\n--- sortie node ---\n{proc.stdout}\n{proc.stderr}")
+        self.assertIn("agrees with", proc.stdout)
 
 
 if __name__ == "__main__":

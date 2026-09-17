@@ -36,7 +36,10 @@ jobs:
 
       # Lot 2 (2026-09-15): the admin page's candidate-contract block (app.js) is a literal
       # port of src/candidate_contract.py — check it against the shared fixture with node
-      # (ubuntu runners ship it; the VPS does not, so this cannot run in the Python suite).
+      # Depuis le 2026-09-17, node est une dépendance de TEST approuvée (paquet Debian
+      # nodejs) et le VPS l'a aussi : ce runner tourne désormais AUSSI dans la suite
+      # Python (tests/test_candidate_contract.py, skip propre sans node). L'étape reste
+      # ici pour que l'échec soit lisible seul dans le journal de CI.
       - name: Candidate contract — app.js mirror (node)
         if: hashFiles('tests/js/candidate_contract_check.js') != ''
         run: node tests/js/candidate_contract_check.js
