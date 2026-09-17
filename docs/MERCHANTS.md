@@ -794,8 +794,12 @@ matcher et le classifieur importent le registre.
   AKS, 228 non-jeux nommés, 11 éditions non mappables. Le dry-run complet (matching AKS) sur
   la version précédente du fichier donnait 74 candidats ; il sera rejoué sur ces règles.
   Tests : `tests/test_merchants_wyrel.py` (24 tests).
-- **Statut live** : hors liste blanche safe-auto, **dry-run supervisé d'abord** — le corpus
-  ne couvre qu'une page sur soixante.
+- **Statut live** : **1re saisie réelle le 2026-09-17 — 15 / 15 créées, zéro refus**, chacune
+  prouvée par la disparition du feed, arrêt propre sur la limite demandée. La grammaire
+  `[R53]` tient donc en écriture réelle. Reste hors liste blanche safe-auto (le corpus ne
+  couvre que 10 pages sur 59). Dry-run de la tranche : 80 candidats sur 990 lignes — Steam 53,
+  Xbox Series 13, Xbox One 11, Switch 2, Switch 2 ×1 ; 45 des 80 partent sous le compartiment
+  **Steam Gift(25)**, la livraison que le marchand écrit en clair.
 
 ## Ce qui n'est pas propre à un marchand
 

@@ -18,8 +18,9 @@ current feed (by id and by URL) » — dix refus consécutifs, et le garde anti-
 périmé. **La bonne marche à suivre est un matching frais** : refait le jour même (feed passé
 de 992 à 1032 lignes) → **198 candidats, les 15 déjà saisies absentes du lot**, vérifié.
 
-**Wyrel (162)** — 1re saisie réelle en cours sur le serveur secondaire, la 1re offre est
-créée et prouvée : la grammaire `[R53]` tient en écriture. Son feed fait 59 pages, donc la
+**Wyrel (162)** — **1re saisie réelle : 15 / 15 créées, zéro refus** (2026-09-17, serveur
+secondaire), chacune prouvée par la disparition du feed, arrêt propre sur `limit_reached`. La
+grammaire `[R53]` tient en écriture réelle. Son feed fait 59 pages, donc la
 preuve par relecture complète coûte cher — 15 offres y prennent des heures là où GameBoost
 (13 pages) en prenait cinquante minutes. Piste pour plus tard : la preuve par recherche ciblée
 (`--prove-gone-by-search`), déjà utilisée par le sweep de nuit.
