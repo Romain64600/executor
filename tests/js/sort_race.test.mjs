@@ -357,5 +357,50 @@ await test("Échap pendant le suivi arrête aussi le sondage", async () => {
     "le tick retenu a conclu malgré Échap — finishStatus a rechargé la page");
 });
 
+await test("le ✕ retire la fenêtre TOUT DE SUITE, sans attendre l'évènement close différé", async () => {
+  // Romain, 5e passe : « l'évènement close est différé dans le navigateur ». Le standard HTML
+  // fait mettre en file l'évènement par les étapes de fermeture, donc une continuation en
+  // attente peut reprendre ENTRE le geste et le gestionnaire. Le retrait doit être synchrone.
+  const app = await planASeul();
+  await ouvrir(app, 0);
+  const go = app.$("#modal-actions").querySelector(".go-in");
+  const canary = app.$("#modal-actions").querySelector(".primary");
+  go.value = "GO";
+  await go.fire("input");
+  canary.fire("click").catch(() => {});
+  await tick();
+
+  app.$("#modal-close").fire("click");     // le geste; l'évènement close, lui, est différé
+  assert.equal(app.$("#offers-modal").open, false, "la fenêtre est fermée dès le geste");
+  const before = app.net.calls.length;
+  await app.net.release("submit/status?offset=0", { offset: 3 });
+  await tick();
+
+  assert.deepEqual(app.net.calls.slice(before).map((c) => `${c.method} ${c.url}`), [],
+    "le POST est parti pendant le délai de l'évènement close");
+});
+
+await test("l'évènement close différé ne retire pas la fenêtre SUIVANTE", async () => {
+  // Conséquence du correctif : si l'opérateur rouvre une liste avant que l'évènement mis en
+  // file ne s'exécute, celui-ci ne doit pas invalider la nouvelle ouverture.
+  const app = await planASeul();
+  await ouvrir(app, 0);
+  app.$("#modal-close").fire("click");     // évènement close encore en file
+  await ouvrir(app, 1);                    // on rouvre AVANT qu'il ne s'exécute
+  await tick();                            // il s'exécute maintenant, fenêtre rouverte
+
+  const go = app.$("#modal-actions").querySelector(".go-in");
+  const canary = app.$("#modal-actions").querySelector(".primary");
+  go.value = "GO";
+  await go.fire("input");
+  canary.fire("click").catch(() => {});
+  await tick();
+  await app.net.release("submit/status?offset=0", { offset: 5 });
+  await tick();
+
+  const move = app.net.calls.find((c) => c.url.includes("/sort/move"));
+  assert.ok(move, "la fenêtre rouverte a été invalidée par l'évènement de la précédente");
+});
+
 console.log(failures ? `\n${failures} échec(s)` : "\ntout passe");
 process.exit(failures ? 1 : 0);

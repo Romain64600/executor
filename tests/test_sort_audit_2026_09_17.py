@@ -126,21 +126,30 @@ class TheOpenModalOwnsThatIdentityTests(unittest.TestCase):
         self.assertIn("stopPoll()", close)
         self.assertIn("MODAL_SEQ++", close)
 
-    def test_the_cleanup_hangs_on_the_dialog_not_on_the_buttons(self):
-        """Romain, 4e passe: « la fermeture par Échap contourne le nettoyage ». A <dialog>
-        closes natively on Escape without passing through any handler of ours. The cleanup is
-        now bound to the dialog's own "close" event, which fires for EVERY ending — ✕,
-        backdrop, Escape (cancel then close), script close() — so one listener covers them
-        all. Exercised live, and it dies under mutation."""
+    def test_the_window_is_retired_SYNCHRONOUSLY_with_the_gesture(self):
+        """Romain, 4e puis 5e passe. First: Escape closed the dialog natively, bypassing our
+        button handlers entirely. Hanging the cleanup on the dialog's "close" event fixed the
+        coverage — but not the timing: per the HTML standard the close steps QUEUE that event,
+        so an awaited continuation resumes between the gesture and the handler and still fires
+        its POST. Every closing path we drive now retires the window itself, first; the
+        "cancel" listener is the synchronous hook for Escape; the "close" listener is the net
+        for endings we do not drive, and only acts while the dialog is still closed, so a
+        queued event can never retire the NEXT opening. All of it is exercised live in
+        ``tests/js/sort_race.test.mjs`` and dies under mutation."""
 
-        self.assertIn('$("#offers-modal").addEventListener("close", closeOffers);', JS)
-        self.assertTrue(_body("closeOffers").startswith("function closeOffers()"),
-                        "it is an event handler now — it must not take, nor close, a dialog")
-        self.assertNotIn("dlg.close()", JS)
-        # the two explicit paths just ASK the dialog to close; the listener does the work
-        self.assertIn('$("#modal-close").addEventListener("click", () => $("#offers-modal").close());', JS)
-        self.assertIn('if (e.target.id === "offers-modal") e.target.close();', JS)
+        self.assertIn('$("#modal-close").addEventListener("click", () => { closeOffers(); '
+                      '$("#offers-modal").close(); });', JS)
+        self.assertIn('if (e.target.id === "offers-modal") { closeOffers(); e.target.close(); }', JS)
+        self.assertIn('$("#offers-modal").addEventListener("cancel", closeOffers);', JS)
+        self.assertIn('$("#offers-modal").addEventListener("close", () => '
+                      '{ if (!$("#offers-modal").open) closeOffers(); });', JS)
 
+    def test_the_deferred_event_cannot_retire_the_next_opening(self):
+        close_line = [l for l in JS.splitlines()
+                      if 'addEventListener("close"' in l and "offers-modal" in l]
+        self.assertEqual(len(close_line), 1)
+        self.assertIn('!$("#offers-modal").open', close_line[0],
+                      "without this check a queued event retires the window reopened since")
 
 class TheActionReadsTheModalNotThePageTests(unittest.TestCase):
     """Pass 1 + 2 — nothing mutable may decide anything once the modal is open."""

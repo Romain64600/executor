@@ -42,11 +42,17 @@ export function makeEl(tag = "div") {
     remove() {},
     focus() {},
     showModal() { el.open = true; },
-    // A real <dialog> emits "close" for EVERY ending — the ✕, the backdrop, Échap, a script
-    // close(). The stub must too, or a test cannot tell the paths apart.
-    close() { el.open = false; el.fire("close"); },
-    // Échap: the native sequence is "cancel" then "close".
-    pressEscape() { el.fire("cancel"); el.open = false; return el.fire("close"); },
+    // A real <dialog> QUEUES its "close" event (HTML standard: the close steps queue an
+    // element task). Firing it synchronously would hide exactly the defect Romain found —
+    // an awaited continuation resumes between the gesture and the handler. So the stub
+    // defers it too, and `close()` returns a promise the test can await.
+    close() {
+      el.open = false;
+      return new Promise((r) => setImmediate(() => { el.fire("close"); r(); }));
+    },
+    // Échap: "cancel" is dispatched with the key event (synchronous), then the dialog closes
+    // and its "close" event is queued like any other.
+    pressEscape() { el.fire("cancel"); return el.close(); },
     querySelector(sel) { return find(el, sel)[0] || null; },
     querySelectorAll(sel) { return find(el, sel); },
     options: [],

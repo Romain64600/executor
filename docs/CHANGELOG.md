@@ -3,6 +3,34 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-17 (7e passe) — L'évènement `close` est DIFFÉRÉ : le retrait devient synchrone
+
+Romain, sur `0f2c871` : « le nettoyage attend maintenant l'évènement `close`, qui est différé
+dans le navigateur, contrairement au simulateur qui le déclenche immédiatement. Le standard
+HTML confirme cet ordre. » Reproduit : GO → fermeture → réponse d'offset → **POST envoyé avant
+le nettoyage**, au ✕ comme à Échap.
+
+Il a raison, et mon simulateur mentait : il émettait `close` **synchronement**, ce qui cachait
+exactement le défaut. Les étapes de fermeture d'un `<dialog>` METTENT EN FILE cet évènement,
+donc une continuation en attente reprend la main entre le geste et le gestionnaire.
+
+**Correction :** chaque chemin de fermeture que NOUS pilotons retire la fenêtre lui-même,
+d'abord, avant d'appeler `close()`. `cancel` (Échap) est dispatché avec l'évènement clavier,
+donc synchrone : c'est le crochet de ce chemin. `close` ne sert plus que de filet pour les fins
+que nous ne pilotons pas — et il ne retire que si le dialogue est **encore fermé**, sinon un
+évènement en file invaliderait la fenêtre rouverte entre-temps.
+
+**Le simulateur a été corrigé avant le code** : `close()` met l'évènement en file via
+`setImmediate` et rend une promesse, `pressEscape()` émet `cancel` synchronement puis ferme.
+Sans cela le scénario de Romain restait invisible. C'est la deuxième fois aujourd'hui que le
+harnais lui-même était le maillon faible ; un bouchon qui simplifie le navigateur cache des
+défauts réels.
+
+Deux scénarios de plus (15 au total), tous deux morts sous mutation : le ✕ pendant la lecture
+d'offset ne laisse plus partir le POST, et l'évènement différé d'une fenêtre ne retire pas la
+suivante. Un drapeau d'idempotence ajouté en cours de route a été **retiré** : aucun test ne
+le tuait, la garde sur l'état du dialogue suffit, et je préfère moins d'état non testé.
+
 ## 2026-09-17 (6e passe) — Échap fermait la fenêtre sans rien nettoyer
 
 Romain, sur `26d067e` : « seuls le bouton ✕ et le clic extérieur appellent `closeOffers`. La
