@@ -419,9 +419,19 @@ python3 scripts/03_match.py runs/<id>/offers.json                            # �
 python3 scripts/04_validate.py template runs/<id>/candidates.json            # → validation.template.json (à remplir, puis copier en validation.json)
 python3 scripts/04_validate.py check runs/<id>/candidates.json runs/<id>/validation.json   # vérifie validation.json → écrit approved.json (05 le re-vérifie contre candidates.json + validation.json voisins : un approved.json non vérifié / périmé est refusé)
 python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127            # DRY-RUN (défaut)
-python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127 --submit   # WRITE (safe: lot validé complet) — sur GO
-python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127 --submit --mode learning   # canary de 1 (WRITE) — sur GO
+python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127 --submit --prove-gone-by-search   # WRITE (safe: lot validé complet) — sur GO
+python3 scripts/05_submit.py runs/<id>/approved.json --merchant Driffle --store-id 127 --submit --mode learning --prove-gone-by-search   # canary de 1 (WRITE) — sur GO
 ```
+
+**`--prove-gone-by-search` sur toute saisie manuelle (2026-09-17).** Sans lui, la preuve
+post-écriture est la MARCHE complète du feed après CHAQUE création (forme (a) d'EXECUTOR_RULES
+« Two accepted forms of the refreshed-feed proof »), restée le défaut du chemin manuel alors que
+le sweep de nuit utilise la recherche depuis le GO du 2026-09-10. Mesuré sur GameBoost le
+2026-09-17 (feed de 12 pages / 1080 lignes) : ~85 s de re-marche par offre, soit **123 s par
+offre et 6 h 45 pour 198** ; la même preuve par recherche filtrée tient en ~2 s. Les deux formes
+prouvent une absence sur TOUT le feed et partagent les mêmes garde-fous fail-closed (une
+recherche non rendue = `FeedScanError` → offre UNKNOWN, jamais un faux « gone »).
+`--prove-gone-scan` restaure la marche historique si on la veut.
 
 **Safe-auto sweep (multi-marchands, par page, highest-first) :**
 ```sh

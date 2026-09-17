@@ -82,13 +82,22 @@ class DisplayedPlanIsTheActedOnPlanTests(unittest.TestCase):
         self.assertIn("if (seq !== LOAD_SEQ) return;", SORT_JS)
 
     def test_the_actions_read_the_displayed_run_not_the_picker(self):
+        """SUPERSEDED-IN-FORM 2026-09-17, same intent, stronger guarantee. This used to
+        require the literal ``PLAN_RUN_ID`` in each action URL. The next day's audit showed
+        that reading the MUTABLE global at each step was itself the defect (a plan swap
+        during an await redirected the move), so the actions now read ``runId`` — a const
+        frozen from ``PLAN_RUN_ID`` at the click. What this test protects is unchanged: an
+        action must never address the PICKER's ``RUN_ID``. See
+        ``test_sort_audit_2026_09_17`` for the freezing itself."""
+
         self.assertIn("PLAN_RUN_ID", SORT_JS)
+        self.assertIn("const runId = PLAN_RUN_ID;", SORT_JS)
         for call in ("/sort/move", "/submit/status?offset=0"):
             with self.subTest(call=call):
                 line = [l for l in SORT_JS.splitlines() if call in l and "encodeURIComponent" in l]
                 self.assertTrue(line, call)
                 for l in line:
-                    self.assertIn("PLAN_RUN_ID", l)
+                    self.assertIn("encodeURIComponent(runId)", l)
                     self.assertNotIn("encodeURIComponent(RUN_ID)", l)
 
     def test_the_move_sends_the_plan_digest(self):

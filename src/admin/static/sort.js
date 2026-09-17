@@ -93,7 +93,9 @@ async function loadRuns() {
 // The scan whose plan is ACTUALLY on screen, and a sequence token so a slow answer from a
 // previously selected scan can never repaint over a newer one (audit de Romain 2026-09-16:
 // « le GO peut viser un autre scan que celui affiché » — plan A displayed, move sent for B).
-// Every action reads PLAN_RUN_ID, never the picker's current value.
+// Every action reads PLAN_RUN_ID, never the picker's current value — and a GATED action
+// (runAction) FREEZES it at the click, so a plan swap mid-action cannot redirect it
+// (audit de Romain 2026-09-17).
 let PLAN_RUN_ID = null;
 let LOAD_SEQ = 0;
 
@@ -308,6 +310,16 @@ function buildActions(id, g) {
 async function runAction(id, action, goInput, batched, deferred) {
   if ((action === "canary" || action === "batch")
       && (!goInput || goInput.value.trim().toUpperCase() !== "GO")) return;
+  // FREEZE the approved plan's identity AT THE CLICK, before any await (audit de Romain
+  // 2026-09-17). Between the click and the POST this function awaits twice, and a loadPlan()
+  // that lands DURING either await swaps PLAN_RUN_ID / PLAN to another scan. The server's
+  // digest gate cannot catch that case: the swapped-in digest is genuinely the current one
+  // for the swapped-in run, so the move passes — on a plan the operator never examined.
+  // Everything below (status base, POST, polling) reads these frozen consts, never the
+  // mutable globals.
+  const runId = PLAN_RUN_ID;
+  const planDigest = PLAN && PLAN.plan_digest;
+  if (!runId) return;                       // no plan on screen → nothing was approved
   const body = { list_id: id, action };
   if (action !== "dry_run") body.confirm = "GO";
   if (batched) body.batched = true;
@@ -318,7 +330,7 @@ async function runAction(id, action, goInput, batched, deferred) {
   // reading from its CURRENT end so the pane shows only THIS action's events,
   // not replayed history from earlier canaries/dry-runs.
   try {
-    const base = await getJSON(`api/runs/${encodeURIComponent(PLAN_RUN_ID)}/submit/status?offset=0`);
+    const base = await getJSON(`api/runs/${encodeURIComponent(runId)}/submit/status?offset=0`);
     OFFSET = base.offset ?? 0;
   } catch (e) { OFFSET = 0; }
   const tag = action.replace("_", "-")
@@ -326,18 +338,22 @@ async function runAction(id, action, goInput, batched, deferred) {
   showStatusPane(`▶ ${tag} — liste ${id} — lancement…`);
   setStatus(`Lancement ${tag}…`, true);
   try {
-    // the run the DISPLAYED plan came from, plus its identity — the server refuses the
-    // move if the two no longer agree (409 plan_changed)
-    body.plan_digest = PLAN && PLAN.plan_digest;
-    await postJSON(`api/runs/${encodeURIComponent(PLAN_RUN_ID)}/sort/move`, body);
+    // the run the plan on screen AT THE CLICK came from, plus that plan's identity — the
+    // server still refuses the move if the two no longer agree (409 plan_changed)
+    body.plan_digest = planDigest;
+    await postJSON(`api/runs/${encodeURIComponent(runId)}/sort/move`, body);
   } catch (e) {
     appendStatus("✖ refusé : " + e.message);
     setStatus("Refusé — " + e.message);
     $("#modal-actions").querySelectorAll("button,input").forEach((n) => (n.disabled = false));
     return;
   }
+  if (PLAN_RUN_ID !== runId) {
+    // the action is the one that was approved; the CARDS on screen are another scan's
+    appendStatus(`⚠ le scan affiché a changé pendant l'envoi — cette action porte sur ${runId}`, "bad");
+  }
   if (goInput) goInput.value = "";
-  startPoll();
+  startPoll(runId);
 }
 
 function showStatusPane(msg) {
@@ -370,11 +386,14 @@ function fmtEvent(ev) {
   return null;
 }
 
-function startPoll() {
+function startPoll(runId) {
   stopPoll();
+  // the run THIS action was approved on (frozen by runAction). Never re-read from the
+  // mutable PLAN_RUN_ID: a plan switch mid-action would tail another run's event log.
+  const rid = runId || PLAN_RUN_ID;
   const tick = async () => {
     let s;
-    try { s = await getJSON(`api/runs/${encodeURIComponent(PLAN_RUN_ID)}/submit/status?offset=${OFFSET}`); }
+    try { s = await getJSON(`api/runs/${encodeURIComponent(rid)}/submit/status?offset=${OFFSET}`); }
     catch (e) { return; }
     OFFSET = s.offset ?? OFFSET;
     for (const ev of (s.events || [])) { const line = fmtEvent(ev); if (line) appendStatus(line); }

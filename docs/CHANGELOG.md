@@ -3,6 +3,48 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-17 — Audit de Romain : le GO du tri gelé au clic, et la preuve lente du chemin manuel
+
+**1. Priorité haute — le GO du tri pouvait ENCORE viser un autre scan.** Le correctif du 16/09
+avait fermé la course au REPEINT et ajouté l'empreinte côté serveur ; Romain a trouvé le trou
+restant sur le chemin d'écriture : « l'action attend une réponse réseau avant de relire le scan
+et son empreinte. Si le chargement d'un autre plan termine pendant cette attente : GO cliqué
+sur A ; requête de déplacement envoyée pour B, avec l'empreinte valide de B. » `runAction`
+lisait `PLAN_RUN_ID` / `PLAN.plan_digest` à TROIS moments séparés par deux `await`, et le garde
+serveur ne peut rien voir : l'empreinte envoyée est bien l'empreinte COURANTE de B, donc le
+déplacement passe — sur un plan que l'opérateur n'a jamais examiné.
+**Correction :** l'identité du plan approuvé est GELÉE au clic, avant tout `await`
+(`const runId` / `const planDigest`) ; la lecture de l'offset, le POST et le suivi lisent ces
+constantes. `startPoll(runId)` prend le scan en paramètre (sinon il tailait le journal d'un
+autre run). Ajouts : refus quand aucun plan n'est affiché, et avertissement visible dans le
+panneau quand l'écran a changé pendant l'envoi (l'action reste celle qui a été approuvée, mais
+les cartes à l'écran sont celles d'un autre scan). `tests/test_sort_audit_2026_09_17.py` — 10
+tests, **tous les 10 échouent sur la version d'avant** (vérifié). L'assertion du 16/09 qui
+exigeait l'ancienne écriture est mise à jour, même intention, garantie plus forte.
+*Réserve :* Romain demandait une simulation des réponses réseau retardées ; elle exige
+d'exécuter le JS et aucun moteur n'est installé (ni node/deno/quickjs, ni moteur Python), et
+AGENTS.md interdit d'ajouter une dépendance sans son accord. Les assertions sont donc
+STRUCTURELLES et le disent.
+
+**2. Le chemin manuel payait la preuve lente — `--prove-gone-by-search` documenté
+(`docs/HANDOFF.md`).** Romain : « Pourquoi on relit tout le feed alors que je ne purge plus les
+offres ? » Réponse : rien à voir avec une purge. Deux formes de preuve existent depuis le GO du
+2026-09-10 ; le sweep de nuit utilise la recherche filtrée, mais la ligne MANUELLE par marchand
+était restée sur la marche complète du feed après CHAQUE création. Mesuré en production sur
+GameBoost (12 pages / 1080 lignes) : **~85 s de re-marche par offre, soit 123 s par offre et
+6 h 45 pour 198**. Avec le drapeau : **40 s par offre**, zéro relecture de page entre deux
+écritures, ~2 h pour le lot. Les lignes WRITE de HANDOFF le portent désormais, avec la mesure.
+
+**3. Reprise après arrêt opérateur — dé-approuver, jamais éditer `approved.json`.** Le run
+GameBoost a été coupé proprement (`run_stopped reason=operator_stop`, dernière offre terminée
+et prouvée avant l'arrêt, 7/7 créées, zéro refus). Rejouer le lot tel quel aurait commencé par
+7 échecs consécutifs contre un seuil de 10 : marge de 3. Et `approved.json` ne se filtre PAS à
+la main — `verify_approved_against_source` le re-dérive de `candidates.json` + `validation.json`
+et refuse tout écart. La marche à suivre, appliquée : passer `approve: false` sur les offres
+déjà créées dans `validation.json`, puis `04_validate.py check` régénère le lot (198 → 191,
+aucune des 7 dedans). Complète la « LIMITE TROUVÉE » du 16/09 : un matching frais reste la
+solution quand le feed a bougé, la dé-approbation suffit quand seule NOTRE passe l'a modifié.
+
 ## 2026-09-16 — Saisies réelles du jour : GameBoost 15/15, Wyrel en cours, et une limite du rejeu
 
 **GameBoost (157)** — 1er matching réel (992 lignes, 13 pages) → 207 candidats ; **1re passe
