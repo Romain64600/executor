@@ -255,24 +255,52 @@ class TheNeighbouringPollLoopsAreGuardedTests(unittest.TestCase):
 
 
 class TheLaunchItselfIsGuardedTests(unittest.TestCase):
-    """Romain, P2: « La génération protège les requêtes de suivi, mais pas le lancement ».
+    """Romain, P2 puis 3e passe : « La génération protège les requêtes de suivi, mais pas le
+    lancement », puis « le garde compare uniquement le scan, pas l'ouverture de fenêtre » et
+    « une réponse d'erreur contourne entièrement le nouveau garde ».
 
-    The pane belongs to the OPEN modal. With the modal closed (or reopened on another plan)
-    while the POST was in flight, ``startPoll`` used to restart anyway and paint A's
-    "terminé (exit 0)" into that other window. Exercised live, and mutation-verified."""
+    Comparing the RUN was not enough: switching to another list of the SAME scan keeps the run
+    identical, so one list's outcome landed in another's window. And the ``catch`` ran before
+    any check, so a late refusal painted into a foreign window and re-enabled ITS buttons.
+    The identity is now the OPENING itself (``MODAL_SEQ``), checked after EVERY await — the
+    log-offset read, the POST's success path AND its error path. All three are exercised live
+    in ``tests/js/sort_race.test.mjs`` and each dies under mutation."""
 
-    def test_the_action_refuses_to_paint_into_a_foreign_pane(self):
-        self.assertIn("if (MODAL_RUN_ID !== runId) {", RUN_ACTION)
-        block = RUN_ACTION[RUN_ACTION.index("if (MODAL_RUN_ID !== runId) {"):]
-        block = block[:block.index("\n  }")]          # ce bloc-ci seulement
+    def test_the_action_captures_its_own_window_opening(self):
+        self.assertIn("const seq = MODAL_SEQ;", RUN_ACTION)
+        self.assertIn("const gone = () => seq !== MODAL_SEQ;", RUN_ACTION)
+
+    def test_every_opening_and_every_close_retires_the_previous_one(self):
+        self.assertIn("MODAL_SEQ++", _body("openList"))
+        self.assertIn("MODAL_SEQ++", _body("closeOffers"))
+
+    def test_each_of_the_three_awaits_is_followed_by_the_check(self):
+        code = _no_comments(RUN_ACTION)
+        awaits = [i for i in range(len(code)) if code.startswith("await ", i)]
+        self.assertEqual(len(awaits), 2, "offset read + POST")
+        self.assertEqual(code.count("gone()"), 3,
+                         "one after the offset read, one in the catch, one on the success path")
+
+    def test_the_error_path_checks_BEFORE_it_paints_or_re_enables(self):
+        # the POST's catch, not the one-line catch of the offset read above it
+        catch = RUN_ACTION[RUN_ACTION.rindex("  } catch (e) {"):]
+        catch = catch[:catch.index("\n  }")]
+        self.assertIn("refusé", catch, "wrong catch block picked up")
+        self.assertLess(catch.index("gone()"), catch.index("appendStatus("),
+                        "a late refusal would paint into whatever window is open now")
+        self.assertLess(catch.index("gone()"), catch.index("disabled = false"),
+                        "a late refusal would re-enable another window's buttons mid-launch")
+
+    def test_abandoning_uses_the_page_status_never_the_pane(self):
+        block = RUN_ACTION[RUN_ACTION.index("const abandon = "):]
+        block = block[:block.index("\n  };")]
         self.assertIn("setStatus(", block, "the page's own status line, never the pane")
         self.assertNotIn("appendStatus(", block,
-                         "appendStatus writes into the modal pane — which is another plan's")
-        self.assertIn("return;", block)
+                         "appendStatus writes into the modal pane — which is another window's")
 
     def test_it_is_checked_before_the_poll_starts(self):
         code = _no_comments(RUN_ACTION)
-        self.assertLess(code.index("if (MODAL_RUN_ID !== runId)"), code.index("startPoll(runId)"))
+        self.assertLess(code.rindex("gone()"), code.index("startPoll(runId)"))
 
 
 class ThePreFixSpellingsAreGoneTests(unittest.TestCase):

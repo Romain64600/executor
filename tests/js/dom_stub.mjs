@@ -128,6 +128,19 @@ export async function tick(n = 12) {
   await new Promise((r) => setImmediate(r));
 }
 
+/** Every clickable element of a subtree whose text contains `txt`, in document order. */
+export function byTextAll(root, txt) {
+  const out = [];
+  (function walk(n) {
+    for (const c of n.children || []) {
+      if (typeof c === "string") continue;
+      if ((c.textContent || "").includes(txt) && c.has("click")) out.push(c);
+      walk(c);
+    }
+  })(root);
+  return out;
+}
+
 /** Walk a subtree for the first element whose text contains `txt`. */
 export function byText(root, txt) {
   const out = [];

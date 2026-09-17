@@ -226,7 +226,10 @@ function cmdRow(tag, cmd) {
 let POLL = null, POLL_SEQ = 0, OFFSET = 0, BATCHED = false, DEFERRED = false;
 // The plan the OPEN modal belongs to — set when it opens, cleared when it closes. Every
 // command shown, every GO and every poll reads these, never the mutable PLAN_RUN_ID / PLAN.
-let MODAL_RUN_ID = null, MODAL_DIGEST = null;
+// MODAL_SEQ identifies the OPENING itself, not just the plan (audit de Romain, 3e passe):
+// changing list inside the SAME scan is a new window too, and an action launched from the
+// previous one must not paint into it — comparing the run alone could not see that.
+let MODAL_RUN_ID = null, MODAL_DIGEST = null, MODAL_SEQ = 0;
 
 function renderCmds(id) {
   // The exact copyable CLI, tracking the "Batché" toggle. Batched = the fast
@@ -249,7 +252,9 @@ function renderCmds(id) {
 
 function openList(id, g, runId, planDigest) {
   const [, family] = fam(id);
-  // Take the identity of the plan these offers came from BEFORE anything is rendered.
+  // Take the identity of the plan these offers came from BEFORE anything is rendered, and
+  // retire whatever the PREVIOUS opening had in flight.
+  MODAL_SEQ++;
   MODAL_RUN_ID = runId || null;
   MODAL_DIGEST = planDigest || null;
   $("#modal-title").textContent = `${g.label || family} — liste ${id} · ${fmt(g.count)} offres`;
@@ -330,7 +335,17 @@ async function runAction(id, action, goInput, batched, deferred) {
   // a swap on its own, since the swapped-in digest is genuinely that run's current one.
   const runId = MODAL_RUN_ID;
   const planDigest = MODAL_DIGEST;
+  const seq = MODAL_SEQ;        // THIS opening. Checked after every await, errors included.
   if (!runId) return;                       // no open plan → nothing was approved
+  // The pane and the buttons belong to the window that is open NOW. Once this opening is
+  // retired — closed, or replaced by another list of the SAME scan — nothing below may
+  // touch them: a late answer would otherwise paint one list's outcome into another's
+  // window and re-enable ITS buttons mid-launch (audit de Romain, 3e passe).
+  const gone = () => seq !== MODAL_SEQ;
+  const abandon = (what) => {
+    setStatus(`${what} sur ${runId} (liste ${id}) — la fenêtre a été fermée depuis`);
+    if (goInput) goInput.value = "";
+  };
   const body = { list_id: id, action };
   if (action !== "dry_run") body.confirm = "GO";
   if (batched) body.batched = true;
@@ -340,10 +355,12 @@ async function runAction(id, action, goInput, batched, deferred) {
   // The run's event log is shared across every action on this run — start
   // reading from its CURRENT end so the pane shows only THIS action's events,
   // not replayed history from earlier canaries/dry-runs.
+  let base = null;
   try {
-    const base = await getJSON(`api/runs/${encodeURIComponent(runId)}/submit/status?offset=0`);
-    OFFSET = base.offset ?? 0;
-  } catch (e) { OFFSET = 0; }
+    base = await getJSON(`api/runs/${encodeURIComponent(runId)}/submit/status?offset=0`);
+  } catch (e) { base = null; }
+  if (gone()) return;                       // window replaced while we read the log offset
+  OFFSET = (base && base.offset) ?? 0;
   const tag = action.replace("_", "-")
     + (batched ? (body.deferred ? " (batché · différé)" : " (batché)") : "");
   showStatusPane(`▶ ${tag} — liste ${id} — lancement…`);
@@ -354,22 +371,20 @@ async function runAction(id, action, goInput, batched, deferred) {
     body.plan_digest = planDigest;
     await postJSON(`api/runs/${encodeURIComponent(runId)}/sort/move`, body);
   } catch (e) {
+    // The REFUSAL is bound to its window exactly like the success is: before this check a
+    // late error from list 8 painted "✖ refusé" into list 16 and re-enabled ITS buttons.
+    if (gone()) { abandon("Action refusée"); return; }
     appendStatus("✖ refusé : " + e.message);
     setStatus("Refusé — " + e.message);
     $("#modal-actions").querySelectorAll("button,input").forEach((n) => (n.disabled = false));
     return;
   }
-  // The status pane belongs to the OPEN modal. If it was closed — or reopened on another
-  // plan — while the POST was in flight, this action's output has no home: painting into it
-  // would show A's "terminé (exit 0)" inside B's window, and startPoll would tail A there
-  // (audit de Romain, P2, 2026-09-17). The generation token protects the poll REQUESTS; it
-  // cannot protect the launch that precedes them. The action itself is fine and running
-  // server-side — we say so on the page's own status line, which belongs to no modal.
-  if (MODAL_RUN_ID !== runId) {
-    setStatus(`Action lancée sur ${runId} — la fenêtre a été fermée depuis, suivi interrompu`);
-    if (goInput) goInput.value = "";
-    return;
-  }
+  // The status pane belongs to the window that is open NOW. If it was closed, or replaced by
+  // another list — of this scan or another — while the POST was in flight, this action's
+  // output has no home: painting would show one list's "terminé (exit 0)" inside another's
+  // window, and startPoll would tail it there. The action itself is fine and running
+  // server-side — we say so on the page's own status line, which belongs to no window.
+  if (gone()) { abandon("Action lancée"); return; }
   if (PLAN_RUN_ID !== runId) {
     // the action is the one that was approved; the CARDS on screen are another scan's
     appendStatus(`⚠ le scan affiché a changé pendant l'envoi — cette action porte sur ${runId}`, "bad");
@@ -525,7 +540,7 @@ $("#stop-btn").addEventListener("click", async () => {
   setTimeout(() => { b.disabled = false; b.textContent = "Arrêter"; refreshBusy(); }, 1500);
 });
 setInterval(refreshBusy, 4000);   // keep the busy indicator live across tabs/runs
-function closeOffers(dlg) { stopPoll(); MODAL_RUN_ID = null; MODAL_DIGEST = null; dlg.close(); }
+function closeOffers(dlg) { MODAL_SEQ++; stopPoll(); MODAL_RUN_ID = null; MODAL_DIGEST = null; dlg.close(); }
 $("#modal-close").addEventListener("click", () => closeOffers($("#offers-modal")));
 $("#offers-modal").addEventListener("click", (e) => { if (e.target.id === "offers-modal") closeOffers(e.target); });
 

@@ -3,6 +3,50 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-17 (5e passe) — Une génération PAR OUVERTURE de fenêtre, erreurs comprises
+
+Romain a audité `fdfcd10` et repris le garde en défaut sur deux cas, tous deux reproduits :
+
+**1. `[P2]` Changer de LISTE dans le même scan contournait le garde.** GO sur la liste 8 →
+fermeture → ouverture de la liste 16 → réponse tardive : le résultat de la 8 s'affichait dans
+la 16. Le garde comparait le SCAN (`MODAL_RUN_ID !== runId`) ; or changer de liste garde le
+même scan, donc il ne voyait rien.
+
+**2. `[P2]` Une réponse d'ERREUR contournait entièrement le garde.** « Le catch intervient
+avant la vérification » : un refus tardif de la liste 8 s'affichait dans la 16 **et réactivait
+ses boutons**, en plein lancement de celle-ci.
+
+**Correction : l'identité n'est plus le plan, c'est l'OUVERTURE.** `MODAL_SEQ` est incrémenté
+à chaque `openList` ET à chaque fermeture ; `runAction` le capture au clic et le vérifie après
+**chacune de ses trois attentes** — la lecture de l'offset, le chemin de succès du POST, et
+son chemin d'erreur. Quand l'ouverture est périmée, l'action ne touche ni le panneau ni les
+boutons : elle le dit sur la ligne de statut de la PAGE, qui n'appartient à aucune fenêtre.
+
+**Ce que la mutation a appris.** Mon premier jeu de tests pour ce cas était vert **pour la
+mauvaise raison** : je l'avais écrit sur le contexte qui charge aussi le plan B, si bien que
+rouvrir une liste changeait le SCAN — l'ancien garde suffisait donc, et le mutant passait.
+Le scénario est réécrit sur un contexte « plan A seul » où seule l'ouverture change. Sans
+cette vérification par mutation, j'aurais livré un test inutile en croyant le contraire.
+
+| garde retiré | test qui meurt |
+|---|---|
+| `gone()` sur le chemin de succès (retour au garde par scan) | changer de LISTE dans le même scan |
+| `gone()` dans le `catch` | un REFUS tardif ne peint pas dans une autre fenêtre |
+| `gone()` après la lecture d'offset | la lecture d'offset qui revient trop tard |
+
+Le harnais passe à 11 scénarios.
+
+## 2026-09-17 — Le contrôle du miroir `app.js` tourne enfin hors CI
+
+Conséquence directe de l'arrivée de node : `tests/js/candidate_contract_check.js`, qui compare
+le bloc de contrat candidat recopié dans `app.js` à `src/candidate_contract.py` sur 25 cas
+partagés, ne s'exécutait **que** dans la CI, après un push ; côté Python on se contentait de
+vérifier que le fichier existait, « node étant absent du VPS ». Ce n'est plus vrai. Le runner
+est désormais EXÉCUTÉ depuis `tests/test_candidate_contract.py` (skip propre sans node), donc
+une dérive du portage échoue sur la machine de développement et sur le VPS, pas seulement chez
+GitHub. Vérifié en injectant une dérive dans le bloc miroir : le runner sort en erreur et le
+test Python échoue. Le commentaire de `ci.yml` qui affirmait le contraire est corrigé.
+
 ## 2026-09-17 (4e passe) — Le lancement gardé lui aussi, les deux boucles voisines, et un faux vert
 
 Premier audit de Romain **appuyé sur le harnais node livré le matin même**. Deux points, tous

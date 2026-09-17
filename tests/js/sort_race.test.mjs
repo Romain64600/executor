@@ -14,7 +14,7 @@ import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadConsole } from "./load_console.mjs";
-import { byText, tick } from "./dom_stub.mjs";
+import { byText, byTextAll, tick } from "./dom_stub.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const SORT_JS = process.env.SORT_JS || path.join(ROOT, "src", "admin", "static", "sort.js");
@@ -26,8 +26,12 @@ const plan = (tag) => ({
   plan_digest: `digest-${tag}`,
   counts: { total: 10, routed: 3, target_lists: 1, unrouted_skips: 0, candidates: 0 },
   coverage: { pages_fetched: 1, truncated: false },
-  by_list: { 8: { count: 3, label: "Blacklist",
-                  offers: [{ store_id: "12", name: `offre ${tag}`, url: `https://m.test/${tag}`, reason: "x" }] } },
+  by_list: {
+    8: { count: 3, label: "Blacklist",
+         offers: [{ store_id: "12", name: `offre ${tag} liste 8`, url: `https://m.test/${tag}/8`, reason: "x" }] },
+    16: { count: 2, label: "Softwares",
+          offers: [{ store_id: "12", name: `offre ${tag} liste 16`, url: `https://m.test/${tag}/16`, reason: "y" }] },
+  },
   moved_tally: {},
 });
 
@@ -56,6 +60,23 @@ async function upToTheOpenModal(overrides) {
 
   // 3. NOW B finishes loading, behind the open modal
   await app.net.release("runs/scan-B/sort", plan("B"));
+  return app;
+}
+
+// Le plan A seul, affiché, sans aucun autre chargement en vol : le seul changement possible
+// est alors l'OUVERTURE d'une autre fenêtre du MÊME scan — le cas que le garde par scan ne
+// pouvait pas voir.
+async function planASeul(overrides) {
+  const app = await loadConsole(SORT_JS, overrides);
+  await app.net.release("api/sort/runs", RUNS);
+  await app.net.release("runs/scan-A/sort", plan("A"));
+  return app;
+}
+
+async function ouvrir(app, n) {
+  const cartes = byTextAll(app.$("#board"), "Voir les offres");
+  assert.equal(cartes.length, 2, "le plan de test doit offrir deux listes");
+  await cartes[n].fire("click");
   return app;
 }
 
@@ -221,6 +242,73 @@ await test("un tick de sondage périmé ne touche pas le run suivant", async () 
   assert.equal(planAfter, planBefore,
     "le tick périmé a rechargé le plan — il a donc exécuté finishStatus");
   assert.ok(app.net.calls.length >= before, "aucun appel ne doit disparaître");
+});
+
+await test("changer de LISTE dans le même scan retire aussi l'action précédente", async () => {
+  // Romain, 3e passe : le garde ne comparait que le SCAN, donc passer de la liste 8 à la
+  // liste 16 du MÊME scan le laissait passer et le résultat de la 8 atterrissait dans la 16.
+  // Aucun autre plan n'est chargé ici : c'est bien l'OUVERTURE qui change, pas le scan.
+  const app = await planASeul();
+  await ouvrir(app, 0);
+  await typeGoAndFire(app);
+
+  await app.$("#modal-close").fire("click");
+  await ouvrir(app, 1);
+  assert.ok(app.$("#modal-title").textContent.includes("liste 16"), app.$("#modal-title").textContent);
+
+  const before = app.net.calls.length;
+  await app.net.release("/sort/move", { ok: true });   // la réponse de la liste 8 arrive
+  await tick();
+
+  assert.deepEqual(app.net.calls.slice(before).filter((c) => c.url.includes("submit/status")).map((c) => c.url), [],
+    "aucun suivi ne doit démarrer dans la fenêtre d'une autre liste");
+  assert.ok(!app.$("#modal-status").textContent.includes("liste 8"),
+    `la fenêtre de la liste 16 a reçu le lancement de la 8 : ${app.$("#modal-status").textContent}`);
+});
+
+await test("un REFUS tardif ne peint pas dans une autre fenêtre ni ne réactive ses boutons", async () => {
+  // Romain, 3e passe : « le catch intervient avant la vérification ». Un refus tardif de la
+  // liste 8 s'affichait dans la 16 et réactivait SES boutons, en plein lancement.
+  const app = await planASeul();
+  await ouvrir(app, 0);
+  await typeGoAndFire(app);
+
+  await app.$("#modal-close").fire("click");
+  await ouvrir(app, 1);
+  const boutons = app.$("#modal-actions").querySelectorAll("button,input");
+  boutons.forEach((b) => (b.disabled = true));         // la 16 est elle-même en cours de lancement
+
+  await app.net.release("/sort/move", { error: { message: "plan_changed" } }, false);
+  await tick();
+
+  assert.ok(!app.$("#modal-status").textContent.includes("refusé"),
+    `le refus de la liste 8 a été peint dans la fenêtre de la 16 : ${app.$("#modal-status").textContent}`);
+  assert.ok(boutons.every((b) => b.disabled),
+    "le refus d'une autre fenêtre a réactivé les boutons de celle-ci, en plein lancement");
+});
+
+await test("la lecture d'offset qui revient trop tard ne peint pas non plus", async () => {
+  // Troisième attente du même chemin : si la fenêtre est remplacée pendant la lecture de
+  // l'offset, écrire OFFSET et ouvrir le panneau viserait la NOUVELLE fenêtre.
+  const app = await planASeul();
+  await ouvrir(app, 0);
+  const go = app.$("#modal-actions").querySelector(".go-in");
+  const canary = app.$("#modal-actions").querySelector(".primary");
+  go.value = "GO";
+  await go.fire("input");
+  canary.fire("click").catch(() => {});
+  await tick();
+
+  await app.$("#modal-close").fire("click");           // la fenêtre part AVANT la réponse
+  await ouvrir(app, 1);
+  const before = app.net.calls.length;
+  await app.net.release("submit/status?offset=0", { offset: 3 });
+  await tick();
+
+  assert.ok(!app.$("#modal-status").textContent.includes("liste 8"),
+    `le panneau de la liste 16 a reçu le lancement de la 8 : ${app.$("#modal-status").textContent}`);
+  assert.deepEqual(app.net.calls.slice(before).map((c) => c.url), [],
+    "aucune requête ne doit partir pour une fenêtre qui n'existe plus");
 });
 
 console.log(failures ? `\n${failures} échec(s)` : "\ntout passe");
