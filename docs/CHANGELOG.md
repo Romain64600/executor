@@ -3,6 +3,36 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-17 — Stage 13 : le SQL de tri, généré et MESURÉ, jamais exécuté
+
+Romain : « j'aimerais bien que tu me génères des requêtes SQL […] sur l'admin on aura un espace
+où on pourra les copier-coller et nous aller les exécuter personnellement », avec des exemples
+filtrant sur l'URL (`WHERE url LIKE '%-furniture-pack%' AND listId=9`). Sur sa confirmation
+(« on filtre sur l'url »), `scripts/13_sort_sql.py`.
+
+**Le script ne touche aucune base : il écrit du texte.** L'exécution reste manuelle, dans
+phpMyAdmin. C'est justement pourquoi il est prudent : un `UPDATE` lancé à la main n'a ni garde
+fail-closed, ni preuve de disparition, ni retour arrière. Chaque motif est donc MESURÉ sur le
+feed avant d'être proposé — combien de lignes il vise, combien notre routeur enverrait sur
+cette liste, combien sur une AUTRE, combien il laisse volontairement en pending, et surtout
+combien sont de **vrais jeux à créer**. Une seule de ces dernières écarte le motif.
+
+**La leçon de la première version, gardée en test.** Je minais d'abord tous les jetons d'URL
+« purs » dans l'échantillon. Résultat : `%modern-warfare%` → Blacklist, plus
+`%agatha-christie%`, `%marvel-tokon%`, `%familiar%`. Purs sur 10 % du feed, catastrophiques sur
+100 % : ce sont des NOMS DE JEUX, pas des catégories. Les motifs ne viennent plus que du
+VOCABULAIRE de routage (`forbidden region: X`, `skip category: Y`), c'est-à-dire du mot qui a
+fait décider le routeur. `tests/test_sort_sql.py` verrouille précisément cette régression.
+
+Deux modes : proposer, et **auditer un motif écrit à la main** avant de le lancer. Les treize
+motifs de Romain passés au crible sur le scan du soir ne visent presque rien — le scan ne
+couvre que 10 % du feed — sauf `%1-year%`, dont l'unique ligne visée est un VRAI JEU. Signal
+utile : cette famille de motifs demande la passe complète avant d'être exécutée.
+
+Garde-fous du texte produit : une seule forme de requête, vérifiée par expression régulière,
+toujours bornée par `AND listId=9`, seul `listId` assigné, et le motif validé contre une liste
+blanche de caractères (un motif à guillemet ou à espace est refusé, pas échappé).
+
 ## 2026-09-17 — R18 durci : seul un seau DLC SOLITAIRE décide d'un titre sans marqueur
 
 Romain, en voyant une offre du sweep de la nuit : « Pourquoi l'executor a rentré cette offre
