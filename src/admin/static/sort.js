@@ -93,9 +93,10 @@ async function loadRuns() {
 // The scan whose plan is ACTUALLY on screen, and a sequence token so a slow answer from a
 // previously selected scan can never repaint over a newer one (audit de Romain 2026-09-16:
 // « le GO peut viser un autre scan que celui affiché » — plan A displayed, move sent for B).
-// Every action reads PLAN_RUN_ID, never the picker's current value — and a GATED action
-// (runAction) FREEZES it at the click, so a plan swap mid-action cannot redirect it
-// (audit de Romain 2026-09-17).
+// Every action reads PLAN_RUN_ID, never the picker's current value. And a GATED action does
+// not read it at all: the identity of the plan the CARDS were painted from travels with them
+// (render → card → openList → MODAL_RUN_ID / MODAL_DIGEST), so a plan that finishes loading
+// while a modal is open cannot redirect the GO (audit de Romain 2026-09-17, deux passes).
 let PLAN_RUN_ID = null;
 let LOAD_SEQ = 0;
 
@@ -163,8 +164,14 @@ function render() {
       el("div", { class: "l" }, `${fmt(c.total)} offres · tous stores`)]),
   );
 
+  // The identity of the plan these cards are painted from travels WITH them (audit de
+  // Romain 2026-09-17, 2e passe). Freezing at the click was still too late: a loadPlan()
+  // landing between the click and the GO swapped the globals while the modal kept showing
+  // the offers of the plan the operator had opened. Bound here, the whole chain
+  // card → openList → commandes → GO → suivi speaks about ONE plan.
+  const runId = PLAN_RUN_ID, planDigest = PLAN && PLAN.plan_digest;
   const lists = Object.entries(PLAN.by_list || {}).sort((a, b) => (b[1].count || 0) - (a[1].count || 0));
-  $("#board").replaceChildren(...lists.map(([id, g]) => card(id, g)));
+  $("#board").replaceChildren(...lists.map(([id, g]) => card(id, g, runId, planDigest)));
 
   $("#secondary").replaceChildren(
     note(c.unrouted_skips, "À garder — skips sans liste sûre (devises, console, bundles, DLC sans page AKS propre). Restent dans Pending, décision opérateur."),
@@ -172,7 +179,7 @@ function render() {
   );
 }
 
-function card(id, g) {
+function card(id, g, runId, planDigest) {
   const [color, family] = fam(id);
   const stores = new Set((g.offers || []).map((o) => o.store_id)).size;
   const moved = ((PLAN.moved_tally || {})[id] || {}).moved_total || 0;
@@ -195,9 +202,9 @@ function card(id, g) {
       [String(g.count), el("span", { class: "u" }, "au plan")]),
     el("div", { class: "card-meta" }, meta),
     el("div", { class: "card-actions" }, [
-      el("button", { class: "linkbtn", onclick: () => openList(id, g) }, "Voir les offres →"),
+      el("button", { class: "linkbtn", onclick: () => openList(id, g, runId, planDigest) }, "Voir les offres →"),
       el("span", { class: "grow" }),
-      el("button", { class: "small", title: "Commandes de déplacement (CLI supervisé)", onclick: () => openList(id, g) }, "Déplacer…"),
+      el("button", { class: "small", title: "Commandes de déplacement (CLI supervisé)", onclick: () => openList(id, g, runId, planDigest) }, "Déplacer…"),
     ]),
   ]);
   c.style.setProperty("--stripe", `var(${CVAR[color]})`);
@@ -216,14 +223,17 @@ function cmdRow(tag, cmd) {
   ]);
 }
 
-let POLL = null, OFFSET = 0, BATCHED = false, DEFERRED = false;
+let POLL = null, POLL_SEQ = 0, OFFSET = 0, BATCHED = false, DEFERRED = false;
+// The plan the OPEN modal belongs to — set when it opens, cleared when it closes. Every
+// command shown, every GO and every poll reads these, never the mutable PLAN_RUN_ID / PLAN.
+let MODAL_RUN_ID = null, MODAL_DIGEST = null;
 
 function renderCmds(id) {
   // The exact copyable CLI, tracking the "Batché" toggle. Batched = the fast
   // many-offers-per-Apply path; its canary must fire a >=2-item Apply (--limit 2)
   // and its full list needs that multi-item proof. "Différé" (P1.6) only rides on
   // the batched FULL list — one verify per store — never the canary.
-  const base = `python3 scripts/09_sort_move.py runs/${PLAN_RUN_ID} --list ${id}`;
+  const base = `python3 scripts/09_sort_move.py runs/${MODAL_RUN_ID} --list ${id}`;
   const canaryCmd = BATCHED
     ? `${base} --execute --mode learning --batch --limit 2`
     : `${base} --execute --mode learning`;
@@ -237,8 +247,11 @@ function renderCmds(id) {
   );
 }
 
-function openList(id, g) {
+function openList(id, g, runId, planDigest) {
   const [, family] = fam(id);
+  // Take the identity of the plan these offers came from BEFORE anything is rendered.
+  MODAL_RUN_ID = runId || null;
+  MODAL_DIGEST = planDigest || null;
   $("#modal-title").textContent = `${g.label || family} — liste ${id} · ${fmt(g.count)} offres`;
   BATCHED = false;
   DEFERRED = false;
@@ -310,16 +323,14 @@ function buildActions(id, g) {
 async function runAction(id, action, goInput, batched, deferred) {
   if ((action === "canary" || action === "batch")
       && (!goInput || goInput.value.trim().toUpperCase() !== "GO")) return;
-  // FREEZE the approved plan's identity AT THE CLICK, before any await (audit de Romain
-  // 2026-09-17). Between the click and the POST this function awaits twice, and a loadPlan()
-  // that lands DURING either await swaps PLAN_RUN_ID / PLAN to another scan. The server's
-  // digest gate cannot catch that case: the swapped-in digest is genuinely the current one
-  // for the swapped-in run, so the move passes — on a plan the operator never examined.
-  // Everything below (status base, POST, polling) reads these frozen consts, never the
-  // mutable globals.
-  const runId = PLAN_RUN_ID;
-  const planDigest = PLAN && PLAN.plan_digest;
-  if (!runId) return;                       // no plan on screen → nothing was approved
+  // The action belongs to the plan THIS MODAL was opened from — not to whatever the page
+  // has loaded since (audit de Romain 2026-09-17, 2e passe: « le gel au clic arrive trop
+  // tard », B chargé pendant que la fenêtre de A reste ouverte). The identity was bound at
+  // render time and carried card → openList → here; the server's digest gate cannot catch
+  // a swap on its own, since the swapped-in digest is genuinely that run's current one.
+  const runId = MODAL_RUN_ID;
+  const planDigest = MODAL_DIGEST;
+  if (!runId) return;                       // no open plan → nothing was approved
   const body = { list_id: id, action };
   if (action !== "dry_run") body.confirm = "GO";
   if (batched) body.batched = true;
@@ -367,7 +378,9 @@ function appendStatus(line, cls) {
   p.append(el("div", { class: "logline" + (cls ? " " + cls : "") }, line));
   p.scrollTop = p.scrollHeight;
 }
-function stopPoll() { if (POLL) { clearInterval(POLL); POLL = null; } }
+// Stopping also RETIRES the current generation: clearInterval cannot cancel a tick whose
+// getJSON is already in flight, so the generation token is what actually disarms it.
+function stopPoll() { POLL_SEQ++; if (POLL) { clearInterval(POLL); POLL = null; } }
 
 function fmtEvent(ev) {
   const n = ev.event || "";
@@ -388,13 +401,21 @@ function fmtEvent(ev) {
 
 function startPoll(runId) {
   stopPoll();
-  // the run THIS action was approved on (frozen by runAction). Never re-read from the
-  // mutable PLAN_RUN_ID: a plan switch mid-action would tail another run's event log.
-  const rid = runId || PLAN_RUN_ID;
+  // the run THIS action was approved on (the open modal's). No fallback to the mutable
+  // PLAN_RUN_ID: runAction refuses before calling us when there is no open plan, and a
+  // fallback would quietly tail another run's event log.
+  const rid = runId;
+  // This poll's generation (audit 2026-09-17, GO de Romain). `tick` is async: a tick whose
+  // answer lands AFTER the modal was closed and another action started would otherwise run
+  // on the NEW poll's state — its stopPoll() would clear the LIVE interval, its OFFSET write
+  // would corrupt the new run's log window, and finishStatus() would paint the PREVIOUS
+  // run's conclusion and exit code into the pane. Same token pattern as LOAD_SEQ.
+  const seq = POLL_SEQ;
   const tick = async () => {
     let s;
     try { s = await getJSON(`api/runs/${encodeURIComponent(rid)}/submit/status?offset=${OFFSET}`); }
     catch (e) { return; }
+    if (seq !== POLL_SEQ) return;   // retired generation — touch nothing
     OFFSET = s.offset ?? OFFSET;
     for (const ev of (s.events || [])) { const line = fmtEvent(ev); if (line) appendStatus(line); }
     const running = s.state === "running";
@@ -488,8 +509,9 @@ $("#stop-btn").addEventListener("click", async () => {
   setTimeout(() => { b.disabled = false; b.textContent = "Arrêter"; refreshBusy(); }, 1500);
 });
 setInterval(refreshBusy, 4000);   // keep the busy indicator live across tabs/runs
-$("#modal-close").addEventListener("click", () => { stopPoll(); $("#offers-modal").close(); });
-$("#offers-modal").addEventListener("click", (e) => { if (e.target.id === "offers-modal") { stopPoll(); e.target.close(); } });
+function closeOffers(dlg) { stopPoll(); MODAL_RUN_ID = null; MODAL_DIGEST = null; dlg.close(); }
+$("#modal-close").addEventListener("click", () => closeOffers($("#offers-modal")));
+$("#offers-modal").addEventListener("click", (e) => { if (e.target.id === "offers-modal") closeOffers(e.target); });
 
 // ---- Reconnexion par transfert de cookies (AKS = social login only) ---------
 // L'opérateur remplit Nom + Valeur par cookie WP ; le JS assemble l'objet cookie

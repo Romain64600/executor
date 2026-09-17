@@ -3,6 +3,48 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-17 (2e passe) — Le gel au clic arrivait trop tard : l'identité suit désormais les cartes
+
+Romain a audité `507bdf8` et l'a pris en défaut, repro JavaScript à l'appui : **geler au clic
+ne suffisait pas**. Son scénario : le chargement de B démarre pendant que A est affiché ;
+l'opérateur ouvre les offres de A ; B termine son chargement, la fenêtre reste sur A ; le GO
+part sur **B**, avec l'empreinte de B. La modale n'étant jamais resynchronisée, l'opérateur
+approuve en regardant les offres de A une action qui s'exécute sur B.
+
+**Correction :** l'identité n'est plus prise au clic mais **à la peinture des cartes**, et elle
+voyage avec elles — `render()` → `card(id, g, runId, planDigest)` → `openList(…)` →
+`MODAL_RUN_ID` / `MODAL_DIGEST`. Tout ce que la modale montre et déclenche parle du même plan :
+les commandes CLI copiables, l'offset du journal, le POST, le suivi. Fermer la modale libère
+l'identité. Le repli `runId || PLAN_RUN_ID` du suivi est supprimé : sans plan ouvert,
+`runAction` refuse avant d'appeler `startPoll`, et un repli ne ferait que suivre discrètement
+un autre run. Geler l'empreinte pour la vie d'une modale est sûr parce que `src/sort_move.py`
+est pur et n'écrit rien : un déplacement ne réécrit pas `sort_plan.json`, donc la séquence
+dry-run → canary → batch d'une même modale garde une empreinte valable, et un 409 ne survient
+que si le scan a été refait — précisément le cas où il DOIT survenir.
+
+`tests/test_sort_audit_2026_09_17.py` passe à 21 tests : les 21 échouent avant la 1re passe,
+et **14 échouent encore sur `507bdf8`**.
+
+**Second point de l'audit — un drapeau inexistant dans la doc.** La note ajoutée le matin
+conseillait `--prove-gone-scan` pour revenir à la marche complète sur le chemin MANUEL. Ce
+drapeau n'existe que dans `scripts/10_data_entry_auto.py` ; `05_submit` ne le connaît pas. Sur
+le chemin manuel il suffit de **retirer** `--prove-gone-by-search`. Corrigé dans
+`docs/HANDOFF.md`, et un test vérifie désormais l'existence réelle des drapeaux cités.
+
+**Revue adversariale de la même classe ailleurs (lecture seule, 25 agents).** Sept pistes
+examinées sur les autres fichiers de la console, le serveur admin, les verrous et le
+garde-fou ; **aucune n'a survécu à la réfutation**. Deux enseignements honnêtes : (1) la revue
+avait bien retrouvé le défaut de Romain toute seule, mais ses réfuteurs l'ont écarté à tort —
+le seuil « dans le doute, on réfute » est trop sévère pour un défaut réel ; (2) une piste
+écartée mérite l'arbitrage de Romain, décrite dans `docs/AUDIT.md` : le tick de `startPoll`
+lit le global `POLL` APRÈS son `await`, donc un tick resté en vol depuis un run terminé peut
+tuer la boucle du run suivant et afficher la conclusion du précédent. Aucune écriture fautive,
+mais un affichage qui ment. **Corrigé le jour même sur GO de Romain** (« fais le fix du
+polling aussi ») : un jeton de génération `POLL_SEQ`, même patron que `LOAD_SEQ`. `stopPoll`
+retire la génération courante (un `clearInterval` ne peut rien contre une requête déjà en vol),
+`startPoll` prend le jeton juste après, et le tick le vérifie dès son retour d'`await`, avant
+toute écriture. Quatre tests l'épinglent, dont l'ordre des instructions.
+
 ## 2026-09-17 — Audit de Romain : le GO du tri gelé au clic, et la preuve lente du chemin manuel
 
 **1. Priorité haute — le GO du tri pouvait ENCORE viser un autre scan.** Le correctif du 16/09

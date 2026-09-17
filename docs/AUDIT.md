@@ -356,3 +356,52 @@ blob (diagnostics-only path — only its routing is tested) and the live
 behaviour of the Enter fallback (= P4). If the module is ever split, moving
 these ~45 tests to a dedicated `tests/test_submit_session.py` would follow the
 code, not precede it.
+
+---
+
+## 2026-09-17 — RÉSOLU (GO de Romain le jour même) : le tick de sondage périmé
+
+**Origine.** Revue adversariale en lecture seule de la classe « état mutable relu après une
+attente », lancée après la double trouvaille de Romain sur `sort.js`. Sept pistes examinées,
+aucune n'a survécu aux réfuteurs — mais celle-ci mérite son arbitrage, parce que les mêmes
+réfuteurs avaient aussi écarté à tort le vrai défaut que Romain a démontré.
+
+**Le mécanisme.** `startPoll` (`src/admin/static/sort.js`) installe un `setInterval(tick,
+1500)`. `tick` est `async` : après son `await getJSON(...)` il appelle `stopPoll()`, qui lit le
+**global mutable** `POLL`, et `finishStatus(s)` avec la charge qu'il vient de recevoir. Rien ne
+marque la génération du sondage. Un tick resté EN VOL quand un nouveau sondage a démarré
+reprend donc la main et agit sur l'état du nouveau :
+
+1. l'opérateur ferme la modale pendant qu'un tick attend sa réponse (`closeOffers` appelle bien
+   `stopPoll`, mais la promesse en vol, elle, n'est pas annulable) ;
+2. il rouvre une liste et lance une action → `startPoll` installe un nouvel intervalle ;
+3. l'ancien tick reprend, voit `state !== "running"` pour SON run, et appelle `stopPoll()` :
+   il efface l'intervalle du run EN COURS ;
+4. `finishStatus(s)` affiche alors la conclusion et le code de sortie du run PRÉCÉDENT, et
+   réactive les boutons.
+
+Le global `OFFSET` est partagé de la même façon : le tick périmé y écrit la position du journal
+de l'ancien run.
+
+**Portée.** Aucune écriture fautive sur AKS : le POST est déjà parti, correctement adressé, et
+la preuve par disparition du feed reste faite côté serveur. Le défaut est un **affichage qui
+ment** — le suivi du run en cours meurt en silence et l'opérateur lit la fin d'un autre run.
+C'est le motif exact sur lequel Romain a déjà tranché deux fois aujourd'hui, d'où ce report
+plutôt qu'un classement sans suite.
+
+**Correctif proposé (deux lignes, même patron que `LOAD_SEQ`).** Un jeton de génération :
+`POLL_SEQ` incrémenté par `startPoll` et par `stopPoll`, capturé dans `const seq` à
+l'installation, et testé juste après l'`await` — `if (seq !== POLL_SEQ) return;`. Un tick d'une
+génération périmée ne touche alors ni `OFFSET`, ni l'intervalle, ni le panneau.
+
+**Statut : APPLIQUÉ** (« fais le fix du polling aussi », 2026-09-17). `POLL_SEQ` est
+incrémenté par `stopPoll` — qui retire donc la génération en cours, puisque `clearInterval` ne
+peut rien contre une requête déjà en vol — et `startPoll` prend le jeton APRÈS cet appel, donc
+tout tick plus ancien est périmé. Le test juste après l'`await` (`if (seq !== POLL_SEQ)
+return;`) précède la moindre écriture : ni `OFFSET`, ni l'intervalle, ni le panneau, ni
+`finishStatus`. Épinglé par `TheStalePollTickIsRetiredTests`.
+
+**Voisins non touchés, pour mémoire.** Le même patron existe dans `pollScan` (`SCAN_POLL`) et
+dans `startPolling` d'`auto.js`. Les deux sont bien moins exposés — leur bouton de lancement
+est désactivé pendant le run, donc une seconde boucle ne démarre pas pendant qu'un tick est en
+vol — et aucun des deux n'a été demandé. À trancher séparément si le sujet revient.

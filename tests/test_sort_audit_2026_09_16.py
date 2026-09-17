@@ -85,13 +85,14 @@ class DisplayedPlanIsTheActedOnPlanTests(unittest.TestCase):
         """SUPERSEDED-IN-FORM 2026-09-17, same intent, stronger guarantee. This used to
         require the literal ``PLAN_RUN_ID`` in each action URL. The next day's audit showed
         that reading the MUTABLE global at each step was itself the defect (a plan swap
-        during an await redirected the move), so the actions now read ``runId`` — a const
-        frozen from ``PLAN_RUN_ID`` at the click. What this test protects is unchanged: an
-        action must never address the PICKER's ``RUN_ID``. See
-        ``test_sort_audit_2026_09_17`` for the freezing itself."""
+        during an await redirected the move). A second pass the same day showed the click
+        was still too late, so the identity is now bound where the CARDS are painted and
+        carried to the modal (``MODAL_RUN_ID``), and the actions read ``runId`` from it.
+        What this test protects is unchanged: an action must never address the PICKER's
+        ``RUN_ID``. See ``test_sort_audit_2026_09_17`` for the binding itself."""
 
         self.assertIn("PLAN_RUN_ID", SORT_JS)
-        self.assertIn("const runId = PLAN_RUN_ID;", SORT_JS)
+        self.assertIn("const runId = MODAL_RUN_ID;", SORT_JS)
         for call in ("/sort/move", "/submit/status?offset=0"):
             with self.subTest(call=call):
                 line = [l for l in SORT_JS.splitlines() if call in l and "encodeURIComponent" in l]

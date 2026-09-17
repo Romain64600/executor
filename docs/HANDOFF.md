@@ -431,7 +431,10 @@ le sweep de nuit utilise la recherche depuis le GO du 2026-09-10. Mesuré sur Ga
 offre et 6 h 45 pour 198** ; la même preuve par recherche filtrée tient en ~2 s. Les deux formes
 prouvent une absence sur TOUT le feed et partagent les mêmes garde-fous fail-closed (une
 recherche non rendue = `FeedScanError` → offre UNKNOWN, jamais un faux « gone »).
-`--prove-gone-scan` restaure la marche historique si on la veut.
+Pour revenir à la marche historique sur le chemin MANUEL, il suffit de retirer
+`--prove-gone-by-search` : `05_submit` n'a pas de `--prove-gone-scan`, ce drapeau
+appartient à `scripts/10_data_entry_auto.py` (il y désactive le défaut du sweep).
+Erreur signalée par Romain le 2026-09-17 dans la 1re rédaction de cette note.
 
 **Safe-auto sweep (multi-marchands, par page, highest-first) :**
 ```sh
