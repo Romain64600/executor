@@ -49,6 +49,12 @@ python3 scripts/01_check_invariants.py
 # Unit tests (pure — run anywhere).
 python3 -m unittest discover -s tests -v
 
+# Simulation vivante de la console (charge le vrai sort.js dans un DOM bouchonné et
+# libère les réponses réseau à la main). Dépendance de TEST seulement : paquet Debian
+# `nodejs`, aucune installation npm. tests/test_console_js_simulation.py la lance depuis
+# la suite Python et se met en SKIP si node est absent.
+node tests/js/sort_race.test.mjs
+
 # Read-only feed extractor (VPS only — needs the live CDP session).
 # Refuses to run unless invariants are green + authoritative.
 python3 scripts/02_extract_feed.py --merchant Driffle --store-id 127

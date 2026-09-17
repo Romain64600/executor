@@ -3,6 +3,47 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-17 — Le JavaScript de la console est enfin EXÉCUTÉ par ses tests (node approuvé)
+
+Romain : « nos tests sont avec un simulateur formel ? ». Réponse honnête : non, et pire — pour
+la console il n'y avait **aucune exécution**. Comptage fait le jour même sur les 2 080
+méthodes de test : **2 016 exécutent vraiment le code, 64 ne vérifient qu'une orthographe, et
+52 de ces 64 portent sur le front-end de la console**. Zéro test d'orthographe dans le matcher,
+le submitter ou les règles marchandes. Le défaut était donc concentré exactement là où Romain
+a trouvé ses deux bugs : ses repros EXÉCUTAIENT un scénario, mes tests vérifiaient une écriture.
+
+Il a levé la contrainte d'`AGENTS.md` : « Installe node pour les tests JS ». **node est
+désormais une dépendance de TEST** (paquet Debian `nodejs` 20.19.2, bibliothèque standard
+seule — aucun `npm install`, aucun `package.json`, aucun `node_modules`, rien ajouté au
+runtime ni au chemin d'écriture du VPS). Inscrit dans `AGENTS.md` pour qu'un audit ne le
+relise pas comme une dérive, et le VPS n'ayant pas node, le test s'y met en SKIP propre.
+
+`tests/js/` : un DOM bouchonné (`dom_stub.mjs`), un chargeur qui injecte les globales dans le
+vrai fichier livré (`load_console.mjs`), et un `fetch` dont **les réponses sont libérées à la
+main** — c'est ce qui permet d'entrelacer deux chargements de plan exactement comme dans le
+repro de Romain. Le harnais pilote le vrai chemin d'interface (sélecteur de scan, bouton de
+carte, champ GO, bouton canary) et n'affirme que sur **les requêtes qui sortent de la page**.
+
+Six scénarios, et surtout leur pouvoir de discrimination, mesuré :
+
+| version de `sort.js` | résultat |
+|---|---|
+| `507bdf8~1` (avant toute correction) | 3 échecs |
+| `507bdf8` (gel au clic, 1re passe) | 3 échecs — **le repro de Romain reproduit** : le déplacement part sur `scan-B` alors que l'opérateur regarde les offres de `scan-A` |
+| HEAD sans le jeton `POLL_SEQ` | le test du tick périmé échoue |
+| HEAD | tout passe |
+
+`tests/test_console_js_simulation.py` lance le harnais depuis la suite Python, se met en SKIP
+si node est absent, et contient un **test de mutation** qui rejoue le harnais contre `507bdf8`
+pour vérifier qu'il vire bien au ROUGE : un harnais toujours vert ne prouve rien.
+
+**Ce que ce n'est PAS.** Pas une méthode formelle : ni vérificateur de modèle, ni preuve, ni
+exploration par propriétés (l'inventaire de l'outillage confirme qu'il n'y a rien de tel dans
+le dépôt, ni même d'analyseur statique). C'est une simulation des scénarios que nous avons
+écrits ; elle ne dit rien de ceux auxquels nous n'avons pas pensé. Les tests structurels sont
+conservés — ils coûtent peu et cassent si la forme du correctif est défaite — mais **en cas de
+désaccord, la simulation fait autorité**, et c'est écrit dans leur en-tête.
+
 ## 2026-09-17 (2e passe) — Le gel au clic arrivait trop tard : l'identité suit désormais les cartes
 
 Romain a audité `507bdf8` et l'a pris en défaut, repro JavaScript à l'appui : **geler au clic

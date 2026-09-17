@@ -32,12 +32,17 @@ writes nothing, so a move does not rewrite ``sort_plan.json`` — the digest is 
 the dry-run → canary → batch sequence of one modal, and changes only when the scan is re-run,
 which is exactly when the server SHOULD answer 409.
 
-NOTE ON SIMULATION. Romain drove his repro in a JavaScript runtime. None is installed on this
-box (no node / deno / quickjs, no Python JS engine) and AGENTS.md forbids adding a dependency
-without his go, so these assertions are STRUCTURAL: they pin the ordering and ownership the
-race turns on. Measured against the earlier revisions: all 21 fail before pass 1, and 14 of
-the 21 still fail against 507bdf8 (the pass-1 fix) — the 7 that pass there are the ones
-pinning pass 1 itself.
+NOTE ON WHAT THIS FILE PROVES. These assertions are STRUCTURAL: they read ``sort.js`` as TEXT
+and pin the ordering and ownership the race turns on. They are cheap and they fail loudly if
+someone unpicks the shape of the fix — all 25 fail before pass 1, and 14 still fail against
+507bdf8 (the pass-1 fix); the rest pin pass 1 itself. But a structural test can only notice
+the spelling it was told about.
+
+**The behaviour is proven elsewhere, by execution.** On 2026-09-17 Romain approved node as a
+test-only dependency, so ``tests/js/sort_race.test.mjs`` now loads this very file into a
+stubbed browser and replays his repro with the network answers released by hand. Read
+``tests/test_console_js_simulation.py`` for what that harness discriminates. When the two
+disagree, the simulation is the authority and this file is the one to correct.
 """
 
 import pathlib

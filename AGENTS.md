@@ -123,6 +123,13 @@ No degraded mode.
 - Python 3.
 - Minimal dependencies.
 - No new production dependency without asking Romain.
+- **`node` is an approved TEST-ONLY dependency (Romain, 2026-09-17: « Installe node pour les
+  tests JS »).** Debian package `nodejs` (20.x), standard library only — no npm install, no
+  `package.json`, no lockfile, nothing added to the runtime or to the VPS write path. It
+  exists so the browser console (`src/admin/static/*.js`) is EXECUTED by its tests instead of
+  being spell-checked: `tests/js/` holds a stubbed DOM + a hand-released `fetch`, and
+  `tests/test_console_js_simulation.py` runs it and SKIPS cleanly where node is absent. Do not
+  extend it into an npm toolchain, and do not make any production stage depend on it.
 - Scripts must be CLI-friendly.
 - Outputs should be JSON or JSONL where practical.
 - Human reports go in Markdown.

@@ -295,8 +295,13 @@ executor/
 # 2. Invariant gate (read-only). Must be authoritative:true AND ok:true on the VPS:
 python3 scripts/01_check_invariants.py
 
-# 3. Unit tests (pure — run anywhere; 1846 tests on 2026-09-15, ~6 min, hermetic):
+# 3. Unit tests (pure — run anywhere; 2087 tests on 2026-09-17, ~6 min, hermetic):
 python3 -m unittest discover -s tests
+
+# 3b. The browser console's JS is EXECUTED, not spell-checked. Needs the Debian
+#     package `nodejs` (test-only dependency, Romain's go 2026-09-17); the Python
+#     test SKIPS cleanly without it:
+node tests/js/sort_race.test.mjs
 ```
 
 **Environment classification.** The audit and the invariant checker detect where
