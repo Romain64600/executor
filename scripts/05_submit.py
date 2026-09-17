@@ -25,6 +25,7 @@ Examples (on the VPS):
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import math
 import signal
@@ -74,6 +75,7 @@ from src.step_guard import BlockLedger, StepGuard  # noqa: E402
 from src.pacing import Pacer  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
 from src.submit_session import SubmitSession, WriteSubmitSession  # noqa: E402
+from src import run_marker  # noqa: E402
 from src.validation import ValidationError, verify_approved_against_source  # noqa: E402
 from src.submitter import (  # noqa: E402
     FEED_UNREADABLE_EXCS,
@@ -336,6 +338,13 @@ def _main() -> int:
 
     out_dir = Path(args.approved).resolve().parent
     run_id = out_dir.name
+    # Same discovery as the sweep (Romain 2026-09-17): a submit launched from a terminal —
+    # the way GameBoost's 198 offers were entered that day — is now visible in the console,
+    # and blocks a console launch cleanly instead of failing later on the browser lock.
+    # PID-based liveness, so a lost SSH session (which killed exactly such a run that day)
+    # leaves nothing behind.
+    run_marker.write_marker(ROOT, run_id=run_id, kind="submit", source="cli")
+    atexit.register(run_marker.clear_marker, ROOT, run_id)
 
     # Effective feed-scan ceiling — AUTO from the feed's own page count unless
     # --max-pages is explicit (2026-07-20). Reported so the operator sees why.

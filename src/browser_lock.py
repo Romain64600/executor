@@ -35,6 +35,46 @@ from typing import Iterator
 LOCK_FILENAME = "browser.lock"
 
 
+def lock_status(repo_root: Path) -> dict[str, object]:
+    """Who holds the browser tab, read WITHOUT touching the lock (2026-09-17).
+
+    Deliberately does NOT probe with ``flock``: taking it, even for a microsecond, would
+    make a stage that asks for it at that instant fail closed and refuse to start. So the
+    label line is parsed instead — ``"<label> pid=<pid> since <stamp>"`` — and liveness is
+    decided by the PID, exactly as this module's own docstring prescribes for a reader:
+    a label with a dead pid is residue from a hard kill and the lock is in fact FREE.
+
+    Returns ``{"held": bool, "label": str|None, "pid": int|None, "since": str|None}``.
+    An absent, empty or unparsable file reads as free — this is a readable indicator, the
+    flock itself remains the authority for mutual exclusion.
+    """
+
+    path = Path(repo_root) / "state" / LOCK_FILENAME
+    try:
+        line = path.read_text(encoding="utf-8").strip().splitlines()[-1]
+    except (OSError, IndexError, UnicodeDecodeError):
+        return {"held": False, "label": None, "pid": None, "since": None}
+    label, pid, since = line, None, None
+    if " pid=" in line:
+        label, _, rest = line.partition(" pid=")
+        head, _, since = rest.partition(" since ")
+        try:
+            pid = int(head.strip())
+        except ValueError:
+            pid = None
+    alive = False
+    if pid is not None:
+        try:
+            os.kill(pid, 0)
+            alive = True
+        except ProcessLookupError:
+            alive = False
+        except PermissionError:
+            alive = True
+    return {"held": alive, "label": label.strip() or None, "pid": pid,
+            "since": (since or "").strip() or None}
+
+
 class BrowserBusyError(RuntimeError):
     """Another process currently drives the browser tab."""
 

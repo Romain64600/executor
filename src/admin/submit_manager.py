@@ -106,6 +106,8 @@ def _write_atomic(path: Path, text: str) -> None:
         raise
 
 
+from src.run_marker import read_marker
+
 def _pid_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
@@ -315,6 +317,17 @@ class SubmitManager:
                 "orphan_alive",
                 f"un ancien process submit est encore vivant (pid {still_alive[0]['pid']}, "
                 f"run {still_alive[0]['run_id']}) — aucun nouveau run tant qu'il existe",
+            )
+        # A run launched from a terminal holds the browser just as ours does — refuse
+        # cleanly here instead of letting the child die later on the browser lock with an
+        # opaque error (Romain 2026-09-17).
+        marker = read_marker(self.repo_root)
+        if marker is not None:
+            raise SubmitStartError(
+                "cli_run_in_progress",
+                f"un run lancé en ligne de commande est en cours "
+                f"({marker.get('kind')} sur {marker.get('run_id')}, pid {marker.get('pid')}) "
+                f"— attends sa fin ou arrête-le dans son terminal",
             )
         if self._active is not None:
             raise SubmitStartError(
@@ -1054,10 +1067,26 @@ class SubmitManager:
         )
 
     def busy(self) -> dict[str, Any] | None:
+        """The run currently driving the browser — OURS, or one started from a terminal.
+
+        Romain 2026-09-17: « on peut avoir un monitoring sur l'admin même lorsqu'on lance en
+        ligne de commande ? ». The manager only ever knew the children it spawned, so a CLI
+        sweep was invisible in the console. It falls back to the on-disk marker
+        (``src/run_marker.py``), whose liveness is decided by the PID. The shape is the same
+        ``{run_id, kind}`` the pages already render, plus ``source`` — so both consoles adopt
+        a CLI run with no client change, and ``/submit/status`` (which reads the run's
+        artefacts from disk) shows its progress exactly like ours."""
+
         with self._mutex:
-            if self._active is None:
-                return None
-            return {"run_id": self._active["run_id"], "kind": self._active["kind"]}
+            if self._active is not None:
+                return {"run_id": self._active["run_id"], "kind": self._active["kind"],
+                        "source": "admin"}
+        marker = read_marker(self.repo_root)
+        if marker is None:
+            return None
+        return {"run_id": marker.get("run_id"), "kind": marker.get("kind"),
+                "source": marker.get("source", "cli"), "pid": marker.get("pid"),
+                "started_at": marker.get("started_at")}
 
     # Write runs stop cooperatively at an OFFER BOUNDARY (submit) or a PAGE
     # boundary (data-entry auto). One offer's Create + post-save feed re-scan can

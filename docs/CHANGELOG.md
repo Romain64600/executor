@@ -3,6 +3,41 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-17 — Un run lancé en ligne de commande est enfin visible dans la console
+
+Romain : « On peut faire en sorte d'avoir un monitoring sur l'admin même lorsqu'on lance en
+ligne de commande ? ». La moitié du chemin existait déjà : `/submit/status` lit les artefacts
+d'un run sur le DISQUE, donc la console savait déjà AFFICHER n'importe quel run dont on
+connaît l'identifiant. Ce qui manquait, c'est la DÉCOUVERTE : `SubmitManager` ne connaît que
+les enfants qu'il a lancés lui-même, si bien qu'un sweep démarré depuis un terminal était
+invisible et que le bouton « Lancer » ne le refusait même pas.
+
+**`src/run_marker.py`** — l'orchestrateur (`scripts/10`) et la saisie manuelle (`scripts/05`)
+déposent un marqueur au démarrage et le retirent en sortant. `SubmitManager.busy()` y retombe
+quand il n'a rien à lui, **dans la forme que les pages affichent déjà** (`{run_id, kind}`) :
+les deux consoles adoptent donc un run CLI **sans une ligne de JavaScript à changer**, et
+`auto.js` le reprend par son `resumeIfActive` existant.
+
+**La vivacité est décidée par le PID, jamais par l'âge.** Un run tué ne peut pas bloquer la
+console indéfiniment, et un run long ne peut pas être pris pour un résidu — les deux cas se
+sont produits le jour même : la saisie GameBoost a tourné 1 h 50, et une session SSH expirée
+en a tué une autre en plein vol. Seul le propriétaire efface son marqueur, donc un run qui
+sort tard n'efface pas celui qui l'a remplacé, et une écriture atomique interdit de lire un
+marqueur à moitié écrit.
+
+**`browser_lock.lock_status()`** lit le verrou **sans le prendre** — le prendre, fût-ce une
+microseconde, ferait échouer fail-closed une étape qui le demanderait à cet instant. Il parse
+l'étiquette déjà écrite (`<label> pid=<pid> since <stamp>`) et teste le PID, exactement ce que
+le module prescrit depuis toujours à un lecteur. Exposé sous `browser` par `api/sort/runs`.
+
+**Bénéfice au-delà de l'affichage :** un lancement depuis la console pendant un run CLI est
+désormais refusé proprement (`cli_run_in_progress`) au lieu de mourir plus tard sur le verrou
+du navigateur avec une erreur illisible. Le verrou reste la vraie exclusion mutuelle ; ceci
+n'est que l'étiquette lisible posée par-dessus.
+
+`tests/test_cli_run_visibility.py`, 17 tests. **Livré non déployé** : la prise d'effet exige
+un redémarrage du service, impossible tant que le sweep de nuit tourne.
+
 ## 2026-09-17 (7e passe) — L'évènement `close` est DIFFÉRÉ : le retrait devient synchrone
 
 Romain, sur `0f2c871` : « le nettoyage attend maintenant l'évènement `close`, qui est différé

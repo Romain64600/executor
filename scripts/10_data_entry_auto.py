@@ -21,6 +21,7 @@ a NotLoggedIn/feed-unreadable abort stops it, never a re-auth.
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import re
 import sys
@@ -30,6 +31,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from src import run_marker
 from src.data_entry_auto import (  # noqa: E402
     ExtractOutcome, MatchOutcome, MoveOutcome, Stages, StageError, SubmitOutcome,
     SweepConfig, run_sweep,
@@ -479,6 +481,17 @@ def main() -> int:
              "coverage_incomplete": [], "total_created": 0, "total_moved": 0,
              "consoles": bool(args.consoles)}          # [R45] console branch on? (default since 2026-09-15)
     recap_path = sweep_dir / "recap.json"
+
+    # DISCOVERY for the console (Romain 2026-09-17: « un monitoring sur l'admin même lorsqu'on
+    # lance en ligne de commande »). SubmitManager only knows the children it spawned, so a
+    # sweep started from a terminal was invisible there and the "Lancer" button did not even
+    # refuse while it ran. The marker makes it discoverable; ``/submit/status`` already reads
+    # this run's artefacts from disk, so the console shows its progress like any other.
+    # Liveness is decided by the PID (src/run_marker.py), so a SIGKILL can never wedge the
+    # console: the marker simply stops being active. A dry-run is marked too — it drives the
+    # browser just the same, and a console launch during one must be refused.
+    run_marker.write_marker(ROOT, run_id=run_id, kind="data_entry_auto", source="cli")
+    atexit.register(run_marker.clear_marker, ROOT, run_id)
 
     def persist():
         recap["updated_at"] = _clock()

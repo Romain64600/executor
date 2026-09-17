@@ -35,6 +35,7 @@ from src.admin.runs import (
     safe_run_dir,
     sha256_file,
 )
+from src.browser_lock import lock_status
 from src.admin.submit_manager import (
     BY_URLS_EVENTS,
     CANARY_LIMIT,
@@ -312,7 +313,11 @@ class AdminHandler(BaseHTTPRequestHandler):
                     )
                 except (RunAccessError, OSError):
                     run["created_count"] = None
-            return self._send_json(200, {"runs": runs, "busy": self.state.manager.busy()})
+            # "browser" says whether the single CDP tab is taken and by whom, read
+            # WITHOUT touching the lock (Romain 2026-09-17). "busy" already falls back
+            # to the CLI run marker, so a terminal-launched run shows up like ours.
+            return self._send_json(200, {"runs": runs, "busy": self.state.manager.busy(),
+                                         "browser": lock_status(self.state.repo_root)})
 
         match = RUN_ROUTE.match(path)
         if match:
