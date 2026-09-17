@@ -96,7 +96,12 @@ export function makeNetwork() {
         url,
         call,
         release(payload, ok = true) {
-          resolve({ ok, status: ok ? 200 : 500, json: async () => payload });
+          // sort.js reads r.json(), auto.js reads r.text() then parses — serve both.
+          resolve({
+            ok, status: ok ? 200 : 500,
+            json: async () => payload,
+            text: async () => (payload === undefined ? "" : JSON.stringify(payload)),
+          });
         },
       });
     });

@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { makeDocument, makeNetwork, tick } from "./dom_stub.mjs";
 
-export async function loadConsole(path) {
+export async function loadConsole(path, overrides = {}) {
   const src = readFileSync(path, "utf8");
   const document = makeDocument();
   const net = makeNetwork();
@@ -20,6 +20,7 @@ export async function loadConsole(path) {
     confirm: () => false,
     alert: () => {},
     navigator: { clipboard: { writeText() {} } },
+    ...overrides,        // e.g. { confirm: () => true } pour franchir une confirmation
   };
   const names = Object.keys(globals);
   // eslint-disable-next-line no-new-func

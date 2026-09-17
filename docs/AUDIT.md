@@ -401,7 +401,14 @@ tout tick plus ancien est périmé. Le test juste après l'`await` (`if (seq !==
 return;`) précède la moindre écriture : ni `OFFSET`, ni l'intervalle, ni le panneau, ni
 `finishStatus`. Épinglé par `TheStalePollTickIsRetiredTests`.
 
-**Voisins non touchés, pour mémoire.** Le même patron existe dans `pollScan` (`SCAN_POLL`) et
-dans `startPolling` d'`auto.js`. Les deux sont bien moins exposés — leur bouton de lancement
-est désactivé pendant le run, donc une seconde boucle ne démarre pas pendant qu'un tick est en
-vol — et aucun des deux n'a été demandé. À trancher séparément si le sujet revient.
+**Voisins — CORRIGÉS le même jour** (« Fix les 2 boucles de sondage voisines »).
+`pollScan` (sort.js) cumulait deux défauts : il relisait le global mutable `SCAN_RUN` DANS son
+tick, donc un second scan redirigeait le sondage du premier, et il effaçait `SCAN_POLL` après
+son `await`. Il prend désormais le run en paramètre (`const rid`), porte une génération
+`SCAN_SEQ` retirée par `stopScanPoll`, et **le tout est exercé en vrai** par
+`tests/js/sort_race.test.mjs` (le test meurt si l'on retire le garde).
+`startPolling` d'`auto.js` porte la même génération, avec **deux** vérifications puisque son
+tick attend deux fois ; `endSweepUi` retire la génération. Là, honnêtement : le scénario exige
+deux sondages qui se chevauchent et le bouton de lancement est désactivé pendant un sweep,
+donc je n'ai pas su l'atteindre par le chemin réel de l'interface. C'est de la défense en
+profondeur, épinglée structurellement, **sans repro vivant** — contrairement à `pollScan`.

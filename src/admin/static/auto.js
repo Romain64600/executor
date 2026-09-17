@@ -141,7 +141,7 @@ $("#stop-btn").addEventListener("click", async () => {
 });
 
 // ---- live recap ----
-let POLL = null;
+let POLL = null, POLL_SEQ = 0;
 // The manager is the authoritative "is a sweep running" signal — it works even
 // if the recap route is momentarily unavailable. undefined = transient error
 // (don't declare finished on a blip); null = idle; {kind,run_id} = active.
@@ -150,6 +150,10 @@ async function fetchBusy() {
   catch (e) { return undefined; }
 }
 function endSweepUi(finalText) {
+  // Retire the generation too: clearInterval cannot cancel a tick already waiting on the
+  // network, and such a tick would otherwise declare a LATER sweep finished (audit
+  // 2026-09-17, même classe que le sondage du tri).
+  POLL_SEQ++;
   clearInterval(POLL); POLL = null;
   SWEEP_RUNNING = false;
   $("#busy-ind").classList.add("hidden");
@@ -161,11 +165,19 @@ function startPolling(runId) {
   $("#recap-card").classList.remove("hidden");
   $("#busy-ind").classList.remove("hidden");
   if (POLL) clearInterval(POLL);
+  // This polling's generation. `tick` awaits TWICE, so it is checked after each await: a tick
+  // left over from a previous sweep must never renderRecap into this one, and above all must
+  // never reach endSweepUi — that would clear the LIVE interval and re-enable the GO while a
+  // sweep is still writing on AKS.
+  POLL_SEQ++;
+  const seq = POLL_SEQ;
   const tick = async () => {
     const busy = await fetchBusy();
+    if (seq !== POLL_SEQ) return;
     let d = null;
     try { d = await api("api/data-entry/recap" + (runId ? "?run=" + encodeURIComponent(runId) : "")); }
     catch (e) { d = null; }        // recap detail may be unavailable; busy still drives run state
+    if (seq !== POLL_SEQ) return;
     if (d) renderRecap(d);
     const rec = d && d.recap;
     // Still running if the manager reports an auto sweep, or (busy unknown) on a

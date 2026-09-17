@@ -359,6 +359,17 @@ async function runAction(id, action, goInput, batched, deferred) {
     $("#modal-actions").querySelectorAll("button,input").forEach((n) => (n.disabled = false));
     return;
   }
+  // The status pane belongs to the OPEN modal. If it was closed — or reopened on another
+  // plan — while the POST was in flight, this action's output has no home: painting into it
+  // would show A's "terminé (exit 0)" inside B's window, and startPoll would tail A there
+  // (audit de Romain, P2, 2026-09-17). The generation token protects the poll REQUESTS; it
+  // cannot protect the launch that precedes them. The action itself is fine and running
+  // server-side — we say so on the page's own status line, which belongs to no modal.
+  if (MODAL_RUN_ID !== runId) {
+    setStatus(`Action lancée sur ${runId} — la fenêtre a été fermée depuis, suivi interrompu`);
+    if (goInput) goInput.value = "";
+    return;
+  }
   if (PLAN_RUN_ID !== runId) {
     // the action is the one that was approved; the CARDS on screen are another scan's
     appendStatus(`⚠ le scan affiché a changé pendant l'envoi — cette action porte sur ${runId}`, "bad");
@@ -452,7 +463,10 @@ $("#refresh").addEventListener("click", loadRuns);
 $("#doc-btn").addEventListener("click", () => $("#doc-modal").showModal());  // close = native form method="dialog"
 $("#doc-modal").addEventListener("click", (e) => { if (e.target.id === "doc-modal") e.target.close(); });
 
-let SCAN_RUN = null, SCAN_POLL = null;
+let SCAN_POLL = null, SCAN_SEQ = 0;
+// Same generation discipline as the move poll: clearInterval cannot cancel a tick already
+// waiting on the network, so retiring the generation is what actually disarms it.
+function stopScanPoll() { SCAN_SEQ++; if (SCAN_POLL) { clearInterval(SCAN_POLL); SCAN_POLL = null; } }
 $("#new-scan").addEventListener("click", async () => {
   const b = $("#new-scan");
   if (BUSY) { setStatus(`Un run est déjà en cours (${BUSY.kind}).`); return; }
@@ -461,34 +475,36 @@ $("#new-scan").addEventListener("click", async () => {
   setStatus("Scan frais — lancement…", true);
   try {
     const r = await postJSON("api/sort/scan", {});
-    SCAN_RUN = r.run_id || (r.meta && r.meta.run_id);
-    pollScan();
+    pollScan(r.run_id || (r.meta && r.meta.run_id));
   } catch (e) {
     setStatus("Scan refusé : " + e.message);
     b.disabled = false;
   }
 });
 
-function pollScan() {
-  if (SCAN_POLL) clearInterval(SCAN_POLL);
+function pollScan(runId) {
+  stopScanPoll();
+  const seq = SCAN_SEQ;      // this scan-poll's generation
+  const rid = runId;         // frozen: a later scan must not redirect this one's tick
   const b = $("#new-scan");
   const tick = async () => {
     let s;
-    try { s = await getJSON(`api/runs/${encodeURIComponent(SCAN_RUN)}/submit/status`); }
+    try { s = await getJSON(`api/runs/${encodeURIComponent(rid)}/submit/status`); }
     catch (e) { return; }
+    if (seq !== SCAN_SEQ) return;   // retired generation — touch nothing
     setBusy(s.busy || null);
     const pages = (s.events || []).filter((e) => e.event === "feed_page").length;
     if (s.state === "running") {
       setStatus(`Scan frais en cours…${pages ? " " + pages + " pages" : ""}`, true);
       return;
     }
-    clearInterval(SCAN_POLL); SCAN_POLL = null;
+    stopScanPoll();
     b.disabled = false;
     setStatus(`Scan terminé (${s.state}) — chargement du plan frais…`);
     await loadRuns();
-    if (SCAN_RUN && [...$("#run-picker").options].some((o) => o.value === SCAN_RUN)) {
-      $("#run-picker").value = SCAN_RUN;
-      RUN_ID = SCAN_RUN;
+    if (rid && [...$("#run-picker").options].some((o) => o.value === rid)) {
+      $("#run-picker").value = rid;
+      RUN_ID = rid;
       loadPlan();
     }
   };

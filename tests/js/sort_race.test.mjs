@@ -38,8 +38,8 @@ async function test(name, fn) {
 }
 
 // Brings the page to: plan A painted, load of B in flight, modal open on A.
-async function upToTheOpenModal() {
-  const app = await loadConsole(SORT_JS);
+async function upToTheOpenModal(overrides) {
+  const app = await loadConsole(SORT_JS, overrides);
   await app.net.release("api/sort/runs", RUNS);
   await app.net.release("runs/scan-A/sort", plan("A"));
 
@@ -112,11 +112,15 @@ await test("les commandes copiables nomment le scan ouvert", async () => {
   assert.ok(!txt.includes("runs/scan-B"), "une commande nomme le scan qui vient d'être chargé");
 });
 
-await test("sans plan ouvert, un GO n'envoie rien", async () => {
+await test("sans plan ouvert, un GO n'émet AUCUNE requête", async () => {
+  // Romain, P2 : la version précédente n'affirmait que l'absence de POST, sans libérer la
+  // lecture d'offset qui le précède — elle restait donc verte même sans le garde, puisque le
+  // POST n'arrive qu'APRÈS cette lecture. On compte désormais TOUTES les requêtes.
   const app = await upToTheOpenModal();
   const go = app.$("#modal-actions").querySelector(".go-in");
   const canary = app.$("#modal-actions").querySelector(".primary");
   await app.$("#modal-close").fire("click");          // ferme la fenêtre → identité libérée
+  const before = app.net.calls.length;
   go.value = "GO";
   await go.fire("input");
   // Sur le code CORRIGÉ, runAction refuse tout de suite. Sur une version ancienne il
@@ -124,8 +128,61 @@ await test("sans plan ouvert, un GO n'envoie rien", async () => {
   // le défaut qu'il mesure.
   canary.fire("click").catch(() => {});
   await tick();
-  assert.ok(!app.net.calls.some((c) => c.url.includes("/sort/move")),
-    "un GO après fermeture ne doit rien envoyer");
+  const emises = app.net.calls.slice(before).map((c) => `${c.method} ${c.url}`);
+  assert.deepEqual(emises, [],
+    `un GO après fermeture ne doit émettre aucune requête, même pas la lecture d'offset`);
+});
+
+await test("une réponse de lancement tardive ne peint pas dans une autre fenêtre", async () => {
+  // Romain, P2 : GO sur A → fermeture → la réponse du POST de A arrive. Le jeton protège les
+  // requêtes de suivi, pas le LANCEMENT qui les précède : startPoll(A) redémarrait et
+  // affichait « terminé (exit 0) » dans le panneau devenu celui d'une autre fenêtre.
+  const app = await upToTheOpenModal();
+  const go = app.$("#modal-actions").querySelector(".go-in");
+  const canary = app.$("#modal-actions").querySelector(".primary");
+  go.value = "GO";
+  await go.fire("input");
+  canary.fire("click").catch(() => {});
+  await tick();
+  await app.net.release("submit/status?offset=0", { offset: 3 });
+  await tick();
+
+  await app.$("#modal-close").fire("click");     // la fenêtre est fermée pendant l'envoi
+  const before = app.net.calls.length;
+  await app.net.release("/sort/move", { ok: true });   // la réponse du POST arrive enfin
+  await tick();
+
+  const suivi = app.net.calls.slice(before).filter((c) => c.url.includes("submit/status"));
+  assert.deepEqual(suivi.map((c) => c.url), [],
+    "aucun suivi ne doit démarrer : son panneau n'existe plus");
+  assert.ok(!app.$("#modal-status").textContent.includes("terminé"),
+    "le panneau ne doit pas recevoir la conclusion d'une action dont la fenêtre est fermée");
+});
+
+await test("la boucle du scan frais suit SON scan et retire sa génération", async () => {
+  const app = await upToTheOpenModal({ confirm: () => true });
+  app.$("#new-scan").fire("click").catch(() => {});
+  await tick();
+  await app.net.release("api/sort/scan", { run_id: "scan-frais-1" });
+  await tick();
+  const t1 = app.net.calls.filter((c) => c.url.includes("scan-frais-1/submit/status"));
+  assert.ok(t1.length, `le sondage du scan doit viser son propre run.\n${app.net.calls.map((c) => c.url).join("\n")}`);
+
+  // le tick est en vol ; un SECOND scan démarre
+  app.$("#new-scan").fire("click").catch(() => {});
+  await tick();
+  await app.net.release("api/sort/scan", { run_id: "scan-frais-2" });
+  await tick();
+  assert.ok(app.net.calls.some((c) => c.url.includes("scan-frais-2/submit/status")),
+    "le second scan doit sonder son propre run");
+
+  // le tick PÉRIMÉ du premier répond enfin, en annonçant la fin : il ne doit rien déclencher
+  const before = app.net.calls.filter((c) => c.url.includes("api/sort/runs")).length;
+  await app.net.release("scan-frais-1/submit/status", { state: "done", events: [], busy: null });
+  await tick();
+  const after = app.net.calls.filter((c) => c.url.includes("api/sort/runs")).length;
+  assert.equal(after, before,
+    "le tick périmé a rechargé la liste des scans — il a donc conclu à la place du scan en cours");
 });
 
 await test("un tick de sondage périmé ne touche pas le run suivant", async () => {

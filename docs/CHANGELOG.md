@@ -3,6 +3,51 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-17 (4e passe) — Le lancement gardé lui aussi, les deux boucles voisines, et un faux vert
+
+Premier audit de Romain **appuyé sur le harnais node livré le matin même**. Deux points, tous
+deux réels, plus la correction des deux boucles de sondage voisines qu'il avait demandée.
+
+**1. `[P2]` Une réponse de LANCEMENT tardive peignait dans la fenêtre d'un autre plan.** Son
+repro : GO sur A → fermeture de la fenêtre → ouverture de B → la réponse du POST de A arrive →
+`startPoll(A)` redémarrait et affichait « terminé (exit 0) » dans la fenêtre de B. Le jeton de
+génération protège les requêtes de SUIVI ; il ne peut rien pour le lancement qui les précède.
+**Correction :** le panneau appartient à la fenêtre OUVERTE — si elle a été fermée ou rouverte
+sur un autre plan pendant l'envoi, l'action ne peint pas dans un panneau étranger et ne démarre
+aucun suivi ; elle le dit sur la ligne de statut de la PAGE, qui n'appartient à aucune fenêtre.
+L'action elle-même est partie et tourne côté serveur, ce que le message précise.
+
+**2. `[P2]` Le test « sans plan ouvert » était un FAUX VERT.** Il n'affirmait que l'absence de
+POST sans libérer la lecture d'offset qui le précède : sans le garde, le POST n'arrivait
+simplement jamais dans la fenêtre du test. Romain l'a prouvé en supprimant le garde dans une
+copie — les six scénarios restaient verts. Le test compte désormais **toutes** les requêtes
+émises après le clic et exige la liste vide.
+
+**3. Les deux boucles voisines.** `pollScan` relisait le global mutable `SCAN_RUN` dans son
+tick (un second scan redirigeait le sondage du premier) et effaçait `SCAN_POLL` après son
+`await` : run gelé en paramètre + génération `SCAN_SEQ`. `startPolling` d'`auto.js` reçoit la
+même génération, avec deux vérifications puisque son tick attend deux fois, et `endSweepUi`
+retire la génération — sans quoi un tick d'un sweep terminé pouvait déclarer fini un sweep
+SUIVANT, effacer l'intervalle vivant et réactiver le GO pendant que l'autre écrit sur AKS.
+
+**Vérification par MUTATION, désormais possible grâce à node.** Chaque nouveau garde a été
+retiré d'une copie, et le test correspondant meurt :
+
+| garde retiré | test qui échoue |
+|---|---|
+| `if (MODAL_RUN_ID !== runId)` avant le suivi | « une réponse de lancement tardive ne peint pas dans une autre fenêtre » |
+| `if (!runId) return;` | « sans plan ouvert, un GO n'émet AUCUNE requête » |
+| `if (seq !== SCAN_SEQ) return;` | « la boucle du scan frais suit SON scan et retire sa génération » |
+
+Le harnais passe à 8 scénarios. Le stub sert maintenant `json()` ET `text()` (auto.js lit le
+texte puis parse), et la confirmation est configurable.
+
+**Réserve honnête sur `auto.js`.** Son garde est correct mais je n'ai pas su atteindre le
+scénario par le chemin réel de l'interface : il exige deux sondages qui se chevauchent, or le
+bouton de lancement est désactivé pendant un sweep. C'est de la défense en profondeur épinglée
+structurellement, **sans repro vivant**, et `docs/AUDIT.md` le dit. `pollScan`, lui, est
+exercé en vrai.
+
 ## 2026-09-17 — Le JavaScript de la console est enfin EXÉCUTÉ par ses tests (node approuvé)
 
 Romain : « nos tests sont avec un simulateur formel ? ». Réponse honnête : non, et pire — pour

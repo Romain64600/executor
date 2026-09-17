@@ -217,6 +217,64 @@ class TheStalePollTickIsRetiredTests(unittest.TestCase):
                 self.assertLess(guard, code.index(after))
 
 
+class TheNeighbouringPollLoopsAreGuardedTests(unittest.TestCase):
+    """Romain: « Fix les 2 boucles de sondage voisines ».
+
+    ``pollScan`` (sort.js) and ``startPolling`` (auto.js) carried the same pattern as the move
+    poll. ``pollScan`` also read the MUTABLE ``SCAN_RUN`` inside its tick, so a second scan
+    redirected the first one's polling; it now takes the run as a parameter and freezes it.
+
+    ``auto.js`` is the honest half of this entry. Its guard is real — a tick that concluded a
+    sweep must not be able to conclude a LATER one, clearing the live interval and re-enabling
+    the GO while a sweep is still writing on AKS — but the sequence needs two overlapping
+    pollings, and the page's own gating (the launch button is disabled while a sweep runs)
+    makes it hard to reach through the real UI. It is therefore defence in depth, pinned
+    structurally here, with **no live repro** — unlike ``pollScan``, whose fix IS exercised by
+    ``tests/js/sort_race.test.mjs`` and dies under mutation."""
+
+    def test_the_fresh_scan_poll_freezes_its_run(self):
+        body = _body("pollScan")
+        self.assertTrue(body.startswith("function pollScan(runId)"), body[:40])
+        self.assertIn("const rid = runId;", body)
+        self.assertNotIn("SCAN_RUN", body, "the mutable global must not decide anything")
+
+    def test_the_fresh_scan_poll_has_a_generation(self):
+        self.assertIn("const seq = SCAN_SEQ;", _body("pollScan"))
+        stop = [l for l in JS.splitlines() if l.startswith("function stopScanPoll(")]
+        self.assertEqual(len(stop), 1)
+        self.assertIn("SCAN_SEQ++", stop[0])
+
+    def test_the_auto_tab_sweep_poll_has_a_generation(self):
+        auto = (ROOT / "src" / "admin" / "static" / "auto.js").read_text(encoding="utf-8")
+        self.assertIn("POLL_SEQ", auto)
+        self.assertIn("const seq = POLL_SEQ;", auto)
+        self.assertEqual(auto.count("if (seq !== POLL_SEQ) return;"), 2,
+                         "its tick awaits TWICE — one guard after each await")
+        end = auto[auto.index("function endSweepUi("):]
+        self.assertIn("POLL_SEQ++", end[:400])
+
+
+class TheLaunchItselfIsGuardedTests(unittest.TestCase):
+    """Romain, P2: « La génération protège les requêtes de suivi, mais pas le lancement ».
+
+    The pane belongs to the OPEN modal. With the modal closed (or reopened on another plan)
+    while the POST was in flight, ``startPoll`` used to restart anyway and paint A's
+    "terminé (exit 0)" into that other window. Exercised live, and mutation-verified."""
+
+    def test_the_action_refuses_to_paint_into_a_foreign_pane(self):
+        self.assertIn("if (MODAL_RUN_ID !== runId) {", RUN_ACTION)
+        block = RUN_ACTION[RUN_ACTION.index("if (MODAL_RUN_ID !== runId) {"):]
+        block = block[:block.index("\n  }")]          # ce bloc-ci seulement
+        self.assertIn("setStatus(", block, "the page's own status line, never the pane")
+        self.assertNotIn("appendStatus(", block,
+                         "appendStatus writes into the modal pane — which is another plan's")
+        self.assertIn("return;", block)
+
+    def test_it_is_checked_before_the_poll_starts(self):
+        code = _no_comments(RUN_ACTION)
+        self.assertLess(code.index("if (MODAL_RUN_ID !== runId)"), code.index("startPoll(runId)"))
+
+
 class ThePreFixSpellingsAreGoneTests(unittest.TestCase):
     def test_no_action_path_reads_the_mutable_globals_any_more(self):
         for gone in (
