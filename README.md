@@ -463,12 +463,20 @@ python3 scripts/10_data_entry_auto.py --all-allowlisted --run-id <id> --dry-run
 The real night sweep (WRITES, on Romain's GO — never fire-and-forget, keep it supervised):
 
 ```bash
-cd /home/debian/executor && setsid nohup python3 scripts/10_data_entry_auto.py \
+tmux new -s sweep
+sudo -u debian -H bash -c 'cd /home/debian/executor && python3 scripts/10_data_entry_auto.py \
   --all-allowlisted \
   --run-id "$(date -u +%Y%m%d-%H%M%S)-auto" \
   --max-pages 10 --continue-on-halt \
-  > "logs/sweep-$(date -u +%Y%m%d)-night.stdout" 2>&1 < /dev/null &
+  2>&1 | tee "logs/sweep-$(date -u +%Y%m%d)-night.stdout"'
 ```
+
+**Run it under `tmux`, not `setsid nohup &`** (2026-09-17). The old form here was
+fire-and-forget, which AGENTS.md forbids and which this very line contradicted. It also
+detaches the run from any supervision. `tmux` keeps it attached to a terminal you can come
+back to (`tmux attach -t sweep`, `Ctrl-b d` to detach) and it survives a dropped SSH session
+— which is exactly how a GameBoost write lost 62 offers on 2026-09-17: the session timed out
+("Timeout, client not responding") and took the attached process with it.
 
 `--max-pages 10` caps each merchant (Kinguin has 67 pages, G2A 38 — a full pass would take
 all night); `--continue-on-halt` makes one merchant's fail-closed stop skip to the next
