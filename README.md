@@ -25,7 +25,9 @@ moves the risky work behind a scripted engine with a hard guardrail: the model
 > **2026-09-15** and are ON by default everywhere since Romain's decision « 1 » of the same
 > day. All write stages stay gated behind green + authoritative invariants on the Debian VPS
 > target. Audits: **2026-07-17** ([`docs/AUDIT_2026-07-17.md`](docs/AUDIT_2026-07-17.md)),
-> **2026-09-02** and **2026-09-05/06** (P1 + P2 fixed, [`docs/CHANGELOG.md`](docs/CHANGELOG.md)).
+> **2026-09-02** and **2026-09-05/06** (P1 + P2 fixed, [`docs/CHANGELOG.md`](docs/CHANGELOG.md)),
+> **2026-09-18** ([`docs/AUDIT_2026-09-18_complet.md`](docs/AUDIT_2026-09-18_complet.md) — audit
+> complet du dépôt, 36 constats OUVERTS).
 > See [Capability status](#capability-status-2026-09-15) and [Roadmap](#roadmap).
 
 ---
@@ -193,6 +195,7 @@ executor/
 │   ├── DATA_CONTRACTS.md       # stage I/O JSON schemas + run-log format
 │   ├── AUDIT.md                # Sprint 1 audit (2026-07-02) — fully resolved
 │   ├── AUDIT_2026-07-17.md     # audit register 2026-07-17 — findings tracked OPEN → FIXED
+│   ├── AUDIT_2026-09-18_complet.md # audit complet 2026-09-18 — 36 constats, 8 P1, OUVERTS
 │   ├── CONTRIBUTING.md         # developer guide
 │   ├── CHANGELOG.md            # notable changes
 │   └── ua-switcher-aks-staff.json  # UA-Switcher policy config (AKS/Staff UA)

@@ -3,6 +3,49 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-18 (soir) — Audit complet du dépôt : 36 constats, 8 P1, AUCUN corrigé
+
+Audit demandé par Romain pendant le sweep de nuit, priorité à la **logique métier**. Rapport
+complet : [`AUDIT_2026-09-18_complet.md`](AUDIT_2026-09-18_complet.md). Méthode : 12 dimensions
+en parallèle, chaque constat ensuite attaqué par deux agents indépendants — l'un chargé de le
+réfuter, l'autre de le reproduire en exécutant le vrai code — puis une passe de complétude sur
+les coutures entre règles. 93 agents, 2 758 appels d'outils, 2 h 13. 40 constats bruts,
+2 réfutés, 3 ajoutés par la passe de complétude, 36 après dédoublonnage.
+
+**Rien n'est corrigé dans ce commit** — l'audit est le livrable, les correctifs attendent la
+décision de Romain sur l'ordre.
+
+Les trois qui pressent, tous reproduits à la main :
+
+- **`src/admin/submit_manager.py:1128`** — le bouton « Arrêter » ne peut pas arrêter un run
+  lancé en ligne de commande. `busy()` retombe bien sur le marqueur disque, donc la console
+  affiche le run et propose le bouton ; `stop_active()`, lui, ne connaît que `self._active` et
+  répond `{"stopped": null}` en **HTTP 200**. Aucun `.js` ne lit `stopped` : les trois consoles
+  affichent « Arrêt demandé » pendant que le sweep continue d'écrire sur le site vivant.
+- **`src/matcher.py:3169`** — le durcissement `[R18]` du 17/09 n'a fermé qu'une porte sur trois
+  vers le seau DLC(16). La vérification de page E05/R23 adopte le seau DLC par simple égalité
+  de libellé, sans marqueur de titre et sans la condition « seul seau ». Reproduit :
+  `DLC Quest` (un vrai jeu de base, que `EXECUTOR_RULES.md §4.3 (f)` nomme explicitement) sur
+  une page `{1:Standard, 16:DLC}` ressort en **DLC(16)** ; la même offre sur une page mono-seau
+  ressort en Standard(1).
+- **`scripts/13_sort_sql.py:98`** et **`src/admin/sort_sql_view.py:255`** — la mesure SQL ment
+  encore, deux fois. Le correctif `_` = joker du matin n'a été posé que sur la vue console : le
+  script CLI que le README documente pour auditer la liste quotidienne sous-compte toujours. Et
+  un scan tronqué (`--max-pages 60` par défaut) est rendu `measured: true` — `coverage` n'est
+  lu nulle part dans le module — donc un collatéral nul par absence de données se présente
+  comme un collatéral nul par sûreté.
+
+Deux constats propres au marchand créé la veille : **Gamerall émet le jeton de plateforme
+`UPLAY`**, que `REGION_IDS` ne connaît pas (tous les autres marchands normalisent en `UBISOFT`),
+si bien que 100 % de ses lignes Ubisoft Connect sont refusées sur un faux conflit
+title=UBISOFT vs page=UPLAY ; et **la branche console n'appelle jamais `offer_page_resolver`**,
+donc une ligne console Gamerall sans région entre en GLOBAL implicite au lieu d'ouvrir la page
+— exactement ce que `[R54]` a été créé pour empêcher. Instant Gaming, l'autre marchand à
+résolveur de page, n'est pas touché : il ne déclare aucune famille console.
+
+Les décisions arrêtées de `AGENTS.md` (« Reviewed decisions — do NOT re-tighten ») étaient
+interdites aux auditeurs ; aucun constat ne les rouvre.
+
 ## 2026-09-18 — Audit de Romain : la mesure SQL mentait, un scan vide se disait mesuré
 
 Trois défauts trouvés sur les 14 commits `0f2c871..36c83fc`, tous reproduits. Les deux premiers
