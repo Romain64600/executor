@@ -30,7 +30,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from src.sort_sql_rules import FLAGGED, RULES
+from src.sort_sql_rules import FLAGGED, RETIRED, RULES
 
 
 def _latest_sort_run(runs_dir: Path, wanted: str = "") -> Path | None:
@@ -96,6 +96,7 @@ def sort_sql_payload(runs_dir: Path, wanted: str = "") -> dict[str, Any]:
                           "target": target, "measured": False,
                           "flag": FLAGGED.get(pattern)})
         return {"run_id": None, "measured": False, "rules": rules,
+                "retired": [{"pattern": p, "why": w} for p, w in RETIRED.items()],
                 "note": "aucun scan de tri — les requêtes sont rendues sans mesure"}
 
     dest, by_url = _classify(run_dir)
@@ -126,5 +127,8 @@ def sort_sql_payload(runs_dir: Path, wanted: str = "") -> dict[str, Any]:
         "measured": True,
         "offers": len(dest),
         "rules": rules,
+        # Une règle retirée reste VISIBLE, avec sa raison : sinon le retrait est invisible et
+        # quelqu'un la recolle depuis une vieille liste.
+        "retired": [{"pattern": p, "why": w} for p, w in RETIRED.items()],
         "all_sql": "\n".join(r["sql"] for r in rules),
     }

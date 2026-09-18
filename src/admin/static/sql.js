@@ -77,6 +77,17 @@ function render() {
       : "Aucun scan de tri disponible : les requêtes sont affichées SANS mesure. "
         + "Lance un scan de tri pour savoir ce qu'elles toucheraient.";
     render();
+    // Le bloc unique : certains préfèrent sélectionner à la main plutôt que se fier au
+    // presse-papiers du navigateur, qui peut être refusé sans HTTPS ou sans geste direct.
+    $("#all-sql").value = RULES.map((r) => r.sql).join("\n");
+    const ret = d.retired || [];
+    if (ret.length) {
+      const box = el("div", { class: "note" }, [
+        el("strong", {}, `${ret.length} règle(s) RETIRÉE(S) — ne pas les recoller depuis une ancienne liste :`),
+        ...ret.map((r) => el("div", { class: "rz" }, `${r.pattern} — ${r.why}`)),
+      ]);
+      $("#measured").after(box);
+    }
     setStatus(`${RULES.length} requêtes`);
   } catch (e) {
     setStatus("Erreur : " + e.message);

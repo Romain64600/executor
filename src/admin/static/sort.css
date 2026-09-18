@@ -212,3 +212,8 @@ td .rz{color:var(--dim);font-size:.76rem;}
 footer{position:fixed;left:0;right:0;bottom:0;z-index:20;padding:.4rem .9rem;background:var(--panel);
   border-top:1px solid var(--line);font-size:.82rem;color:var(--dim);font-family:var(--mono);}
 footer.busy{color:var(--warn);}
+
+/* Tri SQL — le bloc unique, sélectionnable d'un coup (2026-09-18). */
+.sqlblock { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+            font-size: .82rem; line-height: 1.45; white-space: pre; }
+tr.noterow td { padding-top: 0; opacity: .85; }

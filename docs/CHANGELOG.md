@@ -3,6 +3,46 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-18 — La liste de Romain est gardée VERBATIM : 54 lignes, 53 règles
+
+Romain : « j'avais 54 requêtes, pourquoi /executor/sql me donne que les 52 ? ». Bonne question,
+et ma réponse d'origine était une optimisation que je n'avais pas le droit de faire.
+
+J'avais replié les paires ne différant que par la casse — `%Month-Subscription%` /
+`%month-subscription%`, idem pour Year — au motif que les collations `_ci` usuelles de MySQL
+font matcher les deux sur les mêmes lignes. C'est vrai **si** la colonne est en `_ci`, et je ne
+peux pas le vérifier d'ici. Or sa liste contient des motifs écrits UNIQUEMENT en capitales —
+`%-Pass-PSN-%`, `%-Ancient-Coins-%`, `%-Clothing-Set-%` — que mon repli en minuscules aurait
+fait échouer **en silence** sur une collation sensible à la casse. Deux requêtes redondantes ne
+coûtent rien ; une requête qui ne matche plus rien coûte un tri perdu.
+
+Ses motifs sont donc restaurés tels qu'il les écrit, casse comprise. Le compte tombe juste :
+54 lignes données, 1 retirée sur son arbitrage (`%valid-until%`), **53 servies**, rien d'autre
+perdu ni ajouté — un test le vérifie par addition.
+
+La mesure, elle, continue de comparer en minuscules des deux côtés : c'est une estimation de ce
+que la requête toucherait, pas la requête.
+
+Ajouts de la même passe, demandés par Romain : la page est atteignable depuis la barre
+d'onglets de toutes les consoles, et la liste complète est offerte **aussi** comme un bloc
+sélectionnable, pas seulement par un bouton — le presse-papiers du navigateur peut être refusé
+sans HTTPS ou sans geste direct, une sélection à la main marche toujours.
+
+## 2026-09-18 — `%valid-until%` retirée : la décision de septembre l'emporte
+
+Romain, après que la page a signalé la contradiction : « retire la règle, on respecte la
+décision de septembre ». La règle envoyait en Blacklist les clés portant « (valid until
+<mois> <année>) », alors que la décision du 2026-09-14 — « Kinguin valid until juin 2027 on
+rentre » — établit que cette mention est une date limite d'ACTIVATION, pas un produit, et que
+ces clés sont ENTRÉES. Les deux ne pouvaient pas coexister ; c'est la décision qui l'emporte.
+
+Elle n'est pas simplement absente : `RETIRED` porte sa raison, la page l'affiche sous la
+liste, et un test interdit à toute règle Blacklist de viser « valid ». Un retrait silencieux
+se fait recoller depuis une vieille liste six mois plus tard — c'est le même réflexe que les
+« Reviewed decisions » d'AGENTS.md.
+
+La liste passe à 51 règles.
+
 ## 2026-09-18 — La voie SQL remplace l'exécution d'un déplacement
 
 Romain : « je veux que la voie SQL remplace l'exécution d'un déplacement, tu me donneras les

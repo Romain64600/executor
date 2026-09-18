@@ -6,7 +6,13 @@
 </head><body>
 <header class="top">
   <h1>Tri par SQL</h1>
-  <nav class="tabs"><a href="/">Accueil</a> <a href="/sort">Tri</a> <a href="/auto">Data entry auto</a> <a href="/games">Par URLs</a></nav>
+  <nav class="tabs">
+      <a href="." class="tab">Validation &amp; Submit</a>
+      <a href="tri" class="tab">Tri des listes</a>
+      <a href="auto" class="tab">Data Entry Auto</a>
+      <a href="games" class="tab">Saisie par jeux</a>
+      <a href="sql" class="tab active" aria-current="page">Tri SQL</a>
+  </nav>
   <span id="status" class="idle">…</span>
   <button id="theme" type="button" title="Thème">◐</button>
 </header>
@@ -24,6 +30,11 @@
 </section>
 
 <p id="measured" class="note"></p>
+
+<details id="block" open>
+  <summary>Toutes les requêtes en un bloc — sélectionne et copie</summary>
+  <textarea id="all-sql" class="sqlblock" rows="14" readonly spellcheck="false"></textarea>
+</details>
 
 <table id="rules" class="rules">
   <thead><tr>
