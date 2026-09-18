@@ -367,6 +367,14 @@ def main() -> int:
     ap.add_argument("--run-id", default=None, help="Sweep run id (holds recap.json).")
     ap.add_argument("--start-page", type=int, default=1)
     ap.add_argument(
+        "--all-pages", action="store_true",
+        help="Couvre TOUTES les pages que le feed annonce, sans plafond (Romain 2026-09-18 : "
+             "« on fait toutes les pages sauf lors d'un arrêt pour sécurité »). Seul un arrêt "
+             "fail-closed — extract/match/submit en échec, ou stop opérateur — écourte alors "
+             "la passe. La nuit du 17/09, le plafond de 10 avait laissé de côté 97 pages chez "
+             "GameSeal, 54 chez Kinguin, 42 chez Gamivo, 36 chez Eneba et 23 chez G2A. "
+             "Incompatible avec --max-pages.")
+    ap.add_argument(
         "--max-pages", type=int, default=30,
         help="Cap pages processed per merchant (default 30). The sweep runs highest-page-"
              "first down to page 1, and the submit index is only productive on the ~28-30 "
@@ -413,6 +421,11 @@ def main() -> int:
     # 20260914-inspect-consoles) and proven by two real canaries (Legend of Mana Switch, one
     # target; Diablo 2 Resurrected Xbox One + Series, two targets via [data-add-target]).
     # 05_submit still gates every entry one by one (shape targets_v2, cap 3, readbacks).
+    if args.all_pages and any(a.startswith("--max-pages") for a in sys.argv[1:]):
+        print(json.dumps({"aborted": True,
+                          "reason": "--all-pages et --max-pages sont exclusifs : choisis "
+                                    "la couverture complète ou un plafond explicite"}))
+        return 2
     if args.max_pages < 1 or args.start_page < 1:
         # Review 2026-09-09: with the cap now benign coverage (not a halt), a zero/negative
         # cap would be a silent exit-0 "done" run that processes NO page. Fail loud instead.
@@ -511,7 +524,8 @@ def main() -> int:
             break
         slug = re.sub(r"[^a-z0-9]+", "-", merchant.lower()).strip("-") or "merchant"
         cfg = SweepConfig(merchant=merchant, store_id=store_id, start_page=args.start_page,
-                          max_pages=args.max_pages, consoles=args.consoles)
+                          max_pages=(None if args.all_pages else args.max_pages),
+                          consoles=args.consoles)
         stages = _make_stages(merchant, store_id, args.available, args.pace,
                               triage=args.triage, move_execute=args.move_execute,
                               dry_run=args.dry_run, prove_gone_scan=args.prove_gone_scan,

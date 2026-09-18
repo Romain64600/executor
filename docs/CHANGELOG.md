@@ -3,6 +3,29 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-18 — Le sweep de nuit couvre TOUT le feed (`--all-pages`)
+
+Romain, au vu du bilan de la nuit : « je ne veux pas couvrir les marchands seulement sur
+10 pages, on fait toutes les pages sauf lors d'un arrêt pour sécurité ».
+
+Le plafond de 10 avait créé 360 offres **et laissé de côté** 97 pages chez GameSeal (107 au
+total), 54 chez Kinguin, 42 chez Gamivo, 36 chez Eneba et 23 chez G2A. Le récapitulatif le
+disait honnêtement en `coverage_incomplete` — mais le dire n'est pas le faire.
+
+`--all-pages` supprime le plafond : la passe descend de la dernière page que le feed ANNONCE
+jusqu'à la page 1, plus haute d'abord (toujours reflow-safe). **Seul un arrêt fail-closed
+l'écourte** désormais : extract / match / submit en échec, ou stop opérateur. `--max-pages N`
+reste disponible pour une passe délibérément courte, et les deux drapeaux sont exclusifs —
+demander les deux est une consigne ambiguë, donc un refus, pas un arbitrage silencieux.
+
+Ce que ce drapeau ne promet PAS : tout voir. Si le feed grandit pendant la passe, la couverture
+reste signalée `incomplete_feed_grew` comme avant. Retirer un plafond met fin à une troncature
+silencieuse, pas à la mouvance du feed.
+
+`tests/test_sweep_all_pages.py`, 7 tests : le balayage complet, le plafond qui tronque encore
+et le dit, l'arrêt de sécurité comme seule cause d'écourtement, et l'exclusivité des drapeaux.
+La commande du README passe à `--all-pages`.
+
 ## 2026-09-17 — Stage 13 : le SQL de tri, généré et MESURÉ, jamais exécuté
 
 Romain : « j'aimerais bien que tu me génères des requêtes SQL […] sur l'admin on aura un espace

@@ -467,9 +467,18 @@ tmux new -s sweep
 sudo -u debian -H bash -c 'cd /home/debian/executor && python3 scripts/10_data_entry_auto.py \
   --all-allowlisted \
   --run-id "$(date -u +%Y%m%d-%H%M%S)-auto" \
-  --max-pages 10 --continue-on-halt \
+  --all-pages --continue-on-halt \
   2>&1 | tee "logs/sweep-$(date -u +%Y%m%d)-night.stdout"'
 ```
+
+**`--all-pages`, pas un plafond (Romain 2026-09-18 : « on fait toutes les pages sauf lors
+d'un arrêt pour sécurité »).** La nuit du 17/09 tournait avec `--max-pages 10` : elle a créé
+360 offres mais laissé de côté 97 pages chez GameSeal (107 au total), 54 chez Kinguin, 42 chez
+Gamivo, 36 chez Eneba et 23 chez G2A — signalées honnêtement en `coverage_incomplete`, et
+pourtant laissées. Sans plafond, la passe descend de la dernière page annoncée jusqu'à la
+page 1, et **seul un arrêt fail-closed l'écourte** : extract / match / submit en échec, ou stop
+opérateur. Compte donc une nuit bien plus longue. `--max-pages N` reste là pour une passe
+délibérément courte, et les deux drapeaux sont exclusifs.
 
 **Run it under `tmux`, not `setsid nohup &`** (2026-09-17). The old form here was
 fire-and-forget, which AGENTS.md forbids and which this very line contradicted. It also

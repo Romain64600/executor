@@ -59,7 +59,10 @@ class SweepConfig:
     merchant: str
     store_id: str
     start_page: int = 1
-    max_pages: int = 30       # shallow-index cap, same default as scripts/10 --max-pages (the
+    # None = TOUTES les pages que le feed annonce (Romain 2026-09-18 : « je ne veux pas
+    # couvrir les marchands seulement sur 10 pages, on fait toutes les pages sauf lors d'un
+    # arrêt pour sécurité »). Un entier garde l'ancien plafond.
+    max_pages: int | None = 30  # shallow-index cap, same default as scripts/10 --max-pages (the
                               # submit index is only productive on the ~28-30 shallowest pages)
     # [R45] match the pages WITH the console branch (03_match --consoles). Default ON since
     # Romain's decision « 1 » of 2026-09-15 (consoles by default everywhere, after the two
@@ -210,7 +213,11 @@ def run_sweep(
         finish_page({"page": cfg.start_page, "run": probe_id, "offers": 0, "end_of_feed": True})
         return recap
 
-    top = min(feed_last, cfg.start_page + cfg.max_pages - 1)
+    # `max_pages=None` : on couvre tout ce que le feed annonce. Seul un arrêt fail-closed
+    # (extract/match/submit en échec, stop opérateur) écourte alors la passe — la couverture
+    # ne peut plus être rognée en silence par un plafond.
+    top = (feed_last if cfg.max_pages is None
+           else min(feed_last, cfg.start_page + cfg.max_pages - 1))
     capped = feed_last > top
     max_seen = feed_last   # largest feed_last_page any extract advertised (feed growth)
 
