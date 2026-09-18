@@ -104,8 +104,13 @@ RANDOM_LOOTBOX_EXAMPLES = (
 
 
 class TokenizeTests(unittest.TestCase):
-    def test_normalizes_apostrophes(self):
-        self.assertEqual(tokenize("Dragon’s Dogma"), ["DRAGON'S", "DOGMA"])
+    def test_normalizes_and_folds_apostrophes(self):
+        """Audit du 2026-09-18 : l'apostrophe est REPLIÉE, comme le fait déjà
+        `_identity_tokens` pour les pages console et comme `_slug_variants` sonde déjà les
+        deux orthographes. La courbe est d'abord ramenée à l'ASCII, puis retirée."""
+
+        self.assertEqual(tokenize("Dragon’s Dogma"), ["DRAGONS", "DOGMA"])
+        self.assertEqual(tokenize("Dragon's Dogma"), tokenize("Dragons Dogma"))
 
     def test_unicode_roman_numeral_survives_tokenization(self):
         # Eneba escape (2026-07-16): "Road to Empress Ⅱ" (U+2161, a single
@@ -231,8 +236,16 @@ class TokenizeTests(unittest.TestCase):
             [],
         )
 
-    def test_r01_apostrophe_mismatch_is_missing(self):
-        self.assertEqual(missing_aks_words("Dragon's Dogma", "Dragons Dogma"), ["DRAGON'S"])
+    def test_r01_apostrophe_spelling_is_not_a_mismatch(self):
+        """Audit du 2026-09-18 : R01 exigeait l'apostrophe au caractère près, si bien qu'un
+        titre marchand « Dragons Dogma » ne couvrait pas le nom AKS « Dragon's Dogma » — un
+        FAUX refus, jamais une fausse saisie. Le repli ne peut faire matcher que des noms qui
+        SIGNIFIENT la même chose (même argument que `fold_accents`) ; un vrai mot manquant
+        reste manquant."""
+
+        self.assertEqual(missing_aks_words("Dragon's Dogma", "Dragons Dogma"), [])
+        self.assertEqual(missing_aks_words("Dragons Dogma", "Dragon's Dogma"), [])
+        self.assertEqual(missing_aks_words("Dragon's Dogma 2", "Dragons Dogma"), ["2"])
 
 
 class QualifierTests(unittest.TestCase):

@@ -141,6 +141,23 @@ No degraded mode.
 These are deliberate, Romain-reviewed calls. An adversarial audit re-derives them as
 "findings" every time; leave them AS-IS unless Romain explicitly changes his mind.
 
+- **Chemin by-urls : l'index de localisation EST remplacé par la preuve après chaque création —
+  laisser tel quel (audit complet du 2026-09-18, constat écarté).** Sur `--locate-by-search`
+  les deux drapeaux sont vrais, donc `keep_index` vaut False et l'index bâti par
+  `_index_by_search` (3 tentatives par candidat) est remplacé par les 0-1 lignes de la recherche
+  de preuve. Le fait est exact ; il est DÉLIBÉRÉ. Sur ce chemin chaque offre est localisée par SA
+  PROPRE recherche (`_relocate_by_url` re-cherche), il n'y a pas de fenêtre de page à préserver,
+  et `test_by_urls_path_still_refreshes_its_index_from_the_search` épingle le comportement. Aucun
+  effet sur la justesse — seulement du travail refait. Un audit le re-trouvera en citant le
+  commentaire qui le précède : ne pas retourner une décision testée pour une économie non mesurée.
+
+- **R01 : l'apostrophe est REPLIÉE, les mots-outils NON (audit complet du 2026-09-18).** Le repli
+  de l'apostrophe dans `tokenize` est acquis (« Assassins Creed » couvre « Assassin's Creed ») —
+  il ne peut faire matcher que des noms qui SIGNIFIENT la même chose. La seconde moitié du même
+  constat — retirer THE / OF / AND du côté REQUIS, ou plier `&` en `AND` — a été délibérément
+  abandonnée : elle, elle relâcherait l'identité. Un audit reproposera le paquet entier ; ne
+  reprendre que la moitié déjà faite.
+
 - **Software region catch-all (`resolve_software_region`, Fable finding [7], DECLINED
   2026-09-07).** When an AKS software page has a SINGLE region and it is a
   GLOBAL/PUBLISHER-type bucket, a merchant offer is filed under it even when the offer's

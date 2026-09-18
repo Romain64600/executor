@@ -46,9 +46,37 @@ def pid_alive(pid: int) -> bool:
     return True
 
 
+class ActiveRunExists(RuntimeError):
+    """Un AUTRE run est vivant : on n'écrase pas son marqueur.
+
+    AUDIT DU 2026-09-18. `write_marker` écrasait INCONDITIONNELLEMENT, alors que sa docstring
+    ne promet que « overwrites any marker left by a dead process ». `scripts/05_submit.py` avait
+    reçu la garde le matin même ; `scripts/10` appelait sans garde. Conséquence mesurée : un
+    simple `--dry-run` lancé pendant un sweep de 30 h volait le marqueur, le sweep devenait
+    INVISIBLE dans les consoles, et `_ensure_free` rouvrait le lancement depuis la console —
+    deux runs concurrents sur le même onglet. Comme `clear_marker` n'efface que le sien, le
+    marqueur du dry-run restait ensuite en place à sa mort. La garde vit ici, pas au point
+    d'appel, pour que tout appelant futur en hérite."""
+
+    def __init__(self, marker: dict[str, Any]) -> None:
+        super().__init__(
+            f"un run est déjà en cours ({marker.get('kind')} sur {marker.get('run_id')}, "
+            f"pid {marker.get('pid')}) — attends sa fin ou arrête-le dans son terminal"
+        )
+        self.marker = marker
+
+
 def write_marker(repo_root: Path | str, *, run_id: str, kind: str,
                  source: str = "cli", pid: int | None = None) -> dict[str, Any]:
-    """Stamp the active run. Overwrites any marker left by a dead process."""
+    """Stamp the active run. Overwrites any marker left by a dead process.
+
+    Refuse (``ActiveRunExists``) si un marqueur VIVANT porte un AUTRE ``run_id`` — un pid mort
+    reste écrasé (l'auto-guérison documentée est préservée), et le MÊME ``run_id`` reste
+    écrasable (relance explicite avec ``--run-id``)."""
+
+    existing = read_marker(repo_root)
+    if existing is not None and str(existing.get("run_id")) != str(run_id):
+        raise ActiveRunExists(existing)
 
     marker = {
         "run_id": str(run_id),

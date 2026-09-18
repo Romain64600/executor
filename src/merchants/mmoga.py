@@ -54,10 +54,10 @@ MMOGA_URL_PLATFORM_PREFIXES = {
     "epic": "EPIC",
     "ubisoft": "UBISOFT",
     "uplay": "UBISOFT",
-    "rockstar": "ROCKSTAR",  # no plain-key REGION_IDS entry → fail-closed skip, not Steam
+    "rockstar": "ROCKSTAR",  # seaux Rockstar mappés depuis [R50] — la ligne ENTRE
     "battle.net": "BATTLENET",
     "blizzard": "BATTLENET",
-    "windows": "MICROSOFT",  # no REGION_IDS entry → fail-closed skip, not Steam
+    "windows": "MICROSOFT",  # seaux Windows mappés depuis [R50] — la ligne ENTRE
 }
 
 # "<Product> <CODE> Key" / "<Product> <CODE> CD Key" — uppercase code, raw title case.

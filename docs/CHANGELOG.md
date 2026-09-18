@@ -3,6 +3,95 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-18 (nuit) — Audit complet, lots 3 et 4/4 : identité, édition, orchestration, console
+
+Fin des 36 constats. Un seul a été ÉCARTÉ après vérification (voir le bas de l'entrée).
+
+**Identité — les replis s'arrêtaient à mi-chemin.**
+`[P2]` Le repli d'accents du 16/09 ne couvrait que les scans CATÉGORIELS : ni l'identité
+(`tokenize`, donc R01/R01b) ni le slug (`cleaned_title` → `build_slug_candidates`) ne repliaient
+rien, alors que la regex `[A-Z0-9']+` JETTE silencieusement ce qui sort de sa classe.
+« Kādomon » perdait son « ā » — le mot devenait « K DOMON », l'identité ne matchait plus et la
+mauvaise page était sondée. `normalize_apostrophes` fait désormais NFKD + retrait des marques
+combinantes (sur-ensemble strict du NFKC exigé par `[R28]` : « Ⅱ »→II, « ＤＬＣ »→DLC, « ﬁ »→fi).
+`[P2]` L'apostrophe est repliée dans `tokenize`, comme `_identity_tokens` le fait pour les pages
+console depuis le 14/09 et comme `_slug_variants` sonde déjà les deux orthographes : R01
+l'exigeait au caractère près, donc « Assassins Creed » ne couvrait pas « Assassin's Creed ». La
+moitié « mots-outils » du constat est écartée — elle, elle relâcherait l'identité.
+
+**Région — « Global » dans le nom du jeu.** `[P2]` La branche GLOBAL était testée AVANT US et UK
+et lit « -global » en sous-chaîne nue : un produit dont le NOM contient le mot (Counter-Strike:
+Global Offensive) gagnait contre un verrou US/UK pourtant écrit dans le créneau. On ne touche ni
+l'ordre ni la lecture de « -global » — le « -global » en milieu de slug est la grammaire NORMALE
+de Driffle, K4G et Gamivo — on fait seulement perdre GLOBAL face à un verrou **terminal** (slot
+de fin d'URL, `-united-states`/`-united-kingdom` en fin de chemin, ou queue de titre). Les
+lectures faibles restent après GLOBAL, sans quoi le cas fondateur de `[R44]` (AoE3 « United
+States Civilization … Steam Key GLOBAL ») basculerait à tort. Huit non-régressions vérifiées.
+
+**Édition.** `[P2]` Le garde « DLC anonyme » de `[R43]` testait Standard par la CLÉ littérale
+« 1 », alors que le reste de la fonction le teste par le NOM : une page dont le Standard
+s'appelle « Standard + DLC » (id 518, vu vivant) ouvrait le garde. Il se déclenche maintenant dès
+que la page porte un seau AUTRE que le seau DLC — la spec littérale (« a DLC-only page still
+enters »). `[P2]` Le sauvetage par « extras » court-circuitait `detect_edition` : les mots de
+PALIER étant du bruit, un titre « <Jeu> Deluxe <qualificatif> » pouvait être adopté sous le seau
+du qualificatif, palier perdu — une écriture de MAUVAISE ÉDITION. On exige que le seau adopté
+porte les paliers que le MARCHAND ajoute (titre moins nom AKS, sinon « Ultimate Admiral » serait
+refusé à tort), comparés par `_edition_key` pour que GOTY ↔ « Game of the Year » tienne.
+
+**Consoles.** `[P2]` Les quatre marchands à hook `console_url_families` (G2A, GameSeal, Driffle,
+K4G) consomment le jeton `pc` dans leur propre expression et jetaient l'information : la garde P2
+« Xbox + PC sans Play Anywhere » ne pouvait JAMAIS se déclencher chez eux. Le signal est complété
+comme dans la branche sans hook. `[P2]` La plateforme réelle de la page cible n'était jamais
+vérifiée : `page_platform` était extrait puis jeté, et `console_page_identity` retire justement
+le suffixe de plateforme — « Hades PS4 », « Hades PS5 » et « Hades » sont tous « Hades ». Une
+barre d'onglets pointant vers une autre génération passait. Table inverse bâtie sur le
+vocabulaire de la MÉTA (« Xbox Series X », pas l'onglet « Xbox Series ») ; méta absente ou
+inconnue = aucun refus, seule une méta qui nomme une AUTRE famille fait échouer la cible.
+
+**Orchestration.** `[P2]` `write_marker` écrasait inconditionnellement : un `--dry-run` volait le
+marqueur d'un sweep de 30 h, qui devenait INVISIBLE dans les consoles pendant que le lancement s'y
+rouvrait. Refus `ActiveRunExists` quand un marqueur VIVANT porte un autre `run_id` ; un pid mort
+reste écrasé, le même `run_id` aussi. `[P2]` Un stop opérateur ÉCRASAIT les haltes fail-closed
+accumulées par `--continue-on-halt` et rendait le code de sortie VERT : il concatène maintenant.
+`[P2]` FC3 — un run AVORTÉ remettait à zéro le compteur inter-processus de runs bloqués, la seule
+anti-boucle du projet, alors qu'aucune offre n'avait été touchée. `[P2]` La garde `[20]`
+(nav_max=0 sur une page 1 pleine → sonder p=2) manquait au mode « tranche », celui que
+`scripts/10` utilise pour sa sonde de pagination : un feed de 107 pages pouvait être balayé sur
+UNE page et déclaré complet. `[P3]` `recap.json`, relu en direct par la console, est écrit
+atomiquement (sweep et by-urls) au lieu d'être tronqué puis réécrit après chaque page.
+
+**Console d'administration.** `[P2]` `app.js` n'avait aucun jeton de génération — la seule des
+quatre pages à n'avoir jamais reçu la discipline appliquée à `sort.js` / `auto.js` / `urls.js` :
+`pollStatus`, `refreshStatus` et `idleTick` relisaient `CURRENT.runId` APRÈS l'await et
+ré-armaient le sondage que `stopPolling()` venait d'annuler. `[P3]` Le champ `browser` (qui tient
+l'onglet unique) était servi sur deux routes et lu par AUCUNE page : la pastille l'affiche, et
+surtout `_ensure_free` refuse maintenant le lancement (`browser_busy`) au lieu de laisser
+l'enfant mourir plus loin sur le flock.
+
+**Contrats.** `[P1]` `primary_ids` interpolait les ids PRIMAIRES sans contrôle : le même dict
+était REFUSÉ en position `targets[1]` et ACCEPTÉ en position 0, où `None` devenait la chaîne
+« None » — une identité stable et fausse. Le test porte sur les valeurs BRUTES, avant `str()`.
+`[P3]` Le remap libellé→id vivant du submitter (« the wrong-edition fix ») ne retirait le suffixe
+d'id que s'il était PUREMENT NUMÉRIQUE : les 9 seaux console à id alphanumérique (24eu, 88ps5h,
+992…) ne matchaient jamais et retombaient sur la voie « id », donc un id qui aurait dérivé était
+écrit tel quel. Le BOM est retiré au passage. `[P3]` Une règle RETIRÉE restait promouvable depuis
+la console — `%valid-until%` pouvait revenir contre la décision du 14/09 qu'il contredit.
+
+**Tests.** `[P2]` FAUX VERT corrigé : le test qui « verrouillait » la preuve de couverture du
+`prove-gone-by-search` ne servait qu'UNE page, donc la garde de wedge levait bien avant la garde
+de couverture — il restait vert si on supprimait le bloc qu'il prétendait protéger. Vérifié par
+mutation : il rougit maintenant quand la garde saute. `[P2]` La règle dure « on n'entre JAMAIS de
+bundle » n'était exécutée par aucun des 2 245 tests ; elle l'est, avec le MOTIF exact (un
+`assertIsInstance` lâche resterait vert, la réconciliation P1-1 deux lignes plus bas émettant
+elle aussi un skip). `[P3]` Cinq commentaires périmés depuis `[R50]` promettaient un refus
+fail-closed Rockstar / Windows / Microsoft qui n'existe plus.
+
+**Le constat écarté.** `src/submitter.py:1849` (« l'index de localisation est effacé après chaque
+création sur le chemin by-urls ») : c'est exact, et c'est DÉLIBÉRÉ. Sur ce chemin chaque offre est
+localisée par SA PROPRE recherche, il n'y a pas de fenêtre de page à préserver, et
+`test_by_urls_path_still_refreshes_its_index_from_the_search` épingle le comportement. Aucun effet
+sur la justesse : on ne retourne pas une décision testée pour une économie de travail non mesurée.
+
 ## 2026-09-18 (nuit) — Audit complet, lot 2/4 : la Blacklist qui avalait de vrais jeux
 
 **`[P1]` Un nom de pays DANS LE NOM DU JEU était lu comme un verrou de région.** Le balayage

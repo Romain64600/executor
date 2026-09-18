@@ -621,6 +621,31 @@ class FeedExtractor:
             feed_ui = bool(state.get("feed_ui"))
             feed_last_page = max(feed_last_page, nav_max, 1 if feed_ui else 0)
 
+            # AUDIT DU 2026-09-18 : la garde [20] du mode SWEEP manquait ici. `extract_pages`
+            # faisait du `nav_max` lu au premier read la valeur autoritaire de
+            # `feed_last_page`, sans la corroboration que `extract` applique à la même forme —
+            # or c'est CE mode que `scripts/10` utilise pour sa sonde de pagination
+            # (`02_extract_feed.py --pages <N>`), donc un feed de 107 pages dont la nav dérive
+            # pouvait être balayé sur UNE page et déclaré complet. Même sonde, même refus :
+            # des lignes en p=2 ⇒ `FeedUnstableError`, jamais une troncature silencieuse ;
+            # une over-page vide confirme le feed mono-page et la tranche continue.
+            if page == first_page == 1 and feed_ui and nav_max == 0 and page_offers:
+                probe_url = feed_url(store_id, page=2, feed_page=feed_page, available=available)
+                self._pace()
+                probe_state = self._settled_page_state(
+                    merchant=merchant, sweep=1, page=2, url=probe_url)
+                if parse_offers_payload(probe_state.get("offers")):
+                    self._log(
+                        "aborted",
+                        reason="nav_max=0 on a row-full page 1 but p=2 rendered rows",
+                        mode="pages", merchant=merchant, page=page,
+                    )
+                    raise FeedUnstableError(
+                        "pages mode: page 1 rendered rows with nav_max=0 (the single-page "
+                        "marker) but page 2 also rendered rows — the pagination nav is "
+                        "unreadable; refusing to silently truncate a multi-page feed "
+                        "(re-run; the nav markup may have drifted)")
+
             if not page_offers:
                 if page == 1 and feed_ui and nav_max == 0:
                     self._log(

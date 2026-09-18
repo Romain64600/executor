@@ -9,6 +9,14 @@ const $ = (sel) => document.querySelector(sel);
 let META = null;
 let CURRENT = null; // { runId, detail, validation, stamp }
 let POLL_TIMER = null;
+// AUDIT DU 2026-09-18 : cette console est la SEULE des quatre à n'avoir jamais reçu la
+// discipline des jetons de génération appliquée à sort.js / auto.js / urls.js. `pollStatus`,
+// `refreshStatus` et `idleTick` relisaient `CURRENT.runId` APRÈS l'await au lieu d'un id figé
+// avant, et ré-armaient `POLL_TIMER` alors que `stopPolling()` venait de l'annuler : un tick
+// en vol du run A repeignait #events, écrasait LOG_OFFSET et RESSUSCITAIT le sondage sous le
+// run B. Un compteur suffit : on le fait avancer à chaque arrêt / changement de run, et on
+// sort après CHAQUE await si la génération a changé.
+let POLL_SEQ = 0;
 let LOG_OFFSET = 0;
 let INVARIANTS_GREEN = false;
 let DIRTY = false;   // éditions non enregistrées dans le tableau de validation
@@ -198,8 +206,8 @@ async function startMatch() {
 
 async function loadRuns() {
   try {
-    const { runs, busy } = await api('api/runs');
-    updateBusyBadge(busy);
+    const { runs, busy, browser } = await api('api/runs');
+    updateBusyBadge(busy, browser);
     const list = $('#runs');
     list.textContent = '';
     for (const run of runs) {
@@ -1050,6 +1058,7 @@ async function fetchCatalog() {
 // ---------------------------------------------------------------- polling
 
 function stopPolling() {
+  POLL_SEQ++;                       // toute réponse en vol devient périmée
   if (POLL_TIMER) { clearTimeout(POLL_TIMER); POLL_TIMER = null; }
 }
 
@@ -1074,10 +1083,14 @@ function eventLine(event) {
 
 async function pollStatus() {
   if (!CURRENT) return;
+  const rid = CURRENT.runId;        // figé AVANT le réseau
+  const seq = POLL_SEQ;
+  const gone = () => seq !== POLL_SEQ || !CURRENT || CURRENT.runId !== rid;
   try {
     const status = await api(
-      `api/runs/${encodeURIComponent(CURRENT.runId)}/submit/status?offset=${LOG_OFFSET}`
+      `api/runs/${encodeURIComponent(rid)}/submit/status?offset=${LOG_OFFSET}`
     );
+    if (gone()) return;             // le run a changé pendant l'attente : on n'écrit rien
     LOG_OFFSET = status.offset;
     updateBusyBadge(status.busy);
     const box = $('#events');
@@ -1101,6 +1114,7 @@ async function pollStatus() {
     }
     if (status.state !== 'idle') renderFinal(status);
   } catch (err) {
+    if (gone()) return;             // une erreur tardive n'appartient plus à l'écran courant
     showError(err);
   }
 }
@@ -1167,10 +1181,13 @@ async function refreshStatus() {
   $('#progress').classList.add('hidden');
   $('#events').textContent = '';
   $('#plan-summary').textContent = '';
+  const rid = CURRENT.runId;        // figé AVANT le réseau (audit 2026-09-18)
+  const seq = POLL_SEQ;
   const status = await api(
-    `api/runs/${encodeURIComponent(CURRENT.runId)}/submit/status?offset=0`
+    `api/runs/${encodeURIComponent(rid)}/submit/status?offset=0`
   ).catch(() => null);
   if (!status) return;
+  if (seq !== POLL_SEQ || !CURRENT || CURRENT.runId !== rid) return;
   LOG_OFFSET = status.offset;
   updateBusyBadge(status.busy);
   if (status.state === 'running') {
@@ -1185,10 +1202,18 @@ async function refreshStatus() {
   }
 }
 
-function updateBusyBadge(busy) {
+// AUDIT DU 2026-09-18 : le champ `browser` (qui tient l'onglet unique) était SERVI sur
+// /api/runs et sur /api/sort/runs, et lu par AUCUNE page — le correctif « champ posé sur une
+// route que personne ne lit » du matin même n'avait jamais atteint le client. L'indicateur
+// demandé par Romain n'existait donc nulle part. Le serveur refuse maintenant aussi le
+// lancement (`browser_busy` dans `_ensure_free`) ; ceci en est la moitié visible.
+function updateBusyBadge(busy, browser) {
   const badge = $('#busy');
   if (busy) {
     badge.textContent = `⏳ ${busy.kind} en cours sur ${busy.run_id}`;
+    badge.classList.remove('hidden');
+  } else if (browser && browser.held) {
+    badge.textContent = `⏳ onglet pris par ${browser.label} (pid ${browser.pid})`;
     badge.classList.remove('hidden');
   } else {
     badge.classList.add('hidden');
@@ -1229,7 +1254,11 @@ async function idleTick() {
   try {
     await loadRuns();
     if (!CURRENT || POLL_TIMER || $('#confirm-dialog').open) return;
-    const detail = await api(`api/runs/${encodeURIComponent(CURRENT.runId)}`);
+    const rid = CURRENT.runId;      // figé AVANT le réseau (audit 2026-09-18)
+    const seq = POLL_SEQ;
+    const gone = () => seq !== POLL_SEQ || !CURRENT || CURRENT.runId !== rid;
+    const detail = await api(`api/runs/${encodeURIComponent(rid)}`);
+    if (gone()) return;
     const stamp = detailStamp(detail);
     if (stamp !== CURRENT.stamp) {
       if (DIRTY) {
@@ -1242,8 +1271,9 @@ async function idleTick() {
     // état inchangé sur disque : streamer l'éventuelle activité du log
     // (ex. submit lancé en CLI — il n'écrit ses artefacts qu'à la fin)
     const status = await api(
-      `api/runs/${encodeURIComponent(CURRENT.runId)}/submit/status?offset=${LOG_OFFSET}`
+      `api/runs/${encodeURIComponent(rid)}/submit/status?offset=${LOG_OFFSET}`
     );
+    if (gone()) return;
     LOG_OFFSET = status.offset;
     if (status.state === 'running' && !POLL_TIMER) {
       $('#progress').classList.remove('hidden');

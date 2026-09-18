@@ -150,13 +150,20 @@ def target_ids(target: Any) -> tuple[str, str, str]:
 
 def primary_ids(candidate: dict[str, Any]) -> tuple[str, str, str]:
     """``(aks_product_id, region_id, edition_id)`` of the PRIMARY fields, as ``str``.
-    A missing key raises ``KeyError`` (a candidate without a primary has no identity)."""
+    A missing key raises ``KeyError`` (a candidate without a primary has no identity).
 
-    return (
-        str(candidate["aks_product_id"]),
-        str(candidate["region"]["id"]),
-        str(candidate["edition"]["id"]),
-    )
+    AUDIT DU 2026-09-18. Le refus « un id null n'entre jamais dans une identité », posé le
+    2026-09-14 sur ``flatten_target``, ne couvrait que ``targets[1:]`` : l'empreinte
+    interpolait les ids PRIMAIRES dans une f-string sans contrôle, si bien que le même dict
+    était REFUSÉ en position 1 et ACCEPTÉ en position 0 — ``None`` y devenait la chaîne
+    littérale « None », une identité stable et fausse. Le test doit porter sur les valeurs
+    BRUTES, avant ``str()`` : après conversion il ne reste plus rien à détecter."""
+
+    raw = (candidate["aks_product_id"], candidate["region"]["id"], candidate["edition"]["id"])
+    if any(v is None or v == "" for v in raw):
+        raise CandidateContractError(
+            f"identité primaire incomplète (id nul) : {raw!r}")
+    return (str(raw[0]), str(raw[1]), str(raw[2]))
 
 
 def primary_target(candidate: dict[str, Any]) -> dict[str, Any]:

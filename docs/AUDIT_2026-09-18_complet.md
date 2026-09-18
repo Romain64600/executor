@@ -13,6 +13,24 @@ défaut de la branche console) : **36 constats**, dont **8 P1**.
 Les décisions arrêtées de Romain listées dans `AGENTS.md` (« Reviewed decisions — do NOT
 re-tighten ») étaient interdites aux auditeurs. Aucun constat ci-dessous ne les rouvre.
 
+> **ÉTAT AU 2026-09-18, fin de soirée — 35 des 36 constats sont CORRIGÉS.** Romain : « tout ».
+> Quatre lots, chacun avec sa suite complète verte et ses tests de non-régression :
+> `2230aea` (lot 1), `5431767` (lot 2), puis les lots 3 et 4. Le détail de chaque correctif,
+> avec ce qui a été refusé des correctifs proposés et pourquoi, est dans
+> [`CHANGELOG.md`](CHANGELOG.md).
+>
+> **Le seul constat ÉCARTÉ** est `src/submitter.py:1849` (l'index de localisation effacé après
+> chaque création sur le chemin by-urls) : le fait est exact, mais il est DÉLIBÉRÉ et épinglé
+> par `test_by_urls_path_still_refreshes_its_index_from_the_search`. Sur ce chemin chaque offre
+> est localisée par sa propre recherche ; aucun effet sur la justesse. On ne retourne pas une
+> décision testée pour une économie de travail non mesurée.
+>
+> Plusieurs correctifs PROPOSÉS par les auditeurs ont été rejetés ou resserrés après
+> vérification — les plus notables : ajouter `DE` et `ID` aux codes de verrou régional (faux
+> positifs documentés), faire perdre GLOBAL contre toute lecture US/UK (casserait le cas
+> fondateur de `[R44]`), et tester Standard « par le nom » dans `[R43]` (rate « Standard + DLC »).
+> Chaque rejet est motivé dans le CHANGELOG.
+
 ## Ce que j'ai vérifié moi-même, à la main
 
 Sept constats ont été reproduits ou relus ligne à ligne par moi, indépendamment des agents :

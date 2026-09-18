@@ -136,12 +136,20 @@ def promote(repo_root: Path | str, *, pattern: str, target: str, by: str,
     """
 
     from src.aks_lists import LISTS
-    from src.sort_sql_rules import RULES
+    from src.sort_sql_rules import RETIRED, RULES
 
     pattern = (pattern or "").strip()
     target = str(target or "").strip()
     if not SAFE_PATTERN.match(pattern):
         raise ValueError(f"motif refusé : {pattern!r} — attendu %texte% sans espace ni quote")
+    # AUDIT DU 2026-09-18 : une règle RETIRÉE restait promouvable. `%valid-until%` a été retiré
+    # le matin même sur arbitrage de Romain parce qu'il contredit une décision de `AGENTS.md`
+    # (« Kinguin valid until juin 2027 on rentre ») — mais rien n'empêchait de le re-promouvoir
+    # depuis la console, vers cette liste ou une autre. Le test porte sur le MOTIF SEUL : un
+    # motif retiré est faux vers N'IMPORTE QUELLE liste. La raison du retrait, déjà rédigée,
+    # remonte telle quelle à l'écran (`app.py` transforme tout `ValueError` en 400).
+    if pattern in RETIRED:
+        raise ValueError(RETIRED[pattern])
     known = {l["id"] for l in LISTS}
     if target not in known:
         raise ValueError(f"liste inconnue : {target!r}")

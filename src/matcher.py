@@ -42,6 +42,7 @@ from src.console_keys import (
     classify_console,
     console_marker_in_url,
     console_page_identity,
+    page_platform_family,
     extract_console_pages,
     extract_page_platform,
 )
@@ -700,7 +701,21 @@ def normalize_apostrophes(text: str) -> str:
     """
 
     text = _NFKC_LETTER_SYMBOL_RE.sub(" ", text)
-    return unicodedata.normalize("NFKC", text).replace("’", "'").replace("‘", "'")
+    # AUDIT DU 2026-09-18. Le repli d'accents du 2026-09-16 s'était arrêté aux scans
+    # CATÉGORIELS (`fold_accents` dans `precheck_skip` / `_norm_tokens`) : ni l'identité
+    # (`tokenize`, donc R01/R01b) ni le slug (`cleaned_title` → `build_slug_candidates`) ne
+    # repliaient quoi que ce soit, alors que la regex `[A-Z0-9']+` de `tokenize` JETTE
+    # silencieusement tout caractère hors de sa classe. « Kādomon » perdait donc son « ā » :
+    # le mot devenait « K DOMON », l'identité ne matchait plus et le slug sondait la mauvaise
+    # page — exactement le mode d'échec que la normalisation « Ⅱ » de 2026-07-16 avait
+    # corrigé pour les numéraux. NFKD **remplace** NFKC ici : c'est un sur-ensemble strict
+    # (même décomposition de compatibilité — « Ⅱ »→II, « ＤＬＣ »→DLC, « ﬁ »→fi, exigée
+    # par [R28]) auquel s'ajoute la décomposition canonique, dont on retire ensuite les
+    # marques combinantes. L'ordre compte : le strip des symboles reste AVANT, sinon
+    # « Company™ » devient « COMPANYTM ».
+    decomposed = unicodedata.normalize("NFKD", text)
+    folded = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    return folded.replace("’", "'").replace("‘", "'")
 
 
 # [R42] Roman numerals ≡ digits (2026-09-10, MMOGA "Crusader Kings III" vs the AKS page
@@ -740,8 +755,21 @@ def tokenize(name: str) -> list[str]:
 
     # Trademark/legal symbols (™ ® © ℠ ℡ №…) are stripped inside normalize_apostrophes,
     # BEFORE its NFKC — else NFKC glues them into letters ("Company™" → "COMPANYTM").
+    # AUDIT DU 2026-09-18 : l'apostrophe est REPLIÉE, comme `_identity_tokens` le fait déjà
+    # pour les pages console depuis le 2026-09-14 et comme `_slug_variants` sonde déjà les
+    # deux orthographes. R01 l'exigeait au caractère près, si bien qu'« Assassins Creed » ne
+    # couvrait pas « Assassin's Creed » : un faux refus, jamais une fausse saisie — mais le
+    # repli ne peut faire matcher que des noms qui SIGNIFIENT la même chose (même argument
+    # que `fold_accents`). Les deux replis sont maintenant identiques, ils ne peuvent plus
+    # diverger. La moitié « mots-outils » du constat (THE / OF / AND retirés du côté requis)
+    # est volontairement ABANDONNÉE : elle, elle relâcherait l'identité.
     cleaned = normalize_apostrophes(name).upper()
-    return [_ROMAN_TO_DIGIT.get(t, t) for t in re.findall(r"[A-Z0-9']+", cleaned) if t.strip("'")]
+    out = []
+    for t in re.findall(r"[A-Z0-9']+", cleaned):
+        t = t.replace("'", "")
+        if t:
+            out.append(_ROMAN_TO_DIGIT.get(t, t))
+    return out
 
 
 def missing_aks_words(aks_name: str, merchant_title: str) -> list[str]:
@@ -1096,7 +1124,7 @@ _PLATFORM_WORDS = {
     "EPIC": "EPIC",
     "UBISOFT": "UBISOFT",
     "UPLAY": "UBISOFT",
-    "ROCKSTAR": "ROCKSTAR",  # no REGION_IDS entry -> fail-closed skip, not Steam
+    "ROCKSTAR": "ROCKSTAR",  # seaux Rockstar mappés depuis [R50] — la ligne ENTRE
     "STEAM": "STEAM",
 }
 
@@ -1303,6 +1331,30 @@ def _detect_region_parts(offer: NormalizedOffer) -> tuple[str, str, bool, bool, 
         or tail in ("EU", "EUROPE")
     ):
         base, label = "eu", "EU"
+    # AUDIT DU 2026-09-18. La branche GLOBAL était testée AVANT US et UK, et elle lit
+    # « -global » en SOUS-CHAÎNE NUE plus « GLOBAL » en plein milieu du titre. Un produit dont
+    # le NOM PROPRE contient le mot (Counter-Strike: Global Offensive, Global Agenda…) faisait
+    # donc gagner GLOBAL(2) contre un verrou US/UK pourtant écrit dans le CRÉNEAU de l'URL ou
+    # en queue de titre : une clé verrouillée publiée mondiale.
+    #
+    # On ne touche NI l'ordre général NI la lecture de « -global » : le « -global » en milieu
+    # de slug est la grammaire NORMALE de Driffle, K4G (altergift) et Gamivo, et le passer en
+    # implicite casserait des décisions documentées. On fait seulement perdre GLOBAL face à un
+    # verrou US/UK **terminal**, c'est-à-dire écrit là où un créneau de région s'écrit : slot
+    # de fin d'URL (`_url_region_code`, déjà ancré), chemin finissant par `-united-states` /
+    # `-united-kingdom`, ou QUEUE de titre. Les lectures FAIBLES (« USA » ou « (UK) » en plein
+    # milieu du titre, `-united-states-` en milieu de slug) restent où elles étaient, APRÈS
+    # GLOBAL : sans quoi le cas fondateur de [R44] — « Age of Empires III: United States
+    # Civilization … - Steam Key GLOBAL » — basculerait de GLOBAL (correct) vers US.
+    #
+    # Quand les deux sont explicites (queue de titre GLOBAL + slot d'URL US, la paire Eneba),
+    # le VERROU gagne : c'est le sens sûr, une clé verrouillée ne doit jamais s'élargir.
+    elif (re.search(r"-united-states/?$", url) or _url_region_code(url, "us")
+          or _url_region_code(url, "usa") or tail in ("UNITED STATES", "US", "USA")):
+        base, label = "us", "US"
+    elif (re.search(r"-united-kingdom/?$", url) or _url_region_code(url, "uk")
+          or _url_region_code(url, "gb") or tail in ("UK", "UNITED KINGDOM")):
+        base, label = "uk", "UK"
     elif "-global" in url or " GLOBAL " in padded or "(GLOBAL)" in padded or " WORLDWIDE " in padded:
         base, label = "global", "GLOBAL"
     elif (re.search(r"-united-states(?:[-/]|$)", url) or _url_region_code(url, "us")
@@ -2870,7 +2922,18 @@ def _pc_plan(
             f"{dlc_marker} in title but AKS page {resolution.slug!r} carries no DLC "
             "edition — base game or wrong product, not entered (R43)",
         )
-    if (dlc_marker not in (None, *_DLC_PASS_MARKERS) and "1" in resolution.editions
+    # AUDIT DU 2026-09-18. Le garde testait la présence de Standard par la CLÉ LITTÉRALE
+    # « 1 », alors que le reste de la même fonction teste Standard par le NOM. Dès qu'une page
+    # ne porte pas cette clé — page multi-seaux dont le Standard s'appelle « Standard + DLC »
+    # (id 518, vu vivant), ou Standard sous un autre id — le garde s'ouvrait et un DLC ANONYME
+    # entrait. La spec dit « a DLC-only page ({16} without Standard) still enters » : on
+    # implémente donc ça littéralement — le garde se déclenche dès que la page porte un seau
+    # AUTRE que le seau DLC. (La variante « tester Standard par le nom » a été évaluée et
+    # rejetée : « Standard + DLC » ≠ « STANDARD », elle rate justement le cas le plus
+    # plausible.)
+    _non_dlc_buckets = [k for k, v in resolution.editions.items()
+                        if k != "16" and _edition_entry_name(v).strip().upper() != "DLC"]
+    if (dlc_marker not in (None, *_DLC_PASS_MARKERS) and _non_dlc_buckets
             and not re.search(r"\s[-–—:|]\s|:\s", cleaned_title(strip_dlc_marker(offer.name)))):
         # "<Game> (DLC)" — a DLC marker with NO DLC name of its own (no subtitle) on a page
         # that also sells a Standard product: indistinguishable from the base game's own
@@ -2879,7 +2942,8 @@ def _pc_plan(
         return SkippedOffer(
             offer,
             f"{dlc_marker} in title without a DLC name of its own, on a page that also "
-            f"sells Standard ({resolution.slug!r}) — base game or unnamed DLC, not entered (R43)",
+            f"sells a non-DLC edition ({resolution.slug!r}) — base game or unnamed DLC, "
+            "not entered (R43)",
         )
     if dlc_marker is not None and not resolved_on_own_page(resolution.slug, resolve_name):
         # The DLC bucket alone is not proof the page is THIS DLC (a base-game page may
@@ -3008,6 +3072,24 @@ def match_offer(
             edition_from_extras = match_extras_to_page_edition(extras, resolution.editions)
             if edition_from_extras is None:
                 return SkippedOffer(offer, f"different/expanded product — extra words: {extras}")
+            # AUDIT DU 2026-09-18. Ce sauvetage COURT-CIRCUITE `detect_edition` (branche `elif`
+            # du bloc édition). Or les mots de PALIER — DELUXE, ULTIMATE, GOLD, GOTY… — sont
+            # dans NOISE_TOKENS, donc ils n'entrent jamais dans `extras` : un titre « <Jeu>
+            # Deluxe <qualificatif> » pouvait être adopté sous le seau du qualificatif, palier
+            # perdu, c'est-à-dire une écriture de MAUVAISE ÉDITION. On exige que le seau adopté
+            # porte les paliers que le MARCHAND ajoute — ceux du titre moins ceux du nom AKS,
+            # sinon « Ultimate Admiral: Age of Sail » ou « Homeworld Remastered Collection »
+            # seraient refusés à tort (le mot est DANS le nom du produit). La comparaison passe
+            # par `_edition_key`, pour que l'alias GOTY ↔ « Game of the Year » ne fasse pas
+            # rater une adoption correcte.
+            _tiers = ((set(tokenize(guard_name)) & _EDITION_TIER_TOKENS)
+                      - set(tokenize(identity_name)))
+            if _tiers and not _tiers <= _edition_key(edition_from_extras[1]):
+                return SkippedOffer(
+                    offer,
+                    f"les extras nomment l'édition {edition_from_extras[1]!r} mais le titre "
+                    f"déclare le palier {sorted(_tiers)} — non entré (R39)",
+                )
 
         qualifier = dangerous_qualifier(guard_name, resolution.aks_name, dlc_page=dlc_page)
         if qualifier:
@@ -3581,6 +3663,18 @@ def _console_plan(
         if _identity_tokens(console_page_identity(page.aks_name)) != _identity_tokens(identity_name):
             return SkippedOffer(
                 offer, f"console page '{page.aks_name}' is not '{identity_name}' (R45)")
+        # AUDIT DU 2026-09-18 : la comparaison de noms ci-dessus ne distingue PAS les
+        # générations — `console_page_identity` retire justement le suffixe de plateforme, si
+        # bien que « Hades PS4 » et « Hades PS5 » sont tous deux « Hades ». La méta de la page
+        # le dit, elle, et elle était extraite puis jetée. Prudence : une méta absente ou d'un
+        # vocabulaire inconnu ne prouve rien et ne refuse rien ; seule une méta qui nomme
+        # explicitement une AUTRE famille fait échouer la cible.
+        _meta_fam = page_platform_family(getattr(page, "page_platform", "") or "")
+        if _meta_fam is not None and _meta_fam != fam:
+            return SkippedOffer(
+                offer,
+                f"console: la page {page.url} se déclare {_meta_fam}, pas {fam} — "
+                "onglet vers une autre génération, non entré (R45)")
         if not page.editions:
             # "(R19, R45)": feed_status files the console branch's R19 under consoles.
             return SkippedOffer(

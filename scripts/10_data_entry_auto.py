@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import atexit
 import json
+import os
 import re
 import sys
 from datetime import datetime, timezone
@@ -488,6 +489,15 @@ def main() -> int:
 
     run_id = args.run_id or f"{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-auto"
     sweep_dir = ROOT / "runs" / run_id
+    # Le marqueur AVANT la création du dossier : un refus ne doit pas laisser derrière lui un
+    # `runs/<run-id>/` vide (audit du 2026-09-18).
+    try:
+        run_marker.write_marker(ROOT, run_id=run_id, kind="data_entry_auto", source="cli")
+    except run_marker.ActiveRunExists as exc:
+        print(json.dumps({"aborted": True, "reason": str(exc), "active": exc.marker},
+                         ensure_ascii=False, indent=2))
+        return 2
+    atexit.register(run_marker.clear_marker, ROOT, run_id)
     sweep_dir.mkdir(parents=True, exist_ok=True)
     recap = {"run_id": run_id, "started_at": _clock(), "targets": [], "halted": None,
              "halted_merchants": [],
@@ -503,9 +513,6 @@ def main() -> int:
     # Liveness is decided by the PID (src/run_marker.py), so a SIGKILL can never wedge the
     # console: the marker simply stops being active. A dry-run is marked too — it drives the
     # browser just the same, and a console launch during one must be refused.
-    run_marker.write_marker(ROOT, run_id=run_id, kind="data_entry_auto", source="cli")
-    atexit.register(run_marker.clear_marker, ROOT, run_id)
-
     def persist():
         recap["updated_at"] = _clock()
         # (t.get("recap") or {}) — a target's recap is None until its sweep starts
@@ -515,12 +522,25 @@ def main() -> int:
                                      for t in recap["targets"])
         recap["total_moved"] = sum((t.get("recap") or {}).get("total_moved", 0)
                                    for t in recap["targets"])
-        recap_path.write_text(json.dumps(recap, ensure_ascii=False, indent=2), encoding="utf-8")
+        # ÉCRITURE ATOMIQUE (audit du 2026-09-18) : `recap.json` est le contrat que la console
+        # relit EN DIRECT, et il était réécrit en place (troncature puis réécriture) après
+        # CHAQUE page, toute la nuit. Une lecture tombant dans la fenêtre voyait un JSON
+        # tronqué. Le dépôt a déjà cette convention (`validation_io`, `run_marker`) : tmp dans
+        # le MÊME dossier, donc même système de fichiers, puis `os.replace`.
+        tmp = recap_path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(recap, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.replace(tmp, recap_path)
 
     persist()
     for merchant, store_id in targets:
         if _RUNNER.stopped:
-            recap["halted"] = "operator_stop"
+            # AUDIT DU 2026-09-18 : ceci ÉCRASAIT les haltes fail-closed déjà accumulées par
+            # `--continue-on-halt`, et comme le code de sortie rend 0 sur « operator_stop », un
+            # run qui avait échoué sur plusieurs marchands sortait VERT dès qu'un stop
+            # opérateur survenait ensuite. On CONCATÈNE : le stop est un événement de plus,
+            # pas une amnistie.
+            recap["halted"] = "; ".join(
+                [*(recap.get("halted_merchants") or []), "operator_stop"])
             break
         slug = re.sub(r"[^a-z0-9]+", "-", merchant.lower()).strip("-") or "merchant"
         cfg = SweepConfig(merchant=merchant, store_id=store_id, start_page=args.start_page,
@@ -564,7 +584,8 @@ def main() -> int:
             recap["halted"] = label
             break
         if _RUNNER.stopped:
-            recap["halted"] = "operator_stop"
+            recap["halted"] = "; ".join(
+                [*(recap.get("halted_merchants") or []), "operator_stop"])
             break
 
     recap["finished_at"] = _clock()
@@ -577,6 +598,13 @@ def main() -> int:
     # [34] Fable re-audit 2026-09-06: exit non-zero when the sweep HALTED fail-closed, so
     # a supervising caller (manager / CI) sees the failure instead of a green exit 0. A
     # clean run or a cooperative operator stop is a 0.
+    # Le marqueur est rendu ICI, pas seulement à la sortie du processus : depuis que
+    # `write_marker` refuse d'écraser un run vivant (audit du 2026-09-18), le garder jusqu'à
+    # l'`atexit` ferait refuser un second sweep lancé dans le MÊME processus. L'`atexit` reste
+    # en place pour les sorties brutales.
+    run_marker.clear_marker(ROOT, run_id)
+    # Un stop opérateur SEUL reste un 0 ([34], inchangé) ; un stop qui suit des haltes
+    # fail-closed rend 2, parce que les haltes, elles, sont des échecs (audit 2026-09-18).
     return 0 if recap["halted"] in (None, "operator_stop") else 2
 
 

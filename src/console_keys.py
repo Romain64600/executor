@@ -861,6 +861,16 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
             if skip:
                 return signal(declared, pc_declared or _hook_pc_declared(cfg, name, url), skip)
             families = list(declared)
+            # AUDIT DU 2026-09-18 : la branche SANS hook complète `pc_declared` avec la lecture
+            # générique du slug, la branche AVEC hook non — or les quatre marchands qui ont un
+            # `console_url_families` (G2A, GameSeal, Driffle, K4G) CONSOMMENT le jeton `pc`
+            # dans leur propre expression et jettent l'information, et aucun ne déclare
+            # `console_pc_declared`. La garde P2 de §4.12 (« Xbox + PC sans Play Anywhere
+            # vérifié ») ne pouvait donc jamais se déclencher chez eux. On complète le signal
+            # de la même façon, sauf si le marchand a explicitement pris la main en déclarant
+            # son propre `console_pc_declared` — ce qu'aucun ne fait aujourd'hui.
+            if cfg.console_pc_declared is None:
+                pc_declared = pc_declared or _generic_url_read(url, title.leading_tokens).pc_declared
         else:
             read = _generic_url_read(url, title.leading_tokens)
             if read.skip_reason:
@@ -924,6 +934,35 @@ def extract_console_pages(body: str) -> dict[str, str]:
 
 
 _PLATFORM_META_RE = re.compile(r'<meta\s+data-itemprop="platform"\s+content="([^"]*)"', re.I)
+
+
+# AUDIT DU 2026-09-18 : `page_platform` était EXTRAIT puis JETÉ. Le seul contrôle d'une page
+# cible console était une comparaison de NOMS — or `console_page_identity` retire précisément
+# le suffixe de plateforme, donc « Hades PS4 », « Hades PS5 » et « Hades » sont tous égaux à
+# « Hades » : une barre d'onglets qui pointe sur la page d'une AUTRE génération passait. La
+# méta de la page, elle, le dit. Table bâtie sur le vocabulaire de la MÉTA (pas sur les titres
+# d'onglets, qui en diffèrent : l'onglet dit « Xbox Series », la méta « Xbox Series X »).
+# FAIL-CLOSED PRUDENT : une méta absente ou inconnue ne prouve RIEN et ne refuse rien ; seule
+# une méta qui nomme explicitement une AUTRE famille fait échouer la cible.
+PAGE_PLATFORM_FAMILY: dict[str, str] = {
+    "PC": "XBOX_PC",
+    "PS4": "PS4",
+    "PS5": "PS5",
+    "XBOX ONE": "XBOX_ONE",
+    "XBOX SERIES": "XBOX_SERIES",
+    "XBOX SERIES X": "XBOX_SERIES",
+    "XBOX SERIES X|S": "XBOX_SERIES",
+    "SWITCH": "SWITCH",
+    "NINTENDO SWITCH": "SWITCH",
+    "SWITCH 2": "SWITCH2",
+    "NINTENDO SWITCH 2": "SWITCH2",
+}
+
+
+def page_platform_family(text: str) -> str | None:
+    """La famille que la MÉTA de la page revendique, ou None si elle ne dit rien d'exploitable."""
+
+    return PAGE_PLATFORM_FAMILY.get(re.sub(r"\s+", " ", (text or "").strip()).upper())
 
 
 def extract_page_platform(body: str) -> str:

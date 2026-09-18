@@ -141,6 +141,20 @@ def load_validation(
         raise ValidationError("validated_at is required")
 
     by_fingerprint = {candidate_fingerprint(c): c for c in candidate_dicts}
+    # AUDIT DU 2026-09-18 : deux entrées portant la MÊME empreinte passaient, et le lot se
+    # terminait après le premier ajout — une édition manuelle malformée produisait donc un lot
+    # silencieusement tronqué. Un doublon est refusé qu'il soit approuvé ou non : c'est la même
+    # malformation, et §5 ne connaît pas l'approbation partielle. La console refuse déjà en
+    # amont (`duplicate_decision`), le safe-auto aussi (une décision par candidat) — c'est le
+    # fichier écrit à la main qui n'avait pas de filet.
+    seen_fingerprints: set[str] = set()
+    for entry in data.get("candidates", []):
+        fp = entry.get("fingerprint")
+        if fp in seen_fingerprints:
+            raise ValidationError(
+                f"la même empreinte apparaît deux fois dans la validation : {fp!r} "
+                "— fichier refusé en entier")
+        seen_fingerprints.add(fp)
     approved: list[dict[str, Any]] = []
     for entry in data.get("candidates", []):
         # AUDIT DU 2026-09-18. La décision se lisait `if not entry.get("approve")`, c'est-à-dire

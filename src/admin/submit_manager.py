@@ -106,6 +106,7 @@ def _write_atomic(path: Path, text: str) -> None:
         raise
 
 
+from src.browser_lock import lock_status
 from src.run_marker import read_marker
 
 def _pid_alive(pid: int) -> bool:
@@ -334,6 +335,20 @@ class SubmitManager:
                 "submit_in_progress",
                 f"un run est déjà en cours ({self._active['kind']} sur "
                 f"{self._active['run_id']}) — un seul à la fois",
+            )
+        # AUDIT DU 2026-09-18 : l'onglet peut être pris par un porteur que ni les orphelins ni
+        # le marqueur ne décrivent (un stage lancé à la main, un reste de kill dur dont le pid
+        # vit encore). Sans ce contrôle, le lancement partait et l'enfant mourait plus loin sur
+        # le flock, avec une erreur opaque. `lock_status` lit l'étiquette SANS prendre le
+        # verrou — le prendre, même une microseconde, ferait échouer un stage qui le demande
+        # au même instant — et un pid mort y compte comme LIBRE.
+        holder = lock_status(self.repo_root)
+        if holder.get("held"):
+            raise SubmitStartError(
+                "browser_busy",
+                f"l'onglet du navigateur est pris par {holder.get('label')} "
+                f"(pid {holder.get('pid')}, depuis {holder.get('since')}) — attends sa fin",
+                detail=holder,
             )
 
     @staticmethod

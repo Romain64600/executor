@@ -561,7 +561,12 @@ def _main() -> int:
 
     # FC3: record this pass's guard outcome in the cross-process ledger (a
     # clean pass resets the blocked-run streak).
-    if write:
+    # AUDIT DU 2026-09-18 : un run AVORTÉ n'est pas une passe propre. `ledger.record(
+    # blocked=False)` remet `consecutive_blocked_runs` à 0 — l'unique anti-boucle
+    # INTER-PROCESSUS du projet — alors qu'aucune offre n'a été touchée et que la garde n'a
+    # même pas été armée. Trois avortements de suite effaçaient donc la série que FC3 existe
+    # pour compter. Un abort ne crédite ni ne débite : il laisse la série telle quelle.
+    if write and not result.get("aborted"):
         snapshot = submitter_kw["guard"].snapshot()
         ledger.record(
             task_id=run_id,

@@ -51,7 +51,7 @@ ENEBA_URL_PLATFORM_PREFIXES = {
     "uplay": "UBISOFT",
     "origin": "EA",
     "blizzard": "BATTLENET",
-    "windows": "MICROSOFT",  # no REGION_IDS entry -> fail-closed skip, not Steam
+    "windows": "MICROSOFT",  # seaux Windows mappés depuis [R50] — la ligne ENTRE
 }
 
 # ── console hooks (R45, 2026-09-14) ──────────────────────────────────────────────────

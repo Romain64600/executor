@@ -305,9 +305,17 @@ def _row_check(row: dict[str, str], candidate: dict[str, Any], *,
 def _norm_option_text(text: str) -> str:
     """Normalize a catalog option label for comparison: drop the trailing
     ``(id)`` suffix regions carry (e.g. "Steam EU (9)"), lowercase, collapse
-    whitespace. Editions carry no suffix so are unaffected."""
+    whitespace. Editions carry no suffix so are unaffected.
 
-    text = re.sub(r"\s*\(\d+\)\s*$", "", (text or "").strip())
+    AUDIT DU 2026-09-18 : le suffixe n'était retiré que s'il était PUREMENT NUMÉRIQUE. Les
+    seaux console de `[R45]` portent des ids alphanumériques — 24eu, 24us, 88eu, 88us, 88uk,
+    88ps5h, 99eu, 99us, 992 — donc 9 des 21 gardaient « (88ps5h) » dans le texte normalisé,
+    la comparaison de libellé échouait TOUJOURS et le remap libellé→id vivant (« the
+    wrong-edition fix ») était inerte pour eux. Le BOM est retiré aussi : `_strip_bom` existe
+    déjà pour la frappe Selectize, et un libellé qui en porte un ne comparait jamais."""
+
+    text = (text or "").strip().lstrip("\ufeff")
+    text = re.sub(r"\s*\([0-9a-z]+\)\s*$", "", text, flags=re.IGNORECASE)
     return re.sub(r"\s+", " ", text).lower()
 
 
@@ -1846,6 +1854,14 @@ class Submitter(_SubmitterBase):
         # the window index stays as is (the next offers are still on their page; a row
         # that reflowed is re-found by _relocate_by_url), so never wipe it with the
         # search's 0-1 rows (2026-09-10).
+        # AUDIT DU 2026-09-18, constat ÉCARTÉ après vérification. Il relevait que sur le
+        # chemin by-urls (`--locate-by-search`) les deux drapeaux sont vrais, donc l'index
+        # bâti par `_index_by_search` est remplacé par les 0-1 lignes de la preuve après
+        # chaque création. C'est bien ce qui se passe, et c'est DÉLIBÉRÉ : sur ce chemin
+        # chaque offre est localisée par SA PROPRE recherche (`_relocate_by_url` re-cherche),
+        # il n'y a pas de fenêtre de page à préserver, et `test_by_urls_path_still_refreshes_
+        # its_index_from_the_search` épingle ce comportement. Aucun effet sur la justesse :
+        # on ne le change pas pour une économie de travail non mesurée.
         keep_index = ctx.get("prove_gone_by_search") and not ctx.get("search_locate")
         if fresh_index is not None and not keep_index:
             ctx["index"].clear()

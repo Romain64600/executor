@@ -185,6 +185,15 @@ shapes: see [`DATA_CONTRACTS.md`](DATA_CONTRACTS.md).
 
 ---
 
+
+**La garde `[20]` vaut aussi pour le mode TRANCHE (audit complet, 2026-09-18).** `extract_pages`
+faisait du `nav_max` lu au premier read la valeur autoritaire de `feed_last_page`, sans la
+corroboration que le mode SWEEP applique à la même forme (page 1 pleine de lignes + `nav_max == 0`
+→ sonder p=2 → `FeedUnstableError`). Or c'est CE mode que `scripts/10` utilise pour sa sonde de
+pagination (`02_extract_feed.py --pages <N>`) : un feed de 107 pages dont la nav dérive pouvait
+être balayé sur UNE page et déclaré complet. Même sonde, même refus, jamais de troncature
+silencieuse ; une over-page vide confirme le feed mono-page et la tranche continue inchangée.
+
 ## 4. Stage 2 — Matcher (pure, deterministic)
 
 Consumes the normalized offers JSON; emits candidates JSON + skipped JSON. No
@@ -192,10 +201,24 @@ network side effects except read-only AKS slug `200` checks.
 
 ### 4.1 Name match — necessary condition `[R01]`
 Tokenize the AKS product name (strip trademark/legal symbols
-`™ ℠ № ℡ © ® ℗ ℅ ℀ ℁ ℆` to a space, then NFKC-normalize, then apostrophes
-`U+2019/U+2018 → '`). **Every meaningful word of the AKS name must be present
-in the merchant title.** One word missing → **SKIP**. (Necessary, not
-sufficient.)
+`™ ℠ № ℡ © ® ℗ ℅ ℀ ℁ ℆` to a space, then **NFKD + retrait des marques combinantes**, then
+apostrophes `U+2019/U+2018 → '`, **puis repli de l'apostrophe**). **Every meaningful word of
+the AKS name must be present in the merchant title.** One word missing → **SKIP**.
+(Necessary, not sufficient.)
+
+**Deux replis complétés le 2026-09-18 (audit complet).** Le repli d'accents du 2026-09-16
+s'était arrêté aux scans CATÉGORIELS : ni l'identité ni le slug ne repliaient quoi que ce soit,
+alors que la regex `[A-Z0-9']+` JETTE silencieusement ce qui sort de sa classe — « Kādomon »
+devenait « K DOMON », l'identité échouait et la mauvaise page AKS était sondée. NFKD **remplace**
+NFKC : c'est un sur-ensemble strict (même décomposition de compatibilité, donc `[R28]` tient —
+« Ⅱ »→II, « ＤＬＣ »→DLC, « ﬁ »→fi) auquel s'ajoute la décomposition canonique dont on retire les
+marques. L'apostrophe, elle, est repliée dans `tokenize` — comme `_identity_tokens` le fait pour
+les pages console depuis le 2026-09-14 et comme `_slug_variants` sonde déjà les deux
+orthographes : R01 l'exigeait au caractère près, donc « Assassins Creed » ne couvrait pas
+« Assassin's Creed ». Un faux REFUS, jamais une fausse saisie ; le repli ne peut faire matcher
+que des noms qui SIGNIFIENT la même chose (même argument que `fold_accents`). La moitié
+« mots-outils » du constat (THE / OF / AND retirés du côté requis) est délibérément ABANDONNÉE :
+elle relâcherait l'identité.
 **NFKC first `[R28]` (2026-07-16):** NFKC-normalize BEFORE both `tokenize` and
 `build_slug_candidates` — `tokenize`'s `[A-Z0-9']+` regex silently drops any character
 outside that class, and NFKC decomposes compatibility characters such as the single-codepoint
@@ -876,6 +899,27 @@ label match, else a page listing that id under a different tier ("Winter Pack" a
 would be entered under the wrong label. Runs ONLY when R23 did not already verify.
 Standard(1) is the safe canonical fallback and is exempt. Historique (three
 adversarial-review rounds) : CHANGELOG 2026-09-02 (R40).
+
+
+**Deux portes refermées le 2026-09-18 (audit complet).**
+
+1. **Le garde « DLC anonyme » de `[R43]`** testait la présence de Standard par la CLÉ LITTÉRALE
+   « 1 », alors que le reste de la même fonction le teste par le NOM. Une page dont le Standard
+   s'appelle « Standard + DLC » (id 518, vu vivant) ou vit sous un autre id ouvrait donc le garde
+   et un DLC ANONYME entrait. La spec dit « a DLC-only page ({16} without Standard) still
+   enters » : le garde se déclenche maintenant dès que la page porte un seau AUTRE que le seau
+   DLC. La variante « tester Standard par le nom » a été évaluée et REJETÉE — « Standard + DLC »
+   ≠ « STANDARD », elle rate justement le cas le plus plausible.
+
+2. **Le sauvetage par « extras »** court-circuite `detect_edition` (branche `elif` du bloc
+   édition). Or les mots de PALIER (DELUXE, ULTIMATE, GOLD, GOTY, PREMIUM…) sont dans
+   `NOISE_TOKENS`, donc ils n'entrent jamais dans `extras` : un titre « <Jeu> Deluxe
+   <qualificatif> » pouvait être adopté sous le seau du qualificatif, palier PERDU — une écriture
+   de mauvaise édition. Le seau adopté doit désormais porter les paliers que le **marchand
+   ajoute** — ceux du titre MOINS ceux du nom AKS, sinon « Ultimate Admiral: Age of Sail » ou
+   « Homeworld Remastered Collection » seraient refusés à tort — comparés via `_edition_key` pour
+   que l'alias GOTY ↔ « Game of the Year » ne fasse pas rater une adoption correcte. Sinon :
+   skip `(R39)` avec un motif distinct et routable.
 
 ### 4.6 URL hygiene
 The merchant URL is kept **complete, exactly as the feed carries it** — never
@@ -1703,6 +1747,24 @@ from IG, MERCHANTS.md).
 
 ---
 
+
+**Deux gardes console refermées le 2026-09-18 (audit complet).**
+
+- **`console_pc_declared` complété pour les marchands à hook.** Les quatre marchands qui
+  déclarent `console_url_families` (G2A, GameSeal, Driffle, K4G) CONSOMMENT le jeton `pc` dans
+  leur propre expression et jetaient l'information, et aucun ne déclare `console_pc_declared` :
+  la garde P2 « Xbox + PC sans Play Anywhere vérifié » ne pouvait JAMAIS se déclencher chez eux.
+  La branche à hook complète maintenant le signal avec la lecture générique du slug, exactement
+  comme la branche sans hook — sauf si le marchand a explicitement pris la main.
+- **La plateforme de la page cible est vérifiée.** Le seul contrôle était une comparaison de
+  NOMS — or `console_page_identity` retire précisément le suffixe de plateforme, donc
+  « Hades PS4 », « Hades PS5 » et « Hades » sont tous égaux : une barre d'onglets pointant vers
+  la page d'une AUTRE génération passait. `page_platform` était extrait puis JETÉ. La table
+  inverse est bâtie sur le vocabulaire de la **méta** (« Xbox Series X »), qui diffère de celui
+  des onglets (« Xbox Series »). Prudence assumée : une méta absente ou d'un vocabulaire inconnu
+  ne prouve rien et ne refuse rien ; seule une méta nommant une AUTRE famille fait échouer la
+  cible.
+
 ## 5. Stage 3 — Validation
 
 No submission without an explicit validation file for the **exact current
@@ -2040,6 +2102,17 @@ has more than one target. On v2 a multi-target candidate is written whole.
 ---
 
 ---
+
+
+**Le remap libellé→id vivant couvre enfin les seaux console (audit complet, 2026-09-18).**
+`_norm_option_text` ne retirait le suffixe `(id)` d'un libellé de catalogue que s'il était
+PUREMENT NUMÉRIQUE. Les 9 seaux console de `[R45]` à id alphanumérique (24eu, 24us, 88eu, 88us,
+88uk, 88ps5h, 99eu, 99us, 992) gardaient donc « (88ps5h) » dans le texte normalisé, la
+comparaison de libellé échouait TOUJOURS, et `resolve_catalog_id` retombait systématiquement sur
+la voie « valider l'id du matcher » — c'est-à-dire que la voie PRÉFÉRÉE, celle qui existe
+justement pour rattraper un id qui a dérivé (« the wrong-edition fix »), était inerte pour eux.
+Le BOM est retiré au passage : `_strip_bom` existait déjà pour la frappe Selectize, mais un
+libellé qui en porte un ne comparait jamais.
 
 ## 7. Stage 5 — Post-save verification (the deterministic success signal)
 

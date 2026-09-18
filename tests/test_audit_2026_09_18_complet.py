@@ -249,3 +249,126 @@ class TheLanguageRegionMirrorCannotDrift(unittest.TestCase):
         drift = (M.LANGUAGE_TOKENS & codes) - M._REGION_LOCK_LANG_CODES
         self.assertEqual(drift, set(),
                          f"codes verrous dans l'URL mais avalés comme langue dans le titre : {drift}")
+
+
+class NoBundleEverIsActuallyLocked(unittest.TestCase):
+    """`src/matcher.py:3352` — la règle dure de Romain (2026-07-07) « on n'entre JAMAIS de
+    bundle » avait son garde-fou (`edition_id == "8"` → skip) exécuté par AUCUN des 2 245
+    tests : le supprimer laissait la suite verte ET faisait entrer un bundle.
+
+    On assert le MOTIF EXACT, pas seulement le type : la réconciliation P1-1 deux lignes plus
+    bas émet elle aussi un skip, et un `assertIsInstance` lâche resterait vert après la
+    régression."""
+
+    RAISON = "bundle edition resolved — no bundles ever"
+
+    def _run(self, title, editions):
+        return _match(title, "https://gamivo.com/product/neon-beats",
+                      _page(editions, aks_name="Neon Beats", platforms=("Steam",)))
+
+    def test_a_bundle_tier_on_the_page_is_still_refused(self):
+        res = self._run("Neon Beats Pack (PC) - Steam Key - GLOBAL",
+                        {"1": "Standard", "444": "Bundle Edition"})
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertEqual(res.reason, self.RAISON)
+
+    def test_the_defence_in_depth_in_front_of_it(self):
+        """Les deux autres orthographes n'ATTEIGNENT pas ce garde-fou — elles sont arrêtées
+        plus tôt, et c'est très bien : « Bundle » par la catégorie du precheck, « Trilogy »
+        par la garde de mots supplémentaires. C'est « Pack » qui traverse tout (le mot est
+        du bruit de format, donc jamais un extra) et qui fait du garde-fou final le SEUL
+        filet — d'où le test ci-dessus."""
+
+        res = self._run("Neon Beats Bundle Steam Key GLOBAL", {"1": "Standard"})
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("BUNDLE", res.reason)
+        res = self._run("Neon Beats Trilogy Steam Key GLOBAL", {"1": "Standard", "8": "Bundle"})
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("TRILOGY", res.reason)
+
+
+class ARetiredRuleCannotComeBack(unittest.TestCase):
+    """`tests/test_sort_sql_console.py:399` — `%valid-until%` a été RETIRÉ le matin même parce
+    qu'il contredit une décision de `AGENTS.md` (« Kinguin valid until juin 2027 on rentre »),
+    mais rien n'empêchait de le re-promouvoir depuis la console, vers cette liste ou une
+    autre. Le retrait porte sur le MOTIF, pas sur le couple (motif, liste)."""
+
+    def test_promoting_a_retired_pattern_is_refused_towards_any_list(self):
+        import tempfile
+        from src.sort_sql_promoted import promote
+        from src.sort_sql_rules import RETIRED
+        pattern = next(iter(RETIRED))
+        for target in ("8", "21", "41"):
+            with self.subTest(target=target):
+                with self.assertRaises(ValueError) as ctx:
+                    promote(Path(tempfile.mkdtemp()), pattern=pattern, target=target, by="test")
+                self.assertIn("RETIR", str(ctx.exception).upper())
+
+
+class ALiveRunsMarkerIsNeverStolen(unittest.TestCase):
+    """`scripts/10_data_entry_auto.py:506` — `write_marker` écrasait inconditionnellement.
+    Un simple `--dry-run` volait le marqueur d'un sweep de 30 h : le sweep devenait INVISIBLE
+    dans les consoles et `_ensure_free` rouvrait le lancement. Un pid mort reste écrasé."""
+
+    def test_another_live_run_is_refused_but_the_same_run_id_is_not(self):
+        import tempfile
+        from src import run_marker
+        root = Path(tempfile.mkdtemp())
+        run_marker.write_marker(root, run_id="sweep-1", kind="data_entry_auto", source="cli")
+        with self.assertRaises(run_marker.ActiveRunExists):
+            run_marker.write_marker(root, run_id="dry-run-2", kind="sort_dry_run", source="cli")
+        # Le MÊME run_id reste écrasable (relance explicite avec --run-id).
+        again = run_marker.write_marker(root, run_id="sweep-1", kind="data_entry_auto")
+        self.assertEqual(again["run_id"], "sweep-1")
+
+    def test_a_dead_pid_is_still_overwritten(self):
+        import json
+        import tempfile
+        from src import run_marker
+        root = Path(tempfile.mkdtemp())
+        (root / "state").mkdir(parents=True)
+        (root / "state" / run_marker.MARKER_NAME).write_text(json.dumps(
+            {"run_id": "mort", "kind": "x", "pid": 2 ** 22, "started_at": "2026-09-18T00:00:00Z"}),
+            encoding="utf-8")
+        self.assertEqual(
+            run_marker.write_marker(root, run_id="neuf", kind="y")["run_id"], "neuf")
+
+
+class AnOperatorStopDoesNotAmnestyFailClosedHalts(unittest.TestCase):
+    """`scripts/10_data_entry_auto.py:567` — `recap["halted"] = "operator_stop"` ÉCRASAIT les
+    haltes fail-closed accumulées par `--continue-on-halt`, et comme le code de sortie rend 0
+    sur « operator_stop », un run qui avait échoué sur plusieurs marchands sortait VERT."""
+
+    def test_the_source_concatenates_instead_of_overwriting(self):
+        source = (ROOT / "scripts" / "10_data_entry_auto.py").read_text(encoding="utf-8")
+        self.assertNotIn('recap["halted"] = "operator_stop"', source,
+                         "le stop opérateur ne doit plus écraser les haltes déjà enregistrées")
+        self.assertEqual(source.count('[*(recap.get("halted_merchants") or []), "operator_stop"]'), 2,
+                         "les deux points de stop doivent concaténer")
+
+
+class TwoEntriesForTheSameFingerprintAreRefused(unittest.TestCase):
+    """`src/validation.py:153` — deux entrées portant la même empreinte passaient, et le lot
+    se terminait après le PREMIER ajout : une édition manuelle malformée produisait un lot
+    silencieusement tronqué. §5 ne connaît pas l'approbation partielle."""
+
+    def _files(self, entries):
+        from src.validation import candidate_fingerprint
+        cand = {"offer": {"offer_id": "1", "name": "Hades", "url": "https://m/x",
+                          "merchant": "Kinguin"},
+                "aks_product_id": "1", "aks_url": "https://aks/x", "aks_name": "Hades",
+                "platform": "STEAM", "region": {"label": "GLOBAL", "id": "2", "implicit": False},
+                "edition": {"label": "Standard", "id": "1"}}
+        fp = candidate_fingerprint(cand)
+        return [cand], {"run_id": "r1", "validated_by": "r", "validated_at": "2026-09-18",
+                        "candidates": [{"fingerprint": fp, **e} for e in entries]}
+
+    def test_a_duplicate_fingerprint_rejects_the_whole_file(self):
+        from src.validation import ValidationError, load_validation
+        for entries in ([{"approve": True}, {"approve": True}],
+                        [{"approve": True}, {"approve": False}]):
+            with self.subTest(entries=entries):
+                cands, validation = self._files(entries)
+                with self.assertRaises(ValidationError) as ctx:
+                    load_validation(validation, cands, expected_run_id="r1")
+                self.assertIn("deux fois", str(ctx.exception))

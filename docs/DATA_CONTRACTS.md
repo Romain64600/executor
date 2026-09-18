@@ -553,6 +553,8 @@ Defaults to a canary of 1.
 
 ## guard_ledger.json (FC3 — cross-process block ledger)
 
+**Une passe AVORTÉE n'est pas une passe propre (audit complet, 2026-09-18).** `ledger.record(blocked=False)` remet `consecutive_blocked_runs` à 0 — l'unique anti-boucle INTER-PROCESSUS du projet. Il était appelé dès que le run était en mode écriture, y compris quand `submitter.run()` avait renvoyé un `aborted` : aucune offre touchée, garde jamais armée, et pourtant la série effacée. Un abort ne crédite ni ne débite désormais : la série reste telle quelle. (`operator_stop` reste hors périmètre.)
+
 `runs/<run_id>/guard_ledger.json`, written by `BlockLedger`
 (`src/step_guard.py`) — real (write) passes only; dry-runs stake nothing. The
 in-memory StepGuard dies with its process, so this ledger applies G03 ("the
@@ -746,3 +748,21 @@ log.log_guard(guard.snapshot())         # persist the StepGuard state per task
   The one deliberate exception is `guard_ledger.json`, fail-open by design
   (see its section): a broken ledger must not brick the pipeline while the
   in-run guard stays armed.
+
+
+## `recap.json` — écriture ATOMIQUE (audit complet, 2026-09-18)
+
+`recap.json` est le contrat que la console relit EN DIRECT pendant qu'un run tourne. Il était
+réécrit en place (troncature puis réécriture) après CHAQUE page, toute la nuit : une lecture
+tombant dans la fenêtre voyait un JSON coupé. Sweep (`scripts/10`) et by-urls (`scripts/11`,
+`scripts/12`) utilisent maintenant la convention déjà en place ailleurs dans le dépôt —
+fichier temporaire dans le MÊME dossier, donc même système de fichiers, puis `os.replace`.
+
+## `state/active_run.json` — on ne vole pas le marqueur d'un run vivant (2026-09-18)
+
+`write_marker` écrasait inconditionnellement, alors que sa docstring ne promettait que
+« overwrites any marker left by a dead process ». Un simple `--dry-run` lancé pendant un sweep
+de 30 h volait donc le marqueur : le sweep devenait INVISIBLE dans les consoles, et le bouton
+« Lancer » s'y rouvrait. `ActiveRunExists` est levé quand un marqueur VIVANT porte un AUTRE
+`run_id` ; un pid mort reste écrasé (l'auto-guérison est préservée) et le même `run_id` aussi.
+Le sweep rend maintenant son marqueur à la FIN de `main()`, pas seulement à l'`atexit`.

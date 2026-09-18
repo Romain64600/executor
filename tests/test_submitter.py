@@ -1105,7 +1105,12 @@ class MultiTargetGateTests(unittest.TestCase):
         self.assertEqual(session.page_offer_ids(), ["1"])              # row not consumed
         # Every target went through the live catalog; the primary also fills the
         # historical top-level fields.
-        self.assertEqual(entry["targets"][0]["region_resolution"]["source"], "id")
+        # Audit du 2026-09-18 : le suffixe d'id n'était retiré que s'il était PUREMENT
+        # NUMÉRIQUE, donc « PS5 » ne matchait jamais « PS5 (88ps5h) » et le remap
+        # libellé→id vivant — « the wrong-edition fix », la voie PRÉFÉRÉE du
+        # résolveur — était inerte pour 9 des 21 seaux console de [R45]. Il matche
+        # maintenant : même id écrit ici, mais un id qui dériverait serait rattrapé.
+        self.assertEqual(entry["targets"][0]["region_resolution"]["source"], "label")
         self.assertEqual(entry["targets"][0]["region_text"], "PS5 (88ps5h)")
         self.assertEqual(entry["targets"][1]["region_text"], "Playstation Game Code GLOBAL (88)")
         self.assertEqual(entry["targets"][1]["edition_text"], "Standard")
@@ -1213,8 +1218,11 @@ class ConsoleSingleTargetTests(unittest.TestCase):
         self.assertTrue(entry["ready"])
         self.assertTrue(entry["submitted"])
         self.assertEqual((result["write_attempts"], result["created"]), (1, 1))
-        # "PS5" never label-matches "PS5 (88ps5h)" (the suffix is not numeric) → id path.
-        self.assertEqual(entry["region_resolution"]["source"], "id")
+        # Audit du 2026-09-18 : « PS5 » matche enfin « PS5 (88ps5h) » — le suffixe d'id
+        # alphanumérique est retiré comme le numérique. La voie PRÉFÉRÉE (libellé → id vivant)
+        # s'applique donc aussi aux seaux console ; l'id écrit est le même, mais un id qui
+        # aurait dérivé serait maintenant rattrapé au lieu d'être écrit tel quel.
+        self.assertEqual(entry["region_resolution"]["source"], "label")
         self.assertFalse(entry["region_resolution"]["changed"])
         self.assertEqual(entry["region_text"], "PS5 (88ps5h)")
         self.assertEqual(session.fill_calls, [("offer[region]", "88ps5h", "offer[edition]", "1", "trusted")])
@@ -1224,7 +1232,7 @@ class ConsoleSingleTargetTests(unittest.TestCase):
         # The single target mirrors the primary and carries its own resolution too.
         self.assertEqual(len(entry["targets"]), 1)
         self.assertEqual(entry["targets"][0]["region_id"], "88ps5h")
-        self.assertEqual(entry["targets"][0]["region_resolution"]["source"], "id")
+        self.assertEqual(entry["targets"][0]["region_resolution"]["source"], "label")
 
     def test_bom_is_stripped_from_the_typed_query_but_kept_in_the_plan_text(self):
         session = ConsoleCatalogWriteSession([["1"]])
@@ -2801,11 +2809,19 @@ class SearchLocateTests(unittest.TestCase):
     def test_scan_search_overflow_raises_fail_closed(self):
         # HIGH #1 fix: results still advertise more pages than the budget covers →
         # coverage unproven → FeedScanError (UNKNOWN), NEVER a false "gone".
+        #
+        # FAUX VERT corrigé le 2026-09-18 (audit complet) : la version précédente ne servait
+        # QU'UNE page avec nav_max=99, donc la navigation vers p=2 re-servait la page 1 et la
+        # garde de wedge SC6 levait `FeedScanError` bien avant la garde de couverture. Le test
+        # était vert sans jamais atteindre la ligne qu'il prétendait verrouiller : supprimer
+        # le bloc `else:` du scan le laissait vert. On sert donc autant de pages que le budget
+        # (3), et on assert le MOTIF, pas seulement le type.
         from src.submitter import FeedScanError
-        row = {"id": "1", "url": "https://m/hot-p1", "name": "H", "store_id": "127"}
-        sub = self._sub(_SearchFake([row], nav_max=99))   # 1 page served, nav says 99
+        rows = [[{"id": str(i), "url": f"https://m/hot-p1-{i}", "name": "H", "store_id": "127"}]
+                for i in range(1, 4)]
+        sub = self._sub(_SearchFake(rows, nav_max=99))   # 3 pages servies, nav en annonce 99
         sub.search_scan_max_pages = 3
-        with self.assertRaises(FeedScanError):
+        with self.assertRaisesRegex(FeedScanError, "coverage unproven"):
             sub._scan_search("127", "aks-merchant-feeds-9", "all", "https://m/hot-p1")
 
     def test_scan_search_foreign_dom_raises_fail_closed(self):

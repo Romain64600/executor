@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -44,6 +45,21 @@ from typing import Any, Callable
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+
+
+def _write_json_atomic(path, payload) -> None:
+    """Écriture ATOMIQUE d'un contrat de run (audit du 2026-09-18).
+
+    `recap.json` est relu EN DIRECT par la console pendant que le run tourne. Un
+    `write_text` nu tronque puis réécrit en place : une lecture tombant dans la fenêtre voit
+    un JSON coupé. Le dépôt a déjà cette convention (`validation_io`, `run_marker`) — tmp
+    dans le MÊME dossier, donc même système de fichiers, puis `os.replace`."""
+
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, path)
+
+
 
 from src.admin import auto_merchants  # noqa: E402
 from src.aks_env import OFFICIAL_CDP_ENDPOINT, _allkeyshop_host  # noqa: E402
@@ -543,8 +559,7 @@ def run_plan(urls: list[str], targets: list[tuple[str, str]], *, available: str,
     emit = logger.log if logger is not None else (lambda *a, **k: None)
 
     def _flush() -> None:
-        (run_dir / "recap.json").write_text(
-            json.dumps(recap, ensure_ascii=False, indent=2), encoding="utf-8")
+        _write_json_atomic(run_dir / "recap.json", recap)
 
     emit("run_start", urls=len(urls), merchants=len(targets), consoles=bool(consoles))
     # Resolve every URL first (read-only http_get, no browser) so a bad URL is
@@ -782,8 +797,7 @@ def main(argv: list[str] | None = None) -> int:
     if not urls:
         recap = {"mode": "dry-run", "aborted": "no_urls", "games": [],
                  "totals": {"games": 0, "resolved": 0, "candidates": 0}}
-        (run_dir / "recap.json").write_text(json.dumps(recap, ensure_ascii=False, indent=2),
-                                            encoding="utf-8")
+        _write_json_atomic(run_dir / "recap.json", recap)
         print(json.dumps({"run_id": args.run_id, "aborted": "no_urls"}))
         return 2
 
@@ -802,8 +816,7 @@ def main(argv: list[str] | None = None) -> int:
     if not (report["ok"] and report["authoritative"]):
         recap = {"mode": "dry-run", "aborted": "invariants not green/authoritative",
                  "games": [], "totals": {"games": 0, "resolved": 0, "candidates": 0}}
-        (run_dir / "recap.json").write_text(json.dumps(recap, ensure_ascii=False, indent=2),
-                                            encoding="utf-8")
+        _write_json_atomic(run_dir / "recap.json", recap)
         print(json.dumps({"run_id": args.run_id, "aborted": recap["aborted"],
                           "invariants": {"ok": report["ok"],
                                          "authoritative": report["authoritative"]}}))

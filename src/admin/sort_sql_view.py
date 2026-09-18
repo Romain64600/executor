@@ -152,6 +152,11 @@ def _mine(plan: dict, dest: dict[str, str], by_url: dict[str, dict],
     seeds = {(p, t) for p, t in SEED_PROPOSALS}
     out = []
     for pattern, target in sorted(seen - known):
+        # Un motif RETIRÉ ne se repropose pas : le retrait porte sur le motif, pas sur le
+        # couple (motif, liste), donc il ne peut pas vivre dans `known` (hygiène, audit
+        # du 2026-09-18 — la promotion est de toute façon refusée côté serveur).
+        if pattern in RETIRED:
+            continue
         m = _measure(pattern, target, dest, by_url)
         # Une proposition n'est offerte que si elle ne vise AUCUN vrai jeu et n'entre en
         # conflit avec aucune autre liste. Le reste n'est pas une proposition, c'est un piège.
