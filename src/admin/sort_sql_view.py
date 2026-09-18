@@ -30,6 +30,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+import re
+
+from src import sort_sql_promoted
 from src.sort_sql_rules import FLAGGED, RETIRED, RULES
 
 
@@ -82,12 +85,71 @@ def _classify(run_dir: Path) -> tuple[dict[str, str], dict[str, dict]]:
     return dest, by_url
 
 
+# Un motif proposé ne vient QUE du vocabulaire qui a fait décider notre routeur — jamais d'un
+# mot quelconque de l'URL. La première version minait tous les jetons « purs » de l'échantillon
+# et proposait %modern-warfare% vers la Blacklist : des noms de jeux, purs sur 10 % du feed et
+# catastrophiques sur 100 %.
+_REASON_RE = re.compile(r"^(?:forbidden region|skip category)\s*:\s*([A-Z0-9 &+/'-]{3,40})")
+
+
+def _vocab_term(reason: str) -> str | None:
+    m = _REASON_RE.match((reason or "").strip())
+    if not m:
+        return None
+    return (m.group(1).strip().rstrip("(,").strip()) or None
+
+
+def _mine(plan: dict, dest: dict[str, str], by_url: dict[str, dict],
+          known: set[tuple[str, str]]) -> list[dict[str, Any]]:
+    """Motifs candidats, MESURÉS, qui ne sont pas déjà dans la liste."""
+
+    seen: set[tuple[str, str]] = set()
+    for list_id, group in (plan.get("by_list") or {}).items():
+        for row in group.get("offers", []):
+            term = _vocab_term(row.get("reason", ""))
+            if term is None:
+                continue
+            for word in {term.lower().replace(" ", "-"), term.lower().replace(" ", "")}:
+                pattern = f"%{word}%"
+                if len(word) >= 4 and sort_sql_promoted.SAFE_PATTERN.match(pattern):
+                    seen.add((pattern, str(list_id)))
+
+    out = []
+    for pattern, target in sorted(seen - known):
+        m = _measure(pattern, target, dest, by_url)
+        # Une proposition n'est offerte que si elle ne vise AUCUN vrai jeu et n'entre en
+        # conflit avec aucune autre liste. Le reste n'est pas une proposition, c'est un piège.
+        if m["hits"] >= 2 and not m["collateral"] and not m["conflict"] and m["agree"]:
+            out.append(m)
+    out.sort(key=lambda m: (-m["hits"], m["pattern"]))
+    return out
+
+
+def _measure(pattern: str, target: str, dest: dict[str, str],
+             by_url: dict[str, dict]) -> dict[str, Any]:
+    needle = pattern.strip("%").lower()
+    hits = [u for u in dest if needle in _slug(u)]
+    tally: dict[str, int] = {}
+    for u in hits:
+        tally[dest[u]] = tally.get(dest[u], 0) + 1
+    collateral = [by_url[u].get("name", "")[:80] for u in hits if dest[u] == "__candidat__"]
+    return {
+        "sql": _statement(pattern, target), "pattern": pattern, "target": str(target),
+        "measured": True, "hits": len(hits), "agree": tally.get(str(target), 0),
+        "conflict": sum(n for k, n in tally.items()
+                        if k not in (str(target), "__candidat__", "__garder__")),
+        "keep": tally.get("__garder__", 0), "collateral": len(collateral),
+        "collateral_sample": collateral[:3], "flag": FLAGGED.get(pattern),
+    }
+
+
 def _statement(pattern: str, target: str) -> str:
     return (f"UPDATE `aksfeeds_offer` SET `listId`={int(target)} "
             f"WHERE `url` LIKE '{pattern}' AND `listId`=9;")
 
 
-def sort_sql_payload(runs_dir: Path, wanted: str = "") -> dict[str, Any]:
+def sort_sql_payload(runs_dir: Path, wanted: str = "",
+                     repo_root: Path | None = None) -> dict[str, Any]:
     run_dir = _latest_sort_run(Path(runs_dir), wanted)
     rules: list[dict[str, Any]] = []
     if run_dir is None:
@@ -95,38 +157,27 @@ def sort_sql_payload(runs_dir: Path, wanted: str = "") -> dict[str, Any]:
             rules.append({"sql": _statement(pattern, target), "pattern": pattern,
                           "target": target, "measured": False,
                           "flag": FLAGGED.get(pattern)})
-        return {"run_id": None, "measured": False, "rules": rules,
+        return {"run_id": None, "measured": False, "rules": rules, "proposals": [],
                 "retired": [{"pattern": p, "why": w} for p, w in RETIRED.items()],
                 "note": "aucun scan de tri — les requêtes sont rendues sans mesure"}
 
     dest, by_url = _classify(run_dir)
+    promoted = sort_sql_promoted.load(repo_root) if repo_root else []
     for pattern, target in RULES:
-        needle = pattern.strip("%")
-        hits = [u for u in dest if needle in _slug(u)]
-        tally: dict[str, int] = {}
-        for u in hits:
-            tally[dest[u]] = tally.get(dest[u], 0) + 1
-        collateral = [by_url[u].get("name", "")[:80] for u in hits
-                      if dest[u] == "__candidat__"]
-        rules.append({
-            "sql": _statement(pattern, target),
-            "pattern": pattern,
-            "target": target,
-            "measured": True,
-            "hits": len(hits),
-            "agree": tally.get(str(target), 0),
-            "conflict": sum(n for k, n in tally.items()
-                            if k not in (str(target), "__candidat__", "__garder__")),
-            "keep": tally.get("__garder__", 0),
-            "collateral": len(collateral),
-            "collateral_sample": collateral[:3],
-            "flag": FLAGGED.get(pattern),
-        })
+        rules.append(_measure(pattern, target, dest, by_url))
+    for entry in promoted:
+        m = _measure(entry["pattern"], entry["target"], dest, by_url)
+        m["promoted"] = {k: entry.get(k) for k in ("promoted_at", "promoted_by", "source_run")}
+        rules.append(m)
+    plan = json.loads((run_dir / "sort_plan.json").read_text(encoding="utf-8"))
+    known = {(p, t) for p, t in RULES} | {(e["pattern"], e["target"]) for e in promoted}
+    proposals = _mine(plan, dest, by_url, known)
     return {
         "run_id": run_dir.name,
         "measured": True,
         "offers": len(dest),
         "rules": rules,
+        "proposals": proposals,
         # Une règle retirée reste VISIBLE, avec sa raison : sinon le retrait est invisible et
         # quelqu'un la recolle depuis une vieille liste.
         "retired": [{"pattern": p, "why": w} for p, w in RETIRED.items()],

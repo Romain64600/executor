@@ -14,6 +14,7 @@ réellement sur le dernier scan.
 
 import json
 import pathlib
+import re
 import tempfile
 import unittest
 
@@ -48,9 +49,100 @@ class NothingHereTouchesADatabaseTests(unittest.TestCase):
                 self.assertNotIn(drv, VIEW)
                 self.assertNotIn(drv, JS)
 
-    def test_the_page_never_posts_anything(self):
-        self.assertNotIn('method: "POST"', JS)
+    def test_the_only_post_is_the_promotion_of_a_RULE(self):
+        """La page a gagné un POST le 2026-09-18 (promotion d'une proposition). Il modifie
+        une LISTE, jamais une base : aucune requête n'est exécutée d'ici, et le chemin du
+        déplacement par navigateur n'est pas rappelé."""
+
+        posts = re.findall(r'post\("([^"]+)"', JS)
+        self.assertEqual(posts, ["api/sort/sql/promote"], posts)
         self.assertNotIn("api/sort/move", JS)
+        self.assertNotIn("UPDATE `aksfeeds_offer`", JS,
+                         "le SQL vient du serveur, la page ne le fabrique pas")
+
+
+class PromotingAProposalTests(unittest.TestCase):
+    """« go pour les propositions avec promotion manuelle » — le mineur propose, Romain décide."""
+
+    def setUp(self):
+        self.tmp = pathlib.Path(tempfile.mkdtemp())
+
+    def test_a_promoted_rule_persists_and_joins_the_list(self):
+        from src import sort_sql_promoted
+        sort_sql_promoted.promote(self.tmp, pattern="%philippines%", target="8",
+                                  by="Romain", run_id="scan", hits=76)
+        rows = sort_sql_promoted.load(self.tmp)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["pattern"], "%philippines%")
+        self.assertEqual(rows[0]["promoted_by"], "Romain")
+        self.assertTrue(rows[0]["promoted_at"].endswith("Z"))
+
+    def test_a_duplicate_is_refused(self):
+        from src import sort_sql_promoted
+        sort_sql_promoted.promote(self.tmp, pattern="%philippines%", target="8", by="R")
+        with self.assertRaises(ValueError):
+            sort_sql_promoted.promote(self.tmp, pattern="%philippines%", target="8", by="R")
+
+    def test_a_rule_already_in_romains_list_cannot_be_promoted_again(self):
+        from src import sort_sql_promoted
+        with self.assertRaises(ValueError):
+            sort_sql_promoted.promote(self.tmp, pattern="%gift-card%", target="21", by="R")
+
+    def test_an_injectable_pattern_is_refused_not_escaped(self):
+        from src import sort_sql_promoted
+        for bad in ("%o'brien%", "%a b%", "x%", "%x%; DROP", "%café%"):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    sort_sql_promoted.promote(self.tmp, pattern=bad, target="8", by="R")
+
+    def test_an_unknown_list_is_refused(self):
+        from src import sort_sql_promoted
+        with self.assertRaises(ValueError):
+            sort_sql_promoted.promote(self.tmp, pattern="%x-y%", target="999", by="R")
+
+    def test_a_corrupt_store_does_not_break_the_page(self):
+        from src import sort_sql_promoted
+        (self.tmp / "data").mkdir(parents=True)
+        (self.tmp / "data" / "sort_sql_promoted.json").write_text("{pas du json", encoding="utf-8")
+        self.assertEqual(sort_sql_promoted.load(self.tmp), [])
+
+    def test_the_endpoint_exists_and_answers_400_on_a_bad_promotion(self):
+        self.assertIn('if self.path.split("?")[0] == "/api/sort/sql/promote":', APP)
+        self.assertIn('raise ApiError(400, "bad_promotion", str(exc))', APP)
+
+
+class ProposalsAreMinedNotInventedTests(unittest.TestCase):
+    """Le mineur ne propose que du VOCABULAIRE de routage, et rien qui vise un vrai jeu."""
+
+    def test_a_game_name_is_never_proposed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = [{"offer_id": str(i), "name": f"Modern Warfare {i}",
+                     "url": f"https://m.test/modern-warfare-{i}-philippines"} for i in range(3)]
+            runs = _run(tmp, rows, {"8": {"offers": [dict(r, reason="forbidden region: PHILIPPINES")
+                                                     for r in rows]}})
+            payload = sort_sql_payload(runs, "scan", repo_root=pathlib.Path(tmp))
+        got = {p["pattern"] for p in payload["proposals"]}
+        self.assertIn("%philippines%", got)
+        self.assertNotIn("%modern-warfare%", got)
+
+    def test_a_proposal_that_would_hit_a_real_game_is_not_offered(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = [{"offer_id": "1", "name": "Razer PH", "url": "https://m.test/razer-philippines"},
+                    {"offer_id": "2", "name": "Razer PH 2", "url": "https://m.test/razer2-philippines"},
+                    {"offer_id": "3", "name": "Vrai Jeu", "url": "https://m.test/jeu-philippines"}]
+            runs = _run(tmp, rows, {"8": {"offers": [dict(r, reason="forbidden region: PHILIPPINES")
+                                                     for r in rows[:2]]}})
+            payload = sort_sql_payload(runs, "scan", repo_root=pathlib.Path(tmp))
+        self.assertEqual([p["pattern"] for p in payload["proposals"]], [])
+
+    def test_a_rule_already_in_the_list_is_not_proposed_again(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = [{"offer_id": str(i), "name": f"Carte {i}",
+                     "url": f"https://m.test/a-{i}-gift-card"} for i in range(3)]
+            runs = _run(tmp, rows, {"21": {"offers": [dict(r, reason="skip category: GIFT CARD")
+                                                      for r in rows]}})
+            payload = sort_sql_payload(runs, "scan", repo_root=pathlib.Path(tmp))
+        self.assertNotIn("%gift-card%", [p["pattern"] for p in payload["proposals"]])
 
     def test_every_statement_is_bounded_to_the_pending_list(self):
         payload = sort_sql_payload(pathlib.Path("/nonexistent"))

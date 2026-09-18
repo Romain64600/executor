@@ -36,6 +36,7 @@ from src.admin.runs import (
     sha256_file,
 )
 from src.browser_lock import lock_status
+from src import sort_sql_promoted
 from src.admin.sort_sql_view import sort_sql_payload
 from src.admin.submit_manager import (
     BY_URLS_EVENTS,
@@ -294,8 +295,9 @@ class AdminHandler(BaseHTTPRequestHandler):
             # Les requêtes de tri prêtes à copier, MESURÉES contre le dernier scan de tri.
             # Lecture seule de bout en bout : on rend du texte, Romain l'exécute lui-même
             # dans phpMyAdmin. Aucun accès base ici, aucun driver importé.
-            return self._send_json(200, sort_sql_payload(self.state.runs_dir,
-                                                         parse_qs(parsed.query).get("run", [""])[0]))
+            return self._send_json(200, sort_sql_payload(
+                self.state.runs_dir, parse_qs(parsed.query).get("run", [""])[0],
+                repo_root=self.state.repo_root))
 
         if path == "/api/sort/runs":
             # C'est CETTE route que les deux consoles interrogent (sort.js refreshBusy,
@@ -480,6 +482,30 @@ class AdminHandler(BaseHTTPRequestHandler):
             self._send_error_json(500, "internal", f"{type(exc).__name__}: {exc}")
 
     def _route_post(self) -> None:
+
+        if self.path.split("?")[0] == "/api/sort/sql/promote":
+            # Promotion d'un motif PROPOSÉ vers la liste. N'exécute rien : la liste sert à
+            # être copiée dans phpMyAdmin. Le garde est dans sort_sql_promoted.promote —
+            # vocabulaire du motif, liste connue, pas de doublon — et une erreur en ressort
+            # en 400 explicite plutôt qu'en 500.
+            body = self._json_body()
+            action = str(body.get("action") or "promote").strip()
+            try:
+                if action == "demote":
+                    ok = sort_sql_promoted.demote(
+                        self.state.repo_root, pattern=str(body.get("pattern", "")),
+                        target=str(body.get("target", "")))
+                    return self._send_json(200, {"demoted": ok})
+                entry = sort_sql_promoted.promote(
+                    self.state.repo_root,
+                    pattern=str(body.get("pattern", "")),
+                    target=str(body.get("target", "")),
+                    by=str(body.get("by") or "console"),
+                    run_id=str(body.get("run_id") or ""),
+                    hits=body.get("hits") if isinstance(body.get("hits"), int) else None)
+            except ValueError as exc:
+                raise ApiError(400, "bad_promotion", str(exc))
+            return self._send_json(200, {"promoted": entry})
         path = urlparse(self.path).path
 
         if path == "/api/invariants/check":

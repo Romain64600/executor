@@ -26,7 +26,18 @@ function el(tag, attrs, kids) {
   return n;
 }
 
-let RULES = [];
+let RULES = [], PROPOSALS = [], RUN_ID = null;
+
+async function post(path, body) {
+  const r = await fetch(path, {
+    method: "POST",
+    headers: { "X-AKS-Admin": "1", "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(body),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error((d.error && d.error.message) || `HTTP ${r.status}`);
+  return d;
+}
 
 function copy(text, msg) {
   navigator.clipboard?.writeText(text);
@@ -66,11 +77,41 @@ function render() {
   }));
 }
 
+function renderProposals() {
+  const box = $("#proposals-box");
+  if (!PROPOSALS.length) { box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  $("#proposals tbody").replaceChildren(...PROPOSALS.map((p) => el("tr", {}, [
+    el("td", {}, el("code", {}, p.sql)),
+    el("td", { class: "rz" }, String(p.target)),
+    el("td", { class: "rz tnum" }, String(p.hits)),
+    el("td", { class: "rz tnum" }, String(p.agree)),
+    el("td", {}, el("button", {
+      class: "primary",
+      onclick: async (e) => {
+        e.target.disabled = true;
+        try {
+          await post("api/sort/sql/promote", {
+            pattern: p.pattern, target: p.target, run_id: RUN_ID, hits: p.hits, by: "console",
+          });
+          $("#copy-msg").textContent = `${p.pattern} promue — rechargement…`;
+          location.reload();
+        } catch (err) {
+          e.target.disabled = false;
+          $("#copy-msg").textContent = "promotion refusée : " + err.message;
+        }
+      },
+    }, "Promouvoir")),
+  ])));
+}
+
 (async function init() {
   setStatus("Chargement…", true);
   try {
     const d = await api("api/sort/sql");
     RULES = d.rules || [];
+    PROPOSALS = d.proposals || [];
+    RUN_ID = d.run_id || null;
     $("#measured").textContent = d.measured
       ? `Mesuré sur le scan ${d.run_id} — ${d.offers} offres. Les comptes viennent de ce scan, `
         + `pas d'une estimation ; ils vieillissent avec lui.`
@@ -88,7 +129,9 @@ function render() {
       ]);
       $("#measured").after(box);
     }
-    setStatus(`${RULES.length} requêtes`);
+    renderProposals();
+    setStatus(`${RULES.length} requêtes`
+      + (PROPOSALS.length ? ` · ${PROPOSALS.length} proposition(s)` : ""));
   } catch (e) {
     setStatus("Erreur : " + e.message);
   }

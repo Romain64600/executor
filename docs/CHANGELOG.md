@@ -3,6 +3,37 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-18 — Propositions mesurées, promotion MANUELLE : la liste s'agrandit sans dériver
+
+Romain : « quand je lance un run, ça va en ajouter des nouvelles au 53 ? […] si on ajoute 7, on
+aura 60. Le run d'après, on gardera les 60, mais on ajoutera d'autres ». Ce n'était pas le cas —
+la liste était figée — et il a tranché : « go pour les propositions avec promotion manuelle ».
+
+**Pourquoi la promotion n'est pas automatique.** La première version du mineur proposait très
+sérieusement `%modern-warfare%` vers la Blacklist, plus `%agatha-christie%` et
+`%marvel-tokon%` : des mots « purs » sur un échantillon de 10 %, mais des NOMS DE JEUX. Une
+règle qui s'ajouterait seule et que Romain lancerait chaque jour rendrait une telle erreur
+permanente et silencieuse. Le mineur propose, il ne décide pas.
+
+**Ce que la page fait maintenant.** Sous la liste, une section « Propositions » : des motifs
+tirés du VOCABULAIRE qui fait décider notre routeur (jamais un mot quelconque d'URL), mesurés
+sur le scan, et offerts **seulement** s'ils ne visent aucun vrai jeu, n'entrent en conflit avec
+aucune autre liste, et touchent au moins deux lignes. Un clic les promeut ; elles rejoignent la
+liste et y restent. Sur le scan local, 8 propositions — toutes des régions fermées, `%philippines%`
+à 76 lignes en tête.
+
+**Où vivent les promotions.** `data/sort_sql_promoted.json`, du JSON qui se relit et se corrige
+à la main — sous `data/` et non `state/`, précisément pour être commité : sinon les deux
+serveurs divergeraient, chacun avec ses promotions. Écriture atomique.
+
+**Ce que la promotion refuse**, en 400 explicite plutôt qu'en 500 : un motif hors du vocabulaire
+autorisé (refusé, jamais échappé), une liste inconnue, et un DOUBLON — deux fois le même motif,
+c'est une requête qui ne fera rien la seconde fois et qui allonge la liste que Romain relit
+avant de coller.
+
+`tests/test_sort_sql_console.py` passe à 31 tests, dont la garantie que le mineur ne propose
+jamais un nom de jeu et qu'un motif visant un vrai jeu n'est pas offert du tout.
+
 ## 2026-09-18 — La liste de Romain est gardée VERBATIM : 54 lignes, 53 règles
 
 Romain : « j'avais 54 requêtes, pourquoi /executor/sql me donne que les 52 ? ». Bonne question,
