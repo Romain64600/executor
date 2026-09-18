@@ -3,6 +3,50 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-18 — La voie SQL remplace l'exécution d'un déplacement
+
+Romain : « je veux que la voie SQL remplace l'exécution d'un déplacement, tu me donneras les
+requêtes dans l'admin en liste et [elles seront] prêtes à copier coller, les requêtes seront
+collées à la main dans phpMyAdmin par mes soins ». Il a fourni sa liste quotidienne, 52 règles
+après repli des doublons de casse.
+
+**Ce que ce remplacement coûte, et comment on le compense.** Le déplacement par navigateur
+avait une PREUVE : la ligne avait quitté la liste source au rafraîchissement, l'exact analogue
+du « gone from feed » du submit. Un `UPDATE` collé à la main n'a ni preuve, ni garde
+fail-closed, ni retour arrière. On ne peut plus vérifier APRÈS — donc tout se joue AVANT, et
+chaque requête s'affiche avec ce qu'elle toucherait réellement sur le dernier scan : lignes
+visées, lignes que notre routeur enverrait sur la même liste, ailleurs, ou qu'il tient pour de
+**vrais jeux à créer**, avec leurs noms.
+
+`src/sort_sql_rules.py` (la liste, versionnée), `src/admin/sort_sql_view.py` (la mesure),
+`/sql` dans la console (la liste prête à copier, avec « tout copier » et « copier seulement
+les requêtes sans désaccord »). Aucun driver base n'est importé nulle part sur ce chemin ; la
+page ne fait aucun POST.
+
+**Audit des 52 règles sur le scan de 49 899 offres de l'ancien VPS.** La plupart ne visent plus
+rien — normal, Romain les lance chaque jour, les lignes sont déjà parties. Celles qui mordent
+encore désignent les arrivées récentes, et sept sont en désaccord avec notre routeur :
+
+| règle | vise | vrais jeux visés |
+|---|---|---|
+| `%-1-month-%` | 232 | 35 (YouTube Premium, Duolingo) |
+| `%-outfit-%` | 71 | 53 (DLC de tenues Fortnite) |
+| `%-robux-%` | 18 | 9 (cartes Roblox) |
+| `%-weapon-charm%` | 18 | 1 (DLC Call of Duty) |
+| `%month-subscription%` | 11 | 4 |
+| `%-day-game-time-code%` | 2 | 2 (temps de jeu LOTRO) |
+| `%-day-credit%` | 2 | 1 (booster Warframe) |
+
+`%-pass-xbox%` vise 82 lignes dont 10 que le routeur enverrait sur une AUTRE liste. Ce n'est
+pas un verdict : c'est un désaccord entre sa règle et notre routeur, affiché pour qu'il
+tranche.
+
+**Une contradiction avec une décision écrite, signalée et non censurée.** `%valid-until%` →
+Blacklist contredit « Kinguin valid until juin 2027 on rentre » (Romain 2026-09-14) : la note
+est une date limite d'activation, pas un produit, et ces clés sont ENTRÉES. La règle reste dans
+la liste — c'est la sienne — avec son avertissement affiché. `%puzzle%` est signalée de même :
+elle vise un GENRE de jeu.
+
 ## 2026-09-18 — Le bouton du sweep de nuit lance la couverture totale
 
 Romain : « Ajoute la couverture totale au bouton ». Le bouton de l'onglet Data entry auto

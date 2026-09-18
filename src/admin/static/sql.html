@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="fr"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tri par SQL — AKS</title>
+<link rel="stylesheet" href="style.css"><link rel="stylesheet" href="sort.css">
+</head><body>
+<header class="top">
+  <h1>Tri par SQL</h1>
+  <nav class="tabs"><a href="/">Accueil</a> <a href="/sort">Tri</a> <a href="/auto">Data entry auto</a> <a href="/games">Par URLs</a></nav>
+  <span id="status" class="idle">…</span>
+  <button id="theme" type="button" title="Thème">◐</button>
+</header>
+
+<p class="banner" id="intro">
+  Ces requêtes ne sont <strong>pas exécutées ici</strong>. Copie-les et lance-les toi-même dans
+  phpMyAdmin. Chaque requête ne touche que la file d'attente (<code>listId=9</code>) et ne
+  change que <code>listId</code>.
+</p>
+
+<section class="cmd-actions">
+  <button id="copy-all" type="button" class="primary">Copier toutes les requêtes</button>
+  <button id="copy-safe" type="button">Copier seulement les requêtes sans désaccord</button>
+  <span id="copy-msg" class="msg"></span>
+</section>
+
+<p id="measured" class="note"></p>
+
+<table id="rules" class="rules">
+  <thead><tr>
+    <th>Requête</th><th class="rz">liste</th><th class="rz" title="lignes du scan dont l'URL matche">vise</th>
+    <th class="rz" title="lignes que notre routeur enverrait sur la MÊME liste">d'accord</th>
+    <th class="rz" title="lignes que notre routeur enverrait AILLEURS">conflit</th>
+    <th class="rz" title="lignes que notre routeur tient pour de VRAIS JEUX à créer">collatéral</th>
+    <th></th>
+  </tr></thead>
+  <tbody></tbody>
+</table>
+
+<script src="sql.js"></script>
+</body></html>

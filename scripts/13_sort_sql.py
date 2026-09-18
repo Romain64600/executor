@@ -202,6 +202,9 @@ def main() -> int:
     ap.add_argument("--check", action="append", default=[],
                     metavar="'%motif%:listId'",
                     help="audite un motif écrit à la main au lieu de proposer")
+    ap.add_argument("--rules", action="store_true",
+                    help="audite les règles quotidiennes de Romain (src/sort_sql_rules.py) "
+                         "contre ce scan, au lieu d'en proposer de nouvelles")
     ap.add_argument("--out", default=None, help="écrit le résultat dans ce fichier")
     args = ap.parse_args()
 
@@ -234,6 +237,27 @@ def main() -> int:
         return 0
 
     plan = json.loads((run_dir / "sort_plan.json").read_text(encoding="utf-8"))
+    if args.rules:
+        from src.sort_sql_rules import FLAGGED, RULES
+        print(f"# {len(RULES)} règles quotidiennes confrontées au scan {args.run_id}\n")
+        safe, risky = [], []
+        for pattern, target in RULES:
+            m = measure(pattern, target, dest, by_url)
+            (risky if (m["collateral"] or m["conflict"]) else safe).append(m)
+            flag = FLAGGED.get(pattern)
+            mark = "!!" if m["collateral"] else ("!" if m["conflict"] else "  ")
+            print(f"{mark} {pattern:32} -> {target:>3} | vise {m['hits']:5} | "
+                  f"d'accord {m['agree']:5} | conflit {m['conflict']:4} | "
+                  f"collatéral {m['collateral']:5}")
+            if m["sample_collateral"]:
+                for s in m["sample_collateral"][:2]:
+                    print(f"      vrai jeu visé : {s}")
+            if flag:
+                print(f"      SIGNALÉE : {flag[:150]}")
+        print(f"\n# {len(safe)} règle(s) sans collatéral ni conflit, "
+              f"{len(risky)} à regarder")
+        return 0
+
     items = propose(dest, by_url, plan)
     refused: list[tuple[dict, str]] = []
     text = render(items, refused)

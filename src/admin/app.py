@@ -36,6 +36,7 @@ from src.admin.runs import (
     sha256_file,
 )
 from src.browser_lock import lock_status
+from src.admin.sort_sql_view import sort_sql_payload
 from src.admin.submit_manager import (
     BY_URLS_EVENTS,
     CANARY_LIMIT,
@@ -73,6 +74,9 @@ STATIC_FILES = {
     "auto.html": "text/html; charset=utf-8",
     "auto.js": "application/javascript; charset=utf-8",
     "auto.css": "text/css; charset=utf-8",
+    # Stage 13 — le tri par SQL : les requêtes prêtes à copier dans phpMyAdmin.
+    "sql.html": "text/html; charset=utf-8",
+    "sql.js": "application/javascript; charset=utf-8",
     # Data entry from a list of AKS page URLs (search the feed, dry-run preview).
     "urls.html": "text/html; charset=utf-8",
     "urls.js": "application/javascript; charset=utf-8",
@@ -262,6 +266,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._serve_static("sort.html")
         if path in ("/auto", "/data-entry"):
             return self._serve_static("auto.html")
+        if path in ("/sql", "/tri-sql"):
+            return self._serve_static("sql.html")
         if path in ("/games", "/urls"):
             return self._serve_static("urls.html")
         if path == "/api/data-entry/recap":
@@ -283,6 +289,13 @@ class AdminHandler(BaseHTTPRequestHandler):
         name = path.lstrip("/")
         if name in STATIC_FILES:
             return self._serve_static(name)
+
+        if path == "/api/sort/sql":
+            # Les requêtes de tri prêtes à copier, MESURÉES contre le dernier scan de tri.
+            # Lecture seule de bout en bout : on rend du texte, Romain l'exécute lui-même
+            # dans phpMyAdmin. Aucun accès base ici, aucun driver importé.
+            return self._send_json(200, sort_sql_payload(self.state.runs_dir,
+                                                         parse_qs(parsed.query).get("run", [""])[0]))
 
         if path == "/api/sort/runs":
             # C'est CETTE route que les deux consoles interrogent (sort.js refreshBusy,
