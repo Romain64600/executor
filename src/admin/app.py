@@ -515,7 +515,28 @@ class AdminHandler(BaseHTTPRequestHandler):
                 check = measure_pattern(self.state.runs_dir, str(body.get("pattern", "")),
                                         str(body.get("target", "")),
                                         str(body.get("run_id") or ""))
-                if check.get("measured") and check.get("collateral"):
+                # AUDIT DU 2026-09-18 — la porte ne se fermait que sur un collatéral NON NUL
+                # d'une mesure RÉUSSIE. Une mesure impossible (pas de scan, scan illisible)
+                # la désarmait entièrement : promouvoir sans mesure passait. Et un scan
+                # TRONQUÉ rendait un collatéral nul par absence de données, indiscernable
+                # d'un collatéral nul par sûreté. Une promotion est une règle PERMANENTE
+                # qu'on ne peut pas prouver après coup — on exige donc une mesure complète.
+                if not check.get("measured"):
+                    raise ApiError(
+                        400, "promotion_unmeasured",
+                        "impossible de mesurer ce motif — "
+                        f"{check.get('note') or 'aucun scan de tri exploitable'} ; "
+                        "relance un scan de tri avant de promouvoir",
+                        detail=check)
+                if check.get("truncated"):
+                    cov = check.get("coverage") or {}
+                    raise ApiError(
+                        400, "promotion_truncated",
+                        f"mesuré sur un scan INCOMPLET ({cov.get('why') or 'couverture inconnue'}) : "
+                        "le collatéral affiché ne prouve rien — relance un scan complet "
+                        "(--max-pages 800) avant de promouvoir",
+                        detail=check)
+                if check.get("collateral"):
                     raise ApiError(
                         400, "promotion_collateral",
                         f"ce motif vise {check['collateral']} offre(s) que le routeur tient "

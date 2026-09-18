@@ -1124,8 +1124,27 @@ class SubmitManager:
 
         with self._mutex:
             active = self._active
-            if active is None:
-                return {"stopped": None, "reason": "aucun run en cours"}
+        if active is None:
+            # AUDIT DU 2026-09-18. `busy()` retombe volontairement sur le marqueur disque
+            # pour faire APPARAÎTRE dans les consoles un run lancé au terminal — mais
+            # `stop_active` ne connaissait que `self._active` et répondait
+            # `{"stopped": null}` en HTTP 200. Les trois consoles traitent tout 200 comme
+            # un succès et affichaient « Arrêt demandé » pendant qu'un sweep continuait
+            # d'ÉCRIRE sur le site vivant : le frein d'urgence mentait. On refuse
+            # franchement, avec le pid à tuer — un run que nous n'avons pas lancé n'a pas
+            # notre superviseur pour libérer le créneau, donc on ne le tue pas d'ici.
+            marker = read_marker(self.repo_root)
+            if marker is not None:
+                raise SubmitStartError(
+                    "cli_run_not_stoppable",
+                    f"run lancé en ligne de commande ({marker.get('kind')} sur "
+                    f"{marker.get('run_id')}, pid {marker.get('pid')}) — "
+                    "il faut l'arrêter dans son terminal (Ctrl-C), pas d'ici",
+                    detail={"run_id": marker.get("run_id"), "kind": marker.get("kind"),
+                            "pid": marker.get("pid"), "source": marker.get("source")},
+                )
+            return {"stopped": None, "reason": "aucun run en cours"}
+        with self._mutex:
             info = {"run_id": active["run_id"], "kind": active["kind"], "pid": active.get("pid")}
         if grace is None:
             grace = self._STOP_GRACE_BY_KIND.get(info.get("kind", ""), 12.0)

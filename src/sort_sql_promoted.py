@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import re
+from functools import lru_cache
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,38 @@ from typing import Any
 # Le même vocabulaire restreint que le générateur : un motif est du texte injecté dans une
 # chaîne SQL, on n'accepte rien d'autre.
 SAFE_PATTERN = re.compile(r"^%[A-Za-z0-9._/+-]+%$")
+
+
+# LA mesure d'un motif — une seule implémentation, partagée par la vue console et par le
+# stage 13. Elle doit reproduire le ``LIKE`` de MySQL, sinon elle ment sur la SEULE garde de
+# la voie SQL : Romain exécute les requêtes lui-même, il n'y a pas de preuve après coup.
+# Deux écarts trouvés le 2026-09-18 :
+#   * ``_`` est un JOKER en SQL. ``%digital_extras%`` sélectionne « digital-extras », alors
+#     que la recherche littérale annonçait 0 ligne — un compteur « collatéral » nul, et des
+#     offres déplacées quand même.
+#   * la mesure retirait les paramètres d'URL, que la colonne `url` contient. Un motif qui
+#     vise un paramètre était donc compté à zéro.
+# L'audit complet du même soir a montré que le correctif n'avait été posé QUE sur la vue :
+# le stage 13, celui que le README documente pour auditer la liste quotidienne AVANT de la
+# lancer, sous-comptait toujours. D'où ce module commun — et non un import depuis la vue
+# admin, qu'un script CLI n'a pas à tirer derrière lui.
+@lru_cache(maxsize=512)
+def like_re(pattern: str) -> "re.Pattern[str]":
+    out = []
+    for ch in pattern or "":
+        if ch == "%":
+            out.append(".*")
+        elif ch == "_":
+            out.append(".")
+        else:
+            out.append(re.escape(ch))
+    return re.compile("^" + "".join(out) + "$", re.IGNORECASE | re.DOTALL)
+
+
+def like(pattern: str, url: str) -> bool:
+    """``url LIKE pattern`` comme MySQL le ferait, sur l'URL ENTIÈRE, sans casse."""
+
+    return bool(like_re(pattern).match(url or ""))
 
 
 def _path(repo_root: Path | str) -> Path:

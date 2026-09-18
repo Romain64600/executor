@@ -186,6 +186,12 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   Les titres MARQUÉS sont inchangés (R43 : own-page, DLC anonyme). Ceci REMPLACE la décision
   du 2026-09-11 ci-dessous, qui reste en note pour l'historique : un audit qui relirait le
   git y verrait « ne pas durcir » — c'est périmé, Romain a tranché l'inverse le 17.
+  **Complété le 2026-09-18 :** le durcissement ne fermait qu'une porte sur trois. La
+  vérification de page E05/R23 et la réconciliation P1-1 adoptaient le seau DLC par égalité de
+  libellé, sans marqueur ni condition « seul seau » — « DLC Quest », un vrai jeu de base,
+  ressortait DLC(16). Les deux portes écartent maintenant les seaux DLC : `edition_id == "16"`
+  ne peut venir QUE de R18. Un audit « trouvera » qu'un vrai DLC caché sous un seau nommé
+  « DLC Pack » n'est plus adopté — c'est voulu, R18 est le seul juge.
 
 - **[HISTORIQUE, SUPERSÉDÉ LE 2026-09-17] R18 "DLC bucket on the page ⇒ edition DLC(16)" for
   MARKERLESS titles — KEPT (Romain 2026-09-11).** The R43 adversarial review showed live base-game pages carrying bucket 16

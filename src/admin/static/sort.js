@@ -531,9 +531,15 @@ $("#stop-btn").addEventListener("click", async () => {
   b.disabled = true;
   b.textContent = "Arrêt…";
   try {
-    await postJSON("api/sort/stop", {});
-    appendStatus("■ arrêt demandé — le run s'arrête au prochain point sûr (fin de page/offre)…");
-    setStatus("Arrêt demandé…", true);
+    // Audit 2026-09-18 : `stopped: null` = rien à arrêter. Un 200 n'est pas une preuve.
+    const r = await postJSON("api/sort/stop", {});
+    if (r && r.stopped) {
+      appendStatus("■ arrêt demandé — le run s'arrête au prochain point sûr (fin de page/offre)…");
+      setStatus("Arrêt demandé…", true);
+    } else {
+      appendStatus("■ rien à arrêter — " + ((r && r.reason) || "aucun run en cours"));
+      setStatus("Rien à arrêter");
+    }
   } catch (e) {
     setStatus("Arrêt : " + e.message);
   }

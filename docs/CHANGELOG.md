@@ -3,6 +3,57 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-18 (nuit) — Audit complet, lot 1/4 : le frein d'urgence, la porte DLC, la mesure SQL
+
+Romain : « tout » — les 36 constats de [`AUDIT_2026-09-18_complet.md`](AUDIT_2026-09-18_complet.md)
+sont à corriger. Premier lot : les trois qui pressaient, plus les deux défauts du marchand créé
+la veille. Suite complète verte (2245 tests).
+
+**`[P1]` Le bouton « Arrêter » ne pouvait pas arrêter un run lancé en ligne de commande.**
+`busy()` retombe volontairement sur le marqueur disque pour faire APPARAÎTRE un run CLI dans les
+consoles — mais `stop_active()` ne connaissait que `self._active` et répondait `{"stopped": null}`
+en **HTTP 200**. Les trois consoles traitent tout 200 comme un succès : l'écran affichait « Arrêt
+demandé » pendant qu'un sweep continuait d'ÉCRIRE sur le site vivant. Le serveur refuse désormais
+franchement (409 `cli_run_not_stoppable`) en donnant le pid à tuer ; on ne tue pas d'ici un
+processus qui n'a pas notre superviseur pour libérer le créneau. Les trois consoles lisent
+maintenant `stopped` au lieu de déduire l'arrêt du code HTTP.
+
+**`[P1]` `[R18]` est le seul juge du seau DLC.** Le durcissement du 17/09 ne fermait qu'une porte
+sur trois : la vérification de page E05/R23 et la réconciliation P1-1 adoptaient le seau DLC par
+simple égalité de libellé, sans marqueur et sans la condition « seul seau ». Reproduit :
+« DLC Quest » — un vrai JEU DE BASE que `EXECUTOR_RULES §4.3 (f)` nomme explicitement — sur une
+page `{1: Standard, 16: DLC}` ressortait en **DLC(16)** ; idem sous un seau nommé « DLC Pack »,
+PACK étant du bruit de format. Les deux portes écartent les seaux DLC, et la réconciliation
+refuse en NOMMANT R18 au lieu de dire « not sold on the resolved AKS page » alors que la page le
+vend — un motif faux, et qui alimente le routeur de tri des listes.
+
+**`[P1]` La mesure SQL mentait encore, à deux endroits.** (a) Le correctif « `_` est un joker »
+du matin n'avait été posé que sur la vue console : `scripts/13_sort_sql.py`, celui que le README
+documente pour auditer la liste quotidienne AVANT de la coller, cherchait toujours une
+sous-chaîne littérale sur l'URL amputée de ses paramètres. `--check "%digital_extras%:8"`
+répondait « 0 ligne » pendant que l'`UPDATE` en déplaçait deux. La mesure vit désormais dans
+`src/sort_sql_promoted.py`, importée des deux côtés — et le `SAFE_PATTERN` local du script, plus
+LÂCHE que le partagé, a été remplacé par lui. (b) Le bloc `coverage` de `sort_plan.json` n'était
+lu **nulle part** : un scan tronqué (défaut `--max-pages 60` sur ~639 pages) était rendu
+`measured: true`, donc un collatéral nul par ABSENCE DE DONNÉES se présentait comme un collatéral
+nul par SÛRETÉ. Lecture fail-closed (`truncated` seul décide ; pas de bloc = tronqué) ; les
+propositions et l'arbitrage sont refusés sur un scan partiel ; la page l'annonce en rouge ; la
+promotion répond 400 (`promotion_truncated`). Au passage, la porte de promotion ne se fermait pas
+non plus quand la mesure ÉCHOUAIT (`promotion_unmeasured`), et le bouton « copier seulement les
+requêtes sans désaccord » copiait TOUT quand rien n'était mesuré.
+
+**`[P2]` Gamerall, deux défauts du fichier écrit la veille.** Il rendait le jeton `UPLAY`, absent
+de `REGION_IDS` — tous les autres marchands normalisent en `UBISOFT` : 100 % de ses lignes
+Ubisoft Connect étaient refusées sur un faux « platform conflict: title=UBISOFT vs offer
+page=UPLAY ». Et la branche CONSOLE ne consultait jamais `offer_page_resolver` : une URL
+`/playstation/…-ps5` partait en GLOBAL implicite sans ouvrir la page, l'inverse exact de `[R54]`.
+Elle le consulte maintenant, pour la RÉGION seulement.
+
+**`[P2]` `MICROSOFT` rejoint `NOISE_TOKENS`** — exactement l'histoire de ROCKSTAR du 16/09,
+rejouée : les seaux Microsoft sont mappés depuis `[R50]`, donc la ligne passe la garde de région
+et vient mourir un cran plus loin sur « extra words: ['MICROSOFT'] ». Même contrôle de sûreté :
+aucun nom de produit AKS des corpus sauvegardés ne contient le mot.
+
 ## 2026-09-18 (soir) — Audit complet du dépôt : 36 constats, 8 P1, AUCUN corrigé
 
 Audit demandé par Romain pendant le sweep de nuit, priorité à la **logique métier**. Rapport

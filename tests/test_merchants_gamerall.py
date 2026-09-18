@@ -47,7 +47,7 @@ class TitleGrammarTests(unittest.TestCase):
         for name, token in (
             ("The Witcher 3: Wild Hunt - Complete Edition (Xbox Live)", "XBOX"),
             ("Die in the Dungeon (Steam)", "STEAM"),
-            ("Anno 1800 (Ubisoft Connect)", "UPLAY"),
+            ("Anno 1800 (Ubisoft Connect)", "UBISOFT"),
             ("EA FC 25 (EA App)", "EA"),
             ("Mario Kart (Nintendo Switch)", "NINTENDO"),
             ("Ghost of Tsushima (PSN)", "PSN"),
@@ -55,6 +55,24 @@ class TitleGrammarTests(unittest.TestCase):
         ):
             with self.subTest(name=name):
                 self.assertEqual(g.title_platform(name), token)
+
+    def test_every_token_emitted_belongs_to_the_matcher_vocabulary(self):
+        """Le piège du 2026-09-18 : le fichier rendait « UPLAY », un nom commercial que
+        `REGION_IDS` ne connaît pas. Le matcher lisait UBISOFT dans le titre, UPLAY dans
+        l'URL, et refusait 100 % des lignes Ubisoft Connect sur un faux conflit interne.
+        Un jeton que le matcher ne sait pas router n'a rien à faire dans un fichier
+        marchand : il ne produit pas un refus lisible, il produit un refus MENSONGER."""
+
+        from src.matcher import REGION_IDS
+
+        # Les familles console sont routées par `classify_console`, pas par REGION_IDS
+        # sous ce nom : elles sont légitimes ici, on ne les confronte pas au vocabulaire PC.
+        console_tokens = {"XBOX", "PSN", "NINTENDO"}
+        emitted = set(g.PLATFORM_TEXT.values()) | {tok for _, tok in g.URL_PLATFORM}
+        for token in sorted(emitted - console_tokens):
+            with self.subTest(token=token):
+                self.assertIn(token, REGION_IDS,
+                              f"{token!r} n'est pas une famille que le matcher sait router")
 
     def test_an_unknown_platform_is_refused_BY_NAME_not_guessed(self):
         reason = g.precheck("Some Game (Amiga)", "https://gamerall.com/a/some-game-amiga")

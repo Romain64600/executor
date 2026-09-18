@@ -577,6 +577,7 @@ NOISE_TOKENS = {
     "PC", "MAC", "STEAM", "GOG", "EPIC", "EA", "APP", "ORIGIN", "UPLAY", "UBISOFT",
     "CONNECT", "GAMES", "LAUNCHER", "STORE",  # "Ubisoft Connect" / "Epic Games Store"
     "BATTLE", "NET", "BATTLENET", "ROCKSTAR",   # ROCKSTAR added 2026-09-16, see below
+    "MICROSOFT",                                # MICROSOFT added 2026-09-18, same story
     "KEY", "KEYS", "CD", "CDKEY", "DIGITAL", "DOWNLOAD",
     "CODE", "GAME", "VERSION", "FULL", "PLATFORM", "WINDOWS", "ACTIVATION", "EDITION",
     "STANDARD", "GLOBAL", "WORLDWIDE", "WW", "EU", "EUROPE", "US", "USA", "UK", "ROW",
@@ -594,6 +595,12 @@ NOISE_TOKENS = {
 # extra words: ['ROCKSTAR']". The two fixes are one fix: without this line the region
 # mapping delivers nothing. Safe on the saved corpora — no AKS product name contains the
 # word (0 of every candidates.json / skipped.json of the runs kept).
+# MICROSOFT (2026-09-18, audit complet) : exactement la même histoire, deux ans plus tard.
+# Les seaux MICROSOFT sont mappés depuis [R50] (voir REGION_IDS ci-dessus), donc les lignes
+# « (Microsoft Store) » passent la garde de région et viennent mourir un cran plus loin, sur
+# « different/expanded product — extra words: ['MICROSOFT'] ». Reproduit sur Gamerall, qui
+# écrit la boutique dans le titre. Même contrôle de sûreté que pour ROCKSTAR : aucun nom de
+# produit AKS des corpus sauvegardés ne contient le mot (0 sur tous les candidates.json).
 # ISO 639-1 language codes. A store's language marker ("Hard Bullet VR Gift EN
 # Global", "… FR", …) is NOT a product differentiator (Romain 2026-09-01: "EN =
 # english only … enter every language variant as the SAME product"). But a code is
@@ -3096,6 +3103,14 @@ def match_offer(
     if _dlc_edition_on_page(resolution.editions) and (
             dlc_title_marker(offer.name) is not None or len(resolution.editions) == 1):
         edition_label, edition_id = "DLC", "16"
+    # AUDIT DU 2026-09-18 : le durcissement ci-dessus ne fermait qu'UNE porte sur trois.
+    # Deux autres producteurs adoptaient le seau DLC par simple égalité de libellé, sans
+    # marqueur et sans la condition « seul seau » : la vérification de page E05/R23 et la
+    # réconciliation P1-1, plus bas. Reproduit : « DLC Quest » — un vrai JEU DE BASE que
+    # EXECUTOR_RULES §4.3 (f) nomme explicitement — sur une page {1: Standard, 16: DLC}
+    # ressortait en DLC(16), exactement la classe d'erreur « Vice City » du 17/09. Les deux
+    # portes écartent désormais le seau DLC : après ce bloc, DLC(16) n'est atteignable QUE
+    # par [R18]. Invariant verrouillé par test_r18_is_the_sole_authority_on_the_dlc_bucket.
     elif edition_from_extras is not None:
         # A page-verified edition named by the merchant's "extra" tokens, rescued
         # above from the different-product guard (e.g. Knights Editon 2723).
@@ -3166,6 +3181,8 @@ def match_offer(
                     ekey = _edition_key(ename)
                     if ekey & {"BUNDLE", "TRILOGY"}:
                         continue                       # never resurrect a bundle tier
+                    if eid == "16" or ekey == {"DLC"}:
+                        continue                       # [R18] seul juge du seau DLC — voir ci-dessous
                     if ekey == want_key:
                         on_page.append((eid, ename))
                 exact = [c for c in on_page if c[1].strip().upper() == edition_label.upper()]
@@ -3211,10 +3228,21 @@ def match_offer(
         # Standard(1)); re-running on an E05-resolved id would false-flag ambiguity.
         if edition_id != "1" and not e05_page_verified:
             want_key = _edition_key(edition_label)
+            if want_key == {"DLC"}:
+                # [R18] est le SEUL juge du seau DLC (durcissement du 2026-09-17). Sans ce
+                # refus, le motif générique plus bas dirait « not sold on the resolved AKS
+                # page » alors que la page le vend — un motif faux, et qui alimente le
+                # routeur de tri des listes.
+                return SkippedOffer(
+                    offer,
+                    f"edition {edition_label!r}({edition_id}) : seul [R18] décide du seau DLC "
+                    "— titre sans marqueur ou page multi-seaux, non entré",
+                )
             pool = [(eid, _edition_entry_name(v))
                     for eid, v in resolution.editions.items()
                     if _edition_entry_name(v).strip().upper() != "STANDARD"
-                    and want_key and _edition_key(_edition_entry_name(v)) == want_key]
+                    and want_key and _edition_key(_edition_entry_name(v)) == want_key
+                    and eid != "16"]
             if len(pool) == 1:
                 edition_id, edition_label = pool[0]          # adopt the page's real id
             elif len(pool) > 1:
@@ -3376,7 +3404,36 @@ def _console_plan(
             "— not entered (R45)",
         )
     else:
-        base, label, implicit = "global", "GLOBAL", True
+        # AUDIT DU 2026-09-18 — un marchand dont la région vit sur SA PROPRE PAGE ([R33]
+        # Instant Gaming, [R54] Gamerall) n'était jamais consulté ici : la branche console
+        # tombait directement sur le GLOBAL implicite, c'est-à-dire exactement ce que
+        # « absence de région = on ouvre la page pour s'en assurer » interdit. Reproduit sur
+        # une URL Gamerall `/playstation/…-ps5` : families=('PS5',), region_base=None,
+        # aucun mot de région → GLOBAL implicite, page jamais ouverte, et le fail-closed
+        # `GamerallPageUnreadable` jamais déclenché. On ne lit ici QUE la région : la
+        # plateforme vient du classifieur console, et la confronter au jeton PC du résolveur
+        # produirait un faux conflit (PSN / NINTENDO ne sont pas des familles PC).
+        _cfg_console = merchant_config(offer.merchant)
+        _resolver = _cfg_console.offer_page_resolver if _cfg_console is not None else None
+        if _resolver is not None:
+            try:
+                _psig = _resolver(offer.url, offer.name)
+            except Exception as exc:  # noqa: BLE001 — page illisible → fail closed
+                return SkippedOffer(
+                    offer,
+                    f"console: {offer.merchant} offer page unreadable — unverifiable "
+                    f"(R32/R45): {exc}")
+            if not _psig.region_resolved:
+                return SkippedOffer(
+                    offer,
+                    f"console: {offer.merchant} offer page gives no region — "
+                    "never an implicit GLOBAL for this merchant (R32/R45)")
+            if _psig.region_base is None:
+                return SkippedOffer(offer, f"forbidden region: {_psig.region_label}")
+            base, implicit = _psig.region_base, False
+            label = "GLOBAL" if _psig.region_base == "global" else str(_psig.region_base).upper()
+        else:
+            base, label, implicit = "global", "GLOBAL", True
     for fam in families:
         if REGION_IDS.get(fam, {}).get(base) is None:
             return SkippedOffer(offer, f"no region id for {fam}/{label} (R45)")

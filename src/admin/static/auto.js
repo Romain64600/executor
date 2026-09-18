@@ -140,7 +140,13 @@ $("#launch-all").addEventListener("click", async () => {
 });
 $("#stop-btn").addEventListener("click", async () => {
   $("#stop-btn").disabled = true;
-  try { await api("api/sort/stop", { method: "POST", body: "{}" }); setStatus("Arrêt demandé (entre pages)…", true); }
+  // Audit 2026-09-18 : un 200 ne prouve pas qu'un run a été arrêté. `stopped: null`
+  // veut dire « rien à arrêter » — l'annoncer comme un arrêt était le mensonge du frein.
+  try {
+    const r = await api("api/sort/stop", { method: "POST", body: "{}" });
+    if (r && r.stopped) setStatus("Arrêt demandé (entre pages)…", true);
+    else { setStatus("Rien à arrêter — " + ((r && r.reason) || "aucun run en cours")); $("#stop-btn").disabled = false; }
+  }
   catch (e) { setStatus("Stop refusé — " + e.message); $("#stop-btn").disabled = false; }
 });
 

@@ -397,6 +397,17 @@ AUTRE seau (id 518) et n'a jamais déclenché R18. Les titres MARQUÉS restent g
 (own-page, DLC anonyme), inchangés. Ceci REMPLACE la décision « ne pas durcir » du 2026-09-11
 (historique : AGENTS.md et CHANGELOG).
 
+**Complété le 2026-09-18 (audit complet) — `[R18]` est le SEUL juge du seau DLC.** Le
+durcissement du 17 ne fermait qu'une porte sur trois : deux autres producteurs adoptaient le
+seau DLC de la page par simple égalité de libellé, sans marqueur et sans la condition « seul
+seau » — la vérification de page E05/R23 et la réconciliation P1-1. Reproduit : « DLC Quest »,
+un vrai JEU DE BASE que le §4.3 (f) nomme explicitement, sur une page `{1: Standard, 16: DLC}`
+ressortait en DLC(16) ; idem sous un seau nommé « DLC Pack » (PACK est du bruit de format, la
+clé de comparaison valait {DLC}). Les deux portes écartent désormais les seaux DLC, et la
+réconciliation refuse en NOMMANT R18 au lieu de mentir (« not sold on the resolved AKS page »
+alors que la page le vend — motif faux, et qui alimente le routeur de tri des listes).
+Invariant : après le bloc édition, `edition_id == "16"` ne peut venir que de R18.
+
 **Console keys — see §4.12 `[R45]` (2026-09-12).** Romain's AKS feed tool OVERWRITES the
 region (= region/PLATFORM) and the edition PER TARGET PAGE, so one feed row can be filed on
 several AKS pages. The full rule — page model (§4.12.1: separate console product pages
@@ -2642,3 +2653,20 @@ désormais le titre en plus de l'URL — contrat élargi le même jour pour tous
 Fail-closed : page injoignable, réponse non conforme, ou page lisible sans région exploitable
 ⇒ **refus**, jamais un repli sur GLOBAL. Une région lue mais non vendable remonte son libellé
 brut, dont le routage (Blacklist / garder) reste décidé en un seul endroit.
+
+**Corrigé le 2026-09-18 (audit complet), deux défauts du même fichier :**
+
+1. **Les jetons de plateforme sont ceux du matcher, jamais le nom commercial.** Le fichier
+   rendait `UPLAY` pour Ubisoft Connect — un nom que `REGION_IDS` ne connaît pas, là où tous
+   les autres marchands normalisent en `UBISOFT`. Le matcher lisait donc `UBISOFT` dans le
+   titre et `UPLAY` dans l'URL : **100 % des lignes Ubisoft Connect étaient refusées** sur un
+   faux « platform conflict: title=UBISOFT vs offer page=UPLAY », c'est-à-dire un refus
+   MENSONGER, pas un refus lisible. Verrouillé par un test qui confronte chaque jeton émis au
+   vocabulaire de `REGION_IDS`.
+2. **La branche CONSOLE consulte désormais `offer_page_resolver`.** Elle ne le faisait jamais :
+   une URL `/playstation/…-ps5` donne `families=('PS5',)`, `region_base=None`, aucun mot de
+   région → GLOBAL implicite, page jamais ouverte, `GamerallPageUnreadable` jamais déclenché.
+   C'est exactement ce que cette règle interdit. La branche console ne lit QUE la région : la
+   plateforme vient du classifieur console, et la confronter au jeton PC du résolveur
+   produirait un faux conflit (PSN / NINTENDO ne sont pas des familles PC). Vaut aussi pour
+   `[R33]` (Instant Gaming), qui n'était pas exposé faute de famille console déclarée.

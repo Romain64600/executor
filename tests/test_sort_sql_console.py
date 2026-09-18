@@ -36,7 +36,13 @@ def _run(tmp, rows, by_list, unrouted=()):
     d.mkdir(parents=True)
     (d / "offers.json").write_text(json.dumps({"offers": rows}), encoding="utf-8")
     (d / "sort_plan.json").write_text(
-        json.dumps({"by_list": by_list, "unrouted": list(unrouted)}), encoding="utf-8")
+        json.dumps({"by_list": by_list, "unrouted": list(unrouted),
+                    # Couverture COMPLÈTE déclarée : depuis l'audit du 2026-09-18, un plan
+                    # sans bloc `coverage` est traité comme TRONQUÉ (fail-closed) et les
+                    # propositions sont refusées. Une fixture doit dire ce qu'elle simule.
+                    "coverage": {"partial": True, "pages_fetched": 3,
+                                 "feed_last_page": 3, "truncated": False}}),
+        encoding="utf-8")
     return pathlib.Path(tmp)
 
 
@@ -273,7 +279,9 @@ class APromotedProposalDisappearsTests(unittest.TestCase):
         (run / "offers.json").write_text(json.dumps({"offers": rows}), encoding="utf-8")
         (run / "sort_plan.json").write_text(json.dumps(
             {"by_list": {"21": {"offers": [dict(r, reason="skip category: GIFT CARD")
-                                           for r in rows]}}, "unrouted": []}), encoding="utf-8")
+                                           for r in rows]}}, "unrouted": [],
+             "coverage": {"partial": True, "pages_fetched": 3, "feed_last_page": 3,
+                          "truncated": False}}), encoding="utf-8")
         return pathlib.Path(tmp)
 
     def test_promoting_an_EDITED_pattern_removes_the_original_proposal(self):

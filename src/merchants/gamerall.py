@@ -52,13 +52,17 @@ PROBE_DELAY_S = 0.6        # politesse sur un sweep en masse, comme Instant Gami
 
 # Plateforme lue en fin de titre, « (…) ». Vocabulaire OUVERT : un libellé inconnu n'est pas
 # deviné, il est refusé par son nom — c'est ce qui a évité les faux classements chez Wyrel.
+# Les JETONS RENDUS sont ceux du matcher (`_PLATFORM_WORDS`, `REGION_IDS`), jamais le nom
+# commercial : Ubisoft Connect rend UBISOFT et non « UPLAY » (audit du 2026-09-18 — le
+# fichier rendait UPLAY, absent de REGION_IDS, et 100 % des lignes Ubisoft Connect étaient
+# refusées sur un faux « platform conflict: title=UBISOFT vs offer page=UPLAY »).
 PLATFORM_TEXT: dict[str, str] = {
     "STEAM": "STEAM",
     "XBOX LIVE": "XBOX",
     "EA APP": "EA",
     "ORIGIN": "EA",
-    "UBISOFT CONNECT": "UPLAY",
-    "UPLAY": "UPLAY",
+    "UBISOFT CONNECT": "UBISOFT",
+    "UPLAY": "UBISOFT",
     "NINTENDO SWITCH": "NINTENDO",
     "PSN": "PSN",
     "MICROSOFT STORE": "MICROSOFT",
@@ -89,10 +93,10 @@ _ANY_PLATFORM_RE = re.compile(r"\(([^()]{2,24})\)")
 # et le matcher refuse ensuite si elle contredit celle du titre (son audit #1). Ordre du plus
 # long au plus court, sinon « steam » capturerait « steam-games-and-more ».
 URL_PLATFORM: list[tuple[str, str]] = [
-    ("-xbox-live", "XBOX"), ("-ubisoft-connect", "UPLAY"), ("-nintendo-switch", "NINTENDO"),
+    ("-xbox-live", "XBOX"), ("-ubisoft-connect", "UBISOFT"), ("-nintendo-switch", "NINTENDO"),
     ("-microsoft-store", "MICROSOFT"), ("-epic-games", "EPIC"), ("-battle-net", "BATTLENET"),
     ("-rockstar", "ROCKSTAR"), ("-gog-com", "GOG"), ("-ea-app", "EA"), ("-origin", "EA"),
-    ("-uplay", "UPLAY"), ("-psn", "PSN"), ("-steam", "STEAM"), ("-gog", "GOG"),
+    ("-uplay", "UBISOFT"), ("-psn", "PSN"), ("-steam", "STEAM"), ("-gog", "GOG"),
 ]
 # La valeur « Region » du JSON embarqué de la page marchand, échappée ou non.
 # Le guillemet ouvrant devant « Region » n'est pas exigé : la page porte les deux formes, et

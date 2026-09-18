@@ -50,7 +50,11 @@ function copy(text, msg) {
 
 // Une requête « sans désaccord » ne vise aucun vrai jeu et n'entre en conflit avec aucune
 // autre liste. C'est le sous-ensemble qu'on peut coller sans rien arbitrer.
-const clean = (r) => !r.measured || (!r.collateral && !r.conflict);
+// AUDIT DU 2026-09-18 : `!r.measured` rendait « propre » TOUT ce qui n'était pas mesuré —
+// donc, sans scan, la totalité des règles. Et une règle mesurée sur un scan TRONQUÉ affiche
+// un collatéral nul par ABSENCE DE DONNÉES. Dans les deux cas il n'y a pas de preuve :
+// le bouton ne doit rien promettre.
+const clean = (r) => !!r.measured && !r.truncated && !r.collateral && !r.conflict;
 
 function render() {
   const tb = $("#rules tbody");
@@ -67,6 +71,7 @@ function render() {
     ];
     const row = el("tr", { class: warn }, cells);
     const notes = [];
+    if (r.truncated) notes.push("mesuré sur un scan incomplet — ces comptes ne prouvent rien");
     if (r.flag) notes.push("⚠ " + r.flag);
     if (r.collateral) {
       notes.push("vrais jeux visés : " + (r.collateral_sample || []).join(" · "));
@@ -111,8 +116,9 @@ function renderProposals() {
                            { pattern: pat.value.trim(), target: tgt.value.trim(), run_id: RUN_ID });
       hits.textContent = d.measured ? String(d.hits) : "—";
       agree.textContent = d.measured ? String(d.agree) : "—";
-      fresh = !!d.measured && !d.collateral && !d.conflict;
+      fresh = !!d.measured && !d.truncated && !d.collateral && !d.conflict;
       msg.textContent = !d.measured ? (d.note || "non mesurable")
+        : d.truncated ? `✖ scan incomplet (${(d.coverage || {}).why || "couverture inconnue"}) — rien n'est prouvé`
         : d.collateral ? `✖ vise ${d.collateral} vrai(s) jeu(x) : ${(d.collateral_sample || []).join(" · ")}`
         : d.conflict ? `⚠ ${d.conflict} ligne(s) iraient sur une autre liste`
         : `✔ ${d.hits} ligne(s), aucun vrai jeu visé`;
@@ -141,7 +147,7 @@ function renderProposals() {
               // et l'opérateur n'a pas à deviner qu'il manque une étape.
               if (!fresh) {
                 const d = await remesure();
-                if (!d.measured || d.collateral) {
+                if (!d.measured || d.truncated || d.collateral) {
                   e.target.disabled = false;
                   return;                      // remesure() a déjà écrit pourquoi
                 }
@@ -193,11 +199,19 @@ function renderProposals() {
       el("td", { class: "rz tnum" }, String(l.id)),
       el("td", {}, l.label),
     ])));
-    $("#measured").textContent = d.measured
-      ? `Mesuré sur le scan ${d.run_id} — ${d.offers} offres. Les comptes viennent de ce scan, `
-        + `pas d'une estimation ; ils vieillissent avec lui.`
-      : "Aucun scan de tri disponible : les requêtes sont affichées SANS mesure. "
-        + "Lance un scan de tri pour savoir ce qu'elles toucheraient.";
+    const cov = d.coverage || {};
+    $("#measured").className = d.measured && !d.truncated ? "note" : "note bad";
+    $("#measured").textContent = !d.measured
+      ? "Aucun scan de tri exploitable : les requêtes sont affichées SANS mesure. "
+        + "Lance un scan de tri pour savoir ce qu'elles toucheraient."
+      : d.truncated
+        ? `⚠ SCAN INCOMPLET — ${cov.why || "couverture inconnue"}. Les comptes ci-dessous ne `
+          + `portent que sur cet échantillon, alors que l'UPDATE balaie toute la table : un `
+          + `collatéral à 0 ne prouve RIEN. Les propositions et l'arbitrage sont désactivés, `
+          + `et la promotion sera refusée. Relance un scan complet (--max-pages 800).`
+        : `Mesuré sur le scan ${d.run_id} — ${d.offers} offres, couverture complète `
+          + `(${cov.pages_fetched}/${cov.feed_last_page} pages). Les comptes viennent de ce `
+          + `scan, pas d'une estimation ; ils vieillissent avec lui.`;
     render();
     // Le bloc unique : certains préfèrent sélectionner à la main plutôt que se fier au
     // presse-papiers du navigateur, qui peut être refusé sans HTTPS ou sans geste direct.

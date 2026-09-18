@@ -46,6 +46,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from src import sort_sql_promoted  # noqa: E402 — après sys.path
+
 TABLE = "aksfeeds_offer"
 PENDING_LIST = 9          # la clause `AND listId=9` de Romain : on ne touche que le pending
 MIN_HITS = 2              # un motif vu une seule fois ne se généralise pas
@@ -53,7 +55,10 @@ CANDIDATE = "__candidat__"
 KEEP = "__garder__"
 
 # Un motif est du texte injecté dans une chaîne SQL. On n'accepte que ce vocabulaire.
-SAFE_PATTERN = re.compile(r"^[%A-Za-z0-9._/+-]+$")
+# Le motif partagé (`src/sort_sql_promoted.py`) est le bon : il EXIGE les `%` encadrants,
+# là où la copie locale s'en passait. Une copie plus lâche que l'original, c'est exactement
+# le schéma qui a produit le bug de mesure ci-dessous (audit du 2026-09-18).
+SAFE_PATTERN = sort_sql_promoted.SAFE_PATTERN
 
 
 def _classify(run_dir: Path) -> tuple[dict[str, str], dict[str, dict]]:
@@ -84,18 +89,19 @@ def _classify(run_dir: Path) -> tuple[dict[str, str], dict[str, dict]]:
     return dest, by_url
 
 
-def _slug(url: str) -> str:
-    """The comparable part of a merchant URL: path, lowercased, query dropped."""
-
-    return re.sub(r"[?#].*$", "", url or "").lower()
-
-
 def measure(pattern: str, target: str, dest: dict[str, str],
             by_url: dict[str, dict]) -> dict:
-    """What a LIKE pattern would really touch, per our router's opinion."""
+    """Ce qu'un motif LIKE toucherait vraiment, de l'avis de NOTRE routeur.
 
-    needle = pattern.strip("%").lower()
-    hits = [u for u in dest if needle in _slug(u)]
+    AUDIT DU 2026-09-18. Cette fonction cherchait une SOUS-CHAÎNE LITTÉRALE dans l'URL
+    amputée de ses paramètres. Le correctif « ``_`` est un joker en SQL, et la colonne
+    `url` contient les paramètres » n'avait été posé que sur la vue console : ce script —
+    celui que le README documente pour auditer la liste quotidienne AVANT de la coller —
+    sous-comptait toujours, dans le sens dangereux. ``--check "%digital_extras%:8"``
+    répondait « 0 ligne, ne se généralise pas » pendant que l'``UPDATE`` en déplaçait deux.
+    La mesure est désormais celle de `src/sort_sql_promoted.py`, partagée avec la vue."""
+
+    hits = [u for u in dest if sort_sql_promoted.like(pattern, u)]
     tally = Counter(dest[u] for u in hits)
     return {
         "pattern": pattern,

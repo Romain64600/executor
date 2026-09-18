@@ -28,11 +28,8 @@ from __future__ import annotations
 
 import json
 import re
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
-
-import re
 
 from src import sort_sql_promoted
 from src.aks_lists import LISTS, PENDING_LIST_ID
@@ -41,6 +38,34 @@ from src.sort_sql_rules import FLAGGED, RETIRED, RULES, SEED_PROPOSALS
 
 class IncompleteScan(RuntimeError):
     """Scan inexploitable : on ne prétend pas l'avoir mesuré."""
+
+
+def _coverage(plan: dict[str, Any]) -> dict[str, Any]:
+    """La couverture du scan, en FAIL-CLOSED : pas de bloc = tronqué.
+
+    AUDIT DU 2026-09-18. `sort_sql_payload` chargeait `sort_plan.json` sans jamais lire son
+    bloc `coverage` : un scan qui n'avait lu que 60 pages (le défaut de `08_sort_plan.py`)
+    sur les ~639 du feed était rendu « mesuré », et les compteurs `collateral` / `conflict`
+    — la SEULE garde de cette voie, puisque Romain exécute les requêtes lui-même et qu'il
+    n'y a pas de preuve après coup — étaient calculés sur cet échantillon pendant que
+    l'`UPDATE` collé dans phpMyAdmin balaie, lui, toute la table. Un collatéral nul par
+    ABSENCE DE DONNÉES se présentait comme un collatéral nul par SÛRETÉ.
+
+    La clef de décision est `truncated` et elle seule : `partial` est câblé à `True` en dur
+    (08_sort_plan.py:150) et ne discrimine rien. Un plan sans bloc `coverage` (ancien, écrit
+    à la main, autre producteur) est traité comme tronqué."""
+
+    cov = plan.get("coverage")
+    if not isinstance(cov, dict):
+        return {"truncated": True, "pages_fetched": None, "feed_last_page": None,
+                "why": "le scan ne déclare aucune couverture"}
+    out = {"truncated": bool(cov.get("truncated", True)),
+           "pages_fetched": cov.get("pages_fetched"),
+           "feed_last_page": cov.get("feed_last_page")}
+    if out["truncated"]:
+        out["why"] = (f"scan partiel — {out['pages_fetched']} page(s) lues sur "
+                      f"{out['feed_last_page']}")
+    return out
 
 
 def _latest_sort_run(runs_dir: Path, wanted: str = "") -> Path | None:
@@ -59,34 +84,14 @@ def _latest_sort_run(runs_dir: Path, wanted: str = "") -> Path | None:
     return best
 
 
-# La mesure doit reproduire le LIKE de MySQL, sinon elle ment sur la seule garde de cette voie.
-# Deux écarts trouvés par l'audit de Romain (2026-09-18) :
-#   * ``_`` est un JOKER en SQL. ``%digital_extras%`` sélectionne « digital-extras », alors que
-#     la recherche littérale annonçait 0 ligne — un compteur « collatéral » nul, et des offres
-#     déplacées quand même.
-#   * la mesure retirait les paramètres d'URL, que la colonne `url` contient. Un motif qui vise
-#     un paramètre était donc compté à zéro.
-# On compile donc le motif en expression régulière, ``%`` → ``.*`` et ``_`` → ``.``, et on la
-# confronte à l'URL ENTIÈRE, sans casse (collations ``_ci`` usuelles).
-@lru_cache(maxsize=512)
-def _like_re(pattern: str) -> "re.Pattern[str]":
-    out = []
-    for ch in pattern or "":
-        if ch == "%":
-            out.append(".*")
-        elif ch == "_":
-            out.append(".")
-        else:
-            out.append(re.escape(ch))
-    return re.compile("^" + "".join(out) + "$", re.IGNORECASE | re.DOTALL)
+# La mesure du LIKE vit dans `src/sort_sql_promoted.py`, partagée avec le stage 13 : le
+# correctif du 2026-09-18 n'avait été posé qu'ici, et le script CLI sous-comptait encore
+# (audit complet du même soir). Une seule implémentation, un seul endroit où se tromper.
+_like = sort_sql_promoted.like
 
 
-def _like(pattern: str, url: str) -> bool:
-    return bool(_like_re(pattern).match(url or ""))
-
-
-def _classify(run_dir: Path) -> tuple[dict[str, str], dict[str, dict]]:
-    """url -> destination selon NOTRE routeur ; url -> ligne du feed."""
+def _classify(run_dir: Path) -> tuple[dict[str, str], dict[str, dict], dict[str, Any]]:
+    """url -> destination selon NOTRE routeur ; url -> ligne du feed ; et le plan lu."""
 
     plan = json.loads((run_dir / "sort_plan.json").read_text(encoding="utf-8"))
     try:
@@ -111,7 +116,7 @@ def _classify(run_dir: Path) -> tuple[dict[str, str], dict[str, dict]]:
             if u:
                 dest[u] = str(list_id)
                 by_url.setdefault(u, r)
-    return dest, by_url
+    return dest, by_url, plan
 
 
 # Un motif proposé ne vient QUE du vocabulaire qui a fait décider notre routeur — jamais d'un
@@ -182,9 +187,6 @@ def _conflicted_seeds(dest: dict[str, str], by_url: dict[str, dict],
     out.sort(key=lambda m: -m["hits"])
     return out
 
-    out.sort(key=lambda m: (-m["hits"], m["pattern"]))
-    return out
-
 
 def _measure(pattern: str, target: str, dest: dict[str, str],
              by_url: dict[str, dict]) -> dict[str, Any]:
@@ -224,7 +226,7 @@ def sort_sql_payload(runs_dir: Path, wanted: str = "",
                 "note": "aucun scan de tri — les requêtes sont rendues sans mesure"}
 
     try:
-        dest, by_url = _classify(run_dir)
+        dest, by_url, plan = _classify(run_dir)
     except IncompleteScan as exc:
         for pattern, target in RULES:
             rules.append({"sql": _statement(pattern, target), "pattern": pattern,
@@ -243,16 +245,28 @@ def sort_sql_payload(runs_dir: Path, wanted: str = "",
         m = _measure(entry["pattern"], entry["target"], dest, by_url)
         m["promoted"] = {k: entry.get(k) for k in ("promoted_at", "promoted_by", "source_run")}
         rules.append(m)
-    plan = json.loads((run_dir / "sort_plan.json").read_text(encoding="utf-8"))
+    coverage = _coverage(plan)
+    if coverage["truncated"]:
+        # Une mesure faite sur un échantillon reste AFFICHÉE — Romain a besoin du texte SQL —
+        # mais elle est marquée, et le bouton « sans désaccord » l'exclut : un collatéral nul
+        # par absence de données n'est pas un collatéral nul.
+        for m in rules:
+            if m.get("measured"):
+                m["truncated"] = True
     # « connu » = déjà dans la liste, déjà promu, ou explicitement écarté / promu sous une
     # forme éditée. Sans ce dernier point, un motif resserré laisse son original revenir.
     known = ({(p, t) for p, t in RULES}
              | {(e["pattern"], e["target"]) for e in promoted}
              | (sort_sql_promoted.dismissed(repo_root) if repo_root else set()))
-    proposals = _mine(plan, dest, by_url, known)
+    # Une PROPOSITION est une règle PERMANENTE déduite d'un échantillon : sur un scan tronqué
+    # on la refuse franchement, on ne se contente pas de l'annoter. C'est exactement le piège
+    # « purs sur 10 % du feed, catastrophiques sur 100 % » que ce module cite trois fois.
+    proposals = [] if coverage["truncated"] else _mine(plan, dest, by_url, known)
     return {
         "run_id": run_dir.name,
         "measured": True,
+        "coverage": coverage,
+        "truncated": coverage["truncated"],
         "offers": len(dest),
         "rules": rules,
         # Le catalogue des listes, pour que « 21 » s'affiche « 21 — Gift cards » et qu'on
@@ -260,7 +274,7 @@ def sort_sql_payload(runs_dir: Path, wanted: str = "",
         "lists": [{"id": l["id"], "label": l["label"]} for l in LISTS],
         "pending_list": PENDING_LIST_ID,
         "proposals": proposals,
-        "conflicted": _conflicted_seeds(dest, by_url, known),
+        "conflicted": [] if coverage["truncated"] else _conflicted_seeds(dest, by_url, known),
         # Une règle retirée reste VISIBLE, avec sa raison : sinon le retrait est invisible et
         # quelqu'un la recolle depuis une vieille liste.
         "retired": [{"pattern": p, "why": w} for p, w in RETIRED.items()],
@@ -281,7 +295,9 @@ def measure_pattern(runs_dir: Path, pattern: str, target: str,
     if run_dir is None:
         return {"measured": False, "pattern": pattern, "target": str(target),
                 "note": "aucun scan de tri — impossible de mesurer"}
-    dest, by_url = _classify(run_dir)
+    dest, by_url, plan = _classify(run_dir)
     m = _measure(pattern, str(target), dest, by_url)
     m["run_id"] = run_dir.name
+    m["coverage"] = _coverage(plan)
+    m["truncated"] = m["coverage"]["truncated"]
     return m

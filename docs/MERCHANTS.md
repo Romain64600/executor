@@ -835,6 +835,18 @@ slugs sur 275) et, dans 82 % des cas, la région, dont le vocabulaire tient en t
 et porte sa région dans son JSON embarqué. Une page illisible, ou lisible sans région, est un
 REFUS : jamais de repli sur GLOBAL, la règle qu'Instant Gaming s'est donnée après son audit #2.
 
+**Deux correctifs de l'audit complet du soir même :**
+
+- **Jeton Ubisoft.** Le fichier rendait `UPLAY`, un nom commercial que `REGION_IDS` ne connaît
+  pas — tous les autres marchands normalisent en `UBISOFT`. Le matcher lisait `UBISOFT` dans le
+  titre et `UPLAY` dans l'URL : les **14 lignes Ubisoft Connect** étaient refusées sur un faux
+  « platform conflict », un refus mensonger et non lisible. Un test confronte désormais chaque
+  jeton émis par ce fichier au vocabulaire du matcher.
+- **Branche console.** Les lignes PSN / Nintendo Switch (11 lignes du corpus) n'ouvraient
+  JAMAIS la page : la branche console du matcher ne consultait pas `offer_page_resolver` et
+  tombait sur le GLOBAL implicite — l'inverse exact de la règle ci-dessus. Elle le consulte
+  maintenant, pour la RÉGION seulement (la plateforme vient du classifieur console).
+
 **Ordre de lecture : titre → URL → page**, du gratuit vers le coûteux (Romain : « mets un check
 du titre par défaut avant d'ouvrir la page, ça reste plus opti »). Sur ce marchand le titre ne
 donne rien aujourd'hui, 0 ligne sur 783 ; le crible existe pour le jour où ce feed changera
