@@ -55,10 +55,11 @@ def main() -> int:
     parser.add_argument(
         "--max-pages",
         type=int,
-        default=60,
+        default=800,
         help="Upper bound on pages fetched in a full pass (the feed self-reports "
         "its page count; the scan stops early past the end). If the feed "
-        "advertises MORE pages than this, the plan is flagged truncated.",
+        "advertises MORE pages than this, the plan is flagged truncated. "
+        "Défaut 800 = le feed entier ; baisser DÉLIBÉRÉMENT pour échantillonner.",
     )
     parser.add_argument(
         "--pages",

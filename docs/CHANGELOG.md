@@ -48,6 +48,15 @@ barre d'onglets pointant vers une autre génération passait. Table inverse bât
 vocabulaire de la MÉTA (« Xbox Series X », pas l'onglet « Xbox Series ») ; méta absente ou
 inconnue = aucun refus, seule une méta qui nomme une AUTRE famille fait échouer la cible.
 
+**La cause racine du scan tronqué : le défaut de `08_sort_plan.py` passe de 60 à 800 pages.**
+Le bouton de la console passait déjà `--max-pages 800` (le feed entier) ; la ligne de commande,
+elle, plafonnait à **60**. C'est de là que venait le scan que `/sql` servait en production au
+moment du déploiement : `tri-20260917-1426`, **60 pages lues sur 612**, 4 098 offres sur ~49 000.
+Chaque « collatéral 0 » affiché depuis était mesuré sur 8 % du feed. La page le dit maintenant en
+rouge et refuse propositions et promotions, mais laisser un défaut qui tronque silencieusement la
+SEULE garde de cette voie n'avait pas de sens : le défaut est désormais le passage complet, et
+c'est l'échantillonnage qui se demande explicitement.
+
 **Orchestration.** `[P2]` `write_marker` écrasait inconditionnellement : un `--dry-run` volait le
 marqueur d'un sweep de 30 h, qui devenait INVISIBLE dans les consoles pendant que le lancement s'y
 rouvrait. Refus `ActiveRunExists` quand un marqueur VIVANT porte un autre `run_id` ; un pid mort
