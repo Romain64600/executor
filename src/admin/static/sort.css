@@ -217,3 +217,7 @@ footer.busy{color:var(--warn);}
 .sqlblock { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
             font-size: .82rem; line-height: 1.45; white-space: pre; }
 tr.noterow td { padding-top: 0; opacity: .85; }
+
+/* Tri SQL — motif éditable avant promotion (2026-09-18). */
+input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
+#proposals .msg { display: block; font-size: .78rem; opacity: .9; margin-top: .2rem; }

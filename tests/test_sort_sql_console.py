@@ -49,13 +49,14 @@ class NothingHereTouchesADatabaseTests(unittest.TestCase):
                 self.assertNotIn(drv, VIEW)
                 self.assertNotIn(drv, JS)
 
-    def test_the_only_post_is_the_promotion_of_a_RULE(self):
-        """La page a gagné un POST le 2026-09-18 (promotion d'une proposition). Il modifie
-        une LISTE, jamais une base : aucune requête n'est exécutée d'ici, et le chemin du
-        déplacement par navigateur n'est pas rappelé."""
+    def test_the_only_posts_MEASURE_or_PROMOTE_a_rule(self):
+        """La page a gagné deux POST le 2026-09-18 : mesurer un motif édité (lecture seule)
+        et promouvoir une proposition (édition d'une LISTE). Aucun ne touche une base ;
+        aucune requête n'est exécutée d'ici, et le déplacement par navigateur n'est pas
+        rappelé."""
 
-        posts = re.findall(r'post\("([^"]+)"', JS)
-        self.assertEqual(posts, ["api/sort/sql/promote"], posts)
+        posts = sorted(set(re.findall(r'post\("([^"]+)"', JS)))
+        self.assertEqual(posts, ["api/sort/sql/measure", "api/sort/sql/promote"], posts)
         self.assertNotIn("api/sort/move", JS)
         self.assertNotIn("UPDATE `aksfeeds_offer`", JS,
                          "le SQL vient du serveur, la page ne le fabrique pas")
@@ -109,6 +110,58 @@ class PromotingAProposalTests(unittest.TestCase):
     def test_the_endpoint_exists_and_answers_400_on_a_bad_promotion(self):
         self.assertIn('if self.path.split("?")[0] == "/api/sort/sql/promote":', APP)
         self.assertIn('raise ApiError(400, "bad_promotion", str(exc))', APP)
+
+
+class EditingBeforePromotingTests(unittest.TestCase):
+    """Romain 2026-09-18 : « faudrait qu'on puisse éditer avant de promouvoir, dans le cas où
+    on a besoin d'hésiter, rajoutez un tiret ». Resserrer %puzzle% en %-puzzle-% doit être
+    possible — mais une édition rend la mesure affichée PÉRIMÉE, et la mesure est la seule
+    garde de cette voie. Elle est donc refaite des deux côtés."""
+
+    def test_the_pattern_and_the_list_are_editable(self):
+        self.assertIn('el("input", { type: "text", value: p.pattern', JS)
+        self.assertIn('value: String(p.target)', JS)
+
+    def test_an_edit_invalidates_the_displayed_measurement(self):
+        self.assertIn('pat.addEventListener("input", stale)', JS)
+        self.assertIn('tgt.addEventListener("input", stale)', JS)
+        self.assertIn('msg.textContent = "édité — mesure à refaire"', JS)
+
+    def test_promoting_a_stale_edit_is_refused_client_side(self):
+        self.assertIn('if (!fresh) { msg.textContent = "mesure d\'abord', JS)
+
+    def test_the_server_re_measures_before_accepting(self):
+        """La garde côté client ne suffit pas : éditer ne doit pas être le moyen de la
+        contourner. Le serveur refait la mesure et refuse le collatéral."""
+
+        self.assertIn('check = measure_pattern(', APP)
+        self.assertIn('"promotion_collateral"', APP)
+        block = APP[APP.index("check = measure_pattern("):]
+        self.assertLess(block.index("promotion_collateral"),
+                        block.index("sort_sql_promoted.promote("),
+                        "la vérification doit précéder l'écriture")
+
+    def test_the_measure_endpoint_is_read_only(self):
+        self.assertIn('if self.path.split("?")[0] == "/api/sort/sql/measure":', APP)
+        block = APP[APP.index('"/api/sort/sql/measure"'):]
+        block = block[:block.index('"/api/sort/sql/promote"')]
+        self.assertNotIn("promote(", block)
+        self.assertNotIn("write_text", block)
+
+    def test_a_narrowed_pattern_measures_differently(self):
+        """Le cas d'usage exact : le tiret resserre, et le compte le montre."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = [{"offer_id": "1", "name": "Vrai Jeu Puzzle", "url": "https://m.test/a-puzzle-game"},
+                    {"offer_id": "2", "name": "Pack", "url": "https://m.test/jigsaw-puzzles-pack"}]
+            runs = _run(tmp, rows, {"8": {"offers": [dict(rows[1], reason="skip category: SKIN")]}})
+            from src.admin.sort_sql_view import measure_pattern
+            large = measure_pattern(runs, "%puzzle%", "8", "scan")
+            tight = measure_pattern(runs, "%-puzzles-%", "8", "scan")
+        self.assertEqual(large["hits"], 2)
+        self.assertEqual(large["collateral"], 1, "le motif large attrape le vrai jeu")
+        self.assertEqual(tight["hits"], 1)
+        self.assertEqual(tight["collateral"], 0, "le motif resserré ne l'attrape plus")
 
 
 class ProposalsAreMinedNotInventedTests(unittest.TestCase):

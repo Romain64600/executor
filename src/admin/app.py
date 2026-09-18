@@ -37,7 +37,7 @@ from src.admin.runs import (
 )
 from src.browser_lock import lock_status
 from src import sort_sql_promoted
-from src.admin.sort_sql_view import sort_sql_payload
+from src.admin.sort_sql_view import measure_pattern, sort_sql_payload
 from src.admin.submit_manager import (
     BY_URLS_EVENTS,
     CANARY_LIMIT,
@@ -483,6 +483,13 @@ class AdminHandler(BaseHTTPRequestHandler):
 
     def _route_post(self) -> None:
 
+        if self.path.split("?")[0] == "/api/sort/sql/measure":
+            # Mesure d'un motif ÉDITÉ. Lecture seule : elle ne promeut rien.
+            body = self._json_body()
+            return self._send_json(200, measure_pattern(
+                self.state.runs_dir, str(body.get("pattern", "")),
+                str(body.get("target", "")), str(body.get("run_id") or "")))
+
         if self.path.split("?")[0] == "/api/sort/sql/promote":
             # Promotion d'un motif PROPOSÉ vers la liste. N'exécute rien : la liste sert à
             # être copiée dans phpMyAdmin. Le garde est dans sort_sql_promoted.promote —
@@ -496,6 +503,19 @@ class AdminHandler(BaseHTTPRequestHandler):
                         self.state.repo_root, pattern=str(body.get("pattern", "")),
                         target=str(body.get("target", "")))
                     return self._send_json(200, {"demoted": ok})
+                # Un motif ÉDITÉ rend la mesure affichée périmée : on la REFAIT ici, côté
+                # serveur, et on refuse s'il vise désormais de vrais jeux. Sans ce contrôle,
+                # éditer serait un moyen de contourner la seule garde qui protège cette voie.
+                check = measure_pattern(self.state.runs_dir, str(body.get("pattern", "")),
+                                        str(body.get("target", "")),
+                                        str(body.get("run_id") or ""))
+                if check.get("measured") and check.get("collateral"):
+                    raise ApiError(
+                        400, "promotion_collateral",
+                        f"ce motif vise {check['collateral']} offre(s) que le routeur tient "
+                        f"pour de vrais jeux — ex. "
+                        f"{'; '.join(check.get('collateral_sample') or [])}",
+                        detail=check)
                 entry = sort_sql_promoted.promote(
                     self.state.repo_root,
                     pattern=str(body.get("pattern", "")),

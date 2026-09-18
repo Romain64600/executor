@@ -81,28 +81,72 @@ function renderProposals() {
   const box = $("#proposals-box");
   if (!PROPOSALS.length) { box.classList.add("hidden"); return; }
   box.classList.remove("hidden");
-  $("#proposals tbody").replaceChildren(...PROPOSALS.map((p) => el("tr", {}, [
-    el("td", {}, el("code", {}, p.sql)),
-    el("td", { class: "rz" }, String(p.target)),
-    el("td", { class: "rz tnum" }, String(p.hits)),
-    el("td", { class: "rz tnum" }, String(p.agree)),
-    el("td", {}, el("button", {
-      class: "primary",
-      onclick: async (e) => {
-        e.target.disabled = true;
-        try {
-          await post("api/sort/sql/promote", {
-            pattern: p.pattern, target: p.target, run_id: RUN_ID, hits: p.hits, by: "console",
-          });
-          $("#copy-msg").textContent = `${p.pattern} promue — rechargement…`;
-          location.reload();
-        } catch (err) {
-          e.target.disabled = false;
-          $("#copy-msg").textContent = "promotion refusée : " + err.message;
-        }
-      },
-    }, "Promouvoir")),
-  ])));
+  // Le motif et la liste sont ÉDITABLES avant promotion (Romain 2026-09-18 : « dans le cas
+  // où on a besoin d'hésiter, rajouter un tiret »). Toute édition rend la mesure affichée
+  // périmée : on la refait, et le serveur la refait aussi avant d'accepter — éditer ne doit
+  // pas devenir le moyen de contourner la seule garde de cette voie.
+  $("#proposals tbody").replaceChildren(...PROPOSALS.map((p) => {
+    const pat = el("input", { type: "text", value: p.pattern, class: "pat mono", size: "26" });
+    const tgt = el("input", { type: "text", value: String(p.target), class: "rz mono", size: "4" });
+    const hits = el("td", { class: "rz tnum" }, String(p.hits));
+    const agree = el("td", { class: "rz tnum" }, String(p.agree));
+    const msg = el("span", { class: "msg" }, "");
+    let fresh = true;
+
+    const stale = () => {
+      fresh = false;
+      hits.textContent = "?"; agree.textContent = "?";
+      msg.textContent = "édité — mesure à refaire";
+    };
+    pat.addEventListener("input", stale);
+    tgt.addEventListener("input", stale);
+
+    const remesure = async () => {
+      const d = await post("api/sort/sql/measure",
+                           { pattern: pat.value.trim(), target: tgt.value.trim(), run_id: RUN_ID });
+      hits.textContent = d.measured ? String(d.hits) : "—";
+      agree.textContent = d.measured ? String(d.agree) : "—";
+      fresh = !!d.measured && !d.collateral && !d.conflict;
+      msg.textContent = !d.measured ? (d.note || "non mesurable")
+        : d.collateral ? `✖ vise ${d.collateral} vrai(s) jeu(x) : ${(d.collateral_sample || []).join(" · ")}`
+        : d.conflict ? `⚠ ${d.conflict} ligne(s) iraient sur une autre liste`
+        : `✔ ${d.hits} ligne(s), aucun vrai jeu visé`;
+      return d;
+    };
+
+    return el("tr", {}, [
+      el("td", {}, [pat, msg]),
+      el("td", { class: "rz" }, tgt),
+      hits, agree,
+      el("td", {}, [
+        el("button", {
+          onclick: async (e) => {
+            e.target.disabled = true;
+            try { await remesure(); } catch (err) { msg.textContent = "erreur : " + err.message; }
+            e.target.disabled = false;
+          },
+        }, "Mesurer"),
+        el("button", {
+          class: "primary",
+          onclick: async (e) => {
+            if (!fresh) { msg.textContent = "mesure d'abord — le motif a changé"; return; }
+            e.target.disabled = true;
+            try {
+              await post("api/sort/sql/promote", {
+                pattern: pat.value.trim(), target: tgt.value.trim(),
+                run_id: RUN_ID, hits: p.hits, by: "console",
+              });
+              $("#copy-msg").textContent = `${pat.value.trim()} promue — rechargement…`;
+              location.reload();
+            } catch (err) {
+              e.target.disabled = false;
+              msg.textContent = "refusée : " + err.message;
+            }
+          },
+        }, "Promouvoir"),
+      ]),
+    ]);
+  }));
 }
 
 (async function init() {

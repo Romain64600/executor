@@ -216,3 +216,22 @@ def sort_sql_payload(runs_dir: Path, wanted: str = "",
         "retired": [{"pattern": p, "why": w} for p, w in RETIRED.items()],
         "all_sql": "\n".join(r["sql"] for r in rules),
     }
+
+
+def measure_pattern(runs_dir: Path, pattern: str, target: str,
+                    wanted: str = "") -> dict[str, Any]:
+    """Mesure UN motif — celui que Romain vient d'éditer — contre le scan courant.
+
+    Romain 2026-09-18 : « faudrait qu'on puisse éditer avant de promouvoir, dans le cas où on
+    a besoin d'hésiter, rajouter un tiret ». Un motif édité rend la mesure affichée périmée :
+    on la refait, sinon on promeut sur la foi d'un chiffre qui parlait d'un autre motif.
+    """
+
+    run_dir = _latest_sort_run(Path(runs_dir), wanted)
+    if run_dir is None:
+        return {"measured": False, "pattern": pattern, "target": str(target),
+                "note": "aucun scan de tri — impossible de mesurer"}
+    dest, by_url = _classify(run_dir)
+    m = _measure(pattern, str(target), dest, by_url)
+    m["run_id"] = run_dir.name
+    return m

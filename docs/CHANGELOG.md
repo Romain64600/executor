@@ -3,6 +3,27 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-18 — Éditer une proposition avant de la promouvoir
+
+Romain : « faudrait qu'on puisse éditer avant de promouvoir. Dans le cas où on a besoin
+d'hésiter, rajoutez un tiret ». Le cas d'usage est exactement celui de `%puzzle%`, trop large,
+qu'un tiret resserre en `%-puzzles-%`.
+
+Le motif ET la liste sont donc éditables sur chaque ligne de proposition. Mais **une édition
+rend la mesure affichée périmée**, et cette mesure est la seule garde de toute la voie SQL —
+il n'y a plus de preuve après coup, puisque Romain exécute lui-même. Trois conséquences :
+
+* toute frappe efface les compteurs et affiche « édité — mesure à refaire » ;
+* un bouton « Mesurer » refait la mesure sur le motif édité et dit ce qu'il attrape —
+  `✔ N lignes, aucun vrai jeu visé`, ou `✖ vise N vrai(s) jeu(x)` avec leurs noms ;
+* **le serveur refait la mesure lui-même** avant d'accepter la promotion, et refuse en 400 si
+  le motif édité vise un vrai jeu. Sans ce dernier point, éditer serait précisément le moyen de
+  contourner la garde : on aurait ajouté un champ de saisie juste devant le seul contrôle.
+
+Le point d'API de mesure est en lecture seule, vérifié par un test qui interdit toute écriture
+dans ce bloc. Un test reproduit le cas d'usage de bout en bout : `%puzzle%` attrape un vrai jeu,
+`%-puzzles-%` ne l'attrape plus.
+
 ## 2026-09-18 — Mots-clés proposés par l'ANALYSE du feed : vider le pending de ce qui s'y trompe
 
 Romain : « tu peux proposer aussi des mots-clés à sortir de la liste 9 vers une autre liste. Le
