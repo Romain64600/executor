@@ -52,8 +52,49 @@ def load(repo_root: Path | str) -> list[dict[str, Any]]:
     return out
 
 
+def dismissed(repo_root: Path | str) -> set[tuple[str, str]]:
+    """Les propositions à ne plus reproposer : celles écartées, et l'ORIGINE d'une promotion.
+
+    Romain 2026-09-18 : « une fois après avoir modifié, mesuré et promu, on devrait plus avoir
+    l'entrée proposée ». Quand il resserre ``%puzzle%`` en ``%-puzzles-%`` et promeut, c'est
+    le motif ÉDITÉ qui entre dans la liste ; sans mémoire de l'origine, ``%puzzle%`` revenait
+    à chaque run comme si rien ne s'était passé. On retient donc d'où vient la promotion.
+    """
+
+    out: set[tuple[str, str]] = set()
+    for r in load(repo_root):
+        if r.get("dismissed"):
+            out.add((r["pattern"], r["target"]))
+        origin = r.get("origin")
+        if isinstance(origin, dict) and origin.get("pattern"):
+            out.add((str(origin["pattern"]), str(origin.get("target", r["target"]))))
+    return out
+
+
+def dismiss(repo_root: Path | str, *, pattern: str, target: str, by: str) -> dict[str, Any]:
+    """Écarte une proposition sans la promouvoir : elle ne sera plus reproposée."""
+
+    if not SAFE_PATTERN.match((pattern or "").strip()):
+        raise ValueError(f"motif refusé : {pattern!r}")
+    entry = {
+        "pattern": pattern.strip(), "target": str(target), "dismissed": True,
+        "promoted_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "promoted_by": str(by or "?"),
+    }
+    rows = [r for r in load(repo_root)
+            if not (r["pattern"] == entry["pattern"] and r["target"] == entry["target"])]
+    rows.append(entry)
+    path = _path(repo_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
+    return entry
+
+
 def promote(repo_root: Path | str, *, pattern: str, target: str, by: str,
-            run_id: str = "", hits: int | None = None) -> dict[str, Any]:
+            run_id: str = "", hits: int | None = None,
+            origin: dict[str, str] | None = None) -> dict[str, Any]:
     """Ajoute une règle promue. Refuse un motif malformé, une liste inconnue, un doublon.
 
     Le refus du DOUBLON compte : deux fois le même motif, c'est une requête qui ne fera rien
@@ -71,7 +112,8 @@ def promote(repo_root: Path | str, *, pattern: str, target: str, by: str,
     known = {l["id"] for l in LISTS}
     if target not in known:
         raise ValueError(f"liste inconnue : {target!r}")
-    existing = {(p, t) for p, t in RULES} | {(r["pattern"], r["target"]) for r in load(repo_root)}
+    existing = {(p, t) for p, t in RULES} | {
+        (r["pattern"], r["target"]) for r in load(repo_root) if not r.get("dismissed")}
     if (pattern, target) in existing:
         raise ValueError(f"{pattern} → {target} est déjà dans la liste")
 
@@ -82,6 +124,11 @@ def promote(repo_root: Path | str, *, pattern: str, target: str, by: str,
         "promoted_by": str(by or "?"),
         "source_run": str(run_id or ""),
         "hits_when_promoted": hits,
+        # D'où vient cette promotion : la proposition telle qu'elle était AVANT édition.
+        # Sans ça, un motif resserré laisse son original revenir à chaque run.
+        "origin": ({"pattern": str(origin.get("pattern", "")),
+                    "target": str(origin.get("target", target))}
+                   if isinstance(origin, dict) and origin.get("pattern") else None),
     }
     rows = load(repo_root)
     rows.append(entry)

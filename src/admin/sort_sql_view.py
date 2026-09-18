@@ -197,7 +197,8 @@ def sort_sql_payload(runs_dir: Path, wanted: str = "",
                 "note": "aucun scan de tri — les requêtes sont rendues sans mesure"}
 
     dest, by_url = _classify(run_dir)
-    promoted = sort_sql_promoted.load(repo_root) if repo_root else []
+    promoted = [r for r in (sort_sql_promoted.load(repo_root) if repo_root else [])
+                if not r.get("dismissed")]
     for pattern, target in RULES:
         rules.append(_measure(pattern, target, dest, by_url))
     for entry in promoted:
@@ -205,7 +206,11 @@ def sort_sql_payload(runs_dir: Path, wanted: str = "",
         m["promoted"] = {k: entry.get(k) for k in ("promoted_at", "promoted_by", "source_run")}
         rules.append(m)
     plan = json.loads((run_dir / "sort_plan.json").read_text(encoding="utf-8"))
-    known = {(p, t) for p, t in RULES} | {(e["pattern"], e["target"]) for e in promoted}
+    # « connu » = déjà dans la liste, déjà promu, ou explicitement écarté / promu sous une
+    # forme éditée. Sans ce dernier point, un motif resserré laisse son original revenir.
+    known = ({(p, t) for p, t in RULES}
+             | {(e["pattern"], e["target"]) for e in promoted}
+             | (sort_sql_promoted.dismissed(repo_root) if repo_root else set()))
     proposals = _mine(plan, dest, by_url, known)
     return {
         "run_id": run_dir.name,

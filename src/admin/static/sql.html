@@ -36,16 +36,15 @@
   <textarea id="all-sql" class="sqlblock" rows="14" readonly spellcheck="false"></textarea>
 </details>
 
-<aside id="lists-box">
-  <h2>Listes AKS</h2>
-  <p class="note">La file d'attente est la liste <strong id="pending-id">9</strong>. Toute
-    requête déplace des lignes <em>depuis</em> celle-ci vers l'une des suivantes.</p>
+<details id="lists-box" open>
+  <summary>Listes AKS — id &rarr; nom</summary>
+  <p class="note">File d'attente : liste <strong id="pending-id">9</strong>.</p>
   <table id="lists" class="rules">
-    <thead><tr><th class="rz">id</th><th>nom</th></tr></thead>
     <tbody></tbody>
   </table>
-</aside>
+</details>
 
+<div class="tablewrap">
 <table id="rules" class="rules">
   <thead><tr>
     <th>Requête</th><th class="rz">liste</th><th class="rz" title="lignes du scan dont l'URL matche">vise</th>
@@ -56,6 +55,7 @@
   </tr></thead>
   <tbody></tbody>
 </table>
+</div>
 
 <section id="proposals-box" class="hidden">
   <h2>Propositions — mesurées, à promouvoir si tu les valides</h2>

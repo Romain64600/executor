@@ -498,6 +498,12 @@ class AdminHandler(BaseHTTPRequestHandler):
             body = self._json_body()
             action = str(body.get("action") or "promote").strip()
             try:
+                if action == "dismiss":
+                    entry = sort_sql_promoted.dismiss(
+                        self.state.repo_root, pattern=str(body.get("pattern", "")),
+                        target=str(body.get("target", "")),
+                        by=str(body.get("by") or "console"))
+                    return self._send_json(200, {"dismissed": entry})
                 if action == "demote":
                     ok = sort_sql_promoted.demote(
                         self.state.repo_root, pattern=str(body.get("pattern", "")),
@@ -522,7 +528,8 @@ class AdminHandler(BaseHTTPRequestHandler):
                     target=str(body.get("target", "")),
                     by=str(body.get("by") or "console"),
                     run_id=str(body.get("run_id") or ""),
-                    hits=body.get("hits") if isinstance(body.get("hits"), int) else None)
+                    hits=body.get("hits") if isinstance(body.get("hits"), int) else None,
+                    origin=body.get("origin") if isinstance(body.get("origin"), dict) else None)
             except ValueError as exc:
                 raise ApiError(400, "bad_promotion", str(exc))
             return self._send_json(200, {"promoted": entry})

@@ -3,6 +3,42 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-18 — Promouvoir un motif édité : la proposition d'origine disparaît enfin
+
+Deux reproches de Romain, tous deux justes, et de la même famille : j'avais livré une
+fonctionnalité dont il manquait la moitié.
+
+**1. « J'ai essayé de modifier le masque, je reçois ce message ».** Il éditait le motif puis
+cliquait Promouvoir, et tombait sur « mesure d'abord — le motif a changé ». Un message au lieu
+d'une action, pour une étape qu'il ne pouvait pas deviner. La promotion **remesure d'elle-même**
+désormais, et ne s'arrête que si le motif édité vise de vrais jeux — auquel cas elle dit
+lesquels. Rien n'est contourné : le serveur refait la mesure de son côté avant d'écrire.
+
+**2. « Une fois après avoir modifié, mesuré et promu, on devrait plus avoir l'entrée
+proposée ».** Exact, et le mécanisme était cassé dès qu'on éditait : resserrer `%bigo-live%` en
+`%-bigo-live-%` promeut le motif ÉDITÉ, si bien que l'ORIGINAL n'était dans aucune liste connue
+et revenait à chaque run. Une promotion retient maintenant **d'où elle vient** (`origin`), et
+l'origine est exclue des propositions futures. Un test le prouve de bout en bout.
+
+**Ajouté dans la foulée : « Écarter ».** Une proposition qu'on ne veut ni promouvoir ni revoir
+se range d'un clic. Écarter n'est pas promouvoir : la ligne est mémorisée comme traitée mais
+n'entre pas dans la liste des requêtes — vérifié par un test, parce que confondre les deux
+ajouterait silencieusement un `UPDATE` que personne n'a voulu.
+
+## 2026-09-18 — L'aparté des listes resserré : il empiétait sur la page
+
+Romain : « elle est trop large, ça empiète sur mon admin ». Ma première version faisait 22 rem
+et flottait devant des tableaux larges — or **un tableau ne respecte pas un flottant, il passe
+dessous**. Le panneau recouvrait donc les requêtes au lieu de se ranger à côté.
+
+Deux corrections, pas une : la largeur tombe à 12 rem et le panneau devient repliable
+(`<details>`), et surtout chaque tableau large vit désormais dans un conteneur qui **défile
+horizontalement** au lieu de glisser sous l'aparté. La seconde est la vraie : réduire la
+largeur sans elle n'aurait fait que déplacer le recouvrement.
+
+Deux tests le verrouillent — une largeur supérieure à 14 rem échoue, et le conteneur défilant
+doit exister.
+
 ## 2026-09-18 — Le catalogue des listes, à droite et toujours à vue
 
 Romain : « ajoute aussi le nom des listes à droite et leurs IDs », puis « le nom des listes à

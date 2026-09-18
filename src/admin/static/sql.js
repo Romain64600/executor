@@ -134,12 +134,23 @@ function renderProposals() {
         el("button", {
           class: "primary",
           onclick: async (e) => {
-            if (!fresh) { msg.textContent = "mesure d'abord — le motif a changé"; return; }
             e.target.disabled = true;
             try {
+              // Si le motif a été édité, on REMESURE tout seul au lieu d'exiger un clic de
+              // plus : le serveur refera la mesure de son côté, donc rien n'est contourné,
+              // et l'opérateur n'a pas à deviner qu'il manque une étape.
+              if (!fresh) {
+                const d = await remesure();
+                if (!d.measured || d.collateral) {
+                  e.target.disabled = false;
+                  return;                      // remesure() a déjà écrit pourquoi
+                }
+              }
               await post("api/sort/sql/promote", {
                 pattern: pat.value.trim(), target: tgt.value.trim(),
                 run_id: RUN_ID, hits: p.hits, by: "console",
+                // d'où elle vient : sans ça, un motif resserré laisse son original revenir
+                origin: { pattern: p.pattern, target: String(p.target) },
               });
               $("#copy-msg").textContent = `${pat.value.trim()} promue — rechargement…`;
               location.reload();
@@ -149,6 +160,21 @@ function renderProposals() {
             }
           },
         }, "Promouvoir"),
+        el("button", {
+          title: "Ne plus proposer ce motif",
+          onclick: async (e) => {
+            e.target.disabled = true;
+            try {
+              await post("api/sort/sql/promote", {
+                action: "dismiss", pattern: p.pattern, target: String(p.target), by: "console",
+              });
+              location.reload();
+            } catch (err) {
+              e.target.disabled = false;
+              msg.textContent = "refus d'écarter : " + err.message;
+            }
+          },
+        }, "Écarter"),
       ]),
     ]);
   }));

@@ -223,13 +223,19 @@ input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-s
 #proposals .msg { display: block; font-size: .78rem; opacity: .9; margin-top: .2rem; }
 
 /* Tri SQL — catalogue des listes en aparté, à droite (2026-09-18). */
-/* « à droite, flottant, toujours à vue » : il suit le défilement et se replie tout seul
-   sur un écran étroit, où un panneau collant mangerait la page. */
-#lists-box { float: right; position: sticky; top: 1rem; max-height: 80vh; overflow-y: auto;
-             max-width: 22rem; margin: 0 0 1rem 1.5rem; background: var(--bg, inherit);
-             border: 1px solid var(--line, #8883); border-radius: .5rem; padding: .6rem .8rem; }
-#lists-box h2 { margin: 0 0 .3rem; font-size: 1rem; }
-#lists td { padding: .12rem .5rem; }
+/* « à droite, flottant, toujours à vue » — mais ÉTROIT : la première version faisait 22 rem
+   et, flottante devant des tableaux larges, elle empiétait sur la page (Romain : « elle est
+   trop large, ça empiète sur mon admin »). Deux corrections : elle est réduite à 12 rem et
+   repliable, et chaque tableau large vit dans un conteneur qui DÉFILE au lieu de glisser
+   sous l'aparté — un tableau ne respecte pas un flottant, il passe dessous. */
+#lists-box { float: right; position: sticky; top: 1rem; max-height: 78vh; overflow-y: auto;
+             width: 12rem; margin: 0 0 .8rem 1rem; background: var(--bg, inherit);
+             border: 1px solid var(--line, #8883); border-radius: .5rem;
+             padding: .4rem .6rem; font-size: .8rem; }
+#lists-box summary { cursor: pointer; font-weight: 600; }
+#lists-box .note { margin: .3rem 0; font-size: .75rem; }
+#lists td { padding: .1rem .35rem; }
+.tablewrap { overflow-x: auto; }
 @media (max-width: 70rem) {
   #lists-box { float: none; position: static; max-height: none; max-width: none;
                margin-left: 0; }

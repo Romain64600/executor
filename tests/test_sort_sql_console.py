@@ -159,6 +159,26 @@ class ListNamesAreShownTests(unittest.TestCase):
         self.assertIn("top:", block)
         self.assertIn("overflow-y: auto", block, "un catalogue long doit défiler seul")
 
+    def test_the_panel_stays_NARROW_and_can_be_folded(self):
+        """Romain : « elle est trop large, ça empiète sur mon admin ». Un aparté flottant
+        large devant des tableaux larges recouvre la page — un tableau ne respecte pas un
+        flottant, il passe dessous."""
+
+        css = (ROOT / "src" / "admin" / "static" / "sort.css").read_text(encoding="utf-8")
+        block = css[css.index("#lists-box {"):]
+        block = block[:block.index("}")]
+        width = [l for l in block.splitlines() if "width:" in l and "max-height" not in l]
+        self.assertTrue(width, block)
+        rem = float(width[0].split("width:")[1].split("rem")[0].strip())
+        self.assertLessEqual(rem, 14, f"aparté trop large : {rem} rem")
+        self.assertIn("<details id=\"lists-box\"", HTML, "il doit pouvoir être replié")
+        self.assertIn("<summary>", HTML)
+
+    def test_wide_tables_scroll_instead_of_sliding_under_the_panel(self):
+        self.assertIn('<div class="tablewrap">', HTML)
+        css = (ROOT / "src" / "admin" / "static" / "sort.css").read_text(encoding="utf-8")
+        self.assertIn(".tablewrap { overflow-x: auto; }", css)
+
     def test_every_target_used_by_a_rule_is_a_known_list(self):
         """Une règle qui vise une liste absente du catalogue serait illisible."""
 
@@ -185,8 +205,28 @@ class EditingBeforePromotingTests(unittest.TestCase):
         self.assertIn('tgt.addEventListener("input", stale)', JS)
         self.assertIn('msg.textContent = "édité — mesure à refaire"', JS)
 
-    def test_promoting_a_stale_edit_is_refused_client_side(self):
-        self.assertIn('if (!fresh) { msg.textContent = "mesure d\'abord', JS)
+    def test_promoting_a_stale_edit_RE_MEASURES_instead_of_refusing(self):
+        """Première version : « mesure d'abord ». Romain a édité, cliqué Promouvoir, et s'est
+        heurté à un message au lieu d'une action — il manquait une étape qu'il ne pouvait pas
+        deviner. La promotion remesure donc elle-même, et s'arrête si le motif édité vise de
+        vrais jeux. Rien n'est contourné : le serveur remesure de son côté."""
+
+        block = JS[JS.index('}, "Promouvoir")') - 1600:JS.index('}, "Promouvoir")')]
+        self.assertIn("if (!fresh) {", block)
+        self.assertIn("await remesure()", block)
+        self.assertIn("d.collateral", block)
+
+    def test_a_promotion_records_WHERE_IT_CAME_FROM(self):
+        """Romain : « une fois après avoir modifié, mesuré et promu, on devrait plus avoir
+        l'entrée proposée ». Un motif resserré entre sous sa forme éditée ; sans mémoire de
+        l'original, la proposition d'origine revenait à chaque run."""
+
+        self.assertIn("origin: { pattern: p.pattern, target: String(p.target) }", JS)
+        self.assertIn('origin=body.get("origin")', APP)
+
+    def test_a_proposal_can_be_dismissed_without_being_promoted(self):
+        self.assertIn('action: "dismiss"', JS)
+        self.assertIn('if action == "dismiss":', APP)
 
     def test_the_server_re_measures_before_accepting(self):
         """La garde côté client ne suffit pas : éditer ne doit pas être le moyen de la
@@ -220,6 +260,54 @@ class EditingBeforePromotingTests(unittest.TestCase):
         self.assertEqual(large["collateral"], 1, "le motif large attrape le vrai jeu")
         self.assertEqual(tight["hits"], 1)
         self.assertEqual(tight["collateral"], 0, "le motif resserré ne l'attrape plus")
+
+
+class APromotedProposalDisappearsTests(unittest.TestCase):
+    """Le bout-en-bout du reproche de Romain, sur un motif ÉDITÉ."""
+
+    def _scan(self, tmp):
+        run = pathlib.Path(tmp) / "runs" / "scan"
+        run.mkdir(parents=True)
+        rows = [{"offer_id": str(i), "name": f"Carte {i}",
+                 "url": f"https://m.test/a-{i}-bigo-live"} for i in range(3)]
+        (run / "offers.json").write_text(json.dumps({"offers": rows}), encoding="utf-8")
+        (run / "sort_plan.json").write_text(json.dumps(
+            {"by_list": {"21": {"offers": [dict(r, reason="skip category: GIFT CARD")
+                                           for r in rows]}}, "unrouted": []}), encoding="utf-8")
+        return pathlib.Path(tmp)
+
+    def test_promoting_an_EDITED_pattern_removes_the_original_proposal(self):
+        from src import sort_sql_promoted
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._scan(tmp)
+            before = {p["pattern"] for p in
+                      sort_sql_payload(root / "runs", "scan", repo_root=root)["proposals"]}
+            self.assertIn("%bigo-live%", before)
+            sort_sql_promoted.promote(root, pattern="%-bigo-live-%", target="21", by="R",
+                                      origin={"pattern": "%bigo-live%", "target": "21"})
+            after = {p["pattern"] for p in
+                     sort_sql_payload(root / "runs", "scan", repo_root=root)["proposals"]}
+        self.assertNotIn("%bigo-live%", after, "la proposition d'origine est revenue")
+        self.assertNotIn("%-bigo-live-%", after, "la promue ne se repropose pas non plus")
+
+    def test_a_dismissed_proposal_never_comes_back(self):
+        from src import sort_sql_promoted
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._scan(tmp)
+            sort_sql_promoted.dismiss(root, pattern="%bigo-live%", target="21", by="R")
+            after = {p["pattern"] for p in
+                     sort_sql_payload(root / "runs", "scan", repo_root=root)["proposals"]}
+        self.assertNotIn("%bigo-live%", after)
+
+    def test_a_dismissed_pattern_is_not_served_as_a_RULE(self):
+        """Écarter n'est pas promouvoir : la ligne ne doit pas se retrouver dans la liste."""
+
+        from src import sort_sql_promoted
+        with tempfile.TemporaryDirectory() as tmp:
+            root = self._scan(tmp)
+            sort_sql_promoted.dismiss(root, pattern="%bigo-live%", target="21", by="R")
+            payload = sort_sql_payload(root / "runs", "scan", repo_root=root)
+        self.assertNotIn("%bigo-live%", [r["pattern"] for r in payload["rules"]])
 
 
 class ProposalsAreMinedNotInventedTests(unittest.TestCase):
