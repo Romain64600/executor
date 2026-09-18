@@ -112,3 +112,140 @@ class AMerchantFileNeverInventsAPlatformToken(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ACountryNameInTheGameTitleIsNotARegionLock(unittest.TestCase):
+    """`src/matcher.py:930` — le balayage s'appliquait au titre ENTIER : tout jeu dont le NOM
+    contient China / India / Japan / Ukraine / Poland était refusé « forbidden region » puis
+    routé vers la Blacklist(8), alors qu'il déclare GLOBAL dans son titre ET dans son URL.
+
+    Règle retenue : la région est la DERNIÈRE chose déclarée. Un nom de pays suivi d'un
+    marqueur vendable appartient au nom du produit."""
+
+    ENTRENT = [
+        ("Assassin's Creed Chronicles: China (PC) - Steam Key - GLOBAL",
+         "https://www.g2a.com/assassins-creed-chronicles-china-steam-key-global-i1"),
+        ("Crusader Kings II: Rajas of India - Steam Key - GLOBAL",
+         "https://www.g2a.com/crusader-kings-ii-rajas-of-india-steam-key-global-i2"),
+        ("Cities: Skylines - Content Creator Pack: Modern Japan Steam Key GLOBAL",
+         "https://www.g2a.com/cities-skylines-modern-japan-steam-key-global-i3"),
+        ("Ukraine War Stories - Steam Key - GLOBAL",
+         "https://www.g2a.com/ukraine-war-stories-steam-key-global-i4"),
+        ("Civilization VI - Poland Civilization and Scenario Pack Steam Key GLOBAL",
+         "https://www.g2a.com/civ-vi-poland-steam-key-global-i5"),
+    ]
+    VERROUS = [
+        ("Cyberpunk 2077 Steam Key BRAZIL", "https://www.g2a.com/cyberpunk-2077-steam-key-brazil-i6"),
+        # Le cas qui protège le P1 du 2026-09-06 : le verrou vient APRÈS le mot vendable.
+        ("Cyberpunk 2077 Global Steam Key BRAZIL",
+         "https://www.g2a.com/cyberpunk-2077-global-steam-key-brazil-i7"),
+        ("Hades RUSSIA PC Steam CD Key", "https://www.kinguin.net/x/hades-pc-steam-cd-key-russia"),
+        ("Hades Steam Key RUSSIA", "https://www.eneba.com/steam-hades-steam-key-russia"),
+    ]
+
+    def test_a_country_in_the_product_name_does_not_blacklist_a_global_key(self):
+        from src.matcher import precheck_skip
+        for name, url in self.ENTRENT:
+            with self.subTest(name=name[:40]):
+                offer = NormalizedOffer(offer_id="1", name=name, url=url, merchant="G2A")
+                self.assertIsNone(precheck_skip(offer))
+
+    def test_a_real_region_lock_is_still_refused(self):
+        from src.matcher import precheck_skip
+        for name, url in self.VERROUS:
+            with self.subTest(name=name[:40]):
+                offer = NormalizedOffer(offer_id="1", name=name, url=url, merchant="G2A")
+                reason = precheck_skip(offer)
+                self.assertIsNotNone(reason, "un verrou réel doit rester refusé")
+                self.assertIn("forbidden region", reason)
+
+    def test_the_slug_keeps_the_country_when_it_is_part_of_the_name(self):
+        """Troisième site du même défaut : le strip itératif amputait « Rajas of India » en
+        « Rajas of » une fois GLOBAL / KEY / STEAM retirés — mauvaise page sondée."""
+        from src.matcher import cleaned_title
+        self.assertEqual(cleaned_title("Crusader Kings II: Rajas of India - Steam Key - GLOBAL"),
+                         "Crusader Kings II: Rajas of India")
+        self.assertEqual(cleaned_title("Cities: Skylines - Content Creator Pack: Modern Japan "
+                                       "Steam Key GLOBAL"),
+                         "Cities: Skylines - Content Creator Pack: Modern Japan")
+        # Mais un vrai verrou est toujours retiré du slug.
+        self.assertEqual(cleaned_title("Hades Steam Key RUSSIA"), "Hades")
+
+
+class ApproveMustBeAJsonBoolean(unittest.TestCase):
+    """`src/validation.py:146` — « if not entry.get("approve") » lisait la VÉRITÉ PYTHON :
+    la chaîne "false" approuve. Et `verify_approved_against_source` re-dérivant avec le même
+    prédicat, la re-vérification au submit CONFIRMAIT l'approbation au lieu de la refuser."""
+
+    def _files(self, approve):
+        from src.validation import candidate_fingerprint
+        cand = {"offer": {"offer_id": "1", "name": "Hades", "url": "https://m/x",
+                          "merchant": "Kinguin"},
+                "aks_product_id": "1", "aks_url": "https://aks/x", "aks_name": "Hades",
+                "platform": "STEAM", "region": {"label": "GLOBAL", "id": "2", "implicit": False},
+                "edition": {"label": "Standard", "id": "1"}}
+        fp = candidate_fingerprint(cand)
+        validation = {"run_id": "r1", "validated_by": "romain", "validated_at": "2026-09-18",
+                      "candidates": [{"fingerprint": fp, "approve": approve}]}
+        return [cand], validation
+
+    def test_the_string_false_no_longer_approves(self):
+        from src.validation import ValidationError, load_validation
+        cands, validation = self._files("false")
+        with self.assertRaises(ValidationError) as ctx:
+            load_validation(validation, cands, expected_run_id="r1")
+        self.assertIn("booléen", str(ctx.exception))
+
+    def test_a_real_boolean_still_works_in_both_directions(self):
+        from src.validation import load_validation
+        cands, validation = self._files(True)
+        self.assertEqual(len(load_validation(validation, cands, expected_run_id="r1")), 1)
+        cands, validation = self._files(False)
+        self.assertEqual(load_validation(validation, cands, expected_run_id="r1"), [])
+
+
+class RegionBucketsArePerPlatformInBothDirections(unittest.TestCase):
+    """`src/admin/validation_io.py:177` — la garde « les seaux de région sont PAR PLATEFORME »
+    n'existait que dans le sens « je change la plateforme ». Changer la SEULE région acceptait
+    un seau d'une autre famille, et le `<select>` de la console présente toutes les options de
+    toutes les plateformes sans filtrage."""
+
+    CATALOG = {"regions": [{"key": "2", "text": "Steam (2)"},
+                           {"key": "9", "text": "Steam EU (9)"},
+                           {"key": "88ps5h", "text": "PS5 (88ps5h)"}],
+               "editions": [{"key": "1", "text": "Standard"}]}
+
+    def _candidate(self):
+        return {"offer": {"offer_id": "1", "name": "Hades", "url": "https://m/x",
+                          "merchant": "Kinguin"},
+                "aks_product_id": "1", "aks_url": "https://aks/x", "aks_name": "Hades",
+                "platform": "STEAM", "region": {"label": "GLOBAL", "id": "2", "implicit": False},
+                "edition": {"label": "Standard", "id": "1"}}
+
+    def test_a_foreign_bucket_is_refused_when_only_the_region_changes(self):
+        from src.admin.validation_io import ValidationIOError, _apply_override
+        cand = self._candidate()
+        with self.assertRaises(ValidationIOError) as ctx:
+            _apply_override(cand, {"region_id": "88ps5h"}, self.CATALOG,
+                            by="romain", now="2026-09-18T00:00:00Z")
+        self.assertEqual(ctx.exception.code, "platform_region_mismatch")
+
+    def test_a_bucket_of_the_right_platform_still_passes(self):
+        from src.admin.validation_io import _apply_override
+        cand = self._candidate()
+        _apply_override(cand, {"region_id": "9"}, self.CATALOG,
+                        by="romain", now="2026-09-18T00:00:00Z")
+        self.assertEqual(cand["region"]["id"], "9")
+
+
+class TheLanguageRegionMirrorCannotDrift(unittest.TestCase):
+    """`src/matcher.py:617` — le commentaire revendique de MIROITER la décision P2-6b (« the
+    SAME trailing code a forbidden region »), mais TH était verrou dans l'URL et langue dans
+    le titre. Verrouillé ici pour que le miroir ne puisse plus diverger."""
+
+    def test_every_url_lock_code_that_is_also_a_language_is_protected(self):
+        import src.matcher as M
+        codes = {c.upper() for c, _ in M._URL_FORBIDDEN_CODES}
+        drift = (M.LANGUAGE_TOKENS & codes) - M._REGION_LOCK_LANG_CODES
+        self.assertEqual(drift, set(),
+                         f"codes verrous dans l'URL mais avalés comme langue dans le titre : {drift}")

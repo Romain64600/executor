@@ -3,6 +3,37 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-18 (nuit) — Audit complet, lot 2/4 : la Blacklist qui avalait de vrais jeux
+
+**`[P1]` Un nom de pays DANS LE NOM DU JEU était lu comme un verrou de région.** Le balayage
+s'appliquait au texte entier — titre ET chemin d'URL — sans exiger de créneau. Cinq lignes G2A
+réelles, toutes GLOBAL dans le titre et dans l'URL, partaient en **Blacklist (8)** :
+« Assassin's Creed Chronicles: China », « Crusader Kings II: Rajas of India », « Cities:
+Skylines … Modern Japan », « Ukraine War Stories », « Civilization VI - Poland Civilization and
+Scenario Pack ». Dans un sweep `--triage --move-execute` personne ne relit la page et
+`is_blacklist_label` fait sauter la vérification présent-sur-cible : des jeux vendables sortaient
+physiquement du feed, sans revue. Règle retenue : **la région est la DERNIÈRE chose déclarée** —
+un nom de pays suivi d'un marqueur vendable (GLOBAL / EU / US / UK…) est du nom de produit.
+« Cyberpunk 2077 Global Steam Key BRAZIL » reste refusé, le verrou venant APRÈS le mot vendable :
+le `[P1]` du 2026-09-06 n'est pas rouvert. Le troisième site du même défaut est corrigé avec :
+le strip itératif amputait « Rajas of India » en « Rajas of » et sondait la mauvaise page AKS.
+
+**`[P1]` `approve` doit être un booléen JSON.** La décision se lisait en vérité Python : la
+chaîne `"false"` approuvait l'offre, et `verify_approved_against_source` re-dérivant avec le
+même prédicat, la re-vérification au submit la CONFIRMAIT. Une valeur non booléenne lève
+désormais et le fichier est refusé en entier.
+
+**`[P1]` Les seaux de région sont par plateforme dans les DEUX sens.** La surcharge opérateur ne
+validait un `region_id` que contre le catalogue de session global : un clic sur « PS5 (88ps5h) »
+était accepté sur un candidat STEAM, et rien en aval ne rattrapait. La garde symétrique existait
+déjà pour le changement de plateforme. Refus `platform_region_mismatch` quand la région seule
+change vers un seau prouvablement étranger ; re-choisir les deux ensemble reste accepté.
+
+**`[P2]` `TH` rejoint `_REGION_LOCK_LANG_CODES`.** Le commentaire revendiquait de miroiter la
+décision P2-6b, mais `("th", "THAILAND")` était dans `_URL_FORBIDDEN_CODES` depuis le 06/09 sans
+suivre : le même code était verrou dans l'URL et langue dans le titre. L'invariant est maintenant
+verrouillé par test. DE et ID ne sont pas ajoutés — ce sont des décisions prises, pas des oublis.
+
 ## 2026-09-18 (nuit) — Audit complet, lot 1/4 : le frein d'urgence, la porte DLC, la mesure SQL
 
 Romain : « tout » — les 36 constats de [`AUDIT_2026-09-18_complet.md`](AUDIT_2026-09-18_complet.md)

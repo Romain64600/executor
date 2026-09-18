@@ -174,6 +174,33 @@ def _apply_override(
                 f"region id {changes['region_id']!r} is not in the session catalog",
                 http_status=400,
             )
+        # AUDIT DU 2026-09-18. L'id région n'était validé que contre le catalogue de session
+        # GLOBAL — les ~867 options de TOUTES les plateformes, que le `<select>` de la console
+        # présente d'ailleurs sans le moindre filtrage (app.js). Un mauvais clic sur
+        # « PS5 (88ps5h) » était donc ACCEPTÉ sur un candidat STEAM, et aucun étage en aval ne
+        # rattrapait : ni validation.py, ni candidate_contract, ni le submitter ne consultent
+        # REGION_IDS. La branche « changement de plateforme » juste en dessous refuse pourtant
+        # exactement cette incohérence, en la nommant. La garde est maintenant SYMÉTRIQUE : les
+        # ids région sont PAR PLATEFORME, dans les deux sens.
+        # La garde ne joue QUE si la plateforme ne change pas. Quand l'opérateur re-choisit
+        # les DEUX ensemble, c'est une décision explicite et l'id pické fait autorité pour
+        # l'écriture — c'est la position déjà prise par la branche plateforme ci-dessous et
+        # par test_platform_plus_region_repick_together_succeeds ; on ne la retourne pas.
+        platform_eff = str(candidate["platform"])
+        valid_ids = {str(v) for v in REGION_IDS.get(platform_eff, {}).values()}
+        # Un id que NOTRE table ne rattache à aucune famille n'est pas réfutable : il peut
+        # venir d'un seau que nous ne modélisons pas. On ne refuse que ce qu'on peut PROUVER
+        # étranger, c'est-à-dire un id qui appartient à une AUTRE famille.
+        foreign = {str(v) for fam, ids in REGION_IDS.items() if fam != platform_eff
+                   for v in ids.values()} - valid_ids
+        if "platform" not in changes and valid_ids and str(entry["key"]) in foreign:
+            raise ValidationIOError(
+                "platform_region_mismatch",
+                f"l'id région {str(entry['key'])!r} ({entry['text']}) n'appartient pas à la "
+                f"plateforme {platform_eff!r} — les seaux de région sont PAR PLATEFORME, "
+                "l'écran et l'écriture diraient deux choses différentes",
+                http_status=400,
+            )
         candidate["region"] = {"label": entry["text"], "id": entry["key"], "implicit": False}
     if "edition_id" in changes:
         entry = _catalog_entry(catalog["editions"], changes["edition_id"])

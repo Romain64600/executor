@@ -621,7 +621,16 @@ LANGUAGE_TOKENS = frozenset({
 # that safe-auto auto-approves. Kept as a significant extra → the "different/expanded
 # product — extra words" fail-closed skip (doubt → skip), mirroring the P2-6b URL
 # decision that already rules the SAME trailing code a forbidden region.
-_REGION_LOCK_LANG_CODES = frozenset({"RU", "TR", "AR", "PL", "UA"})
+# AUDIT DU 2026-09-18 : TH manquait. Le commentaire ci-dessus revendique de MIROITER la
+# décision P2-6b (« the SAME trailing code a forbidden region ») — or `_URL_FORBIDDEN_CODES`
+# porte ("th", "THAILAND") depuis le 2026-09-06 sans que celui-ci suive : le même code
+# était verrou dans l'URL et langue dans le titre. Le miroir est désormais VÉRIFIÉ par
+# test (LANGUAGE_TOKENS ∩ codes URL ⊆ cet ensemble), pour qu'il ne puisse plus dériver
+# quand on ajoutera un code. Les autres codes de langue qui nomment aussi un pays (DE, IT,
+# ES…) ne sont PAS ajoutés : le dépôt porte le faux positif documenté « (Without DE) »
+# (docs/MERCHANTS.md) et « id » a été écarté comme trop collisionnel — ce sont des
+# décisions prises, pas des oublis.
+_REGION_LOCK_LANG_CODES = frozenset({"RU", "TR", "AR", "PL", "TH", "UA"})
 PLATFORM_LABEL = {
     "STEAM": "Steam", "GOG": "GOG", "EPIC": "Epic", "EA": "EA App",
     "UBISOFT": "Ubisoft", "BATTLENET": "Battle.net", "PUBLISHER": "Publisher",
@@ -883,6 +892,51 @@ def dangerous_qualifier(merchant_title: str, aks_name: str, *, dlc_page: bool = 
     return None
 
 
+# Marqueurs de région VENDABLE, tels qu'un marchand les écrit dans son créneau. Servent au
+# départage ci-dessous ; volontairement courts — on ne cherche pas à LIRE la région ici,
+# seulement à savoir qu'une région vendable a été déclarée APRÈS un nom de pays.
+_SELLABLE_REGION_WORDS = (
+    "GLOBAL", "WORLDWIDE", "WW", "EUROPE", "EU", "USA", "US", "UK",
+    "UNITED STATES", "UNITED KINGDOM",
+)
+
+
+def _forbidden_region_in(padded: str) -> str | None:
+    """Le nom de pays qui VERROUILLE ce texte, ou None.
+
+    AUDIT DU 2026-09-18 (P1). Le balayage était ``if f" {region} " in padded`` sur le texte
+    ENTIER : tout jeu dont le NOM contient China / India / Japan / Ukraine / Poland… était
+    refusé « forbidden region: <PAYS> », puis routé par ``suggest_target_list`` vers la
+    Blacklist (8). Reproduit sur cinq lignes G2A réelles, toutes GLOBAL dans le titre ET dans
+    l'URL : « Assassin's Creed Chronicles: China … GLOBAL », « Crusader Kings II: Rajas of
+    India … GLOBAL », « Cities: Skylines … Modern Japan … GLOBAL », « Ukraine War Stories …
+    GLOBAL », « Civilization VI - Poland Civilization and Scenario Pack … GLOBAL ». Dans un
+    sweep ``--triage --move-execute``, chaque page s'auto-autorise ([R36], §14) et
+    ``is_blacklist_label`` fait sauter la vérification présent-sur-cible : des jeux vendables
+    sortaient physiquement du feed de travail vers la Blacklist, sans revue et sans preuve.
+
+    Le départage est celui que les marchands écrivent réellement : **la région est la DERNIÈRE
+    chose déclarée**. Un nom de pays suivi, plus loin dans le même texte, d'un marqueur
+    vendable est donc du NOM DE PRODUIT. Ce qui reste refusé, et doit l'être : « … Steam Key
+    BRAZIL », « Hades RUSSIA PC Steam CD Key », et — c'est le point qui protège le P1 du
+    2026-09-06 — « Cyberpunk 2077 Global Steam Key BRAZIL », où le verrou vient APRÈS le mot
+    vendable. On ne retire AUCUN pays de FORBIDDEN_REGIONS : le verrou dans le slug reste
+    attrapé, et les deux scans (titre et URL) gardent leur défense en profondeur."""
+
+    best_region, best_at = None, -1
+    for region in FORBIDDEN_REGIONS:
+        at = padded.find(f" {region} ")
+        if at >= 0 and at > best_at:
+            best_region, best_at = region, at
+    if best_region is None:
+        return None
+    after = best_at + len(best_region)
+    for word in _SELLABLE_REGION_WORDS:
+        if padded.find(f" {word} ", after) >= 0:
+            return None             # un marqueur vendable SUIT le pays → nom de produit
+    return best_region
+
+
 def precheck_skip(offer: NormalizedOffer, *, consoles: bool = False) -> str | None:
     """Categorical SKIPs from the merchant title/URL, before any AKS lookup.
 
@@ -933,9 +987,9 @@ def precheck_skip(offer: NormalizedOffer, *, consoles: bool = False) -> str | No
         if sig.region_label:
             return f"forbidden region: {sig.region_label}"
         # A classified console row keeps going through the remaining categorical scans.
-    for region in FORBIDDEN_REGIONS:
-        if f" {region} " in padded:
-            return f"forbidden region: {region}"
+    _locked = _forbidden_region_in(padded)
+    if _locked:
+        return f"forbidden region: {_locked}"
     # P2-6 (audit 2026-09-02): a forbidden region encoded ONLY in the merchant URL
     # (e.g. Gamivo ".../cyberpunk-2077-steam-key-brazil") escaped this title-only scan
     # and reached detect_region, which recognizes ONLY sellable buckets
@@ -947,9 +1001,9 @@ def precheck_skip(offer: NormalizedOffer, *, consoles: bool = False) -> str | No
     # BRAZIL/LATAM/… → Blacklist and NA/ROW/… → garder, identically.
     url_path = urlparse(strip_merchant_url_noise(offer.url, offer.merchant)).path
     url_padded = " " + re.sub(r"[^A-Z0-9]+", " ", fold_accents(url_path).upper()) + " "
-    for region in FORBIDDEN_REGIONS:
-        if f" {region} " in url_padded:
-            return f"forbidden region: {region}"
+    _locked_url = _forbidden_region_in(url_padded)
+    if _locked_url:
+        return f"forbidden region: {_locked_url}"
     # P2-6b (audit 2026-09-02): forbidden regions also appear as bare 2-letter slug
     # codes ("…-steam-key-ru") — caught only in a trailing region slot (see
     # _url_region_code) so English words ("lost-in-random", "among-us") don't skip.
@@ -1439,6 +1493,16 @@ _TRAILING_NOISE_PHRASES = tuple(sorted(
     key=len,
     reverse=True,
 ))
+# Le MÊME jeu de phrases, sans les noms de pays. AUDIT DU 2026-09-18, troisième site du même
+# défaut : le strip est ITÉRATIF, donc après avoir retiré « GLOBAL », « KEY » et « STEAM » de
+# « Crusader Kings II: Rajas of India - Steam Key - GLOBAL », « INDIA » se retrouvait en queue
+# et était amputé à son tour → slug « crusader-kings-ii-rajas-of », mauvaise page sondée même
+# une fois le precheck corrigé. Idem « Modern Japan » → « Modern ». Un nom de pays n'est retiré
+# que si la ligne est RÉELLEMENT verrouillée par lui, selon la même règle que les deux scans
+# (`_forbidden_region_in` : la région est la dernière chose déclarée).
+_TRAILING_NOISE_PHRASES_KEEP_COUNTRY = tuple(
+    ph for ph in _TRAILING_NOISE_PHRASES if ph not in FORBIDDEN_REGIONS
+)
 # Edition words stripped (trailing only) for the fallback slug variant.
 # EDITION_HINTS vocabulary minus BUNDLE/PACK/TRILOGY/DLC: those name a
 # different product (bundle titles are hard-skipped upstream; a DLC title has its
@@ -1477,7 +1541,10 @@ def cleaned_title(name: str) -> str:
     """
 
     without_parens = re.sub(r"\([^)]*\)", " ", normalize_apostrophes(name)).strip()
-    return _strip_trailing_phrases(without_parens, _TRAILING_NOISE_PHRASES)
+    padded = " " + re.sub(r"[^A-Z0-9]+", " ", fold_accents(name).upper()) + " "
+    phrases = (_TRAILING_NOISE_PHRASES if _forbidden_region_in(padded)
+               else _TRAILING_NOISE_PHRASES_KEEP_COUNTRY)
+    return _strip_trailing_phrases(without_parens, phrases)
 
 
 def build_slug_candidates(name: str) -> list[str]:

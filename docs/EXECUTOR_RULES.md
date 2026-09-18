@@ -659,8 +659,11 @@ validity condition is pinned by a test and re-measured on every corpus: the day 
 Platform stays title-sourced; no console hook (the shared classifier reads the 75 console
 rows, 8 of them Xbox Play Anywhere). A "template gap" rule (double space at the slot
 position) was measured, found INERT and noisy, and deliberately NOT added — see
-`docs/MERCHANTS.md`. Both merchants stay OFF the safe-auto allowlist: supervised dry-run
-first. Tests: `tests/test_merchants_electronicfirst.py`.
+`docs/MERCHANTS.md`. Both merchants JOINED the safe-auto allowlist on **2026-09-16** (Romain:
+« On va whitelist Eletronicfirst et GamersOutlet ») — `src/admin/auto_merchants.py` is the
+authority. (This sentence read « stay OFF the safe-auto allowlist: supervised dry-run first »
+until the 2026-09-18 audit found the spec contradicting the code for two days.)
+Tests: `tests/test_merchants_electronicfirst.py`.
 **GameBoost grammar `[R47]` (2026-09-15).** GameBoost (feed store 157) writes its region
 at the END of the title, in full words, and leaves the slot EMPTY on the rows whose region
 is only on its own offer page — which is Cloudflare-blocked and is NEVER fetched (the
@@ -678,8 +681,11 @@ delivery runs peeled — `Gift` and `Nintendo eShop` included — anchored at th
 "Stronghold 2: Steam Edition Steam Key EU" resolves "Stronghold 2: Steam Edition");
 `console_region_slot` (the console rows use the same trailing slot). The platform stays the
 generic TITLE read (`title_is_platform_source`, like Kinguin) with **no** `offer_page_resolver`
-— a token-less title keeps the `[R27]` fail-closed skip. GameBoost stays OFF the safe-auto
-allowlist: the file serves SUPERVISED runs only. Tests: `tests/test_merchants_gameboost.py`.
+— a token-less title keeps the `[R27]` fail-closed skip. GameBoost JOINED the safe-auto
+allowlist on **2026-09-16** (Romain: « Ajoute Gameboost a la whiteliste ») —
+`src/admin/auto_merchants.py` is the authority. (This sentence read « stays OFF … SUPERVISED
+runs only » until the 2026-09-18 audit found the spec contradicting the code.)
+Tests: `tests/test_merchants_gameboost.py`.
 **`MA7` RETIRED (2026-09-01, Romain: "EN = english only … on a quasi toutes les
 régions qui ont leur version EN only").** A Gamivo `-en-` URL segment used to skip
 as an EN-only *language restriction*; a language variant now ENTERS as the same
@@ -1242,6 +1248,37 @@ page-resolved (e.g. a Kinguin bare 2-letter `BR`) is NOT detected today → it s
 defaults GLOBAL; such a merchant needs its own region source (config resolver) before
 a sweep, exactly like IG got one.
 
+**La région est la DERNIÈRE chose déclarée (audit complet, 2026-09-18, `[P1]`).** Le balayage
+des noms de pays s'appliquait au texte ENTIER — titre et chemin d'URL — sans exiger de créneau :
+tout jeu dont le NOM contient China / India / Japan / Ukraine / Poland était refusé
+« forbidden region: <PAYS> », puis routé par `suggest_target_list` vers la **Blacklist (8)**.
+Cinq lignes G2A réelles, toutes GLOBAL dans le titre ET dans l'URL, le prouvaient :
+« Assassin's Creed Chronicles: China », « Crusader Kings II: Rajas of India », « Cities:
+Skylines … Modern Japan », « Ukraine War Stories », « Civilization VI - Poland Civilization
+and Scenario Pack ». Dans un sweep `--triage --move-execute`, chaque page s'auto-autorise
+(`[R36]`, §14) et `is_blacklist_label` fait sauter la vérification présent-sur-cible : des jeux
+vendables sortaient physiquement du feed vers la Blacklist, sans revue et sans preuve.
+
+Règle : un nom de pays suivi, plus loin dans le même texte, d'un **marqueur de région vendable**
+(GLOBAL / WORLDWIDE / WW / EU / EUROPE / US / USA / UK) appartient au NOM DU PRODUIT, pas au
+créneau. Ce qui reste refusé : « … Steam Key BRAZIL », « Hades RUSSIA PC Steam CD Key », et —
+c'est le point qui protège le `[P1]` du 2026-09-06 — « Cyberpunk 2077 Global Steam Key BRAZIL »,
+où le verrou vient APRÈS le mot vendable. Aucun pays n'est retiré de `FORBIDDEN_REGIONS` : le
+verrou dans le slug reste attrapé, et les deux scans gardent leur défense en profondeur.
+La même règle gouverne le TROISIÈME site du même défaut : le strip itératif de `cleaned_title`
+amputait « Rajas of India » en « Rajas of » une fois GLOBAL / KEY / STEAM retirés — mauvaise
+page AKS sondée même le precheck corrigé.
+
+**Le miroir langue / verrou est vérifié par test (même audit).** Le commentaire de
+`_REGION_LOCK_LANG_CODES` revendique de miroiter la décision P2-6b (« the SAME trailing code a
+forbidden region ») — or `TH` figurait dans `_URL_FORBIDDEN_CODES` depuis le 2026-09-06 sans y
+être ajouté : le même code était verrou dans l'URL et langue dans le titre. `TH` rejoint
+l'ensemble, et l'invariant `LANGUAGE_TOKENS ∩ codes URL ⊆ _REGION_LOCK_LANG_CODES` est
+désormais verrouillé par test, pour qu'il ne puisse plus dériver. Les autres codes de langue qui
+nomment aussi un pays (DE, IT, ES…) ne sont PAS ajoutés : le faux positif « (Without DE) » est
+documenté dans `MERCHANTS.md`, et `id` a été écarté comme trop collisionnel — ce sont des
+décisions prises, pas des oublis.
+
 ### 4.12 Console keys — region/platform, console pages, multi-target candidates `[R45]` (2026-09-12)
 
 **Trigger (Romain 2026-09-12).** The AKS feed tool OVERWRITES the region (and the edition)
@@ -1737,6 +1774,26 @@ candidate payload, who/when) — the matcher's output is never silently lost.
 page's table is the operational view.
 
 ---
+
+
+**`approve` doit être un booléen JSON (audit complet, 2026-09-18, `[P1]`).** La décision se
+lisait en VÉRITÉ PYTHON (`if not entry.get("approve")`) : la chaîne `"false"` — des guillemets
+de trop, ou un tableur qui sérialise les booléens en texte — valait `True` et APPROUVAIT
+l'offre. Et comme `verify_approved_against_source` re-dérive avec le même prédicat, la
+re-vérification au moment du submit CONFIRMAIT l'approbation au lieu de la refuser : l'unique
+porte avant une écriture live s'ouvrait sur un refus. Une valeur non booléenne lève désormais
+`ValidationError` et le fichier est refusé EN ENTIER — jamais deviné, jamais honoré à moitié.
+
+**Les seaux de région sont PAR PLATEFORME, dans les DEUX sens (même audit, `[P1]`).** La
+surcharge opérateur ne validait un `region_id` que contre le catalogue de session GLOBAL — les
+options de TOUTES les plateformes, que le `<select>` de la console présente d'ailleurs sans
+filtrage. Un mauvais clic sur « PS5 (88ps5h) » était donc accepté sur un candidat STEAM, et
+aucun étage en aval ne rattrapait (ni `validation.py`, ni `candidate_contract`, ni le
+submitter ne consultent `REGION_IDS`). La branche « changement de plateforme » refusait pourtant
+déjà l'incohérence symétrique. Refus `platform_region_mismatch` quand la région seule change et
+que l'id appartient PROUVABLEMENT à une autre famille ; un id qu'aucune famille ne revendique
+n'est pas réfutable et passe ; re-choisir les DEUX ensemble reste une décision explicite de
+l'opérateur et reste acceptée.
 
 ## 6. Stage 4 — Submitter (dry-run by default, locked behind validation)
 

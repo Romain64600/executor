@@ -599,7 +599,7 @@ matcher et le classifieur importent le registre.
   `/buy-console-account-…-account-<id>` → `"console: ACCOUNT — not a game (R45)"`).
 - **Statut live** : parqué (hors liste blanche).
 
-## GameBoost (store 157, hors liste blanche)
+## GameBoost (store 157, liste blanche safe-auto depuis le 2026-09-16)
 
 - **Fichier** : `src/merchants/gameboost.py`. **Hors liste blanche safe-auto**
   (`src/admin/auto_merchants.py`) : le fichier sert aux runs **supervisés** (02 → 03 → 04 →
@@ -642,7 +642,7 @@ matcher et le classifieur importent le registre.
   global 57), 175 non-jeux, 137 sans région `[R47]`, 79 régions interdites (ROW 37, EMEA 19,
   NORTH AMERICA 6, TURKEY 4, CANADA 3, …). Tests : `tests/test_merchants_gameboost.py`.
 
-## GamersOutlet (store 31, hors liste blanche)
+## GamersOutlet (store 31, liste blanche safe-auto depuis le 2026-09-16)
 
 - **Fichier** : `src/merchants/gamersoutlet.py`. Audité sur **la totalité du feed en attente
   du 2026-09-15** (20 lignes, une seule page — `runs/20260915-gamersoutlet`).
@@ -672,11 +672,12 @@ matcher et le classifieur importent le registre.
   ROBLOX ». Tests : `tests/test_merchants_gamersoutlet.py`.
 - **Statut live** : **allowlisté safe-auto le 2026-09-16**. 1re saisie le même jour — **2 / 2 créées** (Grand Theft Auto V
   Enhanced en Rockstar mondial 15, Polylithic en Steam mondial 2), prouvées par la disparition
-  du feed. Reste hors liste blanche safe-auto. Volume : la file complète du marchand fait ~19
+  du feed. **Dans la liste blanche safe-auto depuis le 2026-09-16** (Romain : « On va whitelist
+  Eletronicfirst et GamersOutlet ») ; `src/admin/auto_merchants.py` fait foi. Volume : la file complète du marchand fait ~19
   lignes dont 2 saisissables — surtout des licences logicielles absentes d'AKS et des recharges
   Roblox ; il faut attendre que la file se remplisse pour un lot de 10-15.
 
-## Electronicfirst (store 70, hors liste blanche)
+## Electronicfirst (store 70, liste blanche safe-auto depuis le 2026-09-16)
 
 - **Fichier** : `src/merchants/electronicfirst.py`. Audité sur **323 lignes uniques**
   (feed complet, couverture prouvée — `runs/20260915-electronicfirst`).

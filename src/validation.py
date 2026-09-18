@@ -143,7 +143,20 @@ def load_validation(
     by_fingerprint = {candidate_fingerprint(c): c for c in candidate_dicts}
     approved: list[dict[str, Any]] = []
     for entry in data.get("candidates", []):
-        if not entry.get("approve"):
+        # AUDIT DU 2026-09-18. La décision se lisait `if not entry.get("approve")`, c'est-à-dire
+        # en VÉRITÉ PYTHON : la chaîne "false" — des guillemets de trop, ou un tableur qui
+        # sérialise les booléens en texte — vaut True et APPROUVE l'offre. Et comme
+        # `verify_approved_against_source` re-dérive avec le même prédicat, la re-vérification
+        # au moment du submit confirmait l'approbation au lieu de la refuser : l'unique porte
+        # avant une écriture live s'ouvrait sur un refus. Un fichier mal typé est renvoyé à
+        # l'humain, jamais deviné (§5 : pas d'honneur partiel, le fichier est refusé entier).
+        value = entry.get("approve", False)
+        if not isinstance(value, bool):
+            raise ValidationError(
+                f"approve doit être un booléen JSON (true / false), reçu {value!r} pour "
+                f"{entry.get('fingerprint')!r} — fichier refusé en entier"
+            )
+        if not value:
             continue
         fingerprint = entry.get("fingerprint")
         if fingerprint not in by_fingerprint:

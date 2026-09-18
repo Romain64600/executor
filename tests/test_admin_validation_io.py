@@ -35,6 +35,7 @@ def _catalog():
                 {"key": "1", "text": "Publisher (1)"},
                 {"key": "2", "text": "Steam (2)"},
                 {"key": "9", "text": "Steam EU (9)"},
+                {"key": "88eu", "text": "Playstation Game Code EU (88eu)"},
             ]
         },
         "editions": {
@@ -495,21 +496,31 @@ class MultiTargetTests(ValidationIOTestCase):
         self.assertEqual(approved[0]["targets"], c1["targets"])
 
     def test_single_target_override_still_works_and_mirrors_targets0(self):
+        # Ce test porte sur le MIROIR dans targets[0], pas sur la sémantique de région. Depuis
+        # l'audit du 2026-09-18, un seau d'une AUTRE famille est refusé quand la plateforme ne
+        # change pas — et PS5 n'a qu'un seul seau, donc on ne peut pas y re-choisir. On passe
+        # donc par PS4, qui en a quatre : la re-sélection y est légitime.
         c1 = _console_cand("1", second=False)
+        c1["platform"] = "PS4"
+        c1["region"] = {"label": "Playstation Game Code GLOBAL", "id": "88", "implicit": False}
+        c1["targets"][0]["platform"] = "PS4"
+        c1["targets"][0]["region"] = {"label": "Playstation Game Code GLOBAL", "id": "88"}
+        c1["fingerprint"] = "1|85105|88|1"
         sha = self._write([c1])
         result = self._save(
-            [{"fingerprint": c1["fingerprint"], "approve": True, "override": {"region_id": "9"}}],
+            [{"fingerprint": c1["fingerprint"], "approve": True, "override": {"region_id": "88eu"}}],
             sha,
         )
-        self.assertEqual(result["overrides"][0]["new_fingerprint"], "1|85105|9|1")
+        self.assertEqual(result["overrides"][0]["new_fingerprint"], "1|85105|88eu|1")
         candidates, _validation, approved = self._triple()
         rewritten = candidates[0]
-        self.assertEqual(rewritten["region"], {"label": "Steam EU (9)", "id": "9", "implicit": False})
+        want = {"label": "Playstation Game Code EU (88eu)", "id": "88eu"}
+        self.assertEqual(rewritten["region"], {**want, "implicit": False})
         self.assertEqual(len(rewritten["targets"]), 1)
-        self.assertEqual(rewritten["targets"][0]["region"], {"label": "Steam EU (9)", "id": "9"})
+        self.assertEqual(rewritten["targets"][0]["region"], want)
         self.assertEqual(rewritten["targets"][0]["aks_product_id"], "85105")
         self.assertEqual(rewritten["targets"][0]["aks_url"], "https://aks/ps5")
-        self.assertEqual(approved[0]["fingerprint"], "1|85105|9|1")
+        self.assertEqual(approved[0]["fingerprint"], "1|85105|88eu|1")
 
     def test_pre_r45_candidate_override_invents_no_targets_key(self):
         c1 = _cand("1")
