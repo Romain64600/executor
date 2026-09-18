@@ -706,10 +706,11 @@ class DataEntryAutoAllowlistTests(AppTestCase):
     def test_suggested_merchant_accepted(self):
         seen = {}
         def fake(targets, *, by, max_pages=None, start_page=None, continue_on_halt=False,
-                 consoles=True):
+                 consoles=True, all_pages=False):
             seen["targets"] = targets
             seen["continue_on_halt"] = continue_on_halt
             seen["consoles"] = consoles
+            seen["all_pages"] = all_pages      # couverture totale (Romain 2026-09-18)
             return {"run_id": "20260807-000000-auto", "started": True}
         self.manager.start_data_entry_auto = fake
         response, body = self._json(

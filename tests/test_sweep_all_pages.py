@@ -131,5 +131,49 @@ class TheCliRefusesAnAmbiguousRequestTests(unittest.TestCase):
                          "le plafond de 10 laissait 97 pages de GameSeal de côté")
 
 
+class TheNightSweepButtonAsksForFullCoverageTests(unittest.TestCase):
+    """Romain 2026-09-18 : « Ajoute la couverture totale au bouton »."""
+
+    def setUp(self):
+        self.html = (ROOT / "src" / "admin" / "static" / "auto.html").read_text(encoding="utf-8")
+        self.js = (ROOT / "src" / "admin" / "static" / "auto.js").read_text(encoding="utf-8")
+        self.app = (ROOT / "src" / "admin" / "app.py").read_text(encoding="utf-8")
+        self.mgr = (ROOT / "src" / "admin" / "submit_manager.py").read_text(encoding="utf-8")
+
+    def _handler(self):
+        h = self.js[self.js.index('$("#launch-all").addEventListener'):]
+        return h[:h.index('$("#stop-btn")')]
+
+    def test_the_button_sends_full_coverage(self):
+        self.assertIn("all_pages: true", self._handler())
+
+    def test_it_does_NOT_send_the_form_cap(self):
+        """Les deux ensemble sont refusés côté serveur : le bouton n'envoie que l'un."""
+
+        self.assertNotIn("body.max_pages", self._handler())
+
+    def test_an_ignored_cap_is_SAID_not_swallowed(self):
+        self.assertIn("est ignoré par ce bouton", self._handler())
+
+    def test_the_label_and_the_tooltip_tell_the_truth(self):
+        self.assertIn("toutes les pages", self.html)
+        self.assertIn("36 h", self.html, "une nuit de 36 h se dit avant le clic, pas après")
+
+    def test_the_server_demands_a_real_boolean(self):
+        self.assertIn("bad_all_pages", self.app)
+        block = self.app[self.app.index('all_pages = body.get("all_pages", False)'):]
+        self.assertIn("isinstance(all_pages, bool)", block[:400])
+
+    def test_the_server_refuses_coverage_AND_a_cap(self):
+        self.assertIn("coverage_conflict", self.mgr)
+
+    def test_the_manager_passes_the_flag_through(self):
+        self.assertIn('argv.append("--all-pages")', self.mgr)
+        self.assertIn("all_pages=all_pages", self.app)
+
+    def test_the_typed_go_still_gates_it(self):
+        self.assertIn('confirm: "GO"', self._handler())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -710,6 +710,7 @@ class SubmitManager:
         self, targets: list[tuple[str, str]], *, by: str,
         max_pages: int | None = None, start_page: int | None = None,
         continue_on_halt: bool = False, consoles: bool = True,
+        all_pages: bool = False,
     ) -> dict[str, Any]:
         """Launch the safe-auto data-entry sweep (Romain's explicit go, 2026-08-04):
         for each ``(merchant, store_id)`` target, sweep the feed page by page —
@@ -744,10 +745,21 @@ class SubmitManager:
             run_dir = self.repo_root / "runs" / run_id
             run_dir.mkdir(parents=True, exist_ok=False)
             spec = ",".join(f"{m}:{s}" for m, s in clean)
+            if all_pages and max_pages is not None:
+                # Consigne ambiguë : couverture totale ET plafond. Refus, comme au CLI —
+                # jamais un arbitrage silencieux sur un chemin d'écriture réelle.
+                raise SubmitStartError(
+                    "coverage_conflict",
+                    "all_pages et max_pages sont exclusifs : choisis la couverture "
+                    "complète ou un plafond explicite", http_status=400)
             self._check_max_pages(max_pages)   # review 2026-09-09: parity with the other spawns
             argv = [self.python, str(self.data_entry_auto_script),
                     "--targets", spec, "--run-id", run_id]
-            if max_pages is not None:
+            if all_pages:
+                # Romain 2026-09-18 : « on fait toutes les pages sauf lors d'un arrêt pour
+                # sécurité ». Compte ~36 h sur les 14 marchands (364 pages à ~6 min).
+                argv.append("--all-pages")
+            elif max_pages is not None:
                 argv += ["--max-pages", str(int(max_pages))]
             if start_page is not None:
                 argv += ["--start-page", str(int(start_page))]

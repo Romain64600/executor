@@ -177,6 +177,25 @@ class TheManagerSeesCliRunsTests(unittest.TestCase):
         mgr._ensure_free()          # must not raise
 
 
+class TheApiExposesItOnTheRouteThePagesReadTests(unittest.TestCase):
+    """Vérifié en production le 2026-09-18 : mon premier essai posait le champ sur
+    /api/runs, qu'aucune des deux consoles n'interroge. Les deux lisent /api/sort/runs
+    (sort.js refreshBusy, auto.js fetchBusy)."""
+
+    def test_the_browser_state_is_on_the_polled_route(self):
+        app = (ROOT / "src" / "admin" / "app.py").read_text(encoding="utf-8")
+        block = app[app.index('if path == "/api/sort/runs":'):]
+        block = block[:block.index("if path ==", 40)]
+        self.assertIn('"browser": lock_status(', block)
+        self.assertIn('"busy": self.state.manager.busy()', block)
+
+    def test_both_consoles_poll_that_route(self):
+        static = ROOT / "src" / "admin" / "static"
+        for page in ("sort.js", "auto.js"):
+            with self.subTest(page=page):
+                self.assertIn("api/sort/runs", (static / page).read_text(encoding="utf-8"))
+
+
 class TheCliEntryPointsStampItTests(unittest.TestCase):
     def test_the_sweep_marks_and_unmarks(self):
         src = (ROOT / "scripts" / "10_data_entry_auto.py").read_text(encoding="utf-8")

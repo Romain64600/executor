@@ -98,7 +98,8 @@
           Un seul run à la fois — le bouton est désactivé si un sweep (ou un submit) est déjà en cours.</p>
         <div class="golaunch">
           <span class="golabel">Tape <b>GO</b> ci-dessus, puis :</span>
-          <button id="launch-all" type="button" class="danger" disabled>Lancer le sweep de nuit (tous les marchands)</button>
+          <button id="launch-all" type="button" class="danger" disabled
+                  title="Couverture TOTALE : chaque marchand est balayé de sa dernière page annoncée jusqu'à la page 1. Seul un arrêt fail-closed écourte un marchand. Compte ~36 h sur les 14 marchands (364 pages). Le plafond de pages ci-dessus est ignoré par ce bouton.">Lancer le sweep de nuit (tous les marchands, toutes les pages)</button>
         </div>
         <p id="launch-all-msg" class="msg"></p>
       </div>

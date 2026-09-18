@@ -112,17 +112,21 @@ $("#launch").addEventListener("click", async () => {
 // ---- night sweep: every allowlisted merchant ----
 $("#launch-all").addEventListener("click", async () => {
   if ($("#go").value.trim().toUpperCase() !== "GO" || SWEEP_RUNNING) return;
-  const body = { all_allowlisted: true, confirm: "GO" };
-  const mp = parseInt($("#max-pages").value, 10); if (mp > 0) body.max_pages = mp;
+  // Couverture TOTALE (Romain 2026-09-18 : « on fait toutes les pages sauf lors d'un arrêt
+  // pour sécurité »). Le plafond du formulaire n'est PAS envoyé — le serveur refuse d'ailleurs
+  // les deux ensemble — et on le dit à l'opérateur au lieu de l'ignorer en silence.
+  const body = { all_allowlisted: true, all_pages: true, confirm: "GO" };
+  const mp = parseInt($("#max-pages").value, 10);
   const sp = parseInt($("#start-page").value, 10); if (sp > 0) body.start_page = sp;
   body.consoles = $("#consoles").checked;
   body.continue_on_halt = true;   // one merchant's fail-closed stop must not end the night
   $("#launch-all").disabled = true;
-  $("#launch-all-msg").textContent = "Lancement du sweep de nuit…";
+  $("#launch-all-msg").textContent = "Lancement du sweep de nuit (toutes les pages, ~36 h)…"
+    + (mp > 0 ? ` — le plafond de ${mp} page(s) est ignoré par ce bouton.` : "");
   try {
     const r = await api("api/data-entry/auto", { method: "POST", body: JSON.stringify(body) });
     $("#launch-all-msg").textContent = "▶ sweep de nuit lancé : " + (r.run_id || "")
-      + " · " + SUGGESTED.length + " marchand(s)";
+      + " · " + SUGGESTED.length + " marchand(s) · couverture totale";
     SWEEP_RUNNING = true;
     setStatus("Sweep de nuit en cours…", true);
     $("#busy-ind").classList.remove("hidden");

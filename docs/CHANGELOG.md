@@ -3,6 +3,29 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-18 — Le bouton du sweep de nuit lance la couverture totale
+
+Romain : « Ajoute la couverture totale au bouton ». Le bouton de l'onglet Data entry auto
+envoie désormais `all_pages: true` et **n'envoie plus le plafond du formulaire** — le serveur
+refuse d'ailleurs les deux ensemble (`coverage_conflict`), comme le CLI.
+
+Trois honnêtetés dans cette petite fonctionnalité :
+
+* le plafond saisi dans le formulaire n'est pas ignoré en silence : si l'opérateur en a mis un,
+  le message de lancement le lui DIT (« le plafond de N page(s) est ignoré par ce bouton ») ;
+* la durée est annoncée AVANT le clic, dans l'infobulle et dans le libellé — ~36 h pour les
+  364 pages des 14 marchands, à ~6 min la page mesurées sur la nuit du 17/09 ;
+* `all_pages` exige un vrai booléen JSON, comme `all_allowlisted` et `consoles`. La chaîne
+  « false » avait déjà lancé les 14 marchands une fois (audit du 2026-09-16) ; on ne devine
+  jamais une valeur de vérité sur un chemin d'écriture réelle.
+
+Le GO tapé reste exigé, et le garde une-exécution-à-la-fois refuse toujours un second départ.
+
+**Corrigé au passage, vu en production** : le champ `browser` (état du verrou du navigateur)
+était posé sur `/api/runs`, qu'aucune des deux consoles n'interroge. Les deux lisent
+`/api/sort/runs`. Je ne l'ai vu qu'en vérifiant l'API après redémarrage — le test d'origine
+vérifiait la présence du champ, pas la route. Un test le vérifie désormais.
+
 ## 2026-09-18 — Le sweep de nuit couvre TOUT le feed (`--all-pages`)
 
 Romain, au vu du bilan de la nuit : « je ne veux pas couvrir les marchands seulement sur

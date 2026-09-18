@@ -285,8 +285,14 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._serve_static(name)
 
         if path == "/api/sort/runs":
+            # C'est CETTE route que les deux consoles interrogent (sort.js refreshBusy,
+            # auto.js fetchBusy) : "busy" y retombe sur le marqueur d'un run lancé en ligne
+            # de commande, et "browser" dit si l'onglet unique est pris, lu SANS toucher au
+            # verrou. La première version de ce champ était posée sur /api/runs, qu'aucune
+            # des deux pages ne lit — corrigé le 2026-09-18 après vérification en production.
             return self._send_json(200, {"runs": list_sort_runs(self.state.runs_dir),
-                                         "busy": self.state.manager.busy()})
+                                         "busy": self.state.manager.busy(),
+                                         "browser": lock_status(self.state.repo_root)})
 
         if path == "/api/login/status":
             return self._send_json(200, self.state.login.status())
@@ -645,8 +651,15 @@ class AdminHandler(BaseHTTPRequestHandler):
         if str(body.get("confirm") or "").strip().upper() != "GO":
             raise ApiError(400, "confirm_required",
                            "tape GO pour confirmer le sweep safe-auto réel")
+        all_pages = body.get("all_pages", False)
+        if not isinstance(all_pages, bool):
+            # Même exigence que all_allowlisted / consoles : un vrai booléen JSON. La chaîne
+            # "false" avait déjà lancé les 14 marchands une fois (audit du 2026-09-16).
+            raise ApiError(400, "bad_all_pages",
+                           "all_pages doit être un booléen JSON (true / false)")
         result = self.state.manager.start_data_entry_auto(
-            targets, by=by, max_pages=_parse_int(body.get("max_pages")),
+            targets, by=by, all_pages=all_pages,
+            max_pages=_parse_int(body.get("max_pages")),
             start_page=_parse_int(body.get("start_page")),
             continue_on_halt=bool(body.get("continue_on_halt")),
             consoles=_parse_consoles(body))   # [R45] default True (Romain 2026-09-15)
