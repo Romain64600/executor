@@ -26,7 +26,10 @@ function el(tag, attrs, kids) {
   return n;
 }
 
-let RULES = [], PROPOSALS = [], RUN_ID = null;
+let RULES = [], PROPOSALS = [], RUN_ID = null, LISTS = {};
+// « 21 » ne dit rien ; « 21 — Gift cards » se relit. Un id inconnu se voit.
+const listLabel = (id) => LISTS[String(id)] || "liste inconnue";
+const listCell = (id) => `${id} — ${listLabel(id)}`;
 
 async function post(path, body) {
   const r = await fetch(path, {
@@ -55,7 +58,7 @@ function render() {
     const warn = r.collateral ? "bad" : (r.conflict ? "warn" : "");
     const cells = [
       el("td", {}, el("code", {}, r.sql)),
-      el("td", { class: "rz" }, String(r.target)),
+      el("td", { class: "rz" }, listCell(r.target)),
       el("td", { class: "rz tnum" }, r.measured ? String(r.hits) : "—"),
       el("td", { class: "rz tnum" }, r.measured ? String(r.agree) : "—"),
       el("td", { class: "rz tnum" }, r.measured ? String(r.conflict) : "—"),
@@ -88,6 +91,8 @@ function renderProposals() {
   $("#proposals tbody").replaceChildren(...PROPOSALS.map((p) => {
     const pat = el("input", { type: "text", value: p.pattern, class: "pat mono", size: "26" });
     const tgt = el("input", { type: "text", value: String(p.target), class: "rz mono", size: "4" });
+    const tgtName = el("span", { class: "msg" }, listLabel(p.target));
+    tgt.addEventListener("input", () => (tgtName.textContent = listLabel(tgt.value.trim())));
     const hits = el("td", { class: "rz tnum" }, String(p.hits));
     const agree = el("td", { class: "rz tnum" }, String(p.agree));
     const msg = el("span", { class: "msg" }, "");
@@ -116,7 +121,7 @@ function renderProposals() {
 
     return el("tr", {}, [
       el("td", {}, [pat, msg]),
-      el("td", { class: "rz" }, tgt),
+      el("td", { class: "rz" }, [tgt, tgtName]),
       hits, agree,
       el("td", {}, [
         el("button", {
@@ -156,6 +161,12 @@ function renderProposals() {
     RULES = d.rules || [];
     PROPOSALS = d.proposals || [];
     RUN_ID = d.run_id || null;
+    LISTS = Object.fromEntries((d.lists || []).map((l) => [String(l.id), l.label]));
+    $("#pending-id").textContent = d.pending_list || "9";
+    $("#lists tbody").replaceChildren(...(d.lists || []).map((l) => el("tr", {}, [
+      el("td", { class: "rz tnum" }, String(l.id)),
+      el("td", {}, l.label),
+    ])));
     $("#measured").textContent = d.measured
       ? `Mesuré sur le scan ${d.run_id} — ${d.offers} offres. Les comptes viennent de ce scan, `
         + `pas d'une estimation ; ils vieillissent avec lui.`
@@ -179,7 +190,7 @@ function renderProposals() {
       $("#conflicted-box").classList.remove("hidden");
       $("#conflicted tbody").replaceChildren(...conf.map((c) => el("tr", { class: "warn" }, [
         el("td", {}, el("code", {}, c.sql)),
-        el("td", { class: "rz" }, String(c.target)),
+        el("td", { class: "rz" }, listCell(c.target)),
         el("td", { class: "rz tnum" }, String(c.hits)),
         el("td", { class: "rz tnum" }, String(c.conflict)),
       ])));

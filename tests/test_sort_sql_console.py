@@ -112,6 +112,64 @@ class PromotingAProposalTests(unittest.TestCase):
         self.assertIn('raise ApiError(400, "bad_promotion", str(exc))', APP)
 
 
+class ListNamesAreShownTests(unittest.TestCase):
+    """Romain 2026-09-18 : « ajoute aussi le nom des listes à droite et leurs IDs ».
+    « 21 » ne dit rien ; « 21 — Gift cards » se relit, et se vérifie avant de coller."""
+
+    def test_the_catalogue_is_served(self):
+        payload = sort_sql_payload(pathlib.Path("/nonexistent"))
+        by_id = {l["id"]: l["label"] for l in payload["lists"]}
+        self.assertEqual(by_id.get("21"), "Gift cards")
+        self.assertEqual(by_id.get("41"), "Top-Up")
+        self.assertEqual(by_id.get("8"), "Blacklist")
+        self.assertEqual(payload["pending_list"], "9")
+
+    def test_the_catalogue_matches_the_source_of_truth(self):
+        from src.aks_lists import LISTS
+        payload = sort_sql_payload(pathlib.Path("/nonexistent"))
+        self.assertEqual([l["id"] for l in payload["lists"]], [l["id"] for l in LISTS])
+
+    def test_every_target_is_rendered_with_its_name(self):
+        """Les lignes figées affichent « id — nom » ; les propositions, dont l'id est
+        ÉDITABLE, affichent le nom à côté du champ et le mettent à jour à la frappe."""
+
+        self.assertIn("const listCell = (id) =>", JS)
+        self.assertIn("listCell(r.target)", JS)        # règles
+        self.assertIn("listCell(c.target)", JS)        # à arbitrer
+        self.assertIn("listLabel(p.target)", JS)       # propositions (champ éditable)
+
+    def test_an_unknown_id_is_visibly_unknown(self):
+        self.assertIn('|| "liste inconnue"', JS)
+
+    def test_the_edited_list_shows_its_name_live(self):
+        """On édite un id : son nom doit suivre, sinon on promeut vers une liste au hasard."""
+
+        self.assertIn("tgtName.textContent = listLabel(tgt.value.trim())", JS)
+
+    def test_the_side_panel_exists_and_stays_in_view(self):
+        """Romain : « le nom des listes à droite, flottant, toujours à vue ». Le panneau
+        colle au défilement au lieu de disparaître dès qu'on descend dans la liste."""
+
+        self.assertIn('id="lists-box"', HTML)
+        self.assertIn('id="pending-id"', HTML)
+        css = (ROOT / "src" / "admin" / "static" / "sort.css").read_text(encoding="utf-8")
+        block = css[css.index("#lists-box {"):]
+        block = block[:block.index("}")]
+        self.assertIn("position: sticky", block)
+        self.assertIn("top:", block)
+        self.assertIn("overflow-y: auto", block, "un catalogue long doit défiler seul")
+
+    def test_every_target_used_by_a_rule_is_a_known_list(self):
+        """Une règle qui vise une liste absente du catalogue serait illisible."""
+
+        from src.aks_lists import LISTS
+        from src.sort_sql_rules import RULES, SEED_PROPOSALS
+        known = {l["id"] for l in LISTS}
+        for pattern, target in list(RULES) + list(SEED_PROPOSALS):
+            with self.subTest(pattern=pattern):
+                self.assertIn(target, known)
+
+
 class EditingBeforePromotingTests(unittest.TestCase):
     """Romain 2026-09-18 : « faudrait qu'on puisse éditer avant de promouvoir, dans le cas où
     on a besoin d'hésiter, rajoutez un tiret ». Resserrer %puzzle% en %-puzzle-% doit être

@@ -3,6 +3,25 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-18 — Le catalogue des listes, à droite et toujours à vue
+
+Romain : « ajoute aussi le nom des listes à droite et leurs IDs », puis « le nom des listes à
+droite, flottant, toujours à vue ».
+
+« 21 » ne dit rien ; « 21 — Gift cards » se relit, et se vérifie avant de coller un `UPDATE`
+qu'on exécutera soi-même. Chaque cible s'affiche donc avec son nom : dans la liste des règles,
+dans la section « À arbitrer », et à côté du champ éditable d'une proposition — où le nom
+**suit la frappe**, sans quoi on promeut vers une liste au hasard.
+
+Le catalogue complet des 26 listes est en aparté à droite, `position: sticky` : il suit le
+défilement au lieu de disparaître dès qu'on descend dans les 53 requêtes. Il défile seul
+au-delà de 80 % de la hauteur, et se replie en pleine largeur sous 70 rem — un panneau collant
+sur un écran étroit mangerait la page.
+
+Deux gardes de lecture : un id absent du catalogue s'affiche « liste inconnue » plutôt que nu,
+et un test vérifie que **toute** cible utilisée par une règle ou une graine existe bien dans le
+catalogue.
+
 ## 2026-09-18 — Éditer une proposition avant de la promouvoir
 
 Romain : « faudrait qu'on puisse éditer avant de promouvoir. Dans le cas où on a besoin

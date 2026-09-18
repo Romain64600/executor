@@ -221,3 +221,16 @@ tr.noterow td { padding-top: 0; opacity: .85; }
 /* Tri SQL — motif éditable avant promotion (2026-09-18). */
 input.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem; }
 #proposals .msg { display: block; font-size: .78rem; opacity: .9; margin-top: .2rem; }
+
+/* Tri SQL — catalogue des listes en aparté, à droite (2026-09-18). */
+/* « à droite, flottant, toujours à vue » : il suit le défilement et se replie tout seul
+   sur un écran étroit, où un panneau collant mangerait la page. */
+#lists-box { float: right; position: sticky; top: 1rem; max-height: 80vh; overflow-y: auto;
+             max-width: 22rem; margin: 0 0 1rem 1.5rem; background: var(--bg, inherit);
+             border: 1px solid var(--line, #8883); border-radius: .5rem; padding: .6rem .8rem; }
+#lists-box h2 { margin: 0 0 .3rem; font-size: 1rem; }
+#lists td { padding: .12rem .5rem; }
+@media (max-width: 70rem) {
+  #lists-box { float: none; position: static; max-height: none; max-width: none;
+               margin-left: 0; }
+}

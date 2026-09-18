@@ -33,6 +33,7 @@ from typing import Any
 import re
 
 from src import sort_sql_promoted
+from src.aks_lists import LISTS, PENDING_LIST_ID
 from src.sort_sql_rules import FLAGGED, RETIRED, RULES, SEED_PROPOSALS
 
 
@@ -190,6 +191,8 @@ def sort_sql_payload(runs_dir: Path, wanted: str = "",
                           "target": target, "measured": False,
                           "flag": FLAGGED.get(pattern)})
         return {"run_id": None, "measured": False, "rules": rules, "proposals": [],
+                "lists": [{"id": l["id"], "label": l["label"]} for l in LISTS],
+                "pending_list": PENDING_LIST_ID,
                 "retired": [{"pattern": p, "why": w} for p, w in RETIRED.items()],
                 "note": "aucun scan de tri — les requêtes sont rendues sans mesure"}
 
@@ -209,6 +212,10 @@ def sort_sql_payload(runs_dir: Path, wanted: str = "",
         "measured": True,
         "offers": len(dest),
         "rules": rules,
+        # Le catalogue des listes, pour que « 21 » s'affiche « 21 — Gift cards » et qu'on
+        # puisse le consulter en entier sans quitter la page (Romain 2026-09-18).
+        "lists": [{"id": l["id"], "label": l["label"]} for l in LISTS],
+        "pending_list": PENDING_LIST_ID,
         "proposals": proposals,
         "conflicted": _conflicted_seeds(dest, by_url, known),
         # Une règle retirée reste VISIBLE, avec sa raison : sinon le retrait est invisible et
