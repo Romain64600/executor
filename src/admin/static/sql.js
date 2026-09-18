@@ -130,6 +130,16 @@ function renderProposals() {
       $("#measured").after(box);
     }
     renderProposals();
+    const conf = d.conflicted || [];
+    if (conf.length) {
+      $("#conflicted-box").classList.remove("hidden");
+      $("#conflicted tbody").replaceChildren(...conf.map((c) => el("tr", { class: "warn" }, [
+        el("td", {}, el("code", {}, c.sql)),
+        el("td", { class: "rz" }, String(c.target)),
+        el("td", { class: "rz tnum" }, String(c.hits)),
+        el("td", { class: "rz tnum" }, String(c.conflict)),
+      ])));
+    }
     setStatus(`${RULES.length} requêtes`
       + (PROPOSALS.length ? ` · ${PROPOSALS.length} proposition(s)` : ""));
   } catch (e) {

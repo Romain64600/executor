@@ -3,6 +3,41 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-18 — Mots-clés proposés par l'ANALYSE du feed : vider le pending de ce qui s'y trompe
+
+Romain : « tu peux proposer aussi des mots-clés à sortir de la liste 9 vers une autre liste. Le
+but, c'est de laisser en pending offers seulement des offres qui n'ont pas pu être triées ».
+
+**D'abord mesurer ce qui reste.** Sur le scan de 49 899 offres : **16 356 lignes restent en
+attente**. Leur composition, par motif, est l'information la plus utile de la journée :
+
+| ce qui reste en attente | lignes | une liste existe-t-elle ? |
+|---|---|---|
+| console | 8 641 | **non** — à trancher |
+| bundles | 1 645 | **non** — à trancher |
+| valeur stockée (Wyrel) | 1 143 | oui, 21 / 41 |
+| région ROW | 962 | **non** — à trancher |
+| région AMÉRIQUE DU NORD | 629 | **non** — à trancher |
+| diamants / points / coins | 496 | oui, 41 Top-Up |
+
+**Dix motifs proposés**, mesurés, chacun ne visant QUE des lignes que le routeur laisse en
+attente faute de cible — donc du pending sans raison d'y être. Huit passent la porte
+(412 lignes) : `%bigo-live%` 156 → Gift cards, `%ultimate-team%` 74 et `%madden-points%` 72 →
+Top-Up, `%sportswear%` 48 → Gift cards, puis `%-top-up%`, `%coins-top%`, `%-fut-points%`,
+`%points-pack%`.
+
+**Une porte a dû être corrigée pour eux.** Le filtre exigeait qu'au moins une ligne visée soit
+déjà routée vers la même liste — sensé pour un motif miné depuis une ligne routée, absurde pour
+une graine qui vise justement ce que le routeur n'a pas su router : « d'accord » y vaut zéro par
+construction, et l'exigence les rejetait toutes.
+
+**Ce qui est écarté est dit, pas tu.** `%diamonds%` vise 492 lignes mais 3 vrais jeux — remplacé
+par `%diamonds-top%`, plus étroit. `%-tokens-%` : 11 vrais jeux sur 35. `%-vbucks%` et
+`%-v-bucks%` : notre routeur tient les V-Bucks pour des produits à créer, désaccord de fond qui
+se tranche à la main. Et deux graines à fort volume — `%diamonds-top%` (294, dont 72 que le
+routeur enverrait ailleurs) et `%-voucher%` (71, dont 4) — ne sont pas offertes au clic mais
+affichées dans une section **« À arbitrer »** : les taire serait pire que les proposer.
+
 ## 2026-09-18 — Propositions mesurées, promotion MANUELLE : la liste s'agrandit sans dériver
 
 Romain : « quand je lance un run, ça va en ajouter des nouvelles au 53 ? […] si on ajoute 7, on

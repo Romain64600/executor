@@ -33,7 +33,7 @@ from typing import Any
 import re
 
 from src import sort_sql_promoted
-from src.sort_sql_rules import FLAGGED, RETIRED, RULES
+from src.sort_sql_rules import FLAGGED, RETIRED, RULES, SEED_PROPOSALS
 
 
 def _latest_sort_run(runs_dir: Path, wanted: str = "") -> Path | None:
@@ -103,7 +103,8 @@ def _mine(plan: dict, dest: dict[str, str], by_url: dict[str, dict],
           known: set[tuple[str, str]]) -> list[dict[str, Any]]:
     """Motifs candidats, MESURÉS, qui ne sont pas déjà dans la liste."""
 
-    seen: set[tuple[str, str]] = set()
+    # Les graines d'analyse d'abord : elles viennent d'une lecture du feed, pas du mineur.
+    seen: set[tuple[str, str]] = {(p, t) for p, t in SEED_PROPOSALS}
     for list_id, group in (plan.get("by_list") or {}).items():
         for row in group.get("offers", []):
             term = _vocab_term(row.get("reason", ""))
@@ -114,13 +115,44 @@ def _mine(plan: dict, dest: dict[str, str], by_url: dict[str, dict],
                 if len(word) >= 4 and sort_sql_promoted.SAFE_PATTERN.match(pattern):
                     seen.add((pattern, str(list_id)))
 
+    seeds = {(p, t) for p, t in SEED_PROPOSALS}
     out = []
     for pattern, target in sorted(seen - known):
         m = _measure(pattern, target, dest, by_url)
         # Une proposition n'est offerte que si elle ne vise AUCUN vrai jeu et n'entre en
         # conflit avec aucune autre liste. Le reste n'est pas une proposition, c'est un piège.
-        if m["hits"] >= 2 and not m["collateral"] and not m["conflict"] and m["agree"]:
+        if m["hits"] < 2 or m["collateral"] or m["conflict"]:
+            continue
+        # Un motif MINÉ vient d'une ligne déjà routée : au moins une ligne doit confirmer la
+        # destination, sinon le mot ne prouve rien. Une GRAINE d'analyse, elle, vise justement
+        # des lignes que le routeur laisse en attente faute de cible — « agree » y vaut zéro
+        # par construction, et l'exiger les rejetait toutes. C'est ce que Romain demande :
+        # sortir du pending ce qui n'a aucune raison d'y rester.
+        if (pattern, target) in seeds or m["agree"]:
+            m["source"] = "analyse" if (pattern, target) in seeds else "vocabulaire"
             out.append(m)
+    return out
+
+
+def _conflicted_seeds(dest: dict[str, str], by_url: dict[str, dict],
+                      known: set[tuple[str, str]]) -> list[dict[str, Any]]:
+    """Graines écartées pour CONFLIT — montrées quand même, pour arbitrage.
+
+    Les taire serait pire que les proposer : ce sont des motifs à fort volume dont notre
+    routeur enverrait une partie ailleurs. Ce n'est pas une erreur du motif, c'est un
+    désaccord, et il se tranche à la main."""
+
+    out = []
+    for pattern, target in SEED_PROPOSALS:
+        if (pattern, target) in known:
+            continue
+        m = _measure(pattern, target, dest, by_url)
+        if m["hits"] >= 2 and not m["collateral"] and m["conflict"]:
+            m["source"] = "analyse"
+            out.append(m)
+    out.sort(key=lambda m: -m["hits"])
+    return out
+
     out.sort(key=lambda m: (-m["hits"], m["pattern"]))
     return out
 
@@ -178,6 +210,7 @@ def sort_sql_payload(runs_dir: Path, wanted: str = "",
         "offers": len(dest),
         "rules": rules,
         "proposals": proposals,
+        "conflicted": _conflicted_seeds(dest, by_url, known),
         # Une règle retirée reste VISIBLE, avec sa raison : sinon le retrait est invisible et
         # quelqu'un la recolle depuis une vieille liste.
         "retired": [{"pattern": p, "why": w} for p, w in RETIRED.items()],

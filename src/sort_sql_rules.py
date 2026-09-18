@@ -29,6 +29,7 @@ from __future__ import annotations
 GIFT_CARDS = "21"
 BLACKLIST = "8"
 ACCOUNTS = "30"
+TOP_UP = "41"          # « Top-Up » — recharges et monnaies de jeu
 
 # (motif, liste) — l'ordre est celui de la liste de Romain, regroupé par destination.
 RULES: list[tuple[str, str]] = [
@@ -122,3 +123,33 @@ FLAGGED: dict[str, str] = {
         "échantillon, son unique ligne visée était un vrai jeu."
     ),
 }
+
+
+# Motifs proposés par l'ANALYSE du feed, pas par le mineur de vocabulaire (2026-09-18).
+# Romain : « tu peux proposer aussi des mots-clés à sortir de la liste 9 vers une autre liste.
+# Le but, c'est de laisser en pending offers seulement des offres qui n'ont pas pu être triées ».
+#
+# Mesurés sur le scan de 49 899 offres de l'ancien VPS. Chacun vise UNIQUEMENT des lignes que
+# notre routeur laisse aujourd'hui en attente faute de cible sûre — donc du pending qui n'a
+# aucune raison d'y rester. Ils passent le même filtre que les autres propositions (aucun vrai
+# jeu visé, aucun conflit de liste) et la même promotion manuelle : rien n'entre tout seul.
+#
+# Écartés à la mesure, et pourquoi — c'est l'information utile :
+#   %diamonds%     492 lignes mais 3 vrais jeux ; remplacé par %diamonds-top%, plus étroit ;
+#   %-tokens-%      35 lignes dont 11 vrais jeux (Asphalt Legends…) ;
+#   %-vbucks% / %-v-bucks%  : notre routeur tient les V-Bucks pour des produits à créer —
+#                   désaccord de fond, à trancher par Romain, pas à trancher par un motif ;
+#   %game-time%    : ses 4 lignes sont des temps de jeu LOTRO que sa propre règle
+#                   %-day-game-time-code% envoie déjà en 21.
+SEED_PROPOSALS: list[tuple[str, str]] = [
+    ("%bigo-live%", GIFT_CARDS),        # 156 lignes, crédits d'application de streaming
+    ("%sportswear%", GIFT_CARDS),       # 48, cartes cadeaux d'enseignes (Wyrel)
+    ("%-voucher%", GIFT_CARDS),         # 71, bons d'achat
+    ("%diamonds-top%", TOP_UP),         # 294, recharges de diamants (Mobile Legends…)
+    ("%ultimate-team%", TOP_UP),        # 74, points FUT / Madden
+    ("%madden-points%", TOP_UP),        # 72
+    ("%-top-up%", TOP_UP),              # 24, recharges explicites
+    ("%coins-top%", TOP_UP),            # 19
+    ("%-fut-points%", TOP_UP),          # 16
+    ("%points-pack%", TOP_UP),          # 3
+]
