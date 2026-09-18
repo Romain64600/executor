@@ -1,0 +1,50 @@
+[
+  {
+    "pattern": "%-fut-points%",
+    "target": "41",
+    "promoted_at": "2026-09-18T11:01:18Z",
+    "promoted_by": "console",
+    "source_run": "tri-20260917-1426",
+    "hits_when_promoted": 3
+  },
+  {
+    "pattern": "%-top-up%",
+    "target": "41",
+    "promoted_at": "2026-09-18T11:01:23Z",
+    "promoted_by": "console",
+    "source_run": "tri-20260917-1426",
+    "hits_when_promoted": 24
+  },
+  {
+    "pattern": "%-voucher%",
+    "target": "21",
+    "promoted_at": "2026-09-18T11:02:25Z",
+    "promoted_by": "console",
+    "source_run": "tri-20260917-1426",
+    "hits_when_promoted": 5
+  },
+  {
+    "pattern": "%africa%",
+    "target": "35",
+    "promoted_at": "2026-09-18T11:02:39Z",
+    "promoted_by": "console",
+    "source_run": "tri-20260917-1426",
+    "hits_when_promoted": 5
+  },
+  {
+    "pattern": "%bigo-live-%",
+    "target": "21",
+    "promoted_at": "2026-09-18T11:37:03Z",
+    "promoted_by": "console",
+    "source_run": "tri-20260917-1426",
+    "hits_when_promoted": 100
+  },
+  {
+    "pattern": "%-canada-%",
+    "target": "33",
+    "promoted_at": "2026-09-18T11:37:23Z",
+    "promoted_by": "console",
+    "source_run": "tri-20260917-1426",
+    "hits_when_promoted": 7
+  }
+]
