@@ -1043,14 +1043,14 @@ class MerchantConfigR32Tests(unittest.TestCase):
 
     # ---- IG platform + region from the offer page ----
     def test_ig_enters_real_platform_from_page(self):
-        r = self._match_ig(lambda url: MerchantOfferSignals(
+        r = self._match_ig(lambda url, name="": MerchantOfferSignals(
             platform="STEAM", region_resolved=True, region_base="global"))
         self.assertIsInstance(r, Candidate)
         self.assertEqual(r.platform, "STEAM")          # NOT Publisher
         self.assertEqual(r.region_label, "GLOBAL")
 
     def test_ig_region_europe_enters_as_eu(self):
-        r = self._match_ig(lambda url: MerchantOfferSignals(
+        r = self._match_ig(lambda url, name="": MerchantOfferSignals(
             platform="STEAM", region_resolved=True, region_base="eu"))
         self.assertIsInstance(r, Candidate)
         self.assertEqual((r.platform, r.region_label), ("STEAM", "EU"))
@@ -1058,7 +1058,7 @@ class MerchantConfigR32Tests(unittest.TestCase):
     def test_ig_region_locked_skips_R33(self):
         # A non-sellable region → forbidden-region skip (same reason format as the
         # generic path), never entered as GLOBAL. ROW has no list → garder.
-        r = self._match_ig(lambda url: MerchantOfferSignals(
+        r = self._match_ig(lambda url, name="": MerchantOfferSignals(
             platform="STEAM", region_resolved=True, region_base=None, region_label="ROW"))
         self.assertIsInstance(r, SkippedOffer)
         self.assertIn("forbidden region", r.reason)
@@ -1068,14 +1068,14 @@ class MerchantConfigR32Tests(unittest.TestCase):
         # LATAM / Brazil / Asia / Russia → forbidden-region skip whose label the ONE
         # central router (suggest_target_list) sends to Blacklist (8).
         for label in ("Latin America", "Brazil", "RU", "Russia & CIS", "Asia", "China"):
-            r = self._match_ig(lambda url, _l=label: MerchantOfferSignals(
+            r = self._match_ig(lambda url, name="", _l=label: MerchantOfferSignals(
                 platform="STEAM", region_resolved=True, region_base=None, region_label=_l))
             self.assertIsInstance(r, SkippedOffer, label)
             self.assertIn("forbidden region", r.reason)
             self.assertEqual(suggest_target_list(r.reason), "8", label)
 
     def test_ig_unrecognized_platform_skips(self):
-        r = self._match_ig(lambda url: MerchantOfferSignals(platform=None))
+        r = self._match_ig(lambda url, name="": MerchantOfferSignals(platform=None))
         self.assertIsInstance(r, SkippedOffer)
         self.assertIn("R32", r.reason)
 
@@ -1088,7 +1088,7 @@ class MerchantConfigR32Tests(unittest.TestCase):
         saved = M.MERCHANT_CONFIGS["INSTANT GAMING"]
         M.MERCHANT_CONFIGS["INSTANT GAMING"] = MerchantConfig(
             "Instant Gaming",
-            offer_page_resolver=lambda u: MerchantOfferSignals(
+            offer_page_resolver=lambda u, n="": MerchantOfferSignals(
                 platform="STEAM", region_resolved=True, region_base=None, region_label="RU"))
         self.addCleanup(lambda: M.MERCHANT_CONFIGS.__setitem__("INSTANT GAMING", saved))
         o = NormalizedOffer(offer_id="1", name="Numina Steam",   # title HAS 'Steam'
@@ -1204,7 +1204,7 @@ class MerchantConfigR32Tests(unittest.TestCase):
         saved = M.MERCHANT_CONFIGS["INSTANT GAMING"]
         M.MERCHANT_CONFIGS["INSTANT GAMING"] = MerchantConfig(
             "Instant Gaming",
-            offer_page_resolver=lambda u: MerchantOfferSignals(
+            offer_page_resolver=lambda u, n="": MerchantOfferSignals(
                 platform="UBISOFT", region_resolved=True, region_base="global"))
         self.addCleanup(lambda: M.MERCHANT_CONFIGS.__setitem__("INSTANT GAMING", saved))
         o = NormalizedOffer(offer_id="1", name="Numina Steam",   # title declares STEAM

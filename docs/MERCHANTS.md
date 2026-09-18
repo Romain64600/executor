@@ -121,6 +121,7 @@ du feed.
 | Wyrel | 162 | `wyrel.py` (**nouveau 16/09**) | PC : `precheck` (`[R53a]` gabarit, `[R53b]` non-jeu à 3 signaux, `[R53c]` édition, `[R53d]` accord titre/URL, `[R53e]` fente plateforme inconnue), `title_region`, `resolve_name` ; console : `console_region_slot`, `console_noise` | **non — supervisé d'abord** | 60 |
 | GameBoost | 157 | `gameboost.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux + `[R47]` région obligatoire), `title_region`, `resolve_name` ; console : `console_region_slot` | **oui, allowlisté le 16/09** — 1er matching : 207 candidats / 992 lignes | 13 |
 | GamersOutlet | 31 | `gamersoutlet.py` (**nouveau 15/09**) | PC : `precheck` (slot obligatoire + vocabulaire boutique fermé), `title_region`, `resolve_name`, `url_platform` | **oui, allowlisté le 16/09** — 1re saisie : 2 / 2 créées | 1 |
+| Gamerall | 13 | `gamerall.py` (**nouveau 18/09**) | `precheck` (plateforme du titre obligatoire), `resolve_name`, `title_region`, `url_platform`/`url_region`, et surtout `offer_page_resolver` — région lue dans l'ordre **titre → URL → page**, la page n'étant ouverte que pour les ~18 % de lignes sans région | **non — supervisé d'abord** | 32 |
 | Electronicfirst | 70 | `electronicfirst.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux, logiciels, `[R49a]` EU partiel, `[R49b]` mot de région dans le nom, `[R49c]` console sans slot), `title_region`, `resolve_name` | **oui, allowlisté le 16/09** — parqué puis dé-parqué, défaut PUBLISHER/STEAM fermé par `[R51]` | 4 |
 
 Plus aucun marchand « générique » : la ligne `"KINGUIN": MerchantConfig("Kinguin",
@@ -815,3 +816,35 @@ matcher et le classifieur importent le registre.
   la base.
 - La liste blanche est contrôlée côté serveur (`rejection_reason`) : un marchand absent est
   refusé même si l'interface est contournée.
+
+## Gamerall (store 13, marchand AKS 317, supervisé)
+
+Écrit le 2026-09-18 sur **783 lignes réelles** — pages 1-6 ET 26-31, pas une seule page. La
+répartition est très inégale : la page 1 montre 11 % de lignes avec région, les pages 26-31 en
+montrent **100 %**, l'ensemble 82 %. J'avais d'abord annoncé « 89 % sans région » d'après la
+page 1 seule : c'était faux, et c'est la deuxième fois de la semaine qu'une page unique me fait
+écrire une règle fausse (Wyrel, page 1 contre 990 lignes).
+
+**Grammaire.** Le titre finit toujours par sa plateforme entre parenthèses — Steam 681, Xbox
+Live 38, EA App 25, Ubisoft Connect 14, Nintendo Switch 7, PSN 4, Microsoft Store 3, GOG.com 2,
+Epic Games 2, Rockstar 1 — et ne porte **jamais** de région. L'URL porte la plateforme (274
+slugs sur 275) et, dans 82 % des cas, la région, dont le vocabulaire tient en trois mots :
+`global` 514, `europe` 123, `usa` 6.
+
+**Région absente ⇒ la page est ouverte** (arbitrage de Romain, 2026-09-18). Elle répond en 200
+et porte sa région dans son JSON embarqué. Une page illisible, ou lisible sans région, est un
+REFUS : jamais de repli sur GLOBAL, la règle qu'Instant Gaming s'est donnée après son audit #2.
+
+**Ordre de lecture : titre → URL → page**, du gratuit vers le coûteux (Romain : « mets un check
+du titre par défaut avant d'ouvrir la page, ça reste plus opti »). Sur ce marchand le titre ne
+donne rien aujourd'hui, 0 ligne sur 783 ; le crible existe pour le jour où ce feed changera
+d'habitude, et parce que le contrat est le même pour tous les marchands.
+
+**Premier matching** : 100 candidats sur 275 lignes (plafond atteint), **un seul refus de
+grammaire**, 22 lignes perdues sur des sondages AKS instables. Première saisie de 10 offres le
+jour même. Hors liste blanche tant qu'il n'a pas fait ses preuves.
+
+**Deux défauts trouvés par les tests, pas en production** : la plateforme était cherchée par
+simple présence dans le slug (la rubrique `steam-games-and-more` passait pour du Steam), et la
+parenthèse de plateforme était cherchée ancrée en fin de titre — un titre portant une région ne
+finit plus par elle, donc le crible du titre ne se serait jamais déclenché.

@@ -343,8 +343,13 @@ def _main() -> int:
     # and blocks a console launch cleanly instead of failing later on the browser lock.
     # PID-based liveness, so a lost SSH session (which killed exactly such a run that day)
     # leaves nothing behind.
-    run_marker.write_marker(ROOT, run_id=run_id, kind="submit", source="cli")
-    atexit.register(run_marker.clear_marker, ROOT, run_id)
+    # NE PAS écraser le marqueur d'un run PARENT (audit de Romain, 2026-09-18) : le sweep
+    # lance des submits enfants, et chacun écrasait le marqueur du sweep puis l'effaçait en
+    # sortant. Le sweep continuait, mais la console ne le voyait plus et acceptait un nouveau
+    # lancement. Un enfant ne s'annonce donc que si personne n'est déjà annoncé.
+    if run_marker.read_marker(ROOT) is None:
+        run_marker.write_marker(ROOT, run_id=run_id, kind="submit", source="cli")
+        atexit.register(run_marker.clear_marker, ROOT, run_id)
 
     # Effective feed-scan ceiling — AUTO from the feed's own page count unless
     # --max-pages is explicit (2026-07-20). Reported so the operator sees why.

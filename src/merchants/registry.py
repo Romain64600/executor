@@ -36,6 +36,7 @@ from src.merchants import (
     k4g,
     kinguin,
     mmoga,
+    gamerall,
     wyrel,
 )
 
@@ -62,6 +63,7 @@ MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
     "GAMERSOUTLET": gamersoutlet.CONFIG,
     "ELECTRONICFIRST": electronicfirst.CONFIG,
     "WYREL": wyrel.CONFIG,
+    "GAMERALL": gamerall.CONFIG,
 }
 
 
@@ -77,6 +79,7 @@ MERCHANT_STORE_IDS: dict[str, str] = {
     "Gamivo": "51", "Instant Gaming": "28", "CJS-CDKeys": "30", "Allyouplay": "17",
     "GameSeal": "126", "GameBoost": "157", "Electronicfirst": "70",
     "GamersOutlet": "31", "MMOGA": "12", "Difmark": "167", "Wyrel": "162",
+    "Gamerall": "13",
 }
 _BY_STORE: dict[str, str] = {store: name for name, store in MERCHANT_STORE_IDS.items()}
 

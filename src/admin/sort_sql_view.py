@@ -27,6 +27,8 @@ décision écrite (voir ``FLAGGED``).
 from __future__ import annotations
 
 import json
+import re
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +37,10 @@ import re
 from src import sort_sql_promoted
 from src.aks_lists import LISTS, PENDING_LIST_ID
 from src.sort_sql_rules import FLAGGED, RETIRED, RULES, SEED_PROPOSALS
+
+
+class IncompleteScan(RuntimeError):
+    """Scan inexploitable : on ne prétend pas l'avoir mesuré."""
 
 
 def _latest_sort_run(runs_dir: Path, wanted: str = "") -> Path | None:
@@ -53,12 +59,30 @@ def _latest_sort_run(runs_dir: Path, wanted: str = "") -> Path | None:
     return best
 
 
-def _slug(url: str) -> str:
-    u = (url or "").lower()
-    for cut in ("?", "#"):
-        if cut in u:
-            u = u.split(cut, 1)[0]
-    return u
+# La mesure doit reproduire le LIKE de MySQL, sinon elle ment sur la seule garde de cette voie.
+# Deux écarts trouvés par l'audit de Romain (2026-09-18) :
+#   * ``_`` est un JOKER en SQL. ``%digital_extras%`` sélectionne « digital-extras », alors que
+#     la recherche littérale annonçait 0 ligne — un compteur « collatéral » nul, et des offres
+#     déplacées quand même.
+#   * la mesure retirait les paramètres d'URL, que la colonne `url` contient. Un motif qui vise
+#     un paramètre était donc compté à zéro.
+# On compile donc le motif en expression régulière, ``%`` → ``.*`` et ``_`` → ``.``, et on la
+# confronte à l'URL ENTIÈRE, sans casse (collations ``_ci`` usuelles).
+@lru_cache(maxsize=512)
+def _like_re(pattern: str) -> "re.Pattern[str]":
+    out = []
+    for ch in pattern or "":
+        if ch == "%":
+            out.append(".*")
+        elif ch == "_":
+            out.append(".")
+        else:
+            out.append(re.escape(ch))
+    return re.compile("^" + "".join(out) + "$", re.IGNORECASE | re.DOTALL)
+
+
+def _like(pattern: str, url: str) -> bool:
+    return bool(_like_re(pattern).match(url or ""))
 
 
 def _classify(run_dir: Path) -> tuple[dict[str, str], dict[str, dict]]:
@@ -68,8 +92,12 @@ def _classify(run_dir: Path) -> tuple[dict[str, str], dict[str, dict]]:
     try:
         raw = json.loads((run_dir / "offers.json").read_text(encoding="utf-8"))
         rows = raw if isinstance(raw, list) else raw.get("offers", [])
-    except (OSError, ValueError):
-        rows = []
+    except (OSError, ValueError) as exc:
+        # Sans offers.json, les CANDIDATS À LA CRÉATION disparaissent de la classification :
+        # le compteur « collatéral » deviendrait nul par absence de données, pas par sûreté,
+        # et une promotion passerait sans le seul contrôle qui la protège. On refuse de
+        # mesurer plutôt que de mesurer à vide (audit de Romain, 2026-09-18).
+        raise IncompleteScan(f"offers.json illisible dans {run_dir.name} : {exc}") from exc
     by_url = {str(r.get("url") or ""): r for r in rows if r.get("url")}
     dest = {u: "__candidat__" for u in by_url}
     for r in plan.get("unrouted", []):
@@ -160,8 +188,7 @@ def _conflicted_seeds(dest: dict[str, str], by_url: dict[str, dict],
 
 def _measure(pattern: str, target: str, dest: dict[str, str],
              by_url: dict[str, dict]) -> dict[str, Any]:
-    needle = pattern.strip("%").lower()
-    hits = [u for u in dest if needle in _slug(u)]
+    hits = [u for u in dest if _like(pattern, u)]
     tally: dict[str, int] = {}
     for u in hits:
         tally[dest[u]] = tally.get(dest[u], 0) + 1
@@ -196,7 +223,18 @@ def sort_sql_payload(runs_dir: Path, wanted: str = "",
                 "retired": [{"pattern": p, "why": w} for p, w in RETIRED.items()],
                 "note": "aucun scan de tri — les requêtes sont rendues sans mesure"}
 
-    dest, by_url = _classify(run_dir)
+    try:
+        dest, by_url = _classify(run_dir)
+    except IncompleteScan as exc:
+        for pattern, target in RULES:
+            rules.append({"sql": _statement(pattern, target), "pattern": pattern,
+                          "target": target, "measured": False, "flag": FLAGGED.get(pattern)})
+        return {"run_id": run_dir.name, "measured": False, "rules": rules, "proposals": [],
+                "conflicted": [],
+                "lists": [{"id": l["id"], "label": l["label"]} for l in LISTS],
+                "pending_list": PENDING_LIST_ID,
+                "retired": [{"pattern": p, "why": w} for p, w in RETIRED.items()],
+                "note": f"scan inexploitable, rien n'est mesuré : {exc}"}
     promoted = [r for r in (sort_sql_promoted.load(repo_root) if repo_root else [])
                 if not r.get("dismissed")]
     for pattern, target in RULES:

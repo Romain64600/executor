@@ -2628,3 +2628,17 @@ même décision que le sweep : `--consoles` est le **défaut** sur les deux scri
 
 ---
 
+### `[R54]` Gamerall (store 13) — région : titre → URL → page (2026-09-18)
+
+Le titre de Gamerall finit par sa plateforme entre parenthèses et ne porte jamais de région ;
+l'URL porte la plateforme et, dans 82 % des cas, la région (`global` / `europe` / `usa`).
+Pour les lignes sans région, **la page marchand est ouverte** et sa valeur `Region` lue
+(arbitrage de Romain, 2026-09-18) : le mécanisme est celui d'Instant Gaming
+(`MerchantConfig.offer_page_resolver`), pas un nouveau lecteur.
+
+Ordre imposé, du gratuit vers le coûteux : **titre, puis URL, puis page**. Le résolveur reçoit
+désormais le titre en plus de l'URL — contrat élargi le même jour pour tous les marchands.
+
+Fail-closed : page injoignable, réponse non conforme, ou page lisible sans région exploitable
+⇒ **refus**, jamais un repli sur GLOBAL. Une région lue mais non vendable remonte son libellé
+brut, dont le routage (Blacklist / garder) reste décidé en un seul endroit.

@@ -493,6 +493,27 @@ instead of ending the sweep. The recap lands in `runs/<run-id>/recap.json`, one 
 merchant with `created` and any `halted` reason. Consoles are INCLUDED by default `[R45]`;
 add `--no-consoles` for a PC-only pass.
 
+**Tri par SQL — console `/sql` (2026-09-18).** Romain exécute lui-même les `UPDATE` de tri
+dans phpMyAdmin ; la console les **génère et les mesure**, elle n'exécute rien et n'importe
+aucun pilote de base. Chaque requête s'affiche avec ce qu'elle toucherait sur le dernier scan
+de tri — lignes visées, lignes que notre routeur enverrait ailleurs, et surtout lignes qu'il
+tient pour de **vrais jeux à créer**, nommées. C'est la seule garde de cette voie : le
+déplacement par navigateur avait une preuve (la ligne quitte la liste source), un `UPDATE`
+collé à la main n'en a aucune, donc tout se joue sur la mesure d'AVANT.
+
+```bash
+python3 scripts/13_sort_sql.py --run-id <scan de tri>                  # propose des motifs
+python3 scripts/13_sort_sql.py --run-id <scan> --rules                 # audite la liste quotidienne
+python3 scripts/13_sort_sql.py --run-id <scan> --check "%puzzle%:8"    # audite UN motif à la main
+```
+
+La liste quotidienne vit dans `src/sort_sql_rules.py` (53 règles, celles de Romain, gardées
+VERBATIM — casse comprise, parce que l'équivalence de casse dépend d'une collation MySQL qu'on
+ne peut pas vérifier d'ici). Les promotions de nouveaux motifs vont dans
+`data/sort_sql_promoted.json`, versionné pour que les deux serveurs ne divergent pas. Une règle
+retirée garde sa raison écrite : `%valid-until%` a été retirée le 18/09 parce qu'elle
+contredisait la décision du 14/09 sur les clés Kinguin « valid until ».
+
 **Allowlist as of 2026-09-16 (14 merchants)** — the command above derives this list itself,
 it is reproduced only so a reader knows what a night sweep covers: Kinguin 58, G2A 38,
 Driffle 127, Eneba 19, K4G 92, Gamivo 51, Instant Gaming 28, CJS-CDKeys 30, Allyouplay 17,

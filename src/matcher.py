@@ -2624,7 +2624,9 @@ def _pc_plan(
     # unrecognized page platform → skip, never a guess.
     if _cfg is not None and _cfg.offer_page_resolver is not None:
         try:
-            _sig = _cfg.offer_page_resolver(offer.url)
+            # Le titre est passé au résolveur : certains marchands y écrivent ce que
+            # l'URL tait, et le lire évite d'ouvrir la page (Romain 2026-09-18).
+            _sig = _cfg.offer_page_resolver(offer.url, offer.name)
         except Exception as exc:  # noqa: BLE001 — page unreadable → fail closed
             return SkippedOffer(
                 offer, f"{offer.merchant} offer page unreadable — unverifiable (R32): {exc}")

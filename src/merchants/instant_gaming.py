@@ -146,7 +146,9 @@ def resolve_ig_offer(url: str, http_get_fn: Callable[..., Any] = http_get) -> Ig
     )
 
 
-def ig_offer_signals(url: str) -> MerchantOfferSignals:
+def ig_offer_signals(url: str, name: str = "") -> MerchantOfferSignals:  # noqa: ARG001
+    # ``name`` fait partie du contrat depuis le 2026-09-18 ; IG ne s'en sert pas —
+    # son titre ne porte NI plateforme NI région, tout est sur la page.
     """Instant Gaming config hook: read the offer page ONCE, map platform + region
     to our vocabulary. The IG page ALWAYS yields a region signal, so
     ``region_resolved=True`` and either:

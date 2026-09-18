@@ -67,7 +67,7 @@ class TriageOfferTests(unittest.TestCase):
         saved = M.MERCHANT_CONFIGS["INSTANT GAMING"]
         M.MERCHANT_CONFIGS["INSTANT GAMING"] = MerchantConfig(
             "Instant Gaming",
-            offer_page_resolver=lambda u: MerchantOfferSignals(
+            offer_page_resolver=lambda u, n="": MerchantOfferSignals(
                 platform="STEAM", region_resolved=True, region_base=None, region_label="RU"))
         self.addCleanup(lambda: M.MERCHANT_CONFIGS.__setitem__("INSTANT GAMING", saved))
         o = _offer(name="Battlefield", url="https://ig/x", merchant="Instant Gaming")

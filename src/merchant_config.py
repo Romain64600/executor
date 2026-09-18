@@ -60,7 +60,12 @@ class MerchantConfig:
     # MerchantOfferSignals``. Raising means the page was unreadable → the caller
     # fails closed. (Instant Gaming: platform from data-platform, region from the
     # page <title> suffix.)
-    offer_page_resolver: Optional[Callable[[str], "MerchantOfferSignals"]] = None
+    # ``offer_page_resolver(offer_url, offer_name)`` — le TITRE est passé depuis le
+    # 2026-09-18 (Romain : « pour certains marchands on peut avoir une info dans le titre qui
+    # n'est pas dans l'URL […] mets un check du titre par défaut avant d'ouvrir la page, ça
+    # reste plus opti »). Un résolveur lit donc dans cet ordre : titre, URL, puis la page —
+    # et n'ouvre la page que si les deux premiers n'ont rien dit.
+    offer_page_resolver: Optional[Callable[..., "MerchantOfferSignals"]] = None
     # Eneba: the URL's leading path segment encodes the platform
     # ("eneba.com/steam-…" → STEAM). {prefix: platform token}.
     url_platform_prefixes: dict[str, str] = field(default_factory=dict)

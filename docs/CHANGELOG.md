@@ -3,6 +3,93 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-18 — Audit de Romain : la mesure SQL mentait, un scan vide se disait mesuré
+
+Trois défauts trouvés sur les 14 commits `0f2c871..36c83fc`, tous reproduits. Les deux premiers
+touchent **la seule garde de la voie SQL** — il n'y a pas de preuve après coup, Romain exécutant
+lui-même les requêtes, donc une mesure fausse est une garde absente.
+
+**`[P1]` La mesure ne reproduisait pas le `LIKE` de MySQL.** Elle cherchait une sous-chaîne
+littérale et retirait les paramètres d'URL. Deux écarts : ``_`` est un **joker** en SQL, si bien
+que `%digital_extras%` sélectionne « digital-extras » alors que la mesure annonçait **0 ligne** ;
+et la colonne `url` contient les paramètres que la mesure coupait. Un compteur « collatéral »
+pouvait donc valoir zéro pendant que la requête déplaçait de vrais jeux. Le motif est désormais
+compilé en expression régulière (``%`` → ``.*``, ``_`` → ``.``, le reste échappé — un `.` du
+motif reste littéral) et confronté à l'URL **entière**, sans casse.
+
+**`[P2]` Un scan privé d'`offers.json` se déclarait mesuré.** Le code poursuivait avec une liste
+vide : les candidats à la création disparaissaient de la classification, et le collatéral tombait
+à zéro **par absence de données, pas par sûreté** — une promotion passait alors sans contrôle.
+Un scan inexploitable lève maintenant, la page sert les règles **non mesurées** et le dit, et
+plus aucune proposition n'est offerte.
+
+**`[P2]` Le premier submit enfant effaçait le suivi du sweep.** Le sweep lance des submits
+enfants ; chacun écrasait le marqueur du sweep puis le supprimait en sortant. Le sweep
+continuait, mais la console ne le voyait plus et acceptait un nouveau lancement — exactement ce
+que le marqueur existait pour empêcher. Un enfant ne s'annonce plus que si personne n'est déjà
+annoncé, et le nettoyage vit dans la même branche.
+
+`tests/test_sort_sql_audit_2026_09_18.py`, 12 tests, dont l'exemple exact de Romain.
+
+## 2026-09-18 — Le titre est lu AVANT d'ouvrir la page (contrat élargi)
+
+Romain : « pour certains marchands on peut avoir une info dans le titre qui n'est pas dans
+l'URL. Donc ce serait bien d'avoir le check du titre dans nos configs marchands. Tu peux mettre
+un check du titre par défaut avant d'ouvrir la page, ça reste plus opti ».
+
+`offer_page_resolver` reçoit désormais **le titre en plus de l'URL**, et l'ordre de lecture est
+partout le même, du gratuit vers le coûteux : **titre → URL → page**. Instant Gaming accepte le
+nouvel argument sans changer de comportement (son titre ne porte ni plateforme ni région, tout
+est sur la page — c'est écrit dans le code pour qu'on ne s'y trompe pas).
+
+Sur Gamerall, mesure honnête : le titre ne donne **rien** aujourd'hui, 0 ligne sur 783. Le
+crible est là parce qu'il est gratuit, qu'il couvre le jour où ce feed changera d'habitude, et
+que le contrat doit être le même pour tous les marchands.
+
+**Un défaut trouvé en écrivant le test, pas en production** : la parenthèse de plateforme était
+cherchée ANCRÉE en fin de titre. Or un titre qui porte une région ne finit plus par elle
+(« (Steam) GLOBAL ») — le crible ne se serait donc jamais déclenché, et la page aurait été
+ouverte pour rien. La recherche porte maintenant sur la DERNIÈRE parenthèse.
+
+Le nom du jeu reste hors de portée du crible : on ne lit que ce qui SUIT la parenthèse, sinon
+« Europa Universalis » deviendrait « eu » et « US Route 66 » deviendrait « us ». Deux tests le
+verrouillent.
+
+## 2026-09-18 — `[R54]` Gamerall (store 13, marchand AKS 317) : la région lue dans l'URL, sinon sur la page
+
+Romain : « pour le data entry auto, on va devoir travailler sur Gamerall ». Grammaire écrite
+sur **783 lignes réelles**, pages 1-6 ET 26-31.
+
+**La leçon la plus chère de cette mise en place** : j'avais d'abord mesuré la page 1 seule et
+annoncé « 89 % des lignes sans région ». Faux. La page 1 en montre 11 % avec région, les pages
+26-31 en montrent **100 %**, et l'ensemble 82 %. Un feed n'est pas homogène et une page ne le
+résume pas — c'est la deuxième fois cette semaine (Wyrel, page 1 contre 990 lignes).
+
+**Ce que le feed dit.** Le titre finit toujours par sa plateforme entre parenthèses (Steam 681,
+Xbox Live 38, EA App 25, Ubisoft Connect 14, Switch 7, PSN 4…) et ne porte **jamais** de
+région. L'URL porte la plateforme (274 slugs sur 275) et, dans 82 % des cas, la région — dont
+le vocabulaire tient en trois mots : `global` 514, `europe` 123, `usa` 6.
+
+**Région absente ⇒ on ouvre la page**, sur arbitrage de Romain. Sa correction m'a remis
+d'aplomb : le lecteur de page n'était PAS à construire, il existe depuis Instant Gaming
+(`MerchantConfig.offer_page_resolver`) et ne concernait que les marchands qu'on n'arrive pas à
+ouvrir. Gamerall s'ouvre : 200, et la région est dans son JSON embarqué. Une page illisible ou
+sans région lève et l'offre est refusée — **jamais de repli sur GLOBAL**, la règle qu'Instant
+Gaming s'est donnée après son audit #2.
+
+**Le résolveur ne coûte une requête que pour les lignes sans région.** Le matcher l'appelle
+pour chaque offre ; tirer 550 ko par ligne sur 32 pages serait déraisonnable.
+
+**Deux défauts trouvés par les tests, pas en production.** L'ancrage de la plateforme était un
+simple `in` : la rubrique `steam-games-and-more` était prise pour du Steam. Il est désormais
+ancré en FIN de slug, après avoir retiré la région finale. Et la lecture de la région exigeait
+un guillemet ouvrant que la forme échappée de la page ne restitue pas.
+
+Premier matching : **100 candidats** sur 275 lignes (plafond atteint), **un seul refus de
+grammaire**. 22 lignes perdues sur des sondages AKS instables, côté AKS. Première saisie de
+10 offres lancée le jour même. `tests/test_merchants_gamerall.py`, 22 tests. Hors liste
+blanche tant qu'il n'a pas fait ses preuves.
+
 ## 2026-09-18 — Promouvoir un motif édité : la proposition d'origine disparaît enfin
 
 Deux reproches de Romain, tous deux justes, et de la même famille : j'avais livré une
