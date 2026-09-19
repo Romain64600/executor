@@ -372,3 +372,28 @@ class TwoEntriesForTheSameFingerprintAreRefused(unittest.TestCase):
                 with self.assertRaises(ValidationError) as ctx:
                     load_validation(validation, cands, expected_run_id="r1")
                 self.assertIn("deux fois", str(ctx.exception))
+
+
+class AnOperatorStopIsNotAStageFailure(unittest.TestCase):
+    """2026-09-19, vécu en direct — Romain clique « Arrêter » pour réordonner ses marchands.
+    Le stop SIGTERM l'enfant du stage en vol, celui-ci rend `exit -15`, et le sweep l'étiquette
+    `GameSeal: match_failed_p103` : un arrêt DÉLIBÉRÉ présenté comme une panne fail-closed,
+    avec un code de sortie 2. Les trois étages testaient `should_stop()` AVANT de se lancer,
+    aucun ne le re-testait APRÈS un échec — or le signal arrive justement pendant l'attente."""
+
+    def test_a_stage_failure_under_a_requested_stop_reads_as_operator_stop(self):
+        from src.data_entry_auto import _halt_label
+        self.assertEqual(_halt_label("match_failed_p103", lambda: True), "operator_stop")
+        self.assertEqual(_halt_label("extract_failed_p1", lambda: True), "operator_stop")
+
+    def test_a_real_failure_keeps_its_own_label(self):
+        from src.data_entry_auto import _halt_label
+        self.assertEqual(_halt_label("match_failed_p103", lambda: False), "match_failed_p103")
+
+    def test_every_stage_failure_goes_through_the_helper(self):
+        source = (ROOT / "src" / "data_entry_auto.py").read_text(encoding="utf-8")
+        for label in ("extract_failed_p", "match_failed_p", "approve_failed_p"):
+            for line in source.splitlines():
+                if f'"{label}' in line and 'recap["halted"]' in line:
+                    self.assertIn("_halt_label", line,
+                                  f"{label} doit passer par _halt_label")

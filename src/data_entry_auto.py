@@ -54,6 +54,22 @@ from src.validation import candidate_fingerprint
 _BENIGN_STOPPED = {"limit_reached", "operator_stop"}
 
 
+def _halt_label(stage_label: str, should_stop: Callable[[], bool]) -> str:
+    """Le motif de halte d'un étage qui vient d'échouer — « operator_stop » si c'est NOUS qui
+    l'avons tué.
+
+    2026-09-19, vécu en direct. Romain clique « Arrêter » pour réordonner ses marchands ; le
+    stop SIGTERM l'enfant du stage en vol, l'étage rend ``exit -15``, et le sweep l'a étiqueté
+    ``GameSeal: match_failed_p103`` — un arrêt DÉLIBÉRÉ présenté comme une panne fail-closed,
+    avec un code de sortie 2. Romain a naturellement demandé ce qui était cassé : rien. Les
+    trois étages testaient déjà ``should_stop()`` AVANT de se lancer, mais aucun ne le
+    re-testait APRÈS un échec — or c'est précisément là que l'information arrive, puisque le
+    signal a été reçu pendant l'attente. Un arrêt demandé est un arrêt demandé, quel que soit
+    l'étage qui en meurt."""
+
+    return "operator_stop" if should_stop() else stage_label
+
+
 @dataclass
 class SweepConfig:
     merchant: str
@@ -201,7 +217,7 @@ def run_sweep(
     probe_id = page_run_id(cfg.start_page)
     probe = stages.extract(cfg.start_page, probe_id)
     if not probe.ok:
-        recap["halted"] = f"extract_failed_p{cfg.start_page}"
+        recap["halted"] = _halt_label(f"extract_failed_p{cfg.start_page}", should_stop)
         if probe.detail:
             recap["halted_detail"] = probe.detail      # the WHY, surfaced by the console/monitor
         finish_page({"page": cfg.start_page, "run": probe_id, "offers": probe.offers,
@@ -236,7 +252,7 @@ def run_sweep(
             max_seen = ex.feed_last_page   # a re-import grew the feed mid-sweep
         if not ex.ok:
             entry["error"] = "extract: " + (ex.detail or "failed")
-            recap["halted"] = f"extract_failed_p{page}"
+            recap["halted"] = _halt_label(f"extract_failed_p{page}", should_stop)
             if ex.detail:
                 recap["halted_detail"] = ex.detail
             finish_page(entry)
@@ -254,7 +270,7 @@ def run_sweep(
             entry["probe_unreliable"] = mt.probe_unreliable   # a throttled page ≠ an empty one
         if not mt.ok:
             entry["error"] = "match: " + (mt.detail or "failed")
-            recap["halted"] = f"match_failed_p{page}"
+            recap["halted"] = _halt_label(f"match_failed_p{page}", should_stop)
             finish_page(entry)
             break
 
@@ -268,7 +284,7 @@ def run_sweep(
                 entry["approved"] = stages.approve(run_id)
             except StageError as exc:
                 entry["error"] = "approve: " + str(exc)
-                recap["halted"] = f"approve_failed_p{page}"
+                recap["halted"] = _halt_label(f"approve_failed_p{page}", should_stop)
                 finish_page(entry)
                 break
             sub = stages.submit(run_id)

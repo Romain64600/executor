@@ -3,6 +3,20 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-19 — Un arrêt demandé n'est pas une panne, et la case manquante
+
+**`[P2]` « Arrêter » était rapporté comme une panne fail-closed.** Romain clique « Arrêter »
+pour réordonner ses marchands ; le stop SIGTERM l'enfant du stage en vol, celui-ci rend
+`exit -15`, et le sweep l'étiquette **`GameSeal: match_failed_p103`** — avec un code de sortie
+**2**. Romain a naturellement demandé ce qui était cassé : rien. Rien n'avait été écrit (0
+créée), et rejouer le même matching à la main sur la même page donnait `98 offres → 22
+candidats, exit 0`. Les trois étages testaient déjà `should_stop()` AVANT de se lancer, mais
+aucun ne le re-testait APRÈS un échec — or c'est précisément là que l'information arrive,
+puisque le signal a été reçu pendant l'attente. `_halt_label` rend désormais `operator_stop`
+quand l'arrêt a été demandé, quel que soit l'étage qui en meurt. C'est le miroir exact du
+défaut corrigé la veille (un stop opérateur qui EFFAÇAIT des haltes réelles) : là c'était
+l'amnistie, ici c'est l'accusation.
+
 ## 2026-09-19 — La case « continuer après une halte » manquait au lancement sélectif
 
 Romain relance trois marchands depuis la console pour reprendre ce que le sweep de nuit n'avait
