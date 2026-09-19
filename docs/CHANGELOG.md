@@ -3,6 +3,43 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-19 — Ajouter un marchand à un sweep EN COURS (branche `feat/ajout-marchand-sweep-en-cours`)
+
+Romain : « On a l'option pour ajouter un marchand à un sweep en cours ? Si on n'a pas l'option
+tu audites la faisabilité, on fait la modification sur une nouvelle branche. »
+
+**L'option n'existait pas.** Le bouton « + ajouter un marchand » de `/auto` appartient au
+FORMULAIRE DE LANCEMENT, pas à un run vivant. `scripts/10_data_entry_auto.py` lisait `--targets`
+une fois au démarrage et itérait `for merchant, store_id in targets:` sur une liste figée. Pour
+ajouter un marchand, il fallait couper — et perdre le balayage en cours, comme ce matin même où
+un run Gamivo de 58 minutes a été arrêté à la page 16 sur 42.
+
+**Faisabilité : le canal ne pouvait pas être en mémoire.** Le sweep est un PROCESSUS ENFANT ; la
+console ne peut pas muter sa liste. Le canal est donc un fichier du dossier de run,
+`targets_queue.json` (contrat décrit dans `DATA_CONTRACTS.md`), avec **un seul écrivain** (la
+console, sous son mutex, en écriture atomique) et **un seul lecteur** (le sweep, qui ne le
+réécrit jamais) : pas de lecture-modification-écriture concurrente, donc pas de course à
+arbitrer.
+
+**Ce qui a changé dans le sweep** — la boucle des cibles est INDEXÉE au lieu d'être un `for`
+sur une liste figée, et elle relit la file à chaque frontière de marchand **et avant le test de
+fin**. Cette dernière relecture ferme la seule course réelle du canal : une cible ajoutée
+pendant le DERNIER marchand serait sinon perdue. Une cible ajoutée n'interrompt jamais une page
+en cours — elle prend la file.
+
+**Les portes sont celles d'un lancement**, parce que c'est la même autorisation : un marchand
+ajouté écrit sur AKS sans relecture humaine. Liste blanche re-vérifiée côté serveur, **GO tapé**
+exigé, `store_id` numérique, et un sweep doit vraiment tourner (`409 no_sweep_running`). Double
+clic sans effet ; marchand déjà balayé non rebalayé.
+
+**Un interblocage attrapé au test, pas à la lecture** : la première version appelait `busy()`
+DANS `with self._mutex:` — or `threading.Lock` n'est pas réentrant et `busy()` prend le même
+mutex. Le serveur d'administration gelait au premier clic. Le verrou ne couvre plus que la
+lecture-modification-écriture de la file, la seule section qui en a besoin.
+
+15 tests, dont la tolérance aux fichiers corrompus et la position de la relecture dans la
+boucle. Branche non fusionnée : elle attend l'arbitrage de Romain.
+
 ## 2026-09-19 — Revue de Romain (36c83fc..cb3f4ec) : trois défauts, dont deux dans mes propres correctifs
 
 **`[P1]` Un verrou régional RÉPÉTÉ disparaissait.** Le départage « la région est la dernière

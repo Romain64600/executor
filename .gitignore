@@ -42,3 +42,6 @@ docs/audit_*/*.js
 docs/audit_*/*.sh
 docs/audit_*/build_progress.py
 docs/audit_*/inputs/
+
+# Worktrees git des agents (isolation) — jamais versionnés
+.claude/worktrees/

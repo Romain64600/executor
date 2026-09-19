@@ -766,3 +766,43 @@ de 30 h volait donc le marqueur : le sweep devenait INVISIBLE dans les consoles,
 « Lancer » s'y rouvrait. `ActiveRunExists` est levé quand un marqueur VIVANT porte un AUTRE
 `run_id` ; un pid mort reste écrasé (l'auto-guérison est préservée) et le même `run_id` aussi.
 Le sweep rend maintenant son marqueur à la FIN de `main()`, pas seulement à l'`atexit`.
+
+
+## `runs/<run>/targets_queue.json` — ajouter un marchand à un sweep EN COURS (2026-09-19)
+
+Romain : « On a l'option pour ajouter un marchand à un sweep en cours ? ». Il n'y en avait
+aucune : `scripts/10_data_entry_auto.py` lisait `--targets` une fois au démarrage et itérait
+une liste figée. Couper un sweep de plusieurs heures pour y ajouter un marchand, c'était perdre
+le balayage en cours.
+
+**Forme** — une liste JSON, ordonnée par ajout :
+
+```json
+[{"merchant": "Gamerall", "store_id": "13", "by": "romain", "at": "2026-09-19T08:43:57Z"}]
+```
+
+**Un seul écrivain, un seul lecteur.** La console (`SubmitManager.add_sweep_target`) est le
+SEUL écrivain : elle lit, ajoute, réécrit atomiquement, sous son mutex. Le sweep est le SEUL
+lecteur : il ne réécrit jamais ce fichier, il retient en mémoire ce qu'il a déjà pris. Il n'y a
+donc aucune lecture-modification-écriture concurrente, et rien à arbitrer.
+
+**Quand le sweep le relit** — à chaque FRONTIÈRE de marchand, et une dernière fois avant de
+sortir de la boucle. Jamais au milieu d'une page : une cible ajoutée n'interrompt rien, elle
+prend la file. La relecture avant le test de fin ferme la seule course réelle du canal — une
+cible ajoutée pendant le DERNIER marchand serait sinon perdue.
+
+**Les portes** — ce sont celles d'un lancement, parce que c'est la même autorisation : un
+marchand ajouté écrit sur AKS **sans relecture humaine**. La liste blanche est re-vérifiée
+côté serveur (`rejection_reason`), le **GO tapé** est exigé, le `store_id` doit être numérique,
+et un sweep doit vraiment tourner (sinon `409 no_sweep_running` : l'ajout partirait dans le
+vide). Un double clic ne met pas deux fois le même marchand ; un marchand déjà balayé n'est pas
+rebalayé.
+
+**Tolérance aux pannes** — un fichier absent, illisible ou mal formé se lit comme une file
+vide, et le sweep continue. Le pire cas acceptable est « le marchand que Romain vient d'ajouter
+n'est pas pris », visible immédiatement dans la console — jamais une écriture fausse sur AKS,
+jamais un run de 30 h tué par un fichier de service. Les entrées sans `merchant` ou sans
+`store_id` sont ignorées une par une, pas la file entière.
+
+**Trace** — chaque ajout pris par le sweep est inscrit dans `recap.json` sous `targets_added`
+(`{merchant, store_id, at}`), pour qu'un recap relu plus tard dise d'où vient chaque marchand.

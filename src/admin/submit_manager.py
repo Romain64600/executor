@@ -721,6 +721,67 @@ class SubmitManager:
                 meta={"merchant": merchant, "store_id": store_id, "by": by, "page": page},
             )
 
+    TARGETS_QUEUE = "targets_queue.json"
+
+    def add_sweep_target(self, merchant: str, store_id: str, *, by: str) -> dict[str, Any]:
+        """Ajoute un marchand au sweep EN COURS (Romain 2026-09-19).
+
+        Le canal est un fichier du dossier de run, ``targets_queue.json``, et ce point d'entrée
+        en est le SEUL écrivain : le sweep ne fait que le lire, à chaque frontière de marchand.
+        Pas de lecture-modification-écriture des deux côtés, donc pas de course — et l'écriture
+        est atomique, comme tous les contrats de run depuis l'audit du 18/09.
+
+        Les mêmes portes qu'un lancement s'appliquent, parce que c'est la même autorisation :
+        un marchand ajouté ÉCRIT sur AKS sans relecture humaine. La liste blanche est
+        re-vérifiée côté serveur (`rejection_reason`, appelé par la route), le GO tapé est exigé
+        par la route, et le store_id doit être numérique. Ce qui s'ajoute ici : il faut qu'un
+        sweep soit VRAIMENT en cours, sinon l'ajout partirait dans le vide."""
+
+        merchant = str(merchant).strip()
+        store_id = str(store_id).strip()
+        if not merchant:
+            raise SubmitStartError("bad_merchant", "merchant requis", http_status=400)
+        if not store_id.isdigit():
+            raise SubmitStartError(
+                "bad_store_id",
+                f"store_id doit être numérique pour {merchant!r}, reçu {store_id!r}",
+                http_status=400)
+        # `busy()` prend LUI-MÊME le mutex, et `threading.Lock` n'est pas réentrant :
+        # l'appeler à l'intérieur du `with` gelait le serveur. On l'interroge donc AVANT, et
+        # on ne verrouille que la lecture-modification-écriture de la file — la seule section
+        # qui a besoin d'être sérialisée (deux clics rapprochés).
+        busy = self.busy()
+        if busy is None or busy.get("kind") != "data_entry_auto":
+            raise SubmitStartError(
+                "no_sweep_running",
+                "aucun sweep en cours — ajoute le marchand au prochain lancement",
+                http_status=409)
+        run_id = str(busy.get("run_id") or "")
+        with self._mutex:
+            run_dir = self.repo_root / "runs" / run_id
+            if not run_dir.is_dir():
+                raise SubmitStartError(
+                    "no_run_dir", f"dossier de run introuvable pour {run_id!r}", http_status=409)
+            path = run_dir / self.TARGETS_QUEUE
+            try:
+                queued = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                queued = []
+            if not isinstance(queued, list):
+                queued = []
+            key = (merchant.casefold(), store_id)
+            if any((str(q.get("merchant", "")).casefold(), str(q.get("store_id", ""))) == key
+                   for q in queued if isinstance(q, dict)):
+                return {"queued": False, "reason": "déjà dans la file", "run_id": run_id}
+            entry = {"merchant": merchant, "store_id": store_id,
+                     "by": str(by or "console"), "at": self.clock()}
+            queued.append(entry)
+            tmp = path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(queued, ensure_ascii=False, indent=2), encoding="utf-8")
+            os.replace(tmp, path)
+            return {"queued": True, "run_id": run_id, "entry": entry,
+                    "position": len(queued)}
+
     def start_data_entry_auto(
         self, targets: list[tuple[str, str]], *, by: str,
         max_pages: int | None = None, start_page: int | None = None,
