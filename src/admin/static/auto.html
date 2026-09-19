@@ -82,6 +82,7 @@
         <label>Max pages <input id="max-pages" type="number" min="1" placeholder="30 (défaut)" class="num"></label>
         <label>Page de départ <input id="start-page" type="number" min="1" placeholder="1" class="num"></label>
         <label title="R45 — consoles par défaut depuis le 15/09 (décision Romain « 1 ») : les clés Xbox One / Series, PS4 / PS5, Switch / Switch 2 sont saisies sur leurs pages AKS consoles (une cible par plateforme déclarée). Décoché = --no-consoles (les lignes consoles restent skippées « console »)."><input id="consoles" type="checkbox" checked> Consoles (pages Xbox / PlayStation / Switch)</label>
+        <label title="Un arrêt fail-closed sur UN marchand (feed illisible, offre UNKNOWN, 10 échecs d'affilée) ne termine pas le lot : le sweep note la halte et passe au marchand suivant. Décoché, le premier marchand qui s'arrête emporte tous les suivants — c'est le défaut historique de ce bouton, et c'est ce qui manquait ici le 19/09. Le bouton « sweep de nuit », lui, l'a toujours forcé."><input id="continue-on-halt" type="checkbox" checked> Continuer au marchand suivant après une halte</label>
       </div>
       <p class="restrict">Consoles cochées par défaut (15/09) — décochez pour un sweep PC seulement.</p>
       <div class="golaunch">

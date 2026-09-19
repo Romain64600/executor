@@ -106,3 +106,26 @@ class WhatTheSweepWouldCoverTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheSelectiveLaunchCarriesContinueOnHalt(unittest.TestCase):
+    """2026-09-19 — Romain relance trois marchands depuis la console et cherche la case
+    « continue on halt » : elle n'existait pas. Seul le bouton « sweep de nuit » forçait le
+    drapeau ; le lancement SÉLECTIF ne l'envoyait pas du tout, donc il valait False.
+
+    C'est le lancement qu'on utilise justement pour REPRENDRE après une halte : une halte
+    fail-closed sur le premier marchand y emportait tous les suivants, en silence."""
+
+    HTML = (ROOT / "src" / "admin" / "static" / "auto.html").read_text(encoding="utf-8")
+    JS = (ROOT / "src" / "admin" / "static" / "auto.js").read_text(encoding="utf-8")
+
+    def test_the_checkbox_exists_and_is_ticked_by_default(self):
+        self.assertIn('id="continue-on-halt"', self.HTML)
+        line = next(l for l in self.HTML.splitlines() if 'id="continue-on-halt"' in l)
+        self.assertIn("checked", line, "cochée par défaut, comme le sweep de nuit")
+
+    def test_the_selective_launch_sends_the_flag(self):
+        self.assertIn('body.continue_on_halt = $("#continue-on-halt").checked;', self.JS)
+
+    def test_the_night_sweep_still_forces_it(self):
+        self.assertIn("body.continue_on_halt = true;", self.JS)

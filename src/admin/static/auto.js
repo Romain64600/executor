@@ -93,6 +93,13 @@ $("#launch").addEventListener("click", async () => {
   const sp = parseInt($("#start-page").value, 10); if (sp > 0) body.start_page = sp;
   // [R45] consoles by default (Romain 2026-09-15); unticked = PC-only sweep (--no-consoles).
   body.consoles = $("#consoles").checked;
+  // 2026-09-19 : ce bouton n'envoyait PAS `continue_on_halt`, donc il valait False — alors que
+  // le bouton « sweep de nuit » le force depuis toujours. Romain a relancé trois marchands
+  // (GameSeal, CJS, Gamivo) et a cherché la case : elle n'existait pas. Conséquence concrète :
+  // une halte fail-closed sur le PREMIER marchand emporte tous les suivants, et c'est
+  // précisément le lancement sélectif qu'on utilise pour reprendre après une halte. Cochée par
+  // défaut, comme le sweep de nuit ; décocher = le lot s'arrête au premier marchand en échec.
+  body.continue_on_halt = $("#continue-on-halt").checked;
   $("#launch").disabled = true;
   $("#launch-msg").textContent = "Lancement…";
   try {

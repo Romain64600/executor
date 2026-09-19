@@ -3,6 +3,26 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-19 — La case « continuer après une halte » manquait au lancement sélectif
+
+Romain relance trois marchands depuis la console pour reprendre ce que le sweep de nuit n'avait
+pas couvert, et cherche où cocher `--continue-on-halt` : **la case n'existait pas.** Seul le
+bouton « sweep de nuit » (tous les marchands de la liste blanche) forçait le drapeau dans son
+corps de requête ; le lancement SÉLECTIF ne l'envoyait pas du tout, donc il valait `False` côté
+serveur. Le serveur et le script, eux, l'ont toujours su faire — c'est la console qui ne le
+proposait pas.
+
+L'ironie coûte cher : le lancement sélectif est précisément celui qu'on utilise pour REPRENDRE
+après une halte. Dans le run `20260919-071948-auto`, GameSeal (105 pages, ~50 candidats/page)
+passait avant CJS-CDKeys et Gamivo ; une halte fail-closed sur GameSeal — il en a eu une la
+veille, sur une ré-importation du feed — aurait emporté les deux autres marchands sans qu'ils
+tournent jamais, en silence.
+
+Case ajoutée au formulaire, **cochée par défaut** comme le sweep de nuit, avec l'explication en
+info-bulle ; décocher garde l'ancien comportement (le lot s'arrête au premier marchand en échec).
+Verrouillé par `tests/test_auto_night_sweep_button.py` — la case existe, elle est cochée, le
+lancement sélectif l'envoie, et le sweep de nuit continue de le forcer.
+
 ## 2026-09-18 (nuit) — Audit complet, lots 3 et 4/4 : identité, édition, orchestration, console
 
 Fin des 36 constats. Un seul a été ÉCARTÉ après vérification (voir le bas de l'entrée).
