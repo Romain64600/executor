@@ -75,8 +75,14 @@ def write_marker(repo_root: Path | str, *, run_id: str, kind: str,
     écrasable (relance explicite avec ``--run-id``)."""
 
     existing = read_marker(repo_root)
-    if existing is not None and str(existing.get("run_id")) != str(run_id):
-        raise ActiveRunExists(existing)
+    if existing is not None:
+        same_run = str(existing.get("run_id")) == str(run_id)
+        # Revue `/code-review` (2026-09-19) : le MÊME run_id passait même si son processus
+        # était encore VIVANT — un `--run-id X` relancé depuis l'historique du shell pendant
+        # que X tournait volait ses fichiers, puis effaçait son marqueur en mourant sur le
+        # verrou navigateur. Le même run_id n'est repris que par SON processus (ou un mort).
+        if not same_run or int(existing.get("pid") or 0) != os.getpid():
+            raise ActiveRunExists(existing)
 
     marker = {
         "run_id": str(run_id),

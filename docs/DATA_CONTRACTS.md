@@ -782,69 +782,59 @@ le balayage en cours.
 ```
 
 **Un seul écrivain, un seul lecteur.** La console (`SubmitManager.add_sweep_target`) est le
-SEUL écrivain : elle lit, ajoute, réécrit atomiquement, sous son mutex. Le sweep est le SEUL
-lecteur : il ne réécrit jamais ce fichier, il retient en mémoire ce qu'il a déjà pris. Il n'y a
-donc aucune lecture-modification-écriture concurrente, et rien à arbitrer.
+SEUL écrivain du fichier : elle lit, ajoute, réécrit atomiquement, sous son mutex. Le sweep est
+le SEUL lecteur : il ne réécrit jamais ce fichier, il retient en mémoire ce qu'il a déjà pris.
+Il n'y a donc aucune lecture-modification-écriture concurrente sur la file.
 
-**Quand le sweep le relit** — à chaque FRONTIÈRE de marchand, et une dernière fois avant de
-sortir de la boucle. Jamais au milieu d'une page : une cible ajoutée n'interrompt rien, elle
-prend la file. La relecture avant le test de fin ferme la seule course réelle du canal — une
-cible ajoutée pendant le DERNIER marchand serait sinon perdue.
+**L'état « fermée » vit dans le recap, pas dans un fichier à part.** `recap["queue_closed"]`
+est écrit par le sweep, atomiquement (`persist()`), et relu par la console à chaque ajout — elle
+lit déjà le recap pour connaître le plan. Une première version portait cet état dans un
+fichier `targets_queue.closed` ; ses deux cas spéciaux (fermer après la boucle, effacer au
+démarrage) ont chacun ouvert un défaut (revue `/code-review`, 2026-09-19). Le recap est rebâti
+à chaque lancement (aucun héritage), stampé sur toute sortie, et il est ce que la console
+affiche.
 
-**Les portes** — ce sont celles d'un lancement, parce que c'est la même autorisation : un
-marchand ajouté écrit sur AKS **sans relecture humaine**. La liste blanche est re-vérifiée
-côté serveur (`rejection_reason`), le **GO tapé** est exigé, le `store_id` doit être numérique,
-et un sweep doit vraiment tourner (sinon `409 no_sweep_running` : l'ajout partirait dans le
-vide). Un double clic ne met pas deux fois le même marchand ; un marchand déjà balayé n'est pas
-rebalayé.
+**Le protocole de fin, et pourquoi l'ORDRE est la garantie.** À chaque frontière de marchand le
+sweep relit la file. Quand il n'a plus rien à balayer : il écrit `queue_closed: true` **puis**
+relit une dernière fois. Un ajout que la console a accepté sans avoir vu la fermeture a été
+écrit avant elle, donc la relecture qui la suit le voit — c'est un happens-before, pas une
+fenêtre « supposée nulle ». Si cette relecture rapporte une retardataire, le sweep la traite et
+**rouvre** la file (`queue_closed: false`) pendant son balayage — sans quoi la console refuserait
+pendant des heures un ajout que le lecteur aurait pris — puis referme à la vraie fin. Sur
+TOUTE sortie (fin naturelle, stop opérateur, halte fail-closed), le sweep ferme, fait une
+dernière relecture d'**enregistrement**, et inscrit `targets_not_reached` : les cibles prises
+mais jamais démarrées, et les ajouts arrivés trop tard. Un ajout accepté ne disparaît jamais
+sans trace.
 
-**Tolérance aux pannes** — un fichier absent, illisible ou mal formé se lit comme une file
-vide, et le sweep continue. Le pire cas acceptable est « le marchand que Romain vient d'ajouter
-n'est pas pris », visible immédiatement dans la console — jamais une écriture fausse sur AKS,
-jamais un run de 30 h tué par un fichier de service. Les entrées sans `merchant` ou sans
-`store_id` sont ignorées une par une, pas la file entière.
+**Côté console, dans l'ordre :** `run_id` **obligatoire** et égal au run actif (`409
+run_required` / `409 run_mismatch` — sinon un clic sur un onglet qui a vu « Sweep terminé »
+rejoindrait n'importe quel sweep B, avec les paramètres de B) ; `queue_closed` **avant tout le
+reste** (`409 sweep_finishing`, sans rien écrire — même pour un doublon, sinon une relance après
+« NON garantie » recevrait 200 « déjà dans la file ») ; puis le dédoublonnage contre `planned ∪
+targets ∪ targets_added` (`queued: false`, « déjà cible de ce sweep ») ; puis l'écriture ; puis
+une **re-vérification** de `queue_closed` — s'il vient de passer à `true`, la réponse est
+`queued: false` « prise en charge NON garantie ; le recap fait foi » au lieu d'une promesse. La
+liste blanche est vérifiée par la route ET par le lecteur du sweep (`take_from_queue`) :
+`Difmark:167` écrit à la main dans le fichier est refusé et inscrit `targets_refused`, jamais
+balayé. Chaque issue est journalisée dans `logs/<run>.jsonl` (`add_target_queued` /
+`_ignored` / `_uncertain` / `_refused`).
 
-**Trace** — chaque ajout pris par le sweep est inscrit dans `recap.json` sous `targets_added`
-(`{merchant, store_id, at}`), pour qu'un recap relu plus tard dise d'où vient chaque marchand ;
-chaque ajout REFUSÉ par le lecteur l'est sous `targets_refused` (`{merchant, store_id, reason,
-at}`).
+**Ce que le sweep inscrit dans le recap** — `planned` (le plan complet, initial + pris, tenu à
+jour), `targets_added` (pris dans la file), `targets_refused` (liste blanche), `targets_ignored`
+(doublon du plan initial écrit à la main — un ajout pris par ce run n'est PAS re-tracé aux
+relectures suivantes), `targets_not_reached`, `queue_closed`. La console les affiche sous le
+compteur du recap.
 
-**Trois gardes ajoutées le 2026-09-19 sur revue de Romain (5c727bb → 7d7d310) :**
+**Au lancement** — la file n'est effacée que sur une **relance** (un `recap.json` existe déjà) :
+un dossier neuf de la console, qui déclare le run occupé AVANT de lancer le processus, peut
+déjà contenir un ajout fait pendant le démarrage — il est pour ce run. Et `write_marker`
+n'accepte le MÊME `run_id` que depuis son propre processus (ou après sa mort) : une relance
+depuis l'historique du shell pendant que le run tourne est refusée au lieu de voler ses
+fichiers.
 
-- **La liste blanche est appliquée par le LECTEUR aussi** (`take_from_queue`), pas seulement
-  par la route HTTP. `Difmark:167`, interdit au lancement, écrit directement dans le fichier,
-  rejoignait l'exécution. Même argument que la garde de `--targets` dans `main` : le point qui
-  déclenche les écritures vérifie lui-même, quel que soit le chemin d'arrivée. Un ajout refusé
-  n'arrête pas le run : il est inscrit `targets_refused` et ignoré.
-- **`targets_queue.closed`** — le sweep écrit ce marqueur **avant** sa toute dernière relecture,
-  et c'est l'ordre qui compte. Un ajout arrivé après la dernière relecture répondait
-  `queued: true` puis le sweep se terminait sans le traiter — succès annoncé, marchand perdu,
-  sortie 0. Désormais : la console refuse (`409 sweep_finishing`) dès qu'elle voit le marqueur,
-  sans rien écrire ; et elle **re-vérifie après avoir écrit** — si le marqueur vient d'apparaître,
-  elle répond `queued: false` avec « prise en charge NON garantie ; le recap fait foi » au lieu
-  de promettre. Un ajout que la console a accepté sans voir le marqueur a été écrit avant lui,
-  donc avant la relecture qui le suit : il est pris. Une retardataire arrivée dans la fenêtre est
-  traitée ; après elle, la file reste fermée.
-- **L'ajout est lié au run AFFICHÉ** — le client envoie le `run_id` qu'il montre ; si le sweep A
-  a fini et que B a démarré entre l'affichage et le clic, le serveur refuse (`409
-  run_mismatch`) au lieu de faire rejoindre B au marchand, avec les paramètres de B.
-  **Le `run_id` est OBLIGATOIRE** (`409 run_required` sans lui) : la première version le rendait
-  facultatif, et le client l'envoyait à `null` dès que l'onglet avait vu « Sweep terminé » —
-  la garde était sautée. Côté écran, le bouton « + marchand » n'existe que quand un run est
-  affiché, et le message de succès NOMME le run.
-
-**Trois gardes de plus, trouvées par trois réfuteurs indépendants le même jour :**
-
-- **`planned` dans `recap.json`** — le plan complet du sweep (cibles initiales, tenu à jour à
-  chaque ajout pris). Sans lui la console ne POUVAIT pas savoir qu'un marchand était déjà cible
-  (`targets` ne liste que ceux déjà démarrés) : elle répondait « ✔ ajouté — position N » pour un
-  marchand que le lecteur ignorait ensuite sans trace. Elle refuse désormais (`queued: false`,
-  « déjà cible de ce sweep ») pour tout marchand de `planned ∪ targets ∪ targets_added` ; et un
-  doublon écrit à la main laisse une trace `targets_ignored` dans le recap.
-- **Canal PROPRE au lancement** — une relance explicite avec le MÊME `--run-id` héritait du
-  `targets_queue.closed` du run précédent (tout ajout refusé « sweep_finishing » dès le premier
-  marchand) et de son ancienne file (un marchand non demandé rebalayé). Les deux fichiers sont
-  effacés juste après la pose du marqueur de run : `--targets` est tout le plan.
-- **Fermée sur TOUTE sortie** — les `break` (stop opérateur, halte fail-closed) sortaient de la
-  boucle sans fermer la file : pendant tout l'arrêt coopératif la console répondait encore
-  `queued: true`. La fermeture est faite après la boucle, quel que soit le chemin de sortie.
+**La fenêtre résiduelle, dite honnêtement** — un SIGKILL du sweep entre l'écriture de
+`queue_closed: true` et la relecture qui la suit laisse dans la file un ajout déjà accepté, sans
+`finished_at` ni `targets_not_reached`. La console refuse ensuite tout nouvel ajout
+(`no_sweep_running`, le marqueur ayant un pid mort), mais cet ajout-là ne se retrouve qu'en
+comparant `targets_queue.json` et `targets_added`. C'est le prix d'un canal fichier sans
+transaction ; il est nommé plutôt que nié.

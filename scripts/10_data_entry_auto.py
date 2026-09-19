@@ -89,7 +89,7 @@ def read_targets_queue(sweep_dir: "Path | None") -> list[tuple[str, str]]:
 
 
 def take_from_queue(sweep_dir: "Path | None", planned: set, refused_keys: set,
-                    recap: dict, clock) -> list[tuple[str, str]]:
+                    recap: dict, clock, taken_keys: "set | None" = None) -> list[tuple[str, str]]:
     """Ce que la file apporte de NOUVEAU et de VETTÉ ; le reste est ignoré ou inscrit refusé.
 
     Revue de Romain (2026-09-19, P1) : la route HTTP filtrait la liste blanche, mais pas le
@@ -97,20 +97,24 @@ def take_from_queue(sweep_dir: "Path | None", planned: set, refused_keys: set,
     rejoignait l'exécution. Même argument que la garde de `--targets` dans `main` : le point
     qui DÉCLENCHE les écritures vérifie lui-même, quel que soit le chemin d'arrivée. Un ajout
     refusé n'arrête pas un run de 30 h : il est inscrit dans le recap (`targets_refused`) et
-    ignoré. `planned` et `refused_keys` sont mutés en place (clés en minuscules)."""
+    ignoré.
+
+    `planned` = le plan complet (initial + pris), `taken_keys` = ce que CE run a pris dans la
+    file. Revue `/code-review` (2026-09-19) : sans cette distinction, chaque ajout accepté
+    était re-tracé « déjà cible » à toutes les relectures suivantes — la file n'est jamais
+    vidée, et la clé était désormais dans `planned`. Une entrée prise se relit en silence ;
+    seul un doublon du PLAN INITIAL, écrit à la main, laisse une trace `targets_ignored`.
+    Tous les ensembles sont mutés en place (clés en minuscules)."""
 
     taken: list[tuple[str, str]] = []
+    if taken_keys is None:
+        taken_keys = set()
     ignored = recap.setdefault("targets_ignored", [])
     for added in read_targets_queue(sweep_dir):
         key = (added[0].casefold(), str(added[1]))
-        if key in refused_keys:
+        if key in refused_keys or key in taken_keys:
             continue
         if key in planned:
-            # Réfuteur du 2026-09-19 : un marchand DÉJÀ cible du run (plan initial ou ajout
-            # précédent) était ignoré ici SANS TRACE, pendant que la console avait répondu
-            # « ✔ ajouté ». La console refuse désormais en amont (elle lit `planned` dans le
-            # recap) ; on garde le skip et on l'inscrit, pour qu'un doublon écrit à la main
-            # laisse aussi une trace lisible.
             if not any((i.get("merchant", "").casefold(), str(i.get("store_id"))) == key for i in ignored):
                 ignored.append({"merchant": added[0], "store_id": added[1],
                                 "reason": "déjà cible du sweep", "at": clock()})
@@ -121,32 +125,21 @@ def take_from_queue(sweep_dir: "Path | None", planned: set, refused_keys: set,
             recap.setdefault("targets_refused", []).append(
                 {"merchant": added[0], "store_id": added[1], "reason": why, "at": clock()})
             continue
-        planned.add(key)
+        planned.add(key); taken_keys.add(key)
         recap.setdefault("targets_added", []).append(
             {"merchant": added[0], "store_id": added[1], "at": clock()})
         taken.append(added)
     return taken
 
 
-TARGETS_QUEUE_CLOSED = "targets_queue.closed"
-
-
-def close_targets_queue(sweep_dir: "Path | None") -> None:
-    """Déclare la file FERMÉE : à partir d'ici la console refuse les ajouts.
-
-    Revue de Romain (2026-09-19, P2) : un ajout arrivé APRÈS la dernière relecture répondait
-    `queued: true` côté serveur, puis le sweep se terminait sans le traiter — succès annoncé,
-    marchand perdu, sortie 0. Le marqueur est écrit AVANT la toute dernière relecture, et
-    c'est cet ordre qui ferme la course : un ajout que la console a vu passer sans marqueur a
-    forcément été écrit avant lui, donc avant la relecture qui le suit ; un ajout qui trouve le
-    marqueur est refusé ou signalé incertain, jamais promis."""
-
-    if sweep_dir is None:
-        return
-    try:
-        (sweep_dir / TARGETS_QUEUE_CLOSED).write_text(_clock(), encoding="utf-8")
-    except OSError:
-        pass          # sans marqueur la console continue d'accepter : c'est le cas d'avant, pas pire
+# L'état « file fermée » vit dans le RECAP (`queue_closed`), écrit atomiquement par
+# `persist()`, et non dans un fichier à part. Revue `/code-review` (2026-09-19) : le fichier
+# `targets_queue.closed` de la version précédente avait dû être complété par deux cas
+# spéciaux (fermeture après la boucle, effacement au démarrage), et chacun a ouvert un défaut
+# (ajout accepté puis détruit au démarrage, marqueur collé pendant qu'une retardataire
+# balayait des heures). Le recap est déjà relu par la console à chaque ajout, il est rebâti
+# à chaque lancement, et il porte `finished_at` sur toute sortie : un seul état, un seul
+# écrivain, aucun héritage entre deux lancements.
 
 
 def _run_child(argv: list[str]) -> int:
@@ -600,8 +593,13 @@ def main() -> int:
     # premier marchand) ET de son ancienne file (un marchand non demandé rebalayé). Un
     # lancement démarre avec un canal PROPRE : `--targets` est tout le plan. `missing_ok`
     # couvre aussi le dossier absent, donc unlink → mkdir tient dans les deux cas.
-    for stale in (TARGETS_QUEUE, TARGETS_QUEUE_CLOSED):
-        (sweep_dir / stale).unlink(missing_ok=True)
+    # …mais SEULEMENT sur une relance (un recap.json existe déjà). Revue `/code-review` : la
+    # console déclare le run occupé (dossier créé, marqueur `_active`) AVANT de lancer ce
+    # processus — un ajout accepté pendant notre démarrage vivait déjà dans la file et
+    # l'effacement inconditionnel le détruisait. Un dossier neuf de la console ne contient
+    # qu'admin_submit.json : sa file est pour NOUS.
+    if (sweep_dir / "recap.json").exists():
+        (sweep_dir / TARGETS_QUEUE).unlink(missing_ok=True)
     sweep_dir.mkdir(parents=True, exist_ok=True)
     recap = {"run_id": run_id, "started_at": _clock(), "targets": [], "halted": None,
              "halted_merchants": [],
@@ -644,35 +642,44 @@ def main() -> int:
     # marchand, et pour qu'un marchand déjà balayé ne soit pas rebalayé.
     planned = {(m.casefold(), str(sid)) for m, sid in targets}
     refused_keys: set[tuple[str, str]] = set()
+    taken_keys: set[tuple[str, str]] = set()
     # Réfuteur du 2026-09-19 : la console ne POUVAIT pas savoir qu'un marchand était déjà cible
     # — `recap["targets"]` ne liste que ceux déjà démarrés. `planned` est le plan complet, tenu
     # à jour à chaque ajout pris ; la console le lit avant de promettre quoi que ce soit.
     recap["planned"] = [{"merchant": m, "store_id": str(sid)} for m, sid in targets]
+    recap["queue_closed"] = False
     persist()
 
-    def drain_queue() -> None:
+    def drain_queue() -> list[tuple[str, str]]:
         before = tuple(len(recap.get(k) or []) for k in ("targets_added", "targets_refused", "targets_ignored"))
-        new_targets = take_from_queue(sweep_dir, planned, refused_keys, recap, _clock)
+        new_targets = take_from_queue(sweep_dir, planned, refused_keys, recap, _clock, taken_keys)
         targets.extend(new_targets)
         recap["planned"].extend({"merchant": m, "store_id": str(sid)} for m, sid in new_targets)
         after = tuple(len(recap.get(k) or []) for k in ("targets_added", "targets_refused", "targets_ignored"))
         if after != before:
             persist()          # le recap dit d'où vient chaque marchand, et ce qui a été refusé
+        return new_targets
+
+    def close_queue(closed: bool) -> None:
+        recap["queue_closed"] = bool(closed)
+        persist()              # atomique : la console voit l'état AVANT la relecture qui suit
 
     index = 0
-    queue_closed = False
     while True:
         # La file est relue à chaque frontière de marchand — jamais au milieu d'une page.
         drain_queue()
         if index >= len(targets):
-            if queue_closed:
+            if recap["queue_closed"]:
                 break
             # Sur le point de sortir : on FERME d'abord (la console refuse dès maintenant),
-            # PUIS on relit une dernière fois. Un ajout que la console a accepté sans voir le
-            # marqueur a été écrit avant lui, donc cette relecture le voit. Une retardataire
-            # arrivée dans cette fenêtre est traitée ; après elle, la file reste fermée.
-            close_targets_queue(sweep_dir)
-            queue_closed = True
+            # PUIS on relit une dernière fois. Un ajout que la console a accepté sans voir la
+            # fermeture a été écrit avant elle, donc cette relecture le voit. Si une
+            # retardataire arrive, on la traite ET ON ROUVRE — revue `/code-review` : la
+            # version précédente laissait la file fermée pendant tout son balayage (des
+            # heures) alors que le lecteur continuait de relire à chaque frontière.
+            close_queue(True)
+            if drain_queue():
+                close_queue(False)
             continue
         merchant, store_id = targets[index]
         index += 1
@@ -735,7 +742,16 @@ def main() -> int:
     # boucle SANS fermer la file — pendant tout l'arrêt coopératif la console répondait encore
     # `queued: true` à des ajouts que plus personne ne lirait. Fermer ici couvre toute sortie ;
     # sur la fin naturelle c'est un second appel sans effet.
-    close_targets_queue(sweep_dir)
+    # Toute sortie ferme la file — y compris les `break` (stop opérateur, halte). Puis UNE
+    # relecture d'ENREGISTREMENT : revue `/code-review` (2026-09-19) — sur un `break`, un ajout
+    # que la console avait accepté n'était ni balayé ni inscrit nulle part. Il est désormais
+    # inscrit `targets_not_reached`, avec les cibles prises mais jamais démarrées.
+    recap["queue_closed"] = True
+    late = take_from_queue(sweep_dir, planned, refused_keys, recap, _clock, taken_keys)
+    not_reached = [{"merchant": m, "store_id": str(sid)} for m, sid in targets[index:]]
+    not_reached += [{"merchant": m, "store_id": str(sid)} for m, sid in late]
+    if not_reached:
+        recap["targets_not_reached"] = not_reached
     recap["finished_at"] = _clock()
     persist()
     print(json.dumps({"run_id": run_id, "total_created": recap["total_created"],

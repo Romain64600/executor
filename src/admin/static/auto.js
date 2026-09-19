@@ -186,7 +186,7 @@ $("#add-live-btn").addEventListener("click", async () => {
   } catch (e) {
     msg.textContent = "✖ " + e.message;
   }
-  $("#add-live-btn").disabled = false;
+  syncGo();   // revue /code-review : pas de ré-armement inconditionnel — si le sweep a fini pendant l'attente, le bouton reste éteint
 });
 
 $("#stop-btn").addEventListener("click", async () => {
@@ -292,8 +292,20 @@ function renderRecap(d) {
                    : (rec.finished_at ? (partial ? "TERMINÉ — couverture partielle" : "TERMINÉ") : "EN COURS");
   pill.className = "pill " + st;
   const total = rec.total_created || 0;
+  // La FILE d'ajouts, visible (revue /code-review 2026-09-19) : la réponse « NON garantie ;
+  // le recap fait foi » renvoyait l'opérateur vers un recap dont l'écran n'affichait que les
+  // marchands déjà démarrés — impossible de distinguer « en file, pas commencé » de « jamais
+  // pris ». Chaque liste du recap a sa ligne, avec le nom du marchand.
+  const names = (xs) => (xs || []).map((t) => t.merchant + (t.reason ? " (" + t.reason + ")" : "")).join(", ");
+  const queueLines = [];
+  if ((rec.targets_added || []).length) queueLines.push("+ ajoutés en cours de run : " + names(rec.targets_added));
+  if ((rec.targets_not_reached || []).length) queueLines.push("✖ jamais atteints : " + names(rec.targets_not_reached));
+  if ((rec.targets_refused || []).length) queueLines.push("⛔ refusés (liste blanche) : " + names(rec.targets_refused));
+  if ((rec.targets_ignored || []).length) queueLines.push("— ignorés (déjà cibles) : " + names(rec.targets_ignored));
+  if (rec.queue_closed) queueLines.push("file fermée — le sweep termine, plus d'ajout possible");
   $("#recap-summary").replaceChildren(
     el("div", { class: "kpi" }, [el("div", { class: "kpi-n", text: String(total) }), el("div", { class: "kpi-l", text: "offres créées" })]),
+    ...queueLines.map((t) => el("div", { class: "queue-line", text: t })),
     el("div", { class: "kpi" }, [el("div", { class: "kpi-n", text: String((rec.targets || []).length) }), el("div", { class: "kpi-l", text: "marchand(s)" })]),
   );
   const wrap = $("#recap-pages");

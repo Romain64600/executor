@@ -723,7 +723,18 @@ class SubmitManager:
 
     TARGETS_QUEUE = "targets_queue.json"
 
-    TARGETS_QUEUE_CLOSED = "targets_queue.closed"
+    def _read_recap(self, run_dir: Path) -> dict[str, Any]:
+        """Le recap du run, ou {} — jamais une exception : revue `/code-review` (2026-09-19),
+        un recap dont le sommet n'est pas un dict (liste, ou `{"recap": null}` tel que la route
+        /api/data-entry/recap l'émet sans recap) faisait répondre 500 à chaque clic."""
+
+        try:
+            raw = json.loads((run_dir / "recap.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        if isinstance(raw, dict) and isinstance(raw.get("recap"), dict):
+            raw = raw["recap"]
+        return raw if isinstance(raw, dict) else {}
 
     def add_sweep_target(self, merchant: str, store_id: str, *, by: str,
                          run_id: str | None = None) -> dict[str, Any]:
@@ -732,13 +743,16 @@ class SubmitManager:
         Le canal est un fichier du dossier de run, ``targets_queue.json``, et ce point d'entrée
         en est le SEUL écrivain : le sweep ne fait que le lire, à chaque frontière de marchand.
         Pas de lecture-modification-écriture des deux côtés, donc pas de course — et l'écriture
-        est atomique, comme tous les contrats de run depuis l'audit du 18/09.
+        est atomique, comme tous les contrats de run depuis l'audit du 18/09. L'état « fermée »
+        vit dans le RECAP du sweep (``queue_closed``), écrit atomiquement AVANT sa dernière
+        relecture : un ajout accepté sans avoir vu la fermeture a été écrit avant elle.
 
         Les mêmes portes qu'un lancement s'appliquent, parce que c'est la même autorisation :
         un marchand ajouté ÉCRIT sur AKS sans relecture humaine. La liste blanche est
-        re-vérifiée côté serveur (`rejection_reason`, appelé par la route), le GO tapé est exigé
-        par la route, et le store_id doit être numérique. Ce qui s'ajoute ici : il faut qu'un
-        sweep soit VRAIMENT en cours, sinon l'ajout partirait dans le vide."""
+        re-vérifiée par la route (`rejection_reason`) ET par le lecteur du sweep ; le GO tapé
+        est exigé par la route ; le store_id doit être numérique ; un sweep doit VRAIMENT être
+        en cours, et c'est CELUI que l'opérateur affiche (run_id obligatoire). Chaque issue est
+        journalisée dans logs/<run>.jsonl (AGENTS.md : « JSONL logs for every action »)."""
 
         merchant = str(merchant).strip()
         store_id = str(store_id).strip()
@@ -751,8 +765,7 @@ class SubmitManager:
                 http_status=400)
         # `busy()` prend LUI-MÊME le mutex, et `threading.Lock` n'est pas réentrant :
         # l'appeler à l'intérieur du `with` gelait le serveur. On l'interroge donc AVANT, et
-        # on ne verrouille que la lecture-modification-écriture de la file — la seule section
-        # qui a besoin d'être sérialisée (deux clics rapprochés).
+        # on ne verrouille que la lecture-modification-écriture de la file.
         busy = self.busy()
         if busy is None or busy.get("kind") != "data_entry_auto":
             raise SubmitStartError(
@@ -760,45 +773,45 @@ class SubmitManager:
                 "aucun sweep en cours — ajoute le marchand au prochain lancement",
                 http_status=409)
         active_run = str(busy.get("run_id") or "")
+        run_dir = self.repo_root / "runs" / active_run
+        log = self._logger(run_dir) if run_dir.is_dir() else None
+
+        def refuse(code: str, message: str, status: int = 409, **detail: Any) -> None:
+            if log is not None:
+                log.log("add_target_refused", merchant=merchant, store_id=store_id, by=by,
+                        code=code, run_id=active_run, **detail)
+            raise SubmitStartError(code, message, http_status=status,
+                                   detail={"active_run": active_run, **detail})
+
         # Revue de Romain (2026-09-19, P2) : l'ajout doit être LIÉ au run que l'opérateur a
-        # sous les yeux. Sans ça, si le sweep A se termine et qu'un sweep B démarre entre
-        # l'affichage et le clic, le marchand rejoint B — avec les paramètres de B.
-        # Réfuteur du même jour : la première version rendait `run_id` FACULTATIF — et le client
-        # l'envoie à null dès que l'onglet a vu « Sweep terminé » : la garde était sautée, le
-        # marchand rejoignait n'importe quel run B, et un auto.js en cache (sans le champ) la
-        # contournait aussi. Le point qui déclenche vérifie lui-même : run_id OBLIGATOIRE.
+        # sous les yeux. Réfuteur du même jour : `run_id` facultatif = garde sautée dès que le
+        # client l'envoie à null (« Sweep terminé »), ou par un client en cache. OBLIGATOIRE.
         if not run_id:
-            raise SubmitStartError(
-                "run_required",
-                "aucun sweep affiché — recharge la page avant d'ajouter un marchand",
-                http_status=409, detail={"active_run": active_run})
+            refuse("run_required", "aucun sweep affiché — recharge la page avant d'ajouter un marchand")
         if str(run_id) != active_run:
-            raise SubmitStartError(
-                "run_mismatch",
-                f"le sweep affiché ({run_id}) n'est plus celui qui tourne ({active_run}) — "
-                "recharge la page avant d'ajouter",
-                http_status=409, detail={"active_run": active_run})
-        run_id = active_run
+            refuse("run_mismatch",
+                   f"le sweep affiché ({run_id}) n'est plus celui qui tourne ({active_run}) — "
+                   "recharge la page avant d'ajouter", displayed_run=str(run_id))
+        if not run_dir.is_dir():
+            refuse("no_run_dir", f"dossier de run introuvable pour {active_run!r}")
         with self._mutex:
-            run_dir = self.repo_root / "runs" / run_id
-            if not run_dir.is_dir():
-                raise SubmitStartError(
-                    "no_run_dir", f"dossier de run introuvable pour {run_id!r}", http_status=409)
-            # Réfuteur du 2026-09-19 : un marchand DÉJÀ cible du run (plan initial, ou ajout
-            # déjà pris) recevait « ✔ ajouté — position N » puis était ignoré sans trace par le
-            # lecteur. Le sweep publie son plan dans le recap (`planned`) : on refuse ici,
-            # jamais `queued: true` pour ce que le lecteur ignorera.
-            try:
-                recap = json.loads((run_dir / "recap.json").read_text(encoding="utf-8"))
-                recap = recap.get("recap", recap)
-            except (OSError, ValueError):
-                recap = {}
+            recap = self._read_recap(run_dir)
+            # Fermée = le sweep termine : refuser AVANT tout, même avant les doublons (revue
+            # `/code-review` : une relance après une réponse « NON garantie » recevait 200
+            # « déjà dans la file », qui se lisait comme une promesse).
+            if recap.get("queue_closed"):
+                refuse("sweep_finishing",
+                       "le sweep se termine — l'ajout n'aurait pas été traité ; "
+                       "ajoute le marchand au prochain lancement")
             key = (merchant.casefold(), store_id)
             already = [(str(t.get("merchant", "")).casefold(), str(t.get("store_id", "")))
                        for k in ("planned", "targets", "targets_added")
                        for t in (recap.get(k) or []) if isinstance(t, dict)]
             if key in already:
-                return {"queued": False, "run_id": run_id,
+                if log is not None:
+                    log.log("add_target_ignored", merchant=merchant, store_id=store_id, by=by,
+                            reason="déjà cible du sweep", run_id=active_run)
+                return {"queued": False, "run_id": active_run,
                         "reason": f"{merchant} est déjà cible de ce sweep"}
             path = run_dir / self.TARGETS_QUEUE
             try:
@@ -809,30 +822,29 @@ class SubmitManager:
                 queued = []
             if any((str(q.get("merchant", "")).casefold(), str(q.get("store_id", ""))) == key
                    for q in queued if isinstance(q, dict)):
-                return {"queued": False, "reason": "déjà dans la file", "run_id": run_id}
-            # Fermée = le sweep termine : refuser AVANT d'écrire, pas de fausse promesse.
-            if (run_dir / self.TARGETS_QUEUE_CLOSED).exists():
-                raise SubmitStartError(
-                    "sweep_finishing",
-                    "le sweep se termine — l'ajout n'aurait pas été traité ; "
-                    "ajoute le marchand au prochain lancement",
-                    http_status=409)
+                return {"queued": False, "run_id": active_run, "reason": "déjà dans la file"}
             entry = {"merchant": merchant, "store_id": store_id,
                      "by": str(by or "console"), "at": self.clock()}
             queued.append(entry)
             tmp = path.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(queued, ensure_ascii=False, indent=2), encoding="utf-8")
             os.replace(tmp, path)
-            # Revue de Romain (2026-09-19, P2) : un ajout accepté puis perdu en fin de run.
-            # On RE-VÉRIFIE le marqueur APRÈS l'écriture. S'il est absent maintenant, l'écriture
-            # a précédé la fermeture, donc la dernière relecture du sweep (qui suit la
-            # fermeture) la verra : promesse tenue. S'il vient d'apparaître, on ne sait pas
-            # de quel côté de la relecture l'écriture est tombée — on le DIT au lieu de promettre.
-            if (run_dir / self.TARGETS_QUEUE_CLOSED).exists():
-                return {"queued": False, "run_id": run_id, "entry": entry,
+            # Revue de Romain (2026-09-19, P2) : un ajout accepté puis perdu en fin de run. On
+            # RE-VÉRIFIE la fermeture APRÈS l'écriture. Absente maintenant → l'écriture a
+            # précédé la fermeture, donc la relecture qui la suit la voit : promesse tenue.
+            # Apparue entre-temps → on ne sait pas de quel côté de la relecture l'écriture est
+            # tombée : on le DIT au lieu de promettre (le recap fait foi).
+            if self._read_recap(run_dir).get("queue_closed"):
+                if log is not None:
+                    log.log("add_target_uncertain", merchant=merchant, store_id=store_id, by=by,
+                            run_id=active_run)
+                return {"queued": False, "run_id": active_run, "entry": entry,
                         "reason": "le sweep se terminait au même instant — prise en charge "
                                   "NON garantie ; le recap (targets_added) fait foi"}
-            return {"queued": True, "run_id": run_id, "entry": entry,
+            if log is not None:
+                log.log("add_target_queued", merchant=merchant, store_id=store_id, by=by,
+                        run_id=active_run, position=len(queued))
+            return {"queued": True, "run_id": active_run, "entry": entry,
                     "position": len(queued)}
 
     def start_data_entry_auto(

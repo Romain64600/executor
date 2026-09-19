@@ -3,6 +3,52 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-19 — Revue `/code-review` de Romain (7d7d310 → bd55ba1) : 14 constats, une remontée d'altitude
+
+La revue a confirmé les trois correctifs des réfuteurs déjà poussés, en a réfuté deux
+candidats, et en a rapporté **14**. Le plus important n'est pas un trou mais une remarque de
+conception : l'état « file fermée » vivait dans un fichier à part (`targets_queue.closed`), et
+chacun des deux cas spéciaux qu'il avait fallu lui ajouter — fermer après la boucle, effacer au
+démarrage — avait ouvert un défaut. **L'état vit désormais dans le recap** (`queue_closed`),
+écrit atomiquement par `persist()`, relu par la console à chaque ajout, rebâti à chaque
+lancement, stampé sur toute sortie. Un seul état, un seul écrivain, aucun héritage.
+
+Ce que ça ferme, constat par constat :
+
+- **Un `break` (stop, halte) sortait sans dernière relecture** : un ajout accepté n'était ni
+  balayé ni inscrit nulle part. Toute sortie ferme, relit une dernière fois pour
+  ENREGISTREMENT, et inscrit `targets_not_reached` (cibles prises jamais démarrées + ajouts
+  arrivés trop tard).
+- **L'effacement de la file au démarrage détruisait un ajout accepté pendant le lancement** —
+  la console déclare le run occupé AVANT de lancer le processus. Effacement gaté sur une
+  relance (un `recap.json` déjà présent) ; un dossier neuf garde sa file.
+- **Fermeture collée** : une retardataire prise après la fermeture balayait des heures pendant
+  que la console refusait tout. La file est ROUVERTE pendant son balayage, refermée à la fin.
+- **`write_marker` acceptait le même `run_id` avec un processus encore vivant** : une relance
+  depuis l'historique du shell volait les fichiers du run en cours puis effaçait son marqueur.
+  Le même `run_id` n'est repris que par son propre processus.
+- **Les doublons passaient avant la fermeture** : une relance après « NON garantie » recevait
+  200 « déjà dans la file ». La fermeture est testée en premier.
+- **Un recap non-dict faisait répondre 500** (`{"recap": null}`, la forme émise sans recap).
+  Lecture robuste.
+- **Chaque ajout accepté était re-tracé « déjà cible »** à toutes les relectures suivantes.
+  Les clés prises par ce run sont distinguées du plan initial.
+- **Le couplage boucle ↔ file n'était ancré que par des chaînes** ; des mutants passaient la
+  suite. Sept tests font maintenant tourner la VRAIE boucle de `main()` avec un `run_sweep`
+  bouchonné qui écrit dans la file pendant le run : ajout pendant le premier marchand, pendant
+  le dernier, retardataire et réouverture, Difmark écrit à la main, stop opérateur après un
+  ajout, relance même `run-id`, ajout pendant le démarrage.
+- **Le test de la route ancrait sur le dispatch, pas sur le `def`** : supprimer la vérification
+  de liste blanche de la route laissait le test vert. Ancré sur `def`.
+- **Le bouton se ré-armait inconditionnellement** après la requête, même si le sweep venait de
+  finir. `syncGo()`.
+- **Aucun journal JSONL** pour les issues de l'ajout ; **la file n'était pas affichée** dans le
+  recap alors que la réponse « NON garantie » y renvoyait. Journalisé (`add_target_*`), affiché.
+- **La doc affirmait deux choses incompatibles** (« la relecture ferme la course » vs le
+  marqueur) et prétendait un SIGKILL sans perte. Section réécrite, fenêtre résiduelle NOMMÉE.
+
+Suite complète verte ; chaque garde vérifiée par mutation.
+
 ## 2026-09-19 — Trois réfuteurs contre l'ajout de marchand : trois trous de plus
 
 Après la revue de Romain, trois agents indépendants ont attaqué le correctif sous trois angles
