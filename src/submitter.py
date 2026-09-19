@@ -264,6 +264,12 @@ def _href_search_term(href: str) -> str | None:
     return values[0] if values else None
 
 
+def _norm_ws(text: Any) -> str:
+    """Blancs de bord retirés, suites de blancs repliées — et rien d'autre."""
+
+    return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
 def _row_check(row: dict[str, str], candidate: dict[str, Any], *,
                check_price: bool) -> tuple[list[str], list[str]]:
     """(mismatches, checked): feed-row fields verified against the candidate.
@@ -284,7 +290,14 @@ def _row_check(row: dict[str, str], candidate: dict[str, Any], *,
     offer = candidate["offer"]
     mismatches: list[str] = []
     checked = ["name", "url"]
-    if row.get("name", "") != offer["name"]:
+    # 2026-09-19 (GameSeal, deux sweeps arrêtés au même endroit) : le feed rend certains
+    # titres avec un ou deux ESPACES DE FIN — « Teddy Terror (PC) Steam Key - GLOBAL  » —
+    # que l'extracteur avait retirés du candidat. La comparaison au caractère près déclarait
+    # « la ligne à l'URL approuvée porte un titre différent » sur dix offres d'affilée, et
+    # le sweep s'arrêtait, page 102, hier et aujourd'hui. Un écart de blancs n'a jamais été
+    # un autre produit : les deux côtés sont normalisés (bords + suites d'espaces) avant de
+    # comparer. Tout autre caractère reste comparé tel quel.
+    if _norm_ws(row.get("name", "")) != _norm_ws(offer["name"]):
         mismatches.append("name")
     if _url_key(row.get("url", "")) != _url_key(str(offer.get("url") or "")):
         mismatches.append("url")

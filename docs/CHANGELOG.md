@@ -3,6 +3,20 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-19 — GameSeal s'arrêtait page 102 pour deux espaces de fin
+
+Deux sweeps, hier soir et aujourd'hui, arrêtés au MÊME endroit : GameSeal page 102, dix refus
+d'affilée « feed row at the approved URL has a different title », halte `ten_consecutive_failures`.
+La différence : `'Teddy Terror (PC) Steam Key - GLOBAL  '` contre `'Teddy Terror (PC) Steam
+Key - GLOBAL'` — **deux espaces de fin** que le feed rend sur certains titres GameSeal et que
+l'extracteur avait retirés du candidat. La comparaison au caractère près de `_row_check` en
+faisait un « autre produit ». Un écart de blancs n'a jamais été un autre produit : les deux côtés
+sont normalisés (bords, suites d'espaces) avant de comparer ; tout autre caractère reste comparé
+tel quel (« Teddy Terror 2 » reste un mismatch). Verrouillé par test, vérifié par mutation.
+
+Conséquence pratique : les pages 1-101 de GameSeal n'ont jamais été balayées par aucun sweep —
+les deux s'y sont cassés. Elles sont à reprendre, maintenant que la garde ne ment plus.
+
 ## 2026-09-19 — Revue `/code-review` de Romain (7d7d310 → bd55ba1) : 14 constats, une remontée d'altitude
 
 La revue a confirmé les trois correctifs des réfuteurs déjà poussés, en a réfuté deux

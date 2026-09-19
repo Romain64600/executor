@@ -695,3 +695,34 @@ class TheConsoleRegionSlotRefusesTwoSellableBasesBeforeOpeningThePage(unittest.T
         self.assertEqual(distinct_region_bases(("EU", "European Union")), ("eu",))
         self.assertEqual(distinct_region_bases(("CA",)), ())
         self.assertEqual(distinct_region_bases(()), ())
+
+
+class ATrailingSpaceInTheFeedTitleIsNotADifferentProduct(unittest.TestCase):
+    """2026-09-19 — GameSeal, deux sweeps arrêtés au MÊME endroit (page 102, hier soir et
+    aujourd'hui) : le feed rend certains titres avec un ou deux espaces de fin
+    (« Teddy Terror (PC) Steam Key - GLOBAL  »), que l'extracteur avait retirés du candidat.
+    La comparaison au caractère près du submitter déclarait « la ligne à l'URL approuvée porte
+    un titre différent » dix fois d'affilée → halte `ten_consecutive_failures`. Un écart de
+    blancs n'a jamais été un autre produit."""
+
+    CAND = {"offer": {"name": "Teddy Terror (PC) Steam Key - GLOBAL", "offer_id": "100698758",
+                      "url": "https://gameseal.com/teddy-terror-pc-steam-key-global",
+                      "merchant": "GameSeal"}}
+
+    def _check(self, feed_name):
+        from src.submitter import _row_check
+        row = {"name": feed_name, "url": self.CAND["offer"]["url"], "id": "100698758"}
+        mismatches, _ = _row_check(row, self.CAND, check_price=False)
+        return mismatches
+
+    def test_trailing_and_doubled_spaces_are_not_a_mismatch(self):
+        for feed in ("Teddy Terror (PC) Steam Key - GLOBAL  ",
+                     "  Teddy Terror (PC) Steam Key - GLOBAL",
+                     "Teddy  Terror (PC) Steam Key - GLOBAL",
+                     "Teddy Terror (PC) Steam Key - GLOBAL\t"):
+            with self.subTest(feed=repr(feed)):
+                self.assertNotIn("name", self._check(feed))
+
+    def test_a_real_title_difference_is_still_a_mismatch(self):
+        self.assertIn("name", self._check("Teddy Terror 2 (PC) Steam Key - GLOBAL"))
+        self.assertIn("name", self._check("Teddy Terror (PC) Steam Key - EUROPE"))
