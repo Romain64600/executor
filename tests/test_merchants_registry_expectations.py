@@ -36,6 +36,7 @@ EXPECTED_MODULE = {
     "Electronicfirst": "electronicfirst.py",
     "GamersOutlet": "gamersoutlet.py",
     "GameBoost": "gameboost.py",
+    "Gamerall": "gamerall.py",      # liste blanche le 2026-09-19 (Romain)
 }
 
 

@@ -2771,6 +2771,16 @@ même décision que le sweep : `--consoles` est le **défaut** sur les deux scri
 
 ### `[R54]` Gamerall (store 13) — région : titre → URL → page (2026-09-18)
 
+**Dans la liste blanche safe-auto depuis le 2026-09-19** (Romain : « Tu peux ajouter Gamerall
+aux marchands whitelisted ? ») — `src/admin/auto_merchants.py` fait foi. Il écrit donc sur AKS
+sans relecture humaine. Ce qui le rend acceptable : sa règle de région est la plus stricte du
+dépôt (page ouverte quand titre et URL se taisent, refus quand la page est illisible ou muette,
+jamais de repli sur GLOBAL), sa 1re saisie a fait 10 / 10, et les deux défauts trouvés par
+l'audit du 18/09 au soir — le jeton `UPLAY` inconnu de `REGION_IDS` et la branche console qui
+n'ouvrait jamais la page — sont corrigés et verrouillés par test. À savoir tout de même : ces
+deux correctifs sont POSTÉRIEURS à la seule saisie réelle du marchand, donc sa première passe
+en safe-auto est aussi la première mise à l'épreuve de la configuration corrigée.
+
 Le titre de Gamerall finit par sa plateforme entre parenthèses et ne porte jamais de région ;
 l'URL porte la plateforme et, dans 82 % des cas, la région (`global` / `europe` / `usa`).
 Pour les lignes sans région, **la page marchand est ouverte** et sa valeur `Region` lue

@@ -121,7 +121,7 @@ du feed.
 | Wyrel | 162 | `wyrel.py` (**nouveau 16/09**) | PC : `precheck` (`[R53a]` gabarit, `[R53b]` non-jeu à 3 signaux, `[R53c]` édition, `[R53d]` accord titre/URL, `[R53e]` fente plateforme inconnue), `title_region`, `resolve_name` ; console : `console_region_slot`, `console_noise` | **non — supervisé d'abord** | 60 |
 | GameBoost | 157 | `gameboost.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux + `[R47]` région obligatoire), `title_region`, `resolve_name` ; console : `console_region_slot` | **oui, allowlisté le 16/09** — 1er matching : 207 candidats / 992 lignes | 13 |
 | GamersOutlet | 31 | `gamersoutlet.py` (**nouveau 15/09**) | PC : `precheck` (slot obligatoire + vocabulaire boutique fermé), `title_region`, `resolve_name`, `url_platform` | **oui, allowlisté le 16/09** — 1re saisie : 2 / 2 créées | 1 |
-| Gamerall | 13 | `gamerall.py` (**nouveau 18/09**) | `precheck` (plateforme du titre obligatoire), `resolve_name`, `title_region`, `url_platform`/`url_region`, et surtout `offer_page_resolver` — région lue dans l'ordre **titre → URL → page**, la page n'étant ouverte que pour les ~18 % de lignes sans région | **non — supervisé d'abord** | 32 |
+| Gamerall | 13 | `gamerall.py` (**nouveau 18/09**) | `precheck` (plateforme du titre obligatoire), `resolve_name`, `title_region`, `url_platform`/`url_region`, et surtout `offer_page_resolver` — région lue dans l'ordre **titre → URL → page**, la page n'étant ouverte que pour les ~18 % de lignes sans région | **oui, allowlisté le 19/09** — 1re saisie : 10 / 10 créées le 18/09 | 32 |
 | Electronicfirst | 70 | `electronicfirst.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux, logiciels, `[R49a]` EU partiel, `[R49b]` mot de région dans le nom, `[R49c]` console sans slot), `title_region`, `resolve_name` | **oui, allowlisté le 16/09** — parqué puis dé-parqué, défaut PUBLISHER/STEAM fermé par `[R51]` | 4 |
 
 Plus aucun marchand « générique » : la ligne `"KINGUIN": MerchantConfig("Kinguin",
@@ -818,7 +818,7 @@ matcher et le classifieur importent le registre.
 - La liste blanche est contrôlée côté serveur (`rejection_reason`) : un marchand absent est
   refusé même si l'interface est contournée.
 
-## Gamerall (store 13, marchand AKS 317, supervisé)
+## Gamerall (store 13, marchand AKS 317, liste blanche safe-auto depuis le 2026-09-19)
 
 Écrit le 2026-09-18 sur **783 lignes réelles** — pages 1-6 ET 26-31, pas une seule page. La
 répartition est très inégale : la page 1 montre 11 % de lignes avec région, les pages 26-31 en

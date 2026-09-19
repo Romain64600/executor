@@ -245,9 +245,19 @@ class RegistryTests(unittest.TestCase):
         self.assertIsNotNone(cfg.offer_page_resolver)
         self.assertTrue(cfg.title_is_platform_source)
 
-    def test_off_the_safe_auto_allowlist_until_proven(self):
-        from src.admin.auto_merchants import AUTO_MERCHANTS
-        self.assertNotIn("Gamerall", [n for n, _ in AUTO_MERCHANTS])
+    def test_on_the_safe_auto_allowlist_since_2026_09_19(self):
+        """Romain, 2026-09-19 : « Tu peux ajouter Gamerall aux marchands whitelisted ? ».
+
+        Ce test disait l'inverse depuis la création du fichier la veille (« hors liste blanche
+        tant que ce n'est pas prouvé ») ; la décision d'allowlister appartient à Romain, et il
+        l'a prise après la 1re saisie (10/10 créées) et les deux correctifs de l'audit du soir.
+        Le store est vérifié en même temps : c'est lui que la garde serveur compare."""
+
+        from src.admin.auto_merchants import AUTO_MERCHANTS, rejection_reason
+        self.assertIn(("Gamerall", "13"), AUTO_MERCHANTS)
+        self.assertIsNone(rejection_reason("Gamerall", "13"))
+        self.assertIsNotNone(rejection_reason("Gamerall", "999"),
+                             "un store qui ne correspond pas doit rester refusé")
 
 
 if __name__ == "__main__":

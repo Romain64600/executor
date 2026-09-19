@@ -3,6 +3,29 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-19 — Gamerall rejoint la liste blanche safe-auto
+
+Romain : « Tu peux ajouter Gamerall aux marchands whitelisted ? ». Feed store **13**, marchand
+AKS 317, 15e entrée de `AUTO_MERCHANTS`. Il écrit donc sur AKS **sans relecture humaine**.
+
+Ce qui le rend acceptable : `[R54]` est la règle de région la plus stricte du dépôt — titre, puis
+URL, puis **la page marchand est ouverte** pour les ~18 % de lignes qui se taisent, et une page
+injoignable ou lisible sans région est un REFUS, jamais un repli sur GLOBAL. Sa 1re saisie du
+18/09 a fait 10 / 10.
+
+**Ce qu'il faut savoir** : les deux défauts que l'audit du 18/09 au soir a trouvés dans
+`gamerall.py` — le jeton `UPLAY` inconnu de `REGION_IDS` (100 % des lignes Ubisoft Connect
+refusées sur un faux conflit) et la branche console qui n'appelait jamais `offer_page_resolver`
+(donc GLOBAL implicite sur les lignes PSN / Switch) — sont POSTÉRIEURS à cette unique saisie
+réelle. Sa première passe en safe-auto est donc aussi la première mise à l'épreuve de la
+configuration corrigée. Les deux correctifs sont verrouillés par test, dont un qui confronte
+chaque jeton de plateforme émis par le fichier au vocabulaire du matcher.
+
+Deux tests qui épinglaient l'inverse ont été retournés : `test_off_the_safe_auto_allowlist_until_proven`
+devient `test_on_the_safe_auto_allowlist_since_2026_09_19` (et vérifie au passage que le store 13
+est bien celui que la garde serveur compare), et la table des modules attendus accueille
+`gamerall.py`.
+
 ## 2026-09-19 — Un arrêt demandé n'est pas une panne, et la case manquante
 
 **`[P2]` « Arrêter » était rapporté comme une panne fail-closed.** Romain clique « Arrêter »
