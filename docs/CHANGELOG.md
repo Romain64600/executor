@@ -3,6 +3,35 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-19 — Revue de Romain (36c83fc..cb3f4ec) : trois défauts, dont deux dans mes propres correctifs
+
+**`[P1]` Un verrou régional RÉPÉTÉ disparaissait.** Le départage « la région est la dernière
+chose déclarée », posé la veille, partait de la **première** occurrence du pays (`find`). Sur
+« Assassin's Creed Chronicles **China** Global Steam Key **CHINA** », il s'arrêtait au CHINA du
+NOM DU JEU, voyait GLOBAL après lui, concluait « nom de produit » — et la clé verrouillée Chine
+sortait **candidat GLOBAL(2)**, chez Kinguin comme chez Gamivo. `rfind` : on part de la dernière.
+Reproduit, corrigé, et vérifié PAR MUTATION (remettre `find` fait rougir le test).
+
+**`[P1]` La garde console de Gamerall arrivait trop tard.** Elle vivait dans le DERNIER `else`
+de la branche console, donc le balayage GÉNÉRIQUE la précédait — et ce balayage lit les mots du
+NOM DU JEU. « 51 Worldwide Games (Nintendo Switch) », sans région dans l'URL, donnait un GLOBAL
+**explicite** sur le seul mot « Worldwide » du titre : le lecteur marchand n'était **jamais**
+appelé, même simulé indisponible. Pour un marchand qui déclare `offer_page_resolver`, son
+résolveur EST la lecture ordonnée complète (titre → URL → page) : il passe maintenant juste
+après le créneau de grammaire console, avant tout balayage générique. Vérifié par mutation
+également.
+
+**`[P2]` La lecture de région du titre Gamerall était inaccessible.** `title_region` lisait la
+dernière parenthèse depuis le 18/09, mais `title_platform`, `resolve_name` et `precheck`
+exigeaient encore qu'elle TERMINE le titre : « Hades (Steam) EUROPE » était refusé au
+précontrôle avant que `title_region` ait la parole. Les deux lectures divergeaient — c'est la
+divergence qui a produit le défaut. Un seul lecteur partagé (`_platform_paren`) pour les quatre
+fonctions ; `resolve_name` coupe AVANT la parenthèse pour que la queue de région parte avec
+elle, sans quoi le slug sondé serait « hades-europe ».
+
+Deux des trois sont des défauts de MES correctifs de la veille, pas du code d'origine. Le
+troisième est une divergence que j'avais créée en ne corrigeant qu'un des deux lecteurs.
+
 ## 2026-09-19 — Gamerall rejoint la liste blanche safe-auto
 
 Romain : « Tu peux ajouter Gamerall aux marchands whitelisted ? ». Feed store **13**, marchand

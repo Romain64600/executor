@@ -88,6 +88,22 @@ URL_REGION: dict[str, str] = {
 _PLATFORM_RE = re.compile(r"\(([^()]{2,24})\)\s*$")
 _ANY_PLATFORM_RE = re.compile(r"\(([^()]{2,24})\)")
 
+
+def _platform_paren(name: str) -> "re.Match[str] | None":
+    """La DERNIÈRE parenthèse du titre — celle où ce marchand écrit sa plateforme.
+
+    Romain, 2026-09-19 : `title_region` lisait déjà la dernière parenthèse depuis la veille,
+    mais `title_platform`, `resolve_name` et `precheck` exigeaient encore qu'elle TERMINE le
+    titre. « Hades (Steam) EUROPE » était donc refusé au précontrôle (« plateforme non
+    reconnue en fin de titre »), et la lecture de région du titre — celle que `[R54]` place en
+    PREMIER, avant l'URL et la page — devenait inaccessible. Les deux lectures divergeaient :
+    c'est exactement la divergence qui a produit le bug. Un seul lecteur, désormais."""
+
+    last = None
+    for last in _ANY_PLATFORM_RE.finditer((name or "").strip()):
+        pass
+    return last
+
 # La plateforme est AUSSI dans le slug — mesurée présente sur 274 des 275 lignes de la
 # tranche. Le résolveur de page ne reçoit que l'URL : c'est de là qu'il tire la plateforme,
 # et le matcher refuse ensuite si elle contredit celle du titre (son audit #1). Ordre du plus
@@ -128,7 +144,7 @@ def _slug(url: str) -> str:
 def title_platform(name: str) -> str | None:
     """Notre jeton de plateforme, ou None si la parenthèse finale est inconnue."""
 
-    m = _PLATFORM_RE.search((name or "").strip())
+    m = _platform_paren(name)
     if not m:
         return None
     return PLATFORM_TEXT.get(m.group(1).strip().upper())
@@ -207,9 +223,7 @@ def title_region(name: str) -> str | None:
     # On cherche la DERNIÈRE parenthèse, pas celle de fin de chaîne : quand le titre porte
     # une région, la parenthèse de plateforme n'est plus le dernier élément (« (Steam) GLOBAL »)
     # et _PLATFORM_RE, ancré sur la fin, ne la voyait pas — le crible ne servait alors jamais.
-    paren = None
-    for paren in _ANY_PLATFORM_RE.finditer((name or "").strip()):
-        pass
+    paren = _platform_paren(name)
     tail = (name or "").strip()[paren.end():] if paren else ""
     if not tail.strip():
         return None
@@ -222,17 +236,22 @@ def title_region(name: str) -> str | None:
 def resolve_name(name: str) -> str:
     """Le nom du jeu : la plateforme finale est retirée, le reste est intact."""
 
-    base = _PLATFORM_RE.sub("", (name or "").strip()).strip()
-    return base.rstrip("-–—").strip() or (name or "").strip()
+    # On coupe AVANT la parenthèse de plateforme : ce qui suit est de la furniture (plateforme,
+    # et désormais la région éventuelle — « Hades (Steam) EUROPE » doit donner « Hades », pas
+    # « Hades EUROPE », sinon le slug sondé est « hades-europe ».)
+    raw = (name or "").strip()
+    m = _platform_paren(raw)
+    base = raw[:m.start()].strip() if m else raw
+    return base.rstrip("-–—").strip() or raw
 
 
 def precheck(name: str, url: str) -> str | None:
     """Refus déterministes AVANT toute résolution de page."""
 
     if title_platform(name) is None:
-        m = _PLATFORM_RE.search((name or "").strip())
+        m = _platform_paren(name)
         shown = m.group(1).strip() if m else "aucune"
-        return (f"Gamerall: plateforme non reconnue en fin de titre ({shown!r}) — "
+        return (f"Gamerall: plateforme non reconnue dans le titre ({shown!r}) — "
                 f"refus plutôt que supposition (R54)")
     region = url_region(url)
     if region is None:

@@ -397,3 +397,113 @@ class AnOperatorStopIsNotAStageFailure(unittest.TestCase):
                 if f'"{label}' in line and 'recap["halted"]' in line:
                     self.assertIn("_halt_label", line,
                                   f"{label} doit passer par _halt_label")
+
+
+class TheREGIONIsTheLastOneDeclared(unittest.TestCase):
+    """`src/matcher.py:956` — Romain, 2026-09-19. Le départage « la région est la DERNIÈRE
+    chose déclarée » partait de la PREMIÈRE occurrence du pays. Un verrou RÉPÉTÉ disparaissait
+    donc : « Assassin's Creed Chronicles China Global Steam Key CHINA » s'arrêtait au CHINA du
+    NOM DU JEU, voyait GLOBAL après lui, concluait « nom de produit » — et la clé verrouillée
+    Chine entrait en GLOBAL(2)."""
+
+    NAME = "Assassin's Creed Chronicles China Global Steam Key CHINA"
+
+    def test_a_repeated_lock_is_caught(self):
+        from src.matcher import precheck_skip
+        for merchant, url in (("Kinguin", "https://www.kinguin.net/category/1/ac-pc-steam-cd-key"),
+                              ("Gamivo", "https://www.gamivo.com/product/ac-pc-steam")):
+            with self.subTest(merchant=merchant):
+                offer = NormalizedOffer(offer_id="1", name=self.NAME, url=url, merchant=merchant)
+                reason = precheck_skip(offer)
+                self.assertIsNotNone(reason, "le second CHINA est le créneau de région")
+                self.assertIn("CHINA", reason)
+
+    def test_the_country_in_the_product_name_alone_still_enters(self):
+        from src.matcher import precheck_skip
+        offer = NormalizedOffer(
+            offer_id="1", name="Assassin's Creed Chronicles: China (PC) - Steam Key - GLOBAL",
+            url="https://www.g2a.com/ac-chronicles-china-steam-key-global-i1", merchant="G2A")
+        self.assertIsNone(precheck_skip(offer))
+
+
+class AMerchantPageRegionIsReadBeforeTheGenericScan(unittest.TestCase):
+    """`src/matcher.py:3547` — Romain, 2026-09-19. La garde posée la veille vivait dans le
+    dernier `else` de la branche console : le balayage GÉNÉRIQUE la précédait, et ce balayage
+    lit les mots du NOM DU JEU. « 51 Worldwide Games (Nintendo Switch) », sans région dans
+    l'URL, donnait un GLOBAL *explicite* sur le seul mot « Worldwide » du titre — la page
+    marchande n'était jamais ouverte, même simulée indisponible."""
+
+    URL = "https://gamerall.com/nintendo/51-worldwide-games-nintendo-switch"
+    TITLE = "51 Worldwide Games (Nintendo Switch)"
+
+    def _match_with(self, resolver):
+        import dataclasses
+        from src.merchants.registry import MERCHANT_CONFIGS
+        page = AksResolution(slug="s", url="https://aks/sw", product_id="1",
+                             aks_name="51 Worldwide Games", editions={"1": "Standard"},
+                             regions={"99": "GLOBAL"}, official_platforms=("Nintendo",),
+                             console_pages={"nintendo-switch": "https://aks/sw"})
+        # On restaure l'OBJET d'origine, pas le champ : `dataclasses.replace` fabrique une
+        # NOUVELLE config, et `test_registered_config_is_the_module_config` vérifie que le
+        # registre porte bien l'objet du module — restaurer par un second `replace` laissait
+        # un sosie derrière soi et faisait rougir deux tests… mais seulement dans la suite
+        # complète, jamais en ciblé. C'est exactement la pollution de test qu'ils surveillent.
+        original = MERCHANT_CONFIGS["GAMERALL"]
+        MERCHANT_CONFIGS["GAMERALL"] = dataclasses.replace(
+            original, offer_page_resolver=resolver)
+        try:
+            offer = NormalizedOffer(offer_id="1", name=self.TITLE, url=self.URL,
+                                    merchant="Gamerall")
+            return match_offer(offer, resolver=lambda n, **k: page,
+                               page_resolver=lambda u: page, consoles=True)
+        finally:
+            MERCHANT_CONFIGS["GAMERALL"] = original
+
+    def test_an_unreachable_page_fails_closed_instead_of_reading_the_game_name(self):
+        from src.merchants.gamerall import GamerallPageUnreadable
+        calls = []
+
+        def boom(url, name=""):
+            calls.append(url)
+            raise GamerallPageUnreadable("page simulée indisponible")
+
+        res = self._match_with(boom)
+        self.assertTrue(calls, "le résolveur marchand DOIT être appelé")
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("unreadable", res.reason)
+
+    def test_the_page_region_wins_over_the_word_in_the_title(self):
+        from src.merchant_config import MerchantOfferSignals
+
+        def eu(url, name=""):
+            return MerchantOfferSignals(platform="NINTENDO", region_resolved=True,
+                                        region_base="eu", region_label="Europe")
+
+        res = self._match_with(eu)
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+        self.assertIn("EU", res.region_label.upper())
+
+
+class GamerallReadsOneParenthesisEverywhere(unittest.TestCase):
+    """`src/merchants/gamerall.py:232` — Romain, 2026-09-19. `title_region` lisait la DERNIÈRE
+    parenthèse depuis le 18/09, mais `title_platform`, `resolve_name` et `precheck` exigeaient
+    encore qu'elle TERMINE le titre. « Hades (Steam) EUROPE » était donc refusé au précontrôle,
+    et la lecture de région du titre — que `[R54]` place en PREMIER — devenait inaccessible."""
+
+    def test_a_region_tail_no_longer_blocks_the_precheck(self):
+        import src.merchants.gamerall as g
+        self.assertIsNone(g.precheck("Hades (Steam) EUROPE", "https://gamerall.com/pc/hades-steam"))
+        self.assertEqual(g.title_platform("Hades (Steam) EUROPE"), "STEAM")
+        self.assertEqual(g.title_region("Hades (Steam) EUROPE"), "eu")
+
+    def test_the_slug_name_drops_the_region_tail_too(self):
+        """Sinon le slug sondé serait « hades-europe »."""
+        import src.merchants.gamerall as g
+        self.assertEqual(g.resolve_name("Hades (Steam) EUROPE"), "Hades")
+        self.assertEqual(g.resolve_name("Anno 1800 (Ubisoft Connect) GLOBAL"), "Anno 1800")
+
+    def test_an_unknown_parenthesis_is_still_refused_by_name(self):
+        import src.merchants.gamerall as g
+        reason = g.precheck("Some Game (Amiga)", "https://gamerall.com/a/some-game-amiga")
+        self.assertIsNotNone(reason)
+        self.assertIn("Amiga", reason)

@@ -951,10 +951,16 @@ def _forbidden_region_in(padded: str) -> str | None:
     vendable. On ne retire AUCUN pays de FORBIDDEN_REGIONS : le verrou dans le slug reste
     attrapé, et les deux scans (titre et URL) gardent leur défense en profondeur."""
 
+    # La DERNIÈRE occurrence, pas la première (Romain, 2026-09-19). Avec `find`, un verrou
+    # RÉPÉTÉ disparaissait : « Assassin's Creed Chronicles China Global Steam Key CHINA »
+    # s'arrêtait au CHINA du NOM DU JEU, voyait GLOBAL après lui, et concluait « nom de
+    # produit » — alors que le second CHINA, lui, est bien le créneau de région. Une clé
+    # verrouillée Chine entrait en GLOBAL(2) chez Kinguin comme chez Gamivo. La règle dit
+    # « la région est la dernière chose déclarée » : il faut donc partir de la dernière.
     best_region, best_at = None, -1
     for region in FORBIDDEN_REGIONS:
-        at = padded.find(f" {region} ")
-        if at >= 0 and at > best_at:
+        at = padded.rfind(f" {region} ")
+        if at > best_at:
             best_region, best_at = region, at
     if best_region is None:
         return None
@@ -3537,6 +3543,21 @@ def _console_plan(
     generic_base, generic_label, generic_implicit, gift = detect_region_base(offer)
     if gift:
         return SkippedOffer(offer, "console: gift delivery has no console bucket (R45)")
+    # Le marchand dont la région vit sur SA PROPRE PAGE ([R33] Instant Gaming, [R54] Gamerall)
+    # est consulté AVANT le balayage générique, et son résolveur est la lecture ORDONNÉE
+    # complète du marchand : titre, puis URL, puis page.
+    #
+    # 2026-09-18, audit : il n'était pas consulté du tout ici — la branche console tombait sur
+    # le GLOBAL implicite sans jamais ouvrir la page.
+    # 2026-09-19, Romain : la garde ajoutée la veille arrivait TROP TARD. Elle vivait dans le
+    # dernier `else`, donc le balayage GÉNÉRIQUE la précédait — et ce balayage lit les mots du
+    # NOM DU JEU. « 51 Worldwide Games (Nintendo Switch) », sans région dans l'URL, donnait un
+    # GLOBAL *explicite* sur le seul mot « Worldwide » du titre : la page n'était jamais
+    # ouverte, même simulée indisponible. On ne lit ici QUE la région — la plateforme vient du
+    # classifieur console, et la confronter au jeton PC du résolveur produirait un faux
+    # conflit (PSN / NINTENDO ne sont pas des familles PC).
+    _cfg_console = merchant_config(offer.merchant)
+    _page_resolver = _cfg_console.offer_page_resolver if _cfg_console is not None else None
     grammar_base = sig.region_base
     if grammar_base is not None:
         if not generic_implicit and generic_base != grammar_base:
@@ -3544,6 +3565,23 @@ def _console_plan(
                 offer, "console: region contradiction (title/grammar vs URL) — not entered (R45)")
         base, implicit = grammar_base, False
         label = "GLOBAL" if grammar_base == "global" else str(grammar_base).upper()
+    elif _page_resolver is not None:
+        try:
+            _psig = _page_resolver(offer.url, offer.name)
+        except Exception as exc:  # noqa: BLE001 — page illisible → fail closed
+            return SkippedOffer(
+                offer,
+                f"console: {offer.merchant} offer page unreadable — unverifiable "
+                f"(R32/R45): {exc}")
+        if not _psig.region_resolved:
+            return SkippedOffer(
+                offer,
+                f"console: {offer.merchant} offer page gives no region — "
+                "never an implicit GLOBAL for this merchant (R32/R45)")
+        if _psig.region_base is None:
+            return SkippedOffer(offer, f"forbidden region: {_psig.region_label}")
+        base, implicit = _psig.region_base, False
+        label = "GLOBAL" if _psig.region_base == "global" else str(_psig.region_base).upper()
     elif not generic_implicit:
         base, label, implicit = generic_base, generic_label, False
     elif sig.region_words:
@@ -3553,36 +3591,7 @@ def _console_plan(
             "— not entered (R45)",
         )
     else:
-        # AUDIT DU 2026-09-18 — un marchand dont la région vit sur SA PROPRE PAGE ([R33]
-        # Instant Gaming, [R54] Gamerall) n'était jamais consulté ici : la branche console
-        # tombait directement sur le GLOBAL implicite, c'est-à-dire exactement ce que
-        # « absence de région = on ouvre la page pour s'en assurer » interdit. Reproduit sur
-        # une URL Gamerall `/playstation/…-ps5` : families=('PS5',), region_base=None,
-        # aucun mot de région → GLOBAL implicite, page jamais ouverte, et le fail-closed
-        # `GamerallPageUnreadable` jamais déclenché. On ne lit ici QUE la région : la
-        # plateforme vient du classifieur console, et la confronter au jeton PC du résolveur
-        # produirait un faux conflit (PSN / NINTENDO ne sont pas des familles PC).
-        _cfg_console = merchant_config(offer.merchant)
-        _resolver = _cfg_console.offer_page_resolver if _cfg_console is not None else None
-        if _resolver is not None:
-            try:
-                _psig = _resolver(offer.url, offer.name)
-            except Exception as exc:  # noqa: BLE001 — page illisible → fail closed
-                return SkippedOffer(
-                    offer,
-                    f"console: {offer.merchant} offer page unreadable — unverifiable "
-                    f"(R32/R45): {exc}")
-            if not _psig.region_resolved:
-                return SkippedOffer(
-                    offer,
-                    f"console: {offer.merchant} offer page gives no region — "
-                    "never an implicit GLOBAL for this merchant (R32/R45)")
-            if _psig.region_base is None:
-                return SkippedOffer(offer, f"forbidden region: {_psig.region_label}")
-            base, implicit = _psig.region_base, False
-            label = "GLOBAL" if _psig.region_base == "global" else str(_psig.region_base).upper()
-        else:
-            base, label, implicit = "global", "GLOBAL", True
+        base, label, implicit = "global", "GLOBAL", True
     for fam in families:
         if REGION_IDS.get(fam, {}).get(base) is None:
             return SkippedOffer(offer, f"no region id for {fam}/{label} (R45)")

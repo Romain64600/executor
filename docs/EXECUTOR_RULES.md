@@ -1303,6 +1303,13 @@ and Scenario Pack ». Dans un sweep `--triage --move-execute`, chaque page s'aut
 (`[R36]`, §14) et `is_blacklist_label` fait sauter la vérification présent-sur-cible : des jeux
 vendables sortaient physiquement du feed vers la Blacklist, sans revue et sans preuve.
 
+**Correction du 2026-09-19 (Romain) : on part de la DERNIÈRE occurrence du pays, pas de la
+première.** Le premier jet lisait `find`, donc un verrou RÉPÉTÉ disparaissait : « Assassin's
+Creed Chronicles **China** Global Steam Key **CHINA** » s'arrêtait au CHINA du NOM DU JEU, voyait
+GLOBAL après lui, concluait « nom de produit » — et la clé verrouillée Chine entrait en
+GLOBAL(2), chez Kinguin comme chez Gamivo. La règle dit « la région est la dernière chose
+déclarée » : il faut donc partir de la dernière.
+
 Règle : un nom de pays suivi, plus loin dans le même texte, d'un **marqueur de région vendable**
 (GLOBAL / WORLDWIDE / WW / EU / EUROPE / US / USA / UK) appartient au NOM DU PRODUIT, pas au
 créneau. Ce qui reste refusé : « … Steam Key BRAZIL », « Hades RUSSIA PC Steam CD Key », et —
@@ -1756,6 +1763,14 @@ from IG, MERCHANTS.md).
   la garde P2 « Xbox + PC sans Play Anywhere vérifié » ne pouvait JAMAIS se déclencher chez eux.
   La branche à hook complète maintenant le signal avec la lecture générique du slug, exactement
   comme la branche sans hook — sauf si le marchand a explicitement pris la main.
+- **Le résolveur du marchand passe AVANT le balayage générique (corrigé le 2026-09-19,
+  Romain).** La garde posée la veille vivait dans le DERNIER `else` de la branche console : le
+  balayage générique la précédait, et ce balayage lit les mots du NOM DU JEU. « 51 Worldwide
+  Games (Nintendo Switch) », sans région dans l'URL, produisait un GLOBAL **explicite** sur le
+  seul mot « Worldwide » du titre — la page marchande n'était jamais ouverte, même simulée
+  indisponible. Pour un marchand qui déclare `offer_page_resolver`, son résolveur EST la lecture
+  ordonnée complète (titre → URL → page) : il passe donc juste après le créneau de grammaire
+  console, avant tout balayage générique et avant le GLOBAL implicite.
 - **La plateforme de la page cible est vérifiée.** Le seul contrôle était une comparaison de
   NOMS — or `console_page_identity` retire précisément le suffixe de plateforme, donc
   « Hades PS4 », « Hades PS5 » et « Hades » sont tous égaux : une barre d'onglets pointant vers
@@ -2793,6 +2808,15 @@ désormais le titre en plus de l'URL — contrat élargi le même jour pour tous
 Fail-closed : page injoignable, réponse non conforme, ou page lisible sans région exploitable
 ⇒ **refus**, jamais un repli sur GLOBAL. Une région lue mais non vendable remonte son libellé
 brut, dont le routage (Blacklist / garder) reste décidé en un seul endroit.
+
+**Corrigé le 2026-09-19 (Romain) : un SEUL lecteur de parenthèse.** `title_region` lisait la
+DERNIÈRE parenthèse depuis le 18/09, mais `title_platform`, `resolve_name` et `precheck`
+exigeaient encore qu'elle TERMINE le titre. « Hades (Steam) EUROPE » était donc refusé au
+précontrôle (« plateforme non reconnue en fin de titre »), et la lecture de région du TITRE —
+celle que cette règle place en PREMIER, avant l'URL et la page — devenait inaccessible. Les deux
+lectures divergeaient : c'est précisément la divergence qui a produit le défaut. `resolve_name`
+coupe désormais AVANT la parenthèse, pour que la queue de région parte avec elle (sans quoi le
+slug sondé serait « hades-europe »).
 
 **Corrigé le 2026-09-18 (audit complet), deux défauts du même fichier :**
 
