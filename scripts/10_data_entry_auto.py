@@ -100,9 +100,20 @@ def take_from_queue(sweep_dir: "Path | None", planned: set, refused_keys: set,
     ignoré. `planned` et `refused_keys` sont mutés en place (clés en minuscules)."""
 
     taken: list[tuple[str, str]] = []
+    ignored = recap.setdefault("targets_ignored", [])
     for added in read_targets_queue(sweep_dir):
         key = (added[0].casefold(), str(added[1]))
-        if key in planned or key in refused_keys:
+        if key in refused_keys:
+            continue
+        if key in planned:
+            # Réfuteur du 2026-09-19 : un marchand DÉJÀ cible du run (plan initial ou ajout
+            # précédent) était ignoré ici SANS TRACE, pendant que la console avait répondu
+            # « ✔ ajouté ». La console refuse désormais en amont (elle lit `planned` dans le
+            # recap) ; on garde le skip et on l'inscrit, pour qu'un doublon écrit à la main
+            # laisse aussi une trace lisible.
+            if not any((i.get("merchant", "").casefold(), str(i.get("store_id"))) == key for i in ignored):
+                ignored.append({"merchant": added[0], "store_id": added[1],
+                                "reason": "déjà cible du sweep", "at": clock()})
             continue
         why = rejection_reason(added[0], added[1])
         if why is not None:
@@ -584,6 +595,13 @@ def main() -> int:
                          ensure_ascii=False, indent=2))
         return 2
     atexit.register(run_marker.clear_marker, ROOT, run_id)
+    # Réfuteur du 2026-09-19 : une relance explicite avec le MÊME --run-id héritait du
+    # `targets_queue.closed` du run précédent (tout ajout refusé « sweep_finishing » dès le
+    # premier marchand) ET de son ancienne file (un marchand non demandé rebalayé). Un
+    # lancement démarre avec un canal PROPRE : `--targets` est tout le plan. `missing_ok`
+    # couvre aussi le dossier absent, donc unlink → mkdir tient dans les deux cas.
+    for stale in (TARGETS_QUEUE, TARGETS_QUEUE_CLOSED):
+        (sweep_dir / stale).unlink(missing_ok=True)
     sweep_dir.mkdir(parents=True, exist_ok=True)
     recap = {"run_id": run_id, "started_at": _clock(), "targets": [], "halted": None,
              "halted_merchants": [],
@@ -626,11 +644,18 @@ def main() -> int:
     # marchand, et pour qu'un marchand déjà balayé ne soit pas rebalayé.
     planned = {(m.casefold(), str(sid)) for m, sid in targets}
     refused_keys: set[tuple[str, str]] = set()
+    # Réfuteur du 2026-09-19 : la console ne POUVAIT pas savoir qu'un marchand était déjà cible
+    # — `recap["targets"]` ne liste que ceux déjà démarrés. `planned` est le plan complet, tenu
+    # à jour à chaque ajout pris ; la console le lit avant de promettre quoi que ce soit.
+    recap["planned"] = [{"merchant": m, "store_id": str(sid)} for m, sid in targets]
+    persist()
 
     def drain_queue() -> None:
-        before = (len(recap.get("targets_added") or []), len(recap.get("targets_refused") or []))
-        targets.extend(take_from_queue(sweep_dir, planned, refused_keys, recap, _clock))
-        after = (len(recap.get("targets_added") or []), len(recap.get("targets_refused") or []))
+        before = tuple(len(recap.get(k) or []) for k in ("targets_added", "targets_refused", "targets_ignored"))
+        new_targets = take_from_queue(sweep_dir, planned, refused_keys, recap, _clock)
+        targets.extend(new_targets)
+        recap["planned"].extend({"merchant": m, "store_id": str(sid)} for m, sid in new_targets)
+        after = tuple(len(recap.get(k) or []) for k in ("targets_added", "targets_refused", "targets_ignored"))
         if after != before:
             persist()          # le recap dit d'où vient chaque marchand, et ce qui a été refusé
 
@@ -706,6 +731,11 @@ def main() -> int:
                 [*(recap.get("halted_merchants") or []), "operator_stop"])
             break
 
+    # Réfuteur du 2026-09-19 : les `break` (stop opérateur, halte fail-closed) sortaient de la
+    # boucle SANS fermer la file — pendant tout l'arrêt coopératif la console répondait encore
+    # `queued: true` à des ajouts que plus personne ne lirait. Fermer ici couvre toute sortie ;
+    # sur la fin naturelle c'est un second appel sans effet.
+    close_targets_queue(sweep_dir)
     recap["finished_at"] = _clock()
     persist()
     print(json.dumps({"run_id": run_id, "total_created": recap["total_created"],

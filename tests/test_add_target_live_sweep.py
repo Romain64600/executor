@@ -48,42 +48,42 @@ class TheQueueIsWrittenByTheConsoleOnly(unittest.TestCase):
         fichier que personne ne lira."""
 
         with self.assertRaises(SubmitStartError) as ctx:
-            self.manager.add_sweep_target("Gamerall", "13", by="romain")
+            self.manager.add_sweep_target("Gamerall", "13", by="romain", run_id=RUN)
         self.assertEqual(ctx.exception.code, "no_sweep_running")
         self.assertEqual(ctx.exception.http_status, 409)
 
     def test_a_target_is_queued_and_the_sweep_reads_it(self):
         self._sweep_is_running()
-        out = self.manager.add_sweep_target("Gamerall", "13", by="romain")
+        out = self.manager.add_sweep_target("Gamerall", "13", by="romain", run_id=RUN)
         self.assertTrue(out["queued"])
         self.assertEqual(out["position"], 1)
         self.assertEqual(SWEEP.read_targets_queue(self.run_dir), [("Gamerall", "13")])
 
     def test_a_double_click_does_not_queue_twice(self):
         self._sweep_is_running()
-        self.manager.add_sweep_target("Gamerall", "13", by="romain")
-        again = self.manager.add_sweep_target("Gamerall", "13", by="romain")
+        self.manager.add_sweep_target("Gamerall", "13", by="romain", run_id=RUN)
+        again = self.manager.add_sweep_target("Gamerall", "13", by="romain", run_id=RUN)
         self.assertFalse(again["queued"])
         self.assertEqual(SWEEP.read_targets_queue(self.run_dir), [("Gamerall", "13")])
 
     def test_the_order_of_addition_is_kept(self):
         self._sweep_is_running()
-        self.manager.add_sweep_target("Gamerall", "13", by="romain")
-        self.manager.add_sweep_target("MMOGA", "12", by="romain")
+        self.manager.add_sweep_target("Gamerall", "13", by="romain", run_id=RUN)
+        self.manager.add_sweep_target("MMOGA", "12", by="romain", run_id=RUN)
         self.assertEqual(SWEEP.read_targets_queue(self.run_dir),
                          [("Gamerall", "13"), ("MMOGA", "12")])
 
     def test_a_non_numeric_store_is_refused(self):
         self._sweep_is_running()
         with self.assertRaises(SubmitStartError) as ctx:
-            self.manager.add_sweep_target("Gamerall", "treize", by="romain")
+            self.manager.add_sweep_target("Gamerall", "treize", by="romain", run_id=RUN)
         self.assertEqual(ctx.exception.code, "bad_store_id")
 
     def test_the_write_is_atomic(self):
         """Le sweep lit ce fichier pendant qu'il tourne : jamais de troncature visible."""
 
         self._sweep_is_running()
-        self.manager.add_sweep_target("Gamerall", "13", by="romain")
+        self.manager.add_sweep_target("Gamerall", "13", by="romain", run_id=RUN)
         self.assertFalse(list(self.run_dir.glob("*.tmp")), "aucun temporaire ne doit rester")
         self.assertIsInstance(
             json.loads((self.run_dir / "targets_queue.json").read_text(encoding="utf-8")), list)
@@ -209,7 +209,7 @@ class AnAddIsNeverAcceptedThenLost(unittest.TestCase):
     def test_an_add_after_closing_is_refused_before_anything_is_written(self):
         SWEEP.close_targets_queue(self.run_dir)
         with self.assertRaises(SubmitStartError) as ctx:
-            self.manager.add_sweep_target("Gamerall", "13", by="romain")
+            self.manager.add_sweep_target("Gamerall", "13", by="romain", run_id=RUN)
         self.assertEqual(ctx.exception.code, "sweep_finishing")
         self.assertFalse((self.run_dir / "targets_queue.json").exists(),
                          "rien n'est écrit : pas de fausse promesse, pas de fichier orphelin")
@@ -228,7 +228,7 @@ class AnAddIsNeverAcceptedThenLost(unittest.TestCase):
 
         sm.os.replace = replace_then_close
         try:
-            out = self.manager.add_sweep_target("Gamerall", "13", by="romain")
+            out = self.manager.add_sweep_target("Gamerall", "13", by="romain", run_id=RUN)
         finally:
             sm.os.replace = real_replace
         self.assertFalse(out["queued"])
@@ -245,14 +245,14 @@ class AnAddIsNeverAcceptedThenLost(unittest.TestCase):
         targets.extend(SWEEP.take_from_queue(self.run_dir, planned, refused, recap, lambda: "t"))
         self.assertEqual(targets, [])
         # 2. la console ajoute Gamerall — AVANT la fermeture : accepté
-        self.assertTrue(self.manager.add_sweep_target("Gamerall", "13", by="romain")["queued"])
+        self.assertTrue(self.manager.add_sweep_target("Gamerall", "13", by="romain", run_id=RUN)["queued"])
         # 3. le sweep ferme, PUIS relit une dernière fois : Gamerall est pris
         SWEEP.close_targets_queue(self.run_dir)
         targets.extend(SWEEP.take_from_queue(self.run_dir, planned, refused, recap, lambda: "t"))
         self.assertEqual(targets, [("Gamerall", "13")], "l'ajout accepté est traité")
         # 4. un ajout APRÈS la fermeture : refusé, jamais promis
         with self.assertRaises(SubmitStartError) as ctx:
-            self.manager.add_sweep_target("MMOGA", "12", by="romain")
+            self.manager.add_sweep_target("MMOGA", "12", by="romain", run_id=RUN)
         self.assertEqual(ctx.exception.code, "sweep_finishing")
 
 
@@ -319,3 +319,108 @@ class TheConsoleControlIsWired(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheRunIdIsRequiredNotOptional(unittest.TestCase):
+    """Réfuteur du 2026-09-19 — la première version rendait `run_id` FACULTATIF côté serveur,
+    et le client l'envoie à null dès que l'onglet a vu « Sweep terminé » (bouton jamais
+    désactivé) : la garde était sautée, le marchand rejoignait n'importe quel run B. Un
+    auto.js en cache (sans le champ) la contournait aussi — même structure que le P1."""
+
+    def setUp(self):
+        self.root = pathlib.Path(tempfile.mkdtemp())
+        (self.root / "state").mkdir(parents=True)
+        (self.root / "runs" / RUN).mkdir(parents=True)
+        self.manager = SubmitManager(self.root)
+        run_marker.write_marker(self.root, run_id=RUN, kind="data_entry_auto", source="admin")
+
+    def test_no_run_id_is_refused_even_with_a_run_active(self):
+        for absent in (None, ""):
+            with self.subTest(run_id=absent):
+                with self.assertRaises(SubmitStartError) as ctx:
+                    self.manager.add_sweep_target("Gamerall", "13", by="romain", run_id=absent)
+                self.assertEqual(ctx.exception.code, "run_required")
+                self.assertEqual(ctx.exception.http_status, 409)
+        self.assertFalse((self.root / "runs" / RUN / "targets_queue.json").exists())
+
+    def test_the_button_is_disabled_until_a_run_is_displayed(self):
+        html = (ROOT / "src" / "admin" / "static" / "auto.html").read_text(encoding="utf-8")
+        js = (ROOT / "src" / "admin" / "static" / "auto.js").read_text(encoding="utf-8")
+        line = next(l for l in html.splitlines() if 'id="add-live-btn"' in l)
+        self.assertIn(" disabled", line, "désactivé au chargement")
+        start = js[js.index("function startPolling"):]
+        self.assertIn('live.disabled = !LIVE_RUN_ID', start[:600], "activé quand un run est affiché")
+        sync = js[js.index("function syncGo"):]
+        sync = sync[:sync.index("\n}")]
+        self.assertIn("live.disabled = !SWEEP_RUNNING", sync, "désactivé quand le sweep finit")
+        self.assertIn("ajouté à ${r.run_id}", js, "le run est nommé dans le message")
+
+
+class AMerchantAlreadyInThePlanIsNotPromised(unittest.TestCase):
+    """Réfuteur du 2026-09-19 — un marchand DÉJÀ cible du run (plan initial ou ajout pris)
+    recevait « ✔ ajouté — position N », puis le lecteur l'ignorait SANS TRACE. Le sweep publie
+    son plan dans le recap (`planned`) ; la console refuse avant de promettre ; le lecteur
+    inscrit `targets_ignored` pour un doublon écrit à la main."""
+
+    def setUp(self):
+        self.root = pathlib.Path(tempfile.mkdtemp())
+        (self.root / "state").mkdir(parents=True)
+        self.run_dir = self.root / "runs" / RUN
+        self.run_dir.mkdir(parents=True)
+        self.manager = SubmitManager(self.root)
+        run_marker.write_marker(self.root, run_id=RUN, kind="data_entry_auto", source="admin")
+        (self.run_dir / "recap.json").write_text(json.dumps({
+            "planned": [{"merchant": "Gamivo", "store_id": "51"}],
+            "targets": [{"merchant": "Gamivo", "store_id": "51", "recap": None}],
+            "targets_added": [{"merchant": "MMOGA", "store_id": "12", "at": "t"}]}), encoding="utf-8")
+
+    def test_planned_or_already_added_merchants_are_refused_without_writing(self):
+        for m, sid in (("Gamivo", "51"), ("gamivo", "51"), ("MMOGA", "12")):
+            with self.subTest(merchant=m):
+                out = self.manager.add_sweep_target(m, sid, by="romain", run_id=RUN)
+                self.assertFalse(out["queued"])
+                self.assertIn("déjà cible", out["reason"])
+        self.assertFalse((self.run_dir / "targets_queue.json").exists())
+
+    def test_a_new_merchant_still_goes_through(self):
+        self.assertTrue(self.manager.add_sweep_target("Gamerall", "13", by="romain", run_id=RUN)["queued"])
+
+    def test_the_reader_leaves_a_trace_for_a_hand_written_duplicate(self):
+        (self.run_dir / "targets_queue.json").write_text(json.dumps(
+            [{"merchant": "Gamivo", "store_id": "51"}]), encoding="utf-8")
+        recap, planned = {}, {("gamivo", "51")}
+        taken = SWEEP.take_from_queue(self.run_dir, planned, set(), recap, lambda: "t")
+        self.assertEqual(taken, [])
+        self.assertEqual(recap["targets_ignored"][0]["reason"], "déjà cible du sweep")
+        SWEEP.take_from_queue(self.run_dir, planned, set(), recap, lambda: "t")
+        self.assertEqual(len(recap["targets_ignored"]), 1, "une trace, pas une par relecture")
+
+    def test_main_publishes_the_plan_in_the_recap(self):
+        src = (ROOT / "scripts" / "10_data_entry_auto.py").read_text(encoding="utf-8")
+        self.assertIn('recap["planned"] = [{"merchant": m, "store_id": str(sid)} for m, sid in targets]', src)
+        self.assertIn('recap["planned"].extend(', src, "tenu à jour à chaque ajout pris")
+
+
+class TheChannelIsCleanAtLaunchAndClosedOnEveryExit(unittest.TestCase):
+    """Réfuteur du 2026-09-19 — (P3) une relance avec le MÊME --run-id héritait du marqueur de
+    fermeture (tout ajout refusé dès le premier marchand) et de l'ancienne file (un marchand
+    non demandé rebalayé) ; et les `break` (stop, halte) sortaient sans fermer la file."""
+
+    SOURCE = (ROOT / "scripts" / "10_data_entry_auto.py").read_text(encoding="utf-8")
+
+    def test_stale_channel_files_are_removed_before_the_run_dir_is_made(self):
+        i = self.SOURCE.index("for stale in (TARGETS_QUEUE, TARGETS_QUEUE_CLOSED):")
+        j = self.SOURCE.index("sweep_dir.mkdir(parents=True, exist_ok=True)")
+        self.assertLess(i, j)
+        self.assertIn("unlink(missing_ok=True)", self.SOURCE[i:j])
+
+    def test_the_queue_is_closed_after_the_loop_whatever_the_exit(self):
+        after_loop = self.SOURCE[self.SOURCE.index('    recap["finished_at"] = _clock()') - 400:
+                                 self.SOURCE.index('    recap["finished_at"] = _clock()')]
+        self.assertIn("close_targets_queue(sweep_dir)", after_loop,
+                      "fermer après la boucle couvre les break (stop opérateur, halte)")
+
+    def test_close_is_idempotent(self):
+        d = pathlib.Path(tempfile.mkdtemp())
+        SWEEP.close_targets_queue(d); SWEEP.close_targets_queue(d)
+        self.assertTrue((d / "targets_queue.closed").is_file())

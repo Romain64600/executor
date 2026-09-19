@@ -79,6 +79,10 @@ function syncGo() {
   const all = $("#launch-all");
   if (all) all.disabled = !(SUGGEST_READY && !SWEEP_RUNNING && go);
   $("#launch").disabled = !ok;
+  // Réfuteur du 2026-09-19 : « + marchand » restait actif après « Sweep terminé », et le clic
+  // partait avec run_id=null. Le serveur exige maintenant le run_id ; côté écran, pas de
+  // bouton sans run affiché.
+  const live = $("#add-live-btn"); if (live) live.disabled = !SWEEP_RUNNING;
 }
 $("#add-target").addEventListener("click", () => { if (SUGGEST_READY) addTarget().focus(); });
 $("#go").addEventListener("input", syncGo);
@@ -174,8 +178,9 @@ $("#add-live-btn").addEventListener("click", async () => {
       // rejoindre B au marchand — avec les paramètres de B.
       body: JSON.stringify({ merchant, store_id, confirm: "GO", run_id: LIVE_RUN_ID }),
     });
+    // Le run est NOMMÉ dans le message : l'opérateur voit à quoi son ajout est lié.
     msg.textContent = r.queued
-      ? `✔ ${merchant} ajouté — position ${r.position} dans la file`
+      ? `✔ ${merchant} ajouté à ${r.run_id} — position ${r.position} dans la file`
       : `⚠ ${r.reason || "non pris"}`;
     $("#add-live-go").value = "";
   } catch (e) {
@@ -220,6 +225,7 @@ function endSweepUi(finalText) {
 }
 function startPolling(runId) {
   LIVE_RUN_ID = runId || null;
+  { const live = $("#add-live-btn"); if (live) live.disabled = !LIVE_RUN_ID; }   // un run affiché ⇒ on peut y ajouter
   $("#recap-card").classList.remove("hidden");
   $("#busy-ind").classList.remove("hidden");
   if (POLL) clearInterval(POLL);

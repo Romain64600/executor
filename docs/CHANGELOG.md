@@ -3,6 +3,40 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-19 — Trois réfuteurs contre l'ajout de marchand : trois trous de plus
+
+Après la revue de Romain, trois agents indépendants ont attaqué le correctif sous trois angles
+(concurrence, autorisation, contrat), en lecture seule, avec ordre de ne rapporter qu'un trou
+reproduit par exécution. Les trois en ont trouvé un.
+
+**`[P2]` La liaison au run affiché était désarmée dès que l'onglet avait vu la fin de A.** Le
+`run_id` était FACULTATIF côté serveur (`if run_id and …`), et le client l'envoyait à `null` dès
+« Sweep terminé » — le bouton « + marchand » n'était jamais désactivé. Un clic après le démarrage
+d'un sweep B (autre onglet, terminal, même un `--dry-run`) faisait rejoindre B au marchand, avec
+les paramètres de B, sous un « ✔ ajouté — position 1 ». Un `auto.js` en cache navigateur, sans
+le champ, contournait la garde de la même façon — même structure que le P1 de la revue. Le
+`run_id` est OBLIGATOIRE (`409 run_required`) ; le bouton n'existe que quand un run est affiché ;
+le message nomme le run.
+
+**`[P2]` « ✔ ajouté — position N » pour un marchand déjà cible du run.** La console acceptait,
+le lecteur ignorait (dédoublonnage `planned`) sans aucune trace. Elle ne pouvait pas savoir :
+`recap["targets"]` ne liste que les marchands déjà démarrés. Le sweep publie maintenant son plan
+complet (`recap["planned"]`, tenu à jour), la console refuse avant de promettre, et un doublon
+écrit à la main laisse une trace `targets_ignored`.
+
+**`[P3]` Relance avec le même `--run-id`.** Elle héritait du `targets_queue.closed` précédent
+(tout ajout refusé dès le premier marchand) et de l'ancienne file (un marchand non demandé
+rebalayé). Les deux fichiers sont effacés au lancement. Et les `break` de la boucle (stop
+opérateur, halte fail-closed) sortaient sans fermer la file : la fermeture est faite après la
+boucle, quel que soit le chemin de sortie.
+
+Ce que les réfuteurs ont examiné et jugé SOLIDE, pour mémoire : deux clics simultanés (le mutex
+couvre la lecture-modification-écriture et les deux contrôles du marqueur) ; un fichier à moitié
+écrit (écrivain unique, `os.replace`) ; un SIGKILL entre la fermeture et la relecture (marqueur à
+pid mort → `no_sweep_running`, rien de promis n'est perdu) ; un `.closed` d'un autre run (le
+run_id est dans le chemin) ; la retardataire traitée après la fermeture pendant que la console
+refuse (choix documenté, fail-closed).
+
 ## 2026-09-19 — Revue de Romain (5c727bb → 7d7d310) : trois trous dans l'ajout de marchand
 
 Trois défauts dans la fonctionnalité fusionnée le jour même, tous reproduits par Romain, tous

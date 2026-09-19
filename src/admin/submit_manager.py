@@ -762,9 +762,17 @@ class SubmitManager:
         active_run = str(busy.get("run_id") or "")
         # Revue de Romain (2026-09-19, P2) : l'ajout doit être LIÉ au run que l'opérateur a
         # sous les yeux. Sans ça, si le sweep A se termine et qu'un sweep B démarre entre
-        # l'affichage et le clic, le marchand rejoint B — avec les paramètres de B. Le client
-        # envoie le run_id affiché ; s'il ne correspond pas au run actif, on refuse.
-        if run_id and str(run_id) != active_run:
+        # l'affichage et le clic, le marchand rejoint B — avec les paramètres de B.
+        # Réfuteur du même jour : la première version rendait `run_id` FACULTATIF — et le client
+        # l'envoie à null dès que l'onglet a vu « Sweep terminé » : la garde était sautée, le
+        # marchand rejoignait n'importe quel run B, et un auto.js en cache (sans le champ) la
+        # contournait aussi. Le point qui déclenche vérifie lui-même : run_id OBLIGATOIRE.
+        if not run_id:
+            raise SubmitStartError(
+                "run_required",
+                "aucun sweep affiché — recharge la page avant d'ajouter un marchand",
+                http_status=409, detail={"active_run": active_run})
+        if str(run_id) != active_run:
             raise SubmitStartError(
                 "run_mismatch",
                 f"le sweep affiché ({run_id}) n'est plus celui qui tourne ({active_run}) — "
@@ -776,6 +784,22 @@ class SubmitManager:
             if not run_dir.is_dir():
                 raise SubmitStartError(
                     "no_run_dir", f"dossier de run introuvable pour {run_id!r}", http_status=409)
+            # Réfuteur du 2026-09-19 : un marchand DÉJÀ cible du run (plan initial, ou ajout
+            # déjà pris) recevait « ✔ ajouté — position N » puis était ignoré sans trace par le
+            # lecteur. Le sweep publie son plan dans le recap (`planned`) : on refuse ici,
+            # jamais `queued: true` pour ce que le lecteur ignorera.
+            try:
+                recap = json.loads((run_dir / "recap.json").read_text(encoding="utf-8"))
+                recap = recap.get("recap", recap)
+            except (OSError, ValueError):
+                recap = {}
+            key = (merchant.casefold(), store_id)
+            already = [(str(t.get("merchant", "")).casefold(), str(t.get("store_id", "")))
+                       for k in ("planned", "targets", "targets_added")
+                       for t in (recap.get(k) or []) if isinstance(t, dict)]
+            if key in already:
+                return {"queued": False, "run_id": run_id,
+                        "reason": f"{merchant} est déjà cible de ce sweep"}
             path = run_dir / self.TARGETS_QUEUE
             try:
                 queued = json.loads(path.read_text(encoding="utf-8"))
@@ -783,7 +807,6 @@ class SubmitManager:
                 queued = []
             if not isinstance(queued, list):
                 queued = []
-            key = (merchant.casefold(), store_id)
             if any((str(q.get("merchant", "")).casefold(), str(q.get("store_id", ""))) == key
                    for q in queued if isinstance(q, dict)):
                 return {"queued": False, "reason": "déjà dans la file", "run_id": run_id}

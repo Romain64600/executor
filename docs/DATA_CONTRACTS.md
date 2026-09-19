@@ -828,3 +828,23 @@ at}`).
 - **L'ajout est lié au run AFFICHÉ** — le client envoie le `run_id` qu'il montre ; si le sweep A
   a fini et que B a démarré entre l'affichage et le clic, le serveur refuse (`409
   run_mismatch`) au lieu de faire rejoindre B au marchand, avec les paramètres de B.
+  **Le `run_id` est OBLIGATOIRE** (`409 run_required` sans lui) : la première version le rendait
+  facultatif, et le client l'envoyait à `null` dès que l'onglet avait vu « Sweep terminé » —
+  la garde était sautée. Côté écran, le bouton « + marchand » n'existe que quand un run est
+  affiché, et le message de succès NOMME le run.
+
+**Trois gardes de plus, trouvées par trois réfuteurs indépendants le même jour :**
+
+- **`planned` dans `recap.json`** — le plan complet du sweep (cibles initiales, tenu à jour à
+  chaque ajout pris). Sans lui la console ne POUVAIT pas savoir qu'un marchand était déjà cible
+  (`targets` ne liste que ceux déjà démarrés) : elle répondait « ✔ ajouté — position N » pour un
+  marchand que le lecteur ignorait ensuite sans trace. Elle refuse désormais (`queued: false`,
+  « déjà cible de ce sweep ») pour tout marchand de `planned ∪ targets ∪ targets_added` ; et un
+  doublon écrit à la main laisse une trace `targets_ignored` dans le recap.
+- **Canal PROPRE au lancement** — une relance explicite avec le MÊME `--run-id` héritait du
+  `targets_queue.closed` du run précédent (tout ajout refusé « sweep_finishing » dès le premier
+  marchand) et de son ancienne file (un marchand non demandé rebalayé). Les deux fichiers sont
+  effacés juste après la pose du marqueur de run : `--targets` est tout le plan.
+- **Fermée sur TOUTE sortie** — les `break` (stop opérateur, halte fail-closed) sortaient de la
+  boucle sans fermer la file : pendant tout l'arrêt coopératif la console répondait encore
+  `queued: true`. La fermeture est faite après la boucle, quel que soit le chemin de sortie.
