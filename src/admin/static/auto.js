@@ -41,6 +41,7 @@ $("#doc-modal").addEventListener("click", (e) => { if (e.target.id === "doc-moda
 let SUGGESTED = [];       // [{name, store_id}] from /api/data-entry/merchants
 let SUGGEST_READY = false;
 let SWEEP_RUNNING = false; // a data-entry-auto sweep is active (launched here OR elsewhere)
+let LIVE_RUN_ID = null;    // le run AFFICHÉ — celui auquel un « + marchand » doit être lié
 function merchantOptions() {
   const opts = [el("option", { value: "", text: "Marchand…" })];
   for (const m of SUGGESTED) opts.push(el("option", { value: m.name, text: m.name + " (store " + m.store_id + ")" }));
@@ -168,11 +169,14 @@ $("#add-live-btn").addEventListener("click", async () => {
   try {
     const r = await api("api/data-entry/auto/add-target", {
       method: "POST",
-      body: JSON.stringify({ merchant, store_id, confirm: "GO" }),
+      // Revue de Romain (2026-09-19) : lier l'ajout au run AFFICHÉ. Si le sweep A a fini et
+      // que B a démarré entre l'affichage et le clic, le serveur refuse au lieu de faire
+      // rejoindre B au marchand — avec les paramètres de B.
+      body: JSON.stringify({ merchant, store_id, confirm: "GO", run_id: LIVE_RUN_ID }),
     });
     msg.textContent = r.queued
       ? `✔ ${merchant} ajouté — position ${r.position} dans la file`
-      : `déjà dans la file (${r.reason || ""})`;
+      : `⚠ ${r.reason || "non pris"}`;
     $("#add-live-go").value = "";
   } catch (e) {
     msg.textContent = "✖ " + e.message;
@@ -208,12 +212,14 @@ function endSweepUi(finalText) {
   POLL_SEQ++;
   clearInterval(POLL); POLL = null;
   SWEEP_RUNNING = false;
+  LIVE_RUN_ID = null;       // plus de run affiché : un « + marchand » tardif n'a rien à lier
   $("#busy-ind").classList.add("hidden");
   setStatus(finalText);
   $("#stop-btn").disabled = false;
   syncGo();
 }
 function startPolling(runId) {
+  LIVE_RUN_ID = runId || null;
   $("#recap-card").classList.remove("hidden");
   $("#busy-ind").classList.remove("hidden");
   if (POLL) clearInterval(POLL);

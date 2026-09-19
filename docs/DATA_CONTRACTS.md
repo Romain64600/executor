@@ -805,4 +805,26 @@ jamais un run de 30 h tué par un fichier de service. Les entrées sans `merchan
 `store_id` sont ignorées une par une, pas la file entière.
 
 **Trace** — chaque ajout pris par le sweep est inscrit dans `recap.json` sous `targets_added`
-(`{merchant, store_id, at}`), pour qu'un recap relu plus tard dise d'où vient chaque marchand.
+(`{merchant, store_id, at}`), pour qu'un recap relu plus tard dise d'où vient chaque marchand ;
+chaque ajout REFUSÉ par le lecteur l'est sous `targets_refused` (`{merchant, store_id, reason,
+at}`).
+
+**Trois gardes ajoutées le 2026-09-19 sur revue de Romain (5c727bb → 7d7d310) :**
+
+- **La liste blanche est appliquée par le LECTEUR aussi** (`take_from_queue`), pas seulement
+  par la route HTTP. `Difmark:167`, interdit au lancement, écrit directement dans le fichier,
+  rejoignait l'exécution. Même argument que la garde de `--targets` dans `main` : le point qui
+  déclenche les écritures vérifie lui-même, quel que soit le chemin d'arrivée. Un ajout refusé
+  n'arrête pas le run : il est inscrit `targets_refused` et ignoré.
+- **`targets_queue.closed`** — le sweep écrit ce marqueur **avant** sa toute dernière relecture,
+  et c'est l'ordre qui compte. Un ajout arrivé après la dernière relecture répondait
+  `queued: true` puis le sweep se terminait sans le traiter — succès annoncé, marchand perdu,
+  sortie 0. Désormais : la console refuse (`409 sweep_finishing`) dès qu'elle voit le marqueur,
+  sans rien écrire ; et elle **re-vérifie après avoir écrit** — si le marqueur vient d'apparaître,
+  elle répond `queued: false` avec « prise en charge NON garantie ; le recap fait foi » au lieu
+  de promettre. Un ajout que la console a accepté sans voir le marqueur a été écrit avant lui,
+  donc avant la relecture qui le suit : il est pris. Une retardataire arrivée dans la fenêtre est
+  traitée ; après elle, la file reste fermée.
+- **L'ajout est lié au run AFFICHÉ** — le client envoie le `run_id` qu'il montre ; si le sweep A
+  a fini et que B a démarré entre l'affichage et le clic, le serveur refuse (`409
+  run_mismatch`) au lieu de faire rejoindre B au marchand, avec les paramètres de B.

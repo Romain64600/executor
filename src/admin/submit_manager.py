@@ -723,7 +723,10 @@ class SubmitManager:
 
     TARGETS_QUEUE = "targets_queue.json"
 
-    def add_sweep_target(self, merchant: str, store_id: str, *, by: str) -> dict[str, Any]:
+    TARGETS_QUEUE_CLOSED = "targets_queue.closed"
+
+    def add_sweep_target(self, merchant: str, store_id: str, *, by: str,
+                         run_id: str | None = None) -> dict[str, Any]:
         """Ajoute un marchand au sweep EN COURS (Romain 2026-09-19).
 
         Le canal est un fichier du dossier de run, ``targets_queue.json``, et ce point d'entrée
@@ -756,7 +759,18 @@ class SubmitManager:
                 "no_sweep_running",
                 "aucun sweep en cours — ajoute le marchand au prochain lancement",
                 http_status=409)
-        run_id = str(busy.get("run_id") or "")
+        active_run = str(busy.get("run_id") or "")
+        # Revue de Romain (2026-09-19, P2) : l'ajout doit être LIÉ au run que l'opérateur a
+        # sous les yeux. Sans ça, si le sweep A se termine et qu'un sweep B démarre entre
+        # l'affichage et le clic, le marchand rejoint B — avec les paramètres de B. Le client
+        # envoie le run_id affiché ; s'il ne correspond pas au run actif, on refuse.
+        if run_id and str(run_id) != active_run:
+            raise SubmitStartError(
+                "run_mismatch",
+                f"le sweep affiché ({run_id}) n'est plus celui qui tourne ({active_run}) — "
+                "recharge la page avant d'ajouter",
+                http_status=409, detail={"active_run": active_run})
+        run_id = active_run
         with self._mutex:
             run_dir = self.repo_root / "runs" / run_id
             if not run_dir.is_dir():
@@ -773,12 +787,28 @@ class SubmitManager:
             if any((str(q.get("merchant", "")).casefold(), str(q.get("store_id", ""))) == key
                    for q in queued if isinstance(q, dict)):
                 return {"queued": False, "reason": "déjà dans la file", "run_id": run_id}
+            # Fermée = le sweep termine : refuser AVANT d'écrire, pas de fausse promesse.
+            if (run_dir / self.TARGETS_QUEUE_CLOSED).exists():
+                raise SubmitStartError(
+                    "sweep_finishing",
+                    "le sweep se termine — l'ajout n'aurait pas été traité ; "
+                    "ajoute le marchand au prochain lancement",
+                    http_status=409)
             entry = {"merchant": merchant, "store_id": store_id,
                      "by": str(by or "console"), "at": self.clock()}
             queued.append(entry)
             tmp = path.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(queued, ensure_ascii=False, indent=2), encoding="utf-8")
             os.replace(tmp, path)
+            # Revue de Romain (2026-09-19, P2) : un ajout accepté puis perdu en fin de run.
+            # On RE-VÉRIFIE le marqueur APRÈS l'écriture. S'il est absent maintenant, l'écriture
+            # a précédé la fermeture, donc la dernière relecture du sweep (qui suit la
+            # fermeture) la verra : promesse tenue. S'il vient d'apparaître, on ne sait pas
+            # de quel côté de la relecture l'écriture est tombée — on le DIT au lieu de promettre.
+            if (run_dir / self.TARGETS_QUEUE_CLOSED).exists():
+                return {"queued": False, "run_id": run_id, "entry": entry,
+                        "reason": "le sweep se terminait au même instant — prise en charge "
+                                  "NON garantie ; le recap (targets_added) fait foi"}
             return {"queued": True, "run_id": run_id, "entry": entry,
                     "position": len(queued)}
 

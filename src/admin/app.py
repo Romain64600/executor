@@ -777,7 +777,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             raise ApiError(400, "confirm_required",
                            "tape GO pour confirmer l'ajout au sweep en cours")
         self._send_json(200, self.state.manager.add_sweep_target(
-            merchant, store_id, by=by))
+            merchant, store_id, by=by,
+            run_id=str(body.get("run_id") or "") or None))
 
     def _post_data_entry_by_urls(self) -> None:
         body = self._json_body()

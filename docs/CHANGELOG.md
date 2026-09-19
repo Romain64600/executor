@@ -3,6 +3,36 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-19 — Revue de Romain (5c727bb → 7d7d310) : trois trous dans l'ajout de marchand
+
+Trois défauts dans la fonctionnalité fusionnée le jour même, tous reproduits par Romain, tous
+corrigés et **vérifiés par mutation** (chaque garde désarmée fait rougir ses tests).
+
+**`[P1]` La liste blanche n'était vérifiée que par la route HTTP, pas par le lecteur.** Un
+`Difmark:167` — parké, interdit au lancement — écrit directement dans `targets_queue.json`
+rejoignait l'exécution et créait des offres. C'est exactement le trou que la garde de `--targets`
+dans `main` avait fermé le 2026-09-06 pour la ligne de commande, rouvert par un second chemin
+d'arrivée. Le lecteur (`take_from_queue`, extrait de la boucle pour être testable) applique
+désormais `rejection_reason` lui-même ; un ajout refusé est inscrit `targets_refused` dans le
+recap et ignoré — jamais un arrêt de run pour une erreur d'opérateur.
+
+**`[P2]` Un ajout accepté puis perdu en fin de run.** Ma « dernière relecture avant le test de
+fin » ne fermait pas la course, elle la déplaçait : un ajout arrivé APRÈS cette relecture
+recevait `queued: true`, puis le sweep se terminait, sortie 0, marchand jamais traité. Le sweep
+écrit maintenant un marqueur `targets_queue.closed` **avant** sa dernière relecture — l'ordre est
+la correction. La console refuse dès qu'elle le voit (`409 sweep_finishing`, sans rien écrire) et
+**re-vérifie après avoir écrit** : si le marqueur vient d'apparaître, elle répond `queued: false`
+en le disant, au lieu de promettre. La fenêtre résiduelle est ainsi rendue HONNÊTE plutôt que
+prétendue nulle.
+
+**`[P2]` L'ajout n'était pas lié au run affiché.** Aucun `run_id` dans la requête : si le sweep A
+finissait et que B démarrait entre l'affichage et le clic, le marchand rejoignait B — avec les
+paramètres de B. Le client envoie le run qu'il affiche (`LIVE_RUN_ID`, remis à zéro en fin de
+sweep), le serveur refuse tout écart (`409 run_mismatch`).
+
+12 tests ajoutés (27 sur la fonctionnalité), dont le protocole de fin de boucle joué de bout en
+bout avec les vraies fonctions des deux côtés.
+
 ## 2026-09-19 — Ajouter un marchand à un sweep EN COURS
 
 Romain : « On a l'option pour ajouter un marchand à un sweep en cours ? Si on n'a pas l'option
