@@ -794,6 +794,13 @@ démarrage) ont chacun ouvert un défaut (revue `/code-review`, 2026-09-19). Le 
 à chaque lancement (aucun héritage), stampé sur toute sortie, et il est ce que la console
 affiche.
 
+**La fermeture est PUBLIÉE, jamais seulement en mémoire (revue de Romain, 2026-09-19).** Sur
+une sortie par `break` (stop opérateur, halte fail-closed), le drapeau ne touchait le disque
+qu'au tout dernier `persist()` : entre-temps la console lisait encore « ouverte », répondait
+`queued: true`, et l'entrée tombait APRÈS la relecture finale — ni balayée, ni inscrite dans
+`targets_not_reached`. Toute sortie passe désormais par le même `close_queue(True)` que la
+boucle, qui écrit ET persiste avant de relire.
+
 **Le protocole de fin, et pourquoi l'ORDRE est la garantie.** À chaque frontière de marchand le
 sweep relit la file. Quand il n'a plus rien à balayer : il écrit `queue_closed: true` **puis**
 relit une dernière fois. Un ajout que la console a accepté sans avoir vu la fermeture a été

@@ -682,7 +682,11 @@ def main() -> int:
                 close_queue(False)
             continue
         merchant, store_id = targets[index]
-        index += 1
+        # L'index n'avance qu'APRÈS le contrôle du stop (revue de Romain, 2026-09-19) : sinon
+        # un arrêt tombant entre deux marchands excluait de `targets_not_reached` celui qui
+        # venait d'être pris et n'avait JAMAIS démarré — le bilan d'arrêt l'oubliait purement.
+        # Les `break` d'APRÈS le balayage, eux, trouvent l'index déjà avancé : le marchand
+        # traité n'y figure pas, ce qui est correct.
         if _RUNNER.stopped:
             # AUDIT DU 2026-09-18 : ceci ÉCRASAIT les haltes fail-closed déjà accumulées par
             # `--continue-on-halt`, et comme le code de sortie rend 0 sur « operator_stop », un
@@ -692,6 +696,7 @@ def main() -> int:
             recap["halted"] = "; ".join(
                 [*(recap.get("halted_merchants") or []), "operator_stop"])
             break
+        index += 1
         slug = re.sub(r"[^a-z0-9]+", "-", merchant.lower()).strip("-") or "merchant"
         cfg = SweepConfig(merchant=merchant, store_id=store_id, start_page=args.start_page,
                           max_pages=(None if args.all_pages else args.max_pages),
@@ -746,7 +751,14 @@ def main() -> int:
     # relecture d'ENREGISTREMENT : revue `/code-review` (2026-09-19) — sur un `break`, un ajout
     # que la console avait accepté n'était ni balayé ni inscrit nulle part. Il est désormais
     # inscrit `targets_not_reached`, avec les cibles prises mais jamais démarrées.
-    recap["queue_closed"] = True
+    # …et elle est PUBLIÉE (persist) AVANT cette relecture, pas seulement mise en mémoire.
+    # Revue de Romain (2026-09-19) : sur une sortie par `break` (stop, halte), le drapeau ne
+    # touchait le disque qu'au tout dernier `persist()`. Entre les deux, la console lisait
+    # encore « ouverte », répondait `queued: true`, et l'entrée tombait APRÈS la relecture
+    # finale : ni balayée, ni inscrite dans `targets_not_reached`. Promesse tenue par personne.
+    # Publier d'abord rétablit le même happens-before que dans la boucle : un ajout accepté
+    # sans avoir vu la fermeture a été écrit avant elle, donc la relecture qui suit le voit.
+    close_queue(True)
     late = take_from_queue(sweep_dir, planned, refused_keys, recap, _clock, taken_keys)
     not_reached = [{"merchant": m, "store_id": str(sid)} for m, sid in targets[index:]]
     not_reached += [{"merchant": m, "store_id": str(sid)} for m, sid in late]

@@ -3,6 +3,30 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-19 — Revue de Romain (jusqu'à c4f64e2) : deux P2, et un piège de cache
+
+**`[P2]` Ajout encore accepté puis perdu sur arrêt ou erreur.** La fermeture de la file n'était
+mise qu'EN MÉMOIRE avant la relecture finale : sur une sortie par `break` (stop opérateur, halte
+fail-closed), le disque ne portait `queue_closed` qu'au tout dernier `persist()`. Pendant cet
+intervalle la console lisait « ouverte », répondait `queued: true`, et l'entrée tombait après la
+relecture — ni balayée, ni dans `targets_not_reached`. Reproduit ; la sortie passe maintenant par
+le même `close_queue(True)` que la boucle, qui **publie** avant de relire. Sur une fin naturelle
+il n'y avait pas de trou (la boucle publiait déjà) — c'est bien le chemin `break` qui manquait.
+
+**`[P2]` Marchand oublié dans le bilan d'arrêt.** `index += 1` s'exécutait AVANT le contrôle du
+stop : un arrêt tombant entre deux marchands excluait de `targets_not_reached` celui qui venait
+d'être pris et n'avait jamais démarré. L'index n'avance qu'après le contrôle ; les `break`
+d'après le balayage, eux, le trouvent déjà avancé, donc un marchand traité n'y figure pas.
+
+**Et un piège d'outillage, qui vaut d'être noté.** En vérifiant ces correctifs par mutation, un
+test est passé au ROUGE alors que le correctif était bien sur disque : les tests chargeaient le
+script via `spec_from_file_location`, qui écrit et relit `scripts/__pycache__`. Un `.pyc` périmé
+faisait exécuter l'ANCIEN code. Le danger n'est pas le faux rouge — c'est le faux VERT : une
+mutation aurait pu sembler détectée alors que le test tournait sur du bytecode d'avant. Les tests
+compilent désormais le texte courant du fichier. Troisième piège d'ordre de la journée, après la
+pollution du registre marchand (`dataclasses.replace`) et l'ancrage sur le dispatch au lieu du
+`def`.
+
 ## 2026-09-19 — GameSeal s'arrêtait page 102 pour deux espaces de fin
 
 Deux sweeps, hier soir et aujourd'hui, arrêtés au MÊME endroit : GameSeal page 102, dix refus

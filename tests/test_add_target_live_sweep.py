@@ -10,11 +10,11 @@ lecteur (le sweep). Pas de lecture-modification-écriture des deux côtés, donc
 arbitrer. Le sweep le relit à chaque FRONTIÈRE de marchand, jamais au milieu d'une page.
 """
 
-import importlib.util
 import json
 import pathlib
 import sys
 import tempfile
+import types
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -24,10 +24,25 @@ if str(ROOT) not in sys.path:
 from src import run_marker                                       # noqa: E402
 from src.admin.submit_manager import SubmitManager, SubmitStartError   # noqa: E402
 
-_spec = importlib.util.spec_from_file_location(
-    "sweep_cli", ROOT / "scripts" / "10_data_entry_auto.py")
-SWEEP = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(SWEEP)
+SWEEP_PATH = ROOT / "scripts" / "10_data_entry_auto.py"
+
+
+def load_sweep(name="sweep_cli"):
+    """Charge le script depuis sa SOURCE, jamais depuis `scripts/__pycache__`.
+
+    2026-09-19 : `spec_from_file_location` + `exec_module` écrit et relit un `.pyc`. Un cache
+    périmé a fait passer un test au ROUGE alors que le correctif était bien sur disque — et,
+    pire, aurait pu faire passer une mutation au VERT. On compile le texte courant : le test
+    parle toujours du fichier tel qu'il est. C'est le troisième piège d'ordre de la journée,
+    après la pollution du registre marchand et l'ancrage sur le dispatch."""
+
+    mod = types.ModuleType(name)
+    mod.__file__ = str(SWEEP_PATH)
+    exec(compile(SWEEP_PATH.read_text(encoding="utf-8"), str(SWEEP_PATH), "exec"), mod.__dict__)
+    return mod
+
+
+SWEEP = load_sweep()
 
 RUN = "20260919-082932-auto"
 
@@ -471,9 +486,7 @@ class TheLoopDrivenEndToEnd(unittest.TestCase):
     avec un `run_sweep` bouchonné qui écrit dans la file pendant le run."""
 
     def setUp(self):
-        import importlib.util
-        spec = importlib.util.spec_from_file_location("sweep_cli_loop", ROOT / "scripts" / "10_data_entry_auto.py")
-        self.MOD = importlib.util.module_from_spec(spec); spec.loader.exec_module(self.MOD)
+        self.MOD = load_sweep("sweep_cli_loop")
         self.tmp = pathlib.Path(tempfile.mkdtemp())
         self.MOD.ROOT = self.tmp
         (self.tmp / "state").mkdir()
@@ -613,3 +626,115 @@ class TheSameRunIdIsReservedToItsOwnProcess(unittest.TestCase):
         (root / "state" / run_marker.MARKER_NAME).unlink()
         run_marker.write_marker(root, run_id="Y", kind="data_entry_auto")
         self.assertEqual(run_marker.write_marker(root, run_id="Y", kind="data_entry_auto")["run_id"], "Y")
+
+
+class TheCloseIsPublishedBeforeTheFinalReread(unittest.TestCase):
+    """Revue de Romain (2026-09-19, P2) — sur une sortie par `break` (stop opérateur, halte),
+    `queue_closed` n'était mis qu'EN MÉMOIRE ; le disque ne le portait qu'au tout dernier
+    `persist()`. Entre les deux, la console lisait « ouverte », répondait `queued: true`, et
+    l'entrée tombait APRÈS la relecture finale : ni balayée, ni inscrite dans
+    `targets_not_reached`. Publier d'abord rétablit le happens-before de la boucle."""
+
+    SOURCE = (ROOT / "scripts" / "10_data_entry_auto.py").read_text(encoding="utf-8")
+
+    def test_the_post_loop_close_goes_through_close_queue_which_persists(self):
+        after = self.SOURCE[self.SOURCE.index("    # …et elle est PUBLIÉE"):]
+        after = after[:after.index('    recap["finished_at"]')]
+        close = after.index("close_queue(True)")
+        drain = after.index("take_from_queue(")
+        self.assertLess(close, drain, "publier la fermeture AVANT la relecture finale")
+        self.assertNotIn('recap["queue_closed"] = True', after,
+                         "l'écriture en mémoire seule ne doit plus exister ici")
+        # close_queue publie : c'est ce qui rend la garde réelle
+        helper = self.SOURCE[self.SOURCE.index("    def close_queue(closed: bool)"):]
+        self.assertIn("persist()", helper[:helper.index("\n\n")])
+
+    def test_a_break_exit_leaves_the_flag_on_disk(self):
+        """Joué sur la vraie boucle : après un stop, le recap sur disque dit fermée."""
+        from unittest import mock
+        MOD = load_sweep("s10_close")
+        tmp = pathlib.Path(tempfile.mkdtemp()); MOD.ROOT = tmp; (tmp / "state").mkdir()
+        seen = {}
+
+        def fake(cfg, stages, *, on_page=lambda r: None, **kw):
+            MOD._RUNNER.stopped = True                      # stop pendant le 1er marchand
+            rec = {"merchant": cfg.merchant, "store_id": cfg.store_id, "pages": [],
+                   "total_created": 0, "halted": None}
+            on_page(rec); return rec
+
+        real_take = MOD.take_from_queue
+
+        def spy(sweep_dir, *a, **k):
+            path = sweep_dir / "recap.json"
+            if a[2].get("queue_closed") and "disk" not in seen:      # a[2] = recap
+                seen["disk"] = json.loads(path.read_text(encoding="utf-8")).get("queue_closed")
+            return real_take(sweep_dir, *a, **k)
+
+        with mock.patch.object(MOD, "run_sweep", side_effect=fake), \
+                mock.patch.object(MOD, "take_from_queue", side_effect=spy), \
+                mock.patch.object(sys, "argv", ["10", "--targets", "Kinguin:58", "--run-id", RUN]):
+            try:
+                MOD.main()
+            finally:
+                MOD._RUNNER.stopped = False
+        self.assertIs(seen.get("disk"), True,
+                      "la relecture finale doit trouver la fermeture DÉJÀ publiée")
+
+
+class TheStopBilanForgetsNoMerchant(unittest.TestCase):
+    """Revue de Romain (2026-09-19, P2) — `index += 1` s'exécutait AVANT le contrôle du stop :
+    un arrêt entre deux marchands excluait de `targets_not_reached` celui qui venait d'être
+    pris et n'avait JAMAIS démarré. Le bilan d'arrêt l'oubliait purement."""
+
+    def _run(self, targets, stop_before):
+        from unittest import mock
+        MOD = load_sweep("s10_stop")
+        tmp = pathlib.Path(tempfile.mkdtemp()); MOD.ROOT = tmp; (tmp / "state").mkdir()
+        swept = []
+
+        def fake(cfg, stages, *, on_page=lambda r: None, **kw):
+            swept.append(cfg.merchant)
+            rec = {"merchant": cfg.merchant, "store_id": cfg.store_id, "pages": [],
+                   "total_created": 0, "halted": None}
+            on_page(rec); return rec
+
+        with mock.patch.object(MOD, "run_sweep", side_effect=fake), \
+                mock.patch.object(sys, "argv", ["10", "--targets", targets, "--run-id", RUN]):
+            if stop_before:
+                MOD._RUNNER.stopped = True
+            try:
+                MOD.main()
+            finally:
+                MOD._RUNNER.stopped = False
+        recap = json.loads((tmp / "runs" / RUN / "recap.json").read_text(encoding="utf-8"))
+        return swept, recap
+
+    def test_a_stop_before_the_first_merchant_lists_them_all(self):
+        swept, recap = self._run("Kinguin:58,G2A:38", stop_before=True)
+        self.assertEqual(swept, [], "aucun marchand n'a démarré")
+        self.assertEqual([t["merchant"] for t in recap["targets_not_reached"]], ["Kinguin", "G2A"])
+
+    def test_a_merchant_actually_swept_is_not_listed_as_not_reached(self):
+        """L'autre bord : les `break` d'APRÈS le balayage trouvent l'index déjà avancé."""
+        from unittest import mock
+        MOD = load_sweep("s10_stop2")
+        tmp = pathlib.Path(tempfile.mkdtemp()); MOD.ROOT = tmp; (tmp / "state").mkdir()
+        swept = []
+
+        def fake(cfg, stages, *, on_page=lambda r: None, **kw):
+            swept.append(cfg.merchant)
+            MOD._RUNNER.stopped = True                     # stop APRÈS le 1er balayage
+            rec = {"merchant": cfg.merchant, "store_id": cfg.store_id, "pages": [],
+                   "total_created": 0, "halted": None}
+            on_page(rec); return rec
+
+        with mock.patch.object(MOD, "run_sweep", side_effect=fake), \
+                mock.patch.object(sys, "argv", ["10", "--targets", "Kinguin:58,G2A:38", "--run-id", RUN]):
+            try:
+                MOD.main()
+            finally:
+                MOD._RUNNER.stopped = False
+        recap = json.loads((tmp / "runs" / RUN / "recap.json").read_text(encoding="utf-8"))
+        self.assertEqual(swept, ["Kinguin"])
+        self.assertEqual([t["merchant"] for t in recap["targets_not_reached"]], ["G2A"],
+                         "Kinguin a bien démarré : il n'est pas « non atteint »")
