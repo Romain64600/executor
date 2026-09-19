@@ -341,6 +341,25 @@ def region_slot_of(words: Sequence[str]) -> tuple[str | None, str | None]:
     return None, None
 
 
+def distinct_region_bases(words: Sequence[str]) -> tuple[str, ...]:
+    """Les bases VENDABLES distinctes déclarées par ces mots, dans l'ordre d'apparition.
+
+    Séparée de :func:`region_slot_of`, qui replie « plusieurs bases » et « aucun mot » sur le
+    même ``(None, None)`` : le matcher doit pouvoir distinguer les deux, et NOMMER la
+    contradiction quand il refuse (Romain, 2026-09-19 — « le classifieur détecte deux régions
+    incompatibles » et le refus ne disait pas lesquelles). Les mots non vendables sont ignorés
+    ici : un « GLOBAL CANADA » n'est pas une contradiction entre deux zones vendables, c'est
+    un verrou interdit, et il garde son propre aiguillage.
+    """
+
+    out: list[str] = []
+    for word in words:
+        base = _REGION_BASE_OF.get(re.sub(r"\s+", " ", word.upper()).strip())
+        if base is not None and base not in out:
+            out.append(base)
+    return tuple(out)
+
+
 _region_slot = region_slot_of
 
 

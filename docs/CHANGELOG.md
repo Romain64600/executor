@@ -3,6 +3,64 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-19 — `[P1]` Gamerall acceptait des régions CONTRADICTOIRES
+
+Romain : « Gamerall accepte des régions contradictoires. Avec `Hades (Nintendo Switch) GLOBAL
+US`, le classifieur détecte deux régions incompatibles. Le résolveur marchand prend ensuite la
+première et produit un candidat GLOBAL (99). `EUROPE USA` produit pareillement EU (99eu). »
+
+**Ce qui cassait, mesuré avant correctif sur `match_offer`.** Branche console : « GLOBAL US » →
+**CANDIDAT 99 (GLOBAL)**, « EUROPE USA » → **CANDIDAT 99eu (EU)**. Branche PC, jamais signalée
+mais atteinte par le même lecteur : « (Steam) GLOBAL US » → **2 (GLOBAL)**, « (Steam) EUROPE
+USA » → **9 (EU)**. Deux étages étaient en cause, et ils ont été corrigés tous les deux.
+
+**Étage 1 — `gamerall.py`.** `title_region` lisait la queue du titre au `search` : la PREMIÈRE
+région gagnait, la seconde disparaissait **en silence**. La queue est lue ENTIÈRE
+(`title_regions`, `finditer`) ; deux BASES différentes ⇒ refus qui NOMME les deux zones, posé
+dans `precheck`, donc avant `url_region` et avant toute ouverture de page — un titre
+contradictoire ne coûte pas une requête, et le refus couvre les deux branches (`precheck_skip`
+est en tête de `match_offer`, avant l'aiguillage). Le dédoublonnage porte sur la base :
+« WORLDWIDE GLOBAL » dit deux fois la même chose et entre toujours. `title_region` **lève**
+(`GamerallTitleAmbiguous`) au lieu de rendre `None` : rendre `None` ferait descendre
+`offer_signals` sur l'URL puis sur la page et entrerait la clé sur une région que le titre
+CONTREDIT — un repli déguisé, ce que `[R54]` interdit.
+
+**Étage 2 — `_console_plan`.** Le contrat de `ConsoleSignal` dit depuis le 14/09 que des mots de
+région ne désignant pas UNE base vendable unique sont un refus. La remontée du résolveur
+marchand du matin même (correctif « 51 Worldwide Games ») l'avait court-circuité : la branche
+`elif _page_resolver is not None:` ne contrôlait RIEN. La garde est replacée **au-dessus** du
+résolveur — un titre contradictoire ne coûte pas une page (vérifié : 0 appel au résolveur) — et
+le refus nomme les mots : « console: merchant region contradiction GLOBAL / US — no single
+sellable base, not entered (R45) ». Ce second étage vaut pour tout marchand à créneau console,
+pas seulement Gamerall.
+
+**Ce qui a été REFUSÉ du correctif proposé, et pourquoi.** Le prédicat suggéré pour l'étage 2
+était « le résolveur répond ET la lecture générique est explicite ET elle diffère ». Écarté : il
+refuserait « 51 Worldwide Games (Nintendo Switch) », dont le générique rend un GLOBAL
+**explicite** tiré du seul mot « Worldwide » du NOM DU JEU — si la page répond Europe, ce n'est
+pas une contradiction du marchand, c'est le générique qui se trompe, et le test du matin
+(`AMerchantPageRegionIsReadBeforeTheGenericScan`) l'exige vert. Le bon discriminateur est
+`sig.region_words`, qui ne rapporte que les mots retirés **À CÔTÉ de la phrase de plateforme** :
+mesuré `()` sur « 51 Worldwide Games », `('GLOBAL', 'US')` sur le titre de Romain. Écarté aussi :
+étendre le prédicat aux mots non vendables — « GLOBAL CANADA » n'est pas une contradiction entre
+deux zones vendables mais un verrou interdit, et il garde son aiguillage propre
+(`distinct_region_bases` les ignore).
+
+**Effet de bord assumé.** Un marchand SANS résolveur dont la ligne console porte deux bases et
+une lecture générique explicite était ENTRÉ sur la lecture générique ; il est désormais refusé.
+C'est le sens fail-closed du dépôt. Ce qu'une recherche CIBLÉE (« European Union », « EU/UK »)
+a fait remonter : une seule ligne réelle de cette forme, la Kinguin « Kingdom Rush Origins EU
+(European Union + UK) XBOX One / Xbox Series X|S CD Key » (`test_console_keys.py:971`), et elle
+est arrêtée plus tôt par le garde-fou « possible multi-game bundle ». Donc aucune fuite vive
+constatée — mais c'est la portée de cette recherche, pas un balayage exhaustif du corpus : je
+ne prétends pas qu'il n'en existe aucune autre.
+
+**Vérifié par mutation, les deux étages séparément** (retirer la garde 1 : 7 tests rouges ;
+retirer la garde 2, `precheck` neutralisé : les deux lignes de Romain ressortent CANDIDAT 99).
+Suite complète verte. Instant Gaming, l'autre marchand à `offer_page_resolver`, a été regardé :
+sa région vient d'une valeur UNIQUE de page (`extract_ig_region`), pas d'un balayage qui pourrait
+en trouver deux — rien à corriger chez lui.
+
 ## 2026-09-19 — Revue de Romain (36c83fc..cb3f4ec) : trois défauts, dont deux dans mes propres correctifs
 
 **`[P1]` Un verrou régional RÉPÉTÉ disparaissait.** Le départage « la région est la dernière

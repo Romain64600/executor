@@ -42,6 +42,7 @@ from src.console_keys import (
     classify_console,
     console_marker_in_url,
     console_page_identity,
+    distinct_region_bases,
     page_platform_family,
     extract_console_pages,
     extract_page_platform,
@@ -3496,8 +3497,11 @@ def _console_plan(
        classifier: Kinguin / K4G "<Game> US Xbox One …", Driffle "(Europe)") is
        authoritative; the generic title/URL scan (detect_region_base, which carries the
        R46 Gamivo ``title_region`` hook: "Ravenswatch EN United Kingdom" → uk) speaks
-       only when NOT implicit; the two must agree (else skip); an implicit read while
-       the classifier removed a region word (``sig.region_words``) is refused — a
+       only when NOT implicit; the two must agree (else skip); region words naming MORE
+       THAN ONE sellable base are refused right after that slot — above the merchant's
+       ``offer_page_resolver``, so a contradictory title never costs a page fetch
+       (2026-09-19, Romain: "Gamerall accepte des régions contradictoires"); an implicit
+       read while the classifier removed a region word (``sig.region_words``) is refused — a
        region-locked console key is NEVER filed under an implicit GLOBAL (Gamivo 254/264
        and Kinguin 37 real rows did before); a gift → skip (no console gift bucket); a
        missing bucket (PS5 EU/US/UK) → skip;
@@ -3565,6 +3569,25 @@ def _console_plan(
                 offer, "console: region contradiction (title/grammar vs URL) — not entered (R45)")
         base, implicit = grammar_base, False
         label = "GLOBAL" if grammar_base == "global" else str(grammar_base).upper()
+    elif len(distinct_region_bases(sig.region_words)) > 1:
+        # Romain, 2026-09-19 : « Gamerall accepte des régions contradictoires ». Le contrat
+        # de :class:`ConsoleSignal` le dit déjà — des mots de région qui ne désignent PAS une
+        # base vendable unique sont un refus — mais le déplacement du résolveur marchand
+        # au-dessus (même jour, correctif « 51 Worldwide Games ») l'avait court-circuité :
+        # « Hades (Nintendo Switch) GLOBAL US » descendait au résolveur, qui prenait la
+        # PREMIÈRE région du titre et entrait la clé en GLOBAL(99) ; « EUROPE USA » en
+        # EU(99eu). La garde est donc AU-DESSUS du résolveur, et un titre contradictoire ne
+        # coûte pas une requête de page.
+        #
+        # Le prédicat est `sig.region_words`, PAS un désaccord avec le balayage générique :
+        # le générique lit les mots du NOM DU JEU et se tromperait sur « 51 Worldwide Games
+        # (Nintendo Switch) » (générique GLOBAL explicite, page Europe — un faux conflit).
+        # `region_words` ne rapporte que les mots retirés À CÔTÉ de la phrase de plateforme —
+        # mesuré `()` sur ce titre-là, `('GLOBAL', 'US')` sur celui de Romain.
+        return SkippedOffer(
+            offer,
+            f"console: merchant region contradiction {' / '.join(sig.region_words)} — "
+            "no single sellable base, not entered (R45)")
     elif _page_resolver is not None:
         try:
             _psig = _page_resolver(offer.url, offer.name)

@@ -1614,7 +1614,13 @@ SWITCH alone) — the fix of the Gamivo leak below.
       buckets `226` / `305`); gift → skip "console: gift delivery has no console bucket
       (R45)". Then, in order: the grammar slot `sig.region_base`, when set, is
       authoritative (if the generic read is NOT implicit and differs → skip "console:
-      region contradiction (title/grammar vs URL) — not entered (R45)"); else the generic
+      region contradiction (title/grammar vs URL) — not entered (R45)"); else, when the
+      classifier's region words name **more than one sellable base**
+      (`distinct_region_bases(sig.region_words)`, 2026-09-19) → skip "console: merchant
+      region contradiction <mots> — no single sellable base, not entered (R45)" (au-dessus
+      du résolveur marchand : un titre contradictoire ne coûte pas une page) ; else the
+      merchant's `offer_page_resolver`, when it declares one — son résolveur EST la lecture
+      ordonnée complète (titre → URL → page), fail-closed (`[R33]` / `[R54]`) ; else the generic
       read when it is not implicit; else, if the classifier removed a region word
       (`sig.region_words`) → skip "console: merchant region '<word>' not mapped to a
       sellable base — not entered (R45)"; else implicit GLOBAL (no region word at all —
@@ -1771,6 +1777,22 @@ from IG, MERCHANTS.md).
   indisponible. Pour un marchand qui déclare `offer_page_resolver`, son résolveur EST la lecture
   ordonnée complète (titre → URL → page) : il passe donc juste après le créneau de grammaire
   console, avant tout balayage générique et avant le GLOBAL implicite.
+- **Deux bases VENDABLES dans le créneau = refus, AU-DESSUS du résolveur (corrigé le
+  2026-09-19, Romain : « Gamerall accepte des régions contradictoires »).** Le contrat de
+  `ConsoleSignal` disait déjà que des mots de région ne désignant pas UNE base vendable unique
+  sont un refus, mais la remontée du résolveur marchand (ci-dessus, même jour) l'avait
+  court-circuité : la branche `elif _page_resolver is not None:` ne contrôlait rien, et
+  « Hades (Nintendo Switch) GLOBAL US » descendait jusqu'à elle pour ressortir **candidat
+  GLOBAL(99)** ; « EUROPE USA » ressortait **EU(99eu)**. L'ordre est donc : créneau de grammaire
+  → **contradiction** → résolveur marchand → balayage générique → GLOBAL implicite, avec le
+  refus « console: merchant region contradiction `<mots>` — no single sellable base, not entered
+  (R45) ». Étant au-dessus du résolveur, un titre contradictoire **ne coûte pas une page**.
+  Le prédicat est `sig.region_words` (les mots retirés À CÔTÉ de la phrase de plateforme), **pas**
+  un désaccord avec le balayage générique : celui-ci lit les mots du NOM DU JEU et refuserait à
+  tort « 51 Worldwide Games » (générique GLOBAL explicite, page Europe). Mesuré : `region_words`
+  vaut `()` sur ce titre-là et `('GLOBAL', 'US')` sur celui de Romain. Les mots non vendables
+  sont ignorés du prédicat (`distinct_region_bases`) : « GLOBAL CANADA » reste un verrou
+  interdit et garde son aiguillage propre.
 - **La plateforme de la page cible est vérifiée.** Le seul contrôle était une comparaison de
   NOMS — or `console_page_identity` retire précisément le suffixe de plateforme, donc
   « Hades PS4 », « Hades PS5 » et « Hades » sont tous égaux : une barre d'onglets pointant vers
@@ -2808,6 +2830,21 @@ désormais le titre en plus de l'URL — contrat élargi le même jour pour tous
 Fail-closed : page injoignable, réponse non conforme, ou page lisible sans région exploitable
 ⇒ **refus**, jamais un repli sur GLOBAL. Une région lue mais non vendable remonte son libellé
 brut, dont le routage (Blacklist / garder) reste décidé en un seul endroit.
+
+**Corrigé le 2026-09-19 (Romain) : deux régions dans un titre = REFUS, pas la première.**
+Romain : « Gamerall accepte des régions contradictoires. Avec `Hades (Nintendo Switch) GLOBAL
+US`, le classifieur détecte deux régions incompatibles. Le résolveur marchand prend ensuite la
+première et produit un candidat GLOBAL (99). `EUROPE USA` produit pareillement EU (99eu). »
+La queue du titre était lue au `search` : la première région gagnait, la seconde disparaissait
+en silence. Elle est lue ENTIÈRE (`title_regions`, `finditer`) — un titre n'est déclaré lisible
+qu'après avoir été lu en entier. Deux BASES différentes (le dédoublonnage porte sur la base :
+« WORLDWIDE GLOBAL » dit deux fois la même chose) ⇒ refus nommant les deux zones, dans
+`precheck`, donc **avant `url_region` et avant toute ouverture de page** — un titre
+contradictoire ne coûte pas une requête, et le refus vaut pour la branche PC comme pour la
+branche console (`precheck_skip` est appelé en tête de `match_offer`, avant l'aiguillage).
+`title_region` LÈVE (`GamerallTitleAmbiguous`) au lieu de rendre `None` : rendre `None` ferait
+descendre `offer_signals` sur l'URL puis sur la page et entrerait la clé sur une région que le
+titre CONTREDIT — un repli déguisé, exactement ce que cette règle interdit.
 
 **Corrigé le 2026-09-19 (Romain) : un SEUL lecteur de parenthèse.** `title_region` lisait la
 DERNIÈRE parenthèse depuis le 18/09, mais `title_platform`, `resolve_name` et `precheck`

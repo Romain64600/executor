@@ -136,6 +136,15 @@ class GamerallPageUnreadable(RuntimeError):
     """Page marchand illisible, ou lisible sans région : on refuse, on ne devine pas."""
 
 
+class GamerallTitleAmbiguous(RuntimeError):
+    """Titre déclarant DEUX régions différentes : illisible, donc refusé — jamais deviné.
+
+    Romain, 2026-09-19 : « Gamerall accepte des régions contradictoires. Avec
+    "Hades (Nintendo Switch) GLOBAL US", le classifieur détecte deux régions incompatibles.
+    Le résolveur marchand prend ensuite la première et produit un candidat GLOBAL (99). »
+    """
+
+
 def _slug(url: str) -> str:
     path = (url or "").split("?")[0].split("#")[0].rstrip("/").lower()
     return path.rsplit("/", 1)[-1] if "/" in path else path
@@ -212,12 +221,19 @@ _TITLE_REGION_RE = re.compile(
     re.IGNORECASE)
 
 
-def title_region(name: str) -> str | None:
-    """La région écrite dans le TITRE, ou None. Lue en premier, avant l'URL et la page.
+def title_regions(name: str) -> tuple[str, ...]:
+    """TOUTES les bases de région écrites dans la queue du titre, dédoublonnées, dans l'ordre.
 
     Le nom du jeu est écarté d'abord : « Europa Universalis » ne doit pas devenir « eu ». On ne
     regarde donc que ce qui suit la parenthèse de plateforme, seul endroit où ce marchand
     écrirait une région.
+
+    Primitive introduite le 2026-09-19 (Romain) parce que `title_region` s'arrêtait à la
+    PREMIÈRE région trouvée (`search`) : « Hades (Nintendo Switch) GLOBAL US » rendait
+    « global » et la seconde région disparaissait en silence. On lit maintenant la queue
+    ENTIÈRE (`finditer`) — un titre ne peut être déclaré lisible qu'après avoir été lu en
+    entier. Le dédoublonnage porte sur la BASE, pas sur le mot : « WORLDWIDE GLOBAL » dit
+    deux fois la même chose et n'est pas une contradiction.
     """
 
     # On cherche la DERNIÈRE parenthèse, pas celle de fin de chaîne : quand le titre porte
@@ -226,11 +242,31 @@ def title_region(name: str) -> str | None:
     paren = _platform_paren(name)
     tail = (name or "").strip()[paren.end():] if paren else ""
     if not tail.strip():
-        return None
-    found = _TITLE_REGION_RE.search(tail)
-    if not found:
-        return None
-    return TITLE_REGION_TEXT.get(re.sub(r"\s+", " ", found.group("w")).upper().strip())
+        return ()
+    found: list[str] = []
+    for hit in _TITLE_REGION_RE.finditer(tail):
+        base = TITLE_REGION_TEXT.get(re.sub(r"\s+", " ", hit.group("w")).upper().strip())
+        if base is not None and base not in found:
+            found.append(base)
+    return tuple(found)
+
+
+def title_region(name: str) -> str | None:
+    """La région écrite dans le TITRE, ou None. Lue en premier, avant l'URL et la page.
+
+    Deux régions DIFFÉRENTES dans la même queue ne sont pas départageables, et le refus ne
+    peut pas être un None : `offer_signals` descendrait alors sur l'URL puis sur la page et
+    entrerait la clé sur une région que le titre CONTREDIT — une devinette, exactement ce que
+    `[R54]` interdit. C'est donc une levée, nommant les deux régions. `precheck` refuse la
+    même ligne plus tôt et sans réseau ; cette levée est la sécurité du hook appelé seul.
+    """
+
+    found = title_regions(name)
+    if len(found) > 1:
+        raise GamerallTitleAmbiguous(
+            f"Gamerall: deux régions contradictoires dans le titre ({', '.join(found).upper()}) "
+            f"— refus plutôt que supposition (R54)")
+    return found[0] if found else None
 
 
 def resolve_name(name: str) -> str:
@@ -253,6 +289,18 @@ def precheck(name: str, url: str) -> str | None:
         shown = m.group(1).strip() if m else "aucune"
         return (f"Gamerall: plateforme non reconnue dans le titre ({shown!r}) — "
                 f"refus plutôt que supposition (R54)")
+    # Romain, 2026-09-19 : « Gamerall accepte des régions contradictoires ». « Hades
+    # (Nintendo Switch) GLOBAL US » entrait en GLOBAL(99) et « … EUROPE USA » en EU(99eu),
+    # parce que `title_region` s'arrêtait à la PREMIÈRE région de la queue. Le titre déclare
+    # DEUX zones incompatibles : il n'est pas lisible, et `[R54]` dit qu'un signal illisible
+    # est un refus, jamais une supposition. Le refus est ici, AVANT `url_region` et avant
+    # toute ouverture de page : un titre contradictoire ne coûte pas une requête, et le
+    # refus vaut pour la branche PC comme pour la branche console (`precheck_skip` est
+    # appelé en tête de `match_offer`, avant l'aiguillage).
+    declared = title_regions(name)
+    if len(declared) > 1:
+        return (f"Gamerall: deux régions contradictoires dans le titre "
+                f"({', '.join(declared).upper()}) — refus plutôt que supposition (R54)")
     region = url_region(url)
     if region is None:
         return None                          # la page tranchera (offer_page_resolver)

@@ -507,3 +507,191 @@ class GamerallReadsOneParenthesisEverywhere(unittest.TestCase):
         reason = g.precheck("Some Game (Amiga)", "https://gamerall.com/a/some-game-amiga")
         self.assertIsNotNone(reason)
         self.assertIn("Amiga", reason)
+
+
+class GamerallRefusesTwoContradictoryRegionsInOneTitle(unittest.TestCase):
+    """`src/merchants/gamerall.py:title_region` — Romain, 2026-09-19 : « Gamerall accepte des
+    régions contradictoires. Avec "Hades (Nintendo Switch) GLOBAL US", le classifieur détecte
+    deux régions incompatibles. Le résolveur marchand prend ensuite la première et produit un
+    candidat GLOBAL (99). "EUROPE USA" produit pareillement EU (99eu). »
+
+    La queue du titre était lue au `search` — la PREMIÈRE région gagnait et la seconde
+    disparaissait en silence. Mesuré avant le correctif, sur `match_offer` : « GLOBAL US » →
+    CANDIDAT 99, « EUROPE USA » → CANDIDAT 99eu en console ; et 2 (GLOBAL) / 9 (EU) sur la
+    branche PC, `title_region` étant partagé. Deux régions incompatibles = un titre ILLISIBLE,
+    et `[R54]` dit qu'un signal illisible est un REFUS, jamais une supposition."""
+
+    URL_SWITCH = "https://gamerall.com/nintendo/hades-nintendo-switch"
+    URL_PC = "https://gamerall.com/pc/hades-steam"
+
+    def _switch_page(self):
+        return AksResolution(slug="s", url="https://aks/sw", product_id="1",
+                             aks_name="Hades", editions={"1": "Standard"},
+                             regions={"99": "GLOBAL"}, official_platforms=("Nintendo",),
+                             console_pages={"nintendo-switch": "https://aks/sw"})
+
+    def test_the_title_reader_reports_BOTH_regions(self):
+        import src.merchants.gamerall as g
+        self.assertEqual(g.title_regions("Hades (Nintendo Switch) GLOBAL US"), ("global", "us"))
+        self.assertEqual(g.title_regions("Hades (Nintendo Switch) EUROPE USA"), ("eu", "us"))
+        # deux MOTS pour la même base ne se contredisent pas
+        self.assertEqual(g.title_regions("Hades (Steam) WORLDWIDE GLOBAL"), ("global",))
+        # une seule région, et aucune : inchangé
+        self.assertEqual(g.title_regions("Hades (Steam) EUROPE"), ("eu",))
+        self.assertEqual(g.title_regions("Hades (Steam)"), ())
+
+    def test_the_precheck_refuses_and_NAMES_the_two_regions(self):
+        import src.merchants.gamerall as g
+        # le MOTIF exact, sur le cas canonique de Romain — pas seulement le type du refus
+        self.assertEqual(
+            g.precheck("Hades (Nintendo Switch) GLOBAL US", self.URL_SWITCH),
+            "Gamerall: deux régions contradictoires dans le titre (GLOBAL, US) — "
+            "refus plutôt que supposition (R54)")
+        for title, expected in (("Hades (Nintendo Switch) GLOBAL US", ("GLOBAL", "US")),
+                                ("Hades (Nintendo Switch) EUROPE USA", ("EU", "US"))):
+            with self.subTest(title=title):
+                reason = g.precheck(title, self.URL_SWITCH)
+                self.assertIsNotNone(reason, "un titre contradictoire ne s'entre pas")
+                self.assertIn("deux régions contradictoires", reason)
+                self.assertIn("R54", reason)
+                for word in expected:
+                    self.assertIn(word, reason)
+
+    def test_the_hook_called_alone_raises_instead_of_guessing(self):
+        """Rendre None laisserait `offer_signals` descendre sur l'URL puis la page et entrer
+        la clé sur une région que le titre CONTREDIT — un repli déguisé."""
+        import src.merchants.gamerall as g
+        with self.assertRaises(g.GamerallTitleAmbiguous):
+            g.title_region("Hades (Nintendo Switch) GLOBAL US")
+        calls = []
+
+        def never(url, **kw):
+            calls.append(url)
+            raise AssertionError("aucune requête ne doit partir sur un titre illisible")
+
+        with self.assertRaises(g.GamerallTitleAmbiguous):
+            g.offer_signals(self.URL_SWITCH, "Hades (Nintendo Switch) GLOBAL US", never)
+        self.assertEqual(calls, [])
+        # une seule région : le hook répond toujours, sans réseau (le titre suffit)
+        self.assertEqual(g.title_region("Hades (Steam) EUROPE"), "eu")
+        self.assertEqual(g.offer_signals(self.URL_PC, "Hades (Steam) EUROPE", never).region_base,
+                         "eu")
+
+    def test_end_to_end_neither_branch_enters_the_contradiction(self):
+        page = self._switch_page()
+        pc = AksResolution(slug="s", url="https://aks/pc", product_id="1", aks_name="Hades",
+                           editions={"1": "Standard"}, regions={"2": "GLOBAL", "9": "EU"},
+                           official_platforms=("Steam",))
+        cases = ((self.URL_SWITCH, "Hades (Nintendo Switch) GLOBAL US", page, True),
+                 (self.URL_SWITCH, "Hades (Nintendo Switch) EUROPE USA", page, True),
+                 (self.URL_PC, "Hades (Steam) GLOBAL US", pc, False),
+                 (self.URL_PC, "Hades (Steam) EUROPE USA", pc, False))
+        for url, title, target, consoles in cases:
+            with self.subTest(title=title, consoles=consoles):
+                offer = NormalizedOffer(offer_id="1", name=title, url=url, merchant="Gamerall")
+                res = match_offer(offer, resolver=lambda n, **k: target,
+                                  page_resolver=lambda u: target, consoles=consoles)
+                self.assertIsInstance(res, SkippedOffer)
+                self.assertIn("deux régions contradictoires", res.reason)
+
+    def test_a_single_region_title_still_enters_on_both_branches(self):
+        """Le correctif REFUSE la contradiction, il ne ferme pas la lecture du titre."""
+        page = self._switch_page()
+        offer = NormalizedOffer(offer_id="1", name="Hades (Nintendo Switch) GLOBAL",
+                                url=self.URL_SWITCH, merchant="Gamerall")
+        res = match_offer(offer, resolver=lambda n, **k: page, page_resolver=lambda u: page,
+                          consoles=True)
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+        self.assertEqual(res.region_id, "99")
+        pc = AksResolution(slug="s", url="https://aks/pc", product_id="1", aks_name="Hades",
+                           editions={"1": "Standard"}, regions={"2": "GLOBAL", "9": "EU"},
+                           official_platforms=("Steam",))
+        offer = NormalizedOffer(offer_id="1", name="Hades (Steam) EUROPE", url=self.URL_PC,
+                                merchant="Gamerall")
+        res = match_offer(offer, resolver=lambda n, **k: pc, page_resolver=lambda u: pc)
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+        self.assertEqual(res.region_id, "9")
+
+
+class TheConsoleRegionSlotRefusesTwoSellableBasesBeforeOpeningThePage(unittest.TestCase):
+    """`src/matcher.py:_console_plan` — second étage du même défaut du 2026-09-19.
+
+    Le contrat de `ConsoleSignal` dit depuis le 14/09 : des mots de région qui ne désignent
+    pas UNE base vendable unique sont un refus. Le déplacement du résolveur marchand au-dessus
+    de cette garde (même jour, correctif « 51 Worldwide Games ») l'a court-circuitée : la
+    branche `elif _page_resolver is not None:` ne contrôlait RIEN et « Hades (Nintendo Switch)
+    GLOBAL US » descendait jusqu'à elle.
+
+    `precheck` est neutralisé ici EXPRÈS : sans cela le fichier marchand refuserait la ligne
+    en premier et ce test resterait vert même sans la garde — il ne prouverait rien.
+
+    Le prédicat retenu est `sig.region_words`, PAS un désaccord avec le balayage générique :
+    celui-ci lit les mots du NOM DU JEU et se tromperait sur « 51 Worldwide Games » (la classe
+    voisine `AMerchantPageRegionIsReadBeforeTheGenericScan` verrouille ce cas — `region_words`
+    y vaut `()`, mesuré)."""
+
+    URL = "https://gamerall.com/nintendo/hades-nintendo-switch"
+
+    def _match(self, title):
+        import dataclasses
+        from src.merchant_config import MerchantOfferSignals
+        from src.merchants.registry import MERCHANT_CONFIGS
+        page = AksResolution(slug="s", url="https://aks/sw", product_id="1",
+                             aks_name="Hades", editions={"1": "Standard"},
+                             regions={"99": "GLOBAL"}, official_platforms=("Nintendo",),
+                             console_pages={"nintendo-switch": "https://aks/sw"})
+        calls = []
+
+        def stub(url, name=""):
+            calls.append(url)
+            return MerchantOfferSignals(platform="NINTENDO", region_resolved=True,
+                                        region_base="global", region_label="Global")
+
+        # On restaure l'OBJET d'origine, pas le champ — `dataclasses.replace` fabrique une
+        # NOUVELLE config et `test_registered_config_is_the_module_config` vérifie que le
+        # registre porte bien celle du module (pollution visible en suite complète seulement).
+        original = MERCHANT_CONFIGS["GAMERALL"]
+        MERCHANT_CONFIGS["GAMERALL"] = dataclasses.replace(
+            original, precheck=None, offer_page_resolver=stub)
+        try:
+            offer = NormalizedOffer(offer_id="1", name=title, url=self.URL, merchant="Gamerall")
+            return match_offer(offer, resolver=lambda n, **k: page,
+                               page_resolver=lambda u: page, consoles=True), calls
+        finally:
+            MERCHANT_CONFIGS["GAMERALL"] = original
+
+    def test_two_sellable_bases_are_refused_without_costing_a_page(self):
+        # le MOTIF exact, sur le cas canonique de Romain — pas seulement le type du refus
+        res, calls = self._match("Hades (Nintendo Switch) GLOBAL US")
+        self.assertEqual(
+            getattr(res, "reason", None),
+            "console: merchant region contradiction GLOBAL / US — "
+            "no single sellable base, not entered (R45)")
+        for title, words in (("Hades (Nintendo Switch) GLOBAL US", ("GLOBAL", "US")),
+                             ("Hades (Nintendo Switch) EUROPE USA", ("EUROPE", "USA"))):
+            with self.subTest(title=title):
+                res, calls = self._match(title)
+                self.assertIsInstance(res, SkippedOffer)
+                self.assertIn("merchant region contradiction", res.reason)
+                self.assertIn("no single sellable base", res.reason)
+                for word in words:
+                    self.assertIn(word, res.reason)
+                # la garde est AU-DESSUS du résolveur : un titre illisible ne tire pas 550 ko
+                self.assertEqual(calls, [])
+
+    def test_the_resolver_is_still_consulted_when_the_title_says_nothing(self):
+        """La garde ne doit pas voler la parole au résolveur — le correctif du 19/09 matin."""
+        res, calls = self._match("Hades (Nintendo Switch)")
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+        self.assertEqual((res.region_id, calls), ("99", [self.URL]))
+
+    def test_the_shared_helper_ignores_a_forbidden_word(self):
+        """« GLOBAL CANADA » n'est pas une contradiction entre deux zones VENDABLES : c'est un
+        verrou interdit, et il garde son aiguillage propre (`forbidden region:`)."""
+        from src.console_keys import distinct_region_bases
+        self.assertEqual(distinct_region_bases(("GLOBAL", "US")), ("global", "us"))
+        self.assertEqual(distinct_region_bases(("EUROPE", "USA")), ("eu", "us"))
+        self.assertEqual(distinct_region_bases(("GLOBAL", "CANADA")), ("global",))
+        self.assertEqual(distinct_region_bases(("EU", "European Union")), ("eu",))
+        self.assertEqual(distinct_region_bases(("CA",)), ())
+        self.assertEqual(distinct_region_bases(()), ())
