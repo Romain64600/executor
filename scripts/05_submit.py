@@ -170,8 +170,35 @@ def main() -> int:
         with browser_lock(ROOT, label="05_submit " + " ".join(sys.argv[1:])[:160]):
             return _main()
     except BrowserBusyError as exc:
+        # Même journal que les autres abandons (2026-09-19) : un enfant du sweep refusé ici
+        # restait muet (sa sortie standard est jetée). Le run_id se déduit du chemin
+        # approved.json — au mieux ; sans lui, la sortie standard reste la seule trace.
+        run_id = _run_id_from_argv(sys.argv[1:])
+        if run_id:
+            RunLogger(run_id, log_dir=str(ROOT / "logs")).log("aborted", reason=str(exc))
         print(json.dumps({"aborted": True, "reason": str(exc)}, indent=2))
         return 2
+
+
+def _run_id_from_argv(argv: list[str]) -> str:
+    """Le nom du dossier de run porté par le premier argument positionnel (approved.json),
+    "" si l'argv n'en montre aucun — un argparse allégé, jamais une erreur."""
+    for i, arg in enumerate(argv):
+        if arg.startswith("-"):
+            continue
+        if i > 0 and argv[i - 1] in _VALUE_FLAGS:
+            continue
+        return Path(arg).resolve().parent.name
+    return ""
+
+
+# Les options qui prennent une valeur — pour que `--merchant Driffle` ne soit pas lu comme
+# le chemin approved par `_run_id_from_argv`. Tenu à la main, comme le parser ci-dessous.
+_VALUE_FLAGS = frozenset({
+    "--merchant", "--store-id", "--endpoint", "--available", "--max-pages", "--mode",
+    "--limit", "--click-mode", "--page-hint", "--page-window", "--pace-pages",
+    "--pace-offers", "--catalog-cache",
+})
 
 
 _STOP = False
@@ -317,6 +344,22 @@ def _main() -> int:
         return 2
     pacer_kw = {"page_pacer": page_pacer, "offer_pacer": offer_pacer}
 
+    out_dir = Path(args.approved).resolve().parent
+    run_id = out_dir.name
+    # Le journal du run s'ouvre AVANT toute porte fail-closed (2026-09-19). Le sweep jette la
+    # sortie standard de ses enfants (`src/child_runner.py`, DEVNULL) : quand ce stage sortait
+    # en 2, le recap ne disait que « submit: exit 2 ». Le run Gamerall 20260919-152446 s'est
+    # arrêté ainsi page 26 — feed illisible au premier accès, motif imprimé ici puis perdu ;
+    # il a fallu rejouer la page à la main pour l'établir. `_last_abort_reason` (scripts/10)
+    # lit le jsonl : chaque abandon y écrit donc sa raison, comme 02_extract le fait déjà.
+    logger = RunLogger(run_id, log_dir=str(ROOT / "logs"))
+
+    def abort(reason: str, **extra) -> int:
+        """Abandon fail-closed : la raison part sur la sortie standard ET dans le jsonl."""
+        logger.log("aborted", reason=reason, **extra)
+        print(json.dumps({"aborted": True, "reason": reason, **extra}, indent=2, default=str))
+        return 2
+
     # Fail-closed gate: invariants must be green AND authoritative. Retry a couple
     # times — a transient red (e.g. AKS rate-limit right after the matcher's GET
     # burst) should not abort; a persistent one still does.
@@ -327,17 +370,14 @@ def _main() -> int:
         time.sleep(5)
         report = build_report(endpoint=args.endpoint)
     if not (report["ok"] and report["authoritative"]):
-        print(json.dumps({
-            "aborted": True,
-            "reason": "invariants not green/authoritative after retries",
-            "ok": report["ok"],
-            "authoritative": report["authoritative"],
-            "failing_checks": [c for c in report.get("checks", []) if not c["ok"]],
-        }, indent=2))
-        return 2
+        failing = [c for c in report.get("checks", []) if not c.get("ok")]
+        names = ", ".join(str(c.get("name") or "?") for c in failing) or "none red"
+        return abort(
+            f"invariants not green/authoritative after retries ({names}; "
+            f"authoritative={report['authoritative']})",
+            ok=report["ok"], authoritative=report["authoritative"], failing_checks=failing,
+        )
 
-    out_dir = Path(args.approved).resolve().parent
-    run_id = out_dir.name
     # Same discovery as the sweep (Romain 2026-09-17): a submit launched from a terminal —
     # the way GameBoost's 198 offers were entered that day — is now visible in the console,
     # and blocks a console launch cleanly instead of failing later on the browser lock.
@@ -364,11 +404,7 @@ def _main() -> int:
                     session, store_id=args.store_id, available=args.available, max_pages=max_pages,
                 )
         except FEED_UNREADABLE_EXCS as exc:
-            print(json.dumps({
-                "aborted": True,
-                "reason": f"fail-closed abort (feed/CDP unreadable): {exc}",
-            }, indent=2))
-            return 2
+            return abort(f"fail-closed abort (feed/CDP unreadable): {exc}")
         (out_dir / "session_catalog.json").write_text(json.dumps(catalog, indent=2), encoding="utf-8")
         summary = {"mode": "catalog", "ok": catalog.get("ok"), "out_dir": str(out_dir),
                    "artifact": "session_catalog.json"}
@@ -404,13 +440,7 @@ def _main() -> int:
             expected_run_id=run_id,
         )
     except (ValidationError, ValueError) as exc:
-        print(json.dumps({
-            "aborted": True,
-            "reason": f"submit-time validation re-check failed: {exc}",
-        }, indent=2))
-        return 2
-
-    logger = RunLogger(run_id, log_dir=str(ROOT / "logs"))
+        return abort(f"submit-time validation re-check failed: {exc}")
 
     if args.inspect:
         limit = args.limit if args.limit is not None else (None if args.all else 1)
@@ -427,11 +457,7 @@ def _main() -> int:
                     approved=approved_slice, available=args.available, max_pages=max_pages,
                 )
         except FEED_UNREADABLE_EXCS as exc:
-            print(json.dumps({
-                "aborted": True,
-                "reason": f"fail-closed abort (feed/CDP unreadable): {exc}",
-            }, indent=2))
-            return 2
+            return abort(f"fail-closed abort (feed/CDP unreadable): {exc}")
         (out_dir / "modal_inspection.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
         inspected = sum(1 for p in result["plan"] if p.get("inspection") is not None)
         print(json.dumps({
@@ -462,20 +488,12 @@ def _main() -> int:
                 json.loads(meta_path.read_text(encoding="utf-8")).get("data_entry_mode") or ""
             ) or None
         except (json.JSONDecodeError, OSError) as exc:
-            print(json.dumps({
-                "aborted": True,
-                "reason": f"match_meta.json unreadable — cannot verify the matched mode (FC5): {exc}",
-            }, indent=2))
-            return 2
+            return abort(f"match_meta.json unreadable — cannot verify the matched mode (FC5): {exc}")
     if write and matched_mode in CANARY_MODES and args.mode == "safe":
-        print(json.dumps({
-            "aborted": True,
-            "reason": (
-                f"run matched under mode {matched_mode!r} (canary) cannot submit as "
-                "'safe' (full batch) — re-match under safe or submit in the matched mode (FC5)"
-            ),
-        }, indent=2))
-        return 2
+        return abort(
+            f"run matched under mode {matched_mode!r} (canary) cannot submit as "
+            "'safe' (full batch) — re-match under safe or submit in the matched mode (FC5)"
+        )
 
     # R24: the batch size is the mode's call (safe = full validated batch, R23b;
     # learning/advanced = canary of 1). --all is a no-op here — kept only for
@@ -502,16 +520,12 @@ def _main() -> int:
             ledger.acknowledge("operator --acknowledge-block on the CLI")
         elif ledger.requires_ack():
             previous = ledger.load().get("last_block") or {}
-            print(json.dumps({
-                "aborted": True,
-                "reason": (
-                    "the previous TWO real passes of this run both ended "
-                    "guard-blocked (G03 across processes) — inspect the feed and "
-                    "submit_plan.json, then re-run with --acknowledge-block (FC3)"
-                ),
-                "last_block": previous,
-            }, indent=2))
-            return 2
+            return abort(
+                "the previous TWO real passes of this run both ended "
+                "guard-blocked (G03 across processes) — inspect the feed and "
+                "submit_plan.json, then re-run with --acknowledge-block (FC3)",
+                last_block=previous,
+            )
 
     session_cls = WriteSubmitSession if write else SubmitSession
     submitter_cls = Submitter if write else DryRunSubmitter
@@ -553,11 +567,7 @@ def _main() -> int:
                 catalog=catalog,
             )
     except FEED_UNREADABLE_EXCS as exc:
-        print(json.dumps({
-            "aborted": True,
-            "reason": f"fail-closed abort (feed/CDP unreadable): {exc}",
-        }, indent=2))
-        return 2
+        return abort(f"fail-closed abort (feed/CDP unreadable): {exc}")
 
     # FC3: record this pass's guard outcome in the cross-process ledger (a
     # clean pass resets the blocked-run streak).

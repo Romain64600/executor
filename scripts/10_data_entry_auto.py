@@ -328,6 +328,12 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
                            "created": created_ok, "post_save": ps})
         ok = (rc == 0 and plan_readable)
         detail = "" if ok else (f"exit {rc}" if rc else "submit_plan.json unreadable after exit 0")
+        if rc:
+            # 2026-09-19 : 05 journalise chaque abandon fail-closed (sa sortie standard est
+            # jetée) — le recap dit POURQUOI la page s'est arrêtée, pas seulement « exit 2 ».
+            why = _last_abort_reason(run_id)
+            if why:
+                detail = f"exit {rc} ({why})"
         return SubmitOutcome(ok=ok, aborted=plan.get("aborted"),
                              stopped=plan.get("stopped"),
                              created=created, offers=offers, detail=detail)

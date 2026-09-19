@@ -3,6 +3,36 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-19 — Un submit qui s'arrête dit pourquoi (Gamerall 152446, page 26)
+
+**Le symptôme.** Le run Gamerall `20260919-152446-auto` (nouveau VPS, 75 offres créées pages
+29→27) s'est arrêté page 26 avec pour seule trace `submit: exit 2` — 61 candidats validés, pas de
+`submit_plan.json`, registre FC3 à zéro, aucun `aborted` dans le jsonl. Le sweep jette la sortie
+standard de ses enfants (`src/child_runner.py`, `DEVNULL`) et relit le POURQUOI d'un stage non nul
+dans `logs/<run>.jsonl` (`_last_abort_reason`) — mais seulement pour l'extraction, et `05_submit`
+ne journalisait AUCUN de ses abandons fail-closed : le `RunLogger` naissait après la porte des
+invariants, et huit `print(json) ; return 2` (invariants, revalidation, FC5, FC3, feed/CDP
+illisible ×3, verrou navigateur) parlaient à un stdout que personne ne lisait.
+
+**La cause de la page 26, établie après coup.** Le jsonl porte `catalog_cache_hit` à 16:49:50 —
+un évènement émis APRÈS toutes les portes précoces — puis plus rien jusqu'à la fin du sweep à
+16:50:40. La seule sortie en 2 encore atteignable est le garde-fou `feed/CDP unreadable` autour de
+`submitter.run()` : le premier accès au feed a échoué (transitoire — la même page rejouée en
+dry-run huit minutes plus tard passait, 13/13 prêts). Rien n'a été écrit sur cette page.
+
+**Le correctif.** `05_submit` ouvre son journal dès que `run_id` est connu, AVANT la porte des
+invariants ; chaque abandon passe par `abort()` qui écrit l'évènement `aborted` (avec sa raison)
+puis imprime le JSON comme avant. La raison des invariants porte désormais le NOM des contrôles
+rouges (seul champ relu par le sweep). Le refus de verrou navigateur, hors `_main`, déduit le
+run_id du chemin `approved.json` (`_run_id_from_argv`) — au mieux, jamais une erreur. Côté sweep,
+`submit()` reprend le motif comme `extract()` : le recap dit `submit: exit 2 (fail-closed abort
+(feed/CDP unreadable): …)`. Tests : cinq abandons journalisés + verrou occupé + détail du sweep,
+chacun vérifié par mutation (journal retiré, motif retiré, ancien ordre du logger).
+
+**Non fait, à trancher.** Une page dont le submit avorte AVANT toute écriture (pas de
+`submit_plan.json`, zéro tentative) pourrait être rejouée une fois par le sweep au lieu de stopper
+le marchand — c'est un changement de sémantique de halte, pas un correctif ; Romain décide.
+
 ## 2026-09-19 — Revue de Romain (jusqu'à c4f64e2) : deux P2, et un piège de cache
 
 **`[P2]` Ajout encore accepté puis perdu sur arrêt ou erreur.** La fermeture de la file n'était

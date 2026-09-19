@@ -739,6 +739,16 @@ log.log("feed_fetch", merchant=merchant, pages_scanned=n)
 log.log_guard(guard.snapshot())         # persist the StepGuard state per task
 ```
 
+**L'évènement `aborted` est le canal du POURQUOI (2026-09-19).** Le sweep (`scripts/10`) lance ses
+stages avec la sortie standard jetée (`src/child_runner.py`) et relit la raison d'un stage non nul
+dans le jsonl du run de page : le DERNIER `aborted` porteur d'un `reason` (`_last_abort_reason`,
+tronqué à 160 caractères) devient `exit N (<reason>)` dans le recap — pour l'extraction ET pour le
+submit. Contrat pour `02_extract` et `05_submit` : **toute sortie fail-closed en 2 écrit d'abord
+`{"event": "aborted", "reason": …}`** — invariants (avec le nom des contrôles rouges),
+revalidation, FC5, FC3, feed/CDP illisible, verrou navigateur (run_id déduit du chemin
+`approved.json`). Un `return 2` sans `aborted` est une régression : le recap redirait « exit 2 »
+sans cause, comme Gamerall `20260919-152446` page 26.
+
 ## Conventions
 
 - Timestamps are UTC ISO-8601 `...Z`; clocks are injectable for tests.

@@ -492,3 +492,44 @@ class ContinueOnHaltTests(unittest.TestCase):
         self.assertEqual(len(recap["targets"]), 1)
         self.assertEqual(recap["halted"], "Kinguin: extract_failed_p1")
 
+
+class SubmitAbortReasonTests(unittest.TestCase):
+    """2026-09-19: a submit that halts the sweep carries its WHY too — 05 now journals every
+    fail-closed exit 2 (Gamerall run 152446 halted p26 on 'submit: exit 2' with the reason
+    thrown away with the child's stdout)."""
+
+    def setUp(self):
+        self.MOD = _load_cli()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self._orig_root = self.MOD.ROOT
+        self.MOD.ROOT = Path(self.tmp.name)
+        self.addCleanup(lambda: setattr(self.MOD, "ROOT", self._orig_root))
+
+    def test_submit_detail_carries_the_abort_reason(self):
+        run_id = "r-p26"
+        logs = self.MOD.ROOT / "logs"; logs.mkdir(parents=True)
+        reason = "fail-closed abort (feed/CDP unreadable): page 26 blank after re-fetch"
+        (logs / f"{run_id}.jsonl").write_text(
+            json.dumps({"event": "catalog_cache_hit", "run_id": run_id}) + "\n"
+            + json.dumps({"event": "aborted", "reason": reason, "run_id": run_id}) + "\n",
+            encoding="utf-8")
+        with mock.patch.object(self.MOD, "_run_child", return_value=2):
+            stages = self.MOD._make_stages("Gamerall", "13", "all", None)
+            sb = stages.submit(run_id)
+        self.assertFalse(sb.ok)
+        self.assertFalse(sb.clean())
+        self.assertEqual(sb.detail, f"exit 2 ({reason})")
+
+    def test_submit_detail_without_a_logged_reason_stays_the_exit_code(self):
+        with mock.patch.object(self.MOD, "_run_child", return_value=2):
+            stages = self.MOD._make_stages("Gamerall", "13", "all", None)
+            self.assertEqual(stages.submit("r-nolog").detail, "exit 2")
+
+    def test_a_clean_submit_keeps_an_empty_detail(self):
+        run_id = "r-ok"
+        d = self.MOD.ROOT / "runs" / run_id; d.mkdir(parents=True)
+        (d / "submit_plan.json").write_text(json.dumps({"plan": [], "aborted": None}))
+        with mock.patch.object(self.MOD, "_run_child", return_value=0):
+            stages = self.MOD._make_stages("Gamerall", "13", "all", None)
+            self.assertEqual(stages.submit(run_id).detail, "")

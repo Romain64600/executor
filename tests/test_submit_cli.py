@@ -64,6 +64,27 @@ class _FakeLogger:
         pass
 
 
+class _RecordingLogger:
+    """Le journal tel que le sweep le relit (2026-09-19) : chaque instance garde son run_id
+    et ses évènements — passé APRÈS `_FakeLogger` dans `patches=`, il l'emporte."""
+    instances: list = []
+
+    def __init__(self, run_id, *args, **kwargs):
+        self.run_id = run_id
+        self.events = []
+        type(self).instances.append(self)
+
+    def log(self, event, **fields):
+        self.events.append({"event": event, **fields})
+
+    def log_guard(self, *args, **kwargs):
+        pass
+
+    @classmethod
+    def aborted(cls):
+        return [e for inst in cls.instances for e in inst.events if e["event"] == "aborted"]
+
+
 class _FakeSession:
     instantiated = 0
 
@@ -497,6 +518,129 @@ class SubmitCliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(fake.run_kwargs["limit"], 1)
         self.assertEqual(json.loads(out)["data_entry_mode"], "learning")
+
+    # -- every fail-closed exit 2 is journaled (2026-09-19) ------------------------------
+    # The sweep throws its children's stdout away (src/child_runner.py, DEVNULL) and reads
+    # the WHY of a non-zero stage from the run's jsonl (`_last_abort_reason`). Gamerall run
+    # 20260919-152446 halted p26 on a feed unreadable at first access, and the recap said
+    # only "submit: exit 2": the logger was built AFTER the invariants gate and the outer
+    # feed/CDP wrapper printed without logging. Each abort now writes an `aborted` event.
+
+    def _recording(self):
+        _RecordingLogger.instances = []
+        return mock.patch.object(MOD, "RunLogger", _RecordingLogger)
+
+    def test_invariants_abort_is_journaled_with_the_failing_check(self):
+        approved = self._write_fixture()
+        code, out = self._run_cli(self._base_argv(approved), report=RED,
+                                  patches=(self._recording(),))
+        self.assertEqual(code, 2)
+        events = _RecordingLogger.aborted()
+        self.assertEqual(len(events), 1)
+        self.assertIn("invariants not green/authoritative", events[0]["reason"])
+        self.assertIn("cdp", events[0]["reason"])           # the check name rides in `reason`
+        self.assertEqual(_RecordingLogger.instances[0].run_id, self.run_id)
+        self.assertIn("cdp", json.loads(out)["reason"])
+
+    def test_feed_unreadable_outside_the_batch_is_journaled(self):
+        # The p26 door: the first feed read inside run() raised, the wrapper returned 2
+        # and no submit_plan.json existed — the jsonl now carries the reason.
+        approved = self._write_fixture()
+        exc_cls = MOD.FEED_UNREADABLE_EXCS[1]
+
+        class _Raising:
+            def __init__(self, session, **kwargs):
+                pass
+
+            def run(self, **kwargs):
+                raise exc_cls("page 26 blank after re-fetch")
+
+        code, out = self._run_cli(
+            self._base_argv(approved),
+            patches=(self._recording(),
+                     mock.patch.object(MOD, "SubmitSession", _FakeSession),
+                     mock.patch.object(MOD, "DryRunSubmitter", _Raising)),
+        )
+        self.assertEqual(code, 2)
+        self.assertFalse((self.run_dir / "submit_plan.json").exists())
+        events = _RecordingLogger.aborted()
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0]["reason"],
+                         "fail-closed abort (feed/CDP unreadable): page 26 blank after re-fetch")
+        self.assertEqual(json.loads(out)["reason"], events[0]["reason"])
+
+    def test_validation_recheck_abort_is_journaled(self):
+        approved = self._write_fixture(drop=("validation.json",))
+        code, _ = self._run_cli(self._base_argv(approved), patches=(self._recording(),))
+        self.assertEqual(code, 2)
+        events = _RecordingLogger.aborted()
+        self.assertEqual(len(events), 1)
+        self.assertIn("submit-time validation re-check failed", events[0]["reason"])
+
+    def test_fc5_canary_to_safe_abort_is_journaled(self):
+        approved = self._write_fixture()
+        (self.run_dir / "match_meta.json").write_text(
+            json.dumps({"run_id": self.run_id, "data_entry_mode": "learning"}),
+            encoding="utf-8",
+        )
+        code, _ = self._run_cli(
+            self._base_argv(approved, "--submit"),
+            patches=(self._recording(),
+                     mock.patch.object(MOD, "WriteSubmitSession", _FakeSession),
+                     mock.patch.object(MOD, "Submitter", _fake_submitter_cls({}))),
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("cannot submit as 'safe'", _RecordingLogger.aborted()[0]["reason"])
+
+    def test_fc3_double_block_abort_is_journaled(self):
+        approved = self._write_fixture()
+        (self.run_dir / "guard_ledger.json").write_text(json.dumps({
+            "consecutive_blocked_runs": 2, "last_block": {"rule": "G03"},
+        }), encoding="utf-8")
+        code, _ = self._run_cli(
+            self._base_argv(approved, "--submit"),
+            patches=(self._recording(),
+                     mock.patch.object(MOD, "WriteSubmitSession", _FakeSession),
+                     mock.patch.object(MOD, "Submitter", _fake_submitter_cls({}))),
+        )
+        self.assertEqual(code, 2)
+        events = _RecordingLogger.aborted()
+        self.assertIn("--acknowledge-block (FC3)", events[0]["reason"])
+        self.assertEqual(events[0]["last_block"], {"rule": "G03"})
+
+    def test_browser_busy_abort_is_journaled_under_the_run_id_from_argv(self):
+        from src.browser_lock import BrowserBusyError
+
+        def busy_lock(root, label):
+            raise BrowserBusyError("browser tab busy — held by test pid=1")
+
+        approved = self._write_fixture()
+        # the approved path LAST, after value flags: the run_id must still be found
+        argv = ["--merchant", "Driffle", "--store-id", "127", "--submit", approved]
+        out = io.StringIO()
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch.object(MOD, "browser_lock", busy_lock))
+            stack.enter_context(self._recording())
+            stack.enter_context(mock.patch.object(sys, "argv", ["05_submit.py"] + argv))
+            stack.enter_context(contextlib.redirect_stdout(out))
+            stack.enter_context(contextlib.redirect_stderr(io.StringIO()))
+            code = MOD.main()
+        self.assertEqual(code, 2)
+        self.assertEqual([i.run_id for i in _RecordingLogger.instances], [self.run_id])
+        self.assertIn("browser tab busy", _RecordingLogger.aborted()[0]["reason"])
+
+    def test_run_id_from_argv_skips_flag_values_and_never_raises(self):
+        self.assertEqual(MOD._run_id_from_argv(
+            ["--merchant", "Driffle", "--store-id", "127", "/r/20260919-x-p26/approved.json"]),
+            "20260919-x-p26")
+        self.assertEqual(MOD._run_id_from_argv(
+            ["/r/20260919-x-p26/approved.json", "--merchant", "Driffle", "--submit"]),
+            "20260919-x-p26")
+        self.assertEqual(MOD._run_id_from_argv(
+            ["--submit", "--prove-gone-by-search", "/r/20260919-x-p26/approved.json"]),
+            "20260919-x-p26")
+        self.assertEqual(MOD._run_id_from_argv(["--merchant", "Driffle"]), "")
+        self.assertEqual(MOD._run_id_from_argv([]), "")
 
 
 class ModeLimitTests(unittest.TestCase):
