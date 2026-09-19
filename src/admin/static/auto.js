@@ -145,6 +145,41 @@ $("#launch-all").addEventListener("click", async () => {
     syncGo();
   }
 });
+// ---- ajouter un marchand au sweep EN COURS (Romain 2026-09-19) ----
+// Le sweep relit la file à chaque FRONTIÈRE de marchand : la cible ajoutée ne coupe rien,
+// elle attend son tour. Le GO est exigé parce que c'est la même autorisation qu'un lancement —
+// un marchand ajouté écrit sur AKS sans validation humaine.
+function fillLiveMerchants() {
+  const sel = $("#add-live-merchant");
+  if (!sel || sel.options.length) return;
+  sel.replaceChildren(...SUGGESTED.map((m) =>
+    el("option", { value: `${m.name}|${m.store_id}` }, `${m.name} (${m.store_id})`)));
+}
+
+$("#add-live-btn").addEventListener("click", async () => {
+  const msg = $("#add-live-msg");
+  const raw = $("#add-live-merchant").value || "";
+  const [merchant, store_id] = raw.split("|");
+  if (!merchant || !store_id) { msg.textContent = "choisis un marchand"; return; }
+  if (($("#add-live-go").value || "").trim().toUpperCase() !== "GO") {
+    msg.textContent = "tape GO"; return;
+  }
+  $("#add-live-btn").disabled = true;
+  try {
+    const r = await api("api/data-entry/auto/add-target", {
+      method: "POST",
+      body: JSON.stringify({ merchant, store_id, confirm: "GO" }),
+    });
+    msg.textContent = r.queued
+      ? `✔ ${merchant} ajouté — position ${r.position} dans la file`
+      : `déjà dans la file (${r.reason || ""})`;
+    $("#add-live-go").value = "";
+  } catch (e) {
+    msg.textContent = "✖ " + e.message;
+  }
+  $("#add-live-btn").disabled = false;
+});
+
 $("#stop-btn").addEventListener("click", async () => {
   $("#stop-btn").disabled = true;
   // Audit 2026-09-18 : un 200 ne prouve pas qu'un run a été arrêté. `stopped: null`
@@ -290,6 +325,7 @@ function renderRecap(d) {
       + SUGGESTED.map((m) => m.name).join(", ") + ".";
   } catch (e) { SUGGESTED = []; }
   SUGGEST_READY = SUGGESTED.length > 0;
+  fillLiveMerchants();      // la liste « + marchand » du sweep en cours vient de la même source
   if (!SUGGEST_READY) {
     $("#add-target").disabled = true;
     $("#launch-msg").textContent = "✖ liste des marchands suggérés indisponible — lancement bloqué (fail-closed).";

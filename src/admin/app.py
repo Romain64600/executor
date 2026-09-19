@@ -562,6 +562,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._post_extract()
         if path == "/api/data-entry/auto":
             return self._post_data_entry_auto()
+        if path == "/api/data-entry/auto/add-target":
+            return self._post_data_entry_auto_add_target()
         if path == "/api/data-entry/by-urls":
             return self._post_data_entry_by_urls()
         if path == "/api/data-entry/by-urls/submit":
@@ -751,6 +753,31 @@ class AdminHandler(BaseHTTPRequestHandler):
             continue_on_halt=bool(body.get("continue_on_halt")),
             consoles=_parse_consoles(body))   # [R45] default True (Romain 2026-09-15)
         self._send_json(200, result)
+
+    def _post_data_entry_auto_add_target(self) -> None:
+        """Ajoute UN marchand au sweep en cours (Romain 2026-09-19).
+
+        Mêmes portes qu'un lancement, parce que c'est la même autorisation : un marchand
+        ajouté écrit sur AKS SANS relecture humaine. La liste blanche fait autorité côté
+        serveur (un client bricolé ne la contourne pas), et le GO tapé est exigé comme sur
+        toutes les voies d'écriture réelle. Le manager, lui, vérifie qu'un sweep tourne
+        vraiment — sinon l'ajout partirait dans le vide."""
+
+        body = self._json_body()
+        by = str(self._basic_user() or body.get("by") or "operateur")
+        merchant = str(body.get("merchant") or "").strip()
+        store_id = str(body.get("store_id") or "").strip()
+        if not merchant or not store_id:
+            raise ApiError(400, "target_required",
+                           "merchant et store_id requis")
+        reason = rejection_reason(merchant, store_id)
+        if reason is not None:
+            raise ApiError(403, "merchant_not_allowed", reason)
+        if str(body.get("confirm") or "").strip().upper() != "GO":
+            raise ApiError(400, "confirm_required",
+                           "tape GO pour confirmer l'ajout au sweep en cours")
+        self._send_json(200, self.state.manager.add_sweep_target(
+            merchant, store_id, by=by))
 
     def _post_data_entry_by_urls(self) -> None:
         body = self._json_body()

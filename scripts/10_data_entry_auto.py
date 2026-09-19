@@ -52,6 +52,42 @@ from src.validation import candidate_fingerprint  # noqa: E402
 _RUNNER = CooperativeChildRunner()
 
 
+TARGETS_QUEUE = "targets_queue.json"
+
+
+def read_targets_queue(sweep_dir: "Path | None") -> list[tuple[str, str]]:
+    """Les marchands AJOUTÉS au sweep pendant qu'il tourne, dans l'ordre d'ajout.
+
+    Le canal est un fichier du dossier de run, et il a UN SEUL écrivain : la console
+    (``SubmitManager.add_sweep_target``, sous son mutex, en écriture atomique). Le sweep, lui,
+    ne fait que LIRE — jamais de lecture-modification-écriture des deux côtés, donc pas de
+    course à gérer. Il le relit à chaque FRONTIÈRE de marchand, jamais au milieu d'une page :
+    une cible ajoutée n'interrompt rien, elle prend la file.
+
+    Un fichier illisible ne casse pas un run de 30 h : on rend une liste vide et l'appelant
+    le signale dans le recap. C'est le bon arbitrage ici — le pire cas est « le marchand que
+    Romain vient d'ajouter n'est pas pris », visible immédiatement dans la console, pas une
+    écriture fausse sur AKS."""
+
+    if sweep_dir is None:
+        return []
+    try:
+        raw = json.loads((sweep_dir / TARGETS_QUEUE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    if not isinstance(raw, list):
+        return []
+    out: list[tuple[str, str]] = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        merchant = str(entry.get("merchant") or "").strip()
+        store_id = str(entry.get("store_id") or "").strip()
+        if merchant and store_id:
+            out.append((merchant, store_id))
+    return out
+
+
 def _run_child(argv: list[str]) -> int:
     return _RUNNER.run(argv, str(ROOT))
 
@@ -532,7 +568,31 @@ def main() -> int:
         os.replace(tmp, recap_path)
 
     persist()
-    for merchant, store_id in targets:
+    # Boucle INDEXÉE, pas un `for … in targets` : la file peut s'allonger pendant le run
+    # (Romain 2026-09-19 : « on a l'option pour ajouter un marchand à un sweep en cours ? »).
+    # On relit la file de la console à CHAQUE frontière de marchand — jamais au milieu d'une
+    # page : une cible ajoutée ne coupe rien, elle attend son tour. `planned` porte la liste
+    # déjà connue, en minuscules, pour qu'un double clic n'ajoute pas deux fois le même
+    # marchand, et pour qu'un marchand déjà balayé ne soit pas rebalayé.
+    planned = {(m.casefold(), str(sid)) for m, sid in targets}
+    index = 0
+    while True:
+        # La file est relue AVANT le test de fin, pas seulement avant chaque marchand : sans
+        # ça, une cible ajoutée pendant le DERNIER marchand serait perdue — le sweep sortirait
+        # de la boucle sans jamais la voir. C'est la seule course réelle de ce canal.
+        for added in read_targets_queue(sweep_dir):
+            key = (added[0].casefold(), str(added[1]))
+            if key in planned:
+                continue
+            planned.add(key)
+            targets.append(added)
+            recap.setdefault("targets_added", []).append(
+                {"merchant": added[0], "store_id": added[1], "at": _clock()})
+            persist()
+        if index >= len(targets):
+            break
+        merchant, store_id = targets[index]
+        index += 1
         if _RUNNER.stopped:
             # AUDIT DU 2026-09-18 : ceci ÉCRASAIT les haltes fail-closed déjà accumulées par
             # `--continue-on-halt`, et comme le code de sortie rend 0 sur « operator_stop », un
