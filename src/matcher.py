@@ -750,6 +750,28 @@ def swap_numerals(text: str) -> str:
     return _NUMERAL_TOKEN_RE.sub(_swap, text)
 
 
+# Les orthographes de FRANCHISE qu'AKS et les marchands écrivent différemment. Une seule
+# aujourd'hui, LUE SUR SIX PAGES VIVANTES le 2026-09-20 (`warhammer-40k-darktide`,
+# `…-space-marine-2`, `…-boltgun`, `…-rogue-trader`, `…-gladius-relics-of-war`,
+# `…-battlesector`) : AKS écrit « Warhammer 40K », jamais « 40000 » ni « 40-000 », quand les
+# marchands écrivent « Warhammer 40,000 ». Sans ce repli, la ligne échouait DEUX fois — le
+# slug sondé (`warhammer-40-000-battlesector`, 404) puis, même avec la bonne page, la garde
+# d'identité R01 (« missing AKS words: ['40K'] »). 12 offres du seul balayage GameSeal du
+# 19/09. Comme le repli d'apostrophe, il ne peut faire matcher que des noms qui SIGNIFIENT
+# la même chose : « 40,000 » et « 40K » sont deux graphies du même nombre, des deux côtés de
+# la comparaison. N'y ajoute pas de règle de nombre GÉNÉRIQUE (« 10,000 » → « 10K ») sans la
+# même vérification en ligne : AKS ne l'applique pas partout.
+_FRANCHISE_SPELLINGS = ((re.compile(r"\b40[\s,]?000\b"), "40K"),)
+
+
+def fold_franchise_spellings(text: str) -> str:
+    """« Warhammer 40,000 » → « Warhammer 40K » (l'orthographe d'AKS), des DEUX côtés."""
+
+    for pattern, canonical in _FRANCHISE_SPELLINGS:
+        text = pattern.sub(canonical, text or "")
+    return text
+
+
 def tokenize(name: str) -> list[str]:
     """Uppercase word tokens, apostrophes normalized, punctuation stripped; standalone
     Roman numerals II–XV canonicalised to digits ([R42])."""
@@ -764,7 +786,7 @@ def tokenize(name: str) -> list[str]:
     # que `fold_accents`). Les deux replis sont maintenant identiques, ils ne peuvent plus
     # diverger. La moitié « mots-outils » du constat (THE / OF / AND retirés du côté requis)
     # est volontairement ABANDONNÉE : elle, elle relâcherait l'identité.
-    cleaned = normalize_apostrophes(name).upper()
+    cleaned = fold_franchise_spellings(normalize_apostrophes(name).upper())
     out = []
     for t in re.findall(r"[A-Z0-9']+", cleaned):
         t = t.replace("'", "")
@@ -1626,6 +1648,7 @@ def build_slug_candidates(name: str) -> list[str]:
     caught by the R01 / extra-words guards downstream.
     """
 
+    name = fold_franchise_spellings(name)   # « Warhammer 40,000 » → le `40k` d'AKS
     without_parens = re.sub(r"\([^)]*\)", " ", normalize_apostrophes(name)).strip()
     full = cleaned_title(name)
     head = re.split(r"\s[-–—]\s", without_parens)[0]

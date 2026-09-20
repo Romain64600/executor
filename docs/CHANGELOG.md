@@ -63,11 +63,24 @@ mais le sauvetage d'édition comparait des tokens bruts : « Fallout 4: Game of 
 sortait « extra words: ['YEAR'] » quand son jumeau « Fallout 4 GOTY Edition » entrait le même
 jour en GOTY(9) sur le même produit.
 
+**Et « Warhammer 40,000 », une fois les pages lues (même jour, 15:40).** Six pages vivantes
+consultées en lecture seule : AKS écrit **« Warhammer 40K »** (`warhammer-40k-darktide`,
+`…-space-marine-2`, `…-boltgun`, `…-rogue-trader`, `…-gladius-relics-of-war`,
+`…-battlesector`) ; ni `warhammer-40000-…` ni `warhammer-40-000-…` n'existent. La ligne
+échouait DEUX fois : le slug 404, puis — même en lui donnant la bonne page — la garde
+d'identité R01 (« missing AKS words: ['40K'] »). `fold_franchise_spellings` replie donc la
+graphie des DEUX côtés de la comparaison, comme le repli d'apostrophe : deux graphies du même
+nombre, jamais deux produits différents. 12 offres du seul balayage GameSeal. Le repli n'est
+PAS une règle de nombres (« 10,000 » reste « 10 000 ») : AKS ne l'applique pas partout, et
+toute extension demande la même vérification en ligne.
+
+**La page de l'écriture fausse, lue elle aussi** : `…-zombies-chronicles` ne porte QUE le seau
+DLC (16) et **aucune page « Deluxe Edition » n'existe** (404) — [R18b] refuse donc désormais
+cette ligne à juste titre, il n'y a pas de page où l'écrire.
+
 **Reste à faire, en ligne, une fois les balayages arrêtés** : vérifier les 4 offres soumises
 restées dans le feed (100698275, 100695990, 100700379, 100700585 — état inconnu, à contrôler
-AVANT tout rejeu), corriger l'entrée 100700366, et lire l'orthographe AKS de la famille
-« Warhammer 40,000 » (12 offres perdues sur le segment `40-000`, aucun correctif tant que la
-page n'est pas lue).
+AVANT tout rejeu), et corriger l'entrée 100700366 (à retirer : le SKU Deluxe n'a pas de page).
 
 ## 2026-09-19 — Un submit qui s'arrête dit pourquoi (Gamerall 152446, page 26)
 

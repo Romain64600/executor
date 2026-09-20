@@ -307,6 +307,50 @@ class TheSearchCircuitBreakerExpires(unittest.TestCase):
         return _c.timegm(_t.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ"))
 
 
+class TheWarhammer40kSpellingIsFoldedOnBothSides(unittest.TestCase):
+    """`src/matcher.py::fold_franchise_spellings` — le seul constat que l'audit avait laissé
+    en attente d'une lecture en ligne.
+
+    Les marchands écrivent « Warhammer 40,000 », AKS écrit « Warhammer 40K ». Vérifié le
+    2026-09-20 sur six pages vivantes (`warhammer-40k-darktide`, `…-space-marine-2`,
+    `…-boltgun`, `…-rogue-trader`, `…-gladius-relics-of-war`, `…-battlesector`) ; ni
+    `warhammer-40000-…` ni `warhammer-40-000-…` n'existent. La ligne échouait DEUX fois : le
+    slug sondé 404, puis la garde d'identité (« missing AKS words: ['40K'] »)."""
+
+    TITRE = "Warhammer 40,000: Battlesector (PC) Steam Gift - EU"
+
+    def test_both_spellings_tokenize_the_same(self):
+        from src.matcher import tokenize
+
+        self.assertEqual(tokenize("Warhammer 40,000: Battlesector"),
+                         tokenize("Warhammer 40K Battlesector"))
+
+    def test_the_aks_slug_becomes_reachable(self):
+        self.assertEqual(build_slug_candidates(gameseal.resolve_name(self.TITRE)),
+                         ["warhammer-40k-battlesector"])
+
+    def test_the_row_enters_end_to_end(self):
+        page = AksResolution(slug="warhammer-40k-battlesector", url="https://aks/x",
+                             product_id="1", aks_name="Warhammer 40K Battlesector",
+                             editions={"1": "Standard"}, regions={"2": "GLOBAL", "9": "EU"},
+                             official_platforms=("Steam",))
+        offer = NormalizedOffer(
+            offer_id="1", name=self.TITRE, merchant="GameSeal",
+            url="https://gameseal.com/warhammer-40-000-battlesector-pc-steam-gift-eu")
+        res = match_offer(offer, resolver=lambda n, **k: page)
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+        self.assertEqual((res.region_id, res.edition_id), ("259", "1"))   # Steam Gift EU
+
+    def test_other_comma_numbers_are_untouched(self):
+        """Le repli est une orthographe de FRANCHISE vérifiée, pas une règle de nombres :
+        AKS ne réécrit pas « 10,000 » en « 10K »."""
+
+        from src.matcher import tokenize
+
+        self.assertEqual(tokenize("10,000,000"), ["10", "000", "000"])
+        self.assertEqual(tokenize("Sid Meier's Civilization VI"), ["SID", "MEIERS", "CIVILIZATION", "6"])
+
+
 class TheSweepMeasuresOffersNotPages(unittest.TestCase):
     """`src/data_entry_auto.py` — « 58 pages faites » ne disait pas ce qu'elles contenaient.
 
