@@ -142,8 +142,37 @@ def take_from_queue(sweep_dir: "Path | None", planned: set, refused_keys: set,
 # écrivain, aucun héritage entre deux lancements.
 
 
-def _run_child(argv: list[str]) -> int:
-    return _RUNNER.run(argv, str(ROOT))
+def _run_child(argv: list[str], run_id: str | None = None) -> int:
+    """Le stage écrit sa sortie dans ``logs/<run_id>-stages.log`` (2026-09-20) : c'est la
+    seule trace qui survive à un CRASH (exit 1), avant même que le stage n'ait un journal."""
+
+    path = None
+    if run_id:
+        try:
+            (ROOT / "logs").mkdir(parents=True, exist_ok=True)
+            path = str(ROOT / "logs" / f"{run_id}-stages.log")
+        except OSError:
+            path = None
+    return _RUNNER.run(argv, str(ROOT), output_path=path)
+
+
+_TRACEBACK_LAST_LINE = re.compile(r"^(?:[A-Za-z_.]*(?:Error|Exception|Exit)\b.*|Traceback .*)$")
+
+
+def _stage_crash_tail(run_id: str) -> str:
+    """La dernière ligne utile de la sortie d'un stage — le type et le message de
+    l'exception quand il a crashé. "" si le fichier n'existe pas ou ne dit rien."""
+
+    try:
+        lines = [l.strip() for l in
+                 (ROOT / "logs" / f"{run_id}-stages.log").read_text(
+                     encoding="utf-8", errors="replace").splitlines() if l.strip()]
+    except OSError:
+        return ""
+    for line in reversed(lines):
+        if _TRACEBACK_LAST_LINE.match(line):
+            return line[:160]
+    return lines[-1][:160] if lines else ""
 
 
 def _last_abort_reason(run_id: str) -> str:
@@ -197,7 +226,7 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
                 "--run-id", run_id, "--pages", str(page), "--available", available]
         if pace:
             argv += ["--pace", pace]
-        rc = _run_child(argv)
+        rc = _run_child(argv, run_id)
         offers = _load_json(ROOT / "runs" / run_id / "offers.json") or {}
         n = offers.get("offer_count") if isinstance(offers, dict) else None
         if n is None and isinstance(offers, dict):
@@ -205,7 +234,11 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
         flp = offers.get("feed_last_page") if isinstance(offers, dict) else None
         detail = "" if rc == 0 else f"exit {rc}"
         if rc != 0:
-            why = _last_abort_reason(run_id)
+            # 2026-09-20 : `_last_abort_reason` ne lit que les abandons JOURNALISÉS. Un
+            # CRASH n'en écrit aucun — l'extract de la page 7 du run 20260920-154717 est
+            # mort en exit 1 sans même créer son journal, et le recap n'a su dire que
+            # « extract: exit 1 ». La sortie capturée du stage porte alors le traceback.
+            why = _last_abort_reason(run_id) or _stage_crash_tail(run_id)
             if why:
                 detail = f"exit {rc} ({why})"       # e.g. "exit 2 (not logged in (wp-login))"
         return ExtractOutcome(ok=(rc == 0), offers=int(n or 0),
@@ -223,7 +256,7 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
         # candidates). Explicit either way so a run dir's argv shows the mode; --no-consoles
         # = PC-only match (console rows keep the 'console' skip).
         argv.append("--consoles" if consoles else "--no-consoles")
-        rc = _run_child(argv)
+        rc = _run_child(argv, run_id)
         cands = _load_json(ROOT / "runs" / run_id / "candidates.json")
         n = len(cands) if isinstance(cands, list) else 0
         # Review 2026-09-09: surface WHY 03 aborted (its stdout is not captured) and how
@@ -234,6 +267,10 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
             aborted = _load_json(ROOT / "runs" / run_id / "match_aborted.json")
             if isinstance(aborted, dict) and aborted.get("reason"):
                 detail = f"exit {rc} ({aborted['reason']}: {str(aborted.get('detail') or '')[:120]})"
+            else:
+                crash = _stage_crash_tail(run_id)          # 2026-09-20 : un crash ne fait pas de fichier
+                if crash:
+                    detail = f"exit {rc} ({crash})"
         meta = _load_json(ROOT / "runs" / run_id / "match_meta.json")
         unreliable = int((meta or {}).get("probe_unreliable") or 0) if isinstance(meta, dict) else 0
         movable = 0
@@ -307,7 +344,7 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
             # argparse errored, halting every paced sweep at its first submit. Map the
             # sweep's single pace spec onto both real flags (same Pacer spec format).
             argv += ["--pace-pages", pace, "--pace-offers", pace]
-        rc = _run_child(argv)
+        rc = _run_child(argv, run_id)
         # P2-14 (audit 2026-09-02): on exit 0 an UNREADABLE submit_plan.json (None from
         # _load_json — external corruption / interrupted write) leaves the post-write
         # state UNKNOWN. Do NOT collapse it to {} and record a benign 0-created page:
@@ -400,7 +437,7 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
                 argv += ["--page-hint", run_id.rsplit("-p", 1)[1]]
             except IndexError:
                 pass
-            rc = _run_child(argv)
+            rc = _run_child(argv, run_id)
             res = _load_json(run_dir / "move_plan.json") or {}
             moved = int(res.get("moved") or 0)
             plan = res.get("plan") or []

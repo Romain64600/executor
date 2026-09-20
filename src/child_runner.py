@@ -71,12 +71,28 @@ class CooperativeChildRunner:
             except Exception:
                 pass
 
-    def run(self, argv: list[str], cwd: str) -> int:
+    def run(self, argv: list[str], cwd: str, output_path: str | None = None) -> int:
         """Run one child to completion, cooperatively stoppable. Returns its exit code.
         ``start_new_session`` isolates the child from an orchestrator SIGKILL cascade;
-        this runner's own escalation is what guarantees a hung child still dies."""
-        self._child = subprocess.Popen(argv, cwd=cwd, start_new_session=True,
-                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        this runner's own escalation is what guarantees a hung child still dies.
+
+        ``output_path`` (2026-09-20) : la sortie de l'enfant est APPENDUE dans ce fichier au
+        lieu d'être jetée. Le 19/09 un submit est sorti en 2 sans laisser de motif ; le 20/09
+        un extract a CRASHÉ (exit 1, traceback perdu) avant même d'avoir un journal — le
+        balayage n'a su dire que « extract: exit 1 ». Un fichier, pas un tube : un tube que
+        personne ne lit se remplit et bloque l'enfant, exactement ce que DEVNULL évitait.
+        Un chemin illisible ne fait jamais échouer un stage (on retombe sur DEVNULL)."""
+
+        sink = None
+        if output_path:
+            try:
+                sink = open(output_path, "ab", buffering=0)
+            except OSError:
+                sink = None
+        self._child = subprocess.Popen(
+            argv, cwd=cwd, start_new_session=True,
+            stdout=sink if sink is not None else subprocess.DEVNULL,
+            stderr=subprocess.STDOUT if sink is not None else subprocess.DEVNULL)
         if self.stopped:                         # a stop arrived during the fork window
             self._signal_child()
         try:
@@ -85,3 +101,8 @@ class CooperativeChildRunner:
             signal.alarm(0)                      # disarm — this child is done
             self._alarm_armed = False            # a reused runner arms fresh for the next child
             self._child = None
+            if sink is not None:
+                try:
+                    sink.close()
+                except OSError:
+                    pass

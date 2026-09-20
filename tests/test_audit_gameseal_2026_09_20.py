@@ -45,6 +45,17 @@ def _load_match_cli():
     return module
 
 
+def _load_sweep_cli():
+    """`scripts/10`, compilé depuis son texte (jamais depuis __pycache__)."""
+
+    path = ROOT / "scripts" / "10_data_entry_auto.py"
+    spec = importlib.util.spec_from_loader("m10_cli_gs", loader=None)
+    module = importlib.util.module_from_spec(spec)
+    module.__file__ = str(path)
+    exec(compile(path.read_text(encoding="utf-8"), str(path), "exec"), module.__dict__)
+    return module
+
+
 def _page(editions, *, aks_name, regions=None, platforms=("Steam",), slug="s"):
     return AksResolution(slug=slug, url="https://aks/x", product_id="1", aks_name=aks_name,
                          editions=editions, regions=regions or {"2": "GLOBAL", "9": "EU"},
@@ -416,6 +427,91 @@ class TheSweepMeasuresOffersNotPages(unittest.TestCase):
                           page_run_id=lambda p: f"r-p{p}")
         self.assertIsNone(recap["halted"])
         self.assertIsNone(recap["coverage"])
+
+
+class AStageCrashLeavesItsReason(unittest.TestCase):
+    """`src/child_runner.py` + `scripts/10` — troisième perte de motif en deux jours.
+
+    Le 19/09 un submit sortait en 2 sans rien dire (corrigé : chaque abandon fail-closed
+    écrit un évènement). Le 20/09 l'extract de la page 7 du run `20260920-154717` a CRASHÉ
+    (exit 1) AVANT de créer son journal : aucun évènement possible, traceback jeté avec la
+    sortie de l'enfant, recap réduit à « extract: exit 1 ». La sortie des stages est
+    désormais appendue dans `logs/<run-de-page>-stages.log`."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name)
+
+    def test_the_runner_appends_stdout_and_stderr_to_the_file(self):
+        from src.child_runner import CooperativeChildRunner
+
+        out = self.root / "stages.log"
+        rc = CooperativeChildRunner().run(
+            [sys.executable, "-c", "import sys; print('resume'); print('boom', file=sys.stderr); sys.exit(1)"],
+            str(self.root), output_path=str(out))
+        self.assertEqual(rc, 1)
+        body = out.read_text(encoding="utf-8")
+        self.assertIn("resume", body)
+        self.assertIn("boom", body)
+
+        rc = CooperativeChildRunner().run([sys.executable, "-c", "print('seconde page')"],
+                                          str(self.root), output_path=str(out))
+        self.assertEqual(rc, 0)
+        self.assertIn("resume", out.read_text(encoding="utf-8"))      # appendu, jamais écrasé
+
+    def test_an_unwritable_path_never_fails_the_stage(self):
+        from src.child_runner import CooperativeChildRunner
+
+        rc = CooperativeChildRunner().run([sys.executable, "-c", "pass"], str(self.root),
+                                          output_path=str(self.root / "nulle-part" / "x.log"))
+        self.assertEqual(rc, 0)
+
+    def test_the_sweep_reads_the_exception_line_back(self):
+        MOD = _load_sweep_cli()
+        MOD.ROOT = self.root
+        (self.root / "logs").mkdir(parents=True)
+        (self.root / "logs" / "r-p7-stages.log").write_text(
+            "max-pages: auto\nTraceback (most recent call last):\n"
+            '  File "scripts/02_extract_feed.py", line 80, in main\n'
+            "ConnectionResetError: [Errno 104] Connection reset by peer\n", encoding="utf-8")
+        self.assertEqual(MOD._stage_crash_tail("r-p7"),
+                         "ConnectionResetError: [Errno 104] Connection reset by peer")
+
+    def test_a_crashed_extract_carries_the_reason_into_the_recap(self):
+        MOD = _load_sweep_cli()
+        MOD.ROOT = self.root
+        (self.root / "logs").mkdir(parents=True, exist_ok=True)
+        (self.root / "logs" / "r-p7-stages.log").write_text(
+            "Traceback (most recent call last):\nRuntimeError: CDP a disparu\n", encoding="utf-8")
+        with mock.patch.object(MOD, "_run_child", return_value=1):
+            stages = MOD._make_stages("Gamerall", "13", "all", None)
+            ex = stages.extract(7, "r-p7")
+        self.assertFalse(ex.ok)
+        self.assertEqual(ex.detail, "exit 1 (RuntimeError: CDP a disparu)")
+
+    def test_a_logged_abort_still_wins_over_the_raw_output(self):
+        MOD = _load_sweep_cli()
+        MOD.ROOT = self.root
+        (self.root / "logs").mkdir(parents=True, exist_ok=True)
+        (self.root / "logs" / "r-p7.jsonl").write_text(
+            json.dumps({"event": "aborted", "reason": "not logged in (wp-login)", "run_id": "r-p7"}) + "\n",
+            encoding="utf-8")
+        (self.root / "logs" / "r-p7-stages.log").write_text("RuntimeError: bruit\n", encoding="utf-8")
+        with mock.patch.object(MOD, "_run_child", return_value=2):
+            ex = MOD._make_stages("Gamerall", "13", "all", None).extract(7, "r-p7")
+        self.assertEqual(ex.detail, "exit 2 (not logged in (wp-login))")
+
+    def test_a_clean_stage_says_nothing(self):
+        MOD = _load_sweep_cli()
+        MOD.ROOT = self.root
+        (self.root / "runs" / "r-p7").mkdir(parents=True)
+        (self.root / "runs" / "r-p7" / "offers.json").write_text(
+            json.dumps({"offer_count": 3, "feed_last_page": 9}), encoding="utf-8")
+        with mock.patch.object(MOD, "_run_child", return_value=0):
+            ex = MOD._make_stages("Gamerall", "13", "all", None).extract(7, "r-p7")
+        self.assertTrue(ex.ok)
+        self.assertEqual(ex.detail, "")
 
 
 if __name__ == "__main__":

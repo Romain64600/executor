@@ -3,6 +3,29 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-20 — Un stage qui CRASHE laisse son traceback (3e perte de motif en deux jours)
+
+Le run Gamerall `20260920-154717` s'est arrêté page 7 sur « extract: **exit 1** » — un exit 1,
+donc une exception non rattrapée, pas un abandon fail-closed. Le stage est mort AVANT de créer
+son journal (`logs/<page>.jsonl` n'existe pas, le dossier de run non plus) : aucun évènement
+`aborted` n'était possible, et le traceback est parti avec la sortie de l'enfant, jetée dans
+`DEVNULL` depuis toujours. Le recap ne savait dire que « exit 1 ». Rejeu en lecture seule de la
+même page, deux minutes plus tard : 100 offres, exit 0 — transitoire, dans la fenêtre
+`build_report` (sondes HTTP/CDP) qui précède la création du journal.
+
+**La sortie des stages va désormais dans un FICHIER** : `logs/<run-de-page>-stages.log`,
+appendu, sortie standard et erreur mêlées (`CooperativeChildRunner(output_path=…)`). Un
+fichier et pas un tube — un tube que personne ne lit se remplit et bloque l'enfant, ce que
+`DEVNULL` évitait à juste titre. Un chemin illisible retombe sur `DEVNULL` : la capture n'est
+jamais une raison d'échouer un stage. Côté balayage, `_stage_crash_tail` relit la dernière
+ligne utile (le type et le message de l'exception) et la porte dans le recap quand aucun
+évènement journalisé ne parle : « extract: exit 1 (ConnectionResetError: …) ». Un abandon
+JOURNALISÉ garde la priorité — la sortie brute n'est que le dernier recours.
+
+C'est la troisième fois en deux jours qu'un motif se perd : submit exit 2 muet (19/09,
+corrigé), page 26 de Gamerall (même jour), et ce crash. Les trois chemins sont maintenant
+couverts : évènement `aborted` pour les abandons, fichier de sortie pour les crashs.
+
 ## 2026-09-20 — Audit GameSeal : les écritures étaient justes, la couverture ne l'était pas
 
 **Le constat.** 1 090 offres GameSeal écrites (balayage `20260919-082932`, pages 103→46),

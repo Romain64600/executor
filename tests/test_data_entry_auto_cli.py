@@ -113,7 +113,7 @@ class CliSeamTests(unittest.TestCase):
         run_dir.mkdir(parents=True)
         (run_dir / "approved.json").write_text("[]")
         with mock.patch.object(self.MOD, "_run_child",
-                               side_effect=lambda argv: captured.setdefault("argv", argv) or 0):
+                               side_effect=lambda argv, *_: captured.setdefault("argv", argv) or 0):
             stages.submit("t-pace-p1")
         argv = captured["argv"]
         self.assertIn("--pace-pages", argv)
@@ -132,7 +132,7 @@ class CliSeamTests(unittest.TestCase):
             run_dir.mkdir(parents=True, exist_ok=True)
             (run_dir / "approved.json").write_text("[]")
             with mock.patch.object(self.MOD, "_run_child",
-                                   side_effect=lambda argv: captured.setdefault("argv", argv) or 0):
+                                   side_effect=lambda argv, *_: captured.setdefault("argv", argv) or 0):
                 stages.submit(f"t-pg{int(scan)}-p3")
             self.assertEqual("--prove-gone-by-search" in captured["argv"], expected, scan)
             self.assertIn("--page-hint", captured["argv"])           # locate window kept
@@ -148,7 +148,7 @@ class CliSeamTests(unittest.TestCase):
         run_dir.mkdir(parents=True, exist_ok=True)
         (run_dir / "approved.json").write_text("[]")
         (run_dir / "offers.json").write_text("{}")
-        with mock.patch.object(self.MOD, "_run_child", side_effect=lambda argv: captured.append(argv) or 0):
+        with mock.patch.object(self.MOD, "_run_child", side_effect=lambda argv, *_: captured.append(argv) or 0):
             stages.match("t-sweep-kinguin-s58-p3")
             stages.submit("t-sweep-kinguin-s58-p3")
         m_argv, s_argv = captured
@@ -198,7 +198,7 @@ class CliSeamTests(unittest.TestCase):
             run_dir = self.MOD.ROOT / "runs" / f"t-con{tag}-p2"
             run_dir.mkdir(parents=True, exist_ok=True)
             (run_dir / "offers.json").write_text("{}")
-            with mock.patch.object(self.MOD, "_run_child", side_effect=lambda argv: argvs.append(argv) or 0):
+            with mock.patch.object(self.MOD, "_run_child", side_effect=lambda argv, *_: argvs.append(argv) or 0):
                 stages.match(f"t-con{tag}-p2")
             self.assertTrue(str(argvs[0][1]).endswith("03_match.py"))
             return argvs[0]
@@ -340,7 +340,7 @@ class TriageStageWiringTests(unittest.TestCase):
         ]), encoding="utf-8")
         (d / "move_plan.json").write_text(json.dumps({"moved": 2}), encoding="utf-8")  # stale
 
-        def fake_run_child(argv):
+        def fake_run_child(argv, *_):
             mode = argv[argv.index("--mode") + 1]
             if mode == "learning":                      # canary: writes moved=2, ok
                 (d / "move_plan.json").write_text(json.dumps({"moved": 2}), encoding="utf-8")
@@ -368,7 +368,7 @@ class TriageStageWiringTests(unittest.TestCase):
              "reason": "skip category: GIFT CARD"},
         ]), encoding="utf-8")
 
-        def fake_run_child(argv):
+        def fake_run_child(argv, *_):
             (d / "move_plan.json").write_text(json.dumps({"moved": 0, "plan": [
                 {"offer_id": "1", "moved": False, "blocker": None,
                  "skipped": "not on source list (already moved?) — proven by full scan"},

@@ -752,6 +752,13 @@ log.log("feed_fetch", merchant=merchant, pages_scanned=n)
 log.log_guard(guard.snapshot())         # persist the StepGuard state per task
 ```
 
+**`logs/<run-de-page>-stages.log` — le dernier recours (2026-09-20).** La sortie standard ET
+l'erreur de chaque stage enfant du balayage y sont appendues (`CooperativeChildRunner`,
+`output_path`). C'est la seule trace d'un CRASH : un stage qui lève avant d'avoir un journal
+(la fenêtre `build_report`, par exemple) n'écrit aucun évènement `aborted`. `scripts/10` en
+relit la dernière ligne utile (`_stage_crash_tail`) pour le recap, et seulement quand aucun
+évènement journalisé ne parle. Fichier gitignoré comme le reste de `logs/`.
+
 **L'évènement `aborted` est le canal du POURQUOI (2026-09-19).** Le sweep (`scripts/10`) lance ses
 stages avec la sortie standard jetée (`src/child_runner.py`) et relit la raison d'un stage non nul
 dans le jsonl du run de page : le DERNIER `aborted` porteur d'un `reason` (`_last_abort_reason`,
