@@ -147,7 +147,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual((CONFIG.name, CONFIG.domain), ("GameSeal", "gameseal.com"))
         self.assertIs(CONFIG.precheck, precheck)
         self.assertIs(CONFIG.title_region, title_region)
-        self.assertIsNone(CONFIG.resolve_name)
+        self.assertIs(CONFIG.resolve_name, gameseal.resolve_name)   # 2026-09-20, queue pelée
         self.assertIn("dry-run", CONFIG.notes)
         fields = {f.name for f in dataclasses.fields(MerchantConfig)}
         if "console_region_slot" in fields:

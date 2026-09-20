@@ -158,6 +158,28 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   abandonnée : elle, elle relâcherait l'identité. Un audit reproposera le paquet entier ; ne
   reprendre que la moitié déjà faite.
 
+- **[R18b] R18 se RETIRE quand le titre annonce un palier que la page ne nomme pas (2026-09-20,
+  « le correctif que tu veux »).** R18 reste le SEUL juge du seau DLC(16) — la décision du
+  17/09 est intacte : un titre sans marqueur sur une page mono-seau DLC entre en DLC(16). La
+  seule exception ajoutée : si le titre marchand annonce un PALIER (Deluxe / Ultimate / Gold /
+  Complete, lu par `detect_edition`) que le NOM DE LA PAGE AKS ne porte pas, R18 laisse la
+  main — le marchand vend un SKU plus large que la page, et la vérification de page (P1-1)
+  refuse. Déclencheur : « Call of Duty: Black Ops III Zombies Chronicles Deluxe Edition »
+  (offre 100700366) écrite DLC(16) sur la page du DLC seul. Mesure avant application sur
+  1 818 lignes écrites : 43 en DLC(16), 10 sans marqueur, UNE bascule — la fausse. Un audit
+  « trouvera » que R18 a été affaibli (« un vrai DLC dont le titre dit Deluxe n'entre plus »)
+  : il entre toujours si la page nomme le même palier (« Wortox Deluxe Chest »), et sinon
+  c'est un refus, jamais une écriture fausse. Ne pas restaurer la préséance inconditionnelle.
+
+- **Le disjoncteur de recherche R30 EXPIRE au bout de 30 min (2026-09-20, même GO).** Le
+  commentaire de `scripts/03_match.py` a longtemps dit « sweep-scoped and has no expiry
+  (Romain 2026-09-10) » — un audit qui relira le git voudra restaurer l'éternité. Mesure qui
+  l'a fait tomber : le balayage `20260919-082932` (3 marchands, 30 h) a ouvert le disjoncteur
+  66 SECONDES après son démarrage, 7 heures avant que GameSeal ne commence ; les 60 pages de
+  GameSeal ont résolu au slug seul et 434 offres distinctes sont ressorties « no AKS product
+  page found ». La décision du 10/09 précédait les balayages tout-pages multi-marchands. Le
+  coût d'une re-sonde est borné (3 tentatives par page qui la tente, une fois par fenêtre).
+
 - **Software region catch-all (`resolve_software_region`, Fable finding [7], DECLINED
   2026-09-07).** When an AKS software page has a SINGLE region and it is a
   GLOBAL/PUBLISHER-type bucket, a merchant offer is filed under it even when the offer's

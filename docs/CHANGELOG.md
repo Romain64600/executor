@@ -3,6 +3,72 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-20 — Audit GameSeal : les écritures étaient justes, la couverture ne l'était pas
+
+**Le constat.** 1 090 offres GameSeal écrites (balayage `20260919-082932`, pages 103→46),
+auditées ligne à ligne par 15 agents (7 dimensions, chaque constat attaqué par un réfuteur) :
+**1 089 justes**. Régions 1 090/1 090 (686 cadeaux tous sous un seau cadeau, 404 clés aucune),
+93 éditions non-Standard toutes réconciliées avec la page, aucune clé console entrée comme clé
+PC, 0 double création. L'essentiel des défauts portait sur ce qui n'a PAS été écrit. Romain :
+« Le correctif que tu veux » — les six décisions ci-dessous sont donc les miennes, chacune
+mesurée sur le corpus écrit avant d'être appliquée.
+
+**`[P1]` La seule écriture fausse — R18 se retire d'un cas, un seul.** « Call of Duty: Black
+Ops III Zombies Chronicles **Deluxe Edition** » (offre 100700366) est entrée DLC(16) sur
+`…-zombies-chronicles`, la page du DLC seul : `detect_edition` lisait bien Deluxe(7), mais R18
+s'exécutait avant et l'écrasait. [R18b] : quand un titre SANS marqueur de DLC annonce un
+PALIER que la page AKS ne nomme pas, R18 ne décide plus — la ligne part en vérification de page
+(P1-1) et se fait refuser proprement. Le DLC caché sans palier (« Exoplanets Pack ») est
+intact, et un palier que la page nomme aussi garde R18 (« Wortox Deluxe Chest »). Mesure sur
+1 818 lignes écrites (GameSeal + le crible de 728) : 43 en DLC(16), 10 sans marqueur, **une
+seule bascule — celle qui était fausse**. L'entrée AKS reste à corriger à la main.
+
+**`[P2]` La recherche AKS était coupée depuis 66 secondes… pendant 30 heures.** Le disjoncteur
+R30 a ouvert à 08:30:38 le 19/09 (5 échecs pendant Gamivo), **7 heures avant que GameSeal ne
+commence** ; « portée balayage, sans expiration » (décision du 10/09) voulait dire que les
+60 pages de GameSeal ont résolu au slug seul, sans jamais chercher. 434 offres DISTINCTES en
+sont ressorties « no AKS product page found ». Le marqueur EXPIRE désormais
+(`SEARCH_CIRCUIT_TTL_S`, 30 min) : une panne passagère coûte une fenêtre, plus un balayage.
+
+**`[P2]` GameSeal ne déclarait pas `resolve_name` : 44 offres EU perdues sur un tiret collé.**
+« Zombies Invasion (PC) Steam Gift**-** EU » sondait `zombies-invasion-steam-gift-eu` — le
+nettoyage générique ne retire « GLOBAL » que parce qu'il est dans sa liste de bruit (EU n'y est
+pas) et son découpage de queue exige un tiret entouré d'espaces. 44 offres, 0 création, quand
+les EU bien espacées entrent à 66 %. Le hook pèle la queue « <Store> <Livraison> - <RÉGION> »
+en fin de titre, une seule fois (« Christmas Gift Steam Key » → « Christmas Gift », jamais
+« Christmas »). Non-régression mesurée : sur les 1 090 lignes écrites, **0 slug résolu perdu**.
+
+**`[P2]` La pagination n'avançait pas, et rien ne le disait.** Pages 86→73 : QUATORZE requêtes,
+la même centaine d'offres (empreinte identique, `skipped.json` byte-identiques) ; 58→53 six de
+plus. 5 861 lignes lues pour 2 059 distinctes — 65 % de relecture, `coverage: null`. Le balayage
+compte désormais les OFFRES et non les pages : `new_offers` par page, `distinct_offers` et
+`pages_without_new_offers` dans le recap, et `coverage: incomplete_repeated_pages (…)` quand une
+page n'apporte rien. **Ce n'est pas une halte** (une page vraiment vide est légitime, et un
+plafond garde la priorité sur la ligne `coverage`) — c'est la vérité sur la couverture.
+
+**`[P2]` Un motif de refus qui nommait un Xbox absent.** « FINAL FANTASY VIII - REMASTERED (PC)
+(Nintendo Switch) Nintendo Key - EU » (offre 100703022) refusée 22 fois avec « merchant declares
+Xbox + PC », alors que `classify_console` ne déclare que SWITCH : la garde Play Anywhere se
+déclenchait pour n'importe quelle famille dès que « PC » était déclaré à côté, hors du domaine
+que sa spec lui donne (§4.12 P2, « next to an Xbox family »). Le refus reste — une clé eShop ne
+s'active pas sur PC, la déclaration marchande se contredit — mais le motif devient vrai, et la
+garde Play Anywhere ne juge plus que les familles Xbox.
+
+**`[P2]` Deux mots au repli de slug.** « DIGITAL » rejoint les phrases d'édition de queue
+(« Alien: Isolation Digital Deluxe Edition » s'arrêtait sur `alien-isolation-digital` ; 6 offres
+perdues) — et **DEFINITIVE / REMASTERED / ANNIVERSARY n'y entrent PAS** : sans seau dans
+`EDITION_HINTS`, atteindre la page de base leur donnerait Standard(1) sur un autre produit
+(15 lignes justes du même balayage résolvent leur page dédiée). L'alias GOTY, lui, existait déjà
+mais le sauvetage d'édition comparait des tokens bruts : « Fallout 4: Game of the Year Edition »
+sortait « extra words: ['YEAR'] » quand son jumeau « Fallout 4 GOTY Edition » entrait le même
+jour en GOTY(9) sur le même produit.
+
+**Reste à faire, en ligne, une fois les balayages arrêtés** : vérifier les 4 offres soumises
+restées dans le feed (100698275, 100695990, 100700379, 100700585 — état inconnu, à contrôler
+AVANT tout rejeu), corriger l'entrée 100700366, et lire l'orthographe AKS de la famille
+« Warhammer 40,000 » (12 offres perdues sur le segment `40-000`, aucun correctif tant que la
+page n'est pas lue).
+
 ## 2026-09-19 — Un submit qui s'arrête dit pourquoi (Gamerall 152446, page 26)
 
 **Le symptôme.** Le run Gamerall `20260919-152446-auto` (nouveau VPS, 75 offres créées pages

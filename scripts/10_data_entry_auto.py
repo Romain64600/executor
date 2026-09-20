@@ -438,7 +438,13 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
                            stopped=result.get("stopped"), moved=result["moved"],
                            offers=result.get("phases", []), detail=result["detail"])
 
-    return Stages(extract=extract, match=match, approve=approve, submit=submit,
+    def offer_ids(run_id: str) -> tuple[str, ...]:
+        """Les offer_id de la page extraite — la matière de la mesure de couverture."""
+        data = _load_json(ROOT / "runs" / run_id / "offers.json")
+        rows = data if isinstance(data, list) else (data or {}).get("offers") or []
+        return tuple(str(r.get("offer_id")) for r in rows if isinstance(r, dict) and r.get("offer_id"))
+
+    return Stages(offer_ids=offer_ids, extract=extract, match=match, approve=approve, submit=submit,
                   move=(move if triage else None))
 
 

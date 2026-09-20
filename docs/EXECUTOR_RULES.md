@@ -973,7 +973,7 @@ page as clean. Below the bar, `match_meta.json.probe_unreliable` counts the unre
 skips (and the sweep page entry carries `probe_unreliable`). A non-200 site search other
 than 404/410 is unreliable, not "no result". The by-urls preview (scripts/11) applies the
 same rule to its URL resolves (`recap.aborted = aks_throttled`; a 429 is never retried).
-**R30 circuit breaker (Romain 2026-09-10):** site-search failures never count toward the
+**R30 circuit breaker (Romain 2026-09-10; expire depuis le 2026-09-20 — §4.7):** site-search failures never count toward the
 abort (they say nothing about the product pages AKS throttles); after
 `SEARCH_CIRCUIT_BREAKER_FAILURES` = 3 consecutive search failures (timeout / empty body /
 5xx) in one run, the search is not called again for the rest of that run — offers whose
@@ -1045,6 +1045,16 @@ games" filler, so a search hit is **not** trusted on its own — it is just
 another candidate page, subject to the exact same R01/R01b identity checks as
 a guessed slug — search only ever *proposes* a page, it never bypasses the identity gate
 (historique — live verification on an Eneba batch : CHANGELOG 2026-07-16).
+
+**Le disjoncteur R30 EXPIRE (2026-09-20).** Le marqueur persisté (`search_circuit.json`, dans
+le dossier du balayage) reste de portée balayage, mais il n'est plus éternel :
+`SEARCH_CIRCUIT_TTL_S` = 30 min, au-delà la page suivante re-sonde la recherche et ré-arme le
+fichier si elle échoue encore. Ce qui l'a imposé : le balayage `20260919-082932` a ouvert le
+disjoncteur **66 secondes** après son démarrage (5 échecs pendant Gamivo), 7 heures avant que
+GameSeal ne commence — ses 60 pages ont donc résolu au slug seul, sans jamais chercher, et
+**434 offres distinctes** en sont ressorties « no AKS product page found ». Un audit relira le
+commentaire du 10/09 (« sweep-scoped and has no expiry ») et voudra restaurer l'éternité :
+c'est périmé, la décision d'origine précédait les balayages de 30 h à plusieurs marchands.
 
 ### 4.8 Limits & doubt
 Max **100** candidates by default unless Romain asks otherwise `[S26]`. Doubt
@@ -1424,7 +1434,7 @@ tokens XBOX / PLAYSTATION / PS4 / PS5 / PSN / NINTENDO / SWITCH, or
 - `families`: the families DECLARED by the merchant, in order of appearance,
   deduplicated, among XBOX_ONE / XBOX_SERIES / PS4 / PS5 / SWITCH / SWITCH2 (never
   XBOX_PC);
-- `pc_declared`: the platform phrase names PC / Windows( 10| 11)? next to an Xbox family
+- `pc_declared`: the platform phrase names PC / Windows( 10| 11)? next to a console family
   ("Xbox Series X|S / Windows", "PC/XBOX One/Series X|S", "(Xbox Series X/S, PC)",
   "(Windows/Xbox Series X|S)", "Xbox One, PC") — the shared title-phrase read — OR the
   merchant's `console_pc_declared(name, url)` hook says so (Gamivo `-pc` / `-windows`
@@ -1712,6 +1722,15 @@ guessed: doubt → skip with an explicit reason string.
 - **P2 Play Anywhere = the PC page's truth** ("Xbox Play Anywhere" in `official
   platforms`): merchant "+ PC/Windows" WITHOUT PA on the page → skip (contradiction); PA on
   the page WITHOUT a merchant mention → PA targets (XBOX/PC bucket on PC + One + Series).
+  **Domaine borné le 2026-09-20** : cette porte ne juge que les familles XBOX. Xbox Play
+  Anywhere n'existe ni sur Nintendo ni sur PlayStation, et la garde se déclenchait pourtant
+  dès que « PC » était déclaré à côté de N'IMPORTE quelle famille : « FINAL FANTASY VIII -
+  REMASTERED (PC) (Nintendo Switch) Nintendo Key - EU » (GameSeal, offre 100703022) a été
+  refusée 22 fois avec un motif affirmant un Xbox absent du titre. Une déclaration « PC +
+  famille non-Xbox » reste un REFUS — une clé eShop ne s'active pas sur PC, la déclaration
+  marchande se contredit et on ne devine pas laquelle est vraie — mais sous son vrai motif
+  (`contradictory delivery`). Un audit « trouvera » qu'une clé Switch pourrait entrer sur sa
+  page : ce serait deviner, laisser le refus.
 - **P3 PS5 outside GLOBAL** ("PS5 … [EU]") → skip: no PS5 EU/US/UK bucket exists — Romain
   can create them in the tool.
 - **P4 Eneba's 704 "XBOX LIVE Key" rows without a generation** → skip (no declaration).

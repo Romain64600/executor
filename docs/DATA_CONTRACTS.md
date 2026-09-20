@@ -269,6 +269,19 @@ validation triple's shape is load-bearing (FC5, audit 2026-07-17).
   page of the sweep was matched in that mode; the per-target `recap` dicts written by
   `run_sweep` repeat the same `consoles` stamp.
 
+- **La couverture se compte en OFFRES depuis le 2026-09-20.** Chaque `recap` de cible porte
+  `distinct_offers` (le nombre d'offer_id DIFFÉRENTS que le balayage a vus) et
+  `pages_without_new_offers` (les numéros de page qui n'ont apporté AUCUN id nouveau) ; chaque
+  entrée de page porte `new_offers` et, le cas échéant, `repeated_page: true`. Quand cette
+  liste n'est pas vide et qu'aucun plafond ne parle déjà, `coverage` vaut
+  `incomplete_repeated_pages (N page(s) sans offre nouvelle : …)`.
+  Pourquoi : sur `20260919-082932`, les pages 86→73 ont rendu QUATORZE fois la même centaine
+  d'offres (empreinte identique) et 58→53 six fois de plus — 5 861 lignes lues pour 2 059
+  distinctes, et un recap qui publiait `coverage: null`. **Ce n'est jamais une halte** (une
+  page réellement vide est légitime, un plafond garde la priorité sur la ligne `coverage`) :
+  c'est la seule preuve de couverture que le balayage sache produire. La mesure vient de
+  `Stages.offer_ids` (optionnel) ; absent ou en erreur, le balayage se comporte comme avant.
+
 Consumers: `scripts/05_submit.py` and the admin's `SubmitManager` refuse a REAL
 submit whose declared mode implies a **wider** batch than the matched mode — a
 run matched under an unlock (canary of 1) must never take the full-batch `safe`

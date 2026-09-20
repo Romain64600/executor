@@ -1569,6 +1569,15 @@ _TRAILING_NOISE_PHRASES_KEEP_COUNTRY = tuple(
 _TRAILING_EDITION_PHRASES = (
     "ULTIMATE COLLECTION", "GAME OF THE YEAR", "GOTY", "DELUXE", "GOLD",
     "PREMIUM", "COMPLETE", "ULTIMATE", "COLLECTION", "STANDARD", "EDITION",
+    # AUDIT DU 2026-09-20 : « DIGITAL » manquait, et il précède presque toujours un palier
+    # déjà listé (« Alien: Isolation Digital Deluxe Edition » → le repli s'arrêtait sur
+    # `alien-isolation-digital`, `alien-isolation` n'était JAMAIS sondé : 6 offres perdues
+    # sur le balayage GameSeal). DIGITAL n'est pas un produit, c'est un format.
+    # NE PAS y ajouter DEFINITIVE / REMASTERED / ANNIVERSARY : eux n'ont AUCUN seau dans
+    # EDITION_HINTS, donc atteindre la page de base leur donnerait Standard(1) sur un AUTRE
+    # produit — 15 lignes justes du même balayage résolvent leur page dédiée
+    # (`buy-age-of-empires-3-definitive-edition-`, `buy-starcraft-remastered-`…).
+    "DIGITAL",
 )
 
 _SEPARATOR_CHARS = " \t-–—:,&|"
@@ -2435,15 +2444,26 @@ _EDITION_RESIDUE_NOISE = (NOISE_TOKENS - _EDITION_TIER_TOKENS) | frozenset({"EDI
 _EDITION_LABEL_ALIASES = (("GOTY", "GAME OF THE YEAR"),)
 
 
+def expand_edition_aliases(label: str) -> str:
+    """"GOTY" → "GAME OF THE YEAR" (the page and the merchant spell the same tier two
+    ways). Shared by ``_edition_key`` and by the extras rescue, qui le lisait en tokens
+    BRUTS : une offre « Game of the Year Edition » (extras {YEAR}) ne reconnaissait pas le
+    seau « GOTY » de la page ({GOTY}) et sortait « extra words: [\'YEAR\'] » — 3 refus sur
+    le balayage GameSeal du 19/09, alors que son jumeau « Fallout 4 GOTY Edition » entrait
+    sur le MÊME produit en GOTY(9) (audit du 2026-09-20)."""
+
+    up = " " + (label or "").strip().upper() + " "
+    for abbr, expanded in _EDITION_LABEL_ALIASES:
+        up = re.sub(r"\b" + abbr + r"\b", expanded, up)
+    return up.strip()
+
+
 def _edition_key(label: str) -> frozenset[str]:
     """The distinctive-token signature of an edition label (format noise + stopwords
     removed, GOTY expanded). Two labels name the same edition tier iff their keys are
     equal — never a substring/superset."""
 
-    up = " " + label.strip().upper() + " "
-    for abbr, expanded in _EDITION_LABEL_ALIASES:
-        up = re.sub(r"\b" + abbr + r"\b", expanded, up)
-    return frozenset(t for t in re.findall(r"[A-Z0-9]+", up)
+    return frozenset(t for t in re.findall(r"[A-Z0-9]+", " " + expand_edition_aliases(label) + " ")
                      if t not in _EDITION_FORMAT_NOISE)
 
 
@@ -2609,7 +2629,9 @@ def match_extras_to_page_edition(
         return None
     compatible: list[tuple[str, str, set[str]]] = []
     for eid, value in editions.items():
-        etoks = {t.replace("'", "") for t in tokenize(_edition_entry_name(value))}
+        # L'alias est appliqué AVANT la tokenisation (2026-09-20) : le seau « GOTY » de la
+        # page doit se comparer aux extras d'un titre « Game of the Year Edition ».
+        etoks = {t.replace("'", "") for t in tokenize(expand_edition_aliases(_edition_entry_name(value)))}
         if not etoks or etoks == {"STANDARD"}:
             continue
         if etoks & {"BUNDLE", "PACK", "TRILOGY"}:
@@ -3256,7 +3278,27 @@ def match_offer(
     # gouverné par R43 (own-page, DLC anonyme) et garde l'ancien comportement.
     # NB : "Standard + DLC" est un AUTRE seau (518) que "DLC" (16) et n'a jamais déclenché
     # R18 — vérifié sur le catalogue vivant du 2026-09-17.
-    if _dlc_edition_on_page(resolution.editions) and (
+    # [R18b] AUDIT DU 2026-09-20, sur GO de Romain (« le correctif que tu veux »). R18 est
+    # le seul juge du seau DLC et le reste ; il se RETIRE d'un seul cas, mesuré en
+    # production : le titre marchand annonce un PALIER (Deluxe / Ultimate / Gold / Complete)
+    # que la page AKS ne nomme pas — le marchand vend alors un SKU plus large que ce que la
+    # page propose. « Call of Duty: Black Ops III Zombies Chronicles Deluxe Edition » (offre
+    # 100700366, balayage du 19/09) est entrée DLC(16) sur `…-zombies-chronicles`, la page du
+    # DLC seul : `detect_edition` lisait bien Deluxe(7), mais R18 s'exécutait avant et
+    # l'écrasait. Sans R18 la ligne part en `else` → la vérification de page (P1-1) refuse
+    # « edition 'Deluxe'(7) not sold on the resolved AKS page » : un refus, pas une écriture
+    # fausse. Le DLC caché SANS palier (« Exoplanets Pack ») est intact, et un palier que la
+    # page nomme AUSSI garde R18 (« Wortox Deluxe Chest » sur la page du même nom, « All
+    # Nauts pack » sur `…-all-nauts-pack`). Mesure avant/après sur 1 818 lignes écrites
+    # (GameSeal + le crible de 728) : 43 en DLC(16), 10 sans marqueur, UNE SEULE bascule —
+    # celle qui était fausse.
+    _title_tier = detect_edition(guard_name, offer.url, offer.merchant)[1]
+    _tier_the_page_does_not_name = (
+        dlc_title_marker(offer.name) is None
+        and _title_tier != "1"
+        and _title_tier != detect_edition(resolution.aks_name or "")[1]
+    )
+    if _dlc_edition_on_page(resolution.editions) and not _tier_the_page_does_not_name and (
             dlc_title_marker(offer.name) is not None or len(resolution.editions) == 1):
         edition_label, edition_id = "DLC", "16"
     # AUDIT DU 2026-09-18 : le durcissement ci-dessus ne fermait qu'UNE porte sur trois.
@@ -3646,13 +3688,27 @@ def _console_plan(
 
     # (f) Play Anywhere is the PC page's truth (P2).
     pa = pc_res is not None and "XBOX PLAY ANYWHERE" in {p.upper() for p in pc_res.official_platforms}
+    xbox_declared = any(f in ("XBOX_ONE", "XBOX_SERIES") for f in families)
+    # AUDIT DU 2026-09-20 : la garde Play Anywhere se déclenchait pour N'IMPORTE quelle
+    # famille dès que « PC » était déclaré à côté, alors que Xbox Play Anywhere n'existe ni
+    # sur Nintendo ni sur PlayStation (docs/EXECUTOR_RULES.md §4.12 P2 : « next to an Xbox
+    # family »). « FINAL FANTASY VIII - REMASTERED (PC) (Nintendo Switch) Nintendo Key - EU »
+    # (offre 100703022) était refusée 22 fois avec un motif qui affirmait un Xbox absent du
+    # titre. Le refus RESTE (une clé eShop ne s'active pas sur PC : la déclaration marchande
+    # se contredit, on ne devine pas laquelle est vraie) — c'est le motif qui devient vrai,
+    # et la garde Play Anywhere retrouve son domaine.
+    if sig.pc_declared and not xbox_declared:
+        return SkippedOffer(
+            offer,
+            "console: merchant declares PC next to "
+            f"{'/'.join(families) or 'a console'} — contradictory delivery, not entered (R45)",
+        )
     if sig.pc_declared and not pa:
         return SkippedOffer(
             offer,
             "console: merchant declares Xbox + PC but the AKS page does not list Xbox Play "
             "Anywhere — not entered (R45)",
         )
-    xbox_declared = any(f in ("XBOX_ONE", "XBOX_SERIES") for f in families)
     pa_targets = pa and xbox_declared
 
     def _bucket(fam: str) -> tuple[str, str] | SkippedOffer:

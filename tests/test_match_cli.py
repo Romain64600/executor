@@ -92,7 +92,7 @@ class SearchCircuitFileTests(MatchCliTests):
             return self.MOD.main()
 
     def test_open_file_preopens_the_circuit_and_stays_open(self):
-        path = self._circuit(open=True, written_at="2026-09-10T16:27:04Z")
+        path = self._circuit(open=True, written_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
         before = path.read_text()
         seen = {}
 
@@ -102,17 +102,31 @@ class SearchCircuitFileTests(MatchCliTests):
         self.assertTrue(seen["search_circuit_open"])
         self.assertEqual(path.read_text(), before)                        # left in place, untouched
 
-    def test_an_old_file_still_preopens_no_expiry(self):
-        """Sweep-scoped, no TTL (Romain 2026-09-10): a legacy `open_until` in the past or a
-        file written hours ago keeps the search OFF for the rest of the sweep."""
-        path = self._circuit(open=True, open_until=time.time() - 3600, written_at="2026-09-10T01:00:00Z")
+    def test_an_old_file_no_longer_preopens(self):
+        """De portée balayage, mais PLUS éternel (2026-09-20, `SEARCH_CIRCUIT_TTL_S`) : un
+        marqueur écrit il y a plus de 30 min laisse la page suivante re-sonder la recherche.
+
+        Le balayage 20260919-082932 avait ouvert le disjoncteur 66 secondes après son
+        démarrage — 7 h avant que GameSeal ne commence — et ses 60 pages ont résolu au slug
+        seul : 434 offres distinctes refusées « no AKS product page found »."""
+
+        path = self._circuit(open=True, written_at="2026-09-10T01:00:00Z")
         seen = {}
 
         def stub(feed, resolver, **kw):
-            seen.update(kw); kw["stats"].update({"search_circuit_open_offers": 1}); return ([], [])
+            seen.update(kw); kw["stats"].update({"search_failures": 0}); return ([], [])
         self.assertEqual(self._main_with(path, stub), 0)
-        self.assertTrue(seen["search_circuit_open"])
-        self.assertTrue(path.exists())
+        self.assertFalse(seen["search_circuit_open"])       # la recherche est re-sondée
+        self.assertFalse(path.exists())                     # elle a marché → marqueur effacé
+
+    def test_an_expired_marker_is_re_armed_when_the_search_fails_again(self):
+        path = self._circuit(open=True, written_at="2026-09-10T01:00:00Z")
+
+        def stub(feed, resolver, **kw):
+            kw["stats"].update({"search_failures": 3, "search_circuit_open_offers": 2}); return ([], [])
+        self.assertEqual(self._main_with(path, stub), 0)
+        import json as _json
+        self.assertTrue(_json.loads(path.read_text())["open"])
 
     def test_closed_or_garbage_file_does_not_preopen(self):
         for body in ('{"open": false}', "not json", "[1, 2]", ""):

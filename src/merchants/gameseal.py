@@ -34,6 +34,8 @@ a second shape ``gameseal.com/detail/<hex id>`` carries nothing.
 
 Hooks: ``domain`` (docs/MERCHANTS.md — the host of the July rows), ``title_region`` /
 ``precheck`` (the explicit tail read; AU / BELGIUM were outside the generic vocabulary),
+``resolve_name`` (2026-09-20 — la queue « <Store> <Livraison> - <RÉGION> » pelée avant la
+résolution du slug ; 44 offres EU à tiret collé se perdaient sur ``…-steam-gift-eu``),
 ``console_region_slot``, ``console_url_families`` (Xbox 360 → the R45 skip). The PC grammar
 is to be re-read at the first dry-run. Pure functions of the feed row; no matcher /
 console_keys import.
@@ -73,6 +75,17 @@ def region_tail(name: str) -> str | None:
     return text or None
 
 
+# Le magasin + la livraison qui précèdent la queue de région ("… (PC) Steam Gift - EU").
+_STORE = (
+    r"Steam|Xbox Live|Xbox|PSN|PlayStation|Nintendo eShop|Nintendo|GOG\.com|GOG|Epic Games|"
+    r"Epic|Ubisoft Connect|Ubisoft|EA App|EA|Origin|Microsoft Store|Microsoft|"
+    r"Rockstar Games Launcher|Rockstar|Battle\.net|Official website"
+)
+_STORE_DELIVERY_TAIL_RE = re.compile(
+    rf"(?:\b(?:{_STORE})\b\s*)?\b(?:Keys?|Gift)\b\s*$", re.IGNORECASE
+)
+
+
 # ── hooks (PC pipeline) ──────────────────────────────────────────────────────────────
 def precheck(name: str, url: str) -> str | None:
     """A tail region that is not sellable → ``forbidden region: <LABEL>``; a tail outside
@@ -93,6 +106,30 @@ def title_region(name: str) -> str | None:
 
     text = region_tail(name)
     return sellable_base(text) if text else None
+
+
+def resolve_name(name: str) -> str:
+    """Le titre confié à la résolution AKS, queue « <Store> <Livraison> - <RÉGION> » pelée :
+    « Zombies Invasion (PC) Steam Gift- EU » → « Zombies Invasion (PC) » → slug
+    ``zombies-invasion``.
+
+    AUDIT DU 2026-09-20 (balayage 20260919-082932, pages 103→46). GameSeal ne déclarait pas
+    ce hook : le nettoyage générique ne retire « GLOBAL » que parce qu'il est dans sa liste de
+    bruit, et son découpage de queue exige un tiret ENTOURÉ d'espaces. Résultat mesuré :
+    44 offres «  - EU » à tiret collé sondaient ``…-steam-gift-eu``, une URL qui n'existe pas —
+    44 refus « no AKS product page found », 0 création, alors que les offres EU bien espacées
+    entrent à 66 %. La pelure est ANCRÉE À LA FIN et le magasin+livraison n'est retiré QU'UNE
+    fois : un jeu qui s'appelle « Christmas Gift » garde son nom (« Christmas Gift Steam Key »
+    → « Christmas Gift », jamais « Christmas »). Les gardes d'identité (R01/R16) continuent de
+    lire le titre BRUT — peler ne fait qu'ouvrir la bonne page, jamais accepter un autre jeu."""
+
+    text = re.sub(r"\s+", " ", name or "").strip()
+    m = _TAIL_RE.search(text)
+    if m:
+        text = text[: m.start("region")].rstrip(" -–—,")   # « - EU » part, « Steam Gift » reste
+    peeled = _STORE_DELIVERY_TAIL_RE.sub("", text).rstrip(" -–—,")
+    text = peeled or text
+    return text or (name or "").strip()
 
 
 # ── hooks (R45 console contract) ─────────────────────────────────────────────────────
@@ -136,6 +173,7 @@ CONFIG = make_config(
     domain="gameseal.com",
     precheck=precheck,
     title_region=title_region,
+    resolve_name=resolve_name,
     console_region_slot=console_region_slot,
     console_url_families=console_url_families,
     notes=("feed store 126 — never swept in safe-auto (dry-run first, Romain 2026-09-11); "

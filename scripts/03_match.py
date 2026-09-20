@@ -12,6 +12,7 @@ Example (on the VPS):
 from __future__ import annotations
 
 import argparse
+import calendar
 import json
 import sys
 import time
@@ -50,20 +51,37 @@ def load_feed(path: str) -> NormalizedFeed:
     )
 
 
-# The persisted R30 breaker is SWEEP-SCOPED and has no expiry (Romain 2026-09-10): once a
-# page trips it, the remaining pages of that sweep never re-probe the AKS search — offers
-# whose guessed URLs all 404 are simply left in the feed for the next sweep. The file lives
-# in the sweep directory (`scripts/10`), so a fresh sweep always starts with the search on.
+# The persisted R30 breaker is SWEEP-SCOPED (Romain 2026-09-10): once a page trips it, the
+# following pages stop re-probing the AKS search — offers whose guessed URLs all 404 are
+# left in the feed for the next sweep. The file lives in the sweep directory (`scripts/10`),
+# so a fresh sweep always starts with the search on.
+#
+# … ET IL EXPIRE DEPUIS LE 2026-09-20 (audit GameSeal, GO de Romain « le correctif que tu
+# veux »). Sans expiration, « portée balayage » voulait dire 30 heures : le balayage
+# 20260919-082932 a ouvert le disjoncteur 66 SECONDES après son démarrage (5 échecs pendant
+# Gamivo), 7 heures avant que GameSeal ne commence — et les 60 pages de GameSeal ont résolu
+# au slug seul, sans jamais chercher. 434 offres DISTINCTES en sont ressorties « no AKS
+# product page found ». Le prix d'une re-sonde est borné (3 tentatives × 20 s par page qui
+# la tente, une fois par fenêtre) ; le prix de la condamnation, lui, grandit avec la durée
+# du balayage. La fenêtre vaut donc pour ce qu'elle a été mesurée : une panne passagère.
+SEARCH_CIRCUIT_TTL_S = 30 * 60
 
 
-def _search_circuit_is_open(path: str | None) -> bool:
-    """True iff ``path`` records an open circuit (age is irrelevant — sweep-scoped)."""
+def _search_circuit_is_open(path: str | None, *, now: float | None = None) -> bool:
+    """True iff ``path`` records an open circuit LESS DE ``SEARCH_CIRCUIT_TTL_S`` VIEUX.
+    Un marqueur plus vieux (ou dont la date est illisible) est traité comme refermé : la
+    page suivante re-sonde la recherche et ré-arme le fichier si elle échoue encore."""
     if not path:
         return False
     try:
-        return bool(json.loads(Path(path).read_text(encoding="utf-8")).get("open"))
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+        if not raw.get("open"):
+            return False
+        written = str(raw.get("written_at") or "")
+        stamp = calendar.timegm(time.strptime(written, "%Y-%m-%dT%H:%M:%SZ"))
     except (OSError, ValueError, TypeError, AttributeError):
         return False
+    return ((now if now is not None else time.time()) - stamp) < SEARCH_CIRCUIT_TTL_S
 
 
 def _search_circuit_persist(path: str | None, stats: dict, was_open: bool) -> None:

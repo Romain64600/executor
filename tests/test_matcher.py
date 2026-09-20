@@ -2588,13 +2588,36 @@ class MatchOfferTests(unittest.TestCase):
         self.assertEqual((result.edition_label, result.edition_id), ("DLC", "16"))
 
     def test_dlc_bucket_overrides_title_edition_hints(self):
-        # The page's DLC nature beats any edition word in the title — a
-        # "Deluxe" marker on a DLC product must not yield Deluxe(7).
+        # The page's DLC nature beats an edition word in the title — a "Deluxe" marker on a
+        # DLC product must not yield Deluxe(7) — TANT QUE LA PAGE NOMME CE PALIER ([R18b],
+        # 2026-09-20). C'est le cas « Wortox Deluxe Chest » : la page EST ce produit.
         result = match_offer(
             _offer("Neon Beats Deluxe - Steam GLOBAL"),
-            self._resolver(editions={"16": {"name": "DLC"}}),
+            self._resolver(aks_name="Neon Beats Deluxe", editions={"16": {"name": "DLC"}}),
         )
         self.assertIsInstance(result, Candidate)
+        self.assertEqual((result.edition_label, result.edition_id), ("DLC", "16"))
+
+    def test_a_tier_the_page_does_not_name_stands_R18_down(self):
+        # [R18b] (2026-09-20) : le titre annonce un palier ABSENT du nom de la page — le
+        # marchand vend un SKU plus large que ce que la page propose. R18 laisse la main, la
+        # vérification de page refuse. Cas réel : « Black Ops III Zombies Chronicles Deluxe
+        # Edition » (offre 100700366) entrée DLC(16) sur la page du DLC seul.
+        result = match_offer(
+            _offer("Neon Beats Deluxe - Steam GLOBAL"),
+            self._resolver(aks_name="Neon Beats", editions={"16": {"name": "DLC"}}),
+        )
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("not sold on the resolved", result.reason)
+
+    def test_a_markerless_hidden_dlc_still_enters_on_a_single_bucket_page(self):
+        # La décision de Romain du 17/09 est intacte : sans palier lisible dans le titre,
+        # le seau DLC seul de la page décide.
+        result = match_offer(
+            _offer("Neon Beats - Steam GLOBAL"),
+            self._resolver(aks_name="Neon Beats", editions={"16": {"name": "DLC"}}),
+        )
+        self.assertIsInstance(result, Candidate, getattr(result, "reason", ""))
         self.assertEqual((result.edition_label, result.edition_id), ("DLC", "16"))
 
     def test_non_dlc_buckets_do_not_alter_edition(self):

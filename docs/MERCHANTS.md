@@ -115,7 +115,7 @@ du feed.
 | Instant Gaming | 28 | `instant_gaming.py` | PC : `offer_page_resolver` ; console : `console_url_families` → toujours None (déclaré : l'URL ne dit rien ; une plateforme console lue sur la page IG → plateforme None → skip R32) | oui | 4-5 |
 | Eneba | 19 | `eneba.py` | `console_url_families`, `console_pc_declared`, `console_region_slot` | **non — dry-run du 12/09 fait (32 candidats, 90 % consoles), sweep réel sur go** | ≥ 30 |
 | Allyouplay | 17 | `allyouplay.py` (**nouveau**, identité seule) | `domain="allyouplay.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
-| GameSeal | 126 | `gameseal.py` (**nouveau**) | `domain` ; PC : `precheck`, `title_region` (queue ` - <RÉGION>`) ; console : `console_url_families`, `console_region_slot` | **non, dry-run d'abord** | ? |
+| GameSeal | 126 | `gameseal.py` | `domain` ; PC : `precheck`, `title_region` (queue ` - <RÉGION>`), `resolve_name` (queue pelée, 20/09) ; console : `console_url_families`, `console_region_slot` | oui (1er balayage 19/09) | 1 090 écrites, 1 089 justes (audit du 20/09) |
 | CJS-CDKeys | 30 | `cjs.py` (**nouveau**, identité seule) | `domain="cjs-cdkeys.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
 | Difmark | 167 | `difmark.py` | `console_url_families` (comptes) | parqué (hors liste blanche) | — |
 | Wyrel | 162 | `wyrel.py` (**nouveau 16/09**) | PC : `precheck` (`[R53a]` gabarit, `[R53b]` non-jeu à 3 signaux, `[R53c]` édition, `[R53d]` accord titre/URL, `[R53e]` fente plateforme inconnue), `title_region`, `resolve_name` ; console : `console_region_slot`, `console_noise` | **non — supervisé d'abord** | 60 |
@@ -566,8 +566,18 @@ matcher et le classifieur importent le registre.
   console — `console_url_families` (runs partagés ; `xbox-360` → skip R45) ;
   `console_region_slot` (queue ` - <RÉGION>`). Mesure (sweep du 15/07, vs code committé) :
   30 prechecks (NORTH AMERICA 27, AUSTRALIA 1, BELGIUM 2) ; 0 candidat touché.
+- **Hook `resolve_name` (20/09)** : la queue « <Store> <Livraison> - <RÉGION> » est pelée
+  AVANT la résolution du slug — « Zombies Invasion (PC) Steam Gift**-** EU » →
+  « Zombies Invasion (PC) » → `zombies-invasion`. Sans lui, le nettoyage générique gardait
+  la queue quand le tiret était COLLÉ (il ne connaît « GLOBAL » que par sa liste de bruit —
+  EU n'y est pas — et son découpage exige un tiret entouré d'espaces) : slug
+  `…-steam-gift-eu`, inexistant. Mesure sur le balayage du 19/09 : **44 offres EU, 0 création,
+  41 refus « no AKS product page found »**, contre 66 % de créations pour les EU bien
+  espacées. Non-régression : sur les 1 090 lignes déjà écrites, 0 slug résolu perdu. La
+  pelure est ancrée à la fin et faite UNE fois (« Christmas Gift Steam Key » → « Christmas
+  Gift »), et les gardes d'identité (R01/R16) lisent toujours le titre BRUT.
 - **Statut live** : dans la liste blanche mais **jamais balayé en safe-auto** ; dry-run
-  d'abord (Romain, 2026-09-11).
+  d'abord (Romain, 2026-09-11). Premier balayage réel : 19-20/09 (`20260919-082932-auto`).
 
 ## CJS-CDKeys (store 30)
 

@@ -170,6 +170,9 @@ class Stages:
     # lists AFTER the ADDs are submitted+verified (Romain 2026-08-13, unified
     # per-page workflow). None = ADD-only sweep (unchanged legacy behaviour).
     move: Callable[[str], MoveOutcome] | None = None
+    # Les offer_id extraits d'une page, pour mesurer la couverture RÉELLE (2026-09-20).
+    # None = mesure indisponible (le balayage se comporte alors exactement comme avant).
+    offer_ids: Callable[[str], tuple[str, ...]] | None = None
 
 
 class StageError(Exception):
@@ -199,6 +202,17 @@ def run_sweep(
         "pages": [], "total_created": 0, "total_moved": 0,
         "halted": None, "feed_last_page": None, "coverage": None,
         "consoles": bool(cfg.consoles),        # [R45] matched with the console branch?
+        # AUDIT DU 2026-09-20. Le balayage annonçait « 58 pages faites » sans jamais
+        # regarder CE QU'ELLES CONTENAIENT : sur 20260919-082932, les pages 86→73 ont rendu
+        # QUATORZE FOIS la même centaine d'offres (empreinte identique, skipped.json
+        # byte-identiques), 58→53 six fois de plus — 5861 lignes lues pour 2059 distinctes,
+        # 65 % de relecture, et un recap qui disait « couverture : rien à signaler ». Le
+        # submitter avait déjà la garde (src/submitter.py : deux pages sans id NOUVEAU
+        # terminent la marche) ; l'orchestrateur, lui, comptait des pages. On mesure
+        # désormais les OFFRES : `new_offers` par page, et la liste des pages qui n'ont
+        # rien apporté. Ce n'est PAS une halte (une page vraiment vide est légitime) —
+        # c'est la vérité sur la couverture, que `coverage` refusait de dire.
+        "distinct_offers": 0, "pages_without_new_offers": [],
     }
 
     def finish_page(entry: dict[str, Any]) -> None:
@@ -239,6 +253,28 @@ def run_sweep(
 
     # Highest page first (reflow-safe): a higher page's removals never shift a
     # lower, not-yet-processed page.
+    seen_offer_ids: set[str] = set()
+
+    def measure_coverage(entry: dict[str, Any], run_id: str) -> None:
+        """`new_offers` = les ids que cette page apporte et qu'aucune n'avait apportés."""
+        if stages.offer_ids is None:
+            return
+        try:
+            ids = [str(i) for i in stages.offer_ids(run_id) if i]
+        except Exception:
+            return                       # une mesure n'est jamais une raison d'échouer
+        if not ids:
+            return
+        fresh = [i for i in ids if i not in seen_offer_ids]
+        entry["new_offers"] = len(fresh)
+        seen_offer_ids.update(ids)
+        recap["distinct_offers"] = len(seen_offer_ids)
+        if not fresh:
+            entry["repeated_page"] = True
+            pages = recap["pages_without_new_offers"]
+            if entry["page"] not in pages:
+                pages.append(entry["page"])
+
     for page in range(top, cfg.start_page - 1, -1):
         if should_stop():
             recap["halted"] = "operator_stop"
@@ -257,6 +293,7 @@ def run_sweep(
                 recap["halted_detail"] = ex.detail
             finish_page(entry)
             break
+        measure_coverage(entry, run_id)
         if ex.offers == 0:
             entry["empty"] = True   # feed shrank past this page — nothing to do here
             finish_page(entry)
@@ -337,6 +374,16 @@ def run_sweep(
             recap["coverage"] = f"incomplete_max_pages (feed has {feed_last} pages)"
         elif max_seen > feed_last:
             recap["coverage"] = f"incomplete_feed_grew ({feed_last}→{max_seen} pages)"
+    # Une page qui REDONNE une page déjà lue n'a rien couvert : la pagination du feed a
+    # glissé sous le balayage. Dit dans `coverage` (jamais une halte) — un plafond garde la
+    # priorité, il décrit la même chose : ce qui n'a pas été vu.
+    repeated = recap["pages_without_new_offers"]
+    if repeated and recap["coverage"] is None:
+        recap["coverage"] = (
+            f"incomplete_repeated_pages ({len(repeated)} page(s) sans offre nouvelle : "
+            f"{', '.join(str(p) for p in repeated[:12])}"
+            f"{'…' if len(repeated) > 12 else ''})"
+        )
 
     return recap
 
