@@ -469,6 +469,21 @@ class CatalogRecorder:
         return len(self._seen)
 
 
+# Les clés SSH essayées, dans l'ordre, pour une base DISTANTE. La première est dédiée au
+# catalogue (créée le 2026-09-21 sur l'ancien VPS, autorisée chez le nouveau avec
+# `restrict,command="/usr/bin/python3 -"` : la commande est FORCÉE, ce qui ferme l'usage
+# général de cette clé — vérifié, un `rm -rf` envoyé par ce canal n'est pas exécuté). La
+# seconde est la clé de déploiement historique, pour le sens nouveau → ancien.
+SSH_KEY_CANDIDATES = ("~/.ssh/id_ed25519_catalog", "~/.ssh/aks_executor_deploy")
+
+
+def _first_existing_key() -> str:
+    for candidate in SSH_KEY_CANDIDATES:
+        if Path(candidate).expanduser().is_file():
+            return candidate
+    return ""
+
+
 def catalog_from_spec(spec: str, *, source: str = "", ttl_days: int = DEFAULT_TTL_DAYS
                       ) -> PageCatalog | None:
     """``"/chemin/page_catalog.db"`` → base locale ;
@@ -480,6 +495,6 @@ def catalog_from_spec(spec: str, *, source: str = "", ttl_days: int = DEFAULT_TT
         return None
     if "@" in spec.split(":", 1)[0] and ":" in spec:
         host, path = spec.split(":", 1)
-        return PageCatalog(path, ssh=host, ssh_key="~/.ssh/aks_executor_deploy",
+        return PageCatalog(path, ssh=host, ssh_key=_first_existing_key(),
                            source=source, ttl_days=ttl_days)
     return PageCatalog(spec, source=source, ttl_days=ttl_days)
