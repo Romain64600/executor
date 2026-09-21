@@ -475,6 +475,32 @@ sudo -u debian -H bash -c 'cd /home/debian/executor && python3 scripts/10_data_e
   2>&1 | tee "logs/sweep-$(date -u +%Y%m%d)-night.stdout"'
 ```
 
+### En parallèle sur plusieurs VPS — les groupes
+
+Romain, 2026-09-21 : *« je voudrais qu'on puisse lancer des marchands aussi par groupe… vu
+qu'on a deux VPS »*, puis *« je compte prendre un troisième et quatrième VPS »*. Un balayage
+tient **un onglet de navigateur par machine** (verrou `state/browser.lock`) : une machine, un
+groupe. Sur chaque VPS, une seule commande change — le groupe :
+
+```bash
+# VPS 1                                    # VPS 2
+--group A                                  --group B
+# à trois ou quatre machines, la forme calculée :
+--group 1/4     --group 2/4     --group 3/4     --group 4/4
+```
+
+`A` / `B` sont les groupes figés de `src/merchant_groups.py` ; `i/n` répartit à la volée les
+marchands allowlistés sur `n` machines (LPT sur la charge en attente, déterministe). Voir la
+répartition avec :
+
+```bash
+python3 -c "import sys; sys.path.insert(0,'.'); from src.merchant_groups import split, PENDING_2026_09_21 as P; \
+[print('%d/%d %6d lignes : %s' % (i,4,sum(P.get(m,0) for m in g),', '.join(g))) for i,g in enumerate(split(4),1)]"
+```
+
+**Difmark n'est dans aucun groupe** : sa file Pending est vide, ses lignes sont dans la liste
+*account* (30) — `02_extract_feed --list 30` puis `05_submit --list 30`, à la main.
+
 **`--all-pages`, pas un plafond (Romain 2026-09-18 : « on fait toutes les pages sauf lors
 d'un arrêt pour sécurité »).** La nuit du 17/09 tournait avec `--max-pages 10` : elle a créé
 360 offres mais laissé de côté 97 pages chez GameSeal (107 au total), 54 chez Kinguin, 42 chez

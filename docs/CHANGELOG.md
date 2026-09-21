@@ -3,6 +3,40 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-21 — Des groupes de marchands, un par VPS (et prêts pour le 3e et le 4e)
+
+Romain : « je voudrais qu'on puisse lancer des marchands aussi par groupe… divise nos
+marchands en deux groupes, vu qu'on a deux VPS » — puis, dans la foulée : « je compte prendre
+un troisième et quatrième VPS pour paralléliser plus ».
+
+**La contrainte qui dicte tout** : un balayage tient **un onglet de navigateur par machine**
+(verrou `state/browser.lock`, OP1). Une machine = un groupe. Donc autant de groupes que de
+machines, et la division ne pouvait pas être gravée à deux.
+
+`src/merchant_groups.py` offre les deux formes :
+- **groupes figés** `A` / `B`, écrits et documentés, pour un lancement reproductible ;
+- **`i/n` calculé** (`--group 2/4`) : répartition **LPT** (le plus gros marchand sur la
+  machine la moins chargée, puis le suivant) sur la charge en attente mesurée le 21/09 par le
+  scan tous-magasins — 20 185 lignes. Déterministe : même entrée, même sortie.
+
+Équilibre obtenu : à 2 machines 10 159 / 10 026 lignes ; à 3, 6 775 / 6 784 / 6 626 ; à 4,
+5 522 / 4 919 / 4 897 / 4 847 — et à quatre, **GameSeal (27 % du travail) est seul sur sa
+machine**, ce qui est exactement ce qu'on veut.
+
+**La limite, dite franchement** : la charge est comptée en LIGNES, alors que le temps réel
+dépend surtout des CRÉATIONS (~1 min chacune, contre ~2,5 min pour extraire et matcher une
+page entière) et que les taux de création vont de 0,6 % (CJS) à 21 % (GameSeal). C'est un
+point de départ mesuré, pas un optimum démontré : à rééquilibrer sur les durées observées
+après un tour complet. La mesure vit dans une table éditable, prévue pour ça.
+
+**Difmark n'est dans aucun groupe**, et ce n'est pas un oubli : sa file Pending est vide, ses
+lignes sont dans la liste *account* (30) que le balayage ne lit pas. La raison est inscrite
+dans `EXCLUDED`, et un test vérifie que c'est le seul absent.
+
+`scripts/10_data_entry_auto.py --group A|B|i/n` ; un groupe inconnu, une forme illisible ou
+un groupe désynchronisé de la liste blanche refuse avant tout lancement, et `--group` ne se
+combine pas avec `--targets` / `--all-allowlisted`.
+
 ## 2026-09-21 — Revue de Romain (e596cd3 → 5d163e1) : quatre points, tous justes
 
 **`[P1]` E06 pouvait adopter un BUNDLE.** « Une offre Standard face à une page {8: Bundle}

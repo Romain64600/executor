@@ -499,6 +499,12 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="Safe-auto data-entry sweep (real writes).")
     ap.add_argument("--targets", help="Comma list 'Merchant:store_id[,Merchant:store_id...]'.")
     ap.add_argument(
+        "--group",
+        help="Balaie un GROUPE de marchands, pour paralléliser sur plusieurs VPS (Romain, "
+             "2026-09-21). Deux formes : un groupe figé ('A', 'B' — src/merchant_groups.py) "
+             "ou 'i/n' ('2/4' = le 2e de 4 groupes équilibrés, calculés sur la charge en "
+             "attente). Un balayage tient un onglet par machine : une machine, un groupe.")
+    ap.add_argument(
         "--all-allowlisted", action="store_true",
         help="Sweep EVERY merchant of the safe-auto allowlist (src/admin/auto_merchants.py "
              "AUTO_MERCHANTS), in its order. This is the NIGHT SWEEP entrypoint (Romain "
@@ -600,9 +606,14 @@ def main() -> int:
             "que sous --triage). Ajoute --triage, ou retire --move-execute.")}))
         return 2
 
-    if args.all_allowlisted and (args.targets or args.merchant or args.store_id):
+    if args.all_allowlisted and (args.targets or args.merchant or args.store_id or args.group):
         print(json.dumps({"aborted": True, "reason": (
             "--all-allowlisted balaie déjà toute la liste blanche — ne le combine pas avec "
+            "--targets / --merchant / --store-id / --group")}))
+        return 2
+    if args.group and (args.targets or args.merchant or args.store_id):
+        print(json.dumps({"aborted": True, "reason": (
+            "--group porte déjà sa liste de marchands — ne le combine pas avec "
             "--targets / --merchant / --store-id")}))
         return 2
 
@@ -610,6 +621,15 @@ def main() -> int:
     if args.all_allowlisted:
         from src.admin.auto_merchants import AUTO_MERCHANTS
         targets = [(name, store) for name, store in AUTO_MERCHANTS]
+    elif args.group:
+        # Un groupe inconnu, mal écrit ou désynchronisé de la liste blanche lève : on ne
+        # lance pas un balayage sur une liste de cibles approximative (fail-closed).
+        from src.merchant_groups import targets_for
+        try:
+            targets = targets_for(args.group)
+        except KeyError as exc:
+            print(json.dumps({"aborted": True, "reason": str(exc)}, ensure_ascii=False))
+            return 2
     elif args.targets:
         for tok in args.targets.split(","):
             tok = tok.strip()
