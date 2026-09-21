@@ -37,6 +37,8 @@ EXPECTED_MODULE = {
     "GamersOutlet": "gamersoutlet.py",
     "GameBoost": "gameboost.py",
     "Gamerall": "gamerall.py",      # liste blanche le 2026-09-19 (Romain)
+    "Difmark": "difmark.py",        # liste blanche le 2026-09-21 (Romain), après sa 1re
+                                    # saisie réelle : 10 comptes Steam créés et prouvés
 }
 
 

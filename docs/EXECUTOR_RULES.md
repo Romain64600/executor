@@ -1046,6 +1046,19 @@ another candidate page, subject to the exact same R01/R01b identity checks as
 a guessed slug — search only ever *proposes* a page, it never bypasses the identity gate
 (historique — live verification on an Eneba batch : CHANGELOG 2026-07-16).
 
+**`[E06]` L'édition retenue doit être VENDUE par la page (2026-09-21, Romain : « normalement
+tu es censé aller voir la page AKS comme pour les jeux normaux, voir si on est en standard ou
+en DLC sur cette page »).** Dernier contrôle du bloc édition, après tous ses producteurs : si
+l'id retenu n'est pas une clef de la carte d'éditions de la page, la page à **un seul seau**
+l'impose (une page `{5: Early Access}` entre en Early Access — « toutes les offres seront
+rentrées en early access à la place de standard »), et **plusieurs seaux sans correspondance**
+est un refus fail-closed qui NOMME ce que la page vend. Le seau **DLC(16) est hors périmètre**
+— [R18] en est le seul juge et émet son id canonique même si la page range son DLC sous un
+autre id. Ce qui l'a imposé : Standard était exempté de toute vérification de page
+(« the safe canonical fallback »), et « Diablo IV Lord of Hatred » est entrée Standard sur une
+page `{16, 7, 21}` qui ne vend pas Standard — 5 des 10 premières écritures Difmark, 1 page sur
+60 chez GameSeal. La branche console appliquait déjà la règle à ses pages cibles (§4.12).
+
 **Le disjoncteur R30 EXPIRE (2026-09-20).** Le marqueur persisté (`search_circuit.json`, dans
 le dossier du balayage) reste de portée balayage, mais il n'est plus éternel :
 `SEARCH_CIRCUIT_TTL_S` = 30 min, au-delà la page suivante re-sonde la recherche et ré-arme le

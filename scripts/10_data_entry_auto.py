@@ -368,7 +368,11 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
         if rc:
             # 2026-09-19 : 05 journalise chaque abandon fail-closed (sa sortie standard est
             # jetée) — le recap dit POURQUOI la page s'est arrêtée, pas seulement « exit 2 ».
-            why = _last_abort_reason(run_id)
+            # Revue de Romain (2026-09-21, 8c2f7d8 → e596cd3) : le submit était le SEUL
+            # stage à ne pas consulter la sortie capturée, donc un CRASH (exit 1, aucun
+            # évènement écrit) n'y laissait que « exit 1 » quand extract et match montraient
+            # déjà leur traceback. Même recours qu'eux.
+            why = _last_abort_reason(run_id) or _stage_crash_tail(run_id)
             if why:
                 detail = f"exit {rc} ({why})"
         return SubmitOutcome(ok=ok, aborted=plan.get("aborted"),

@@ -665,7 +665,8 @@ class DataEntryAutoAllowlistTests(AppTestCase):
         self.assertEqual(response.status, 200)
         names = {m["name"] for m in body["merchants"]}
         self.assertIn("Kinguin", names)
-        self.assertNotIn("Difmark", names)
+        self.assertIn("Difmark", names)      # liste blanche le 2026-09-21
+        self.assertNotIn("Wyrel", names)     # supervisé, hors liste
         self.assertNotIn("Gameboost", names)
 
     def test_non_suggested_merchant_refused_without_launching(self):
@@ -673,7 +674,7 @@ class DataEntryAutoAllowlistTests(AppTestCase):
         self.manager.start_data_entry_auto = lambda *a, **k: calls.append((a, k)) or {}
         response, body = self._json(
             "POST", "/api/data-entry/auto",
-            body={"targets": [{"merchant": "Difmark", "store_id": "167"}], "by": "Romain"},
+            body={"targets": [{"merchant": "Wyrel", "store_id": "162"}], "by": "Romain"},
         )
         self.assertEqual(response.status, 403)
         self.assertEqual(body["error"]["code"], "merchant_not_allowed")
@@ -693,11 +694,11 @@ class DataEntryAutoAllowlistTests(AppTestCase):
         self.manager.start_data_entry_auto = lambda *a, **k: calls.append((a, k)) or {}
         response, _ = self._json(
             "POST", "/api/data-entry/auto",
-            # Difmark (167) reste hors liste ; GameBoost l'a rejointe le 2026-09-16, donc
-            # l'exemple d'un marchand refusé est désormais Difmark.
+            # L'exemple du marchand refusé est Wyrel (162, supervisé) : GameBoost a rejoint
+            # la liste le 2026-09-16 et Difmark le 2026-09-21.
             body={"targets": [
                 {"merchant": "Kinguin", "store_id": "58"},
-                {"merchant": "Difmark", "store_id": "167"},
+                {"merchant": "Wyrel", "store_id": "162"},
             ]},
         )
         self.assertEqual(response.status, 403)

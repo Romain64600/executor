@@ -55,11 +55,26 @@ AUTO_MERCHANTS: list[tuple[str, str]] = [
                                 # authorised for safe-auto BEFORE a supervised validated run —
                                 # the merchant rules (src/merchants/mmoga.py) fail closed on any
                                 # region code they cannot map. Feed store 12; AKS page id 40.
+    ("Difmark", "167"),         # Romain 2026-09-21 (« Ajouter difmark a la whitelist »), le
+                                # jour de sa 1re saisie réelle : 10 offres créées et prouvées
+                                # sur 13 candidats, toutes des COMPTES Steam (région « Steam
+                                # Account » 412, page AKS dédiée `…-steam-account-`). Deux
+                                # choses à savoir avant de le balayer : sa file Pending
+                                # (liste 9) est VIDE — ses lignes vivent dans la liste
+                                # *account* (30), qui se lit avec `--list 30` ; et une ligne
+                                # Difmark est un COMPTE, routée vers la branche compte
+                                # (`MerchantConfig.account_row`), jamais vers les clés
+                                # console. Seul le type Steam est câblé : les comptes Epic /
+                                # PlayStation / Xbox sont refusés en NOMMANT ce qui manque,
+                                # faute de page AKS pour ce catalogue (50 titres sondés le
+                                # 21/09, 0 page trouvée).
 ]
 
 # Deliberately NOT suggested (enforcement is simply "absent from the list";
 # named here for humans):
-#   Difmark (167)  — parked 2026-08-07, feed is console/Epic/Windows (~0 enterable).
+#   (Difmark 167 a rejoint la liste ci-dessus le 2026-09-21 ; il y était refusé depuis le
+#    2026-08-07 au motif « feed console/Epic/Windows, ~0 saisissable » — c'était vrai de sa
+#    file Pending, vide depuis ; ses comptes Steam de la liste 30 sont saisissables.)
 #     (GameBoost 157 joined the list above on 2026-09-16.)
 #     (Electronicfirst 70 and GamersOutlet 31 were moved INTO the list above on 2026-09-16.)
 #     (Gamerall 13 joined the list above on 2026-09-19.)

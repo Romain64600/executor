@@ -26,12 +26,15 @@ class AutoMerchantsAllowlistTests(unittest.TestCase):
         self.assertFalse(is_allowed("Bogus", "999"))
 
     def test_parked_and_unvetted_merchants_refused(self):
-        # Difmark reste explicitement hors liste (Romain 2026-08-07, feed console/Epic/Windows,
-        # ~0 ligne saisissable). GameBoost (157) l'a REJOINTE le 2026-09-16 (« Ajoute Gameboost
-        # a la whiteliste ») après son 1er matching réel — 207 candidats sur 992 lignes, zéro
-        # PUBLISHER — et sa 1re passe de saisie ; voir tests/test_merchants_gameboost.py.
-        self.assertFalse(is_allowed("Difmark", "167"))
+        # Wyrel (162) tient le rôle du marchand hors liste : « supervisé d'abord »
+        # (docs/MERCHANTS.md), jamais allowlisté. Deux boutiques ont fait le chemin inverse
+        # après leur première saisie réelle : GameBoost le 2026-09-16 (« Ajoute Gameboost a la
+        # whiteliste », 207 candidats sur 992 lignes, zéro PUBLISHER) et **Difmark le
+        # 2026-09-21** (« Ajouter difmark a la whitelist », 10 comptes Steam créés et prouvés
+        # sur 13 candidats) — leur refus n'est donc plus ce que ce test épingle.
+        self.assertFalse(is_allowed("Wyrel", "162"))
         self.assertTrue(is_allowed("GameBoost", "157"))
+        self.assertTrue(is_allowed("Difmark", "167"))
         # une boutique jamais vettée reste refusée, quelle que soit son orthographe
         self.assertFalse(is_allowed("Royalcdkeys", "85"))
         self.assertFalse(is_allowed("Keycense", "130"))
@@ -52,7 +55,8 @@ class AutoMerchantsAllowlistTests(unittest.TestCase):
         self.assertEqual(len(rows), len(AUTO_MERCHANTS))
         names = {r["name"] for r in rows}
         self.assertIn("Kinguin", names)
-        self.assertNotIn("Difmark", names)
+        self.assertIn("Difmark", names)          # 2026-09-21
+        self.assertNotIn("Wyrel", names)         # supervisé, hors liste
         # MMOGA (Romain 2026-09-10): allowed with its FEED store id only — the AKS page
         # merchant id (40) is not a store and must be refused like any tampered id.
         self.assertIn("MMOGA", names)

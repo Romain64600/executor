@@ -225,8 +225,9 @@ class CliSeamTests(unittest.TestCase):
     def test_main_rejects_non_allowlisted_merchant(self):
         # P2-2 (audit 2026-09-02): safe-auto writes without validation → the allowlist
         # is an authoritative gate enforced at the CLI, not only in the HTTP handler.
-        # A parked/non-vetted merchant (Difmark:167) is refused before any write.
-        code, captured = self._run(["--targets", "Difmark:167", "--run-id", "t-bad"], {"pages": []})
+        # A supervised/non-vetted merchant (Wyrel:162) is refused before any write.
+        # (Difmark:167 tenait ce rôle jusqu'au 2026-09-21, date de son entrée en liste blanche.)
+        code, captured = self._run(["--targets", "Wyrel:162", "--run-id", "t-bad"], {"pages": []})
         self.assertEqual(code, 2)
         self.assertNotIn("cfg", captured)   # never built a sweep / opened a session
 

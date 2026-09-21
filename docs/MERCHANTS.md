@@ -639,9 +639,35 @@ matcher et le classifieur importent le registre.
   « Fallout 4 - Season Pass (PS4 ACCOUNT, **REGION FREE**) ». Un audit « trouvera » que
   `region_product_id` n'est pas mappé et voudra fermer : il n'y a rien à mapper, les deux
   valeurs observées désignent la même chose.
-- **Ce qui n'a PAS changé** : Difmark reste **parqué** (hors liste blanche safe-auto) et ses
-  lignes restent des COMPTES, refusés par `[R45]` (« console: ACCOUNT — not a game »). Le
-  classement en B dit que la boutique est LISIBLE sans page marchande, pas qu'on la saisit.
+- **BRANCHE COMPTE + LISTE BLANCHE (Romain, 2026-09-21).** Deux décisions du même jour, après
+  la première saisie réelle (10 offres créées et prouvées sur 13 candidats) :
+  1. « Elle ne doit pas continuer à passer par la branche console. Elle doit être routée vers
+     une branche compte. Elle utilisera la branche jeu ou la branche console selon le type
+     d'account. » → `MerchantConfig.account_row` : le marchand déclare qu'une ligne est un
+     COMPTE (grammaire d'URL Difmark : préfixe `/buy-console-account-`, suffixe
+     `-account[-<id>]`), et cette ligne ne passe plus par le classifieur console — ni au
+     précheck, ni au dispatch. Le refus « ACCOUNT — not a game » du 14/09 n'est plus le
+     verdict de ces 107 lignes par page. **La sécurité tient désormais à l'AIGUILLAGE** : la
+     branche compte exige une PAGE AKS « <plateforme> Account » ET un seau « Account » — un
+     compte ne peut donc toujours pas entrer sur une page de clé (l'incident du 12/09). Les
+     marqueurs NON-JEU restent dus (une « PSN Card (Account) », un « Game Pass (Account) »
+     sont refusés comme partout), et le hook `console_url_families` reste en filet.
+  2. « Ajouter difmark a la whitelist » → `("Difmark", "167")` dans `auto_merchants.py`.
+- **Un seul type de compte est câblé : STEAM.** Romain : « t'as trouvé du Steam account, c'est
+  très bien, ajoute-le. Quand tu trouveras du Epic account, tu ajouteras l'Epic account. »
+  `DIFMARK_ACCOUNT_PAGE_KINDS = {"STEAM": "steam-account"}` et les seaux 412 / 480 / 578.
+  Les autres types sont refusés en NOMMANT ce qui manque (« compte EPIC — pas encore de page
+  ni de seau AKS confirmés pour ce type de compte »), via
+  `DIFMARK_ACCOUNT_PLATFORMS_PENDING`. Mesure du 21/09 : **50 titres réels du feed sondés**
+  sur `epic-account`, `playstation-account`, `ps4-account`, `xbox-one-account`,
+  `xbox-series-account`, `windows-account` → **0 page**. Les gabarits existent chez AKS pour
+  quelques blockbusters (`gta-5-epic-account`, `call-of-duty-black-ops-7-xbox-one-account`)
+  mais pas pour ce catalogue — et le test qui tranche : « Train Sim World 7 » a sa page
+  `…-steam-account` (offre créée le 21/09) et n'a ni `…-epic-account` ni
+  `…-playstation-account`. Le facteur limitant est le catalogue AKS, pas notre grammaire.
+- **À savoir avant de le balayer** : sa file Pending (liste 9) est **vide**, ses lignes vivent
+  dans la liste *account* (30) — `scripts/02_extract_feed.py --list 30` et
+  `scripts/05_submit.py --list 30`. Le balayage `scripts/10`, lui, lit toujours la liste 9.
 - **Statut live** : parqué (hors liste blanche).
 
 ## GameBoost (store 157, liste blanche safe-auto depuis le 2026-09-16)

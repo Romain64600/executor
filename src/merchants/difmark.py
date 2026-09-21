@@ -200,11 +200,47 @@ def resolve_difmark_offer(
 _ACCOUNT_URL_RE = re.compile(r"(?:^|-)account(?:-\d+)?/?$")
 
 
+def account_row(name: str, url: str) -> bool:
+    """True quand la ligne est un COMPTE Difmark — la grammaire d'URL le dit :
+    préfixe ``/buy-console-account-`` ou suffixe ``-account[-<id>]``.
+
+    Romain, 2026-09-21 : « elle ne doit pas continuer à passer par la branche console, elle
+    doit être routée vers une branche compte ». Le compte EST le produit vendu chez Difmark ;
+    le faire refuser par le classifieur console comme « ACCOUNT — not a game » était un
+    raccourci du 14/09, né d'un vrai incident (un compte entré comme clé Switch le 12/09).
+    La sécurité ne tient plus au refus mais à l'AIGUILLAGE : une ligne compte ne prend jamais
+    le chemin des clés console, elle prend le chemin compte, qui exige une PAGE AKS dédiée
+    (``buy-<slug>-steam-account-compare-prices``) et un SEAU « Account ». Sans les deux, elle
+    est refusée — jamais entrée sur une page de clé."""
+
+    path = urlsplit(url or "").path.lower()
+    return bool("/buy-console-account-" in path or _ACCOUNT_URL_RE.search(path))
+
+
+# Les plateformes de compte que la page marchande NOMME mais pour lesquelles AKS n'a, à ce
+# jour, ni page « <plateforme> Account » ni seau confirmé pour le catalogue Difmark. Elles
+# servent UNIQUEMENT à écrire un refus vrai : « compte EPIC GAMES — pas encore de page ni de
+# seau ». Mesuré le 2026-09-21 : 50 titres réels du feed sondés sur les gabarits
+# `epic-account`, `playstation-account`, `ps4-account`, `xbox-one-account`,
+# `xbox-series-account`, `windows-account` → 0 page. Les gabarits EXISTENT chez AKS pour
+# quelques blockbusters (`gta-5-epic-account`, `call-of-duty-black-ops-7-xbox-one-account`)
+# mais pas pour ce catalogue. Romain, 2026-09-21 : « quand tu trouveras du Epic account, tu
+# ajouteras l'Epic account » — ce jour-là, la plateforme passe de cette liste à
+# DIFMARK_ACCOUNT_PAGE_KINDS + un seau dans les tables de région.
+DIFMARK_ACCOUNT_PLATFORMS_PENDING = {
+    "EPIC GAMES": "EPIC", "XBOX LIVE": "XBOX", "PSN": "PLAYSTATION", "MICROSOFT": "MICROSOFT",
+}
+
+
 def console_url_families(url: str) -> str | None:
-    """"console: ACCOUNT — not a game (R45)" for a Difmark account URL
-    (``/buy-console-account-…`` prefix or ``-account[-<id>]`` suffix), else None — a
-    Difmark URL never declares a console family (the platform is read on the offer page
-    for the PC path; console accounts take no console branch)."""
+    """"console: ACCOUNT — not a game (R45)" for a Difmark account URL — FILET, plus la
+    règle (2026-09-21).
+
+    Depuis que ``account_row`` aiguille les comptes vers la branche compte, le classifieur
+    console ne voit plus ces lignes du tout. Ce hook reste en place pour la ligne dont la
+    grammaire d'URL nous échapperait : elle serait alors refusée ici plutôt que d'entrer
+    comme une CLÉ console — c'est l'incident du 12/09 (un compte entré comme clé Switch) qui
+    justifie de garder les deux. Un Difmark ne déclare jamais de famille console."""
 
     path = urlsplit(url or "").path.lower()
     if "/buy-console-account-" in path or _ACCOUNT_URL_RE.search(path):
@@ -215,7 +251,8 @@ def console_url_families(url: str) -> str | None:
 CONFIG = make_config(
     "Difmark",
     url_ignore_substrings=("buy-console-account-", "buy-console-account"),
-    console_url_families=console_url_families,      # accounts, never console keys (2026-09-14)
+    account_row=account_row,                        # branche compte (Romain, 2026-09-21)
+    console_url_families=console_url_families,      # filet : accounts, never console keys
     notes=("offer-page resolver (resolve_difmark_offer) still handled in match_offer; parked "
            "(store 167, outside the safe-auto allowlist); console rows are accounts (2026-09-14)"),
 )

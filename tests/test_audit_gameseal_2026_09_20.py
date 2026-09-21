@@ -502,6 +502,41 @@ class AStageCrashLeavesItsReason(unittest.TestCase):
             ex = MOD._make_stages("Gamerall", "13", "all", None).extract(7, "r-p7")
         self.assertEqual(ex.detail, "exit 2 (not logged in (wp-login))")
 
+    def test_a_crashed_SUBMIT_carries_the_reason_too(self):
+        """Revue de Romain (2026-09-21, 8c2f7d8 → e596cd3) : « le récapitulatif reste muet
+        sur les crashs du submitter — submit() ne consulte que les événements aborted ».
+        Exact : extract et match avaient le recours, pas submit. Ce test l'épingle."""
+
+        MOD = _load_sweep_cli()
+        MOD.ROOT = self.root
+        (self.root / "logs").mkdir(parents=True, exist_ok=True)
+        (self.root / "logs" / "r-p9-stages.log").write_text(
+            "REAL SUBMISSION (mode=safe)\nTraceback (most recent call last):\n"
+            "ConnectionResetError: [Errno 104] Connection reset by peer\n", encoding="utf-8")
+        (self.root / "runs" / "r-p9").mkdir(parents=True, exist_ok=True)
+        (self.root / "runs" / "r-p9" / "submit_plan.json").write_text(
+            json.dumps({"plan": [], "aborted": None}), encoding="utf-8")
+        with mock.patch.object(MOD, "_run_child", return_value=1):
+            sub = MOD._make_stages("GameSeal", "126", "all", None).submit("r-p9")
+        self.assertFalse(sub.ok)
+        self.assertEqual(sub.detail,
+                         "exit 1 (ConnectionResetError: [Errno 104] Connection reset by peer)")
+
+    def test_a_logged_submit_abort_still_wins(self):
+        MOD = _load_sweep_cli()
+        MOD.ROOT = self.root
+        (self.root / "logs").mkdir(parents=True, exist_ok=True)
+        (self.root / "logs" / "r-p9.jsonl").write_text(
+            json.dumps({"event": "aborted", "reason": "invariants not green", "run_id": "r-p9"}) + "\n",
+            encoding="utf-8")
+        (self.root / "logs" / "r-p9-stages.log").write_text("RuntimeError: bruit\n", encoding="utf-8")
+        (self.root / "runs" / "r-p9").mkdir(parents=True, exist_ok=True)
+        (self.root / "runs" / "r-p9" / "submit_plan.json").write_text(
+            json.dumps({"plan": [], "aborted": None}), encoding="utf-8")
+        with mock.patch.object(MOD, "_run_child", return_value=2):
+            sub = MOD._make_stages("GameSeal", "126", "all", None).submit("r-p9")
+        self.assertEqual(sub.detail, "exit 2 (invariants not green)")
+
     def test_a_clean_stage_says_nothing(self):
         MOD = _load_sweep_cli()
         MOD.ROOT = self.root
@@ -686,3 +721,175 @@ class TheSubmitCanWorkOnAnotherList(unittest.TestCase):
         url = feed_url("167", page=3, feed_page=feed_page_for_list(30), available="all")
         self.assertIn("page=aks-merchant-feeds-30", url)
         self.assertNotIn("aks-merchant-feeds-9", url)
+
+
+class AnAccountRowTakesTheAccountBranch(unittest.TestCase):
+    """`MerchantConfig.account_row` + l'aiguillage de `match_offer` — Romain, 2026-09-21 :
+    « elle ne doit pas continuer à passer par la branche console. Elle doit être routée vers
+    une branche compte. Elle utilisera la branche jeu ou la branche console selon le type
+    d'account. »
+
+    Avant : 107 lignes de la page lue (PS5 61, Xbox Series 27, PS4 12, Xbox 7) étaient
+    refusées « console: ACCOUNT — not a game (R45) » — le compte traité comme un marqueur
+    non-jeu. La sécurité ne tient plus au refus mais à l'AIGUILLAGE : une ligne compte prend
+    la branche compte, qui exige une page AKS « <plateforme> Account » ET un seau « Account »
+    — jamais le chemin des clés console (l'incident du 12/09)."""
+
+    PS5 = "https://difmark.com/en/buy-console-account-phantom-blade-zero-ps5-account-177232"
+    STEAM = "https://difmark.com/en/buy-console-account-subnautica-2-steam-account-199942"
+    CLE = "https://difmark.com/en/buy-console-account-some-game-xbox-series-12345"
+
+    def test_difmark_declares_its_account_rows(self):
+        from src.merchants.difmark import CONFIG, account_row
+
+        self.assertIs(CONFIG.account_row, account_row)
+        self.assertTrue(account_row("Phantom Blade Zero (Account) Standard Edition", self.PS5))
+        self.assertTrue(account_row("Subnautica 2 Standard Edition", self.STEAM))
+        self.assertFalse(account_row("X", "https://difmark.com/en/buy-x-cd-key-12"))
+        self.assertFalse(account_row("", ""))
+
+    def test_the_console_classifier_no_longer_claims_the_row(self):
+        """L'ancien refus « ACCOUNT — not a game » ne doit plus être le verdict d'une ligne
+        compte : elle descend jusqu'à la branche compte, qui refuse sur ce qui manque
+        VRAIMENT (la page marchande n'est pas lisible ici, donc c'est ce refus-là qu'on voit)."""
+
+        offer = NormalizedOffer(offer_id="1", name="Phantom Blade Zero (Account) Standard Edition",
+                                url=self.PS5, merchant="Difmark")
+        page = _page({"1": "Standard"}, aks_name="Phantom Blade Zero")
+        res = match_offer(offer, resolver=lambda n, **k: page,
+                          difmark_offer_resolver=lambda u: (_ for _ in ()).throw(
+                              __import__("src.merchants.difmark", fromlist=["x"]).DifmarkPageUnreadable("hors ligne")),
+                          consoles=True)
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertNotIn("not a game", res.reason)
+
+    def test_a_pending_account_platform_is_named_in_the_refusal(self):
+        """« compte EPIC — pas encore de page ni de seau » : le refus dit ce qui manque, pour
+        qu'on sache quoi ajouter le jour où AKS publie la page."""
+
+        from src.merchants.difmark import DIFMARK_ACCOUNT_PLATFORMS_PENDING, DifmarkOfferAttributes
+
+        self.assertEqual(DIFMARK_ACCOUNT_PLATFORMS_PENDING.get("EPIC GAMES"), "EPIC")
+        offer = NormalizedOffer(
+            offer_id="1", name="Phantom Blade Zero Standard Edition",
+            url="https://difmark.com/en/buy-console-account-phantom-blade-zero-epic-games-account-177234",
+            merchant="Difmark")
+        attrs = DifmarkOfferAttributes(raw_platform="EPIC GAMES", raw_region="GLOBAL",
+                                       offer_name="Phantom Blade Zero (Epic Games Account)")
+        res = match_offer(offer, resolver=lambda n, **k: _page({"1": "Standard"}, aks_name="Phantom Blade Zero"),
+                          difmark_offer_resolver=lambda u: attrs, consoles=True)
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("compte EPIC", res.reason)
+        self.assertIn("Steam seul", res.reason)
+
+    def test_only_steam_is_wired_today(self):
+        """Romain : « ajoute le Steam account ; quand tu trouveras du Epic account, tu
+        ajouteras l'Epic account ». Une seule page-compte et un seul jeu de seaux."""
+
+        from src.merchants.difmark import (DIFMARK_ACCOUNT_PAGE_KINDS,
+                                           DIFMARK_STEAM_ACCOUNT_REGION_IDS)
+
+        self.assertEqual(DIFMARK_ACCOUNT_PAGE_KINDS, {"STEAM": "steam-account"})
+        self.assertEqual(DIFMARK_STEAM_ACCOUNT_REGION_IDS,
+                         {"global": "412", "eu": "480", "us": "578"})
+
+    def test_the_net_still_refuses_a_row_the_hook_would_miss(self):
+        """Le filet du 14/09 reste : si la grammaire d'URL nous échappait, le classifieur
+        console refuse encore — un compte n'entre JAMAIS comme clé console."""
+
+        from src.merchants.difmark import console_url_families
+
+        self.assertIn("not a game", console_url_families(self.PS5) or "")
+
+    def test_a_non_game_account_row_is_still_refused(self):
+        """L'aiguillage ne doit pas ouvrir une porte : une carte cadeau ou un Game Pass
+        vendus « (Account) » restent des non-jeux, et une région interdite reste interdite.
+        (Ma première version de l'aiguillage sautait TOUS les scans suivants.)"""
+
+        from src.matcher import precheck_skip
+
+        cas = [
+            ("PSN Card 20 EUR (Account) Standard Edition",
+             "https://difmark.com/en/buy-console-account-psn-card-20-eur-ps5-account-2",
+             "PSN CARD"),
+            ("Xbox Game Pass Ultimate 3 Months (Account) Standard Edition",
+             "https://difmark.com/en/buy-console-account-xbox-game-pass-xbox-one-account-3",
+             "GAME PASS"),
+            ("Jeu (Account) Standard Edition Turkey",
+             "https://difmark.com/en/buy-console-account-jeu-ps5-account-1",
+             "forbidden region: TURKEY"),
+        ]
+        for name, url, attendu in cas:
+            with self.subTest(name=name):
+                offer = NormalizedOffer(offer_id="1", name=name, url=url, merchant="Difmark")
+                reason = precheck_skip(offer, consoles=True)
+                self.assertIsNotNone(reason, "cette ligne doit rester refusée")
+                self.assertIn(attendu, reason)
+
+    def test_a_plain_account_game_row_passes_the_precheck(self):
+        from src.matcher import precheck_skip
+
+        for url in (self.PS5, self.STEAM):
+            with self.subTest(url=url):
+                offer = NormalizedOffer(offer_id="1", name="Phantom Blade Zero (Account) Standard Edition",
+                                        url=url, merchant="Difmark")
+                self.assertIsNone(precheck_skip(offer, consoles=True))
+
+    def test_other_merchants_are_untouched(self):
+        from src.merchants.registry import MERCHANT_CONFIGS
+
+        sans = [c.name for c in MERCHANT_CONFIGS.values() if c.account_row is not None]
+        self.assertEqual(sans, ["Difmark"])
+
+
+class TheWrittenEditionMustBeSoldByThePage(unittest.TestCase):
+    """[E06] — Romain, 2026-09-21, sur une écriture qu'il a repérée lui-même : « t'as rentré
+    un DLC en standard ».
+
+    « Diablo IV Lord of Hatred » est entrée Standard(1) sur une page qui vend
+    {16: DLC, 7: Deluxe, 21: Ultimate} — un id que la page n'offre même pas. La page était
+    pourtant LUE : c'est Standard qui était exempté du contrôle (la réconciliation P1-1 ne
+    tourne que `if edition_id != "1"`). Mesure du jour : 5 des 10 offres Difmark créées (1 DLC
+    + 4 accès anticipé), et 1 page sur 60 tirées au sort chez GameSeal."""
+
+    def _match(self, title, editions, aks_name="Neon Beats"):
+        offer = NormalizedOffer(offer_id="1", name=title,
+                                url="https://gameseal.com/x-pc-steam-key-global", merchant="GameSeal")
+        return match_offer(offer, resolver=lambda n, **k: _page(editions, aks_name=aks_name))
+
+    def test_standard_is_not_written_on_a_page_that_does_not_sell_it(self):
+        res = self._match("Neon Beats (PC) Steam Key - GLOBAL",
+                          {"16": "DLC", "7": "Deluxe", "21": "Ultimate"})
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("not sold on the resolved AKS page", res.reason)
+        self.assertIn("(E06)", res.reason)
+        self.assertIn("Deluxe", res.reason)      # le refus DIT ce que la page vend
+
+    def test_a_sole_early_access_bucket_is_adopted(self):
+        res = self._match("Neon Beats (PC) Steam Key - GLOBAL", {"5": "Early Access"})
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+        self.assertEqual((res.edition_label, res.edition_id), ("Early Access", "5"))
+
+    def test_a_page_selling_standard_is_untouched(self):
+        for editions in ({"1": "Standard"}, {"1": "Standard", "5": "Early Access"},
+                         {"1": "Standard", "7": "Deluxe"}):
+            with self.subTest(editions=editions):
+                res = self._match("Neon Beats (PC) Steam Key - GLOBAL", editions)
+                self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+                self.assertEqual(res.edition_id, "1")
+
+    def test_R18_keeps_its_canonical_dlc_id(self):
+        """[R18] reste le seul juge du seau DLC : il émet 16 même si la page range son DLC
+        sous un autre id — E06 ne doit pas le contredire (AGENTS.md)."""
+
+        res = self._match("Neon Beats (PC) Steam Key - GLOBAL", {"99": "dlc"})
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+        self.assertEqual(res.edition_id, "16")
+
+    def test_the_console_rule_and_the_pc_rule_now_say_the_same_thing(self):
+        """La branche console appliquait déjà « l'édition doit être vendue par la page »
+        depuis le 12/09 ; c'était la page PRIMAIRE qui y échappait."""
+
+        src = (ROOT / "src" / "matcher.py").read_text(encoding="utf-8")
+        self.assertIn("not sold on the {fam} page (R45)", src)
+        self.assertIn("(E06)", src)

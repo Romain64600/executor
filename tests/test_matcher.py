@@ -2621,18 +2621,26 @@ class MatchOfferTests(unittest.TestCase):
         self.assertEqual((result.edition_label, result.edition_id), ("DLC", "16"))
 
     def test_non_dlc_buckets_do_not_alter_edition(self):
-        # Bundle/Early Access buckets on the page describe other offers there,
-        # not the product's nature — GUILTY GEAR (Standard+Bundle) and the
-        # Early Access indies stay Standard.
-        for editions in (
-            {"1": {"name": "Standard"}, "8": {"name": "Bundle"}},
-            {"5": {"name": "Early Access"}},
-        ):
-            result = match_offer(
-                _offer("Neon Beats - Steam GLOBAL"), self._resolver(editions=editions)
-            )
-            self.assertIsInstance(result, Candidate, editions)
-            self.assertEqual(result.edition_id, "1", editions)
+        # Un seau Bundle À CÔTÉ de Standard décrit les autres offres de la page, pas la
+        # nature du produit : GUILTY GEAR (Standard+Bundle) reste Standard.
+        result = match_offer(
+            _offer("Neon Beats - Steam GLOBAL"),
+            self._resolver(editions={"1": {"name": "Standard"}, "8": {"name": "Bundle"}}),
+        )
+        self.assertIsInstance(result, Candidate)
+        self.assertEqual(result.edition_id, "1")
+
+    def test_a_page_that_sells_only_early_access_enters_early_access(self):
+        # [E06] (Romain, 2026-09-21) : quand la page ne vend PAS Standard, on n'écrit pas
+        # Standard. Une page mono-seau « Early Access » est exactement le cas qu'il a
+        # annoncé — « toutes les offres seront rentrées en early access à la place de
+        # standard » — et quatre écritures Difmark du 21/09 l'avaient raté.
+        result = match_offer(
+            _offer("Neon Beats - Steam GLOBAL"),
+            self._resolver(editions={"5": {"name": "Early Access"}}),
+        )
+        self.assertIsInstance(result, Candidate, getattr(result, "reason", ""))
+        self.assertEqual((result.edition_label, result.edition_id), ("Early Access", "5"))
 
     def test_name_embedded_edition_word_uses_page_verified_edition(self):
         # R23 (2026-07-13, Valve Complete Pack escape): "Complete" is part of

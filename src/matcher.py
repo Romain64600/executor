@@ -61,6 +61,7 @@ from src.merchants.instant_gaming import (  # noqa: F401 — re-exported for tes
 )
 from src.merchants.difmark import (  # noqa: F401 — re-exported for tests/back-compat
     DIFMARK_ACCOUNT_PAGE_KINDS,
+    DIFMARK_ACCOUNT_PLATFORMS_PENDING,
     DIFMARK_PLATFORM_TEXT_MAP,
     DIFMARK_PROBE_DELAY_S,
     DIFMARK_REGION_TEXT_MAP,
@@ -1026,7 +1027,25 @@ def precheck_skip(offer: NormalizedOffer, *, consoles: bool = False) -> str | No
     # United States" (gamivo …/riders-republic-xbox-xbox-one-series-us-premium) escaped
     # the title-only scan and was entered on the PC page (run 20260911-162100, AKS
     # 50562). Active even with consoles=False (→ the historical "console" skip).
-    if any(f" {t} " in padded for t in CONSOLE_TOKENS) or console_marker_in_url(offer.url):
+    # AIGUILLAGE COMPTE (Romain, 2026-09-21) : une ligne que le marchand déclare COMPTE ne
+    # passe pas par le scan console — ni ici, ni au dispatch de `match_offer`. Le compte est
+    # le produit vendu ; la branche compte exigera sa page « <plateforme> Account » et son
+    # seau, donc un compte ne peut toujours pas entrer comme une clé.
+    _account_row = bool(
+        cfg is not None and cfg.account_row is not None
+        and cfg.account_row(offer.name, offer.url))
+    if _account_row:
+        # La ligne part vers la branche compte — mais les marqueurs NON-JEU du classifieur
+        # restent dus : une « PSN Card 20 EUR (Account) » ou un « Game Pass (Account) » sont
+        # refusés comme partout ailleurs. SEUL le motif « ACCOUNT — not a game » est ignoré,
+        # puisque c'est exactement la classification que Romain a renversée le 2026-09-21.
+        # (Correctif de mon propre correctif, même jour : la première version sautait TOUS
+        # les scans suivants — régions interdites et cartes cadeaux comprises.)
+        _sig_account = classify_console(offer.name, offer.url, offer.merchant)
+        _reason_account = _sig_account.skip_reason if _sig_account is not None else None
+        if _reason_account and "ACCOUNT — not a game" not in _reason_account:
+            return _reason_account
+    elif (any(f" {t} " in padded for t in CONSOLE_TOKENS) or console_marker_in_url(offer.url)):
         if not consoles:
             return "console"
         sig = classify_console(offer.name, offer.url, offer.merchant)
@@ -2852,6 +2871,18 @@ def _pc_plan(
         if declared_platform is None:
             mapped_platform = DIFMARK_PLATFORM_TEXT_MAP.get(difmark_attrs.raw_platform)
             if mapped_platform is None:
+                # Le TYPE de compte est lu, mais AKS n'a pas encore (pour ce catalogue) la
+                # page « <plateforme> Account » ni le seau correspondant — 50 titres réels
+                # sondés le 2026-09-21 sur six gabarits : 0 page. Le refus le DIT, au lieu
+                # de prétendre que la plateforme est inconnue : le jour où l'on en trouve
+                # une, la plateforme passe dans DIFMARK_ACCOUNT_PAGE_KINDS (Romain :
+                # « quand tu trouveras du Epic account, tu ajouteras l'Epic account »).
+                pending = DIFMARK_ACCOUNT_PLATFORMS_PENDING.get(difmark_attrs.raw_platform)
+                if pending and difmark_is_account:
+                    return SkippedOffer(
+                        offer,
+                        f"compte {pending} — pas encore de page ni de seau AKS confirmés "
+                        f"pour ce type de compte (Steam seul aujourd'hui)")
                 return SkippedOffer(
                     offer, f"Difmark page platform unrecognized: {difmark_attrs.raw_platform!r}"
                 )
@@ -3063,7 +3094,20 @@ def match_offer(
     # skip_reason — precheck_skip already returned one otherwise) resolves its platform
     # PAGES and buckets in _console_plan; every other row takes the historical PC path.
     # Both rejoin the common flow below (R44 → R01/R16/R01b → R19 → platform → edition).
-    console_sig = classify_console(offer.name, offer.url, offer.merchant) if consoles else None
+    # AIGUILLAGE COMPTE (Romain, 2026-09-21 : « elle ne doit pas continuer à passer par la
+    # branche console, elle doit être routée vers une branche compte. Elle utilisera la
+    # branche jeu ou la branche console selon le type d'account »). Un marchand qui déclare
+    # `account_row` dit que CETTE ligne vend un COMPTE : le compte est le produit, pas un
+    # marqueur non-jeu. Elle prend donc la branche compte (`_pc_plan`, qui lit la page
+    # marchande et exige une PAGE AKS « <plateforme> Account » + un SEAU « Account »), et
+    # jamais le chemin des clés console — c'est cet aiguillage, et non le refus « ACCOUNT —
+    # not a game » du 14/09, qui empêche désormais un compte d'être entré comme une clé.
+    _account_cfg = merchant_config(offer.merchant)
+    _is_account_row = bool(
+        _account_cfg is not None and _account_cfg.account_row
+        and _account_cfg.account_row(offer.name, offer.url))
+    console_sig = (classify_console(offer.name, offer.url, offer.merchant)
+                   if consoles and not _is_account_row else None)
     if console_sig is not None:
         plan = _console_plan(offer, console_sig, resolver, page_resolver)
     else:
@@ -3478,6 +3522,44 @@ def match_offer(
                     f"edition {edition_label!r}({edition_id}) not sold on the resolved "
                     f"AKS page — guessed edition unverified (audit P1-1)",
                 )
+
+    # [E06] L'ÉDITION RETENUE DOIT ÊTRE VENDUE PAR LA PAGE — STANDARD COMPRIS (Romain,
+    # 2026-09-21 : « normalement tu es censé aller voir la page AKS comme pour les jeux
+    # normaux, voir si on est en standard ou en DLC sur cette page »).
+    #
+    # La page était DÉJÀ lue et sa carte d'éditions en main : le trou n'était pas qu'on ne
+    # regardait pas, c'est que Standard était EXEMPTÉ du contrôle — la réconciliation P1-1
+    # ci-dessus ne s'exécute que `if edition_id != "1"` (« Standard(1) is the safe canonical
+    # fallback and stays untouched »). Un titre sans marqueur sortait donc en Standard(1)
+    # même sur une page qui ne vend pas Standard. Mesuré le jour même sur la 1re saisie
+    # Difmark : 5 des 10 offres créées — « Diablo IV Lord of Hatred » sur une page
+    # {16 DLC, 7 Deluxe, 21 Ultimate}, et quatre jeux en accès anticipé sur des pages
+    # {5: Early Access}. Sur un marchand classique le défaut est rare mais réel : 1 page sur
+    # 60 tirées au sort chez GameSeal (« TurboMania Fog Racers », Early Access).
+    #
+    # La branche console applique déjà exactement cette règle à ses pages cibles depuis le
+    # 12/09 (« edition … not sold on the <fam> page ») ; c'est la page PRIMAIRE qui y
+    # échappait. Trois issues, dans cet ordre :
+    #   - l'édition est au catalogue de la page → rien ne change ;
+    #   - la page n'a qu'UN seau → c'est lui (le cas « Early Access » de Romain : sur ces
+    #     pages toutes les offres entrent en accès anticipé). R18 garde la main sur le seau
+    #     DLC : une page mono-seau DLC a déjà été tranchée par lui plus haut ;
+    #   - plusieurs seaux et aucun qui corresponde → REFUS fail-closed, on ne devine pas
+    #     (le cas Diablo : DLC + Deluxe + Ultimate, sans Standard).
+    # Le seau DLC est HORS de ce contrôle : [R18] en est le seul juge (AGENTS.md), et il
+    # émet l'id canonique 16 même quand la page liste son DLC sous un autre id — un garde-fou
+    # délibéré, verrouillé par test_dlc_bucket_matched_by_name_when_id_moves.
+    if resolution.editions and edition_id not in resolution.editions and edition_id != "16":
+        if len(resolution.editions) == 1:
+            _sole_id, _sole_value = next(iter(resolution.editions.items()))
+            edition_id, edition_label = _sole_id, _edition_entry_name(_sole_value)
+        else:
+            return SkippedOffer(
+                offer,
+                f"edition {edition_label!r}({edition_id}) not sold on the resolved AKS page "
+                f"— page sells {sorted(_edition_entry_name(v) for v in resolution.editions.values())} "
+                "(E06)",
+            )
 
     # [R45] (2026-09-12) console targets — after the edition block so every page enters
     # the ONE edition the primary page resolved (P1-1 reconciled it against the primary's

@@ -3,6 +3,77 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-21 — [E06] L'édition écrite doit être VENDUE par la page (Standard compris)
+
+Romain, sur une offre qu'il a repérée lui-même : « t'as rentré un DLC en standard ». Exact.
+« Diablo IV Lord of Hatred » est entrée **Standard(1)** sur une page qui vend
+`{16: DLC, 7: Deluxe, 21: Ultimate}` — un id que la page n'offre même pas.
+
+**La page était pourtant lue, sa carte d'éditions en main.** Le trou : Standard était
+EXEMPTÉ du contrôle. La réconciliation P1-1 ne tourne que `if edition_id != "1"` — « Standard
+is the safe canonical fallback and stays untouched ». Un titre sans marqueur sortait donc en
+Standard même sur une page qui ne le vend pas.
+
+**Ampleur mesurée le jour même.** Difmark, 1re saisie : **5 des 10 offres créées** — 1 DLC
+(Diablo) et **4 jeux en accès anticipé** sur des pages `{5: Early Access}`, exactement le cas
+que Romain avait annoncé (« on va rencontrer aussi le cas early access, où toutes les offres
+seront rentrées en early access à la place de standard »). Chez un marchand classique le
+défaut est rare mais réel : **1 page sur 60** tirées au sort parmi les 978 écritures Standard
+de GameSeal (« TurboMania Fog Racers », Early Access).
+
+**La règle.** L'édition retenue doit être une clef de la carte d'éditions de la page. Sinon :
+page à **un seul seau** → c'est lui (les pages Early Access entrent en Early Access) ;
+**plusieurs seaux et aucun qui corresponde** → refus fail-closed, avec la liste de ce que la
+page vend dans le motif. Le seau **DLC(16) est hors périmètre** : [R18] en reste le seul juge
+(AGENTS.md) et émet son id canonique même si la page range son DLC ailleurs. La branche
+console appliquait déjà cette règle à ses pages cibles depuis le 12/09 — c'est la page
+PRIMAIRE qui y échappait.
+
+**Les 5 écritures fausses sont listées pour correction à la main** (Diablo → DLC 16 ;
+Subnautica 2, Car Service Together, Species Unknown, Vein → Early Access 5).
+
+## 2026-09-21 — Le récap dit enfin pourquoi un SUBMIT a crashé (revue de Romain)
+
+« Le récapitulatif reste muet sur les crashs du submitter — `submit()` ne consulte que les
+événements `aborted`. » Exact : le recours à `_stage_crash_tail` avait été câblé sur extract
+et match le 20/09, pas sur submit — un crash (exit 1, aucun évènement écrit) n'y laissait que
+« exit 1 ». Même recours qu'eux, et un test qui le verrouille (la mutation n'était détectée
+par aucun test avant).
+
+## 2026-09-21 — Une branche COMPTE, et Difmark dans la liste blanche
+
+**La saisie d'abord** : première data-entry réelle de Difmark, sur une page de la liste 30 —
+244 lignes lues, 13 candidats, **10 offres créées et prouvées** (« gone from feed », qui
+fonctionne donc aussi hors de la file Pending), 2 échecs « STILL in feed », 1 refus
+fail-closed (la ligne fraîche à cet id contredisait le candidat : la liste a bougé sous le
+run). Toutes des comptes Steam, région « Steam Account » (412), sur les pages AKS dédiées.
+Pré-vol fait comme le code l'exigeait : 412 / 480 / 578 et les éditions 1 / 7 confirmés sur
+le catalogue vivant.
+
+**Puis la règle.** Romain : « elle ne doit pas continuer à passer par la branche console, elle
+doit être routée vers une branche compte. Elle utilisera la branche jeu ou la branche console
+selon le type d'account. » → `MerchantConfig.account_row`. Une ligne que le marchand déclare
+COMPTE ne passe plus par le classifieur console (ni au précheck, ni au dispatch) : les 107
+lignes par page refusées « console: ACCOUNT — not a game (R45) » descendent maintenant vers la
+branche compte. **La sécurité passe du refus à l'aiguillage** — la branche compte exige une
+page AKS « <plateforme> Account » ET un seau « Account », donc un compte ne peut toujours pas
+entrer sur une page de clé (l'incident du 12/09 reste fermé), et `console_url_families` reste
+en filet pour la ligne dont la grammaire d'URL nous échapperait.
+
+**Un correctif dans le correctif, le même jour.** Ma première version sautait TOUS les scans
+du précheck pour une ligne compte — régions interdites et cartes cadeaux comprises : une
+« PSN Card 20 EUR (Account) » passait. Seul le motif « ACCOUNT — not a game » est désormais
+ignoré ; les autres marqueurs non-jeu et tous les scans suivants restent dus (test dédié).
+
+**Un seul type de compte est câblé : Steam.** « Quand tu trouveras du Epic account, tu
+ajouteras l'Epic account. » Les autres types sont refusés en nommant ce qui manque — mesure
+du jour : 50 titres réels sondés sur six gabarits de page compte, **0 page**. Le facteur
+limitant est le catalogue AKS (« Train Sim World 7 » a sa page Steam Account, pas ses pages
+Epic ou PlayStation), pas notre grammaire.
+
+**Et Difmark entre dans la liste blanche** (« Ajouter difmark a la whitelist »), avec la note
+qui compte : sa file Pending est vide, ses lignes sont dans la liste 30.
+
 ## 2026-09-21 — La couverture se juge sur ce qu'on a VU, pas sur un maximum périmé
 
 Romain : « le tri est fini mais je ne vois pas de proposition d'ajouts de requêtes ». Ce

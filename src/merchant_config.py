@@ -145,6 +145,16 @@ class MerchantConfig:
     url_platform: Optional[Callable[[str], Optional[str]]] = None
     guard_name: Optional[Callable[[str], str]] = None
     gift_delivery: Optional[Callable[[str, str], Optional[bool]]] = None
+    #   account_row(name, url) -> bool — « chez ce marchand, cette ligne est un COMPTE »
+    #       (Romain, 2026-09-21 : « elle ne doit pas continuer à passer par la branche
+    #       console, elle doit être routée vers une branche compte »). Une ligne qui répond
+    #       True NE PASSE PAS par le classifieur console : le compte est le PRODUIT vendu,
+    #       pas un marqueur non-jeu. La branche compte dispatche ensuite selon le TYPE de
+    #       compte (page + seau AKS dédiés) — Steam seul est confirmé aujourd'hui, les
+    #       autres tombent sur un refus qui NOMME ce qui manque, prêt à être complété le
+    #       jour où l'on trouve une page « Epic Account » / « PS4 Account » dans AKS.
+    #       Défaut None = comportement d'avant, inchangé pour tous les autres marchands.
+    account_row: Optional[Callable[[str, str], bool]] = None
     # Console-side hooks (R32 / R45, 2026-09-14 — Romain: « pour la détection région /
     # édition / plateforme, tu as un fichier de config par marchand. Et si tu ne l'as pas,
     # tu dois l'avoir. »). The shared classifier ``src.console_keys.classify_console`` owns
