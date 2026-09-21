@@ -998,3 +998,42 @@ class TheWrittenEditionMustBeSoldByThePage(unittest.TestCase):
         src = (ROOT / "src" / "matcher.py").read_text(encoding="utf-8")
         self.assertIn("not sold on the {fam} page (R45)", src)
         self.assertIn("(E06)", src)
+
+
+class LeBalayageAlimenteLeCatalogue(unittest.TestCase):
+    """`scripts/10 --page-catalog` — Romain, 2026-09-21 : « relance un balayage GameSeal avec
+    le catalogue de pages activé ». Le balayage transmet l'option à chaque match ; sans elle,
+    l'argv est celui d'avant, au drapeau près."""
+
+    def setUp(self):
+        self.MOD = _load_sweep_cli()
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self._orig = self.MOD.ROOT
+        self.MOD.ROOT = Path(self.tmp.name)
+        self.addCleanup(lambda: setattr(self.MOD, "ROOT", self._orig))
+
+    def _argv_du_match(self, **kw):
+        vus = []
+        with mock.patch.object(self.MOD, "_run_child",
+                               side_effect=lambda argv, *_: vus.append(argv) or 0):
+            self.MOD._make_stages("GameSeal", "126", "all", None, **kw).match("r-p1")
+        return vus[0]
+
+    def test_le_drapeau_est_transmis_au_match(self):
+        argv = self._argv_du_match(page_catalog="state/page_catalog.db")
+        self.assertIn("--page-catalog", argv)
+        self.assertEqual(argv[argv.index("--page-catalog") + 1], "state/page_catalog.db")
+
+    def test_une_base_partagee_passe_telle_quelle(self):
+        argv = self._argv_du_match(page_catalog="debian@51.38.37.254:/home/debian/executor/state/c.db")
+        self.assertEqual(argv[argv.index("--page-catalog") + 1],
+                         "debian@51.38.37.254:/home/debian/executor/state/c.db")
+
+    def test_sans_option_largv_est_celui_davant(self):
+        self.assertNotIn("--page-catalog", self._argv_du_match())
+
+    def test_le_cli_expose_loption(self):
+        src = (ROOT / "scripts" / "10_data_entry_auto.py").read_text(encoding="utf-8")
+        self.assertIn('"--page-catalog"', src)
+        self.assertIn("page_catalog=args.page_catalog", src)

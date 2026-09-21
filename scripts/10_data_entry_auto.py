@@ -211,7 +211,8 @@ def _clock() -> str:
 def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
                  *, triage: bool = False, move_execute: bool = False,
                  dry_run: bool = False, prove_gone_scan: bool = False,
-                 sweep_dir: Path | None = None, consoles: bool = True) -> Stages:
+                 sweep_dir: Path | None = None, consoles: bool = True,
+                 page_catalog: str = "") -> Stages:
     py = sys.executable
     # A fully read-only preview (Romain: "teste le dry-run"): extract (browser read)
     # + match (AKS read) + triage plan, but NEVER a real write — the ADD submit is
@@ -256,6 +257,11 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
         # candidates). Explicit either way so a run dir's argv shows the mode; --no-consoles
         # = PC-only match (console rows keep the 'console' skip).
         argv.append("--consoles" if consoles else "--no-consoles")
+        if page_catalog:
+            # Le catalogue des pages (2026-09-21) : chaque page de feed écrit en UN lot ce
+            # que son match a déjà lu. Coût mesuré : ~0,1 s contre 145-226 s de match. Jamais
+            # bloquant — le stage ignore une base illisible ou un hôte injoignable.
+            argv += ["--page-catalog", page_catalog]
         rc = _run_child(argv, run_id)
         cands = _load_json(ROOT / "runs" / run_id / "candidates.json")
         n = len(cands) if isinstance(cands, list) else 0
@@ -536,6 +542,13 @@ def main() -> int:
     ap.add_argument("--move-execute", action="store_true",
                     help="With --triage: REALLY move (06_move --mode safe, "
                          "canary-authorized lists only). Default: dry-run plan only.")
+    ap.add_argument(
+        "--page-catalog", default="",
+        help="Catalogue des pages AKS alimenté par chaque match du balayage : chemin local "
+             "(ex. state/page_catalog.db) ou '<user>@<hôte>:<chemin>' pour la base PARTAGÉE. "
+             "Vide = aucun. Ce que le match a DÉJÀ lu y est écrit en un lot par page (~0,1 s "
+             "contre 145-226 s de match) ; jamais bloquant — base illisible ou hôte "
+             "injoignable sont ignorés, et un échec de résolution n'entre JAMAIS au catalogue.")
     ap.add_argument("--prove-gone-scan", action="store_true",
                     help="Prove each post-save disappearance by re-walking the WHOLE feed "
                          "(the pre-2026-09-10 behaviour) instead of the feed SEARCH filtered "
@@ -757,7 +770,8 @@ def main() -> int:
         stages = _make_stages(merchant, store_id, args.available, args.pace,
                               triage=args.triage, move_execute=args.move_execute,
                               dry_run=args.dry_run, prove_gone_scan=args.prove_gone_scan,
-                              sweep_dir=sweep_dir, consoles=args.consoles)
+                              sweep_dir=sweep_dir, consoles=args.consoles,
+                              page_catalog=args.page_catalog)
         target_entry = {"merchant": merchant, "store_id": store_id, "recap": None}
         recap["targets"].append(target_entry)
 
