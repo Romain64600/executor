@@ -38,10 +38,11 @@ from src.extractor import (  # noqa: E402
     NotLoggedInError,
     parse_page_range,
 )
+from src.extractor import feed_page_for_list  # noqa: E402
 from src.invariants import build_report  # noqa: E402
 from src.pacing import Pacer  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
-from src.sort_plan import build_sort_plan, render_report  # noqa: E402
+from src.sort_plan import build_sort_plan, coverage_from_stats, render_report  # noqa: E402
 from src.step_guard import StepGuard, StepGuardError  # noqa: E402
 
 ALL_STORES_LABEL = "all-stores"
@@ -52,6 +53,11 @@ def main() -> int:
         description="Read-only all-stores Pending list-sorting scan (no mutation)."
     )
     parser.add_argument("--endpoint", default=OFFICIAL_CDP_ENDPOINT)
+    parser.add_argument(
+        "--list", dest="list_id", type=int, default=9,
+        help="Liste AKS scannée (9 = file Pending, défaut ; 30 = account…). "
+             "La liste 8 (Blacklist) est refusée. Le plan produit reste un PLAN : "
+             "aucun déplacement n'est exécuté par ce script.")
     parser.add_argument(
         "--max-pages",
         type=int,
@@ -108,6 +114,12 @@ def main() -> int:
     first_page, last_page = page_range if page_range else (1, args.max_pages)
 
     try:
+        feed_page = feed_page_for_list(args.list_id)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    try:
         # OP1: one tab, one driver — refuse to start while another stage holds
         # the browser. store_id=None → the all-stores view (no store filter).
         with browser_lock(ROOT, label="08_sort_plan all-stores"), \
@@ -119,6 +131,7 @@ def main() -> int:
                 store_id=None,
                 first_page=first_page,
                 last_page=last_page,
+                feed_page=feed_page,
             )
     except BrowserBusyError as exc:
         print(json.dumps({"aborted": True, "reason": str(exc), "run_id": run_id}, indent=2))
@@ -146,13 +159,16 @@ def main() -> int:
     stats = extractor.last_stats
     covered_pages = stats.get("pages_fetched", 0)
     feed_pages = stats.get("feed_last_page", 0)
-    truncated = bool(page_range) or (feed_pages > first_page - 1 + covered_pages)
-    plan["coverage"] = {
-        "partial": True,
-        "pages_fetched": covered_pages,
-        "feed_last_page": feed_pages,
-        "truncated": truncated,
-    }
+    # AUDIT DU 2026-09-21 : `feed_last_page` est le MAXIMUM vu depuis le début de la marche,
+    # et une longue marche voit la liste rétrécir sous elle. Le scan du 21/09 a lu 566 pages
+    # annoncées en page 1, puis 488 en page 489 — où la liste s'est terminée (page à 0 ligne,
+    # `ended_past_end`). L'ancien test comparait 566 aux 489 pages lues et déclarait la
+    # couverture tronquée : la console taisait alors TOUTE proposition de requête (garde du
+    # 18/09) pour un scan pourtant complet. On juge désormais sur ce qui a été OBSERVÉ —
+    # avoir vu la page d'après-la-fin, ou avoir lu au moins autant de pages que la dernière
+    # pagination LUE. Une tranche explicite (`--pages`) reste tronquée par nature.
+    plan["coverage"] = coverage_from_stats(
+        stats, first_page=first_page, sliced=bool(page_range))
 
     (out_dir / "sort_plan.json").write_text(json.dumps(plan, indent=2, ensure_ascii=False),
                                             encoding="utf-8")
@@ -162,7 +178,7 @@ def main() -> int:
         json.dumps(
             {
                 "run_id": run_id,
-                "source": "list 9 (all stores, no store filter)",
+                "source": f"list {args.list_id} (all stores, no store filter)",
                 "offers": plan["counts"]["total"],
                 "coverage": plan["coverage"],
                 "counts": plan["counts"],

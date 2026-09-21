@@ -7,9 +7,26 @@ Captured read-only from the live admin on **2026-07-21** by
 
 The merchant feed is **per-list**: the admin URL is
 `admin.php?...&page=aks-merchant-feeds-<listId>`. Every offer row carries a
-`listId` (seen in the `data-offer` payload). Our extractor only ever scans
-**list 9 = "AKS Feeds"** (the default pending queue) — every offer we've
-captured (2 780 across recent runs) is on list 9.
+`listId` (seen in the `data-offer` payload). L'extracteur a longtemps ne scanné
+**que la liste 9 = "AKS Feeds"** (la file pending) — et c'est resté le défaut.
+
+**Depuis le 2026-09-21, `--list <id>` ouvre les autres listes** (`scripts/02_extract_feed.py`
+et `scripts/08_sort_plan.py`, `src/extractor.py::feed_page_for_list`). Romain : « ajoute un
+paramètre liste pour pouvoir travailler sur les autres listes sauf la liste 8 (blacklist) ».
+Ce qu'il faut savoir :
+
+- **La liste 8 (Blacklist) est refusée** comme liste de travail, fail-closed : les exclusions
+  définitives ne se re-travaillent pas. Le DÉPLACEMENT vers la 8 est intact (le tri y route,
+  391 lignes le 21/09, et le mover scanne la liste cible pour prouver son déplacement — ces
+  chemins ne passent pas par le sélecteur).
+- **Lecture seule.** Le chemin d'ÉCRITURE (balayage `scripts/10`, submit `scripts/05`) reste
+  sur la liste 9 : une offre localisée puis prouvée « disparue du feed » l'est dans la file
+  pending. Lire la liste 30 sert à auditer, pas à saisir.
+- Un id mal formé (`0`, `-1`, `abc`, vide) est refusé avec le même soin que `store_id` —
+  sinon on scannerait silencieusement une autre liste que celle demandée.
+- Déclencheur : le feed pending de **Difmark** est vide (0 ligne le 21/09) alors que ses
+  lignes existent toujours — elles ont été déplacées vers la liste *account* (30), que nous
+  ne savions pas lire.
 
 "Move to List" = change an offer's `listId` from 9 to another list.
 

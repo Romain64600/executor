@@ -516,3 +516,141 @@ class AStageCrashLeavesItsReason(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TheListParameterOpensTheOtherAksLists(unittest.TestCase):
+    """`src/extractor.py::feed_page_for_list` — Romain, 2026-09-21 : « ajoute un paramètre
+    liste pour pouvoir travailler sur les autres listes sauf la liste 8 (blacklist) ».
+
+    Déclencheur : le feed pending de Difmark est VIDE (0 ligne, vérifié le 21/09) alors que
+    ses lignes existent toujours — elles ont été déplacées vers la liste *account* (30). Or
+    l'extracteur ne savait lire QUE la liste 9 (`docs/AKS_LISTS.md`)."""
+
+    def test_a_list_id_becomes_its_admin_page(self):
+        from src.extractor import feed_page_for_list
+
+        self.assertEqual(feed_page_for_list(9), "aks-merchant-feeds-9")
+        self.assertEqual(feed_page_for_list("30"), "aks-merchant-feeds-30")
+        self.assertEqual(feed_page_for_list(" 12 "), "aks-merchant-feeds-12")
+
+    def test_the_blacklist_is_refused(self):
+        from src.extractor import FEED_LIST_BLACKLIST, feed_page_for_list
+
+        self.assertEqual(FEED_LIST_BLACKLIST, 8)
+        for value in (8, "8", " 8 "):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError) as ctx:
+                    feed_page_for_list(value)
+                self.assertIn("Blacklist", str(ctx.exception))
+
+    def test_a_malformed_id_never_builds_a_silent_query(self):
+        from src.extractor import feed_page_for_list
+
+        for value in (0, -1, "abc", 3.7, "", "9a", None):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    feed_page_for_list(value)
+
+    def test_the_url_carries_the_chosen_list(self):
+        from src.extractor import feed_page_for_list, feed_url
+
+        url = feed_url("167", page=2, feed_page=feed_page_for_list(30), available="all")
+        self.assertIn("page=aks-merchant-feeds-30", url)
+        self.assertIn("&store=167", url)
+        self.assertIn("&p=2", url)
+
+    def test_moving_TO_the_blacklist_is_untouched(self):
+        """Le tri route vers la 8 (391 lignes le 21/09) et le mover scanne la liste cible
+        pour prouver le déplacement : ces chemins ne passent pas par le sélecteur."""
+
+        from src.extractor import feed_url
+
+        self.assertIn("page=aks-merchant-feeds-8",
+                      feed_url(None, feed_page="aks-merchant-feeds-8"))
+
+    def test_both_clis_declare_the_flag_and_refuse_the_blacklist(self):
+        for name in ("02_extract_feed.py", "08_sort_plan.py"):
+            with self.subTest(script=name):
+                src = (ROOT / "scripts" / name).read_text(encoding="utf-8")
+                self.assertIn('"--list"', src)
+                self.assertIn("feed_page_for_list", src)
+                self.assertIn("feed_page=feed_page", src)
+
+
+class TheCoverageIsJudgedOnWhatWasObserved(unittest.TestCase):
+    """`src/extractor.py` + `scripts/08_sort_plan.py` — 2026-09-21.
+
+    Le scan de tri du 21/09 a lu `nav_max=566` en page 1, puis la liste a rétréci sous lui
+    pendant 1 h 38 : `nav_max=488` en page 489, qui est revenue VIDE (fin atteinte).
+    `feed_last_page` étant un maximum courant, l'ancien test comparait 566 à 489 pages lues
+    et déclarait la couverture tronquée — et la console taisait alors toute proposition de
+    requête (`sort_sql_view` : `proposals = [] if coverage["truncated"]`). Romain : « le tri
+    est fini mais je ne vois pas de proposition d'ajouts de requêtes »."""
+
+    def _coverage(self, stats, *, page_range=None, first_page=1):
+        """LE code de production, pas une copie : `08_sort_plan` appelle cette fonction."""
+        from src.sort_plan import coverage_from_stats
+
+        return coverage_from_stats(stats, first_page=first_page,
+                                   sliced=bool(page_range))["truncated"]
+
+    def test_the_shrinking_list_of_the_21_09_is_not_truncated(self):
+        stats = {"pages_fetched": 489, "feed_last_page": 566,
+                 "feed_last_page_final": 488, "ended_past_end": True}
+        self.assertFalse(self._coverage(stats))
+
+    def test_a_real_truncation_is_still_caught(self):
+        """Marche arrêtée par le plafond : la liste annonçait encore des pages."""
+        stats = {"pages_fetched": 40, "feed_last_page": 566,
+                 "feed_last_page_final": 566, "ended_past_end": False}
+        self.assertTrue(self._coverage(stats))
+
+    def test_an_explicit_slice_stays_truncated(self):
+        stats = {"pages_fetched": 3, "feed_last_page": 3, "feed_last_page_final": 3,
+                 "ended_past_end": True}
+        self.assertTrue(self._coverage(stats, page_range=(1, 3)))
+
+    def test_legacy_stats_without_the_witnesses_stay_fail_closed(self):
+        """Un vieux `last_stats` (sans les deux témoins) ne doit pas devenir complet par
+        accident : on retombe sur le maximum, donc sur l'ancien verdict."""
+        stats = {"pages_fetched": 489, "feed_last_page": 566}
+        self.assertTrue(self._coverage(stats))
+
+    def test_the_extractor_really_publishes_both_witnesses(self):
+        """Marche réelle sur une session simulée : pages 1-2 pleines, page 3 au-delà de la
+        fin (nav_max retombé à 2) — exactement la forme du scan du 21/09, en miniature."""
+
+        from tests.test_extractor import FakeSession, _extractor, _offer, _state
+
+        session = FakeSession({
+            1: [_state([_offer(1)], nav_max=9)],      # la liste en annonce 9 au départ…
+            2: [_state([_offer(2)], nav_max=2)],      # …puis elle a rétréci à 2
+            3: [_state([], nav_max=2)],               # page d'après-la-fin
+        })
+        extractor = _extractor(session)
+        extractor.extract_pages(run_id="r1", merchant="M", store_id=1,
+                                first_page=1, last_page=9)
+        stats = extractor.last_stats
+        self.assertTrue(stats["ended_past_end"])
+        self.assertEqual(stats["feed_last_page_final"], 2)
+        self.assertEqual(stats["feed_last_page"], 9)          # le maximum, conservé tel quel
+        self.assertFalse(self._coverage(stats))               # couverture COMPLÈTE
+
+    def test_a_walk_stopped_by_the_cap_is_truncated_end_to_end(self):
+        from tests.test_extractor import FakeSession, _extractor, _offer, _state
+
+        session = FakeSession({
+            1: [_state([_offer(1)], nav_max=9)],
+            2: [_state([_offer(2)], nav_max=9)],
+        })
+        extractor = _extractor(session)
+        extractor.extract_pages(run_id="r1", merchant="M", store_id=1,
+                                first_page=1, last_page=2)
+        stats = extractor.last_stats
+        self.assertFalse(stats["ended_past_end"])
+        self.assertEqual(stats["feed_last_page_final"], 9)
+        self.assertTrue(self._coverage(stats))
+
+    def test_the_sort_cli_uses_the_shared_rule(self):
+        plan = (ROOT / "scripts" / "08_sort_plan.py").read_text(encoding="utf-8")
+        self.assertIn("coverage_from_stats(", plan)

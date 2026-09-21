@@ -54,6 +54,33 @@ from src.step_guard import StepGuard
 AKS_ADMIN_URL = "https://www.allkeyshop.com/blog/wp-admin/admin.php"
 DEFAULT_FEED_PAGE = "aks-merchant-feeds-9"
 
+# La liste sur laquelle on ne TRAVAILLE jamais (Romain, 2026-09-21 : « pour pouvoir
+# travailler sur les autres listes sauf la liste 8 (blacklist) »). Ce n'est pas une garde
+# technique : la 8 est la liste des exclusions définitives, la lire pour en extraire un
+# lot de travail n'a pas de sens et rouvrirait une porte qu'on a fermée à la main.
+# Le DÉPLACEMENT vers la 8 reste intact : le tri y route (391 lignes le 21/09) et le
+# vérificateur du mover scanne la liste cible — ces chemins ne passent pas par ici.
+FEED_LIST_BLACKLIST = 8
+
+
+def feed_page_for_list(list_id: str | int) -> str:
+    """``30`` → ``"aks-merchant-feeds-30"``, la page admin d'une liste AKS.
+
+    Refuse la liste 8 (Blacklist) et tout id qui n'est pas un entier strictement positif —
+    même sévérité que `feed_url` sur `store_id` : un id mal formé construirait une requête
+    silencieusement fausse, et on scannerait une autre liste que celle demandée."""
+
+    s = str(list_id).strip()
+    if not re.fullmatch(r"[0-9]+", s) or int(s) < 1:
+        raise ValueError(
+            f"list_id {list_id!r} est invalide — attendu un entier strictement positif "
+            "(9 = file Pending, 30 = account, …)")
+    if int(s) == FEED_LIST_BLACKLIST:
+        raise ValueError(
+            f"liste {FEED_LIST_BLACKLIST} (Blacklist) : interdite comme liste de travail "
+            "(Romain, 2026-09-21) — les exclusions définitives ne se re-travaillent pas")
+    return f"aks-merchant-feeds-{int(s)}"
+
 # One evaluate per page: raw data-offer attribute strings + deterministic
 # page-state markers (probed live on G2A 2026-07-07: past-the-end pages render
 # the same chrome with 0 rows, and the pagination nav is the only element that
@@ -606,6 +633,17 @@ class FeedExtractor:
         rows_seen = 0
         pages_fetched = 0
         feed_last_page = 0
+        # AUDIT DU 2026-09-21. `feed_last_page` est un MAXIMUM courant : il retient le plus
+        # grand `nav_max` vu depuis le début. Sur une longue marche, la liste RÉTRÉCIT sous
+        # le lecteur (des lignes sont triées, déplacées, créées ailleurs) et ce maximum
+        # devient un souvenir : le scan de tri du 21/09 a lu `nav_max=566` en page 1 puis
+        # `488` en page 489, où la liste s'est terminée. Comparer 566 aux 489 pages lues
+        # déclarait la couverture TRONQUÉE alors qu'elle était COMPLÈTE — et la console
+        # refusait alors toute proposition de requête (`sort_sql_view`, garde du 18/09).
+        # Ces deux témoins-ci sont des FAITS observés, pas des souvenirs : la dernière
+        # pagination lue, et le fait d'avoir vu la page d'après-la-fin.
+        feed_last_page_final = 0
+        ended_past_end = False
         source_url = feed_url(
             store_id, page=first_page, feed_page=feed_page, available=available
         )
@@ -620,6 +658,8 @@ class FeedExtractor:
             nav_max = int(state.get("nav_max") or 0)
             feed_ui = bool(state.get("feed_ui"))
             feed_last_page = max(feed_last_page, nav_max, 1 if feed_ui else 0)
+            if nav_max:
+                feed_last_page_final = nav_max      # la pagination LUE sur CETTE page
 
             # AUDIT DU 2026-09-18 : la garde [20] du mode SWEEP manquait ici. `extract_pages`
             # faisait du `nav_max` lu au premier read la valeur autoritaire de
@@ -661,7 +701,9 @@ class FeedExtractor:
                         "feed_page",
                         merchant=merchant, mode="pages", page=page,
                         offers_on_page=0, new_offers=0, nav_max=nav_max, past_end=True,
+                        ended_past_end=True,
                     )
+                    ended_past_end = True
                     break
                 self._log(
                     "aborted",
@@ -710,6 +752,10 @@ class FeedExtractor:
             "pages_requested": [first_page, last_page],
             "pages_fetched": pages_fetched,
             "feed_last_page": feed_last_page,
+            # La dernière pagination LUE (≠ le maximum vu) et la preuve d'avoir atteint la
+            # fin : la couverture se juge là-dessus, pas sur un maximum périmé (2026-09-21).
+            "feed_last_page_final": feed_last_page_final or feed_last_page,
+            "ended_past_end": ended_past_end,
             "rows_seen": rows_seen,
             "distinct_offers": len(seen),
         }

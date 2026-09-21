@@ -727,6 +727,26 @@ Ajouts `[R45]` (2026-09-15), tous rétro-compatibles (nouvelles clés seulement)
   (« N trouvée(s), X doublon(s) entre jeux »). Le manager garde `totals.candidates` pour
   `nothing_to_submit` / `meta.candidates` (compte par jeu, pas le lot).
 
+## sort_plan.json — le bloc `coverage`
+
+`scripts/08_sort_plan.py` écrit `coverage` via `src.sort_plan.coverage_from_stats` :
+`partial` (toujours `True` — un scan est une photo), `pages_fetched`, `feed_last_page` (le
+MAXIMUM de pagination vu pendant la marche), **`feed_last_page_final`** (la dernière
+pagination réellement LUE) et **`ended_past_end`** (la marche a vu la page d'après-la-fin),
+puis `truncated`.
+
+**`truncated` se juge sur les deux témoins OBSERVÉS, jamais sur le maximum (2026-09-21).**
+Une marche longue voit la liste rétrécir sous elle : le scan `20260921-072420-sort` a lu
+566 pages annoncées en page 1 et s'est terminé page 489 sur une page vide (`nav_max=488`).
+Comparer 566 à 489 déclarait tronqué — et la console tait TOUTE proposition de requête sur
+un plan tronqué (`src/admin/sort_sql_view.py` : `proposals = [] if coverage["truncated"]`).
+Une tranche explicite (`--pages`) reste tronquée par nature ; des statistiques sans les
+témoins (runs d'avant le 21/09) retombent sur l'ancien verdict — fail-closed.
+
+Un plan re-jugé après coup porte la trace de l'opération : `recomputed_at`,
+`recomputed_note` et `recomputed_from` (les valeurs d'origine), pour qu'un lecteur voie
+que la couverture a été recalculée et sur quelle preuve.
+
 ## Run log (JSONL)
 
 `src/run_log.py`'s `RunLogger` writes one JSON object per line to

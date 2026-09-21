@@ -3,6 +3,45 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-21 — La couverture se juge sur ce qu'on a VU, pas sur un maximum périmé
+
+Romain : « le tri est fini mais je ne vois pas de proposition d'ajouts de requêtes ». Ce
+n'était pas un bug de la vue : le scan `20260921-072420-sort` était marqué
+`coverage.truncated = true`, et la console tait TOUTE proposition sur un plan tronqué
+(`sort_sql_view` : `proposals = [] if coverage["truncated"]`, garde du 18/09 — un
+« collatéral = 0 » mesuré sur un feed partiel ne vaut rien).
+
+**Sauf que la couverture était complète.** Le journal du run le prouve : page 1 annonçait
+`nav_max=566`, et la marche s'est terminée page **489 sur une page VIDE**, avec
+`nav_max=488` — la liste avait rétréci de ~78 pages pendant les 1 h 38 du scan (des lignes
+triées, déplacées, créées ailleurs). Or `feed_last_page` est un **maximum courant** : il
+gardait 566, lu en page 1, et le test `feed_last_page > pages lues` déclarait tronqué.
+
+L'extracteur publie désormais deux témoins **observés** à côté du maximum :
+`feed_last_page_final` (la dernière pagination réellement LUE) et `ended_past_end` (on a vu
+la page d'après-la-fin). `08_sort_plan` juge sur eux ; une tranche explicite (`--pages`)
+reste tronquée par nature, et de vieilles statistiques sans les témoins retombent sur
+l'ancien verdict (fail-closed). Le plan du 21/09 a été re-jugé **à partir de son propre
+journal** (trace `coverage.recomputed_note`, valeurs d'origine conservées dans
+`recomputed_from`) : la console propose maintenant **12 requêtes** sur ce scan — `%canada%`
+→ liste 33, `%middle-east%` → 34, `%south-america%` → 36, `%madden-points%` /
+`%ultimate-team%` / `%points-pack%` → 41, `%sportswear%`, `%digital-book%`… toutes à
+conflit 0 et collatéral 0, plus un motif signalé en conflit (`%diamonds-top%`, 225 lignes).
+
+## 2026-09-21 — `--list` : les autres listes AKS deviennent lisibles (sauf la Blacklist)
+
+« Ajoute un paramètre liste pour pouvoir travailler sur les autres listes sauf la liste 8
+(blacklist) ». `scripts/02_extract_feed.py --list <id>` et `scripts/08_sort_plan.py
+--list <id>` (défaut 9) ; le sélecteur vit dans `src/extractor.py::feed_page_for_list`, qui
+refuse la **liste 8** et tout id mal formé avec la même sévérité que `store_id` — un id
+invalide construirait une requête silencieusement fausse. Le déplacement VERS la 8 est
+intact (le tri y route, le mover scanne la liste cible), et le chemin d'écriture reste sur
+la 9 : lire la liste 30 sert à auditer, pas à saisir.
+
+Déclencheur : le feed pending de **Difmark** est vide (0 ligne, vérifié le 21/09) alors que
+ses lignes existent toujours — elles sont dans la liste *account* (30), que nous ne savions
+pas lire. C'est ce qui bloquait la vérification de la grammaire Difmark.
+
 ## 2026-09-21 — Une offre épuisée n'est pas une erreur (ruling de Romain)
 
 L'audit GameSeal signalait 62 lignes écrites à prix `0` en demandant à Romain si une offre à

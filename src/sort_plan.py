@@ -53,6 +53,34 @@ def _with_canonical_merchant(offer: NormalizedOffer) -> NormalizedOffer:
     return replace(offer, merchant=canonical)
 
 
+def coverage_from_stats(stats: dict, *, first_page: int = 1, sliced: bool = False) -> dict:
+    """Le bloc ``coverage`` d'un plan de tri, jugé sur ce que la marche a OBSERVÉ.
+
+    AUDIT DU 2026-09-21. ``feed_last_page`` est un MAXIMUM courant : il retient la plus
+    grande pagination vue depuis le début. Une longue marche voit la liste RÉTRÉCIR sous
+    elle — le scan du 21/09 a lu 566 pages annoncées en page 1, puis 488 en page 489, où la
+    liste s'est terminée. Comparer 566 aux 489 pages lues déclarait la couverture tronquée,
+    et la console taisait alors TOUTE proposition de requête (garde du 18/09, `sort_sql_view`).
+    On juge donc sur deux témoins observés : avoir vu la page d'après-la-fin
+    (``ended_past_end``), ou avoir lu au moins autant de pages que la dernière pagination
+    RÉELLEMENT lue (``feed_last_page_final``). Une tranche explicite reste tronquée par
+    nature, et de vieilles statistiques sans les témoins retombent sur l'ancien verdict."""
+
+    covered = int(stats.get("pages_fetched") or 0)
+    feed_pages = int(stats.get("feed_last_page") or 0)
+    feed_final = int(stats.get("feed_last_page_final") or 0) or feed_pages
+    reached_end = bool(stats.get("ended_past_end")) or (
+        feed_final <= first_page - 1 + covered)
+    return {
+        "partial": True,
+        "pages_fetched": covered,
+        "feed_last_page": feed_pages,
+        "feed_last_page_final": feed_final,
+        "ended_past_end": bool(stats.get("ended_past_end")),
+        "truncated": bool(sliced) or not reached_end,
+    }
+
+
 def build_sort_plan(
     offers: Iterable[NormalizedOffer],
     *,

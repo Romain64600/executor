@@ -30,6 +30,7 @@ from src.extractor import (  # noqa: E402
     FeedExtractor,
     FeedUnstableError,
     NotLoggedInError,
+    feed_page_for_list,
     parse_page_range,
 )
 from src.invariants import build_report  # noqa: E402
@@ -65,6 +66,11 @@ def main() -> int:
         help="Seconds between page fetches, 'N' or 'MIN-MAX' (bounded-random, "
         "burst mitigation). 0 disables. Default: 2-5.",
     )
+    parser.add_argument(
+        "--list", dest="list_id", type=int, default=9,
+        help="Liste AKS à lire (9 = file Pending, défaut ; 30 = account, 12 = pages à créer…). "
+             "La liste 8 (Blacklist) est refusée. La lecture seule uniquement : le chemin "
+             "d'écriture (sweep, submit) reste sur la 9.")
     parser.add_argument("--out-dir", default=None)
     parser.add_argument("--run-id", default=None)
     args = parser.parse_args()
@@ -72,6 +78,7 @@ def main() -> int:
     try:
         pacer = Pacer.from_spec(args.pace)
         page_range = parse_page_range(args.pages) if args.pages else None
+        feed_page = feed_page_for_list(args.list_id)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -113,6 +120,7 @@ def main() -> int:
                     first_page=page_range[0],
                     last_page=page_range[1],
                     available=args.available,
+                    feed_page=feed_page,
                 )
             else:
                 snapshot, feed = extractor.extract(
@@ -122,6 +130,7 @@ def main() -> int:
                     available=args.available,
                     max_pages=args.max_pages,
                     max_sweeps=args.max_sweeps,
+                    feed_page=feed_page,
                 )
     except BrowserBusyError as exc:
         print(json.dumps({"aborted": True, "reason": str(exc), "run_id": run_id}, indent=2))
