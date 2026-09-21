@@ -62,6 +62,7 @@ from src.merchants.instant_gaming import (  # noqa: F401 — re-exported for tes
 from src.merchants.difmark import (  # noqa: F401 — re-exported for tests/back-compat
     DIFMARK_ACCOUNT_PAGE_KINDS,
     DIFMARK_ACCOUNT_PLATFORMS_PENDING,
+    url_account_platform as difmark_url_account_platform,
     DIFMARK_PLATFORM_TEXT_MAP,
     DIFMARK_PROBE_DELAY_S,
     DIFMARK_REGION_TEXT_MAP,
@@ -2868,6 +2869,34 @@ def _pc_plan(
         except DifmarkPageUnreadable as exc:
             return SkippedOffer(offer, f"Difmark merchant page unverifiable: {exc}")
         difmark_is_account = "ACCOUNT" in difmark_attrs.offer_name.upper()
+        # REVUE DE ROMAIN (2026-09-21, e596cd3 → 5d163e1) : « la branche compte peut encore
+        # produire une CLÉ. Reproduit avec une URL ps5-account, un titre sans (Account), une
+        # API indiquant STEAM et un offer_name VIDE : candidat sur la page de clé, région
+        # GLOBAL(2). Cette ligne était refusée avant le pull ; le nouvel aiguillage doit
+        # imposer une preuve du type de compte. » Exact, et c'est MA régression : en retirant
+        # ces lignes au classifieur console, j'ai retiré le refus qui les protégeait.
+        #
+        # La réponse n'est PAS de refuser toute ligne dont l'URL dit « account » : chez
+        # Difmark ce segment est du GABARIT, présent sur toutes les annonces quel que soit le
+        # type (docs/MERCHANTS.md) — de vraies clés passent par là. La réponse est d'exiger
+        # que la page PARLE, et qu'elle ne se contredise pas :
+        #   (a) `offer_name` vide ⇒ on ne sait pas ⇒ refus (c'est le cas de la reproduction) ;
+        #   (b) la famille que l'URL déclare (ps5-account, xb1, epic-games-account…) doit
+        #       s'accorder avec la plateforme que la page annonce — « URL PS5 + page STEAM »
+        #       est une contradiction, pas un candidat.
+        if not (difmark_attrs.offer_name or "").strip():
+            return SkippedOffer(
+                offer,
+                "Difmark : la page ne nomme pas l'offre (offer_name vide) — type de compte "
+                "invérifiable, jamais entré comme clé")
+        _url_family = difmark_url_account_platform(offer.url)
+        _page_family = DIFMARK_PLATFORM_TEXT_MAP.get(difmark_attrs.raw_platform) or (
+            DIFMARK_ACCOUNT_PLATFORMS_PENDING.get(difmark_attrs.raw_platform))
+        if _url_family and _page_family and _url_family != _page_family:
+            return SkippedOffer(
+                offer,
+                f"Difmark : l'URL déclare {_url_family} et la page {_page_family} "
+                f"({difmark_attrs.raw_platform!r}) — déclaration contradictoire, non entré")
         if declared_platform is None:
             mapped_platform = DIFMARK_PLATFORM_TEXT_MAP.get(difmark_attrs.raw_platform)
             if mapped_platform is None:
@@ -3552,7 +3581,24 @@ def match_offer(
     if resolution.editions and edition_id not in resolution.editions and edition_id != "16":
         if len(resolution.editions) == 1:
             _sole_id, _sole_value = next(iter(resolution.editions.items()))
-            edition_id, edition_label = _sole_id, _edition_entry_name(_sole_value)
+            _sole_name = _edition_entry_name(_sole_value)
+            # REVUE DE ROMAIN (2026-09-21, e596cd3 → 5d163e1) : « E06 peut accepter un
+            # bundle interdit — une offre Standard face à une page {8: Bundle} devient un
+            # candidat Bundle. L'adoption du seul seau intervient après le contrôle
+            # anti-bundle et le contourne. » Exact, et c'est la règle la plus absolue du
+            # projet (Romain 2026-07-07 : « on n'entre JAMAIS de bundle »). L'adoption du
+            # seau unique s'arrête donc net sur un bundle — la page ne vend que ça, il n'y a
+            # rien à écrire ici.
+            # Jetons BRUTS, comme la garde anti-bundle de `match_extras_to_page_edition` :
+            # `_edition_key` traite « Pack » comme du bruit de format, ce qui laisserait
+            # passer un seau « Deluxe Pack ». Adopter un seau que l'offre n'a pas demandé est
+            # déjà une supposition ; si ce seau sent le bundle, la règle absolue tranche.
+            if _sole_id == "8" or set(tokenize(_sole_name)) & {"BUNDLE", "PACK", "TRILOGY"}:
+                return SkippedOffer(
+                    offer,
+                    f"la page ne vend que {_sole_name!r} — bundle, jamais entré (E06)",
+                )
+            edition_id, edition_label = _sole_id, _sole_name
         else:
             return SkippedOffer(
                 offer,

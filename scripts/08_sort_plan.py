@@ -154,6 +154,12 @@ def main() -> int:
     (out_dir / "offers.json").write_text(json.dumps(feed.to_dict(), indent=2), encoding="utf-8")
 
     plan = build_sort_plan(feed.offers, run_id=run_id)
+    # REVUE DE ROMAIN (2026-09-21) : « un scan d'une autre liste peut servir de mesure SQL
+    # pour la liste 9 — avec --list 30, le plan déclare encore la liste 9. La vue SQL
+    # sélectionne ce scan comme complet et "mesuré", alors que ses requêtes ciblent
+    # listId=9. » Exact : j'avais changé la ligne IMPRIMÉE et pas le plan. La liste scannée
+    # est désormais DANS le plan, et la vue SQL refuse d'en faire une mesure du pending.
+    plan["source_list"] = int(args.list_id)
     # No silent caps: if the feed advertises more pages than we fetched, the plan
     # covers only part of the list — say so loudly.
     stats = extractor.last_stats

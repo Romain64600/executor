@@ -232,6 +232,33 @@ DIFMARK_ACCOUNT_PLATFORMS_PENDING = {
 }
 
 
+_URL_ACCOUNT_PLATFORM = (
+    ("-steam-account", "STEAM"), ("-steam-accounts", "STEAM"),
+    ("-epic-games-account", "EPIC"), ("-epic-account", "EPIC"),
+    ("-ps5-account", "PLAYSTATION"), ("-ps4-account", "PLAYSTATION"),
+    ("-ps5-", "PLAYSTATION"), ("-ps4-", "PLAYSTATION"),
+    ("-xbox-series-account", "XBOX"), ("-xbox-one-account", "XBOX"), ("-xb1-", "XBOX"),
+    ("-xbox-x", "XBOX"), ("-pc-windows-account", "MICROSOFT"),
+)
+
+
+def url_account_platform(url: str) -> str | None:
+    """La plateforme que le SLUG déclare pour un compte : ``…-ps5-account-177232`` →
+    PLAYSTATION, ``…-steam-account-199942`` → STEAM, ``…-xb1-39175`` → XBOX.
+
+    Sert à REFUSER une contradiction (revue de Romain, 2026-09-21) : une URL qui dit PS5 et
+    une page marchande qui répond STEAM ne décrivent pas la même offre, et la ligne ne doit
+    surtout pas se rabattre sur le chemin des clés PC. Elle ne sert jamais à AFFIRMER une
+    plateforme : c'est la page qui la donne (le segment d'URL est du gabarit, présent sur
+    toutes les annonces)."""
+
+    path = urlsplit(url or "").path.lower()
+    for marqueur, famille in _URL_ACCOUNT_PLATFORM:
+        if marqueur in path:
+            return famille
+    return None
+
+
 def console_url_families(url: str) -> str | None:
     """"console: ACCOUNT — not a game (R45)" for a Difmark account URL — FILET, plus la
     règle (2026-09-21).

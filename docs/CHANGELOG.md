@@ -3,6 +3,39 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-21 — Revue de Romain (e596cd3 → 5d163e1) : quatre points, tous justes
+
+**`[P1]` E06 pouvait adopter un BUNDLE.** « Une offre Standard face à une page {8: Bundle}
+devient un candidat Bundle : l'adoption du seul seau intervient après le contrôle anti-bundle
+et le contourne. » Exact, et c'est la règle la plus absolue du projet (« on n'entre JAMAIS de
+bundle », 2026-07-07). L'adoption du seau unique s'arrête maintenant sur un bundle — id 8 ou
+jetons BRUTS contenant BUNDLE / PACK / TRILOGY (jetons bruts et non `_edition_key`, qui traite
+« Pack » comme du bruit de format et laisserait passer un seau « Deluxe Pack »).
+
+**`[P1]` La branche compte pouvait encore produire une CLÉ.** « Reproduit avec une URL
+ps5-account, un titre sans (Account), une API indiquant STEAM et un offer_name vide : candidat
+sur la page de clé, région GLOBAL(2). Cette ligne était refusée avant le pull. » C'était ma
+régression : en retirant ces lignes au classifieur console, j'avais retiré le refus qui les
+protégeait. La réponse n'est PAS de refuser toute ligne dont l'URL dit « account » — chez
+Difmark ce segment est du gabarit, présent sur toutes les annonces, et de vraies clés passent
+par là (six tests historiques le prouvent). Deux exigences à la place : un `offer_name` VIDE
+est un refus (le type de compte est invérifiable), et une contradiction entre la famille que
+l'URL déclare et la plateforme que la page annonce (`url_account_platform`) est un refus.
+
+**`[P1]` Un scan d'une autre liste pouvait servir de mesure SQL pour la liste 9.** « Avec
+--list 30, le plan déclare encore la liste 9 ; la vue SQL le sélectionne comme mesuré alors
+que ses requêtes ciblent listId=9. » Exact : j'avais changé la ligne IMPRIMÉE, pas le plan.
+La liste scannée est maintenant dans `sort_plan.json` (`source_list`), et la vue SQL refuse
+d'en tirer une mesure — « ce scan a lu la liste 30, pas la file Pending ». Les plans d'avant
+ce jour n'ont pas le champ : leur absence vaut 9, puisqu'on ne savait lire que celle-là.
+
+**`[P2]` Le catalogue du submit ignorait `--list`.** Deux sites d'appel existent et je n'avais
+câblé que celui du mode `--catalog` : avec `--list 30` et un cache absent ou périmé, le
+catalogue était cherché dans la liste 9, vide — submit bloqué malgré les offres de la 30.
+
+Quatre reproductions, quatre tests, cinq mutations vérifiées. Sa remarque sur les 700 tests
+ciblés qui ne couvraient rien de tout ça était juste : aucun ne visait ces chemins.
+
 ## 2026-09-21 — Le catalogue des pages AKS, partagé entre les deux VPS
 
 Romain : « ça serait bien qu'on puisse garder ça en mémoire… on peut juste dire : c'est une

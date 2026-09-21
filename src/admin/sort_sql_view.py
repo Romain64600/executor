@@ -40,6 +40,16 @@ class IncompleteScan(RuntimeError):
     """Scan inexploitable : on ne prétend pas l'avoir mesuré."""
 
 
+def _scan_list_id(plan: dict[str, Any]) -> int:
+    """La liste que ce scan a lue. Les plans d'avant le 2026-09-21 n'ont pas le champ : ils
+    ne pouvaient lire que la 9, donc leur absence VAUT 9."""
+
+    try:
+        return int(plan.get("source_list", PENDING_LIST_ID))
+    except (TypeError, ValueError):
+        return int(PENDING_LIST_ID)
+
+
 def _coverage(plan: dict[str, Any]) -> dict[str, Any]:
     """La couverture du scan, en FAIL-CLOSED : pas de bloc = tronqué.
 
@@ -232,6 +242,14 @@ def sort_sql_payload(runs_dir: Path, wanted: str = "",
 
     try:
         dest, by_url, plan = _classify(run_dir)
+        # REVUE DE ROMAIN (2026-09-21) : les requêtes proposées portent toutes
+        # « AND listId=9 ». Un scan d'une AUTRE liste ne mesure donc PAS ce qu'elles
+        # toucheraient — ses compteurs parleraient d'un autre lot de lignes. On refuse de
+        # le présenter comme une mesure, au lieu de compter faux.
+        if _scan_list_id(plan) != int(PENDING_LIST_ID):
+            raise IncompleteScan(
+                f"ce scan a lu la liste {_scan_list_id(plan)}, pas la file Pending "
+                f"({PENDING_LIST_ID}) que les requêtes ciblent — rien n'est mesuré")
     except IncompleteScan as exc:
         for pattern, target in RULES:
             rules.append({"sql": _statement(pattern, target), "pattern": pattern,

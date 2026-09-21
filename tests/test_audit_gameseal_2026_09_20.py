@@ -549,6 +549,108 @@ class AStageCrashLeavesItsReason(unittest.TestCase):
         self.assertEqual(ex.detail, "")
 
 
+class LaRevueDuVingtEtUnSeptembre(unittest.TestCase):
+    """Revue de Romain, e596cd3 → 5d163e1 : quatre points, quatre reproductions.
+
+    Aucun des 700 tests ciblés qu'il a lancés ne les couvrait — ceux-ci les couvrent."""
+
+    # ── [P1] E06 ne doit pas adopter un seau BUNDLE ────────────────────────────────
+    def test_e06_ne_prend_jamais_un_bundle(self):
+        """« Une offre Standard face à une page {8: Bundle} devient un candidat Bundle.
+        L'adoption du seul seau intervient après le contrôle anti-bundle et le contourne. »"""
+
+        offer = NormalizedOffer(offer_id="1", name="Neon Beats (PC) Steam Key - GLOBAL",
+                                url="https://gameseal.com/x-pc-steam-key-global", merchant="GameSeal")
+        for editions in ({"8": "Bundle"}, {"4711": "Deluxe Pack"}, {"77": "Trilogy"}):
+            with self.subTest(editions=editions):
+                res = match_offer(offer, resolver=lambda n, **k: _page(editions, aks_name="Neon Beats"))
+                self.assertIsInstance(res, SkippedOffer, f"{editions} ne doit JAMAIS entrer")
+                self.assertIn("bundle", res.reason.lower())
+
+    def test_e06_adopte_toujours_un_seau_legitime(self):
+        offer = NormalizedOffer(offer_id="1", name="Neon Beats (PC) Steam Key - GLOBAL",
+                                url="https://gameseal.com/x-pc-steam-key-global", merchant="GameSeal")
+        res = match_offer(offer, resolver=lambda n, **k: _page({"5": "Early Access"}, aks_name="Neon Beats"))
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+        self.assertEqual(res.edition_id, "5")
+
+    # ── [P1] la branche compte ne doit pas produire une clé ────────────────────────
+    def _difmark(self, url, offer_name, raw_platform="STEAM", raw_region="GLOBAL"):
+        from src.merchants.difmark import DifmarkOfferAttributes
+
+        offer = NormalizedOffer(offer_id="1", name="Un Jeu Standard Edition", url=url,
+                                merchant="Difmark")
+        attrs = DifmarkOfferAttributes(raw_platform=raw_platform, raw_region=raw_region,
+                                       offer_name=offer_name)
+        page = _page({"1": "Standard"}, aks_name="Un Jeu")
+        return match_offer(offer, resolver=lambda n, **k: page,
+                           difmark_offer_resolver=lambda u: attrs, consoles=True)
+
+    def test_un_offer_name_vide_ne_devient_pas_une_cle(self):
+        """La reproduction de Romain : URL ps5-account, titre sans « (Account) », API STEAM,
+        offer_name VIDE → c'était un candidat sur la page de clé, région GLOBAL(2)."""
+
+        res = self._difmark("https://difmark.com/en/buy-console-account-un-jeu-ps5-account-1", "")
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("offer_name vide", res.reason)
+
+    def test_une_url_ps5_contre_une_page_steam_est_une_contradiction(self):
+        res = self._difmark("https://difmark.com/en/buy-console-account-un-jeu-ps5-account-1",
+                            "Un Jeu (Steam Account)")
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("contradictoire", res.reason)
+
+    def test_une_vraie_cle_difmark_passe_toujours(self):
+        """Le segment « account » de l'URL est du GABARIT chez Difmark : il ne doit pas, à
+        lui seul, refuser une vraie clé (sinon on casserait le chemin historique)."""
+
+        res = self._difmark("https://difmark.com/en/buy-console-account-un-jeu-steam-account-1",
+                            "Un Jeu (Steam)")
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+
+    # ── [P1] un scan d'une autre liste n'est pas une mesure du pending ─────────────
+    def test_un_scan_de_la_liste_30_nest_pas_une_mesure_pour_la_9(self):
+        """« Avec --list 30, le plan déclare encore la liste 9. La vue SQL sélectionne ce
+        scan comme complet et "mesuré", alors que ses requêtes ciblent listId=9. »"""
+
+        import tempfile
+        from src.admin.sort_sql_view import sort_sql_payload
+
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "runs" / "scan30"
+            d.mkdir(parents=True)
+            (d / "offers.json").write_text(json.dumps({"offers": [
+                {"offer_id": "1", "name": "Jeu", "url": "https://m.test/a-gift-card-20"}]}),
+                encoding="utf-8")
+            (d / "sort_plan.json").write_text(json.dumps({
+                "by_list": {}, "unrouted": [], "source_list": 30,
+                "coverage": {"truncated": False}}), encoding="utf-8")
+            payload = sort_sql_payload(Path(tmp) / "runs", "scan30", repo_root=Path(tmp))
+        self.assertFalse(payload["measured"])
+        self.assertIn("liste 30", payload["note"])
+        self.assertEqual(payload["proposals"], [])
+
+    def test_un_scan_du_pending_reste_mesure(self):
+        import tempfile
+        from src.admin.sort_sql_view import sort_sql_payload
+
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "runs" / "scan9"
+            d.mkdir(parents=True)
+            (d / "offers.json").write_text(json.dumps({"offers": [
+                {"offer_id": "1", "name": "Jeu", "url": "https://m.test/a-gift-card-20"}]}),
+                encoding="utf-8")
+            (d / "sort_plan.json").write_text(json.dumps({
+                "by_list": {}, "unrouted": [], "source_list": 9,
+                "coverage": {"truncated": False}}), encoding="utf-8")
+            payload = sort_sql_payload(Path(tmp) / "runs", "scan9", repo_root=Path(tmp))
+        self.assertTrue(payload["measured"])
+
+    def test_le_scan_ecrit_la_liste_quil_a_lue(self):
+        src = (ROOT / "scripts" / "08_sort_plan.py").read_text(encoding="utf-8")
+        self.assertIn('plan["source_list"] = int(args.list_id)', src)
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -705,8 +807,11 @@ class TheSubmitCanWorkOnAnotherList(unittest.TestCase):
         src = (ROOT / "scripts" / "05_submit.py").read_text(encoding="utf-8")
         self.assertIn('"--list"', src)
         self.assertIn("feed_page = feed_page_for_list(args.list_id)", src)
-        # les TROIS chemins qui lisent le feed doivent le recevoir
-        self.assertEqual(src.count("feed_page=feed_page"), 3, "catalogue, inspect et submit")
+        # les QUATRE chemins qui lisent le feed doivent le recevoir : mode --catalog,
+        # inspect, submit, et le catalogue rafraîchi quand le cache est absent ou périmé
+        # (ce dernier manquait — revue de Romain du 2026-09-21).
+        self.assertEqual(src.count("feed_page=feed_page"), 4,
+                         "catalogue, inspect, submit, et le catalogue hors cache")
 
     def test_the_blacklist_is_refused_here_too(self):
         from src.extractor import feed_page_for_list

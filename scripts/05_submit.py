@@ -561,9 +561,14 @@ def _main() -> int:
             if write and args.catalog_cache:
                 catalog = _load_catalog_cache(args.catalog_cache, args.store_id)
                 if catalog is None:
+                    # REVUE DE ROMAIN (2026-09-21) : « le catalogue ignore --list avec le
+                    # cache — avec --list 30 et un cache absent ou expiré, le catalogue est
+                    # cherché dans la liste 9. Si celle-ci est vide, le submit reste bloqué
+                    # malgré les offres présentes en liste 30. » Exact : les deux sites
+                    # d'appel existent et je n'avais câblé que celui du mode --catalog.
                     catalog = fetch_session_catalog(
                         session, store_id=args.store_id, available=args.available,
-                        max_pages=max_pages,
+                        max_pages=max_pages, feed_page=feed_page,
                     )
                     _write_catalog_cache(args.catalog_cache, catalog, args.store_id)
                 else:
