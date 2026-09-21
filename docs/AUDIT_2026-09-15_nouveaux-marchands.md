@@ -96,6 +96,14 @@ navigateur était pris par un `08_sort_plan`), avec une ré-implémentation du m
 |---|---|---|---|---|---|---|
 | Difmark | 167 | 1 265 | C | **97** / 5 | **1** / 1 | 99 |
 
+**Corrigé le 2026-09-21 — ces chiffres ignoraient la query string.** Les deux mesures
+ci-dessus (et celle de juillet) coupaient l'URL au `?`. Or c'est LÀ que Difmark écrit ses
+signaux : `marketplace_id` (plateforme), `edition_id` (édition, concordante avec le titre sur
+1 348 / 1 348 lignes), `region_product_id` (région, mais constante à 1 sur 1 347). Détail et
+méthode : `docs/MERCHANTS.md` § Difmark. Une lecture de signaux qui ne regarde que le chemin
+de l'URL sous-estime donc les boutiques qui paramètrent leurs liens — à refaire pour les
+autres classes C avant de les déclarer illisibles.
+
 Nuance que ces chiffres imposent à l'étiquette « classe C » : chez Difmark la **plateforme est
 bien dans l'URL** (`…-pc-epic-games-account-149270`, 97 %), c'est la **région** qui n'est nulle
 part (1 %) — et c'est elle seule qui force l'ouverture de la page de l'offre

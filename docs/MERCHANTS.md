@@ -607,6 +607,28 @@ matcher et le classifieur importent le registre.
   jamais la branche console.
 - **Hooks (cible 14/09)** : `url_ignore_substrings` ; `console_url_families` (chemin
   `/buy-console-account-…-account-<id>` → `"console: ACCOUNT — not a game (R45)"`).
+- **LA QUERY STRING PORTE TOUT (lecture de la liste 30, 2026-09-21).** Le feed *pending*
+  (liste 9) de Difmark est VIDE : ses lignes vivent dans la liste **account (30)**, 299 pages.
+  1 348 lignes distinctes lues sur cinq tranches réparties (pages 1-3, 75-77, 150-152,
+  225-227, 297-299) : **chaque URL porte des paramètres structurés**, que le slug ne dit pas —
+  `?referal=…&marketplace_id=<n>&edition_id=<n>&region_product_id=<n>&coupon=…&seller_id[]=…`,
+  et `foreignId` vaut `<produit>-<région>-<édition>` sur 1 348 / 1 348.
+  - `marketplace_id` = la boutique/plateforme, et il en dit PLUS que le slug : 8 → Xbox (490),
+    5 → PlayStation (462, dont **212 lignes dont le slug ne nomme aucune plateforme**),
+    2 → Steam (381), 10 → Epic (12), 14 → Microsoft (1).
+  - `edition_id` = l'édition, et elle concorde avec le titre sur **1 348 / 1 348** : 780 =
+    Standard (1 331 lignes, toutes titrées « Standard Edition », zéro exception), et les 17
+    autres nomment toutes leur palier — 2 = Deluxe, 3 = Complete, 15 = Ultimate, 751 =
+    Upgrade, 12 = Definitive, 1004 = Vault, 1463 = Early Access Pack.
+  - `region_product_id` = **1 sur 1 347 lignes** (une seule exception, 59, sur un Season Pass
+    PS4). L'emplacement est connu, mais la VALEUR ne discrimine pas : il faudrait la table de
+    correspondance Difmark — ou ancrer une fois « 1 = ? » en ouvrant une page — avant d'en
+    tirer une région AKS.
+  - **La région n'est PAS dans le nom** : 0 sur 1 348 (les « trouvailles » d'un scan naïf sont
+    des sous-chaînes — « Lily Fant**asia** », « the Devil is **in** the Details »).
+  Conséquence : la plateforme et l'édition de Difmark sont lisibles **sans ouvrir la page
+  marchande**. Seule la région manque encore, ce qui le rapproche de la classe B (Kinguin /
+  MMOGA : politique boutique à arrêter une fois) plutôt que de la classe C.
 - **Statut live** : parqué (hors liste blanche).
 
 ## GameBoost (store 157, liste blanche safe-auto depuis le 2026-09-16)
