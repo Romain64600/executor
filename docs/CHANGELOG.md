@@ -3,6 +3,41 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-21 — Le catalogue des pages AKS, partagé entre les deux VPS
+
+Romain : « ça serait bien qu'on puisse garder ça en mémoire… on peut juste dire : c'est une
+page standard, une page DLC, une page early access jusqu'à telle date ou sans date limite, une
+page console Xbox Series X… on peut créer une DB partagée sur nos VPS, non ? » — oui.
+
+**Ce qu'il garde.** Pour chaque page AKS LUE : le gabarit (`page_kind` — clé, compte Steam,
+console PS4/PS5/Xbox One/Xbox Series…), la **nature** (standard / DLC / accès anticipé), la
+**carte d'éditions** et la **carte de régions** telles quelles, les plateformes officielles,
+les onglets console, et la date de lecture. Deux axes séparés volontairement : la page compte
+de « Subnautica 2 » est À LA FOIS une page de compte Steam ET une page d'accès anticipé — les
+mélanger perdrait précisément ce qui a fait entrer quatre offres en Standard le même jour.
+`describe()` recompose la phrase (« page compte Steam, accès anticipé »).
+
+**Ce qu'il ne coûte pas.** La page est déjà ouverte par le match : la nature est un
+sous-produit, zéro requête de plus. Mesuré entre les deux VPS : **48 ms** l'aller-retour SSH
+multiplexé (430 ms sans multiplexage), **~107 ms** pour 100 écritures groupées, **~138 ms**
+pour relire 100 pages — contre **145 à 226 s** pour matcher une page de 100 offres. Soit
+**0,1 %**. En face, ~7 % des résolutions d'un run tombent sur une page déjà lue.
+
+**Les trois garde-fous, tenus par construction et par test.** (1) *Jamais un échec en cache* —
+seule une résolution réussie entre ; une page créée plus tard doit rester trouvable (c'est ce
+piège qui a coûté 434 offres distinctes au balayage GameSeal du 19/09). (2) *Une durée de vie*
+(30 jours) : un vieux relevé n'est plus une réponse, mais rien n'est effacé — « Early Access »
+devient « Standard » à la sortie. (3) *Jamais une raison d'échouer* : base illisible, hôte
+injoignable, verrou — tout est avalé. Un **disjoncteur** coupe le catalogue après deux échecs :
+mesure faite, un hôte injoignable coûtait 120 s par lot, il en coûte 10 une fois pour toutes.
+
+**Comment c'est branché.** `scripts/03_match.py --page-catalog <chemin | user@hôte:chemin>` ;
+vide = comportement d'avant. Le résolveur est ENVELOPPÉ (`CatalogRecorder.wrap`) : `src/matcher.py`
+n'importe pas le catalogue et ses tests n'en voient rien (test dédié). Un seul lot écrit à la
+fin du match, y compris quand le stage s'arrête sur un throttle — les pages lues avant l'arrêt
+sont de vraies lectures. Inspection : `scripts/15_page_catalog.py --stats | --get <slug> |
+--nature early_access`.
+
 ## 2026-09-21 — [E06] L'édition écrite doit être VENDUE par la page (Standard compris)
 
 Romain, sur une offre qu'il a repérée lui-même : « t'as rentré un DLC en standard ». Exact.

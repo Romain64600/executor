@@ -25,7 +25,8 @@ if str(ROOT) not in sys.path:
 
 from src.aks_env import AKS_DIRECT_URL, AKS_STAFF_UA, http_get, validate_aks_direct_status  # noqa: E402
 from src.contracts import NormalizedFeed, NormalizedOffer  # noqa: E402
-from src.matcher import AksThrottled, match_feed, resolve_aks  # noqa: E402
+from src.matcher import AksThrottled, match_feed, resolve_aks, resolve_aks_url  # noqa: E402
+from src.page_catalog import CatalogRecorder, catalog_from_spec  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
 
 
@@ -109,6 +110,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Match a normalized feed to AKS (read-only).")
     parser.add_argument("offers", help="Path to offers.json (a NormalizedFeed).")
     parser.add_argument("--max-candidates", type=int, default=100)
+    parser.add_argument(
+        "--page-catalog", default="",
+        help="Catalogue des pages AKS à alimenter : chemin local, ou "
+             "'<user>@<hôte>:<chemin>' pour la base PARTAGÉE de l'autre VPS. Vide = aucun "
+             "(comportement d'avant). Le catalogue n'enregistre QUE des résolutions "
+             "réussies, en un seul lot à la fin du match, et ne peut jamais faire échouer "
+             "le stage : c'est un accélérateur, pas une dépendance.")
     parser.add_argument("--out-dir", default=None)
     parser.add_argument(
         "--mode", default="safe", choices=["safe", "learning", "advanced"],
@@ -160,11 +168,18 @@ def main() -> int:
     circuit_open = _search_circuit_is_open(args.search_circuit_file)
     if circuit_open:
         logger.log("search_circuit_preopened", file=args.search_circuit_file)
+    # Le catalogue se remplit de ce que le match LIT DÉJÀ : le résolveur est enveloppé, le
+    # matcher ne le connaît pas et ne l'importe pas (ses tests n'en voient rien). Un seul
+    # lot est écrit à la fin — un aller-retour SSH groupé (~0,1 s) contre les 145-226 s que
+    # prend le match d'une page de 100 offres.
+    catalog = catalog_from_spec(args.page_catalog, source=f"03_match {feed.run_id}")
+    recorder = CatalogRecorder(catalog, source=f"03_match {feed.run_id}")
     try:
         candidates, skipped = match_feed(
-            feed, resolve_aks, max_candidates=args.max_candidates,
+            feed, recorder.wrap(resolve_aks), max_candidates=args.max_candidates,
             on_progress=lambda d: logger.log("match_progress", **d), stats=stats,
             search_circuit_open=circuit_open,
+            page_resolver=recorder.wrap_url(resolve_aks_url),
             consoles=bool(args.consoles),          # [R45] console branch (default ON since 2026-09-15)
         )
     except AksThrottled as exc:
@@ -179,10 +194,17 @@ def main() -> int:
                                            indent=2), encoding="utf-8")
         print(json.dumps({"aborted": True, "reason": "aks_throttled", "detail": str(exc)},
                          indent=2))
+        # Les pages LUES avant le throttle sont de vraies lectures : elles entrent quand
+        # même au catalogue. Un abandon n'invalide pas ce qu'on a appris.
+        logger.log("page_catalog", written=recorder.flush(), aborted=True)
         return 2
     if aborted_path.exists():
         aborted_path.unlink()      # a clean match supersedes a previous abort of this dir
     _search_circuit_persist(args.search_circuit_file, stats, circuit_open)
+    if catalog is not None:
+        ecrites = recorder.flush()
+        logger.log("page_catalog", written=ecrites, db=args.page_catalog,
+                   error=(catalog.last_error or None), disabled=catalog.disabled)
 
     (out_dir / "candidates.json").write_text(
         json.dumps([c.to_dict() for c in candidates], indent=2), encoding="utf-8"

@@ -747,6 +747,25 @@ Un plan re-jugé après coup porte la trace de l'opération : `recomputed_at`,
 `recomputed_note` et `recomputed_from` (les valeurs d'origine), pour qu'un lecteur voie
 que la couverture a été recalculée et sur quelle preuve.
 
+## state/page_catalog.db — le catalogue des pages AKS (2026-09-21)
+
+SQLite, une ligne par **(slug, gabarit)**, alimentée par `03_match --page-catalog` avec ce que
+le match a DÉJÀ lu. Colonnes : `slug`, `page_kind` (cd-key / steam-account / ps4 / ps5 /
+xbox-one / xbox-series / nintendo-switch…), `url`, `product_id`, `aks_name`, **`nature`**
+(`standard` / `dlc` / `early_access` / `inconnue`), `early_access_until`, `editions` et
+`regions` (JSON, cartes brutes), `official_platforms`, `console_pages`, `page_platform`,
+`read_at` (UTC), `source`.
+
+La **nature** décrit le CONTENU, le **gabarit** décrit la page : une page peut être à la fois
+« compte Steam » et « accès anticipé ». `src.page_catalog.describe()` rend la phrase.
+
+Base **partagée** entre les deux VPS : `<user>@<hôte>:<chemin>` ouvre un tunnel SSH multiplexé
+(ControlMaster) et travaille en accès GROUPÉS. `journal_mode=WAL` + `busy_timeout` : deux
+balayages qui écrivent en même temps ne se bloquent pas. Trois invariants : jamais un échec en
+cache, une durée de vie de 30 jours à la lecture (rien n'est effacé), et **aucune erreur ne
+remonte** — disjoncteur après deux échecs. Le catalogue ne décide jamais à la place d'une
+lecture fraîche : au moment d'écrire une offre, la carte d'éditions relue reste l'autorité.
+
 ## Run log (JSONL)
 
 `src/run_log.py`'s `RunLogger` writes one JSON object per line to
