@@ -170,7 +170,9 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   épuisée » ou un garde « prix nul » : NE PAS l'ajouter.
 
 - **[R18b] R18 se RETIRE quand le titre annonce un palier que la page ne nomme pas (2026-09-20,
-  « le correctif que tu veux »).** R18 reste le SEUL juge du seau DLC(16) — la décision du
+  « le correctif que tu veux » — CONFIRMÉ le 2026-09-21 sur le cas concret, « garde ta règle »,
+  après que Romain a lui-même écarté la lecture « ça rentre quand même » qui lui était proposée
+  en regard de son ruling sur les offres épuisées).** R18 reste le SEUL juge du seau DLC(16) — la décision du
   17/09 est intacte : un titre sans marqueur sur une page mono-seau DLC entre en DLC(16). La
   seule exception ajoutée : si le titre marchand annonce un PALIER (Deluxe / Ultimate / Gold /
   Complete, lu par `detect_edition`) que le NOM DE LA PAGE AKS ne porte pas, R18 laisse la
