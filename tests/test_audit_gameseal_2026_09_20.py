@@ -654,3 +654,35 @@ class TheCoverageIsJudgedOnWhatWasObserved(unittest.TestCase):
     def test_the_sort_cli_uses_the_shared_rule(self):
         plan = (ROOT / "scripts" / "08_sort_plan.py").read_text(encoding="utf-8")
         self.assertIn("coverage_from_stats(", plan)
+
+
+class TheSubmitCanWorkOnAnotherList(unittest.TestCase):
+    """`scripts/05_submit.py --list` — 2026-09-21, Romain : « passe sur une page difmark et
+    rentre les offres que t'y trouves ».
+
+    Les lignes Difmark ne sont plus dans la file Pending (liste 9, vide) mais dans la liste
+    *account* (30). Le submit localise la ligne et PROUVE sa disparition en scannant le feed :
+    sans le drapeau il scannerait la 9 et refuserait « offer not in current feed ». Le
+    plombage existait déjà côté `src/submitter.py` (`feed_page` traversait scan, index,
+    recherche et preuve) — seul le CLI ne l'exposait pas."""
+
+    def test_the_cli_declares_the_flag_and_threads_it(self):
+        src = (ROOT / "scripts" / "05_submit.py").read_text(encoding="utf-8")
+        self.assertIn('"--list"', src)
+        self.assertIn("feed_page = feed_page_for_list(args.list_id)", src)
+        # les TROIS chemins qui lisent le feed doivent le recevoir
+        self.assertEqual(src.count("feed_page=feed_page"), 3, "catalogue, inspect et submit")
+
+    def test_the_blacklist_is_refused_here_too(self):
+        from src.extractor import feed_page_for_list
+
+        with self.assertRaises(ValueError):
+            feed_page_for_list(8)
+
+    def test_the_submitter_scans_the_list_it_is_given(self):
+        """Le paramètre n'est pas décoratif : c'est l'URL scannée qui change."""
+        from src.extractor import feed_page_for_list, feed_url
+
+        url = feed_url("167", page=3, feed_page=feed_page_for_list(30), available="all")
+        self.assertIn("page=aks-merchant-feeds-30", url)
+        self.assertNotIn("aks-merchant-feeds-9", url)

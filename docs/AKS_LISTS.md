@@ -19,9 +19,13 @@ Ce qu'il faut savoir :
   définitives ne se re-travaillent pas. Le DÉPLACEMENT vers la 8 est intact (le tri y route,
   391 lignes le 21/09, et le mover scanne la liste cible pour prouver son déplacement — ces
   chemins ne passent pas par le sélecteur).
-- **Lecture seule.** Le chemin d'ÉCRITURE (balayage `scripts/10`, submit `scripts/05`) reste
-  sur la liste 9 : une offre localisée puis prouvée « disparue du feed » l'est dans la file
-  pending. Lire la liste 30 sert à auditer, pas à saisir.
+- **Le submit aussi, depuis le 2026-09-21** (Romain : « passe sur une page difmark et rentre
+  les offres que t'y trouves »). `scripts/05_submit.py --list <id>` : la ligne est localisée
+  ET sa disparition prouvée dans CETTE liste. Sans le drapeau, une ligne qui vit dans la 30
+  serait cherchée dans la 9 et le submit refuserait « offer not in current feed ». Le
+  plombage existait déjà dans `src/submitter.py` (`feed_page` traverse le scan, l'index, la
+  recherche et la preuve) ; seul le CLI ne l'exposait pas. Le **balayage** (`scripts/10`),
+  lui, reste sur la 9 : c'est la file pending qu'on couvre page par page.
 - Un id mal formé (`0`, `-1`, `abc`, vide) est refusé avec le même soin que `store_id` —
   sinon on scannerait silencieusement une autre liste que celle demandée.
 - Déclencheur : le feed pending de **Difmark** est vide (0 ligne le 21/09) alors que ses

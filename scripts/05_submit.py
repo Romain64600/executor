@@ -70,6 +70,7 @@ if str(ROOT) not in sys.path:
 
 from src.aks_env import OFFICIAL_CDP_ENDPOINT  # noqa: E402
 from src.browser_lock import BrowserBusyError, browser_lock  # noqa: E402
+from src.extractor import feed_page_for_list  # noqa: E402
 from src.invariants import build_report  # noqa: E402
 from src.step_guard import BlockLedger, StepGuard  # noqa: E402
 from src.pacing import Pacer  # noqa: E402
@@ -221,6 +222,12 @@ def _main() -> int:
     parser.add_argument("--endpoint", default=OFFICIAL_CDP_ENDPOINT)
     parser.add_argument("--available", default="all", choices=["all", "pending"])
     parser.add_argument(
+        "--list", dest="list_id", type=int, default=9,
+        help="Liste AKS où la ligne est localisée ET où sa disparition est prouvée "
+             "(9 = file Pending, défaut ; 30 = account…). La liste 8 est refusée. "
+             "Une ligne qui vit dans une autre liste n'est pas trouvable dans la 9 : "
+             "sans ce drapeau le submit refuserait « offer not in current feed ».")
+    parser.add_argument(
         "--max-pages", type=int, default=None,
         help="Feed-scan page ceiling for the coverage scan. Default: AUTO — "
              "derived from the extraction's own feed page count (offers.json "
@@ -339,6 +346,7 @@ def _main() -> int:
     try:
         page_pacer = Pacer.from_spec(args.pace_pages)
         offer_pacer = Pacer.from_spec(args.pace_offers)
+        feed_page = feed_page_for_list(args.list_id)
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 2
@@ -401,7 +409,8 @@ def _main() -> int:
         try:
             with SubmitSession(args.endpoint) as session:
                 catalog = fetch_session_catalog(
-                    session, store_id=args.store_id, available=args.available, max_pages=max_pages,
+                    session, store_id=args.store_id, available=args.available,
+                    max_pages=max_pages, feed_page=feed_page,
                 )
         except FEED_UNREADABLE_EXCS as exc:
             return abort(f"fail-closed abort (feed/CDP unreadable): {exc}")
@@ -455,6 +464,7 @@ def _main() -> int:
                 result = InspectSubmitter(session, logger=logger, **pacer_kw).run(
                     run_id=run_id, merchant=args.merchant, store_id=args.store_id,
                     approved=approved_slice, available=args.available, max_pages=max_pages,
+                    feed_page=feed_page,
                 )
         except FEED_UNREADABLE_EXCS as exc:
             return abort(f"fail-closed abort (feed/CDP unreadable): {exc}")
@@ -561,6 +571,7 @@ def _main() -> int:
             result = submitter.run(
                 run_id=run_id, merchant=args.merchant, store_id=args.store_id,
                 approved=approved, available=args.available, max_pages=max_pages, limit=limit,
+                feed_page=feed_page,
                 page_hint=args.page_hint, page_window=args.page_window,
                 locate_by_search=args.locate_by_search,
                 prove_gone_by_search=args.prove_gone_by_search,
