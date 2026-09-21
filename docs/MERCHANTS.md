@@ -591,7 +591,7 @@ matcher et le classifieur importent le registre.
 - **Statut live** : dans la liste blanche mais **jamais balayé** ; dry-run exigé avant tout
   sweep réel (Romain, 2026-09-11).
 
-## Difmark (167, parqué)
+## Difmark (167, parqué) — **classe B** (Romain, 2026-09-21)
 
 - **Fichier** : `src/merchants/difmark.py`.
 - **Grammaire PC** : titres nus `<Nom> Standard Edition` ; chaque URL porte un segment
@@ -627,8 +627,21 @@ matcher et le classifieur importent le registre.
   - **La région n'est PAS dans le nom** : 0 sur 1 348 (les « trouvailles » d'un scan naïf sont
     des sous-chaînes — « Lily Fant**asia** », « the Devil is **in** the Details »).
   Conséquence : la plateforme et l'édition de Difmark sont lisibles **sans ouvrir la page
-  marchande**. Seule la région manque encore, ce qui le rapproche de la classe B (Kinguin /
-  MMOGA : politique boutique à arrêter une fois) plutôt que de la classe C.
+  marchande**.
+- **CLASSE B — il n'y a pas de région géographique chez Difmark (Romain, 2026-09-21).** Sa
+  décision, mot pour mot : « Difmark, tu peux considérer en classe B, car il n'y a pas de
+  différentes régions géographiques. On a des régions spéciales (compte Steam, Epic, tout
+  ça), mais on n'a pas de régionalisation. » La « région » d'une ligne Difmark, c'est le SEAU
+  DE COMPTE de sa plateforme, pas un pays. **Ancré en lecture seule le même jour** sur les
+  deux seules valeurs que `region_product_id` prend (1 sur 1 347 lignes, 59 sur une) :
+  `resolve_difmark_offer` rend `raw_region='GLOBAL'` pour les deux, et le nom d'offre de la
+  page le dit en toutes lettres — « DYNASTY WARRIORS 9 (XBX 1 ACCOUNT, **REGION FREE**) » et
+  « Fallout 4 - Season Pass (PS4 ACCOUNT, **REGION FREE**) ». Un audit « trouvera » que
+  `region_product_id` n'est pas mappé et voudra fermer : il n'y a rien à mapper, les deux
+  valeurs observées désignent la même chose.
+- **Ce qui n'a PAS changé** : Difmark reste **parqué** (hors liste blanche safe-auto) et ses
+  lignes restent des COMPTES, refusés par `[R45]` (« console: ACCOUNT — not a game »). Le
+  classement en B dit que la boutique est LISIBLE sans page marchande, pas qu'on la saisit.
 - **Statut live** : parqué (hors liste blanche).
 
 ## GameBoost (store 157, liste blanche safe-auto depuis le 2026-09-16)

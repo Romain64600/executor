@@ -94,7 +94,7 @@ navigateur était pris par un `08_sort_plan`), avec une ré-implémentation du m
 
 | Boutique | id | lignes | classe | plateforme % URL / titre | région % URL / titre | mot d'édition % titre |
 |---|---|---|---|---|---|---|
-| Difmark | 167 | 1 265 | C | **97** / 5 | **1** / 1 | 99 |
+| Difmark | 167 | 1 265 | ~~C~~ **B** | **97** / 5 (et 100 % par `marketplace_id`) | pas de régionalisation (Romain 21/09) | 100 % par `edition_id` |
 
 **Corrigé le 2026-09-21 — ces chiffres ignoraient la query string.** Les deux mesures
 ci-dessus (et celle de juillet) coupaient l'URL au `?`. Or c'est LÀ que Difmark écrit ses
