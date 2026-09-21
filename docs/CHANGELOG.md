@@ -3,6 +3,18 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-21 — Une offre épuisée n'est pas une erreur (ruling de Romain)
+
+L'audit GameSeal signalait 62 lignes écrites à prix `0` en demandant à Romain si une offre à
+zéro devait être publiée. Sa réponse, après avoir regardé les lignes : « à part le fait que ce
+soit out of stock, je vois pas d'erreurs. C'est peut-être des offres qui vont restocker à
+l'avenir. Vu que c'est dans leur feed en pending offers, vaut mieux les avoir au cas où, un
+jour, ils restockent. » Même logique que le retrait de R25 : une offre PENDING est à ajouter.
+
+Aucun changement de code : **ni le stock ni le prix ne conditionnent quoi que ce soit** dans le
+pipeline (vérifié — le prix reste un signal de routage, jamais un bloqueur, §6). La décision est
+inscrite dans `AGENTS.md` pour qu'un audit ne la re-propose pas en « garde prix nul ».
+
 ## 2026-09-20 — Un stage qui CRASHE laisse son traceback (3e perte de motif en deux jours)
 
 Le run Gamerall `20260920-154717` s'est arrêté page 7 sur « extract: **exit 1** » — un exit 1,

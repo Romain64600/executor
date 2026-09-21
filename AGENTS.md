@@ -158,6 +158,17 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   abandonnée : elle, elle relâcherait l'identité. Un audit reproposera le paquet entier ; ne
   reprendre que la moitié déjà faite.
 
+- **Une offre ÉPUISÉE (stock `n`, prix `0`) est une offre à SAISIR — Romain, 2026-09-21.** Sa
+  ruling, après avoir regardé les lignes que l'audit GameSeal avait signalées : « à part le
+  fait que ce soit out of stock, je vois pas d'erreurs. C'est peut-être des offres qui vont
+  restocker à l'avenir. Vu que c'est dans leur feed en pending offers, vaut mieux les avoir au
+  cas où, un jour, ils restockent. » C'est la même logique que le retrait de R25 : une offre
+  PENDING est à ajouter, point. Le code est déjà d'accord — ni le stock ni le prix ne
+  conditionnent quoi que ce soit dans `src/matcher.py` / `src/submitter.py` (le prix reste un
+  signal de routage, jamais un bloqueur, EXECUTOR_RULES §6). Un audit « trouvera » ces lignes
+  (le balayage GameSeal du 19-20/09 en a écrit 62 à prix `0`) et voudra un skip « offre
+  épuisée » ou un garde « prix nul » : NE PAS l'ajouter.
+
 - **[R18b] R18 se RETIRE quand le titre annonce un palier que la page ne nomme pas (2026-09-20,
   « le correctif que tu veux »).** R18 reste le SEUL juge du seau DLC(16) — la décision du
   17/09 est intacte : un titre sans marqueur sur une page mono-seau DLC entre en DLC(16). La
