@@ -84,6 +84,27 @@ aujourd'hui, à re-regarder quand elles se remplissent.
 | Driffle | 127 | 100 |  | B- | 67 / 67 / 67 | 88 / 98 / 98 | 31 | 38 / 97 | STEAM 38, EPIC 10, UBISOFT 9, MSSTORE 9 | GLOBAL 71, EU 15, OTHER 5, US 4 |
 | Instant Gaming | 28 | 100 |  | C | 0 / 0 / 0 | 0 / 4 / 4 | 18 | 0 / — |  | ASIA 3, DE 1, OTHER 1 |
 
+**Difmark (167) — ajouté le 2026-09-21, Romain : « je vois pas difmark dans le tableau ».** Il
+manquait pour deux raisons cumulées : la méthode excluait les 12 boutiques déjà prises en
+charge (dont Difmark), et l'étalonnage ci-dessus n'a repris que les 6 marchands qui avaient un
+run récent — Difmark est parqué, il n'en avait pas. Mesure faite le 21/09 sur **1 265 lignes
+distinctes sauvegardées** (les `skipped.json` des runs d'août, pas un dump frais de page 1 : le
+navigateur était pris par un `08_sort_plan`), avec une ré-implémentation du même comptage —
+`analyze_signals.py` n'existe plus :
+
+| Boutique | id | lignes | classe | plateforme % URL / titre | région % URL / titre | mot d'édition % titre |
+|---|---|---|---|---|---|---|
+| Difmark | 167 | 1 265 | C | **97** / 5 | **1** / 1 | 99 |
+
+Nuance que ces chiffres imposent à l'étiquette « classe C » : chez Difmark la **plateforme est
+bien dans l'URL** (`…-pc-epic-games-account-149270`, 97 %), c'est la **région** qui n'est nulle
+part (1 %) — et c'est elle seule qui force l'ouverture de la page de l'offre
+(`resolve_difmark_offer`). Le 99 % d'« édition » est un leurre : tous les titres finissent par
+« Standard Edition », c'est du gabarit, pas une information. À rapprocher d'Instant Gaming,
+l'autre référence de classe C, où **rien** n'est lisible (0 / 0). Enfin ces lignes sont très
+majoritairement des **COMPTES** (`buy-console-account-…`), refusés par `[R45]` — la lecture
+n'ouvre donc pas de voie de saisie, elle situe la boutique sur l'échelle.
+
 Lecture : G2A / Eneba / Driffle écrivent tout dans l'URL et le titre (classe A) ; Kinguin et MMOGA déclarent la plateforme mais laissent la région implicite (GLOBAL par défaut, code pays sinon — classe B, saisis grâce à une politique boutique déclarée dans leur fichier marchand) ; Instant Gaming n'écrit rien dans ses titres (classe C) et n'est saisi que parce que son fichier marchand lit la page de l'offre (`data-platform`). Les nouvelles boutiques se rangent sur la même échelle.
 
 ## Résultat — boutiques non prises en charge
