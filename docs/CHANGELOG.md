@@ -3,6 +3,32 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-22 — Audit marchand : GOG.com (lecture seule, rien n'est écrit)
+
+Romain : « regarde quel type de marchand est GOG, fais juste un audit. »
+Trace complète : [`AUDIT_2026-09-22_gog.md`](AUDIT_2026-09-22_gog.md).
+
+**GOG n'est pas un revendeur de clés** : c'est une boutique de premier rang qui vend ses
+propres jeux sans DRM — sur les pages AKS elle voisine Epic Games et le Humble Store, pas les
+revendeurs. Il n'y a donc ni région ni plateforme à lire, parce qu'il n'y en a qu'une.
+
+Mesures sur les 3 473 lignes du scan tous-magasins : 0,3 % de mot de plateforme, 0,3 % de mot
+de région, 0 % de mot « key » — et les 22 lignes concernées sont **toutes** des faux positifs
+(« Two Worlds *Epic* Edition », « Detective Girl of the *Steam* City », « War in *Europe* »).
+Une seule forme d'URL, 3 473 fois sur 3 473. Côté AKS, huit pages lues en direct : la région
+GOG est **6 sur 10 lignes sur 10**, invariable ; seule l'édition bouge.
+
+Aujourd'hui **100 % des lignes GOG sont refusées** par `[R27]`/`[R51]` — « no platform in
+title ». Et il ne faut surtout pas y répondre en lisant le titre : la plateforme devinée
+ainsi donne 3 472 erreurs sur 3 473. La source déterministe est le DOMAINE. Vérifié en
+injectant une configuration qui déclare la plateforme depuis l'URL : la ligne devient un
+candidat `platform=GOG region=6 edition=1`. Ceci ne rouvre pas le trou que `[R51]` a fermé —
+R51 refusait d'INFÉRER la plateforme depuis la page AKS, ici elle est DÉCLARÉE par le domaine.
+
+Volume : 1 553 lignes ont déjà une page AKS, 1 778 n'en ont pas, 142 sont des démos.
+
+Rien n'a été écrit : pas de fichier marchand, pas d'entrée en liste blanche. Décision à Romain.
+
 ## 2026-09-22 — La recherche d'AKS est morte ; le sitemap la remplace, et le tri par identifiants
 
 Romain : « comment ça se fait qu'on ait toujours 55 000 offres en pending ? » puis, sur la
