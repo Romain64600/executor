@@ -78,6 +78,14 @@ function syncGo() {
   // ce sweep est deja en cours »); the server refuses it too (409 submit_in_progress).
   const all = $("#launch-all");
   if (all) all.disabled = !(SUGGEST_READY && !SWEEP_RUNNING && go);
+  // Les groupes suivent la même règle que le sweep de nuit : le GO tapé, et aucun run en
+  // cours (une machine tient un seul onglet — le serveur répond 409 de toute façon).
+  if (typeof GROUPS !== "undefined") {
+    GROUPS.forEach((g) => {
+      const b = $("#launch-group-" + g.name);
+      if (b) b.disabled = !(SUGGEST_READY && !SWEEP_RUNNING && go);
+    });
+  }
   $("#launch").disabled = !ok;
   // Réfuteur du 2026-09-19 : « + marchand » restait actif après « Sweep terminé », et le clic
   // partait avec run_id=null. Le serveur exige maintenant le run_id ; côté écran, pas de
@@ -338,12 +346,66 @@ function renderRecap(d) {
   }
 }
 
+// ---- groupes de marchands (une machine, un groupe) ----
+// Romain, 2026-09-22 : « je ne vois pas les groupes A et B sur l'admin ». La console ne les
+// invente pas : elle affiche ce que le serveur lui envoie et lui renvoie un NOM de groupe —
+// c'est le serveur qui le détend sur la liste blanche, comme pour le sweep de nuit.
+let GROUPS = [];
+
+function renderGroups() {
+  const zone = $("#group-buttons");
+  const note = $("#groups-note");
+  if (!zone) return;
+  zone.textContent = "";
+  if (!GROUPS.length) {
+    if (note) note.textContent = "Aucun groupe déclaré côté serveur.";
+    return;
+  }
+  if (note) {
+    note.textContent = GROUPS.map((g) => "groupe " + g.name + " : " + g.merchants.length
+      + " marchand(s), ~" + g.pending + " lignes en attente").join(" · ") + ".";
+  }
+  GROUPS.forEach((g) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "danger";
+    b.id = "launch-group-" + g.name;
+    b.disabled = true;
+    b.textContent = "Lancer le groupe " + g.name;
+    b.title = g.merchants.map((m) => m.name).join(", ")
+      + " — toutes les pages, un arrêt fail-closed n'arrête pas les autres marchands.";
+    b.addEventListener("click", () => launchGroup(g));
+    zone.appendChild(b);
+  });
+  syncGo();
+}
+
+async function launchGroup(group) {
+  if ($("#go").value.trim().toUpperCase() !== "GO" || SWEEP_RUNNING) return;
+  const body = { group: group.name, all_pages: true, confirm: "GO",
+                 continue_on_halt: true, consoles: $("#consoles").checked };
+  const sp = parseInt($("#start-page").value, 10); if (sp > 0) body.start_page = sp;
+  GROUPS.forEach((g) => { const b = $("#launch-group-" + g.name); if (b) b.disabled = true; });
+  $("#launch-group-msg").textContent = "Lancement du groupe " + group.name + "…";
+  try {
+    const r = await api("api/data-entry/auto", { method: "POST", body: JSON.stringify(body) });
+    $("#launch-group-msg").textContent = "▶ groupe " + group.name + " lancé : " + (r.run_id || "")
+      + " · " + group.merchants.length + " marchand(s) · couverture totale";
+    SWEEP_RUNNING = true;
+  } catch (e) {
+    $("#launch-group-msg").textContent = "✖ " + (e && e.message ? e.message : e);
+    syncGo();
+  }
+}
+
 // ---- init ----
 (async function init() {
   setStatus("Prêt");
   try {
     const d = await api("api/data-entry/merchants");
     SUGGESTED = (d && d.merchants) || [];
+    GROUPS = (d && d.groups) || [];
+    renderGroups();
     const cnt = $("#all-count");
     if (cnt) cnt.textContent = "Aujourd'hui : " + SUGGESTED.length + " marchand(s) — "
       + SUGGESTED.map((m) => m.name).join(", ") + ".";

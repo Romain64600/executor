@@ -669,6 +669,50 @@ class DataEntryAutoAllowlistTests(AppTestCase):
         self.assertNotIn("Wyrel", names)     # supervisé, hors liste
         self.assertNotIn("Gameboost", names)
 
+    def test_groups_served_with_the_merchants(self):
+        """Romain, 2026-09-22 : « je ne vois pas les groupes A et B sur l'admin ». La console
+        les REÇOIT du serveur, elle ne les invente pas."""
+
+        response, body = self._json("GET", "/api/data-entry/merchants")
+        self.assertEqual(response.status, 200)
+        groupes = body.get("groups")
+        self.assertTrue(groupes, "la route doit servir les groupes")
+        self.assertEqual([g["name"] for g in groupes], ["A", "B"])
+        a = next(g for g in groupes if g["name"] == "A")
+        self.assertIn("GameSeal", [m["name"] for m in a["merchants"]])
+        self.assertGreater(a["pending"], 0)
+
+    def test_a_group_launch_expands_server_side(self):
+        vus = []
+        self.manager.start_data_entry_auto = lambda targets, **k: vus.append((targets, k)) or {"run_id": "r"}
+        response, _ = self._json(
+            "POST", "/api/data-entry/auto",
+            body={"group": "A", "confirm": "GO", "all_pages": True, "by": "Romain"})
+        self.assertEqual(response.status, 200)
+        cibles, kwargs = vus[0]
+        self.assertIn(("GameSeal", "126"), cibles)
+        self.assertTrue(kwargs["all_pages"])
+
+    def test_an_unknown_group_is_refused_without_launching(self):
+        calls = []
+        self.manager.start_data_entry_auto = lambda *a, **k: calls.append((a, k)) or {}
+        response, body = self._json(
+            "POST", "/api/data-entry/auto", body={"group": "Z", "confirm": "GO"})
+        self.assertEqual(response.status, 400)
+        self.assertEqual(body["error"]["code"], "unknown_group")
+        self.assertEqual(calls, [])
+
+    def test_a_group_with_targets_is_refused(self):
+        calls = []
+        self.manager.start_data_entry_auto = lambda *a, **k: calls.append((a, k)) or {}
+        response, body = self._json(
+            "POST", "/api/data-entry/auto",
+            body={"group": "A", "targets": [{"merchant": "Kinguin", "store_id": "58"}],
+                  "confirm": "GO"})
+        self.assertEqual(response.status, 400)
+        self.assertEqual(body["error"]["code"], "targets_conflict")
+        self.assertEqual(calls, [])
+
     def test_non_suggested_merchant_refused_without_launching(self):
         calls = []
         self.manager.start_data_entry_auto = lambda *a, **k: calls.append((a, k)) or {}

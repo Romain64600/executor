@@ -38,6 +38,10 @@ export function makeEl(tag = "div") {
     fire(kind, ev) { return Promise.all((listeners[kind] || []).map((f) => f(ev || { target: el }))); },
     has(kind) { return !!(listeners[kind] || []).length; },
     append(...kids) { kids.forEach((k) => { if (k != null) el.children.push(k); }); },
+    // `appendChild` manquait : renderGroups() l'appelle, l'exception partait dans le
+    // try/catch de l'init et la console restait MUETTE — soit exactement la panne que
+    // Romain a signalée. Un bouchon incomplet cache le défaut qu'il devrait montrer.
+    appendChild(kid) { if (kid != null) el.children.push(kid); return kid; },
     replaceChildren(...kids) { el.children = []; el.append(...kids); },
     remove() {},
     focus() {},
@@ -86,6 +90,28 @@ export function makeDocument() {
     createElement: (t) => makeEl(t),
     createTextNode: (t) => String(t),
     querySelector(sel) {
+      // Un id posé par le CODE (renderGroups crée ses boutons et leur donne un id) doit se
+      // retrouver par `$("#launch-group-A")`, sinon le test regarde un élément fantôme et
+      // ne voit jamais le bouton réel. On cherche donc d'abord dans l'arbre déjà construit,
+      // puis on retombe sur la fabrique à la demande pour les ids de la page statique.
+      if (sel.startsWith("#")) {
+        const want = sel.slice(1);
+        const seen = new Set();
+        const walk = (n) => {
+          for (const c of (n && n.children) || []) {
+            if (typeof c === "string" || seen.has(c)) continue;
+            seen.add(c);
+            if (c.id === want) return c;
+            const hit = walk(c);
+            if (hit) return hit;
+          }
+          return null;
+        };
+        for (const racine of [doc.body, ...byId.values()]) {
+          const hit = walk(racine);
+          if (hit) return hit;
+        }
+      }
       if (!byId.has(sel)) byId.set(sel, makeEl("div"));
       return byId.get(sel);
     },

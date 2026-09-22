@@ -82,5 +82,48 @@ class SortConsoleLiveSimulationTests(unittest.TestCase):
             pathlib.Path(path).unlink(missing_ok=True)
 
 
+AUTO_HARNESS = ROOT / "tests" / "js" / "auto_groups.test.mjs"
+
+
+@unittest.skipIf(NODE is None, "node absent (dépendance de test)")
+class AutoConsoleGroupsSimulationTests(unittest.TestCase):
+    """La console de SAISIE AUTO, exécutée — les groupes de marchands (2026-09-22).
+
+    Romain : « je ne vois pas les groupes A et B sur l'admin ». Aucun test de texte n'aurait
+    vu cette panne : le code était écrit, il ne s'affichait pas. Écrire le harnais a d'ailleurs
+    trouvé la même classe de défaut dans le bouchon lui-même (`appendChild` manquant : la
+    console levait, l'init avalait, l'écran restait muet)."""
+
+    def test_the_harness_targets_the_shipped_console(self):
+        self.assertTrue(AUTO_HARNESS.is_file(), AUTO_HARNESS)
+        self.assertIn('"src", "admin", "static", "auto.js"',
+                      AUTO_HARNESS.read_text(encoding="utf-8"))
+
+    def test_every_scenario_passes(self):
+        proc = subprocess.run([NODE, str(AUTO_HARNESS)], cwd=ROOT, capture_output=True,
+                              text=True, timeout=120)
+        self.assertEqual(proc.returncode, 0,
+                         f"\n--- sortie node ---\n{proc.stdout}\n{proc.stderr}")
+        self.assertNotIn("FAIL", proc.stdout)
+
+    def test_the_harness_goes_red_when_the_console_stops_rendering(self):
+        """Vert ne prouve rien tant que rouge n'est pas prouvé : on retire l'appel à
+        `renderGroups()` et le harnais doit s'effondrer — c'est la panne de Romain."""
+
+        js = (ROOT / "src" / "admin" / "static" / "auto.js").read_text(encoding="utf-8")
+        casse = js.replace("    renderGroups();\n", "", 1)
+        self.assertNotEqual(casse, js, "l'appel à renderGroups a changé de forme")
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            faux = pathlib.Path(tmp) / "auto.js"
+            faux.write_text(casse, encoding="utf-8")
+            env = dict(os.environ, AUTO_JS=str(faux))
+            proc = subprocess.run([NODE, str(AUTO_HARNESS)], cwd=ROOT, capture_output=True,
+                                  text=True, timeout=120, env=env)
+        self.assertNotEqual(proc.returncode, 0,
+                            "le harnais passe sur une console qui n'affiche rien")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -501,6 +501,12 @@ python3 -c "import sys; sys.path.insert(0,'.'); from src.merchant_groups import 
 **Difmark n'est dans aucun groupe** : sa file Pending est vide, ses lignes sont dans la liste
 *account* (30) — `02_extract_feed --list 30` puis `05_submit --list 30`, à la main.
 
+**Dans la console** (2026-09-22) : la carte « Groupes » de l'onglet saisie auto liste A et B
+avec leurs marchands et leur charge estimée, un bouton par groupe. La console ne calcule rien
+— elle reçoit les groupes de `/api/data-entry/merchants` et renvoie le NOM du groupe, que le
+serveur détend lui-même sur la liste blanche. `group` ne se combine ni avec `targets` ni avec
+`all_allowlisted`. L'écran est vérifié en l'EXÉCUTANT (`tests/js/auto_groups.test.mjs`).
+
 **`--all-pages`, pas un plafond (Romain 2026-09-18 : « on fait toutes les pages sauf lors
 d'un arrêt pour sécurité »).** La nuit du 17/09 tournait avec `--max-pages 10` : elle a créé
 360 offres mais laissé de côté 97 pages chez GameSeal (107 au total), 54 chez Kinguin, 42 chez

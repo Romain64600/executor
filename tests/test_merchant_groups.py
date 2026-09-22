@@ -94,3 +94,38 @@ class LeDecoupageSuitLeNombreDeMachines(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LaConsoleVoitLesGroupes(unittest.TestCase):
+    """Romain, 2026-09-22 : « je ne vois pas les groupes A et B sur l'admin ». La console ne
+    les invente pas : le serveur les SERT et détend lui-même le nom en cibles — un client
+    bricolé ne peut pas fabriquer une liste de marchands par ce chemin."""
+
+    def test_la_route_des_marchands_sert_les_groupes(self):
+        from src.admin.app import _auto_groups
+
+        groupes = _auto_groups()
+        self.assertEqual([g["name"] for g in groupes], ["A", "B"])
+        for g in groupes:
+            with self.subTest(groupe=g["name"]):
+                self.assertTrue(g["merchants"])
+                self.assertIn("store_id", g["merchants"][0])
+                self.assertGreater(g["pending"], 0)
+
+    def test_le_serveur_detend_le_nom_et_refuse_linconnu(self):
+        src = (ROOT / "src" / "admin" / "app.py").read_text(encoding="utf-8")
+        self.assertIn("targets_for(group)", src)
+        self.assertIn("unknown_group", src)
+        self.assertIn("targets_conflict", src)
+
+    def test_la_console_est_verifiee_en_lexecutant_pas_en_la_lisant(self):
+        """Ce que fait l'écran est vérifié par `tests/js/auto_groups.test.mjs`, qui CHARGE
+        le fichier livré dans un DOM bouchonné, clique et regarde ce qui part. Une lecture
+        de texte n'aurait pas vu la panne de Romain — le code était écrit, il ne s'affichait
+        pas. On ne garde ici que le lien, pour qu'il ne se perde pas."""
+
+        harnais = ROOT / "tests" / "js" / "auto_groups.test.mjs"
+        self.assertTrue(harnais.is_file(), "le harnais d'exécution de auto.js a disparu")
+        self.assertIn('"src", "admin", "static", "auto.js"',
+                      harnais.read_text(encoding="utf-8"),
+                      "le harnais doit charger la console LIVRÉE, jamais une copie")

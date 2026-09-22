@@ -45,6 +45,23 @@ exception, aucun log. Un test lance maintenant `match_feed` sur une clé Switch,
 branche console lit une seconde page, et exige les DEUX gabarits au catalogue.
 Suite complète : 2 476 tests, verts.
 
+**Et les groupes sont enfin VISIBLES dans la console** (Romain : « je ne vois pas les groupes
+A et B sur l'admin »). La console ne les invente pas : `/api/data-entry/merchants` les LIVRE
+(`src/merchant_groups.py`, même source que le CLI, aucune dérive possible), et le lancement
+envoie le NOM du groupe — c'est le serveur qui le détend sur la liste blanche, comme pour le
+sweep de nuit. Un client bricolé ne peut donc pas fabriquer une liste de cibles par ce chemin.
+`group` refuse de se combiner avec `targets` ou `all_allowlisted` (`targets_conflict`), et un
+nom inconnu répond `unknown_group` avant tout lancement.
+
+**Et cette fois l'écran est EXÉCUTÉ, pas relu.** `tests/js/auto_groups.test.mjs` charge le
+`auto.js` livré dans le DOM bouchonné, sert la charge utile réelle, tape GO, clique, et
+vérifie ce qui PART : le nom du groupe, jamais une liste de marchands fabriquée par le client.
+Un test de texte n'aurait rien vu de la panne de Romain — le code ÉTAIT écrit, il ne
+s'affichait pas. Écrire le harnais a d'ailleurs trouvé la même classe de défaut dans le
+bouchon lui-même : `appendChild` y manquait, la console levait, l'init avalait l'exception,
+l'écran restait muet. Le harnais est prouvé ROUGE sur une console d'où l'on retire
+`renderGroups()`.
+
 ## 2026-09-21 — Des groupes de marchands, un par VPS (et prêts pour le 3e et le 4e)
 
 Romain : « je voudrais qu'on puisse lancer des marchands aussi par groupe… divise nos

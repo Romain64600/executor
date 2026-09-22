@@ -62,6 +62,27 @@ from src.admin.auto_merchants import allowed_list as auto_allowed_list, rejectio
 from src.matcher import PLATFORM_LABEL, REGION_IDS
 from src.validation import candidate_fingerprint
 
+
+def _auto_groups() -> list[dict[str, object]]:
+    """Les groupes de marchands, tels que la console doit les afficher : nom, membres et
+    charge estimée. Lus du même module que le CLI (`src/merchant_groups.py`)."""
+
+    from src.merchant_groups import GROUPS, PENDING_2026_09_21, group_targets
+
+    out: list[dict[str, object]] = []
+    for nom in sorted(GROUPS):
+        try:
+            cibles = group_targets(nom)
+        except KeyError:
+            continue                  # un groupe désynchronisé ne s'affiche pas
+        out.append({
+            "name": nom,
+            "merchants": [{"name": m, "store_id": s} for m, s in cibles],
+            "pending": sum(PENDING_2026_09_21.get(m, 0) for m, _ in cibles),
+        })
+    return out
+
+
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 STATIC_FILES = {
     "index.html": "text/html; charset=utf-8",
@@ -286,7 +307,11 @@ class AdminHandler(BaseHTTPRequestHandler):
         if path == "/api/data-entry/merchants":
             # The safe-auto allowlist — the only merchants the UI may offer and
             # the server will accept for unvalidated auto entry.
-            return self._send_json(200, {"merchants": auto_allowed_list()})
+            # Les GROUPES voyagent avec (Romain, 2026-09-22 : « je ne vois pas les groupes
+            # A et B sur l'admin ») : la console ne les invente pas, elle les REÇOIT — même
+            # source que le CLI, donc aucune dérive possible entre les deux.
+            return self._send_json(200, {"merchants": auto_allowed_list(),
+                                         "groups": _auto_groups()})
         name = path.lstrip("/")
         if name in STATIC_FILES:
             return self._serve_static(name)
@@ -704,6 +729,24 @@ class AdminHandler(BaseHTTPRequestHandler):
         # never drift from it — same source as the CLI's --all-allowlisted. "Already
         # running" is enforced by the manager's _ensure_free (one run at a time, whatever
         # its kind), which answers 409 — the UI greys the button out on top of that.
+        # Un GROUPE (Romain, 2026-09-21/22) : la console envoie son NOM, le serveur le
+        # détend lui-même sur la liste blanche — exactement comme le bouton « sweep de
+        # nuit ». Un client bricolé ne peut donc pas fabriquer une liste de cibles par ce
+        # chemin, et la console ne peut pas dériver du CLI.
+        group = body.get("group")
+        if group is not None:
+            if not isinstance(group, str) or not group.strip():
+                raise ApiError(400, "bad_group", "group doit être un nom de groupe ('A', '2/4')")
+            if raw:
+                raise ApiError(400, "targets_conflict",
+                               "group porte déjà ses marchands — n'envoie pas targets en plus")
+            try:
+                from src.merchant_groups import targets_for
+                targets = list(targets_for(group))
+            except KeyError as exc:
+                raise ApiError(400, "unknown_group", str(exc)) from None
+            if not targets:
+                raise ApiError(500, "group_empty", f"groupe {group!r} vide — lancement refusé")
         all_allowlisted = body.get("all_allowlisted", False)
         if not isinstance(all_allowlisted, bool):
             # audit de Romain 2026-09-16 : la valeur de vérité Python acceptait la CHAÎNE
@@ -711,6 +754,9 @@ class AdminHandler(BaseHTTPRequestHandler):
             # booléen JSON, jamais une valeur devinée — c'est un chemin d'écriture réelle.
             raise ApiError(400, "bad_all_allowlisted",
                            "all_allowlisted doit être un booléen JSON (true / false)")
+        if all_allowlisted and group is not None:
+            raise ApiError(400, "targets_conflict",
+                           "all_allowlisted balaie déjà toute la liste blanche — pas avec group")
         if all_allowlisted:
             if raw:
                 raise ApiError(400, "targets_conflict",
@@ -720,6 +766,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             if not targets:
                 raise ApiError(500, "allowlist_empty",
                                "liste blanche vide — lancement refusé (fail-closed)")
+        elif group is not None:
+            pass                      # déjà détendu ci-dessus
         elif isinstance(raw, list):
             for t in raw:
                 if isinstance(t, dict):
