@@ -21,6 +21,8 @@ from src.sort_sql_ids import (  # noqa: E402
     ExportRefused,
     PAGE_KINDS,
     collect,
+    collect_from_sort_scan,
+    domain_of,
     partition,
     render_sql,
 )
@@ -239,6 +241,63 @@ class LeFichierSQL(unittest.TestCase):
         sql = render_sql(self.OFFRES, 22, chunk=2)
         for o in self.OFFRES:
             self.assertIn(o["offer_id"], sql)
+
+
+class LeScanDeTriCommeSource(unittest.TestCase):
+    """Romain, 2026-09-22 : « lance le même export sur les autres marchands ». Les 44
+    boutiques hors liste blanche n'ont jamais été balayées : aucun `skipped.json` n'existe
+    pour elles. Le scan de tri tous-magasins est la seule source — il a déjà fait passer
+    toute la file par notre routeur."""
+
+    def _scan(self, tmp):
+        d = pathlib.Path(tmp) / "tri"
+        d.mkdir(parents=True)
+        rows = [
+            {"offer_id": "1", "name": "Jeu Libre", "url": "https://gog.com/a"},
+            {"offer_id": "2", "name": "Carte", "url": "https://gog.com/carte"},
+            {"offer_id": "3", "name": "Console", "url": "https://wyrel.com/c"},
+            {"offer_id": "4", "name": "Notre Jeu", "url": "https://www.gameseal.com/x"},
+        ]
+        (d / "offers.json").write_text(json.dumps({"offers": rows}), encoding="utf-8")
+        (d / "sort_plan.json").write_text(json.dumps({
+            "source_list": 9,
+            "by_list": {"21": {"offers": [rows[1]]}},          # réclamée : carte cadeau
+            "unrouted": [dict(rows[2], reason="console")],      # gardée avec une raison
+            "coverage": {"truncated": False, "pages_fetched": 1, "feed_last_page": 1},
+        }), encoding="utf-8")
+        return d
+
+    def test_seules_les_lignes_que_le_routeur_tient_pour_des_jeux_sortent(self):
+        """Une ligne déjà réclamée par une autre liste (carte cadeau) ou gardée avec une
+        raison (console) n'a rien à faire en 22 : on ne demanderait pas la création d'une
+        page pour une carte cadeau."""
+
+        with tempfile.TemporaryDirectory() as tmp:
+            got = collect_from_sort_scan(self._scan(tmp))
+        self.assertEqual(sorted(o["offer_id"] for o in got), ["1", "4"])
+
+    def test_le_filtre_par_boutique_separe_les_notres_des_autres(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = self._scan(tmp)
+            autres = collect_from_sort_scan(d, exclude_domains={"gameseal.com"})
+            self.assertEqual([o["offer_id"] for o in autres], ["1"])
+            gog = collect_from_sort_scan(d, only_domains={"gog.com"})
+            self.assertEqual([o["offer_id"] for o in gog], ["1"])
+            self.assertEqual(domain_of("https://www.gameseal.com/x"), "gameseal.com")
+
+    def test_la_table_des_domaines_couvre_exactement_la_liste_blanche(self):
+        """Un marchand ajouté à la liste blanche et oublié ici serait traité comme « un
+        autre » : ses lignes partiraient dans les deux exports."""
+
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "s17dom", str(ROOT / "scripts" / "17_sort_sql_ids.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        from src.admin.auto_merchants import AUTO_MERCHANTS
+        self.assertEqual(sorted(mod.NOS_DOMAINES), sorted(n for n, _ in AUTO_MERCHANTS))
+        for nom, dom in mod.NOS_DOMAINES.items():
+            self.assertRegex(dom, r"^[a-z0-9.-]+\.[a-z]{2,}$", nom)
 
 
 class LeCliRefuseUnIndexQuilNePeutPasJustifier(unittest.TestCase):

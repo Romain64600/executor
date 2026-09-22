@@ -31,20 +31,44 @@ if str(ROOT) not in sys.path:
 
 from src.aks_sitemap import DEFAULT_PATH, DEFAULT_TTL_DAYS, SitemapIndex  # noqa: E402
 from src.matcher import build_slug_candidates  # noqa: E402
+from src.admin.auto_merchants import AUTO_MERCHANTS  # noqa: E402
 from src.sort_sql_ids import (  # noqa: E402
     DEFAULT_CHUNK,
     ExportRefused,
     FAMILIES,
     collect,
+    collect_from_sort_scan,
+    domain_of,
     partition,
     render_sql,
 )
+
+# Les domaines de nos marchands allowlistés — pour l'option `--others`, qui veut dire
+# « toutes les boutiques SAUF les nôtres ». La liste blanche donne des NOMS et des store_id,
+# pas des domaines : cette table est donc écrite à la main, et un test vérifie qu'elle couvre
+# exactement `AUTO_MERCHANTS` — sans quoi un marchand ajouté à la liste blanche serait traité
+# comme « un autre » et ses lignes exportées deux fois.
+NOS_DOMAINES = {
+    "GameSeal": "gameseal.com", "Gamivo": "gamivo.com", "Eneba": "eneba.com",
+    "Kinguin": "kinguin.net", "G2A": "g2a.com", "CJS-CDKeys": "cjs-cdkeys.com",
+    "GameBoost": "gameboost.com", "Gamerall": "gamerall.com", "Driffle": "driffle.com",
+    "Electronicfirst": "electronicfirst.com", "Instant Gaming": "instant-gaming.com",
+    "Allyouplay": "allyouplay.com", "MMOGA": "mmoga.com", "K4G": "k4g.com",
+    "GamersOutlet": "gamersoutlet.net", "Difmark": "difmark.com",
+}
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="Tri SQL par identifiants (lecture seule).")
     ap.add_argument("--run", required=True,
-                    help="préfixe du balayage, ex. 20260921-140728-auto")
+                    help="préfixe du balayage, ou dossier du scan de tri avec --sort-scan")
+    ap.add_argument("--sort-scan", action="store_true",
+                    help="lire un scan de TRI tous-magasins au lieu d'un balayage : c'est la "
+                         "seule source pour les boutiques jamais balayées")
+    ap.add_argument("--others", action="store_true",
+                    help="avec --sort-scan : ne garder que les boutiques HORS liste blanche")
+    ap.add_argument("--only-domain", action="append", default=[],
+                    help="avec --sort-scan : ne garder que ce domaine (répétable)")
     ap.add_argument("--runs-dir", default=str(ROOT / "runs"))
     ap.add_argument("--family", default="no_aks_page", choices=sorted(FAMILIES))
     ap.add_argument("--list", dest="target", type=int, required=True,
@@ -74,15 +98,33 @@ def main() -> int:
               "ou --allow-stale en connaissance de cause", file=sys.stderr)
         return 2
 
-    offres = collect(args.runs_dir, args.run, args.family)
+    if args.sort_scan:
+        if args.family != "no_aks_page":
+            print("--sort-scan ne sait produire que la famille no_aks_page : un scan de tri "
+                  "n'a pas sondé les pages, c'est l'index sitemap qui tranche", file=sys.stderr)
+            return 2
+        dossier = Path(args.runs_dir) / args.run
+        if not (dossier / "sort_plan.json").exists():
+            print(f"pas de sort_plan.json dans {dossier}", file=sys.stderr)
+            return 2
+        offres = collect_from_sort_scan(
+            dossier,
+            exclude_domains=set(NOS_DOMAINES.values()) if args.others else (),
+            only_domains=args.only_domain)
+    else:
+        if args.others or args.only_domain:
+            print("--others / --only-domain n'ont de sens qu'avec --sort-scan", file=sys.stderr)
+            return 2
+        offres = collect(args.runs_dir, args.run, args.family)
     if not offres:
         print(f"aucune ligne « {FAMILIES[args.family]['label']} » dans {args.run}",
               file=sys.stderr)
         return 1
     part = partition(offres, index, build_slug_candidates)
 
+    source = ("scan de tri tous-magasins" if args.sort_scan else "balayage")
     entete = (
-        f"balayage {args.run} — famille « {FAMILIES[args.family]['label']} »\n"
+        f"{source} {args.run} — famille « {FAMILIES[args.family]['label']} »\n"
         f"index sitemap : {len(index.entries)} pages, relevé {index.fetched_at}\n"
         f"lues {len(offres)} — retenues {len(part.page_exists)} (page existante) "
         f"+ {len(part.doubtful)} (doute par préfixe)"

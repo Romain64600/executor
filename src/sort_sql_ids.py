@@ -228,3 +228,78 @@ def render_sql(offers: list[dict[str, Any]], target_list: int, *,
           f"AND `listId`={PENDING_LIST_ID};")
         a("")
     return "\n".join(lignes) + "\n"
+
+# --- deuxième source : un scan de TRI tous-magasins -------------------------------------
+# Romain, 2026-09-22 : « lance le même export sur les autres marchands ». Les 44 boutiques
+# hors liste blanche n'ont jamais été balayées — il n'existe pour elles aucun `skipped.json`.
+# Mais le scan de tri tous-magasins (`scripts/08_sort_plan.py`) a déjà fait passer TOUTES les
+# lignes de la file par notre routeur, marchand par marchand, avec leurs configurations
+# (R53b Wyrel, GameBoost, allyouplay…). Il nous donne donc la même information de départ :
+# ce que le routeur tient pour un VRAI JEU À CRÉER.
+#
+# Ce qu'il ne donne PAS, et c'est la différence avec un balayage : la page AKS n'a pas été
+# sondée. C'est précisément ce que l'index sitemap remplace — il répond hors ligne à « cette
+# page existe-t-elle ? ». Le verdict rendu ici est donc le même que celui d'un balayage,
+# obtenu sans une requête.
+
+CANDIDATE = "__candidat__"
+
+
+def domain_of(url: str) -> str:
+    from urllib.parse import urlparse
+    h = (urlparse(str(url or "")).hostname or "").lower()
+    return h[4:] if h.startswith("www.") else h
+
+
+def collect_from_sort_scan(run_dir: str | Path, *, exclude_domains: Iterable[str] = (),
+                           only_domains: Iterable[str] = ()) -> list[dict[str, Any]]:
+    """Les lignes qu'un scan de tri tient pour de VRAIS JEUX À CRÉER.
+
+    Trois seaux dans un plan de tri : ``by_list`` (le routeur les envoie ailleurs),
+    ``unrouted`` (il les garde en attente avec une raison — console, bundle, région…), et le
+    reste, qui est ce qu'il tiendrait pour un jeu à créer. C'est ce reste qu'on prend : une
+    ligne déjà réclamée par une autre liste n'a rien à faire en 22.
+
+    ``exclude_domains`` / ``only_domains`` filtrent par boutique (le domaine de l'URL de
+    l'offre), parce qu'un scan tous-magasins mélange les 57 boutiques de la file."""
+
+    d = Path(run_dir)
+    plan = json.loads((d / "sort_plan.json").read_text(encoding="utf-8"))
+    brut = json.loads((d / "offers.json").read_text(encoding="utf-8"))
+    rows = brut if isinstance(brut, list) else brut.get("offers", [])
+
+    reclamees: set[str] = set()
+    for r in plan.get("unrouted") or []:
+        u = str(r.get("url") or "")
+        if u:
+            reclamees.add(u)
+    for _, groupe in (plan.get("by_list") or {}).items():
+        for r in groupe.get("offers") or []:
+            u = str(r.get("url") or "")
+            if u:
+                reclamees.add(u)
+
+    exclus = {str(x).lower() for x in exclude_domains}
+    seuls = {str(x).lower() for x in only_domains}
+    vus: dict[str, dict[str, Any]] = {}
+    for r in rows:
+        url = str(r.get("url") or "")
+        if not url or url in reclamees:
+            continue
+        dom = domain_of(url)
+        if exclus and dom in exclus:
+            continue
+        if seuls and dom not in seuls:
+            continue
+        oid = str(r.get("offer_id") or "").strip()
+        if not _ID_RE.match(oid):
+            continue
+        vus.setdefault(oid, {
+            "offer_id": oid,
+            "name": str(r.get("name") or ""),
+            "url": url,
+            "merchant": dom,
+            "reason": CANDIDATE,
+            "seen_in": d.name,
+        })
+    return [vus[k] for k in sorted(vus, key=int)]

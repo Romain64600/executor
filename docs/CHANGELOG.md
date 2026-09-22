@@ -73,6 +73,17 @@ parce qu'un ``UPDATE`` collé à la main n'a ni preuve après coup ni retour arr
 4. **L'export refuse un index sitemap absent, incomplet ou périmé** (TTL 7 jours) plutôt que
    de déplacer à l'aveugle.
 
+**Et pour les 44 boutiques jamais balayées** (Romain : « lance le même export sur les autres
+marchands ») : elles n'ont aucun `skipped.json`, donc `--sort-scan` lit un scan de TRI
+tous-magasins à la place. Ce scan a déjà fait passer toute la file par notre routeur, marchand
+par marchand, avec leurs configurations (R53b Wyrel, GameBoost, allyouplay…) ; ce qu'il ne
+faisait pas, c'est sonder la page AKS — et c'est exactement ce que l'index sitemap remplace,
+hors ligne. On ne garde que les lignes que le routeur tient pour de VRAIS JEUX À CRÉER : une
+ligne déjà réclamée par une autre liste (carte cadeau) ou gardée avec une raison (console,
+bundle, région) n'a rien à faire en 22. `--others` exclut nos propres boutiques, et un test
+vérifie que la table des domaines couvre exactement la liste blanche — un marchand oublié là
+verrait ses lignes partir dans les deux exports.
+
 La famille console — « no AKS product page found (console) (R45) » — est délibérément EXCLUE :
 le jeu a une page PC, c'est celle de la console qui manque ; l'envoyer en 22 demanderait la
 création d'une page qui existe déjà.
