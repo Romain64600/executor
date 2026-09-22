@@ -65,12 +65,26 @@ class LeDecoupageSuitLeNombreDeMachines(unittest.TestCase):
     def test_le_decoupage_est_deterministe(self):
         self.assertEqual(split(4), split(4))
 
-    def test_le_plus_gros_marchand_ne_partage_pas_sa_machine_a_quatre(self):
-        """GameSeal pèse 27 % du travail : à quatre machines, il est seul sur la sienne."""
+    def test_les_deux_plus_gros_ne_partagent_jamais_une_machine(self):
+        """La propriété qui compte vraiment, et qui survit à un nouveau marchand.
 
-        groupes = split(4)
-        sien = next(g for g in groupes if "GameSeal" in g)
-        self.assertEqual(sien, ["GameSeal"])
+        Le test disait avant « GameSeal est SEUL sur sa machine à quatre ». C'était vrai de
+        la charge du 2026-09-21, pas du découpage : l'entrée de GOG (3 473 lignes) le
+         2026-09-22 a monté la moyenne, et GameSeal partage désormais sa machine avec deux
+        petites files — pour un équilibre MEILLEUR qu'avant (6 000 / 5 879 / 5 872 / 5 907).
+        Épingler la composition exacte d'un groupe, c'est épingler une mesure ; ce qu'on
+        veut garantir, c'est que deux poids lourds ne se retrouvent jamais ensemble."""
+
+        from src.merchant_groups import PENDING_2026_09_21 as P
+        lourds = sorted(P, key=lambda m: -P[m])[:2]
+        for n in (2, 3, 4):
+            with self.subTest(machines=n):
+                for g in split(n):
+                    ensemble = [m for m in lourds if m in g]
+                    if n == 1:
+                        continue
+                    self.assertLess(len(ensemble), 2,
+                                    f"{ensemble} sur la même machine à {n} machines")
 
     def test_l_equilibre_tient_jusqu_a_quatre(self):
         for n in (2, 3, 4):

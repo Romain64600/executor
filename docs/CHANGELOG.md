@@ -3,6 +3,42 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-22 — GOG entre en liste blanche `[R55]` : le titre en complément, jamais pour la plateforme
+
+Romain : « pour GOG, on peut prendre le titre en complément d'information. Testons sur une
+page. » Fichier marchand `src/merchants/gog.py`, feed store 34, audit
+[`AUDIT_2026-09-22_gog.md`](AUDIT_2026-09-22_gog.md).
+
+La nuance de sa décision est tout le fichier. Le titre GOG sert à **l'édition**, aux
+**marqueurs DLC** et au **refus des démos**. Il ne sert JAMAIS à la plateforme ni à la région,
+parce que les mots qui y ressemblent sont des noms de jeux — « Two Worlds *Epic* Edition »,
+« Detective Girl of the *Steam* City », « Strategic Command WWII: War in *Europe* », « Tiny
+Troopers: *Global* Ops ». Mesuré sur les 3 473 lignes : lire la plateforme dans le titre donne
+**3 472 erreurs sur 3 473**.
+
+* **Plateforme : le DOMAINE.** `gog.com` ne vend que du GOG. `[R51]` reste entier — il refuse
+  d'INFÉRER la plateforme depuis la ligne « Direct Publisher » de la page AKS, qui décrit le
+  jeu ; ici elle est DÉCLARÉE par le vendeur. Ce n'est pas le même mécanisme, et un audit qui
+  rapprochera les deux se trompera de porte.
+* **Région : GOG GLOBAL (seau 6), toujours.** Un jeu sans DRM n'a pas de verrou régional, et
+  AKS le range en 6 dix fois sur dix sur les pages observées. Le crochet `title_region`
+  RÉPOND « global » au lieu de lire — ce qui court-circuite le scan générique avant qu'il ne
+  trouve « Europe » dans un nom de jeu.
+* **Démos : refusées**, 142 lignes sur 3 473. Le mot est cherché dans le titre ET dans le
+  slug, ancré sur ses frontières pour que « Demolition Company » et « Democracy 3 » passent.
+
+Les règles générales ne bougent pas : un bundle reste refusé, un DLC reste soumis à R43.
+
+Deux gardes de la suite ont refusé le marchand tant qu'il n'était pas déclaré partout — la
+table des modules attendus, et les groupes de machines. GOG rejoint le groupe A ; son entrée
+fait passer A devant B (12 828 contre 10 830), écart assumé tant qu'on ne connaît pas son taux
+de création. Au passage, un test épinglait « GameSeal seul sur sa machine à quatre » : c'était
+une propriété de la MESURE du 21/09, pas du découpage. Il épingle maintenant ce qui compte —
+deux poids lourds ne partagent jamais une machine — et le découpage à quatre est d'ailleurs
+mieux équilibré qu'avant (6 000 / 5 879 / 5 872 / 5 907).
+
+Suite complète : 2 532 tests, verts.
+
 ## 2026-09-22 — Audit marchand : GOG.com (lecture seule, rien n'est écrit)
 
 Romain : « regarde quel type de marchand est GOG, fais juste un audit. »

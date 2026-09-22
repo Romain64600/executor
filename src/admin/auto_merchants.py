@@ -68,6 +68,17 @@ AUTO_MERCHANTS: list[tuple[str, str]] = [
                                 # PlayStation / Xbox sont refusés en NOMMANT ce qui manque,
                                 # faute de page AKS pour ce catalogue (50 titres sondés le
                                 # 21/09, 0 page trouvée).
+    ("GOG", "34"),              # Romain 2026-09-22 (« pour GOG, on peut prendre le titre en
+                                # complément d'information. Testons sur une page. »), après
+                                # l'audit du même jour (docs/AUDIT_2026-09-22_gog.md) sur
+                                # 3 473 lignes et 8 pages AKS lues en direct. GOG n'est pas
+                                # un revendeur : c'est la boutique de CD Projekt, sans DRM —
+                                # donc UNE plateforme (GOG, déclarée par le domaine) et UNE
+                                # région (GOG GLOBAL, seau 6, observée 10 fois sur 10). Le
+                                # titre ne sert qu'à l'ÉDITION, aux marqueurs DLC et au refus
+                                # des démos : le lire pour la plateforme donnerait 3 472
+                                # erreurs sur 3 473 (« Two Worlds *Epic* Edition »). Feed
+                                # store 34 ; fichier src/merchants/gog.py [R55].
 ]
 
 # Deliberately NOT suggested (enforcement is simply "absent from the list";

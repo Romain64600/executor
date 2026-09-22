@@ -31,6 +31,7 @@ from src.merchants import (
     gameboost,
     gamersoutlet,
     gameseal,
+    gog,
     gamivo,
     instant_gaming,
     k4g,
@@ -64,6 +65,7 @@ MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
     "ELECTRONICFIRST": electronicfirst.CONFIG,
     "WYREL": wyrel.CONFIG,
     "GAMERALL": gamerall.CONFIG,
+    "GOG": gog.CONFIG,
 }
 
 
@@ -79,7 +81,7 @@ MERCHANT_STORE_IDS: dict[str, str] = {
     "Gamivo": "51", "Instant Gaming": "28", "CJS-CDKeys": "30", "Allyouplay": "17",
     "GameSeal": "126", "GameBoost": "157", "Electronicfirst": "70",
     "GamersOutlet": "31", "MMOGA": "12", "Difmark": "167", "Wyrel": "162",
-    "Gamerall": "13",
+    "Gamerall": "13", "GOG": "34",
 }
 _BY_STORE: dict[str, str] = {store: name for name, store in MERCHANT_STORE_IDS.items()}
 

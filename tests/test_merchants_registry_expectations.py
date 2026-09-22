@@ -39,6 +39,9 @@ EXPECTED_MODULE = {
     "Gamerall": "gamerall.py",      # liste blanche le 2026-09-19 (Romain)
     "Difmark": "difmark.py",        # liste blanche le 2026-09-21 (Romain), après sa 1re
                                     # saisie réelle : 10 comptes Steam créés et prouvés
+    "GOG": "gog.py",                # liste blanche le 2026-09-22 (Romain : « on peut prendre
+                                    # le titre en complément d'information. Testons sur une
+                                    # page. »), après l'audit du même jour
 }
 
 

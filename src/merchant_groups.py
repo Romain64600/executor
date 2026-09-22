@@ -42,6 +42,8 @@ PENDING_2026_09_21 = {
     "CJS-CDKeys": 1859, "GameBoost": 885, "Gamerall": 569, "Driffle": 349,
     "Electronicfirst": 316, "Instant Gaming": 264, "Allyouplay": 206, "MMOGA": 189,
     "K4G": 162, "GamersOutlet": 9, "Difmark": 0,
+    # Mesuré le 2026-09-22 sur le même scan, à l'entrée de GOG en liste blanche.
+    "GOG": 3473,
 }
 
 # Hors groupes, avec la raison — un marchand absent des deux groupes n'est PAS un oubli.
@@ -51,8 +53,13 @@ EXCLUDED: dict[str, str] = {
 }
 
 GROUPS: dict[str, tuple[str, ...]] = {
-    # ~9 355 lignes : le poids lourd isolé, entouré de petites files.
-    "A": ("GameSeal", "G2A", "GameBoost", "Driffle", "Instant Gaming", "MMOGA", "GamersOutlet"),
+    # ~12 828 lignes : le poids lourd isolé, entouré de petites files — et GOG, entré en
+    # liste blanche le 2026-09-22 avec 3 473 lignes. Le groupe A passe donc devant le B
+    # (10 830) : l'écart est ASSUMÉ pour l'instant, faute de connaître le taux de création
+    # de GOG. À rééquilibrer sur les durées observées après son premier tour complet —
+    # c'est exactement la limite que ce module annonce depuis le début.
+    "A": ("GameSeal", "G2A", "GameBoost", "Driffle", "Instant Gaming", "MMOGA",
+          "GamersOutlet", "GOG"),
     # ~10 830 lignes : trois files moyennes et le reste.
     "B": ("Gamivo", "Eneba", "Kinguin", "CJS-CDKeys", "Gamerall", "Electronicfirst",
           "Allyouplay", "K4G"),
