@@ -25,19 +25,23 @@ mais elle ne peut plus rien confirmer.
 `scripts/16_sitemap_index.py`). C'est la liste faisant autorité de ce qui existe. Confrontation
 des 9 719 verdicts à cette liste :
 
-| | lignes | part |
-|---|---|---|
-| aucune page, verdict PROUVÉ | 7 903 | 81,3 % |
-| page existante sous un gabarit qu'on ne sonde pas | 872 | 9,0 % |
-| page voisine par préfixe — doute assumé | 944 | 9,7 % |
+Attention au dénombrement : ces 9 719 sont des LIGNES DE REFUS, et la même offre est refusée
+plusieurs fois au fil des pages (le feed re-sert les lignes à mesure que d'autres sont
+consommées). Cela fait **4 152 offres distinctes**. Confrontées au sitemap :
 
-Les 872 sont surtout un gabarit ``-key`` (404) et des pages compte Steam (246) : de vraies
-offres, qu'un déplacement en masse aurait enterrées.
+| | offres | part |
+|---|---|---|
+| aucune page, verdict PROUVÉ | 3 179 | 76,6 % |
+| page existante sous un gabarit qu'on ne sonde pas | 546 | 13,2 % |
+| page voisine par préfixe — doute assumé | 427 | 10,3 % |
+
+Les 546 sont de vraies offres qu'un déplacement en masse aurait enterrées.
 
 **Le matcher les rattrape maintenant — mais seulement les clés** (`matcher.sitemap_shapes`,
 passe 3). Quand aucun slug deviné ne répond, l'index dit s'il existe une page sous un autre
-gabarit de CLÉ (``-key``, ``-game-code``, ``-download-code``) et on sonde celle-là : **404
-lignes récupérées**, sans une seule requête supplémentaire quand l'index ne connaît rien —
+gabarit de CLÉ (``-key``, ``-game-code``, ``-download-code``) et on sonde celle-là : **226
+offres récupérées** (404 lignes de refus), sans une seule requête supplémentaire quand l'index
+ne connaît rien —
 c'est une lecture locale, pas une devinette de plus (leçon du 2026-09-10 : sonder plus de
 formes à l'aveugle poussait ~300 req/min et AKS répondait 503).
 

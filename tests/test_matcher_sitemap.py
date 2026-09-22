@@ -6,9 +6,10 @@ Le contexte, qui explique pourquoi cette passe existe. La recherche interne d'AK
 notre seul recours quand aucun slug deviné ne répondait. Mesurée le 2026-09-22 depuis les DEUX
 VPS, elle rend ``HTTP 200`` avec ``Content-Length: 0`` : un corps vide. Son disjoncteur était
 ouvert sur 253 des 259 pages du balayage de nuit, et 9 719 lignes en sont ressorties « no AKS
-product page found ». Confrontées au sitemap d'AKS, 872 de ces lignes ont POURTANT une page.
+product page found » — soit 4 152 offres DISTINCTES (la même offre est refusée à plusieurs
+pages). Confrontées au sitemap d'AKS, 546 d'entre elles ont POURTANT une page.
 
-La passe 3 en rattrape **404** : celles dont la page est une autre façon d'écrire « une clé »
+La passe 3 en rattrape **226** : celles dont la page est une autre façon d'écrire « une clé »
 (le gabarit ``-key``). Les autres — 246 pages compte Steam, des pages console — ne sont PAS
 rattrapées ici, et c'est délibéré : un compte n'est pas une clé, une page console a sa propre
 branche. Elles restent « pas de page » pour le matcher, et l'export de tri les RETIENT au lieu
@@ -88,7 +89,7 @@ class LaPasse3(unittest.TestCase):
 
     # -- ce que la passe 3 apporte ---------------------------------------------------
     def test_le_gabarit_key_est_rattrape_grace_a_lindex(self):
-        """Le cas de Romain, mesuré : 404 lignes du balayage vivent sur `buy-<slug>-key-`."""
+        """Le cas de Romain, mesuré : 226 offres du balayage vivent sur `buy-<slug>-key-`."""
 
         M.set_sitemap_index(_index(["ignoble-key"]))
         vus = []
@@ -179,7 +180,7 @@ class LaPasse3(unittest.TestCase):
                          "une page compte ne sonde que la sienne")
 
     def test_une_page_COMPTE_nest_jamais_un_substitut_a_une_cle(self):
-        """Mesure du 22/09 : 246 lignes « sans page » ont une page `-steam-account`. Les
+        """Mesure du 22/09 : des offres « sans page » ont en fait une page `-steam-account`. Les
         rattraper ici les entrerait sous un AUTRE produit — un compte n'est pas une clé.
         Elles restent « pas de page », et l'export de tri les RETIENT au lieu de les
         déplacer en 22. C'est le partage voulu entre les deux mécanismes."""
