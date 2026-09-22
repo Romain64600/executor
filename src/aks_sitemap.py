@@ -1,0 +1,216 @@
+"""L'index des pages produit d'AKS, lu dans son propre sitemap (2026-09-22).
+
+Romain, 2026-09-22 : « liste 22, go » — déplacer vers « Pages for creation » les lignes dont
+AKS n'a pas la page. Avant de déplacer 8 817 lignes à la main dans phpMyAdmin, il faut PROUVER
+que la page n'existe pas. Ce module est cette preuve.
+
+**Pourquoi il existe.** Le seul moyen que le matcher avait de vérifier une page introuvable
+était la recherche interne d'AKS (R30). Mesurée le 2026-09-22 depuis les deux VPS, elle répond
+``HTTP 200`` avec ``Content-Length: 0`` — un corps VIDE, quel que soit le délai d'attente. Elle
+est morte. Le disjoncteur R30 était donc ouvert sur 253 des 259 pages du balayage de nuit, et
+9 719 lignes en sont ressorties « no AKS product page found » sans second regard.
+
+Le sitemap d'AKS, lui, répond : ``sitemap_index.xml`` pointe 55 fichiers ``page-sitemap*.xml``
+qui portent **213 404 pages produit**, téléchargées en quatre minutes. C'est la liste complète
+et faisant autorité de ce qui existe. Confronté à elle, le verdict du balayage tient à 90,7 % ;
+les 9,3 % restants sont des pages réelles sous un gabarit qu'on ne sonde pas (``-key`` 404
+lignes, ``-steam-account`` 246), et ceux-là ne doivent surtout PAS être déplacés.
+
+**Ce que ce module ne fait pas.** Il ne décide rien et ne touche pas au matcher. Il répond à
+une seule question : « l'URL ``buy-<slug>-<gabarit>-compare-prices/`` est-elle dans le sitemap
+d'AKS ? ». Un index absent ou périmé répond « je ne sais pas » (``None``), jamais « non » —
+l'appelant reste fail-closed.
+
+**Limite, dite franchement.** Le sitemap est une photo. Une page créée depuis la photo est
+absente de l'index, et une page supprimée depuis y figure encore. L'index prouve donc
+l'EXISTENCE (on a vu l'URL publiée), jamais l'ABSENCE définitive ; c'est pour ça que l'export
+de tri l'utilise pour EXCLURE des lignes, et qu'il exige un index frais.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import time
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Callable, Iterable
+
+SITEMAP_INDEX_URL = "https://www.allkeyshop.com/blog/sitemap_index.xml"
+# `robots.txt` annonce « Crawl-delay: 0.5 » — on le respecte, c'est leur site.
+CRAWL_DELAY_S = 0.5
+# L'UA de nos sondes. Mémoire 2026-09-11 : une sonde ad-hoc avec l'UA navigateur a fait bannir
+# l'IP du VPS pendant des heures. Jamais autre chose ici.
+SITEMAP_UA = "AKS/Staff"
+DEFAULT_PATH = "state/aks_sitemap.json"
+DEFAULT_TTL_DAYS = 7
+
+_LOC_RE = re.compile(rb"<loc>([^<]+)</loc>")
+# La grammaire des pages produit : buy-<slug>-<gabarit>-compare-prices/
+_PAGE_RE = re.compile(r"/blog/buy-(.+?)-compare-prices/?$")
+
+# Les gabarits de page qu'on sait nommer. L'index en couvre 96 % ; le reste est rattrapé par
+# la recherche par préfixe (voir `SitemapIndex.any_page_starting_with`).
+PAGE_KINDS: tuple[str, ...] = (
+    "cd-key", "key", "game-code", "download-code",
+    "steam-account", "windows-account", "epic-account", "origin-account", "ea-account",
+    "uplay-account", "ubisoft-account", "battlenet-account", "rockstar-account",
+    "gog-account", "psn-account", "xbox-account", "nintendo-account",
+    "ps4", "ps5", "xbox-one", "xbox-series", "nintendo-switch", "nintendo-switch-2",
+    "ps4-account", "ps5-account", "xbox-one-account", "xbox-series-account",
+    "ps4-game-code", "ps5-game-code", "xbox-one-key", "xbox-series-key",
+    "xbox-360-code", "nintendo-3ds", "wii-u", "gift-card",
+)
+
+
+
+class SitemapUnavailable(RuntimeError):
+    """Le sitemap n'a pas pu être lu — on ne prétend pas connaître le catalogue."""
+
+
+def _fetch(url: str, timeout: int = 60) -> bytes:
+    req = urllib.request.Request(url, headers={"User-Agent": SITEMAP_UA})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        return resp.read()
+
+
+def refresh(dest: str | Path, *, fetch: Callable[[str], bytes] = _fetch,
+            sleep: Callable[[float], None] = time.sleep,
+            now: Callable[[], float] = time.time,
+            on_progress: Callable[[str, int, int], None] | None = None) -> dict[str, Any]:
+    """Télécharge le sitemap et écrit l'index dans ``dest``.
+
+    Rend le petit résumé de ce qui a été lu. Un sous-sitemap illisible est SIGNALÉ et sauté :
+    un index partiel est honnête tant qu'il le dit (``incomplete``), et l'export de tri refuse
+    un index incomplet — on ne déplace pas des lignes sur la foi d'un catalogue troué."""
+
+    index = fetch(SITEMAP_INDEX_URL)
+    sous = [u.decode("utf-8", "replace") for u in _LOC_RE.findall(index)]
+    cibles = [u for u in sous if "page-sitemap" in u]
+    if not cibles:
+        raise SitemapUnavailable(
+            f"{SITEMAP_INDEX_URL} ne liste aucun 'page-sitemap' — grammaire changée ?")
+
+    pages: set[str] = set()
+    echecs: list[str] = []
+    for i, url in enumerate(cibles, 1):
+        try:
+            corps = fetch(url)
+        except Exception as exc:                       # noqa: BLE001 — on note et on continue
+            echecs.append(f"{url}: {exc}")
+            continue
+        for loc in _LOC_RE.findall(corps):
+            m = _PAGE_RE.search(loc.decode("utf-8", "replace"))
+            if m:
+                pages.add(m.group(1))
+        if on_progress:
+            on_progress(url, i, len(cibles))
+        sleep(CRAWL_DELAY_S)
+
+    resume = {
+        "fetched_at": _iso(now()),
+        "source": SITEMAP_INDEX_URL,
+        "sitemaps": len(cibles),
+        "sitemaps_failed": echecs,
+        "incomplete": bool(echecs),
+        "pages": len(pages),
+    }
+    chemin = Path(dest)
+    chemin.parent.mkdir(parents=True, exist_ok=True)
+    chemin.write_text(json.dumps({**resume, "entries": sorted(pages)},
+                                 ensure_ascii=False), encoding="utf-8")
+    return resume
+
+
+def _iso(epoch: float) -> str:
+    import datetime
+    return datetime.datetime.fromtimestamp(
+        epoch, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+@dataclass
+class SitemapIndex:
+    """Les pages produit d'AKS, telles que le sitemap les publiait à ``fetched_at``."""
+
+    entries: frozenset[str]
+    fetched_at: str
+    incomplete: bool
+    source: str = SITEMAP_INDEX_URL
+
+    @classmethod
+    def load(cls, path: str | Path = DEFAULT_PATH) -> "SitemapIndex | None":
+        """L'index, ou **None** s'il est absent ou illisible — jamais un index vide.
+
+        Un index vide et un index absent se ressemblent à l'usage mais disent le contraire :
+        « AKS n'a aucune page » contre « je ne sais pas ». On ne rend que le second."""
+
+        try:
+            brut = json.loads(Path(path).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+        entrees = brut.get("entries")
+        if not isinstance(entrees, list) or not entrees:
+            return None
+        return cls(entries=frozenset(str(e) for e in entrees),
+                   fetched_at=str(brut.get("fetched_at") or ""),
+                   incomplete=bool(brut.get("incomplete")),
+                   source=str(brut.get("source") or SITEMAP_INDEX_URL))
+
+    def age_days(self, now: float | None = None) -> float | None:
+        import datetime
+        try:
+            t = datetime.datetime.strptime(self.fetched_at, "%Y-%m-%dT%H:%M:%SZ")
+        except ValueError:
+            return None
+        t = t.replace(tzinfo=datetime.timezone.utc)
+        maintenant = (datetime.datetime.fromtimestamp(now, datetime.timezone.utc)
+                      if now is not None else datetime.datetime.now(datetime.timezone.utc))
+        return (maintenant - t).total_seconds() / 86400.0
+
+    def fresh(self, ttl_days: int = DEFAULT_TTL_DAYS, now: float | None = None) -> bool:
+        age = self.age_days(now)
+        return age is not None and age <= ttl_days
+
+    def has_page(self, full_slug: str) -> bool:
+        """``hades-cd-key`` → la page existe-t-elle ? C'est le segment ENTIER entre
+        ``buy-`` et ``-compare-prices``, gabarit compris — jamais le slug nu."""
+
+        return str(full_slug or "").strip().lower() in self.entries
+
+    def kinds_for(self, slug: str, kinds: Iterable[str]) -> list[str]:
+        """Parmi ``kinds``, ceux sous lesquels ``slug`` a une page publiée."""
+
+        s = str(slug or "").strip().lower()
+        return [k for k in kinds if s and f"{s}-{k}" in self.entries]
+
+    def any_page_starting_with(self, slug: str) -> str | None:
+        """La PREMIÈRE page dont le slug commence par ``<slug>-``, ou None.
+
+        Pourquoi en plus de :meth:`kinds_for` : la liste des gabarits qu'on connaît couvre
+        96 % de l'index, pas 100 % (``xbox-360-code``, ``ps5-account``, ``nintendo-3ds``,
+        ``wii-u``, ``download-code``… existent aussi). Avant de déplacer des milliers de
+        lignes à la main, une correspondance par PRÉFIXE attrape les gabarits qu'on n'a pas
+        énumérés. Elle attrape aussi des voisins homonymes (« hades » préfixe « hades-2 ») :
+        c'est un excès de prudence ASSUMÉ, il laisse la ligne en attente au lieu de la
+        déplacer — et l'export les compte à part pour qu'on voie ce que ça coûte.
+
+        Recherche dichotomique sur la liste triée : ``O(log n)`` sur 213 000 entrées."""
+
+        import bisect
+        s = str(slug or "").strip().lower()
+        if not s:
+            return None
+        pref = s + "-"
+        i = bisect.bisect_left(self._sorted, pref)
+        if i < len(self._sorted) and self._sorted[i].startswith(pref):
+            return self._sorted[i]
+        return None
+
+    @property
+    def _sorted(self) -> tuple[str, ...]:
+        cache = getattr(self, "_sorted_cache", None)
+        if cache is None:
+            cache = tuple(sorted(self.entries))
+            object.__setattr__(self, "_sorted_cache", cache)
+        return cache

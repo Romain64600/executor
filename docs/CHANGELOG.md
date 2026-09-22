@@ -3,6 +3,84 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-22 — La recherche d'AKS est morte ; le sitemap la remplace, et le tri par identifiants
+
+Romain : « comment ça se fait qu'on ait toujours 55 000 offres en pending ? » puis, sur la
+réponse, « **liste 22, go** ».
+
+**Le chiffre, d'abord.** 550 pages × 100 = 55 000 lignes, lu en direct. Nos 16 marchands n'en
+détiennent que 30 400 : **48 % de la file appartient à 44 boutiques jamais balayées** (wyrel
+4 725, gog 3 473, pixelcodes 1 547, software-codes 1 538…). Et sur ce qu'on balaie, le scan de
+nuit a lu 25 100 lignes pour en créer 690 — 2,7 %. Le premier motif de refus, 9 719 lignes,
+est « no AKS product page found ».
+
+**Ce qui l'expliquait.** La recherche interne d'AKS (R30), notre seul recours quand aucun slug
+deviné ne répond, est **morte** : ``HTTP 200`` avec ``Content-Length: 0``, depuis les deux VPS,
+vite ou lentement, avec ou sans ``Accept``. Le disjoncteur R30 était donc ouvert sur **253 des
+259 pages** du balayage. R30 n'est pas retirée — la décision de Romain du 2026-07-16 tient —
+mais elle ne peut plus rien confirmer.
+
+**Ce qui la remplace : le sitemap.** ``sitemap_index.xml`` pointe 55 fichiers qui publient
+**213 404 pages produit**, téléchargées en quatre minutes (`src/aks_sitemap.py`,
+`scripts/16_sitemap_index.py`). C'est la liste faisant autorité de ce qui existe. Confrontation
+des 9 719 verdicts à cette liste :
+
+| | lignes | part |
+|---|---|---|
+| aucune page, verdict PROUVÉ | 7 903 | 81,3 % |
+| page existante sous un gabarit qu'on ne sonde pas | 872 | 9,0 % |
+| page voisine par préfixe — doute assumé | 944 | 9,7 % |
+
+Les 872 sont surtout un gabarit ``-key`` (404) et des pages compte Steam (246) : de vraies
+offres, qu'un déplacement en masse aurait enterrées.
+
+**Le matcher les rattrape maintenant — mais seulement les clés** (`matcher.sitemap_shapes`,
+passe 3). Quand aucun slug deviné ne répond, l'index dit s'il existe une page sous un autre
+gabarit de CLÉ (``-key``, ``-game-code``, ``-download-code``) et on sonde celle-là : **404
+lignes récupérées**, sans une seule requête supplémentaire quand l'index ne connaît rien —
+c'est une lecture locale, pas une devinette de plus (leçon du 2026-09-10 : sonder plus de
+formes à l'aveugle poussait ~300 req/min et AKS répondait 503).
+
+Les pages COMPTE et CONSOLE sont volontairement hors de cette passe : un compte n'est pas une
+clé (branche compte, R32) et une page console a la sienne (R45). Ces lignes-là restent « pas
+de page » pour le matcher — et c'est l'export de tri qui les RETIENT au lieu de les déplacer.
+Les deux mécanismes se partagent le travail au lieu de se contredire.
+
+Un 429 / 5xx sur une page annoncée par l'index remonte à la garde de throttle comme n'importe
+quelle sonde (MA1, immédiatement) ; un 404 propre, lui, n'est pas une anomalie — le sitemap est
+une photo, une page publiée hier peut avoir été retirée.
+
+**Le tri par identifiants** (`src/sort_sql_ids.py`, `scripts/17_sort_sql_ids.py`). La voie SQL
+existante route par ``url LIKE '%motif%'`` : elle ne sait exprimer que ce qui est ÉCRIT dans
+l'URL. « AKS n'a pas de page pour ce jeu » est un VERDICT du matcher, qu'aucun motif ne peut
+formuler. On déplace donc par ``WHERE id IN (…)``, la liste venant d'un balayage réel, et le
+sitemap retirant du lot tout ce dont la page existe.
+
+Rien n'est exécuté : le script rend du TEXTE que Romain colle dans phpMyAdmin. Quatre gardes,
+parce qu'un ``UPDATE`` collé à la main n'a ni preuve après coup ni retour arrière :
+
+1. **Une ÉTAPE 0 obligatoire.** Nous n'avons jamais vu le schéma : le nom de la colonne
+   d'identifiant est une HYPOTHÈSE (table et colonnes ``url``/``listId`` viennent des requêtes
+   de Romain). Le fichier s'ouvre sur un ``SELECT id, url`` de 20 lignes, avec les 20 URL
+   attendues en commentaire juste à côté. Si elles ne correspondent pas : on s'arrête.
+2. **Chaque lot est compté avant d'être écrit** — ``SELECT COUNT(*)`` et le compte attendu
+   annoncé, comme la mesure des motifs : on ne peut pas vérifier après, on vérifie avant.
+3. **Tout ``WHERE`` porte ``AND listId=9``** — une ligne déjà triée ailleurs ne rebouge pas.
+4. **L'export refuse un index sitemap absent, incomplet ou périmé** (TTL 7 jours) plutôt que
+   de déplacer à l'aveugle.
+
+La famille console — « no AKS product page found (console) (R45) » — est délibérément EXCLUE :
+le jeu a une page PC, c'est celle de la console qui manque ; l'envoyer en 22 demanderait la
+création d'une page qui existe déjà.
+
+**Une note de politique, pour mémoire.** `docs/AKS_LISTS.md` (2026-07-21) prévoyait de séparer
+22 « Pages for creation » (sorti ≤ 5 ans) et 27 « Old games / No pages » au-delà, et jugeait le
+partage non automatisable faute de date de sortie dans le feed. Romain a tranché le 2026-09-22
+pour la 22 sans partage. Le sitemap ne donne pas non plus de date de sortie ; si un second
+passage vers la 27 est voulu, il faudra une source de dates.
+
+Huit mutations vérifiées sur les gardes de l'export, quatre sur la passe 3.
+
 ## 2026-09-22 — Revue de Romain (5d163e1 → c047bb2) : quatre points, tous justes
 
 Le plus grave n'était pas dans le catalogue mais dans ce qu'il ÉTEIGNAIT.

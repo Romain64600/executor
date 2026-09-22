@@ -21,10 +21,12 @@ import html
 import datetime
 import inspect
 import json
+import os
 import re
 import time
 import unicodedata
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import quote, urlparse
 
@@ -1727,6 +1729,74 @@ def aks_url(slug: str, page_kind: str = "cd-key") -> str:
     return AKS_COMPARE_URL.format(slug=slug, kind=page_kind)
 
 
+_SITEMAP_CACHE: list[Any] = []          # [] = pas encore chargé, [None] = pas d'index
+
+
+def sitemap_index(path: str | None = None) -> Any:
+    """L'index des pages publiées par AKS, chargé UNE fois par processus, ou ``None``.
+
+    Il ne remplace aucune garde : il dit seulement quelles URL existent, pour qu'on sonde
+    celles-là au lieu de deviner. Un index absent, illisible ou périmé rend ``None`` et le
+    matcher se comporte exactement comme avant (voir `src/aks_sitemap.py`)."""
+
+    if path is not None or not _SITEMAP_CACHE:
+        from src import aks_sitemap
+        chemin = path or os.environ.get("AKS_SITEMAP_PATH") or str(
+            Path(__file__).resolve().parents[1] / aks_sitemap.DEFAULT_PATH)
+        index = aks_sitemap.SitemapIndex.load(chemin)
+        if index is not None and (index.incomplete or not index.fresh()):
+            index = None          # un catalogue troué ou vieux ne fait pas autorité
+        if path is not None:
+            return index
+        _SITEMAP_CACHE.append(index)
+    return _SITEMAP_CACHE[0]
+
+
+def set_sitemap_index(index: Any) -> None:
+    """Pose l'index pour ce processus (tests, et 03_match qui le charge une fois)."""
+
+    _SITEMAP_CACHE.clear()
+    _SITEMAP_CACHE.append(index)
+
+
+def sitemap_is_authoritative() -> bool:
+    return sitemap_index() is not None
+
+
+# Les SEULS gabarits que la passe 3 accepte comme équivalents d'une page `cd-key` : d'autres
+# façons d'écrire « une clé pour ce jeu ». Volontairement étroit.
+#   * PAS les pages COMPTE (`-steam-account`…) : un compte n'est pas une clé, c'est un autre
+#     produit — la branche compte (Difmark, R32) le dit déjà, et 246 des lignes rattrapables
+#     du balayage de nuit sont de ce genre. Les rattraper ICI les ferait entrer sous le
+#     mauvais produit ; elles ressortent donc toujours « pas de page », et l'export de tri
+#     les RETIENT au lieu de les déplacer (c'est exactement son rôle).
+#   * PAS les pages CONSOLE : elles ont leur propre branche (R45, `_console_plan`), avec ses
+#     règles de plateformes déclarées.
+SITEMAP_KEY_KINDS: tuple[str, ...] = ("key", "game-code", "download-code")
+
+
+def sitemap_shapes(slugs: list[str], page_kind: str = "cd-key") -> list[tuple[str, str]]:
+    """Les ``(slug, url)`` que l'index CONFIRME et que les passes 1-2 n'ont pas déjà sondés.
+
+    Rend une liste vide sans index — la passe 3 disparaît alors purement et simplement — et
+    vide aussi pour tout ``page_kind`` autre que ``cd-key`` : on ne rouvre pas la porte des
+    clés à une page compte."""
+
+    index = sitemap_index()
+    if index is None or not slugs or page_kind != "cd-key":
+        return []
+    autres = tuple(k for k in SITEMAP_KEY_KINDS if k != page_kind)
+    out: list[tuple[str, str]] = []
+    vus: set[str] = set()
+    for slug in slugs:
+        for kind in index.kinds_for(slug, autres):
+            url = AKS_COMPARE_URL.format(slug=slug, kind=kind)
+            if url not in vus:
+                vus.add(url)
+                out.append((slug, url))
+    return out
+
+
 def aks_page_urls(slug: str, page_kind: str = "cd-key", *,
                   years: tuple[int, ...] | None = None) -> list[tuple[str, str]]:
     """The ordered ``(slug_variant, url)`` shapes to probe for ONE guessed slug (Romain
@@ -2331,9 +2401,40 @@ def resolve_aks(
             raise AksNameUnreadable(variant)
         return resolution
 
+    # Pass 3 (2026-09-22, Romain : « n'oublie pas le gabarit -key et l'index sitemap ») —
+    # l'INDEX SITEMAP. Aucun slug deviné n'a répondu ; avant de rendre None, on demande à la
+    # liste des pages qu'AKS publie lui-même si l'une d'elles porte un de nos slugs sous un
+    # gabarit qu'on ne sonde pas : `-key` (404 lignes du balayage de nuit), `-steam-account`
+    # (246), et le reste. Le coût est NUL quand l'index ne connaît rien — c'est une lecture
+    # locale, pas une requête — ce qui est exactement la leçon du 2026-09-10 : sonder plus de
+    # formes à l'aveugle avait poussé ~300 req/min et AKS répondait en 503.
+    for variant, url in sitemap_shapes(slugs, page_kind):
+        probe = _probe_guessed_page(url, http_get_fn)
+        if probe is None:
+            # Le sitemap est une PHOTO : une page publiée hier peut avoir été retirée. Un
+            # 404 propre sur une page annoncée n'est donc pas une anomalie — on continue.
+            continue
+        if not (probe.ok and probe.status == 200 and probe.body):
+            # …en revanche un 429 / 5xx est AKS qui pousse, et doit atteindre la garde de
+            # throttle comme n'importe quelle autre sonde (MA1 : immédiatement).
+            raise AksProbeUnreliable(f"{variant} -> {probe.status or probe.error}",
+                                     status=probe.status, slug=variant)
+        resolution = _resolution_from_body(variant, url, probe.body)
+        if resolution is not None:
+            return resolution
+
     if page_kind != "cd-key" or not search:
         # no site-search fallback for account pages (see docstring), nor once the R30
         # circuit breaker is open for this run (_ThrottleGuard, 2026-09-10)
+        return None
+    if sitemap_is_authoritative():
+        # R30 n'est pas retirée — la décision de Romain du 2026-07-16 tient — mais la
+        # recherche interne d'AKS est MORTE : mesurée le 2026-09-22 depuis les DEUX VPS, elle
+        # répond `HTTP 200` avec `Content-Length: 0`, vite ou lentement, avec ou sans
+        # `Accept`. Elle était ouverte en disjoncteur sur 253 des 259 pages du balayage de
+        # nuit. Quand l'index sitemap est frais, il répond à la même question (« cette page
+        # existe-t-elle ? ») de façon complète et hors ligne : on ne paie plus 3 × 8 s pour
+        # un corps vide. Index absent ou périmé → on retombe sur la recherche, inchangée.
         return None
     for slug in search_aks_slugs(name, http_get_fn):
         # P3-1: a fallback slug may live at the bare `-key-` page, not `-cd-key-`.

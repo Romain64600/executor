@@ -25,7 +25,9 @@ if str(ROOT) not in sys.path:
 
 from src.aks_env import AKS_DIRECT_URL, AKS_STAFF_UA, http_get, validate_aks_direct_status  # noqa: E402
 from src.contracts import NormalizedFeed, NormalizedOffer  # noqa: E402
-from src.matcher import AksThrottled, match_feed, resolve_aks, resolve_aks_url  # noqa: E402
+from src.matcher import (  # noqa: E402
+    AksThrottled, match_feed, resolve_aks, resolve_aks_url, sitemap_index,
+)
 from src.page_catalog import CatalogRecorder, catalog_from_spec  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
 
@@ -168,6 +170,15 @@ def main() -> int:
     circuit_open = _search_circuit_is_open(args.search_circuit_file)
     if circuit_open:
         logger.log("search_circuit_preopened", file=args.search_circuit_file)
+    # L'index sitemap (2026-09-22) : on dit dans le journal AVEC QUOI la page a été matchée.
+    # Sans lui, « pas de page AKS » veut dire « aucun slug deviné n'a répondu » ; avec lui,
+    # ça veut dire « et AKS ne publie aucune page sous un gabarit de clé ». Ce n'est pas le
+    # même verdict, et un audit doit pouvoir les distinguer après coup.
+    _sitemap = sitemap_index()
+    logger.log("sitemap_index",
+               authoritative=_sitemap is not None,
+               pages=len(_sitemap.entries) if _sitemap else 0,
+               fetched_at=getattr(_sitemap, "fetched_at", ""))
     # Le catalogue se remplit de ce que le match LIT DÉJÀ : il ÉCOUTE les résolutions
     # (`on_resolution`), il n'enveloppe plus les résolveurs — voir la revue du 2026-09-22
     # juste en dessous. Un seul lot est écrit à la fin : un aller-retour SSH groupé

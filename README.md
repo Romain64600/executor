@@ -550,6 +550,24 @@ ne peut pas vérifier d'ici). Les promotions de nouveaux motifs vont dans
 retirée garde sa raison écrite : `%valid-until%` a été retirée le 18/09 parce qu'elle
 contredisait la décision du 14/09 sur les clés Kinguin « valid until ».
 
+**Tri par IDENTIFIANTS — ce qu'un motif d'URL ne sait pas dire (2026-09-22).** « AKS n'a pas
+de page pour ce jeu » est un verdict du matcher, pas une forme d'URL : aucun `LIKE` ne peut
+l'exprimer. On déplace donc par `WHERE id IN (…)`, la liste venant d'un balayage réel.
+
+```bash
+python3 scripts/16_sitemap_index.py --refresh          # 213 404 pages AKS, ~4 min
+python3 scripts/17_sort_sql_ids.py --run <balayage> --list 22 \
+    --out docs/tri/<date>-no-page.sql --held-out docs/tri/<date>-retenues.json
+```
+
+Le sitemap d'AKS remplace ici sa recherche interne, mesurée MORTE le 22/09 (`HTTP 200`,
+`Content-Length: 0`, depuis les deux VPS) : il PROUVE qu'une page n'existe pas. Une ligne dont
+la page existe sous un gabarit qu'on ne sonde pas (`-key`, `-steam-account`) est retirée du
+lot et écrite dans `--held-out` — sur les 9 719 lignes du balayage de nuit, ce filtre en
+retient 1 816. Le fichier `.sql` s'ouvre sur une **étape 0 obligatoire** qui vérifie le nom de
+la colonne d'identifiant (que nous n'avons jamais vu : le schéma vient des requêtes de Romain)
+en affichant 20 URL connues d'avance, et chaque lot est compté avant d'être écrit.
+
 **Allowlist as of 2026-09-16 (14 merchants)** — the command above derives this list itself,
 it is reproduced only so a reader knows what a night sweep covers: Kinguin 58, G2A 38,
 Driffle 127, Eneba 19, K4G 92, Gamivo 51, Instant Gaming 28, CJS-CDKeys 30, Allyouplay 17,
