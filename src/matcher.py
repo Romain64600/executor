@@ -2005,8 +2005,20 @@ class _ThrottleGuard:
                  grace_s: float = THROTTLE_GRACE_S, max_graces: int = THROTTLE_MAX_GRACES,
                  search_breaker: int = SEARCH_CIRCUIT_BREAKER_FAILURES,
                  search_open: bool = False,
+                 on_resolution: Callable[[Any, dict[str, Any]], None] | None = None,
                  shared: "_ThrottleGuard | None" = None) -> None:
         self._resolver = resolver
+        # REVUE DE ROMAIN (2026-09-22) : « le catalogue désactive des protections contre le
+        # throttling — l'enveloppe change l'IDENTITÉ du résolveur, utilisée par match_feed
+        # pour activer les gardes console/compte. Un 429 sur une page PS5 devient un simple
+        # skip. Cela arrive même sans catalogue activé. » Exact, et c'était le plus grave :
+        # `match_feed` décide de TROIS choses par `resolver is resolve_aks` (sommeil réel,
+        # résolveur de compte gardé, et surtout garde de throttle sur les pages console).
+        # Mon `recorder.wrap()` rendait une NOUVELLE fonction — donc `is` faux, donc les
+        # lectures de page console tournaient SANS garde, et ce depuis le commit, catalogue
+        # actif ou non. Le catalogue ÉCOUTE désormais ici, au lieu d'envelopper : l'identité
+        # du résolveur reste intacte et toutes les gardes se rallument.
+        self._on_resolution = on_resolution
         self._sleep = sleep
         self._search_breaker = search_breaker
         self._accepts_search = _accepts_kwarg(resolver, "search")
@@ -2117,6 +2129,11 @@ class _ThrottleGuard:
         self.consecutive = 0
         self._last_failed = None
         self.search_failures_consecutive = 0
+        if result is not None and self._on_resolution is not None:
+            try:
+                self._on_resolution(result, kwargs)
+            except Exception:                 # noqa: BLE001
+                pass                          # un observateur ne casse jamais une résolution
         return result
 
 
@@ -3963,6 +3980,7 @@ def match_feed(
     search_circuit_open: bool = False,
     page_resolver: Callable[[str], AksResolution | None] = resolve_aks_url,
     consoles: bool = False,
+    on_resolution: Callable[[Any, dict[str, Any]], None] | None = None,
 ) -> tuple[list[Candidate], list[SkippedOffer]]:
     """Match every offer. ``on_progress`` (2026-07-20), when given, is called
     every ``progress_every`` offers and once at the end with
@@ -3987,7 +4005,7 @@ def match_feed(
     total = len(feed.offers)
     # No real sleep under an injected test resolver (same identity rule as the pacing).
     guard = _ThrottleGuard(resolver, sleep=time.sleep if resolver is resolve_aks else (lambda s: None),
-                           search_open=search_circuit_open)
+                           search_open=search_circuit_open, on_resolution=on_resolution)
     # Account-page resolutions (Difmark accounts) go through the same guard when the
     # production resolver is in use; an injected test resolver keeps the default.
     account_resolver = guard if resolver is resolve_aks else resolve_aks
@@ -3998,7 +4016,7 @@ def match_feed(
         page_guard = _ThrottleGuard(
             page_resolver,
             sleep=time.sleep if page_resolver is resolve_aks_url else (lambda s: None),
-            shared=guard)
+            on_resolution=on_resolution, shared=guard)
     for i, offer in enumerate(feed.offers, 1):
         result = match_offer(offer, guard, difmark_offer_resolver, account_resolver=account_resolver,
                              page_resolver=page_guard, consoles=consoles)

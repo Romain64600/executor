@@ -168,18 +168,22 @@ def main() -> int:
     circuit_open = _search_circuit_is_open(args.search_circuit_file)
     if circuit_open:
         logger.log("search_circuit_preopened", file=args.search_circuit_file)
-    # Le catalogue se remplit de ce que le match LIT DÉJÀ : le résolveur est enveloppé, le
-    # matcher ne le connaît pas et ne l'importe pas (ses tests n'en voient rien). Un seul
-    # lot est écrit à la fin — un aller-retour SSH groupé (~0,1 s) contre les 145-226 s que
-    # prend le match d'une page de 100 offres.
+    # Le catalogue se remplit de ce que le match LIT DÉJÀ : il ÉCOUTE les résolutions
+    # (`on_resolution`), il n'enveloppe plus les résolveurs — voir la revue du 2026-09-22
+    # juste en dessous. Un seul lot est écrit à la fin : un aller-retour SSH groupé
+    # (~0,1 s) contre les 145-226 s que prend le match d'une page de 100 offres.
     catalog = catalog_from_spec(args.page_catalog, source=f"03_match {feed.run_id}")
     recorder = CatalogRecorder(catalog, source=f"03_match {feed.run_id}")
     try:
         candidates, skipped = match_feed(
-            feed, recorder.wrap(resolve_aks), max_candidates=args.max_candidates,
+            feed, resolve_aks, max_candidates=args.max_candidates,
             on_progress=lambda d: logger.log("match_progress", **d), stats=stats,
             search_circuit_open=circuit_open,
-            page_resolver=recorder.wrap_url(resolve_aks_url),
+            page_resolver=resolve_aks_url,
+            # Le catalogue ÉCOUTE (revue de Romain, 2026-09-22) : envelopper le résolveur
+            # changeait son identité, et `match_feed` s'en sert pour armer la garde de
+            # throttle des pages console. Les résolveurs repassent donc tels quels.
+            on_resolution=recorder.note,
             consoles=bool(args.consoles),          # [R45] console branch (default ON since 2026-09-15)
         )
     except AksThrottled as exc:

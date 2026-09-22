@@ -40,14 +40,35 @@ class IncompleteScan(RuntimeError):
     """Scan inexploitable : on ne prétend pas l'avoir mesuré."""
 
 
-def _scan_list_id(plan: dict[str, Any]) -> int:
-    """La liste que ce scan a lue. Les plans d'avant le 2026-09-21 n'ont pas le champ : ils
-    ne pouvaient lire que la 9, donc leur absence VAUT 9."""
+_FEED_PAGE_LIST_RE = re.compile(r"aks-merchant-feeds-(\d+)")
 
-    try:
-        return int(plan.get("source_list", PENDING_LIST_ID))
-    except (TypeError, ValueError):
-        return int(PENDING_LIST_ID)
+
+def _scan_list_id(plan: dict[str, Any], run_dir: Path | None = None) -> int | None:
+    """La liste que ce scan a lue, ou **None** quand on ne peut pas l'établir.
+
+    REVUE DE ROMAIN (2026-09-22) : « les scans existants hors liste 9 restent acceptés —
+    l'absence de source_list vaut automatiquement 9, alors que le commit précédent permettait
+    déjà --list 30 sans écrire ce champ. Il faut retrouver la source dans raw.json ou refuser
+    une source incertaine. » Exact : `--list` est arrivé AVANT `source_list`, donc un scan
+    fait entre les deux peut avoir lu la 30 sans le dire. Trois sources, dans l'ordre :
+    le champ du plan, puis l'URL de `raw.json` (`…&page=aks-merchant-feeds-<id>`), et sinon
+    None — une source incertaine ne devient pas la 9 par défaut."""
+
+    if "source_list" in plan:
+        try:
+            return int(plan["source_list"])
+        except (TypeError, ValueError):
+            return None
+    if run_dir is not None:
+        try:
+            raw = json.loads((run_dir / "raw.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            raw = None
+        source_url = (raw or {}).get("source_url") if isinstance(raw, dict) else None
+        m = _FEED_PAGE_LIST_RE.search(str(source_url or ""))
+        if m:
+            return int(m.group(1))
+    return None
 
 
 def _coverage(plan: dict[str, Any]) -> dict[str, Any]:
@@ -246,9 +267,14 @@ def sort_sql_payload(runs_dir: Path, wanted: str = "",
         # « AND listId=9 ». Un scan d'une AUTRE liste ne mesure donc PAS ce qu'elles
         # toucheraient — ses compteurs parleraient d'un autre lot de lignes. On refuse de
         # le présenter comme une mesure, au lieu de compter faux.
-        if _scan_list_id(plan) != int(PENDING_LIST_ID):
+        _liste = _scan_list_id(plan, run_dir)
+        if _liste is None:
             raise IncompleteScan(
-                f"ce scan a lu la liste {_scan_list_id(plan)}, pas la file Pending "
+                "impossible d'établir quelle liste ce scan a lue (ni source_list, ni URL "
+                "dans raw.json) — les requêtes ciblent listId=9, on ne mesure pas à l'aveugle")
+        if _liste != int(PENDING_LIST_ID):
+            raise IncompleteScan(
+                f"ce scan a lu la liste {_liste}, pas la file Pending "
                 f"({PENDING_LIST_ID}) que les requêtes ciblent — rien n'est mesuré")
     except IncompleteScan as exc:
         for pattern, target in RULES:
@@ -318,7 +344,21 @@ def measure_pattern(runs_dir: Path, pattern: str, target: str,
     if run_dir is None:
         return {"measured": False, "pattern": pattern, "target": str(target),
                 "note": "aucun scan de tri — impossible de mesurer"}
-    dest, by_url, plan = _classify(run_dir)
+    # REVUE DE ROMAIN (2026-09-22) : « la promotion SQL contourne encore le contrôle de
+    # liste — la vue refuse un scan de liste 30, mais measure_pattern, utilisé lors d'une
+    # promotion, l'accepte toujours : measured=True, truncated=False, collateral=0. » Exact,
+    # et c'est le chemin qui compte le plus : c'est celui par lequel une requête est
+    # PROMUE. Même porte que la vue.
+    try:
+        dest, by_url, plan = _classify(run_dir)
+        _liste = _scan_list_id(plan, run_dir)
+        if _liste is None or _liste != int(PENDING_LIST_ID):
+            raise IncompleteScan(
+                f"ce scan a lu la liste {_liste if _liste is not None else 'inconnue'}, pas "
+                f"la file Pending ({PENDING_LIST_ID}) que la requête cible — rien n'est mesuré")
+    except IncompleteScan as exc:
+        return {"measured": False, "pattern": pattern, "target": str(target),
+                "run_id": run_dir.name, "note": str(exc)}
     m = _measure(pattern, str(target), dest, by_url)
     m["run_id"] = run_dir.name
     m["coverage"] = _coverage(plan)

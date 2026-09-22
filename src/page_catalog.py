@@ -127,6 +127,30 @@ def page_nature(editions: Mapping[str, Any], page_kind: str = "cd-key") -> str:
     return NATURE_UNKNOWN
 
 
+_PAGE_KIND_RE = __import__("re").compile(r"/buy-(?P<reste>[a-z0-9-]+)-compare-prices/?$")
+
+
+def page_kind_from_url(url: str, slug: str = "") -> str:
+    """Le GABARIT que l'URL déclare : ``buy-<slug>-steam-account-compare-prices`` →
+    ``steam-account``, ``buy-<slug>-xbox-one-compare-prices`` → ``xbox-one``, sinon
+    ``cd-key``.
+
+    REVUE DE ROMAIN (2026-09-22) : « une page console écrase l'entrée PC du catalogue —
+    wrap_url classe les lectures console en cd-key. Après lecture des pages PC puis PS5 du
+    même jeu, l'entrée PC contient l'URL PS5 et aucune entrée PS5 n'existe. » Exact : la clé
+    est (slug, gabarit), et je classais toutes les lectures par URL en ``cd-key``, donc la
+    seconde écrasait la première. Le gabarit se déduit de l'URL elle-même."""
+
+    m = _PAGE_KIND_RE.search((url or "").strip().lower())
+    if not m:
+        return "cd-key"
+    reste = m.group("reste")
+    slug = (slug or "").strip().lower()
+    if slug and reste.startswith(slug + "-"):
+        return reste[len(slug) + 1:] or "cd-key"
+    return "cd-key"
+
+
 def describe(record: Mapping[str, Any]) -> str:
     """La phrase de Romain : « une page DLC », « une page console Xbox Series X », « une page
     compte Steam, accès anticipé jusqu'à <date> »."""
@@ -431,24 +455,24 @@ class CatalogRecorder:
         self.source = source
         self._seen: dict[tuple[str, str], PageRecord] = {}
 
-    def wrap(self, resolver):
-        def _resolver(name, **kwargs):
-            resolution = resolver(name, **kwargs)
-            self.note(resolution, page_kind=str(kwargs.get("page_kind") or "cd-key"))
-            return resolution
-        return _resolver
+    def note(self, resolution: Any, kwargs: Mapping[str, Any] | None = None, *,
+             page_kind: str = "") -> None:
+        """Retient UNE résolution réussie. Signature d'écouteur (`on_resolution` du
+        matcher) : le catalogue n'enveloppe plus le résolveur — l'envelopper changeait son
+        IDENTITÉ, et `match_feed` s'en sert pour armer la garde de throttle des pages
+        console (revue de Romain, 2026-09-22). Il écoute, sans rien changer au chemin.
 
-    def wrap_url(self, resolver):
-        def _resolver(url, **kwargs):
-            resolution = resolver(url, **kwargs)
-            self.note(resolution, page_kind=str(kwargs.get("page_kind") or "cd-key"))
-            return resolution
-        return _resolver
+        Le gabarit vient, dans l'ordre : de l'appelant, du mot-clé `page_kind` de la
+        résolution demandée, puis de l'URL rendue — une page console ne doit pas atterrir
+        sous « cd-key » et écraser la page PC du même jeu."""
 
-    def note(self, resolution: Any, *, page_kind: str = "cd-key") -> None:
         if resolution is None or not getattr(resolution, "slug", ""):
             return          # garde-fou n°1 : jamais un échec en cache
-        record = PageRecord.from_resolution(resolution, page_kind=page_kind, source=self.source)
+        kind = (page_kind or str((kwargs or {}).get("page_kind") or "")).strip()
+        if not kind:
+            kind = page_kind_from_url(getattr(resolution, "url", ""),
+                                      getattr(resolution, "slug", ""))
+        record = PageRecord.from_resolution(resolution, page_kind=kind, source=self.source)
         self._seen[(record.slug, record.page_kind)] = record
 
     def flush(self) -> int:

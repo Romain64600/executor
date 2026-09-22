@@ -184,18 +184,16 @@ class LeSeauDuMatch(unittest.TestCase):
         introuvable ne doit pas devenir un souvenir."""
 
         rec = CatalogRecorder(self.cat, source="t")
-        resolver = rec.wrap(lambda name, **kw: None)
-        self.assertIsNone(resolver("un jeu sans page"))
+        rec.note(None, {})
         self.assertEqual(rec.pending, 0)
         self.assertEqual(rec.flush(), 0)
         self.assertEqual(self.cat.stats()["total"], 0)
 
     def test_une_resolution_reussie_est_retenue_puis_ecrite_en_un_lot(self):
         rec = CatalogRecorder(self.cat, source="t")
-        resolver = rec.wrap(lambda name, **kw: _Res(slug=name, url="https://aks/" + name,
-                                                    editions={"1": "Standard"}, regions={}))
         for nom in ("a", "b", "c", "a"):          # « a » deux fois : une seule ligne
-            resolver(nom)
+            rec.note(_Res(slug=nom, url="https://aks/blog/buy-%s-cd-key-compare-prices/" % nom,
+                          editions={"1": "Standard"}, regions={}), {})
         self.assertEqual(rec.pending, 3)
         self.assertEqual(rec.flush(), 3)
         self.assertEqual(rec.pending, 0)          # le seau est vidé
@@ -203,16 +201,33 @@ class LeSeauDuMatch(unittest.TestCase):
 
     def test_le_gabarit_voyage_avec_la_resolution(self):
         rec = CatalogRecorder(self.cat, source="t")
-        resolver = rec.wrap(lambda name, **kw: _Res(slug=name, url="https://aks/x",
-                                                    editions={"5": "Early Access"}, regions={}))
-        resolver("subnautica-2", page_kind="steam-account")
+        rec.note(_Res(slug="subnautica-2", url="https://aks/x",
+                      editions={"5": "Early Access"}, regions={}),
+                 {"page_kind": "steam-account"})
         rec.flush()
         row = self.cat.get("subnautica-2", "steam-account")
         self.assertEqual(row["nature"], NATURE_EARLY_ACCESS)
 
+    def test_une_page_console_nécrase_pas_la_page_PC(self):
+        """Revue de Romain (2026-09-22) : « après lecture des pages PC puis PS5 du même jeu,
+        l'entrée PC contient l'URL PS5 et aucune entrée PS5 n'existe ». Le gabarit se lit
+        sur l'URL quand l'appelant ne le donne pas — c'est le cas des lectures de page
+        console, qui passent par le résolveur d'URL."""
+
+        rec = CatalogRecorder(self.cat, source="t")
+        base = "https://www.allkeyshop.com/blog/buy-hades-%s-compare-prices/"
+        rec.note(_Res(slug="hades", url=base % "cd-key", editions={"1": "Standard"}, regions={}), {})
+        rec.note(_Res(slug="hades", url=base % "ps5", editions={"1": "Standard"}, regions={}), {})
+        self.assertEqual(rec.flush(), 2)
+        pc = self.cat.get("hades", "cd-key")
+        ps5 = self.cat.get("hades", "ps5")
+        self.assertIsNotNone(ps5, "la page PS5 doit exister en propre")
+        self.assertIn("cd-key", pc["url"])
+        self.assertIn("ps5", ps5["url"])
+
     def test_sans_catalogue_le_seau_ne_fait_rien(self):
         rec = CatalogRecorder(None, source="t")
-        rec.wrap(lambda name, **kw: _Res(slug="a", url="u", editions={}, regions={}))("a")
+        rec.note(_Res(slug="a", url="u", editions={}, regions={}), {})
         self.assertEqual(rec.flush(), 0)
 
     def test_le_matcher_ignore_tout_du_catalogue(self):
@@ -235,8 +250,111 @@ class LaSpecificationDeBase(unittest.TestCase):
         src = (ROOT / "scripts" / "03_match.py").read_text(encoding="utf-8")
         self.assertIn('"--page-catalog"', src)
         self.assertIn('default=""', src)          # vide = comportement d'avant
-        self.assertIn("recorder.wrap(resolve_aks)", src)
+        # Le catalogue ÉCOUTE, il n'enveloppe plus : envelopper changeait l'identité du
+        # résolveur, dont `match_feed` se sert pour armer la garde de throttle des pages
+        # console (revue de Romain, 2026-09-22).
+        self.assertIn("on_resolution=recorder.note", src)
+        self.assertNotIn("recorder.wrap(", src)
         self.assertIn("recorder.flush()", src)
+
+    def test_le_resolveur_passe_au_matcher_reste_LE_resolveur(self):
+        """La revue du 22/09, vérifiée sur le CLI réel et pas sur son texte.
+
+        `match_feed` n'arme la garde de throttle des pages console que si le résolveur
+        qu'on lui donne EST `resolve_aks` (test d'identité). Le catalogue enveloppait ce
+        résolveur : l'identité tombait, la garde n'était plus armée — et ce, même sans
+        `--page-catalog`, donc pendant le balayage GameSeal de la nuit. On lance ici le
+        vrai CLI, catalogue activé, et on regarde ce qui arrive au matcher."""
+
+        import importlib.util
+        import pathlib
+        import sys
+        import tempfile
+        from unittest import mock
+        from src.aks_env import HttpProbeResult
+        import src.matcher as M
+
+        spec = importlib.util.spec_from_file_location(
+            "m03_identite", str(ROOT / "scripts" / "03_match.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            racine = pathlib.Path(tmp)
+            mod.ROOT = racine
+            run = racine / "runs" / "r1"
+            run.mkdir(parents=True)
+            (run / "offers.json").write_text(json.dumps({
+                "run_id": "r1", "merchant": "GameSeal", "fetched_at": "t",
+                "offers": [{"offer_id": "1", "name": "Neon Beats - Steam GLOBAL",
+                            "url": "https://gameseal.com/x", "merchant": "GameSeal",
+                            "store_id": "999"}]}), encoding="utf-8")
+            vus = {}
+
+            def faux_match_feed(feed, resolver, **kw):
+                vus["resolver"] = resolver
+                vus["page_resolver"] = kw.get("page_resolver")
+                vus["on_resolution"] = kw.get("on_resolution")
+                return [], []
+
+            argv = ["03_match.py", str(run / "offers.json"),
+                    "--page-catalog", str(racine / "cat.db")]
+            with mock.patch.object(mod, "match_feed", faux_match_feed), \
+                    mock.patch.object(mod, "http_get", return_value=HttpProbeResult(
+                        url="u", ok=True, status=200, body="x")), \
+                    mock.patch.object(sys, "argv", argv):
+                mod.main()
+
+        self.assertIs(vus["resolver"], M.resolve_aks,
+                      "le catalogue ne doit pas changer l'identité du résolveur principal")
+        self.assertIs(vus["page_resolver"], M.resolve_aks_url,
+                      "ni celle du résolveur de pages — c'est lui que la garde surveille")
+        self.assertIsNotNone(vus["on_resolution"],
+                             "le catalogue écoute : il reçoit les résolutions autrement")
+
+    def test_lecoute_recoit_la_page_PC_ET_la_page_console(self):
+        """L'écoute doit REMPLACER l'enveloppe, pas la supprimer.
+
+        Une enveloppe voyait tout ce que les deux résolveurs rendaient. Si l'écoute ne
+        remonte qu'une partie — ou rien — le catalogue se vide en silence et personne ne le
+        voit : aucune exception, aucun log. On lance donc `match_feed` sur une clé Switch,
+        dont la branche console lit une SECONDE page, et on vérifie que les deux lectures
+        arrivent au catalogue, chacune sous son propre gabarit."""
+
+        from unittest import mock
+        import src.matcher as M
+        from src.contracts import NormalizedFeed, NormalizedOffer
+        from src.matcher import AksResolution
+
+        AKS = "https://www.allkeyshop.com/blog/"
+        url_pc = AKS + "buy-hades-cd-key-compare-prices/"
+        url_switch = AKS + "buy-hades-nintendo-switch-compare-prices/"
+        page_pc = AksResolution(
+            slug="hades", url=url_pc, product_id="1", aks_name="Hades",
+            editions={"1": "Standard"}, regions={"99eu": "EU"},
+            official_platforms=("Nintendo",),
+            console_pages={"nintendo-switch": url_switch})
+        page_switch = AksResolution(
+            slug="hades", url=url_switch, product_id="1", aks_name="Hades",
+            editions={"1": "Standard"}, regions={"99eu": "EU"},
+            official_platforms=("Nintendo",),
+            console_pages={"nintendo-switch": url_switch})
+        offre = NormalizedOffer(offer_id="1", name="Hades (Nintendo Switch) Nintendo Key - EU",
+                                url="https://gameseal.com/hades-nintendo-switch-nintendo-key-eu",
+                                merchant="GameSeal")
+        feed = NormalizedFeed(run_id="r", merchant="GameSeal",
+                              fetched_at="2026-09-22T00:00:00Z", offers=(offre,))
+        recorder = CatalogRecorder(None, source="test")
+
+        with mock.patch.object(M, "resolve_aks", lambda n, **k: page_pc), \
+                mock.patch.object(M, "resolve_aks_url", lambda u: page_switch):
+            M.match_feed(feed, M.resolve_aks, page_resolver=M.resolve_aks_url,
+                         consoles=True, on_resolution=recorder.note)
+
+        gabarits = sorted(k for _, k in recorder._seen)
+        self.assertIn("cd-key", gabarits, "la résolution principale n'arrive plus au catalogue")
+        self.assertIn("nintendo-switch", gabarits,
+                      "la lecture de page CONSOLE n'arrive plus au catalogue")
 
 
 if __name__ == "__main__":

@@ -1037,3 +1037,118 @@ class LeBalayageAlimenteLeCatalogue(unittest.TestCase):
         src = (ROOT / "scripts" / "10_data_entry_auto.py").read_text(encoding="utf-8")
         self.assertIn('"--page-catalog"', src)
         self.assertIn("page_catalog=args.page_catalog", src)
+
+
+class LaRevueDuVingtDeuxSeptembre(unittest.TestCase):
+    """Revue de Romain, 5d163e1 → c047bb2 : quatre points, quatre reproductions."""
+
+    # ── [P1] l'identité du résolveur commande des gardes : ne pas l'envelopper ──────
+    def test_le_catalogue_n_eteint_plus_la_garde_de_throttle(self):
+        """« L'enveloppe change l'identité du résolveur, utilisée par match_feed pour
+        activer les gardes console/compte. Un 429 sur une page PS5 devient un simple skip.
+        Cela arrive même sans catalogue activé. » — le plus grave de la journée."""
+
+        import src.matcher as M
+
+        src = (ROOT / "scripts" / "03_match.py").read_text(encoding="utf-8")
+        self.assertIn("feed, resolve_aks,", src, "le résolveur passe TEL QUEL")
+        self.assertIn("page_resolver=resolve_aks_url", src)
+        self.assertNotIn("recorder.wrap", src)
+        self.assertIn("on_resolution=recorder.note", src)
+        # et le seau reçoit bien ce que la garde lui passe
+        import inspect
+        self.assertIn("on_resolution", inspect.signature(M.match_feed).parameters)
+
+    def test_la_garde_des_pages_console_est_bien_armee(self):
+        """Le cœur de la régression : `match_feed` n'arme la garde de throttle des pages
+        console QUE si `resolver is resolve_aks`. Une enveloppe cassait ce test d'identité
+        — la garde n'était plus construite, et un 429 sur une page console redevenait un
+        simple skip. Ici on compte les gardes construites."""
+
+        import src.matcher as M
+        from src.contracts import NormalizedFeed
+
+        feed = NormalizedFeed(run_id="r", merchant="GameSeal",
+                              fetched_at="2026-09-22T00:00:00Z", offers=())
+        construites = []
+        vrai_guard = M._ThrottleGuard
+
+        def compter(*a, **kw):
+            construites.append(kw.get("shared") is not None)
+            return vrai_guard(*a, **kw)
+
+        with mock.patch.object(M, "_ThrottleGuard", compter):
+            M.match_feed(feed, M.resolve_aks, page_resolver=M.resolve_aks_url,
+                         consoles=True, on_resolution=lambda r, kw: None)
+        self.assertEqual(construites, [False, True],
+                         "garde principale + garde des pages console partageant son état")
+
+        # et avec une ENVELOPPE (l'ancien montage), la seconde n'existe pas
+        construites.clear()
+        with mock.patch.object(M, "_ThrottleGuard", compter):
+            M.match_feed(feed, lambda *a, **k: M.resolve_aks(*a, **k),
+                         page_resolver=M.resolve_aks_url, consoles=True)
+        self.assertEqual(construites, [False], "c'est exactement ce que la revue a trouvé")
+
+    # ── [P1] la promotion mesure sur la bonne liste ────────────────────────────────
+    def _scan(self, tmp, plan_extra):
+        d = Path(tmp) / "runs" / "scan"
+        d.mkdir(parents=True)
+        (d / "offers.json").write_text(json.dumps({"offers": [
+            {"offer_id": "1", "name": "Jeu", "url": "https://m.test/a-gift-card-20"}]}),
+            encoding="utf-8")
+        plan = {"by_list": {}, "unrouted": [], "coverage": {"truncated": False}}
+        plan.update(plan_extra)
+        (d / "sort_plan.json").write_text(json.dumps(plan), encoding="utf-8")
+        return Path(tmp) / "runs"
+
+    def test_la_promotion_refuse_un_scan_dune_autre_liste(self):
+        """« measure_pattern, utilisé lors d'une promotion, l'accepte toujours :
+        measured=True, truncated=False, collateral=0. »"""
+
+        import tempfile
+        from src.admin.sort_sql_view import measure_pattern
+
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = self._scan(tmp, {"source_list": 30})
+            m = measure_pattern(runs, "%gift-card%", "21", "scan")
+        self.assertFalse(m["measured"])
+        self.assertIn("liste 30", m["note"])
+
+    def test_la_promotion_mesure_un_scan_du_pending(self):
+        import tempfile
+        from src.admin.sort_sql_view import measure_pattern
+
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = self._scan(tmp, {"source_list": 9})
+            m = measure_pattern(runs, "%gift-card%", "21", "scan")
+        self.assertTrue(m["measured"])
+
+    # ── [P2] une source incertaine n'est pas la liste 9 par défaut ─────────────────
+    def test_un_scan_sans_source_declaree_nest_pas_suppose_pending(self):
+        """« L'absence de source_list vaut automatiquement 9, alors que le commit précédent
+        permettait déjà --list 30 sans écrire ce champ. »"""
+
+        import tempfile
+        from src.admin.sort_sql_view import sort_sql_payload
+
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = self._scan(tmp, {})            # ni source_list, ni raw.json
+            payload = sort_sql_payload(runs, "scan", repo_root=Path(tmp))
+        self.assertFalse(payload["measured"])
+        self.assertIn("impossible d'établir", payload["note"])
+
+    def test_la_source_est_retrouvee_dans_raw_json(self):
+        import tempfile
+        from src.admin.sort_sql_view import sort_sql_payload
+
+        for liste, mesure in ((9, True), (30, False)):
+            with self.subTest(liste=liste):
+                with tempfile.TemporaryDirectory() as tmp:
+                    runs = self._scan(tmp, {})
+                    (runs / "scan" / "raw.json").write_text(json.dumps({
+                        "source_url": "https://www.allkeyshop.com/blog/wp-admin/admin.php"
+                                      "?available=all&page=aks-merchant-feeds-%d" % liste}),
+                        encoding="utf-8")
+                    payload = sort_sql_payload(runs, "scan", repo_root=Path(tmp))
+                self.assertEqual(payload["measured"], mesure)

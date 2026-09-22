@@ -3,6 +3,48 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-22 — Revue de Romain (5d163e1 → c047bb2) : quatre points, tous justes
+
+Le plus grave n'était pas dans le catalogue mais dans ce qu'il ÉTEIGNAIT.
+
+**`[P1]` Le catalogue désactivait la garde anti-throttle des pages console.**
+`scripts/03_match.py` enveloppait les résolveurs pour observer ce qu'ils lisaient. Or
+`match_feed` n'arme la garde de throttle des pages console que si le résolveur qu'on lui
+donne **est** `resolve_aks` (test d'identité) : l'enveloppe cassait ce test, la garde n'était
+plus construite, et un 429 sur une page console redevenait un simple skip au lieu d'arrêter
+le stage. Le point qui fait mal, et que Romain a vu : **cela arrivait même sans
+`--page-catalog`**, l'enveloppe étant posée dans tous les cas — donc pendant le balayage
+GameSeal de la nuit. Le catalogue ÉCOUTE désormais (`match_feed(..., on_resolution=...)`) :
+les résolveurs repassent tels quels, un observateur ne peut plus rien éteindre, et par
+construction il ne peut pas non plus casser une résolution (son exception est avalée).
+
+**`[P1]` La promotion SQL contournait encore le contrôle de liste.** La VUE refusait un scan
+de la liste 30, mais `measure_pattern` — le chemin par lequel une requête est réellement
+PROMUE après édition — l'acceptait toujours : `measured=True`, `collateral=0`. La mesure sur
+laquelle Romain décide passait donc par la seule porte non gardée. Même porte des deux côtés
+maintenant.
+
+**`[P2]` Les scans existants hors liste 9 restaient acceptés.** L'absence de `source_list`
+valait 9 d'office, alors que le commit PRÉCÉDENT permettait déjà `--list 30` sans écrire ce
+champ : un scan fait dans cet intervalle pouvait avoir lu la 30 en silence. Trois sources
+désormais, dans l'ordre : le champ du plan, puis l'URL de `raw.json`
+(`…&page=aks-merchant-feeds-<id>`), sinon **rien** — une source incertaine ne devient plus la
+9 par défaut. Les deux scans réels du VPS sont retrouvés par la deuxième source : ils
+continuent de mesurer.
+
+**`[P2]` Une page console écrasait l'entrée PC du catalogue.** La clé est `(slug, gabarit)`
+et je classais toute lecture par URL en `cd-key` : après la page PC puis la page PS5 du même
+jeu, l'entrée PC portait l'URL PS5 et aucune entrée PS5 n'existait. Le gabarit se déduit
+maintenant de l'URL elle-même (`page_kind_from_url`).
+
+Quatre points, cinq tests, **six mutations vérifiées** — dont l'identité du résolveur, testée
+sur le vrai CLI et non sur son texte. Deux de ces mutations comblent un trou trouvé en
+vérifiant le correctif lui-même : rien ne détectait qu'une écoute cesse d'être appelée (ni du
+tout, ni seulement sur les pages console). Le catalogue se serait vidé en silence — aucune
+exception, aucun log. Un test lance maintenant `match_feed` sur une clé Switch, dont la
+branche console lit une seconde page, et exige les DEUX gabarits au catalogue.
+Suite complète : 2 476 tests, verts.
+
 ## 2026-09-21 — Des groupes de marchands, un par VPS (et prêts pour le 3e et le 4e)
 
 Romain : « je voudrais qu'on puisse lancer des marchands aussi par groupe… divise nos
@@ -60,8 +102,10 @@ l'URL déclare et la plateforme que la page annonce (`url_account_platform`) est
 --list 30, le plan déclare encore la liste 9 ; la vue SQL le sélectionne comme mesuré alors
 que ses requêtes ciblent listId=9. » Exact : j'avais changé la ligne IMPRIMÉE, pas le plan.
 La liste scannée est maintenant dans `sort_plan.json` (`source_list`), et la vue SQL refuse
-d'en tirer une mesure — « ce scan a lu la liste 30, pas la file Pending ». Les plans d'avant
-ce jour n'ont pas le champ : leur absence vaut 9, puisqu'on ne savait lire que celle-là.
+d'en tirer une mesure — « ce scan a lu la liste 30, pas la file Pending ». ~~Les plans d'avant
+ce jour n'ont pas le champ : leur absence vaut 9, puisqu'on ne savait lire que celle-là.~~
+**Corrigé le 22/09** (revue suivante) : `--list` existait AVANT `source_list`, donc un plan
+sans le champ a pu lire la 30 sans le dire. L'absence ne vaut plus 9 — voir l'entrée du 22/09.
 
 **`[P2]` Le catalogue du submit ignorait `--list`.** Deux sites d'appel existent et je n'avais
 câblé que celui du mode `--catalog` : avec `--list 30` et un cache absent ou périmé, le

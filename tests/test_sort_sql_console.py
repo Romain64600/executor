@@ -37,6 +37,10 @@ def _run(tmp, rows, by_list, unrouted=()):
     (d / "offers.json").write_text(json.dumps({"offers": rows}), encoding="utf-8")
     (d / "sort_plan.json").write_text(
         json.dumps({"by_list": by_list, "unrouted": list(unrouted),
+                    # Liste LUE déclarée : depuis la revue du 2026-09-22, un scan dont on ne
+                    # peut pas établir la liste source est refusé (les requêtes portent
+                    # « AND listId=9 » — mesurer un scan de la 30 compterait un autre lot).
+                    "source_list": 9,
                     # Couverture COMPLÈTE déclarée : depuis l'audit du 2026-09-18, un plan
                     # sans bloc `coverage` est traité comme TRONQUÉ (fail-closed) et les
                     # propositions sont refusées. Une fixture doit dire ce qu'elle simule.
@@ -280,6 +284,7 @@ class APromotedProposalDisappearsTests(unittest.TestCase):
         (run / "sort_plan.json").write_text(json.dumps(
             {"by_list": {"21": {"offers": [dict(r, reason="skip category: GIFT CARD")
                                            for r in rows]}}, "unrouted": [],
+             "source_list": 9,
              "coverage": {"partial": True, "pages_fetched": 3, "feed_last_page": 3,
                           "truncated": False}}), encoding="utf-8")
         return pathlib.Path(tmp)

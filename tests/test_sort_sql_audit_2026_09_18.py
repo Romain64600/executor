@@ -25,8 +25,11 @@ def _scan(tmp, rows, by_list, drop_offers=False, corrupt=False):
         (d / "offers.json").write_text("{pas du json", encoding="utf-8")
     elif not drop_offers:
         (d / "offers.json").write_text(json.dumps({"offers": rows}), encoding="utf-8")
+    # `source_list` : depuis la revue du 2026-09-22, un scan dont la liste est INCERTAINE
+    # n'est plus mesuré (il pourrait avoir lu la 30). Ce gabarit simule un scan normal du
+    # pending, donc il le déclare — comme le fait `08_sort_plan` depuis le même jour.
     (d / "sort_plan.json").write_text(
-        json.dumps({"by_list": by_list, "unrouted": []}), encoding="utf-8")
+        json.dumps({"by_list": by_list, "unrouted": [], "source_list": 9}), encoding="utf-8")
     return pathlib.Path(tmp)
 
 
