@@ -251,7 +251,7 @@ def domain_of(url: str) -> str:
     return h[4:] if h.startswith("www.") else h
 
 
-def collect_from_sort_scan(run_dir: str | Path, *, exclude_domains: Iterable[str] = (),
+def collect_from_sort_scan(run_dir: str | Path, *, exclude_stores: Iterable[str] = (),
                            only_domains: Iterable[str] = ()) -> list[dict[str, Any]]:
     """Les lignes qu'un scan de tri tient pour de VRAIS JEUX À CRÉER.
 
@@ -260,8 +260,15 @@ def collect_from_sort_scan(run_dir: str | Path, *, exclude_domains: Iterable[str
     reste, qui est ce qu'il tiendrait pour un jeu à créer. C'est ce reste qu'on prend : une
     ligne déjà réclamée par une autre liste n'a rien à faire en 22.
 
-    ``exclude_domains`` / ``only_domains`` filtrent par boutique (le domaine de l'URL de
-    l'offre), parce qu'un scan tous-magasins mélange les 57 boutiques de la file."""
+    ``exclude_stores`` écarte des marchands par **store_id**, et c'est délibéré : le
+    ``store_id`` EST la clé de la liste blanche, alors que le domaine se devine. Première
+    version de ce code, qui filtrait par domaine : deux marchands sur seize étaient mal
+    orthographiés — GamersOutlet vit sur ``gamers-outlet.net`` (avec un tiret) et Allyouplay
+    n'a pas de domaine à lui du tout, ses liens passent par ``anandadigitalbv.sjv.io``. Leurs
+    lignes tombaient donc dans l'export « des autres », en double. Le ``store_id`` ne se
+    trompe pas.
+
+    ``only_domains`` reste, lui, un confort de lecture pour isoler une boutique à la main."""
 
     d = Path(run_dir)
     plan = json.loads((d / "sort_plan.json").read_text(encoding="utf-8"))
@@ -279,7 +286,7 @@ def collect_from_sort_scan(run_dir: str | Path, *, exclude_domains: Iterable[str
             if u:
                 reclamees.add(u)
 
-    exclus = {str(x).lower() for x in exclude_domains}
+    exclus = {str(x).strip() for x in exclude_stores}
     seuls = {str(x).lower() for x in only_domains}
     vus: dict[str, dict[str, Any]] = {}
     for r in rows:
@@ -287,7 +294,7 @@ def collect_from_sort_scan(run_dir: str | Path, *, exclude_domains: Iterable[str
         if not url or url in reclamees:
             continue
         dom = domain_of(url)
-        if exclus and dom in exclus:
+        if exclus and str(r.get("store_id") or "").strip() in exclus:
             continue
         if seuls and dom not in seuls:
             continue

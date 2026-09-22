@@ -253,10 +253,13 @@ class LeScanDeTriCommeSource(unittest.TestCase):
         d = pathlib.Path(tmp) / "tri"
         d.mkdir(parents=True)
         rows = [
-            {"offer_id": "1", "name": "Jeu Libre", "url": "https://gog.com/a"},
-            {"offer_id": "2", "name": "Carte", "url": "https://gog.com/carte"},
-            {"offer_id": "3", "name": "Console", "url": "https://wyrel.com/c"},
-            {"offer_id": "4", "name": "Notre Jeu", "url": "https://www.gameseal.com/x"},
+            {"offer_id": "1", "name": "Jeu Libre", "url": "https://gog.com/a", "store_id": "999"},
+            {"offer_id": "2", "name": "Carte", "url": "https://gog.com/carte", "store_id": "999"},
+            {"offer_id": "3", "name": "Console", "url": "https://wyrel.com/c", "store_id": "998"},
+            # Un de NOS marchands, dont le domaine ne se devine pas : GamersOutlet vit sur
+            # « gamers-outlet.net » avec un tiret. C'est le store_id qui doit l'exclure.
+            {"offer_id": "4", "name": "Notre Jeu",
+             "url": "https://www.gamers-outlet.net/x", "store_id": "31"},
         ]
         (d / "offers.json").write_text(json.dumps({"offers": rows}), encoding="utf-8")
         (d / "sort_plan.json").write_text(json.dumps({
@@ -276,28 +279,29 @@ class LeScanDeTriCommeSource(unittest.TestCase):
             got = collect_from_sort_scan(self._scan(tmp))
         self.assertEqual(sorted(o["offer_id"] for o in got), ["1", "4"])
 
-    def test_le_filtre_par_boutique_separe_les_notres_des_autres(self):
+    def test_nos_marchands_sont_ecartes_par_STORE_ID_pas_par_domaine(self):
+        """Le défaut que ce test épingle, trouvé sur les vraies données : filtrer par
+        domaine ratait GamersOutlet (« gamers-outlet.net », avec un tiret) et Allyouplay
+        (pas de domaine propre du tout — ses liens passent par « anandadigitalbv.sjv.io »).
+        Leurs lignes partaient dans l'export « des autres », donc en double."""
+
         with tempfile.TemporaryDirectory() as tmp:
             d = self._scan(tmp)
-            autres = collect_from_sort_scan(d, exclude_domains={"gameseal.com"})
-            self.assertEqual([o["offer_id"] for o in autres], ["1"])
+            autres = collect_from_sort_scan(d, exclude_stores={"31"})
+            self.assertEqual([o["offer_id"] for o in autres], ["1"],
+                             "le store_id 31 doit écarter la ligne, quel que soit son domaine")
             gog = collect_from_sort_scan(d, only_domains={"gog.com"})
             self.assertEqual([o["offer_id"] for o in gog], ["1"])
-            self.assertEqual(domain_of("https://www.gameseal.com/x"), "gameseal.com")
+            self.assertEqual(domain_of("https://www.gamers-outlet.net/x"), "gamers-outlet.net")
 
-    def test_la_table_des_domaines_couvre_exactement_la_liste_blanche(self):
-        """Un marchand ajouté à la liste blanche et oublié ici serait traité comme « un
-        autre » : ses lignes partiraient dans les deux exports."""
-
+    def test_le_CLI_ecarte_exactement_les_store_id_de_la_liste_blanche(self):
         import importlib.util
         spec = importlib.util.spec_from_file_location(
             "s17dom", str(ROOT / "scripts" / "17_sort_sql_ids.py"))
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         from src.admin.auto_merchants import AUTO_MERCHANTS
-        self.assertEqual(sorted(mod.NOS_DOMAINES), sorted(n for n, _ in AUTO_MERCHANTS))
-        for nom, dom in mod.NOS_DOMAINES.items():
-            self.assertRegex(dom, r"^[a-z0-9.-]+\.[a-z]{2,}$", nom)
+        self.assertEqual(mod.NOS_STORES, {s for _, s in AUTO_MERCHANTS})
 
 
 class LeCliRefuseUnIndexQuilNePeutPasJustifier(unittest.TestCase):

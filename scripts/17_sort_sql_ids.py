@@ -43,19 +43,13 @@ from src.sort_sql_ids import (  # noqa: E402
     render_sql,
 )
 
-# Les domaines de nos marchands allowlistés — pour l'option `--others`, qui veut dire
-# « toutes les boutiques SAUF les nôtres ». La liste blanche donne des NOMS et des store_id,
-# pas des domaines : cette table est donc écrite à la main, et un test vérifie qu'elle couvre
-# exactement `AUTO_MERCHANTS` — sans quoi un marchand ajouté à la liste blanche serait traité
-# comme « un autre » et ses lignes exportées deux fois.
-NOS_DOMAINES = {
-    "GameSeal": "gameseal.com", "Gamivo": "gamivo.com", "Eneba": "eneba.com",
-    "Kinguin": "kinguin.net", "G2A": "g2a.com", "CJS-CDKeys": "cjs-cdkeys.com",
-    "GameBoost": "gameboost.com", "Gamerall": "gamerall.com", "Driffle": "driffle.com",
-    "Electronicfirst": "electronicfirst.com", "Instant Gaming": "instant-gaming.com",
-    "Allyouplay": "allyouplay.com", "MMOGA": "mmoga.com", "K4G": "k4g.com",
-    "GamersOutlet": "gamersoutlet.net", "Difmark": "difmark.com",
-}
+# `--others` = « toutes les boutiques SAUF les nôtres », et le filtre porte sur le
+# **store_id**, pas sur le domaine. J'avais d'abord écrit une table de domaines à la main :
+# deux entrées sur seize étaient fausses — GamersOutlet est sur `gamers-outlet.net` (tiret)
+# et Allyouplay n'a pas de domaine propre, ses liens passent par `anandadigitalbv.sjv.io`.
+# Leurs lignes partaient donc dans l'export « des autres », en double. Le store_id est la
+# clé de la liste blanche elle-même : il ne peut pas diverger.
+NOS_STORES = {store for _, store in AUTO_MERCHANTS}
 
 
 def main() -> int:
@@ -109,7 +103,7 @@ def main() -> int:
             return 2
         offres = collect_from_sort_scan(
             dossier,
-            exclude_domains=set(NOS_DOMAINES.values()) if args.others else (),
+            exclude_stores=NOS_STORES if args.others else (),
             only_domains=args.only_domain)
     else:
         if args.others or args.only_domain:
