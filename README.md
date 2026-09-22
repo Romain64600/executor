@@ -558,6 +558,9 @@ l'exprimer. On déplace donc par `WHERE id IN (…)`, la liste venant d'un balay
 python3 scripts/16_sitemap_index.py --refresh          # 213 404 pages AKS, ~4 min
 python3 scripts/17_sort_sql_ids.py --run <balayage> --list 22 \
     --out docs/tri/<date>-no-page.sql --held-out docs/tri/<date>-retenues.json
+# les boutiques jamais balayées n'ont pas de skipped.json : on lit un scan de TRI
+python3 scripts/17_sort_sql_ids.py --sort-scan --others --run <scan de tri> --list 22 \
+    --out docs/tri/<date>-autres.sql --held-out docs/tri/<date>-autres-retenues.json
 ```
 
 Le sitemap d'AKS remplace ici sa recherche interne, mesurée MORTE le 22/09 (`HTTP 200`,
