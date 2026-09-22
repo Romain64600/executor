@@ -84,6 +84,31 @@ bundle, région) n'a rien à faire en 22. `--others` exclut nos propres boutique
 vérifie que la table des domaines couvre exactement la liste blanche — un marchand oublié là
 verrait ses lignes partir dans les deux exports.
 
+**L'export « autres marchands » a été VÉRIFIÉ avant d'être livré, et il a fallu le corriger.**
+Huit agents, un par boutique, ont audité 200 lignes tirées au sort : est-ce un jeu ? la page
+manque-t-elle vraiment (sondée en direct, UA `AKS/Staff`, 8 sondes maximum par boutique, jamais
+la recherche) ? Deux familles de défauts sont ressorties, toutes deux corrigées et mesurées sur
+l'export entier :
+
+*Des NON-JEUX, 394 lignes sur 4 811 (8,2 %).* `awin1.com` n'est pas une boutique mais le
+redirecteur d'affiliation d'Awin : l'URL réelle est dans un paramètre, et son CHEMIN type le
+produit. 177 bandes dessinées (`/comic/`), 71 livres (`/book/`) — dont « Halo: Collateral
+Damage », un ROMAN qui serait parti en 22 comme un jeu — et 4 configurateurs
+(`/pick-and-mix/`). S'y ajoutent 137 démos (produit gratuit, aucune clé, aucun prix à comparer)
+et 5 titres de remplacement non traduits (« product_title_1294777125 »), dont le verdict « pas
+de page » ne prouve rien puisqu'il n'y avait pas de titre à chercher.
+
+*Des pages QUI EXISTENT, cachées par la ponctuation, 140 lignes (2,9 %).* « Hyperdimension
+Neptunia Re;Birth3 » cherchait `…re-birth3…` quand AKS écrit `…rebirth3…` ; « House of 1,000
+Doors » cherchait `…1-000-doors…` contre `…1000-doors…` ; « MotoGP24 » contre `motogp-24`. Le
+produit est le même, l'écriture diffère. `SitemapIndex.flat_page` compare les deux côtés
+réduits à leurs lettres et chiffres. C'est sûr des deux côtés : pour l'export, une
+correspondance à tort ne fait que RETENIR une ligne ; pour le matcher, l'URL est ensuite
+réellement téléchargée et passe les gardes de nom R01, qui refusent un homonyme.
+
+Le même aplatissement sert donc aussi la passe 3 du matcher : une page trouvée à la ponctuation
+près est une offre de plus qui entre, au lieu d'un refus.
+
 La famille console — « no AKS product page found (console) (R45) » — est délibérément EXCLUE :
 le jeu a une page PC, c'est celle de la console qui manque ; l'envoyer en 22 demanderait la
 création d'une page qui existe déjà.

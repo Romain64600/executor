@@ -23,6 +23,7 @@ from src.sort_sql_ids import (  # noqa: E402
     collect,
     collect_from_sort_scan,
     domain_of,
+    non_game_reason,
     partition,
     render_sql,
 )
@@ -179,6 +180,73 @@ class LeFiltreDuSitemap(unittest.TestCase):
                   enumerate(["Ignoble", "Legends", "Jeu Fantome"], 1)]
         part = partition(offres, idx, self._cands)
         self.assertEqual(sum(part.counts().values()), len(offres))
+
+
+class LeFiltreDesNonJeux(unittest.TestCase):
+    """Mesuré sur l'export réel du 2026-09-22 par une vérification boutique par boutique :
+    394 lignes sur 4 811 n'étaient pas des jeux. Demander la création d'une page AKS pour
+    une bande dessinée, c'est fabriquer du travail inutile pour un humain."""
+
+    def _cands(self, nom):
+        return ["x"]
+
+    def test_une_BD_ou_un_livre_derriere_un_redirecteur_daffiliation(self):
+        """`awin1.com` n'est pas une boutique : c'est un redirecteur. Sans déplier l'URL,
+        le chemin qui type le produit est invisible — et « Halo: Collateral Damage », un
+        ROMAN, part en 22 comme un jeu."""
+
+        roman = {"offer_id": "1", "name": "Halo: Collateral Damage",
+                 "url": "https://www.awin1.com/cread.php?ued=https%3A%2F%2F"
+                        "www.fanatical.com%2Fen%2Fbook%2Fhalo-collateral-damage"}
+        self.assertIn("/book/", non_game_reason(roman) or "")
+        bd = dict(roman, offer_id="2", url="https://fanatical.com/en/comic/the-midnite-show")
+        self.assertIn("/comic/", non_game_reason(bd) or "")
+
+    def test_une_demo_nest_pas_un_produit_a_comparer(self):
+        self.assertIn("démo", non_game_reason(
+            {"offer_id": "3", "name": "Dice Crawler Demo", "url": "https://gog.com/x"}) or "")
+        self.assertIsNone(non_game_reason(
+            {"offer_id": "4", "name": "Demolition Company", "url": "https://gog.com/x"}),
+            "« Demolition » contient « demo » sans être une démo — le mot est isolé")
+
+    def test_un_titre_de_remplacement_ne_prouve_rien(self):
+        for nom in ("product_title_1294777125", "2367709"):
+            self.assertIsNotNone(non_game_reason(
+                {"offer_id": "5", "name": nom, "url": "https://muve.games/x"}), nom)
+
+    def test_un_vrai_jeu_passe(self):
+        self.assertIsNone(non_game_reason(
+            {"offer_id": "6", "name": "Hades", "url": "https://gog.com/en/game/hades"}))
+
+    def test_la_partition_les_range_a_part_et_les_compte(self):
+        idx = _index(["x-cd-key"])
+        offres = [{"offer_id": "1", "name": "Dice Crawler Demo", "url": "u"},
+                  {"offer_id": "2", "name": "Vrai Jeu", "url": "u"}]
+        part = partition(offres, idx, lambda n: ["jamais-vu"])
+        self.assertEqual([o["offer_id"] for o in part.not_a_game], ["1"])
+        self.assertEqual([o["offer_id"] for o in part.to_move], ["2"])
+        self.assertEqual(sum(part.counts().values()), len(offres))
+
+
+class LaComparaisonAplatie(unittest.TestCase):
+    """La ponctuation et le groupement des chiffres divergent entre le titre marchand et le
+    slug d'AKS, pas le produit : « Re;Birth3 » contre « rebirth3 », « 1,000 Doors » contre
+    « 1000-doors », « MotoGP24 » contre « motogp-24 ». 140 lignes de l'export (2,9 %)
+    retrouvent leur page ainsi — et ne doivent donc PAS partir en création."""
+
+    def test_une_page_trouvee_a_la_ponctuation_pres_retient_la_ligne(self):
+        idx = _index(["motogp-24-cd-key"])
+        part = partition([{"offer_id": "1", "name": "MotoGP24", "url": "u"}],
+                         idx, lambda n: ["motogp24"])
+        self.assertEqual(part.to_move, [], "la page existe : on ne demande pas de la créer")
+        self.assertEqual(part.page_exists[0]["pages_aks"], ["motogp-24-cd-key"])
+
+    def test_elle_ne_rapproche_pas_deux_produits_differents(self):
+        idx = _index(["hades-2-cd-key"])
+        part = partition([{"offer_id": "1", "name": "Hades", "url": "u"}],
+                         idx, lambda n: ["hades"])
+        self.assertEqual([o["offer_id"] for o in part.page_exists], [],
+                         "« hades » et « hades-2 » ne s'aplatissent pas pareil")
 
 
 class LeFichierSQL(unittest.TestCase):

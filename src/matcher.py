@@ -1789,11 +1789,26 @@ def sitemap_shapes(slugs: list[str], page_kind: str = "cd-key") -> list[tuple[st
     out: list[tuple[str, str]] = []
     vus: set[str] = set()
     for slug in slugs:
-        for kind in index.kinds_for(slug, autres):
-            url = AKS_COMPARE_URL.format(slug=slug, kind=kind)
+        # (slug tel qu'AKS l'écrit, gabarit) — le slug rendu doit rester NU : il devient
+        # `AksResolution.slug`, que R43 compare aux slugs du titre (`own_page_slugs`).
+        paires: list[tuple[str, str]] = [(slug, k) for k in index.kinds_for(slug, autres)]
+        # …et la même question à la ponctuation près. Trouvé par la vérification du
+        # 2026-09-22 : « Hyperdimension Neptunia Re;Birth3 » cherche `…re-birth3…` quand AKS
+        # écrit `…rebirth3…`, « House of 1,000 Doors » cherche `…1-000-doors…` contre
+        # `…1000-doors…`, « MotoGP24 » contre `motogp-24`. Le produit est le même, seule
+        # l'écriture diffère. L'URL proposée est ensuite RÉELLEMENT téléchargée et passe les
+        # gardes de nom R01 : un homonyme aplati est refusé là, comme n'importe quel autre.
+        for kind in (page_kind,) + autres:
+            plat = index.flat_page(f"{slug}-{kind}")
+            if plat and plat.endswith("-" + kind):
+                paire = (plat[: -len(kind) - 1], kind)
+                if paire not in paires:
+                    paires.append(paire)
+        for nu, kind in paires:
+            url = AKS_COMPARE_URL.format(slug=nu, kind=kind)
             if url not in vus:
                 vus.add(url)
-                out.append((slug, url))
+                out.append((nu, url))
     return out
 
 

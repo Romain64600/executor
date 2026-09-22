@@ -49,6 +49,15 @@ DEFAULT_TTL_DAYS = 7
 _LOC_RE = re.compile(rb"<loc>([^<]+)</loc>")
 # La grammaire des pages produit : buy-<slug>-<gabarit>-compare-prices/
 _PAGE_RE = re.compile(r"/blog/buy-(.+?)-compare-prices/?$")
+_FLAT_RE = re.compile(r"[^a-z0-9]+")
+
+
+def _flatten(slug: str) -> str:
+    """Le slug réduit à ses lettres et ses chiffres : « re-birth3 » et « rebirth3 »
+    deviennent la même clé, « 1-000-doors » et « 1000-doors » aussi."""
+
+    return _FLAT_RE.sub("", str(slug or "").lower())
+
 
 # Les gabarits de page qu'on sait nommer. L'index en couvre 96 % ; le reste est rattrapé par
 # la recherche par préfixe (voir `SitemapIndex.any_page_starting_with`).
@@ -183,6 +192,35 @@ class SitemapIndex:
 
         s = str(slug or "").strip().lower()
         return [k for k in kinds if s and f"{s}-{k}" in self.entries]
+
+    def flat_page(self, full_slug: str) -> str | None:
+        """La page dont le slug, RÉDUIT à ses lettres et chiffres, est le même. Ou None.
+
+        REVUE PAR AGENTS (2026-09-22). Une vérification boutique par boutique de l'export
+        vers la liste 22 a trouvé des pages qui existent et que nous déclarions absentes :
+        « Hyperdimension Neptunia Re;Birth3 » cherche ``…re-birth3…`` quand AKS écrit
+        ``…rebirth3…``, « House of 1,000 Doors » cherche ``…1-000-doors…`` quand AKS écrit
+        ``…1000-doors…``, « MotoGP24 » contre ``motogp-24``. La ponctuation et le groupement
+        des chiffres divergent, pas le produit. En aplatissant les deux côtés, 140 lignes de
+        l'export (2,9 %) retrouvent leur page.
+
+        Pourquoi c'est sûr des deux côtés : pour l'EXPORT, une correspondance à tort ne fait
+        que RETENIR une ligne (on ne déplace pas) ; pour le MATCHER, l'URL rendue est ensuite
+        réellement téléchargée et passe les gardes de nom R01 habituelles, qui refusent un
+        homonyme. On ne saute aucune vérification, on propose seulement une URL de plus."""
+
+        cle = _flatten(full_slug)
+        return self._flat.get(cle) if cle else None
+
+    @property
+    def _flat(self) -> dict[str, str]:
+        cache = getattr(self, "_flat_cache", None)
+        if cache is None:
+            cache = {}
+            for e in self.entries:
+                cache.setdefault(_flatten(e), e)
+            object.__setattr__(self, "_flat_cache", cache)
+        return cache
 
     def any_page_starting_with(self, slug: str) -> str | None:
         """La PREMIÈRE page dont le slug commence par ``<slug>-``, ou None.

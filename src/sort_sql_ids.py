@@ -43,7 +43,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Mapping
 
 from src.aks_sitemap import PAGE_KINDS, SitemapIndex
 
@@ -73,6 +73,53 @@ FAMILIES: dict[str, dict[str, Any]] = {
 }
 
 
+# Les marqueurs de NON-JEU trouvés dans l'export réel du 2026-09-22 par une vérification
+# boutique par boutique. Ce ne sont pas des intuitions : chacun a été compté.
+#
+#   177 bandes dessinées, 71 livres, 4 configurateurs « compose ton pack » — tous chez
+#   Fanatical, atteint par le redirecteur d'affiliation Awin. Le CHEMIN de l'URL marchande
+#   type le produit (`/comic/`, `/book/`, `/pick-and-mix/`), c'est donc déterministe et
+#   gratuit. « Halo: Collateral Damage » est un ROMAN ; sans ce filtre il partait en 22
+#   comme un jeu.
+#   137 démos : un produit gratuit, aucune clé vendue, aucun prix à comparer.
+#   5 titres de remplacement non traduits (« product_title_1294777125 », « 2367709 ») : un
+#   titre absent ne prouve rien, son verdict « pas de page » non plus.
+#
+# Soit 394 lignes sur 4 811 (8,2 %) qu'on ne demandera pas de créer.
+NON_GAME_URL = re.compile(r"/(?:comics?|books?|pick-and-mix)/", re.I)
+NON_GAME_TITLE = re.compile(r"\bdemos?\b", re.I)
+PLACEHOLDER_TITLE = re.compile(r"^(?:product_title_\d+|\d+)$")
+
+
+def _target_url(url: str) -> str:
+    """L'URL du PRODUIT derrière un lien d'affiliation.
+
+    `awin1.com` et `go.loaded.com` ne sont pas des boutiques : ce sont des redirecteurs, et
+    la vraie adresse est dans un paramètre de la requête. Sans ce dépliage, le chemin qui
+    type le produit (`/comic/`, `/book/`) est invisible."""
+
+    from urllib.parse import parse_qs, unquote, urlparse
+    q = parse_qs(urlparse(str(url or "")).query)
+    for cle in ("u", "ued", "url", "p"):
+        if q.get(cle):
+            return unquote(q[cle][0])
+    return str(url or "")
+
+
+def non_game_reason(offer: Mapping[str, Any]) -> str | None:
+    """Pourquoi cette ligne n'est pas un jeu à créer — ou None si elle en est un."""
+
+    nom = str(offer.get("name") or "")
+    if PLACEHOLDER_TITLE.match(nom.strip()):
+        return "titre de remplacement non traduit — le verdict « pas de page » ne prouve rien"
+    if NON_GAME_TITLE.search(nom):
+        return "démo — produit gratuit, aucune clé vendue, aucun prix à comparer"
+    m = NON_GAME_URL.search(_target_url(offer.get("url") or ""))
+    if m:
+        return f"l'URL marchande type le produit : {m.group(0)} — ce n'est pas un jeu"
+    return None
+
+
 class ExportRefused(RuntimeError):
     """On refuse de produire des requêtes qu'on ne peut pas justifier."""
 
@@ -84,10 +131,11 @@ class Partition:
     to_move: list[dict[str, Any]] = field(default_factory=list)
     page_exists: list[dict[str, Any]] = field(default_factory=list)
     doubtful: list[dict[str, Any]] = field(default_factory=list)
+    not_a_game: list[dict[str, Any]] = field(default_factory=list)
 
     def counts(self) -> dict[str, int]:
         return {"a_deplacer": len(self.to_move), "page_existe": len(self.page_exists),
-                "doute_prefixe": len(self.doubtful)}
+                "doute_prefixe": len(self.doubtful), "pas_un_jeu": len(self.not_a_game)}
 
 
 def collect(runs_dir: str | Path, run_prefix: str, family: str) -> list[dict[str, Any]]:
@@ -140,6 +188,10 @@ def partition(offers: Iterable[dict[str, Any]], index: SitemapIndex,
     kinds = tuple(kinds)
     out = Partition()
     for offre in offers:
+        pourquoi = non_game_reason(offre)
+        if pourquoi:
+            out.not_a_game.append({**offre, "pas_un_jeu": pourquoi})
+            continue
         cands = slug_candidates(offre.get("name") or "")
         gabarits: list[str] = []
         voisin = None
@@ -147,6 +199,12 @@ def partition(offers: Iterable[dict[str, Any]], index: SitemapIndex,
             trouves = index.kinds_for(c, kinds)
             if trouves:
                 gabarits = [f"{c}-{k}" for k in trouves]
+                break
+            # …et la même question en aplatissant la ponctuation des deux côtés
+            plat = next((index.flat_page(f"{c}-{k}") for k in kinds
+                         if index.flat_page(f"{c}-{k}")), None)
+            if plat:
+                gabarits = [plat]
                 break
         if gabarits:
             out.page_exists.append({**offre, "pages_aks": gabarits})

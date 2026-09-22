@@ -131,6 +131,23 @@ class LaPasse3(unittest.TestCase):
                 url=url, ok=False, status=404, body=""))
         self.assertFalse(recherche.called)
 
+    def test_la_ponctuation_ne_doit_pas_cacher_une_page_qui_existe(self):
+        """Trouvé par la vérification du 22/09 : « MotoGP24 » cherche `motogp24` quand AKS
+        écrit `motogp-24`, « House of 1,000 Doors » cherche `1-000-doors` contre
+        `1000-doors`. Le produit est le même. Le slug rendu doit être celui d'AKS, NU —
+        c'est lui que R43 compare au titre (`own_page_slugs`)."""
+
+        M.set_sitemap_index(_index(["motogp-24-cd-key"]))
+        formes = M.sitemap_shapes(["motogp24"])
+        self.assertEqual(formes, [("motogp-24",
+                                   "https://www.allkeyshop.com/blog/"
+                                   "buy-motogp-24-cd-key-compare-prices/")])
+
+    def test_laplatissement_ne_rapproche_pas_deux_jeux_differents(self):
+        M.set_sitemap_index(_index(["hades-2-cd-key"]))
+        self.assertEqual(M.sitemap_shapes(["hades"]), [],
+                         "« hades » et « hades-2 » ne s'aplatissent pas pareil")
+
     # -- les gardes de la passe 3 ----------------------------------------------------
     def test_un_503_sur_une_page_annoncee_remonte_a_la_garde_de_throttle(self):
         """AKS qui pousse doit arrêter le stage, pas devenir un skip silencieux — MA1."""

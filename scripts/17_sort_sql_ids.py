@@ -121,7 +121,7 @@ def main() -> int:
         f"{source} {args.run} — famille « {FAMILIES[args.family]['label']} »\n"
         f"index sitemap : {len(index.entries)} pages, relevé {index.fetched_at}\n"
         f"lues {len(offres)} — retenues {len(part.page_exists)} (page existante) "
-        f"+ {len(part.doubtful)} (doute par préfixe)"
+        f"+ {len(part.doubtful)} (doute par préfixe) + {len(part.not_a_game)} (pas un jeu)"
     )
     try:
         sql = render_sql(part.to_move, args.target, chunk=args.chunk, header=entete)
@@ -139,7 +139,8 @@ def main() -> int:
     if args.held_out:
         Path(args.held_out).parent.mkdir(parents=True, exist_ok=True)
         Path(args.held_out).write_text(json.dumps(
-            {"page_existe": part.page_exists, "doute_prefixe": part.doubtful},
+            {"page_existe": part.page_exists, "doute_prefixe": part.doubtful,
+             "pas_un_jeu": part.not_a_game},
             ensure_ascii=False, indent=2), encoding="utf-8")
 
     rapport = {
