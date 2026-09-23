@@ -3,6 +3,21 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-23 — Audit des refus GOG (lecture seule)
+
+Romain : « les offres qui ont été skippées pour GOG, ça vient d'où ? On n'a pas la page ? »
+Trace : [`AUDIT_2026-09-23_gog-refus.md`](AUDIT_2026-09-23_gog-refus.md), sur les 16 premières
+pages du balayage en cours (852 offres distinctes, 622 refusées).
+
+55 % des refus sont « pas de page AKS », et le sitemap confirme 79 % d'entre eux sans aucun
+parent. Le reste est surtout des DLC et goodies GOG titrés « <Jeu> - <Contenu> », résolus sur
+la page du jeu et refusés à juste titre par R16. Un seul défaut de grammaire : le préfixe
+« Expansion - » cache 14 pages Paradox sur les 3 473 lignes. Un faux positif isolé (« Ukraine
+Support » lu comme une région). Et une décision laissée à Romain : 20 DLC GOG sans marqueur,
+refusés parce que R18 durci n'adopte le seau DLC que s'il est seul sur la page.
+
+Aucun code modifié.
+
 ## 2026-09-23 — La liste balayée se choisit depuis la console
 
 Romain : « je voudrais pouvoir choisir la liste depuis l'admin. Par défaut, on sera en pending
