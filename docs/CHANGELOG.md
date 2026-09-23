@@ -3,6 +3,21 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-23 — Audit : plus de marchands en parallèle, faut-il louer ? (lecture seule)
+
+Romain : « tu penses que je suis obligé de louer d'autres VPS pour lancer plus de marchands en
+parallèle ? Audit, ne code pas. » Trace : [`AUDIT_2026-09-23_parallelisme.md`](AUDIT_2026-09-23_parallelisme.md).
+
+Non. La limite est UN onglet de navigateur par machine, un choix logiciel (OP1), pas le
+matériel : la nouvelle machine a 8 cœurs, 24 Go dont 19 libres, et tourne à un quart de sa
+capacité. Le temps d'un balayage part à 53-88 % dans l'onglet, surtout pour écrire (~1 min par
+offre créée). Plusieurs onglets par machine rapporteraient beaucoup sur les marchands qui
+créent (GOG, GameSeal), peu sur ceux qui créent peu, parce que les onglets d'une machine
+partagent la même IP et donc le même budget de requêtes AKS. Levier le moins cher d'abord :
+guider le matching par le sitemap, qui éviterait ~164 sondes 404 par page de 100 lignes.
+
+Aucun code modifié.
+
 ## 2026-09-23 — Revue de Romain jusqu'à f656565 : trois points, tous justes
 
 **`[P1]` Un sitemap invalide passait pour complet.** Un sous-sitemap qui renvoie une page
