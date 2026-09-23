@@ -156,15 +156,24 @@ class LaPageNaPasBesoinDeDeclarerGOG(unittest.TestCase):
         self.assertEqual(res.platform, "GOG")
         self.assertEqual(res.region_id, "6")
 
-    def test_mais_sans_seau_GOG_la_ligne_est_TOUJOURS_refusee(self):
-        """Le vrai garde. 125 des 128 lignes sont dans ce cas : la page n'offre que des
-        seaux Steam, on ne peut rien y écrire sous GOG."""
+    def test_une_page_qui_ne_VEND_que_du_Steam_accepte_quand_meme_une_offre_GOG(self):
+        """La correction du 2026-09-23 (Romain : « c'est GOG la plateforme, il n'y en a pas
+        d'autres, je ne vois pas pourquoi tu cherches une plateforme »).
+
+        J'avais remplacé R20 par un contrôle du SEAU : la page devait porter le seau 6.
+        C'était le mauvais signal. `extract_regions` rend les régions sous lesquelles le
+        produit est DÉJÀ VENDU — une liste de filtre — alors que le menu de saisie est un
+        CATALOGUE GLOBAL, identique pour tous les produits, dont le soumetteur résout
+        l'identifiant en direct à l'ouverture de la modale. Une page dont les offres
+        actuelles sont toutes Steam accepte parfaitement une offre GOG ; le contrôle
+        refusait 136 lignes sur 250 pour une case qui existe."""
 
         page = _page("Monolith", platforms=("Steam",),
                      regions={"2": "STEAM GLOBAL", "9": "STEAM EU"})
         res = _match("Monolith", "monolith", page)
-        self.assertIsInstance(res, SkippedOffer)
-        self.assertIn("region", res.reason.lower())
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+        self.assertEqual(res.platform, "GOG")
+        self.assertEqual(res.region_id, "6")
 
     def test_les_autres_marchands_gardent_le_controle_R20(self):
         """Le drapeau est POUR CE MARCHAND. Une ligne Kinguin dont le titre dit Steam face

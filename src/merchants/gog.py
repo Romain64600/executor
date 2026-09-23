@@ -114,13 +114,23 @@ CONFIG = MerchantConfig(
     url_platform=url_platform,
     title_region=title_region,
     precheck=precheck,
-    # `[R56]` (Romain, 2026-09-22 : « pour GOG pas besoin que la page déclare GOG »).
+    # `[R56]` (Romain, 2026-09-22 : « pour GOG pas besoin que la page déclare GOG » ; puis,
+    # le 23 : « c'est GOG la plateforme, il n'y en a pas d'autres, je ne vois pas pourquoi
+    # tu cherches une plateforme »).
+    #
     # R20 refuse une ligne dont la plateforme déclarée n'est pas dans les plateformes
-    # officielles de la page. Ce garde protège un marchand dont la plateforme est LUE dans
-    # un titre ; celle de GOG vient de son domaine, et la liste d'une page AKS peut être
-    # incomplète sans rien prouver. Mesuré avant de le poser, sur les 128 lignes que R20
-    # refusait : 125 de ces pages n'ont AUCUN seau GOG (6) et retombent sur « no region
-    # id » — le vrai refus. Une seule ligne est réellement débloquée.
+    # officielles de la page AKS. Ce garde protège un marchand dont la plateforme est LUE
+    # dans un titre : la contradiction y trahit une mauvaise lecture. Chez GOG il n'y a rien
+    # à lire et rien à contredire — la boutique ne vend qu'une plateforme.
+    #
+    # Ce que j'ai appris en me trompant, et qui mérite d'être écrit ici : j'avais d'abord
+    # remplacé R20 par un contrôle du SEAU de région (la page doit porter le seau 6). Mauvais
+    # signal. `extract_regions` rend les régions sous lesquelles le produit est DÉJÀ VENDU —
+    # une liste de filtre — alors que le menu de saisie est un CATALOGUE GLOBAL, identique
+    # pour tous les produits, dont `src/submitter.py` résout l'identifiant EN DIRECT à
+    # l'ouverture de la modale. Une page dont les offres sont toutes Steam accepte
+    # parfaitement une offre GOG. Le contrôle refusait 136 lignes sur 250 pour une case qui
+    # existe. Ne pas le réintroduire.
     require_page_platform=False,
     # On n'ouvre pas la page marchande : tout se décide sur le feed, l'URL et la page AKS.
     offer_page_readable=True,

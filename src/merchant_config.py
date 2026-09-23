@@ -105,11 +105,11 @@ class MerchantConfig:
     # que du GOG, la liste de la page ne peut pas le contredire, elle peut seulement être
     # incomplète. Mettre False lève ce contrôle POUR CE MARCHAND SEULEMENT.
     #
-    # Mesuré avant d'être posé, sur les 128 lignes GOG que R20 refusait : 125 de ces pages
-    # n'ont AUCUN seau de région GOG (6), donc l'écriture y est impossible de toute façon et
-    # la ligne retombe sur le refus « no region id » — exact, celui-là. UNE seule ligne est
-    # réellement débloquée. Le drapeau ne relâche donc rien : il déplace le refus de la
-    # DÉCLARATION (approximative) vers le SEAU (qui, lui, décide vraiment).
+    # Ne PAS y adjoindre un contrôle « la page porte-t-elle le seau de région ? » : essayé le
+    # 2026-09-22, retiré le 23. `extract_regions` rend les régions sous lesquelles le produit
+    # est DÉJÀ VENDU (une liste de filtre), pas ce que le formulaire propose — le menu des
+    # régions est un CATALOGUE GLOBAL, identique pour tous les produits, résolu en direct par
+    # le soumetteur. Le contrôle refusait 136 lignes sur 250 pour une case qui existe.
     require_page_platform: bool = True
     # Generic-behaviour OVERRIDE hooks (Romain 2026-09-10: « un fichier de config marchand
     # par marchand, qui peut ajouter, overwrite, modifier des comportements génériques »).

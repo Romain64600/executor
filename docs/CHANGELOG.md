@@ -17,24 +17,21 @@ la plateforme vient du DOMAINE — la liste d'une page ne la contredit pas, elle
 autres) lève ce contrôle pour un marchand. GOG le déclare dans SON fichier ; le matcher ne
 connaît que le drapeau, pas le marchand.
 
-**Mais lever R20 ouvrait un trou, et il a fallu le fermer.** `REGION_IDS` traduit GOG/global
-en seau **6** sans jamais demander à la page si elle a ce seau : R20 servait de garde par
-ricochet. Sans lui, une ligne devenait candidate vers une case inexistante — le premier test
-écrit l'a montré tout de suite. Le contrôle qui le remplace regarde le SEAU lui-même, ce que
-le formulaire offre vraiment, et il est plus juste que R20 : « AKS page has no GoG region
-bucket (GLOBAL/6) — nothing to file it under (R56) ».
+**J'ai d'abord remplacé R20 par un mauvais contrôle, et Romain l'a arrêté le lendemain :**
+« c'est GOG la plateforme, il n'y en a pas d'autres, je ne vois pas pourquoi tu cherches une
+plateforme ». J'avais exigé que la page AKS porte le seau de région 6. Mauvais signal, et la
+vérification l'a montré : `extract_regions` rend les régions sous lesquelles le produit est
+**déjà vendu** — une liste de filtre pour l'affichage — alors que le menu de saisie est un
+**catalogue global, identique pour tous les produits**, dont `src/submitter.py` résout
+l'identifiant EN DIRECT à l'ouverture de la modale (« Both dropdowns are a global catalog »).
+Une page dont les offres actuelles sont toutes Steam accepte parfaitement une offre GOG.
 
-**Ce que la règle change en volume, mesuré avant de l'écrire.** Sur les 128 lignes GOG que R20
-refusait, chaque page a été sondée en direct :
+Le contrôle refusait **136 lignes sur 250** pour une case qui existe. Il est retiré, et les
+deux fichiers portent la note de ne pas le réintroduire.
 
-| | Lignes |
-|---|---|
-| Page sans aucun seau GOG (6) — refus inévitable | 125 |
-| Page avec le seau 6 — réellement débloquée | 1 |
-| Page introuvable au moment de la sonde | 2 |
-
-La règle est donc juste dans son principe et quasi nulle en volume : le blocage n'était pas la
-déclaration, c'était l'absence de la case. Trois mutations vérifiées.
+Reste donc de `[R56]` ce que Romain a demandé, et rien d'autre : un marchand mono-plateforme
+n'exige plus que la page AKS le déclare. Sur l'échantillon de 250 lignes, les candidats
+passent de 19 à **147**.
 
 Suite complète : 2 535 tests, verts.
 
