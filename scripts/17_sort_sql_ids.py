@@ -30,7 +30,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from src.aks_sitemap import DEFAULT_PATH, DEFAULT_TTL_DAYS, SitemapIndex  # noqa: E402
-from src.matcher import build_slug_candidates  # noqa: E402
+from src.contracts import NormalizedOffer  # noqa: E402
+from src.matcher import build_slug_candidates, resolution_name  # noqa: E402
 from src.admin.auto_merchants import AUTO_MERCHANTS  # noqa: E402
 from src.sort_sql_ids import (  # noqa: E402
     DEFAULT_CHUNK,
@@ -50,6 +51,25 @@ from src.sort_sql_ids import (  # noqa: E402
 # Leurs lignes partaient donc dans l'export « des autres », en double. Le store_id est la
 # clé de la liste blanche elle-même : il ne peut pas diverger.
 NOS_STORES = {store for _, store in AUTO_MERCHANTS}
+
+
+def noms_a_chercher(offre: dict) -> list[str]:
+    """Le titre brut ET le nom que le matcher donnerait à la résolution AKS.
+
+    Revue de Romain du 2026-09-23 : l'export cherchait le seul titre brut. Le nom de
+    résolution applique la grammaire du marchand — `matcher.resolution_name`, la même
+    fonction que le matcher, pour que les deux ne puissent plus diverger."""
+
+    brut = offre.get("name") or ""
+    try:
+        ligne = NormalizedOffer(offer_id=str(offre.get("offer_id") or "0"), name=brut,
+                                url=offre.get("url") or "https://invalid/",
+                                merchant=offre.get("merchant") or "",
+                                store_id=offre.get("store_id") or None)
+        nettoye = resolution_name(ligne)
+    except Exception:                         # noqa: BLE001 — au pire, le brut seul
+        nettoye = brut
+    return [brut] if nettoye == brut else [brut, nettoye]
 
 
 def main() -> int:
@@ -114,7 +134,7 @@ def main() -> int:
         print(f"aucune ligne « {FAMILIES[args.family]['label']} » dans {args.run}",
               file=sys.stderr)
         return 1
-    part = partition(offres, index, build_slug_candidates)
+    part = partition(offres, index, build_slug_candidates, name_variants=noms_a_chercher)
 
     source = ("scan de tri tous-magasins" if args.sort_scan else "balayage")
     entete = (

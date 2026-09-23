@@ -29,6 +29,20 @@ from src.sort_sql_ids import (  # noqa: E402
 )
 
 
+# Des sitemaps de la FORME réelle d'AKS (Yoast) : racine `sitemapindex` pour l'index,
+# `urlset` pour une page, espace de noms sitemaps.org. Vérifié contre le vrai site.
+_NS_INDEX = (b'<?xml version="1.0" encoding="UTF-8"?>'
+             b'<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
+_NS_URLSET = (b'<?xml version="1.0" encoding="UTF-8"?>'
+              b'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
+_INDEX_2 = (_NS_INDEX
+            + b"<sitemap><loc>https://www.allkeyshop.com/blog/page-sitemap1.xml</loc></sitemap>"
+            + b"<sitemap><loc>https://www.allkeyshop.com/blog/page-sitemap2.xml</loc></sitemap>"
+            + b"</sitemapindex>")
+_URLSET_HADES = (_NS_URLSET + b"<url><loc>https://www.allkeyshop.com/blog/"
+                 b"buy-hades-cd-key-compare-prices/</loc></url></urlset>")
+
+
 def _index(entries, fetched_at="2026-09-22T12:00:00Z", incomplete=False):
     return SitemapIndex(entries=frozenset(entries), fetched_at=fetched_at,
                         incomplete=incomplete)
@@ -90,14 +104,11 @@ class LIndexSitemap(unittest.TestCase):
         """Un index troué qui ne le dit pas ferait déplacer des lignes dont la page existe
         dans le morceau manquant. Il le dit, et l'export refuse."""
 
-        pages = (b"<loc>https://www.allkeyshop.com/blog/page-sitemap1.xml</loc>"
-                 b"<loc>https://www.allkeyshop.com/blog/page-sitemap2.xml</loc>")
         def faux_fetch(url):
             if url.endswith("sitemap_index.xml"):
-                return b"<urlset>" + pages + b"</urlset>"
+                return _INDEX_2
             if url.endswith("page-sitemap1.xml"):
-                return (b"<urlset><loc>https://www.allkeyshop.com/blog/"
-                        b"buy-hades-cd-key-compare-prices/</loc></urlset>")
+                return _URLSET_HADES
             raise OSError("502")
         with tempfile.TemporaryDirectory() as tmp:
             dest = pathlib.Path(tmp) / "idx.json"
@@ -112,7 +123,41 @@ class LIndexSitemap(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(SitemapUnavailable):
                 refresh(pathlib.Path(tmp) / "x.json",
-                        fetch=lambda u: b"<urlset><loc>https://ailleurs/rien.xml</loc></urlset>",
+                        fetch=lambda u: (_NS_INDEX + b"<sitemap><loc>https://ailleurs/rien.xml"
+                                         b"</loc></sitemap></sitemapindex>"),
+                        sleep=lambda s: None, now=lambda: 0.0)
+
+    def test_un_sous_sitemap_qui_nest_pas_un_sitemap_rend_lindex_INCOMPLET(self):
+        """REVUE DE ROMAIN (2026-09-23) : « un sous-sitemap renvoyant du HTML ou un corps
+        vide ne déclenche aucune erreur — deux fichiers, dont un invalide, donnent
+        incomplete=False. » Une page d'erreur ne contient aucun <loc> : lue à l'expression
+        régulière, elle passait pour un sitemap vide et l'index se disait complet, alors
+        qu'il lui manquait des milliers de pages. C'est le cas où l'export déplacerait en
+        22 des lignes dont la page existe."""
+
+        for nom, corps in (("page HTML", b"<html><body>503 Service Unavailable</body></html>"),
+                           ("corps vide", b""),
+                           ("XML tronqué", b"<urlset><url><loc>https://x"),
+                           ("urlset sans URL", _NS_URLSET + b"</urlset>"),
+                           # l'INDEX renvoyé à la place d'une page : du XML valide, avec des
+                           # <loc>, mais la mauvaise racine — seule la racine le trahit.
+                           ("index au lieu d'une page", _INDEX_2)):
+            with self.subTest(cas=nom):
+                def faux_fetch(url, c=corps):
+                    if url.endswith("sitemap_index.xml"):
+                        return _INDEX_2
+                    return _URLSET_HADES if url.endswith("page-sitemap1.xml") else c
+                with tempfile.TemporaryDirectory() as tmp:
+                    resume = refresh(pathlib.Path(tmp) / "i.json", fetch=faux_fetch,
+                                     sleep=lambda s: None, now=lambda: 0.0)
+                self.assertTrue(resume["incomplete"], f"{nom} accepté comme sitemap")
+                self.assertEqual(len(resume["sitemaps_failed"]), 1)
+
+    def test_un_index_qui_nest_pas_un_index_leve(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(SitemapUnavailable):
+                refresh(pathlib.Path(tmp) / "x.json",
+                        fetch=lambda u: b"<html><a>page-sitemap1.xml</a></html>",
                         sleep=lambda s: None, now=lambda: 0.0)
 
 
@@ -247,6 +292,67 @@ class LaComparaisonAplatie(unittest.TestCase):
                          idx, lambda n: ["hades"])
         self.assertEqual([o["offer_id"] for o in part.page_exists], [],
                          "« hades » et « hades-2 » ne s'aplatissent pas pareil")
+
+
+class LExportLitLeNomCommeLeMatcher(unittest.TestCase):
+    """REVUE DE ROMAIN (2026-09-23) : « Zombies Invasion (PC) Steam Gift- EU part en page à
+    créer alors que le nettoyage GameSeal retrouve la page. Il faut réutiliser les règles de
+    résolution du marchand. » Mesuré sur les deux fichiers livrés la veille : 204 lignes dont
+    la page existe une fois le nom nettoyé — elles seraient parties en 22."""
+
+    def _cli(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "s17noms", str(ROOT / "scripts" / "17_sort_sql_ids.py"))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_le_nom_GameSeal_nettoye_est_cherche_aussi(self):
+        mod = self._cli()
+        noms = mod.noms_a_chercher({"offer_id": "1", "merchant": "GameSeal",
+                                    "name": "Zombies Invasion (PC) Steam Gift- EU",
+                                    "url": "https://gameseal.com/x"})
+        self.assertEqual(noms[0], "Zombies Invasion (PC) Steam Gift- EU", "le brut reste essayé")
+        self.assertEqual(len(noms), 2)
+        self.assertNotIn("Steam Gift", noms[1], f"nettoyage GameSeal non appliqué : {noms}")
+
+    def test_la_page_trouvee_sous_le_nom_nettoye_RETIENT_la_ligne(self):
+        from src.matcher import build_slug_candidates
+        mod = self._cli()
+        idx = _index(["zombies-invasion-cd-key"])
+        offre = {"offer_id": "1", "merchant": "GameSeal", "url": "https://gameseal.com/x",
+                 "name": "Zombies Invasion (PC) Steam Gift- EU"}
+        sans = partition([offre], idx, build_slug_candidates)
+        avec = partition([offre], idx, build_slug_candidates, name_variants=mod.noms_a_chercher)
+        self.assertEqual([o["offer_id"] for o in sans.to_move], ["1"],
+                         "témoin : sur le seul titre brut, la ligne partait en 22")
+        self.assertEqual(avec.to_move, [], "la page existe : on ne demande pas de la créer")
+        self.assertEqual([o["offer_id"] for o in avec.page_exists], ["1"])
+
+    def test_un_nom_de_plus_ne_peut_quempecher_un_deplacement(self):
+        """Le sens prudent : chaque variante de nom est une chance de PLUS de trouver la
+        page. Une variante qui ne trouve rien ne fait pas partir une ligne retenue."""
+
+        idx = _index(["hades-cd-key"])
+        offre = {"offer_id": "1", "name": "Hades", "url": "u"}
+        part = partition([offre], idx, lambda n: [n.lower().replace(" ", "-")],
+                         name_variants=lambda o: ["Hades", "Rien Du Tout"])
+        self.assertEqual(part.to_move, [])
+
+    def test_le_scan_de_tri_retrouve_le_marchand_canonique_par_son_store(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = pathlib.Path(tmp) / "tri"; d.mkdir()
+            (d / "offers.json").write_text(json.dumps({"offers": [
+                {"offer_id": "1", "name": "Jeu", "url": "https://www.gog.com/en/game/jeu",
+                 "store_id": "34"},
+                {"offer_id": "2", "name": "Autre", "url": "https://inconnu.test/a",
+                 "store_id": "99999"}]}), encoding="utf-8")
+            (d / "sort_plan.json").write_text(json.dumps(
+                {"source_list": 9, "by_list": {}, "unrouted": []}), encoding="utf-8")
+            got = {o["offer_id"]: o for o in collect_from_sort_scan(d)}
+        self.assertEqual(got["1"]["merchant"], "GOG", "store 34 -> la grammaire GOG")
+        self.assertEqual(got["2"]["merchant"], "inconnu.test", "inconnu -> le domaine")
 
 
 class LeFichierSQL(unittest.TestCase):

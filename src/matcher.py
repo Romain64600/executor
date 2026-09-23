@@ -319,6 +319,30 @@ def title_dlc_marker(offer: "NormalizedOffer", cfg: Any = None) -> str | None:
     return dlc_title_marker(offer.name)
 
 
+def resolution_name(offer: "NormalizedOffer", cfg: Any = None) -> str:
+    """Le nom qu'on donne à la résolution AKS pour cette ligne — UNE seule définition.
+
+    Le crochet `resolve_name` du marchand d'abord (GameSeal retire « <Store> <Delivery> -
+    <RÉGION> », MMOGA la queue « <CODE> Key », Wyrel son gabarit « (PC) Standard Global »,
+    GOG le préfixe « Expansion - »), puis le marqueur DLC, qui n'est pas dans le slug AKS.
+
+    REVUE DE ROMAIN (2026-09-23) : « export SQL sans nettoyage propre au marchand —
+    Zombies Invasion (PC) Steam Gift- EU part en page à créer alors que le nettoyage GameSeal
+    retrouve la page ». Exact : l'export vers la liste 22 confrontait au sitemap le titre
+    BRUT, pendant que le matcher cherchait le titre NETTOYÉ. Deux lectures du même nom, et
+    celle qui décidait d'un déplacement sans retour était la plus pauvre. Mesuré sur les deux
+    fichiers livrés le 2026-09-22 : 204 lignes dont la page existe une fois le nom nettoyé
+    (Wyrel 157, Gamivo 21, Kinguin 10, GOG 7…). Le matcher et l'export lisent désormais
+    CETTE fonction, et ne peuvent plus diverger."""
+
+    if cfg is None:
+        cfg = merchant_config(offer.merchant)
+    nom = cfg.resolve_name(offer.name) if cfg is not None and cfg.resolve_name else offer.name
+    if title_dlc_marker(offer, cfg) is not None:
+        nom = strip_dlc_marker(nom)
+    return nom or offer.name
+
+
 # [R43] explicit DLC COLLECTIONS are bundles of DLCs — "we NEVER enter bundles" (§4.3):
 # "<Game> - DLC Pack / DLC Collection / DLC Bundle", "All DLC", "Complete DLC", "DLCs".
 # Direction matters: "World's Fair Pack (DLC)" is ONE content pack (PACK before DLC) and
@@ -3201,12 +3225,10 @@ def _pc_plan(
     # Merchant-config override hook (R32e, 2026-09-10): the merchant may rewrite the text
     # handed to AKS resolution (MMOGA peels the "<CODE> Key" tail → slug "borderlands-2",
     # not the 404 "borderlands-2-eu"). The identity checks keep using the raw title.
-    resolve_name = _cfg.resolve_name(offer.name) if _cfg is not None and _cfg.resolve_name else offer.name
     # [R43] the DLC marker is not part of the AKS slug ("… Clan of the Horse (DLC)" →
     # northgard-svardilfari-clan-of-the-horse); Season/Expansion Pass words are kept.
     dlc_marker = title_dlc_marker(offer, _cfg)
-    if dlc_marker is not None:
-        resolve_name = strip_dlc_marker(resolve_name)
+    resolve_name = resolution_name(offer, _cfg)
     try:
         if account_page_kind is not None:
             resolution = account_resolver(resolve_name, page_kind=account_page_kind)

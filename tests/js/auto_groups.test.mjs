@@ -132,6 +132,39 @@ test("sans choix explicite, c'est la file Pending qui part", async () => {
   assert.equal(envoi.body.list, 9);
 });
 
+test("un groupe lancé est SUIVI : statut, récapitulatif, puis boutons réarmés à la fin", async () => {
+  // REVUE DE ROMAIN (2026-09-23) : « après le lancement, aucun startPolling() : l'écran reste
+  // Prêt, le récapitulatif ne s'actualise pas et les boutons restent bloqués après la fin,
+  // jusqu'au rechargement. Reproduit avec le simulateur JS. » Le voici, rejoué.
+  const c = await demarrer();
+  c.$("#go").value = "GO";
+  await c.$("#go").fire("input");
+  await tick();
+  c.$("#launch-group-A").fire("click");
+  await tick();
+  const avant = c.net.calls.length;
+  await c.net.release("data-entry/auto", { run_id: "20260923-auto-A" });
+  await tick();
+  const apres = c.net.calls.slice(avant).map((x) => x.url);
+  assert.ok(apres.some((u) => u.includes("api/sort/runs")),
+            "le suivi doit démarrer (interrogation du gestionnaire) : " + apres.join(", "));
+  assert.equal(c.$("#busy-ind").classList.contains("hidden"), false,
+               "l'indicateur d'activité doit s'allumer");
+  assert.equal(c.$("#launch-group-B").disabled, true, "pendant le run, l'autre groupe est bloqué");
+  // Le gestionnaire est redevenu libre : le tick demande alors le récapitulatif DU run lancé…
+  await c.net.release("api/sort/runs", { busy: null, runs: [] });
+  await tick();
+  assert.ok(c.net.waiting().some((u) => u.includes("data-entry/recap?run=20260923-auto-A")),
+            "le récapitulatif du run lancé doit être demandé : " + c.net.waiting().join(", "));
+  // …qui porte une fin : le run est terminé.
+  await c.net.release("data-entry/recap?run=20260923-auto-A",
+                      { recap: { finished_at: "2026-09-23T20:00:00Z" } });
+  await tick();
+  assert.equal(c.$("#launch-group-B").disabled, false,
+               "après la fin, les boutons doivent se réarmer SANS recharger la page");
+  assert.equal(c.$("#busy-ind").classList.contains("hidden"), true);
+});
+
 test("un serveur sans groupes le DIT au lieu de laisser une case vide", async () => {
   const c = await loadConsole(AUTO);
   await c.net.release("api/data-entry/merchants", { merchants: MARCHANDS.merchants });

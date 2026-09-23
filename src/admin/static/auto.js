@@ -435,7 +435,18 @@ async function launchGroup(group) {
     const r = await api("api/data-entry/auto", { method: "POST", body: JSON.stringify(body) });
     $("#launch-group-msg").textContent = "▶ groupe " + group.name + " lancé : " + (r.run_id || "")
       + " · " + group.merchants.length + " marchand(s) · couverture totale";
+    // REVUE DE ROMAIN (2026-09-23) : « après le lancement, aucun startPolling() : l'écran
+    // reste « Prêt », le récapitulatif ne s'actualise pas et les boutons restent bloqués
+    // après la fin, jusqu'au rechargement ». Exact — ce bouton posait SWEEP_RUNNING et
+    // s'arrêtait là, alors que les deux autres lancements suivent le run. Il fait désormais
+    // exactement comme eux : statut, indicateur, suivi. C'est `startPolling` qui, à la fin
+    // du run, relâche SWEEP_RUNNING et réarme les boutons.
     SWEEP_RUNNING = true;
+    setStatus("Groupe " + group.name + " en cours…", true);
+    $("#busy-ind").classList.remove("hidden");
+    $("#busy-text").textContent = "groupe " + group.name + " · "
+      + group.merchants.length + " marchand(s)";
+    startPolling(r.run_id);
   } catch (e) {
     $("#launch-group-msg").textContent = "✖ " + (e && e.message ? e.message : e);
     syncGo();

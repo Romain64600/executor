@@ -3,6 +3,41 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-23 — Revue de Romain jusqu'à f656565 : trois points, tous justes
+
+**`[P1]` Un sitemap invalide passait pour complet.** Un sous-sitemap qui renvoie une page
+d'erreur HTML, un corps vide ou un XML tronqué ne contient aucun `<loc>` : lu à l'expression
+régulière, il passait pour un sitemap vide, et l'index se disait complet alors qu'il lui
+manquait des milliers de pages. C'est précisément le cas où l'export vers la liste 22
+déplacerait des lignes dont la page existe. Chaque document est maintenant validé — XML qui se
+lit, bonne racine (`sitemapindex` / `urlset`), au moins un `<loc>` — et tout échec rend
+l'index incomplet, que l'export refuse. Vérifié contre le vrai site : l'index réel et ses
+page-sitemaps passent.
+
+**`[P1]` L'export lisait le titre brut, le matcher le titre nettoyé.** « Zombies Invasion (PC)
+Steam Gift- EU » : l'export cherchait `zombies-invasion-steam-gift-eu`, le matcher
+`zombies-invasion`. Celle qui décidait d'un déplacement sans retour était la plus pauvre des
+deux lectures. `matcher.resolution_name` est maintenant la SEULE définition du nom de
+résolution — le matcher et l'export l'appellent tous deux — et l'export cherche le titre brut
+ET ce nom : une variante de plus ne peut qu'empêcher un déplacement. Le scan de tri retrouve
+aussi le marchand canonique par son `store_id`, sans quoi la grammaire de Wyrel ou de GOG
+n'était pas accessible depuis un simple domaine.
+
+L'exemple de la revue est une page que l'index réel ne contient pas — le mécanisme, lui, est
+réel et il a coûté : **204 lignes des deux fichiers livrés le 22/09** ont une page une fois
+le nom nettoyé (Wyrel 157, Gamivo 21, Kinguin 10, GOG 7, K4G 4…). Les fichiers sont regénérés,
+et un fichier de retour en arrière 22 → 9 est fourni pour le cas où les anciens auraient déjà
+été collés.
+
+**`[P2]` Le lancement par groupe ne suivait pas son run.** Le bouton posait « sweep en cours »
+et s'arrêtait là : pas de statut, pas de récapitulatif, boutons bloqués après la fin jusqu'au
+rechargement. Il fait maintenant exactement comme les deux autres lancements. Le scénario de
+la revue est rejoué dans le harnais JS, qui rougit si l'on retire le suivi.
+
+Six mutations sur les deux P1, une sur le P2, toutes rouges. Suite complète : 2 563 tests,
+verts. La revue mentionnait aussi une interférence entre tests admin selon l'ordre
+d'exécution ; elle ne se reproduit pas avec notre lanceur (`unittest discover`).
+
 ## 2026-09-23 — `[R55b]` « Expansion » = DLC chez GOG, `[R57]` le DLC reconnu à sa page et à son jeu
 
 Romain : « expansion veut dire DLC, non ? » ; « tu peux pas faire comme pour les autres

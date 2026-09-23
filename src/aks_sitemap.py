@@ -95,7 +95,10 @@ def refresh(dest: str | Path, *, fetch: Callable[[str], bytes] = _fetch,
     un index incomplet — on ne déplace pas des lignes sur la foi d'un catalogue troué."""
 
     index = fetch(SITEMAP_INDEX_URL)
-    sous = [u.decode("utf-8", "replace") for u in _LOC_RE.findall(index)]
+    try:
+        sous = _locs(index, racine="sitemapindex")
+    except ValueError as exc:
+        raise SitemapUnavailable(f"{SITEMAP_INDEX_URL} illisible : {exc}") from None
     cibles = [u for u in sous if "page-sitemap" in u]
     if not cibles:
         raise SitemapUnavailable(
@@ -106,11 +109,12 @@ def refresh(dest: str | Path, *, fetch: Callable[[str], bytes] = _fetch,
     for i, url in enumerate(cibles, 1):
         try:
             corps = fetch(url)
+            locs = _locs(corps, racine="urlset")
         except Exception as exc:                       # noqa: BLE001 — on note et on continue
             echecs.append(f"{url}: {exc}")
             continue
-        for loc in _LOC_RE.findall(corps):
-            m = _PAGE_RE.search(loc.decode("utf-8", "replace"))
+        for loc in locs:
+            m = _PAGE_RE.search(loc)
             if m:
                 pages.add(m.group(1))
         if on_progress:
@@ -130,6 +134,39 @@ def refresh(dest: str | Path, *, fetch: Callable[[str], bytes] = _fetch,
     chemin.write_text(json.dumps({**resume, "entries": sorted(pages)},
                                  ensure_ascii=False), encoding="utf-8")
     return resume
+
+
+def _locs(corps: bytes, *, racine: str) -> list[str]:
+    """Les ``<loc>`` d'un document sitemap, après avoir vérifié que c'EN EST un.
+
+    REVUE DE ROMAIN (2026-09-23) : « un sous-sitemap renvoyant du HTML ou un corps vide ne
+    déclenche aucune erreur. Deux fichiers, dont un invalide, donnent incomplete=False.
+    L'export SQL peut alors classer des pages existantes comme absentes. » Exact : la
+    première version cherchait les ``<loc>`` à l'expression régulière, et une page d'erreur
+    HTML, un corps vide ou un XML tronqué n'en contiennent simplement… aucun. Le sous-sitemap
+    passait pour lu, ses milliers de pages manquaient, et l'index se disait complet. C'est
+    précisément le cas où l'export déplacerait en 22 des lignes dont la page existe.
+
+    Trois exigences, sans quoi le document est un ÉCHEC (et l'index devient incomplet) :
+    un XML qui se lit, la bonne racine (``urlset`` pour une page, ``sitemapindex`` pour
+    l'index), et au moins un ``<loc>``. Un sitemap sans aucune URL n'est pas « une page
+    vide », c'est une réponse qu'on ne sait pas interpréter."""
+
+    import xml.etree.ElementTree as ET
+    if not corps or not corps.strip():
+        raise ValueError("corps vide")
+    try:
+        arbre = ET.fromstring(corps)
+    except ET.ParseError as exc:
+        raise ValueError(f"XML illisible ({exc})") from None
+    nom_racine = arbre.tag.rsplit("}", 1)[-1]
+    if nom_racine != racine:
+        raise ValueError(f"racine <{nom_racine}> au lieu de <{racine}>")
+    locs = [(el.text or "").strip() for el in arbre.iter() if el.tag.rsplit("}", 1)[-1] == "loc"]
+    locs = [l for l in locs if l]
+    if not locs:
+        raise ValueError(f"<{racine}> sans aucun <loc>")
+    return locs
 
 
 def _iso(epoch: float) -> str:

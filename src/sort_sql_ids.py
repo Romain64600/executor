@@ -46,6 +46,7 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 from src.aks_sitemap import PAGE_KINDS, SitemapIndex
+from src.merchants.registry import merchant_for_store
 
 # Le seul identifiant acceptable : des chiffres. Il est injecté dans du texte SQL.
 _ID_RE = re.compile(r"^[0-9]+$")
@@ -172,6 +173,7 @@ def collect(runs_dir: str | Path, run_prefix: str, family: str) -> list[dict[str
                 "name": str(offre.get("name") or ""),
                 "url": str(offre.get("url") or ""),
                 "merchant": str(offre.get("merchant") or ""),
+                "store_id": str(offre.get("store_id") or ""),
                 "reason": raison,
                 "seen_in": chemin.parent.name,
             })
@@ -179,11 +181,20 @@ def collect(runs_dir: str | Path, run_prefix: str, family: str) -> list[dict[str
 
 
 def partition(offers: Iterable[dict[str, Any]], index: SitemapIndex,
-              slug_candidates, kinds: Iterable[str] = PAGE_KINDS) -> Partition:
+              slug_candidates, kinds: Iterable[str] = PAGE_KINDS,
+              name_variants=None) -> Partition:
     """Sépare ce qu'on peut déplacer de ce que le sitemap retient.
 
     ``slug_candidates`` est injecté (c'est ``matcher.build_slug_candidates``) pour que ce
-    module ne dépende pas du matcher : ses tests restent rapides et sans effet de bord."""
+    module ne dépende pas du matcher : ses tests restent rapides et sans effet de bord.
+
+    ``name_variants(offre) -> [noms]`` rend les noms sous lesquels chercher la page. REVUE DE
+    ROMAIN (2026-09-23) : l'export ne cherchait que le titre BRUT, alors que le matcher
+    cherche le titre NETTOYÉ par la grammaire du marchand (« Zombies Invasion (PC) Steam
+    Gift- EU » → « Zombies Invasion (PC) »). Le CLI passe donc le titre brut ET le nom de
+    résolution du matcher (`matcher.resolution_name`) : on retient la ligne dès que L'UN des
+    deux trouve une page. C'est le sens prudent — chaque nom de plus ne peut qu'empêcher un
+    déplacement, jamais en provoquer un."""
 
     kinds = tuple(kinds)
     out = Partition()
@@ -192,7 +203,12 @@ def partition(offers: Iterable[dict[str, Any]], index: SitemapIndex,
         if pourquoi:
             out.not_a_game.append({**offre, "pas_un_jeu": pourquoi})
             continue
-        cands = slug_candidates(offre.get("name") or "")
+        noms = name_variants(offre) if name_variants else [offre.get("name") or ""]
+        cands: list[str] = []
+        for nom in noms:
+            for c in slug_candidates(nom or ""):
+                if c not in cands:
+                    cands.append(c)
         gabarits: list[str] = []
         voisin = None
         for c in cands:
@@ -359,11 +375,17 @@ def collect_from_sort_scan(run_dir: str | Path, *, exclude_stores: Iterable[str]
         oid = str(r.get("offer_id") or "").strip()
         if not _ID_RE.match(oid):
             continue
+        store = str(r.get("store_id") or "").strip()
         vus.setdefault(oid, {
             "offer_id": oid,
             "name": str(r.get("name") or ""),
             "url": url,
-            "merchant": dom,
+            # Le nom CANONIQUE quand le registre connaît la boutique (Wyrel, GOG…) : c'est lui
+            # qui donne accès à la grammaire du marchand, donc au nettoyage du titre. Le
+            # domaine seul ne la retrouve pas.
+            "merchant": merchant_for_store(store) or dom,
+            "store_id": store,
+            "domain": dom,
             "reason": CANDIDATE,
             "seen_in": d.name,
         })

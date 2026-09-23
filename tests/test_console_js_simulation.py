@@ -125,5 +125,30 @@ class AutoConsoleGroupsSimulationTests(unittest.TestCase):
                             "le harnais passe sur une console qui n'affiche rien")
 
 
+class AutoConsoleGroupLaunchIsFollowed(unittest.TestCase):
+    """REVUE DE ROMAIN (2026-09-23) : « lancement par groupe sans suivi du run — aucun
+    startPolling() : l'écran reste Prêt, le récapitulatif ne s'actualise pas et les boutons
+    restent bloqués après la fin, jusqu'au rechargement ». Le harnais rejoue le scénario ;
+    ce test prouve qu'il ROUGIT quand on retire le suivi du bouton de groupe."""
+
+    @unittest.skipIf(NODE is None, "node absent (dépendance de test)")
+    def test_le_harnais_rougit_sans_le_suivi_du_groupe(self):
+        import os
+        import tempfile
+        js = (ROOT / "src" / "admin" / "static" / "auto.js").read_text(encoding="utf-8")
+        debut = js.index("async function launchGroup(")
+        fin = js.index("\n}", debut)
+        corps = js[debut:fin]
+        self.assertIn("startPolling(r.run_id);", corps, "le bouton de groupe ne suit plus le run")
+        casse = js[:debut] + corps.replace("startPolling(r.run_id);", "") + js[fin:]
+        with tempfile.TemporaryDirectory() as tmp:
+            faux = pathlib.Path(tmp) / "auto.js"
+            faux.write_text(casse, encoding="utf-8")
+            proc = subprocess.run([NODE, str(AUTO_HARNESS)], cwd=ROOT, capture_output=True,
+                                  text=True, timeout=120, env=dict(os.environ, AUTO_JS=str(faux)))
+        self.assertNotEqual(proc.returncode, 0, "le harnais passe sur un groupe non suivi")
+        self.assertIn("SUIVI", proc.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()
