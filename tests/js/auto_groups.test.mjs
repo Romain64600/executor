@@ -19,6 +19,12 @@ const AUTO = process.env.AUTO_JS
 
 const MARCHANDS = {
   merchants: [{ name: "GameSeal", store_id: "126" }, { name: "Gamivo", store_id: "51" }],
+  default_list: 9,
+  lists: [
+    { id: 9, label: "Pending offers" },
+    { id: 30, label: "account" },
+    { id: 22, label: "Pages for creation" },
+  ],
   groups: [
     { name: "A", pending: 9355, merchants: [{ name: "GameSeal", store_id: "126" }] },
     { name: "B", pending: 10830, merchants: [{ name: "Gamivo", store_id: "51" }] },
@@ -89,6 +95,41 @@ test("avec GO, le clic envoie le NOM du groupe — jamais une liste de cibles", 
   assert.ok(msg.includes("20260922-auto-A"), "le run_id du lancement doit s'afficher : " + msg);
   assert.equal(c.$("#launch-group-B").disabled, true,
                "un run en cours : l'autre groupe reste hors de portée sur CETTE machine");
+});
+
+test("la liste balayée est proposée, la Pending par défaut", async () => {
+  const c = await demarrer();
+  const sel = c.$("#work-list");
+  assert.equal(sel.children.length, 3, "les trois listes servies doivent être offertes");
+  assert.equal(sel.value, "9", "la file Pending est le défaut");
+  assert.ok(sel.children[0].textContent.includes("défaut"), "et elle est marquée comme tel");
+});
+
+test("changer de liste l'envoie au serveur, et le dit à l'écran", async () => {
+  const c = await demarrer();
+  c.$("#go").value = "GO";
+  await c.$("#go").fire("input");
+  c.$("#work-list").value = "30";
+  await c.$("#work-list").fire("change");
+  assert.ok(c.$("#list-note").textContent.includes("30"),
+            "l'écran doit signaler qu'on ne balaie PAS la file habituelle");
+  await tick();
+  c.$("#launch-group-A").fire("click");
+  await tick();
+  const envoi = c.net.calls.filter((x) => x.method === "POST" && x.url.includes("data-entry/auto")).pop();
+  assert.ok(envoi, "aucun lancement n'est parti");
+  assert.equal(envoi.body.list, 30, "la liste choisie doit voyager avec le lancement");
+});
+
+test("sans choix explicite, c'est la file Pending qui part", async () => {
+  const c = await demarrer();
+  c.$("#go").value = "GO";
+  await c.$("#go").fire("input");
+  await tick();
+  c.$("#launch-group-A").fire("click");
+  await tick();
+  const envoi = c.net.calls.filter((x) => x.method === "POST" && x.url.includes("data-entry/auto")).pop();
+  assert.equal(envoi.body.list, 9);
 });
 
 test("un serveur sans groupes le DIT au lieu de laisser une case vide", async () => {

@@ -59,6 +59,8 @@ from src.admin.learning_io import (
 from src.admin.validation_io import ValidationIOError, apply_overrides_and_validate
 from src.admin.login_manager import LoginError, LoginManager
 from src.admin.auto_merchants import allowed_list as auto_allowed_list, rejection_reason
+from src.aks_lists import LISTS as AKS_LISTS, PENDING_LIST_ID, is_blacklist_label
+from src.extractor import FEED_LIST_BLACKLIST
 from src.matcher import PLATFORM_LABEL, REGION_IDS
 from src.validation import candidate_fingerprint
 
@@ -118,6 +120,63 @@ def _parse_int(value: Any) -> int | None:
     if isinstance(value, float) and value.is_integer():
         return int(value)
     return value
+
+
+def _work_lists() -> list[dict[str, object]]:
+    """Les listes AKS que la console peut proposer comme file de TRAVAIL.
+
+    La file Pending (9) vient en tête — c'est le défaut. La Blacklist (8) et ses variantes
+    sont écartées : on ne re-travaille pas des exclusions définitives (Romain, 2026-09-21),
+    et le serveur les refuserait de toute façon. Le catalogue vient de `src/aks_lists.py`,
+    la même source que le CLI : la console ne réinvente pas la liste des listes."""
+
+    out: list[dict[str, object]] = [{"id": int(PENDING_LIST_ID), "label": "Pending offers"}]
+    for entree in AKS_LISTS:
+        try:
+            lid = int(entree["id"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if lid == int(PENDING_LIST_ID) or lid == FEED_LIST_BLACKLIST:
+            continue
+        if is_blacklist_label(entree.get("label")):
+            continue
+        out.append({"id": lid, "label": str(entree.get("label") or lid)})
+    return out
+
+
+def _parse_list_id(body: dict[str, Any]) -> int:
+    """La liste AKS demandée par la console — ``9`` (file Pending) par défaut.
+
+    Romain, 2026-09-23 : « je voudrais pouvoir choisir la liste depuis l'admin. Par défaut on
+    sera en pending offers, liste 9, mais je voudrais pouvoir en sélectionner d'autres. »
+
+    Deux refus, pour les mêmes raisons qu'ailleurs sur ce chemin d'écriture :
+
+    * une valeur qui n'est pas un ENTIER est refusée plutôt que devinée — la chaîne "9" d'un
+      `<select>` mal câblé passerait, mais "neuf" ou "9; DROP" ne doivent jamais construire
+      une URL de feed ;
+    * la **liste 8 (Blacklist)** est interdite comme liste de travail (Romain, 2026-09-21 :
+      les exclusions définitives ne se re-travaillent pas). L'extracteur la refuse déjà, mais
+      le serveur doit le dire AVANT de lancer un balayage, pas après une page perdue.
+
+    Le reste est laissé passer : la liste 30 (account), la 12 (pages à trier), etc. Celles-là
+    sont des files de travail légitimes, et c'est tout l'objet de la demande."""
+
+    brut = body.get("list", body.get("list_id"))
+    if brut is None or brut == "":
+        return int(PENDING_LIST_ID)
+    try:
+        val = int(str(brut).strip())
+    except (TypeError, ValueError):
+        raise ApiError(400, "bad_list",
+                       f"list doit être un entier (9 = file Pending), reçu {brut!r}") from None
+    if val < 1:
+        raise ApiError(400, "bad_list", f"list doit être un entier positif, reçu {val}")
+    if val == FEED_LIST_BLACKLIST:
+        raise ApiError(400, "forbidden_list",
+                       f"liste {FEED_LIST_BLACKLIST} (Blacklist) : interdite comme liste de "
+                       "travail — les exclusions définitives ne se re-travaillent pas")
+    return val
 
 
 def _parse_consoles(body: dict[str, Any]) -> bool:
@@ -311,7 +370,9 @@ class AdminHandler(BaseHTTPRequestHandler):
             # A et B sur l'admin ») : la console ne les invente pas, elle les REÇOIT — même
             # source que le CLI, donc aucune dérive possible entre les deux.
             return self._send_json(200, {"merchants": auto_allowed_list(),
-                                         "groups": _auto_groups()})
+                                         "groups": _auto_groups(),
+                                         "lists": _work_lists(),
+                                         "default_list": int(PENDING_LIST_ID)})
         name = path.lstrip("/")
         if name in STATIC_FILES:
             return self._serve_static(name)
@@ -799,6 +860,7 @@ class AdminHandler(BaseHTTPRequestHandler):
             max_pages=_parse_int(body.get("max_pages")),
             start_page=_parse_int(body.get("start_page")),
             continue_on_halt=bool(body.get("continue_on_halt")),
+            list_id=_parse_list_id(body),     # Romain 2026-09-23 : la liste est choisie ici
             consoles=_parse_consoles(body))   # [R45] default True (Romain 2026-09-15)
         self._send_json(200, result)
 

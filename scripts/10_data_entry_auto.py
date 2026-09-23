@@ -40,8 +40,14 @@ from src.data_entry_auto import (  # noqa: E402
 from src.admin.validation_io import apply_overrides_and_validate  # noqa: E402
 from src.admin.runs import sha256_file  # noqa: E402
 from src.admin.auto_merchants import rejection_reason  # noqa: E402
+from src.aks_lists import PENDING_LIST_ID  # noqa: E402
 from src.child_runner import CooperativeChildRunner  # noqa: E402
 from src.triage import execute_page_moves, plan_moves_from_skipped  # noqa: E402
+
+# La file Pending : le défaut de toutes les étapes, et le seul chemin d'écriture
+# éprouvé. Romain, 2026-09-23 : « par défaut on sera en pending offers, liste 9,
+# mais je voudrais pouvoir en sélectionner d'autres ».
+PENDING_LIST = int(PENDING_LIST_ID)
 from src.validation import candidate_fingerprint  # noqa: E402
 
 # Cooperative stop: forward SIGTERM to the current child (05_submit/02/03/06 each
@@ -212,7 +218,7 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
                  *, triage: bool = False, move_execute: bool = False,
                  dry_run: bool = False, prove_gone_scan: bool = False,
                  sweep_dir: Path | None = None, consoles: bool = True,
-                 page_catalog: str = "") -> Stages:
+                 page_catalog: str = "", list_id: int = PENDING_LIST) -> Stages:
     py = sys.executable
     # A fully read-only preview (Romain: "teste le dry-run"): extract (browser read)
     # + match (AKS read) + triage plan, but NEVER a real write — the ADD submit is
@@ -224,7 +230,13 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
     def extract(page: int, run_id: str) -> ExtractOutcome:
         argv = [py, str(ROOT / "scripts" / "02_extract_feed.py"),
                 "--merchant", merchant, "--store-id", store_id,
-                "--run-id", run_id, "--pages", str(page), "--available", available]
+                "--run-id", run_id, "--pages", str(page), "--available", available,
+                # La LISTE lue voyage jusqu'aux deux étapes qui touchent au feed — celle
+                # qui lit et celle qui prouve la disparition. Les laisser diverger ferait
+                # chercher la preuve dans une autre file que celle d'où vient l'offre
+                # (Romain, 2026-09-23 : « je voudrais pouvoir choisir la liste depuis
+                # l'admin »).
+                "--list", str(list_id)]
         if pace:
             argv += ["--pace", pace]
         rc = _run_child(argv, run_id)
@@ -330,7 +342,8 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
         # reach deep pages (submit-index-shallow-feed).
         argv = [py, str(ROOT / "scripts" / "05_submit.py"),
                 str(run_dir / "approved.json"), "--merchant", merchant,
-                "--store-id", store_id, "--mode", "safe", "--submit", "--available", available]
+                "--store-id", store_id, "--mode", "safe", "--submit", "--available", available,
+                "--list", str(list_id)]
         try:
             argv += ["--page-hint", run_id.rsplit("-p", 1)[1]]
         except IndexError:
@@ -548,6 +561,12 @@ def main() -> int:
     ap.add_argument("--move-execute", action="store_true",
                     help="With --triage: REALLY move (06_move --mode safe, "
                          "canary-authorized lists only). Default: dry-run plan only.")
+    ap.add_argument(
+        "--list", dest="list_id", type=int, default=PENDING_LIST,
+        help="Liste AKS balayée (9 = file Pending, défaut ; 30 = account…). La liste 8 "
+             "(Blacklist) est refusée par l'extracteur. La liste voyage jusqu'au submit, "
+             "qui prouve la disparition dans la MÊME file — sans quoi la preuve chercherait "
+             "l'offre dans une autre liste que celle d'où elle vient.")
     ap.add_argument(
         "--page-catalog", default="",
         help="Catalogue des pages AKS alimenté par chaque match du balayage : chemin local "
@@ -791,7 +810,7 @@ def main() -> int:
                               triage=args.triage, move_execute=args.move_execute,
                               dry_run=args.dry_run, prove_gone_scan=args.prove_gone_scan,
                               sweep_dir=sweep_dir, consoles=args.consoles,
-                              page_catalog=args.page_catalog)
+                              page_catalog=args.page_catalog, list_id=args.list_id)
         target_entry = {"merchant": merchant, "store_id": store_id, "recap": None}
         recap["targets"].append(target_entry)
 

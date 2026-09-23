@@ -3,6 +3,39 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-23 — La liste balayée se choisit depuis la console
+
+Romain : « je voudrais pouvoir choisir la liste depuis l'admin. Par défaut, on sera en pending
+offers, liste 9, mais je voudrais pouvoir en sélectionner d'autres. »
+
+Un sélecteur dans l'onglet saisie auto, et la liste voyage jusqu'au bout de la chaîne :
+`02_extract_feed --list` pour la lecture et `05_submit --list` pour la preuve. C'est ce
+dernier point qui compte — le succès d'une écriture est « la ligne a disparu de la file
+rafraîchie ». Laisser les deux diverger ferait chercher la preuve dans une autre liste que
+celle d'où vient l'offre, et rendrait un verdict également faux qu'il soit positif ou négatif.
+
+`scripts/10_data_entry_auto.py --list N` transmet donc la même valeur aux deux étapes. Sur la
+ligne de commande du run, le drapeau n'apparaît que s'il DIFFÈRE de la 9 : le journal d'un
+balayage ordinaire reste identique à ce qu'il était, et une liste explicite se voit tout de
+suite dans l'argv.
+
+**Deux refus côté serveur**, avant tout lancement. Une valeur qui n'est pas un entier positif
+est refusée plutôt que devinée. Et la **liste 8 (Blacklist)** est interdite comme file de
+travail (Romain, 2026-09-21) : l'extracteur la refusait déjà, mais après avoir pris le
+navigateur et perdu une page — le serveur le dit maintenant tout de suite. Le catalogue servi
+à la console écarte aussi toutes les variantes de blacklist, et met la file Pending en tête.
+
+Les **trois** boutons de lancement envoient la liste : le sweep d'un marchand, le sweep de
+nuit et les groupes. En oublier un ferait balayer la 9 par un bouton pendant qu'un autre
+balaie la 30, sans que rien ne le dise. L'écran signale d'ailleurs en clair quand la liste
+choisie n'est pas la file habituelle.
+
+L'écran est vérifié en l'EXÉCUTANT (`tests/js/auto_groups.test.mjs`) : la file Pending est
+bien le défaut, un changement de liste part vraiment dans la requête, et sans choix explicite
+c'est la 9 qui voyage.
+
+Suite complète : 2 540 tests, verts.
+
 ## 2026-09-23 — `[R56]` : un marchand mono-plateforme n'a plus besoin que la page le déclare
 
 Romain : « pour GOG pas besoin que la page déclare GOG. »

@@ -751,11 +751,12 @@ class DataEntryAutoAllowlistTests(AppTestCase):
     def test_suggested_merchant_accepted(self):
         seen = {}
         def fake(targets, *, by, max_pages=None, start_page=None, continue_on_halt=False,
-                 consoles=True, all_pages=False):
+                 consoles=True, all_pages=False, list_id=None):
             seen["targets"] = targets
             seen["continue_on_halt"] = continue_on_halt
             seen["consoles"] = consoles
             seen["all_pages"] = all_pages      # couverture totale (Romain 2026-09-18)
+            seen["list_id"] = list_id          # liste choisie (Romain 2026-09-23)
             return {"run_id": "20260807-000000-auto", "started": True}
         self.manager.start_data_entry_auto = fake
         response, body = self._json(
@@ -767,6 +768,8 @@ class DataEntryAutoAllowlistTests(AppTestCase):
         self.assertEqual(body["run_id"], "20260807-000000-auto")
         self.assertEqual(seen["targets"], [("Kinguin", "58")])
         self.assertIs(seen["consoles"], True)     # [R45] absent from the body = consoles on
+        self.assertEqual(seen["list_id"], 9,
+                         "sans liste dans le corps, c'est la file Pending qui part — et elle est transmise EXPLICITEMENT")
 
 
 class DataEntryRecapRouteTests(AppTestCase):
@@ -1256,3 +1259,53 @@ class LoginRouteTests(AppTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LaListeSeChoisitDepuisLAdmin(unittest.TestCase):
+    """Romain, 2026-09-23 : « je voudrais pouvoir choisir la liste depuis l'admin. Par
+    défaut, on sera en pending offers, liste 9, mais je voudrais pouvoir en sélectionner
+    d'autres. »
+
+    Ce qui est en jeu : la liste voyage jusqu'au SUBMIT, qui prouve la disparition de
+    l'offre dans cette file. Une liste mal transmise ferait chercher la preuve ailleurs que
+    là d'où vient l'offre — un succès ou un échec également faux."""
+
+    def test_absente_ou_vide_la_liste_vaut_la_file_pending(self):
+        from src.admin.app import _parse_list_id
+        for corps in ({}, {"list": ""}, {"list": None}):
+            with self.subTest(corps=corps):
+                self.assertEqual(_parse_list_id(corps), 9)
+
+    def test_une_autre_liste_de_travail_passe(self):
+        from src.admin.app import _parse_list_id
+        self.assertEqual(_parse_list_id({"list": 30}), 30)
+        self.assertEqual(_parse_list_id({"list": "30"}), 30,
+                         "un <select> rend une CHAÎNE — elle doit être acceptée")
+        self.assertEqual(_parse_list_id({"list_id": 22}), 22)
+
+    def test_la_blacklist_est_refusee_AVANT_le_lancement(self):
+        """L'extracteur la refuse déjà, mais après avoir pris le navigateur et perdu une
+        page. Le serveur doit le dire tout de suite (Romain, 2026-09-21 : les exclusions
+        définitives ne se re-travaillent pas)."""
+
+        from src.admin.app import _parse_list_id
+        from src.admin.app import ApiError
+        with self.assertRaises(ApiError) as ctx:
+            _parse_list_id({"list": 8})
+        self.assertEqual(ctx.exception.code, "forbidden_list")
+
+    def test_une_liste_qui_nest_pas_un_entier_est_refusee_pas_devinee(self):
+        from src.admin.app import _parse_list_id
+        from src.admin.app import ApiError
+        for mauvais in ("neuf", "9; DROP", 0, -3, {"a": 1}):
+            with self.subTest(valeur=mauvais):
+                with self.assertRaises(ApiError):
+                    _parse_list_id({"list": mauvais})
+
+    def test_le_catalogue_servi_exclut_la_blacklist_et_met_la_pending_en_tete(self):
+        from src.admin.app import _work_lists
+        listes = _work_lists()
+        self.assertEqual(listes[0]["id"], 9)
+        self.assertTrue(all(l["id"] != 8 for l in listes), "la Blacklist n'est pas proposée")
+        self.assertTrue(all("blacklist" not in str(l["label"]).lower() for l in listes))
+        self.assertIn(30, [l["id"] for l in listes], "la liste account doit être offerte")

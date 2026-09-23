@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from src.aks_lists import PENDING_LIST_ID
 from src.admin.runs import RunAccessError, derive_merchant_store, run_file, sha256_file
 from src.run_log import RunLogger, redact
 from src.validation import ValidationError, verify_approved_against_source
@@ -851,7 +852,7 @@ class SubmitManager:
         self, targets: list[tuple[str, str]], *, by: str,
         max_pages: int | None = None, start_page: int | None = None,
         continue_on_halt: bool = False, consoles: bool = True,
-        all_pages: bool = False,
+        all_pages: bool = False, list_id: int | None = None,
     ) -> dict[str, Any]:
         """Launch the safe-auto data-entry sweep (Romain's explicit go, 2026-08-04):
         for each ``(merchant, store_id)`` target, sweep the feed page by page —
@@ -909,12 +910,20 @@ class SubmitManager:
             # [R45] consoles by DEFAULT (Romain's decision « 1 », 2026-09-15); the flag is
             # explicit either way so the run's argv / meta show the mode of the sweep.
             argv.append("--consoles" if consoles else "--no-consoles")
+            # La LISTE balayée (Romain, 2026-09-23 : « je voudrais pouvoir choisir la liste
+            # depuis l'admin. Par défaut on sera en pending offers, liste 9 »). Elle n'est
+            # ajoutée à la ligne de commande que si elle DIFFÈRE du défaut : le journal d'un
+            # balayage ordinaire reste identique à ce qu'il était, et une liste explicite se
+            # voit immédiatement dans l'argv du run.
+            if list_id is not None and int(list_id) != int(PENDING_LIST_ID):
+                argv += ["--list", str(int(list_id))]
             return self._spawn(
                 run_dir, kind="data_entry_auto", argv=argv,
                 meta={"targets": [{"merchant": m, "store_id": s} for m, s in clean],
                       "by": by, "run_id": run_id, "max_pages": max_pages,
                       "continue_on_halt": bool(continue_on_halt),
-                      "consoles": bool(consoles)},
+                      "consoles": bool(consoles),
+                      "list_id": int(list_id) if list_id is not None else int(PENDING_LIST_ID)},
             )
 
     def start_data_entry_by_urls(

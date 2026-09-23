@@ -101,7 +101,7 @@ $("#launch").addEventListener("click", async () => {
   if (!targets.length || $("#go").value.trim().toUpperCase() !== "GO") return;
   // [11] the server re-enforces the typed GO (confirm=GO) like every other real-write
   // path — send it, not just gate the button client-side.
-  const body = { targets, confirm: "GO" };
+  const body = { targets, confirm: "GO", list: currentList() };
   const mp = parseInt($("#max-pages").value, 10); if (mp > 0) body.max_pages = mp;
   const sp = parseInt($("#start-page").value, 10); if (sp > 0) body.start_page = sp;
   // [R45] consoles by default (Romain 2026-09-15); unticked = PC-only sweep (--no-consoles).
@@ -135,7 +135,8 @@ $("#launch-all").addEventListener("click", async () => {
   // Couverture TOTALE (Romain 2026-09-18 : « on fait toutes les pages sauf lors d'un arrêt
   // pour sécurité »). Le plafond du formulaire n'est PAS envoyé — le serveur refuse d'ailleurs
   // les deux ensemble — et on le dit à l'opérateur au lieu de l'ignorer en silence.
-  const body = { all_allowlisted: true, all_pages: true, confirm: "GO" };
+  const body = { all_allowlisted: true, all_pages: true, confirm: "GO",
+                 list: currentList() };
   const mp = parseInt($("#max-pages").value, 10);
   const sp = parseInt($("#start-page").value, 10); if (sp > 0) body.start_page = sp;
   body.consoles = $("#consoles").checked;
@@ -351,6 +352,48 @@ function renderRecap(d) {
 // invente pas : elle affiche ce que le serveur lui envoie et lui renvoie un NOM de groupe —
 // c'est le serveur qui le détend sur la liste blanche, comme pour le sweep de nuit.
 let GROUPS = [];
+// La liste AKS balayée (Romain, 2026-09-23 : « je voudrais pouvoir choisir la liste depuis
+// l'admin. Par défaut on sera en pending offers, liste 9 »). La console ne fabrique pas ce
+// catalogue : elle l'affiche tel que le serveur l'envoie, et lui renvoie un NOMBRE. Le
+// serveur re-valide (entier, positif, jamais la Blacklist) — un client bricolé ne choisit
+// donc pas une liste interdite par ce chemin.
+let LISTS = [];
+let DEFAULT_LIST = 9;
+
+function renderLists() {
+  const sel = $("#work-list");
+  if (!sel) return;
+  sel.replaceChildren();
+  LISTS.forEach((l) => {
+    const o = document.createElement("option");
+    o.value = String(l.id);
+    o.textContent = l.id === DEFAULT_LIST ? (l.label + " (" + l.id + ") — défaut")
+                                          : (l.label + " (" + l.id + ")");
+    if (l.id === DEFAULT_LIST) o.selected = true;
+    sel.appendChild(o);
+  });
+  // …et on pose AUSSI `value`. `option.selected` suffit dans un navigateur, mais le rendre
+  // explicite évite de dépendre de ce reflet — et le bouchon des tests, qui n'implémente
+  // pas la sémantique du <select>, lit alors la même chose que l'écran réel.
+  sel.value = String(DEFAULT_LIST);
+  syncListNote();
+}
+
+function currentList() {
+  const sel = $("#work-list");
+  const v = sel && sel.value ? parseInt(sel.value, 10) : DEFAULT_LIST;
+  return Number.isFinite(v) && v > 0 ? v : DEFAULT_LIST;
+}
+
+function syncListNote() {
+  const note = $("#list-note");
+  if (!note) return;
+  const l = currentList();
+  note.textContent = l === DEFAULT_LIST
+    ? "file de travail habituelle"
+    : "⚠ liste " + l + " — le submit prouvera la disparition dans CETTE liste";
+}
+
 
 function renderGroups() {
   const zone = $("#group-buttons");
@@ -383,7 +426,8 @@ function renderGroups() {
 async function launchGroup(group) {
   if ($("#go").value.trim().toUpperCase() !== "GO" || SWEEP_RUNNING) return;
   const body = { group: group.name, all_pages: true, confirm: "GO",
-                 continue_on_halt: true, consoles: $("#consoles").checked };
+                 continue_on_halt: true, consoles: $("#consoles").checked,
+                 list: currentList() };
   const sp = parseInt($("#start-page").value, 10); if (sp > 0) body.start_page = sp;
   GROUPS.forEach((g) => { const b = $("#launch-group-" + g.name); if (b) b.disabled = true; });
   $("#launch-group-msg").textContent = "Lancement du groupe " + group.name + "…";
@@ -405,7 +449,12 @@ async function launchGroup(group) {
     const d = await api("api/data-entry/merchants");
     SUGGESTED = (d && d.merchants) || [];
     GROUPS = (d && d.groups) || [];
+    LISTS = (d && d.lists) || [];
+    if (d && d.default_list) DEFAULT_LIST = d.default_list;
+    renderLists();
     renderGroups();
+    const sel = $("#work-list");
+    if (sel) sel.addEventListener("change", syncListNote);
     const cnt = $("#all-count");
     if (cnt) cnt.textContent = "Aujourd'hui : " + SUGGESTED.length + " marchand(s) — "
       + SUGGESTED.map((m) => m.name).join(", ") + ".";

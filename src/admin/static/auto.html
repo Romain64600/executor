@@ -92,6 +92,11 @@
         <label title="Un arrêt fail-closed sur UN marchand (feed illisible, offre UNKNOWN, 10 échecs d'affilée) ne termine pas le lot : le sweep note la halte et passe au marchand suivant. Décoché, le premier marchand qui s'arrête emporte tous les suivants — c'est le défaut historique de ce bouton, et c'est ce qui manquait ici le 19/09. Le bouton « sweep de nuit », lui, l'a toujours forcé."><input id="continue-on-halt" type="checkbox" checked> Continuer au marchand suivant après une halte</label>
       </div>
       <p class="restrict">Consoles cochées par défaut (15/09) — décochez pour un sweep PC seulement.</p>
+      <div class="row" id="list-row">
+        <label for="work-list" title="La liste AKS balayée. Par défaut « Pending offers » (9), la file de travail habituelle. Une autre liste se lit de la même façon — la liste choisie voyage jusqu'au submit, qui prouve la disparition dans CETTE file. La Blacklist (8) n'est pas proposée : les exclusions définitives ne se re-travaillent pas.">Liste AKS balayée</label>
+        <select id="work-list"></select>
+        <span id="list-note" class="dim"></span>
+      </div>
       <div class="golaunch">
         <span class="golabel">Tape <b>GO</b> pour confirmer l'ajout auto :</span>
         <input id="go" type="text" placeholder="GO" class="go-in" autocomplete="off">
