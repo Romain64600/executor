@@ -3483,11 +3483,33 @@ def match_offer(
             return SkippedOffer(offer, f"no region id for {platform}/{region_label}")
     else:
         page_name = PAGE_PLATFORM_NAMES.get(declared_platform)
-        if page_name and page_platforms and page_name.upper() not in page_platforms:
+        # [R56] un marchand mono-plateforme (GOG) peut lever ce contrôle : sa plateforme
+        # vient de son domaine, pas d'une lecture de titre, donc la liste de la page ne la
+        # contredit pas — elle est seulement incomplète. Le seau de région, lui, garde la
+        # décision : sans seau GOG la ligne tombe plus bas sur « no region id ».
+        _exige_page = _cfg is None or _cfg.require_page_platform
+        if _exige_page and page_name and page_platforms and page_name.upper() not in page_platforms:
             source = "Difmark merchant page" if difmark_platform_verified else "title"
             return SkippedOffer(
                 offer,
                 f"{source} says {page_name} but AKS official platforms exclude it (R20)",
+            )
+        if not _exige_page and region_id is not None and resolution.regions \
+                and region_id not in resolution.regions:
+            # `[R56]` — le contrôle qui REMPLACE R20 pour un marchand mono-plateforme, et
+            # qui est plus juste que lui. R20 regardait la liste des plateformes de la page,
+            # une description ; ici on regarde le SEAU DE RÉGION, c'est-à-dire la case que le
+            # formulaire offre réellement. Sans elle, rien ne peut être écrit.
+            #
+            # Il FAUT ce contrôle dès qu'on lève R20 : la table REGION_IDS traduit
+            # GOG/global en seau 6 sans jamais demander à la page si elle a ce seau, et R20
+            # servait de garde par ricochet. Mesuré le 2026-09-22 sur les 128 lignes GOG que
+            # R20 refusait : 125 de ces pages n'ont aucun seau 6. Sans cette ligne, elles
+            # deviendraient des candidats écrits dans une case inexistante.
+            return SkippedOffer(
+                offer,
+                f"AKS page has no {page_name or declared_platform} region bucket "
+                f"({region_label}/{region_id}) — nothing to file it under (R56)",
             )
 
     # R18 as revised by Romain (2026-07-08, replacing the 07-07 skip): a title

@@ -97,6 +97,20 @@ class MerchantConfig:
     # 2026-09-16 is either Cloudflare-403 — Gamivo, Electronicfirst, GamersOutlet, Kinguin,
     # Driffle, G2A — or belongs to a merchant whose resolver already sets the platform upstream).
     publisher_from_merchant_page: bool = False
+    # [R56] (2026-09-22, Romain : « pour GOG pas besoin que la page déclare GOG »).
+    # R20 refuse une ligne dont la plateforme DÉCLARÉE n'apparaît pas dans les plateformes
+    # officielles de la page AKS. Le garde vaut pour un marchand dont la plateforme est LUE
+    # dans un titre : une contradiction y signale une mauvaise lecture. Il ne vaut pas pour
+    # un marchand MONO-PLATEFORME dont la plateforme vient de son domaine — GOG.com ne vend
+    # que du GOG, la liste de la page ne peut pas le contredire, elle peut seulement être
+    # incomplète. Mettre False lève ce contrôle POUR CE MARCHAND SEULEMENT.
+    #
+    # Mesuré avant d'être posé, sur les 128 lignes GOG que R20 refusait : 125 de ces pages
+    # n'ont AUCUN seau de région GOG (6), donc l'écriture y est impossible de toute façon et
+    # la ligne retombe sur le refus « no region id » — exact, celui-là. UNE seule ligne est
+    # réellement débloquée. Le drapeau ne relâche donc rien : il déplace le refus de la
+    # DÉCLARATION (approximative) vers le SEAU (qui, lui, décide vraiment).
+    require_page_platform: bool = True
     # Generic-behaviour OVERRIDE hooks (Romain 2026-09-10: « un fichier de config marchand
     # par marchand, qui peut ajouter, overwrite, modifier des comportements génériques »).
     # Each is optional; the matcher calls it FIRST and falls through to the generic rule

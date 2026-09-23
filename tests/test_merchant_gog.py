@@ -135,6 +135,54 @@ class LaRegionEstUnFaitSurLaBoutique(unittest.TestCase):
         self.assertEqual(gog.title_region("n'importe quoi"), "global")
 
 
+class LaPageNaPasBesoinDeDeclarerGOG(unittest.TestCase):
+    """`[R56]`, Romain 2026-09-22 : « pour GOG pas besoin que la page déclare GOG ».
+
+    R20 refuse une ligne dont la plateforme déclarée n'apparaît pas dans les plateformes
+    officielles de la page. Ce garde protège un marchand dont la plateforme est LUE dans un
+    titre : une contradiction y trahit une mauvaise lecture. Celle de GOG vient de son
+    DOMAINE — la liste d'une page AKS ne la contredit pas, elle peut seulement être
+    incomplète.
+
+    Ce que le drapeau ne fait PAS, et c'est le point mesuré : il ne relâche rien. Sur les 128
+    lignes que R20 refusait, 125 de ces pages n'ont aucun seau GOG (6) et retombent sur le
+    refus « no region id » — celui qui décide vraiment. Le drapeau déplace le refus de la
+    déclaration vers le seau."""
+
+    def test_une_page_qui_ne_liste_que_Steam_nest_plus_un_refus_de_plateforme(self):
+        page = _page("Punk Wars", platforms=("Steam",))
+        res = _match("Punk Wars", "punk_wars", page)
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+        self.assertEqual(res.platform, "GOG")
+        self.assertEqual(res.region_id, "6")
+
+    def test_mais_sans_seau_GOG_la_ligne_est_TOUJOURS_refusee(self):
+        """Le vrai garde. 125 des 128 lignes sont dans ce cas : la page n'offre que des
+        seaux Steam, on ne peut rien y écrire sous GOG."""
+
+        page = _page("Monolith", platforms=("Steam",),
+                     regions={"2": "STEAM GLOBAL", "9": "STEAM EU"})
+        res = _match("Monolith", "monolith", page)
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("region", res.reason.lower())
+
+    def test_les_autres_marchands_gardent_le_controle_R20(self):
+        """Le drapeau est POUR CE MARCHAND. Une ligne Kinguin dont le titre dit Steam face
+        à une page qui ne liste pas Steam reste refusée — la contradiction y a un sens."""
+
+        from src.merchants.registry import merchant_config
+        self.assertTrue(merchant_config("KINGUIN").require_page_platform)
+        offre = NormalizedOffer(offer_id="1", name="Hades Steam Key GLOBAL",
+                                url="https://www.kinguin.net/x", merchant="Kinguin",
+                                store_id="58")
+        page = _page("Hades", platforms=("Epic Store",),
+                     regions={"2": "GLOBAL", "6": "GOG GLOBAL"})
+        res = match_offer(offre, resolver=lambda n, **k: page,
+                          page_resolver=lambda u: page, consoles=True)
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("R20", res.reason)
+
+
 class LeTitreSertVraimentAQuelqueChose(unittest.TestCase):
     """« Complément d'information », ce sont ces trois usages — et eux seuls."""
 

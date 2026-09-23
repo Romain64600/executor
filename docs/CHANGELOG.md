@@ -3,6 +3,41 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-23 — `[R56]` : un marchand mono-plateforme n'a plus besoin que la page le déclare
+
+Romain : « pour GOG pas besoin que la page déclare GOG. »
+
+R20 refusait une ligne dont la plateforme DÉCLARÉE n'apparaît pas dans les plateformes
+officielles de la page AKS. Le garde a un sens pour un marchand dont la plateforme est LUE
+dans un titre : une contradiction y trahit une mauvaise lecture. Il n'en a pas pour GOG, dont
+la plateforme vient du DOMAINE — la liste d'une page ne la contredit pas, elle peut seulement
+être incomplète.
+
+`MerchantConfig.require_page_platform` (défaut **True**, donc rien ne change pour les seize
+autres) lève ce contrôle pour un marchand. GOG le déclare dans SON fichier ; le matcher ne
+connaît que le drapeau, pas le marchand.
+
+**Mais lever R20 ouvrait un trou, et il a fallu le fermer.** `REGION_IDS` traduit GOG/global
+en seau **6** sans jamais demander à la page si elle a ce seau : R20 servait de garde par
+ricochet. Sans lui, une ligne devenait candidate vers une case inexistante — le premier test
+écrit l'a montré tout de suite. Le contrôle qui le remplace regarde le SEAU lui-même, ce que
+le formulaire offre vraiment, et il est plus juste que R20 : « AKS page has no GoG region
+bucket (GLOBAL/6) — nothing to file it under (R56) ».
+
+**Ce que la règle change en volume, mesuré avant de l'écrire.** Sur les 128 lignes GOG que R20
+refusait, chaque page a été sondée en direct :
+
+| | Lignes |
+|---|---|
+| Page sans aucun seau GOG (6) — refus inévitable | 125 |
+| Page avec le seau 6 — réellement débloquée | 1 |
+| Page introuvable au moment de la sonde | 2 |
+
+La règle est donc juste dans son principe et quasi nulle en volume : le blocage n'était pas la
+déclaration, c'était l'absence de la case. Trois mutations vérifiées.
+
+Suite complète : 2 535 tests, verts.
+
 ## 2026-09-22 — GOG entre en liste blanche `[R55]` : le titre en complément, jamais pour la plateforme
 
 Romain : « pour GOG, on peut prendre le titre en complément d'information. Testons sur une
