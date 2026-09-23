@@ -46,5 +46,41 @@
     "promoted_by": "console",
     "source_run": "tri-20260917-1426",
     "hits_when_promoted": 7
+  },
+  {
+    "pattern": "%bigo-live%",
+    "target": "21",
+    "promoted_at": "2026-09-23T09:42:17Z",
+    "promoted_by": "console",
+    "source_run": "20260917-134752-sort",
+    "hits_when_promoted": 156,
+    "origin": {
+      "pattern": "%bigo-live%",
+      "target": "21"
+    }
+  },
+  {
+    "pattern": "%madden-points%",
+    "target": "41",
+    "promoted_at": "2026-09-23T09:43:21Z",
+    "promoted_by": "console",
+    "source_run": "20260917-134752-sort",
+    "hits_when_promoted": 72,
+    "origin": {
+      "pattern": "%madden-points%",
+      "target": "41"
+    }
+  },
+  {
+    "pattern": "%philippines%",
+    "target": "8",
+    "promoted_at": "2026-09-23T09:44:20Z",
+    "promoted_by": "console",
+    "source_run": "20260917-134752-sort",
+    "hits_when_promoted": 92,
+    "origin": {
+      "pattern": "%philippines%",
+      "target": "8"
+    }
   }
 ]
