@@ -397,7 +397,33 @@ class LeFichierSQL(unittest.TestCase):
         sql = render_sql(self.OFFRES, 22, chunk=2)
         self.assertIn("au plus", sql)
         self.assertNotIn("Un écart = arrêter", sql)
-        self.assertIn("déjà triées ailleurs", sql)
+        self.assertIn("ne sont plus dans la liste 9", sql)
+
+    def test_le_retour_en_arriere_de_la_22_vers_la_9(self):
+        """Revue du 2026-09-23 : 255 lignes des fichiers du 22/09 avaient une page. S'ils ont
+        été collés, il faut les rendre — avec les mêmes gardes qu'à l'aller, et SANS toucher
+        une ligne qui n'est pas dans la 22."""
+
+        sql = render_sql(self.OFFRES, 9, chunk=2, from_list=22)
+        requetes = [l for l in sql.splitlines() if l.startswith("UPDATE")]
+        self.assertTrue(requetes)
+        for req in requetes:
+            self.assertIn("SET `listId`=9", req)
+            self.assertIn("AND `listId`=22", req, "seules les lignes encore en 22 bougent")
+        self.assertIn("tous les comptes valent 0", sql,
+                      "si l'ancien fichier n'a pas été collé, le dire : 0 est normal")
+        with self.assertRaises(ExportRefused):
+            render_sql(self.OFFRES, 22, from_list=22)
+
+    def test_letape_0_montre_la_liste_actuelle_sans_filtrer_dessus(self):
+        """Une ligne déjà déplacée ailleurs doit s'afficher à l'étape 0 : filtrée sur la
+        liste d'origine, elle disparaîtrait, et une étape 0 vide ferait croire que la
+        colonne d'identifiant est fausse."""
+
+        etape0 = render_sql(self.OFFRES, 22, chunk=2).split("-- Les URL attendues")[0]
+        select = etape0[etape0.index("SELECT"):]
+        self.assertIn("`listId`", select.splitlines()[0])
+        self.assertNotIn("AND `listId`", select)
 
     def test_la_file_pending_ne_peut_pas_etre_sa_propre_cible(self):
         with self.assertRaises(ExportRefused):

@@ -242,13 +242,20 @@ def _chunks(ids: list[str], taille: int) -> list[list[str]]:
 
 def render_sql(offers: list[dict[str, Any]], target_list: int, *,
                chunk: int = DEFAULT_CHUNK, sample: int = VERIFY_SAMPLE,
-               header: str = "") -> str:
-    """Le fichier .sql : vérification d'abord, puis les lots, chacun compté avant d'écrire."""
+               header: str = "", from_list: int = PENDING_LIST_ID) -> str:
+    """Le fichier .sql : vérification d'abord, puis les lots, chacun compté avant d'écrire.
+
+    ``from_list`` est la liste d'où les lignes PARTENT — la file Pending (9) par défaut.
+    Il existe pour le RETOUR EN ARRIÈRE (revue du 2026-09-23) : 255 lignes des fichiers du
+    22/09 avaient une page, et s'ils ont été collés il faut pouvoir les rendre de la 22 à la
+    9, avec les mêmes gardes qu'à l'aller. Chaque requête porte ``AND listId=<from_list>`` :
+    une ligne qui n'est pas là où on la croit ne bouge pas."""
 
     cible = int(target_list)
-    if cible == PENDING_LIST_ID:
+    depuis = int(from_list)
+    if cible == depuis:
         raise ExportRefused(
-            f"liste cible {cible} = la file Pending elle-même — un déplacement vers la liste "
+            f"liste cible {cible} = la liste d'origine — un déplacement vers la liste "
             "d'origine ne veut rien dire")
     if not offers:
         raise ExportRefused("aucune ligne à déplacer — rien à écrire")
@@ -266,27 +273,36 @@ def render_sql(offers: list[dict[str, Any]], target_list: int, *,
         for l in header.splitlines():
             a("-- " + l)
     a("--")
-    a(f"-- {len(ids)} ligne(s) -> liste {cible}, en {len(lots)} lot(s) de {chunk} maximum.")
+    a(f"-- {len(ids)} ligne(s) de la liste {depuis} vers la liste {cible}, en {len(lots)} "
+      f"lot(s) de {chunk} maximum.")
     a("--")
     a("-- LIRE AVANT DE COLLER :")
     a("--   1. L'ÉTAPE 0 est obligatoire. Nous n'avons jamais vu le schéma de la base : le")
     a(f"--      nom de la colonne d'identifiant ({ID_COLUMN}) est une HYPOTHÈSE. L'étape 0 la")
-    a("--      vérifie en affichant des URL qu'on connaît déjà. Si elles ne correspondent")
-    a("--      pas, ou si la requête échoue : ARRÊTER, ne rien écrire, me le dire.")
-    a("--   2. Chaque lot est précédé d'un COUNT. Le nombre annoncé est un MAXIMUM, pas une")
-    a("--      égalité : Romain a déjà trié une partie de ces lignes vers la 27 « Old games /")
-    a("--      No pages » (2026-09-22), et celles-là ont quitté la file Pending. Un compte")
-    a("--      INFÉRIEUR est donc normal — c'est le tri déjà fait. Un compte SUPÉRIEUR au lot")
-    a("--      est impossible : s'il arrive, arrêter.")
-    a("--   3. Chaque requête porte AND `listId`=9 : une ligne déjà triée ailleurs ne bouge")
-    a("--      pas une seconde fois.")
+    a("--      vérifie en affichant des URL qu'on connaît déjà, et la liste où chaque ligne")
+    a("--      se trouve MAINTENANT. Si les URL ne correspondent pas, ou si la requête échoue :")
+    a("--      ARRÊTER, ne rien écrire, me le dire.")
+    if depuis == PENDING_LIST_ID:
+        a("--   2. Chaque lot est précédé d'un COUNT. Le nombre annoncé est un MAXIMUM, pas une")
+        a("--      égalité : Romain a déjà trié une partie de ces lignes vers la 27 « Old games /")
+        a("--      No pages » (2026-09-22), et celles-là ont quitté la file Pending. Un compte")
+        a("--      INFÉRIEUR est donc normal — c'est le tri déjà fait. Un compte SUPÉRIEUR au lot")
+        a("--      est impossible : s'il arrive, arrêter.")
+    else:
+        a("--   2. Chaque lot est précédé d'un COUNT. Le nombre annoncé est un MAXIMUM : seules")
+        a(f"--      les lignes qui sont ENCORE dans la liste {depuis} bougent. Si le fichier que")
+        a("--      celui-ci corrige n'a jamais été collé, tous les comptes valent 0 et rien ne")
+        a("--      bouge — c'est normal. Un compte SUPÉRIEUR au lot est impossible : arrêter.")
+    a(f"--   3. Chaque requête porte AND `listId`={depuis} : une ligne qui n'est pas là où on")
+    a("--      la croit ne bouge pas.")
     a("-- " + "=" * 76)
     a("")
     a("-- ÉTAPE 0 — VÉRIFICATION DE LA COLONNE (à lancer seul, et à lire)")
     echantillon = offers[:max(1, int(sample))]
-    a(f"SELECT `{ID_COLUMN}`, `url` FROM `{TABLE}`")
-    a(f"  WHERE `{ID_COLUMN}` IN ({', '.join(o['offer_id'] for o in echantillon)})")
-    a(f"    AND `listId`={PENDING_LIST_ID};")
+    # Sans filtre de liste, exprès : une ligne déjà déplacée ailleurs doit quand même
+    # s'afficher, sinon une étape 0 vide ferait croire que la colonne est fausse.
+    a(f"SELECT `{ID_COLUMN}`, `url`, `listId` FROM `{TABLE}`")
+    a(f"  WHERE `{ID_COLUMN}` IN ({', '.join(o['offer_id'] for o in echantillon)});")
     a("")
     a("-- Les URL attendues pour ces identifiants, vues par notre balayage :")
     for o in echantillon:
@@ -295,11 +311,12 @@ def render_sql(offers: list[dict[str, Any]], target_list: int, *,
     for i, lot in enumerate(lots, 1):
         dedans = ", ".join(lot)
         a(f"-- ---- lot {i}/{len(lots)} — {len(lot)} ligne(s) ----")
-        a(f"-- attendu : au plus {len(lot)} (moins si ces lignes sont déjà triées ailleurs)")
+        a(f"-- attendu : au plus {len(lot)} (moins si ces lignes ne sont plus dans la liste "
+          f"{depuis})")
         a(f"SELECT COUNT(*) FROM `{TABLE}` WHERE `{ID_COLUMN}` IN ({dedans}) "
-          f"AND `listId`={PENDING_LIST_ID};")
+          f"AND `listId`={depuis};")
         a(f"UPDATE `{TABLE}` SET `listId`={cible} WHERE `{ID_COLUMN}` IN ({dedans}) "
-          f"AND `listId`={PENDING_LIST_ID};")
+          f"AND `listId`={depuis};")
         a("")
     return "\n".join(lignes) + "\n"
 
