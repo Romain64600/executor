@@ -169,6 +169,17 @@ class MerchantConfig:
     #       jour où l'on trouve une page « Epic Account » / « PS4 Account » dans AKS.
     #       Défaut None = comportement d'avant, inchangé pour tous les autres marchands.
     account_row: Optional[Callable[[str, str], bool]] = None
+    #   dlc_marker(name) -> marker | None — [R55b] (Romain, 2026-09-23 : « expansion veut dire
+    #       DLC, non ? ») : le marqueur DLC propre à la GRAMMAIRE d'un marchand, en plus des
+    #       marqueurs génériques (`matcher.DLC_TITLE_MARKERS`). Une réponse non vide fait
+    #       suivre à la ligne le chemin R43 — page propre du DLC, seau DLC exigé — exactement
+    #       comme un « (DLC) » écrit. Défaut None = seuls les marqueurs génériques comptent.
+    #       Délibérément PAR MARCHAND et pas générique : l'audit du 2026-09-23 sur 88 titres
+    #       « Expansion » de 13 marchands a montré qu'AKS range certaines extensions comme des
+    #       produits à éditions — Diablo IV Vessel of Hatred {DLC, Deluxe, Ultimate}, Guild
+    #       Wars 2 End of Dragons {DLC, Standard, Deluxe} — qu'un marqueur générique forcerait
+    #       en DLC(16). Chez GOG, le préfixe « Expansion - » n'apparaît que sur des DLC.
+    dlc_marker: Optional[Callable[[str], Optional[str]]] = None
     # Console-side hooks (R32 / R45, 2026-09-14 — Romain: « pour la détection région /
     # édition / plateforme, tu as un fichier de config par marchand. Et si tu ne l'as pas,
     # tu dois l'avoir. »). The shared classifier ``src.console_keys.classify_console`` owns

@@ -244,6 +244,25 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   ressortait DLC(16). Les deux portes écartent maintenant les seaux DLC : `edition_id == "16"`
   ne peut venir QUE de R18. Un audit « trouvera » qu'un vrai DLC caché sous un seau nommé
   « DLC Pack » n'est plus adopté — c'est voulu, R18 est le seul juge.
+  **Complété le 2026-09-23 par `[R57]`, une BRANCHE de R18 et non une troisième porte**
+  (Romain : « si on a déjà des offres DLC on ajoute en DLC », après audit sur tous les
+  marchands). Un titre sans marqueur prend aussi le seau DLC quand QUATRE faits sont réunis :
+  il se lit Standard, la page ne vend AUCUN Standard (c'est ce qui garde le cas Vice City), la
+  ligne est sur la page À SON NOM, et la page d'un JEU PARENT existe aussi au sitemap
+  (« Europa Universalis IV: Muslim Advisor Portraits » + `europa-universalis-iv`). Mesuré sur
+  ~17 000 offres : 19 récupérées (GOG 15, K4G 4), toutes des DLC, zéro chez les quatorze
+  autres marchands. Sans index sitemap frais, la branche reste fermée. Un audit « trouvera »
+  un deuxième chemin vers DLC(16) : il est dans le `if` de R18, gardé par ces quatre
+  conditions, chacune vérifiée seule par mutation. Ne pas l'élargir à « la page a un seau
+  DLC » : c'est mot pour mot l'erreur Vice City.
+
+- **`[R55b]` GOG : « Expansion - … » est un marqueur DLC — pour GOG SEULEMENT (Romain,
+  2026-09-23 : « expansion veut dire DLC, non ? »).** Déclaré par `gog.dlc_marker`, le préfixe
+  de rayon retiré du slug et des gardes. L'audit du même jour sur 88 titres « Expansion » de
+  13 marchands a montré qu'AKS vend certaines extensions en ÉDITIONS — Diablo IV Vessel of
+  Hatred {DLC, Deluxe, Ultimate}, Guild Wars 2 End of Dragons {DLC, Standard, Deluxe} — qu'un
+  marqueur générique forcerait en DLC(16). Un audit proposera de rendre « Expansion »
+  générique dans `DLC_TITLE_MARKERS` : ne pas le faire.
 
 - **[HISTORIQUE, SUPERSÉDÉ LE 2026-09-17] R18 "DLC bucket on the page ⇒ edition DLC(16)" for
   MARKERLESS titles — KEPT (Romain 2026-09-11).** The R43 adversarial review showed live base-game pages carrying bucket 16

@@ -3,6 +3,32 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-23 — `[R55b]` « Expansion » = DLC chez GOG, `[R57]` le DLC reconnu à sa page et à son jeu
+
+Romain : « expansion veut dire DLC, non ? » ; « tu peux pas faire comme pour les autres
+marchands, et si on a déjà des offres DLC on ajoute en DLC ? » ; puis « go pour 1 et 3, mais
+avant, audit pour voir si on ferait pas mieux d'ajouter ces comportements à tous les
+marchands ». Audit : [`AUDIT_2026-09-23_dlc-tous-marchands.md`](AUDIT_2026-09-23_dlc-tous-marchands.md),
+sur 17 458 offres de tous les balayages récents.
+
+**`[R55b]` reste à GOG.** Sur 88 titres « Expansion » de 13 marchands, le mot désigne toujours
+une extension — mais AKS en vend certaines en éditions (Diablo IV Vessel of Hatred {DLC,
+Deluxe, Ultimate}, Guild Wars 2 End of Dragons {DLC, Standard, Deluxe}, WoW The War Within
+{Heroic, Epic}). Un marqueur générique les forcerait en DLC(16) ou les refuserait. Chez GOG le
+préfixe « Expansion - » est déclaré marqueur DLC par `gog.dlc_marker` — un marqueur et pas un
+simple retrait, parce que deux des quatorze pages portent un Standard (Jade Dragon, The Old
+Gods) où un titre nu serait rangé à tort. 14 offres au lieu d'une.
+
+**`[R57]` est générique.** Un titre sans marqueur prend le seau DLC quand quatre faits sont
+réunis : il se lit Standard, la page ne vend aucun Standard (le garde Vice City), la ligne est
+sur la page à son nom, et la page d'un jeu parent existe au sitemap. 19 offres récupérées —
+GOG 15, K4G 4, zéro ailleurs — toutes des DLC. Écrite DANS la condition de R18 : R18 reste le
+seul juge du seau DLC. Elle ne peut que transformer un refus en DLC, jamais changer une entrée
+existante.
+
+Sept mutations, sept tests rouges — trois tests ajoutés en route, parce que trois conditions
+étaient d'abord masquées par leurs voisines. Suite complète : 2 556 tests, verts.
+
 ## 2026-09-23 — Audit des refus GOG (lecture seule)
 
 Romain : « les offres qui ont été skippées pour GOG, ça vient d'où ? On n'a pas la page ? »

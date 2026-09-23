@@ -305,6 +305,20 @@ def dlc_title_marker(name: str) -> str | None:
     return None
 
 
+def title_dlc_marker(offer: "NormalizedOffer", cfg: Any = None) -> str | None:
+    """Le marqueur DLC d'une ligne : celui de la GRAMMAIRE du marchand d'abord
+    (`MerchantConfig.dlc_marker`, [R55b] — GOG « Expansion - … »), puis les marqueurs
+    génériques. Un seul point de lecture, pour que la résolution (R43), l'identité et
+    l'édition (R18) voient la MÊME chose : si l'une lisait le marqueur du marchand et
+    l'autre non, un DLC serait cherché comme un DLC puis rangé comme un jeu."""
+
+    if cfg is not None and getattr(cfg, "dlc_marker", None):
+        marque = cfg.dlc_marker(offer.name)
+        if marque:
+            return marque
+    return dlc_title_marker(offer.name)
+
+
 # [R43] explicit DLC COLLECTIONS are bundles of DLCs — "we NEVER enter bundles" (§4.3):
 # "<Game> - DLC Pack / DLC Collection / DLC Bundle", "All DLC", "Complete DLC", "DLCs".
 # Direction matters: "World's Fair Pack (DLC)" is ONE content pack (PACK before DLC) and
@@ -1812,6 +1826,62 @@ def sitemap_shapes(slugs: list[str], page_kind: str = "cd-key") -> list[tuple[st
     return out
 
 
+# [R57] (Romain, 2026-09-23 : « tu peux pas faire comme pour les autres marchands, et si on
+# a déjà des offres DLC on ajoute en DLC ? »). Le séparateur de sous-titre d'un nom de
+# produit : « Crusader Kings II: Holy Fury », « Talisman - The City Expansion ».
+_SUBTITLE_SPLIT_RE = re.compile(r"\s*:\s+|\s+[-–—|]\s+")
+
+
+def derived_dlc_page(title: str, title_tier: str, marker: str | None,
+                     resolution: "AksResolution") -> bool:
+    """[R57] Un titre SANS marqueur est-il un DLC, d'après sa page ET la page de son jeu ?
+
+    La demande de Romain, telle quelle — « si on a déjà des offres DLC, on ajoute en DLC » —
+    rouvrirait exactement l'erreur que R18 a durcie le 17/09 : la page du JEU DE BASE
+    « Grand Theft Auto Vice City » portait un seau DLC à côté du Standard, et le jeu est
+    entré en DLC. Cette branche ne s'ouvre donc que si QUATRE faits sont réunis :
+
+    1. le titre ne porte ni marqueur DLC ni mot d'édition (il se lit « Standard ») ;
+    2. la page ne vend AUCUN seau Standard — c'est ce qui protège le cas Vice City : là où
+       un Standard existe, un titre « Standard » y est rangé, comme avant ;
+    3. la ligne est résolue sur la page À SON PROPRE NOM (`resolved_on_own_page`) ;
+    4. la page d'un JEU PARENT existe aussi, distincte : « Europa Universalis IV: Muslim
+       Advisor Portraits » a sa page ET `europa-universalis-iv` existe. C'est ce qui sépare
+       un DLC d'un jeu de base : un jeu de base n'a pas, au-dessus de lui, une autre page
+       dont son nom est le prolongement.
+
+    Le seau DLC lui-même est vérifié par l'appelant (`_dlc_edition_on_page`).
+
+    Mesuré avant d'être écrit, sur ~17 000 offres des balayages récents de TOUS les
+    marchands : 41 refus E06 portaient sur une page à seau DLC ; la règle en récupère 19 —
+    GOG 15, K4G 4, zéro chez les quatorze autres, qui marquent leurs DLC dans le titre — et
+    les 19 sont bien des DLC, relus un par un. Générique pour cette raison.
+
+    Fail-closed : sans index sitemap frais (condition 4 invérifiable), la branche reste
+    fermée et la ligne est refusée comme avant."""
+
+    if marker is not None or title_tier != "1":
+        return False
+    for bucket_id, entree in (resolution.editions or {}).items():
+        if bucket_id == "1" or "STANDARD" in _edition_entry_name(entree).upper():
+            return False
+    index = sitemap_index()
+    if index is None:
+        return False
+    if not resolved_on_own_page(resolution.slug, title):
+        return False
+    nom = cleaned_title(title).strip()
+    tete = _SUBTITLE_SPLIT_RE.split(nom, maxsplit=1)[0].strip()
+    if not tete or tete == nom:
+        return False
+    for candidat in build_slug_candidates(tete):
+        if candidat == resolution.slug:
+            continue
+        if index.has_page(f"{candidat}-cd-key") or index.flat_page(f"{candidat}-cd-key"):
+            return True
+    return False
+
+
 def aks_page_urls(slug: str, page_kind: str = "cd-key", *,
                   years: tuple[int, ...] | None = None) -> list[tuple[str, str]]:
     """The ordered ``(slug_variant, url)`` shapes to probe for ONE guessed slug (Romain
@@ -3134,7 +3204,7 @@ def _pc_plan(
     resolve_name = _cfg.resolve_name(offer.name) if _cfg is not None and _cfg.resolve_name else offer.name
     # [R43] the DLC marker is not part of the AKS slug ("… Clan of the Horse (DLC)" →
     # northgard-svardilfari-clan-of-the-horse); Season/Expansion Pass words are kept.
-    dlc_marker = dlc_title_marker(offer.name)
+    dlc_marker = title_dlc_marker(offer, _cfg)
     if dlc_marker is not None:
         resolve_name = strip_dlc_marker(resolve_name)
     try:
@@ -3538,13 +3608,15 @@ def match_offer(
     # (GameSeal + le crible de 728) : 43 en DLC(16), 10 sans marqueur, UNE SEULE bascule —
     # celle qui était fausse.
     _title_tier = detect_edition(guard_name, offer.url, offer.merchant)[1]
+    _marker = title_dlc_marker(offer, _cfg)
     _tier_the_page_does_not_name = (
-        dlc_title_marker(offer.name) is None
+        _marker is None
         and _title_tier != "1"
         and _title_tier != detect_edition(resolution.aks_name or "")[1]
     )
     if _dlc_edition_on_page(resolution.editions) and not _tier_the_page_does_not_name and (
-            dlc_title_marker(offer.name) is not None or len(resolution.editions) == 1):
+            _marker is not None or len(resolution.editions) == 1
+            or derived_dlc_page(guard_name, _title_tier, _marker, resolution)):
         edition_label, edition_id = "DLC", "16"
     # AUDIT DU 2026-09-18 : le durcissement ci-dessus ne fermait qu'UNE porte sur trois.
     # Deux autres producteurs adoptaient le seau DLC par simple égalité de libellé, sans

@@ -68,6 +68,48 @@ _DEMO_URL_RE = re.compile(r"(?:^|[_/-])demos?(?:$|[_/-])", re.I)
 _GAME_URL_RE = re.compile(r"//(?:www\.)?gog\.com/", re.I)
 
 
+# `[R55b]` (Romain, 2026-09-23 : « expansion veut dire DLC, non ? »). GOG titre certains DLC
+# « Expansion - <Jeu>: <Contenu> » — « Expansion - Crusader Kings II: Holy Fury ». Le préfixe
+# est une étiquette de RAYON, pas un mot du produit : AKS range la page sous
+# `crusader-kings-2-holy-fury`. Ancré en TÊTE de titre et suivi de « - » : c'est la seule
+# forme mesurée chez GOG (16 lignes sur 3 473), et « Talisman - The City Expansion » — où le
+# mot fait partie du nom — n'est pas concerné.
+_EXPANSION_PREFIX_RE = re.compile(r"^\s*expansion\s+-\s+", re.I)
+
+
+def dlc_marker(name: str) -> str | None:
+    """« Expansion - … » est un DLC chez GOG, et on le DIT au matcher.
+
+    Pourquoi un marqueur et pas seulement le retrait du préfixe : mesuré le 2026-09-23 sur
+    les 14 pages concernées, 13 portent un autre seau à côté du DLC (« Royal Collection »,
+    « Imperial Collection ») et deux portent même un Standard (Jade Dragon, The Old Gods).
+    Un titre SANS marqueur y serait rangé en Standard — faux — ou refusé. Marqué, il suit
+    R43 : page propre du DLC, seau DLC exigé, entrée en DLC(16). 14 offres au lieu d'une.
+
+    Ce marqueur est à GOG seul. L'audit du même jour sur 88 titres « Expansion » de 13
+    marchands a trouvé des extensions qu'AKS vend en éditions (Diablo IV Vessel of Hatred
+    Deluxe, Guild Wars 2 End of Dragons Deluxe) : un marqueur générique les forcerait en
+    DLC(16)."""
+
+    return "EXPANSION" if _EXPANSION_PREFIX_RE.match(name or "") else None
+
+
+def resolve_name(name: str) -> str:
+    """Le nom donné à la résolution AKS : sans le préfixe de rayon « Expansion - »."""
+
+    return _EXPANSION_PREFIX_RE.sub("", name or "") or (name or "")
+
+
+def guard_name(name: str) -> str:
+    """Le nom que lisent les gardes d'identité : sans le préfixe de rayon, et SEULEMENT lui.
+
+    Sans ce retrait, R16 verrait « EXPANSION » comme un mot en trop face au nom AKS
+    « Crusader Kings II: Holy Fury » et refuserait la ligne. Tous les autres mots du titre
+    restent comparés au nom AKS — rien d'autre n'est blanchi."""
+
+    return _EXPANSION_PREFIX_RE.sub("", name or "") or (name or "")
+
+
 def precheck(name: str, url: str) -> str | None:
     """Les refus propres à GOG, avant tout scan générique.
 
@@ -114,6 +156,10 @@ CONFIG = MerchantConfig(
     url_platform=url_platform,
     title_region=title_region,
     precheck=precheck,
+    # `[R55b]` « Expansion - … » = DLC (Romain, 2026-09-23).
+    dlc_marker=dlc_marker,
+    resolve_name=resolve_name,
+    guard_name=guard_name,
     # `[R56]` (Romain, 2026-09-22 : « pour GOG pas besoin que la page déclare GOG » ; puis,
     # le 23 : « c'est GOG la plateforme, il n'y en a pas d'autres, je ne vois pas pourquoi
     # tu cherches une plateforme »).
