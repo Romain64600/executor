@@ -210,6 +210,16 @@ def _load_json(path: Path):
         return None
 
 
+def refresh_sitemap_if_stale() -> dict:
+    """Le relevé automatique de l'index sitemap (Romain 2026-09-24). Point d'injection des
+    tests : aucun test ne doit toucher le réseau."""
+
+    from src import aks_sitemap
+    # Le MÊME fichier que celui que lit le matcher (`matcher.sitemap_index`).
+    chemin = os.environ.get("AKS_SITEMAP_PATH") or str(ROOT / aks_sitemap.DEFAULT_PATH)
+    return aks_sitemap.ensure_fresh(chemin)
+
+
 def _clock() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -536,6 +546,12 @@ def main() -> int:
     ap.add_argument("--run-id", default=None, help="Sweep run id (holds recap.json).")
     ap.add_argument("--start-page", type=int, default=1)
     ap.add_argument(
+        "--sitemap-refresh", action="store_true",
+        help="Relève l'index sitemap AKS au lancement s'il a plus de 20 h, s'il manque, s'il est "
+             "troué ou s'il ignore les pages anciennes (Romain 2026-09-24 : « oui pour le "
+             "refresh auto »). Une à deux minutes de lecture seule ; un échec n'arrête pas le "
+             "balayage (le matcher retombe sur les sondes d'avant). La console le passe toujours.")
+    ap.add_argument(
         "--all-pages", action="store_true",
         help="Couvre TOUTES les pages que le feed annonce, sans plafond (Romain 2026-09-18 : "
              "« on fait toutes les pages sauf lors d'un arrêt pour sécurité »). Seul un arrêt "
@@ -739,6 +755,13 @@ def main() -> int:
         os.replace(tmp, recap_path)
 
     persist()
+    if args.sitemap_refresh:
+        # L'index du jour AVANT la première page : le matcher le relit à chaque page (03_match),
+        # donc tout le balayage profite du relevé. Jamais une halte (voir `ensure_fresh`).
+        recap["sitemap_refresh"] = refresh_sitemap_if_stale()
+        print(json.dumps({"event": "sitemap_refresh", **recap["sitemap_refresh"]},
+                         ensure_ascii=False), flush=True)
+        persist()
     # Boucle INDEXÉE, pas un `for … in targets` : la file peut s'allonger pendant le run
     # (Romain 2026-09-19 : « on a l'option pour ajouter un marchand à un sweep en cours ? »).
     # On relit la file de la console à CHAQUE frontière de marchand — jamais au milieu d'une

@@ -298,6 +298,21 @@ def run_sweep(
             entry["empty"] = True   # feed shrank past this page — nothing to do here
             finish_page(entry)
             continue
+        if entry.get("repeated_page"):
+            # Romain, 2026-09-24 : « go pour sauter les pages vides ». Une page dont TOUTES les
+            # offres ont déjà été servies par une page précédente de CE balayage n'a rien à
+            # apprendre : chacune a déjà été matchée, et saisie ou refusée. La refaire ne coûte
+            # que du temps et des sondes — et rejoue les échecs : « Conclave » (Wyrel, refus
+            # déterministe d'AKS) a été retentée sur les pages 44, 43, 42 et 41 du 24/09. Mesuré
+            # le même jour : Kinguin 44 pages sur 120 dans ce cas, GameSeal 51 sur 208. Une page
+            # PARTIELLEMENT neuve, ou dont la mesure manque (`offer_ids` absent ou en échec),
+            # est traitée comme avant.
+            entry["skipped_repeated"] = True
+            entry["candidates"] = 0
+            entry["created"] = 0
+            entry["offers_created"] = []
+            finish_page(entry)
+            continue
 
         mt = stages.match(run_id)
         entry["candidates"] = mt.candidates

@@ -471,7 +471,7 @@ tmux new -s sweep
 sudo -u debian -H bash -c 'cd /home/debian/executor && python3 scripts/10_data_entry_auto.py \
   --all-allowlisted \
   --run-id "$(date -u +%Y%m%d-%H%M%S)-auto" \
-  --all-pages --continue-on-halt \
+  --all-pages --continue-on-halt --sitemap-refresh \
   2>&1 | tee "logs/sweep-$(date -u +%Y%m%d)-night.stdout"'
 ```
 
@@ -526,7 +526,7 @@ la page où le balayage S'ARRÊTE — y taper 20 sautait les pages 19 à 1. Le C
 
 ```bash
 # groupe A, pages 20 → 1 de chaque marchand
-python3 scripts/10_data_entry_auto.py --group A --max-pages 20 --run-id <id> --continue-on-halt --consoles
+python3 scripts/10_data_entry_auto.py --group A --max-pages 20 --run-id <id> --continue-on-halt --consoles --sitemap-refresh
 ```
 
 **Run it under `tmux`, not `setsid nohup &`** (2026-09-17). The old form here was
@@ -590,8 +590,14 @@ Battlefield 3, Minecraft…) que le relevé du 22-23/09 ignorait : l'export RETI
 ligne dont la page ancienne existe, et refuse un index écrit avant le 24/09 (il ne les a pas
 cherchées). Le matcher, lui, ne sonde plus que les formes d'URL que l'index confirme, plus une
 sonde de sécurité sur le nom complet : **2,82 → 1,16 sonde par offre**, une offre sans page ne
-coûte plus qu'une requête (EXECUTOR_RULES §4.7). Tant que l'index a plus de 7 jours, ce mode est
-coupé et le matcher sonde comme avant — relancer `--refresh` régulièrement.
+coûte plus qu'une requête (EXECUTOR_RULES §4.7). **Relevé automatique** (2026-09-24) : tout
+balayage lancé depuis la console relève l'index s'il a plus de 20 h (`--sitemap-refresh`, à
+ajouter aussi aux commandes lancées à la main), une à deux minutes en lecture seule, jamais une
+halte. Sans relevé pendant 7 jours, le mode se coupe et le matcher sonde comme avant.
+
+**Les pages déjà vues ne sont plus rejouées** (2026-09-24) : quand le feed d'AKS renvoie pour une
+page exactement les offres d'une page précédente du même balayage — Kinguin 44 pages sur 120 le
+24/09, GameSeal 51 sur 208 —, elle n'est ni matchée ni saisie (`skipped_repeated`).
 
 **Allowlist as of 2026-09-24 (18 merchants)** — the command above derives this list itself,
 it is reproduced only so a reader knows what a night sweep covers: Kinguin 58, G2A 38,

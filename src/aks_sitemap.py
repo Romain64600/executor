@@ -33,6 +33,7 @@ de tri l'utilise pour EXCLURE des lignes, et qu'il exige un index frais.
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 import urllib.request
@@ -150,10 +151,75 @@ def refresh(dest: str | Path, *, fetch: Callable[[str], bytes] = _fetch,
     chemin.parent.mkdir(parents=True, exist_ok=True)
     # `legacy_indexed` dit que CE fichier a cherché les pages anciennes : un fichier écrit
     # avant le 2026-09-24 ne l'a pas fait, et son silence ne veut pas dire « aucune ».
-    chemin.write_text(json.dumps({**resume, "legacy_indexed": True,
-                                  "legacy": sorted(anciennes), "entries": sorted(pages)},
-                                 ensure_ascii=False), encoding="utf-8")
+    # ÉCRITURE ATOMIQUE (2026-09-24, relevé automatique au lancement des balayages) : le
+    # matcher relit ce fichier à CHAQUE page d'un balayage qui tourne peut-être sur la même
+    # machine. Écrit en place, une lecture tombant pendant l'écriture verrait un JSON tronqué.
+    # Même convention que `recap.json` : un fichier voisin, puis `os.replace`.
+    tmp = chemin.with_name(chemin.name + ".tmp")
+    tmp.write_text(json.dumps({**resume, "legacy_indexed": True,
+                               "legacy": sorted(anciennes), "entries": sorted(pages)},
+                              ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, chemin)
     return resume
+
+
+# Âge au-delà duquel un balayage relève l'index à son lancement. Moins de 24 h pour qu'un
+# balayage lancé chaque soir à la même heure le relève toujours, même avec quelques minutes
+# d'avance sur la veille.
+AUTO_REFRESH_MAX_AGE_HOURS = 20.0
+
+
+def ensure_fresh(dest: str | Path, *, max_age_hours: float = AUTO_REFRESH_MAX_AGE_HOURS,
+                 fetch: Callable[[str], bytes] = _fetch,
+                 sleep: Callable[[float], None] = time.sleep,
+                 now: Callable[[], float] = time.time) -> dict[str, Any]:
+    """Relève l'index s'il en a besoin, au lancement d'un balayage. Ne lève JAMAIS.
+
+    Romain, 2026-09-24 : « oui pour le refresh auto ». Sans relevé, l'index expire au bout de
+    `DEFAULT_TTL_DAYS` et le matching « sitemap d'abord » se coupe tout seul ; et une page
+    qu'AKS publie entre deux relevés reste invisible jusqu'au suivant. Un relevé coûte une
+    minute ou deux (≈ 56 fichiers, délai de crawl respecté, UA `AKS/Staff`).
+
+    Relève quand l'index est absent, troué, sans les pages anciennes, ou plus vieux que
+    ``max_age_hours``. Un relevé qui échoue ou revient TROUÉ ne remplace pas un index complet
+    encore valable : on garde l'ancien et on le dit. Rend un résumé pour le recap du balayage —
+    jamais une exception, parce qu'un sitemap injoignable n'est pas une raison d'arrêter une
+    saisie : le matcher retombe alors sur les sondes d'avant, tout seul."""
+
+    chemin = Path(dest)
+    ancien = SitemapIndex.load(chemin)
+    raison = None
+    if ancien is None:
+        raison = "absent"
+    elif ancien.incomplete:
+        raison = "incomplet"
+    elif not ancien.legacy_indexed:
+        raison = "sans les pages anciennes"
+    else:
+        age = ancien.age_days(now())
+        if age is None or age * 24 > max_age_hours:
+            raison = ("âge illisible" if age is None
+                      else f"relevé il y a {age * 24:.0f} h (> {max_age_hours:.0f} h)")
+    if raison is None:
+        return {"refreshed": False, "reason": "frais", "fetched_at": ancien.fetched_at}
+
+    ancien_valable = (ancien is not None and not ancien.incomplete
+                      and ancien.fresh(now=now()))
+    brouillon = chemin.with_name(chemin.name + ".releve")
+    try:
+        resume = refresh(brouillon, fetch=fetch, sleep=sleep, now=now)
+    except Exception as exc:                            # noqa: BLE001 — jamais une halte
+        brouillon.unlink(missing_ok=True)
+        return {"refreshed": False, "reason": raison, "error": f"{type(exc).__name__}: {exc}",
+                "fetched_at": ancien.fetched_at if ancien else None}
+    if resume.get("incomplete") and ancien_valable:
+        brouillon.unlink(missing_ok=True)
+        return {"refreshed": False, "reason": raison,
+                "error": f"relevé troué ({len(resume.get('sitemaps_failed') or [])} fichier(s) "
+                         "illisible(s)) — l'index complet précédent est gardé",
+                "fetched_at": ancien.fetched_at}
+    os.replace(brouillon, chemin)
+    return {"refreshed": True, "reason": raison, **resume}
 
 
 def _locs(corps: bytes, *, racine: str) -> list[str]:

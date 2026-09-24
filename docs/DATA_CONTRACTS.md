@@ -282,7 +282,11 @@ validation triple's shape is load-bearing (FC5, audit 2026-07-17).
 - **La couverture se compte en OFFRES depuis le 2026-09-20.** Chaque `recap` de cible porte
   `distinct_offers` (le nombre d'offer_id DIFFÉRENTS que le balayage a vus) et
   `pages_without_new_offers` (les numéros de page qui n'ont apporté AUCUN id nouveau) ; chaque
-  entrée de page porte `new_offers` et, le cas échéant, `repeated_page: true`. Quand cette
+  entrée de page porte `new_offers` et, le cas échéant, `repeated_page: true` — depuis le
+  2026-09-24, une telle page n'est plus ni matchée ni saisie et porte aussi
+  `skipped_repeated: true`, `candidates: 0`, `created: 0`. Le recap du BALAYAGE porte
+  `sitemap_refresh` quand `--sitemap-refresh` est passé : `{refreshed, reason, fetched_at,
+  error?, pages?, legacy_pages?, …}` (`aks_sitemap.ensure_fresh`). Quand cette
   liste n'est pas vide et qu'aucun plafond ne parle déjà, `coverage` vaut
   `incomplete_repeated_pages (N page(s) sans offre nouvelle : …)`.
   Pourquoi : sur `20260919-082932`, les pages 86→73 ont rendu QUATORZE fois la même centaine

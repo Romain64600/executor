@@ -3,6 +3,31 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-24 — Relevé automatique de l'index sitemap ; les pages déjà vues ne sont plus rejouées
+
+Romain : « oui pour le refresh auto, go pour sauter les pages vides ».
+
+**Relevé automatique.** `scripts/10_data_entry_auto.py --sitemap-refresh`, que la console passe
+à chaque lancement, relève l'index avant la première page s'il a plus de 20 h, s'il manque, s'il
+est troué ou s'il ignore les pages anciennes (`aks_sitemap.ensure_fresh`) : une à deux minutes
+de lecture seule. Sans ça, l'index du jour expirait le 01/10 et le matching « sitemap d'abord »
+se coupait tout seul. L'écriture de l'index devient atomique — le matcher le relit à chaque
+page, peut-être pendant qu'un autre balayage le relève. Un relevé n'arrête jamais une saisie :
+réseau en panne ou relevé troué, l'index complet précédent reste en place et le recap le dit
+(`sitemap_refresh`).
+
+**Pages déjà vues.** Le feed d'AKS renvoie parfois la même centaine d'offres pour des numéros
+de page différents. Le 24/09, Wyrel a lu cinq fois les mêmes lignes (pages 45 → 41) et retenté
+« Conclave », qu'AKS refuse, sur quatre pages ; Kinguin compte 44 pages sur 120 dans ce cas,
+GameSeal 51 sur 208, chacune coûtant ~2 min de matching pour rien. `run_sweep` saute maintenant le
+matching, la saisie et le déplacement d'une page dont tous les ids ont déjà été servis dans le
+même balayage (`skipped_repeated`). Une page partiellement neuve, ou sans mesure, est traitée
+comme avant, et la couverture reste signalée (`incomplete_repeated_pages`) : sauter une page ne
+fait pas apparaître les lignes qu'AKS n'a jamais servies — cette question-là reste ouverte.
+
+Tests : `tests/test_sitemap_auto_refresh.py` (9) et `tests/test_sweep_skip_repeated.py` (5),
+chaque garde rougie par mutation (8 mutations).
+
 ## 2026-09-24 — Matching « sitemap d'abord » ; l'index connaît enfin les pages anciennes
 
 Romain : « go pour le matching sitemap d'abord », après l'audit du parallélisme du 23/09 : une

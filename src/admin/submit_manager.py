@@ -896,7 +896,10 @@ class SubmitManager:
                     "complète ou un plafond explicite", http_status=400)
             self._check_max_pages(max_pages)   # review 2026-09-09: parity with the other spawns
             argv = [self.python, str(self.data_entry_auto_script),
-                    "--targets", spec, "--run-id", run_id]
+                    "--targets", spec, "--run-id", run_id,
+                    # Romain 2026-09-24 : « oui pour le refresh auto » — l'index sitemap est
+                    # relevé au lancement s'il a plus de 20 h (lecture seule, jamais une halte).
+                    "--sitemap-refresh"]
             if all_pages:
                 # Romain 2026-09-18 : « on fait toutes les pages sauf lors d'un arrêt pour
                 # sécurité ». Compte ~36 h sur les 14 marchands (364 pages à ~6 min).

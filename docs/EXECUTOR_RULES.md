@@ -986,9 +986,25 @@ avant lui. Quand il fait autorité :
 **Le risque qui reste, dit franchement : la fraîcheur.** Une page créée par AKS après le
 relevé n'est trouvée que par la soupape — si son slug est celui du nom complet. Sous un autre
 tier, elle attend le relevé suivant ; la ligne reste en liste 9 (« pas de page AKS ») et l'export
-de tri, qui lit le même index, peut l'envoyer en 22. L'index n'est pas relevé automatiquement :
-`python3 scripts/16_sitemap_index.py --refresh` à la main (~5 min), et passé 7 jours le mode se
-coupe tout seul. Le relevé automatique au lancement d'un balayage est une décision de Romain.
+de tri, qui lit le même index, peut l'envoyer en 22. **Relevé automatique depuis le 24/09**
+(Romain : « oui pour le refresh auto ») : `scripts/10_data_entry_auto.py --sitemap-refresh` — que
+la console passe TOUJOURS — relève l'index avant la première page s'il a plus de **20 h**, s'il
+manque, s'il est troué ou s'il ignore les pages anciennes (`aks_sitemap.ensure_fresh`). Écriture
+atomique (le matcher le relit à chaque page), jamais une halte : un réseau en panne ou un relevé
+troué laisse l'index complet précédent en place et le recap le dit (`sitemap_refresh`). À la
+main : `python3 scripts/16_sitemap_index.py --refresh`. Passé 7 jours sans relevé, le mode se
+coupe tout seul.
+
+**Une page déjà entièrement vue n'est pas rejouée (2026-09-24, Romain : « go pour sauter les
+pages vides »).** Le feed d'AKS renvoie parfois la même centaine d'offres pour des numéros de page
+différents : le 24/09, Wyrel a lu cinq fois les mêmes lignes (pages 45 → 41) et retenté
+« Conclave », qu'AKS refuse à chaque fois, sur quatre pages ; Kinguin a 44 pages sur 120 dans ce
+cas, GameSeal 51 sur 208. `run_sweep` saute désormais le matching, la saisie et le déplacement
+d'une page dont TOUS les ids ont déjà été servis dans le même balayage (`skipped_repeated: true`)
+: chacune de ses offres a déjà été matchée, puis saisie ou refusée. Une page partiellement neuve,
+ou sans mesure (`offer_ids` absent ou en échec), est traitée comme avant. La couverture reste
+dite honnêtement (`incomplete_repeated_pages`) : sauter une page ne fait pas voir les lignes
+qu'AKS n'a jamais servies.
 
 **Throttle guard (2026-09-09, audit/critic).** Below the per-slug rule `MA1` (a
 transient answer on a *guessed* slug raises immediately → per-offer skip "AKS probe
