@@ -3,6 +3,21 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-24 — Audit : pourquoi le feed renvoie les mêmes lignes (lecture seule)
+
+Romain : « go pour chercher pourquoi AKS renvoie les mêmes lignes ». Trace :
+[`AUDIT_2026-09-24_feed-pages-repetees.md`](AUDIT_2026-09-24_feed-pages-repetees.md).
+
+Le feed marchand est trié par date de création SEULEMENT, et les imports en masse donnent la
+même date, à la seconde, à des milliers de lignes. Entre elles, la base ne garantit aucun ordre :
+chaque page pioche cent lignes du bloc au hasard. Dans les 7 balayages mesurés, chaque page
+100 % répétée est une page à date unique, sans exception. Coût : plus de 13 000 lignes en
+attente jamais montrées par passe (GameSeal ~3 600, Kinguin ~3 550, Gamivo ~1 900, Wyrel ~1 750,
+GOG ~1 140…). Remède vérifié en lecture seule : le serveur accepte `orderBy=id&order=desc`, que
+l'écran ne propose pas, et rend des ids strictement décroissants — un ordre unique, donc des
+pages sans recouvrement. Deux voies : un départage `createdAt DESC, id DESC` côté AKS, ou le
+paramètre ajouté à toutes les URL de feed de l'executor. Rien n'est codé.
+
 ## 2026-09-24 — Relevé automatique de l'index sitemap ; les pages déjà vues ne sont plus rejouées
 
 Romain : « oui pour le refresh auto, go pour sauter les pages vides ».
