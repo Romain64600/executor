@@ -786,6 +786,10 @@ to its section.
   Selectize picks, modal v2 targets per row (§4c), statuses.
 - [`docs/DATA_CONTRACTS.md`](docs/DATA_CONTRACTS.md) — stage I/O JSON shapes + run-log
   format.
+- [`docs/API_IMPORT_ROUTER.md`](docs/API_IMPORT_ROUTER.md) — **chantier prepaid (à venir)** :
+  l'API AKS « import-router » transmise le 2026-09-24 (mise à jour `bulk-update-record`,
+  paramètres de création d'offre), notre lecture, et les 13 questions à renvoyer avant d'écrire
+  une ligne. Rien n'est codé ; aucune clé reçue.
 - [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) — developer guide (setup, tests, StepGuard
   use, adding a stage or a merchant rule, commit rules).
 - [`AGENTS.md`](AGENTS.md) / [`CLAUDE.md`](CLAUDE.md) — builder rules for Codex

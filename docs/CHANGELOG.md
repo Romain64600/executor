@@ -3,6 +3,16 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-24 — Notes : l'API AKS « import-router » pour le chantier prepaid
+
+Romain : « Prends bonne note pour le chantier prepaid qui arrive : API. » Consigné dans
+[`API_IMPORT_ROUTER.md`](API_IMPORT_ROUTER.md) : l'endpoint `bulk-update-record` et sa charge
+utile, le tableau des paramètres de création d'offre, tels que transmis ; ce que le pipeline
+sait déjà fournir (store, URL, prix, id produit) et ce qui manque (URL de création,
+authentification, correspondance des `geo_preset` avec nos régions, édition, slugs de stock et
+de livraison) ; 13 questions à renvoyer à l'équipe AKS, et les règles d'`AGENTS.md` qu'on
+appliquera à un appel HTTP comme à un clic. Aucun code, aucun appel.
+
 ## 2026-09-24 — Console : « de la page N jusqu'à 1 », pour les trois boutons
 
 Romain : « pouvoir choisir à partir de quelle page je lance. Je lance toujours en direction de
