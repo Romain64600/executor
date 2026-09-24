@@ -595,6 +595,17 @@ déjà pris par `BUNDLE`, et les logiciels Microsoft (Visual Studio, Project, Wi
 partent sur le chemin LOGICIEL `[R31]`, page-dirigé. Vérifié ligne à ligne sur les 34 : 29
 passent, 2 bundles, 2 Minecoins, 1 compte. Tests :
 `tests/test_microsoft_category_skip.py`.
+**`[R58]` Wyrel « (PC) » + AKS page Steam-ONLY → STEAM (2026-09-24, Wyrel only).** Romain :
+« si une offre est marquée PC et qu'on n'a pas d'autre info, si sur la page Allkeyshop on a que
+du Steam, on l'ajoutera en Steam ; si on voit qu'il y a du Epic, du Ubisoft, du EA… on skip » —
+« et c'est valable que pour Wyrel, dans sa config marchand ». A merchant whose grammar says
+« PC key, no store » declares it with `MerchantConfig.pc_key_without_store(name, url)` (only
+`wyrel.py` does). For such a row with no platform read anywhere else, the matcher enters STEAM
+iff the page's official platforms are EXACTLY {Steam}; any other official platform on the page
+(Epic, GOG, Ubisoft, EA, Microsoft Windows, Xbox Play Anywhere, Direct Publisher…) leaves the
+R27 / `[R51]` refusal below untouched. Every other merchant: unchanged. Measured on the 418
+Wyrel « (PC) » rows seen on 2026-09-24: 217 on a Steam-only page.
+
 **The PUBLISHER decision needs the MERCHANT's own page `[R51]` (2026-09-16).** `[R27]`
 refuses a title with no platform token UNLESS the AKS page confirms `Direct Publisher`. That
 exception is the hole: the AKS line describes the **GAME** (the game also exists as a

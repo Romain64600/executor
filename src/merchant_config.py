@@ -192,6 +192,16 @@ class MerchantConfig:
     #       Wars 2 End of Dragons {DLC, Standard, Deluxe} — qu'un marqueur générique forcerait
     #       en DLC(16). Chez GOG, le préfixe « Expansion - » n'apparaît que sur des DLC.
     dlc_marker: Optional[Callable[[str], Optional[str]]] = None
+    #   pc_key_without_store(name, url) -> bool — [R58] (Romain, 2026-09-24 : « si une offre
+    #       est marquée PC et qu'on n'a pas d'autre info, si sur la page Allkeyshop on a que du
+    #       Steam, on l'ajoutera en Steam ; si on voit qu'il y a du Epic, du Ubisoft, du EA… on
+    #       skip » — « et c'est valable que pour Wyrel, dans sa config marchand »). True = la
+    #       GRAMMAIRE du marchand dit « clé PC » sans nommer de boutique. Une telle ligne, sans
+    #       plateforme lue ailleurs, entre STEAM si et seulement si la page AKS ne déclare
+    #       QUE Steam comme plateforme officielle ; toute autre plateforme sur la page (Epic,
+    #       GOG, Ubisoft, EA, Microsoft, Xbox Play Anywhere, Direct Publisher…) laisse le refus
+    #       R27 / [R51] d'avant. Défaut None = R27 inchangé pour tous les autres marchands.
+    pc_key_without_store: Optional[Callable[[str, str], bool]] = None
     # Console-side hooks (R32 / R45, 2026-09-14 — Romain: « pour la détection région /
     # édition / plateforme, tu as un fichier de config par marchand. Et si tu ne l'as pas,
     # tu dois l'avoir. »). The shared classifier ``src.console_keys.classify_console`` owns

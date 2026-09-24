@@ -906,11 +906,15 @@ matcher et le classifieur importent le registre.
   distinctes vues sur ~5 000, 117 candidats, **109 offres créées** (95 prouvées + 14 fausses
   « STILL in feed »). Les ~2 300 lignes jamais montrées tenaient au tri du feed, corrigé le même
   jour (`orderBy=id`).
-- **« (PC) » n'est pas « Steam » — NO GO de Romain, 2026-09-24.** 418 lignes « (PC) » vues le
-  24/09 ont une page AKS mais pas de boutique dans le titre : 217 sur une page AKS « Steam »
-  seul, 180 sur une page multi-boutiques, 21 illisibles. La règle « (PC) sur page Steam seule =
-  Steam » a été proposée avec 10 lignes à vérifier, et refusée : elles restent refusées
-  (plateforme invérifiable, R27 / `[R51]`).
+- **`[R58]` « (PC) » sans boutique = Steam quand la page AKS ne vend QUE Steam** (Romain,
+  2026-09-24 : « si on voit qu'il y a du Epic, du Ubisoft, du EA… on skip » ; « valable que
+  pour Wyrel, dans sa config marchand »). Le crochet `pc_key_without_store` reconnaît
+  « <Jeu> (PC) Standard <Région> » et « <DLC> (DLC) Standard PC <Région> », sans « Steam
+  Gift » ; le `marketplace_id` n'y entre pas (il ne sépare rien). Sur les 418 lignes « (PC) »
+  vues le 24/09 avec une page AKS : **217** sur une page « Steam » seul (elles peuvent entrer,
+  si les autres contrôles passent), 180 sur une page qui vend aussi GOG, Epic, Ubisoft, EA,
+  Microsoft, Xbox Play Anywhere ou l'éditeur (refusées, R27 / `[R51]`), 21 illisibles. (Un
+  « NO GO » du même jour, sur une formulation antérieure, a été remplacé par cette règle.)
 
 ## Ce qui n'est pas propre à un marchand
 

@@ -3,12 +3,24 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
-## 2026-09-24 — Décision : pas de « (PC) = Steam » chez Wyrel
+## 2026-09-24 — `[R58]` Wyrel : « (PC) » sans boutique = Steam quand la page AKS ne vend que Steam
 
-Proposée avec 10 lignes à vérifier (217 lignes « (PC) » sur une page AKS « Steam » seul, parmi
-418 vues le jour même) ; **NO GO de Romain**. Les lignes « (PC) » sans boutique restent
-refusées. Consigné dans `AGENTS.md` (décisions revues) et `MERCHANTS.md` (Wyrel) pour qu'un
-audit ne la repropose pas. Aucun code modifié.
+Romain, après un premier « NO GO » sur une formulation antérieure : « si une offre est marquée
+PC et qu'on n'a pas d'autre info, si sur la page Allkeyshop on a que du Steam, on l'ajoutera en
+Steam ; si on voit qu'il y a du Epic, du Ubisoft, du EA… on skip » — « et c'est valable que
+pour Wyrel, dans sa config marchand ».
+
+- `MerchantConfig.pc_key_without_store(name, url)` — nouveau crochet, déclaré par `wyrel.py`
+  seul : « <Jeu> (PC) Standard <Région> » ou « <DLC> (DLC) Standard PC <Région> », sans « Steam
+  Gift ».
+- `matcher` : une telle ligne, sans plateforme lue ailleurs, entre STEAM si les plateformes
+  officielles de la page AKS sont EXACTEMENT {Steam} ; sinon le refus R27 / `[R51]` d'avant.
+  Aucun autre marchand ne change (test : Kinguin, même titre, même page → R27).
+- Enjeu mesuré sur les 418 lignes « (PC) » vues le 24/09 : 217 sur une page « Steam » seul.
+
+Tests : 6 (crochet, entrée Steam, huit pages multi-plateformes refusées, autre marchand
+inchangé, Wyrel seul porteur du crochet) ; 4 mutations, 4 rouges. Docs : EXECUTOR_RULES
+(`[R58]`), MERCHANTS (Wyrel), AGENTS (décision revue, remplace le NO GO du même jour), README.
 
 ## 2026-09-24 — Une erreur passagère ne coupe plus le balayage ; plus de fausses « STILL in feed »
 

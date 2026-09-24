@@ -3611,40 +3611,53 @@ def match_offer(
         # including the Steam-only case R26 defaulted to Publisher. DCS
         # itself reverts to skip (no signal strong enough to auto-resolve
         # it); a human enters cases like it deliberately.
-        if "DIRECT PUBLISHER" not in page_platforms:
-            return SkippedOffer(
-                offer,
-                "no platform in title and AKS page does not confirm Direct"
-                " Publisher — platform unverifiable, not defaulted (R27)",
-            )
-        # [R51] (2026-09-16) — « Direct Publisher » on the AKS page is NOT a statement
-        # about THIS merchant's key. Romain, after two Electronicfirst rows were entered
-        # PUBLISHER while the merchant sells Steam, and a Gamivo row (« Resident Evil
-        # Raccoon City Edition », steam global) reproduced it live: « avant de decider si
-        # publisher ou non on doit ouvrir la page marchant … si on arrive pas a ouvrir la
-        # page marchant on skip l'offre … on devrait ajouter cette securite par defaut pour
-        # tous les marchants ». The AKS line describes the GAME (the game also exists as a
-        # publisher key); the only place that says what the MERCHANT sells is its own product
-        # page. A merchant declares that it reads it with
-        # `MerchantConfig.publisher_from_merchant_page`; the default is False, so the safety
-        # is on for every merchant, config or not. Measured cost on every saved run: 13
-        # distinct candidates (MMOGA 5, Gamivo 6, Electronicfirst 2) — some of them, like
-        # `Minecraft - Java & Bedrock Edition`, are plausibly REAL publisher keys and will be
-        # recoverable when a merchant page reader lands (MMOGA's page answers 200).
-        # Merchants whose real platform is only on their offer page (Instant
-        # Gaming) never reach here token-less: their MerchantConfig resolver set
-        # `declared_platform` from the page above, or already failed closed (R32).
-        if _cfg is None or not _cfg.publisher_from_merchant_page:
-            return SkippedOffer(
-                offer,
-                "no platform in title or URL — the AKS page's 'Direct Publisher' describes"
-                " the game, not this merchant's key, and the merchant page is not read"
-                " (R51)",
-            )
-        platform = "PUBLISHER"
-        region_label, region_id, implicit = detect_region(offer, platform)
-        if region_id is None:
-            return SkippedOffer(offer, f"no region id for {platform}/{region_label}")
+        # [R58] (Romain, 2026-09-24, Wyrel SEULEMENT, dans sa config marchand) : une ligne
+        # que la grammaire du marchand déclare « clé PC » sans boutique entre STEAM quand la
+        # page AKS ne déclare QUE Steam — « si on voit qu'il y a du Epic, du Ubisoft, du EA…
+        # on skip » : la moindre autre plateforme officielle laisse le refus R27 / [R51]
+        # ci-dessous. Égalité STRICTE avec {STEAM}, jamais « Steam parmi d'autres ».
+        _pc_sans_boutique = (_cfg is not None and _cfg.pc_key_without_store is not None
+                             and _cfg.pc_key_without_store(offer.name, offer.url))
+        if _pc_sans_boutique and page_platforms == {"STEAM"}:
+            platform = "STEAM"
+            region_label, region_id, implicit = detect_region(offer, platform)
+            if region_id is None:
+                return SkippedOffer(offer, f"no region id for {platform}/{region_label}")
+        else:
+            if "DIRECT PUBLISHER" not in page_platforms:
+                return SkippedOffer(
+                    offer,
+                    "no platform in title and AKS page does not confirm Direct"
+                    " Publisher — platform unverifiable, not defaulted (R27)",
+                )
+            # [R51] (2026-09-16) — « Direct Publisher » on the AKS page is NOT a statement
+            # about THIS merchant's key. Romain, after two Electronicfirst rows were entered
+            # PUBLISHER while the merchant sells Steam, and a Gamivo row (« Resident Evil
+            # Raccoon City Edition », steam global) reproduced it live: « avant de decider si
+            # publisher ou non on doit ouvrir la page marchant … si on arrive pas a ouvrir la
+            # page marchant on skip l'offre … on devrait ajouter cette securite par defaut pour
+            # tous les marchants ». The AKS line describes the GAME (the game also exists as a
+            # publisher key); the only place that says what the MERCHANT sells is its own product
+            # page. A merchant declares that it reads it with
+            # `MerchantConfig.publisher_from_merchant_page`; the default is False, so the safety
+            # is on for every merchant, config or not. Measured cost on every saved run: 13
+            # distinct candidates (MMOGA 5, Gamivo 6, Electronicfirst 2) — some of them, like
+            # `Minecraft - Java & Bedrock Edition`, are plausibly REAL publisher keys and will be
+            # recoverable when a merchant page reader lands (MMOGA's page answers 200).
+            # Merchants whose real platform is only on their offer page (Instant
+            # Gaming) never reach here token-less: their MerchantConfig resolver set
+            # `declared_platform` from the page above, or already failed closed (R32).
+            if _cfg is None or not _cfg.publisher_from_merchant_page:
+                return SkippedOffer(
+                    offer,
+                    "no platform in title or URL — the AKS page's 'Direct Publisher' describes"
+                    " the game, not this merchant's key, and the merchant page is not read"
+                    " (R51)",
+                )
+            platform = "PUBLISHER"
+            region_label, region_id, implicit = detect_region(offer, platform)
+            if region_id is None:
+                return SkippedOffer(offer, f"no region id for {platform}/{region_label}")
     else:
         page_name = PAGE_PLATFORM_NAMES.get(declared_platform)
         # [R56] un marchand mono-plateforme (GOG) peut lever ce contrôle : sa plateforme

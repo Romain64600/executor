@@ -251,5 +251,69 @@ class WyrelRegistryTests(unittest.TestCase):
         self.assertEqual([g for g, noms in GROUPS.items() if "Wyrel" in noms], ["B"])
 
 
+
+class WyrelPcSansBoutiqueR58Tests(unittest.TestCase):
+    """[R58] (Romain, 2026-09-24) : « si une offre est marquée PC et qu'on n'a pas d'autre info,
+    si sur la page Allkeyshop on a que du Steam, on l'ajoutera en Steam ; si on voit qu'il y a
+    du Epic, du Ubisoft, du EA… on skip » — « et c'est valable que pour Wyrel, dans sa config
+    marchand »."""
+
+    TITRE = "Farm Together Supporters Pack (PC) Standard Global"
+
+    def _match(self, *plateformes, merchant="Wyrel", titre=None, url=None):
+        from src.contracts import NormalizedOffer
+        from src.matcher import AksResolution, match_offer
+        page = AksResolution(slug="farm-together-supporters-pack", url="https://aks/x",
+                             product_id="1", aks_name="Farm Together Supporters Pack",
+                             editions={"1": "Standard"}, regions={"2": "GLOBAL", "9": "EU"},
+                             official_platforms=plateformes)
+        offre = NormalizedOffer(offer_id="1", name=titre or self.TITRE, merchant=merchant,
+                                url=url or _url(region="1"))
+        return match_offer(offre, resolver=lambda n, **k: page)
+
+    def test_le_crochet_reconnait_les_deux_ecritures_du_pc(self):
+        self.assertTrue(w.pc_key_without_store("Some Game (PC) Standard Global"))
+        self.assertTrue(w.pc_key_without_store("Some Game Pack (DLC) Standard PC Europe"))
+
+    def test_le_crochet_refuse_ce_qui_nomme_deja_une_boutique_ou_un_autre_appareil(self):
+        for titre in ("Some Game (PC) Standard Global Steam Gift",
+                      "Some Game (Xbox Series) Standard Xbox Series X/S Europe",
+                      "Some Game (PS4) Standard PlayStation 4 Europe",
+                      "Some Game Pack (DLC) Standard Other Global",
+                      "Some Game (PC) Standard"):                # ne se lit pas
+            self.assertFalse(w.pc_key_without_store(titre), titre)
+
+    def test_page_steam_seul_la_ligne_entre_en_steam(self):
+        from src.matcher import Candidate
+        res = self._match("Steam")
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+        self.assertEqual((res.platform, res.region_id), ("STEAM", "2"))
+
+    def test_une_autre_plateforme_sur_la_page_et_on_skip(self):
+        from src.matcher import SkippedOffer
+        for plateformes in (("Steam", "Epic Store"), ("GoG", "Steam"), ("Steam", "Ubisoft Connect"),
+                            ("EA App", "Steam"), ("Steam", "Xbox Play Anywhere"),
+                            ("Microsoft Windows", "Steam"), ("Direct Publisher", "Steam"),
+                            ("Epic Store",)):
+            res = self._match(*plateformes)
+            self.assertIsInstance(res, SkippedOffer, plateformes)
+            self.assertRegex(res.reason, r"\((R27|R51)\)$", plateformes)
+
+    def test_rien_ne_change_pour_un_autre_marchand(self):
+        """« valable que pour Wyrel » : Kinguin, même titre, même page Steam seul → R27."""
+
+        from src.matcher import SkippedOffer
+        res = self._match("Steam", merchant="Kinguin",
+                          titre="Farm Together Supporters Pack (PC)",
+                          url="https://www.kinguin.net/category/1/farm-together-supporters-pack")
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("(R27)", res.reason)
+
+    def test_seul_wyrel_declare_le_crochet(self):
+        from src.merchants.registry import MERCHANT_CONFIGS
+        porteurs = [n for n, c in MERCHANT_CONFIGS.items() if c.pc_key_without_store is not None]
+        self.assertEqual(porteurs, ["WYREL"])
+
+
 if __name__ == "__main__":
     unittest.main()

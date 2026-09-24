@@ -193,13 +193,16 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   page found ». La décision du 10/09 précédait les balayages tout-pages multi-marchands. Le
   coût d'une re-sonde est borné (3 tentatives par page qui la tente, une fois par fenêtre).
 
-- **Wyrel : une clé « (PC) » n'est PAS une clé Steam par défaut — NO GO de Romain, 2026-09-24.**
-  Le titre Wyrel « <Jeu> (PC) Standard <Région> » ne dit pas sur quelle boutique la clé
-  s'active ; la page Wyrel le dit (« Platform: Steam »), mais elle est derrière Cloudflare. La
-  règle proposée — « (PC) sur une page AKS qui ne vend que Steam = Steam » — aurait fait entrer
-  217 des 418 lignes « (PC) » vues le 24/09. Romain l'a refusée : ces lignes restent refusées
-  (« no platform in title … platform unverifiable », R27 / `[R51]`). Un audit « trouvera » ces
-  centaines de lignes Wyrel perdues et reproposera la règle : ne pas la coder sans un nouveau go.
+- **`[R58]` Wyrel : « (PC) » sans boutique + page AKS « Steam » SEUL = Steam — Romain,
+  2026-09-24, pour Wyrel SEULEMENT** (« si une offre est marquée PC et qu'on n'a pas d'autre
+  info, si sur la page Allkeyshop on a que du Steam, on l'ajoutera en Steam ; si on voit qu'il y
+  a du Epic, du Ubisoft, du EA… on skip » — « et c'est valable que pour Wyrel, dans sa config
+  marchand »). Un premier « NO GO » du même jour a été remplacé par cette règle, formulée par
+  Romain lui-même. Déclarée par `wyrel.pc_key_without_store` (`MerchantConfig`) ; le matcher
+  exige l'égalité STRICTE des plateformes officielles de la page avec {Steam}. Un audit
+  proposera de l'étendre aux autres marchands (Kinguin, Gamivo… écrivent aussi « PC » sans
+  boutique) ou d'accepter « Steam parmi d'autres » : ne pas le faire sans un nouveau go — pour
+  tous les autres marchands, R27 / `[R51]` restent intacts.
 
 - **Une clé ROW n'entre que si on PROUVE qu'elle s'active en Europe — Romain, 2026-09-24**
   (« les ROW, pour que tu puisses les ajouter, il faudra s'assurer qu'ils soient valables en

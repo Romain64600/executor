@@ -254,6 +254,26 @@ def precheck(name: str, url: str) -> str | None:
     return None
 
 
+def pc_key_without_store(name: str, url: str = "") -> bool:
+    """[R58] La ligne se déclare clé PC sans nommer de boutique : « <Jeu> (PC) Standard
+    <Région> » (tag PC, pas de fente plateforme) ou « <DLC> (DLC) Standard PC <Région> » (fente
+    PC), SANS livraison « Steam Gift » (celle-là nomme déjà Steam). Rien d'autre : ni le
+    `marketplace_id` (il ne sépare rien, `[R53b]` — les lignes « (PC) » du 24/09 en portent 2,
+    12, 1021, 4, 3, 6, 312, 14, 1057), ni une supposition sur un titre illisible.
+
+    Romain, 2026-09-24 : « si une offre est marquée PC et qu'on n'a pas d'autre info, si sur la
+    page Allkeyshop on a que du Steam, on l'ajoutera en Steam ; si on voit qu'il y a du Epic, du
+    Ubisoft, du EA… on skip » — « et c'est valable que pour Wyrel, dans sa config marchand ».
+    Le matcher applique la seconde moitié (page AKS « Steam » seul). Mesuré le même jour : 217
+    des 418 lignes « (PC) » vues ont une page AKS qui ne déclare que Steam."""
+
+    parts = parse_title(name)
+    if parts is None or parts["delivery"]:
+        return False
+    tag, slot = parts["tag"].upper(), parts["platform"].upper()
+    return (tag == "PC" and not slot) or slot == "PC"
+
+
 def title_region(name: str) -> str | None:
     """The region slot → "eu" / "us" / "uk" / "global". Read POSITIONALLY from the end of
     the title, never by scanning the title or the URL path. A lock or an unparsable title
@@ -305,6 +325,7 @@ CONFIG = make_config(
     # « STILL in feed » le jour même, la sœur de l'autre région restée au feed). `referal` et
     # `coupon` sont les mêmes sur toutes les lignes : ils n'en font pas partie.
     url_identity_params=("marketplace_id", "edition_id", "region"),
+    pc_key_without_store=pc_key_without_store,      # [R58] « (PC) » + page AKS Steam seul
     notes=(
         "feed store id 162, 60 pages. R53: slot template parsed from the END. The region is "
         "written in FULL in the title AND repeated as the URL's region= id — the two must "

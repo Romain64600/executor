@@ -618,7 +618,8 @@ it is reproduced only so a reader knows what a night sweep covers: Kinguin 58, G
 Driffle 127, Eneba 19, K4G 92, Gamivo 51, Instant Gaming 28, CJS-CDKeys 30, Allyouplay 17,
 GameSeal 126, GameBoost 157, Electronicfirst 70, GamersOutlet 31, Gamerall 13, MMOGA 12,
 Difmark 167 (its rows live in list 30, not 9 — it is in no group), GOG 34 (2026-09-22,
-group A) and **Wyrel 162 (2026-09-24, group B)**. Allyouplay has never had a real sweep —
+group A) and **Wyrel 162 (2026-09-24, group B** — its « (PC) » keys enter as Steam only on a
+Steam-only AKS page, `[R58]`). Allyouplay has never had a real sweep —
 preview it with `--dry-run` before the first write pass.
 
 ---
