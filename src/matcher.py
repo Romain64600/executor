@@ -1808,6 +1808,61 @@ def sitemap_is_authoritative() -> bool:
     return sitemap_index() is not None
 
 
+# Ce que le filtre « sitemap d'abord » a évité ou laissé passer, pour ce processus : 03_match
+# le recopie dans match_meta.json (une page = un processus), l'audit y lit ce que le mode a
+# coûté ou épargné. Remis à zéro par `reset_sitemap_first_stats`.
+SITEMAP_FIRST_STATS: dict[str, int] = {"probes_skipped": 0, "valve_unconfirmed": 0}
+
+
+def reset_sitemap_first_stats() -> None:
+    for cle in SITEMAP_FIRST_STATS:
+        SITEMAP_FIRST_STATS[cle] = 0
+
+
+def sitemap_first_probes(probes: list[tuple[str, str]],
+                         page_kind: str = "cd-key") -> list[tuple[str, str]]:
+    """Les sondes des passes 1-2 que l'index sitemap CONFIRME — sitemap d'abord (2026-09-24).
+
+    Romain : « go pour le matching sitemap d'abord », après l'audit du parallélisme du 23/09 :
+    35 % des offres n'ont aucune page AKS et chacune coûtait ~4,7 sondes aveugles (slug complet,
+    slug sans édition, tête de titre, variantes année et ancienne forme) qui répondaient 404 —
+    ~164 requêtes perdues par page de 100 lignes, sur le budget par IP qui borne tout le reste.
+    Vérifié avant : 99,8 % des ~9 000 pages résolues depuis le 15/09 sont dans l'index.
+
+    * Index absent ou périmé → les sondes telles quelles : rien ne change sans index frais.
+    * Forme courante ou année (`buy-<slug>-<gabarit>-compare-prices/`) → gardée ssi
+      ``has_page(<slug>-<gabarit>)``.
+    * Forme ancienne (`compare-and-buy-…-<slug>/`) → gardée ssi ``has_legacy(slug)`` ; un
+      index qui n'a pas cherché les pages anciennes (``None``) la garde, faute de savoir.
+    * **La soupape** : la TOUTE PREMIÈRE sonde (tier 1, forme courante) part toujours, même
+      non confirmée. Le sitemap est une photo et il a des trous — ``buy-the-front-cd-key``
+      répondait 200 le 24/09 sans figurer dans l'index du 23. Une page neuve porte presque
+      toujours le nom complet du jeu : c'est la sonde qui la trouve. Coût : une requête par
+      offre sans page, au lieu de ~4,7.
+
+    L'ordre est conservé, donc MA1 aussi : les tiers restent du plus au moins précis, et une
+    réponse douteuse sur une sonde gardée lève toujours immédiatement."""
+
+    index = sitemap_index()
+    if index is None or not probes:
+        return list(probes)
+    gardees: list[tuple[str, str]] = []
+    for rang, (variant, url) in enumerate(probes):
+        if url == AKS_LEGACY_URL.format(slug=variant):
+            connue = index.has_legacy(variant)
+            confirmee = connue is None or connue
+        else:
+            confirmee = index.has_page(f"{variant}-{page_kind}")
+        if confirmee:
+            gardees.append((variant, url))
+        elif rang == 0:
+            gardees.append((variant, url))
+            SITEMAP_FIRST_STATS["valve_unconfirmed"] += 1
+        else:
+            SITEMAP_FIRST_STATS["probes_skipped"] += 1
+    return gardees
+
+
 # Les SEULS gabarits que la passe 3 accepte comme équivalents d'une page `cd-key` : d'autres
 # façons d'écrire « une clé pour ce jeu ». Volontairement étroit.
 #   * PAS les pages COMPTE (`-steam-account`…) : un compte n'est pas une clé, c'est un autre
@@ -2501,7 +2556,12 @@ def resolve_aks(
     probes: list[tuple[str, str]] = [(slug, aks_url(slug, page_kind)) for slug in slugs]
     if page_kind == "cd-key" and slugs:
         probes += aks_page_urls(slugs[0], page_kind)[1:]
+    # Sitemap d'abord (2026-09-24) : avec un index frais, on ne sonde que les formes qu'AKS
+    # publie, plus la soupape du tier 1 — voir `sitemap_first_probes`.
+    probes = sitemap_first_probes(probes, page_kind)
+    sondees: set[str] = set()
     for variant, url in probes:
+        sondees.add(url)
         probe = _probe_guessed_page(url, http_get_fn)
         if probe is None:
             continue                                   # clean 404/410 → next shape/tier
@@ -2525,6 +2585,11 @@ def resolve_aks(
     # locale, pas une requête — ce qui est exactement la leçon du 2026-09-10 : sonder plus de
     # formes à l'aveugle avait poussé ~300 req/min et AKS répondait en 503.
     for variant, url in sitemap_shapes(slugs, page_kind):
+        if url in sondees:
+            # Déjà sondée en passe 1-2 : l'aplatissement de la passe 3 retombe sur la même
+            # URL quand le slug exact est dans l'index. La même question aurait la même
+            # réponse — une requête de moins, rien d'autre.
+            continue
         probe = _probe_guessed_page(url, http_get_fn)
         if probe is None:
             # Le sitemap est une PHOTO : une page publiée hier peut avoir été retirée. Un

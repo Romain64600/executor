@@ -243,7 +243,9 @@ validation triple's shape is load-bearing (FC5, audit 2026-07-17).
   "run_id": "2026-07-02-driffle-01",
   "data_entry_mode": "safe",
   "matched_at": "2026-07-02T09:15:00Z",
-  "consoles": true
+  "consoles": true,
+  "sitemap_first": {"active": true, "fetched_at": "2026-09-24T12:34:12Z",
+                    "legacy_indexed": true, "probes_skipped": 312, "valve_unconfirmed": 38}
 }
 ```
 
@@ -258,6 +260,14 @@ validation triple's shape is load-bearing (FC5, audit 2026-07-17).
   sidecar written before 2026-09-15 without the key was a PC-only match. Stamped by
   `scripts/03_match.py`; the safe-auto sweep always passes its own mode through
   (`--consoles` / `--no-consoles`, explicit either way).
+- `sitemap_first` (2026-09-24, EXECUTOR_RULES §4.7): `active` = a fresh, complete sitemap
+  index was loaded, so passes 1-2 probed only the index-confirmed URL shapes plus the tier-1
+  valve; `fetched_at` = the index snapshot the page was matched against; `legacy_indexed` =
+  that snapshot also listed the old `compare-and-buy-…` pages; `probes_skipped` = blind probes
+  avoided on this page; `valve_unconfirmed` = tier-1 probes sent although the index did not
+  list them. With `active: false` the matcher behaved exactly as before the index. Also
+  present in the counter set: `probe_unreliable`, `search_failures`,
+  `search_circuit_open_offers`, `throttle_graces` (§4.7).
 
 ## recap.json (safe-auto sweep, `scripts/10_data_entry_auto.py`)
 

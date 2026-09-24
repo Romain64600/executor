@@ -568,7 +568,7 @@ de page pour ce jeu » est un verdict du matcher, pas une forme d'URL : aucun `L
 l'exprimer. On déplace donc par `WHERE id IN (…)`, la liste venant d'un balayage réel.
 
 ```bash
-python3 scripts/16_sitemap_index.py --refresh          # 213 404 pages AKS, ~4 min
+python3 scripts/16_sitemap_index.py --refresh          # 213 525 pages AKS + 154 anciennes, ~5 min
 python3 scripts/17_sort_sql_ids.py --run <balayage> --list 22 \
     --out docs/tri/<date>-no-page.sql --held-out docs/tri/<date>-retenues.json
 # les boutiques jamais balayées n'ont pas de skipped.json : on lit un scan de TRI
@@ -583,6 +583,15 @@ lot et écrite dans `--held-out` — sur les 9 719 lignes du balayage de nuit, c
 retient 1 816. Le fichier `.sql` s'ouvre sur une **étape 0 obligatoire** qui vérifie le nom de
 la colonne d'identifiant (que nous n'avons jamais vu : le schéma vient des requêtes de Romain)
 en affichant 20 URL connues d'avance, et chaque lot est compté avant d'être écrit.
+
+**Les pages ANCIENNES et le matching « sitemap d'abord » (2026-09-24).** L'index garde aussi, à
+part, les 154 pages `compare-and-buy-cd-key-for-digital-download-<slug>/` (Far Cry 3,
+Battlefield 3, Minecraft…) que le relevé du 22-23/09 ignorait : l'export RETIENT désormais une
+ligne dont la page ancienne existe, et refuse un index écrit avant le 24/09 (il ne les a pas
+cherchées). Le matcher, lui, ne sonde plus que les formes d'URL que l'index confirme, plus une
+sonde de sécurité sur le nom complet : **2,82 → 1,16 sonde par offre**, une offre sans page ne
+coûte plus qu'une requête (EXECUTOR_RULES §4.7). Tant que l'index a plus de 7 jours, ce mode est
+coupé et le matcher sonde comme avant — relancer `--refresh` régulièrement.
 
 **Allowlist as of 2026-09-24 (18 merchants)** — the command above derives this list itself,
 it is reproduced only so a reader knows what a night sweep covers: Kinguin 58, G2A 38,

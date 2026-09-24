@@ -3,6 +3,49 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-24 — Matching « sitemap d'abord » ; l'index connaît enfin les pages anciennes
+
+Romain : « go pour le matching sitemap d'abord », après l'audit du parallélisme du 23/09 : une
+offre sans page AKS coûtait ~4,7 sondes aveugles qui répondaient toutes 404, sur le budget de
+requêtes par IP qui borne le reste.
+
+**Ce qui change dans le matcher (`resolve_aks`, `sitemap_first_probes`).** Avec un index frais
+et complet, les passes 1-2 ne sondent que les formes d'URL que l'index confirme. La toute
+première sonde (le nom complet, forme courante) part toujours : c'est la **soupape** contre les
+trous et le retard du sitemap — `buy-the-front-cd-key` répondait 200 ce matin sans être dans le
+relevé de la veille. La passe 3 ne re-sonde plus une URL déjà sondée. Sans index frais, rien ne
+change. Mesuré sur les 24 000 lignes du scan tous-magasins du 21/09 qui passent le precheck :
+**2,82 → 1,16 sonde par offre (−59 %)** ; une offre sans page passe de 4,58 sondes à **une** ;
+les 14 006 résolutions simulées sont identiques. `match_meta.json` porte un bloc
+`sitemap_first` (actif ou non, relevé, sondes évitées, soupapes).
+
+**Les pages anciennes, un trou de l'index du 22/09.** `compare-and-buy-cd-key-for-digital-download-<slug>/`
+(≈ 2021 : Far Cry 3, Battlefield 3, Borderlands 2, Minecraft) est dans les page-sitemaps, mais
+le relevé ne gardait que `buy-…`. Le matcher les trouvait quand même (sonde aveugle de passe 2 :
+10 résolutions sur ~9 000 depuis le 15/09) ; le mode sitemap d'abord les aurait perdues, et
+l'export de tri pouvait envoyer ces lignes en 22. L'index les garde maintenant **à part**
+(154 pages, `legacy` / `legacy_indexed`) ; l'export retient une ligne dont la page ancienne
+existe, et refuse un index écrit avant ce jour.
+
+**Vérification des fichiers SQL déjà livrés (22 et 23/09), contre le relevé de ce midi.**
+13 lignes déplacées vers la 22 ont une page : 2 une page ancienne (Men of War: Condemned
+Heroes) et 11 une page `buy-` publiée depuis le relevé du 23/09 — vraisemblablement créée par
+l'équipe AKS depuis la liste 22, dont c'est le rôle (Bella Wants Blood, Dagon: The Railway
+Horror, Parisian Bistro Simulator…). Fichier de retour 22 → 9, même format que celui du 23/09
+(étape 0, COUNT, `AND listId=22`) : `/tmp/tri/20260924-retour-22-vers-9.sql` sur la nouvelle
+VM. GOG : aucune.
+
+**Le risque qui reste** : la fraîcheur. Une page créée après le relevé n'est trouvée que par la
+soupape ; l'index n'est pas relevé automatiquement (`16_sitemap_index.py --refresh` à la main),
+et passé 7 jours le mode se coupe tout seul. Le relevé automatique au lancement d'un balayage
+reste à trancher par Romain.
+
+Tests : `tests/test_matcher_sitemap_first.py` (14), export et CLI (`test_sort_sql_ids`), bloc
+`match_meta` (`test_match_cli`). Douze mutations — filtre, soupape (retirée / étendue), forme
+ancienne (toujours gardée / inconnue écartée), gabarit, dédoublonnage de la passe 3, relevé et
+lecture de `legacy`, export, refus du CLI, remise à zéro des compteurs — font chacune rougir un
+test.
+
 ## 2026-09-24 — Notes : l'API AKS « import-router » pour le chantier prepaid
 
 Romain : « Prends bonne note pour le chantier prepaid qui arrive : API. » Consigné dans

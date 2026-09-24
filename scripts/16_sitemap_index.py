@@ -43,6 +43,8 @@ def main() -> int:
     ap.add_argument("--stats", action="store_true", help="ce que l'index contient")
     ap.add_argument("--has", metavar="SLUG_COMPLET",
                     help="ex. hades-cd-key — le segment ENTIER, gabarit compris")
+    ap.add_argument("--legacy", metavar="SLUG",
+                    help="ex. far-cry-3 — la page ANCIENNE compare-and-buy-… existe-t-elle ?")
     ap.add_argument("--kinds", metavar="SLUG",
                     help="ex. hades — sous quels gabarits ce slug a-t-il une page ?")
     ap.add_argument("--ttl-days", type=int, default=DEFAULT_TTL_DAYS)
@@ -76,6 +78,11 @@ def main() -> int:
                          ensure_ascii=False, indent=2))
         return 0 if trouve else 1
 
+    if args.legacy:
+        trouve = index.has_legacy(args.legacy)
+        print(json.dumps({"slug": args.legacy, "legacy_indexed": index.legacy_indexed,
+                          "page_ancienne": trouve}, ensure_ascii=False, indent=2))
+        return 0 if trouve else 1
     if args.kinds:
         gabarits = index.kinds_for(args.kinds, PAGE_KINDS)
         print(json.dumps({"slug": args.kinds, "gabarits": gabarits,
@@ -91,6 +98,8 @@ def main() -> int:
         "age_days": round(age, 2) if age is not None else None,
         "fresh": index.fresh(args.ttl_days),
         "incomplete": index.incomplete,
+        "legacy_indexed": index.legacy_indexed,
+        "legacy_pages": len(index.legacy),
         "source": index.source,
     }, ensure_ascii=False, indent=2))
     return 0

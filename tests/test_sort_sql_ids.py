@@ -279,6 +279,19 @@ class LaComparaisonAplatie(unittest.TestCase):
     « 1000-doors », « MotoGP24 » contre « motogp-24 ». 140 lignes de l'export (2,9 %)
     retrouvent leur page ainsi — et ne doivent donc PAS partir en création."""
 
+    def test_une_page_ANCIENNE_retient_la_ligne(self):
+        """2026-09-24 : `compare-and-buy-cd-key-for-digital-download-far-cry-3/` existe. L'index
+        des 22-23/09 ne connaissait pas cette forme — la ligne partait en 22 à tort."""
+
+        idx = SitemapIndex(entries=frozenset({"x-cd-key"}), fetched_at="2026-09-24T00:00:00Z",
+                           incomplete=False, legacy=frozenset({"far-cry-3"}),
+                           legacy_indexed=True)
+        from src.matcher import build_slug_candidates
+        part = partition([{"offer_id": "1", "name": "Far Cry 3"}], idx, build_slug_candidates)
+        self.assertEqual(part.to_move, [])
+        self.assertEqual(part.page_exists[0]["pages_aks"],
+                         ["compare-and-buy-cd-key-for-digital-download-far-cry-3"])
+
     def test_une_page_trouvee_a_la_ponctuation_pres_retient_la_ligne(self):
         idx = _index(["motogp-24-cd-key"])
         part = partition([{"offer_id": "1", "name": "MotoGP24", "url": "u"}],
@@ -533,6 +546,31 @@ class LeCliRefuseUnIndexQuilNePeutPasJustifier(unittest.TestCase):
             (t / "vieux.json").write_text(json.dumps(
                 {"entries": ["a-cd-key"], "fetched_at": "2020-01-01T00:00:00Z"}))
             self.assertEqual(self._lance(t / "vieux.json"), 2)
+
+    def test_un_index_qui_na_pas_cherche_les_pages_anciennes_est_refuse(self):
+        """2026-09-24 : sans la liste des pages anciennes, l'index ne peut pas prouver qu'un
+        Far Cry 3 n'a pas de page — l'export le déplacerait. Frais et complet ne suffit plus."""
+
+        import datetime
+        import io
+        from contextlib import redirect_stderr
+        frais = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with tempfile.TemporaryDirectory() as tmp:
+            t = pathlib.Path(tmp)
+            (t / "sans.json").write_text(json.dumps(
+                {"entries": ["a-cd-key"], "fetched_at": frais, "incomplete": False}))
+            err = io.StringIO()
+            with redirect_stderr(err):
+                self.assertEqual(self._lance(t / "sans.json"), 2)
+            self.assertIn("pages anciennes", err.getvalue())
+            (t / "avec.json").write_text(json.dumps(
+                {"entries": ["a-cd-key"], "fetched_at": frais, "incomplete": False,
+                 "legacy_indexed": True, "legacy": []}))
+            err = io.StringIO()
+            with redirect_stderr(err):
+                self._lance(t / "avec.json", extra=["--runs-dir", tmp])
+            self.assertNotIn("pages anciennes", err.getvalue(),
+                             "un index qui les a cherchées — même sans en trouver — passe")
 
 
 if __name__ == "__main__":

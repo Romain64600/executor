@@ -18,8 +18,11 @@ lignes, ``-steam-account`` 246), et ceux-là ne doivent surtout PAS être dépla
 
 **Ce que ce module ne fait pas.** Il ne décide rien et ne touche pas au matcher. Il répond à
 une seule question : « l'URL ``buy-<slug>-<gabarit>-compare-prices/`` est-elle dans le sitemap
-d'AKS ? ». Un index absent ou périmé répond « je ne sais pas » (``None``), jamais « non » —
-l'appelant reste fail-closed.
+d'AKS ? » — et, depuis le 2026-09-24, la même pour la forme ANCIENNE
+``compare-and-buy-cd-key-for-digital-download-<slug>/`` (liste à part, ``has_legacy``). Un index
+absent ou périmé répond « je ne sais pas » (``None``), jamais « non » — l'appelant reste
+fail-closed. C'est le matcher qui s'en sert pour ne sonder que ce qui existe (sitemap d'abord,
+``matcher.sitemap_first_probes``).
 
 **Limite, dite franchement.** Le sitemap est une photo. Une page créée depuis la photo est
 absente de l'index, et une page supprimée depuis y figure encore. L'index prouve donc
@@ -49,6 +52,14 @@ DEFAULT_TTL_DAYS = 7
 _LOC_RE = re.compile(rb"<loc>([^<]+)</loc>")
 # La grammaire des pages produit : buy-<slug>-<gabarit>-compare-prices/
 _PAGE_RE = re.compile(r"/blog/buy-(.+?)-compare-prices/?$")
+# …et celle des pages ANCIENNES (≈ 2021), que le matcher sonde en passe 2 depuis le 2026-09-10 :
+# compare-and-buy-cd-key-for-digital-download-<slug>/. Elles sont bien dans les page-sitemaps
+# (72 dans page-sitemap.xml, 16 dans page-sitemap30.xml, relevé du 2026-09-24) mais la
+# première version de ce module ne les gardait pas. Or ce sont des jeux très vendus —
+# Battlefield 3, Far Cry 3, Borderlands 2, Minecraft : 10 résolutions sur ~9 000 depuis le
+# 15/09. Elles vivent dans une liste À PART (`legacy`) : leur slug n'a pas de gabarit, le
+# mélanger aux `entries` fausserait `kinds_for`, `flat_page` et le préfixe de l'export.
+_LEGACY_RE = re.compile(r"/blog/compare-and-buy-cd-key-for-digital-download-(.+?)/?$")
 _FLAT_RE = re.compile(r"[^a-z0-9]+")
 
 
@@ -105,6 +116,7 @@ def refresh(dest: str | Path, *, fetch: Callable[[str], bytes] = _fetch,
             f"{SITEMAP_INDEX_URL} ne liste aucun 'page-sitemap' — grammaire changée ?")
 
     pages: set[str] = set()
+    anciennes: set[str] = set()
     echecs: list[str] = []
     for i, url in enumerate(cibles, 1):
         try:
@@ -117,6 +129,10 @@ def refresh(dest: str | Path, *, fetch: Callable[[str], bytes] = _fetch,
             m = _PAGE_RE.search(loc)
             if m:
                 pages.add(m.group(1))
+                continue
+            m = _LEGACY_RE.search(loc)
+            if m:
+                anciennes.add(m.group(1).lower())
         if on_progress:
             on_progress(url, i, len(cibles))
         sleep(CRAWL_DELAY_S)
@@ -128,10 +144,14 @@ def refresh(dest: str | Path, *, fetch: Callable[[str], bytes] = _fetch,
         "sitemaps_failed": echecs,
         "incomplete": bool(echecs),
         "pages": len(pages),
+        "legacy_pages": len(anciennes),
     }
     chemin = Path(dest)
     chemin.parent.mkdir(parents=True, exist_ok=True)
-    chemin.write_text(json.dumps({**resume, "entries": sorted(pages)},
+    # `legacy_indexed` dit que CE fichier a cherché les pages anciennes : un fichier écrit
+    # avant le 2026-09-24 ne l'a pas fait, et son silence ne veut pas dire « aucune ».
+    chemin.write_text(json.dumps({**resume, "legacy_indexed": True,
+                                  "legacy": sorted(anciennes), "entries": sorted(pages)},
                                  ensure_ascii=False), encoding="utf-8")
     return resume
 
@@ -183,6 +203,11 @@ class SitemapIndex:
     fetched_at: str
     incomplete: bool
     source: str = SITEMAP_INDEX_URL
+    # Les pages anciennes `compare-and-buy-cd-key-for-digital-download-<slug>/`, par slug nu.
+    # `legacy_indexed` est False pour un fichier d'avant le 2026-09-24 : il ne les a pas
+    # cherchées, donc « absente de `legacy` » n'y prouve RIEN (voir `has_legacy`).
+    legacy: frozenset[str] = frozenset()
+    legacy_indexed: bool = False
 
     @classmethod
     def load(cls, path: str | Path = DEFAULT_PATH) -> "SitemapIndex | None":
@@ -198,10 +223,15 @@ class SitemapIndex:
         entrees = brut.get("entries")
         if not isinstance(entrees, list) or not entrees:
             return None
+        anciennes = brut.get("legacy")
+        indexees = brut.get("legacy_indexed") is True and isinstance(anciennes, list)
         return cls(entries=frozenset(str(e) for e in entrees),
                    fetched_at=str(brut.get("fetched_at") or ""),
                    incomplete=bool(brut.get("incomplete")),
-                   source=str(brut.get("source") or SITEMAP_INDEX_URL))
+                   source=str(brut.get("source") or SITEMAP_INDEX_URL),
+                   legacy=frozenset(str(e).lower() for e in anciennes) if indexees
+                   else frozenset(),
+                   legacy_indexed=indexees)
 
     def age_days(self, now: float | None = None) -> float | None:
         import datetime
@@ -223,6 +253,17 @@ class SitemapIndex:
         ``buy-`` et ``-compare-prices``, gabarit compris — jamais le slug nu."""
 
         return str(full_slug or "").strip().lower() in self.entries
+
+    def has_legacy(self, slug: str) -> bool | None:
+        """La page ANCIENNE ``compare-and-buy-cd-key-for-digital-download-<slug>/`` existe-t-elle ?
+
+        Trois réponses, pas deux : True (publiée), False (l'index l'a cherchée et ne l'a pas),
+        **None** (l'index date d'avant le 2026-09-24 et ne les a jamais cherchées — « je ne
+        sais pas », que l'appelant traite comme tel)."""
+
+        if not self.legacy_indexed:
+            return None
+        return str(slug or "").strip().lower() in self.legacy
 
     def kinds_for(self, slug: str, kinds: Iterable[str]) -> list[str]:
         """Parmi ``kinds``, ceux sous lesquels ``slug`` a une page publiée."""

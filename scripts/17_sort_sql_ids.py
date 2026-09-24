@@ -106,6 +106,13 @@ def main() -> int:
         print("index sitemap INCOMPLET (des sous-sitemaps ont échoué) — "
               "relancer --refresh avant d'exporter", file=sys.stderr)
         return 2
+    if not index.legacy_indexed:
+        # 2026-09-24 : un index écrit avant ce jour n'a pas cherché les pages ANCIENNES
+        # (`compare-and-buy-…`). Il ne peut donc pas prouver qu'un Battlefield 3 ou un
+        # Minecraft n'a pas de page — et l'export déplacerait la ligne. On refuse.
+        print("index sitemap sans les pages anciennes (écrit avant le 2026-09-24) — "
+              "relancer `python3 scripts/16_sitemap_index.py --refresh`", file=sys.stderr)
+        return 2
     if not index.fresh(args.ttl_days) and not args.allow_stale:
         age = index.age_days()
         print(f"index sitemap périmé ({age:.1f} j > {args.ttl_days} j) — relancer --refresh, "

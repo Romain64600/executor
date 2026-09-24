@@ -180,6 +180,10 @@ def collect(runs_dir: str | Path, run_prefix: str, family: str) -> list[dict[str
     return [vus[k] for k in sorted(vus, key=int)]
 
 
+# Comment une page ANCIENNE est nommée dans `pages_aks` (fichier des lignes retenues).
+LEGACY_PREFIX = "compare-and-buy-cd-key-for-digital-download-"
+
+
 def partition(offers: Iterable[dict[str, Any]], index: SitemapIndex,
               slug_candidates, kinds: Iterable[str] = PAGE_KINDS,
               name_variants=None) -> Partition:
@@ -221,6 +225,13 @@ def partition(offers: Iterable[dict[str, Any]], index: SitemapIndex,
                          if index.flat_page(f"{c}-{k}")), None)
             if plat:
                 gabarits = [plat]
+                break
+            # …et la page ANCIENNE `compare-and-buy-cd-key-for-digital-download-<slug>/`
+            # (2026-09-24). Le matcher la sonde en passe 2 et la trouve — Battlefield 3,
+            # Far Cry 3, Borderlands 2, Minecraft. L'index des 22-23/09 ne la connaissait pas :
+            # une telle ligne pouvait partir en 22 alors que sa page existe.
+            if index.has_legacy(c):
+                gabarits = [f"{LEGACY_PREFIX}{c}"]
                 break
         if gabarits:
             out.page_exists.append({**offre, "pages_aks": gabarits})

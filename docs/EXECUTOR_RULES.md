@@ -958,6 +958,38 @@ retried ONCE on the same URL after 2 s, then raises — never a lower tier; a 42
 retried. Account kinds keep their single shape (`aks_page_urls`, `_probe_guessed_page`,
 `src/matcher.py`).
 
+**L'index sitemap — passe 3 (2026-09-22) et « sitemap d'abord » (2026-09-24).** `src/aks_sitemap.py`
+relève le sitemap d'AKS (55 `page-sitemap*.xml`, UA `AKS/Staff`, `Crawl-delay` 0,5 s) dans
+`state/aks_sitemap.json` : 213 525 pages `buy-<slug>-<gabarit>-compare-prices/` et, depuis le
+24/09, les **154 pages anciennes** `compare-and-buy-cd-key-for-digital-download-<slug>/` dans
+une liste À PART (`legacy`, `legacy_indexed`). Il ne fait autorité que **frais (≤ 7 jours) et
+complet** ; sinon `sitemap_index()` rend `None` et le matcher se comporte exactement comme
+avant lui. Quand il fait autorité :
+- **Passes 1-2, sitemap d'abord** (Romain : « go pour le matching sitemap d'abord ») : on ne
+  sonde que les formes que l'index CONFIRME — `has_page(<slug>-<gabarit>)` pour les formes
+  courante et année, `has_legacy(slug)` pour la forme ancienne (gardée telle quelle si l'index
+  ne l'a pas cherchée). **Soupape** : la toute première sonde (tier 1, forme courante) part
+  toujours, confirmée ou non — le sitemap est une photo et une page neuve porte le nom complet
+  du jeu (`buy-the-front-cd-key` répondait 200 le 24/09, absente du relevé du 23, présente dans
+  celui du 24). L'ordre des tiers et `MA1` sont intacts : une réponse douteuse sur une sonde
+  gardée lève toujours immédiatement. Mesuré sur les 24 000 lignes du scan tous-magasins du
+  21/09 qui passent le precheck : **2,82 → 1,16 sonde par offre (−59 %)**, une offre sans page
+  passe de 4,58 sondes à **une seule**, et les 14 006 résolutions simulées sont identiques.
+- **Passe 3** : les gabarits de clé que les passes 1-2 ne sondent pas (`-key`, `-game-code`,
+  `-download-code`) et la même question à la ponctuation près (`flat_page`), jamais une page
+  compte ni console. Une URL déjà sondée en passe 1-2 n'est pas re-sondée.
+- **La recherche R30 n'est plus appelée** (morte depuis le 22/09 : `HTTP 200`, corps vide).
+- `match_meta.json.sitemap_first` dit pour chaque page si le mode était actif, contre quel
+  relevé, et combien de sondes il a évitées (`probes_skipped`) ou laissées à la soupape
+  (`valve_unconfirmed`).
+
+**Le risque qui reste, dit franchement : la fraîcheur.** Une page créée par AKS après le
+relevé n'est trouvée que par la soupape — si son slug est celui du nom complet. Sous un autre
+tier, elle attend le relevé suivant ; la ligne reste en liste 9 (« pas de page AKS ») et l'export
+de tri, qui lit le même index, peut l'envoyer en 22. L'index n'est pas relevé automatiquement :
+`python3 scripts/16_sitemap_index.py --refresh` à la main (~5 min), et passé 7 jours le mode se
+coupe tout seul. Le relevé automatique au lancement d'un balayage est une décision de Romain.
+
 **Throttle guard (2026-09-09, audit/critic).** Below the per-slug rule `MA1` (a
 transient answer on a *guessed* slug raises immediately → per-offer skip "AKS probe
 unreliable"), the match stage has a stage-level STOP: the **first `429`** on any AKS

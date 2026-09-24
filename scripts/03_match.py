@@ -26,7 +26,8 @@ if str(ROOT) not in sys.path:
 from src.aks_env import AKS_DIRECT_URL, AKS_STAFF_UA, http_get, validate_aks_direct_status  # noqa: E402
 from src.contracts import NormalizedFeed, NormalizedOffer  # noqa: E402
 from src.matcher import (  # noqa: E402
-    AksThrottled, match_feed, resolve_aks, resolve_aks_url, sitemap_index,
+    SITEMAP_FIRST_STATS, AksThrottled, match_feed, reset_sitemap_first_stats, resolve_aks,
+    resolve_aks_url, sitemap_index,
 )
 from src.page_catalog import CatalogRecorder, catalog_from_spec  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
@@ -178,7 +179,9 @@ def main() -> int:
     logger.log("sitemap_index",
                authoritative=_sitemap is not None,
                pages=len(_sitemap.entries) if _sitemap else 0,
+               legacy_pages=len(getattr(_sitemap, "legacy", ()) or ()),
                fetched_at=getattr(_sitemap, "fetched_at", ""))
+    reset_sitemap_first_stats()
     # Le catalogue se remplit de ce que le match LIT DÉJÀ : il ÉCOUTE les résolutions
     # (`on_resolution`), il n'enveloppe plus les résolveurs — voir la revue du 2026-09-22
     # juste en dessous. Un seul lot est écrit à la fin : un aller-retour SSH groupé
@@ -250,6 +253,15 @@ def main() -> int:
             # candidate (multi-target) can only come from a --consoles match. True by
             # default since 2026-09-15; false = an explicit --no-consoles (PC-only) match.
             "consoles": bool(args.consoles),
+            # Sitemap d'abord (2026-09-24) : actif seulement avec un index frais et complet.
+            # probes_skipped = sondes aveugles évitées ; valve_unconfirmed = sondes du tier 1
+            # parties quand même (la soupape). Un « pas de page AKS » se lit avec ces champs.
+            "sitemap_first": {
+                "active": _sitemap is not None,
+                "fetched_at": getattr(_sitemap, "fetched_at", "") if _sitemap else "",
+                "legacy_indexed": bool(getattr(_sitemap, "legacy_indexed", False)),
+                **{k: int(v) for k, v in SITEMAP_FIRST_STATS.items()},
+            },
         }, indent=2),
         encoding="utf-8",
     )

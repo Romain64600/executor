@@ -72,6 +72,31 @@ class MatchCliTests(unittest.TestCase):
             self.assertEqual(meta[key], 0)        # counters present even when match_feed is mocked
         self.assertEqual(len(json.loads((self.run / "skipped.json").read_text())), 2)
 
+    def test_sitemap_first_counters_are_stamped_and_start_from_zero(self):
+        """2026-09-24 : ce que le mode « sitemap d'abord » a évité, page par page. Les
+        compteurs repartent de zéro à chaque page — un reste de la page d'avant mentirait."""
+
+        import src.matcher as M
+        from src.aks_sitemap import SitemapIndex
+        M.SITEMAP_FIRST_STATS["probes_skipped"] = 999          # reste d'un autre match
+
+        def faux_match(*a, **k):
+            M.SITEMAP_FIRST_STATS["probes_skipped"] += 7
+            M.SITEMAP_FIRST_STATS["valve_unconfirmed"] += 2
+            return [], []
+
+        idx = SitemapIndex(entries=frozenset({"a-cd-key"}), fetched_at="2026-09-24T00:00:00Z",
+                           incomplete=False, legacy=frozenset({"far-cry-3"}),
+                           legacy_indexed=True)
+        with mock.patch.object(self.MOD, "match_feed", side_effect=faux_match), \
+                mock.patch.object(self.MOD, "sitemap_index", return_value=idx):
+            self.assertEqual(self._main(), 0)
+        meta = json.loads((self.run / "match_meta.json").read_text())["sitemap_first"]
+        self.assertEqual(meta, {"active": True, "fetched_at": "2026-09-24T00:00:00Z",
+                                "legacy_indexed": True, "probes_skipped": 7,
+                                "valve_unconfirmed": 2})
+        M.reset_sitemap_first_stats()
+
 
 if __name__ == "__main__":
     unittest.main()
