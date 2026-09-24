@@ -85,7 +85,9 @@ est différente de la voisine, et aucune ligne n'est sautée. `id` croît avec l
    trompe de page. Tests à prévoir, et un essai à blanc sur un marchand à gros blocs (Kinguin)
    avant de l'activer : lignes distinctes vues, contre lignes lues.
 
-Rien de cela n'est codé : ça attend le go de Romain.
+**Voie 2 codée le 2026-09-24** (Romain : « go pour la 2 ») : `extractor.feed_url`, la seule
+fabrique d'URL de feed du pipeline, ajoute `FEED_ORDER = "&orderBy=id&order=desc"` à chaque URL,
+et un test refuse une URL de feed fabriquée ailleurs. La voie 1 reste à demander au dev AKS.
 
 ## 4. Ce qui reste vrai après le remède
 

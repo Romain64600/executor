@@ -103,6 +103,16 @@ site** `[F01]`.
   dropdown — the dropdown can return third-party URLs (Kinguin trap) `[KINGUIN]`.
 - Pagination is `&p=N` (**not** `paged=N`); dedupe by offer id across all pages;
   scan every page `[F03][F03b]`.
+- **Every feed URL carries `&orderBy=id&order=desc` (2026-09-24, Romain : « go pour la 2 »).**
+  The default sort is `createdAt` ALONE, and a bulk import gives the same second to thousands
+  of rows: between them the database guarantees no order, so each `&p=N` draws a random
+  hundred from the block — repeated pages, and more than 13 000 pending rows never shown per
+  pass (`docs/AUDIT_2026-09-24_feed-pages-repetees.md`). The server accepts `orderBy=id`
+  (not offered by the screen): unique, hence deterministic, and `desc` keeps the newest rows on
+  page 1. It is set in the ONE URL factory (`extractor.feed_url`, constant `FEED_ORDER`) so
+  every stage of a run — extract, submitter refresh/locate/prove-gone, mover, all-stores scan —
+  sees the same row on the same page; a test refuses a feed URL built anywhere else. The
+  SEARCH page (`aks-merchant-feeds-search`) is untouched (it does not paginate, below).
 - The real page count comes from the feed's own pagination nav (`.tablenav`
   links, rendered on every page incl. past-the-end) — bound the scan by it,
   never by "first empty page" heuristics.

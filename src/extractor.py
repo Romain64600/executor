@@ -53,6 +53,18 @@ from src.step_guard import StepGuard
 
 AKS_ADMIN_URL = "https://www.allkeyshop.com/blog/wp-admin/admin.php"
 DEFAULT_FEED_PAGE = "aks-merchant-feeds-9"
+# TRI STABLE DU FEED (Romain 2026-09-24 : « go pour la 2 » — docs/AUDIT_2026-09-24_feed-pages-
+# repetees.md). Par défaut la page trie par `createdAt` SEULEMENT, et un import en masse donne la
+# même seconde à des milliers de lignes : entre elles, la base ne garantit aucun ordre, chaque
+# `&p=N` pioche cent lignes du bloc au hasard — pages répétées, et plus de 13 000 lignes jamais
+# montrées par passe (Kinguin ~3 550, GameSeal ~3 600…). Le serveur accepte `orderBy=id`, que
+# l'écran ne propose pas : `id` est unique, l'ordre devient déterministe, et `desc` garde la même
+# logique que le tri d'origine (les plus récentes en page 1). Il est posé ICI, dans la seule
+# fabrique d'URL de feed, pour que TOUTES les étapes d'un run (extraction, rechargement et
+# localisation du submitter, preuve de disparition, déplacements, scan tous-magasins) voient
+# les mêmes lignes au même numéro de page — deux tris différents dans un run feraient changer une
+# ligne de page entre l'extraction et la saisie.
+FEED_ORDER = "&orderBy=id&order=desc"
 
 # La liste sur laquelle on ne TRAVAILLE jamais (Romain, 2026-09-21 : « pour pouvoir
 # travailler sur les autres listes sauf la liste 8 (blacklist) »). Ce n'est pas une garde
@@ -196,7 +208,7 @@ def feed_url(
                 "or a strictly-positive integer store id")
         store_id = int(s)   # canonical form: no sign, no spaces, no leading zeros
     store_clause = "" if store_id is None else f"&store={store_id}"
-    query = f"?available={available}{store_clause}&page={feed_page}"
+    query = f"?available={available}{store_clause}&page={feed_page}{FEED_ORDER}"
     if page is not None and int(page) > 1:
         query += f"&p={int(page)}"
     return admin_url + query

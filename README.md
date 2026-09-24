@@ -595,6 +595,11 @@ balayage lancé depuis la console relève l'index s'il a plus de 20 h (`--sitema
 ajouter aussi aux commandes lancées à la main), une à deux minutes en lecture seule, jamais une
 halte. Sans relevé pendant 7 jours, le mode se coupe et le matcher sonde comme avant.
 
+**Le feed se lit dans un ordre stable** (2026-09-24) : toutes les URL de feed portent
+`&orderBy=id&order=desc`. Le tri par défaut d'AKS (date de création seule) mélangeait au hasard
+les milliers de lignes d'un import en masse : pages répétées, et plus de 13 000 lignes jamais
+montrées par passe (`docs/AUDIT_2026-09-24_feed-pages-repetees.md`).
+
 **Les pages déjà vues ne sont plus rejouées** (2026-09-24) : quand le feed d'AKS renvoie pour une
 page exactement les offres d'une page précédente du même balayage — Kinguin 44 pages sur 120 le
 24/09, GameSeal 51 sur 208 —, elle n'est ni matchée ni saisie (`skipped_repeated`).

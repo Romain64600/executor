@@ -3,6 +3,26 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-24 — Le feed se lit dans un ordre stable : `orderBy=id&order=desc`
+
+Romain : « go pour la 2 », après l'audit du même jour
+([`AUDIT_2026-09-24_feed-pages-repetees.md`](AUDIT_2026-09-24_feed-pages-repetees.md)) : le tri
+par défaut, `createdAt` seul, mélange au hasard les milliers de lignes d'un import en masse, et
+plus de 13 000 lignes en attente n'étaient jamais montrées à une passe.
+
+`extractor.feed_url` — la seule fabrique d'URL de feed du pipeline — ajoute désormais
+`&orderBy=id&order=desc` à chaque URL (`FEED_ORDER`). L'extraction, le rechargement, la
+localisation et la preuve de disparition du submitter, le déplacement vers les listes et le scan
+tous-magasins lisent donc tous les mêmes lignes au même numéro de page. `desc` garde les plus
+récentes en page 1, comme avant. La page de RECHERCHE n'est pas touchée (elle ne pagine pas).
+
+Tests : la fabrique porte le tri pour toute combinaison store / page / mode / liste ; un test
+refuse une URL de feed construite ailleurs (les deux gardes rougies par mutation).
+
+**Déploiement** : pas pendant un balayage — l'extraction d'une page et sa saisie doivent lire le
+feed dans le MÊME ordre. Sur chaque VM, le `git pull` attend qu'aucun balayage ne tourne, après
+une vérification en direct (lecture seule) que deux pages voisines ne se recouvrent plus.
+
 ## 2026-09-24 — Audit : pourquoi le feed renvoie les mêmes lignes (lecture seule)
 
 Romain : « go pour chercher pourquoi AKS renvoie les mêmes lignes ». Trace :

@@ -1,4 +1,5 @@
 import json
+import pathlib
 import re
 import unittest
 
@@ -104,9 +105,43 @@ class FeedUrlTests(unittest.TestCase):
         self.assertEqual(
             url,
             "https://www.allkeyshop.com/blog/wp-admin/admin.php"
-            "?available=all&store=127&page=aks-merchant-feeds-9",
+            "?available=all&store=127&page=aks-merchant-feeds-9&orderBy=id&order=desc",
         )
         self.assertNotIn("&p=", feed_url(127, page=1))
+
+    def test_every_feed_url_carries_the_stable_id_sort(self):
+        """Romain 2026-09-24, « go pour la 2 » (docs/AUDIT_2026-09-24_feed-pages-repetees.md) :
+        le tri par défaut (`createdAt` seul) mélange au hasard les milliers de lignes d'un
+        import en masse. `orderBy=id&order=desc` est unique, donc stable — et il doit être
+        le MÊME sur chaque URL d'un run, sinon une ligne change de page entre deux étapes."""
+
+        from urllib.parse import parse_qs, urlparse
+        for store in (127, "58", None):
+            for page in (None, 1, 2, 44):
+                for available in ("all", "pending"):
+                    for feed_page in ("aks-merchant-feeds-9", "aks-merchant-feeds-30"):
+                        q = parse_qs(urlparse(feed_url(store, page=page, available=available,
+                                                       feed_page=feed_page)).query)
+                        self.assertEqual((q.get("orderBy"), q.get("order")),
+                                         (["id"], ["desc"]), (store, page, available, feed_page))
+
+    def test_no_feed_page_url_is_built_by_hand(self):
+        """Une URL de feed fabriquée à côté de `feed_url` échapperait au tri stable : la même
+        ligne n'aurait plus le même numéro de page d'une étape à l'autre."""
+
+        import re
+        racine = pathlib.Path(__file__).resolve().parent.parent
+        fautifs = []
+        for f in list((racine / "src").rglob("*.py")) + list((racine / "scripts").glob("*.py")):
+            if f.name.startswith(("diag_", "probe_")):
+                continue                       # diagnostics ponctuels, jamais dans un run
+            for n, ligne in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+                if ligne.lstrip().startswith("#") or "FEED_ORDER" in ligne:
+                    continue                   # commentaire, ou la fabrique elle-même
+                if re.search(r"""["'][^"'\s]*page=aks-merchant-feeds-(\d|%|\{)""", ligne) \
+                        or re.search(r"""["']\?available=""", ligne):
+                    fautifs.append(f"{f.relative_to(racine)}:{n}")
+        self.assertEqual(fautifs, [], "URL de feed construite hors de extractor.feed_url")
 
     def test_pagination_and_available(self):
         self.assertIn("&p=3", feed_url(127, page=3))

@@ -39,7 +39,7 @@ skill rule `[F05]` as hardened 2026-07-08), plus run metadata.
   "run_id": "2026-07-02-driffle-01",
   "merchant": "Driffle",
   "store_id": "127",
-  "source_url": "https://www.allkeyshop.com/blog/wp-admin/admin.php?available=all&store=127&page=aks-merchant-feeds-9",
+  "source_url": "https://www.allkeyshop.com/blog/wp-admin/admin.php?available=all&store=127&page=aks-merchant-feeds-9&orderBy=id&order=desc",
   "fetched_at": "2026-07-02T09:15:00Z",
   "pages_scanned": 4,
   "feed_last_page": 4,
