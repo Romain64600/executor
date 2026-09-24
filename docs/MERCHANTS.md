@@ -906,6 +906,11 @@ matcher et le classifieur importent le registre.
   distinctes vues sur ~5 000, 117 candidats, **109 offres créées** (95 prouvées + 14 fausses
   « STILL in feed »). Les ~2 300 lignes jamais montrées tenaient au tri du feed, corrigé le même
   jour (`orderBy=id`).
+- **« (PC) » n'est pas « Steam » — NO GO de Romain, 2026-09-24.** 418 lignes « (PC) » vues le
+  24/09 ont une page AKS mais pas de boutique dans le titre : 217 sur une page AKS « Steam »
+  seul, 180 sur une page multi-boutiques, 21 illisibles. La règle « (PC) sur page Steam seule =
+  Steam » a été proposée avec 10 lignes à vérifier, et refusée : elles restent refusées
+  (plateforme invérifiable, R27 / `[R51]`).
 
 ## Ce qui n'est pas propre à un marchand
 

@@ -193,6 +193,14 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   page found ». La décision du 10/09 précédait les balayages tout-pages multi-marchands. Le
   coût d'une re-sonde est borné (3 tentatives par page qui la tente, une fois par fenêtre).
 
+- **Wyrel : une clé « (PC) » n'est PAS une clé Steam par défaut — NO GO de Romain, 2026-09-24.**
+  Le titre Wyrel « <Jeu> (PC) Standard <Région> » ne dit pas sur quelle boutique la clé
+  s'active ; la page Wyrel le dit (« Platform: Steam »), mais elle est derrière Cloudflare. La
+  règle proposée — « (PC) sur une page AKS qui ne vend que Steam = Steam » — aurait fait entrer
+  217 des 418 lignes « (PC) » vues le 24/09. Romain l'a refusée : ces lignes restent refusées
+  (« no platform in title … platform unverifiable », R27 / `[R51]`). Un audit « trouvera » ces
+  centaines de lignes Wyrel perdues et reproposera la règle : ne pas la coder sans un nouveau go.
+
 - **Une clé ROW n'entre que si on PROUVE qu'elle s'active en Europe — Romain, 2026-09-24**
   (« les ROW, pour que tu puisses les ajouter, il faudra s'assurer qu'ils soient valables en
   Europe »). Ni le titre ni l'URL ne le prouvent ; la page marchand le pourrait, mais celle de

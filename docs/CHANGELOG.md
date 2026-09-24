@@ -3,6 +3,13 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-24 — Décision : pas de « (PC) = Steam » chez Wyrel
+
+Proposée avec 10 lignes à vérifier (217 lignes « (PC) » sur une page AKS « Steam » seul, parmi
+418 vues le jour même) ; **NO GO de Romain**. Les lignes « (PC) » sans boutique restent
+refusées. Consigné dans `AGENTS.md` (décisions revues) et `MERCHANTS.md` (Wyrel) pour qu'un
+audit ne la repropose pas. Aucun code modifié.
+
 ## 2026-09-24 — Une erreur passagère ne coupe plus le balayage ; plus de fausses « STILL in feed »
 
 Romain : « pour Wyrel j'ai dû relancer 3 fois, tu vois pas le pb ? », puis « go pour les deux
