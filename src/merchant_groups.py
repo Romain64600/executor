@@ -44,6 +44,9 @@ PENDING_2026_09_21 = {
     "K4G": 162, "GamersOutlet": 9, "Difmark": 0,
     # Mesuré le 2026-09-22 sur le même scan, à l'entrée de GOG en liste blanche.
     "GOG": 3473,
+    # Même scan, à l'entrée de Wyrel en liste blanche (2026-09-24). Dont 848 non-jeux
+    # (cartes cadeaux, monnaies) et 161 ROW, refusés d'office : la charge réelle est moindre.
+    "Wyrel": 4725,
 }
 
 # Hors groupes, avec la raison — un marchand absent des deux groupes n'est PAS un oubli.
@@ -60,9 +63,11 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # c'est exactement la limite que ce module annonce depuis le début.
     "A": ("GameSeal", "G2A", "GameBoost", "Driffle", "Instant Gaming", "MMOGA",
           "GamersOutlet", "GOG"),
-    # ~10 830 lignes : trois files moyennes et le reste.
+    # ~15 555 lignes : trois files moyennes et le reste — et Wyrel, entré en liste blanche le
+    # 2026-09-24 avec 4 725 lignes, dont une bonne part refusée d'office (non-jeux, ROW).
+    # Mis ici parce que le B était le plus léger ; le B passe donc devant le A (12 828).
     "B": ("Gamivo", "Eneba", "Kinguin", "CJS-CDKeys", "Gamerall", "Electronicfirst",
-          "Allyouplay", "K4G"),
+          "Allyouplay", "K4G", "Wyrel"),
 }
 
 

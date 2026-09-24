@@ -154,6 +154,20 @@ class WyrelRegionCrossCheckTests(unittest.TestCase):
         self.assertEqual(w.precheck("Some Game (PC) Standard Germany", _url(region="19")),
                          "forbidden region: GERMANY")
 
+    def test_rest_of_the_world_is_refused_as_ROW_not_as_unparsable(self):
+        """2026-09-24 : Wyrel écrit « Rest of the world » en toutes lettres (161 lignes,
+        `region=5`). Absent du vocabulaire partagé, le titre ne se lisait pas et la ligne
+        tombait sur « no region slot » (R53a) — refusée, mais pour une fausse raison. Le
+        créneau se lit maintenant, et c'est un verrou : une ROW n'entre que si on prouve
+        qu'elle s'active en Europe (Romain, même jour)."""
+
+        for name in ("DOOM Eternal (PC) Deluxe Edition Rest of the world",
+                     "Kerbal Space Program Breaking Ground Expansion (DLC) Standard PC "
+                     "Rest of the world"):
+            self.assertEqual(w.parse_title(name)["region"], "Rest of the world", name)
+            self.assertEqual(w.precheck(name, _url(region="5")), "forbidden region: ROW", name)
+            self.assertIsNone(w.title_region(name), name)
+
 
 class WyrelPlatformSlotTests(unittest.TestCase):
     """`[R53e]` — open vocabulary, unknown word refused by name."""
@@ -227,9 +241,14 @@ class WyrelRegistryTests(unittest.TestCase):
         self.assertFalse(cfg.publisher_from_merchant_page)
         self.assertTrue(cfg.title_is_platform_source)
 
-    def test_off_the_safe_auto_allowlist(self):
+    def test_on_the_safe_auto_allowlist_with_its_feed_store(self):
+        """Liste blanche le 2026-09-24 (Romain : « Go Wyrel, corrige le motif, puis whitelist
+        ce marchand »), avec son store de feed 162 — et dans un groupe de balayage."""
+
         from src.admin.auto_merchants import AUTO_MERCHANTS
-        self.assertNotIn("Wyrel", [n for n, _ in AUTO_MERCHANTS])
+        from src.merchant_groups import GROUPS
+        self.assertIn(("Wyrel", "162"), AUTO_MERCHANTS)
+        self.assertEqual([g for g, noms in GROUPS.items() if "Wyrel" in noms], ["B"])
 
 
 if __name__ == "__main__":

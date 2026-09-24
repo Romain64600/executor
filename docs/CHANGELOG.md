@@ -3,6 +3,40 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-24 — Wyrel en liste blanche ; « Rest of World » écrit en toutes lettres est un verrou ROW
+
+Romain : « Go Wyrel, corrige le motif, puis whitelist ce marchand », après sa règle du même
+jour : « les ROW, pour que tu puisses les ajouter, il faudra s'assurer qu'ils soient valables
+en Europe ».
+
+**Le motif, et un vrai trou derrière lui.** Le scan des régions interdites ne connaissait que
+le sigle « ROW ». Chez Wyrel, « Rest of the world » manquait au vocabulaire partagé : le titre
+ne se lisait plus et les 161 lignes (`region=5`) tombaient sur « no region slot » `[R53a]` —
+refusées, mais pour une fausse raison. Chez **CJS**, en liste blanche, c'était pire : « Gray
+Zone Warfare - Tactical Edition Upgrade Steam Key: Rest of World » passait le precheck et se
+lisait **GLOBAL(2) implicite** — une clé ROW saisie comme mondiale. Trois lignes de ce type au
+scan du 21/09 ; aucune n'a jamais été écrite (aucun `approved.json` ne contient « Rest of
+World »). Les deux orthographes sont maintenant un verrou, dans le scan générique
+(`matcher.FORBIDDEN_REGIONS` → `forbidden region: REST OF WORLD`) et dans le vocabulaire des
+marchands (`src/merchants/common.py` → `ROW`). Routage : « garder », comme ROW.
+
+Effet mesuré sur les **38 197 lignes** du scan tous-magasins du 21/09, avant/après : 167 lignes
+changent, toutes attendues — 161 Wyrel (même refus, bon motif), 3 CJS qui passaient en GLOBAL
+et sont refusées, 3 CJS déjà refusées pour une autre raison. Rien d'autre ne bouge. Chaque
+ajout retiré seul fait rougir son test.
+
+**Wyrel en liste blanche, groupe B**, donc aussi dans le scan de nuit. Sur ses 4 725 lignes :
+3 428 passent vers la résolution AKS, 848 non-jeux nommés, 213 éditions non mappables, 161 ROW,
+73 verrous pays. La région du titre et le `region=` de l'URL concordent sur toutes. Ses pages
+sont derrière Cloudflare — une dizaine lues depuis le VPS, puis le défi ne se lève plus — et
+rien ne s'y lit : les ROW restent refusées faute de preuve qu'elles s'activent en Europe
+(69 d'entre elles ont une page AKS).
+
+Tests : les exemples « marchand hors liste » des tests de la console, du CLI et du balayage
+passent de Wyrel à Keycense (130, jamais vetté). Docs : `EXECUTOR_RULES` §4.11 et `[R53]`,
+`MERCHANTS.md` (statut et section Wyrel), README (liste blanche au 24/09, ligne Difmark
+périmée corrigée).
+
 ## 2026-09-23 — Audit : plus de marchands en parallèle, faut-il louer ? (lecture seule)
 
 Romain : « tu penses que je suis obligé de louer d'autres VPS pour lancer plus de marchands en

@@ -161,8 +161,9 @@ class TheLoopIsExtensible(unittest.TestCase):
 
 class TheReaderEnforcesTheAllowlist(unittest.TestCase):
     """P1 (revue de Romain, 2026-09-19) — la route HTTP filtrait la liste blanche, pas le
-    lecteur : un marchand interdit au lancement (`Wyrel:162` ; `Difmark:167` tenait ce rôle
-    avant son entrée en liste blanche le 2026-09-21), écrit directement dans le fichier,
+    lecteur : un marchand interdit au lancement (`Keycense:130`, jamais vetté ; `Difmark:167`
+    puis `Wyrel:162` ont tenu ce rôle avant leur entrée en liste blanche, le 2026-09-21 et le
+    2026-09-24), écrit directement dans le fichier,
     rejoignait l'exécution. Le point qui DÉCLENCHE les écritures vérifie lui-même."""
 
     def setUp(self):
@@ -173,12 +174,12 @@ class TheReaderEnforcesTheAllowlist(unittest.TestCase):
             [{"merchant": m, "store_id": s} for m, s in entries]), encoding="utf-8")
 
     def test_a_parked_merchant_written_by_hand_is_refused_not_swept(self):
-        self._queue(("Wyrel", "162"))
+        self._queue(("Keycense", "130"))
         recap, planned, refused = {}, set(), set()
         taken = SWEEP.take_from_queue(self.run_dir, planned, refused, recap, lambda: "t")
         self.assertEqual(taken, [], "un marchand hors liste ne rejoint JAMAIS l'exécution")
-        self.assertEqual([r["merchant"] for r in recap["targets_refused"]], ["Wyrel"])
-        self.assertIn("Wyrel", recap["targets_refused"][0]["reason"])
+        self.assertEqual([r["merchant"] for r in recap["targets_refused"]], ["Keycense"])
+        self.assertIn("Keycense", recap["targets_refused"][0]["reason"])
         self.assertNotIn("targets_added", recap)
 
     def test_a_wrong_store_for_a_vetted_merchant_is_refused_too(self):
@@ -197,7 +198,7 @@ class TheReaderEnforcesTheAllowlist(unittest.TestCase):
         self.assertEqual(len(recap["targets_added"]), 1)
 
     def test_a_refused_entry_is_recorded_once_not_at_every_reread(self):
-        self._queue(("Wyrel", "162"))
+        self._queue(("Keycense", "130"))
         recap, planned, refused = {}, set(), set()
         for _ in range(3):
             SWEEP.take_from_queue(self.run_dir, planned, refused, recap, lambda: "t")
@@ -577,11 +578,11 @@ class TheLoopDrivenEndToEnd(unittest.TestCase):
     def test_a_hand_written_parked_merchant_is_refused_and_traced(self):
         def hook(merchant):
             if merchant == "Kinguin":
-                self._queue(("Wyrel", "162"), ("Gamerall", "13"))
+                self._queue(("Keycense", "130"), ("Gamerall", "13"))
         code, swept, recap = self._main("Kinguin:58", hook)
         self.assertEqual(swept, ["Kinguin", "Gamerall"],
                          "un marchand hors liste ne rejoint JAMAIS l'exécution")
-        self.assertEqual([t["merchant"] for t in recap["targets_refused"]], ["Wyrel"])
+        self.assertEqual([t["merchant"] for t in recap["targets_refused"]], ["Keycense"])
 
     def test_an_add_accepted_then_stopped_is_recorded_as_not_reached(self):
         """Revue `/code-review` : sur un `break` (stop opérateur), un ajout accepté n'était ni

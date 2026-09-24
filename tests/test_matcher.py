@@ -580,6 +580,23 @@ class PrecheckSkipTests(unittest.TestCase):
             self.assertEqual(precheck_skip(_offer("Some Game", url=url)),
                              f"forbidden region: {region}", url)
 
+    def test_rest_of_world_spelled_out_is_a_lock_not_an_implicit_global(self):
+        # 2026-09-24 : le scan ne connaissait que le sigle « ROW ». Ces titres CJS réels (scan
+        # tous-magasins du 21/09) passaient le precheck et se lisaient GLOBAL(2) implicite —
+        # une clé ROW saisie comme mondiale. Romain : une ROW n'entre que si on prouve qu'elle
+        # s'active en Europe, ce que ni le titre ni l'URL ne prouvent. Routage : « garder ».
+        from src.aks_lists import suggest_target_list
+        for name, label in (
+            ("Gray Zone Warfare - Tactical Edition Upgrade Steam Key: Rest of World",
+             "REST OF WORLD"),
+            ("Ambulance Life: A Paramedic Simulator Steam Key: 1 Year  3 Devices (Rest of World)",
+             "REST OF WORLD"),
+            ("Some Game Steam Key Rest of the World", "REST OF THE WORLD"),
+        ):
+            reason = precheck_skip(_offer(name))
+            self.assertEqual(reason, f"forbidden region: {label}", name)
+            self.assertIsNone(suggest_target_list(reason), name)
+
     def test_reaudit_vietnam_is_url_slot_only_spares_wargame_titles(self):
         # VIETNAM is a region lock in a slug SLOT but a legit game name elsewhere — it is
         # scanned URL-slot-only (never the title, never mid-slug), so war games entered

@@ -118,7 +118,7 @@ du feed.
 | GameSeal | 126 | `gameseal.py` | `domain` ; PC : `precheck`, `title_region` (queue ` - <RÉGION>`), `resolve_name` (queue pelée, 20/09) ; console : `console_url_families`, `console_region_slot` | oui (1er balayage 19/09) | 1 090 écrites, 1 089 justes (audit du 20/09) |
 | CJS-CDKeys | 30 | `cjs.py` (**nouveau**, identité seule) | `domain="cjs-cdkeys.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
 | Difmark | 167 | `difmark.py` | `console_url_families` (comptes) | parqué (hors liste blanche) | — |
-| Wyrel | 162 | `wyrel.py` (**nouveau 16/09**) | PC : `precheck` (`[R53a]` gabarit, `[R53b]` non-jeu à 3 signaux, `[R53c]` édition, `[R53d]` accord titre/URL, `[R53e]` fente plateforme inconnue), `title_region`, `resolve_name` ; console : `console_region_slot`, `console_noise` | **non — supervisé d'abord** | 60 |
+| Wyrel | 162 | `wyrel.py` (16/09) | PC : `precheck` (`[R53a]` gabarit, `[R53b]` non-jeu à 3 signaux, `[R53c]` édition, `[R53d]` accord titre/URL, `[R53e]` fente plateforme inconnue), `title_region`, `resolve_name` ; console : `console_region_slot`, `console_noise` | **oui, allowlisté le 24/09** (groupe B) — 1re saisie : 15 / 15 créées le 17/09 | 60 |
 | GameBoost | 157 | `gameboost.py` (**nouveau 15/09**) | PC : `precheck` (non-jeux + `[R47]` région obligatoire), `title_region`, `resolve_name` ; console : `console_region_slot` | **oui, allowlisté le 16/09** — 1er matching : 207 candidats / 992 lignes | 13 |
 | GamersOutlet | 31 | `gamersoutlet.py` (**nouveau 15/09**) | PC : `precheck` (slot obligatoire + vocabulaire boutique fermé), `title_region`, `resolve_name`, `url_platform` | **oui, allowlisté le 16/09** — 1re saisie : 2 / 2 créées | 1 |
 | Gamerall | 13 | `gamerall.py` (**nouveau 18/09**) | `precheck` (plateforme du titre obligatoire), `resolve_name`, `title_region`, `url_platform`/`url_region`, et surtout `offer_page_resolver` — région lue dans l'ordre **titre → URL → page**, la page n'étant ouverte que pour les ~18 % de lignes sans région | **oui, allowlisté le 19/09** — 1re saisie : 10 / 10 créées le 18/09 | 32 |
@@ -821,7 +821,7 @@ matcher et le classifieur importent le registre.
   le déclare. Vérifié : les deux lignes sortent en skip « (R51) ». La décision revue
   d'`AGENTS.md` est mise à jour. Détail dans `src/merchants/electronicfirst.py`.
 
-## Wyrel (store 162, supervisé)
+## Wyrel (store 162, liste blanche depuis le 24/09)
 
 - **Fichier** : `src/merchants/wyrel.py`. Audité sur 100 lignes de la page 1 (16/09), trois
   lentilles puis trois contradicteurs. **60 pages de feed** — le plus volumineux de l'audit,
@@ -869,10 +869,26 @@ matcher et le classifieur importent le registre.
   Tests : `tests/test_merchants_wyrel.py` (24 tests).
 - **Statut live** : **1re saisie réelle le 2026-09-17 — 15 / 15 créées, zéro refus**, chacune
   prouvée par la disparition du feed, arrêt propre sur la limite demandée. La grammaire
-  `[R53]` tient donc en écriture réelle. Reste hors liste blanche safe-auto (le corpus ne
-  couvre que 10 pages sur 59). Dry-run de la tranche : 80 candidats sur 990 lignes — Steam 53,
+  `[R53]` tient donc en écriture réelle. Resté hors liste blanche safe-auto jusqu'au 24/09
+  (le corpus ne couvrait que 10 pages sur 59). Dry-run de la tranche : 80 candidats sur 990 lignes — Steam 53,
   Xbox Series 13, Xbox One 11, Switch 2, Switch 2 ×1 ; 45 des 80 partent sous le compartiment
   **Steam Gift(25)**, la livraison que le marchand écrit en clair.
+- **Liste blanche le 2026-09-24** (Romain : « Go Wyrel, corrige le motif, puis whitelist ce
+  marchand »), **groupe B**, donc aussi dans le scan de nuit. Vérifié avant sur le scan
+  tous-magasins du 21/09, **4 725 lignes** : la région du titre et le `region=` de l'URL
+  concordent partout (17 identifiants, dont 5 = Rest of the world, 27 = Canada, 62 = Suède…).
+  Verdicts de la grammaire : 3 428 passent vers la résolution AKS, 848 non-jeux nommés,
+  213 éditions non mappables, 161 ROW, 73 verrous pays, 2 fentes plateforme inconnues.
+- **« Rest of the world » (161 lignes, `region=5`) = `forbidden region: ROW`** (24/09).
+  Avant, ce créneau manquait au vocabulaire partagé : le titre ne se lisait plus et la ligne
+  tombait sur « no region slot » `[R53a]` — refusée, mais pour une fausse raison. Règle de
+  Romain, même jour : **une ROW n'entre que si on prouve qu'elle s'active en Europe**, et ni
+  le titre ni l'URL ne le prouvent. Enjeu mesuré au sitemap : 69 de ces lignes ont une page
+  AKS (9 douteuses, 83 sans page).
+- **Les pages Wyrel sont derrière Cloudflare** : lues depuis le navigateur du VPS le 24/09,
+  une dizaine sont passées puis le défi « Performing security verification » ne s'est plus
+  levé (4 pages de suite). Rien dans le fichier ne lit la page, et rien ne doit en dépendre :
+  titre + URL suffisent, la seule inconnue étant la ROW, qui reste refusée.
 
 ## Ce qui n'est pas propre à un marchand
 

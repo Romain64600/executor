@@ -167,6 +167,13 @@ FORBIDDEN_REGIONS = (
     "LATIN AMERICA", "PHILIPPINES", "MALAYSIA", "INDONESIA", "THAILAND",
     "MEXICO", "CHILE", "COLOMBIA", "PERU", "POLAND", "UKRAINE",
     "CANADA", "AFRICA", "OCEANIA",
+    # ROW écrit en toutes lettres (2026-09-24). Le scan ne connaissait que le sigle « ROW » :
+    # « Gray Zone Warfare - Tactical Edition Upgrade Steam Key: Rest of World » (CJS, scan
+    # du 21/09, 7 lignes de ce type) passait le precheck et se lisait GLOBAL(2) implicite —
+    # une clé ROW saisie comme mondiale. Aucune n'a été écrite (aucun approved.json ne la
+    # contient). Romain, même jour : une ROW n'entre que si on prouve qu'elle s'active en
+    # Europe — ce que ni le titre ni l'URL ne prouvent. Routage : comme ROW, « garder ».
+    "REST OF WORLD", "REST OF THE WORLD",
 )
 
 # Forbidden regions matched ONLY in the merchant URL slot, NEVER the title — the

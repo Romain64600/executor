@@ -666,7 +666,8 @@ class DataEntryAutoAllowlistTests(AppTestCase):
         names = {m["name"] for m in body["merchants"]}
         self.assertIn("Kinguin", names)
         self.assertIn("Difmark", names)      # liste blanche le 2026-09-21
-        self.assertNotIn("Wyrel", names)     # supervisé, hors liste
+        self.assertIn("Wyrel", names)        # liste blanche le 2026-09-24
+        self.assertNotIn("Keycense", names)  # jamais vetté
         self.assertNotIn("Gameboost", names)
 
     def test_groups_served_with_the_merchants(self):
@@ -718,7 +719,7 @@ class DataEntryAutoAllowlistTests(AppTestCase):
         self.manager.start_data_entry_auto = lambda *a, **k: calls.append((a, k)) or {}
         response, body = self._json(
             "POST", "/api/data-entry/auto",
-            body={"targets": [{"merchant": "Wyrel", "store_id": "162"}], "by": "Romain"},
+            body={"targets": [{"merchant": "Keycense", "store_id": "130"}], "by": "Romain"},
         )
         self.assertEqual(response.status, 403)
         self.assertEqual(body["error"]["code"], "merchant_not_allowed")
@@ -738,11 +739,11 @@ class DataEntryAutoAllowlistTests(AppTestCase):
         self.manager.start_data_entry_auto = lambda *a, **k: calls.append((a, k)) or {}
         response, _ = self._json(
             "POST", "/api/data-entry/auto",
-            # L'exemple du marchand refusé est Wyrel (162, supervisé) : GameBoost a rejoint
-            # la liste le 2026-09-16 et Difmark le 2026-09-21.
+            # L'exemple du marchand refusé est Keycense (130, jamais vetté) : GameBoost a
+            # rejoint la liste le 2026-09-16, Difmark le 2026-09-21 et Wyrel le 2026-09-24.
             body={"targets": [
                 {"merchant": "Kinguin", "store_id": "58"},
-                {"merchant": "Wyrel", "store_id": "162"},
+                {"merchant": "Keycense", "store_id": "130"},
             ]},
         )
         self.assertEqual(response.status, 403)

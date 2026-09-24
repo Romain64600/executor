@@ -79,6 +79,16 @@ AUTO_MERCHANTS: list[tuple[str, str]] = [
                                 # des démos : le lire pour la plateforme donnerait 3 472
                                 # erreurs sur 3 473 (« Two Worlds *Epic* Edition »). Feed
                                 # store 34 ; fichier src/merchants/gog.py [R55].
+    ("Wyrel", "162"),           # Romain 2026-09-24 (« Go Wyrel, corrige le motif, puis
+                                # whitelist ce marchand »). Fichier [R53] du 16/09, 1re saisie
+                                # 15/15 créées le même jour. Wyrel écrit la région DEUX fois —
+                                # en toutes lettres à la fin du titre et en `region=` dans l'URL
+                                # — et les deux concordent sur les 4 725 lignes du scan du
+                                # 21/09 ; un désaccord prouvé est un refus [R53d]. Ses pages
+                                # sont derrière Cloudflare (illisibles depuis le VPS, vérifié le
+                                # 24/09) : rien ne s'y lit, rien n'en dépend. Les « Rest of the
+                                # world » (161) restent refusées : une ROW n'entre que si on
+                                # prouve qu'elle s'active en Europe. Feed store 162.
 ]
 
 # Deliberately NOT suggested (enforcement is simply "absent from the list";

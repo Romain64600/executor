@@ -193,6 +193,15 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   page found ». La décision du 10/09 précédait les balayages tout-pages multi-marchands. Le
   coût d'une re-sonde est borné (3 tentatives par page qui la tente, une fois par fenêtre).
 
+- **Une clé ROW n'entre que si on PROUVE qu'elle s'active en Europe — Romain, 2026-09-24**
+  (« les ROW, pour que tu puisses les ajouter, il faudra s'assurer qu'ils soient valables en
+  Europe »). Ni le titre ni l'URL ne le prouvent ; la page marchand le pourrait, mais celle de
+  Wyrel est derrière Cloudflare. « Rest of World » / « Rest of the World » en toutes lettres
+  sont donc le même verrou que le sigle ROW (`matcher.FORBIDDEN_REGIONS`,
+  `merchants/common.py`). Un audit « trouvera » 161 lignes Wyrel ROW perdues, dont 69 avec une
+  page AKS : c'est le prix accepté tant qu'aucune lecture de page ne prouve l'Europe — ne pas
+  les faire entrer en GLOBAL.
+
 - **Software region catch-all (`resolve_software_region`, Fable finding [7], DECLINED
   2026-09-07).** When an AKS software page has a SINGLE region and it is a
   GLOBAL/PUBLISHER-type bucket, a merchant offer is filed under it even when the offer's

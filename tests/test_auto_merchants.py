@@ -26,13 +26,11 @@ class AutoMerchantsAllowlistTests(unittest.TestCase):
         self.assertFalse(is_allowed("Bogus", "999"))
 
     def test_parked_and_unvetted_merchants_refused(self):
-        # Wyrel (162) tient le rôle du marchand hors liste : « supervisé d'abord »
-        # (docs/MERCHANTS.md), jamais allowlisté. Deux boutiques ont fait le chemin inverse
-        # après leur première saisie réelle : GameBoost le 2026-09-16 (« Ajoute Gameboost a la
-        # whiteliste », 207 candidats sur 992 lignes, zéro PUBLISHER) et **Difmark le
-        # 2026-09-21** (« Ajouter difmark a la whitelist », 10 comptes Steam créés et prouvés
-        # sur 13 candidats) — leur refus n'est donc plus ce que ce test épingle.
-        self.assertFalse(is_allowed("Wyrel", "162"))
+        # Wyrel (162) a longtemps tenu ici le rôle du marchand hors liste (« supervisé
+        # d'abord ») ; il a fait le chemin inverse le **2026-09-24** (« Go Wyrel, … puis
+        # whitelist ce marchand »), comme GameBoost le 2026-09-16 et Difmark le 2026-09-21.
+        # Ce que ce test épingle désormais : des boutiques jamais vettées restent refusées.
+        self.assertTrue(is_allowed("Wyrel", "162"))
         self.assertTrue(is_allowed("GameBoost", "157"))
         self.assertTrue(is_allowed("Difmark", "167"))
         # une boutique jamais vettée reste refusée, quelle que soit son orthographe
@@ -56,7 +54,8 @@ class AutoMerchantsAllowlistTests(unittest.TestCase):
         names = {r["name"] for r in rows}
         self.assertIn("Kinguin", names)
         self.assertIn("Difmark", names)          # 2026-09-21
-        self.assertNotIn("Wyrel", names)         # supervisé, hors liste
+        self.assertIn("Wyrel", names)            # 2026-09-24
+        self.assertNotIn("Royalcdkeys", names)   # jamais vetté
         # MMOGA (Romain 2026-09-10): allowed with its FEED store id only — the AKS page
         # merchant id (40) is not a store and must be refused like any tampered id.
         self.assertIn("MMOGA", names)

@@ -50,7 +50,7 @@ the rule that governs it. The rule text lives ONLY in
 | Eneba "XBOX LIVE Key" rows without a generation (title and URL silent) | **bloqué** | Fail-closed skip `console: no declared generation (R45)` — no declared platform, nothing to file (policy P4, awaiting Romain) | EXECUTOR_RULES §4.12.3 / P4 |
 | Console DLC / season passes | **bloqué** | Fail-closed skip `console: DLC / season pass on console — not entered yet (R45)` (policy P5, v1) — PC DLC ARE entered on their own DLC page `[R43]` | EXECUTOR_RULES §4.12.4 (b) / P5; §4.3 `[R43]` |
 | Instant Gaming console keys | **bloqué** | The platform is not in the IG feed (bare titles, `/en/<id>-/` URLs) and a console platform read on the IG page is not in `IG_PLATFORM_TEXT_MAP` → skip `[R32]` — no console entry from IG until a page-based hook exists | [`docs/MERCHANTS.md`](docs/MERCHANTS.md) « Instant Gaming », EXECUTOR_RULES §4.10 |
-| Difmark 167 | **bloqué** | Parked, outside the safe-auto allowlist (`scripts/10` and the admin refuse it fail-closed); its account rows are never console keys (`console: ACCOUNT — not a game (R45)`); a first real submit needs a fresh catalog re-verification | EXECUTOR_RULES §14 `[P2-2]`, §11 « Difmark »; [`docs/MERCHANTS.md`](docs/MERCHANTS.md) |
+| Difmark 167 | **disponible, à la main** | Allowlisted on 2026-09-21 (10 Steam accounts created and proven); its Pending queue is empty — its rows live in the *account* list (30), swept with `--list 30`, so it is in no group; its account rows are never console keys (`console: ACCOUNT — not a game (R45)`) | EXECUTOR_RULES §14 `[P2-2]`, §11 « Difmark »; [`docs/MERCHANTS.md`](docs/MERCHANTS.md) |
 
 ---
 
@@ -571,12 +571,13 @@ retient 1 816. Le fichier `.sql` s'ouvre sur une **étape 0 obligatoire** qui v�
 la colonne d'identifiant (que nous n'avons jamais vu : le schéma vient des requêtes de Romain)
 en affichant 20 URL connues d'avance, et chaque lot est compté avant d'être écrit.
 
-**Allowlist as of 2026-09-16 (14 merchants)** — the command above derives this list itself,
+**Allowlist as of 2026-09-24 (18 merchants)** — the command above derives this list itself,
 it is reproduced only so a reader knows what a night sweep covers: Kinguin 58, G2A 38,
 Driffle 127, Eneba 19, K4G 92, Gamivo 51, Instant Gaming 28, CJS-CDKeys 30, Allyouplay 17,
-GameSeal 126, GameBoost 157, Electronicfirst 70, GamersOutlet 31, MMOGA 12. Four of them
-(Eneba, CJS-CDKeys, Allyouplay, GameSeal) have never had a real sweep — preview them with
-`--dry-run` before the first write pass.
+GameSeal 126, GameBoost 157, Electronicfirst 70, GamersOutlet 31, Gamerall 13, MMOGA 12,
+Difmark 167 (its rows live in list 30, not 9 — it is in no group), GOG 34 (2026-09-22,
+group A) and **Wyrel 162 (2026-09-24, group B)**. Allyouplay has never had a real sweep —
+preview it with `--dry-run` before the first write pass.
 
 ---
 

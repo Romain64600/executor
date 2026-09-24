@@ -87,6 +87,11 @@ FORBIDDEN_WORDS: dict[str, str] = {
     "EMEA": "EMEA", "LATAM": "LATAM", "ASIA": "ASIA", "AMERICAS": "AMERICAS",
     "OCEANIA": "OCEANIA", "AFRICA": "AFRICA", "EU NA": "EU NA", "EU/NA": "EU NA",
     "EU/UK": "EU/UK", "EU WEST": "EU WEST", "EU EAST": "EU EAST",
+    # « Rest of the world » écrit en toutes lettres = ROW (2026-09-24). Wyrel l'écrit ainsi
+    # dans son créneau de région (161 lignes, `region=5`) : absent du vocabulaire, le titre
+    # ne se lisait plus et la ligne tombait sur « no region slot » — refusée, mais pour une
+    # fausse raison. Romain : une ROW n'entre que si on prouve qu'elle s'active en Europe.
+    "REST OF WORLD": "ROW", "REST OF THE WORLD": "ROW",
     # full names (label = the name itself, matcher spelling)
     "NORTH AMERICA": "NORTH AMERICA", "SOUTH AMERICA": "SOUTH AMERICA",
     "LATIN AMERICA": "LATIN AMERICA", "SOUTH EAST ASIA": "SOUTH EAST ASIA",

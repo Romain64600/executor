@@ -552,8 +552,9 @@ EDITION slot and change the parse — the second source (`edition_id`, also in b
 a long edition name from an undeclared slot. `[R53c]` the edition slot passes when the shared vocabulary really
 MAPS it ("Standard" → Standard(1), "Deluxe Edition" / "Digital Deluxe" → Deluxe(7)) and is
 refused BY NAME when the generic read would silently FLATTEN it to Standard ("Collectors",
-"Zero", "Anniversary", "Classic") — filing a collector's edition on the base game. Verdicts on the corpus: 47 pass, 48 non-game, 5 edition. Store 162 is
-OFF the safe-auto allowlist. Tests: `tests/test_merchants_wyrel.py`.
+"Zero", "Anniversary", "Classic") — filing a collector's edition on the base game. Verdicts on the corpus: 47 pass, 48 non-game, 5 edition. Store 162
+joined the safe-auto allowlist on **2026-09-24** (group B); its « Rest of the world » slot
+is a `forbidden region: ROW` (§4.11). Tests: `tests/test_merchants_wyrel.py`.
 **Accents folded in the categorical scans (2026-09-16).** Every skip vocabulary here is ASCII
 English (`CATEGORY_SKIP`, `CURRENCY_TOKENS`, `BUNDLE_SKIN_TOKENS`, `FORBIDDEN_REGIONS`) while
 the normalisers replaced any non-ASCII letter by a SPACE — so on a localised storefront
@@ -1296,7 +1297,16 @@ d'Asie"* + *"les régions russes aussi"*. Three dispositions for a resolved regi
   countries, `Asia` (+ China / Japan / Korea / India / SEA countries), `Russia` /
   `CIS` / `RU`. ⇒ routed to the **Blacklist** list (8) so it leaves the entry feed.
 - **SKIP (garder)** — any other non-sellable region (`ROW` / `North America` /
-  `Turkey` / `EMEA` …). Left in place; the operator decides. The five regions with a
+  `Turkey` / `EMEA` …). Left in place; the operator decides. **ROW spelled out
+  (2026-09-24)**: « Rest of World » / « Rest of the World » are the same lock as the
+  `ROW` code — in the generic scan (`FORBIDDEN_REGIONS` → `forbidden region: REST OF
+  WORLD`) and in the shared merchant vocabulary (`src/merchants/common.py` → `ROW`).
+  Before, only the code was known: CJS « … Steam Key: Rest of World » read an implicit
+  GLOBAL(2) (3 rows of the 21/09 scan, none ever written) and Wyrel's 161 « Rest of the
+  world » rows were refused for the wrong reason (`[R53a]`, title unparsable). Romain,
+  same day: *a ROW key enters only if it is proven to activate in Europe* — neither the
+  title nor the URL proves it, and the merchant page that might (Wyrel) is behind
+  Cloudflare. The five regions with a
   dedicated list (`Australia`→32, `Canada`→33, `Middle East`→34, `Africa`→35,
   `South America`→36) still route there.
 
