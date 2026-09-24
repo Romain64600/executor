@@ -95,6 +95,25 @@ function syncGo() {
 $("#add-target").addEventListener("click", () => { if (SUGGEST_READY) addTarget().focus(); });
 $("#go").addEventListener("input", syncGo);
 
+// ---- pages balayées (Romain 2026-09-24) ----
+// « Pouvoir choisir à partir de quelle page je lance. Je lance toujours en direction de 1 […]
+// on prend toutes les pages, ou on commence à la page 20 jusqu'à 1, ou de la page 10 jusqu'à
+// 1. » UN réglage pour les trois boutons. « De la page N » = `max_pages: N` : le balayage part
+// de min(N, dernière page du feed) et descend jusqu'à la 1 (data_entry_auto, start_page 1).
+// L'ancien champ « Page de départ » envoyait `start_page`, qui est la page où le balayage
+// S'ARRÊTE : taper 20 y aurait sauté les pages 19 à 1 — l'inverse de ce qu'on veut. Il est
+// retiré de l'écran (le CLI garde --start-page).
+function pageRange() {
+  if (!$("#range-from").checked) return { all_pages: true };
+  const v = String($("#from-page").value || "").trim();
+  const n = parseInt(v, 10);
+  if (!/^\d+$/.test(v) || !(n >= 1)) {
+    throw new Error("« de la page N » : indique un entier ≥ 1, ou choisis « toutes »");
+  }
+  return { all_pages: false, max_pages: n };
+}
+function rangeLabel(r) { return r.all_pages ? "toutes les pages" : `pages ${r.max_pages} → 1`; }
+
 // ---- launch ----
 $("#launch").addEventListener("click", async () => {
   const targets = collectTargets();
@@ -102,8 +121,8 @@ $("#launch").addEventListener("click", async () => {
   // [11] the server re-enforces the typed GO (confirm=GO) like every other real-write
   // path — send it, not just gate the button client-side.
   const body = { targets, confirm: "GO", list: currentList() };
-  const mp = parseInt($("#max-pages").value, 10); if (mp > 0) body.max_pages = mp;
-  const sp = parseInt($("#start-page").value, 10); if (sp > 0) body.start_page = sp;
+  try { Object.assign(body, pageRange()); }
+  catch (e) { $("#launch-msg").textContent = "✖ " + e.message; return; }
   // [R45] consoles by default (Romain 2026-09-15); unticked = PC-only sweep (--no-consoles).
   body.consoles = $("#consoles").checked;
   // 2026-09-19 : ce bouton n'envoyait PAS `continue_on_halt`, donc il valait False — alors que
@@ -117,7 +136,7 @@ $("#launch").addEventListener("click", async () => {
   $("#launch-msg").textContent = "Lancement…";
   try {
     const r = await api("api/data-entry/auto", { method: "POST", body: JSON.stringify(body) });
-    $("#launch-msg").textContent = "▶ sweep lancé : " + (r.run_id || "");
+    $("#launch-msg").textContent = "▶ sweep lancé : " + (r.run_id || "") + " · " + rangeLabel(body);
     SWEEP_RUNNING = true;
     setStatus("Sweep en cours…", true);
     $("#busy-ind").classList.remove("hidden");
@@ -132,22 +151,20 @@ $("#launch").addEventListener("click", async () => {
 // ---- night sweep: every allowlisted merchant ----
 $("#launch-all").addEventListener("click", async () => {
   if ($("#go").value.trim().toUpperCase() !== "GO" || SWEEP_RUNNING) return;
-  // Couverture TOTALE (Romain 2026-09-18 : « on fait toutes les pages sauf lors d'un arrêt
-  // pour sécurité »). Le plafond du formulaire n'est PAS envoyé — le serveur refuse d'ailleurs
-  // les deux ensemble — et on le dit à l'opérateur au lieu de l'ignorer en silence.
-  const body = { all_allowlisted: true, all_pages: true, confirm: "GO",
-                 list: currentList() };
-  const mp = parseInt($("#max-pages").value, 10);
-  const sp = parseInt($("#start-page").value, 10); if (sp > 0) body.start_page = sp;
+  // Par défaut couverture TOTALE (Romain 2026-09-18 : « on fait toutes les pages sauf lors
+  // d'un arrêt pour sécurité ») ; depuis le 2026-09-24 le réglage « Pages » peut la borner à
+  // « de la page N jusqu'à la 1 ».
+  const body = { all_allowlisted: true, confirm: "GO", list: currentList() };
+  try { Object.assign(body, pageRange()); }
+  catch (e) { $("#launch-all-msg").textContent = "✖ " + e.message; return; }
   body.consoles = $("#consoles").checked;
   body.continue_on_halt = true;   // one merchant's fail-closed stop must not end the night
   $("#launch-all").disabled = true;
-  $("#launch-all-msg").textContent = "Lancement du sweep de nuit (toutes les pages, ~36 h)…"
-    + (mp > 0 ? ` — le plafond de ${mp} page(s) est ignoré par ce bouton.` : "");
+  $("#launch-all-msg").textContent = "Lancement du sweep de nuit (" + rangeLabel(body) + ")…";
   try {
     const r = await api("api/data-entry/auto", { method: "POST", body: JSON.stringify(body) });
     $("#launch-all-msg").textContent = "▶ sweep de nuit lancé : " + (r.run_id || "")
-      + " · " + SUGGESTED.length + " marchand(s) · couverture totale";
+      + " · " + SUGGESTED.length + " marchand(s) · " + rangeLabel(body);
     SWEEP_RUNNING = true;
     setStatus("Sweep de nuit en cours…", true);
     $("#busy-ind").classList.remove("hidden");
@@ -425,16 +442,17 @@ function renderGroups() {
 
 async function launchGroup(group) {
   if ($("#go").value.trim().toUpperCase() !== "GO" || SWEEP_RUNNING) return;
-  const body = { group: group.name, all_pages: true, confirm: "GO",
+  const body = { group: group.name, confirm: "GO",
                  continue_on_halt: true, consoles: $("#consoles").checked,
                  list: currentList() };
-  const sp = parseInt($("#start-page").value, 10); if (sp > 0) body.start_page = sp;
+  try { Object.assign(body, pageRange()); }
+  catch (e) { $("#launch-group-msg").textContent = "✖ " + e.message; return; }
   GROUPS.forEach((g) => { const b = $("#launch-group-" + g.name); if (b) b.disabled = true; });
   $("#launch-group-msg").textContent = "Lancement du groupe " + group.name + "…";
   try {
     const r = await api("api/data-entry/auto", { method: "POST", body: JSON.stringify(body) });
     $("#launch-group-msg").textContent = "▶ groupe " + group.name + " lancé : " + (r.run_id || "")
-      + " · " + group.merchants.length + " marchand(s) · couverture totale";
+      + " · " + group.merchants.length + " marchand(s) · " + rangeLabel(body);
     // REVUE DE ROMAIN (2026-09-23) : « après le lancement, aucun startPolling() : l'écran
     // reste « Prêt », le récapitulatif ne s'actualise pas et les boutons restent bloqués
     // après la fin, jusqu'au rechargement ». Exact — ce bouton posait SWEEP_RUNNING et

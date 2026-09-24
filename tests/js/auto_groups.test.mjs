@@ -165,6 +165,68 @@ test("un groupe lancé est SUIVI : statut, récapitulatif, puis boutons réarmé
   assert.equal(c.$("#busy-ind").classList.contains("hidden"), true);
 });
 
+// ---- pages balayées (Romain 2026-09-24) ----
+// « Pouvoir choisir à partir de quelle page je lance. Je lance toujours en direction de 1 […]
+// on prend toutes les pages, ou on commence à la page 20 jusqu'à 1. »
+async function avecGo() {
+  const c = await demarrer();
+  c.$("#go").value = "GO";
+  await c.$("#go").fire("input");
+  await tick();
+  return c;
+}
+function dernierLancement(c) {
+  return c.net.calls.filter((x) => x.method === "POST" && x.url.includes("data-entry/auto")).pop();
+}
+
+test("pages : par défaut, TOUTES — groupe comme sweep de nuit", async () => {
+  for (const bouton of ["#launch-group-A", "#launch-all"]) {
+    const c = await avecGo();
+    c.$(bouton).fire("click");
+    await tick();
+    const envoi = dernierLancement(c);
+    assert.ok(envoi, `${bouton} : aucun lancement n'est parti`);
+    assert.equal(envoi.body.all_pages, true, `${bouton} : sans choix, toutes les pages`);
+    assert.equal(envoi.body.max_pages, undefined, `${bouton} : pas de plafond par défaut`);
+    assert.equal(envoi.body.start_page, undefined,
+                 `${bouton} : start_page est la page où l'on S'ARRÊTE — jamais envoyé`);
+  }
+});
+
+test("pages : « de la page 20 jusqu'à 1 » part en plafond 20, vers la page 1", async () => {
+  for (const bouton of ["#launch-group-A", "#launch-all"]) {
+    const c = await avecGo();
+    c.$("#range-from").checked = true;
+    c.$("#from-page").value = "20";
+    c.$(bouton).fire("click");
+    await tick();
+    const envoi = dernierLancement(c);
+    assert.ok(envoi, `${bouton} : aucun lancement n'est parti`);
+    assert.equal(envoi.body.all_pages, false, `${bouton} : ce n'est plus « toutes »`);
+    assert.equal(envoi.body.max_pages, 20, `${bouton} : la page de départ voyage en plafond`);
+    assert.equal(envoi.body.start_page, undefined, `${bouton} : on descend toujours jusqu'à 1`);
+  }
+});
+
+test("pages : une page de départ absente ou fausse n'envoie RIEN, et le dit", async () => {
+  for (const [bouton, zone] of [["#launch-group-A", "#launch-group-msg"],
+                                ["#launch-all", "#launch-all-msg"]]) {
+    for (const mauvais of ["", "0", "abc", "2.5"]) {
+      const c = await avecGo();
+      c.$("#range-from").checked = true;
+      c.$("#from-page").value = mauvais;
+      // Pas d'`await` sur le clic : si un lancement partait, le gestionnaire resterait
+      // suspendu sur sa requête (qu'on tient) et le harnais ne finirait jamais.
+      c.$(bouton).fire("click");
+      await tick();
+      assert.equal(dernierLancement(c), undefined,
+                   `${bouton} avec « ${mauvais} » : un lancement est parti quand même`);
+      assert.ok(c.$(zone).textContent.includes("de la page N"),
+                `${bouton} : le refus doit être expliqué à l'écran`);
+    }
+  }
+});
+
 test("un serveur sans groupes le DIT au lieu de laisser une case vide", async () => {
   const c = await loadConsole(AUTO);
   await c.net.release("api/data-entry/merchants", { merchants: MARCHANDS.merchants });

@@ -132,7 +132,11 @@ class TheCliRefusesAnAmbiguousRequestTests(unittest.TestCase):
 
 
 class TheNightSweepButtonAsksForFullCoverageTests(unittest.TestCase):
-    """Romain 2026-09-18 : « Ajoute la couverture totale au bouton »."""
+    """Romain 2026-09-18 : « Ajoute la couverture totale au bouton ». Complété le 2026-09-24 :
+    « pouvoir choisir à partir de quelle page je lance […] on prend toutes les pages, ou on
+    commence à la page 20 jusqu'à 1 ». Le bouton suit le réglage « Pages » partagé — TOUTES par
+    défaut. Ce qui part vraiment au clic est vérifié en EXÉCUTANT la console
+    (`tests/js/auto_groups.test.mjs`) ; ici, seulement ce que le texte doit dire."""
 
     def setUp(self):
         self.html = (ROOT / "src" / "admin" / "static" / "auto.html").read_text(encoding="utf-8")
@@ -144,20 +148,25 @@ class TheNightSweepButtonAsksForFullCoverageTests(unittest.TestCase):
         h = self.js[self.js.index('$("#launch-all").addEventListener'):]
         return h[:h.index('$("#stop-btn")')]
 
-    def test_the_button_sends_full_coverage(self):
-        self.assertIn("all_pages: true", self._handler())
+    def test_the_button_follows_the_shared_page_setting_all_by_default(self):
+        self.assertIn("pageRange()", self._handler())
+        fn = self.js[self.js.index("function pageRange()"):]
+        fn = fn[:fn.index("function rangeLabel")]
+        self.assertIn('if (!$("#range-from").checked) return { all_pages: true };', fn)
 
     def test_it_does_NOT_send_the_form_cap(self):
         """Les deux ensemble sont refusés côté serveur : le bouton n'envoie que l'un."""
 
         self.assertNotIn("body.max_pages", self._handler())
 
-    def test_an_ignored_cap_is_SAID_not_swallowed(self):
-        self.assertIn("est ignoré par ce bouton", self._handler())
+    def test_the_chosen_range_is_SAID(self):
+        self.assertIn("rangeLabel(body)", self._handler())
 
     def test_the_label_and_the_tooltip_tell_the_truth(self):
-        self.assertIn("toutes les pages", self.html)
-        self.assertIn("36 h", self.html, "une nuit de 36 h se dit avant le clic, pas après")
+        self.assertIn("toutes (de la dernière à la 1)", self.html)
+        self.assertIn("jusqu'à la 1", self.html)
+        self.assertNotIn('id="start-page"', self.html,
+                         "« Page de départ » envoyait la page où le balayage S'ARRÊTE")
 
     def test_the_server_demands_a_real_boolean(self):
         self.assertIn("bad_all_pages", self.app)

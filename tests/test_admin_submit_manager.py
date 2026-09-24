@@ -782,6 +782,19 @@ class DataEntryAutoTests(ManagerTestCase):
         self.assertIn("--run-id", a)
         self.assertTrue(m.wait_idle(timeout=10))
 
+    def test_argv_from_page_n_down_to_1(self):
+        # Romain 2026-09-24 : « de la page 20 jusqu'à 1 » = un plafond de 20 pages depuis la 1
+        # — le balayage part de min(20, dernière page) et descend. Ni --all-pages ni
+        # --start-page (la page où il S'ARRÊTERAIT) ne doivent partir.
+        m = self._m()
+        r = m.start_data_entry_auto([("Kinguin", "58"), ("Eneba", "70")], by="Romain",
+                                    max_pages=20, all_pages=False)
+        a = r["argv"]
+        self.assertEqual(a[a.index("--max-pages") + 1], "20")
+        self.assertNotIn("--all-pages", a)
+        self.assertNotIn("--start-page", a)
+        self.assertTrue(m.wait_idle(timeout=10))
+
     def test_argv_multi_target(self):
         m = self._m()
         r = m.start_data_entry_auto([("Kinguin", "58"), ("Eneba", "70")], by="Romain")

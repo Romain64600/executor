@@ -3,6 +3,26 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-24 — Console : « de la page N jusqu'à 1 », pour les trois boutons
+
+Romain : « pouvoir choisir à partir de quelle page je lance. Je lance toujours en direction de
+1 […] on prend toutes les pages, ou on commence à la page 20 jusqu'à 1, ou de la page 10
+jusqu'à 1 ». Les boutons « sweep de nuit » et « groupe » forçaient la couverture totale ; seul
+le sweep sélectif avait « Max pages » et « Page de départ ». Et ce dernier champ était un piège :
+il envoyait `start_page`, qui est la page où le balayage S'ARRÊTE — y taper 20 faisait
+descendre de la page 49 à la 20, en sautant les pages 19 à 1.
+
+Un seul réglage remplace les deux champs : « Pages : toutes (de la dernière à la 1) / de la
+page N jusqu'à la 1 », **toutes** par défaut, pour les trois boutons. « De la page N » part au
+serveur en `max_pages: N`, sans `start_page` ; une page absente ou fausse n'envoie rien et le
+dit. Le serveur savait déjà faire (`max_pages` avec `group` / `all_allowlisted`) : rien n'y
+change. Conséquence à connaître : le sweep sélectif, qui plafonnait à 30 pages quand le champ
+était vide, couvre maintenant toutes les pages par défaut — la règle du 18/09.
+
+Tests : trois scénarios exécutés dans la console (`tests/js/auto_groups.test.mjs` — défaut,
+« de 20 à 1 », saisie fausse), chacun rougi par une mutation ; côté serveur, la route et la
+ligne de commande (`--max-pages 20`, ni `--all-pages` ni `--start-page`).
+
 ## 2026-09-24 — Wyrel en liste blanche ; « Rest of World » écrit en toutes lettres est un verrou ROW
 
 Romain : « Go Wyrel, corrige le motif, puis whitelist ce marchand », après sa règle du même

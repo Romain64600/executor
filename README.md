@@ -516,6 +516,19 @@ page 1, et **seul un arrêt fail-closed l'écourte** : extract / match / submit 
 opérateur. Compte donc une nuit bien plus longue. `--max-pages N` reste là pour une passe
 délibérément courte, et les deux drapeaux sont exclusifs.
 
+**« De la page N jusqu'à 1 » (Romain 2026-09-24 : « on prend toutes les pages, ou on commence
+à la page 20 jusqu'à 1 »).** Le balayage descend TOUJOURS vers la page 1 ; `--max-pages N`
+(avec `--start-page 1`, le défaut) le fait partir de la page N — ou de la dernière, si le feed
+est plus court. Dans la console, un seul réglage « Pages : toutes / de la page N jusqu'à la 1 »
+vaut pour les trois boutons (sweep sélectif, sweep de nuit, groupes), **toutes** par défaut.
+L'ancien champ « Page de départ » est retiré de l'écran : il envoyait `--start-page`, qui est
+la page où le balayage S'ARRÊTE — y taper 20 sautait les pages 19 à 1. Le CLI le garde.
+
+```bash
+# groupe A, pages 20 → 1 de chaque marchand
+python3 scripts/10_data_entry_auto.py --group A --max-pages 20 --run-id <id> --continue-on-halt --consoles
+```
+
 **Run it under `tmux`, not `setsid nohup &`** (2026-09-17). The old form here was
 fire-and-forget, which AGENTS.md forbids and which this very line contradicted. It also
 detaches the run from any supervision. `tmux` keeps it attached to a terminal you can come

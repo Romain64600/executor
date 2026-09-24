@@ -47,13 +47,14 @@
           <h4>Ce que fait ce mode · What it does</h4>
           <p lang="fr">Pour chaque marchand, il balaie le feed <b>page par page</b> : extraire → matcher →
             <b>ajouter automatiquement TOUTES les offres candidates</b> (sans validation humaine) → page suivante.
-            Par défaut il s'arrête aux <b>30 pages les moins profondes</b> (l'index submit n'est productif que là) :
-            sur un feed plus long le run finit « TERMINÉ — couverture partielle » (la fin non balayée est notée dans le
-            recap) ; monte « Max pages » pour un balayage profond. Il tient un <b>recap</b> détaillé.</p>
+            Il descend <b>toujours vers la page 1</b> : « Pages : toutes » part de la dernière page du feed,
+            « de la page N » part de la page N — le réglage vaut pour les trois boutons. Sur un feed plus long que N,
+            le run finit « TERMINÉ — couverture partielle » (la fin non balayée est notée dans le recap).
+            Il tient un <b>recap</b> détaillé.</p>
           <p class="en" lang="en">For each merchant it sweeps the feed page by page: extract → match → auto-add
-            EVERY candidate (no human validation) → next page. By default it stops after the 30 shallowest pages
-            (where the submit index is productive): a deeper feed ends “TERMINÉ — couverture partielle” with the
-            unswept tail noted in the recap; raise “Max pages” for a deep sweep. It keeps a detailed recap.</p>
+            EVERY candidate (no human validation) → next page. It always walks DOWN to page 1: “Pages: all” starts
+            from the feed's last page, “from page N” starts at page N — for all three buttons. A longer feed then
+            ends “TERMINÉ — couverture partielle” with the unswept tail noted in the recap. It keeps a detailed recap.</p>
         </section>
         <section>
           <h4>Sécurité · Safety</h4>
@@ -86,8 +87,11 @@
         <span lang="en" class="en">Only vetted merchants are offered (auto = unvalidated writes).</span>
         Difmark (parké) et GameBoost (supervisé seulement) sont exclus pour le moment.</p>
       <div class="opts">
-        <label>Max pages <input id="max-pages" type="number" min="1" placeholder="30 (défaut)" class="num"></label>
-        <label>Page de départ <input id="start-page" type="number" min="1" placeholder="1" class="num"></label>
+        <span class="pagerange" title="Romain 2026-09-24 : on balaie TOUJOURS en direction de la page 1. « Toutes » part de la dernière page annoncée par le feed ; « de la page N » part de la page N (ou de la dernière, si le feed est plus court) et descend jusqu'à la 1. Vaut pour les TROIS boutons : sweep sélectif, sweep de nuit et groupes.">Pages :
+          <label><input type="radio" name="page-range" id="range-all" value="all" checked> toutes (de la dernière à la 1)</label>
+          <label><input type="radio" name="page-range" id="range-from" value="from"> de la page
+            <input id="from-page" type="number" min="1" placeholder="20" class="num"> jusqu'à la 1</label>
+        </span>
         <label title="R45 — consoles par défaut depuis le 15/09 (décision Romain « 1 ») : les clés Xbox One / Series, PS4 / PS5, Switch / Switch 2 sont saisies sur leurs pages AKS consoles (une cible par plateforme déclarée). Décoché = --no-consoles (les lignes consoles restent skippées « console »)."><input id="consoles" type="checkbox" checked> Consoles (pages Xbox / PlayStation / Switch)</label>
         <label title="Un arrêt fail-closed sur UN marchand (feed illisible, offre UNKNOWN, 10 échecs d'affilée) ne termine pas le lot : le sweep note la halte et passe au marchand suivant. Décoché, le premier marchand qui s'arrête emporte tous les suivants — c'est le défaut historique de ce bouton, et c'est ce qui manquait ici le 19/09. Le bouton « sweep de nuit », lui, l'a toujours forcé."><input id="continue-on-halt" type="checkbox" checked> Continuer au marchand suivant après une halte</label>
       </div>
@@ -113,7 +117,7 @@
         <div class="golaunch">
           <span class="golabel">Tape <b>GO</b> ci-dessus, puis :</span>
           <button id="launch-all" type="button" class="danger" disabled
-                  title="Couverture TOTALE : chaque marchand est balayé de sa dernière page annoncée jusqu'à la page 1. Seul un arrêt fail-closed écourte un marchand. Compte ~36 h sur les 14 marchands (364 pages). Le plafond de pages ci-dessus est ignoré par ce bouton.">Lancer le sweep de nuit (tous les marchands, toutes les pages)</button>
+                  title="Chaque marchand de la liste blanche, balayé selon le réglage « Pages » ci-dessus — toutes (de sa dernière page annoncée jusqu'à la 1) ou de la page N jusqu'à la 1. Seul un arrêt fail-closed écourte un marchand.">Lancer le sweep de nuit (tous les marchands)</button>
         </div>
         <p id="launch-all-msg" class="msg"></p>
       </div>
@@ -122,7 +126,7 @@
         <h3>Groupes — un par machine, pour balayer en parallèle</h3>
         <p class="restrict">Un balayage tient <b>un onglet de navigateur par machine</b> : une
           machine, un groupe. La composition est <b>lue sur le serveur</b> (même source que la
-          ligne de commande), et chaque groupe couvre toutes les pages de ses marchands.
+          ligne de commande), et chaque groupe suit le réglage « Pages » ci-dessus.
           <span id="groups-note" class="dim"></span></p>
         <div class="golaunch">
           <span class="golabel">Tape <b>GO</b> ci-dessus, puis :</span>

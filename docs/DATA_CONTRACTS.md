@@ -633,8 +633,11 @@ child and its outcome.
   argv (`--consoles` / `--no-consoles`, explicit either way) — `true` by default.
 - **Admin API bodies (JSON) that carry `consoles`** — Romain's decision « 1 » of
   2026-09-15 (consoles by default everywhere, explicit opt-out):
-  - `POST /api/data-entry/auto` — `{targets: [{merchant, store_id}], confirm: "GO",
-    max_pages?, start_page?, continue_on_halt?, consoles?}`;
+  - `POST /api/data-entry/auto` — `{targets: [{merchant, store_id}] | group | all_allowlisted,
+    confirm: "GO", all_pages? | max_pages?, start_page?, continue_on_halt?, consoles?, list?}`
+    — the console sends `all_pages: true` (« toutes ») or `all_pages: false, max_pages: N`
+    (« de la page N jusqu'à la 1 », 2026-09-24) and never `start_page` (the page where the
+    sweep STOPS; CLI only);
   - `POST /api/data-entry/by-urls` — `{urls: [...] | "u1 u2", consoles?}`;
   - `POST /api/data-entry/by-urls/submit` — `{from_run, recap_sha256, confirm: "GO",
     consoles?}`.

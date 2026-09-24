@@ -694,6 +694,25 @@ class DataEntryAutoAllowlistTests(AppTestCase):
         self.assertIn(("GameSeal", "126"), cibles)
         self.assertTrue(kwargs["all_pages"])
 
+    def test_a_group_can_run_from_page_n_down_to_1(self):
+        """Romain 2026-09-24 : « on commence à la page 20 jusqu'à 1 », pour n'importe quel
+        scan — groupe et sweep de nuit compris. « De la page N » voyage en plafond
+        (`max_pages`), SANS `start_page` : le balayage descend toujours jusqu'à la 1."""
+
+        for extra in ({"group": "A"}, {"all_allowlisted": True}):
+            vus = []
+            self.manager.start_data_entry_auto = (
+                lambda targets, **k: vus.append((targets, k)) or {"run_id": "r"})
+            response, _ = self._json(
+                "POST", "/api/data-entry/auto",
+                body={**extra, "confirm": "GO", "all_pages": False, "max_pages": 20,
+                      "by": "Romain"})
+            self.assertEqual(response.status, 200, extra)
+            _, kwargs = vus[0]
+            self.assertFalse(kwargs["all_pages"], extra)
+            self.assertEqual(kwargs["max_pages"], 20, extra)
+            self.assertIsNone(kwargs["start_page"], extra)
+
     def test_an_unknown_group_is_refused_without_launching(self):
         calls = []
         self.manager.start_data_entry_auto = lambda *a, **k: calls.append((a, k)) or {}
