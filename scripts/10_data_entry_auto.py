@@ -13,7 +13,9 @@ Supervised, NEVER fire-and-forget: this runs as ONE manager-tracked process. A
 SIGTERM (the console "Arrêter" button) stops cooperatively — the current child
 stage is signalled and the sweep halts between pages. Fail-closed: any stage that
 does not finish clean HALTS the whole sweep (no plowing through a broken session);
-a NotLoggedIn/feed-unreadable abort stops it, never a re-auth.
+a NotLoggedIn/feed-unreadable abort stops it, never a re-auth. Since 2026-09-24 a page cut
+by a TRANSIENT failure where nothing can have been written is redone after a pause (2, 5,
+10 min, three times at most — src/data_entry_auto.py TRANSIENT_SIGNATURES).
 
   python3 scripts/10_data_entry_auto.py --targets "Kinguin:58" --run-id <id>
   python3 scripts/10_data_entry_auto.py --targets "Kinguin:58,Eneba:19" --max-pages 50
@@ -514,8 +516,20 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
         rows = data if isinstance(data, list) else (data or {}).get("offers") or []
         return tuple(str(r.get("offer_id")) for r in rows if isinstance(r, dict) and r.get("offer_id"))
 
+    def archive_attempt(run_id: str, attempt: int) -> None:
+        # Reprise passagère (2026-09-24) : la page va être REFAITE dans le même dossier — on
+        # met de côté les traces d'ÉCRITURE de la tentative coupée (plan et rapport de saisie),
+        # sans quoi la reprise les écraserait et les offres créées avant la coupure ne
+        # laisseraient plus de trace sur disque. Extraction et matching se refont à l'identique.
+        run_dir = ROOT / "runs" / run_id
+        for name in ("submit_plan.json", "submit_report.txt", "approved.json"):
+            src = run_dir / name
+            if src.exists():
+                stem, dot, ext = name.partition(".")
+                src.replace(run_dir / f"{stem}.try{attempt}.{ext}")
+
     return Stages(offer_ids=offer_ids, extract=extract, match=match, approve=approve, submit=submit,
-                  move=(move if triage else None))
+                  move=(move if triage else None), archive_attempt=archive_attempt)
 
 
 def main() -> int:

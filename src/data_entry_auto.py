@@ -25,7 +25,10 @@ Design after the 2026-08-04 adversarial review (which found real defects):
   The submitter signals a broken session mid-page via ``stopped`` (feed_unreadable
   / guard_blocked / ten_consecutive_failures), NOT ``aborted``; both must halt the
   whole sweep. ``limit_reached`` is the only benign ``stopped`` (never in safe
-  mode). A NotLoggedIn/feed-unreadable is a STOP, never an auto re-auth.
+  mode). A NotLoggedIn/feed-unreadable is a STOP, never an auto re-auth — with ONE
+  bounded exception since 2026-09-24: a failure where NOTHING can have been written (a
+  transient extract error, a submit stopped before any Create click, a failed pre-flight
+  index scan) redoes the page after a pause, three times at most (TRANSIENT_SIGNATURES).
 
 * COVERAGE HONESTY. Hitting the ``max_pages`` cap while the feed advertises more
   pages (or a feed that grew mid-sweep) is recorded in the recap's ``coverage``
@@ -39,6 +42,8 @@ Design after the 2026-08-04 adversarial review (which found real defects):
 
 from __future__ import annotations
 
+import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -52,6 +57,42 @@ from src.validation import candidate_fingerprint
 # the sweep then halts via its OWN should_stop() check. Every OTHER stopped value
 # (feed_unreadable / guard_blocked / ten_consecutive_failures) halts fail-closed.
 _BENIGN_STOPPED = {"limit_reached", "operator_stop"}
+
+# REPRISE APRÈS UNE ERREUR PASSAGÈRE (Romain, 2026-09-24 : « pour Wyrel j'ai dû relancer 3 fois,
+# tu vois pas le pb ? », puis « go pour les deux correctifs »). Le 24/09, trois arrêts du même
+# balayage, tous passagers et tous SANS écriture en jeu : 12:04 et 14:41 une page du feed qui ne
+# répond pas en 20 s pendant l'extraction (`CdpTimeoutError`), 14:00 AKS qui refuse la connexion
+# (`net::ERR_CONNECTION_REFUSED`) avant tout clic sur « Create ». Chacun arrêtait le balayage et
+# Romain relançait à la main. On refait désormais LA PAGE après une pause — seulement quand rien
+# n'a pu être écrit : un extract en échec (lecture seule) sur une de ces signatures, un submit
+# arrêté AVANT tout clic (`feed_unreadable_prewrite`, src/submitter.py) ou dont le scan d'index
+# d'avant la première offre a échoué (`aborted == "feed_unreadable"`). Un doute APRÈS un clic
+# (`feed_unreadable` = état INCONNU), une déconnexion, un garde, dix échecs d'affilée, un échec
+# de match ou d'approbation restent des haltes immédiates.
+TRANSIENT_SIGNATURES = (
+    "CdpTimeoutError",
+    "net::ERR_CONNECTION_REFUSED", "net::ERR_CONNECTION_RESET", "net::ERR_CONNECTION_CLOSED",
+    "net::ERR_TIMED_OUT", "net::ERR_EMPTY_RESPONSE", "net::ERR_NETWORK_CHANGED",
+    "net::ERR_INTERNET_DISCONNECTED", "net::ERR_ADDRESS_UNREACHABLE",
+    "net::ERR_NAME_NOT_RESOLVED",
+)
+# Le submit n'a rien écrit : aucun clic sur « Create » (src/submitter.py), ou le scan d'index
+# d'avant la première offre a échoué.
+_PREWRITE_STOPPED = {"feed_unreadable_prewrite"}
+_PREWRITE_ABORTED = {"feed_unreadable"}
+
+
+def transient_reason(detail: str | None) -> str | None:
+    """La signature passagère trouvée dans un détail d'échec, ou None. Une déconnexion
+    (« not logged in ») n'est JAMAIS passagère : elle arrête tout, comme avant."""
+
+    text = str(detail or "")
+    if "not logged in" in text.lower():
+        return None
+    for sig in TRANSIENT_SIGNATURES:
+        if sig in text:
+            return sig
+    return None
 
 
 def _halt_label(stage_label: str, should_stop: Callable[[], bool]) -> str:
@@ -86,6 +127,9 @@ class SweepConfig:
     # --no-consoles: console rows keep the 'console' skip). Recorded in the recap so an
     # audit can tell a console sweep from a PC one.
     consoles: bool = True
+    # Pauses avant de REFAIRE une page après une erreur passagère (voir TRANSIENT_SIGNATURES) :
+    # 2, 5 puis 10 min — au plus trois reprises par page, ensuite la halte d'avant.
+    transient_retry_waits: tuple[float, ...] = (120.0, 300.0, 600.0)
 
 
 @dataclass
@@ -173,6 +217,9 @@ class Stages:
     # Les offer_id extraits d'une page, pour mesurer la couverture RÉELLE (2026-09-20).
     # None = mesure indisponible (le balayage se comporte alors exactement comme avant).
     offer_ids: Callable[[str], tuple[str, ...]] | None = None
+    # Avant de REFAIRE une page (reprise passagère), mettre de côté les traces d'écriture de
+    # la tentative ratée — (run_id, n° de tentative). None = rien à conserver (tests).
+    archive_attempt: Callable[[str, int], None] | None = None
 
 
 class StageError(Exception):
@@ -186,6 +233,7 @@ def run_sweep(
     page_run_id: Callable[[int], str],
     should_stop: Callable[[], bool] = lambda: False,
     on_page: Callable[[dict[str, Any]], None] = lambda e: None,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> dict[str, Any]:
     """Sweep a merchant's feed reflow-safe (highest page first), halting fail-closed.
 
@@ -213,7 +261,24 @@ def run_sweep(
         # rien apporté. Ce n'est PAS une halte (une page vraiment vide est légitime) —
         # c'est la vérité sur la couverture, que `coverage` refusait de dire.
         "distinct_offers": 0, "pages_without_new_offers": [],
+        # Reprises après une erreur passagère (2026-09-24) : leur nombre, pour la console.
+        "transient_retries": 0,
     }
+
+    waits = tuple(cfg.transient_retry_waits or ())
+
+    def pause(seconds: float) -> bool:
+        """Attend ``seconds`` par tranches de 5 s au plus, en surveillant l'arrêt opérateur :
+        « Arrêter » reste immédiat pendant une pause de dix minutes. False = arrêt demandé."""
+
+        restant = float(seconds)
+        while restant > 0:
+            if should_stop():
+                return False
+            tranche = min(5.0, restant)
+            sleep(tranche)
+            restant -= tranche
+        return not should_stop()
 
     def finish_page(entry: dict[str, Any]) -> None:
         recap["pages"].append(entry)
@@ -229,13 +294,30 @@ def run_sweep(
 
     # Probe the start page to learn the feed's authoritative last page.
     probe_id = page_run_id(cfg.start_page)
-    probe = stages.extract(cfg.start_page, probe_id)
+    probe_retries: list[dict[str, Any]] = []
+    while True:
+        probe = stages.extract(cfg.start_page, probe_id)
+        if probe.ok:
+            break
+        why = transient_reason(probe.detail)
+        n = len(probe_retries)
+        if why is None or n >= len(waits) or should_stop():
+            break
+        probe_retries.append({"attempt": n + 1, "wait_s": waits[n], "stage": "extract",
+                              "reason": str(probe.detail or why)[:300]})
+        recap["transient_retries"] += 1
+        on_page(recap)
+        if not pause(waits[n]):
+            break
     if not probe.ok:
         recap["halted"] = _halt_label(f"extract_failed_p{cfg.start_page}", should_stop)
         if probe.detail:
             recap["halted_detail"] = probe.detail      # the WHY, surfaced by the console/monitor
-        finish_page({"page": cfg.start_page, "run": probe_id, "offers": probe.offers,
-                     "error": "extract: " + (probe.detail or "failed")})
+        entry = {"page": cfg.start_page, "run": probe_id, "offers": probe.offers,
+                 "error": "extract: " + (probe.detail or "failed")}
+        if probe_retries:
+            entry["transient_retries"] = probe_retries
+        finish_page(entry)
         return recap
     feed_last = probe.feed_last_page if probe.feed_last_page else cfg.start_page
     recap["feed_last_page"] = feed_last
@@ -275,13 +357,14 @@ def run_sweep(
             if entry["page"] not in pages:
                 pages.append(entry["page"])
 
-    for page in range(top, cfg.start_page - 1, -1):
-        if should_stop():
-            recap["halted"] = "operator_stop"
-            break
-        run_id = page_run_id(page)
-        entry: dict[str, Any] = {"page": page, "run": run_id}
+    def attempt_page(page: int, run_id: str, entry: dict[str, Any]) -> tuple[str, str | None]:
+        """UNE tentative d'une page. Rend ``("next", None)`` (page finie, on continue),
+        ``("halt", None)`` (halte fail-closed, page finie) ou ``("retry", motif)`` : un échec
+        PASSAGER sans écriture en jeu — la page n'est PAS finie, l'appelant décide de la
+        refaire. Les champs de halte (`entry["error"]`, `recap["halted"]`) sont posés dans
+        les trois cas d'échec : si les reprises sont épuisées, la halte est déjà écrite."""
 
+        nonlocal max_seen
         ex = stages.extract(page, run_id)
         entry["offers"] = ex.offers
         if ex.feed_last_page and ex.feed_last_page > max_seen:
@@ -291,13 +374,17 @@ def run_sweep(
             recap["halted"] = _halt_label(f"extract_failed_p{page}", should_stop)
             if ex.detail:
                 recap["halted_detail"] = ex.detail
+            why = transient_reason(ex.detail)
+            if why is not None and recap["halted"] != "operator_stop":
+                entry["retry_stage"] = "extract"
+                return "retry", str(ex.detail or why)[:300]
             finish_page(entry)
-            break
+            return "halt", None
         measure_coverage(entry, run_id)
         if ex.offers == 0:
             entry["empty"] = True   # feed shrank past this page — nothing to do here
             finish_page(entry)
-            continue
+            return "next", None
         if entry.get("repeated_page"):
             # Romain, 2026-09-24 : « go pour sauter les pages vides ». Une page dont TOUTES les
             # offres ont déjà été servies par une page précédente de CE balayage n'a rien à
@@ -312,7 +399,7 @@ def run_sweep(
             entry["created"] = 0
             entry["offers_created"] = []
             finish_page(entry)
-            continue
+            return "next", None
 
         mt = stages.match(run_id)
         entry["candidates"] = mt.candidates
@@ -324,21 +411,21 @@ def run_sweep(
             entry["error"] = "match: " + (mt.detail or "failed")
             recap["halted"] = _halt_label(f"match_failed_p{page}", should_stop)
             finish_page(entry)
-            break
+            return "halt", None
 
         if mt.candidates > 0:
             if should_stop():   # re-check right before any real write
                 entry["stopped_before_submit"] = True
                 recap["halted"] = "operator_stop"
                 finish_page(entry)
-                break
+                return "halt", None
             try:
                 entry["approved"] = stages.approve(run_id)
             except StageError as exc:
                 entry["error"] = "approve: " + str(exc)
                 recap["halted"] = _halt_label(f"approve_failed_p{page}", should_stop)
                 finish_page(entry)
-                break
+                return "halt", None
             sub = stages.submit(run_id)
             entry["created"] = sub.created
             entry["offers_created"] = sub.offers
@@ -347,8 +434,17 @@ def run_sweep(
             if not sub.clean():
                 entry["error"] = "submit: " + (sub.halt_reason() or "not clean")
                 recap["halted"] = f"submit_not_clean_p{page}"
+                if should_stop():
+                    finish_page(entry)
+                    return "halt", None
+                if sub.stopped in _PREWRITE_STOPPED or (
+                        sub.aborted in _PREWRITE_ABORTED and not sub.stopped):
+                    # Rien n'a été écrit sur l'offre en échec (voir TRANSIENT_SIGNATURES) ;
+                    # les offres créées AVANT elle sur cette page sont prouvées et gardées.
+                    entry["retry_stage"] = "submit"
+                    return "retry", str(sub.stopped or sub.aborted)
                 finish_page(entry)
-                break
+                return "halt", None
         else:
             entry["created"] = 0
             entry["offers_created"] = []
@@ -362,7 +458,7 @@ def run_sweep(
                 entry["stopped_before_move"] = True
                 recap["halted"] = "operator_stop"
                 finish_page(entry)
-                break
+                return "halt", None
             mv = stages.move(run_id)
             entry["moved"] = mv.moved
             entry["offers_moved"] = mv.offers
@@ -372,9 +468,69 @@ def run_sweep(
                 entry["error"] = "move: " + (mv.halt_reason() or "not clean")
                 recap["halted"] = f"move_not_clean_p{page}"
                 finish_page(entry)
-                break
+                return "halt", None
 
         finish_page(entry)
+        return "next", None
+
+    for page in range(top, cfg.start_page - 1, -1):
+        if should_stop():
+            recap["halted"] = "operator_stop"
+            break
+        run_id = page_run_id(page)
+        retries: list[dict[str, Any]] = []
+        carried_created = 0
+        carried_offers: list[dict[str, Any]] = []
+        # La mesure de couverture d'une tentative ratée ne doit pas faire passer sa
+        # reprise pour une page « déjà vue » (elle serait sautée sans rien refaire).
+        seen_before = set(seen_offer_ids)
+        repeated_before = list(recap["pages_without_new_offers"])
+        distinct_before = recap["distinct_offers"]
+        while True:
+            entry: dict[str, Any] = {"page": page, "run": run_id}
+            if retries:
+                entry["transient_retries"] = list(retries)
+            verdict, motif = attempt_page(page, run_id, entry)
+            if verdict == "retry":
+                n = len(retries)
+                if n < len(waits) and not should_stop():
+                    carried_created += int(entry.get("created") or 0)
+                    carried_offers += list(entry.get("offers_created") or [])
+                    retries.append({"attempt": n + 1, "wait_s": waits[n],
+                                    "stage": entry.get("retry_stage"), "reason": motif,
+                                    "created_before": int(entry.get("created") or 0)})
+                    recap["transient_retries"] += 1
+                    recap["halted"] = None
+                    recap.pop("halted_detail", None)
+                    seen_offer_ids.clear()
+                    seen_offer_ids.update(seen_before)
+                    recap["pages_without_new_offers"][:] = repeated_before
+                    recap["distinct_offers"] = distinct_before
+                    if stages.archive_attempt is not None:
+                        try:
+                            stages.archive_attempt(run_id, n + 1)
+                        except Exception:   # noqa: BLE001 — une trace mise de côté n'est jamais une halte
+                            pass
+                    on_page(recap)
+                    if pause(waits[n]):
+                        continue
+                    recap["halted"] = "operator_stop"
+                # Reprises épuisées (ou arrêt demandé pendant la pause) : la halte d'avant.
+                verdict = "halt"
+                if carried_created or carried_offers:
+                    entry["created"] = int(entry.get("created") or 0) + carried_created
+                    entry["offers_created"] = carried_offers + list(entry.get("offers_created") or [])
+                finish_page(entry)
+            elif carried_created or carried_offers:
+                # La page a fini (ou s'est arrêtée) sur une reprise : ses créations d'avant la
+                # coupure comptent — elles sont prouvées, et le recap les doit.
+                entry["created"] = int(entry.get("created") or 0) + carried_created
+                entry["offers_created"] = carried_offers + list(entry.get("offers_created") or [])
+                recap["total_created"] = sum(p.get("created", 0) for p in recap["pages"])
+                on_page(recap)
+            break
+        if verdict == "halt":
+            break
 
     # Coverage honesty: a max_pages cap over a longer feed, OR a feed that GREW past the
     # probed last page mid-sweep (a re-import), is NOT a full sweep — the tail pages beyond

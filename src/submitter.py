@@ -41,6 +41,7 @@ from src.extractor import (
     NotLoggedInError,
     feed_url,
 )
+from src.merchants.registry import url_identity_params
 from src.pacing import Pacer
 from src.run_log import RunLogger
 from src.step_guard import StepGuard
@@ -238,15 +239,44 @@ def _page_param(url: str) -> int:
     return int(match.group(1)) if match else 1
 
 
+def _url_path(url: str) -> str:
+    """The URL path, query params stripped — the historical identity key (see
+    :func:`_url_key`), still the right SEARCH term source: the feed search matches a
+    substring of the stored URL, and the last path segment is the offer's slug."""
+
+    return (url or "").split("?", 1)[0]
+
+
 def _url_key(url: str) -> str:
-    """Merchant-URL identity key: the URL path, query params stripped.
+    """Merchant-URL identity key: the URL path, query params stripped — PLUS the query
+    params the merchant DECLARES as part of a listing's identity
+    (``MerchantConfig.url_identity_params``, 2026-09-24).
 
     The path is the stable per-product identity across feed re-imports
     (G2A 2026-07-08 vs 07-07: path stable 716/716 common products, FULL url
     only 690/716 — the ``uuid=`` param drifts; K4G's hash lives in the path).
-    Unique in-feed for both (G2A 741/741, K4G 250/250 distinct paths)."""
+    Unique in-feed for both (G2A 741/741, K4G 250/250 distinct paths).
 
-    return (url or "").split("?", 1)[0]
+    But on Wyrel (``marketplace_id`` / ``edition_id`` / ``region``) and CJS (``variation``)
+    two DISTINCT listings share one path and differ by the query only — the Europe and the
+    Global variant of one product. Path-only, the surviving sibling kept every creation
+    « STILL in feed » (14 false failures on Wyrel on 2026-09-24, AKS had answered « Offer
+    created » for all of them). For those merchants, and ONLY for the params they name, the
+    key carries ``?k=v&…`` (sorted, values kept). Every other merchant keeps the path alone —
+    the P2-12 fail-safe unchanged (see ``_verify_gone``). A re-id of the SAME listing keeps
+    the same key (same path, same identity params), so the K4G id-rotation guard holds."""
+
+    path = _url_path(url)
+    keep = url_identity_params(url)
+    if not keep:
+        return path
+    try:
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(url or "").query,
+                                      keep_blank_values=True)
+    except ValueError:
+        return path
+    parts = [f"{k}={query[k][0]}" for k in sorted(keep) if query.get(k)]
+    return path + ("?" + "&".join(parts) if parts else "")
 
 
 def _href_search_term(href: str) -> str | None:
@@ -966,7 +996,7 @@ class _SubmitterBase:
         results still advertising more pages than the budget covers, raises
         FeedScanError so prove-gone is UNKNOWN and never a false 'gone'; a login bounce
         raises NotLoggedInError."""
-        key = _url_key(str(url or ""))
+        key = _url_path(str(url or ""))    # the PATH: the search matches the stored URL's text
         term = key.rstrip("/").rsplit("/", 1)[-1] or key    # the offer's distinctive slug
         index: dict[str, dict[str, str]] = {}
         by_url: dict[str, dict[str, str]] = {}
@@ -992,7 +1022,7 @@ class _SubmitterBase:
                         "— not proven on this search (stale/foreign DOM or no "
                         "search[search]), cannot prove absence")
                 break
-            if not all(term in _url_key(str(r.get("url") or "")) for r in rows):
+            if not all(term in _url_path(str(r.get("url") or "")) for r in rows):
                 raise FeedScanError(
                     f"search page {page} rows do not all match term {term!r} "
                     "— stale/foreign DOM re-served")
@@ -1506,9 +1536,12 @@ class _SubmitterBase:
         except FEED_UNREADABLE_EXCS as exc:
             # Nothing has been attempted yet — abort before the first offer
             # rather than working from an unproven feed snapshot (audit
-            # 2026-07-17, FC1/SC2).
+            # 2026-07-17, FC1/SC2). A login bounce is named apart (2026-09-24): the sweep
+            # retries a `feed_unreadable` pre-flight after a pause (nothing was written),
+            # never a lost session.
             self._log("aborted", reason=f"feed index scan failed closed: {exc}")
-            return {"aborted": "feed_unreadable", "stopped": None, "feed_offers": 0,
+            aborted = "not_logged_in" if isinstance(exc, NotLoggedInError) else "feed_unreadable"
+            return {"aborted": aborted, "stopped": None, "feed_offers": 0,
                     "write_attempts": 0, "created": 0, "plan": []}
         self._log("feed_indexed", offers=len(index), window=window_pages)
         # ``prove_gone_by_search`` (Romain GO 2026-09-10, sweep): keep the cheap page-hint
@@ -1581,10 +1614,22 @@ class _SubmitterBase:
             # plan/logs keep everything known so far (audit 2026-07-17, FC1).
             entry: dict[str, Any] | None = None
             feed_unreadable: str | None = None
+            prewrite = False
             try:
                 entry = self._prepare(candidate, located, ctx)
                 success = self._process(entry, candidate, ctx)
             except FEED_UNREADABLE_EXCS as exc:
+                # AVANT ou APRÈS le clic ? (Romain, 2026-09-24, « go pour les deux
+                # correctifs ».) `_prepare` ne fait que lire : naviguer, retrouver la ligne,
+                # OUVRIR la modale et en lire le contexte — le clic sur « Create » est dans
+                # `_process`. Une exception levée par `_prepare` (entry encore None) laisse donc
+                # l'offre INTACTE : c'était le cas de « The House » (Wyrel, 24/09 14:00,
+                # `net::ERR_CONNECTION_REFUSED` au rechargement), étiquetée « état INCONNU,
+                # vérifier à la main » alors que rien n'était parti. Elle devient
+                # `feed_unreadable_prewrite`, que le balayage peut reprendre après une pause.
+                # Une déconnexion (`NotLoggedInError`) reste l'arrêt d'avant, et TOUT échec
+                # levé par `_process` — pendant ou après le clic — reste « état INCONNU ».
+                prewrite = entry is None and not isinstance(exc, NotLoggedInError)
                 if entry is None:
                     entry = {
                         "offer_id": offer_id,
@@ -1594,10 +1639,16 @@ class _SubmitterBase:
                     }
                 success = False
                 feed_unreadable = f"{type(exc).__name__}: {exc}"
-                entry["post_save"] = (
-                    "feed/CDP unreadable — offer state UNKNOWN, verify it by "
-                    f"hand on AKS before any retry: {feed_unreadable}"
-                )
+                if prewrite:
+                    entry["post_save"] = (
+                        "feed/CDP unreadable BEFORE any write — offer untouched (no Create "
+                        f"click): {feed_unreadable}"
+                    )
+                else:
+                    entry["post_save"] = (
+                        "feed/CDP unreadable — offer state UNKNOWN, verify it by "
+                        f"hand on AKS before any retry: {feed_unreadable}"
+                    )
             if self.write_mode and entry.get("ready"):
                 write_attempts += 1
                 if entry.get("submitted"):
@@ -1636,7 +1687,7 @@ class _SubmitterBase:
             plan.append(entry)
 
             if feed_unreadable is not None:
-                stopped = "feed_unreadable"
+                stopped = "feed_unreadable_prewrite" if prewrite else "feed_unreadable"
                 self._log("run_stopped", reason=stopped, detail=feed_unreadable)
                 break
             if self.guard.blocked:

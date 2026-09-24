@@ -202,6 +202,26 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   page AKS : c'est le prix accepté tant qu'aucune lecture de page ne prouve l'Europe — ne pas
   les faire entrer en GLOBAL.
 
+- **Reprise AUTOMATIQUE d'une page après une erreur passagère — Romain, 2026-09-24** (« pour
+  Wyrel j'ai dû relancer 3 fois, tu vois pas le pb ? » puis « go pour les deux correctifs »).
+  Ce n'est PAS un relâchement du fail-closed : la reprise ne vaut que quand RIEN n'a pu être
+  écrit — un extract (lecture seule) sur une signature passagère, un submit arrêté AVANT tout
+  clic sur « Create » (`feed_unreadable_prewrite`), un scan d'index raté avant la première
+  offre — avec 3 reprises au plus (2, 5, 10 min). Un état INCONNU après un clic, une
+  déconnexion, le garde, dix échecs d'affilée restent des haltes immédiates. Un audit
+  « trouvera » que le balayage ne s'arrête plus au premier doute : ce n'est vrai que des doutes
+  qui ne portent sur aucune écriture ; ne pas revenir à l'arrêt systématique.
+
+- **P2-12 a une exception, et UNE seule forme — `MerchantConfig.url_identity_params`
+  (2026-09-24).** P2-12 garde volontairement le CHEMIN seul comme identité d'une annonce (la
+  query dérive chez G2A) et accepte qu'une sœur au même chemin fasse sortir une création
+  « STILL in feed ». Chez Wyrel et CJS, la query EST l'annonce (région / édition / variation) :
+  14 fausses erreurs Wyrel le 24/09, 13 CJS depuis le 20/09. Seuls les paramètres qu'un
+  marchand DÉCLARE rejoignent la clé ; un marchand qui ne déclare rien garde P2-12 à
+  l'identique, et une ré-identification de la MÊME annonce reste « encore au feed ». Un audit
+  proposera de rendre toute la query identitaire, ou de retirer l'exception : ni l'un ni
+  l'autre.
+
 - **Software region catch-all (`resolve_software_region`, Fable finding [7], DECLINED
   2026-09-07).** When an AKS software page has a SINGLE region and it is a
   GLOBAL/PUBLISHER-type bucket, a merchant offer is filed under it even when the offer's

@@ -2394,9 +2394,11 @@ class FeedScanFailClosedTests(unittest.TestCase):
             sub._read_feed_page("https://aks/x?p=1", 1)
 
     def test_login_bounce_mid_scan_aborts(self):
+        # Nommée à part depuis le 2026-09-24 : le balayage REPREND un `feed_unreadable`
+        # d'avant la première offre, jamais une session perdue.
         session = LoginMidScanSession([["1"]])
         result = _dry(session, [_cand("1")])
-        self.assertEqual(result["aborted"], "feed_unreadable")
+        self.assertEqual(result["aborted"], "not_logged_in")
 
     def test_wedged_navigation_aborts_instead_of_rereading_stale_dom(self):
         session = WedgedNavigationSession([["1"], ["2"]])
@@ -2434,12 +2436,18 @@ class FeedScanFailClosedTests(unittest.TestCase):
         self.assertIn("verify it by hand", entry["post_save"])
         self.assertEqual(len(result["plan"]), 1)        # offer 2 never attempted
 
-    def test_cdp_death_before_modal_is_unknown_and_stops(self):
+    def test_cdp_death_before_modal_is_untouched_and_stops(self):
+        # 2026-09-24 (Romain, « go pour les deux correctifs ») : la modale ne s'est pas
+        # ouverte, donc « Create » n'a pas pu être cliqué — l'offre est INTACTE, pas
+        # « inconnue ». Le run s'arrête toujours (candidat 2 non touché), mais sous
+        # `feed_unreadable_prewrite`, que le balayage reprend après une pause.
         session = ModalRaisesSession([["1", "2"]])
         result = _dry(session, [_cand("1"), _cand("2")])
-        self.assertEqual(result["stopped"], "feed_unreadable")
+        self.assertEqual(result["stopped"], "feed_unreadable_prewrite")
+        self.assertEqual(len(result["plan"]), 1)
         entry = result["plan"][0]
-        self.assertIn("UNKNOWN", entry["post_save"])
+        self.assertIn("BEFORE any write", entry["post_save"])
+        self.assertNotIn("UNKNOWN", entry["post_save"])
         self.assertIn("CdpCommandError", entry["post_save"])
 
 
@@ -2536,9 +2544,11 @@ class FreshRowRecheckTests(unittest.TestCase):
         # (Romain audit 2026-09-01) so the run STOPS feed_unreadable, never a swallowed
         # skip. (A genuinely-gone row renders a clean page and skips — see the
         # index-miss recovery tests.)
+        # Depuis le 2026-09-24 l'arrêt dit qu'il a eu lieu AVANT tout clic (la ligne n'a
+        # même pas été retrouvée) : `feed_unreadable_prewrite` — un arrêt quand même.
         session = VanishingRowSession([["1"]], vanish_from_call=3)
         result = _dry(session, [_cand("1")])
-        self.assertEqual(result.get("stopped"), "feed_unreadable")
+        self.assertEqual(result.get("stopped"), "feed_unreadable_prewrite")
         self.assertFalse(result["plan"][0]["ready"])
 
     def test_row_reided_midrun_is_pinned_by_url_and_proceeds(self):
@@ -2935,7 +2945,8 @@ class SearchLocateTests(unittest.TestCase):
         sub._relocate_by_url = boom
         res = sub.run(run_id="r", merchant="Driffle", store_id="127",
                       approved=[_cand("1"), _cand("2")], locate_by_search=True)
-        self.assertEqual(res.get("aborted") or res.get("stopped"), "feed_unreadable")
+        # avant tout clic → `feed_unreadable_prewrite` (2026-09-24), toujours un ARRÊT
+        self.assertEqual(res.get("aborted") or res.get("stopped"), "feed_unreadable_prewrite")
         self.assertEqual(len(res["plan"]), 1)     # stopped at candidate 1, #2 untouched
         self.assertFalse(res["plan"][0]["ready"])  # nothing created
 

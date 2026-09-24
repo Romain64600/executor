@@ -3,6 +3,42 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-24 — Une erreur passagère ne coupe plus le balayage ; plus de fausses « STILL in feed »
+
+Romain : « pour Wyrel j'ai dû relancer 3 fois, tu vois pas le pb ? », puis « go pour les deux
+correctifs ».
+
+**Reprise après une erreur passagère.** Les trois arrêts Wyrel du jour étaient passagers et
+sans écriture en jeu : deux pages muettes 20 s à l'extraction (`CdpTimeoutError`, 12:04 et
+14:41), un `net::ERR_CONNECTION_REFUSED` à 14:00 avant tout clic — ce dernier pourtant étiqueté
+« état INCONNU, vérifier à la main ». Deux changements :
+- `src/submitter.py` : une panne levée par `_prepare` (qui ne fait que lire et ouvrir la modale ;
+  le clic « Create » est dans `_process`) laisse l'offre INTACTE — `stopped =
+  "feed_unreadable_prewrite"`, « offer untouched (no Create click) ». Une déconnexion et toute
+  panne pendant ou après le clic restent l'arrêt « INCONNU » d'avant. Au scan d'index d'avant la
+  première offre, une déconnexion se nomme désormais `not_logged_in`.
+- `src/data_entry_auto.py` : sur un extract en échec d'une signature passagère (sonde de départ
+  comprise), un submit `feed_unreadable_prewrite` ou un scan d'index raté
+  (`aborted="feed_unreadable"`), la page est REFAITE après 2, 5 puis 10 min, au plus trois fois,
+  puis la halte d'avant. Les offres créées avant la coupure restent au compte de la page et leurs
+  traces sont gardées (`submit_plan.try1.json`…). « Arrêter » reste immédiat pendant la pause.
+  Jamais de reprise sur un état INCONNU, une déconnexion, le garde, dix échecs d'affilée, un
+  échec de match ou d'approbation.
+
+**Fausses « STILL in feed ».** 14 chez Wyrel le 24/09 — AKS avait répondu « Offer created … feed
+entry deleted » pour les 14, et aucune n'est réapparue au feed —, 13 chez CJS depuis le 20/09.
+Cause : la clé d'identité d'une annonce est le CHEMIN de son URL (repli P2-12), et ces deux
+marchands séparent les variantes d'un produit par la query (`region` / `edition_id` /
+`marketplace_id` chez Wyrel, `variation` chez CJS) : la variante d'une autre région, restée au
+feed, bloquait la preuve. `MerchantConfig.url_identity_params` nomme ces paramètres, et eux
+seuls rejoignent la clé ; les autres marchands gardent P2-12 à l'identique, et une annonce
+ré-identifiée reste « encore au feed » (garde anti-création fantôme K4G intacte). La recherche
+du feed cherche toujours le dernier segment du chemin.
+
+Tests : `tests/test_sweep_transient_retry.py` (14), `tests/test_url_identity_params.py` (11),
+quatre tests du submitter mis à jour (la panne d'avant le clic n'est plus « INCONNUE »).
+13 mutations, 13 rouges. Suite complète : 2 629 OK.
+
 ## 2026-09-24 — Le feed se lit dans un ordre stable : `orderBy=id&order=desc`
 
 Romain : « go pour la 2 », après l'audit du même jour

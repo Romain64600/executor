@@ -299,10 +299,16 @@ CONFIG = make_config(
     resolve_name=resolve_name,
     console_region_slot=console_region_slot,
     console_noise=(CONSOLE_NOISE,),
+    # Les variantes d'un même produit partagent le CHEMIN et ne diffèrent que par la query :
+    # « …-shores-unknown-pc-…?marketplace_id=2&edition_id=780&region=4 » (Europe) contre
+    # « …&region=1 » (Global). C'est l'identité de l'annonce (2026-09-24 : 14 fausses
+    # « STILL in feed » le jour même, la sœur de l'autre région restée au feed). `referal` et
+    # `coupon` sont les mêmes sur toutes les lignes : ils n'en font pas partie.
+    url_identity_params=("marketplace_id", "edition_id", "region"),
     notes=(
         "feed store id 162, 60 pages. R53: slot template parsed from the END. The region is "
         "written in FULL in the title AND repeated as the URL's region= id — the two must "
         "agree (R53d). Non-game needs three agreeing signals (R53b); an unknown platform "
-        "slot word is refused by name (R53e). Off the safe-auto allowlist: supervised first."
+        "slot word is refused by name (R53e). Safe-auto allowlist since 2026-09-24 (group B)."
     ),
 )

@@ -284,7 +284,14 @@ validation triple's shape is load-bearing (FC5, audit 2026-07-17).
   `pages_without_new_offers` (les numéros de page qui n'ont apporté AUCUN id nouveau) ; chaque
   entrée de page porte `new_offers` et, le cas échéant, `repeated_page: true` — depuis le
   2026-09-24, une telle page n'est plus ni matchée ni saisie et porte aussi
-  `skipped_repeated: true`, `candidates: 0`, `created: 0`. Le recap du BALAYAGE porte
+  `skipped_repeated: true`, `candidates: 0`, `created: 0`. Depuis le 2026-09-24 aussi, une
+  page REFAITE après une erreur passagère porte `transient_retries: [{attempt, wait_s, stage
+  ("extract" | "submit"), reason, created_before}]` (les créations d'avant la coupure restent
+  dans `created` / `offers_created`), et chaque `recap` compte `transient_retries` (total). Le
+  plan de saisie peut finir `stopped: "feed_unreadable_prewrite"` (panne AVANT tout clic,
+  offre intacte) et `aborted: "not_logged_in"` (déconnexion au scan d'index) ; les traces d'une
+  tentative coupée sont renommées `submit_plan.tryN.json` / `submit_report.tryN.txt` /
+  `approved.tryN.json`. Le recap du BALAYAGE porte
   `sitemap_refresh` quand `--sitemap-refresh` est passé : `{refreshed, reason, fetched_at,
   error?, pages?, legacy_pages?, …}` (`aks_sitemap.ensure_fresh`). Quand cette
   liste n'est pas vide et qu'aucun plafond ne parle déjà, `coverage` vaut

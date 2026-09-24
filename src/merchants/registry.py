@@ -19,6 +19,9 @@ place keep working.
 
 from __future__ import annotations
 
+import functools
+import urllib.parse
+
 from src.merchant_config import MerchantConfig
 from src.merchants import (
     allyouplay,
@@ -95,6 +98,30 @@ def merchant_for_store(store_id: str | int | None) -> str | None:
 
     key = str(store_id).strip() if store_id is not None else ""
     return _BY_STORE.get(key)
+
+
+def url_identity_params(url: str) -> tuple[str, ...]:
+    """Les paramètres de query qui font partie de l'identité d'une annonce, d'après l'HÔTE de
+    son URL (`MerchantConfig.url_identity_params`, 2026-09-24) — ``()`` pour tout marchand qui
+    n'en déclare pas, ou une URL illisible : la clé reste alors le chemin seul (P2-12)."""
+
+    try:
+        host = urllib.parse.urlparse(str(url or "")).netloc.lower()
+    except ValueError:
+        return ()
+    return _identity_params_for_host(host)
+
+
+@functools.lru_cache(maxsize=512)
+def _identity_params_for_host(host: str) -> tuple[str, ...]:
+    if not host:
+        return ()
+    host = host.split("@")[-1].split(":")[0]
+    for cfg in MERCHANT_CONFIGS.values():
+        dom = (cfg.domain or "").lower()
+        if dom and cfg.url_identity_params and (host == dom or host.endswith("." + dom)):
+            return tuple(cfg.url_identity_params)
+    return ()
 
 
 def merchant_config(merchant: str) -> MerchantConfig | None:

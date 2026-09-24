@@ -1005,6 +1005,27 @@ troué laisse l'index complet précédent en place et le recap le dit (`sitemap_
 main : `python3 scripts/16_sitemap_index.py --refresh`. Passé 7 jours sans relevé, le mode se
 coupe tout seul.
 
+**Une page coupée par une erreur PASSAGÈRE est refaite (2026-09-24, Romain : « pour Wyrel j'ai
+dû relancer 3 fois, tu vois pas le pb ? » puis « go pour les deux correctifs »).** Les trois
+arrêts du 24/09 étaient passagers et sans écriture en jeu : deux pages du feed muettes 20 s à
+l'extraction (`CdpTimeoutError`), un `net::ERR_CONNECTION_REFUSED` avant tout clic. `run_sweep`
+refait désormais la page — ré-extraction, match, approbation, saisie — après une pause de 2,
+puis 5, puis 10 min (`SweepConfig.transient_retry_waits`), au plus trois fois, puis la halte
+d'avant. Seulement quand RIEN n'a pu être écrit : un extract en échec (lecture seule) sur une
+signature passagère (`TRANSIENT_SIGNATURES` : `CdpTimeoutError`, `net::ERR_CONNECTION_REFUSED /
+RESET / CLOSED / TIMED_OUT / EMPTY_RESPONSE / NETWORK_CHANGED / INTERNET_DISCONNECTED /
+ADDRESS_UNREACHABLE / NAME_NOT_RESOLVED`, la sonde de départ comprise), un submit arrêté
+`feed_unreadable_prewrite`, ou un submit dont le scan d'index d'avant la première offre a
+échoué (`aborted="feed_unreadable"`). Restent des haltes IMMÉDIATES : l'état INCONNU après un
+clic (`feed_unreadable`), une déconnexion (`not logged in`, `not_logged_in`), le garde,
+`ten_consecutive_failures`, un échec de match ou d'approbation. Les offres créées avant la
+coupure sont prouvées : elles restent au compte de la page, et les traces d'écriture de la
+tentative coupée sont gardées (`submit_plan.try1.json`, `submit_report.try1.txt`,
+`approved.try1.json`). La mesure de couverture de la tentative coupée est effacée, sans quoi
+la reprise passerait pour une page « déjà vue » et serait sautée. « Arrêter » reste immédiat
+pendant une pause (tranches de 5 s au plus). Chaque reprise est inscrite dans l'entrée de page
+(`transient_retries`) et comptée au recap.
+
 **Une page déjà entièrement vue n'est pas rejouée (2026-09-24, Romain : « go pour sauter les
 pages vides »).** Le feed d'AKS renvoie parfois la même centaine d'offres pour des numéros de page
 différents : le 24/09, Wyrel a lu cinq fois les mêmes lignes (pages 45 → 41) et retenté
@@ -2320,7 +2341,33 @@ verify scan (and the batch-start index) prove their own coverage:
 Mid-batch, any of these marks the current offer `post_save = "… offer state
 UNKNOWN, verify it by hand …"` (attempt counted, creation NOT), stops the run
 with `stopped="feed_unreadable"`, and still writes `submit_plan.json` + logs.
-At batch start they abort with `aborted="feed_unreadable"` before any write.
+At batch start they abort with `aborted="feed_unreadable"` before any write — a login
+bounce there is named apart since 2026-09-24: `aborted="not_logged_in"`.
+
+**Before the click is not « unknown » (2026-09-24, Romain : « go pour les deux
+correctifs »).** `_prepare` only READS — navigate, re-find the row, OPEN the modal, read its
+context; the click on « Create » lives in `_process`. A failure raised by `_prepare` (the
+entry does not exist yet) therefore leaves the offer INTACT: `post_save = "feed/CDP
+unreadable BEFORE any write — offer untouched (no Create click): …"` and
+`stopped="feed_unreadable_prewrite"` — still a stop of the run. It was « The House » on
+Wyrel, 24/09 14:00 (`net::ERR_CONNECTION_REFUSED` on the reload), labelled « verify it by
+hand » while nothing had left. A `NotLoggedInError` there, and ANY failure raised by
+`_process` (during or after the click), stay the UNKNOWN + `feed_unreadable` above.
+
+**The listing's identity may live in its URL query (2026-09-24).** `_url_key` — the
+identity the proof, the locate and the mover compare — is the URL PATH, query stripped
+(P2-12, below in `_verify_gone`): the query drifts on G2A (`uuid=`). But two merchants put
+the LISTING in the query: Wyrel separates the variants of one product by `marketplace_id`,
+`edition_id` and `region` on a shared path, CJS by `variation=`. Path-only, the surviving
+sibling of another region kept every creation « STILL in feed » — 14 false failures on
+Wyrel on 24/09 (AKS had answered « Offer created … feed entry deleted » for all 14, none
+reappeared), 13 on CJS since 20/09. `MerchantConfig.url_identity_params` names the params
+that make the listing — Wyrel `("marketplace_id", "edition_id", "region")`, CJS
+`("variation",)` — and ONLY those join the key (`path?k=v&…`, sorted); `referal` /
+`coupon` / any other param stay out. A re-id of the SAME listing keeps the same key, so the
+K4G id-rotation guard holds; a merchant that declares nothing keeps P2-12 exactly. The feed
+SEARCH still searches the last PATH segment (`_url_path`): the search matches the stored
+URL's text.
 
 **One bounded retry of the proof on a CDP command TIMEOUT (Romain GO 2026-09-10;
 historique — the two MMOGA halts behind it : CHANGELOG 2026-09-10).** The AKS admin page

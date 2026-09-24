@@ -587,9 +587,13 @@ matcher et le classifieur importent le registre.
 - **Grammaire PC / console** : **aucune donnée** — jamais balayé, pas d'historique ; même
   logique qu'Allyouplay : le fichier porte la règle et recevra la grammaire relevée au
   dry-run, rien n'est inventé d'ici là.
-- **Hooks** : `domain` seul.
-- **Statut live** : dans la liste blanche mais **jamais balayé** ; dry-run exigé avant tout
-  sweep réel (Romain, 2026-09-11).
+- **Hooks** : `domain` et, depuis le 24/09, `url_identity_params=("variation",)`.
+- **`variation=` est l'identité de l'annonce (2026-09-24).** « …/Ash-of-Gods%3A-The-Way-Steam-
+  Key.html?variation=609 » et « …?variation=608 » sont deux annonces (deux régions) sur le MÊME
+  chemin. Chemin seul, la sœur restée au feed faisait sortir chaque création « STILL in feed » :
+  13 fausses erreurs depuis le 20/09, dont 8 avec la sœur visible sur la même page du feed.
+  `variation` rejoint désormais la clé d'identité (`submitter._url_key`, EXECUTOR_RULES §7).
+- **Statut live** : dans la liste blanche, balayé en groupe B depuis le 22/09.
 
 ## Difmark (167, parqué) — **classe B** (Romain, 2026-09-21)
 
@@ -889,6 +893,19 @@ matcher et le classifieur importent le registre.
   une dizaine sont passées puis le défi « Performing security verification » ne s'est plus
   levé (4 pages de suite). Rien dans le fichier ne lit la page, et rien ne doit en dépendre :
   titre + URL suffisent, la seule inconnue étant la ROW, qui reste refusée.
+- **La query de l'URL est l'identité de l'annonce (2026-09-24,
+  `url_identity_params=("marketplace_id", "edition_id", "region")`).** Les variantes d'un
+  produit partagent le chemin (« …-shores-unknown-pc-12345 ») et ne diffèrent que par
+  `region=` / `edition_id=` / `marketplace_id=`. Chemin seul, la variante Global restée au feed
+  faisait sortir la création de la variante Europe « STILL in feed » : **14 fausses erreurs le
+  24/09** (AKS avait répondu « Offer created … feed entry deleted » pour les 14, aucune n'est
+  réapparue). Ces trois paramètres rejoignent la clé d'identité ; `referal` et `coupon`, les
+  mêmes partout, non (EXECUTOR_RULES §7).
+- **Bilan du 24/09** (quatre lancements, trois arrêts passagers relancés à la main — la
+  reprise automatique du même jour les aurait absorbés, EXECUTOR_RULES §14) : 2 790 lignes
+  distinctes vues sur ~5 000, 117 candidats, **109 offres créées** (95 prouvées + 14 fausses
+  « STILL in feed »). Les ~2 300 lignes jamais montrées tenaient au tri du feed, corrigé le même
+  jour (`orderBy=id`).
 
 ## Ce qui n'est pas propre à un marchand
 

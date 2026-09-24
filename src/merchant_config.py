@@ -111,6 +111,18 @@ class MerchantConfig:
     # régions est un CATALOGUE GLOBAL, identique pour tous les produits, résolu en direct par
     # le soumetteur. Le contrôle refusait 136 lignes sur 250 pour une case qui existe.
     require_page_platform: bool = True
+    # IDENTITÉ D'UNE ANNONCE DANS SON URL (2026-09-24, Romain : « go pour les deux
+    # correctifs »). Par défaut l'identité d'une ligne du feed est le CHEMIN de son URL, query
+    # retirée (`submitter._url_key`, repli P2-12) : la query dérive d'un import à l'autre chez
+    # G2A (`uuid=`), elle n'identifie rien. Chez certains marchands au contraire, la query EST
+    # l'annonce : Wyrel sépare les variantes d'un produit par `marketplace_id`, `edition_id` et
+    # `region` sur un chemin commun, CJS par `variation=`. Chemin seul, la variante Europe et la
+    # variante Global se confondaient : après la création de l'une, l'autre (même chemin)
+    # restait au feed et la preuve concluait « STILL in feed » — 14 fausses erreurs chez Wyrel
+    # le 24/09 (AKS avait répondu « Offer created » pour les 14), 13 chez CJS depuis le 20/09.
+    # Les paramètres nommés ICI, et eux seuls, rejoignent la clé d'identité. Vide = P2-12 à
+    # l'identique.
+    url_identity_params: tuple[str, ...] = ()
     # Generic-behaviour OVERRIDE hooks (Romain 2026-09-10: « un fichier de config marchand
     # par marchand, qui peut ajouter, overwrite, modifier des comportements génériques »).
     # Each is optional; the matcher calls it FIRST and falls through to the generic rule
