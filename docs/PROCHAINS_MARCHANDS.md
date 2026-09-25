@@ -14,7 +14,7 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 |---|---|---|---|---|---|
 | ✓ | **Gamesplanet FR** (55) | 526 | 339 (64 %) | — | **fait** : fichier `[R59]` et liste blanche le 25/09 (groupe A) ; essai à blanc 77 candidats / 150 lignes |
 | 2 | **Gamebillet** (15) | 268 | 192 (72 %) | plateforme et région (URL et titre muets ; la page liste les pays exclus) | à étudier après Gamesplanet |
-| 3 | **Muve** (166) | 605 | 322 (53 %) | titre lisible pour ~40 % des lignes seulement | à étudier |
+| 3 | **Muve** (166) | 605 | 322 (53 %) | titre lisible pour ~35 % des lignes ; pas de région sur la page ; « sans région = Europe » refusé par Romain (25/09) | ~140 lignes seulement, en refusant les lignes sans région |
 | 4 | **Pixelcodes** (82) + **Software-codes** (6) | 1 547 + 1 538 | 1 377 + 1 365 (89 %) | tout : titre et URL muets, page en JavaScript (illisible sans navigateur), aucune offre déjà sur AKS pour s'en inspirer | gros potentiel, difficile |
 | 5 | **Discover.games** (168) | 440 | 370 (84 %) | idem Pixelcodes (aucune offre déjà sur AKS) | difficile |
 | — | Greenmangaming (22) | 482 | 318 (66 %) | URL d'affiliation illisible (sjv.io), titre muet | pas prioritaire |
@@ -45,8 +45,12 @@ Muve mélange **deux catalogues**, qu'on distingue à la fin de l'URL (605 ligne
   product in your country ».
 - AKS range les offres Muve existantes en Steam EU (9) et Windows EU (244).
 - Pour aller au-delà des ~140 lignes lisibles : lire la plateforme sur la page, et une règle de
-  Romain pour la région des lignes nues (par exemple « Muve sans région = Europe », comme AKS le
-  fait déjà). Décision en attente.
+  Romain pour la région des lignes nues. **Décision du 25/09 : PAS de « Muve sans région =
+  Europe ».** Aucun marchand n'a ce comportement : le défaut existant est l'inverse, « sans région
+  = GLOBAL implicite » (MMOGA, Eneba, Kinguin, CJS, Electronicfirst, Gamivo, Difmark — relevé sur
+  les approved.json des deux VM), et GameBoost, GamersOutlet, Wyrel, Gamerall, Gamesplanet
+  refusent ou lisent la page. Un fichier Muve devrait donc REFUSER les lignes sans région (comme
+  GameBoost `[R47]`) : ~140 lignes seulement.
 
 ## 2026-09-25 (suite) — « Il reste des marchands avec toutes les infos dans l'URL + le titre ? »
 
