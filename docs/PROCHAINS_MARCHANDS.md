@@ -27,6 +27,27 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 
 ---
 
+## 2026-09-25 (suite) — Pourquoi Muve n'a que 35 % de lignes lisibles
+
+Muve mélange **deux catalogues**, qu'on distingue à la fin de l'URL (605 lignes du 21/09) :
+
+| Catalogue (fin d'URL) | Titre complet « (PC Steam) (ROW) » | Titre nu | Région seule « (EU) » | Plateforme seule |
+|---|---|---|---|---|
+| identifiant numérique (`…-2401190`), récent | 183 | 152 | 27 | 27 |
+| hash hexadécimal (`…-93200d`), catalogue historique de muve.pl | 4 | 146 | 4 | 18 |
+| autre (slug seul) | 23 | 12 | 2 | 7 |
+
+- Le catalogue « hash » est celui de la boutique polonaise d'origine : titres NUS (« Yakuza Kiwami »).
+- Le catalogue « numérique » écrit souvent tout, mais pas toujours (« Gambonanza »).
+- **La page Muve se lit en HTTP** (237 Ko, données Nuxt) et porte des champs structurés
+  `Platform: PC` et `DRM: Steam` — la plateforme est donc récupérable pour les lignes nues. Mais
+  **aucun champ région** : seulement le message générique « The store does not distribute this
+  product in your country ».
+- AKS range les offres Muve existantes en Steam EU (9) et Windows EU (244).
+- Pour aller au-delà des ~140 lignes lisibles : lire la plateforme sur la page, et une règle de
+  Romain pour la région des lignes nues (par exemple « Muve sans région = Europe », comme AKS le
+  fait déjà). Décision en attente.
+
 ## 2026-09-25 (suite) — « Il reste des marchands avec toutes les infos dans l'URL + le titre ? »
 
 Mesure sur le scan du 21/09 (boutiques hors liste blanche, ≥ 20 lignes) : part des lignes dont le
