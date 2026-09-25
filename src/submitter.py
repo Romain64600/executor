@@ -41,6 +41,7 @@ from src.extractor import (
     NotLoggedInError,
     feed_url,
 )
+from src.console_keys import account_signal
 from src.merchants.registry import url_identity_params
 from src.pacing import Pacer
 from src.run_log import RunLogger
@@ -106,6 +107,60 @@ TOO_MANY_TARGETS_BLOCKER_MESSAGE = (
 # counted, never recorded in the StepGuard (review fix 2026-09-14 for R45; extended to
 # the cap the same day).
 DESIGNED_SKIP_BLOCKERS = (MULTI_TARGET_BLOCKER, TOO_MANY_TARGETS_BLOCKER)
+
+# LAST GUARD BEFORE ANY WRITE — offer type vs destination type (2026-09-25, bug report:
+# a Gamivo ACCOUNT, « Hitman 2 Global » / ``…-xbox-one-series-account-global-standard``,
+# was entered as an « Xbox One Game Code » key; eight Difmark « [OFFLINE] » accounts as
+# Steam keys). The matcher now classifies these rows right; this gate makes sure that a
+# classification slip anywhere upstream can never reach the Create button again.
+#   - offer type  = ``console_keys.account_signal`` — THE detector (title word, URL path
+#     token), the same one the matcher and the sort ask. A merchant with its OWN account
+#     grammar (``account_row``, Difmark) answers ``"merchant"``: its URL is template and its
+#     offer page decided account vs key in the matcher, so only the title word and the
+#     unknown-destination rule are enforced for it here;
+#   - destination = ACCOUNT when its region label says ACCOUNT (« GLOBAL ACCOUNT », the
+#     Steam Account buckets) or its AKS page is a ``…-account-compare-prices`` page; a
+#     destination with neither a label nor a page URL is UNKNOWN.
+# Account offer → key / game-code destination: blocked. Key offer → account destination:
+# blocked. Unknown destination: blocked (never a silent default). Every target is checked
+# on its own (an Xbox One + Xbox Series candidate has two destinations). A REAL blocker:
+# checked in ``_prepare`` before any navigation or modal, nothing is filled, and it feeds
+# the failure streak like any refusal — it is not a designed skip.
+OFFER_TYPE_MISMATCH_BLOCKER = "offer_type_mismatch"
+_ACCOUNT_PAGE_RE = re.compile(r"-account-compare-prices/?$")
+
+
+def destination_is_account(target: dict[str, Any]) -> bool | None:
+    """True / False for an account / key destination; None when it cannot be told."""
+
+    label = str(target.get("region_label") or "").strip()
+    page = str(target.get("aks_url") or "").strip().split("?", 1)[0]
+    if not label and not page:
+        return None
+    return " ACCOUNT " in f" {re.sub(r'[^A-Z0-9]+', ' ', label.upper())} " or bool(
+        _ACCOUNT_PAGE_RE.search(page.lower()))
+
+
+def offer_type_mismatch(candidate: dict[str, Any], targets: list[dict[str, Any]]) -> str | None:
+    """Why this candidate must NOT be written (see above), or None."""
+
+    offer = candidate.get("offer") or {}
+    signal = account_signal(str(offer.get("name") or ""), str(offer.get("url") or ""),
+                            str(offer.get("merchant") or ""))
+    page_decided = signal == "merchant"
+    for n, target in enumerate(targets, 1):
+        where = (f"target {n} ({target.get('platform') or '?'} → "
+                 f"{target.get('region_label') or '?'} on {target.get('aks_url') or '?'})")
+        dest = destination_is_account(target)
+        if dest is None:
+            return f"destination type unknown for {where} — no region label nor AKS page"
+        if page_decided:
+            continue
+        if signal is not None and not dest:
+            return f"ACCOUNT offer (the {signal} says account) → key/game-code destination {where}"
+        if signal is None and dest:
+            return f"key offer → account-only destination {where}"
+    return None
 
 
 def _strip_bom(text: Any) -> str | None:
@@ -1275,6 +1330,14 @@ class _SubmitterBase:
             entry["blocker"] = TOO_MANY_TARGETS_BLOCKER
             entry["blocker_message"] = TOO_MANY_TARGETS_BLOCKER_MESSAGE
             return entry
+        # Offer type vs destination type (2026-09-25) — same place, same discipline: before
+        # any navigate / re-locate / modal open. See OFFER_TYPE_MISMATCH_BLOCKER.
+        mismatch = offer_type_mismatch(candidate, entry["targets"])
+        if mismatch is not None:
+            entry["blocker"] = f"{OFFER_TYPE_MISMATCH_BLOCKER}: {mismatch}"
+            entry["blocker_message"] = mismatch
+            self._log("offer_type_blocked", offer_id=offer_id, reason=mismatch)
+            return entry
         if located.get("blocker"):
             # An index-scan MISS is not a proven absence. The bulk _index_by_search
             # runs one rapid search per candidate at start-up; a transient incomplete
@@ -1839,6 +1902,12 @@ class Submitter(_SubmitterBase):
             entry["ready"] = False
             entry["blocker"] = TOO_MANY_TARGETS_BLOCKER
             entry["blocker_message"] = TOO_MANY_TARGETS_BLOCKER_MESSAGE
+            return False
+        mismatch = offer_type_mismatch(candidate, targets)   # same gate, right before Create
+        if mismatch is not None:
+            entry["ready"] = False
+            entry["blocker"] = f"{OFFER_TYPE_MISMATCH_BLOCKER}: {mismatch}"
+            entry["blocker_message"] = mismatch
             return False
         if len(targets) > 1 and shape != MODAL_SHAPE_V2:
             # R45 (2026-09-12): never "the first target only".

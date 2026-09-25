@@ -41,6 +41,7 @@ from src.console_keys import (
     CONSOLE_REGION_IDS,
     CONSOLE_REGION_LABELS,
     ConsoleSignal,
+    account_signal,
     classify_console,
     console_marker_in_url,
     console_page_identity,
@@ -48,6 +49,7 @@ from src.console_keys import (
     page_platform_family,
     extract_console_pages,
     extract_page_platform,
+    is_account_listing,
 )
 from src.contracts import NormalizedFeed, NormalizedOffer
 from src.merchant_config import MerchantConfig, MerchantOfferSignals
@@ -541,20 +543,19 @@ _WINDOWS_OS_RE = re.compile(
     # absent from the alternation (R31 audit 2026-08-11, game-regression finding).
     r"\bWINDOWS (?:10|11)\s+(?:PRO|HOME|ENTERPRISE|EDUCATION|PROFESSIONAL|OEM|N|LICEN[CS]E)\b"
 )
-# The account-delivery marker ("… (Account) …") — an account-type offer. NOT a
-# precheck skip (the submit pipeline still resolves account offers to their
-# dedicated AKS account page); the sort routes them to the account list instead
-# (Romain 2026-07-23). "Steam Account" listings are already caught upstream by
-# CATEGORY_SKIP, so this only adds the bare "(Account)" marker.
-_ACCOUNT_MARKER_RE = re.compile(r"(?<![\w-])ACCOUNT(?![\w-])")
+def is_account_offer(name: str, url: str = "", merchant: str = "") -> bool:
+    """True when an explicit signal says the listing is an ACCOUNT — the merchant's own
+    ``account_row`` grammar, the whole word ACCOUNT in the title, or ``account`` as a
+    standalone token of the URL path (see ``console_keys.account_signal`` for the
+    precedence). It is THE detector: the sort (account list 30, Romain 2026-07-23), the
+    precheck, the Difmark account branch and the submitter's last guard all ask it.
 
+    2026-09-25 : it read the TITLE only. A Gamivo account titled « Hitman 2 Global », whose
+    URL alone says so (``…-xbox-one-series-account-global-standard``), was entered as an
+    « Xbox One Game Code » key — and eight Difmark « [Steam/Global][OFFLINE] » accounts as
+    Steam keys (the Difmark branch trusted a page wording that never says ACCOUNT)."""
 
-def is_account_offer(name: str) -> bool:
-    """True if the merchant title carries the ``(Account)`` account-delivery
-    marker — used by the list-sorting scan to route account offers out of the
-    creation queue into the account list (Romain 2026-07-23)."""
-
-    return bool(_ACCOUNT_MARKER_RE.search(name.upper()))
+    return is_account_listing(name, url, merchant)
 # Merchant-specific rules (required URL domain, URL boilerplate to ignore, offer-
 # page platform resolver, …) live in ONE place — the `MERCHANT_CONFIGS` registry
 # below, read via `merchant_config()` (R32, 2026-08-11). Notably:
@@ -1209,6 +1210,18 @@ def precheck_skip(offer: NormalizedOffer, *, consoles: bool = False) -> str | No
         return "language restriction"
     if re.search(r"\b(EN|FR|ES|DE|IT|PT|CS|PL|RU)\s*/\s*(EN|FR|ES|DE|IT|PT|CS|PL|RU)\b", upper):
         return "language restriction"
+    # ACCOUNT (2026-09-25) — LAST, so every existing reason keeps its label ("skip category:
+    # STEAM ACCOUNT", "console: ACCOUNT — not a game (R45)", a merchant hook's own refusal).
+    # A merchant that DECLARES its accounts (`account_row`, Difmark) sends them to the
+    # account branch instead — never here. Everyone else: an account is never a key, and no
+    # generic account page flow exists for them, so it is refused and routed to the account
+    # list (30) by `aks_lists.suggest_target_list` — the manual-review queue. Before, a
+    # PC listing whose URL alone said account (title silent) was refused NOWHERE.
+    if not _account_row:
+        signal = account_signal(offer.name, offer.url, offer.merchant)
+        if signal is not None:
+            return (f"skip category: ACCOUNT (account listing — the {signal} says account; "
+                    "never entered as a key)")
     return None
 
 
@@ -3167,7 +3180,30 @@ def _pc_plan(
             difmark_attrs = difmark_offer_resolver(offer.url)
         except DifmarkPageUnreadable as exc:
             return SkippedOffer(offer, f"Difmark merchant page unverifiable: {exc}")
-        difmark_is_account = "ACCOUNT" in difmark_attrs.offer_name.upper()
+        # 2026-09-25 : the page wording decided ALONE, and silence meant KEY — « ACCOUNT » in
+        # `offer_name`, else the key page. Real wordings are « ⭐️ Stellaris +14 Games
+        # [Steam/Global][OFFLINE] », « Beasts of Bermuda [STEAM/GLOBAL][OFFLINE] » (OFFLINE =
+        # a shared offline account): eight rows of the ACCOUNT list (30) went to the Steam KEY
+        # page under GLOBAL(2) on 2026-09-23. The page now has to SAY which it is:
+        #   - ACCOUNT or OFFLINE in `offer_name`, or ACCOUNT in the title → account;
+        #   - the 2026-07-17 key wording « <Game> (<platform>) … » (the API platform alone in
+        #     parentheses, e.g. « (Steam) »), or the word KEY → key — the reviewed « vraie clé
+        #     Difmark » of 2026-09-21 keeps passing (the URL's « account » is template here);
+        #   - anything else (« [Steam/Global] » with no OFFLINE…) → refused, never a key by
+        #     default.
+        _name_up = difmark_attrs.offer_name.upper()
+        difmark_is_account = (
+            re.search(r"\b(?:ACCOUNT|OFFLINE)\b", _name_up) is not None
+            or account_signal(offer.name, "", offer.merchant) == "title")
+        _explicit_key = (
+            re.search(r"\bKEY\b", _name_up) is not None
+            or (bool(difmark_attrs.raw_platform)
+                and f"({difmark_attrs.raw_platform.strip().upper()})" in _name_up.replace("( ", "(").replace(" )", ")")))
+        if not difmark_is_account and not _explicit_key and (difmark_attrs.offer_name or "").strip():
+            return SkippedOffer(
+                offer,
+                f"Difmark : la page ne dit ni compte ni clé ({difmark_attrs.offer_name!r}) — "
+                "type invérifiable, jamais entré comme clé par défaut")
         # REVUE DE ROMAIN (2026-09-21, e596cd3 → 5d163e1) : « la branche compte peut encore
         # produire une CLÉ. Reproduit avec une URL ps5-account, un titre sans (Account), une
         # API indiquant STEAM et un offer_name VIDE : candidat sur la page de clé, région

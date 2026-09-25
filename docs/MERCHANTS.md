@@ -291,6 +291,12 @@ matcher et le classifieur importent le registre.
 - **Statut live** : éprouvé en safe-auto ; 6 saisies fausses du 11/09 à corriger à la main.
 - **Résiduel** : 77 % « sans page AKS » sur les pages hautes (titres `<Jeu> EN United
   States`), régions interdites, restrictions de langue.
+- **Comptes au MILIEU du slug (bug du 2026-09-24, corrigé le 25).** Gamivo écrit un compte
+  `<jeu>-<plateforme>-account-<région>-<édition>` (`hitman-2-xbox-one-series-account-global-
+  standard`, titre « Hitman 2 Global ») : l'ancien marqueur ne lisait `-account` qu'en FIN de
+  chemin, et l'offre 101137320 a été créée comme clé « Xbox One Game Code » (page 23940) et
+  Xbox Series (page 60188). Le jeton `account` est désormais lu n'importe où dans le chemin
+  (EXECUTOR_RULES « ACCOUNT offers ») → « console: ACCOUNT — not a game (R45) », liste 30.
 
 ## G2A (store 38)
 
@@ -673,6 +679,16 @@ matcher et le classifieur importent le registre.
   dans la liste *account* (30) — `scripts/02_extract_feed.py --list 30` et
   `scripts/05_submit.py --list 30`. Le balayage `scripts/10`, lui, lit toujours la liste 9.
 - **Statut live** : parqué (hors liste blanche).
+- **La page doit DIRE compte ou clé (2026-09-25).** Le 23/09, huit comptes de la liste 30 sont
+  entrés comme clés Steam GLOBAL(2) : la branche Difmark ne croyait que le mot ACCOUNT de la
+  page, et les libellés réels n'en ont pas — « ⭐️ Stellaris +14 Games [Steam/Global]
+  [OFFLINE] », « Beasts of Bermuda [STEAM/GLOBAL][OFFLINE] » (OFFLINE = compte partagé hors
+  ligne). Désormais : ACCOUNT ou OFFLINE dans le libellé (ou ACCOUNT dans le titre) → compte
+  (page `…-steam-account`, seau Account, ou refus nommé si la page manque) ; le libellé clé du
+  17/07 « <Jeu> (<plateforme>) … » ou le mot KEY → clé (la « vraie clé Difmark » revue le
+  21/09 passe toujours : le « account » de l'URL est un GABARIT ici) ; tout autre libellé →
+  refus « la page ne dit ni compte ni clé », jamais une clé par défaut. La garde finale du
+  submitter laisse la page décider pour Difmark (seul le mot du titre y est contrôlé).
 
 ## GameBoost (store 157, liste blanche safe-auto depuis le 2026-09-16)
 

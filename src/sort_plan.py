@@ -110,9 +110,12 @@ def build_sort_plan(
             # page fetch. Kept distinct so the two workflows don't fight.
             reason = "skip category: SOFTWARE (software/app — sort routing)"
         if reason is None:
-            # Passes precheck → a creation candidate, UNLESS it carries the
-            # account-delivery marker, which the sort routes to the account list.
-            if is_account_offer(offer.name):
+            # Passes precheck → a creation candidate, UNLESS it is an account (the one
+            # detector: merchant grammar, title word, URL path token — 2026-09-25), which
+            # the sort routes to the account list. Only a merchant that DECLARES its
+            # accounts (`account_row`) still reaches here: every other account is already
+            # refused by the precheck, and routed to 30 by its reason.
+            if is_account_offer(offer.name, offer.url, offer.merchant):
                 by_list.setdefault(_ACCOUNT_LIST_ID, []).append(
                     _entry(offer, "account offer (marqueur (Account))"))
             else:

@@ -595,6 +595,14 @@ balayage lancé depuis la console relève l'index s'il a plus de 20 h (`--sitema
 ajouter aussi aux commandes lancées à la main), une à deux minutes en lecture seule, jamais une
 halte. Sans relevé pendant 7 jours, le mode se coupe et le matcher sonde comme avant.
 
+**Un compte n'est jamais saisi comme une clé** (2026-09-25) : un seul détecteur de compte
+(`console_keys.account_signal` — mot ACCOUNT du titre, jeton `account` n'importe où dans le
+chemin d'URL, grammaire propre du marchand), une priorité écrite, et une garde finale dans le
+submitter qui bloque, avant toute saisie et cible par cible, un compte vers une page clé, une
+clé vers une page compte, ou une destination de type inconnu (EXECUTOR_RULES « ACCOUNT
+offers »). Déclencheur : un compte Gamivo créé comme clé Xbox One / Series, et huit comptes
+Difmark « [OFFLINE] » comme clés Steam.
+
 **Le feed se lit dans un ordre stable** (2026-09-24) : toutes les URL de feed portent
 `&orderBy=id&order=desc`. Le tri par défaut d'AKS (date de création seule) mélangeait au hasard
 les milliers de lignes d'un import en masse : pages répétées, et plus de 13 000 lignes jamais

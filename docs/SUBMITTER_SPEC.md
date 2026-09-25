@@ -250,6 +250,13 @@ the catalog resolution, **before** any write:
   (message « plus de 3 cibles — plafond du modal AKS (Romain 2026-09-14) »),
   set **before** the row is located or its modal opened; a designed skip
   (`gated_too_many_targets`, no guard streak).
+- offer type ≠ destination type → blocker **`offer_type_mismatch: <why>`**
+  (2026-09-25): an ACCOUNT offer (`console_keys.account_signal`: title word, URL path
+  token) towards a key / game-code destination, a key offer towards an account
+  destination (region label « … ACCOUNT » or a `…-account-compare-prices` page), or a
+  destination with neither label nor page. Checked per target, **before** the row is
+  located or its modal opened, and again right before the Create click. A REAL refusal
+  (feeds the guard streak). EXECUTOR_RULES §4.12 « ACCOUNT offers ».
 
 Dry-run `would_submit` for v2 lists the rows: `set offer[region]=…,
 offer[edition]=…, targets_v2 rows [row 0: target=<id> region=<id>

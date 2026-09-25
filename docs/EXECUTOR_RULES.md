@@ -1666,10 +1666,12 @@ SWITCH alone) — the fix of the Gamivo leak below.
   LIVE CARD, XBOX GIFT CARD, PSN CARD, PLAYSTATION (NETWORK )?(CARD|CREDIT|PLUS|STORE
   CARD), PS PLUS, PLAYSTATION PLUS, (NINTENDO )?ESHOP CARD, NINTENDO SWITCH ONLINE, "<x>
   Access" (Kinguin, URL `-online-account-activation`), ACCOUNT as a whole word ANYWHERE
-  in the title ("Madness Beverage (Account) Standard Edition") or a URL path carrying
-  `/buy-console-account-` / a `-account` / `-account-<digits>` suffix (Kinguin "<x>
-  Account", Difmark console accounts — 2026-09-14: an account is never a console key, the
-  console branch runs BEFORE the Difmark account plan), the MMOGA card / subscription
+  in the title ("Madness Beverage (Account) Standard Edition") or **`account` as a
+  standalone token ANYWHERE in the URL path** (URL-decoded, split on non-alphanumerics,
+  query ignored — `console_keys.url_path_account_token`; the end-anchored `-account` /
+  `-account-<digits>` suffix of 2026-09-14 missed Gamivo's
+  `…-xbox-one-series-account-global-standard`, entered as an « Xbox One Game Code » key on
+  2026-09-24 — see « ACCOUNT offers » below), the MMOGA card / subscription
   categories. Since 2026-09-14 the title markers are shared vocabulary while the URL
   markers are merchant grammar returned as "console: <MARKER> — not a game (R45)" by
   `console_url_families` (`kinguin.py`, `difmark.py`, `mmoga.py`). V-BUCKS / VC / POINTS
@@ -1933,6 +1935,49 @@ from IG, MERCHANTS.md).
   des onglets (« Xbox Series »). Prudence assumée : une méta absente ou d'un vocabulaire inconnu
   ne prouve rien et ne refuse rien ; seule une méta nommant une AUTRE famille fait échouer la
   cible.
+
+### ACCOUNT offers — one detector, a written precedence, a last guard (2026-09-25)
+
+Bug report pasted by Romain: the Gamivo offer « Hitman 2 Global »,
+`/product/hitman-2-xbox-one-series-account-global-standard`, was created as an **Xbox One
+Game Code** key (page 23940) and an Xbox Series key (page 60188). Root cause: the URL
+account marker was read only at the END of the path, and Gamivo writes
+`<game>-<platform>-account-<region>-<edition>`. The same family of error hit Difmark: eight
+« [Steam/Global][OFFLINE] » accounts of the account list (30) were entered as Steam keys
+under GLOBAL(2) on 2026-09-23, because the Difmark branch read the page's silence as « key ».
+
+**One detector** — `console_keys.account_signal(name, url, merchant)`, reused by the console
+classifier, `matcher.is_account_offer` / `precheck_skip`, the sort, the Difmark branch and
+the submitter. **Precedence**:
+1. the title carries ACCOUNT as a whole word → `"title"`;
+2. a merchant with its OWN account grammar (`MerchantConfig.account_row` — Difmark) →
+   `"merchant"`: its URL is template (every Difmark URL says « account », keys included —
+   reviewed 2026-09-21), the row takes the account branch and the merchant PAGE decides;
+3. otherwise `account` as a standalone token of the URL PATH (URL-decoded, lower-cased,
+   non-alphanumerics as separators, anywhere, query ignored, the merchant's
+   `url_ignore_substrings` removed first) → `"url"`. « accounting » is not the token.
+No trusted source states « key » explicitly for merchants without their own grammar, so
+nothing overrides signals 1 and 3; the « key » reading is only the default when none fires.
+
+**Where an account goes:** a merchant WITHOUT `account_row` → console rows « console: ACCOUNT
+— not a game (R45) », every other row « skip category: ACCOUNT (…) » (the LAST precheck, so
+existing reasons keep their label) — both routed to the account list (30) by
+`aks_lists.suggest_target_list` / the sort: the manual-review queue. Difmark → its account
+branch, which now requires the page to SAY what it sells: ACCOUNT or OFFLINE in the page
+wording (or ACCOUNT in the title) → the `…-steam-account` page and « Account » bucket, or a
+named refusal when that page is missing; the 2026-07-17 key wording « <Game> (<platform>) … »
+or the word KEY → key; anything else (« [Steam/Global] » alone) → refused (« la page ne dit
+ni compte ni clé »), never a key by default.
+
+**Last guard before any write** — `submitter.offer_type_mismatch`, run in `_prepare` BEFORE
+the row is located or its modal opened, and again in `Submitter._process` right before the
+Create click. Each target is checked on its own (an Xbox One + Xbox Series candidate has two
+destinations). Destination = ACCOUNT when its region label says ACCOUNT or its AKS page is a
+`…-account-compare-prices` page; neither label nor page → UNKNOWN. Account offer → key /
+game-code destination: blocked. Key offer → account destination: blocked. Unknown
+destination: blocked. For a `"merchant"` signal (Difmark) the page decided in the matcher:
+only the title word and the unknown rule are enforced. Blocker `offer_type_mismatch: <why>`
+— a real refusal (feeds the failure streak), never a designed skip, nothing is filled.
 
 ## 5. Stage 3 — Validation
 

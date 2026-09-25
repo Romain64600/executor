@@ -70,7 +70,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Pattern, Sequence
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 if TYPE_CHECKING:  # the registry is imported at call time only (see _config_of)
     from src.merchant_config import MerchantConfig
@@ -550,12 +550,79 @@ _NON_GAME_TITLE_RES = tuple(re.compile(p) for p in (
     r" NINTENDO SWITCH ONLINE ",
     r" GIFT CARDS? ",                   # any gift card on a console row is a card
 ))
-# ACCOUNT listings (2026-09-14, review finder 3 [high]): "<x> Account" (title tail, URL
-# "-account"), "<Game> (Account) Standard Edition" with a "/buy-console-account-<slug>-
-# nintendo-switch-account-<id>" URL — the word ANYWHERE in the title (parenthesised too),
-# a "/buy-console-account-" path, or an "-account" / "-account-<digits>" path suffix.
-# Never a key. Plain-English delivery words, shared by every feed.
-_ACCOUNT_PATH_RE = re.compile(r"(?:^|-)account(?:-\d+)?/?$")
+# ── ACCOUNT listings — THE detector of the whole pipeline (2026-09-25) ────────────────────
+# An ACCOUNT is a product (login credentials), never a key: entering it on a key / game-code
+# page is a wrong offer. ONE detector, used by the console classifier below, by
+# ``matcher.is_account_offer`` / ``precheck_skip`` / the Difmark account branch, by the sort,
+# and by the submitter's last guard before any write — no second classification system.
+#
+# Signals, in order of PRECEDENCE:
+#   1. the title carries ACCOUNT as a whole word (punctuation-insensitive: "(Account)",
+#      "Steam-Account", "... Account") → ``"title"``;
+#   2. a merchant that DECLARES its own account grammar (``MerchantConfig.account_row`` —
+#      Difmark) → ``"merchant"``: its URL is ITS business, never read by the generic token
+#      below. At Difmark every URL carries « account » as TEMPLATE (« /buy-console-account-
+#      … -steam-account-<id> », keys included — the reviewed decision of 2026-09-21 pinned by
+#      ``test_une_vraie_cle_difmark_passe_toujours``), so the row goes to the ACCOUNT BRANCH,
+#      where the merchant's own offer page decides account vs key (``matcher._pc_plan``);
+#   3. otherwise the URL PATH carries ``account`` as a standalone token — URL-decoded,
+#      lower-cased, split on every non-alphanumeric, ANYWHERE in the path (query string
+#      ignored), after the merchant's declared URL noise (``url_ignore_substrings``) → ``"url"``.
+# « accounting » / « accountant » are not the token. For every merchant without its own
+# grammar, no trusted source states « key » explicitly, so nothing overrides signals 1 and 3:
+# the default "key" reading only applies when none fires.
+#
+# Why "anywhere" (bug of 2026-09-24, reported by Romain): the first version read the path
+# token only at the END ("-account" / "-account-<digits>"). Gamivo writes
+# ``<game>-<platform>-account-<region>-<edition>`` —
+# ``/product/hitman-2-xbox-one-series-account-global-standard``, title « Hitman 2 Global » —
+# so the marker never fired and the ACCOUNT was entered as an « Xbox One Game Code » key.
+
+
+def url_path_account_token(url: str, noise: Sequence[str] = ()) -> bool:
+    """True iff the URL PATH carries ``account`` as a standalone token (see above). ``noise``
+    = the merchant's ``url_ignore_substrings``, removed case-insensitively first (Difmark's
+    ``buy-console-account-`` prefix is template, not a signal)."""
+
+    try:
+        path = urlparse(url or "").path
+    except ValueError:
+        path = str(url or "")
+    path = unquote(path).lower()
+    for piece in noise:
+        if piece:
+            path = path.replace(str(piece).lower(), "")
+    return "account" in re.split(r"[^a-z0-9]+", path)
+
+
+def title_account_marker(name: str) -> bool:
+    """The whole word ACCOUNT in the title (punctuation-insensitive)."""
+
+    return " ACCOUNT " in _padded_upper(name or "")
+
+
+def account_signal(name: str, url: str, merchant: str = "") -> str | None:
+    """Which explicit signal says this listing is an ACCOUNT — ``"merchant"`` (the
+    merchant's ``account_row`` grammar), ``"title"`` or ``"url"`` — or None (then, and only
+    then, the row may be read as a key). See the precedence note above."""
+
+    if title_account_marker(name):
+        return "title"
+    cfg = _config_of(merchant)
+    if cfg is not None and cfg.account_row is not None:
+        return "merchant" if cfg.account_row(name, url) else None
+    noise = tuple(cfg.url_ignore_substrings) if cfg is not None else ()
+    if url_path_account_token(url, noise):
+        return "url"
+    return None
+
+
+def is_account_listing(name: str, url: str, merchant: str = "") -> bool:
+    """True when the title or the URL token says account (:func:`account_signal` ``"title"``
+    / ``"url"``). The ``"merchant"`` hint of a merchant with its own account grammar is NOT
+    enough: that merchant's page decides (see above)."""
+
+    return account_signal(name, url, merchant) in ("title", "url")
 
 
 def _non_game_marker(name: str, url: str) -> str | None:
@@ -567,12 +634,18 @@ def _non_game_marker(name: str, url: str) -> str | None:
     path = urlparse(url).path.lower()
     if "gift-card" in path:
         return "GIFT CARD"
-    if (" ACCOUNT " in padded or "/buy-console-account-" in path
-            or _ACCOUNT_PATH_RE.search(path)):
+    if title_account_marker(name):
         return "ACCOUNT"
     # Console ACCESS listings (URL "-online-account-activation"; title "<Game> <Platform>
-    # Access") — never a key either.
-    if "online-account-activation" in path or re.search(r" ACCESS $", padded):
+    # Access") — never a key either. Checked BEFORE the URL account token: that path
+    # carries the token too, and its label has always been ACCESS.
+    if "online-account-activation" in path:
+        return "ACCESS"
+    # The account token ANYWHERE in the path (no merchant here: no noise removed — the
+    # historical "/buy-console-account-" prefix keeps counting, as it always did).
+    if url_path_account_token(url):
+        return "ACCOUNT"
+    if re.search(r" ACCESS $", padded):
         return "ACCESS"          # "<Game> <Platform> Access" — the platform precedes the word
     return None
 

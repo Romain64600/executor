@@ -3,6 +3,49 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-25 — Un compte n'est jamais saisi comme une clé : un détecteur, une priorité, une garde finale
+
+Rapport de bug collé par Romain : l'offre Gamivo « Hitman 2 Global »
+(`/product/hitman-2-xbox-one-series-account-global-standard`) a été créée comme clé « Xbox One
+Game Code » (page 23940) et Xbox Series (page 60188).
+
+**Causes, précises.**
+1. `console_keys._non_game_marker` ne lisait `account` dans l'URL qu'en FIN de chemin
+   (`(?:^|-)account(?:-\d+)?/?$`) ; Gamivo l'écrit au milieu
+   (`<jeu>-<plateforme>-account-<région>-<édition>`) → aucun marqueur → clé console.
+2. La branche Difmark (`_pc_plan`) tenait « clé » pour acquis dès que le libellé de page ne
+   contenait pas ACCOUNT : huit comptes « [Steam/Global][OFFLINE] » de la liste 30 sont entrés
+   comme clés Steam GLOBAL(2) le 23/09 (Stellaris, Beasts of Bermuda, AC Odyssey, Avatar…,
+   Polyaris, Pixelshire, EA FC 24, AC Valhalla Wrath of the Druids).
+3. Sur le chemin PC générique, un compte signalé par l'URL seule (titre muet) n'était refusé
+   nulle part.
+Recherche en lecture seule sur les deux VM : ces 10 entrées sont les seules créées sur une
+page non-compte (liste à réparer à la main : `/tmp/tri/20260925-comptes-entres-comme-cles.csv`).
+
+**Correctif.**
+- UN détecteur, `console_keys.account_signal` (+ `url_path_account_token`,
+  `title_account_marker`, `is_account_listing`), réutilisé par le classifieur console,
+  `matcher.is_account_offer` (qui lit désormais l'URL et le marchand), `precheck_skip`, le tri
+  et le submitter. Priorité : mot ACCOUNT du titre → grammaire propre du marchand
+  (`account_row`, Difmark — son URL est un gabarit, la page décide) → jeton `account`
+  autonome n'importe où dans le chemin décodé (query ignorée, bruit du marchand retiré ;
+  « accounting » exclu).
+- Précheck : un compte d'un marchand sans grammaire propre → `skip category: ACCOUNT (…)`,
+  routé en liste 30 ; placé en DERNIER pour que chaque motif existant garde son libellé.
+- Difmark : ACCOUNT / OFFLINE → compte ; « (<plateforme>) » ou KEY → clé ; sinon refus
+  « la page ne dit ni compte ni clé ».
+- Garde finale `submitter.offer_type_mismatch` dans `_prepare` (avant de localiser la ligne ou
+  d'ouvrir sa modale) et de nouveau juste avant le clic « Create » : compte → page clé,
+  clé → page compte, destination inconnue → bloqué, cible par cible ; blocker
+  `offer_type_mismatch: …`, compté comme un échec.
+
+Tests : `tests/test_account_offer_type.py` (13 — URL Gamivo exacte, query, casse et
+encodage, « accounting », garde compte → Xbox One Game Code sans aucune saisie, clé Xbox
+normale, comptes Kinguin / ACCESS / Difmark existants, destination inconnue, Xbox One + Series
+vérifiées une à une, Difmark où la page décide) et deux tests Difmark dans
+`tests/test_matcher.py` (OFFLINE → page compte jamais la page clé ; libellé muet → refus).
+13 mutations, 13 rouges. Suite : 2 650 OK.
+
 ## 2026-09-24 — `[R58]` Wyrel : « (PC) » sans boutique = Steam quand la page AKS ne vend que Steam
 
 Romain, après un premier « NO GO » sur une formulation antérieure : « si une offre est marquée

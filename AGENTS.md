@@ -193,6 +193,18 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   page found ». La décision du 10/09 précédait les balayages tout-pages multi-marchands. Le
   coût d'une re-sonde est borné (3 tentatives par page qui la tente, une fois par fenêtre).
 
+- **Comptes : un signal explicite l'emporte, et le silence n'est jamais « clé » (2026-09-25,
+  rapport de bug de Romain).** Un détecteur unique (`console_keys.account_signal`) : mot
+  ACCOUNT du titre, jeton `account` n'importe où dans le chemin d'URL, ou la grammaire propre
+  du marchand (`account_row`). Un marchand SANS grammaire propre : un compte est refusé et
+  routé en liste 30. Difmark garde sa branche compte, où la PAGE décide : ACCOUNT / OFFLINE →
+  compte, « (<plateforme>) » ou KEY → clé (la « vraie clé Difmark » du 21/09 reste valide :
+  le « account » de ses URL est un gabarit), rien de tout cela → refus. Un audit voudra
+  (a) faire du « account » d'URL Difmark un signal de compte — non, c'est un gabarit, il
+  casserait les vraies clés ; (b) retomber sur « clé » quand la page Difmark se tait — non,
+  c'est exactement l'erreur des huit « [OFFLINE] » du 23/09 ; (c) assouplir la garde finale
+  du submitter (destination inconnue → bloquée) — non.
+
 - **`[R58]` Wyrel : « (PC) » sans boutique + page AKS « Steam » SEUL = Steam — Romain,
   2026-09-24, pour Wyrel SEULEMENT** (« si une offre est marquée PC et qu'on n'a pas d'autre
   info, si sur la page Allkeyshop on a que du Steam, on l'ajoutera en Steam ; si on voit qu'il y

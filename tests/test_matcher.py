@@ -2303,6 +2303,52 @@ class MatchOfferTests(unittest.TestCase):
         self.assertIn("steam-account", result.aks_url)
         self.assertEqual(result.aks_name, "Rogue Loops Steam Account")
 
+    def test_difmark_offline_wording_is_an_account_never_the_key_page(self):
+        # 2026-09-25 — the exact shape of the 2026-09-23 escape: an « [OFFLINE] » shared
+        # account whose page never says ACCOUNT went to the Steam KEY page as GLOBAL(2).
+        # Now an ACCOUNT: the account page, or a NAMED refusal when it is missing — the key
+        # page is never consulted.
+        offer = NormalizedOffer(
+            offer_id="1", name="Stellaris Standard Edition",
+            url="https://difmark.com/en/buy-console-account-stellaris-steam-account-75948",
+            merchant="Difmark",
+        )
+        attrs = lambda url: DifmarkOfferAttributes(  # noqa: E731
+            raw_platform="STEAM", raw_region="GLOBAL",
+            offer_name="⭐️ Stellaris +14 Games [Steam/Global][OFFLINE]")
+        key_page_used = []
+
+        def key_resolver(name, **k):
+            key_page_used.append(name)
+            return None
+
+        missing = match_offer(offer, key_resolver, difmark_offer_resolver=attrs,
+                              account_resolver=lambda name, page_kind="steam-account": None)
+        self.assertIsInstance(missing, SkippedOffer)
+        self.assertIn("no AKS steam-account product page found", missing.reason)
+        self.assertEqual(key_page_used, [], "the key page must never be consulted")
+        found = match_offer(offer, key_resolver, difmark_offer_resolver=attrs,
+                            account_resolver=self._account_resolver(aks_name="Stellaris Steam Account"))
+        self.assertIsInstance(found, Candidate, getattr(found, "reason", ""))
+        self.assertEqual((found.region_label, found.region_id), ("GLOBAL ACCOUNT", "412"))
+
+    def test_difmark_page_that_says_neither_account_nor_key_is_refused(self):
+        # « [Steam/Global] » with no OFFLINE / ACCOUNT / KEY / « (Steam) »: the old code read
+        # silence as KEY. Now a refusal that names the wording — never a key by default.
+        offer = NormalizedOffer(
+            offer_id="1", name="Some Game Standard Edition",
+            url="https://difmark.com/en/buy-console-account-some-game-steam-account-1",
+            merchant="Difmark",
+        )
+        result = match_offer(
+            offer, self._resolver(aks_name="Some Game"),
+            difmark_offer_resolver=lambda url: DifmarkOfferAttributes(
+                raw_platform="STEAM", raw_region="GLOBAL", offer_name="Some Game [Steam/Global]"),
+            account_resolver=self._account_resolver(aks_name="Some Game Steam Account"),
+        )
+        self.assertIsInstance(result, SkippedOffer)
+        self.assertIn("ni compte ni clé", result.reason)
+
     def test_difmark_steam_account_europe_enters_under_eu_account_region(self):
         offer = NormalizedOffer(
             offer_id="1", name="Rogue Loops Standard Edition",

@@ -503,7 +503,7 @@ Each `plan[]` entry (fields appear as the flow reaches them):
 
 - `modal_shape` (string): `"targets_v2"` | `"targets_v1"` | `"unknown"` — read from
   the open modal; absent when the entry was blocked before its modal opened
-  (`too_many_targets`, row not located).
+  (`too_many_targets`, `offer_type_mismatch: …` — 2026-09-25 —, row not located).
 - `modal_shape_detail` (object, when the session reports it):
   `{v2_target0, v2_region0, v2_edition0, v1_input}` booleans — which shape probes
   hit.
