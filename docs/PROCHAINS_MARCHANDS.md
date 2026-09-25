@@ -15,8 +15,8 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 | ✓ | **Gamesplanet FR** (55) | 526 | 339 (64 %) | — | **fait** : fichier `[R59]` et liste blanche le 25/09 (groupe A) ; essai à blanc 77 candidats / 150 lignes |
 | 2 | **Gamebillet** (15) | 268 | 192 (72 %) | plateforme et région (URL et titre muets ; la page liste les pays exclus) | à étudier après Gamesplanet |
 | 3 | **Muve** (166) | 605 | 322 (53 %) | titre lisible pour ~35 % des lignes ; pas de région sur la page ; « sans région = Europe » refusé par Romain (25/09) | ~140 lignes seulement, en refusant les lignes sans région |
-| 4 | **Pixelcodes** (82) + **Software-codes** (6) | 1 547 + 1 538 | 1 377 + 1 365 (89 %) | tout : titre et URL muets, page en JavaScript (illisible sans navigateur), aucune offre déjà sur AKS pour s'en inspirer | gros potentiel, difficile |
-| 5 | **Discover.games** (168) | 440 | 370 (84 %) | idem Pixelcodes (aucune offre déjà sur AKS) | difficile |
+| 4 | **Pixelcodes** (82) + **Software-codes** (6) | 1 547 + 1 538 | 1 377 + 1 365 (89 %) | **les produits du feed n'existent plus sur leurs sites** (API : « Product not found », 52 sur 52 testés ; sites devenus boutiques de logiciels) | à ne pas saisir ; liste « not found » en cours pour les marchands |
+| 5 | **Discover.games** (168) | 440 | 370 (84 %) | titre du feed nu, mais la page est vivante et dit « Buy <jeu> Steam Key » | à étudier |
 | — | Greenmangaming (22) | 482 | 318 (66 %) | URL d'affiliation illisible (sjv.io), titre muet | pas prioritaire |
 
 \* Mesuré sur le scan tous-magasins du 21/09, **avant** la correction du tri du feed (`orderBy=id`,
@@ -26,6 +26,28 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 (19/09), GameBoost / Electronicfirst / GamersOutlet (16/09), Difmark (21/09).
 
 ---
+
+## 2026-09-25 (suite) — Pixelcodes : les produits du feed n'existent plus sur le site
+
+Romain : « Je pense qu'on va partir sur Pixelcodes […] il faudra essayer d'ouvrir la page pour
+être sûr que ce soit pas un product not found », puis « Tu me garderas une liste de produits not
+found, que je pourrais transmettre aux marchands ».
+
+- Les titres du feed Pixelcodes (scan du 21/09, 1 547 lignes importées le 16/09) sont nus :
+  « Frogun », « Barotrauma » ; ~1 % disent une plateforme ou une région.
+- La page produit est une application JavaScript (2,8 Ko de HTML), mais elle lit ses données
+  dans une **API publique** : `https://pixelcodes.com/api/products/<slug>` (le slug de l'URL du
+  feed). Pour un produit vivant, elle rend `categorySlug`, `regionRestrictions`, `platformType`,
+  les `variants` (avec `platform`, `stockCount`)… ; sinon `{"error":"Product not found"}`.
+- **40 lignes du feed tirées au hasard : 40 « Product not found ».** La recherche du site
+  (`/api/products?q=`) ne trouve ni « frogun », ni « naruto », ni « barotrauma ». Le site
+  d'aujourd'hui est une boutique de LOGICIELS : ses catégories sont antivirus, bureautique,
+  systèmes, VPN… (293 produits en stock), aucune catégorie jeux.
+- **Software-codes** (store 6) : même gabarit de site, même API ; 12 lignes sur 12 « not found ».
+- **Discover.games** (store 168), à part : ses pages sont vivantes (`discover.games/games/mad-metal`
+  → `www.`, titre « Buy Mad Metal Steam Key »). Candidat à étudier, autre famille.
+- Vérification complète en cours (toutes les lignes des deux marchands, API, lecture seule) :
+  `/tmp/tri/20260925-produits-introuvables.csv` sur la nouvelle VM, à transmettre aux marchands.
 
 ## 2026-09-25 (suite) — Pourquoi Muve n'a que 35 % de lignes lisibles
 
