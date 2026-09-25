@@ -447,7 +447,7 @@ Invariant : après le bloc édition, `edition_id == "16"` ne peut venir que de R
 region (= region/PLATFORM) and the edition PER TARGET PAGE, so one feed row can be filed on
 several AKS pages. The full rule — page model (§4.12.1: separate console product pages
 `buy-<slug>-<kind>-compare-prices/`, one product id per page), classifier, multi-target
-candidates, policies (P1 DECIDED by Romain on 2026-09-14, P2-P5 à confirmer), the submit
+candidates, policies (P1 DECIDED by Romain on 2026-09-14; P2, P3, P5 on 2026-09-25), the submit
 path (§6, modal v2) — lives in §4.12; the code runs under `--consoles`, the DEFAULT since
 Romain's decision « 1 » of 2026-09-15 (`--no-consoles` opts out). Bucket table: §10.
 Invariant (d): **one feed row = one offer, and creating it consumes the row** (our proof), so
@@ -1464,8 +1464,9 @@ study (§4.3). The code runs under `--consoles` — **the DEFAULT since 2026-09-
 decision « 1 »); `--no-consoles` is the PC-only opt-out. Real console writes are allowed
 (Romain's GO of 2026-09-15 after the modal v2 was observed with `--inspect` and proven by
 two canaries — one target, then two). **P1 is DECIDED** (Romain 2026-09-14: « clé PS5 seule
-= page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch et Switch 2 »); P2-P5
-below are still **à confirmer par Romain** (listed in §12). Historique (the opt-in / default
+= page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch et Switch 2 »); **P2, P3
+and P5 are DECIDED** (Romain 2026-09-25: « P3 A, P5 A, P2 saisir sur les xbox déclarées et sur
+PC (on le considère Play Anywhere) »); P4 is listed in §12. Historique (the opt-in / default
 OFF phase of 2026-09-12 → 14, the "`--consoles` requires `--dry-run`" guard of 2026-09-14,
 the adversarial review of 2026-09-12 fixed on 2026-09-14, the canaries) : CHANGELOG
 2026-09-12, 2026-09-14, 2026-09-15.
@@ -1506,7 +1507,8 @@ URL grammar : CHANGELOG 2026-09-12.)
   write "/ Windows", "PC/XBOX …", "(Windows/Xbox Series X|S)", "Xbox One, PC".
 - **Modal buckets** (867-entry catalog, byte-identical in the 9 catalogs of 10-12/09):
   the family × base-region table is in §10 (`CONSOLE_REGION_IDS`). Absent = fail-closed:
-  **no PS5 EU/US/UK** (PS5 = the single `88ps5h`), no console gift bucket. Ids are
+  no console gift bucket. PS5 has ONE bucket of its own (`88ps5h`); outside GLOBAL it takes
+  the PlayStation `88eu` / `88us` / `88uk` (P3, Romain 2026-09-25). Ids are
   strings and 182 keys are non-numeric (`24eu`, `88ps5h`, `99eu`…): `resolve_catalog_id`
   resolves them through the **id path** (verified on the live catalog:
   `('GLOBAL','306')`, `('PS5','88ps5h')`, `('EU','24eu')`). **BOM facts** (catalog
@@ -1730,8 +1732,11 @@ SWITCH alone) — the fix of the Gamivo leak below.
    a. `families = sig.families`; `guard_name = sig.resolve_name` (R01 / R16 / R01b and
       `detect_edition` read `guard_name` instead of `offer.name`; PC rows: `guard_name =
       offer.name`, unchanged);
-   b. `dlc_title_marker(offer.name)` → skip "console: DLC / season pass on console — not
-      entered yet (R45)" **[P5]**;
+   b. DLC / season pass **[P5 — DÉCIDÉ Romain 2026-09-25]**: `dlc_marker =
+      title_dlc_marker(offer, cfg) or dlc_title_marker(guard_name)` (the SAME reading R18
+      makes in the edition block); `slug_name = strip_dlc_marker(guard_name)` when a marker
+      is present, else `guard_name` — the text every resolution of steps d-g uses. The
+      pages themselves are checked after step g (R43 per target page);
    c. region (review fix 2026-09-14 — NEVER an implicit GLOBAL for a region word the
       merchant wrote; historique : CHANGELOG 2026-09-14):
       `detect_region_base(offer) -> (base, label, implicit, gift)` is the generic
@@ -1753,20 +1758,26 @@ SWITCH alone) — the fix of the Gamivo leak below.
       sellable base — not entered (R45)"; else implicit GLOBAL (no region word at all —
       the Kinguin-style default, as before). The BASE label is kept in the plan
       (`_Plan.base_label`) for R44. Per family `REGION_IDS[fam].get(base)` — `None` →
-      skip "no region id for <FAMILY>/<LABEL> (R45)" (e.g. `PS5/EU`) for the WHOLE offer
-      ("PS5 … [EU]" skips: no PS5 EU/US/UK bucket exists **[P3]**);
-   d. anchor: `pc_res = resolver(guard_name)`; if `None`: `resolver(guard_name,
+      skip "no region id for <FAMILY>/<LABEL> (R45)" for the WHOLE offer (defensive: since
+      **[P3]** every console family has its four base buckets — PS5 EU / US / UK take the
+      PlayStation `88eu` / `88us` / `88uk`, Romain 2026-09-25);
+   d. anchor: `pc_res = resolver(slug_name)`; if `None`: `resolver(slug_name,
       page_kind=CONSOLE_PAGE_KIND[primary])` (no R30 search for console kinds); `None` →
       "no AKS product page found (console) (R45)";
    e. identity: `identity_name = console_page_identity(anchor.aks_name)`; R01 / R16 /
       R01b on `guard_name`;
-   f. Play Anywhere **[P2]**: `pa = pc_res is not None and "XBOX PLAY ANYWHERE" in
-      {p.upper() for p in pc_res.official_platforms}`. `sig.pc_declared and not pa` → skip
-      "console: merchant declares Xbox + PC but the AKS page does not list Xbox Play
-      Anywhere — not entered (R45)" (contradiction, never resolved in the merchant's
-      favour). `pa` with a declared Xbox family → every Xbox target takes the XBOX_PC
-      bucket and the PC page becomes an additional target (bucket XBOX_PC), whether or not
-      the merchant wrote "+ PC"; otherwise One → XBOX_ONE, Series → XBOX_SERIES;
+   f. Play Anywhere **[P2 — DÉCIDÉ Romain 2026-09-25]**: `pa = pc_res is not None and
+      "XBOX PLAY ANYWHERE" in {p.upper() for p in pc_res.official_platforms}`. "PC" declared
+      next to NO Xbox family → skip "console: merchant declares PC next to <FAMILIES> —
+      contradictory delivery, not entered (R45)" (unchanged, 2026-09-20). Xbox + PC declared
+      with no AKS PC page (`pc_res is None`) → skip "console: merchant declares Xbox + PC but
+      AKS has no PC page for '<identity>' — Play Anywhere target unverifiable, not entered
+      (R45)". Then `pa_targets = xbox_declared and (pa or sig.pc_declared)`: every Xbox
+      target takes the XBOX_PC bucket and the PC page becomes an additional target (bucket
+      XBOX_PC) — when the page lists PA (whether or not the merchant wrote "+ PC") AND, since
+      2026-09-25, when the merchant declares Xbox + PC on a page WITHOUT PA (« on le
+      considère Play Anywhere »; the old "does not list Xbox Play Anywhere" refusal is
+      gone); otherwise One → XBOX_ONE, Series → XBOX_SERIES;
    g. target pages **[P1: merchant declaration ∧ AKS page]**: for each declared family,
       `url = anchor.console_pages.get(kind)` (a console anchor is its own page); absent →
       skip "console: AKS has no <family> page for '<identity>' — declared platform
@@ -1778,7 +1789,16 @@ SWITCH alone) — the fix of the Gamivo leak below.
       '<name>' is not '<identity>' (R45)" (the Elden Ring Tarnished Edition case — also on
       the `nintendo-switch-2` tab: "ELDEN RING Tarnished Edition Nintendo Switch 2", AKS
       188441, is not Elden Ring); `page.editions` empty → skip "AKS <FAMILY> page carries
-      no editions map — edition unverifiable (R19, R45)";
+      no editions map — edition unverifiable (R19, R45)"; then, for a DLC title **[P5]**,
+      EVERY page of the plan (the Play Anywhere PC page included) goes through
+      `r43_dlc_page_refusal(dlc_marker, page, slug_name, guard_name, stamp="R43, R45")` —
+      THE R43 check the PC path runs (§4.3): the page carries the DLC bucket (16), a
+      marker with no DLC name of its own is refused on a page that also sells a non-DLC
+      bucket, and the page slug is one of `own_page_slugs(slug_name)` (a console page's
+      `slug` is the bare game slug, the capture before `-<kind>-compare-prices`). One page
+      failing → skip "console: <FAMILY> — <the R43 reason> (R43, R45)" for the WHOLE row;
+      all pass → `_Plan.dlc_page = True` (the DLC marker is not an extra word for R16 /
+      R01b, as on PC);
    h. `resolution` = the primary page (first declared family), `platform` = the primary
       family, `region_label` / `region_id` = the primary bucket; then the common flow
       (R44 — on the BASE label `plan.base_label` against the page IDENTITY, the grammar's
@@ -1788,7 +1808,10 @@ SWITCH alone) — the fix of the Gamivo leak below.
       block R18 / E05 / R23 / P1-1 unchanged);
    i. after the edition block: every secondary target must sell the resolved edition
       (`edition_id in page.editions`), else skip "edition <label>(<id>) not sold on the
-      <family> page (R45)"; then `targets` and the `Candidate` are built.
+      <family> page (R45)"; then `targets` and the `Candidate` are built. **[P5]** There is
+      no blanket DLC(16) refusal any more: a marked title reaches DLC(16) through R18 after
+      passing R43 on every page; a MARKERLESS title reaches it only through R18's own PC
+      locks (the DLC bucket must be the page's ONLY one — durci 2026-09-17 —, R18b, R57).
 5. `Candidate.targets: tuple[Target, ...]` — `Target(platform, aks_product_id, aks_url,
    aks_name, region_label, region_id, edition_label, edition_id)` (frozen dataclass,
    `to_dict`). `Candidate.to_dict()` ALWAYS emits `"targets": [...]` (a PC candidate: one
@@ -1827,7 +1850,7 @@ reason above. A feed row is consumed by its first creation (§4.3 finding (d)), 
 (no partial `targets`) and at submit time (§6 gate). No region, edition or platform is ever
 guessed: doubt → skip with an explicit reason string.
 
-**Policies (P1 decided; P2-P5 à confirmer par Romain — also listed in §12).**
+**Policies (P1 decided 2026-09-14; P2, P3, P5 decided 2026-09-25; P4 — §12).**
 - **P1 "merchant declaration ∧ AKS page" — DECIDED (Romain 2026-09-14: « clé PS5 seule =
   page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch et Switch 2 »)**: a
   target is added only if the merchant DECLARES the platform AND the AKS page of the game
@@ -1836,9 +1859,15 @@ guessed: doubt → skip with an explicit reason string.
   One); a cross-gen declaration ("PS4 / PS5", "Xbox One / Series X|S") → both pages. No
   sibling page is ever added (AGENTS.md "Reviewed decisions"); there is no "page alone"
   switch.
-- **P2 Play Anywhere = the PC page's truth** ("Xbox Play Anywhere" in `official
-  platforms`): merchant "+ PC/Windows" WITHOUT PA on the page → skip (contradiction); PA on
-  the page WITHOUT a merchant mention → PA targets (XBOX/PC bucket on PC + One + Series).
+- **P2 Play Anywhere — DÉCIDÉ Romain 2026-09-25** (« P2 saisir sur les xbox déclarées et
+  sur PC (on le considère Play Anywhere) »). PA on the page WITHOUT a merchant mention → PA
+  targets (XBOX/PC bucket on PC + the declared Xbox pages), as before. Merchant "Xbox +
+  PC/Windows" WITHOUT PA on the page → **considered Play Anywhere**: the declared Xbox
+  pages + the PC page, all under the XBOX/PC bucket (`306` GLOBAL / `241` EU / `242` US /
+  `240` UK), exactly as when the page lists PA ("PAC-MAN MUSEUM+ EU XBOX One / Xbox Series
+  X|S / PC CD Key" → One + Series + PC in `241`). Until then it was a "contradiction" skip
+  (~100 rows on the skipped.json of 22-25/09). No AKS PC page → skip (the PC target is
+  unverifiable — never a partial entry). P1 and the 3-target cap are unchanged.
   **Domaine borné le 2026-09-20** : cette porte ne juge que les familles XBOX. Xbox Play
   Anywhere n'existe ni sur Nintendo ni sur PlayStation, et la garde se déclenchait pourtant
   dès que « PC » était déclaré à côté de N'IMPORTE quelle famille : « FINAL FANTASY VIII -
@@ -1848,10 +1877,23 @@ guessed: doubt → skip with an explicit reason string.
   marchande se contredit et on ne devine pas laquelle est vraie — mais sous son vrai motif
   (`contradictory delivery`). Un audit « trouvera » qu'une clé Switch pourrait entrer sur sa
   page : ce serait deviner, laisser le refus.
-- **P3 PS5 outside GLOBAL** ("PS5 … [EU]") → skip: no PS5 EU/US/UK bucket exists — Romain
-  can create them in the tool.
+- **P3 PS5 outside GLOBAL — DÉCIDÉ Romain 2026-09-25 (« P3 A »)**: Europe / US / UK take the
+  PlayStation buckets of PS4, `88eu` « Playstation Game Code EUROPE » / `88us` « … US » /
+  `88uk` « … UK »; GLOBAL keeps `88ps5h` « PS5 ». Evidence, read live on 2026-09-25 on 10 AKS
+  PS5 pages: 43 offers under `88eu` « EUROPE » and 41 under `88us` « USA » next to 96 under
+  `88ps5h` — AKS already files PS5 keys there; `88uk` is in the modal catalog
+  (`runs/20260925-152525-auto/catalog.json`: « Playstation Game Code UK (88uk) »). Until then
+  "no region id for PS5/EU (R45)" (~75 rows on the skipped.json of 22-25/09).
 - **P4 Eneba's 704 "XBOX LIVE Key" rows without a generation** → skip (no declaration).
-- **P5 console DLC / season pass** → skip in v1.
+- **P5 console DLC / season pass — DÉCIDÉ Romain 2026-09-25 (« P5 A »)**: the PC DLC rule
+  `[R43]` applied to consoles — the row enters only on the console page OF THE DLC ITSELF
+  (full-name slug + console page kind), and that page must carry the DLC bucket (16);
+  `r43_dlc_page_refusal` is the ONE check, shared with the PC path (no second system).
+  Multi-target ("Xbox One / Xbox Series X|S", or Play Anywhere): every DLC page is checked
+  on its own, one missing = the whole row refused (§6). "Battlefield 4 Premium (DLC) (Xbox
+  One) Xbox Live Key - EU" → Xbox One page of `battlefield-4-premium`, DLC(16), `24eu`.
+  Until then "console: DLC / season pass on console — not entered yet (R45)" (~640 rows on
+  the skipped.json of 22-25/09).
 
 **URL-only console rows.** Gamivo and Eneba carry the platform in the URL alone (the title
 never names it), so the console guard of `precheck_skip` reads the TITLE **and** the URL
@@ -1866,7 +1908,11 @@ leak of 2026-09-11, AKS product 50562, to be corrected by hand — §12) : CHANG
 branch's fail-closed skips (Xbox 360, not a game, PC-only Xbox Live key, no declared
 generation, "console: unparsed platform residue (R45)" and "console: product name suffix
 '<Platform label> Edition' contradicts the declared platform <FAMILY> — not entered
-(R45)" — the two classifier skips of 2026-09-14 (4.12.3) — DLC on console, gift delivery, Play Anywhere contradiction, missing family
+(R45)" — the two classifier skips of 2026-09-14 (4.12.3) — "console: <FAMILY> — <R43
+reason> (R43, R45)" (a console DLC off its own page, P5), gift delivery, "console: merchant
+declares PC next to <FAMILIES> — contradictory delivery, not entered (R45)", "console:
+merchant declares Xbox + PC but AKS has no PC page for '<identity>' — Play Anywhere target
+unverifiable, not entered (R45)", missing family
 page, the region refusals of 2026-09-14 — "console: merchant region '<word>' not mapped
 to a sellable base — not entered (R45)", "console: region contradiction (title/grammar
 vs URL) — not entered (R45)" — and the branch's defensive refusals: "console: unknown platform family
@@ -1875,7 +1921,8 @@ name left once the platform markers are removed (R45)", "console: AKS page name 
 has no product identity (R45)", "console: AKS <family> page <url> not found (404) —
 declared platform unverifiable (R45)" — the tab URL answered 404/410). The remaining R45
 skips keep their page-level wording: "no region id for <FAMILY>/<LABEL> (R45)" (e.g.
-`PS5/EU` — the uppercase LABEL, not the lowercase base), "no AKS product page found
+`XBOX_ONE/EU` — the uppercase LABEL, not the lowercase base; unreachable for a sellable
+base since P3), "no AKS product page found
 (console) (R45)", "console page '<name>' is not '<identity>' (R45)", "edition
 <label>(<id>) not sold on the <FAMILY> page (R45)". A target page without an editions map
 skips as "AKS <FAMILY> page carries no editions map — edition unverifiable (R19, R45)"
@@ -2529,7 +2576,7 @@ are the master text without the " (id)" suffix (`CONSOLE_REGION_LABELS`):
 | XBOX_SERIES (Xbox Series X\|S) | 300 "Xbox Series" | 302 "Xbox Series EU Game Code" | 303 "Xbox Series US Game Code" | 305 "Xbox Series Uk Game Code" |
 | XBOX_PC (Xbox / PC — Play Anywhere) | 306 "Xbox/PC GLOBAL" (BOM in the master label) | 241 "XBOX/PC EU" | 242 "XBOX/PC US" | 240 "XBOX/PC UK" |
 | PS4 | 88 "Playstation Game Code GLOBAL" | 88eu "Playstation Game Code EUROPE" | 88us "Playstation Game Code US" | 88uk "Playstation Game Code UK" |
-| PS5 | 88ps5h "PS5" | — | — | — |
+| PS5 | 88ps5h "PS5" | 88eu (PlayStation EU — P3, 2026-09-25) | 88us (P3) | 88uk (P3) |
 | SWITCH (Nintendo Switch) | 99 "NINTENDO GAME CODE GLOBAL" | 99eu "Nintendo GAME CODE EU" | 99us "Nintendo GAME CODE US" | 992 "Nintendo GAME CODE UK" |
 | SWITCH2 (Nintendo Switch 2 — page kind `nintendo-switch-2`, 2026-09-14) | 99 (same Nintendo family) | 99eu | 99us | 992 |
 
@@ -2540,7 +2587,8 @@ NA Game Code", `345` "Xbox series ROW", `470` "Xbox Series Game Code EU English 
 `400` "Playstation Code ROW", `448` "NINTENDO GAME CODE ROW", `496` "nintendo game code
 north america", the per-country ids) is never selected: a non-base region takes the PC
 dispositions of §4.11 (blacklist / skip), never a "nearest" bucket. Refused as well:
-**no PS5 EU/US/UK, no console gift bucket** (Switch 2 pages use the Nintendo family
+**no console gift bucket** (PS5 EU / US / UK = the PlayStation `88eu` / `88us` / `88uk`
+since P3, Romain 2026-09-25 — AKS files PS5 offers there; Switch 2 pages use the Nintendo family
 buckets — there is no separate Switch 2 bucket, 2026-09-14); subscriptions, PSN /
 eShop cards, accounts (`24ac`, `88ac`, `454` "PS4 Account", `301`…) and Xbox 360 (`23`,
 `23eu`, `23us`). Label facts: the PS4 family never says "PS4" (only "PS4 Account (454)",
@@ -2733,14 +2781,15 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167, MMOGA 12 (its AKS page merchant i
     pour Xbox Series, PS4, Xbox One, Switch et Switch 2 » = "merchant declaration ∧ AKS
     page", a lone declared platform → that page only, cross-gen → both (§4.12 P1,
     AGENTS.md "Reviewed decisions"). No "page alone" switch.
-  - **P2** Play Anywhere = the PC page's truth: merchant "+ PC/Windows" WITHOUT PA on the
-    page → skip; PA on the page WITHOUT a merchant mention → PA targets (XBOX/PC bucket on
-    PC + One + Series). Confirm both directions.
-  - **P3** PS5 outside GLOBAL ("PS5 … [EU]") → skip today; create PS5 EU/US/UK buckets in
-    the tool, or keep skipping?
+  - ~~**P2**~~ **CLOSED 2026-09-25** — Romain: « P2 saisir sur les xbox déclarées et sur PC
+    (on le considère Play Anywhere) » — Xbox + PC declared on a page without PA = Play
+    Anywhere targets (§4.12 P2, AGENTS.md "Reviewed decisions").
+  - ~~**P3**~~ **CLOSED 2026-09-25** — Romain: « P3 A » — PS5 EU / US / UK = `88eu` / `88us` /
+    `88uk` (§4.12 P3, §10).
   - **P4** Eneba's 704 generation-less "XBOX LIVE Key" rows → skip (no declaration) — or
     read the Eneba page?
-  - **P5** console DLC / season pass → skip in v1.
+  - ~~**P5**~~ **CLOSED 2026-09-25** — Romain: « P5 A » — the PC DLC rule R43 on every
+    console target page (§4.12 P5).
   - ~~**Per-target overwrite semantics of the new modal**~~ **CLOSED 2026-09-14/15** —
     observed with `--inspect` (2026-09-14) and proven by the two canaries (2026-09-15):
     ONE Create with N target rows (`offer[targets][i][target|region|edition]`, cap 3,

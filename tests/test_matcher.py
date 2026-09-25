@@ -4764,14 +4764,24 @@ class ConsoleMatchR45Tests(unittest.TestCase):
         self.assertEqual([(t.platform, t.region_id) for t in r.targets], [("XBOX_ONE", "306"), ("XBOX_PC", "306")])
         self.assertEqual(r.region_label, CONSOLE_REGION_LABELS["306"])
 
-    # (iii) merchant says Xbox + PC but the page has no Play Anywhere
-    def test_pc_declared_without_play_anywhere_on_page_skips(self):
+    # (iii) merchant says Xbox + PC but the page has no Play Anywhere — P2, DÉCIDÉ Romain
+    # 2026-09-25: « on le considère Play Anywhere » (it used to be a contradiction skip).
+    def test_pc_declared_without_play_anywhere_on_page_is_considered_play_anywhere(self):
         pc, pages = self._nba_pages()
         r = self._run(self._mmoga("NBA 2K25 (Xbox Series X|S / Windows) - EU"),
                       _Sig(("XBOX_SERIES",), "NBA 2K25", pc_declared=True), pc=pc, pages=pages)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual([(t.platform, t.aks_product_id, t.region_id) for t in r.targets],
+                         [("XBOX_SERIES", "50003", "241"), ("XBOX_PC", "50001", "241")])
+
+    def test_pc_declared_without_a_pc_page_skips(self):
+        one_url = AKS_BLOG + "buy-nba-2k25-xbox-series-compare-prices/"
+        r = self._run(self._mmoga("NBA 2K25 (Xbox Series X|S / Windows) - EU"),
+                      _Sig(("XBOX_SERIES",), "NBA 2K25", pc_declared=True), pc=None,
+                      console_pages_by_kind={"xbox-series": _page("NBA 2K25 Xbox Series", "50003", one_url)})
         self.assertIsInstance(r, SkippedOffer)
-        self.assertIn("Xbox Play Anywhere", r.reason)
-        self.assertTrue(r.reason.startswith("console: "))
+        self.assertEqual(r.reason, "console: merchant declares Xbox + PC but AKS has no PC page for "
+                                   "'NBA 2K25' — Play Anywhere target unverifiable, not entered (R45)")
 
     # (iv) declared family with no tab on the AKS page
     def test_declared_platform_without_an_aks_page_skips(self):
@@ -4798,13 +4808,14 @@ class ConsoleMatchR45Tests(unittest.TestCase):
         self.assertIsInstance(r, SkippedOffer)
         self.assertEqual(r.reason, "console page 'Elden Ring Tarnished Edition Nintendo Switch' is not 'Elden Ring' (R45)")
 
-    # (vi) PS5 has a GLOBAL bucket only
-    def test_ps5_locked_region_has_no_bucket(self):
-        calls = []
-        r = self._run(_offer("Hades (PS5) - EU"), _Sig(("PS5",), "Hades"), calls=calls)
-        self.assertIsInstance(r, SkippedOffer)
-        self.assertEqual(r.reason, "no region id for PS5/EU (R45)")
-        self.assertEqual(calls, [])                                       # refused before any probe
+    # (vi) PS5 outside GLOBAL takes the PlayStation buckets of PS4 (P3, Romain 2026-09-25)
+    def test_ps5_locked_region_takes_the_playstation_bucket(self):
+        ps5_url = AKS_BLOG + "buy-hades-ps5-compare-prices/"
+        pc = _page("Hades", "26712", AKS_BLOG + "buy-hades-cd-key-compare-prices/", console_pages={"ps5": ps5_url})
+        r = self._run(_offer("Hades (PS5) - EU"), _Sig(("PS5",), "Hades"), pc=pc,
+                      pages={ps5_url: _page("Hades PS5", "85105", ps5_url)})
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.platform, r.region_id, r.region_label), ("PS5", "88eu", "Playstation Game Code EUROPE"))
 
     # (vii) Switch → a single target, family 99
     def test_switch_key_is_a_single_target(self):
@@ -4856,18 +4867,33 @@ class ConsoleMatchR45Tests(unittest.TestCase):
         pc, pages = self._nba_pages()
         r = self._run(_offer("Hades Xbox One Gift GLOBAL"), _Sig(("XBOX_ONE",), "Hades"), pc=pc)
         self.assertEqual(r.reason, "console: gift delivery has no console bucket (R45)")
-        r = self._run(_offer("Hades Xbox One - Season Pass GLOBAL"), _Sig(("XBOX_ONE",), "Hades - Season Pass"), pc=pc)
-        self.assertEqual(r.reason, "console: DLC / season pass on console — not entered yet (R45)")
+        # P5 (Romain 2026-09-25): a season pass is resolved and checked by R43 — here the
+        # page reached is the base game (no DLC bucket), so R43 refuses it, stamped R43 + R45.
+        one_url = AKS_BLOG + "buy-hades-xbox-one-compare-prices/"
+        pc = _page("Hades", "26712", AKS_BLOG + "buy-hades-cd-key-compare-prices/", slug="hades",
+                   console_pages={"xbox-one": one_url})
+        r = self._run(_offer("Hades Xbox One - Season Pass GLOBAL"), _Sig(("XBOX_ONE",), "Hades - Season Pass"),
+                      pc=pc, pages={one_url: _page("Hades Xbox One", "85102", one_url, slug="hades")})
+        self.assertIsInstance(r, SkippedOffer)
+        self.assertEqual(r.reason, "console: XBOX_ONE — SEASON PASS in title but AKS page 'hades' carries no DLC "
+                                   "edition — base game or wrong product, not entered (R43, R45)")
 
-    def test_dlc_bucket_read_by_r18_on_a_console_page_skips_p5(self):
+    def test_dlc_bucket_read_by_r18_on_a_console_page_follows_the_pc_rule(self):
+        # P5 (Romain 2026-09-25): the blanket DLC(16) refusal is gone — a MARKERLESS title on
+        # a console page follows R18 exactly like PC (DURCI 2026-09-17: the DLC bucket must be
+        # the page's ONLY one), then every target page must sell DLC(16).
         one_url = AKS_BLOG + "buy-hades-xbox-one-compare-prices/"
         pc = _page("Hades", "26712", AKS_BLOG + "buy-hades-cd-key-compare-prices/", console_pages={"xbox-one": one_url})
-        # DURCI 2026-09-17: a MARKERLESS title needs the DLC bucket to be the page's only
-        # one, so the console page here offers DLC alone (the P5 skip is what is under test).
         pages = {one_url: _page("Hades Xbox One", "85102", one_url, editions={"16": {"name": "DLC"}})}
         r = self._run(_offer("Hades Xbox One GLOBAL"), _Sig(("XBOX_ONE",), "Hades"), pc=pc, pages=pages)
-        self.assertIsInstance(r, SkippedOffer)
-        self.assertEqual(r.reason, "console: DLC / season pass on console — not entered yet (R45)")
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.edition_label, r.edition_id, r.region_id), ("DLC", "16", "24"))
+        # … and a page that ALSO sells Standard keeps the markerless title out of DLC (R18 durci)
+        pages = {one_url: _page("Hades Xbox One", "85102", one_url,
+                                editions={"1": {"name": "Standard"}, "16": {"name": "DLC"}})}
+        r = self._run(_offer("Hades Xbox One GLOBAL"), _Sig(("XBOX_ONE",), "Hades"), pc=pc, pages=pages)
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual(r.edition_id, "1")
 
     def test_guards_read_the_resolve_name_not_the_raw_title(self):
         # R01 / R16 compare the classifier's resolve_name (markers removed): the raw title's
@@ -4926,7 +4952,7 @@ class ConsoleMatchR45Tests(unittest.TestCase):
     def test_region_ids_and_platform_labels_carry_the_console_families(self):
         from src.matcher import PLATFORM_LABEL, REGION_IDS
         self.assertEqual(REGION_IDS["XBOX_ONE"]["eu"], "24eu")
-        self.assertEqual(REGION_IDS["PS5"], {"global": "88ps5h"})
+        self.assertEqual(REGION_IDS["PS5"], {"global": "88ps5h", "eu": "88eu", "us": "88us", "uk": "88uk"})
         self.assertEqual(REGION_IDS["STEAM"]["global"], "2")                 # PC untouched
         for fam in ("XBOX_ONE", "XBOX_SERIES", "XBOX_PC", "PS4", "PS5", "SWITCH"):
             self.assertIn(fam, PLATFORM_LABEL)
@@ -5145,10 +5171,15 @@ class ConsoleReviewFixesR45Tests(unittest.TestCase):
         self.assertEqual(r.reason, "console: region contradiction (title/grammar vs URL) — not entered (R45)")
         self.assertEqual(calls, [])
 
-    def test_grammar_base_without_a_bucket_skips_the_whole_offer(self):
+    def test_grammar_base_reads_the_ps5_eu_bucket(self):
+        # Was "no region id for PS5/EU (R45)" until P3 (Romain 2026-09-25): PS5 EU = 88eu.
+        ps5_url = AKS_BLOG + "buy-hades-ps5-compare-prices/"
+        pc = _page("Hades", "26712", self.PC_URL, console_pages={"ps5": ps5_url})
         r = _console_match(self._kinguin("Hades EU PS5 CD Key", "https://www.kinguin.net/category/1/hades-eu-ps5-cd-key"),
-                           _Sig(("PS5",), "Hades", region_base="eu"))
-        self.assertEqual(r.reason, "no region id for PS5/EU (R45)")
+                           _Sig(("PS5",), "Hades", region_base="eu"), pc=pc,
+                           pages={ps5_url: _page("Hades PS5", "85105", ps5_url)})
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual(r.region_id, "88eu")
 
     def test_gamivo_title_tail_reads_uk_through_the_r46_hook(self):
         # Refuted half of the review: Gamivo's "EN United Kingdom" tail IS read (R46

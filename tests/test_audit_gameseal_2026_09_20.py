@@ -260,11 +260,17 @@ class ThePlayAnywhereGuardStaysInItsDomain(unittest.TestCase):
         self.assertIn("contradictory delivery", res.reason)
         self.assertIn("SWITCH", res.reason)
 
-    def test_an_xbox_key_without_play_anywhere_keeps_its_own_refusal(self):
+    def test_an_xbox_key_with_pc_is_no_longer_refused_for_play_anywhere(self):
+        # P2, DÉCIDÉ Romain 2026-09-25 (« on le considère Play Anywhere ») : le refus « … does
+        # not list Xbox Play Anywhere » de cette garde a disparu — Xbox + PC déclarés sans PA
+        # sur la page = cibles Play Anywhere. Ici la page n'a pas d'onglet Xbox One : la ligne
+        # tombe sur CE refus-là, jamais plus sur la contradiction PC / Xbox.
         res = self._match("Hades (PC) (Xbox One) Xbox Live Key - EU",
                           self.URL_XBOX, self._switch_page(), self._pc_page())
         self.assertIsInstance(res, SkippedOffer)
-        self.assertIn("Xbox Play Anywhere", res.reason)
+        self.assertNotIn("Xbox Play Anywhere", res.reason)
+        self.assertNotIn("contradictory delivery", res.reason)
+        self.assertIn("AKS has no XBOX_ONE page", res.reason)
 
 
 class TheSearchCircuitBreakerExpires(unittest.TestCase):

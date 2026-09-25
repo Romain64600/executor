@@ -345,9 +345,32 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   et Switch 2 ». The console branch (`_console_plan`, EXECUTOR_RULES §4.12 P1) files a key on
   the AKS page of every platform the merchant DECLARES and AKS has — a lone declared platform
   → that page only; a cross-gen declaration ("PS4 / PS5", "Xbox One / Series X|S") → both
-  pages; the PC page only as a page-verified Xbox Play Anywhere target (P2). An audit will
+  pages; the PC page only as a Play Anywhere target (P2 — page-verified, or declared Xbox +
+  PC since 2026-09-25, below). An audit will
   "find" the missing PS4 / Xbox One sibling ("the game exists on that page too") — there is
   no "page alone" policy and no switch for it; leave it out.
+
+- **Consoles — P2 élargi, P3, P5 : DÉCIDÉS par Romain le 2026-09-25** (« P3 A, P5 A, P2 saisir
+  sur les xbox déclarées et sur PC (on le considère Play Anywhere) » ; EXECUTOR_RULES §4.12).
+  Un audit reprendra les trois comme des « trous » ; ils sont voulus :
+  - **P2** — un marchand qui déclare Xbox + PC/Windows alors que la page PC d'AKS ne liste PAS
+    « Xbox Play Anywhere » est traité COMME Play Anywhere : les pages Xbox déclarées + la page
+    PC, toutes dans la case XBOX/PC (306 / 241 / 242 / 240). Ne pas restaurer le refus
+    « … does not list Xbox Play Anywhere » (« la page AKS fait foi » était la décision de
+    départ ; Romain l'a renversée). Bornes inchangées : « PC + famille NON-Xbox » reste le
+    refus `contradictory delivery` ; sans page PC chez AKS, refus (jamais une cible perdue) ;
+    P1 et le plafond de 3 cibles tiennent.
+  - **P3** — une clé PS5 Europe / US / UK prend la case PlayStation de PS4 (`88eu` / `88us` /
+    `88uk`), GLOBAL garde `88ps5h`. AKS range déjà ses offres PS5 ainsi (43 `88eu` + 41 `88us`
+    à côté de 96 `88ps5h` sur 10 pages PS5 lues le 25/09). Un audit « trouvera » un seau
+    « PS4 » sur une page PS5 : les libellés de la famille disent « Playstation Game Code »,
+    pas PS4 ; ne pas remettre le refus « no region id for PS5/EU ».
+  - **P5** — un DLC / season pass console entre, par la règle des DLC PC `[R43]` appliquée à
+    CHAQUE page cible (`r43_dlc_page_refusal`, UNE implémentation partagée avec le PC) : page
+    du DLC lui-même (slug du nom complet), seau DLC (16), sinon la ligne entière est refusée.
+    Un titre SANS marqueur n'atteint DLC(16) que par R18 et ses verrous PC (seau DLC seul de
+    la page…). Ne pas remettre le refus en bloc « DLC / season pass on console — not entered
+    yet » ni une règle console à part.
 
 - **Kinguin "(valid until <Month> <Year>)" keys are ENTERED (Romain 2026-09-14).** Romain's
   ruling: « Kinguin valid until juin 2027 on rentre ». The note is an activation deadline,

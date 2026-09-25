@@ -1003,7 +1003,7 @@ matcher et le classifieur importent le registre.
   vocabulaire commun seulement, il interroge le registre pour les hooks du marchand), pages
   consoles AKS `buy-<slug>-<kind>-compare-prices/`, candidats multi-cibles (`targets`)
   écrits entiers sur le modal v2 (plafond 3 cibles) ; `--no-consoles` = run PC seul ;
-  politiques P2-P5 à confirmer par Romain (EXECUTOR_RULES §4.12, §6, §10, §12).
+  P2, P3, P5 tranchées par Romain le 2026-09-25, P4 ouverte (EXECUTOR_RULES §4.12, §6, §10, §12).
 - La correspondance texte de région → base vendable / label interdit (`EU` / `EUROPE` /
   `UNITED KINGDOM` / `Global`… ; `CA` → `CANADA`, `Hong Kong` → `HONG KONG`…) est du
   vocabulaire partagé : un fichier marchand fournit le TEXTE (`console_region_slot`), jamais

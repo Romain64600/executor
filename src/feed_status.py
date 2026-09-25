@@ -26,7 +26,7 @@ _CATEGORIES: list[tuple[str, str, str, str]] = [
     ("console", "Consoles (Xbox / PlayStation / Switch)",
      "clé console : sans le classifieur (`--consoles`) la ligne est écartée en bloc ; avec "
      "lui, elle est écartée dès qu'un doute subsiste (génération non déclarée, Switch 2 sans "
-     "bucket, page console AKS absente, PS5 hors GLOBAL, DLC console) et une clé déclarée "
+     "bucket, page console AKS absente, DLC console hors de sa propre page) et une clé déclarée "
      "sur PLUSIEURS plateformes reste fail-closed tant que l'overwrite par cible n'a pas "
      "été observé dans le modal (R45, 2026-09-12)",
      "classifieur console R45 — cibles multiples en attente du nouveau modal"),

@@ -57,8 +57,9 @@ guessed region, never a partial family list):
    to ANOTHER product, "Elden Ring Tarnished Edition Nintendo Switch 2").
 
 The bucket ids/labels come from the feed modal's region catalog (867 entries, identical on
-9 catalogs 2026-09-10/12). Absent bucket = fail-closed: no PS5 EU/US/UK, no gift console
-bucket. Switch 2 (2026-09-14): the AKS Switch 2 pages carry the platform and their offers
+9 catalogs 2026-09-10/12). Absent bucket = fail-closed: no gift console bucket (PS5 EU / US /
+UK take the PlayStation buckets 88eu / 88us / 88uk since P3, Romain 2026-09-25). Switch 2
+(2026-09-14): the AKS Switch 2 pages carry the platform and their offers
 use the NINTENDO family bucket (regions map {99: GLOBAL}, activationPlatform
 nintendo-eshop) — SWITCH2 is a family with page kind ``nintendo-switch-2`` and the SAME
 bucket ids as SWITCH. Label ``306`` is the only one carrying a BOM (U+FEFF) in the master
@@ -88,8 +89,12 @@ CONSOLE_PAGE_KIND = {
 }
 CONSOLE_PAGE_KINDS = ("ps4", "ps5", "xbox-one", "xbox-series", "nintendo-switch",
                       "nintendo-switch-2", "cd-key")
-# family → {base region: catalog id} (§0 table; PS5 has ONE bucket — a "PS5 … [EU]" key
-# has no bucket and fails closed in the matcher: "no region id for PS5/EU (R45)").
+# family → {base region: catalog id} (§0 table). [P3] PS5 — DÉCIDÉ Romain 2026-09-25 (« P3
+# A ») : GLOBAL garde sa case propre `88ps5h` « PS5 » ; Europe / US / UK prennent les cases
+# PlayStation `88eu` / `88us` / `88uk`, celles de PS4. C'est ce qu'AKS fait déjà : lu en direct
+# le 25/09 sur 10 pages PS5, 43 offres en `88eu` « EUROPE » et 41 en `88us` « USA » à côté de 96
+# en `88ps5h` ; `88uk` « Playstation Game Code UK » est dans le catalogue du modal
+# (runs/20260925-152525-auto/catalog.json). Avant : « no region id for PS5/EU (R45) ».
 # SWITCH2 shares the Nintendo bucket ids with SWITCH (verified on the Street Fighter 6 /
 # ELDEN RING Tarnished Edition Switch 2 pages, 2026-09-14: prices region 99, regions map
 # {99: GLOBAL}).
@@ -98,7 +103,7 @@ CONSOLE_REGION_IDS: dict[str, dict[str, str]] = {
     "XBOX_SERIES": {"global": "300", "eu": "302", "us": "303", "uk": "305"},
     "XBOX_PC": {"global": "306", "eu": "241", "us": "242", "uk": "240"},
     "PS4": {"global": "88", "eu": "88eu", "us": "88us", "uk": "88uk"},
-    "PS5": {"global": "88ps5h"},
+    "PS5": {"global": "88ps5h", "eu": "88eu", "us": "88us", "uk": "88uk"},
     "SWITCH": {"global": "99", "eu": "99eu", "us": "99us", "uk": "992"},
     "SWITCH2": {"global": "99", "eu": "99eu", "us": "99us", "uk": "992"},
 }

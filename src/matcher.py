@@ -3095,6 +3095,53 @@ class _Plan:
         return bool(self.console_targets)
 
 
+def r43_dlc_page_refusal(dlc_marker: str, resolution: AksResolution, resolve_name: str,
+                         title: str, stamp: str = "R43") -> str | None:
+    """[R43] — THE check that a title announcing a DLC / season pass (``dlc_marker``) sits on
+    the DLC's OWN AKS page; the refusal reason, or None. ONE implementation, read by the PC
+    path (:func:`_pc_plan`) and, since P5 (Romain 2026-09-25, « P5 A »), by the console branch
+    for EVERY target page (:func:`_console_plan`, ``stamp="R43, R45"``). Three facts, in order:
+
+    1. the page's editions map carries the DLC bucket — that page IS a DLC (the same truth R18
+       reads for hidden DLCs); any other page (the base game reached through a less specific
+       slug tier, an empty stub map, a wrong product) is refused;
+    2. AUDIT DU 2026-09-18 — a DLC marker with NO DLC name of its own (no subtitle in
+       ``title``: "<Game> (DLC)") on a page that also sells a bucket OTHER than DLC is
+       indistinguishable from the base game's own page carrying a DLC bucket (live
+       2026-09-11: Stray Blade, Aliens Dark Descent, Dragon Quest III HD-2D Remake base pages
+       all carry bucket 16) → refused. The guard used to test Standard by the LITERAL key
+       « 1 »; a multi-bucket page whose Standard is « Standard + DLC » (id 518) opened it. The
+       spec says « a DLC-only page ({16} without Standard) still enters », implemented
+       literally: any bucket other than DLC fires it. Season / Expansion passes are exempt
+       (they name their page);
+    3. the page was reached under the title's OWN full name (:func:`resolved_on_own_page`,
+       tier 1), never via the edition-stripped or dash-split base-game tiers — the DLC bucket
+       alone is not proof the page is THIS DLC. Measured 2026-09-11: 204/205 dry-run DLC
+       candidates resolve at tier 1. A console page's ``slug`` is the bare game slug (the
+       capture before ``-<kind>-compare-prices``), so the same comparison holds there.
+
+    ``resolve_name`` is the marker-stripped name the page was resolved from; ``title`` the
+    text whose subtitle check (2) reads — the raw title on PC (unchanged), the console
+    classifier's ``resolve_name`` on a console row (the raw console title always carries a
+    " - " of platform / region furniture, which would silence the check)."""
+
+    if not _dlc_edition_on_page(resolution.editions):
+        return (f"{dlc_marker} in title but AKS page {resolution.slug!r} carries no DLC "
+                f"edition — base game or wrong product, not entered ({stamp})")
+    _non_dlc_buckets = [k for k, v in resolution.editions.items()
+                        if k != "16" and _edition_entry_name(v).strip().upper() != "DLC"]
+    if (dlc_marker not in _DLC_PASS_MARKERS and _non_dlc_buckets
+            and not re.search(r"\s[-–—:|]\s|:\s", cleaned_title(strip_dlc_marker(title)))):
+        return (f"{dlc_marker} in title without a DLC name of its own, on a page that also "
+                f"sells a non-DLC edition ({resolution.slug!r}) — base game or unnamed DLC, "
+                f"not entered ({stamp})")
+    if not resolved_on_own_page(resolution.slug, resolve_name):
+        return (f"{dlc_marker} in title resolved through a less specific slug tier "
+                f"({resolution.slug!r} is not the page of {resolve_name!r}) — not the DLC's "
+                f"own page, not entered ({stamp})")
+    return None
+
+
 def _pc_plan(
     offer: NormalizedOffer,
     resolver: Callable[..., AksResolution | None],
@@ -3355,52 +3402,15 @@ def _pc_plan(
         return SkippedOffer(offer, f"no AKS{kind_note} product page found (slug not 200)")
 
     # [R43] (Romain GO 2026-09-11): a title that ANNOUNCES a DLC / season pass must land
-    # on an AKS page whose editions map carries the DLC bucket — that page IS the DLC
-    # (the same truth R18 reads for hidden DLCs). Any other page (the base game reached
-    # through a less specific slug tier, an empty stub map, a wrong product) is a
-    # fail-closed skip, BEFORE the name guards so the reason is explicit. R16 (the DLC's
-    # own words absent from a base-game name) stays the second net behind it.
+    # on the DLC's OWN AKS page, carrying the DLC bucket — see :func:`r43_dlc_page_refusal`
+    # (shared with the console branch since P5, 2026-09-25). BEFORE the name guards so the
+    # reason is explicit. R16 (the DLC's own words absent from a base-game name) stays the
+    # second net behind it.
     dlc_page = bool(_dlc_edition_on_page(resolution.editions))
-    if dlc_marker is not None and not dlc_page:
-        return SkippedOffer(
-            offer,
-            f"{dlc_marker} in title but AKS page {resolution.slug!r} carries no DLC "
-            "edition — base game or wrong product, not entered (R43)",
-        )
-    # AUDIT DU 2026-09-18. Le garde testait la présence de Standard par la CLÉ LITTÉRALE
-    # « 1 », alors que le reste de la même fonction teste Standard par le NOM. Dès qu'une page
-    # ne porte pas cette clé — page multi-seaux dont le Standard s'appelle « Standard + DLC »
-    # (id 518, vu vivant), ou Standard sous un autre id — le garde s'ouvrait et un DLC ANONYME
-    # entrait. La spec dit « a DLC-only page ({16} without Standard) still enters » : on
-    # implémente donc ça littéralement — le garde se déclenche dès que la page porte un seau
-    # AUTRE que le seau DLC. (La variante « tester Standard par le nom » a été évaluée et
-    # rejetée : « Standard + DLC » ≠ « STANDARD », elle rate justement le cas le plus
-    # plausible.)
-    _non_dlc_buckets = [k for k, v in resolution.editions.items()
-                        if k != "16" and _edition_entry_name(v).strip().upper() != "DLC"]
-    if (dlc_marker not in (None, *_DLC_PASS_MARKERS) and _non_dlc_buckets
-            and not re.search(r"\s[-–—:|]\s|:\s", cleaned_title(strip_dlc_marker(offer.name)))):
-        # "<Game> (DLC)" — a DLC marker with NO DLC name of its own (no subtitle) on a page
-        # that also sells a Standard product: indistinguishable from the base game's own
-        # page carrying a DLC bucket (live 2026-09-11: Stray Blade, Aliens Dark Descent,
-        # Dragon Quest III HD-2D Remake base pages all carry bucket 16). Doubt → skip.
-        return SkippedOffer(
-            offer,
-            f"{dlc_marker} in title without a DLC name of its own, on a page that also "
-            f"sells a non-DLC edition ({resolution.slug!r}) — base game or unnamed DLC, "
-            "not entered (R43)",
-        )
-    if dlc_marker is not None and not resolved_on_own_page(resolution.slug, resolve_name):
-        # The DLC bucket alone is not proof the page is THIS DLC (a base-game page may
-        # carry one): the DLC must resolve under its own full name (tier 1), never via
-        # the edition-stripped or dash-split base-game tiers. Fail-closed; measured
-        # 2026-09-11: 204/205 dry-run DLC candidates resolve at tier 1.
-        return SkippedOffer(
-            offer,
-            f"{dlc_marker} in title resolved through a less specific slug tier "
-            f"({resolution.slug!r} is not the page of {resolve_name!r}) — not the DLC's "
-            "own page, not entered (R43)",
-        )
+    if dlc_marker is not None:
+        refusal = r43_dlc_page_refusal(dlc_marker, resolution, resolve_name, offer.name)
+        if refusal is not None:
+            return SkippedOffer(offer, refusal)
 
     # R01 / different-product guards compare against the game-identity name.
     # For an account page that means stripping the "<platform> Account" suffix;
@@ -3975,13 +3985,13 @@ def match_offer(
     # the ONE edition the primary page resolved (P1-1 reconciled it against the primary's
     # own map). Every target page must sell that edition id, else the WHOLE offer skips:
     # never a partial entry (a consumed feed row loses its second platform, design §4).
-    # P5 (v1): no console DLC — the title marker was refused in _console_plan; a DLC
-    # bucket read by R18 on a markerless title lands here as edition 16 → same skip.
+    # P5 (DÉCIDÉ Romain 2026-09-25) : le refus en bloc de l'édition DLC(16) est retiré. Un
+    # titre MARQUÉ a déjà passé R43 sur chaque page (_console_plan) ; un titre SANS marqueur
+    # n'atteint DLC(16) que par R18, avec ses verrous PC (seau DLC seul de la page, R18b,
+    # R57) — la règle des DLC PC appliquée aux consoles, pas un second système. Le contrôle
+    # ci-dessous (chaque page vend l'édition) reste le filet « tout ou rien ».
     targets: tuple[Target, ...] = ()
     if plan.console:
-        if edition_id == "16":
-            return SkippedOffer(
-                offer, "console: DLC / season pass on console — not entered yet (R45)")
         built: list[Target] = []
         for fam, page, bucket_label, bucket_id in plan.console_targets:
             if edition_id not in page.editions:
@@ -4048,7 +4058,10 @@ def _console_plan(
     a. ``families`` = the merchant-declared platforms (classifier), ``guard_name`` = the
        title without platform / store / region markers (edition kept) — the text the
        R01 / R16 / R01b guards and detect_edition read, AND the slug source;
-    b. a DLC / season-pass title → skip (P5, v1);
+    b. a DLC / season-pass title (P5, DÉCIDÉ Romain 2026-09-25 — « P5 A », the PC rule
+       [R43] applied to consoles): resolved with its marker stripped, and EVERY target page
+       (Play Anywhere PC page included) must be the DLC's own page carrying the DLC bucket
+       — :func:`r43_dlc_page_refusal`, one page missing = the whole row refused (§6);
     c. the base region → one bucket per family (REGION_IDS[fam]) — review fix
        2026-09-14: the merchant grammar's region slot (``sig.region_base``, read by the
        classifier: Kinguin / K4G "<Game> US Xbox One …", Driffle "(Europe)") is
@@ -4061,16 +4074,19 @@ def _console_plan(
        read while the classifier removed a region word (``sig.region_words``) is refused — a
        region-locked console key is NEVER filed under an implicit GLOBAL (Gamivo 254/264
        and Kinguin 37 real rows did before); a gift → skip (no console gift bucket); a
-       missing bucket (PS5 EU/US/UK) → skip;
+       missing bucket → skip (PS5 EU / US / UK take 88eu / 88us / 88uk since P3, Romain
+       2026-09-25);
     d. the ANCHOR page: the PC page when it exists (slug tiers + R30 search, unchanged),
        else the console page of the primary family by slug (``page_kind``, no search —
        like account pages); none → skip;
     e. ``identity_name`` = the anchor name without its platform suffix ("Hades PS5" →
        "Hades") — R01 / R16 / R01b compare guard_name against it (common flow);
     f. Play Anywhere (P2) = the PC page's ``official platforms`` lists "Xbox Play
-       Anywhere": every Xbox target then takes the XBOX/PC bucket and the PC page becomes
-       an extra target; a merchant "+ PC/Windows" on a page WITHOUT PA → skip
-       (contradiction);
+       Anywhere" OR (DÉCIDÉ Romain 2026-09-25, « on le considère Play Anywhere ») the
+       merchant declares Xbox + PC/Windows: every Xbox target then takes the XBOX/PC bucket
+       and the PC page becomes an extra target; "PC + a NON-Xbox family" stays a
+       contradictory-delivery skip; Xbox + PC with no AKS PC page → skip (the PC target is
+       unverifiable, never a partial entry);
     g. one target page per declared family from the anchor's tab bar (the console anchor
        is its own page); no tab → skip; the page is re-read (``page_resolver``) and its
        identity must equal the anchor's (a tab can point to another product — Elden Ring
@@ -4091,10 +4107,18 @@ def _console_plan(
         return SkippedOffer(
             offer, "console: no product name left once the platform markers are removed (R45)")
 
-    # (b) P5 — console DLC / season passes are not entered in v1 (own pages, buckets and
-    # the per-page edition overwrite are unobserved on console pages).
-    if dlc_title_marker(offer.name) is not None:
-        return SkippedOffer(offer, "console: DLC / season pass on console — not entered yet (R45)")
+    # (b) P5 — DÉCIDÉ Romain 2026-09-25 (« P5 A ») : un DLC / season pass console suit la
+    # règle des DLC PC [R43]. Le marqueur est lu sur le nom que le classifieur a nettoyé
+    # (plateforme / boutique / région retirées) et retiré pour la résolution, comme sur PC
+    # (`resolution_name`) : « Battlefield 4 Premium (DLC) (Xbox One) Xbox Live Key - EU » →
+    # page « battlefield-4-premium ». Chaque page cible est vérifiée plus bas, en (g).
+    # Avant : refus « console: DLC / season pass on console — not entered yet (R45) ».
+    # Le marqueur est lu comme R18 le lira dans `match_offer` (`title_dlc_marker`, titre brut
+    # + grammaire du marchand), puis sur le nom nettoyé : si les deux lectures divergeaient,
+    # un DLC pourrait sauter R43 ici et être rangé DLC(16) par R18 plus loin.
+    _cfg_console = merchant_config(offer.merchant)
+    dlc_marker = title_dlc_marker(offer, _cfg_console) or dlc_title_marker(guard_name)
+    slug_name = strip_dlc_marker(guard_name) if dlc_marker is not None else guard_name
 
     # (c) region: the platform-independent base, then one bucket per declared family.
     # [R45] review fix (2026-09-14) — never an implicit GLOBAL for a region word the
@@ -4117,7 +4141,6 @@ def _console_plan(
     # ouverte, même simulée indisponible. On ne lit ici QUE la région — la plateforme vient du
     # classifieur console, et la confronter au jeton PC du résolveur produirait un faux
     # conflit (PSN / NINTENDO ne sont pas des familles PC).
-    _cfg_console = merchant_config(offer.merchant)
     _page_resolver = _cfg_console.offer_page_resolver if _cfg_console is not None else None
     grammar_base = sig.region_base
     if grammar_base is not None:
@@ -4181,11 +4204,11 @@ def _console_plan(
     primary = families[0]
     anchor_kind = "cd-key"
     try:
-        pc_res = resolver(guard_name)
+        pc_res = resolver(slug_name)
         anchor = pc_res
         if anchor is None:
             anchor_kind = CONSOLE_PAGE_KIND[primary]
-            anchor = resolver(guard_name, page_kind=anchor_kind)
+            anchor = resolver(slug_name, page_kind=anchor_kind)
     except AksProbeUnreliable as exc:
         return SkippedOffer(offer, f"AKS probe unreliable (throttled?): {exc}")
     except AksNameUnreadable as exc:
@@ -4218,13 +4241,21 @@ def _console_plan(
             "console: merchant declares PC next to "
             f"{'/'.join(families) or 'a console'} — contradictory delivery, not entered (R45)",
         )
-    if sig.pc_declared and not pa:
+    # P2 — DÉCIDÉ Romain 2026-09-25 (« P2 saisir sur les xbox déclarées et sur PC, on le
+    # considère Play Anywhere »). Xbox + PC/Windows déclarés par le marchand SANS que la page
+    # PC d'AKS liste « Xbox Play Anywhere » : ce n'est plus un refus « contradiction », la
+    # clé est traitée EXACTEMENT comme une clé Play Anywhere — les pages Xbox déclarées + la
+    # page PC, toutes dans la case XBOX/PC (306 / 241 / 242 / 240). ~100 lignes refusées avant
+    # (« PAC-MAN MUSEUM+ EU XBOX One / Xbox Series X|S / PC CD Key », « RIOT- Civil Unrest PC
+    # EU XBOX One / Xbox Series X|S CD Key »). Sans page PC chez AKS, la cible PC n'existe pas :
+    # refus, jamais une saisie partielle (§6).
+    if sig.pc_declared and pc_res is None:
         return SkippedOffer(
             offer,
-            "console: merchant declares Xbox + PC but the AKS page does not list Xbox Play "
-            "Anywhere — not entered (R45)",
+            f"console: merchant declares Xbox + PC but AKS has no PC page for "
+            f"'{identity_name}' — Play Anywhere target unverifiable, not entered (R45)",
         )
-    pa_targets = pa and xbox_declared
+    pa_targets = xbox_declared and (pa or sig.pc_declared)
 
     def _bucket(fam: str) -> tuple[str, str] | SkippedOffer:
         bucket_family = "XBOX_PC" if pa_targets and fam in ("XBOX_ONE", "XBOX_SERIES") else fam
@@ -4297,6 +4328,16 @@ def _console_plan(
             return bucket
         pages.append(("XBOX_PC", pc_res, bucket[0], bucket[1]))
 
+    # (b, suite) P5 — la règle R43 sur CHAQUE page cible, page PC Play Anywhere comprise :
+    # la page du DLC lui-même (slug du nom complet), avec le seau DLC (16). Une seule page qui
+    # manque et la ligne entière est refusée — on ne perd pas une plateforme en silence (§6).
+    if dlc_marker is not None:
+        for fam, page, _label, _rid in pages:
+            refusal = r43_dlc_page_refusal(dlc_marker, page, slug_name, guard_name,
+                                           stamp="R43, R45")
+            if refusal is not None:
+                return SkippedOffer(offer, f"console: {fam} — {refusal}")
+
     # (h) the primary page is the plan's resolution; the common flow runs on it.
     fam0, page0, label0, rid0 = pages[0]
     return _Plan(
@@ -4307,7 +4348,9 @@ def _console_plan(
         implicit=implicit,
         declared_platform=fam0,          # no PAGE_PLATFORM_NAMES entry → no R20/R27 check
         difmark_platform_verified=False,
-        dlc_page=False,
+        # P5 : toutes les pages portent le seau DLC (vérifié ci-dessus) → le marqueur DLC du
+        # titre n'est plus un mot « en trop » pour R16 / R01b, exactement comme sur PC.
+        dlc_page=dlc_marker is not None,
         identity_name=identity_name,
         guard_name=guard_name,
         console_targets=tuple(pages),

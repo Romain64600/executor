@@ -3,6 +3,48 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-25 — Consoles : P2, P3 et P5 tranchées par Romain
+
+Romain : « P3 A, P5 A, P2 saisir sur les xbox déclarées et sur PC (on le considère Play
+Anywhere) ». Trois refus console deviennent des saisies (EXECUTOR_RULES §4.12, §10, §12 ;
+AGENTS « Reviewed decisions ») :
+
+- **P3 — PS5 hors GLOBAL** (`src/console_keys.py`) : Europe / US / UK prennent les cases
+  PlayStation de PS4, `88eu` / `88us` / `88uk` ; GLOBAL garde `88ps5h`. AKS range déjà ainsi ses
+  offres PS5 (lu en direct sur 10 pages PS5 : 43 `88eu`, 41 `88us`, 96 `88ps5h`) ; `88uk` est au
+  catalogue du modal. Avant : « no region id for PS5/EU (R45) ».
+- **P5 — DLC / season pass console** (`src/matcher.py`) : la règle R43 des DLC PC, extraite en
+  UNE fonction `r43_dlc_page_refusal` que lisent le chemin PC (réécriture sans changement de
+  comportement) et, désormais, CHAQUE page cible console (page PC Play Anywhere comprise) : page
+  du DLC lui-même (slug du nom complet), seau DLC (16), sinon toute la ligne est refusée
+  (« console: <FAMILLE> — … (R43, R45) »). Le refus en bloc de l'édition DLC(16) sur console est
+  retiré : un titre sans marqueur n'y arrive que par R18 et ses verrous PC (seau DLC seul de la
+  page, R18b, R57). Avant : « console: DLC / season pass on console — not entered yet (R45) ».
+- **P2 — Xbox + PC déclarés sans Play Anywhere sur la page** : considéré Play Anywhere — pages
+  Xbox déclarées + page PC, toutes en case XBOX/PC (306 / 241 / 242 / 240). « PC + famille non
+  Xbox » reste le refus `contradictory delivery` ; sans page PC chez AKS : refus explicite
+  (« … AKS has no PC page … »), jamais une cible perdue.
+
+**Mesure** (rejeu lecture seule du matcher, `consoles=True`, UA `AKS/Staff`, index sitemap de la
+VM, recherche AKS coupée ; 40 lignes par règle tirées des refus réels des deux VM, 22-25/09,
+réparties par marchand ; avant = code de 795883a sur les mêmes réponses AKS) :
+
+| Règle | Candidates avant → après | Pages / cases des nouvelles | Refus restants (principaux) |
+|---|---|---|---|
+| P3 | 0 → 13 | PS5 seule ×9, PS4 + PS5 ×4 ; `88eu` ×11, `88us` ×4, `88uk` ×2 | pas de page console AKS ×17, pas d'onglet PS5 / PS4 ×8 |
+| P5 | 2 → 14 | toutes en DLC(16) : Xbox Series + PC ×4, One + Series ×2, One ×2, One + Series + PC ×1, Switch ×2, PS4 ×1 | pas de page ×8, pas d'onglet One / Series ×6, R43 (page du jeu de base, DLC sans nom propre) ×9 |
+| P2 | 1 → 2 | Xbox Series + PC en `242` | l'onglet Xbox déclaré manque ×21, pas de page PC chez AKS ×13 |
+
+P2 rapporte peu : la garde Play Anywhere masquait un second refus, les onglets Xbox que la page
+AKS n'a pas (surtout des petits jeux « Windows/Xbox Series X|S » d'Eneba et Gamivo).
+
+Tests : `tests/test_consoles_decisions_2026_09_25.py` (17 cas, lignes réelles, vrai classifieur)
++ les tests R45 qui épinglaient les anciens refus, réécrits. Mutations : 11, toutes rouges
+(cases PS5 ; refus en bloc du marqueur ; slug sans marqueur ; R43 par page retiré ; sous-titre lu
+sur le titre brut ; `dlc_page=False` ; refus en bloc DLC(16) ; refus P2 restauré ; cibles PA sans
+la déclaration marchande ; garde « pas de page PC » ; garde du sous-titre dans la fonction
+partagée).
+
 ## 2026-09-25 — `[R61]` Loaded (ex-CDKeys) : région dans le titre, fiche dans le lien d'affiliation
 
 Romain : « Pars sur CDKeys (nouveau nom du marchand est LOADED) », puis « 1. Europe 2. comme

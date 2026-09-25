@@ -158,7 +158,8 @@ class BucketTableTests(unittest.TestCase):
             ("XBOX_SERIES", "global"): "300", ("XBOX_SERIES", "eu"): "302", ("XBOX_SERIES", "us"): "303", ("XBOX_SERIES", "uk"): "305",
             ("XBOX_PC", "global"): "306", ("XBOX_PC", "eu"): "241", ("XBOX_PC", "us"): "242", ("XBOX_PC", "uk"): "240",
             ("PS4", "global"): "88", ("PS4", "eu"): "88eu", ("PS4", "us"): "88us", ("PS4", "uk"): "88uk",
-            ("PS5", "global"): "88ps5h",
+            # P3, DÉCIDÉ Romain 2026-09-25 : PS5 hors GLOBAL = les cases PlayStation de PS4
+            ("PS5", "global"): "88ps5h", ("PS5", "eu"): "88eu", ("PS5", "us"): "88us", ("PS5", "uk"): "88uk",
             ("SWITCH", "global"): "99", ("SWITCH", "eu"): "99eu", ("SWITCH", "us"): "99us", ("SWITCH", "uk"): "992",
             # Switch 2 offers use the NINTENDO family bucket (2026-09-14: prices region 99,
             # regions map {99: GLOBAL}, activationPlatform nintendo-eshop on both saved pages)
@@ -167,8 +168,11 @@ class BucketTableTests(unittest.TestCase):
         flat = {(fam, base): rid for fam, bases in CONSOLE_REGION_IDS.items() for base, rid in bases.items()}
         self.assertEqual(flat, expected)
         self.assertEqual(CONSOLE_REGION_IDS["SWITCH2"], CONSOLE_REGION_IDS["SWITCH"])
-        # PS5 has ONE bucket — no EU/US/UK (fail-closed in the matcher), no gift anywhere
-        self.assertEqual(CONSOLE_REGION_IDS["PS5"], {"global": "88ps5h"})
+        # PS5: its own GLOBAL bucket, the PlayStation EU / US / UK buckets of PS4 (P3,
+        # Romain 2026-09-25 — AKS already files PS5 offers there), no gift anywhere
+        self.assertEqual(CONSOLE_REGION_IDS["PS5"], {"global": "88ps5h", "eu": "88eu", "us": "88us", "uk": "88uk"})
+        self.assertEqual({b: r for b, r in CONSOLE_REGION_IDS["PS5"].items() if b != "global"},
+                         {b: r for b, r in CONSOLE_REGION_IDS["PS4"].items() if b != "global"})
         for bases in CONSOLE_REGION_IDS.values():
             self.assertFalse(any(k.startswith("gift") or k.startswith("gmg") for k in bases))
 

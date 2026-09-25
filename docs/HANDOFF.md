@@ -325,12 +325,11 @@ récents (voir
   UK 2572 mappés le 16/09, `[R50]` — la phrase « sans bucket → skip » était fausse). Reste ouverte : la queue « EU/UK » = skip.
 - **Questions pour Romain (R45, à confirmer — EXECUTOR_RULES §12)** : ~~P1~~ **tranchée le
   14/09** (« clé PS5 seule = page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch
-  et Switch 2 » — déclaration marchande ∧ page AKS, jamais de page sœur) ; restent **P2-P5** :
-  P2 Play Anywhere = vérité de la page PC
-  (marchand « + PC/Windows » sans PA sur la page → skip ; PA sur la page sans mention marchande →
-  cibles PA) ; P3 PS5 hors GLOBAL → skip (créer des buckets PS5 EU/US/UK dans l'outil ?) ; P4 les
-  704 lignes Eneba « XBOX LIVE Key » sans génération → skip ; P5 DLC / season pass console → skip
-  en v1 ; ~~sémantique de l'overwrite par cible dans le nouveau modal~~ **tranchée par
+  et Switch 2 » — déclaration marchande ∧ page AKS, jamais de page sœur) ; ~~P2, P3, P5~~
+  **tranchées le 25/09** (« P3 A, P5 A, P2 saisir sur les xbox déclarées et sur PC ») : P2 Xbox +
+  PC sans Play Anywhere sur la page = Play Anywhere (pages Xbox + page PC, case XBOX/PC) ; P3 PS5
+  hors GLOBAL = cases PlayStation 88eu / 88us / 88uk ; P5 DLC console = R43 sur chaque page cible ;
+  reste **P4** (les lignes Xbox sans génération → skip) ; ~~sémantique de l'overwrite par cible dans le nouveau modal~~ **tranchée par
   l'observation (14/09) et les canaries (15/09)** : UN Create avec N lignes cibles portant
   chacune sa région / édition (SUBMITTER_SPEC §4c) — reste à confirmer côté AKS la création
   sur la 2ᵉ page du canary 2 (Diablo 2 Resurrected, Xbox Series 70802) une fois le cache
