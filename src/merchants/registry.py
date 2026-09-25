@@ -41,6 +41,7 @@ from src.merchants import (
     kinguin,
     mmoga,
     gamerall,
+    gamesplanet,
     wyrel,
 )
 
@@ -69,6 +70,9 @@ MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
     "WYREL": wyrel.CONFIG,
     "GAMERALL": gamerall.CONFIG,
     "GOG": gog.CONFIG,
+    # [R59] Gamesplanet FR (2026-09-25) — fichier écrit, PAS encore en liste blanche : essai à
+    # blanc d'abord (docs/PROCHAINS_MARCHANDS.md).
+    "GAMESPLANET FR": gamesplanet.CONFIG,
 }
 
 
@@ -84,7 +88,7 @@ MERCHANT_STORE_IDS: dict[str, str] = {
     "Gamivo": "51", "Instant Gaming": "28", "CJS-CDKeys": "30", "Allyouplay": "17",
     "GameSeal": "126", "GameBoost": "157", "Electronicfirst": "70",
     "GamersOutlet": "31", "MMOGA": "12", "Difmark": "167", "Wyrel": "162",
-    "Gamerall": "13", "GOG": "34",
+    "Gamerall": "13", "GOG": "34", "Gamesplanet FR": "55",
 }
 _BY_STORE: dict[str, str] = {store: name for name, store in MERCHANT_STORE_IDS.items()}
 

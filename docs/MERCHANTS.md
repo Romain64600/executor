@@ -932,6 +932,31 @@ matcher et le classifieur importent le registre.
   Microsoft, Xbox Play Anywhere ou l'éditeur (refusées, R27 / `[R51]`), 21 illisibles. (Un
   « NO GO » du même jour, sur une formulation antérieure, a été remplacé par cette règle.)
 
+## Gamesplanet FR (store 55, `[R59]`, fichier le 25/09 — pas encore en liste blanche)
+
+- **Fichier** : `src/merchants/gamesplanet.py`. Revendeur OFFICIEL : titres nus (« Regulators »,
+  « The Surge 2 - Premium Edition »), ni plateforme ni région.
+- **Plateforme = le segment de livraison de l'URL**, écrit en clair avant l'identifiant :
+  `…-steam-key--7963-1` (474 lignes sur 526 le 21/09), `-gog-key--` (12), `-epic-games-key--`
+  (8), `-microsoft-store-download--` (16, famille « Windows 10 » R50), `-rockstar-key--` (3),
+  plus Ubisoft / EA / Battle.net s'ils apparaissent. Un segment inconnu (`-arenanet-key--`,
+  `-collection-download--`…) ou absent est refusé PAR SON NOM.
+- **Région = la fiche produit** (HTTP 200, pas de Cloudflare). Sans bloc « REGION LOCK INFO », la
+  clé n'est pas bridée ; sinon « It will NOT activate in: … » (liste courte en ligne, ou liste
+  complète dans la fenêtre `#modal_regionlocks_details`) ou « It will ONLY activate in: … ».
+  **Règle de Romain (25/09)**, sur les pays EXCLUS (pour « ONLY » : les absents) : ni UE, ni
+  Royaume-Uni, ni USA exclus → GLOBAL ; UE autorisée, USA exclus → Europe ; un pays de l'UE exclu,
+  USA autorisés → US ; UE et USA exclus → refus ; Royaume-Uni seul exclu → refus (non tranché) ;
+  page illisible ou sans les repères d'une fiche → refus. Relevé sur 30 fiches : 12 sans bloc,
+  16 « NOT » sans UE / UK / USA (Japon, Chine, Taïwan, ou 55 à 83 pays hors Europe), 2 « ONLY »
+  Europe → 28 GLOBAL, 2 EU.
+- **Essai à blanc du 25/09** (150 lignes tirées au hasard du scan du 21/09, AKS et fiches en
+  direct, lecture seule) : **77 candidats** — Steam GLOBAL 62, Steam EU 10, Steam US 1, GOG GLOBAL
+  3, Microsoft GLOBAL 1. Refus : 37 sans page AKS, 8 produit différent, 5 édition absente de la
+  page, 4 verrou Gamesplanet, 3 bundles, 2 livraisons illisibles, 2 fiches illisibles…
+  Tests : `tests/test_merchants_gamesplanet.py` (15, fiches réelles dans
+  `tests/fixtures/gamesplanet/`), 6 mutations rougies.
+
 ## Ce qui n'est pas propre à un marchand
 
 - Consoles (Xbox / PlayStation / Switch) `[R45]` (2026-09-12, hooks marchands le 14/09,

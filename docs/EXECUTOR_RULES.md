@@ -3009,6 +3009,19 @@ même décision que le sweep : `--consoles` est le **défaut** sur les deux scri
 
 ---
 
+### `[R59]` Gamesplanet FR (store 55) — plateforme dans l'URL, région sur la fiche (2026-09-25)
+
+Romain : « go pour Gamesplanet FR avec ta règle + un pays UE exclu mais États-Unis autorisés →
+US ». `src/merchants/gamesplanet.py` : la plateforme vient du segment de livraison de l'URL
+(`-steam-key--`, `-gog-key--`, `-epic-games-key--`, `-microsoft-store-download--`,
+`-rockstar-key--`…), un segment inconnu est refusé par son nom ; la région vient du bloc
+« REGION LOCK INFO » de la fiche produit (`offer_page_resolver`), lu en HTTP. Règle, sur les pays
+exclus (pour une liste « ONLY » : les absents) : ni UE, ni UK, ni USA → GLOBAL ; UE sans USA →
+EU ; USA sans (toute) l'UE → US ; ni l'un ni l'autre → refus `forbidden region: GAMESPLANET LOCK
+(EU + US)` ; UK seul exclu → refus `… (UK)` ; fiche illisible ou sans ses repères (`prod-data`,
+`platform badge`) → refus R32, jamais un GLOBAL par défaut. La page AKS doit toujours vendre la
+plateforme de l'URL (R20).
+
 ### `[R54]` Gamerall (store 13) — région : titre → URL → page (2026-09-18)
 
 **Dans la liste blanche safe-auto depuis le 2026-09-19** (Romain : « Tu peux ajouter Gamerall

@@ -245,6 +245,13 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   proposera de rendre toute la query identitaire, ou de retirer l'exception : ni l'un ni
   l'autre.
 
+- **`[R59]` Gamesplanet FR : la région est la liste des pays EXCLUS de la fiche — Romain,
+  2026-09-25** (« go pour Gamesplanet FR avec ta règle + un pays UE exclu mais États-Unis
+  autorisés → US »). Ni UE, ni UK, ni USA exclus → GLOBAL (même avec 80 pays d'Asie / d'Amérique
+  latine exclus : c'est ainsi qu'AKS range déjà Gamesplanet FR, 20 offres sur 28 en Steam GLOBAL
+  sur 10 pages lues) ; UE sans USA → EU ; USA sans l'UE → US ; le reste → refus. Un audit
+  « trouvera » une clé bridée en Asie entrée en GLOBAL : c'est la règle voulue, ne pas la durcir.
+
 - **Software region catch-all (`resolve_software_region`, Fable finding [7], DECLINED
   2026-09-07).** When an AKS software page has a SINGLE region and it is a
   GLOBAL/PUBLISHER-type bucket, a merchant offer is filed under it even when the offer's

@@ -3,6 +3,17 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-25 — `[R59]` Gamesplanet FR : plateforme dans l'URL, région sur la fiche
+
+Romain : « go pour Gamesplanet FR avec ta règle + un pays UE exclu mais États-Unis autorisés →
+US ». Nouveau `src/merchants/gamesplanet.py` (store 55), inscrit au registre, **pas encore en
+liste blanche**. La plateforme vient du segment de livraison de l'URL (`-steam-key--`…), la région
+du bloc « REGION LOCK INFO » de la fiche produit lue en HTTP, selon la règle de Romain (pays
+exclus : ni UE / UK / USA → GLOBAL ; UE sans USA → EU ; USA sans l'UE → US ; sinon refus). Essai à
+blanc sur 150 lignes réelles : 77 candidats. Tests : 15 (fiches réelles en
+`tests/fixtures/gamesplanet/`), 6 mutations rougies. Docs : MERCHANTS, EXECUTOR_RULES, AGENTS,
+PROCHAINS_MARCHANDS.
+
 ## 2026-09-25 — Trace des prochains marchands étudiés
 
 Romain : « garde une trace de ce que tu étudies quand je te demande le prochain marchand ».
