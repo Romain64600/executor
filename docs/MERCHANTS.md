@@ -957,6 +957,26 @@ matcher et le classifieur importent le registre.
   Tests : `tests/test_merchants_gamesplanet.py` (15, fiches réelles dans
   `tests/fixtures/gamesplanet/`), 6 mutations rougies.
 
+## Discover.games (store 168, `[R60]`, fichier le 25/09 — pas encore en liste blanche)
+
+- **Fichier** : `src/merchants/discover.py`. Boutique officielle à prix par pays : titre et URL
+  NUS (« Potion Permit », `discover.games/games/<slug>`).
+- **Tout vient de la fiche** (HTTP 200 après redirection vers `www.`), objet
+  `sellableProductDetail` : `platform` (`STEAM`…) et `skus[].availableCountries`, les pays où
+  chaque déclinaison est VENDUE (`["WW"]` = monde). Romain : « il faut vraiment lire la région
+  sur la page » — c'est cette liste que la page affiche.
+- **Région = règle de Romain `[R59]`** sur les pays NON couverts : `WW`, ou UE + UK + USA couverts
+  → GLOBAL ; UE sans USA → EU ; USA sans l'UE → US ; sinon refus. AKS range déjà ainsi les
+  boutiques officielles à prix par pays des mêmes pages (Fanatical, GamersGate, GMG, Humble,
+  Steam : toutes en Steam GLOBAL, 15 pages lues le 25/09).
+- **Produit introuvable** : fiche 404, sans `sellableProductDetail` ou sans déclinaison en vente
+  → refus (« product not found »), jamais une région par défaut.
+- **Essai à blanc du 25/09** (150 lignes du scan du 21/09, AKS et fiches en direct) : **106
+  candidats** (Steam GLOBAL 104, Steam US 2). Refus : 21 sans page AKS, 15 fiches introuvables ou
+  sans déclinaison, 3 produit différent, 2 verrou de région… Tests :
+  `tests/test_merchants_discover.py` (11, extraits réels en `tests/fixtures/discover/`),
+  5 mutations rougies.
+
 ## Ce qui n'est pas propre à un marchand
 
 - Consoles (Xbox / PlayStation / Switch) `[R45]` (2026-09-12, hooks marchands le 14/09,

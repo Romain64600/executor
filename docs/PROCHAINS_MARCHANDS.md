@@ -16,7 +16,8 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 | 2 | **Gamebillet** (15) | 268 | 192 (72 %) | plateforme et région (URL et titre muets ; la page liste les pays exclus) | à étudier après Gamesplanet |
 | 3 | **Muve** (166) | 605 | 322 (53 %) | titre lisible pour ~35 % des lignes ; pas de région sur la page ; « sans région = Europe » refusé par Romain (25/09) | ~140 lignes seulement, en refusant les lignes sans région |
 | 4 | **Pixelcodes** (82) + **Software-codes** (6) | 1 547 + 1 538 | 1 377 + 1 365 (89 %) | **les produits du feed n'existent plus sur leurs sites** (API : « Product not found », 52 sur 52 testés ; sites devenus boutiques de logiciels) | à ne pas saisir ; liste « not found » en cours pour les marchands |
-| 5 | **Discover.games** (168) | 440 | 370 (84 %) | titre du feed nu, mais la page est vivante et dit « Buy <jeu> Steam Key » | à étudier |
+| 5 | **Discover.games** (168) | 440 | 370 (84 %) | — | **fichier écrit le 25/09 (`[R60]`), essai à blanc : 106 candidats sur 150 lignes ; liste blanche à décider** |
+| 6 | **CDKeys → « Loaded »** (40) | ? | ? | à étudier (demande de Romain du 25/09) | en cours |
 | — | Greenmangaming (22) | 482 | 318 (66 %) | URL d'affiliation illisible (sjv.io), titre muet | pas prioritaire |
 
 \* Mesuré sur le scan tous-magasins du 21/09, **avant** la correction du tri du feed (`orderBy=id`,
@@ -26,6 +27,15 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 (19/09), GameBoost / Electronicfirst / GamersOutlet (16/09), Difmark (21/09).
 
 ---
+
+## 2026-09-25 (suite) — Discover.games codé
+
+Romain : « go pour Discover.games », « il faut vraiment lire la région sur la page !!! ». Fichier
+`src/merchants/discover.py` (`[R60]`) : plateforme et région lues sur la fiche
+(`sellableProductDetail` : `platform`, `skus[].availableCountries`, `WW` = monde), règle `[R59]`.
+Essai à blanc sur 150 lignes réelles : **106 candidats** (Steam GLOBAL 104, US 2). Les fiches
+introuvables (404, ou sans déclinaison en vente) sont refusées. Prochain : **CDKeys / Loaded**
+(store 40), demandé par Romain.
 
 ## 2026-09-25 (suite) — Pixelcodes : les produits du feed n'existent plus sur le site
 

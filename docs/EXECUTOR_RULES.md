@@ -3011,6 +3011,14 @@ même décision que le sweep : `--consoles` est le **défaut** sur les deux scri
 
 ---
 
+### `[R60]` Discover.games (store 168) — plateforme et région sur la fiche (2026-09-25)
+
+Romain : « go pour Discover.games », « il faut vraiment lire la région sur la page ».
+`src/merchants/discover.py` lit l'objet `sellableProductDetail` de la fiche : `platform` et
+l'union des `skus[].availableCountries` (`WW` = monde). La règle de région est celle de `[R59]`,
+sur les pays NON couverts. Fiche 404, sans détail ou sans déclinaison en vente → refus
+(« product not found »). La page AKS doit vendre la plateforme lue (R20).
+
 ### `[R59]` Gamesplanet FR (store 55) — plateforme dans l'URL, région sur la fiche (2026-09-25)
 
 Romain : « go pour Gamesplanet FR avec ta règle + un pays UE exclu mais États-Unis autorisés →

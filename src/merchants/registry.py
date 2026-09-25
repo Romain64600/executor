@@ -27,6 +27,7 @@ from src.merchants import (
     allyouplay,
     cjs,
     difmark,
+    discover,
     driffle,
     electronicfirst,
     eneba,
@@ -73,6 +74,9 @@ MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
     # [R59] Gamesplanet FR (2026-09-25) — liste blanche le même jour, groupe A, après l'essai à
     # blanc (77 candidats sur 150 lignes).
     "GAMESPLANET FR": gamesplanet.CONFIG,
+    # [R60] Discover.games (2026-09-25) — fichier écrit, PAS encore en liste blanche : essai à
+    # blanc d'abord (docs/PROCHAINS_MARCHANDS.md).
+    "DISCOVER.GAMES": discover.CONFIG,
 }
 
 
@@ -89,6 +93,7 @@ MERCHANT_STORE_IDS: dict[str, str] = {
     "GameSeal": "126", "GameBoost": "157", "Electronicfirst": "70",
     "GamersOutlet": "31", "MMOGA": "12", "Difmark": "167", "Wyrel": "162",
     "Gamerall": "13", "GOG": "34", "Gamesplanet FR": "55",
+    "Discover.games": "168",
 }
 _BY_STORE: dict[str, str] = {store: name for name, store in MERCHANT_STORE_IDS.items()}
 

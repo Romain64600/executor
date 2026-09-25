@@ -3,6 +3,15 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-25 — `[R60]` Discover.games : plateforme et région lues sur la fiche
+
+Romain : « go pour Discover.games », « il faut vraiment lire la région sur la page ». Nouveau
+`src/merchants/discover.py` (store 168), inscrit au registre, **pas encore en liste blanche**.
+Titre et URL sont nus ; la fiche embarque `sellableProductDetail` (plateforme, pays de vente par
+déclinaison, `WW` = monde) ; région par la règle `[R59]` ; fiche introuvable → refus. Essai à blanc
+sur 150 lignes : 106 candidats. Tests : 11 (extraits réels), 5 mutations rougies. Docs :
+MERCHANTS, EXECUTOR_RULES, PROCHAINS_MARCHANDS.
+
 ## 2026-09-25 — Revue de Romain jusqu'à 9fcf2c2 : trois points, tous justes
 
 1. **`[P1]` Une reprise contournait le garde des dix échecs** (`src/submitter.py`). Une panne
