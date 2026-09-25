@@ -17,7 +17,7 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 | 3 | **Muve** (166) | 605 | 322 (53 %) | titre lisible pour ~35 % des lignes ; pas de région sur la page ; « sans région = Europe » refusé par Romain (25/09) | ~140 lignes seulement, en refusant les lignes sans région |
 | 4 | **Pixelcodes** (82) + **Software-codes** (6) | 1 547 + 1 538 | 1 377 + 1 365 (89 %) | **les produits du feed n'existent plus sur leurs sites** (API : « Product not found », 52 sur 52 testés ; sites devenus boutiques de logiciels) | à ne pas saisir ; liste « not found » en cours pour les marchands |
 | 5 | **Discover.games** (168) | 440 | 370 (84 %) | — | **fichier écrit le 25/09 (`[R60]`), essai à blanc : 106 candidats sur 150 lignes ; liste blanche à décider** |
-| 6 | **CDKeys → « Loaded »** (40) | ? | ? | à étudier (demande de Romain du 25/09) | en cours |
+| 6 | **CDKeys → « Loaded »** (40) | 16 (21/09) | — | titres riches ; décisions de Romain : « (Europe & UK) » → Europe ? région absente → GLOBAL ? | étude faite le 25/09, décisions attendues |
 | — | Greenmangaming (22) | 482 | 318 (66 %) | URL d'affiliation illisible (sjv.io), titre muet | pas prioritaire |
 
 \* Mesuré sur le scan tous-magasins du 21/09, **avant** la correction du tri du feed (`orderBy=id`,
@@ -27,6 +27,22 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 (19/09), GameBoost / Electronicfirst / GamersOutlet (16/09), Difmark (21/09).
 
 ---
+
+## 2026-09-25 (suite) — CDKeys, devenu « Loaded » (store 40)
+
+Romain : « Pars sur CDKeys (nouveau nom du marchand est LOADED) », store 40.
+- Scan du 21/09 : **16 lignes seulement** (le scan triait encore mal ; à remesurer sur le feed du
+  jour). URL d'affiliation `go.loaded.com/c/…?u=https://www.loaded.com/<slug>` : la vraie URL est
+  dans le paramètre `u`.
+- Titres RICHES : « Towerborne Xbox/PC (Europe & UK) », « Attack on Titan 3 … PC (North America) »,
+  « Red Dead Redemption 2: Ultimate Edition Xbox (WW) », « Super Mario Galaxy 2 Switch & Switch 2
+  (Europe & UK) » ; le slug répète plateforme et région (`-pc-steam-eu`, `-xbox-pc-eu`, `-na`).
+  Certains n'ont pas de région (« Zero Caliber 2 Remastered PC », slug `-pc-steam`).
+- AKS range déjà Loaded (20 pages lues) : Steam GLOBAL 14, XBOX/PC EUROPE (241) 9, Xbox X|S
+  EUROPE 7, Steam EU 4, STEAM EMEA 3, Xbox/PC 306, Ubisoft, Rockstar, PS5 EU / US, Switch EU.
+- Décisions à prendre : « (Europe & UK) » → Europe (aujourd'hui le vocabulaire partagé en fait un
+  VERROU, deux régions à la fois) ; une ligne sans région → GLOBAL comme MMOGA / Kinguin, ou refus ;
+  « (North America) » reste refusé comme partout.
 
 ## 2026-09-25 (suite) — Discover.games codé
 
@@ -56,8 +72,11 @@ found, que je pourrais transmettre aux marchands ».
 - **Software-codes** (store 6) : même gabarit de site, même API ; 12 lignes sur 12 « not found ».
 - **Discover.games** (store 168), à part : ses pages sont vivantes (`discover.games/games/mad-metal`
   → `www.`, titre « Buy Mad Metal Steam Key »). Candidat à étudier, autre famille.
-- Vérification complète en cours (toutes les lignes des deux marchands, API, lecture seule) :
-  `/tmp/tri/20260925-produits-introuvables.csv` sur la nouvelle VM, à transmettre aux marchands.
+- **Vérification complète (25/09, API, lecture seule) : 3 085 lignes sur 3 085 « Product not
+  found »** — Pixelcodes 1 547 / 1 547, Software-codes 1 538 / 1 538. Listes à transmettre aux
+  marchands, sur la nouvelle VM : `/tmp/tri/20260925-pixelcodes-produits-introuvables.csv` et
+  `/tmp/tri/20260925-software-codes-produits-introuvables.csv` (URL produit, titre, id d'offre du
+  feed, heure de vérification). Romain a demandé à Pixelcodes de corriger son feed (25/09).
 
 ## 2026-09-25 (suite) — Pourquoi Muve n'a que 35 % de lignes lisibles
 
