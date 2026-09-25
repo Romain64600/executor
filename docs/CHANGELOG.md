@@ -3,6 +3,23 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-25 — Revue de Romain jusqu'à 9fcf2c2 : trois points, tous justes
+
+1. **`[P1]` Une reprise contournait le garde des dix échecs** (`src/submitter.py`). Une panne
+   AVANT le clic compte comme un échec ; si c'était le dixième, le garde était bloqué mais le
+   submitter rendait `feed_unreadable_prewrite`, que le balayage reprend. Le blocage passe
+   désormais devant : `ten_consecutive_failures`, jamais repris.
+2. **`[P1]` La recherche de preuve échappait au tri stable** (`src/submitter.py` `_search_url`,
+   et `scripts/11_data_entry_by_urls.py`). Ses URL portent maintenant `orderBy=id&order=desc`
+   comme toutes les URL de feed ; et `_scan_search` REFUSE une page de résultats dont toutes les
+   lignes ont déjà été lues (`FeedScanError`, donc offre « inconnue » et arrêt) — deux pages qui
+   se recouvrent ne prouvent jamais une disparition.
+3. **`[P2]` Arrêter pendant la pause doublait les créations comptées** (`src/data_entry_auto.py`).
+   Les créations de la tentative coupée étaient reportées puis ajoutées une seconde fois ; elles
+   ne le sont plus (2 restent 2, les offres ne sont plus dupliquées).
+
+Chaque correctif a son test de reproduction, et chacun rougit quand on retire le correctif.
+
 ## 2026-09-25 — Gamesplanet FR en liste blanche, groupe A
 
 Romain : « go liste blanche, groupe A ». `AUTO_MERCHANTS` + `("Gamesplanet FR", "55")`, groupe A

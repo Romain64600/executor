@@ -1029,7 +1029,11 @@ class _SubmitterBase:
         list_no = str(feed_page).rsplit("-", 1)[-1]
         params = {"page": "aks-merchant-feeds-search", "available": available,
                   "list": list_no, "store": str(store_id),
-                  "search[search]": term, "search[field]": field}
+                  "search[search]": term, "search[field]": field,
+                  # REVUE DE ROMAIN (2026-09-25, [P1]) : la recherche de preuve échappait au tri
+                  # stable du feed (`extractor.FEED_ORDER`). Même tri ici, pour que ses pages ne
+                  # se recouvrent pas — et `_scan_search` refuse désormais une page répétée.
+                  "orderBy": "id", "order": "desc"}
         if page and int(page) > 1:
             params["p"] = str(int(page))
         return AKS_ADMIN_URL + "?" + urllib.parse.urlencode(params)
@@ -1081,6 +1085,15 @@ class _SubmitterBase:
                 raise FeedScanError(
                     f"search page {page} rows do not all match term {term!r} "
                     "— stale/foreign DOM re-served")
+            # REVUE DE ROMAIN (2026-09-25, [P1]) : « avec deux pages de recherche répétées, la
+            # simulation conclut gone=True sans couverture complète ». Une page dont TOUTES les
+            # lignes ont déjà été lues n'a rien couvert : les pages glissent (tri instable) et
+            # des lignes n'ont jamais été montrées. L'absence n'est alors pas une preuve.
+            _ids_page = {str(r.get("id") or "") for r in rows} - {""}
+            if page > 1 and _ids_page and _ids_page <= set(index):
+                raise FeedScanError(
+                    f"search page {page} for {term!r} repeats rows already read — result "
+                    "pages overlap, coverage unproven (never a 'gone' proof)")
             for r in rows:
                 rid = str(r.get("id") or "")
                 rk = _url_key(str(r.get("url") or ""))
@@ -1751,6 +1764,13 @@ class _SubmitterBase:
 
             if feed_unreadable is not None:
                 stopped = "feed_unreadable_prewrite" if prewrite else "feed_unreadable"
+                # REVUE DE ROMAIN (2026-09-25, [P1]) : « après neuf échecs puis une erreur avant
+                # clic, le garde devient bloqué, mais le submitter renvoie
+                # feed_unreadable_prewrite. Le balayage reprend automatiquement. » Exact : la
+                # panne avant clic compte comme le DIXIÈME échec, et l'arrêt « reprenable »
+                # masquait le blocage. Le garde passe devant : un blocage n'est jamais repris.
+                if prewrite and self.guard.blocked:
+                    stopped = "ten_consecutive_failures"
                 self._log("run_stopped", reason=stopped, detail=feed_unreadable)
                 break
             if self.guard.blocked:

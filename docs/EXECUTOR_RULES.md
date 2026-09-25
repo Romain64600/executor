@@ -112,7 +112,9 @@ site** `[F01]`.
   page 1. It is set in the ONE URL factory (`extractor.feed_url`, constant `FEED_ORDER`) so
   every stage of a run — extract, submitter refresh/locate/prove-gone, mover, all-stores scan —
   sees the same row on the same page; a test refuses a feed URL built anywhere else. The
-  SEARCH page (`aks-merchant-feeds-search`) is untouched (it does not paginate, below).
+  SEARCH page (`aks-merchant-feeds-search`) carries the same sort since 2026-09-25 (Romain's
+  review: the prove-gone search escaped it), and a search result page whose rows were ALL
+  already read raises `FeedScanError` — overlapping pages are never a disappearance proof.
 - The real page count comes from the feed's own pagination nav (`.tablenav`
   links, rendered on every page incl. past-the-end) — bound the scan by it,
   never by "first empty page" heuristics.

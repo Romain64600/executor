@@ -292,6 +292,10 @@ class SearchUrlTests(unittest.TestCase):
         q = dict(_up.parse_qsl(_up.urlsplit(M._search_url("aks-merchant-feeds-9", "all", "x", "url", 2)).query))
         self.assertEqual(q["p"], "2")
 
+    def test_revue_2026_09_25_the_search_uses_the_stable_feed_sort(self):
+        q = dict(_up.parse_qsl(_up.urlsplit(M._search_url("aks-merchant-feeds-9", "all", "x", "url", 2)).query))
+        self.assertEqual((q["orderBy"], q["order"]), ("id", "desc"))
+
 
 class DedupeTests(unittest.TestCase):
     def test_by_id_and_url(self):

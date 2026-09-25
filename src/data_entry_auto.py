@@ -515,7 +515,16 @@ def run_sweep(
                     if pause(waits[n]):
                         continue
                     recap["halted"] = "operator_stop"
-                # Reprises épuisées (ou arrêt demandé pendant la pause) : la halte d'avant.
+                    # REVUE DE ROMAIN (2026-09-25, [P2]) : « deux créations avant l'erreur
+                    # deviennent quatre si l'opérateur arrête pendant la pause ». Les créations de
+                    # CETTE tentative viennent d'être reportées dans `carried_*` : l'entrée ne
+                    # les ajoute pas une seconde fois.
+                    entry["created"] = carried_created
+                    entry["offers_created"] = list(carried_offers)
+                    finish_page(entry)
+                    verdict = "halt"
+                    break
+                # Reprises épuisées : la halte d'avant.
                 verdict = "halt"
                 if carried_created or carried_offers:
                     entry["created"] = int(entry.get("created") or 0) + carried_created

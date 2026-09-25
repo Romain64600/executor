@@ -2436,6 +2436,24 @@ class FeedScanFailClosedTests(unittest.TestCase):
         self.assertIn("verify it by hand", entry["post_save"])
         self.assertEqual(len(result["plan"]), 1)        # offer 2 never attempted
 
+    def test_revue_2026_09_25_the_tenth_failure_wins_over_a_prewrite_retry(self):
+        """REVUE DE ROMAIN (2026-09-25, [P1]) : « après neuf échecs puis une erreur avant clic,
+        le garde devient bloqué, mais le submitter renvoie feed_unreadable_prewrite. Le balayage
+        reprend automatiquement ». Ici le garde bloque dès le premier échec : la panne avant
+        clic est CET échec-là, et l'arrêt doit être le blocage — jamais un arrêt reprenable."""
+
+        from src.step_guard import StepGuard
+        guard = StepGuard(max_attempts_per_signature=1, max_failures_per_signature=2,
+                          max_consecutive_failures=1, max_failures_per_task=10 ** 9)
+        submitter = DryRunSubmitter(ModalRaisesSession([["1", "2"]]), guard=guard)
+        submitter.empty_retry_wait_s = 0
+        submitter.empty_confirm_waits = (0,)
+        submitter.feed_ui_render_waits = (); submitter.modal_ctx_waits = ()
+        result = submitter.run(run_id="r", merchant="Driffle", store_id="127",
+                               approved=[_cand("1"), _cand("2")])
+        self.assertTrue(guard.blocked)
+        self.assertEqual(result["stopped"], "ten_consecutive_failures")
+
     def test_cdp_death_before_modal_is_untouched_and_stops(self):
         # 2026-09-24 (Romain, « go pour les deux correctifs ») : la modale ne s'est pas
         # ouverte, donc « Create » n'a pas pu être cliqué — l'offre est INTACTE, pas
@@ -2757,6 +2775,24 @@ class SearchLocateTests(unittest.TestCase):
         self.assertIn("page=aks-merchant-feeds-search", sub.session.nav[-1])
         self.assertIn("search%5Bfield%5D=url", sub.session.nav[-1])
         self.assertFalse(any("p=2" in u for u in sub.session.nav))   # never over-read page 2
+
+    def test_revue_2026_09_25_repeated_search_pages_are_never_a_gone_proof(self):
+        """REVUE DE ROMAIN (2026-09-25, [P1]) : « avec deux pages de recherche répétées, la
+        simulation conclut gone=True sans couverture complète ». La page 2 redonne la page 1 :
+        des lignes n'ont jamais été montrées, l'absence de l'offre ne prouve rien."""
+
+        from src.submitter import FeedScanError
+        rows = [{"id": "1", "url": "https://m/some-game-deluxe", "name": "A", "store_id": "127"},
+                {"id": "2", "url": "https://m/some-game-gold", "name": "B", "store_id": "127"}]
+        sub = self._sub(_SearchFake([rows, [dict(r) for r in rows]], nav_max=2))
+        with self.assertRaises(FeedScanError):
+            sub._scan_search("127", "aks-merchant-feeds-9", "all", "https://m/some-game")
+
+    def test_revue_2026_09_25_search_urls_carry_the_stable_sort(self):
+        from urllib.parse import parse_qs, urlparse
+        sub = self._sub(_SearchFake([]))
+        q = parse_qs(urlparse(sub._search_url("127", "aks-merchant-feeds-9", "all", "x", "url", 2)).query)
+        self.assertEqual((q.get("orderBy"), q.get("order")), (["id"], ["desc"]))
 
     def test_scan_search_unrendered_raises_fail_closed(self):
         from src.submitter import FeedScanError

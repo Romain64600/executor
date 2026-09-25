@@ -171,6 +171,20 @@ class UneSaisieCoupeeAvantLeClicEstRefaite(unittest.TestCase):
         self.assertEqual(sc.archives, [(2, 1)], "les traces de la tentative ratée sont gardées")
         self.assertEqual(recap["total_created"], 5)
 
+    def test_revue_2026_09_25_arreter_pendant_la_pause_ne_double_pas_les_creations(self):
+        """REVUE DE ROMAIN (2026-09-25, [P2]) : « deux créations avant l'erreur deviennent quatre
+        dans le récapitulatif si l'opérateur arrête pendant la pause ; les offres sont également
+        dupliquées »."""
+
+        sc = _Scenario(submits={2: [self._prewrite(created=2)]})
+        recap, h = _balayer(sc, horloge=_Horloge(stop_after=20))
+        self.assertEqual(recap["halted"], "operator_stop")
+        p2 = _page(recap, 2)
+        self.assertEqual(p2["created"], 2)
+        self.assertEqual(len(p2["offers_created"]), 2)
+        self.assertEqual(recap["total_created"], 3, "page 3 (1) + les 2 de la page 2, une fois")
+        self.assertEqual(len([p for p in recap["pages"] if p["page"] == 2]), 1)
+
     def test_un_scan_d_index_rate_avant_toute_offre_est_refait(self):
         sc = _Scenario(submits={2: [SubmitOutcome(ok=False, aborted="feed_unreadable",
                                                  detail="exit 2")]})

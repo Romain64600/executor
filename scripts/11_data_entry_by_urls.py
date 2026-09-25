@@ -271,7 +271,9 @@ def _search_url(feed_page: str, available: str, term: str, field: str, page: int
     ``search[field]`` = name|url|productId; ``p`` paginates."""
     list_no = str(feed_page).rsplit("-", 1)[-1]     # "aks-merchant-feeds-9" -> "9"
     q = {"page": "aks-merchant-feeds-search", "available": available,
-         "list": list_no, "search[search]": term, "search[field]": field}
+         "list": list_no, "search[search]": term, "search[field]": field,
+         # Le tri stable du feed (`extractor.FEED_ORDER`, 2026-09-24) — revue de Romain du 25/09.
+         "orderBy": "id", "order": "desc"}
     if page > 1:
         q["p"] = page
     return AKS_ADMIN_URL + "?" + urllib.parse.urlencode(q)
