@@ -15,6 +15,7 @@ import unittest
 
 from src.console_keys import (
     SKIP_PC_ONLY,
+    XBOX_GENERATION_UNDECLARED,
     ConsoleSignal,
     classify_console,
     resolve_name_and_regions,
@@ -90,8 +91,9 @@ class UrlRunHookTests(unittest.TestCase):
         "xbox-xboxone": (("XBOX_ONE",), False, None),
         "xbox-one": (("XBOX_ONE",), False, None),
         "xbox-pc": ((), False, PC_ONLY),
-        "xbox-xbox-windows": ((), False, NO_GEN),        # Xbox + Windows, no generation
-        "xbox-xboxwindows": ((), False, NO_GEN),
+        # Xbox + Windows, no generation — P4 + P2 (Romain 2026-09-25): One + Series, PC declared
+        "xbox-xbox-windows": (ONE_SERIES, True, None),
+        "xbox-xboxwindows": (ONE_SERIES, True, None),
         "ps-ps5": (("PS5",), False, None),
         "psn-ps5": (("PS5",), False, None),
         "ps-ps4-ps5": (("PS4", "PS5"), False, None),
@@ -104,6 +106,8 @@ class UrlRunHookTests(unittest.TestCase):
             url = BASE.format(run=run)
             with self.subTest(run=run):
                 expected = PC_ONLY if skip == PC_ONLY else (families or None)
+                if run in ("xbox-xbox-windows", "xbox-xboxwindows"):
+                    expected = (XBOX_GENERATION_UNDECLARED,)         # the hook's P4 answer
                 self.assertEqual(gamivo.console_url_families(url), expected)
                 self.assertEqual(gamivo.console_pc_declared("Game EN United Kingdom", url), pc)
         self.assertEqual(gamivo.console_url_families(BASE.format(run="xbox-pc")), SKIP_PC_ONLY)

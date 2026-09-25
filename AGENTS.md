@@ -350,7 +350,7 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   "find" the missing PS4 / Xbox One sibling ("the game exists on that page too") — there is
   no "page alone" policy and no switch for it; leave it out.
 
-- **Consoles — P2 élargi, P3, P5 : DÉCIDÉS par Romain le 2026-09-25** (« P3 A, P5 A, P2 saisir
+- **Consoles — P2 élargi, P3, P4, P5 : DÉCIDÉS par Romain le 2026-09-25** (« P3 A, P5 A, P2 saisir
   sur les xbox déclarées et sur PC (on le considère Play Anywhere) » ; EXECUTOR_RULES §4.12).
   Un audit reprendra les trois comme des « trous » ; ils sont voulus :
   - **P2** — un marchand qui déclare Xbox + PC/Windows alors que la page PC d'AKS ne liste PAS
@@ -365,6 +365,23 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
     à côté de 96 `88ps5h` sur 10 pages PS5 lues le 25/09). Un audit « trouvera » un seau
     « PS4 » sur une page PS5 : les libellés de la famille disent « Playstation Game Code »,
     pas PS4 ; ne pas remettre le refus « no region id for PS5/EU ».
+  - **P4 Xbox — « Xbox sur les deux »** (même jour, ajout de Romain). Un Xbox SANS génération
+    (« Tin & Kuna XBOX LIVE Key EUROPE », « (Xbox Live) », Gamivo `-xbox-xboxwindows-`) est LU
+    comme la déclaration « Xbox One / Xbox Series X|S » (`generation_inferred`) : cibles = les
+    pages qu'AKS A (onglet absent ou 404 → cette génération tombe ; les deux → « no AKS product
+    page found (console) ») ; + PC / Windows → le cas P2. Un audit y verra une « page sœur »
+    contraire à P1 : non — P1 interdit d'AJOUTER une génération à une génération DÉCLARÉE
+    (inchangé, tout ou rien) ; ici le marchand n'en déclare aucune et Romain a tranché la
+    lecture. Bornes : un item PlayStation / Nintendo dans le titre ou l'URL → pas de déduction ;
+    PC / Windows à côté du seul magasin « Xbox Live » (« (Windows) XBOX LIVE Key ») = clé PC →
+    refus « PC-only ». **P4 PlayStation = refus** (« … PSN Download Key (Playstation) … » reste
+    « no declared generation ») ; Switch sans génération : refus inchangé.
+  - **« Switch » dans un nom de jeu PC** (bug signalé par Romain, même jour) : un « Switch » nu
+    HORS de tout créneau de plateforme, dans un titre qui déclare une boutique PC (PC / PCS /
+    STEAM / WINDOWS / GOG / EPIC), est un mot du NOM — « Mighty Switch Force! Collection (PC)
+    Steam Key » est une ligne PC (`console_marker_in_title`, lue par le classifieur ET le
+    precheck). Les DEUX conditions sont voulues : « Everybody 1-2-Switch! » (exclusivité Switch,
+    sans boutique PC) reste une ligne console. Ne pas élargir à « tout Switch hors créneau ».
   - **P5** — un DLC / season pass console entre, par la règle des DLC PC `[R43]` appliquée à
     CHAQUE page cible (`r43_dlc_page_refusal`, UNE implémentation partagée avec le PC) : page
     du DLC lui-même (slug du nom complet), seau DLC (16), sinon la ligne entière est refusée.

@@ -447,7 +447,7 @@ Invariant : après le bloc édition, `edition_id == "16"` ne peut venir que de R
 region (= region/PLATFORM) and the edition PER TARGET PAGE, so one feed row can be filed on
 several AKS pages. The full rule — page model (§4.12.1: separate console product pages
 `buy-<slug>-<kind>-compare-prices/`, one product id per page), classifier, multi-target
-candidates, policies (P1 DECIDED by Romain on 2026-09-14; P2, P3, P5 on 2026-09-25), the submit
+candidates, policies (P1 DECIDED by Romain on 2026-09-14; P2-P5 on 2026-09-25), the submit
 path (§6, modal v2) — lives in §4.12; the code runs under `--consoles`, the DEFAULT since
 Romain's decision « 1 » of 2026-09-15 (`--no-consoles` opts out). Bucket table: §10.
 Invariant (d): **one feed row = one offer, and creating it consumes the row** (our proof), so
@@ -1466,7 +1466,8 @@ decision « 1 »); `--no-consoles` is the PC-only opt-out. Real console writes a
 two canaries — one target, then two). **P1 is DECIDED** (Romain 2026-09-14: « clé PS5 seule
 = page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch et Switch 2 »); **P2, P3
 and P5 are DECIDED** (Romain 2026-09-25: « P3 A, P5 A, P2 saisir sur les xbox déclarées et sur
-PC (on le considère Play Anywhere) »); P4 is listed in §12. Historique (the opt-in / default
+PC (on le considère Play Anywhere) »); **P4 is DECIDED** the same day (Xbox without a
+generation: « Xbox sur les deux »; PlayStation without a generation: refused). Historique (the opt-in / default
 OFF phase of 2026-09-12 → 14, the "`--consoles` requires `--dry-run`" guard of 2026-09-14,
 the adversarial review of 2026-09-12 fixed on 2026-09-14, the canaries) : CHANGELOG
 2026-09-12, 2026-09-14, 2026-09-15.
@@ -1683,10 +1684,25 @@ SWITCH alone) — the fix of the Gamivo leak below.
 - "console: PC-only Xbox Live key (R45)" — Gamivo `xbox-pc` alone (`gamivo.py`), Eneba
   `-pc-xbox-live-key-` (`eneba.py`) — both through `console_url_families` (a PC key sold
   through Xbox Live / Microsoft Store is neither a console offer nor a proven Play
-  Anywhere one);
-- "console: no declared generation (R45)" — a console marker without any family: Eneba
-  "<Game> XBOX LIVE Key <REGION>" (**704** of its 1 376 console rows carry no generation
-  in title OR URL), bare "PSN", bare "Nintendo" **[P4]**;
+  Anywhere one); since 2026-09-25 also the shared title reading: PC / Windows next to the
+  "Xbox Live" STORE only, with no bare "Xbox" and no family ("Manor Lords (Windows) XBOX
+  LIVE Key EUROPE", "(PC) - Xbox Live Key", "Windows 11/Xbox Live Key" — 40 rows of the
+  21/09 corpus, refused "no declared generation" before);
+- **Xbox without a generation `[P4 — DÉCIDÉ Romain 2026-09-25, « Xbox sur les deux »]`** —
+  no family anywhere, but the title names Xbox in a platform run (a bare "Xbox" or the "Xbox
+  Live" store, never a leading name run) or the merchant hook answers
+  `XBOX_GENERATION_UNDECLARED` (Gamivo `-xbox-xbox-windows-` / `-xbox-xboxwindows-`), and
+  NO PlayStation / Nintendo item in the title or the URL → `families = ("XBOX_ONE",
+  "XBOX_SERIES")` with `generation_inferred=True`; PC / Windows in the bare-Xbox run ("(Xbox /
+  Windows)", "Xbox/PC") or from the hook → `pc_declared` (the P2 case). Measured on the
+  38 197 rows of the 21/09 corpus: 1 174 rows leave "no declared generation" (Eneba 792,
+  Gamerall 110, GameBoost 84, Gamivo 67…), 826 of them pass the precheck (the others meet
+  their usual bundle / currency / region refusals);
+- "console: no declared generation (R45)" — a console marker without any family and
+  without that Xbox reading: bare "PSN" / "(Playstation)" (**P4 PlayStation — refused**,
+  Romain 2026-09-25: CJS "… PSN Download Key (Playstation) UNITED STATES", ~540 rows), bare
+  "Nintendo" / eShop / "(Switch)" (unchanged), an Xbox word next to a PlayStation / Nintendo
+  one;
 - "console: unparsed platform residue (R45)" (2026-09-14, `SKIP_RESIDUE`) — a SERIES /
   ONE token still glued to a separator once the platform phrase is removed ("/Series",
   "& Series", "(Series", "Series)", "One /"): the grammar did not parse the whole phrase
@@ -1706,8 +1722,15 @@ SWITCH alone) — the fix of the Gamivo leak below.
 1. `REGION_IDS.update(CONSOLE_REGION_IDS)`; `PLATFORM_LABEL.update(CONSOLE_PLATFORM_LABEL)`
    → `validation_io` and `/api/meta` accept the families automatically.
    `PAGE_PLATFORM_NAMES` is unchanged (no R20 / R27 on console rows; `sw=False`).
-2. `precheck_skip(offer, *, consoles=False)`: the console scan = a title token
-   (`CONSOLE_TOKENS`, as before) OR `console_marker_in_url(offer.url)` — **the URL scan is
+2. `precheck_skip(offer, *, consoles=False)`: the console scan =
+   `console_marker_in_title(offer.name)` — the classifier's OWN title rule, the
+   `CONSOLE_TOKENS` words, with ONE exception since 2026-09-25 (bug reported by Romain): a
+   bare "Switch" OUTSIDE every platform slot of a title that declares a PC store (PC / PCS /
+   STEAM / WINDOWS / GOG / EPIC) is a name word — "Mighty Switch Force! Collection (PC) Steam
+   Key - GLOBAL", "NCH: Switch Sound File Converter Key (2 PCs)" are PC rows. Both
+   conditions are required: 6 rows change on the 21/09 corpus, and a name-slot "Switch"
+   WITHOUT a PC store stays a console row ("Everybody 1-2-Switch!" is a Switch exclusive) —
+   OR `console_marker_in_url(offer.url)` — **the URL scan is
    active in EVERY mode**. `consoles=False` → `"console"` (byte-identical for titles; new
    for URL-only rows — the Gamivo / Eneba leak fix). `consoles=True` → `sig =
    classify_console(...)`: its `skip_reason` is returned; then a declared region the
@@ -1762,7 +1785,8 @@ SWITCH alone) — the fix of the Gamivo leak below.
       **[P3]** every console family has its four base buckets — PS5 EU / US / UK take the
       PlayStation `88eu` / `88us` / `88uk`, Romain 2026-09-25);
    d. anchor: `pc_res = resolver(slug_name)`; if `None`: `resolver(slug_name,
-      page_kind=CONSOLE_PAGE_KIND[primary])` (no R30 search for console kinds); `None` →
+      page_kind=CONSOLE_PAGE_KIND[primary])` (no R30 search for console kinds) — for an
+      INFERRED Xbox generation (P4) Xbox One, then Xbox Series; `None` →
       "no AKS product page found (console) (R45)";
    e. identity: `identity_name = console_page_identity(anchor.aks_name)`; R01 / R16 /
       R01b on `guard_name`;
@@ -1781,7 +1805,10 @@ SWITCH alone) — the fix of the Gamivo leak below.
    g. target pages **[P1: merchant declaration ∧ AKS page]**: for each declared family,
       `url = anchor.console_pages.get(kind)` (a console anchor is its own page); absent →
       skip "console: AKS has no <family> page for '<identity>' — declared platform
-      unverifiable (R45)"; `page_resolver(url)` → `None` → skip; identity
+      unverifiable (R45)"; `page_resolver(url)` → `None` → skip (**P4**: for an INFERRED
+      generation, `sig.generation_inferred`, both cases DROP that family instead — only the
+      pages AKS has; none left → "no AKS product page found (console) (R45)"; every other
+      anomaly below still refuses the whole row); identity
       `_identity_tokens(console_page_identity(page.aks_name)) ==
       _identity_tokens(identity_name)` — tokens with apostrophes FOLDED (review fix
       2026-09-14: "Luckys" on a Switch page equals "Lucky's" on the PC page; historique :
@@ -1850,7 +1877,7 @@ reason above. A feed row is consumed by its first creation (§4.3 finding (d)), 
 (no partial `targets`) and at submit time (§6 gate). No region, edition or platform is ever
 guessed: doubt → skip with an explicit reason string.
 
-**Policies (P1 decided 2026-09-14; P2, P3, P5 decided 2026-09-25; P4 — §12).**
+**Policies (P1 decided 2026-09-14; P2-P5 decided 2026-09-25).**
 - **P1 "merchant declaration ∧ AKS page" — DECIDED (Romain 2026-09-14: « clé PS5 seule =
   page PS5 seulement, pareil pour Xbox Series, PS4, Xbox One, Switch et Switch 2 »)**: a
   target is added only if the merchant DECLARES the platform AND the AKS page of the game
@@ -1884,7 +1911,19 @@ guessed: doubt → skip with an explicit reason string.
   `88ps5h` — AKS already files PS5 keys there; `88uk` is in the modal catalog
   (`runs/20260925-152525-auto/catalog.json`: « Playstation Game Code UK (88uk) »). Until then
   "no region id for PS5/EU (R45)" (~75 rows on the skipped.json of 22-25/09).
-- **P4 Eneba's 704 "XBOX LIVE Key" rows without a generation** → skip (no declaration).
+- **P4 — DÉCIDÉ Romain 2026-09-25.** **Xbox without a generation = « Xbox sur les deux »**:
+  "Tin & Kuna XBOX LIVE Key EUROPE" (Eneba), "EA SPORTS FC 25 (Xbox Live)" (Gamerall),
+  "Battlefield 3 - Armored Kill Xbox Live Key EUROPE" (G2A), "Sleeping Dogs: Definitive
+  Edition Xbox Live Key EUROPE" (GameBoost), Gamivo `…-xbox-xbox-windows-uk-…` are READ as
+  the cross-gen declaration "Xbox One / Xbox Series X|S" (4.12.3); the targets are the pages
+  AKS HAS (P1) — a missing tab or a 404 drops that generation, both missing → "no AKS
+  product page found (console) (R45)" (a DECLARED generation keeps its all-or-nothing
+  refusal); without a PC page the console anchor is tried on Xbox One then Xbox Series; PC /
+  Windows declared too → the P2 case (Play Anywhere, XBOX/PC bucket). **PlayStation without a
+  generation = refused** ("… PSN Download Key (Playstation) UNITED STATES", CJS ~540 rows —
+  "no declared generation"); Switch without a generation unchanged (refused). ~1 255 Xbox
+  rows were refused "no declared generation" before (Eneba ~870, Gamerall ~186, GameBoost
+  ~136, Gamivo ~105, CJS).
 - **P5 console DLC / season pass — DÉCIDÉ Romain 2026-09-25 (« P5 A »)**: the PC DLC rule
   `[R43]` applied to consoles — the row enters only on the console page OF THE DLC ITSELF
   (full-name slug + console page kind), and that page must carry the DLC bucket (16);
@@ -2786,8 +2825,9 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167, MMOGA 12 (its AKS page merchant i
     Anywhere targets (§4.12 P2, AGENTS.md "Reviewed decisions").
   - ~~**P3**~~ **CLOSED 2026-09-25** — Romain: « P3 A » — PS5 EU / US / UK = `88eu` / `88us` /
     `88uk` (§4.12 P3, §10).
-  - **P4** Eneba's 704 generation-less "XBOX LIVE Key" rows → skip (no declaration) — or
-    read the Eneba page?
+  - ~~**P4**~~ **CLOSED 2026-09-25** — Romain: Xbox without a generation « Xbox sur les
+    deux » (One + Series, the pages AKS has; + PC = P2); PlayStation without a generation
+    refused (§4.12 P4).
   - ~~**P5**~~ **CLOSED 2026-09-25** — Romain: « P5 A » — the PC DLC rule R43 on every
     console target page (§4.12 P5).
   - ~~**Per-target overwrite semantics of the new modal**~~ **CLOSED 2026-09-14/15** —

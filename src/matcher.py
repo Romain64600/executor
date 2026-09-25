@@ -43,6 +43,7 @@ from src.console_keys import (
     ConsoleSignal,
     account_signal,
     classify_console,
+    console_marker_in_title,
     console_marker_in_url,
     console_page_identity,
     distinct_region_bases,
@@ -143,6 +144,9 @@ AKS_SEARCH_TIMEOUT_S = 8
 AKS_SEARCH_CANDIDATE_LIMIT = 3
 
 # -- classification tables --------------------------------------------------
+# The console words of a title. The precheck gate no longer scans them itself: it calls
+# `console_keys.console_marker_in_title` — the SAME rule as the classifier, with the bare
+# "Switch" exception of 2026-09-25 ("Mighty Switch Force! … Steam Key" is a PC row).
 CONSOLE_TOKENS = ("XBOX", "PLAYSTATION", "PS4", "PS5", "PSN", "NINTENDO", "SWITCH")
 # Bare short tokens (NA/OTHER/SEA) are deliberately excluded — they collide with
 # ordinary title words (e.g. "Sea of Thieves"). Candidates are human-reviewed.
@@ -1094,7 +1098,7 @@ def precheck_skip(offer: NormalizedOffer, *, consoles: bool = False) -> str | No
         _reason_account = _sig_account.skip_reason if _sig_account is not None else None
         if _reason_account and "ACCOUNT — not a game" not in _reason_account:
             return _reason_account
-    elif (any(f" {t} " in padded for t in CONSOLE_TOKENS) or console_marker_in_url(offer.url)):
+    elif console_marker_in_title(fold_accents(offer.name)) or console_marker_in_url(offer.url):
         if not consoles:
             return "console"
         sig = classify_console(offer.name, offer.url, offer.merchant)
@@ -4078,7 +4082,8 @@ def _console_plan(
        2026-09-25);
     d. the ANCHOR page: the PC page when it exists (slug tiers + R30 search, unchanged),
        else the console page of the primary family by slug (``page_kind``, no search —
-       like account pages); none → skip;
+       like account pages; P4, an INFERRED Xbox generation: Xbox One, then Xbox Series);
+       none → skip;
     e. ``identity_name`` = the anchor name without its platform suffix ("Hades PS5" →
        "Hades") — R01 / R16 / R01b compare guard_name against it (common flow);
     f. Play Anywhere (P2) = the PC page's ``official platforms`` lists "Xbox Play
@@ -4088,7 +4093,9 @@ def _console_plan(
        contradictory-delivery skip; Xbox + PC with no AKS PC page → skip (the PC target is
        unverifiable, never a partial entry);
     g. one target page per declared family from the anchor's tab bar (the console anchor
-       is its own page); no tab → skip; the page is re-read (``page_resolver``) and its
+       is its own page); no tab → skip (P4, Romain 2026-09-25 — a generation-less Xbox READ
+       as One + Series, ``sig.generation_inferred``: a page AKS does not have, no tab or a
+       404, is dropped instead; none left → "no AKS product page found (console)"); the page is re-read (``page_resolver``) and its
        identity must equal the anchor's (a tab can point to another product — Elden Ring
        → "Tarnished Edition Nintendo Switch 2") else skip; an empty editions map → R19;
     h. the primary family's page / bucket become the plan's resolution / region — the
@@ -4201,13 +4208,19 @@ def _console_plan(
 
     # (d) anchor page — the PC page first (existing resolution: slug tiers + R30 search),
     # else the console page of the primary family (slug only, like account pages).
+    # P4 Xbox (Romain 2026-09-25, « Xbox sur les deux ») : une génération DÉDUITE (le marchand
+    # dit « Xbox » sans génération, `sig.generation_inferred`) prend les pages qu'AKS A — sans
+    # page PC, l'ancre console est cherchée sur Xbox One PUIS sur Xbox Series.
+    inferred = bool(getattr(sig, "generation_inferred", False))
     primary = families[0]
     anchor_kind = "cd-key"
     try:
         pc_res = resolver(slug_name)
         anchor = pc_res
-        if anchor is None:
-            anchor_kind = CONSOLE_PAGE_KIND[primary]
+        for fam in (families if inferred else (primary,)):
+            if anchor is not None:
+                break
+            anchor_kind = CONSOLE_PAGE_KIND[fam]
             anchor = resolver(slug_name, page_kind=anchor_kind)
     except AksProbeUnreliable as exc:
         return SkippedOffer(offer, f"AKS probe unreliable (throttled?): {exc}")
@@ -4264,7 +4277,11 @@ def _console_plan(
             return SkippedOffer(offer, f"no region id for {bucket_family}/{label} (R45)")
         return CONSOLE_REGION_LABELS.get(rid, label), rid
 
-    # (g) one page per declared family, identity-checked; every page or nothing.
+    # (g) one page per declared family, identity-checked; every page or nothing. P4 : pour une
+    # génération DÉDUITE, une page qu'AKS n'a pas (pas d'onglet, onglet en 404) est écartée —
+    # « seulement les pages qu'AKS a » ; les deux absentes → « no AKS product page found ».
+    # Toute AUTRE anomalie (onglet vers un autre produit, autre génération, carte d'éditions
+    # vide) refuse la ligne entière, comme pour une génération déclarée.
     pages: list[tuple[str, AksResolution, str, str]] = []
     for fam in families:
         kind = CONSOLE_PAGE_KIND[fam]
@@ -4272,6 +4289,8 @@ def _console_plan(
             page = anchor
         else:
             url = anchor.console_pages.get(kind)
+            if not url and inferred:
+                continue
             if not url:
                 return SkippedOffer(
                     offer,
@@ -4288,6 +4307,8 @@ def _console_plan(
             except AksPageUnparseable as exc:
                 return SkippedOffer(
                     offer, f"AKS page markup drifted — guard input unreadable (MA6): {exc}")
+            if page is None and inferred:
+                continue
             if page is None:
                 return SkippedOffer(
                     offer,
@@ -4317,6 +4338,9 @@ def _console_plan(
         if isinstance(bucket, SkippedOffer):
             return bucket
         pages.append((fam, page, bucket[0], bucket[1]))
+    if not pages:
+        # P4 : génération déduite, et AKS n'a ni la page Xbox One ni la page Xbox Series.
+        return SkippedOffer(offer, "no AKS product page found (console) (R45)")
     if pa_targets:
         # The PC page is an extra Play Anywhere target under the XBOX/PC bucket (the
         # anchor IS the PC page here, so its identity is the identity by construction).

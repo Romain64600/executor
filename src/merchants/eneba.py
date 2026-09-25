@@ -30,8 +30,11 @@ title "Nickelodeon Extreme Tennis: Next! (Xbox Series X|S) XBOX LIVE Key EUROPE"
   "… eShop Key HONG KONG" (``console_region_slot``); the shared classifier maps it.
 
 The shared classifier consults the URL hook ONLY when the title phrase declares no
-generation (the 704 "XBOX LIVE Key" rows without a platform phrase stay "no declared
-generation"). ``src/console_keys.py`` names no merchant.
+generation. The "<Game> XBOX LIVE Key <REGION>" rows without any platform phrase (704 of the
+2026-09-12 batch) were "no declared generation" until P4 (Romain 2026-09-25, « Xbox sur les
+deux »): the shared classifier now reads the title's generation-less "XBOX LIVE" as Xbox One
++ Series (``generation_inferred``), and "(Windows) XBOX LIVE Key" as a PC-only key.
+``src/console_keys.py`` names no merchant.
 """
 
 from __future__ import annotations

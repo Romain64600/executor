@@ -152,6 +152,10 @@ SKIP_SWITCH_2 = "console: Switch 2 has no AKS bucket (R45)"
 SKIP_XBOX_360 = "console: Xbox 360 (R45)"
 SKIP_NO_GENERATION = "console: no declared generation (R45)"
 SKIP_PC_ONLY = "console: PC-only Xbox Live key (R45)"
+# P4 Xbox (Romain 2026-09-25, « Xbox sur les deux »): what a merchant ``console_url_families``
+# hook returns, ALONE, for an Xbox run that names no generation (Gamivo ``-xbox-xboxwindows-``).
+# Never a family: the classifier reads it as the inferred cross-gen declaration below.
+XBOX_GENERATION_UNDECLARED = "XBOX"
 # 2026-09-14 (review, finder 2 [low]): a SERIES / ONE token still glued to a separator
 # once the platform phrase is removed means the grammar did not parse the whole phrase —
 # never a partial console entry.
@@ -223,6 +227,12 @@ class ConsoleSignal:
     region_base: str | None = None
     region_label: str | None = None
     region_words: tuple[str, ...] = ()
+    # P4 Xbox — DÉCIDÉ Romain 2026-09-25 (« Xbox sur les deux »): True when the merchant says
+    # Xbox WITHOUT a generation ("<Game> XBOX LIVE Key EUROPE", "(Xbox Live)", Gamivo
+    # "-xbox-xboxwindows-"): ``families`` is then ("XBOX_ONE", "XBOX_SERIES") READ as a
+    # cross-gen declaration, and the matcher keeps only the pages AKS HAS (a declared
+    # generation keeps its all-or-nothing refusal).
+    generation_inferred: bool = False
 
 
 # ── merchant hooks (2026-09-14) ──────────────────────────────────────────────────────
@@ -258,8 +268,9 @@ def _compile_noise(noise: Sequence["str | Pattern[str]"]) -> tuple["Pattern[str]
 
 
 # ── title tokens ─────────────────────────────────────────────────────────────────────
-# Same whole-word console tokens as matcher.CONSOLE_TOKENS (kept in sync by hand — this
-# module must not import the matcher).
+# The whole-word console tokens of the title (matcher.CONSOLE_TOKENS lists the same words).
+# The precheck gate calls :func:`console_marker_in_title` too, so both gates read ONE rule —
+# the bare-SWITCH exception included (2026-09-25).
 _TITLE_MARKER_TOKENS = ("XBOX", "PLAYSTATION", "PS4", "PS5", "PSN", "NINTENDO", "SWITCH")
 # URL PATH tokens that prove a console row (dash/slash-delimited). SWITCH alone is NOT one
 # ("switch-galaxy-ultra-steam-cd-key" is a Steam game); NINTENDO/PSN/XBOX/… are.
@@ -286,6 +297,37 @@ def path_tokens(url: str) -> list[str]:
     """Public alias of the slug tokenizer for the merchant modules (2026-09-14)."""
 
     return _path_tokens(url)
+
+
+# The PC store words that, in the TITLE, prove a bare "Switch" is a NAME word (2026-09-25).
+_PC_STORE_TITLE_RE = re.compile(r" (?:PC|PCS|STEAM|WINDOWS|GOG|EPIC) ")
+
+
+def console_marker_in_title(name: str) -> bool:
+    """A console token in the TITLE (whole words): XBOX / PLAYSTATION / PS4 / PS5 / PSN /
+    NINTENDO always; a BARE "Switch" too — EXCEPT (bug of 2026-09-25, Romain) when it sits
+    OUTSIDE every platform slot of a title that declares a PC store ("Mighty Switch Force!
+    Collection (PC) Steam Key - GLOBAL", "Mighty Switch Force! Ultimate Adventures Steam CD
+    Key", "NCH: Switch Sound File Converter Key (2 PCs)"): there it is the game's name and
+    the row is a PC row. A slot = a run :func:`_run_is_furniture` would strip (bracketed
+    "(Switch) (EU)", the tail "… Standard Switch Europe", or next to a console anchor).
+    Both conditions are required, measured on the 38 197 rows of the 21/09 corpus: a
+    name-slot Switch WITHOUT a PC store is also a real Switch exclusive ("Everybody
+    1-2-Switch!"), so it stays a console row (refused "no declared generation")."""
+
+    padded = _padded_upper(name or "")
+    if any(f" {t} " in padded for t in _TITLE_MARKER_TOKENS if t != "SWITCH"):
+        return True
+    if " SWITCH " not in padded:
+        return False
+    if not _PC_STORE_TITLE_RE.search(padded):
+        return True
+    text = _normalise_title(name)
+    for run in _RUN_RE.finditer(text):
+        groups = {_item_group(m) for m in _ITEM_RE.finditer(run.group(0))}
+        if groups & {"swbare", "switch", "sw2"} and _run_is_furniture(run, text):
+            return True                         # a Switch in a platform slot is a platform
+    return False
 
 
 def console_marker_in_url(url: str) -> bool:
@@ -498,6 +540,15 @@ class _TitleParse:
     xbox_360: bool
     edition_families: tuple[str, ...] = ()      # "<Platform> Edition" name suffixes
     leading_tokens: tuple[str, ...] = ()        # tokens of a leading NAME run ("nintendo", "switch")
+    # P4 (2026-09-25) — the generation-less Xbox signals of the platform runs (name runs never
+    # count): a bare "Xbox" or the "Xbox Live" store; PC / Windows in the SAME run as a bare
+    # "Xbox" ("(Xbox / Windows)", "Xbox/PC"); PC / Windows next to the "Xbox Live" STORE only
+    # ("(Windows) XBOX LIVE Key", "(PC) - Xbox Live Key") = a PC key sold through Xbox Live;
+    # a PlayStation / Nintendo item anywhere (never an Xbox inference then).
+    xbox_undeclared: bool = False
+    xbox_pc: bool = False
+    xbox_live_pc_only: bool = False
+    other_console: bool = False
 
 
 def _parse_title(name: str) -> _TitleParse:
@@ -509,6 +560,7 @@ def _parse_title(name: str) -> _TitleParse:
     xbox_360 = False
     edition_families: list[str] = []
     leading_tokens: tuple[str, ...] = ()
+    xbox_undeclared = xbox_pc = xbox_live_pc_only = other_console = False
     for run in _RUN_RE.finditer(name):
         if _leading_name_run(run, name):
             leading_tokens = tuple(t for t in re.split(r"[^a-z0-9]+", run.group(0).lower()) if t)
@@ -518,7 +570,7 @@ def _parse_title(name: str) -> _TitleParse:
             edition_families.append(edition_family)
             continue
         run_families: list[str] = []
-        run_pc = False
+        run_pc = run_xbox = run_xbox_live = False
         for item in _ITEM_RE.finditer(run.group(0)):
             group = _item_group(item)
             if group == "x360":
@@ -527,15 +579,31 @@ def _parse_title(name: str) -> _TitleParse:
                 run_pc = True
             elif group in _FAMILY_OF_GROUP:
                 run_families.append(_FAMILY_OF_GROUP[group])
+            elif group == "xbare":
+                run_xbox = True
+            elif group == "store":
+                store = re.sub(r"\s+", " ", item.group(0).upper())
+                if store == "XBOX LIVE":
+                    run_xbox_live = True
+                elif store != "MICROSOFT STORE":       # PSN / PlayStation Network / eShop
+                    other_console = True
+            elif group in ("nbare", "swbare"):
+                other_console = True
         # PC/Windows counts only NEXT TO a declared console family (the same run) —
         # "PC Building Simulator (Xbox One)" is not a PC declaration.
         if run_pc and run_families:
             pc_declared = True
+        if run_xbox or run_xbox_live:
+            xbox_undeclared = True
+        if run_pc and run_xbox:
+            xbox_pc = True
+        elif run_pc and run_xbox_live and not run_families:
+            xbox_live_pc_only = True
         for fam in run_families:
             if fam not in families:
                 families.append(fam)
     return _TitleParse(tuple(families), pc_declared, xbox_360, tuple(edition_families),
-                       leading_tokens)
+                       leading_tokens, xbox_undeclared, xbox_pc, xbox_live_pc_only, other_console)
 
 
 # ── non-game markers ─────────────────────────────────────────────────────────────────
@@ -779,7 +847,8 @@ def _hook_url_read(cfg: "MerchantConfig", url: str) -> tuple[tuple[str, ...], st
     """``(families, skip_reason)`` from the merchant's ``console_url_families`` hook,
     validated: a None → nothing declared; a "console: …" string → that skip; families
     must be declarable (never XBOX_PC, never an unknown token) — anything else is a
-    fail-closed skip, never a guess (2026-09-14)."""
+    fail-closed skip, never a guess (2026-09-14). ``(XBOX_GENERATION_UNDECLARED,)`` ALONE
+    (P4, 2026-09-25) is passed through as is: "Xbox, no generation" — the caller infers."""
 
     declared = cfg.console_url_families(url)  # type: ignore[misc]
     if declared is None:
@@ -788,6 +857,8 @@ def _hook_url_read(cfg: "MerchantConfig", url: str) -> tuple[tuple[str, ...], st
         if declared.startswith("console:"):
             return (), declared
         return (), _skip_hook_result(f"returned {declared!r}")
+    if tuple(declared) == (XBOX_GENERATION_UNDECLARED,):
+        return (XBOX_GENERATION_UNDECLARED,), None
     families: list[str] = []
     for fam in declared:
         if fam not in _DECLARABLE:
@@ -915,9 +986,15 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
     Edition" suffix is not a declaration); the URL ONLY when the title declares no
     family — the merchant's ``console_url_families`` hook when it has one (may skip:
     Xbox 360, PC-only, a card / subscription category), else the shared slug runs;
-    still no family → "console: no declared generation (R45)" (bare "PSN" /
-    "Nintendo", a name-only "Nintendo Switch 2 Edition"); a name suffix naming another
-    platform than the declaration → skip. ``pc_declared`` = the shared title phrase
+    still no family → P4 (Romain 2026-09-25): an Xbox named WITHOUT a generation — a bare
+    "Xbox" / the "Xbox Live" store in a platform run, or the hook's
+    ``XBOX_GENERATION_UNDECLARED`` — and no PlayStation / Nintendo item is READ as the
+    cross-gen ("XBOX_ONE", "XBOX_SERIES") with ``generation_inferred=True`` (PC / Windows in
+    the bare-Xbox run → ``pc_declared``); PC / Windows next to the "Xbox Live" STORE only →
+    "console: PC-only Xbox Live key (R45)"; anything else → "console: no declared
+    generation (R45)" (bare "PSN" / "Playstation", bare "Nintendo" / "Switch", a name-only
+    "Nintendo Switch 2 Edition"); a name suffix naming another platform than the
+    declaration → skip. ``pc_declared`` = the shared title phrase
     check OR the merchant's ``console_pc_declared`` hook (OR, for a merchant without
     hooks, a pc / windows token next to the shared slug run). The region slot
     (``region_base`` / ``region_label`` / ``region_words``) is filled on every signal,
@@ -927,9 +1004,7 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
     up by NAME in the registry — the URL host is irrelevant (2026-09-14).
     """
 
-    padded = _padded_upper(name)
-    title_marker = any(f" {t} " in padded for t in _TITLE_MARKER_TOKENS)
-    if not title_marker and not console_marker_in_url(url):
+    if not console_marker_in_title(name) and not console_marker_in_url(url):
         return None
     cfg = _config_of(merchant)
     text = _normalise_title(name)
@@ -938,9 +1013,10 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
     region_words = (slot_text,) if slot_text is not None else stripped_words
     region_base, region_label = region_slot_of(region_words)
 
-    def signal(families: tuple[str, ...], pc: bool, skip: str | None) -> ConsoleSignal:
+    def signal(families: tuple[str, ...], pc: bool, skip: str | None,
+               inferred: bool = False) -> ConsoleSignal:
         return ConsoleSignal(families, pc, resolve_name, skip, region_base, region_label,
-                             region_words)
+                             region_words, inferred)
 
     marker = _non_game_marker(name, url)
     if marker:
@@ -952,11 +1028,14 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
     pc_declared = title.pc_declared
     if title.xbox_360:
         return signal(tuple(families), pc_declared, SKIP_XBOX_360)
+    hook_xbox_undeclared = False
     if not families:
         if cfg is not None and cfg.console_url_families is not None:
             declared, skip = _hook_url_read(cfg, url)
             if skip:
                 return signal(declared, pc_declared or _hook_pc_declared(cfg, name, url), skip)
+            if declared == (XBOX_GENERATION_UNDECLARED,):
+                hook_xbox_undeclared, declared = True, ()
             families = list(declared)
             # AUDIT DU 2026-09-18 : la branche SANS hook complète `pc_declared` avec la lecture
             # générique du slug, la branche AVEC hook non — or les quatre marchands qui ont un
@@ -976,6 +1055,23 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
             pc_declared = pc_declared or read.pc_declared
     pc_declared = pc_declared or _hook_pc_declared(cfg, name, url)
     if not families:
+        # P4 Xbox — DÉCIDÉ Romain 2026-09-25 : « Xbox sur les deux ». Un Xbox SANS génération
+        # (« Tin & Kuna XBOX LIVE Key EUROPE », « EA SPORTS FC 25 (Xbox Live) », Gamivo
+        # « …-xbox-xboxwindows-uk-… ») est lu comme la déclaration cross-gen « Xbox One / Xbox
+        # Series X|S » ; le matcher ne garde que les pages qu'AKS a (P1). Bornes, toutes
+        # fail-closed : un item PlayStation / Nintendo dans le titre ou l'URL → jamais d'Xbox
+        # déduit (« … PSN Download Key (Playstation) … » reste « no declared generation », P4
+        # PlayStation = refus, même décision) ; PC / Windows à côté du seul magasin « Xbox
+        # Live » (« Manor Lords (Windows) XBOX LIVE Key », « (PC) - Xbox Live Key ») est une clé
+        # PC vendue par Xbox Live → refus « PC-only », jamais des pages console.
+        url_other = any(t in ("psn", "playstation", "nintendo", "ps4", "ps5", "eshop")
+                        for t in _path_tokens(url))
+        if title.xbox_live_pc_only and not title.xbox_pc and not hook_xbox_undeclared:
+            return signal((), False, SKIP_PC_ONLY)
+        if (title.xbox_undeclared or hook_xbox_undeclared) and not title.other_console \
+                and not url_other:
+            return signal(("XBOX_ONE", "XBOX_SERIES"), pc_declared or title.xbox_pc, None,
+                          inferred=True)
         return signal((), pc_declared, SKIP_NO_GENERATION)
     for fam in title.edition_families:
         if fam not in families:

@@ -47,7 +47,10 @@ the platform in the URL only): ``…-xbox-<run>-<cc>-…`` with the fused runs
 ``xboxseries`` / ``xbox-series`` / ``series``, ``xboxone`` / ``one``, each optionally
 fused with ``windows`` / ``-pc`` / ``-windows`` / ``-xbox-pc`` (PC declared next to the
 console: Play Anywhere candidate); ``-xbox-pc-`` alone is a PC-only Xbox Live key (skip);
-``-xbox-xbox-windows-`` is Xbox + Windows with no generation (the URL says nothing);
+``-xbox-xbox-windows-`` / ``-xbox-xboxwindows-`` is Xbox + Windows with no generation —
+since P4 (Romain 2026-09-25, « Xbox sur les deux ») the hook returns
+``XBOX_GENERATION_UNDECLARED`` with PC declared: the classifier reads it as Xbox One + Series
++ PC, the Play Anywhere case of P2 (before: "no declared generation");
 ``-ps-ps5-`` / ``-psn-ps5-`` / ``-ps-ps4-ps5-``; ``-nintendo-nintendo-switch(-2)-``. The
 region is the title tail (``console_region_slot`` = ``title_tail``); the language code(s)
 before it ("EN", "EN/PL/CS/RU/TR") are Gamivo's furniture (``console_noise``).
@@ -58,7 +61,7 @@ from __future__ import annotations
 import re
 from urllib.parse import urlsplit
 
-from src.console_keys import SKIP_PC_ONLY
+from src.console_keys import SKIP_PC_ONLY, XBOX_GENERATION_UNDECLARED
 from src.merchant_config import MerchantConfig
 
 # ── title tail ───────────────────────────────────────────────────────────────────────
@@ -284,8 +287,9 @@ CONSOLE_LANG_TAIL_RE = re.compile(
 
 
 def _console_run(url: str) -> tuple[tuple[str, ...] | str | None, bool]:
-    """``(declaration, pc)`` of the console run in the LAST path segment: families,
-    a skip reason, or None (no console run / Xbox + Windows without a generation)."""
+    """``(declaration, pc)`` of the console run in the LAST path segment: families, a skip
+    reason, ``(XBOX_GENERATION_UNDECLARED,)`` for Xbox + Windows without a generation (P4,
+    2026-09-25), or None (no console run)."""
 
     seg = "-" + urlsplit(url or "").path.rstrip("/").rsplit("/", 1)[-1].lower() + "-"
     m = CONSOLE_XBOX_RUN_RE.search(seg)
@@ -293,7 +297,8 @@ def _console_run(url: str) -> tuple[tuple[str, ...] | str | None, bool]:
         if m.group("pconly"):
             return SKIP_PC_ONLY, False
         if m.group("nogen"):
-            return None, False                    # "xbox-xbox-windows": Xbox + Windows, no generation
+            # "xbox-xbox-windows": Xbox + Windows, no generation — P4 « Xbox sur les deux »
+            return (XBOX_GENERATION_UNDECLARED,), True
         pc = bool(m.group("pcw1") or m.group("pcw2") or m.group("pcw3"))
         if m.group("oneseries"):
             return ("XBOX_ONE", "XBOX_SERIES"), pc
@@ -312,7 +317,9 @@ def _console_run(url: str) -> tuple[tuple[str, ...] | str | None, bool]:
 
 def console_url_families(url: str) -> tuple[str, ...] | str | None:
     """The families the URL run declares ("…-xbox-xboxoneseries-uk-standard" → Xbox One +
-    Series), "console: PC-only Xbox Live key (R45)" for "-xbox-pc-", None otherwise."""
+    Series), "console: PC-only Xbox Live key (R45)" for "-xbox-pc-",
+    ``(XBOX_GENERATION_UNDECLARED,)`` for "-xbox-xbox-windows-" / "-xbox-xboxwindows-" (P4),
+    None otherwise."""
 
     return _console_run(url)[0]
 

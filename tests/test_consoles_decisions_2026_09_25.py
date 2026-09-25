@@ -11,13 +11,25 @@ déclarées et sur PC (on le considère Play Anywhere) » (docs/EXECUTOR_RULES.m
   considère Play Anywhere (pages Xbox déclarées + page PC, case XBOX/PC). « PC + famille non
   Xbox » reste une contradiction. Avant : « … does not list Xbox Play Anywhere — not entered ».
 
+Ajout du même jour (Romain, par le coordinateur) :
+
+* **P4 Xbox — « Xbox sur les deux »** : un Xbox dont le marchand ne déclare PAS la génération
+  (« Tin & Kuna XBOX LIVE Key EUROPE ») est lu comme « Xbox One / Xbox Series X|S » ; cibles =
+  les pages qu'AKS A (les deux absentes → « no AKS product page found (console) ») ; PC / Windows
+  déclaré aussi → le cas P2. Avant : « console: no declared generation (R45) ».
+* **P4 PlayStation — refus** : « … PSN Download Key (Playstation) UNITED STATES » reste « no
+  declared generation ». Switch sans génération : inchangé.
+* **« Switch » dans un nom de jeu PC** : « Mighty Switch Force! Collection (PC) Steam Key -
+  GLOBAL » n'est plus une ligne console.
+
 Les lignes sont des lignes RÉELLES refusées dans les skipped.json des deux VM (22-25/09) ; le
 classifieur console est le vrai, seules les pages AKS sont simulées."""
 
 import unittest
 
+from src.console_keys import SKIP_NO_GENERATION, SKIP_PC_ONLY, classify_console
 from src.contracts import NormalizedOffer
-from src.matcher import AksResolution, Candidate, SkippedOffer, match_offer
+from src.matcher import AksResolution, Candidate, SkippedOffer, match_offer, precheck_skip
 
 AKS = "https://www.allkeyshop.com/blog/"
 KINDS = ("cd-key", "xbox-one", "xbox-series", "ps4", "ps5", "nintendo-switch")
@@ -231,6 +243,158 @@ class P2XboxEtPcDeclaresEstPlayAnywhere(unittest.TestCase):
                      pc=_page("FINAL FANTASY VIII - REMASTERED", "1000", "final-fantasy-viii-remastered"))
         self.assertIsInstance(res, SkippedOffer)
         self.assertIn("contradictory delivery", res.reason)
+
+
+class P4XboxSansGenerationSurLesDeux(unittest.TestCase):
+    TIN = ("Eneba", "Tin & Kuna XBOX LIVE Key EUROPE", "https://www.eneba.com/xbox-tin-kuna-xbox-live-key-europe")
+
+    def _tin(self, tabs):
+        pc = _page("Tin & Kuna", "1000", "tin-kuna", tabs=tabs)
+        pages = [_page("Tin & Kuna Xbox One", "2000", "tin-kuna", kind="xbox-one"),
+                 _page("Tin & Kuna Xbox Series", "3000", "tin-kuna", kind="xbox-series")]
+        return pc, pages
+
+    def test_les_lignes_de_romain_sont_lues_one_et_series(self):
+        for merchant, name, url, pc in (
+            (*self.TIN, False),
+            ("Gamerall", "EA SPORTS FC 25 (Xbox Live)",
+             "https://gamerall.com/xbox/ea-sports-fc-25-standard-edition-xbox-live-global", False),
+            ("G2A", "Battlefield 3 - Armored Kill Xbox Live Key EUROPE",
+             "https://www.g2a.com/battlefield-3-armored-kill-xbox-live-key-europe-i10000043368002", False),
+            ("GameBoost", "Sleeping Dogs: Definitive Edition Xbox Live Key EUROPE",
+             "https://gameboost.com/sleeping-dogs-definitive-edition-xbox-live-key-europe-00-32086", False),
+            ("Gamivo", "Frostpunk 2 EN United Kingdom",
+             "https://www.gamivo.com/product/frostpunk-2-xbox-xboxwindows-uk-standard", True),
+            ("Gamivo", "Little Nightmares III Deluxe Edition EN United Kingdom",
+             "https://www.gamivo.com/product/little-nightmares-iii-xbox-xbox-windows-uk-deluxe", True),
+        ):
+            with self.subTest(name):
+                sig = classify_console(name, url, merchant)
+                self.assertEqual((sig.families, sig.pc_declared, sig.skip_reason, sig.generation_inferred),
+                                 (("XBOX_ONE", "XBOX_SERIES"), pc, None, True))
+
+    def test_les_deux_pages_existent_les_deux_cibles(self):
+        pc, pages = self._tin(("xbox-one", "xbox-series"))
+        res = _match(*self.TIN, pc=pc, pages=pages)
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", None))
+        self.assertEqual(_targets(res), [("XBOX_ONE", "2000", "24eu", "1"), ("XBOX_SERIES", "3000", "302", "1")])
+
+    def test_seulement_les_pages_qu_aks_a(self):
+        pc, pages = self._tin(("xbox-series",))
+        res = _match(*self.TIN, pc=pc, pages=pages)
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", None))
+        self.assertEqual(_targets(res), [("XBOX_SERIES", "3000", "302", "1")])
+        # un onglet en 404 est une page qu'AKS n'a pas, lui aussi
+        pc, pages = self._tin(("xbox-one", "xbox-series"))
+        res = _match(*self.TIN, pc=pc, pages=[pages[1]])
+        self.assertEqual(_targets(res), [("XBOX_SERIES", "3000", "302", "1")])
+
+    def test_les_deux_absentes_pas_de_page(self):
+        pc, pages = self._tin(())
+        res = _match(*self.TIN, pc=pc, pages=pages)
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertEqual(res.reason, "no AKS product page found (console) (R45)")
+
+    def test_sans_page_pc_l_ancre_est_cherchee_sur_one_puis_series(self):
+        series = _page("Tin & Kuna Xbox Series", "3000", "tin-kuna", kind="xbox-series")
+        calls = []
+        res = _match(*self.TIN, pc=None, anchors={"xbox-series": series}, calls=calls)
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", None))
+        self.assertEqual(_targets(res), [("XBOX_SERIES", "3000", "302", "1")])
+        self.assertEqual([k for _n, k in calls], [None, "xbox-one", "xbox-series"])
+
+    def test_une_generation_declaree_garde_son_refus_tout_ou_rien(self):
+        # P1 inchangé : « Xbox One / Xbox Series X|S » DÉCLARÉ, un onglet manque → refus
+        pc, pages = self._tin(("xbox-series",))
+        res = _match("Eneba", "Tin & Kuna (Xbox One / Xbox Series X|S) XBOX LIVE Key EUROPE",
+                     "https://www.eneba.com/xbox-tin-kuna-xbox-one-xbox-series-x-s-xbox-live-key-europe",
+                     pc=pc, pages=pages)
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("AKS has no XBOX_ONE page", res.reason)
+
+    def test_une_page_d_un_autre_produit_refuse_toujours(self):
+        pc = _page("Tin & Kuna", "1000", "tin-kuna", tabs=("xbox-one", "xbox-series"))
+        pages = [_page("Tin & Kuna Deluxe Xbox One", "2000", "tin-kuna", kind="xbox-one"),
+                 _page("Tin & Kuna Xbox Series", "3000", "tin-kuna", kind="xbox-series")]
+        res = _match(*self.TIN, pc=pc, pages=pages)
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("is not 'Tin & Kuna'", res.reason)
+
+    def test_xbox_windows_de_gamivo_est_le_cas_p2(self):
+        pc = _page("Frostpunk 2", "1000", "frostpunk-2", platforms=("Steam",), tabs=("xbox-one", "xbox-series"))
+        pages = [_page("Frostpunk 2 Xbox Series", "3000", "frostpunk-2", kind="xbox-series")]
+        res = _match("Gamivo", "Frostpunk 2 EN United Kingdom",
+                     "https://www.gamivo.com/product/frostpunk-2-xbox-xboxwindows-uk-standard", pc=pc, pages=pages)
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", None))
+        self.assertEqual(_targets(res), [("XBOX_SERIES", "3000", "240", "1"), ("XBOX_PC", "1000", "240", "1")])
+
+    def test_windows_a_cote_du_seul_magasin_xbox_live_est_une_cle_pc(self):
+        sig = classify_console("Manor Lords (Windows) XBOX LIVE Key EUROPE",
+                               "https://www.eneba.com/xbox-manor-lords-windows-xbox-live-key-europe", "Eneba")
+        self.assertEqual((sig.families, sig.skip_reason), ((), SKIP_PC_ONLY))
+
+
+class P4PlayStationEtSwitchSansGenerationRestentRefuses(unittest.TestCase):
+    def test_psn_playstation_sans_ps4_ni_ps5(self):
+        offer = NormalizedOffer(
+            offer_id="1", merchant="CJS-CDKeys", name="Once Human (F2P) PSN Download Key (Playstation) UNITED STATES",
+            url="https://www.cjs-cdkeys.com/products/Once-Human-%28F2P%29-PSN-Download-Key-%28Playstation%29-UNITED-STATES.html")
+        self.assertEqual(precheck_skip(offer, consoles=True), SKIP_NO_GENERATION)
+
+    def test_switch_nu_et_nintendo_nu(self):
+        for merchant, name, url in (
+            ("GameBoost", "Think Logic! Sudoku Binary Suguru (Switch) (EU)",
+             "https://gameboost.com/think-logic-sudoku-binary-suguru-switch-eu-00-43867"),
+            ("Eneba", "Game Nintendo eShop Key EUROPE", "https://www.eneba.com/nintendo-game-eshop-key-europe"),
+            ("Shop", "Everybody 1-2-Switch!", "https://example.com/everybody-1-2-switch"),
+        ):
+            with self.subTest(name):
+                offer = NormalizedOffer(offer_id="1", merchant=merchant, name=name, url=url)
+                self.assertEqual(precheck_skip(offer, consoles=True), SKIP_NO_GENERATION)
+
+    def test_une_ligne_xbox_et_psn_n_est_jamais_deduite(self):
+        sig = classify_console("Game XBOX LIVE / PSN Key EUROPE", "https://example.com/game", "Shop")
+        self.assertEqual(sig.skip_reason, SKIP_NO_GENERATION)
+        # … ni un titre « Xbox » dont l'URL dit PlayStation
+        sig = classify_console("Game XBOX LIVE Key EUROPE", "https://example.com/psn-game-key-europe", "Shop")
+        self.assertEqual(sig.skip_reason, SKIP_NO_GENERATION)
+
+
+class SwitchDansUnNomDeJeuPc(unittest.TestCase):
+    PC_ROWS = (
+        ("GameSeal", "Mighty Switch Force! Collection (PC) Steam Key - GLOBAL",
+         "https://gameseal.com/mighty-switch-force-collection-pc-steam-key-global"),
+        ("Kinguin", "Mighty Switch Force! Ultimate Adventures Steam CD Key",
+         "https://www.kinguin.net/category/190125/mighty-switch-force-ultimate-adventures-steam-cd-key"),
+        ("Kinguin", "NCH: Switch Sound File Converter Key (2 PCs)",
+         "https://www.kinguin.net/category/267137/nch-switch-sound-file-converter-key-2-pcs"),
+    )
+
+    def test_les_lignes_de_romain_sont_des_lignes_pc(self):
+        for merchant, name, url in self.PC_ROWS:
+            with self.subTest(name):
+                self.assertIsNone(classify_console(name, url, merchant))
+                offer = NormalizedOffer(offer_id="1", merchant=merchant, name=name, url=url)
+                for consoles in (True, False):
+                    self.assertIsNone(precheck_skip(offer, consoles=consoles))
+
+    def test_elle_est_resolue_comme_une_cle_steam(self):
+        page = _page("Mighty Switch Force Collection", "1000", "mighty-switch-force-collection", platforms=("Steam", "GoG"))
+        res = _match(*self.PC_ROWS[0], pc=page)
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", None))
+        self.assertEqual((res.platform, res.region_id, res.targets), ("STEAM", "2", ()))
+
+    def test_une_vraie_cle_switch_reste_une_ligne_console(self):
+        for merchant, name, url in (
+            ("Wyrel", "Super Smash Bros Ultimate Challenger Pack 3 (DLC) Standard Switch Europe", "https://wyrel.com/en/x"),
+            ("GameBoost", "Harvest Moon: One World - Season Pass (Switch) (EU)",
+             "https://gameboost.com/harvest-moon-one-world-season-pass-switch-eu-00-64283"),
+            # « Steam Prison » est un vrai jeu Switch : le mot STEAM ne suffit pas, le créneau
+            # « (Switch) (EU) » fait la plateforme
+            ("GameBoost", "Steam Prison (Switch) (EU)", "https://gameboost.com/steam-prison-switch-eu-00-1"),
+        ):
+            with self.subTest(name):
+                self.assertIsNotNone(classify_console(name, url, merchant))
 
 
 if __name__ == "__main__":

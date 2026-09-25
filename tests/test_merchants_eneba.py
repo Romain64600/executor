@@ -29,6 +29,9 @@ PC_ONLY = "console: PC-only Xbox Live key (R45)"
 XBOX_360 = "console: Xbox 360 (R45)"
 
 # (title, url, families, pc_declared, skip_reason, resolve_name) — study §7 rows 11-17.
+# P4 Xbox (Romain 2026-09-25, « Xbox sur les deux »): a generation-less "XBOX LIVE Key" row
+# (rows 14 and 17) now reads as One + Series (``generation_inferred``) — before: NO_GEN. Row 17
+# stays refused downstream, by precheck (V-Bucks currency, SOUTH AFRICA lock).
 ROWS = [
     ("Nickelodeon Extreme Tennis: Next! (Xbox Series X|S) XBOX LIVE Key EUROPE",
      "https://www.eneba.com/xbox-nickelodeon-extreme-tennis-next-xbox-series-x-s-xbox-live-key-europe",
@@ -41,7 +44,7 @@ ROWS = [
      (), False, PC_ONLY, "Thomas & Friends™: Wonders of Sodor"),
     ("POLSKA GUROM XBOX LIVE Key UNITED STATES",
      "https://www.eneba.com/xbox-polska-gurom-xbox-live-key-united-states",
-     (), False, NO_GEN, "POLSKA GUROM"),
+     ONE_SERIES, False, None, "POLSKA GUROM"),
     ("Let's Sing 2025 - International Hits (DLC) (PS4/PS5) PSN Key EUROPE",
      "https://www.eneba.com/psn-lets-sing-2025-international-hits-dlc-ps4-ps5-psn-key-europe",
      ("PS4", "PS5"), False, None, "Let's Sing 2025 - International Hits (DLC)"),
@@ -50,7 +53,7 @@ ROWS = [
      ("SWITCH2",), False, None, "Split Fiction"),           # 2026-09-14: a family
     ("Fortnite: Deep Freeze Bundle + 1000 V-Bucks XBOX LIVE Key SOUTH AFRICA",
      "https://www.eneba.com/xbox-fortnite-deep-freeze-bundle-1000-v-bucks-xbox-live-key-south-africa",
-     (), False, NO_GEN, "Fortnite: Deep Freeze Bundle + 1000 V-Bucks"),
+     ONE_SERIES, False, None, "Fortnite: Deep Freeze Bundle + 1000 V-Bucks"),
 ]
 
 
@@ -88,13 +91,16 @@ class UrlSlotHookTests(unittest.TestCase):
         "https://www.eneba.com/xbox-x-xbox-series-x-s-xbox-key-united-states": (("XBOX_SERIES",), False, None),  # "XBOX Key" (2 real rows)
         "https://www.eneba.com/xbox-x-pc-xbox-live-key-europe": ((), False, PC_ONLY),
         "https://www.eneba.com/xbox-x-xbox-360-xbox-live-key-europe": ((), False, XBOX_360),
-        "https://www.eneba.com/xbox-x-xbox-live-key-europe": ((), False, NO_GEN),
+        # the URL declares nothing; the TITLE's "XBOX LIVE" is P4's generation-less Xbox
+        "https://www.eneba.com/xbox-x-xbox-live-key-europe": (ONE_SERIES, False, None),
     }
 
     def test_hook_reads_the_slot_before_the_key_marker(self):
         for url, (families, pc, skip) in self.CASES.items():
             with self.subTest(url=url):
                 expected = skip if skip in (PC_ONLY, XBOX_360) else (families or None)
+                if url.endswith("/xbox-x-xbox-live-key-europe"):
+                    expected = None                     # the hook reads nothing; P4 is the title's
                 self.assertEqual(eneba.console_url_families(url), expected)
                 self.assertEqual(eneba.console_pc_declared("X XBOX LIVE Key EUROPE", url), pc)
         self.assertEqual(eneba.console_url_families("https://www.eneba.com/xbox-x-pc-xbox-live-key-europe"), SKIP_PC_ONLY)
@@ -118,9 +124,10 @@ class UrlSlotHookTests(unittest.TestCase):
         sig = classify_console("One Last Breath XBOX LIVE Key EUROPE",
                                "https://www.eneba.com/xbox-one-last-breath-xbox-one-xbox-live-key-europe", "Eneba")
         self.assertEqual((sig.families, sig.skip_reason, sig.resolve_name), (("XBOX_ONE",), None, "One Last Breath"))
-        # the merchant NAME selects the hooks — no host needed
+        # the merchant NAME selects the hooks — no host needed; the leading "xbox-one" is still
+        # never Xbox One: the title's generation-less "XBOX LIVE" is P4's cross-gen reading
         sig = classify_console("Game XBOX LIVE Key EUROPE", "/xbox-one-last-breath-xbox-live-key-europe", "eneba")
-        self.assertEqual(sig.skip_reason, NO_GEN)
+        self.assertEqual((sig.skip_reason, sig.families, sig.generation_inferred), (None, ONE_SERIES, True))
 
     def test_run_inside_the_game_name_is_not_the_slot(self):
         # the slug mirrors the title: "Nintendo Switch Sports" opens the slug, the platform
@@ -143,12 +150,21 @@ class UrlSlotHookTests(unittest.TestCase):
         self.assertIsNone(eneba.console_url_families("https://www.eneba.com/xbox-x-xbox-series-x-s-united-states"))
         self.assertIsNone(eneba.console_url_families(""))
         sig = classify_console("X XBOX LIVE Key", "https://www.eneba.com/xbox-x-xbox-series-x-s-united-states", "Eneba")
-        self.assertEqual((sig.families, sig.skip_reason), ((), NO_GEN))
+        # the URL run is NOT read (no marker); the title's "XBOX LIVE" is P4's inferred One + Series
+        self.assertEqual((sig.families, sig.skip_reason, sig.generation_inferred), (ONE_SERIES, None, True))
 
     def test_xbox_plus_windows_without_a_generation(self):
+        # P4 + P2 (Romain 2026-09-25): One + Series inferred, PC declared by the "Xbox + Windows" run
         sig = classify_console("Sokmeal Time Xbox + Windows Pack XBOX LIVE Key EUROPE",
                                "https://www.eneba.com/xbox-sokmeal-time-xbox-windows-pack-xbox-live-key-europe", "Eneba")
-        self.assertEqual((sig.families, sig.skip_reason), ((), NO_GEN))
+        self.assertEqual((sig.families, sig.pc_declared, sig.skip_reason), (ONE_SERIES, True, None))
+
+    def test_windows_next_to_the_xbox_live_store_only_is_a_pc_key(self):
+        # "(Windows) XBOX LIVE Key" — a PC key sold through Xbox Live, never console pages (P4
+        # bound, 2026-09-25; 33 Eneba rows of the 21/09 corpus)
+        sig = classify_console("Manor Lords (Windows) XBOX LIVE Key EUROPE",
+                               "https://www.eneba.com/xbox-manor-lords-windows-xbox-live-key-europe", "Eneba")
+        self.assertEqual((sig.families, sig.skip_reason), ((), PC_ONLY))
 
     def test_url_only_switch_2(self):
         sig = classify_console("Game eShop Key", "https://www.eneba.com/nintendo-game-nintendo-switch-2-eshop-key-europe", "Eneba")
@@ -189,9 +205,12 @@ class RegionSlotHookTests(unittest.TestCase):
                 sig = classify_console(title, "https://www.eneba.com/xbox-x", "Eneba")
                 self.assertIsNone(sig.skip_reason)
                 self.assertEqual(_slot(sig), slot)
-        # a region on a no-generation row is still reported (skip set, slot filled)
+        # a region on a generation-less row is reported too (P4: inferred One + Series)
         sig = classify_console("POLSKA GUROM XBOX LIVE Key UNITED STATES",
                                "https://www.eneba.com/xbox-polska-gurom-xbox-live-key-united-states", "Eneba")
+        self.assertEqual((sig.skip_reason, _slot(sig)), (None, ("us", None, ("UNITED STATES",))))
+        # … and on a refused one (bare PSN, no generation — P4 PlayStation stays a refusal)
+        sig = classify_console("Game PSN Key UNITED STATES", "https://www.eneba.com/psn-game-psn-key-united-states", "Eneba")
         self.assertEqual((sig.skip_reason, _slot(sig)), (NO_GEN, ("us", None, ("UNITED STATES",))))
 
     def test_hook_text_wins_over_a_stray_bracket_word(self):
@@ -200,7 +219,7 @@ class RegionSlotHookTests(unittest.TestCase):
         # part of the game name — the key is EUROPE
         sig = classify_console("Dying Light Essentials Edition (Without DE) XBOX LIVE Key EUROPE",
                                "https://www.eneba.com/xbox-dying-light-essentials-edition-without-de-xbox-live-key-europe", "Eneba")
-        self.assertEqual((_slot(sig), sig.skip_reason), (("eu", None, ("EUROPE",)), NO_GEN))
+        self.assertEqual((_slot(sig), sig.skip_reason), (("eu", None, ("EUROPE",)), None))   # P4: inferred
         sig = classify_console("Truck Simulator Cargo Driver 2025 - USA (Windows/Xbox Series X|S) XBOX LIVE Key EUROPE",
                                "https://www.eneba.com/xbox-truck-simulator-cargo-driver-2025-usa-windows-xbox-series-x-s-xbox-live-key-europe", "Eneba")
         self.assertEqual((sig.families, sig.pc_declared, sig.skip_reason, _slot(sig)),

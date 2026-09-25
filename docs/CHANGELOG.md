@@ -3,6 +3,55 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-25 — Consoles : P4 tranchée (Xbox sans génération « sur les deux »), « Switch » dans un nom PC
+
+Ajout de Romain au même chantier (EXECUTOR_RULES §4.12.3 / §4.12.4 / P4, §12 ; AGENTS) :
+
+- **P4 Xbox — « Xbox sur les deux »** (`src/console_keys.py`, `src/matcher.py`,
+  `src/merchants/gamivo.py`). Un Xbox sans génération — « Tin & Kuna XBOX LIVE Key EUROPE »
+  (Eneba), « EA SPORTS FC 25 (Xbox Live) » (Gamerall), « Battlefield 3 - Armored Kill Xbox Live
+  Key EUROPE » (G2A), « Sleeping Dogs: Definitive Edition Xbox Live Key EUROPE » (GameBoost),
+  Gamivo `…-xbox-xboxwindows-uk-…` — est lu comme « Xbox One / Xbox Series X|S »
+  (`ConsoleSignal.generation_inferred`) ; cibles = les pages qu'AKS a (onglet absent ou 404 : la
+  génération tombe ; les deux : « no AKS product page found (console) (R45) ») ; sans page PC,
+  l'ancre console est cherchée sur Xbox One puis Xbox Series ; PC / Windows déclaré aussi = le cas
+  P2 (Gamivo : le hook répond `XBOX_GENERATION_UNDECLARED` avec PC). Une génération DÉCLARÉE garde
+  son refus tout ou rien. Bornes : aucun Xbox déduit à côté d'un item PlayStation / Nintendo (titre
+  ou URL) ; PC / Windows à côté du seul magasin « Xbox Live » (« Manor Lords (Windows) XBOX LIVE
+  Key ») = clé PC → « console: PC-only Xbox Live key (R45) ».
+- **P4 PlayStation — refus** : « … PSN Download Key (Playstation) UNITED STATES » (CJS) reste
+  « no declared generation » (épinglé par un test) ; Switch sans génération inchangé.
+- **« Switch » dans un nom de jeu PC** : `console_marker_in_title`, UNE règle lue par le
+  classifieur et par le precheck (qui lisait `CONSOLE_TOKENS` à part) — un « Switch » nu hors de
+  tout créneau de plateforme, dans un titre qui déclare une boutique PC (PC / PCS / STEAM /
+  WINDOWS / GOG / EPIC), est un mot du nom. « Mighty Switch Force! Collection (PC) Steam Key -
+  GLOBAL », « Mighty Switch Force! Ultimate Adventures Steam CD Key », « NCH: Switch Sound File
+  Converter Key (2 PCs) » repassent par le chemin PC. Les deux conditions sont exigées :
+  « Everybody 1-2-Switch! » (exclusivité Switch, sans boutique PC) reste une ligne console.
+
+**Mesure sans réseau** (classifieur + precheck, les 38 197 lignes du scan du 21/09, avant = 41e84e4) :
+seules les lignes visées changent — 1 174 quittent « no declared generation » pour One + Series
+(Eneba 792, Gamerall 110, GameBoost 84, Gamivo 67, CJS 27…), dont 91 avec PC et 826 qui passent
+le precheck (les autres tombent sur leurs refus habituels : bundle, monnaie, région) ; 40 deviennent
+« PC-only Xbox Live key » ; 6 « Switch » deviennent des lignes PC ; aucune autre ligne ne bouge.
+
+**Mesure avec AKS** (rejeu lecture seule comme pour P2/P3/P5 ; 40 lignes Xbox sans génération tirées
+des refus réels des deux VM, réparties par marchand, + les 7 lignes « Switch » refusées) :
+- P4 Xbox : 0 → **10 candidates** — One + Series ×4, Xbox Series + PC (P2) ×4, One seule ×1,
+  Series seule ×1 ; refus restants : aucune page Xbox chez AKS ×15 (la page PC existe souvent sans
+  onglet console : « Halo Wars 2 »), catégories (pass, bundle, points, coins) ×9, R43 ×3, carte
+  d'éditions vide ×2, régions interdites ×2 ;
+- « Switch » : 0 → **1 candidate** (« Mighty Switch Force! Collection (PC) Steam Key », Steam
+  GLOBAL) ; les 6 autres tombent sur les refus PC ordinaires (pas de page AKS ×5, plateforme non
+  confirmée ×1).
+
+Tests : 15 cas de plus dans `tests/test_consoles_decisions_2026_09_25.py` (lignes réelles) ; les
+tests Eneba / Gamivo / Loaded / console_keys qui épinglaient l'ancien « no declared generation »
+réécrits. Mutations : 15, toutes rouges (déduction retirée ; vetos PlayStation du titre et de
+l'URL ; clé PC Xbox Live ; PC du run Xbox ; hook Gamivo → None / sans PC ; onglet absent et
+onglet 404 refusés ; ancre primaire seule ; garde « aucune page » ; « Switch » toujours console ;
+créneau seul ; mot PC seul ; precheck revenu aux jetons).
+
 ## 2026-09-25 — Consoles : P2, P3 et P5 tranchées par Romain
 
 Romain : « P3 A, P5 A, P2 saisir sur les xbox déclarées et sur PC (on le considère Play

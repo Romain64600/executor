@@ -43,11 +43,11 @@ the rule that governs it. The rule text lives ONLY in
 | Capability | State | Condition | Rule |
 |---|---|---|---|
 | Safe-auto PC sweep (`scripts/10_data_entry_auto.py`, admin `/auto`) on the 7 proven merchants — Kinguin 58, Gamivo 51, Driffle 127, MMOGA 12, G2A 38, Instant Gaming 28, K4G 92 | **disponible** | Romain's go; invariants green + authoritative on the VPS; one merchant per VPS; `--mode safe` = the full validated batch, prove-gone by feed search | EXECUTOR_RULES §14 `[R35]`, §6 `[R24]`, §7; per-merchant status in [`docs/MERCHANTS.md`](docs/MERCHANTS.md) |
-| Console keys — matcher branch, multi-target submit on the AKS modal v2 (cap 3 targets), sweep / admin console / by-URL with **consoles ON by default**, `--no-consoles` to opt out | **disponible** since 2026-09-15 | Proven by two canaries (one target, then two via `[data-add-target]`); the first real MMOGA console sweep runs on 2026-09-15 — read its `recap.json` before the next merchant; P1 decided (declared platforms only); P2 (Xbox + PC = Play Anywhere), P3 (PS5 outside GLOBAL) and P5 (console DLC) decided 2026-09-25; P4 open | EXECUTOR_RULES §4.12 `[R45]`, §6 « Modal v2 », §10 (buckets); [`docs/SUBMITTER_SPEC.md`](docs/SUBMITTER_SPEC.md) §4c |
+| Console keys — matcher branch, multi-target submit on the AKS modal v2 (cap 3 targets), sweep / admin console / by-URL with **consoles ON by default**, `--no-consoles` to opt out | **disponible** since 2026-09-15 | Proven by two canaries (one target, then two via `[data-add-target]`); the first real MMOGA console sweep runs on 2026-09-15 — read its `recap.json` before the next merchant; P1 decided (declared platforms only); P2 (Xbox + PC = Play Anywhere), P3 (PS5 outside GLOBAL), P4 (Xbox without a generation = One + Series) and P5 (console DLC) decided 2026-09-25 | EXECUTOR_RULES §4.12 `[R45]`, §6 « Modal v2 », §10 (buckets); [`docs/SUBMITTER_SPEC.md`](docs/SUBMITTER_SPEC.md) §4c |
 | Entry from a **console page URL** (`scripts/11` preview → `scripts/12` « Saisir », admin `/games`): `buy-<slug>-<kind>-compare-prices/`, kind ∈ ps4 / ps5 / xbox-one / xbox-series / nintendo-switch / nintendo-switch-2 | **disponible, non encore exercé en réel** | Code landed 2026-09-15 (unit-tested; no live read of a console page's tab bar yet); a candidate qualifies iff one of its targets is the requested page and is entered WHOLE; a console URL is refused per URL under `--no-consoles` | EXECUTOR_RULES §14 « Saisie par page » `[R45]` |
 | Sweeps on Eneba 19, Allyouplay 17, GameSeal 126, CJS-CDKeys 30 | **expérimental** | Allowlisted but never swept for real — `--dry-run` first, read `skipped.json` / `candidates.json`, then Romain's go (Eneba dry-run of 2026-09-12: 32 candidates, 90 % console rows) | [`docs/MERCHANTS.md`](docs/MERCHANTS.md) (status table), EXECUTOR_RULES §4.10 `[R32]` |
 | PS5 keys outside GLOBAL ("PS5 … [EU]") | **disponible** since 2026-09-25 | P3 decided by Romain (« P3 A »): Europe / US / UK take the PlayStation buckets of PS4, `88eu` / `88us` / `88uk` (GLOBAL keeps `88ps5h`) — AKS already files PS5 offers there (43 `88eu` + 41 `88us` next to 96 `88ps5h` on 10 live PS5 pages). Was the skip `no region id for PS5/EU (R45)` | EXECUTOR_RULES §4.12 P3, §10 |
-| Eneba "XBOX LIVE Key" rows without a generation (title and URL silent) | **bloqué** | Fail-closed skip `console: no declared generation (R45)` — no declared platform, nothing to file (policy P4, awaiting Romain) | EXECUTOR_RULES §4.12.3 / P4 |
+| Xbox keys without a generation ("<Game> XBOX LIVE Key EUROPE", "(Xbox Live)", Gamivo `-xbox-xbox-windows-`) | **disponible** since 2026-09-25 | P4 decided by Romain (« Xbox sur les deux »): read as Xbox One + Series, entered on the pages AKS has (both missing → `no AKS product page found (console)`); + PC / Windows = the P2 Play Anywhere case; "(Windows) XBOX LIVE Key" = a PC key → `PC-only Xbox Live key`. PlayStation / Switch without a generation stay refused `console: no declared generation (R45)` | EXECUTOR_RULES §4.12.3 / P4 |
 | Console DLC / season passes | **disponible** since 2026-09-25 | P5 decided by Romain (« P5 A »): the PC DLC rule `[R43]` on EVERY console target page — the DLC's own page (full-name slug), carrying the DLC bucket (16), else the whole row is refused `console: <FAMILY> — … (R43, R45)`. Was the skip `console: DLC / season pass on console — not entered yet (R45)` | EXECUTOR_RULES §4.12.4 (b, g) / P5; §4.3 `[R43]` |
 | Instant Gaming console keys | **bloqué** | The platform is not in the IG feed (bare titles, `/en/<id>-/` URLs) and a console platform read on the IG page is not in `IG_PLATFORM_TEXT_MAP` → skip `[R32]` — no console entry from IG until a page-based hook exists | [`docs/MERCHANTS.md`](docs/MERCHANTS.md) « Instant Gaming », EXECUTOR_RULES §4.10 |
 | Difmark 167 | **disponible, à la main** | Allowlisted on 2026-09-21 (10 Steam accounts created and proven); its Pending queue is empty — its rows live in the *account* list (30), swept with `--list 30`, so it is in no group; its account rows are never console keys (`console: ACCOUNT — not a game (R45)`) | EXECUTOR_RULES §14 `[P2-2]`, §11 « Difmark »; [`docs/MERCHANTS.md`](docs/MERCHANTS.md) |
@@ -166,7 +166,8 @@ state and cannot be argued away by a language model.
   ONE creation (modal v2, cap 3 targets, each row proven by readback; proven by two
   canaries on 2026-09-15). P2 (Xbox + PC on a page without Play Anywhere = Play Anywhere),
   P3 (PS5 EU / US / UK = the PlayStation buckets) and P5 (console DLC = R43 per page) were
-  decided on 2026-09-25; P4 stays open. Rules:
+  decided on 2026-09-25, and P4 (an Xbox without a generation = Xbox One + Series) the same
+  day. Rules:
   [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) **§4.12** / §6 « Modal v2 »; status
   per merchant: [`docs/MERCHANTS.md`](docs/MERCHANTS.md).
 
@@ -957,7 +958,7 @@ to its section.
   (`--no-consoles` / `"consoles": false` to opt out; MMOGA dry-run: 174 console
   candidates); entry from a **console page URL** (`scripts/11` / `12`, EXECUTOR_RULES §14)
   landed the same day — not yet exercised live. Policies
-  P2, P3, P5 decided 2026-09-25 (P4 open); Riders Republic
+  P2-P5 decided 2026-09-25; Riders Republic
   (Gamivo Xbox key entered as PC on 2026-09-11) to correct by hand, like the five Gamivo
   US Steam keys entered Publisher GLOBAL the same day (`[R46]`, `docs/MERCHANTS.md`). See
   [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) §4.12.

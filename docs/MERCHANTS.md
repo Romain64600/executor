@@ -517,8 +517,10 @@ matcher et le classifieur importent le registre.
   `xbox-one-last-breath-…` est le jeu « One Last Breath » — 13 des 16 lignes « Xbox One » du
   lot du 12/09 étaient cet artefact), puis `-xbox-series-x-s-xbox-live-key-`,
   `-windows-xbox-series-x-s-`, `-ps4-ps5-`, `-nintendo-switch(-2)-`. Dernier lot : **1 376 /
-  1 659 lignes consoles, dont 704 « XBOX LIVE Key » sans génération** (ni titre ni URL) →
-  skip « console: no declared generation (R45) » (politique P4, à confirmer par Romain).
+  1 659 lignes consoles, dont 704 « XBOX LIVE Key » sans génération** (ni titre ni URL) —
+  refusées « no declared generation » jusqu'au 25/09 ; depuis **P4** (Romain, « Xbox sur les
+  deux ») elles sont lues Xbox One + Series (les pages qu'AKS a), et « (Windows) XBOX LIVE Key »
+  est une clé PC vendue par Xbox Live → refus « PC-only ».
 - **Hooks consoles (cible 14/09)** : `console_url_families` (segment de magasin en tête
   retiré, puis les runs Eneba `-xbox-series-x-s-` / `-ps4-ps5-` / `-ps5-` / `-ps4-` /
   `-nintendo-switch(-2)-` → familles ; `-pc-xbox-live-key-` → `"console: PC-only Xbox Live
@@ -536,8 +538,8 @@ matcher et le classifieur importent le registre.
   Series X|S) XBOX LIVE Key EUROPE » (USA + EUROPE → « not mapped », désormais eu).
 - **Statut live** : **jamais balayé en réel** — dry-run du 2026-09-12 (32 candidats sur
   3 000 offres, 2 698 lignes consoles, voir CHANGELOG) ; sweep réel sur go de Romain
-  seulement ; très fort taux de consoles (pages entières — les 704 lignes sans génération
-  restent skippées, politique P4) et de régions interdites.
+  seulement ; très fort taux de consoles (pages entières — les lignes sans génération sont
+  lues Xbox One + Series depuis P4, 2026-09-25) et de régions interdites.
 
 ## Allyouplay (store 17)
 
@@ -990,7 +992,8 @@ matcher et le classifieur importent le registre.
   classifieur partagé, avec la région du créneau (`console_region_slot`), la génération lue dans
   le slug quand le titre dit seulement « Xbox/PC » (`console_url_families` :
   `towerborne-xbox-series-x-s-pc-eu` → Xbox Series + PC, rangé XBOX/PC EU 241 comme AKS le fait
-  déjà pour Loaded) ; sans génération nulle part → refus « no declared generation » (P4).
+  déjà pour Loaded) ; sans génération nulle part (« Xbox/PC ») → P4 depuis le 25/09 : Xbox One +
+  Series + PC, le cas Play Anywhere de P2.
 - **Essai à blanc** sur les 16 lignes du scan du 21/09 : 1 candidat (Towerborne, Xbox Series + PC,
   XBOX/PC EU) ; refus : 4 sans page AKS, 4 « Xbox/PC » sans génération, 2 North America, 2 bonus de
   précommande, 1 abonnement, 1 bundle. Le feed du jour reste à relire (les deux navigateurs étaient
@@ -1003,7 +1006,7 @@ matcher et le classifieur importent le registre.
   vocabulaire commun seulement, il interroge le registre pour les hooks du marchand), pages
   consoles AKS `buy-<slug>-<kind>-compare-prices/`, candidats multi-cibles (`targets`)
   écrits entiers sur le modal v2 (plafond 3 cibles) ; `--no-consoles` = run PC seul ;
-  P2, P3, P5 tranchées par Romain le 2026-09-25, P4 ouverte (EXECUTOR_RULES §4.12, §6, §10, §12).
+  P2 à P5 tranchées par Romain le 2026-09-25 (EXECUTOR_RULES §4.12, §6, §10, §12).
 - La correspondance texte de région → base vendable / label interdit (`EU` / `EUROPE` /
   `UNITED KINGDOM` / `Global`… ; `CA` → `CANADA`, `Hong Kong` → `HONG KONG`…) est du
   vocabulaire partagé : un fichier marchand fournit le TEXTE (`console_region_slot`), jamais

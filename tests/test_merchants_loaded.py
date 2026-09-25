@@ -89,10 +89,13 @@ class LesConsoles(unittest.TestCase):
                                _aff("towerborne-xbox-series-x-s-pc-eu"), "Loaded")
         self.assertEqual((sig.families, sig.pc_declared, sig.region_base), (("XBOX_SERIES",), True, "eu"))
 
-    def test_sans_generation_nulle_part_le_refus_d_avant(self):
+    def test_sans_generation_nulle_part_xbox_sur_les_deux(self):
+        # P4 Xbox (Romain 2026-09-25, « Xbox sur les deux ») : un « Xbox/PC » sans génération est
+        # lu Xbox One + Series, PC déclaré — le cas Play Anywhere de P2. Avant : refusé.
         sig = classify_console("Kingdom Rush Frontiers Xbox/PC (Europe & UK)",
                                _aff("kingdom-rush-frontiers-xbox-pc-eu"), "Loaded")
-        self.assertIn("no declared generation", sig.skip_reason)
+        self.assertEqual((sig.families, sig.pc_declared, sig.skip_reason, sig.generation_inferred),
+                         (("XBOX_ONE", "XBOX_SERIES"), True, None, True))
 
     def test_europe_et_uk_est_l_europe_cote_console(self):
         sig = classify_console("METAL GEAR SOLID - Master Collection Version Xbox Series X|S (Europe & UK)",

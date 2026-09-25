@@ -329,7 +329,8 @@ récents (voir
   **tranchées le 25/09** (« P3 A, P5 A, P2 saisir sur les xbox déclarées et sur PC ») : P2 Xbox +
   PC sans Play Anywhere sur la page = Play Anywhere (pages Xbox + page PC, case XBOX/PC) ; P3 PS5
   hors GLOBAL = cases PlayStation 88eu / 88us / 88uk ; P5 DLC console = R43 sur chaque page cible ;
-  reste **P4** (les lignes Xbox sans génération → skip) ; ~~sémantique de l'overwrite par cible dans le nouveau modal~~ **tranchée par
+  ~~P4~~ **tranchée le même jour** : Xbox sans génération = « Xbox sur les deux » (One + Series,
+  les pages qu'AKS a ; + PC = P2), PlayStation sans génération = refus ; ~~sémantique de l'overwrite par cible dans le nouveau modal~~ **tranchée par
   l'observation (14/09) et les canaries (15/09)** : UN Create avec N lignes cibles portant
   chacune sa région / édition (SUBMITTER_SPEC §4c) — reste à confirmer côté AKS la création
   sur la 2ᵉ page du canary 2 (Diablo 2 Resurrected, Xbox Series 70802) une fois le cache

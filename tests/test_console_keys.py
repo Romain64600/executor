@@ -273,7 +273,10 @@ class HookPlumbingTests(unittest.TestCase):
     def test_merchant_without_config_gets_the_shared_reading_whatever_the_host(self):
         # a merchant NAME selects the hooks; the URL host is irrelevant
         sig = classify_console("X XBOX LIVE Key EUROPE", "https://www.gamivo.com/product/game-xbox-xboxoneseries-uk-standard", "Shop")
-        self.assertEqual((sig.families, sig.skip_reason), ((), NO_GEN))   # a fused run is not shared vocabulary
+        # a fused run is not shared vocabulary: the families come from the title's
+        # generation-less "XBOX LIVE" (P4, 2026-09-25), INFERRED — not from the URL run
+        self.assertEqual((sig.families, sig.skip_reason, sig.generation_inferred),
+                         (("XBOX_ONE", "XBOX_SERIES"), None, True))
         sig = classify_console("X XBOX LIVE Key EUROPE", "https://www.eneba.com/xbox-one-last-breath-xbox-live-key-europe", "Shop")
         self.assertEqual(sig.families, ("XBOX_ONE",))                      # the plain "xbox-one" run, no store rule
         sig = classify_console("Some Game - EU", "https://www.mmoga.com/Xbox-Live/Xbox-Series-XS-Game-Keys/Some-Game-EU.html", "Shop")
@@ -443,11 +446,16 @@ class ClassifyGrammarTests(unittest.TestCase):
         self.assertIsNone(classify_console("PS Plus 12 Months", "https://example.com/x", "Shop"))
 
     def test_bare_switch_title_is_a_console_row_without_generation(self):
-        # matches today's CONSOLE_TOKENS gate: "Switch" alone is a console marker, never a family
-        sig = classify_console("Switch Galaxy Ultra Steam CD Key",
-                               "https://www.kinguin.net/category/1/switch-galaxy-ultra-steam-cd-key", "Kinguin")
+        # "Switch" alone in a platform SLOT is a console marker, never a family
+        sig = classify_console("Think Logic! Sudoku Binary Suguru (Switch) (EU)",
+                               "https://gameboost.com/think-logic-sudoku-binary-suguru-switch-eu-00-43867", "GameBoost")
         self.assertIsNotNone(sig)
         self.assertEqual(sig.skip_reason, NO_GEN)
+        # 2026-09-25 (bug reported by Romain): a "Switch" in the NAME of a title that declares
+        # a PC store is a PC row — "Switch Galaxy Ultra Steam CD Key" used to be refused here.
+        self.assertIsNone(classify_console("Switch Galaxy Ultra Steam CD Key",
+                                           "https://www.kinguin.net/category/1/switch-galaxy-ultra-steam-cd-key",
+                                           "Kinguin"))
 
     def test_generic_url_grammar(self):
         base = "https://example.com/game-{run}-cd-key"
@@ -466,7 +474,8 @@ class ClassifyGrammarTests(unittest.TestCase):
             "nintendo-switch": (("SWITCH",), False, None),
             "nintendo-switch-2": (("SWITCH2",), False, None),
             "xbox-360": ((), False, XBOX_360),
-            "xbox-live": ((), False, NO_GEN),
+            # P4 (Romain 2026-09-25): the title's generation-less "XBOX LIVE" reads as One + Series
+            "xbox-live": (ONE_SERIES, False, None),
         }
         for run, (families, pc, skip) in cases.items():
             with self.subTest(run=run):
@@ -514,10 +523,12 @@ class ClassifyGrammarTests(unittest.TestCase):
         sig = classify_console("PC Building Simulator (Xbox One) - Xbox Live Key - EUROPE",
                                "https://www.g2a.com/pc-building-simulator-xbox-one-xbox-live-key-europe-i1", "G2A")
         self.assertEqual((sig.families, sig.pc_declared, sig.resolve_name), (("XBOX_ONE",), False, "PC Building Simulator"))
-        # Xbox + Windows WITHOUT a generation → no family, fail-closed
+        # Xbox + Windows WITHOUT a generation → P4 + P2 (Romain 2026-09-25): One + Series read
+        # from the bare "Xbox", PC declared by the SAME run — the Play Anywhere case.
         sig = classify_console("Sokmeal Time Xbox + Windows Pack XBOX LIVE Key EUROPE",
                                "https://example.com/sokmeal-time-xbox-windows-pack-xbox-live-key-europe", "Shop")
-        self.assertEqual(sig.skip_reason, NO_GEN)
+        self.assertEqual((sig.families, sig.pc_declared, sig.skip_reason, sig.generation_inferred),
+                         (("XBOX_ONE", "XBOX_SERIES"), True, None, True))
 
     def test_xbox_360_skips_even_next_to_a_valid_family(self):
         sig = classify_console("Rabbids Invasion (Xbox 360 / Xbox One) Xbox Live Key - UNITED STATES",
@@ -945,7 +956,8 @@ class RegionSlotTests(unittest.TestCase):
                 self.assertIsNone(sig.skip_reason)
                 self.assertEqual(_slot(sig), slot)
         sig = classify_console("Game XBOX LIVE Key UNITED STATES", "https://example.com/x", "Shop")
-        self.assertEqual((sig.skip_reason, _slot(sig)), (NO_GEN, ("us", None, ("UNITED STATES",))))
+        self.assertEqual((sig.skip_reason, sig.generation_inferred, _slot(sig)),
+                         (None, True, ("us", None, ("UNITED STATES",))))            # P4, 2026-09-25
 
     def test_two_letter_codes_are_uppercase_only(self):
         # "Us" / "Uk" / "Ca" in a name are never region words — nothing stripped, nothing read
