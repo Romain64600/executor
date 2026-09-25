@@ -3,6 +3,14 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-25 — Trace des prochains marchands étudiés
+
+Romain : « garde une trace de ce que tu étudies quand je te demande le prochain marchand ».
+Nouveau [`PROCHAINS_MARCHANDS.md`](PROCHAINS_MARCHANDS.md) : un tableau tenu à jour et une section
+datée par étude. Première étude : Gamesplanet FR en tête (plateforme dans l'URL, région lisible
+sur la page, règle de région à trancher), puis Gamebillet, Muve, et le trio
+Pixelcodes / Software-codes / Discover.games (le plus gros, le plus dur). Aucun code.
+
 ## 2026-09-25 — Un compte n'est jamais saisi comme une clé : un détecteur, une priorité, une garde finale
 
 Rapport de bug collé par Romain : l'offre Gamivo « Hitman 2 Global »

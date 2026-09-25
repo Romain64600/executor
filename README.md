@@ -824,6 +824,9 @@ to its section.
   Selectize picks, modal v2 targets per row (§4c), statuses.
 - [`docs/DATA_CONTRACTS.md`](docs/DATA_CONTRACTS.md) — stage I/O JSON shapes + run-log
   format.
+- [`docs/PROCHAINS_MARCHANDS.md`](docs/PROCHAINS_MARCHANDS.md) — les marchands candidats étudiés
+  à chaque « quel est le prochain marchand ? » (mesures, classement, ce qui bloque, décisions),
+  pour savoir sur lequel continuer.
 - [`docs/API_IMPORT_ROUTER.md`](docs/API_IMPORT_ROUTER.md) — **chantier prepaid (à venir)** :
   l'API AKS « import-router » transmise le 2026-09-24 (mise à jour `bulk-update-record`,
   paramètres de création d'offre), notre lecture, et les 13 questions à renvoyer avant d'écrire
