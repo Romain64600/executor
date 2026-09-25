@@ -3,6 +3,12 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-25 — Gamesplanet FR en liste blanche, groupe A
+
+Romain : « go liste blanche, groupe A ». `AUTO_MERCHANTS` + `("Gamesplanet FR", "55")`, groupe A
+(le plus léger : ~13 354 lignes avec ses 526). Tests de liste blanche et de groupes mis à jour ;
+README (liste blanche), MERCHANTS, PROCHAINS_MARCHANDS.
+
 ## 2026-09-25 — `[R59]` Gamesplanet FR : plateforme dans l'URL, région sur la fiche
 
 Romain : « go pour Gamesplanet FR avec ta règle + un pays UE exclu mais États-Unis autorisés →

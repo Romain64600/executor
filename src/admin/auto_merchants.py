@@ -89,6 +89,11 @@ AUTO_MERCHANTS: list[tuple[str, str]] = [
                                 # 24/09) : rien ne s'y lit, rien n'en dépend. Les « Rest of the
                                 # world » (161) restent refusées : une ROW n'entre que si on
                                 # prouve qu'elle s'active en Europe. Feed store 162.
+    ("Gamesplanet FR", "55"),   # Romain 2026-09-25 (« go liste blanche, groupe A »), le jour de
+                                # son fichier [R59] : plateforme = segment de livraison de l'URL
+                                # (-steam-key--…), région = liste des pays exclus de la fiche,
+                                # selon la règle de Romain (GLOBAL / EU / US / refus). Essai à
+                                # blanc sur 150 lignes réelles : 77 candidats. Feed store 55.
 ]
 
 # Deliberately NOT suggested (enforcement is simply "absent from the list";

@@ -932,7 +932,7 @@ matcher et le classifieur importent le registre.
   Microsoft, Xbox Play Anywhere ou l'éditeur (refusées, R27 / `[R51]`), 21 illisibles. (Un
   « NO GO » du même jour, sur une formulation antérieure, a été remplacé par cette règle.)
 
-## Gamesplanet FR (store 55, `[R59]`, fichier le 25/09 — pas encore en liste blanche)
+## Gamesplanet FR (store 55, `[R59]`, liste blanche le 25/09, groupe A)
 
 - **Fichier** : `src/merchants/gamesplanet.py`. Revendeur OFFICIEL : titres nus (« Regulators »,
   « The Surge 2 - Premium Edition »), ni plateforme ni région.

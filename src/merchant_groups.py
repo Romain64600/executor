@@ -47,6 +47,8 @@ PENDING_2026_09_21 = {
     # Même scan, à l'entrée de Wyrel en liste blanche (2026-09-24). Dont 848 non-jeux
     # (cartes cadeaux, monnaies) et 161 ROW, refusés d'office : la charge réelle est moindre.
     "Wyrel": 4725,
+    # Même scan, à l'entrée de Gamesplanet FR en liste blanche (2026-09-25).
+    "Gamesplanet FR": 526,
 }
 
 # Hors groupes, avec la raison — un marchand absent des deux groupes n'est PAS un oubli.
@@ -61,8 +63,10 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # (10 830) : l'écart est ASSUMÉ pour l'instant, faute de connaître le taux de création
     # de GOG. À rééquilibrer sur les durées observées après son premier tour complet —
     # c'est exactement la limite que ce module annonce depuis le début.
+    # + Gamesplanet FR (526 lignes), entré le 2026-09-25 dans le groupe le plus léger
+    # (Romain : « go liste blanche, groupe A ») → ~13 354 lignes.
     "A": ("GameSeal", "G2A", "GameBoost", "Driffle", "Instant Gaming", "MMOGA",
-          "GamersOutlet", "GOG"),
+          "GamersOutlet", "GOG", "Gamesplanet FR"),
     # ~15 555 lignes : trois files moyennes et le reste — et Wyrel, entré en liste blanche le
     # 2026-09-24 avec 4 725 lignes, dont une bonne part refusée d'office (non-jeux, ROW).
     # Mis ici parce que le B était le plus léger ; le B passe donc devant le A (12 828).

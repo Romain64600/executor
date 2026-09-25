@@ -12,7 +12,7 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 
 | Rang | Marchand (store) | Lignes en attente* | Avec une page AKS* | Ce qui manque | Statut |
 |---|---|---|---|---|---|
-| 1 | **Gamesplanet FR** (55) | 526 | 339 (64 %) | — | **fichier écrit le 25/09 (`[R59]`), essai à blanc : 77 candidats sur 150 lignes ; liste blanche à décider** |
+| ✓ | **Gamesplanet FR** (55) | 526 | 339 (64 %) | — | **fait** : fichier `[R59]` et liste blanche le 25/09 (groupe A) ; essai à blanc 77 candidats / 150 lignes |
 | 2 | **Gamebillet** (15) | 268 | 192 (72 %) | plateforme et région (URL et titre muets ; la page liste les pays exclus) | à étudier après Gamesplanet |
 | 3 | **Muve** (166) | 605 | 322 (53 %) | titre lisible pour ~40 % des lignes seulement | à étudier |
 | 4 | **Pixelcodes** (82) + **Software-codes** (6) | 1 547 + 1 538 | 1 377 + 1 365 (89 %) | tout : titre et URL muets, page en JavaScript (illisible sans navigateur), aucune offre déjà sur AKS pour s'en inspirer | gros potentiel, difficile |
@@ -22,7 +22,7 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 \* Mesuré sur le scan tous-magasins du 21/09, **avant** la correction du tri du feed (`orderBy=id`,
 24/09) : ces comptes sont des minimums. Un nouveau scan tous-magasins les rafraîchira.
 
-**Déjà faits** : Wyrel (liste blanche le 24/09, `[R53]` + `[R58]`), GOG (22/09), Gamerall
+**Déjà faits** : Gamesplanet FR (liste blanche le 25/09, `[R59]`), Wyrel (liste blanche le 24/09, `[R53]` + `[R58]`), GOG (22/09), Gamerall
 (19/09), GameBoost / Electronicfirst / GamersOutlet (16/09), Difmark (21/09).
 
 ---

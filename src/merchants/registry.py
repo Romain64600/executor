@@ -70,8 +70,8 @@ MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
     "WYREL": wyrel.CONFIG,
     "GAMERALL": gamerall.CONFIG,
     "GOG": gog.CONFIG,
-    # [R59] Gamesplanet FR (2026-09-25) — fichier écrit, PAS encore en liste blanche : essai à
-    # blanc d'abord (docs/PROCHAINS_MARCHANDS.md).
+    # [R59] Gamesplanet FR (2026-09-25) — liste blanche le même jour, groupe A, après l'essai à
+    # blanc (77 candidats sur 150 lignes).
     "GAMESPLANET FR": gamesplanet.CONFIG,
 }
 
