@@ -3,6 +3,16 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-25 — `[R61]` Loaded (ex-CDKeys) : région dans le titre, fiche dans le lien d'affiliation
+
+Romain : « Pars sur CDKeys (nouveau nom du marchand est LOADED) », puis « 1. Europe 2. comme
+Kinguin et MMOGA en global ». Nouveau `src/merchants/loaded.py` (store 40), **pas encore en liste
+blanche** : région = parenthèse finale du titre (« Europe & UK » → EU ; sans parenthèse → GLOBAL
+implicite), boutique PC lue dans le slug de la fiche (paramètre `u` du lien `go.loaded.com`),
+lignes console avec la région du créneau et la génération du slug. Essai à blanc sur les 16 lignes
+connues : 1 candidat (Towerborne, Xbox Series + PC en XBOX/PC EU, comme AKS range déjà Loaded).
+Tests : 13, 6 mutations rougies. Docs : MERCHANTS, EXECUTOR_RULES, AGENTS, PROCHAINS_MARCHANDS.
+
 ## 2026-09-25 — `[R60]` Discover.games : plateforme et région lues sur la fiche
 
 Romain : « go pour Discover.games », « il faut vraiment lire la région sur la page ». Nouveau

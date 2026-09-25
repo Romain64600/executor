@@ -3011,6 +3011,15 @@ même décision que le sweep : `--consoles` est le **défaut** sur les deux scri
 
 ---
 
+### `[R61]` Loaded, ex-CDKeys (store 40) — région dans le titre, fiche dans le lien d'affiliation (2026-09-25)
+
+Romain : « Pars sur CDKeys (nouveau nom du marchand est LOADED) » ; « 1. Europe 2. comme Kinguin et
+MMOGA en global ». `src/merchants/loaded.py` : région = parenthèse finale du titre
+(« Europe & UK » → EU, « WW » → GLOBAL, verrou → refus, texte inconnu → refus nommé) ; sans
+parenthèse, le GLOBAL implicite générique ; boutique PC lue dans le slug de la fiche (paramètre `u`
+du lien `go.loaded.com`) ; lignes console : région du créneau et génération lue dans le slug quand
+le titre dit seulement « Xbox/PC ».
+
 ### `[R60]` Discover.games (store 168) — plateforme et région sur la fiche (2026-09-25)
 
 Romain : « go pour Discover.games », « il faut vraiment lire la région sur la page ».

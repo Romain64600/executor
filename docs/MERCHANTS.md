@@ -977,6 +977,25 @@ matcher et le classifieur importent le registre.
   `tests/test_merchants_discover.py` (11, extraits réels en `tests/fixtures/discover/`),
   5 mutations rougies.
 
+## Loaded, ex-CDKeys (store 40, `[R61]`, fichier le 25/09 — pas encore en liste blanche)
+
+- **Fichier** : `src/merchants/loaded.py`. Titres RICHES : `<Jeu> <Plateforme> [(<Région>)] [- DLC]`
+  (« Towerborne Xbox/PC (Europe & UK) », « … PC (North America) », « … Xbox (WW) »,
+  « Zero Caliber 2 Remastered PC »). URL = lien d'affiliation `go.loaded.com/c/…?u=<fiche>` : la
+  fiche est dans `u`, son slug répète plateforme / boutique / région (`-pc-steam-eu`, `-xbox-pc-eu`).
+- **Région = parenthèse finale** — décisions de Romain (25/09) : « (Europe & UK) » → **Europe** ;
+  **pas de parenthèse → GLOBAL implicite**, comme Kinguin et MMOGA ; « (WW) » → GLOBAL ;
+  « (North America) » et tout verrou → refus ; un texte inconnu → refus nommé.
+- **Boutique PC = slug de la fiche** (`-pc-steam` → STEAM, `-pc-epic` → EPIC…). Consoles : le
+  classifieur partagé, avec la région du créneau (`console_region_slot`), la génération lue dans
+  le slug quand le titre dit seulement « Xbox/PC » (`console_url_families` :
+  `towerborne-xbox-series-x-s-pc-eu` → Xbox Series + PC, rangé XBOX/PC EU 241 comme AKS le fait
+  déjà pour Loaded) ; sans génération nulle part → refus « no declared generation » (P4).
+- **Essai à blanc** sur les 16 lignes du scan du 21/09 : 1 candidat (Towerborne, Xbox Series + PC,
+  XBOX/PC EU) ; refus : 4 sans page AKS, 4 « Xbox/PC » sans génération, 2 North America, 2 bonus de
+  précommande, 1 abonnement, 1 bundle. Le feed du jour reste à relire (les deux navigateurs étaient
+  pris). Tests : `tests/test_merchants_loaded.py` (13), 6 mutations rougies.
+
 ## Ce qui n'est pas propre à un marchand
 
 - Consoles (Xbox / PlayStation / Switch) `[R45]` (2026-09-12, hooks marchands le 14/09,

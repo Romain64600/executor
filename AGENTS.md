@@ -245,6 +245,13 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   proposera de rendre toute la query identitaire, ou de retirer l'exception : ni l'un ni
   l'autre.
 
+- **`[R61]` Loaded : « (Europe & UK) » = Europe, et SANS région = GLOBAL — Romain, 2026-09-25**
+  (« 1. Europe 2. comme Kinguin et MMOGA en global »). Le vocabulaire partagé lit « Europe & UK »
+  comme deux régions à la fois, donc un verrou : c'est la grammaire de CE marchand qui tranche,
+  dans `src/merchants/loaded.py`. Un audit « trouvera » une clé UK entrée en EU, ou une ligne sans
+  région entrée mondiale : c'est la règle voulue, la même que Kinguin et MMOGA. Ne pas la
+  généraliser aux autres marchands.
+
 - **`[R59]` Gamesplanet FR : la région est la liste des pays EXCLUS de la fiche — Romain,
   2026-09-25** (« go pour Gamesplanet FR avec ta règle + un pays UE exclu mais États-Unis
   autorisés → US »). Ni UE, ni UK, ni USA exclus → GLOBAL (même avec 80 pays d'Asie / d'Amérique
