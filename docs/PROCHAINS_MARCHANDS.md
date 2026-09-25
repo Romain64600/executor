@@ -27,6 +27,29 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 
 ---
 
+## 2026-09-25 (suite) — « Il reste des marchands avec toutes les infos dans l'URL + le titre ? »
+
+Mesure sur le scan du 21/09 (boutiques hors liste blanche, ≥ 20 lignes) : part des lignes dont le
+titre ou l'URL disent À LA FOIS la plateforme et la région, et combien de celles-là ont une page
+AKS.
+
+| Boutique (store) | Lignes | Plateforme + région lisibles | … dont page AKS |
+|---|---|---|---|
+| Muve (166) | 605 | 214 (35 %) | 139 |
+| etailcard (152) | 263 | 166 (63 %) | 82 — surtout des cartes / abonnements, pas des jeux |
+| HRK (14) | 46 | 25 (54 %) | 17 |
+| Keycense (130) | 124 | 45 (36 %) | 5 |
+| Royalcdkeys (85) | 101 | 31 (31 %) | 7 |
+| Gamingdragons (41) | 33 | 14 (42 %) | 6 |
+| ldshop.gg (169) | 21 | 8 (38 %) | 6 |
+| Pixelcodes, Software-codes, Discover.games, Indiegala, etail.market… | — | ~0 % | — |
+
+**Réponse : il n'en reste presque plus.** Les marchands « tout dans le titre » sont déjà en liste
+blanche. Seul **Muve** garde un volume utile (~140 lignes avec une page AKS dont le titre dit tout,
+« AI LIMIT (PC Steam) (ROW) ») ; les autres sont minuscules. Les gros gisements restants
+(Pixelcodes, Software-codes, Discover.games, Gamebillet, Greenmangaming) ont des titres NUS : il
+faut lire leur page marchande (Gamebillet, lisible en HTTP) ou obtenir une règle de Romain.
+
 ## 2026-09-25 (suite) — Gamesplanet FR codé
 
 Romain : « go pour Gamesplanet FR avec ta règle + un pays UE exclu mais États-Unis autorisés →
