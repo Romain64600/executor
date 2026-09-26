@@ -85,22 +85,36 @@ TRANSIENT_SIGNATURES = (
     "net::ERR_INTERNET_DISCONNECTED", "net::ERR_ADDRESS_UNREACHABLE",
     "net::ERR_NAME_NOT_RESOLVED",
 )
-# Le submit n'a rien écrit : aucun clic sur « Create » (src/submitter.py), ou le scan d'index
-# d'avant la première offre a échoué.
+# Le MESSAGE d'un `CdpTimeoutError` (src/cdp_session.py : « CDP <méthode>: no response within
+# <n>s »), reconnu même quand le nom de la classe n'y est pas. Balayage du groupe B, 2026-09-25
+# 20:0x UTC, Gamivo p38 : le détail relu était « exit 1 (feed index scan failed closed: CDP
+# Runtime.evaluate: no response within 45s) » — le motif qu'un stage JOURNALISE (`f"…: {exc}"`)
+# ne porte que le message — et la page s'est arrêtée au lieu d'être refaite à 5 puis 10 min.
+_CDP_TIMEOUT_MESSAGE = re.compile(r"\bCDP [A-Za-z]+\.[A-Za-z]+: no response within \d+(?:\.\d+)?s\b")
+
+# Le submit n'a rien écrit : aucun clic sur « Create » (src/submitter.py), ou tout ce qui
+# précède la boucle des offres — contrôle de connexion, catalogue, scan d'index — a échoué
+# (`aborted == "feed_unreadable"`, write_attempts 0 ; Eneba p66 du 2026-09-25 : le contrôle de
+# connexion d'avant la première offre, 45 s sans réponse, s'échappait jusque-là de `run()`).
 _PREWRITE_STOPPED = {"feed_unreadable_prewrite"}
 _PREWRITE_ABORTED = {"feed_unreadable"}
 
 
 def transient_reason(detail: str | None) -> str | None:
     """La signature passagère trouvée dans un détail d'échec, ou None. Une déconnexion
-    (« not logged in ») n'est JAMAIS passagère : elle arrête tout, comme avant."""
+    (« not logged in », ``NotLoggedInError``, un rebond vers wp-login) n'est JAMAIS
+    passagère : elle arrête tout, comme avant. Ne sert qu'aux extractions (lecture seule) —
+    le submit, lui, se juge sur ses champs ``aborted`` / ``stopped``, jamais sur un texte."""
 
     text = str(detail or "")
-    if "not logged in" in text.lower():
+    low = text.lower()
+    if "not logged in" in low or "notloggedin" in low or "wp-login" in low:
         return None
     for sig in TRANSIENT_SIGNATURES:
         if sig in text:
             return sig
+    if _CDP_TIMEOUT_MESSAGE.search(text):
+        return "CdpTimeoutError"
     return None
 
 

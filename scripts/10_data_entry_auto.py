@@ -167,41 +167,69 @@ def _run_child(argv: list[str], run_id: str | None = None) -> int:
 _TRACEBACK_LAST_LINE = re.compile(r"^(?:[A-Za-z_.]*(?:Error|Exception|Exit)\b.*|Traceback .*)$")
 
 
-def _stage_crash_tail(run_id: str) -> str:
-    """La dernière ligne utile de la sortie d'un stage — le type et le message de
-    l'exception quand il a crashé. "" si le fichier n'existe pas ou ne dit rien."""
+def _log_marks(run_id: str) -> tuple[int, int]:
+    """La taille du journal de la page et de la sortie capturée de ses stages, AVANT qu'un
+    stage ne tourne — ce qu'il écrira commence là.
+
+    Balayage du groupe B, 2026-09-25 (Gamivo p38). La reprise automatique refait une page
+    dans le MÊME dossier et le MÊME journal. La seconde tentative d'extraction a crashé
+    (`CdpTimeoutError`, traceback dans la sortie capturée), mais le détail relu a été
+    l'abandon journalisé par la PREMIÈRE tentative (« feed index scan failed closed … ») : le
+    recap a affiché une panne qui n'était pas la sienne, et la décision de reprendre a été
+    prise sur elle. Les lecteurs ci-dessous ne regardent plus que ce que CE stage a écrit."""
+
+    marks = []
+    for name in (f"{run_id}.jsonl", f"{run_id}-stages.log"):
+        try:
+            marks.append((ROOT / "logs" / name).stat().st_size)
+        except OSError:
+            marks.append(0)
+    return marks[0], marks[1]
+
+
+def _read_since(path: Path, since: int) -> str:
+    """Le texte écrit dans ``path`` après l'octet ``since`` ("" si rien ou illisible). Un
+    fichier plus court que la marque a été remplacé : il est relu en entier."""
 
     try:
-        lines = [l.strip() for l in
-                 (ROOT / "logs" / f"{run_id}-stages.log").read_text(
-                     encoding="utf-8", errors="replace").splitlines() if l.strip()]
+        with path.open("rb") as fh:
+            size = fh.seek(0, 2)
+            fh.seek(since if 0 <= since <= size else 0)
+            return fh.read().decode("utf-8", errors="replace")
     except OSError:
         return ""
+
+
+def _stage_crash_tail(run_id: str, since: int = 0) -> str:
+    """La dernière ligne utile de la sortie d'un stage — le type et le message de
+    l'exception quand il a crashé. "" si le fichier n'existe pas ou ne dit rien.
+    ``since`` : ne lire que ce que le stage courant a écrit (voir ``_log_marks``)."""
+
+    lines = [l.strip() for l in
+             _read_since(ROOT / "logs" / f"{run_id}-stages.log", since).splitlines()
+             if l.strip()]
     for line in reversed(lines):
         if _TRACEBACK_LAST_LINE.match(line):
             return line[:160]
     return lines[-1][:160] if lines else ""
 
 
-def _last_abort_reason(run_id: str) -> str:
+def _last_abort_reason(run_id: str, since: int = 0) -> str:
     """The reason of the LAST ``aborted`` event in ``logs/<run_id>.jsonl`` ("" if none).
     The child stages' stdout is not captured, so this is how the sweep learns WHY an
     extract failed — twice on 2026-09-11 a sweep halted `extract_failed_p1` and the only
     trace of "not logged in (wp-login)" sat in the page log (Romain had to be told by
-    hand that a cookie transfer was needed)."""
+    hand that a cookie transfer was needed). ``since`` (2026-09-26): only the events the
+    CURRENT stage wrote — never an earlier attempt's abort (see ``_log_marks``)."""
 
-    path = ROOT / "logs" / f"{run_id}.jsonl"
     reason = ""
-    try:
-        for line in path.read_text(encoding="utf-8").splitlines():
-            try:
-                event = json.loads(line)
-            except ValueError:
-                continue
-            if event.get("event") == "aborted" and event.get("reason"):
-                reason = str(event["reason"])
-    except OSError:
-        pass
+    for line in _read_since(ROOT / "logs" / f"{run_id}.jsonl", since).splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(event, dict) and event.get("event") == "aborted" and event.get("reason"):
+            reason = str(event["reason"])
     return reason[:160]
 
 
@@ -251,6 +279,7 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
                 "--list", str(list_id)]
         if pace:
             argv += ["--pace", pace]
+        marks = _log_marks(run_id)
         rc = _run_child(argv, run_id)
         offers = _load_json(ROOT / "runs" / run_id / "offers.json") or {}
         n = offers.get("offer_count") if isinstance(offers, dict) else None
@@ -263,7 +292,7 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
             # CRASH n'en écrit aucun — l'extract de la page 7 du run 20260920-154717 est
             # mort en exit 1 sans même créer son journal, et le recap n'a su dire que
             # « extract: exit 1 ». La sortie capturée du stage porte alors le traceback.
-            why = _last_abort_reason(run_id) or _stage_crash_tail(run_id)
+            why = _last_abort_reason(run_id, marks[0]) or _stage_crash_tail(run_id, marks[1])
             if why:
                 detail = f"exit {rc} ({why})"       # e.g. "exit 2 (not logged in (wp-login))"
         return ExtractOutcome(ok=(rc == 0), offers=int(n or 0),
@@ -286,6 +315,7 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
             # que son match a déjà lu. Coût mesuré : ~0,1 s contre 145-226 s de match. Jamais
             # bloquant — le stage ignore une base illisible ou un hôte injoignable.
             argv += ["--page-catalog", page_catalog]
+        marks = _log_marks(run_id)
         rc = _run_child(argv, run_id)
         cands = _load_json(ROOT / "runs" / run_id / "candidates.json")
         n = len(cands) if isinstance(cands, list) else 0
@@ -298,7 +328,7 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
             if isinstance(aborted, dict) and aborted.get("reason"):
                 detail = f"exit {rc} ({aborted['reason']}: {str(aborted.get('detail') or '')[:120]})"
             else:
-                crash = _stage_crash_tail(run_id)          # 2026-09-20 : un crash ne fait pas de fichier
+                crash = _stage_crash_tail(run_id, marks[1])  # 2026-09-20 : un crash ne fait pas de fichier
                 if crash:
                     detail = f"exit {rc} ({crash})"
         meta = _load_json(ROOT / "runs" / run_id / "match_meta.json")
@@ -375,6 +405,7 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
             # argparse errored, halting every paced sweep at its first submit. Map the
             # sweep's single pace spec onto both real flags (same Pacer spec format).
             argv += ["--pace-pages", pace, "--pace-offers", pace]
+        marks = _log_marks(run_id)
         rc = _run_child(argv, run_id)
         # P2-14 (audit 2026-09-02): on exit 0 an UNREADABLE submit_plan.json (None from
         # _load_json — external corruption / interrupted write) leaves the post-write
@@ -403,7 +434,7 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
             # stage à ne pas consulter la sortie capturée, donc un CRASH (exit 1, aucun
             # évènement écrit) n'y laissait que « exit 1 » quand extract et match montraient
             # déjà leur traceback. Même recours qu'eux.
-            why = _last_abort_reason(run_id) or _stage_crash_tail(run_id)
+            why = _last_abort_reason(run_id, marks[0]) or _stage_crash_tail(run_id, marks[1])
             if why:
                 detail = f"exit {rc} ({why})"
         return SubmitOutcome(ok=ok, aborted=plan.get("aborted"),

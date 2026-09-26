@@ -1534,6 +1534,17 @@ class _SubmitterBase:
     def _process(self, entry: dict[str, Any], candidate: dict[str, Any], ctx: dict[str, Any]) -> bool:
         raise NotImplementedError
 
+    def _preflight_abort(self, what: str, exc: BaseException) -> dict[str, Any]:
+        """Abandon d'AVANT la boucle des offres : aucune offre n'a été ouverte, la garde n'est
+        même pas armée — ``write_attempts`` vaut 0 par construction. Une déconnexion reste
+        ``not_logged_in`` (jamais reprise) ; tout autre feed/CDP illisible est
+        ``feed_unreadable``, que le balayage refait après une pause."""
+
+        self._log("aborted", reason=f"{what}: {exc}")
+        aborted = "not_logged_in" if isinstance(exc, NotLoggedInError) else "feed_unreadable"
+        return {"aborted": aborted, "stopped": None, "feed_offers": 0,
+                "write_attempts": 0, "created": 0, "plan": []}
+
     def run(
         self,
         *,
@@ -1552,8 +1563,21 @@ class _SubmitterBase:
         prove_gone_by_search: bool = False,
     ) -> dict[str, Any]:
         # Pre-flight login check.
-        self.session.navigate(feed_url(store_id, feed_page=feed_page, available=available))
-        if self.session.is_login_page():
+        # BALAYAGE DU GROUPE B, 2026-09-25 20:09 UTC (Eneba p66). Le `Runtime.evaluate` de
+        # `is_login_page` est resté 45 s sans réponse ; l'exception SORTAIT de `run()`,
+        # `05_submit` abandonnait en exit 2 SANS submit_plan.json, et le balayage, qui ne
+        # voyait ni `aborted` ni `stopped`, s'arrêtait (`submit_not_clean_p66`) au lieu de
+        # refaire la page — alors que rien n'avait pu être écrit. Tout ce qui précède la
+        # boucle des offres (ce contrôle, le catalogue, le scan d'index plus bas) est de la
+        # LECTURE, avant même que la garde ne soit armée : un feed/CDP illisible ici rend le
+        # même `feed_unreadable` que le scan d'index (reprenable, `write_attempts` 0), une
+        # déconnexion le même `not_logged_in` (halte).
+        try:
+            self.session.navigate(feed_url(store_id, feed_page=feed_page, available=available))
+            logged_out = self.session.is_login_page()
+        except FEED_UNREADABLE_EXCS as exc:
+            return self._preflight_abort("pre-flight feed read failed closed", exc)
+        if logged_out:
             self._log("aborted", reason="not logged in (wp-login)")
             return {"aborted": "not_logged_in", "stopped": None, "feed_offers": 0,
                     "write_attempts": 0, "created": 0, "plan": []}
@@ -1564,10 +1588,13 @@ class _SubmitterBase:
         # no writes.
         if self.write_mode:
             if catalog is None:
-                catalog = fetch_session_catalog(
-                    self.session, store_id=store_id, feed_page=feed_page,
-                    available=available, max_pages=max_pages,
-                )
+                try:
+                    catalog = fetch_session_catalog(
+                        self.session, store_id=store_id, feed_page=feed_page,
+                        available=available, max_pages=max_pages,
+                    )
+                except FEED_UNREADABLE_EXCS as exc:
+                    return self._preflight_abort("catalog fetch failed closed", exc)
             if not catalog.get("ok"):
                 self._log("aborted", reason="catalog fetch failed", detail=catalog.get("reason"))
                 return {"aborted": "catalog_unavailable", "stopped": None, "feed_offers": 0,
@@ -1615,10 +1642,7 @@ class _SubmitterBase:
             # 2026-07-17, FC1/SC2). A login bounce is named apart (2026-09-24): the sweep
             # retries a `feed_unreadable` pre-flight after a pause (nothing was written),
             # never a lost session.
-            self._log("aborted", reason=f"feed index scan failed closed: {exc}")
-            aborted = "not_logged_in" if isinstance(exc, NotLoggedInError) else "feed_unreadable"
-            return {"aborted": aborted, "stopped": None, "feed_offers": 0,
-                    "write_attempts": 0, "created": 0, "plan": []}
+            return self._preflight_abort("feed index scan failed closed", exc)
         self._log("feed_indexed", offers=len(index), window=window_pages)
         # ``prove_gone_by_search`` (Romain GO 2026-09-10, sweep): keep the cheap page-hint
         # LOCATE, but prove the post-save disappearance with the feed SEARCH (a whole-feed

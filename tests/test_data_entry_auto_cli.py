@@ -19,6 +19,22 @@ def _load_cli():
     return mod
 
 
+def _enfant_qui_ecrit(rc, root, ecrits):
+    """Le stage mocké écrit son journal / sa sortie PENDANT qu'il tourne, comme le vrai enfant
+    (2026-09-26 : le balayage ne relit plus que ce que le stage COURANT a écrit — une page
+    refaite garde le journal de sa tentative précédente, voir tests/test_retry_gaps_2026_09_26)."""
+
+    def run(argv, run_id=None):
+        for rel, texte in ecrits.items():
+            chemin = root / rel
+            chemin.parent.mkdir(parents=True, exist_ok=True)
+            with chemin.open("a", encoding="utf-8") as fh:
+                fh.write(texte)
+        return rc
+
+    return run
+
+
 class CliSeamTests(unittest.TestCase):
     def setUp(self):
         self.MOD = _load_cli()
@@ -426,12 +442,10 @@ class ExtractAbortReasonTests(unittest.TestCase):
 
     def test_extract_detail_carries_the_abort_reason(self):
         run_id = "r-p1"
-        logs = self.MOD.ROOT / "logs"; logs.mkdir(parents=True)
-        (logs / f"{run_id}.jsonl").write_text(
-            json.dumps({"event": "feed_page", "run_id": run_id}) + "\n"
-            + json.dumps({"event": "aborted", "page": 1, "reason": "not logged in (wp-login)", "run_id": run_id}) + "\n",
-            encoding="utf-8")
-        with mock.patch.object(self.MOD, "_run_child", return_value=2):
+        journal = (json.dumps({"event": "feed_page", "run_id": run_id}) + "\n"
+                   + json.dumps({"event": "aborted", "page": 1, "reason": "not logged in (wp-login)", "run_id": run_id}) + "\n")
+        with mock.patch.object(self.MOD, "_run_child", side_effect=_enfant_qui_ecrit(
+                2, self.MOD.ROOT, {f"logs/{run_id}.jsonl": journal})):
             stages = self.MOD._make_stages("Driffle", "127", "all", None)
             ex = stages.extract(1, run_id)
         self.assertFalse(ex.ok)
@@ -511,11 +525,10 @@ class SubmitAbortReasonTests(unittest.TestCase):
         run_id = "r-p26"
         logs = self.MOD.ROOT / "logs"; logs.mkdir(parents=True)
         reason = "fail-closed abort (feed/CDP unreadable): page 26 blank after re-fetch"
-        (logs / f"{run_id}.jsonl").write_text(
-            json.dumps({"event": "catalog_cache_hit", "run_id": run_id}) + "\n"
-            + json.dumps({"event": "aborted", "reason": reason, "run_id": run_id}) + "\n",
-            encoding="utf-8")
-        with mock.patch.object(self.MOD, "_run_child", return_value=2):
+        journal = (json.dumps({"event": "catalog_cache_hit", "run_id": run_id}) + "\n"
+                   + json.dumps({"event": "aborted", "reason": reason, "run_id": run_id}) + "\n")
+        with mock.patch.object(self.MOD, "_run_child", side_effect=_enfant_qui_ecrit(
+                2, self.MOD.ROOT, {f"logs/{run_id}.jsonl": journal})):
             stages = self.MOD._make_stages("Gamerall", "13", "all", None)
             sb = stages.submit(run_id)
         self.assertFalse(sb.ok)

@@ -1,0 +1,6 @@
+max-pages: auto: feed advertises 68 page(s) at extraction → max_pages 89
+REAL SUBMISSION (mode=safe) — will create up to ALL offer(s) (click_mode=trusted).
+{
+  "aborted": true,
+  "reason": "fail-closed abort (feed/CDP unreadable): CDP Runtime.evaluate: no response within 45s"
+}

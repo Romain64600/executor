@@ -1,0 +1,45 @@
+Traceback (most recent call last):
+  File "/home/debian/executor/scripts/02_extract_feed.py", line 175, in <module>
+    raise SystemExit(main())
+                     ~~~~^^
+  File "/home/debian/executor/scripts/02_extract_feed.py", line 116, in main
+    snapshot, feed = extractor.extract_pages(
+                     ~~~~~~~~~~~~~~~~~~~~~~~^
+        run_id=run_id,
+        ^^^^^^^^^^^^^^
+    ...<5 lines>...
+        feed_page=feed_page,
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/debian/executor/src/extractor.py", line 666, in extract_pages
+    state = self._settled_page_state(merchant=merchant, sweep=1, page=page, url=url)
+  File "/home/debian/executor/src/extractor.py", line 367, in _settled_page_state
+    state = self._page_state(merchant=merchant, sweep=sweep, page=page, url=url)
+  File "/home/debian/executor/src/extractor.py", line 311, in _page_state
+    return self.guard.run_step(
+           ~~~~~~~~~~~~~~~~~~~^
+        "extract",
+        ^^^^^^^^^^
+    ...<3 lines>...
+        and isinstance(s.get("offers"), list),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/home/debian/executor/src/step_guard.py", line 316, in run_step
+    result = action()
+  File "/home/debian/executor/src/extractor.py", line 308, in _fetch
+    payload = self.session.evaluate_readonly(PAGE_STATE_JS)
+  File "/home/debian/executor/src/cdp_session.py", line 175, in evaluate_readonly
+    return self._evaluate(expression)
+           ~~~~~~~~~~~~~~^^^^^^^^^^^^
+  File "/home/debian/executor/src/cdp_session.py", line 159, in _evaluate
+    response = self._cmd(
+        "Runtime.evaluate",
+        {"expression": expression, "returnByValue": True, "awaitPromise": True},
+    )
+  File "/home/debian/executor/src/cdp_session.py", line 354, in _cmd
+    raise CdpTimeoutError(
+        f"CDP {method}: no response within {self._cmd_timeout}s"
+    )
+src.cdp_session.CdpTimeoutError: CDP Runtime.evaluate: no response within 20s

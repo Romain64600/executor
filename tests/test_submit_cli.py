@@ -569,6 +569,86 @@ class SubmitCliTests(unittest.TestCase):
                          "fail-closed abort (feed/CDP unreadable): page 26 blank after re-fetch")
         self.assertEqual(json.loads(out)["reason"], events[0]["reason"])
 
+    # Balayage du groupe B, 2026-09-26 : ce qui échoue AVANT l'entrée dans `run()` (ouverture
+    # de la session, catalogue du sweep) n'a pu ouvrir aucune offre — preuve structurelle —
+    # et devient l'`aborted: "feed_unreadable"` que le balayage refait après une pause
+    # (submit_plan.json écrit, write_attempts 0). Ce qui s'échappe de `run()` une fois entré
+    # garde l'abandon ci-dessus (exit 2, pas de plan, halte).
+    def _unreadable_session(self, exc):
+        class _Unreadable(_FakeSession):
+            def __enter__(self):
+                raise exc
+
+        return _Unreadable
+
+    def _never_run(self):
+        class _Never:
+            def __init__(self, session, **kwargs):
+                raise AssertionError("aucun submitter ne doit être construit")
+
+        return _Never
+
+    def test_session_unreadable_before_run_is_a_prewrite_abort(self):
+        from src.cdp_session import CdpTimeoutError
+
+        approved = self._write_fixture()
+        code, out = self._run_cli(
+            self._base_argv(approved),
+            patches=(self._recording(),
+                     mock.patch.object(MOD, "SubmitSession", self._unreadable_session(
+                         CdpTimeoutError("CDP Runtime.evaluate: no response within 45s"))),
+                     mock.patch.object(MOD, "DryRunSubmitter", self._never_run())),
+        )
+        self.assertEqual(code, 0)
+        plan = json.loads((self.run_dir / "submit_plan.json").read_text())
+        self.assertEqual((plan["aborted"], plan["stopped"], plan["write_attempts"], plan["plan"]),
+                         ("feed_unreadable", None, 0, []))
+        events = _RecordingLogger.aborted()
+        self.assertEqual(len(events), 1)
+        self.assertIn("before any offer", events[0]["reason"])
+        self.assertIn("no response within 45s", events[0]["reason"])
+        self.assertEqual(json.loads(out)["aborted"], "feed_unreadable")
+
+    def test_sweep_catalog_unreadable_before_run_is_a_prewrite_abort(self):
+        from src.cdp_session import CdpTimeoutError
+
+        approved = self._write_fixture()
+        code, _ = self._run_cli(
+            self._base_argv(approved, "--submit", "--catalog-cache",
+                            str(self.run_dir / "no-such-catalog.json")),
+            patches=(mock.patch.object(MOD, "WriteSubmitSession", _FakeSession),
+                     mock.patch.object(MOD, "Submitter", self._never_run_write()),
+                     mock.patch.object(MOD, "fetch_session_catalog", side_effect=CdpTimeoutError(
+                         "CDP Runtime.evaluate: no response within 45s"))),
+        )
+        self.assertEqual(code, 0)
+        plan = json.loads((self.run_dir / "submit_plan.json").read_text())
+        self.assertEqual((plan["aborted"], plan["write_attempts"]), ("feed_unreadable", 0))
+        self.assertFalse((self.run_dir / "guard_ledger.json").exists(),
+                         "un abandon ne crédite ni ne débite la série FC3")
+
+    def _never_run_write(self):
+        class _NeverRun:
+            def __init__(self, session, **kwargs):
+                pass
+
+            def run(self, **kwargs):
+                raise AssertionError("run() ne doit pas être appelé")
+
+        return _NeverRun
+
+    def test_login_bounce_before_run_stays_not_logged_in(self):
+        approved = self._write_fixture()
+        code, _ = self._run_cli(
+            self._base_argv(approved),
+            patches=(mock.patch.object(MOD, "SubmitSession", self._unreadable_session(
+                         MOD.NotLoggedInError("feed bounced to wp-login"))),
+                     mock.patch.object(MOD, "DryRunSubmitter", self._never_run())),
+        )
+        self.assertEqual(code, 0)
+        plan = json.loads((self.run_dir / "submit_plan.json").read_text())
+        self.assertEqual(plan["aborted"], "not_logged_in")
+
     def test_validation_recheck_abort_is_journaled(self):
         approved = self._write_fixture(drop=("validation.json",))
         code, _ = self._run_cli(self._base_argv(approved), patches=(self._recording(),))

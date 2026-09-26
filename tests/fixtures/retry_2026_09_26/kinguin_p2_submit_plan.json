@@ -1,0 +1,38 @@
+{
+  "aborted": null,
+  "stopped": "feed_unreadable",
+  "feed_offers": 300,
+  "write_attempts": 10,
+  "created": 9,
+  "gated_multi_target": 0,
+  "gated_too_many_targets": 0,
+  "data_entry_mode": "safe",
+  "matched_mode": "safe",
+  "limit": null,
+  "plan": [
+    {
+      "offer_id": "101140736",
+      "merchant_title": "Shadows: Awakening European Union Xbox One / Xbox Series X|S CD Key",
+      "ready": true,
+      "submitted": true,
+      "post_save": "gone from feed (available=all)",
+      "blocker": null,
+      "aks_product_id": "24709",
+      "region_id": "24eu",
+      "edition_id": "1",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-shadows-awakening-xbox-one-compare-prices/"
+    },
+    {
+      "offer_id": "101140732",
+      "merchant_title": "Void Crew US Xbox Series X|S CD Key",
+      "ready": true,
+      "submitted": null,
+      "post_save": "feed/CDP unreadable — offer state UNKNOWN, verify it by hand on AKS before any retry: NotLoggedInError: feed bounced to wp-login mid-scan",
+      "blocker": null,
+      "aks_product_id": "193583",
+      "region_id": "303",
+      "edition_id": "1",
+      "aks_url": "https://www.allkeyshop.com/blog/buy-void-crew-xbox-series-compare-prices/"
+    }
+  ]
+}

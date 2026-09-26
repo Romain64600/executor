@@ -234,6 +234,12 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   déconnexion, le garde, dix échecs d'affilée restent des haltes immédiates. Un audit
   « trouvera » que le balayage ne s'arrête plus au premier doute : ce n'est vrai que des doutes
   qui ne portent sur aucune écriture ; ne pas revenir à l'arrêt systématique.
+  **Précisé le 2026-09-26** (balayage du groupe B, Gamivo p38 / Eneba p66) : « avant la
+  première offre » couvre TOUT ce qui précède la boucle des offres (contrôle de connexion,
+  catalogue, scan d'index, ouverture de session côté 05 avant `run()`) — preuve structurelle,
+  aucune offre n'est ouverte ; le message d'un `CdpTimeoutError` compte comme sa signature ; et
+  le détail d'un stage n'est lu que dans ce que CE stage a écrit. Une exception qui s'échappe de
+  `run()` une fois entré reste une halte : on ne devine pas ce qui a pu partir.
 
 - **P2-12 a une exception, et UNE seule forme — `MerchantConfig.url_identity_params`
   (2026-09-24).** P2-12 garde volontairement le CHEMIN seul comme identité d'une annonce (la

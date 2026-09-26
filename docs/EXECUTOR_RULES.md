@@ -1039,6 +1039,28 @@ la reprise passerait pour une page « déjà vue » et serait sautée. « Arrêt
 pendant une pause (tranches de 5 s au plus). Chaque reprise est inscrite dans l'entrée de page
 (`transient_retries`) et comptée au recap.
 
+**Deux trous comblés le 2026-09-26 (balayage du groupe B `20260925-194851-auto`, même règle :
+rien d'écrit ⇒ reprise).** *(a) Gamivo p38* : la 2e tentative d'extraction a crashé
+(`CdpTimeoutError`), mais le détail relu était l'abandon journalisé par la 1re tentative — la
+page refaite réutilise son journal et la sortie capturée de ses stages — et ce texte (« feed
+index scan failed closed: CDP Runtime.evaluate: no response within 45s ») ne portait pas le nom
+de la classe : halte au lieu des reprises à 5 puis 10 min. Désormais `scripts/10` ne relit que
+ce que le stage COURANT a écrit (`_log_marks` : tailles du journal et de la sortie capturée
+prises avant l'enfant), et `transient_reason` reconnaît aussi le MESSAGE d'un `CdpTimeoutError`
+(« CDP <méthode>: no response within <n>s ») ; un rebond vers wp-login (« not logged in »,
+`NotLoggedInError`, « wp-login ») n'est jamais passager, même accolé à un timeout. *(b) Eneba
+p66* : le contrôle de connexion d'avant la première offre (`is_login_page`, 45 s sans
+réponse) s'échappait de `Submitter.run()` ; 05 sortait en exit 2 SANS submit_plan.json, et le
+balayage n'avait rien à reprendre. Tout ce qui précède la boucle des offres — contrôle de
+connexion, catalogue, scan d'index — rend maintenant `aborted: "feed_unreadable"` (déconnexion :
+`not_logged_in`), `write_attempts` 0, plan écrit ; côté 05, un échec levé AVANT l'entrée dans
+`run()` (ouverture de session, catalogue du sweep) fait de même. La preuve est STRUCTURELLE :
+avant la boucle, aucune offre n'est ouverte et la garde n'est pas armée. Ce qui s'échappe de
+`run()` une fois entré garde l'abandon d'avant (exit 2, pas de plan, halte). *Inchangé :* un
+doute après un clic reste une halte (Kinguin p2, offre 101140732, rebond wp-login après
+« Create »). Tests : `tests/test_retry_gaps_2026_09_26.py` sur les vrais journaux élagués
+(`tests/fixtures/retry_2026_09_26/`).
+
 **Une page déjà entièrement vue n'est pas rejouée (2026-09-24, Romain : « go pour sauter les
 pages vides »).** Le feed d'AKS renvoie parfois la même centaine d'offres pour des numéros de page
 différents : le 24/09, Wyrel a lu cinq fois les mêmes lignes (pages 45 → 41) et retenté

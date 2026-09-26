@@ -3,6 +3,34 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-26 — Reprise automatique : deux trous comblés (Gamivo p38, Eneba p66)
+
+Balayage du groupe B `20260925-194851-auto` (EXECUTOR_RULES §14, AGENTS « Reprise
+AUTOMATIQUE », précisé) — règle de Romain du 24/09 : on refait une page seulement quand RIEN
+n'a pu être écrit.
+
+- **Gamivo p38 (`extract_failed_p38`)** — `scripts/10_data_entry_auto.py`,
+  `src/data_entry_auto.py`. La 2e tentative d'extraction a crashé (`CdpTimeoutError`), mais le
+  détail relu était l'abandon de la 1re (même journal, même sortie capturée) et ce texte ne
+  portait que le message du timeout, pas le nom de la classe → halte au lieu de 5 puis 10 min.
+  `_log_marks` / `_read_since` : extract, match et submit ne relisent plus que ce que le stage
+  COURANT a écrit ; `transient_reason` reconnaît le message « CDP <méthode>: no response within
+  <n>s » ; « not logged in », `NotLoggedInError` et « wp-login » ne sont jamais passagers.
+- **Eneba p66 (`submit_not_clean_p66`)** — `src/submitter.py`, `scripts/05_submit.py`. Le
+  contrôle de connexion d'avant la première offre (45 s sans réponse) s'échappait de
+  `Submitter.run()` ; 05 sortait en exit 2 sans submit_plan.json. Contrôle de connexion et
+  catalogue rendent maintenant `aborted: "feed_unreadable"` comme le scan d'index
+  (`_preflight_abort`, write_attempts 0 ; déconnexion → `not_logged_in`) ; côté 05, un échec levé
+  AVANT l'entrée dans `run()` (session, catalogue du sweep) fait de même, plan écrit. Ce qui
+  s'échappe de `run()` une fois entré reste l'abandon d'avant (exit 2, halte).
+- **Inchangé, épinglé** : Kinguin p2 — rebond vers wp-login APRÈS le clic « Create » (offre
+  101140732, état INCONNU) reste une halte sans pause. Le comportement du lot face à une
+  déconnexion n'est pas touché (question ouverte avec Romain).
+- Tests : `tests/test_retry_gaps_2026_09_26.py` (18, vrais journaux / plan élagués dans
+  `tests/fixtures/retry_2026_09_26/`), 3 tests CLI dans `tests/test_submit_cli.py` ; six tests
+  existants font désormais écrire leur journal PAR l'enfant simulé (c'est ce qui est relu).
+  10 mutations, toutes rougies. Effectif au prochain lancement d'un balayage.
+
 ## 2026-09-26 — Consoles : clé Windows / appli Xbox (« 1. »), Xbox lu aussi dans l'URL (« 2. les 2 »), P2 confirmé
 
 Trois réponses de Romain (EXECUTOR_RULES §4.12.3, §4.12.4 f bis, P2 / P4 ; AGENTS « Reviewed

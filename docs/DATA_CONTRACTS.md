@@ -289,7 +289,10 @@ validation triple's shape is load-bearing (FC5, audit 2026-07-17).
   ("extract" | "submit"), reason, created_before}]` (les créations d'avant la coupure restent
   dans `created` / `offers_created`), et chaque `recap` compte `transient_retries` (total). Le
   plan de saisie peut finir `stopped: "feed_unreadable_prewrite"` (panne AVANT tout clic,
-  offre intacte) et `aborted: "not_logged_in"` (déconnexion au scan d'index) ; les traces d'une
+  offre intacte) et `aborted: "not_logged_in"` (déconnexion au scan d'index) ; depuis le
+  2026-09-26, `aborted: "feed_unreadable"` couvre tout échec feed/CDP d'AVANT la boucle des
+  offres (contrôle de connexion, catalogue, scan d'index, ouverture de session côté 05), plan
+  écrit avec `write_attempts: 0` et, côté 05, un champ `reason` ; les traces d'une
   tentative coupée sont renommées `submit_plan.tryN.json` / `submit_report.tryN.txt` /
   `approved.tryN.json`. Le recap du BALAYAGE porte
   `sitemap_refresh` quand `--sitemap-refresh` est passé : `{refreshed, reason, fetched_at,

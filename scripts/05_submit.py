@@ -82,6 +82,7 @@ from src.submitter import (  # noqa: E402
     FEED_UNREADABLE_EXCS,
     DryRunSubmitter,
     InspectSubmitter,
+    NotLoggedInError,
     Submitter,
     fetch_session_catalog,
 )
@@ -549,8 +550,20 @@ def _main() -> int:
         max_failures_per_task=10 ** 9,
     )
     # Mid-batch feed/CDP failures are handled INSIDE run() (offer marked
-    # UNKNOWN, stopped="feed_unreadable", plan preserved); this wrapper only
-    # catches failures outside the batch loop (pre-flight navigate, catalog).
+    # UNKNOWN, stopped="feed_unreadable", plan preserved), and so is run()'s own
+    # pre-flight (login check, catalog, index scan → aborted "feed_unreadable",
+    # 2026-09-26). This wrapper catches what is left: the session opening and the
+    # sweep's catalog fetch BEFORE run() is entered, and anything unexpected that
+    # escapes run().
+    #
+    # Balayage du groupe B, 2026-09-26 (Romain : reprendre une page quand RIEN n'a pu être
+    # écrit). La preuve est STRUCTURELLE : tant que `run()` n'a pas été appelé, aucun
+    # submitter n'a ouvert d'offre — l'échec devient le même `aborted: "feed_unreadable"`
+    # (submit_plan.json écrit, write_attempts 0) que le balayage refait après une pause. Ce
+    # qui s'échappe de `run()` une fois entré garde l'abandon d'avant : exit 2, pas de plan,
+    # halte — on ne devine pas ce qui a pu partir.
+    run_entered = False
+    result = None
     try:
         with session_cls(args.endpoint) as session:
             submitter = submitter_cls(session, logger=logger, **pacer_kw, **submitter_kw)
@@ -573,6 +586,7 @@ def _main() -> int:
                     _write_catalog_cache(args.catalog_cache, catalog, args.store_id)
                 else:
                     logger.log("catalog_cache_hit", path=args.catalog_cache)
+            run_entered = True
             result = submitter.run(
                 run_id=run_id, merchant=args.merchant, store_id=args.store_id,
                 approved=approved, available=args.available, max_pages=max_pages, limit=limit,
@@ -583,7 +597,14 @@ def _main() -> int:
                 catalog=catalog,
             )
     except FEED_UNREADABLE_EXCS as exc:
-        return abort(f"fail-closed abort (feed/CDP unreadable): {exc}")
+        if run_entered:
+            return abort(f"fail-closed abort (feed/CDP unreadable): {exc}")
+        reason = f"fail-closed abort before any offer (feed/CDP unreadable): {exc}"
+        logger.log("aborted", reason=reason)
+        result = {"aborted": ("not_logged_in" if isinstance(exc, NotLoggedInError)
+                              else "feed_unreadable"),
+                  "stopped": None, "feed_offers": 0, "write_attempts": 0, "created": 0,
+                  "plan": [], "reason": reason}
 
     # FC3: record this pass's guard outcome in the cross-process ledger (a
     # clean pass resets the blocked-run streak).

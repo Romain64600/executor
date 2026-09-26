@@ -56,6 +56,22 @@ def _load_sweep_cli():
     return module
 
 
+def _enfant_qui_ecrit(rc, root, ecrits):
+    """Le stage mocké écrit son journal / sa sortie PENDANT qu'il tourne, comme le vrai enfant
+    (2026-09-26 : le balayage ne relit plus que ce que le stage COURANT a écrit — une page
+    refaite garde le journal de sa tentative précédente, voir tests/test_retry_gaps_2026_09_26)."""
+
+    def run(argv, run_id=None):
+        for rel, texte in ecrits.items():
+            chemin = root / rel
+            chemin.parent.mkdir(parents=True, exist_ok=True)
+            with chemin.open("a", encoding="utf-8") as fh:
+                fh.write(texte)
+        return rc
+
+    return run
+
+
 def _page(editions, *, aks_name, regions=None, platforms=("Steam",), slug="s"):
     return AksResolution(slug=slug, url="https://aks/x", product_id="1", aks_name=aks_name,
                          editions=editions, regions=regions or {"2": "GLOBAL", "9": "EU"},
@@ -488,9 +504,9 @@ class AStageCrashLeavesItsReason(unittest.TestCase):
         MOD = _load_sweep_cli()
         MOD.ROOT = self.root
         (self.root / "logs").mkdir(parents=True, exist_ok=True)
-        (self.root / "logs" / "r-p7-stages.log").write_text(
-            "Traceback (most recent call last):\nRuntimeError: CDP a disparu\n", encoding="utf-8")
-        with mock.patch.object(MOD, "_run_child", return_value=1):
+        with mock.patch.object(MOD, "_run_child", side_effect=_enfant_qui_ecrit(1, self.root, {
+                "logs/r-p7-stages.log":
+                    "Traceback (most recent call last):\nRuntimeError: CDP a disparu\n"})):
             stages = MOD._make_stages("Gamerall", "13", "all", None)
             ex = stages.extract(7, "r-p7")
         self.assertFalse(ex.ok)
@@ -500,11 +516,10 @@ class AStageCrashLeavesItsReason(unittest.TestCase):
         MOD = _load_sweep_cli()
         MOD.ROOT = self.root
         (self.root / "logs").mkdir(parents=True, exist_ok=True)
-        (self.root / "logs" / "r-p7.jsonl").write_text(
-            json.dumps({"event": "aborted", "reason": "not logged in (wp-login)", "run_id": "r-p7"}) + "\n",
-            encoding="utf-8")
-        (self.root / "logs" / "r-p7-stages.log").write_text("RuntimeError: bruit\n", encoding="utf-8")
-        with mock.patch.object(MOD, "_run_child", return_value=2):
+        with mock.patch.object(MOD, "_run_child", side_effect=_enfant_qui_ecrit(2, self.root, {
+                "logs/r-p7.jsonl": json.dumps({"event": "aborted", "reason": "not logged in (wp-login)",
+                                               "run_id": "r-p7"}) + "\n",
+                "logs/r-p7-stages.log": "RuntimeError: bruit\n"})):
             ex = MOD._make_stages("Gamerall", "13", "all", None).extract(7, "r-p7")
         self.assertEqual(ex.detail, "exit 2 (not logged in (wp-login))")
 
@@ -516,13 +531,13 @@ class AStageCrashLeavesItsReason(unittest.TestCase):
         MOD = _load_sweep_cli()
         MOD.ROOT = self.root
         (self.root / "logs").mkdir(parents=True, exist_ok=True)
-        (self.root / "logs" / "r-p9-stages.log").write_text(
-            "REAL SUBMISSION (mode=safe)\nTraceback (most recent call last):\n"
-            "ConnectionResetError: [Errno 104] Connection reset by peer\n", encoding="utf-8")
         (self.root / "runs" / "r-p9").mkdir(parents=True, exist_ok=True)
         (self.root / "runs" / "r-p9" / "submit_plan.json").write_text(
             json.dumps({"plan": [], "aborted": None}), encoding="utf-8")
-        with mock.patch.object(MOD, "_run_child", return_value=1):
+        with mock.patch.object(MOD, "_run_child", side_effect=_enfant_qui_ecrit(1, self.root, {
+                "logs/r-p9-stages.log":
+                    "REAL SUBMISSION (mode=safe)\nTraceback (most recent call last):\n"
+                    "ConnectionResetError: [Errno 104] Connection reset by peer\n"})):
             sub = MOD._make_stages("GameSeal", "126", "all", None).submit("r-p9")
         self.assertFalse(sub.ok)
         self.assertEqual(sub.detail,
@@ -532,14 +547,13 @@ class AStageCrashLeavesItsReason(unittest.TestCase):
         MOD = _load_sweep_cli()
         MOD.ROOT = self.root
         (self.root / "logs").mkdir(parents=True, exist_ok=True)
-        (self.root / "logs" / "r-p9.jsonl").write_text(
-            json.dumps({"event": "aborted", "reason": "invariants not green", "run_id": "r-p9"}) + "\n",
-            encoding="utf-8")
-        (self.root / "logs" / "r-p9-stages.log").write_text("RuntimeError: bruit\n", encoding="utf-8")
         (self.root / "runs" / "r-p9").mkdir(parents=True, exist_ok=True)
         (self.root / "runs" / "r-p9" / "submit_plan.json").write_text(
             json.dumps({"plan": [], "aborted": None}), encoding="utf-8")
-        with mock.patch.object(MOD, "_run_child", return_value=2):
+        with mock.patch.object(MOD, "_run_child", side_effect=_enfant_qui_ecrit(2, self.root, {
+                "logs/r-p9.jsonl": json.dumps({"event": "aborted", "reason": "invariants not green",
+                                               "run_id": "r-p9"}) + "\n",
+                "logs/r-p9-stages.log": "RuntimeError: bruit\n"})):
             sub = MOD._make_stages("GameSeal", "126", "all", None).submit("r-p9")
         self.assertEqual(sub.detail, "exit 2 (invariants not green)")
 

@@ -1,0 +1,7 @@
+{"event": "feed_page", "merchant": "Eneba", "mode": "pages", "nav_max": 68, "new_offers": 100, "offers_on_page": 100, "page": 66, "run_id": "20260925-194851-auto-eneba-s19-p66", "ts": "2026-09-25T20:07:48Z"}
+{"event": "feed_extracted", "feed_last_page": 68, "merchant": "Eneba", "mode": "pages", "normalized_count": 100, "pages_fetched": 1, "pages_requested": [66, 66], "partial": true, "raw_count": 100, "rows_seen": 100, "run_id": "20260925-194851-auto-eneba-s19-p66", "ts": "2026-09-25T20:07:48Z"}
+{"event": "pacing", "max_s": 5.0, "min_s": 2.0, "run_id": "20260925-194851-auto-eneba-s19-p66", "total_waited_s": 0.0, "ts": "2026-09-25T20:07:48Z", "waits": 0}
+{"authoritative": true, "event": "sitemap_index", "fetched_at": "2026-09-25T11:43:45Z", "legacy_pages": 154, "pages": 213599, "run_id": "20260925-194851-auto-eneba-s19-p66", "ts": "2026-09-25T20:07:49Z"}
+{"approved": 5, "deleted": 0, "event": "validation_saved", "overrides": 0, "run_id": "20260925-194851-auto-eneba-s19-p66", "total": 5, "ts": "2026-09-25T20:08:41Z", "validated_by": "auto (safe-auto data entry)", "via": "admin-page"}
+{"event": "catalog_cache_hit", "path": "/home/debian/executor/runs/20260925-194851-auto/catalog.json", "run_id": "20260925-194851-auto-eneba-s19-p66", "ts": "2026-09-25T20:08:41Z"}
+{"event": "aborted", "reason": "fail-closed abort (feed/CDP unreadable): CDP Runtime.evaluate: no response within 45s", "run_id": "20260925-194851-auto-eneba-s19-p66", "ts": "2026-09-25T20:09:31Z"}

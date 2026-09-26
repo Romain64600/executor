@@ -627,7 +627,10 @@ montrées par passe (`docs/AUDIT_2026-09-24_feed-pages-repetees.md`).
 **Une erreur passagère ne coupe plus le balayage** (2026-09-24) : une page dont l'extraction
 ne répond pas (`CdpTimeoutError`), ou qu'AKS refuse (`net::ERR_CONNECTION_REFUSED`), ou dont la
 saisie s'arrête AVANT tout clic sur « Create », est refaite après 2, 5 puis 10 min — au plus
-trois fois. Un doute APRÈS un clic reste une halte immédiate (EXECUTOR_RULES §14).
+trois fois. Un doute APRÈS un clic reste une halte immédiate (EXECUTOR_RULES §14). Depuis le
+2026-09-26, cela couvre aussi un contrôle de connexion ou un catalogue muet avant la première
+offre (Eneba p66) et une ré-extraction qui crashe sur un timeout CDP (Gamivo p38) — effectif au
+prochain lancement d'un balayage.
 
 **Plus de fausses « STILL in feed » chez Wyrel et CJS** (2026-09-24) : leurs variantes
 (région, édition, `variation=`) partagent le chemin de l'URL ; les paramètres déclarés dans

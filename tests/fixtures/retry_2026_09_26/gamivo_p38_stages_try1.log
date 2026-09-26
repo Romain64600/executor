@@ -1,0 +1,16 @@
+  "out_dir": "/home/debian/executor/runs/20260925-194851-auto-gamivo-s51-p38"
+}
+max-pages: auto: feed advertises 39 page(s) at extraction → max_pages 51
+REAL SUBMISSION (mode=safe) — will create up to ALL offer(s) (click_mode=trusted).
+{
+  "mode": "submit",
+  "data_entry_mode": "safe",
+  "limit": null,
+  "aborted": "feed_unreadable",
+  "stopped": null,
+  "feed_offers": 0,
+  "created": 0,
+  "total": 0,
+  "out_dir": "/home/debian/executor/runs/20260925-194851-auto-gamivo-s51-p38",
+  "write_attempts": 0
+}
