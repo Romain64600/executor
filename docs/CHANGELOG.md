@@ -3,6 +3,16 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-26 — Sonde lecture seule `scripts/probe_search_rows.py` (recherche de preuve)
+
+Romain : « go pour vérifier et corriger la recherche CJS ». Trois créations CJS ont fini
+« UNKNOWN — search page 1 rows do not all match term » (21/09 Resonance, 25/09 To the Stars,
+26/09 ATLAS). La sonde lance la recherche de preuve EXACTE du submitter (même terme —
+`submitter.search_term`, extrait de `_scan_search` —, même URL `_search_url`) et imprime les
+lignes rendues ; elle dit aussi si une offre UNKNOWN est encore au feed. Lecture seule, sur le
+modèle de `probe_p2_13_search_navmax.py` : invariants verts ET autoritaires sur le CDP officiel,
+verrou navigateur, rebond wp-login = arrêt, jamais de ré-authentification.
+
 ## 2026-09-26 — `[R18c]` étape A étendue aux pages DLC à plusieurs seaux
 
 Romain : « Route-les aussi vers la page du jeu si le jeu est inclus (jeu + DLC) » (EXECUTOR_RULES

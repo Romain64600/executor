@@ -334,6 +334,16 @@ def _url_key(url: str) -> str:
     return path + ("?" + "&".join(parts) if parts else "")
 
 
+def search_term(url: str) -> str:
+    """The term the proof / locate SEARCH sends for ``url``: the last segment of its PATH
+    (the offer's distinctive slug) — the search matches the stored URL's text. Shared by
+    ``_scan_search`` and ``scripts/probe_search_rows.py`` (the read-only probe), so the
+    probe runs exactly the production search."""
+
+    key = _url_path(str(url or ""))
+    return key.rstrip("/").rsplit("/", 1)[-1] or key
+
+
 def _href_search_term(href: str) -> str | None:
     """The ``search[search]`` query param of a feed-search URL, or None. Used to
     confirm the browser is genuinely on THIS search before trusting an EMPTY result
@@ -1055,8 +1065,7 @@ class _SubmitterBase:
         results still advertising more pages than the budget covers, raises
         FeedScanError so prove-gone is UNKNOWN and never a false 'gone'; a login bounce
         raises NotLoggedInError."""
-        key = _url_path(str(url or ""))    # the PATH: the search matches the stored URL's text
-        term = key.rstrip("/").rsplit("/", 1)[-1] or key    # the offer's distinctive slug
+        term = search_term(url)
         index: dict[str, dict[str, str]] = {}
         by_url: dict[str, dict[str, str]] = {}
         max_pages = self.search_scan_max_pages
