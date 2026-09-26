@@ -191,6 +191,127 @@ class LesDlcSeulsNeSontPasRoutes(_Base):
         self.assertEqual(self.fetched, [])
 
 
+ALASKAN_URL = "https://www.mmoga.com/Steam-Games/Alaskan-Road-Truckers-Mother-Truckers-Edition.html?ref=615"
+
+
+class LesPagesDlcAPlusieursSeaux(_Base):
+    """Romain, 2026-09-26 : « Route-les aussi vers la page du jeu si le jeu est inclus (jeu +
+    DLC) ». La page DLC résolue a PLUSIEURS seaux mais aucun Standard, et l'édition du titre n'y
+    est pas vendue : on route. Éditions relevées en lecture seule le 26/09."""
+
+    def test_alaskan_road_truckers_mother_truckers_edition(self):
+        self._sitemap({"alaskan-road-truckers-cd-key", "alaskan-road-truckers-mother-truckers-cd-key"})
+        res = self._match("Alaskan Road Truckers - Mother Truckers Edition",
+                          _page("Alaskan Road Truckers Mother Truckers", "900",
+                                "alaskan-road-truckers-mother-truckers",
+                                {"16": {"name": "DLC"}, "8": {"name": "Bundle"}}),
+                          [_page("Alaskan Road Truckers", "100", "alaskan-road-truckers",
+                                 {"1": {"name": "Standard"}, "3760": {"name": "Mother Truckers Edition"},
+                                  "3761": {"name": "Highway Edition"}})],
+                          merchant="MMOGA", url=ALASKAN_URL)
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+        self.assertEqual((res.aks_product_id, res.edition_id), ("100", "3760"))
+
+    def test_deceive_inc_black_tie_edition_steam_et_epic(self):
+        self._sitemap({"deceive-inc-cd-key", "deceive-inc-black-tie-cd-key"})
+        plats = ("Steam", "Epic Store")
+        dlc = _page("Deceive Inc. Black Tie", "900", "deceive-inc-black-tie",
+                    {"16": {"name": "DLC"}, "99": {"name": "Special"}}, platforms=plats)
+        jeu = _page("Deceive Inc.", "100", "deceive-inc",
+                    {"1": {"name": "Standard"}, "2690": {"name": "Black Tie Edition"},
+                     "10": {"name": "Ultimate"}}, platforms=plats)
+        for titre, url, plateforme in (
+                ("Deceive Inc. - Black Tie Edition (Steam Key)",
+                 "https://www.mmoga.com/Steam-Games/Deceive-Inc-Black-Tie-Edition-Steam-Key.html?ref=615",
+                 "STEAM"),
+                ("Deceive Inc. - Black Tie Edition (Epic Games Store Key)",
+                 "https://www.mmoga.com/Epic-Store-Games/Deceive-Inc-Black-Tie-Edition-Epic-Games-Store-Key"
+                 ".html?ref=615", "EPIC")):
+            with self.subTest(titre):
+                res = self._match(titre, dlc, [jeu], merchant="MMOGA", url=url)
+                self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+                self.assertEqual((res.aks_product_id, res.edition_id, res.platform),
+                                 ("100", "2690", plateforme))
+
+    def test_kingdom_two_crowns_norse_lands_edition(self):
+        # La page DLC porte elle-même un seau « Norse Lands Edition » ; le titre ne le NOMME
+        # pas (tous ses mots sont dans le nom de la page) : on route vers le jeu, 1558.
+        self._sitemap({"kingdom-two-crowns-cd-key", "kingdom-two-crowns-norse-lands-cd-key"})
+        res = self._match("Kingdom Two Crowns Norse Lands Edition EU",
+                          _page("Kingdom Two Crowns Norse Lands", "900", "kingdom-two-crowns-norse-lands",
+                                {"16": {"name": "DLC"}, "1559": {"name": "Norse Lands Edition"}}),
+                          [_page("Kingdom Two Crowns", "100", "kingdom-two-crowns",
+                                 {"1": {"name": "Standard"}, "1558": {"name": "Norse Lands Edition"},
+                                  "1560": {"name": "Jarl Edition"}})],
+                          merchant="Gamivo", url="https://www.gamivo.com/product/kingdom-two-crowns-pc-steam-eu-norse-lands")
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+        self.assertEqual((res.aks_product_id, res.edition_id, res.region_id), ("100", "1558", "9"))
+
+    def test_une_page_dlc_qui_vend_le_palier_du_titre_garde_le_chemin_normal(self):
+        # « EPISODE ARDYN Complete Edition » sur la page de l'épisode {DLC, Complete} : c'est le
+        # palier de CE produit, vendu là. Aucune page du jeu n'est lue.
+        self._sitemap({"final-fantasy-xv-cd-key", "final-fantasy-xv-episode-ardyn-cd-key"})
+        res = self._match("FINAL FANTASY XV: EPISODE ARDYN Complete Edition Europe Steam CD Key",
+                          _page("FINAL FANTASY XV EPISODE ARDYN", "900", "final-fantasy-xv-episode-ardyn",
+                                {"16": {"name": "DLC"}, "91": {"name": "Complete"}}),
+                          [_page("Final Fantasy XV", "100", "final-fantasy-xv", {"1": {"name": "Standard"}})],
+                          merchant="K4G",
+                          url="https://k4g.com/product/final-fantasy-xv-episode-ardyn-steam-europe-instant-cd-key-"
+                              "complete-edition-cd-key-RQIZ5JH1")
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+        self.assertEqual((res.aks_product_id, res.edition_id), ("900", "91"))
+        self.assertEqual(self.fetched, [])
+
+    def test_une_page_qui_vend_standard_n_est_jamais_routee(self):
+        self._sitemap({"blasphemous-2-cd-key", "blasphemous-2-mea-culpa-cd-key"})
+        res = self._match("Blasphemous 2 Mea Culpa Edition PC Steam CD Key",
+                          _page("Blasphemous 2 Mea Culpa", "900", "blasphemous-2-mea-culpa",
+                                {"1": {"name": "Standard"}, "16": {"name": "DLC"}}),
+                          [_page("Blasphemous 2", "100", "blasphemous-2", BLASPHEMOUS_2)])
+        self.assertNotIn("R18c", getattr(res, "reason", ""))
+        self.assertEqual(self.fetched, [])
+
+    def test_sans_edition_de_ce_nom_sur_la_page_du_jeu_refus(self):
+        self._sitemap({"alaskan-road-truckers-cd-key"})
+        res = self._match("Alaskan Road Truckers - Mother Truckers Edition",
+                          _page("Alaskan Road Truckers Mother Truckers", "900",
+                                "alaskan-road-truckers-mother-truckers",
+                                {"16": {"name": "DLC"}, "8": {"name": "Bundle"}}),
+                          [_page("Alaskan Road Truckers", "100", "alaskan-road-truckers",
+                                 {"1": {"name": "Standard"}, "3761": {"name": "Highway Edition"}})],
+                          merchant="MMOGA", url=ALASKAN_URL)
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("R18c", res.reason)
+
+
+class LesMotsDuNomDuJeuSurLaPageDuJeu(_Base):
+    """« Mother Truckers Edition » : TRUCKERS est un mot du NOM DU JEU (« Alaskan Road
+    Truckers »), pas un palier. Toléré en résidu sur la page du jeu, dans la route R18c
+    SEULEMENT — ailleurs rien ne change."""
+
+    EDITIONS = {"1": {"name": "Standard"}, "3760": {"name": "Mother Truckers Edition"},
+                "3761": {"name": "Highway Edition"}}
+
+    def test_la_fonction_sans_identite_est_inchangee(self):
+        self.assertIsNone(M.match_extras_to_page_edition(["MOTHER"], self.EDITIONS))
+        self.assertEqual(M.match_extras_to_page_edition(["MOTHER"], self.EDITIONS, "Alaskan Road Truckers"),
+                         ("3760", "Mother Truckers Edition"))
+
+    def test_un_palier_du_nom_du_jeu_n_est_jamais_tolere(self):
+        # « Ultimate Admiral » : ULTIMATE est dans le nom du jeu, mais c'est un mot de palier —
+        # il ne devient pas du bruit, l'édition « Ultimate Dreadnought » n'est pas adoptée.
+        eds = {"1": {"name": "Standard"}, "77": {"name": "Ultimate Dreadnought"}}
+        self.assertIsNone(M.match_extras_to_page_edition(["DREADNOUGHT"], eds, "Ultimate Admiral"))
+
+    def test_hors_de_la_route_r18c_le_titre_reste_refuse_sur_la_page_du_jeu(self):
+        self._sitemap({"alaskan-road-truckers-cd-key"})
+        res = self._match("Alaskan Road Truckers - Mother Truckers Edition",
+                          _page("Alaskan Road Truckers", "100", "alaskan-road-truckers", self.EDITIONS),
+                          [], merchant="MMOGA", url=ALASKAN_URL)
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("extra words", res.reason)
+
+
 class LeCheminConsole(_Base):
     """Conan Exiles « Isle of Siptah Edition » — trois écritures CJS fausses la nuit du 25-26/09."""
 

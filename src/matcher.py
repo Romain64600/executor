@@ -2070,9 +2070,8 @@ def derived_dlc_page(title: str, title_tier: str, marker: str | None,
 
     if marker is not None or title_tier != "1":
         return False
-    for bucket_id, entree in (resolution.editions or {}).items():
-        if bucket_id == "1" or "STANDARD" in _edition_entry_name(entree).upper():
-            return False
+    if _page_sells_standard(resolution.editions):
+        return False
     index = sitemap_index()
     if index is None:
         return False
@@ -2931,6 +2930,15 @@ def _edition_key(label: str) -> frozenset[str]:
                      if t not in _EDITION_FORMAT_NOISE)
 
 
+def _page_sells_standard(editions: dict[str, Any]) -> bool:
+    """La page porte-t-elle un seau Standard — l'id 1, ou un libellé qui contient STANDARD
+    (« Standard + DLC », id 518) ? Une page qui en vend un est la page du JEU, pas celle
+    d'un DLC seul ([R57] condition 2, [R18c])."""
+
+    return any(bucket_id == "1" or "STANDARD" in _edition_entry_name(entree).upper()
+               for bucket_id, entree in (editions or {}).items())
+
+
 def _dlc_edition_on_page(editions: dict[str, Any]) -> str:
     """The DLC bucket of an AKS editions map, or "" (id 16 is canonical today,
     the name match is the seatbelt if ids ever move). A truthy value means the
@@ -3066,7 +3074,7 @@ _SOFTWARE_LICENCE_SIGNAL_RE = re.compile(
 
 
 def match_extras_to_page_edition(
-    extras: list[str], editions: dict[str, Any]
+    extras: list[str], editions: dict[str, Any], identity_name: str | None = None
 ) -> tuple[str, str] | None:
     """Page-verified rescue for the different-product guard: when EVERY merchant
     "extra" token (a word absent from the AKS game name and not format/region/edition
@@ -3086,9 +3094,19 @@ def match_extras_to_page_edition(
       - anything else (extra split across editions, an extra in NO edition — a
         distinguishing subtitle like "… Valhalla Edition" on a page with no Valhalla
         edition, a Standard/Bundle-only match) → None → stays a SKIP.
-    Bundles are never rescued (absolute)."""
+    Bundles are never rescued (absolute).
+
+    ``identity_name`` — `[R18c]` étape A SEULEMENT (2026-09-26) : sur la page du JEU, les mots
+    du nom du jeu ne sont pas des paliers. « Alaskan Road Truckers - Mother Truckers Edition »
+    n'a qu'un extra, MOTHER, et l'édition « Mother Truckers Edition » (3760) garde TRUCKERS en
+    résidu — un mot du NOM DU JEU, que le titre porte (R01), pas un palier. Ces mots rejoignent
+    le bruit toléré. ``None`` partout ailleurs : comportement inchangé."""
 
     want = {t.replace("'", "") for t in extras}
+    identity = set()
+    if identity_name:
+        identity = {t.replace("'", "") for t in tokenize(identity_name)} - _EDITION_TIER_TOKENS
+    tolerated = set(_EDITION_RESIDUE_NOISE) | identity
     if not want:
         return None
     compatible: list[tuple[str, str, set[str]]] = []
@@ -3110,7 +3128,7 @@ def match_extras_to_page_edition(
         # stripped from `want` as noise, so the subset test passes) — a wrong-tier write
         # that safe-auto auto-approves. Residue of pure format noise (incl. the "Editon"
         # typo) keeps the endorsed Eisenwald "Knights Editon"(2723) rescue resolving.
-        if (compatible[0][2] - want) <= _EDITION_RESIDUE_NOISE:
+        if (compatible[0][2] - want) <= tolerated:
             return (compatible[0][0], compatible[0][1])
         return None
     if not compatible:
@@ -3118,7 +3136,7 @@ def match_extras_to_page_edition(
     # ≥2 compatible: only a UNIQUE exact match (distinctive tokens == wanted) may win;
     # ties (or several exacts) are ambiguous → fail-closed skip. Order-independent.
     exact = [c for c in compatible
-             if {t for t in c[2] if t not in NOISE_TOKENS} == want]
+             if {t for t in c[2] if t not in NOISE_TOKENS and t not in identity} == want]
     if len(exact) == 1:
         return (exact[0][0], exact[0][1])
     return None
@@ -3647,7 +3665,8 @@ def match_offer(
             # Page-verified rescue: extras that ALL name one page edition are that
             # edition's qualifier ("Knight's Edition" → page "Knights Editon" 2723),
             # not a different product — carry the resolved edition to §edition below.
-            edition_from_extras = match_extras_to_page_edition(extras, resolution.editions)
+            edition_from_extras = match_extras_to_page_edition(
+                extras, resolution.editions, identity_name if _r18c_route else None)
             if edition_from_extras is None:
                 return SkippedOffer(offer, f"different/expanded product — extra words: {extras}")
             # AUDIT DU 2026-09-18. Ce sauvetage COURT-CIRCUITE `detect_edition` (branche `elif`
@@ -3886,7 +3905,29 @@ def match_offer(
         _dlc_edition_on_page(resolution.editions) and not _tier_the_page_does_not_name and (
             _marker is not None or len(resolution.editions) == 1
             or derived_dlc_page(guard_name, _title_tier, _marker, resolution)))
-    if _r18_takes_the_dlc_bucket and edition_claim_off_page(
+    # [R18c] extension (Romain, 2026-09-26 : « Route-les aussi vers la page du jeu si le jeu
+    # est inclus (jeu + DLC) »). Le routage s'ouvre aussi quand la page résolue est une page
+    # de DLC à PLUSIEURS seaux — un seau DLC, AUCUN seau Standard ([R57] condition 2 : une page
+    # qui vend Standard est la page du jeu elle-même) — et que l'édition annoncée par le titre
+    # n'y est PAS vendue : ni une édition nommée par les mots du titre (`edition_from_extras`),
+    # ni le palier que `detect_edition` y lit. Cas réels : Alaskan Road Truckers « Mother
+    # Truckers Edition » (page DLC {DLC, Bundle}), Deceive Inc. « Black Tie Edition » ({DLC,
+    # Special}), Kingdom Two Crowns « Norse Lands Edition » ({DLC, Norse Lands Edition}) —
+    # refusés E06 avant. Une page DLC qui vend le palier du titre garde le chemin normal :
+    # « FINAL FANTASY XV: EPISODE ARDYN Complete Edition » entre en « Complete » sur la page
+    # {DLC, Complete} de l'épisode, comme avant. La preuve que le jeu est inclus reste la même :
+    # la page du jeu porte une édition NOMMÉE par le titre, sinon refus.
+    _t_label, _t_id = detect_edition(guard_name, offer.url, offer.merchant)
+    _title_edition_on_page = edition_from_extras is not None or (
+        _t_id not in ("1", "16") and (
+            _t_id in resolution.editions
+            or any(_edition_key(_edition_entry_name(v)) == _edition_key(_t_label)
+                   for v in resolution.editions.values())))
+    _dlc_only_multi_bucket = (
+        bool(_dlc_edition_on_page(resolution.editions))
+        and not _page_sells_standard(resolution.editions)
+        and not _title_edition_on_page)
+    if (_r18_takes_the_dlc_bucket or _dlc_only_multi_bucket) and edition_claim_off_page(
             guard_name, _marker, resolution.aks_name or "") and not _r18c_route:
         # [R18c] « <Jeu> <X> Edition » = jeu + DLC, rangé par AKS sur la page du JEU. Jamais
         # DLC(16) sur la page du DLC seul. Le chemin console passe ici aussi : toutes ses pages

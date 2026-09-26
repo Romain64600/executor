@@ -181,6 +181,10 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   page du JEU parent (préfixe publié le plus long au sitemap) et n'entre que dans l'édition que
   les mots du titre NOMMENT sur cette page ; sinon le refus reste. Un audit voudra « retomber sur
   Standard sur la page du jeu » ou « essayer un préfixe plus court » : ni l'un ni l'autre.
+  **Étendu le même jour aux pages DLC à plusieurs seaux** (Romain : « Route-les aussi vers la
+  page du jeu si le jeu est inclus (jeu + DLC) ») : page résolue avec un seau DLC et AUCUN
+  Standard, qui ne vend pas l'édition du titre → même routage, même preuve. Une page qui vend
+  Standard, ou le palier du titre, garde le chemin normal.
 
 - **[R18b] R18 se RETIRE quand le titre annonce un palier que la page ne nomme pas (2026-09-20,
   « le correctif que tu veux » — CONFIRMÉ le 2026-09-21 sur le cas concret, « garde ta règle »,

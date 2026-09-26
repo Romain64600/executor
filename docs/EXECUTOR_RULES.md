@@ -483,6 +483,21 @@ DLC(16) sur la page du DLC : 18 écritures fausses (liste dans le CHANGELOG du 2
   Inc. ×2 et Kingdom Two Crowns : leur page DLC vend un 2e seau, R18 ne la prend pas et E06
   refuse ; la « Zombies Chronicles Deluxe » : R18b puis P1-1). Les DLC seuls (« Chivalry 2
   Special Edition Content », « Prison Architect … Warden's Edition »…) restent en DLC(16).
+- **Extension aux pages DLC à plusieurs seaux (même jour)** — Romain : « Route-les aussi vers la
+  page du jeu si le jeu est inclus (jeu + DLC) ». Le routage s'ouvre aussi quand R18 ne prend
+  pas le seau DLC mais que la page résolue est une page de DLC — un seau DLC, AUCUN seau Standard
+  (`_page_sells_standard`, la condition 2 de `[R57]` : une page qui vend Standard est la page du
+  jeu elle-même et garde le chemin normal) — et que l'édition annoncée par le titre n'y est PAS
+  vendue (ni édition nommée par les extras, ni le palier que `detect_edition` y lit : « EPISODE
+  ARDYN Complete Edition » reste en « Complete » sur la page {DLC, Complete} de l'épisode). La
+  preuve que le jeu est inclus est inchangée : une édition NOMMÉE par le titre sur la page du
+  jeu. Sur cette page seulement, les mots du NOM DU JEU (hors mots de palier) sont tolérés dans
+  le résidu de l'édition (`match_extras_to_page_edition(…, identity_name)`) : « Mother Truckers
+  Edition » garde TRUCKERS, mot d'« Alaskan Road Truckers ». Rejeu en lecture seule : Alaskan
+  Road Truckers → 3760, Deceive Inc. Black Tie Edition Steam → 2690 (Steam GLOBAL) et Epic →
+  2690 (Epic GLOBAL 80), Kingdom Two Crowns Norse Lands Edition → 1558 (Steam EU) ; les 13
+  routées, les 7 DLC seuls et « EPISODE ARDYN Complete » inchangés ; Arma 3 Apex et la
+  « Zombies Chronicles Deluxe » restent refusées, sous le motif R18c.
 
 **Console keys — see §4.12 `[R45]` (2026-09-12).** Romain's AKS feed tool OVERWRITES the
 region (= region/PLATFORM) and the edition PER TARGET PAGE, so one feed row can be filed on

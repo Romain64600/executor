@@ -207,7 +207,11 @@ class R18StandsDownOnATierThePageDoesNotName(unittest.TestCase):
             "Call of Duty: Black Ops III Zombies Chronicles Deluxe Edition (PC) Steam Gift - GLOBAL",
             "Call of Duty Black Ops III Zombies Chronicles", {"16": "DLC"})
         self.assertIsInstance(res, SkippedOffer)
-        self.assertIn("not sold on the resolved", res.reason)
+        # Depuis `[R18c]` (2026-09-26), le refus passe par le routage vers la page du JEU (le
+        # titre « … Edition » sur une page DLC sans Standard) : il reste un refus — R39 sur la
+        # page du jeu (DELUXE absent de « Zombies Chronicles Edition »), ou pas d'index — et le
+        # motif le dit. Avant : P1-1 « not sold on the resolved AKS page ».
+        self.assertIn("(R18c)", res.reason)
 
     def test_a_tier_the_page_also_names_keeps_R18(self):
         """« Wortox Deluxe Chest » sur la page du même nom : la page EST ce produit."""

@@ -3,6 +3,21 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-26 — `[R18c]` étape A étendue aux pages DLC à plusieurs seaux
+
+Romain : « Route-les aussi vers la page du jeu si le jeu est inclus (jeu + DLC) » (EXECUTOR_RULES
+§4.5 `[R18c]`, AGENTS). Le routage vers la page du jeu s'ouvre aussi quand la page résolue a un
+seau DLC, AUCUN seau Standard (`_page_sells_standard`, partagé avec `[R57]`) et ne vend pas
+l'édition du titre. Sur la page du jeu, dans la route R18c seulement, les mots du nom du jeu
+(hors paliers) sont tolérés dans le résidu de l'édition (« Mother Truckers Edition »).
+Rejeu en lecture seule : MMOGA 101041174 Alaskan Road Truckers → « Mother Truckers Edition »
+3760 ; MMOGA 101040322 / 101040335 Deceive Inc. → « Black Tie Edition » 2690 (Steam GLOBAL /
+Epic GLOBAL) ; Gamivo 101037804 Kingdom Two Crowns → « Norse Lands Edition » 1558 (Steam EU).
+Non-régression : les 13 routées, les 7 DLC seuls et K4G 100447923 « EPISODE ARDYN Complete »
+(« Complete » sur la page de l'épisode) inchangés. Tests : `tests/test_r18c_etape_a_page_du_jeu.py`
+(+9) ; `test_audit_gameseal_2026_09_20` lit le nouveau motif (toujours un refus) ; 7 mutations,
+7 rougies.
+
 ## 2026-09-26 — `[R18c]` étape A : « <Jeu> <X> Edition » entre sur la page du JEU, édition « <X> Edition »
 
 Romain : « go pour A » ; « ça sera que pour les jeux + DLC et pas pour les DLC seuls » ; « faut
