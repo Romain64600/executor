@@ -79,10 +79,13 @@ class MicrosoftIsAStoreWordNotAProductWord(unittest.TestCase):
     et vient mourir un cran plus loin sur « extra words: ['MICROSOFT'] »."""
 
     def test_a_microsoft_store_row_is_entered(self):
+        # [R62] (2026-09-26) : la page doit lister « Microsoft Windows » — le libellé RÉEL
+        # d'AKS (27 pages lues ce jour-là) ; ce test inventait « Microsoft Store », qu'AKS
+        # n'écrit jamais.
         res = _match("Test Game (Microsoft Store)",
                      "https://gamerall.com/pc/test-game-microsoft-store-europe",
                      _page({"1": "Standard"}, aks_name="Test Game",
-                           platforms=("Microsoft Store",),
+                           platforms=("Microsoft Windows",),
                            regions={"2": "GLOBAL", "244": "EU"}),
                      merchant="Gamerall")
         self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))

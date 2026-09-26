@@ -148,7 +148,10 @@ state and cannot be argued away by a language model.
   Battle.net / Ubisoft gift buckets for US & UK, plus Microsoft, arbitrated by Romain
   (« Windows 10 pour les jeux, microsoft software pour les logiciels »: games take the Windows
   10 family 244-249 here, software resolves from the AKS PAGE via `[R31]`). 138 rows were
-  refused "no region id" by mistake. `[R51]`: the AKS page's `Direct Publisher` line describes
+  refused "no region id" by mistake. `[R62]` (2026-09-26): a Microsoft Store key enters ONLY
+  when the AKS page lists « Microsoft Windows » — one check for every route to `MICROSOFT`
+  (title, URL prefix, merchant page, the Windows / Xbox app branch); none of the 40 Microsoft
+  Store creations to date sits on a page without it. `[R51]`: the AKS page's `Direct Publisher` line describes
   the GAME, not the merchant's key — a row whose platform is in NEITHER the title NOR the URL
   is now REFUSED unless the merchant declares that it reads its own page
   (`publisher_from_merchant_page`, default False, so the safety is on for every merchant).

@@ -339,7 +339,8 @@ matcher et le classifieur importent le registre.
 - **Fichier** : `src/merchants/mmoga.py` (2026-09-10 ; hooks consoles le 14/09).
 - **Grammaire PC** : `mmoga.com/<Plateforme>-Games/<Produit>[-<CODE>-Key].html?ref=<affid>`.
   Plateforme = segment de catégorie de l'URL (`Steam-Games` → STEAM, `EA-Games` → EA, GOG,
-  Epic, Ubisoft/Uplay, Rockstar, Battle.net/Blizzard, Windows → MICROSOFT ; `Xbox-Live`,
+  Epic, Ubisoft/Uplay, Rockstar, Battle.net/Blizzard, Windows → MICROSOFT (page AKS « Microsoft
+  Windows » exigée, `[R62]`) ; `Xbox-Live`,
   `Playstation-Network`, `Nintendo` → console). Région = code 2 lettres **majuscules**
   juste avant le `Key` final (`Borderlands 2 EU Key` → EU ; `Among Us Key` → global), ou
   après le mot Key entre crochets / parenthèses (`(Steam Key EU)`, `[EU]`, `(EU)` pour un
@@ -505,7 +506,8 @@ matcher et le classifieur importent le registre.
 - **Fichier** : `src/merchants/eneba.py` (R29 ; hooks consoles le 14/09).
 - **Grammaire PC** : le titre omet souvent la plateforme ; l'URL commence par le segment de
   plateforme (`eneba.com/steam-<slug>`, `gog-`, `epic-`, `uplay-` → UBISOFT, `origin-` →
-  EA, `blizzard-` → BATTLENET, `windows-` → MICROSOFT) `[R29]`. Région dans le titre quand
+  EA, `blizzard-` → BATTLENET, `windows-` → MICROSOFT, qui n'entre que si la page AKS liste
+  « Microsoft Windows » `[R62]`) `[R29]`. Région dans le titre quand
   elle existe (`… Steam Key (PC) EUROPE`, `UNITED STATES`), sinon GLOBAL implicite ; édition
   = règle générique du titre. Titres avec caractères Unicode compatibilité (« Ⅱ ») → NFKC
   avant identité.
@@ -947,7 +949,9 @@ matcher et le classifieur importent le registre.
   « The Surge 2 - Premium Edition »), ni plateforme ni région.
 - **Plateforme = le segment de livraison de l'URL**, écrit en clair avant l'identifiant :
   `…-steam-key--7963-1` (474 lignes sur 526 le 21/09), `-gog-key--` (12), `-epic-games-key--`
-  (8), `-microsoft-store-download--` (16, famille « Windows 10 » R50), `-rockstar-key--` (3),
+  (8), `-microsoft-store-download--` (16, famille « Windows 10 » R50 — n'entre que si la page
+  AKS liste « Microsoft Windows » `[R62]` : « Avowed » et « Hellblade II » refusés le 26/09),
+  `-rockstar-key--` (3),
   plus Ubisoft / EA / Battle.net s'ils apparaissent. Un segment inconnu (`-arenanet-key--`,
   `-collection-download--`…) ou absent est refusé PAR SON NOM.
 - **Région = la fiche produit** (HTTP 200, pas de Cloudflare). Sans bloc « REGION LOCK INFO », la
@@ -1036,6 +1040,10 @@ Live 38, EA App 25, Ubisoft Connect 14, Nintendo Switch 7, PSN 4, Microsoft Stor
 Epic Games 2, Rockstar 1 — et ne porte **jamais** de région. L'URL porte la plateforme (274
 slugs sur 275) et, dans 82 % des cas, la région, dont le vocabulaire tient en trois mots :
 `global` 514, `europe` 123, `usa` 6.
+
+**« (Microsoft Store) »** → MICROSOFT (famille Windows 10, 246 / 244 / 245), seulement si la
+page AKS liste « Microsoft Windows » `[R62]` (2026-09-26) : les 24 créations Gamerall du 19/09
+sont toutes sur de telles pages.
 
 **Région absente ⇒ la page est ouverte** (arbitrage de Romain, 2026-09-18). Elle répond en 200
 et porte sa région dans son JSON embarqué. Une page illisible, ou lisible sans région, est un

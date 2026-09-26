@@ -342,6 +342,16 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   DLC(16) que par les mêmes verrous (seau DLC SEUL sur la page, R18b, `[R57]`). Un audit proposera
   d'interdire DLC(16) aux titres console sans marqueur : ne pas l'ajouter.
 
+- **`[R62]` Clé Microsoft Store : la page AKS doit lister « Microsoft Windows », TOUTES routes
+  confondues — Romain, 2026-09-26** (« … puis aligne l'ancien chemin Microsoft Store »). Une
+  vérification, `matcher.page_sells_microsoft_store`, lue par la branche « (Windows) XBOX LIVE
+  Key » et par le garde commun ; plus stricte que R20 : une liste de plateformes VIDE ne passe
+  pas, et `require_page_platform=False` (GOG) ne la lève pas. Le libellé AKS est « Microsoft
+  Windows » (27 pages lues le 26/09), jamais « Microsoft Store ». Un audit proposera
+  d'accepter « Microsoft Store », de laisser passer une page sans plateformes « comme R20 », ou
+  de rendre la preuve optionnelle par marchand : non. Coût mesuré : 3 candidates Gamesplanet sur
+  44 (Avowed ×2, Hellblade II, pages sans « Microsoft Windows »), 0 des 40 créations.
+
 - **`[R55b]` GOG : « Expansion - … » est un marqueur DLC — pour GOG SEULEMENT (Romain,
   2026-09-23 : « expansion veut dire DLC, non ? »).** Déclaré par `gog.dlc_marker`, le préfixe
   de rayon retiré du slug et des gardes. L'audit du même jour sur 88 titres « Expansion » de

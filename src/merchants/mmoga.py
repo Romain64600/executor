@@ -57,7 +57,8 @@ MMOGA_URL_PLATFORM_PREFIXES = {
     "rockstar": "ROCKSTAR",  # seaux Rockstar mappés depuis [R50] — la ligne ENTRE
     "battle.net": "BATTLENET",
     "blizzard": "BATTLENET",
-    "windows": "MICROSOFT",  # seaux Windows mappés depuis [R50] — la ligne ENTRE
+    "windows": "MICROSOFT",  # seaux Windows mappés depuis [R50] — la ligne ENTRE si la page
+                             # AKS liste « Microsoft Windows » ([R62], matcher)
 }
 
 # "<Product> <CODE> Key" / "<Product> <CODE> CD Key" — uppercase code, raw title case.

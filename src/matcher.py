@@ -27,7 +27,7 @@ import time
 import unicodedata
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 from urllib.parse import quote, urlparse
 
 from src.aks_env import AKS_STAFF_UA, REQUIRED_USER_AGENT, http_get
@@ -706,7 +706,31 @@ PLATFORM_LABEL.update(CONSOLE_PLATFORM_LABEL)     # [R45] console families (repo
 PAGE_PLATFORM_NAMES = {
     "STEAM": "Steam", "GOG": "GoG", "EPIC": "Epic Store",
     "UBISOFT": "Ubisoft Connect", "EA": "EA app", "BATTLENET": "Battle.net",
+    # [R62] — see page_sells_microsoft_store: STRICT, unlike the entries above.
+    "MICROSOFT": "Microsoft Windows",
 }
+# [R62] (Romain, 2026-09-26 : « … puis aligne l'ancien chemin Microsoft Store »). A Microsoft
+# Store key (platform MICROSOFT, Windows 10 buckets 246 / 244 / 245 / 249) enters ONLY when the
+# AKS page lists « Microsoft Windows » among its official platforms — the proof the « (Windows)
+# XBOX LIVE Key » branch demanded from the start (a6da691), now demanded of EVERY route to
+# MICROSOFT (title « Microsoft Store » / « Microsoft Key », Eneba / MMOGA `windows` URL prefix,
+# Gamerall « (Microsoft Store) » / `-microsoft-store`, Gamesplanet `-microsoft-store-download--`,
+# Discover.games page platform). STRICTER than the R20 entries above: an empty official-platforms
+# list and a merchant's `require_page_platform=False` do NOT let it through. AKS vocabulary,
+# read live 2026-09-26 (UA AKS/Staff, 27 pages): the label is exactly « Microsoft Windows » —
+# never « Microsoft Store » —, every offer in 244 / 245 / 246 / 249 carries
+# `activationPlatform: microsoft-windows`, the buckets are named « WINDOWS GLOBAL » /
+# « WINDOWS EU », and every page carrying such offers lists « Microsoft Windows ».
+SKIP_MICROSOFT_NO_PAGE = (
+    "Microsoft Store key but AKS official platforms exclude 'Microsoft Windows' — "
+    "not entered (R20, R62)")
+
+
+def page_sells_microsoft_store(official_platforms: Iterable[str]) -> bool:
+    """True when an AKS page's official platforms list « Microsoft Windows » — the ONE check
+    every route to platform MICROSOFT goes through (`[R62]`)."""
+
+    return PAGE_PLATFORM_NAMES["MICROSOFT"].upper() in {p.upper() for p in official_platforms}
 # ordered so specific hints win (Ultimate Collection before Ultimate/Collection)
 EDITION_HINTS = (
     (r"\bULTIMATE COLLECTION\b", "Ultimate Collection", "348"),
@@ -3727,7 +3751,12 @@ def match_offer(
         # donc parfaitement une offre GOG. Le contrôle refusait 136 lignes sur 250 pour une
         # case qui existe. Il est retiré.
         _exige_page = _cfg is None or _cfg.require_page_platform
-        if _exige_page and page_name and page_platforms and page_name.upper() not in page_platforms:
+        if declared_platform == "MICROSOFT":
+            # [R62] STRICT, whatever the route that declared it: no pass on an empty list,
+            # no merchant opt-out — the same check as the Windows / Xbox app branch.
+            if not page_sells_microsoft_store(resolution.official_platforms):
+                return SkippedOffer(offer, SKIP_MICROSOFT_NO_PAGE)
+        elif _exige_page and page_name and page_platforms and page_name.upper() not in page_platforms:
             source = "Difmark merchant page" if difmark_platform_verified else "title"
             return SkippedOffer(
                 offer,
@@ -4265,7 +4294,7 @@ def _console_plan(
     # si la page liste « Microsoft Windows » ; sinon refus. Jamais le « Xbox + PC = Play
     # Anywhere » de P2 : le titre ne prouve pas que le JEU est Play Anywhere.
     if windows_key and not pa:
-        if "MICROSOFT WINDOWS" not in {p.upper() for p in pc_res.official_platforms}:
+        if not page_sells_microsoft_store(pc_res.official_platforms):   # [R62] the shared check
             return SkippedOffer(offer, SKIP_WINDOWS_KEY_NO_PAGE)
         ms_rid = REGION_IDS["MICROSOFT"].get(base)
         if ms_rid is None:

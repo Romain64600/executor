@@ -3,6 +3,27 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-26 — `[R62]` clé Microsoft Store : la page AKS doit lister « Microsoft Windows », pour toutes les routes
+
+Romain : « … puis aligne l'ancien chemin Microsoft Store » (EXECUTOR_RULES §4.4 / `[R62]`,
+§4.12.4 f bis ; AGENTS « Reviewed decisions »).
+
+- **Une vérification** (`src/matcher.py`) : `page_sells_microsoft_store`, lue par la branche
+  « (Windows) XBOX LIVE Key » ET par le garde commun pour toute plateforme `MICROSOFT` — titre
+  « Microsoft Store » / « Microsoft Key », préfixe `windows` d'Eneba / MMOGA, Gamerall
+  « (Microsoft Store) », Gamesplanet `-microsoft-store-download--`, Discover.games.
+  `PAGE_PLATFORM_NAMES["MICROSOFT"] = "Microsoft Windows"` ; plus stricte que R20 (liste
+  vide = refus, `require_page_platform=False` ne la lève pas). Refus :
+  `SKIP_MICROSOFT_NO_PAGE` (« … official platforms exclude 'Microsoft Windows' … (R20, R62) »,
+  catégorie « Plateforme » du statut du feed).
+- **Libellé vérifié** sur 27 pages AKS vivantes (UA AKS/Staff) : « Microsoft Windows », jamais
+  « Microsoft Store » ; les offres 244 / 245 / 246 / 249 portent `activationPlatform:
+  microsoft-windows`. Le test d'audit du 18/09 inventait une page « Microsoft Store » : corrigé.
+- **Mesure** : 44 lignes MICROSOFT approuvées depuis le 11/09 sur les deux VM, 40 créées, toutes
+  sur des pages « Microsoft Windows » — aucune à reprendre à la main. 3 candidates Gamesplanet
+  jamais créées tombent (Avowed ×2, Hellblade II).
+- Tests : `tests/test_microsoft_store_page_proof_r62.py` (15), 6 mutations rougies.
+
 ## 2026-09-26 — Déconnexion : le lot continue (`--continue-on-halt`)
 
 Romain, « 2. le lot continue ». Avec `--continue-on-halt`, une déconnexion (« not logged in »)

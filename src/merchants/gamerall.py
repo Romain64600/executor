@@ -65,7 +65,7 @@ PLATFORM_TEXT: dict[str, str] = {
     "UPLAY": "UBISOFT",
     "NINTENDO SWITCH": "NINTENDO",
     "PSN": "PSN",
-    "MICROSOFT STORE": "MICROSOFT",
+    "MICROSOFT STORE": "MICROSOFT",   # entre si la page AKS liste « Microsoft Windows » [R62]
     "GOG.COM": "GOG",
     "GOG": "GOG",
     "EPIC GAMES": "EPIC",

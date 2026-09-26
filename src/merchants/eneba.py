@@ -58,7 +58,8 @@ ENEBA_URL_PLATFORM_PREFIXES = {
     "uplay": "UBISOFT",
     "origin": "EA",
     "blizzard": "BATTLENET",
-    "windows": "MICROSOFT",  # seaux Windows mappés depuis [R50] — la ligne ENTRE
+    "windows": "MICROSOFT",  # seaux Windows mappés depuis [R50] — la ligne ENTRE si la page
+                             # AKS liste « Microsoft Windows » ([R62], matcher)
 }
 
 # ── console hooks (R45, 2026-09-14) ──────────────────────────────────────────────────

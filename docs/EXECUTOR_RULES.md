@@ -1367,6 +1367,17 @@ where an IG Ubisoft/EA/Battle.net offer entered on a Steam-only AKS page.
 `extract_official_platforms` also fixed (it truncated `Battle.net`→`Battle` at the
 first `.`, losing the rest of the list).
 
+**Microsoft Store keys `[R62]` (2026-09-26, Romain : « … puis aligne l'ancien chemin
+Microsoft Store »):** `PAGE_PLATFORM_NAMES["MICROSOFT"] = "Microsoft Windows"`, and the
+check is STRICT — `page_sells_microsoft_store`, ONE function read by every route to
+`MICROSOFT` (title « Microsoft Store » / « Microsoft Key », Eneba / MMOGA `windows` URL
+prefix, Gamerall « (Microsoft Store) », Gamesplanet `-microsoft-store-download--`,
+Discover.games page platform, and the §4.12.4 (f bis) Windows / Xbox app branch): the AKS
+page must list « Microsoft Windows », an EMPTY list does not pass, and a merchant's
+`require_page_platform=False` does not lift it. Else skip "Microsoft Store key but AKS
+official platforms exclude 'Microsoft Windows' — not entered (R20, R62)"
+(`SKIP_MICROSOFT_NO_PAGE`). See `[R62]` below for the evidence and the measurement.
+
 **Instant Gaming REGION `[R33]` (2026-08-13 — was a KNOWN LIMITATION, now solved).**
 IG feed titles/URLs carry no region, and the IG page's region *dropdown* is
 JavaScript-rendered (invisible to `http_get`). But the region IS in the page's
@@ -1846,7 +1857,8 @@ SWITCH alone) — the fix of the Gamivo leak below.
       Windows / Xbox app key — no AKS PC page found for it (R45)"). Its official platforms
       decide: « Xbox Play Anywhere » → the Play Anywhere targets of (f) / (g) — the Xbox pages
       AKS HAS (inferred, P4) + the PC page, XBOX/PC buckets; the PC page ALONE when AKS has
-      no Xbox page; else « Microsoft Windows » → a Microsoft Store key: `platform =
+      no Xbox page; else « Microsoft Windows » (`page_sells_microsoft_store`, the ONE check every
+      route to `MICROSOFT` reads since `[R62]`) → a Microsoft Store key: `platform =
       "MICROSOFT"` on the PC page, `REGION_IDS["MICROSOFT"][base]` (Windows 10: 246 Global /
       244 EU / 245 US / 249 UK), no console target, the common flow as for a PC key (a DLC
       title goes through `r43_dlc_page_refusal` on the PC page first); neither → skip
@@ -3180,6 +3192,30 @@ même décision que le sweep : `--consoles` est le **défaut** sur les deux scri
    `approved.json`.
 
 ---
+
+### `[R62]` Clé Microsoft Store — la page AKS doit lister « Microsoft Windows » (2026-09-26)
+
+Romain : « … puis aligne l'ancien chemin Microsoft Store ». La branche « (Windows) XBOX LIVE
+Key » (§4.12.4 f bis, a6da691) n'entrait une clé Microsoft Store que si la page PC d'AKS
+listait « Microsoft Windows » ; les chemins historiques vers `MICROSOFT` ne vérifiaient rien —
+`PAGE_PLATFORM_NAMES` n'avait pas d'entrée MICROSOFT, donc R20 se taisait. Désormais une seule
+vérification, `matcher.page_sells_microsoft_store`, pour toutes les routes, plus stricte que
+R20 : liste vide = refus, `require_page_platform=False` ne la lève pas.
+
+- **Libellé** (lu le 26/09, UA AKS/Staff, 27 pages AKS des lignes MICROSOFT des 15 derniers
+  jours) : exactement « Microsoft Windows », jamais « Microsoft Store » ; chaque offre des seaux
+  244 / 245 / 246 / 249 porte `activationPlatform: microsoft-windows` ; les seaux s'appellent
+  « WINDOWS GLOBAL » / « WINDOWS EU » ; toute page qui porte de telles offres liste « Microsoft
+  Windows ».
+- **Mesure** (lignes MICROSOFT approuvées sur les deux VM depuis le 11/09, 44 distinctes) :
+  40 créées — Gamerall 24, Gamesplanet FR 7, GameBoost 3, GameSeal 3, Eneba 2, MMOGA 1 — toutes
+  sur des pages qui listent « Microsoft Windows » : **aucune création à reprendre**. Seules
+  3 candidates Gamesplanet jamais créées tombent : « Avowed (Microsoft Store) », « Avowed Premium
+  Edition (Microsoft Store) » (page : Steam, Battle.net, Xbox Play Anywhere, Xbox) et « Senua's
+  Saga: Hellblade II (Microsoft Store) » (page : Steam, Xbox Play Anywhere, Xbox).
+- Tests : `tests/test_microsoft_store_page_proof_r62.py` (15, lignes réelles), 6 mutations
+  rougies (garde retiré, liste vide acceptée, opt-out marchand honoré, « Microsoft Store »
+  accepté, copie locale dans la branche Windows, prédicat toujours vrai).
 
 ### `[R61]` Loaded, ex-CDKeys (store 40) — région dans le titre, fiche dans le lien d'affiliation (2026-09-25)
 

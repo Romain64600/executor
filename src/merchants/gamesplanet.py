@@ -53,7 +53,8 @@ URL_DELIVERY_PLATFORM: dict[str, str] = {
     "steam-key": "STEAM",
     "gog-key": "GOG",
     "epic-games-key": "EPIC",
-    "microsoft-store-download": "MICROSOFT",   # famille « Windows 10 » (R50) pour les jeux
+    "microsoft-store-download": "MICROSOFT",   # famille « Windows 10 » (R50) pour les jeux ;
+                                               # page AKS « Microsoft Windows » exigée [R62]
     "rockstar-key": "ROCKSTAR",
     "ubisoft-connect-key": "UBISOFT",
     "uplay-key": "UBISOFT",
