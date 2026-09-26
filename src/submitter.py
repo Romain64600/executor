@@ -1058,10 +1058,11 @@ class _SubmitterBase:
         slug) is a SUBSTRING match that can overflow one page, and reading only page 1
         would let a live offer on a later page read as absent → a false 'gone' →
         phantom creation (2026-08-25 review). On top of ``_read_feed_page`` it adds a
-        term DATA-check — the server filtered by the slug, so every legit row's URL
-        contains it; rows that do NOT are a stale/foreign DOM re-served under the same
-        ``&p=`` (a prior candidate's search, or a plain feed page) that the page-number
-        href check alone cannot catch. FAIL-CLOSED: an unrendered/wedged page, or
+        term DATA-check — the server filtered by the slug (a CASE-INSENSITIVE substring,
+        proven live 2026-09-26), so every legit row's URL contains it, case folded; rows
+        that do NOT are a stale/foreign DOM re-served under the same ``&p=`` (a prior
+        candidate's search, or a plain feed page) that the page-number href check alone
+        cannot catch — and every page, empty or not, must be ON our term (its href). FAIL-CLOSED: an unrendered/wedged page, or
         results still advertising more pages than the budget covers, raises
         FeedScanError so prove-gone is UNKNOWN and never a false 'gone'; a login bounce
         raises NotLoggedInError."""
@@ -1090,7 +1091,25 @@ class _SubmitterBase:
                         "— not proven on this search (stale/foreign DOM or no "
                         "search[search]), cannot prove absence")
                 break
-            if not all(term in _url_path(str(r.get("url") or "")) for r in rows):
+            # RECHERCHE CJS (Romain, 2026-09-26 : « go pour vérifier et corriger la recherche
+            # CJS »). La recherche AKS est une sous-chaîne INSENSIBLE À LA CASSE — prouvé en
+            # lecture seule (scripts/probe_search_rows.py) : 'ATLAS-Digital-Download-Key-…'
+            # rend aussi 'Starlink-Battle-for-Atlas-Digital-Download-Key-…',
+            # 'Resonance-Steam-Key.html' rend 'SIGILLVM%3A-RESONANCE-Steam-Key.html'. Le contrôle
+            # d'avant, sensible à la casse, prenait ces lignes LÉGITIMES pour un DOM étranger :
+            # trois créations CJS finies « UNKNOWN » (21/09, 25/09, 26/09), CJS arrêté la nuit.
+            # Désormais : (1) la page doit être SUR notre recherche — le terme de son href, comme
+            # pour la page vide ; (2) chaque ligne contient le terme, casse repliée comme le fait
+            # le serveur. Une page étrangère ou périmée reste refusée (FeedScanError → UNKNOWN,
+            # jamais un « gone ») ; les lignes voisines ne gênent pas la preuve, qui compare
+            # l'id et la clé d'identité de NOTRE offre.
+            on_term = _href_search_term(str(state.get("href") or ""))
+            if on_term != term:
+                raise FeedScanError(
+                    f"search page {page} is on term {on_term!r}, expected {term!r} "
+                    "— not proven on this search (stale/foreign DOM)")
+            folded = term.casefold()
+            if not all(folded in _url_path(str(r.get("url") or "")).casefold() for r in rows):
                 raise FeedScanError(
                     f"search page {page} rows do not all match term {term!r} "
                     "— stale/foreign DOM re-served")

@@ -3,6 +3,25 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-26 — Recherche de preuve : AKS cherche sans la casse (trois UNKNOWN CJS)
+
+Romain : « go pour vérifier et corriger la recherche CJS » (EXECUTOR_RULES §6 proof, AGENTS).
+Preuve lecture seule (`scripts/probe_search_rows.py`, nouvelle VM, 26/09) : la recherche du feed
+AKS est une sous-chaîne INSENSIBLE À LA CASSE. « ATLAS-Digital-Download-Key-…(Xbox One/Series
+X) » rend aussi les quatre « Starlink-Battle-for-Atlas-… » ; « Resonance-Steam-Key.html » rend
+« SIGILLVM%3A-RESONANCE-Steam-Key.html ». Le contrôle de `Submitter._scan_search`, sensible à
+la casse, prenait ces lignes légitimes pour un DOM étranger → « UNKNOWN » : Resonance
+(101127835, 21/09), To the Stars (101139740, 25/09), ATLAS UK (101142139, 26/09, CJS arrêté pour
+la nuit). Correction : toute page de résultats, vide ou non, doit être SUR notre recherche
+(terme de son href) et chaque ligne contient le terme casse repliée. Une page étrangère ou
+périmée reste refusée (épinglé : une page Starlink périmée dont toutes les lignes contiennent
+« atlas-… » n'est JAMAIS une preuve). Tests `tests/test_proof_search_case_2026_09_26.py` (6,
+lignes réelles de la sonde), 3 mutations rougies.
+
+État des offres UNKNOWN, lu par la sonde le 26/09 (file pending, liste 9, available=all) :
+CJS 101142139 (ATLAS UK), 101127835 (Resonance), 101139740 (To the Stars) et Kinguin 101140732
+(Void Crew US Xbox Series) ne sont PLUS dans la file — créées (ou retirées) ; à vérifier sur AKS.
+
 ## 2026-09-26 — Sonde lecture seule `scripts/probe_search_rows.py` (recherche de preuve)
 
 Romain : « go pour vérifier et corriger la recherche CJS ». Trois créations CJS ont fini

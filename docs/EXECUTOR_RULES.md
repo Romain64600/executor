@@ -2594,7 +2594,16 @@ is a genuine whole-feed absence (the by-urls proof since 2026-08-25); now the sa
 sweep's default (`05_submit --prove-gone-by-search`, ~2 s instead of ~100 s per offer on
 a 66-page feed). Same fail-closed guards as the walk: an unrendered / wedged / overflowing
 search raises `FeedScanError` → the offer is UNKNOWN, never a false "gone"; the search
-term data-check rejects a re-served foreign DOM. Under the search proof the sweep keeps
+term data-check rejects a re-served foreign DOM. **The AKS search is a CASE-INSENSITIVE
+substring** (proven live 2026-09-26 with the read-only `scripts/probe_search_rows.py`, Romain:
+« go pour vérifier et corriger la recherche CJS »): the term `ATLAS-Digital-Download-Key-…`
+also returns `Starlink-Battle-for-Atlas-Digital-Download-Key-…`, `Resonance-Steam-Key.html`
+returns `SIGILLVM%3A-RESONANCE-Steam-Key.html`. The case-sensitive data-check read those
+legitimate rows as a foreign DOM: three CJS creations ended UNKNOWN (21/09, 25/09, 26/09 —
+the last one halted CJS for the night). Since then every result page — empty or not — must
+be ON our search (the `search[search]` of its href equals the term), and every row must
+contain the term case-folded, like the server. A foreign / stale page still raises; the
+neighbouring rows never matter to the proof, which compares OUR offer's id and identity key. Under the search proof the sweep keeps
 its page-hint locate index (the search's 0-1 rows never replace it); a row that reflowed
 is re-found by the search re-locate. The mode matters: on Kinguin `available=pending` is
 empty even with 1197 rows in `available=all` (2026-07-08), so "gone from

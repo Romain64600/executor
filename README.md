@@ -1004,7 +1004,9 @@ to its section.
 - If a write stops in **UNKNOWN** state (feed/CDP unreadable mid-run — the offer
   may or may not have been written), verify the real state **by hand on AKS
   before any retry**; never replay blindly (a blind retry can double-create).
-  Runbook: [`ops/BROWSER_RUNBOOK.md`](ops/BROWSER_RUNBOOK.md) §2.5.
+  Runbook: [`ops/BROWSER_RUNBOOK.md`](ops/BROWSER_RUNBOOK.md) §2.5. Read-only helper
+  (2026-09-26): `python3 scripts/probe_search_rows.py --store-id <id> --url '<merchant url>'`
+  runs the proof's own feed search and prints the rows — the offer still listed = not created.
 - Session re-auth is **cookie transfer** only (`docs/LOGIN_SPEC.md`): never
   self-triggered; cookie VALUES never logged/stored; a `NotLoggedInError` from
   any other stage is a fail-closed STOP + error report — wait for Romain's

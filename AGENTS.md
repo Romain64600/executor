@@ -242,6 +242,14 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   page AKS : c'est le prix accepté tant qu'aucune lecture de page ne prouve l'Europe — ne pas
   les faire entrer en GLOBAL.
 
+- **La recherche de preuve AKS est insensible à la casse — Romain, 2026-09-26** (« go pour
+  vérifier et corriger la recherche CJS »). Prouvé en lecture seule (`probe_search_rows.py`) :
+  « ATLAS-… » rend « Starlink-Battle-for-Atlas-… ». Le contrôle des lignes replie donc la casse,
+  ET chaque page (vide ou non) doit porter NOTRE terme dans son href. Un audit voudra « revenir
+  au contrôle exact » (il fabriquait des UNKNOWN : trois arrêts CJS) ou « retirer le contrôle
+  d'href » (c'est lui qui refuse une page périmée dont les lignes contiennent notre terme) :
+  ni l'un ni l'autre.
+
 - **Déconnexion pendant un lot : le lot CONTINUE — Romain, 2026-09-26** (« le lot continue »).
   Avec `--continue-on-halt`, un « not logged in » arrête le marchand (halte de page, jamais une
   reprise automatique) puis le lot passe au suivant ; il arrêtait tout le lot avant. Aucune
