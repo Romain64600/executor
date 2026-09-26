@@ -3,6 +3,21 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-26 — Déconnexion : le lot continue (`--continue-on-halt`)
+
+Romain, « 2. le lot continue ». Avec `--continue-on-halt`, une déconnexion (« not logged in »)
+est désormais une halte DU marchand, consignée dans `recap.halted_merchants`, et le marchand
+suivant est balayé — elle arrêtait tout le lot. Déclencheur : la nuit du 25-26/09, Kinguin p2 a
+rebondi sur wp-login à 01:05 UTC après un clic « Create » (offre 101140732, état inconnu, halte
+de page inchangée) ; le lot a continué parce que le détail ne portait pas « not logged in », et
+CJS a créé 618 offres sur la même session. Aucune écriture n'en dépend : l'extract lit la page
+de login avant tout, le submit revérifie la session avant la première offre et après chaque
+clic ; une session vraiment perdue arrête chaque marchand suivant à sa première lecture. Sans
+le flag, la première halte arrête toujours le lot. Une déconnexion n'est jamais une reprise
+automatique de page (`transient_reason`). `scripts/10_data_entry_auto.py` ; tests
+`test_login_bounce_no_longer_stops_the_batch` / `…_without_continue_on_halt_still_stops`.
+Effet au prochain lancement de sweep.
+
 ## 2026-09-26 — Reprise automatique : deux trous comblés (Gamivo p38, Eneba p66)
 
 Balayage du groupe B `20260925-194851-auto` (EXECUTOR_RULES §14, AGENTS « Reprise

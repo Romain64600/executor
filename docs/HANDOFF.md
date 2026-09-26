@@ -171,7 +171,9 @@ récents (voir
   `--no-consoles` pour un sweep PC seul) — une halte fail-closed sur un marchand (offre
   UNKNOWN, feed illisible, 10 échecs)
   est consignée dans `recap.halted_merchants` et le marchand suivant est quand même balayé ;
-  une session expirée (« not logged in ») arrête tout ; exit 2 s'il y a eu au moins une halte.
+  une déconnexion aussi depuis le 2026-09-26 (Romain : « le lot continue » — chaque étape
+  revérifie la session avant d'écrire ; avant, « not logged in » arrêtait tout) ; exit 2 s'il
+  y a eu au moins une halte.
   Sans le flag, la première halte arrête le lot (comportement historique). Via la console :
   champ `continue_on_halt: true` dans le POST `/api/data-entry/auto`. Un marchand par VPS,
   jamais deux sur la même machine (un navigateur, un verrou).

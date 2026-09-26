@@ -460,7 +460,8 @@ class ExtractAbortReasonTests(unittest.TestCase):
 
 class ContinueOnHaltTests(unittest.TestCase):
     """--continue-on-halt (Romain 2026-09-11, unattended multi-merchant nights): a halt on
-    one merchant is recorded and the next merchant is still swept; a login bounce stops."""
+    one merchant is recorded and the next merchant is still swept — a login bounce too, since
+    Romain 2026-09-26 (« le lot continue »)."""
 
     def setUp(self):
         self.MOD = _load_cli()
@@ -498,11 +499,24 @@ class ContinueOnHaltTests(unittest.TestCase):
         self.assertEqual(recap["halted"], "Kinguin: submit_not_clean_p3")
         self.assertEqual(recap["total_created"], 6)
 
-    def test_login_bounce_still_stops_the_batch(self):
+    def test_login_bounce_no_longer_stops_the_batch(self):
+        """Romain, 2026-09-26 : « le lot continue ». Le rebond est une halte DU marchand ;
+        le suivant est balayé (chaque étape revérifie la session avant toute écriture)."""
+
         rc, recap = self._run(["--continue-on-halt"],
                               [{"halted": "extract_failed_p1", "halted_detail": "exit 2 (not logged in (wp-login))",
                                 "pages": [], "total_created": 0, "total_moved": 0},
                                {"halted": None, "pages": [], "total_created": 5, "total_moved": 0}])
+        self.assertEqual(rc, 2)                                       # une halte a eu lieu
+        self.assertEqual(len(recap["targets"]), 2)                   # Eneba balayé quand même
+        self.assertEqual(recap["halted_merchants"], ["Kinguin: extract_failed_p1"])
+        self.assertEqual(recap["total_created"], 5)
+
+    def test_login_bounce_without_continue_on_halt_still_stops(self):
+        rc, recap = self._run([], [{"halted": "extract_failed_p1",
+                                    "halted_detail": "exit 2 (not logged in (wp-login))",
+                                    "pages": [], "total_created": 0, "total_moved": 0},
+                                   {"halted": None, "pages": [], "total_created": 5, "total_moved": 0}])
         self.assertEqual(rc, 2)
         self.assertEqual(len(recap["targets"]), 1)
         self.assertEqual(recap["halted"], "Kinguin: extract_failed_p1")

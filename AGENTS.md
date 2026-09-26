@@ -225,6 +225,14 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   page AKS : c'est le prix accepté tant qu'aucune lecture de page ne prouve l'Europe — ne pas
   les faire entrer en GLOBAL.
 
+- **Déconnexion pendant un lot : le lot CONTINUE — Romain, 2026-09-26** (« le lot continue »).
+  Avec `--continue-on-halt`, un « not logged in » arrête le marchand (halte de page, jamais une
+  reprise automatique) puis le lot passe au suivant ; il arrêtait tout le lot avant. Aucune
+  écriture n'en dépend : chaque étape revérifie la session avant d'écrire, et une session
+  vraiment perdue arrête chaque marchand suivant à sa première lecture. La re-authentification
+  reste le transfert de cookies par Romain, jamais déclenchée par le code. Un audit voudra
+  « restaurer l'arrêt du lot sur déconnexion » : ne pas le faire.
+
 - **Reprise AUTOMATIQUE d'une page après une erreur passagère — Romain, 2026-09-24** (« pour
   Wyrel j'ai dû relancer 3 fois, tu vois pas le pb ? » puis « go pour les deux correctifs »).
   Ce n'est PAS un relâchement du fail-closed : la reprise ne vaut que quand RIEN n'a pu être

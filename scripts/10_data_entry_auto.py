@@ -585,7 +585,8 @@ def main() -> int:
                     help="Multi-merchant batch: a fail-closed halt on one merchant (UNKNOWN offer, "
                          "feed unreadable, 10 failures…) is recorded and the NEXT merchant is still "
                          "swept (its feed is independent). Default: the first halt stops the batch. "
-                         "A login bounce (not logged in) always stops it: every merchant would fail.")
+                         "A login bounce is a halt like the others (Romain 2026-09-26: « le lot "
+                         "continue »): every stage re-checks the session before any write.")
     ap.add_argument("--merchant", help="Single-target merchant (with --store-id).")
     ap.add_argument("--store-id", help="Single-target store id.")
     ap.add_argument("--run-id", default=None, help="Sweep run id (holds recap.json).")
@@ -904,15 +905,22 @@ def main() -> int:
             # operator, but NOT a halt — the next merchant is still swept (audit 2026-09-09).
             recap["coverage_incomplete"].append(f"{merchant}: {sweep['coverage']}")
         persist()
-        # A fail-closed halt on one merchant stops the whole batch (a broken
-        # session / login bounce affects every subsequent merchant too) — unless
+        # A fail-closed halt on one merchant stops the whole batch — unless
         # --continue-on-halt (Romain 2026-09-11, unattended multi-merchant nights): the
-        # halt is recorded per merchant and the next feed is still swept. A login bounce
-        # ("not logged in") stops the batch either way: no merchant can be read.
+        # halt is recorded per merchant and the next feed is still swept.
+        # DÉCONNEXION : une halte comme les autres depuis le 2026-09-26 (Romain : « le lot
+        # continue »). Avant, un « not logged in » arrêtait le lot même avec
+        # --continue-on-halt. La nuit du 25-26/09 a montré le coût : Kinguin p2 a rebondi sur
+        # wp-login à 01:05 UTC (détecté seulement par le submit, donc sans « not logged in »
+        # dans le détail), le lot a continué, et CJS a créé 618 offres sur la MÊME session —
+        # le rebond était passager. Aucune écriture n'en dépend : chaque étape revérifie la
+        # session (l'extract lit la page de login avant tout, le submit avant la 1re offre et
+        # après chaque clic) ; une session vraiment perdue arrête donc chaque marchand suivant
+        # à sa première lecture, sans rien écrire. La page elle-même reste une halte (jamais
+        # une reprise automatique : `transient_reason`).
         if sweep.get("halted") and sweep["halted"] != "operator_stop":
             label = f"{merchant}: {sweep['halted']}"
-            login_bounce = "not logged in" in str(sweep.get("halted_detail") or "").lower()
-            if args.continue_on_halt and not login_bounce:
+            if args.continue_on_halt:
                 recap["halted_merchants"].append(label)
                 recap["halted"] = "; ".join(recap["halted_merchants"])
                 persist()

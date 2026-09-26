@@ -544,7 +544,9 @@ back to (`tmux attach -t sweep`, `Ctrl-b d` to detach) and it survives a dropped
 
 `--max-pages 10` caps each merchant (Kinguin has 67 pages, G2A 38 — a full pass would take
 all night); `--continue-on-halt` makes one merchant's fail-closed stop skip to the next
-instead of ending the sweep. The recap lands in `runs/<run-id>/recap.json`, one entry per
+instead of ending the sweep — a login bounce included since 2026-09-26 (Romain: « le lot
+continue »): every stage re-checks the session before any write, so a really expired session
+just halts each following merchant at its first read. The recap lands in `runs/<run-id>/recap.json`, one entry per
 merchant with `created` and any `halted` reason. Consoles are INCLUDED by default `[R45]`;
 add `--no-consoles` for a PC-only pass.
 
