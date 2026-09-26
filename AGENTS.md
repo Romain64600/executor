@@ -177,7 +177,10 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   structurelle (mot EDITION absent du nom de la page, hors « Standard Edition », titre sans
   marqueur), JAMAIS le prix. Un audit « trouvera » un vrai DLC « … Edition » refusé : s'il est
   vraiment seul, la page AKS porte le mot (« Special Edition Content ») et il entre ; sinon
-  c'est un doute, et un doute se refuse.
+  c'est un doute, et un doute se refuse. **Étape A (même jour) :** le match est refait sur la
+  page du JEU parent (préfixe publié le plus long au sitemap) et n'entre que dans l'édition que
+  les mots du titre NOMMENT sur cette page ; sinon le refus reste. Un audit voudra « retomber sur
+  Standard sur la page du jeu » ou « essayer un préfixe plus court » : ni l'un ni l'autre.
 
 - **[R18b] R18 se RETIRE quand le titre annonce un palier que la page ne nomme pas (2026-09-20,
   « le correctif que tu veux » — CONFIRMÉ le 2026-09-21 sur le cas concret, « garde ta règle »,

@@ -1984,6 +1984,56 @@ def edition_claim_off_page(title: str, marker: str | None, aks_name: str) -> boo
     return not _EDITION_WORD_RE.search((aks_name or "").upper())
 
 
+def r18c_parent_slug(dlc_slug: str, page_kind: str = "cd-key") -> str | None:
+    """[R18c] étape A — le slug de la page du JEU dont ``dlc_slug`` (slug NU de la page du DLC
+    seul : ``blasphemous-2-mea-culpa``) est le prolongement, sous le même gabarit
+    (``cd-key``, ``xbox-one``…) : le plus LONG préfixe propre que l'index sitemap publie
+    (``blasphemous-2`` si ``blasphemous-2-cd-key`` existe). Un seul candidat, jamais un
+    préfixe plus court de repli — celui-là serait un autre produit, plus large. ``None`` sans
+    index sitemap frais (rien n'est deviné) ou sans préfixe publié."""
+
+    index = sitemap_index()
+    if index is None or not dlc_slug:
+        return None
+    toks = dlc_slug.strip().lower().split("-")
+    for n in range(len(toks) - 1, 0, -1):
+        prefix = "-".join(toks[:n])
+        if index.has_page(f"{prefix}-{page_kind}"):
+            return prefix
+    return None
+
+
+def _r18c_route_to_game_page(
+    offer: NormalizedOffer,
+    dlc_slug: str,
+    *,
+    page_resolver: Callable[[str], AksResolution | None],
+    difmark_offer_resolver: Callable[[str], DifmarkOfferAttributes],
+    account_resolver: Callable[..., AksResolution | None],
+    consoles: bool,
+) -> Candidate | SkippedOffer | None:
+    """[R18c] étape A (Romain, 2026-09-26 : « go pour A ») — refait le match de ``offer`` sur la
+    page du JEU parent, comme AKS range ces offres. Le résolveur rendu ne devine rien : il lit
+    la page du préfixe publié (:func:`r18c_parent_slug`) sous le gabarit demandé — la page PC
+    (``cd-key``) d'abord, puis la page console du chemin console quand il la demande — et
+    TOUTES les gardes du chemin commun s'y appliquent (noms R01 / R16 / R01b, R20, région,
+    `[R62]`, tout-ou-rien console). L'édition ne peut venir que d'une édition de la page
+    NOMMÉE par les mots du titre (`match_extras_to_page_edition`), voir ``_r18c_route`` dans
+    :func:`match_offer`. ``None`` sans index sitemap frais : on ne sait pas trouver la page."""
+
+    if sitemap_index() is None:
+        return None
+
+    def game_page(name: str, *, page_kind: str = "cd-key", **_kw: Any) -> AksResolution | None:
+        if page_kind not in CONSOLE_PAGE_KINDS:
+            return None                 # page compte ou gabarit inconnu : jamais de routage
+        parent = r18c_parent_slug(dlc_slug, page_kind)
+        return page_resolver(aks_url(parent, page_kind)) if parent else None
+
+    return match_offer(offer, game_page, difmark_offer_resolver, game_page,
+                       page_resolver=page_resolver, consoles=consoles, _r18c_route=True)
+
+
 # [R57] (Romain, 2026-09-23 : « tu peux pas faire comme pour les autres marchands, et si on
 # a déjà des offres DLC on ajoute en DLC ? »). Le séparateur de sous-titre d'un nom de
 # produit : « Crusader Kings II: Holy Fury », « Talisman - The City Expansion ».
@@ -3516,6 +3566,7 @@ def match_offer(
     *,
     page_resolver: Callable[[str], AksResolution | None] = resolve_aks_url,
     consoles: bool = False,
+    _r18c_route: bool = False,
 ) -> Candidate | SkippedOffer:
     reason = precheck_skip(offer, consoles=consoles)
     if reason:
@@ -3836,15 +3887,41 @@ def match_offer(
             _marker is not None or len(resolution.editions) == 1
             or derived_dlc_page(guard_name, _title_tier, _marker, resolution)))
     if _r18_takes_the_dlc_bucket and edition_claim_off_page(
-            guard_name, _marker, resolution.aks_name or ""):
-        # [R18c] étape B (refus d'attente) : « <Jeu> <X> Edition » = jeu + DLC, rangé par
-        # AKS sur la page du jeu. Jamais DLC(16) sur la page du DLC seul. Le chemin console
-        # passe ici aussi : toutes ses pages entrent l'édition résolue sur la page primaire.
+            guard_name, _marker, resolution.aks_name or "") and not _r18c_route:
+        # [R18c] « <Jeu> <X> Edition » = jeu + DLC, rangé par AKS sur la page du JEU. Jamais
+        # DLC(16) sur la page du DLC seul. Le chemin console passe ici aussi : toutes ses pages
+        # entrent l'édition résolue sur la page primaire.
+        # Étape A (Romain, 2026-09-26 : « go pour A ») : on refait le match sur la page du jeu
+        # parent ; il n'entre que dans l'édition que les mots du titre NOMMENT sur cette page.
+        # Tout autre résultat — pas de page parente publiée, page illisible, pas d'édition de
+        # ce nom, une garde qui refuse — garde le refus de l'étape B, avec le motif de A.
+        # Jamais le prix (« faut pas se fier au prix … si tu ne trouves pas les infos sur la
+        # page, tu skip »).
+        routed = _r18c_route_to_game_page(
+            offer, resolution.slug, page_resolver=page_resolver,
+            difmark_offer_resolver=difmark_offer_resolver, account_resolver=account_resolver,
+            consoles=consoles)
+        if isinstance(routed, Candidate):
+            return routed
+        detail = (routed.reason if isinstance(routed, SkippedOffer)
+                  else "no fresh sitemap index to find the game page")
         return SkippedOffer(
             offer,
             f"title names an edition ('… Edition') that the DLC-only page "
             f"{resolution.aks_name!r} does not — game + DLC, filed by AKS on the game page "
-            "(R18c)",
+            f"(R18c) — game page: {detail}",
+        )
+    if _r18c_route and (_r18_takes_the_dlc_bucket or edition_from_extras is None
+                        or edition_from_extras[0] == "16"
+                        or edition_from_extras[1].strip().upper() == "DLC"):
+        # [R18c] étape A, sur la page du JEU : seule une édition NOMMÉE par les mots du titre
+        # (« Mea Culpa Edition », « Isle of Siptah Edition ») peut être prise — jamais
+        # Standard, jamais DLC, jamais une édition devinée.
+        return SkippedOffer(
+            offer,
+            f"R18c: the game page {resolution.aks_name!r} carries no edition named by the "
+            f"title — sells {sorted(_edition_entry_name(v) for v in resolution.editions.values())}"
+            " — never Standard or DLC",
         )
     if _r18_takes_the_dlc_bucket:
         edition_label, edition_id = "DLC", "16"

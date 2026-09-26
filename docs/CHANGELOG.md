@@ -3,6 +3,35 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-26 — `[R18c]` étape A : « <Jeu> <X> Edition » entre sur la page du JEU, édition « <X> Edition »
+
+Romain : « go pour A » ; « ça sera que pour les jeux + DLC et pas pour les DLC seuls » ; « faut
+pas se fier au prix … si tu ne trouves pas les infos sur la page, tu skip » (EXECUTOR_RULES §4.5
+`[R18c]`, AGENTS). Là où l'étape B refusait, `match_offer` refait le match sur la page du jeu
+parent — le plus long préfixe du slug de la page du DLC publié au sitemap sous le même gabarit
+(`r18c_parent_slug`), lu par le résolveur de page — avec toutes les gardes du chemin commun, et
+n'entre que dans l'édition que les mots du titre nomment sur cette page
+(`match_extras_to_page_edition`). Jamais Standard, jamais DLC, jamais le prix. Tout doute
+(pas d'index, pas de page parente, page illisible, pas d'édition de ce nom, garde qui refuse)
+garde le refus de B, avec le motif de A. `src/matcher.py` (`r18c_parent_slug`,
+`_r18c_route_to_game_page`, paramètre privé `_r18c_route` de `match_offer`) ; tests
+`tests/test_r18c_etape_a_page_du_jeu.py` (13 : Blasphemous 2, Black Ops 3 Zombies Chronicles,
+Conan Exiles console, refus sans index / sans parent / page illisible / sans édition / jamais
+Standard / jamais DLC / palier R39, DLC seul non routé) ; 6 mutations, 5 rougies, la 6e
+(retirer « R18 prend le seau DLC » de la garde de A) équivalente — l'autre condition la couvre.
+
+Rejeu en lecture seule (AKS/Staff, sitemap de la VM) des 18 écritures fausses : 13 vers la
+page du jeu dans l'édition de ce nom — Blasphemous 2 « Mea Culpa Edition » 5738 (Gamivo
+101044520, Kinguin 101004590, G2A 94546286), Conan Exiles « Isle of Siptah Edition » 629 sur
+Xbox One + Xbox Series + PC en XBOX/PC (Kinguin 100994053, CJS 101142180 / 181 / 183), Lords
+and Villeins « The Great Houses Edition » 5262 (MMOGA 101041060, GOG 100386987), Black Ops 3
+« Zombies Chronicles Edition » 329 en Microsoft Store EU 244 (Gamerall 101111920), Matchpoint
+« Legends Edition » 102, Jotunnslayer « Conan Edition » 11668, Dragon Ball Sparking! ZERO
+« Super Limit-Breaking NEO » 15223 ; 5 refusées — Alaskan Road Truckers, Deceive Inc. ×2,
+Kingdom Two Crowns (page DLC à deux seaux : R18 ne la prend pas, E06 refuse), GameSeal 100700366
+« … Zombies Chronicles Deluxe Edition » (R18b puis P1-1). Les 7 DLC seuls « … Edition » du même
+lot restent en DLC(16) sur leur page. Aucun refus R18c dans les sweeps depuis ed7fca0 (deux VM).
+
 ## 2026-09-26 — Ré-audit de Romain (4e7ca1e → a6da691) : deux P1 corrigés
 
 - **Loaded confondait ses offres** (`src/merchants/loaded.py`). Toutes les URL du feed sont le

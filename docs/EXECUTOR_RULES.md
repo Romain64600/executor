@@ -462,8 +462,27 @@ DLC(16) sur la page du DLC : 18 écritures fausses (liste dans le CHANGELOG du 2
 - **Étape B (en place)** : quand R18 allait prendre le seau DLC, refus « game + DLC, filed by
   AKS on the game page (R18c) ». Le chemin console passe par le même bloc (toutes les pages
   entrent l'édition de la page primaire).
-- **Étape A (à venir)** : saisir sur la page du jeu, dans l'édition « <X> Edition » quand la page
-  du jeu la porte ; sinon — ou page illisible — refus.
+- **Étape A (en place, même jour)** : là où B refuserait, le match est REFAIT sur la page du JEU
+  parent (`_r18c_route_to_game_page`). La page parente est le plus LONG préfixe propre du slug
+  de la page du DLC que l'index sitemap publie sous le même gabarit (`r18c_parent_slug` :
+  `blasphemous-2-mea-culpa` → `blasphemous-2-cd-key` ; un seul candidat, jamais un préfixe plus
+  court de repli), lue par le résolveur de page (même garde anti-throttle que le reste du
+  match) — la page PC (`cd-key`) d'abord, puis la page console quand le chemin console la
+  demande ; un gabarit hors pages produit (compte) n'est jamais routé. TOUTES les gardes du
+  chemin commun s'y appliquent (noms R01 / R16 / R01b, R20, région, `[R62]`, R39, tout-ou-rien
+  console). L'édition ne peut venir que d'une édition de la page NOMMÉE par les mots du titre
+  (`match_extras_to_page_edition` : « Mea Culpa Edition » 5738, « Zombies Chronicles Edition »
+  329, « Isle of Siptah Edition » 629) — jamais Standard, jamais DLC, jamais devinée. Pas
+  d'index sitemap frais, pas de page parente publiée, page illisible, pas d'édition de ce nom,
+  une garde qui refuse → le refus de B, suivi du motif de A (« … (R18c) — game page: … »).
+  Le prix n'est jamais lu. Rejeu en lecture seule le 26/09 sur les 18 écritures fausses :
+  13 iraient sur la page du jeu dans l'édition de ce nom (Blasphemous 2 ×3, Conan Exiles ×4 —
+  One + Series + PC en XBOX/PC, la page PC listant Play Anywhere —, Lords and Villeins ×2,
+  Black Ops 3 « Zombies Chronicles Edition » en Microsoft Store 244, Matchpoint, Jotunnslayer,
+  Dragon Ball Sparking! ZERO) ; les 5 autres sont refusées (Alaskan Road Truckers, Deceive
+  Inc. ×2 et Kingdom Two Crowns : leur page DLC vend un 2e seau, R18 ne la prend pas et E06
+  refuse ; la « Zombies Chronicles Deluxe » : R18b puis P1-1). Les DLC seuls (« Chivalry 2
+  Special Edition Content », « Prison Architect … Warden's Edition »…) restent en DLC(16).
 
 **Console keys — see §4.12 `[R45]` (2026-09-12).** Romain's AKS feed tool OVERWRITES the
 region (= region/PLATFORM) and the edition PER TARGET PAGE, so one feed row can be filed on
