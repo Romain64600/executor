@@ -150,5 +150,53 @@ class AutoConsoleGroupLaunchIsFollowed(unittest.TestCase):
         self.assertIn("SUIVI", proc.stdout)
 
 
+LIVE_HARNESS = ROOT / "tests" / "js" / "auto_live_page.test.mjs"
+
+
+@unittest.skipIf(NODE is None, "node absent (dépendance de test)")
+class AutoConsoleLivePageSimulationTests(unittest.TestCase):
+    """La PAGE EN COURS dans la console de saisie auto (Romain, 2026-09-26 : « 4. Go »).
+
+    Le 25/09, une heure de « 0 offres créées · 0 marchand » pendant que Gamesplanet FR saisissait
+    sa page 3. Le harnais charge le vrai ``auto.js``, adopte un sweep en cours et regarde ce
+    qui s'affiche à chaque étape — et ce qui part vers l'admin (les compteurs de la page, lus
+    sur ``api/runs/<run>``, seulement pendant la saisie)."""
+
+    def test_every_scenario_passes(self):
+        proc = subprocess.run([NODE, str(LIVE_HARNESS)], cwd=ROOT, capture_output=True,
+                              text=True, timeout=120)
+        self.assertEqual(proc.returncode, 0,
+                         f"\n--- sortie node ---\n{proc.stdout}\n{proc.stderr}")
+        self.assertNotIn("FAIL", proc.stdout)
+
+    def test_the_harness_goes_red_on_each_removed_piece(self):
+        """Vert ne prouve rien tant que rouge n'est pas prouvé : sans la lecture des
+        compteurs, sans la ligne du résumé, ou sans la garde « run vivant », le harnais
+        doit rougir."""
+
+        import os
+        import tempfile
+        js = (ROOT / "src" / "admin" / "static" / "auto.js").read_text(encoding="utf-8")
+        mutations = {
+            "compteurs": ('const r = await api("api/runs/" + encodeURIComponent(cur.run));',
+                          "const r = null;"),
+            "résumé": ('cur ? el("div", { class: "live-line"', 'false ? el("div", { class: "live-line"'),
+            "run vivant": ("const pc = running && !rec.finished_at ? sr.current : null;",
+                           "const pc = sr.current;"),
+        }
+        for nom, (avant, apres) in mutations.items():
+            with self.subTest(nom):
+                self.assertIn(avant, js, f"la forme de « {nom} » a changé")
+                casse = js.replace(avant, apres, 1)
+                with tempfile.TemporaryDirectory() as tmp:
+                    faux = pathlib.Path(tmp) / "auto.js"
+                    faux.write_text(casse, encoding="utf-8")
+                    proc = subprocess.run([NODE, str(LIVE_HARNESS)], cwd=ROOT,
+                                          capture_output=True, text=True, timeout=120,
+                                          env=dict(os.environ, AUTO_JS=str(faux)))
+                self.assertNotEqual(proc.returncode, 0,
+                                    f"le harnais passe sans « {nom} » :\n{proc.stdout}")
+
+
 if __name__ == "__main__":
     unittest.main()

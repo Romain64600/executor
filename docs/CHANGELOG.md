@@ -3,6 +3,39 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-26 — Console `/executor/auto` : la page EN COURS se voit
+
+Romain : « 4. Go », sur la proposition faite le 25/09 quand la console de l'ancienne VM est
+restée une heure sur « 0 offres créées · 0 marchand » pendant que Gamesplanet FR saisissait sa
+page 3 (52 offres à ~58 s). Cause : `recap.json` n'était réécrit qu'à la FIN d'une page
+(extraction, matching et TOUTE la saisie), et la cible d'un marchand n'y était ajoutée qu'à ce
+moment-là.
+
+- **Le marchand apparaît dès qu'il démarre** (`scripts/10_data_entry_auto.py` : `persist()`
+  juste après l'ajout de la cible).
+- **`recap.targets[].recap.current`** (`src/data_entry_auto.run_sweep`, nouveaux paramètres
+  `on_progress` et `clock`) : la page en cours, son run et son étape (`probe` / `extract` /
+  `match` / `submit` / `move` / `pause`) avec ce qu'elle sait déjà (offres, candidats,
+  approuvés, essai, durée et motif d'une pause). Posé à chaque changement d'étape, remis à
+  `null` à chaque fin de page ; le recap est persisté à chaque fois. Contrat :
+  `docs/DATA_CONTRACTS.md` § recap.json.
+- **La console** (`auto.js` / `auto.css`) l'affiche dans le résumé et sous le marchand ;
+  pendant la SAISIE elle lit créées / échecs sur la route de run déjà servie par l'admin
+  (`GET /api/runs/<run de la page>` → `created_count` / `failed_count`, tirés du journal de la
+  page). Rien « en cours » sur un recap fini ou abandonné (crash).
+- **Aucun changement du chemin d'écriture** : le submitter, sa preuve de disparition et la
+  garde des dix échecs sont intacts ; `current` ne décide de rien, un `on_progress` qui lève est
+  ignoré, et le recap final est identique avec ou sans lui (testé). Le sha AS1 du recap reste
+  celui des octets du fichier.
+- **Quand c'est actif.** La console (fichiers statiques relus à chaque requête) : dès le
+  déploiement. L'étape écrite par le balayage : pour les sweeps lancés APRÈS le déploiement —
+  un sweep déjà en cours garde son code chargé et s'affiche comme avant. Aucune route admin
+  nouvelle : pas besoin de redémarrer `aks-admin`.
+- Tests : `tests/test_sweep_live_page.py` (étapes, reprises, recap identique, orchestrateur,
+  contrat de l'admin) ; `tests/js/auto_live_page.test.mjs` exécuté par
+  `tests/test_console_js_simulation.py`, qui prouve aussi qu'il rougit sans la lecture des
+  compteurs, sans la ligne du résumé ou sans la garde « run vivant ».
+
 ## 2026-09-26 — Discover.games et Loaded en liste blanche (groupe A) ; DLC console sans marqueur : pas de blocage
 
 - **Liste blanche** (`src/admin/auto_merchants.py`, `src/merchant_groups.py`) : Romain, « 5. Go »

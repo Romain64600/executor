@@ -303,6 +303,20 @@ validation triple's shape is load-bearing (FC5, audit 2026-07-17).
   c'est la seule preuve de couverture que le balayage sache produire. La mesure vient de
   `Stages.offer_ids` (optionnel) ; absent ou en erreur, le balayage se comporte comme avant.
 
+- **La page EN COURS depuis le 2026-09-26** (Romain : « 4. Go »). Chaque `recap` de cible porte
+  `current` : `null` entre deux pages et à la fin, sinon `{page, run, since, stage, stage_at}`
+  plus ce que l'étape sait déjà — `offers` (dès le matching), `candidates` et `approved` (dès la
+  saisie), `movable` (déplacement), `attempt` (≥ 2 sur une reprise), `wait_s` et `reason`
+  (pause). `stage` ∈ `probe` (lecture de la page de départ pour connaître la taille du feed),
+  `extract`, `match`, `submit`, `move`, `pause`. `run` est le run de la PAGE
+  (`<sweep>-<marchand>-s<store>-p<N>`) ; `since` / `stage_at` ont le format des `ts` des
+  journaux (`2026-09-26T10:03:00Z`). Le recap est réécrit (`persist`, atomique) à chaque
+  changement d'étape (`run_sweep(on_progress=…)`) et dès qu'un marchand démarre (sa cible
+  apparaît avec `recap: null`). Pendant la saisie, la console lit les créées / échecs sur
+  `GET /api/runs/<run>` (`created_count` / `failed_count`, tirés du journal
+  `logs/<run>.jsonl` — route existante, aucune route nouvelle). Pur affichage : rien ne décide
+  d'une écriture sur `current`, et un `on_progress` en échec est ignoré.
+
 Consumers: `scripts/05_submit.py` and the admin's `SubmitManager` refuse a REAL
 submit whose declared mode implies a **wider** batch than the matched mode — a
 run matched under an unlock (canary of 1) must never take the full-batch `safe`

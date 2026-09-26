@@ -271,8 +271,11 @@ class TheNeighbouringPollLoopsAreGuardedTests(unittest.TestCase):
         auto = (ROOT / "src" / "admin" / "static" / "auto.js").read_text(encoding="utf-8")
         self.assertIn("POLL_SEQ", auto)
         self.assertIn("const seq = POLL_SEQ;", auto)
-        self.assertEqual(auto.count("if (seq !== POLL_SEQ) return;"), 2,
-                         "its tick awaits TWICE — one guard after each await")
+        # Trois attentes depuis le 2026-09-26 : l'état du gestionnaire, le recap, et les
+        # compteurs de la page en cours pendant sa saisie (`api/runs/<run>`) — une garde après
+        # CHACUNE, sinon un tick d'un ancien sweep peindrait dans le nouveau.
+        self.assertEqual(auto.count("if (seq !== POLL_SEQ) return;"), 3,
+                         "its tick awaits THREE times — one guard after each await")
         end = auto[auto.index("function endSweepUi("):]
         self.assertIn("POLL_SEQ++", end[:400])
 

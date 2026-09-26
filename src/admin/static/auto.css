@@ -100,6 +100,11 @@ button.danger:disabled { opacity:.45; cursor:not-allowed; }
 .off-st { font-size:.74rem; }
 .off.ok .off-st { color:var(--good); }
 .off.no .off-st { color:var(--bad); }
+/* La page EN COURS (2026-09-26) : la ligne du résumé et le bloc sous le marchand. */
+.summary { flex-wrap:wrap; }
+.live-line { align-self:center; color:var(--warn); font-size:.82rem; }
+.pg.live { border-color:var(--warn); }
+.pg.live .pg-n { color:var(--warn); }
 
 footer#status { position:sticky; bottom:0; padding:.4rem .9rem; background:var(--panel); border-top:1px solid var(--line); color:var(--dim); font-size:.8rem; }
 footer#status.busy { color:var(--warn); }

@@ -545,6 +545,16 @@ instead of ending the sweep. The recap lands in `runs/<run-id>/recap.json`, one 
 merchant with `created` and any `halted` reason. Consoles are INCLUDED by default `[R45]`;
 add `--no-consoles` for a PC-only pass.
 
+**La page en cours se voit dans `/executor/auto` (2026-09-26).** Un marchand apparaît dès qu'il
+démarre, et la page qu'il traite s'affiche avec son étape — lecture du feed, matching, saisie,
+déplacement, pause après une erreur passagère — dans le résumé (« ▶ en cours : Gamesplanet FR ·
+page 3 — saisie : 39 créée(s) sur 52 candidat(s) ») et sous le marchand. Pendant la saisie, les
+compteurs se mettent à jour à chaque sondage (5 s), lus dans le journal de la page. Avant, rien
+ne s'affichait avant la FIN de la première page : une heure de « 0 offres créées · 0 marchand »
+pour Gamesplanet FR le 25/09. Actif pour les sweeps lancés APRÈS le déploiement (le balayage
+écrit l'étape dans `recap.json` → `current`, `docs/DATA_CONTRACTS.md`) ; un sweep lancé avant
+garde l'affichage page par page.
+
 **Tri par SQL — console `/sql` (2026-09-18).** Romain exécute lui-même les `UPDATE` de tri
 dans phpMyAdmin ; la console les **génère et les mesure**, elle n'exécute rien et n'importe
 aucun pilote de base. Chaque requête s'affiche avec ce qu'elle toucherait sur le dernier scan

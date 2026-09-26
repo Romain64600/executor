@@ -268,7 +268,6 @@ function startPolling(runId) {
     try { d = await api("api/data-entry/recap" + (runId ? "?run=" + encodeURIComponent(runId) : "")); }
     catch (e) { d = null; }        // recap detail may be unavailable; busy still drives run state
     if (seq !== POLL_SEQ) return;
-    if (d) renderRecap(d);
     const rec = d && d.recap;
     // Still running if the manager reports an auto sweep, or (busy unknown) on a
     // transient error; finished only once the manager is idle for this kind.
@@ -277,6 +276,20 @@ function startPolling(runId) {
     else if (busy && busy.kind === "data_entry_auto") running = true;
     else if (rec) running = !rec.finished_at;
     else running = false;
+    // La page EN COURS (Romain, 2026-09-26) : pendant sa SAISIE, ses compteurs viennent de
+    // la route de run déjà servie par l'admin (`api/runs/<run de la page>` : created_count /
+    // failed_count, lus dans le journal de la page). Lecture seule ; un échec n'efface rien,
+    // l'étape s'affiche sans chiffres.
+    let live = null;
+    const cur = running ? currentPage(rec) : null;
+    if (cur && cur.stage === "submit" && cur.run) {
+      try {
+        const r = await api("api/runs/" + encodeURIComponent(cur.run));
+        live = { run: cur.run, created: r && r.created_count, failed: r && r.failed_count };
+      } catch (e) { live = null; }
+      if (seq !== POLL_SEQ) return;
+    }
+    if (d) renderRecap(d, { running, live });
     if (!running) {
       const cov = rec && rec.coverage_incomplete && rec.coverage_incomplete.length ? rec.coverage_incomplete : [];
       endSweepUi(rec && rec.halted ? ("Arrêté : " + rec.halted)
@@ -303,10 +316,52 @@ async function resumeIfActive() {
 // it after the fact (the recap's whole purpose) instead of a bare launch form.
 async function showLastRecap() {
   let d; try { d = await api("api/data-entry/recap"); } catch (e) { return; }
-  if (d && d.recap) { $("#recap-card").classList.remove("hidden"); renderRecap(d); }
+  if (d && d.recap) { $("#recap-card").classList.remove("hidden"); renderRecap(d, { running: false }); }
 }
-function renderRecap(d) {
+// ---- la page en cours (Romain, 2026-09-26 : « 4. Go ») ----
+// Le balayage pose `current` dans le recap de son marchand à chaque changement d'étape
+// (src/data_entry_auto.run_sweep) : {page, run, stage, stage_at, offers, candidates,
+// approved, movable, attempt, wait_s, reason}. Avant, rien ne s'affichait avant la FIN de
+// la première page — une heure de « 0 offres créées · 0 marchand ».
+function currentPage(rec) {
+  if (!rec || rec.finished_at) return null;
+  for (const t of (rec.targets || [])) {
+    const cur = t && t.recap && t.recap.current;
+    if (cur && cur.page != null) return Object.assign({ merchant: t.merchant }, cur);
+  }
+  return null;
+}
+const hhmm = (ts) => (typeof ts === "string" && ts.length >= 16 ? ts.slice(11, 16) + " UTC" : "");
+function stageText(cur, live) {
+  const n = (v) => (v == null ? "?" : String(v));
+  const essai = cur.attempt ? " — essai " + cur.attempt : "";
+  let txt;
+  switch (cur.stage) {
+    case "probe": txt = "lecture de la page " + cur.page + " (taille du feed)" + essai; break;
+    case "extract": txt = "lecture du feed" + essai; break;
+    case "match": txt = "matching de " + n(cur.offers) + " offres"; break;
+    case "submit": {
+      const total = cur.approved != null ? cur.approved : cur.candidates;
+      if (live && live.run === cur.run && live.created != null) {
+        txt = "saisie : " + live.created + " créée(s) sur " + n(total) + " candidat(s)"
+            + (live.failed ? " · " + live.failed + " échec(s)" : "");
+      } else {
+        txt = "saisie de " + n(total) + " candidat(s)";
+      }
+      break;
+    }
+    case "move": txt = "déplacement de " + n(cur.movable) + " offre(s) vers leurs listes"; break;
+    case "pause": txt = "pause de " + Math.round((cur.wait_s || 0) / 60) + " min après une erreur passagère"
+                        + (cur.reason ? " (" + cur.reason + ")" : ""); break;
+    default: txt = String(cur.stage || "en cours");
+  }
+  const depuis = hhmm(cur.stage_at);
+  return txt + (depuis ? " · depuis " + depuis : "");
+}
+function renderRecap(d, opts) {
   const rec = d && d.recap;
+  const running = !!(opts && opts.running);
+  const live = (opts && opts.live) || null;
   $("#recap-run").textContent = d && d.run_id ? "· " + d.run_id : "";
   if (!rec) { $("#recap-summary").textContent = "En attente du premier scan…"; return; }
   const st = rec.finished_at ? (rec.halted ? "halted" : "done") : "running";
@@ -329,16 +384,26 @@ function renderRecap(d) {
   if ((rec.targets_refused || []).length) queueLines.push("⛔ refusés (liste blanche) : " + names(rec.targets_refused));
   if ((rec.targets_ignored || []).length) queueLines.push("— ignorés (déjà cibles) : " + names(rec.targets_ignored));
   if (rec.queue_closed) queueLines.push("file fermée — le sweep termine, plus d'ajout possible");
+  // Seulement pendant un run VIVANT : un recap abandonné par un crash garde son dernier
+  // `current`, et le rejouer comme « en cours » mentirait.
+  const cur = running ? currentPage(rec) : null;
   $("#recap-summary").replaceChildren(
     el("div", { class: "kpi" }, [el("div", { class: "kpi-n", text: String(total) }), el("div", { class: "kpi-l", text: "offres créées" })]),
     ...queueLines.map((t) => el("div", { class: "queue-line", text: t })),
     el("div", { class: "kpi" }, [el("div", { class: "kpi-n", text: String((rec.targets || []).length) }), el("div", { class: "kpi-l", text: "marchand(s)" })]),
+    cur ? el("div", { class: "live-line", text: "▶ en cours : " + cur.merchant + " · page " + cur.page + " — " + stageText(cur, live) }) : null,
   );
   const wrap = $("#recap-pages");
   wrap.replaceChildren();
   for (const t of (rec.targets || [])) {
     const sr = t.recap || {};
     wrap.append(el("h3", { class: "t-title", text: t.merchant + " (store " + t.store_id + ") — " + (sr.total_created || 0) + " créées" + (sr.halted ? " · " + sr.halted : "") + (sr.coverage ? " · couverture : " + sr.coverage : "") }));
+    if (running && !t.recap && !rec.finished_at) {
+      wrap.append(el("div", { class: "pg live" }, [el("div", { class: "pg-head" }, [
+        el("span", { class: "pg-n", text: "démarrage" }),
+        el("span", { class: "pg-m", text: "le marchand vient de commencer — première étape en préparation" }),
+      ])]));
+    }
     for (const p of (sr.pages || [])) {
       const tags = [];
       if (p.end_of_feed) tags.push("fin du feed");
@@ -360,6 +425,15 @@ function renderRecap(d) {
         ]));
       }
       wrap.append(el("div", { class: "pg" }, kids));
+    }
+    // La page en cours de CE marchand, après ses pages finies (l'ordre du balayage : la plus
+    // haute d'abord). Ses créations rejoignent la liste ci-dessus quand elle finit.
+    const pc = running && !rec.finished_at ? sr.current : null;
+    if (pc && pc.page != null) {
+      wrap.append(el("div", { class: "pg live" }, [el("div", { class: "pg-head" }, [
+        el("span", { class: "pg-n", text: "page " + pc.page + " — en cours" }),
+        el("span", { class: "pg-m", text: stageText(pc, live) }),
+      ])]));
     }
   }
 }

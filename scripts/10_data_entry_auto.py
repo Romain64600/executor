@@ -850,16 +850,23 @@ def main() -> int:
                               page_catalog=args.page_catalog, list_id=args.list_id)
         target_entry = {"merchant": merchant, "store_id": store_id, "recap": None}
         recap["targets"].append(target_entry)
+        # Romain, 2026-09-26 (« 4. Go ») : le marchand s'affiche DÈS qu'il démarre. Avant, le
+        # recap n'était réécrit qu'à la fin de la première page — extraction, matching et
+        # TOUTE sa saisie : une heure de « 0 offres créées · 0 marchand » pour Gamesplanet FR.
+        persist()
 
         def on_page(live_recap, _t=target_entry):
             # Attach the LIVE sweep recap so the console sees per-page progress
-            # BEFORE run_sweep returns (the reference is mutated in place).
+            # BEFORE run_sweep returns (the reference is mutated in place). Also the
+            # `on_progress` hook: every stage change of the page in progress
+            # (`recap["current"]`) is persisted the same way.
             _t["recap"] = live_recap
             persist()
 
         sweep = run_sweep(cfg, stages,
                           page_run_id=lambda p, sl=slug, sid=store_id: f"{run_id}-{sl}-s{sid}-p{p}",
-                          should_stop=lambda: _RUNNER.stopped, on_page=on_page)
+                          should_stop=lambda: _RUNNER.stopped, on_page=on_page,
+                          on_progress=on_page, clock=_clock)
         target_entry["recap"] = sweep
         if sweep.get("coverage"):
             # Benign coverage cap (max_pages / feed grew): surfaced at batch level for the

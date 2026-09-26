@@ -38,6 +38,14 @@ Design after the 2026-08-04 adversarial review (which found real defects):
 
 * OPERATOR STOP is re-checked between stages (and before the real submit), so a
   stop that lands mid-page still prevents that page's writes when it can.
+
+* LA PAGE EN COURS SE VOIT (Romain, 2026-09-26 : « 4. Go »). ``recap["current"]`` dit la
+  page qu'on traite, son run et son ÉTAPE (``probe`` / ``extract`` / ``match`` / ``submit``
+  / ``move`` / ``pause``), remis à ``None`` dès qu'elle finit ; ``on_progress`` est appelé à
+  chaque changement d'étape. Sans lui, la console restait sur « 0 offres créées · 0
+  marchand » pendant toute la première page — une heure pour Gamesplanet FR le 25/09 (52
+  saisies à ~58 s). Pur affichage : rien ici ne décide d'une écriture, et un ``on_progress``
+  qui lève est ignoré.
 """
 
 from __future__ import annotations
@@ -45,6 +53,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -226,6 +235,13 @@ class StageError(Exception):
     """A stage (e.g. auto-approve) failed — recorded as a fail-closed halt."""
 
 
+def _utc_stamp() -> str:
+    """Le format des ``ts`` des journaux de page (``2026-09-25T16:05:15Z``) : la console
+    compare les deux."""
+
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def run_sweep(
     cfg: SweepConfig,
     stages: Stages,
@@ -234,6 +250,8 @@ def run_sweep(
     should_stop: Callable[[], bool] = lambda: False,
     on_page: Callable[[dict[str, Any]], None] = lambda e: None,
     sleep: Callable[[float], None] = time.sleep,
+    on_progress: Callable[[dict[str, Any]], None] | None = None,
+    clock: Callable[[], str] = _utc_stamp,
 ) -> dict[str, Any]:
     """Sweep a merchant's feed reflow-safe (highest page first), halting fail-closed.
 
@@ -243,6 +261,9 @@ def run_sweep(
     (a→b pages)'``; a page entry may carry ``probe_unreliable`` (unreliable-probe skips).
     ``on_page`` is called after each page with the LIVE recap dict (mutated in
     place) so the caller can persist per-page progress before the sweep returns.
+    ``on_progress`` (optional) gets the same dict at every STAGE change of the page in
+    progress (``recap["current"]``, 2026-09-26) — display only, its exceptions are
+    swallowed; ``clock`` stamps those changes.
     """
 
     recap: dict[str, Any] = {
@@ -263,9 +284,35 @@ def run_sweep(
         "distinct_offers": 0, "pages_without_new_offers": [],
         # Reprises après une erreur passagère (2026-09-24) : leur nombre, pour la console.
         "transient_retries": 0,
+        # La page EN COURS (2026-09-26) : {page, run, since, stage, stage_at} + ce que
+        # l'étape sait déjà (offers, candidates, approved, movable, attempt, wait_s,
+        # reason). None entre deux pages et à la fin.
+        "current": None,
     }
 
     waits = tuple(cfg.transient_retry_waits or ())
+
+    def show(stage: str, page: int, run_id: str, **fields: Any) -> None:
+        """Pose l'étape de la page en cours et prévient ``on_progress``. Une (nouvelle)
+        tentative — ``probe`` / ``extract``, seules étapes qui suivent une pause — repart
+        d'une fiche vierge : seul ``since``, l'heure du premier essai de CETTE page, survit.
+        Jamais une raison d'échouer."""
+
+        now = clock()
+        cur = recap.get("current")
+        if not (isinstance(cur, dict) and cur.get("page") == page and cur.get("run") == run_id):
+            cur = {"page": page, "run": run_id, "since": now}
+        if stage in ("probe", "extract"):
+            cur = {"page": page, "run": run_id, "since": cur.get("since") or now}
+        cur.update(fields)
+        cur["stage"] = stage
+        cur["stage_at"] = now
+        recap["current"] = cur
+        if on_progress is not None:
+            try:
+                on_progress(recap)
+            except Exception:   # noqa: BLE001 — un affichage n'arrête jamais un balayage
+                pass
 
     def pause(seconds: float) -> bool:
         """Attend ``seconds`` par tranches de 5 s au plus, en surveillant l'arrêt opérateur :
@@ -281,6 +328,7 @@ def run_sweep(
         return not should_stop()
 
     def finish_page(entry: dict[str, Any]) -> None:
+        recap["current"] = None          # la page est finie : plus rien « en cours »
         recap["pages"].append(entry)
         recap["total_created"] = sum(p.get("created", 0) for p in recap["pages"])
         recap["total_moved"] = sum(p.get("moved", 0) for p in recap["pages"])
@@ -296,6 +344,7 @@ def run_sweep(
     probe_id = page_run_id(cfg.start_page)
     probe_retries: list[dict[str, Any]] = []
     while True:
+        show("probe", cfg.start_page, probe_id)
         probe = stages.extract(cfg.start_page, probe_id)
         if probe.ok:
             break
@@ -307,6 +356,8 @@ def run_sweep(
                               "reason": str(probe.detail or why)[:300]})
         recap["transient_retries"] += 1
         on_page(recap)
+        show("pause", cfg.start_page, probe_id, wait_s=waits[n],
+             reason=str(probe.detail or why)[:160])
         if not pause(waits[n]):
             break
     if not probe.ok:
@@ -365,6 +416,8 @@ def run_sweep(
         les trois cas d'échec : si les reprises sont épuisées, la halte est déjà écrite."""
 
         nonlocal max_seen
+        essais = len(entry.get("transient_retries") or [])
+        show("extract", page, run_id, **({"attempt": essais + 1} if essais else {}))
         ex = stages.extract(page, run_id)
         entry["offers"] = ex.offers
         if ex.feed_last_page and ex.feed_last_page > max_seen:
@@ -401,6 +454,7 @@ def run_sweep(
             finish_page(entry)
             return "next", None
 
+        show("match", page, run_id, offers=ex.offers)
         mt = stages.match(run_id)
         entry["candidates"] = mt.candidates
         if mt.movable:
@@ -426,6 +480,7 @@ def run_sweep(
                 recap["halted"] = _halt_label(f"approve_failed_p{page}", should_stop)
                 finish_page(entry)
                 return "halt", None
+            show("submit", page, run_id, candidates=mt.candidates, approved=entry["approved"])
             sub = stages.submit(run_id)
             entry["created"] = sub.created
             entry["offers_created"] = sub.offers
@@ -459,6 +514,7 @@ def run_sweep(
                 recap["halted"] = "operator_stop"
                 finish_page(entry)
                 return "halt", None
+            show("move", page, run_id, movable=mt.movable)
             mv = stages.move(run_id)
             entry["moved"] = mv.moved
             entry["offers_moved"] = mv.offers
@@ -512,6 +568,7 @@ def run_sweep(
                         except Exception:   # noqa: BLE001 — une trace mise de côté n'est jamais une halte
                             pass
                     on_page(recap)
+                    show("pause", page, run_id, wait_s=waits[n], reason=str(motif or "")[:160])
                     if pause(waits[n]):
                         continue
                     recap["halted"] = "operator_stop"
@@ -565,6 +622,7 @@ def run_sweep(
             f"{'…' if len(repeated) > 12 else ''})"
         )
 
+    recap["current"] = None
     return recap
 
 
