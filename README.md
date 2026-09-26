@@ -624,14 +624,18 @@ trois fois. Un doute APRÈS un clic reste une halte immédiate (EXECUTOR_RULES �
 page exactement les offres d'une page précédente du même balayage — Kinguin 44 pages sur 120 le
 24/09, GameSeal 51 sur 208 —, elle n'est ni matchée ni saisie (`skipped_repeated`).
 
-**Allowlist as of 2026-09-24 (18 merchants)** — the command above derives this list itself,
+**Allowlist as of 2026-09-26 (21 merchants)** — the command above derives this list itself,
 it is reproduced only so a reader knows what a night sweep covers: Kinguin 58, G2A 38,
 Driffle 127, Eneba 19, K4G 92, Gamivo 51, Instant Gaming 28, CJS-CDKeys 30, Allyouplay 17,
 GameSeal 126, GameBoost 157, Electronicfirst 70, GamersOutlet 31, Gamerall 13, MMOGA 12,
 Difmark 167 (its rows live in list 30, not 9 — it is in no group), GOG 34 (2026-09-22,
 group A) and **Wyrel 162 (2026-09-24, group B** — its « (PC) » keys enter as Steam only on a
 Steam-only AKS page, `[R58]`) and **Gamesplanet FR 55 (2026-09-25, group A** — platform from
-the URL, region from the product page's excluded countries, `[R59]`). Allyouplay has never had a real sweep —
+the URL, region from the product page's excluded countries, `[R59]`), then on 2026-09-26
+**Discover.games 168 and Loaded 40 (ex-CDKeys), both group A** — Discover.games reads platform
+and region on its product page (`[R60]`), Loaded reads the region in the title's final
+parenthesis and the PC store in the affiliate link's product slug (`[R61]`). Loaded is a small
+queue: sweep it first over few pages. Allyouplay has never had a real sweep —
 preview it with `--dry-run` before the first write pass.
 
 ---

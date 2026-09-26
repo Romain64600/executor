@@ -322,6 +322,12 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   conditions, chacune vérifiée seule par mutation. Ne pas l'élargir à « la page a un seau
   DLC » : c'est mot pour mot l'erreur Vice City.
 
+- **P5 console : un titre SANS marqueur DLC peut entrer en DLC(16) — Romain, 2026-09-26**
+  (« Ne bloque pas côté console »). Depuis P5 (25/09), chaque page cible console passe par
+  `r43_dlc_page_refusal` et par R18 comme le PC : un titre console sans marqueur n'atteint le seau
+  DLC(16) que par les mêmes verrous (seau DLC SEUL sur la page, R18b, `[R57]`). Un audit proposera
+  d'interdire DLC(16) aux titres console sans marqueur : ne pas l'ajouter.
+
 - **`[R55b]` GOG : « Expansion - … » est un marqueur DLC — pour GOG SEULEMENT (Romain,
   2026-09-23 : « expansion veut dire DLC, non ? »).** Déclaré par `gog.dlc_marker`, le préfixe
   de rayon retiré du slug et des gardes. L'audit du même jour sur 88 titres « Expansion » de

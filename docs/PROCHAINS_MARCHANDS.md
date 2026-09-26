@@ -16,8 +16,8 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 | 2 | **Gamebillet** (15) | 268 | 192 (72 %) | plateforme et région (URL et titre muets ; la page liste les pays exclus) | à étudier après Gamesplanet |
 | 3 | **Muve** (166) | 605 | 322 (53 %) | titre lisible pour ~35 % des lignes ; pas de région sur la page ; « sans région = Europe » refusé par Romain (25/09) | ~140 lignes seulement, en refusant les lignes sans région |
 | 4 | **Pixelcodes** (82) + **Software-codes** (6) | 1 547 + 1 538 | 1 377 + 1 365 (89 %) | **les produits du feed n'existent plus sur leurs sites** (API : « Product not found », 52 sur 52 testés ; sites devenus boutiques de logiciels) | à ne pas saisir ; liste « not found » en cours pour les marchands |
-| 5 | **Discover.games** (168) | 440 | 370 (84 %) | — | **fichier écrit le 25/09 (`[R60]`), essai à blanc : 106 candidats sur 150 lignes ; liste blanche à décider** |
-| 6 | **CDKeys → « Loaded »** (40) | 16 (21/09) | — | feed du jour à relire | **fichier écrit le 25/09 (`[R61]`, « Europe & UK » → Europe, sans région → GLOBAL) ; essai à blanc sur 16 lignes : 1 candidat** |
+| 5 | **Discover.games** (168) | 440 | 370 (84 %) | — | **fichier écrit le 25/09 (`[R60]`), essai à blanc : 106 candidats sur 150 lignes ; en liste blanche le 26/09, groupe A** |
+| 6 | **CDKeys → « Loaded »** (40) | 16 (21/09) | — | feed du jour à relire | **fichier écrit le 25/09 (`[R61]`, « Europe & UK » → Europe, sans région → GLOBAL) ; essai à blanc sur 16 lignes : 1 candidat ; en liste blanche le 26/09, groupe A** |
 | — | Greenmangaming (22) | 482 | 318 (66 %) | URL d'affiliation illisible (sjv.io), titre muet | pas prioritaire |
 
 \* Mesuré sur le scan tous-magasins du 21/09, **avant** la correction du tri du feed (`orderBy=id`,

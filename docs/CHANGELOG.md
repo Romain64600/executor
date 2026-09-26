@@ -3,6 +3,18 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-26 — Discover.games et Loaded en liste blanche (groupe A) ; DLC console sans marqueur : pas de blocage
+
+- **Liste blanche** (`src/admin/auto_merchants.py`, `src/merchant_groups.py`) : Romain, « 5. Go »
+  sur le groupe A proposé — **Discover.games 168** (`[R60]`, plateforme et région lues sur la
+  fiche ; essai à blanc 106 / 150) et **Loaded 40**, ex-CDKeys (`[R61]`, région = parenthèse
+  finale du titre, boutique PC = slug de la fiche du lien d'affiliation). Groupe A ≈ 13 810
+  lignes (440 + 16 ajoutées), toujours sous le B. 21 marchands en liste blanche. Effet : au
+  prochain redémarrage de l'admin (liste de la console) et au prochain lancement de groupe.
+- **DLC console sans marqueur** : Romain, « 3. Ne bloque pas côté console » — un titre console
+  sans marqueur DLC peut atteindre DLC(16) par les verrous R18 du PC (seau DLC seul sur la page,
+  R18b, `[R57]`), comme depuis P5. Aucun changement de code ; décision consignée dans AGENTS.md.
+
 ## 2026-09-25 — Consoles : P4 tranchée (Xbox sans génération « sur les deux »), « Switch » dans un nom PC
 
 Ajout de Romain au même chantier (EXECUTOR_RULES §4.12.3 / §4.12.4 / P4, §12 ; AGENTS) :

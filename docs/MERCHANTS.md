@@ -959,7 +959,7 @@ matcher et le classifieur importent le registre.
   Tests : `tests/test_merchants_gamesplanet.py` (15, fiches réelles dans
   `tests/fixtures/gamesplanet/`), 6 mutations rougies.
 
-## Discover.games (store 168, `[R60]`, fichier le 25/09 — pas encore en liste blanche)
+## Discover.games (store 168, `[R60]`, fichier le 25/09, liste blanche le 26/09, groupe A)
 
 - **Fichier** : `src/merchants/discover.py`. Boutique officielle à prix par pays : titre et URL
   NUS (« Potion Permit », `discover.games/games/<slug>`).
@@ -979,7 +979,7 @@ matcher et le classifieur importent le registre.
   `tests/test_merchants_discover.py` (11, extraits réels en `tests/fixtures/discover/`),
   5 mutations rougies.
 
-## Loaded, ex-CDKeys (store 40, `[R61]`, fichier le 25/09 — pas encore en liste blanche)
+## Loaded, ex-CDKeys (store 40, `[R61]`, fichier le 25/09, liste blanche le 26/09, groupe A)
 
 - **Fichier** : `src/merchants/loaded.py`. Titres RICHES : `<Jeu> <Plateforme> [(<Région>)] [- DLC]`
   (« Towerborne Xbox/PC (Europe & UK) », « … PC (North America) », « … Xbox (WW) »,
@@ -998,6 +998,8 @@ matcher et le classifieur importent le registre.
   XBOX/PC EU) ; refus : 4 sans page AKS, 4 « Xbox/PC » sans génération, 2 North America, 2 bonus de
   précommande, 1 abonnement, 1 bundle. Le feed du jour reste à relire (les deux navigateurs étaient
   pris). Tests : `tests/test_merchants_loaded.py` (13), 6 mutations rougies.
+- **Liste blanche le 26/09, groupe A** (Romain : « Go »), avec Discover.games. File minuscule :
+  lancer le premier passage sur peu de pages et relire le bilan.
 
 ## Ce qui n'est pas propre à un marchand
 

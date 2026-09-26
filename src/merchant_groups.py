@@ -49,6 +49,8 @@ PENDING_2026_09_21 = {
     "Wyrel": 4725,
     # Même scan, à l'entrée de Gamesplanet FR en liste blanche (2026-09-25).
     "Gamesplanet FR": 526,
+    # Même scan, à l'entrée de Discover.games et de Loaded en liste blanche (2026-09-26).
+    "Discover.games": 440, "Loaded": 16,
 }
 
 # Hors groupes, avec la raison — un marchand absent des deux groupes n'est PAS un oubli.
@@ -65,8 +67,10 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # c'est exactement la limite que ce module annonce depuis le début.
     # + Gamesplanet FR (526 lignes), entré le 2026-09-25 dans le groupe le plus léger
     # (Romain : « go liste blanche, groupe A ») → ~13 354 lignes.
+    # + Discover.games (440) et Loaded (16), entrés le 2026-09-26 (Romain : « Go », groupe A
+    # proposé) → ~13 810 lignes, toujours sous le B.
     "A": ("GameSeal", "G2A", "GameBoost", "Driffle", "Instant Gaming", "MMOGA",
-          "GamersOutlet", "GOG", "Gamesplanet FR"),
+          "GamersOutlet", "GOG", "Gamesplanet FR", "Discover.games", "Loaded"),
     # ~15 555 lignes : trois files moyennes et le reste — et Wyrel, entré en liste blanche le
     # 2026-09-24 avec 4 725 lignes, dont une bonne part refusée d'office (non-jeux, ROW).
     # Mis ici parce que le B était le plus léger ; le B passe donc devant le A (12 828).

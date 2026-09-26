@@ -107,9 +107,13 @@ class Registre(unittest.TestCase):
         self.assertEqual(merchant_for_store("168"), "Discover.games")
         self.assertIs(merchant_config("Discover.games"), d.CONFIG)
 
-    def test_pas_encore_en_liste_blanche(self):
+    def test_en_liste_blanche_dans_le_groupe_a(self):
+        """Romain, 2026-09-26 : « 5. Go » (groupe A proposé)."""
+
         from src.admin.auto_merchants import AUTO_MERCHANTS
-        self.assertNotIn("168", {s for _, s in AUTO_MERCHANTS})
+        from src.merchant_groups import GROUPS
+        self.assertIn(("Discover.games", "168"), AUTO_MERCHANTS)
+        self.assertEqual([k for k, noms in GROUPS.items() if "Discover.games" in noms], ["A"])
 
 
 if __name__ == "__main__":

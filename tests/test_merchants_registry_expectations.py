@@ -43,6 +43,8 @@ EXPECTED_MODULE = {
                                     # le titre en complément d'information. Testons sur une
                                     # page. »), après l'audit du même jour
     "Gamesplanet FR": "gamesplanet.py",  # liste blanche le 2026-09-25 (Romain, groupe A)
+    "Discover.games": "discover.py",     # liste blanche le 2026-09-26 (Romain, groupe A)
+    "Loaded": "loaded.py",                # liste blanche le 2026-09-26 (Romain, groupe A)
     "Wyrel": "wyrel.py",            # liste blanche le 2026-09-24 (Romain : « Go Wyrel, … puis
                                     # whitelist ce marchand »)
 }

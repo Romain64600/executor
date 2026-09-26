@@ -94,6 +94,18 @@ AUTO_MERCHANTS: list[tuple[str, str]] = [
                                 # (-steam-key--…), région = liste des pays exclus de la fiche,
                                 # selon la règle de Romain (GLOBAL / EU / US / refus). Essai à
                                 # blanc sur 150 lignes réelles : 77 candidats. Feed store 55.
+    ("Discover.games", "168"),  # Romain 2026-09-26 (« 5. Go », groupe A), fichier [R60] du
+                                # 25/09 : titre et URL nus, plateforme ET région lues sur la
+                                # fiche (sellableProductDetail : platform + pays où le produit
+                                # est vendu, WW = monde), règle de Romain [R59] ; fiche 404 /
+                                # sans déclinaison en vente = refus. Essai à blanc : 106
+                                # candidats sur 150 lignes. Feed store 168.
+    ("Loaded", "40"),           # Romain 2026-09-26 (même « Go »), ex-CDKeys, fichier [R61] du
+                                # 25/09 : région = parenthèse finale du titre (« Europe & UK »
+                                # → Europe, sans parenthèse → GLOBAL comme Kinguin / MMOGA),
+                                # boutique PC = slug de la fiche cachée dans le lien
+                                # d'affiliation. Petite file (16 lignes le 21/09) : premier
+                                # passage conseillé sur peu de pages. Feed store 40.
 ]
 
 # Deliberately NOT suggested (enforcement is simply "absent from the list";
