@@ -13,8 +13,8 @@ corrects.
 import unittest
 
 from src.console_keys import (
-    SKIP_PC_ONLY,
     SKIP_XBOX_360,
+    XBOX_WINDOWS_KEY,
     ConsoleSignal,
     classify_console,
     resolve_name_of,
@@ -25,7 +25,7 @@ from src.merchants.registry import merchant_config
 
 ONE_SERIES = ("XBOX_ONE", "XBOX_SERIES")
 NO_GEN = "console: no declared generation (R45)"
-PC_ONLY = "console: PC-only Xbox Live key (R45)"
+WINDOWS = "windows"         # the hook's ``(XBOX_WINDOWS_KEY,)`` — a PC key sold through Xbox Live
 XBOX_360 = "console: Xbox 360 (R45)"
 
 # (title, url, families, pc_declared, skip_reason, resolve_name) — study §7 rows 11-17.
@@ -41,7 +41,9 @@ ROWS = [
      ("XBOX_SERIES",), True, None, "MOTORSLICE"),
     ("Thomas & Friends™: Wonders of Sodor PC/XBOX LIVE Key UNITED STATES",
      "https://www.eneba.com/xbox-thomas-friendstm-wonders-of-sodor-pc-xbox-live-key-united-states",
-     (), False, PC_ONLY, "Thomas & Friends™: Wonders of Sodor"),
+     # « PC/XBOX LIVE » = a PC key sold through Xbox Live (Romain 2026-09-26, « 1. »): a
+     # windows_key signal, the AKS PC page decides (before: "PC-only Xbox Live key" refusal)
+     ONE_SERIES, False, None, "Thomas & Friends™: Wonders of Sodor"),
     ("POLSKA GUROM XBOX LIVE Key UNITED STATES",
      "https://www.eneba.com/xbox-polska-gurom-xbox-live-key-united-states",
      ONE_SERIES, False, None, "POLSKA GUROM"),
@@ -89,7 +91,10 @@ class UrlSlotHookTests(unittest.TestCase):
         "https://www.eneba.com/nintendo-x-nintendo-switch-2-eshop-key-europe": (("SWITCH2",), False, None),
         "https://www.eneba.com/nintendo-x-nintendo-switch-nintendo-eshop-key-europe": (("SWITCH",), False, None),
         "https://www.eneba.com/xbox-x-xbox-series-x-s-xbox-key-united-states": (("XBOX_SERIES",), False, None),  # "XBOX Key" (2 real rows)
-        "https://www.eneba.com/xbox-x-pc-xbox-live-key-europe": ((), False, PC_ONLY),
+        "https://www.eneba.com/xbox-x-pc-xbox-live-key-europe": (ONE_SERIES, False, WINDOWS),
+        "https://www.eneba.com/xbox-x-windows-xbox-live-key-europe": (ONE_SERIES, False, WINDOWS),
+        # the Xbox store's own "(Windows) Key" form — no store-key marker (2026-09-26)
+        "https://www.eneba.com/xbox-x-windows-key-europe": (ONE_SERIES, False, WINDOWS),
         "https://www.eneba.com/xbox-x-xbox-360-xbox-live-key-europe": ((), False, XBOX_360),
         # the URL declares nothing; the TITLE's "XBOX LIVE" is P4's generation-less Xbox
         "https://www.eneba.com/xbox-x-xbox-live-key-europe": (ONE_SERIES, False, None),
@@ -98,19 +103,26 @@ class UrlSlotHookTests(unittest.TestCase):
     def test_hook_reads_the_slot_before_the_key_marker(self):
         for url, (families, pc, skip) in self.CASES.items():
             with self.subTest(url=url):
-                expected = skip if skip in (PC_ONLY, XBOX_360) else (families or None)
+                expected = skip if skip == XBOX_360 else (families or None)
+                if skip == WINDOWS:
+                    expected = (XBOX_WINDOWS_KEY,)
                 if url.endswith("/xbox-x-xbox-live-key-europe"):
                     expected = None                     # the hook reads nothing; P4 is the title's
                 self.assertEqual(eneba.console_url_families(url), expected)
                 self.assertEqual(eneba.console_pc_declared("X XBOX LIVE Key EUROPE", url), pc)
-        self.assertEqual(eneba.console_url_families("https://www.eneba.com/xbox-x-pc-xbox-live-key-europe"), SKIP_PC_ONLY)
+        self.assertEqual(eneba.console_url_families("https://www.eneba.com/xbox-x-pc-xbox-live-key-europe"),
+                         (XBOX_WINDOWS_KEY,))
+        # a "(Windows) Key" outside the Xbox store is not this grammar
+        self.assertIsNone(eneba.console_url_families("https://www.eneba.com/steam-x-windows-key-europe"))
         self.assertEqual(eneba.console_url_families("https://www.eneba.com/xbox-x-xbox-360-xbox-live-key-europe"), SKIP_XBOX_360)
 
     def test_classifier_reads_the_hook(self):
         for url, (families, pc, skip) in self.CASES.items():
             with self.subTest(url=url):
                 sig = classify_console("X XBOX LIVE Key EUROPE", url, "Eneba")   # title-less generation
-                self.assertEqual((sig.families, sig.pc_declared, sig.skip_reason), (families, pc, skip))
+                self.assertEqual((sig.families, sig.pc_declared, sig.skip_reason),
+                                 (families, pc, None if skip == WINDOWS else skip))
+                self.assertEqual(sig.windows_key, skip == WINDOWS)
                 self.assertEqual(_slot(sig), ("eu", None, ("EUROPE",)))
 
     def test_leading_segment_is_the_store_never_a_generation(self):
@@ -160,11 +172,18 @@ class UrlSlotHookTests(unittest.TestCase):
         self.assertEqual((sig.families, sig.pc_declared, sig.skip_reason), (ONE_SERIES, True, None))
 
     def test_windows_next_to_the_xbox_live_store_only_is_a_pc_key(self):
-        # "(Windows) XBOX LIVE Key" — a PC key sold through Xbox Live, never console pages (P4
-        # bound, 2026-09-25; 33 Eneba rows of the 21/09 corpus)
+        # "(Windows) XBOX LIVE Key" — a PC key sold through Xbox Live (33 Eneba rows of the
+        # 21/09 corpus). Romain 2026-09-26 (« 1. »): no longer refused — a windows_key signal,
+        # never P2's "Xbox + PC" (pc_declared stays False): the AKS PC page decides.
         sig = classify_console("Manor Lords (Windows) XBOX LIVE Key EUROPE",
                                "https://www.eneba.com/xbox-manor-lords-windows-xbox-live-key-europe", "Eneba")
-        self.assertEqual((sig.families, sig.skip_reason), ((), PC_ONLY))
+        self.assertEqual((sig.families, sig.pc_declared, sig.skip_reason, sig.windows_key),
+                         (ONE_SERIES, False, None, True))
+        # the same grammar with "xbox" in the URL only (Eneba's "(Windows) Key", 3 rows)
+        sig = classify_console("Call of Duty®: Black Ops II (2012) (Windows) Key UNITED STATES",
+                               "https://www.eneba.com/xbox-call-of-duty-r-black-ops-ii-2012-windows-key-united-states",
+                               "Eneba")
+        self.assertEqual((sig.skip_reason, sig.windows_key, sig.region_base), (None, True, "us"))
 
     def test_url_only_switch_2(self):
         sig = classify_console("Game eShop Key", "https://www.eneba.com/nintendo-game-nintendo-switch-2-eshop-key-europe", "Eneba")

@@ -148,10 +148,23 @@ _DECLARABLE = DECLARABLE_FAMILIES
 # merchant modules import these for their ``console_url_families`` hook (2026-09-14).
 # SKIP_SWITCH_2 is RETIRED (2026-09-14: Switch 2 pages exist and use the Nintendo
 # bucket) — the constant stays for importers, it is never emitted any more.
+# SKIP_PC_ONLY is RETIRED the same way (2026-09-26, Romain « 1. ») — a PC key sold through
+# Xbox Live is now a ``windows_key`` signal (see XBOX_WINDOWS_KEY below), never this refusal.
 SKIP_SWITCH_2 = "console: Switch 2 has no AKS bucket (R45)"
 SKIP_XBOX_360 = "console: Xbox 360 (R45)"
 SKIP_NO_GENERATION = "console: no declared generation (R45)"
 SKIP_PC_ONLY = "console: PC-only Xbox Live key (R45)"
+# Clé Windows / appli Xbox — Romain, 2026-09-26 (« 1. », son explication collée : une clé
+# « (Windows) XBOX LIVE Key » s'active dans l'appli Xbox / le Microsoft Store sur Windows et
+# marche sur PC ; elle ne débloque AUSSI la console que si le JEU est Xbox Play Anywhere —
+# « ne vous fiez pas au titre, vérifiez si le jeu est Play Anywhere »). Ce qu'un hook
+# ``console_url_families`` rend, SEUL, pour une clé PC vendue par Xbox Live (Gamivo
+# ``-xbox-pc-``, Eneba ``-pc-xbox-live-key-``). Jamais une famille : le classifieur en fait
+# un signal ``windows_key`` et le matcher tranche sur la page PC d'AKS.
+XBOX_WINDOWS_KEY = "XBOX_WINDOWS"
+SKIP_WINDOWS_KEY_NO_PAGE = (
+    "console: Windows / Xbox app key — the AKS PC page lists neither Xbox Play Anywhere nor "
+    "Microsoft Windows, not entered (R45)")
 # P4 Xbox (Romain 2026-09-25, « Xbox sur les deux »): what a merchant ``console_url_families``
 # hook returns, ALONE, for an Xbox run that names no generation (Gamivo ``-xbox-xboxwindows-``).
 # Never a family: the classifier reads it as the inferred cross-gen declaration below.
@@ -233,6 +246,14 @@ class ConsoleSignal:
     # cross-gen declaration, and the matcher keeps only the pages AKS HAS (a declared
     # generation keeps its all-or-nothing refusal).
     generation_inferred: bool = False
+    # Clé Windows / appli Xbox (Romain 2026-09-26, « 1. ») : True pour une clé PC vendue par
+    # Xbox Live — « Manor Lords (Windows) XBOX LIVE Key EUROPE », « … PC/XBOX LIVE Key … »,
+    # GameBoost « … Windows 11/Xbox Live Key … », Gamivo ``-xbox-pc-``. ``families`` vaut alors
+    # ("XBOX_ONE", "XBOX_SERIES") avec ``generation_inferred`` — les pages qu'un jeu Play
+    # Anywhere prend AUSSI —, ``pc_declared`` False (ce n'est PAS le « Xbox + PC » de P2) :
+    # le matcher lit la page PC d'AKS — « Xbox Play Anywhere » → cibles Play Anywhere, sinon
+    # « Microsoft Windows » → clé Microsoft Store (MICROSOFT), sinon refus.
+    windows_key: bool = False
 
 
 # ── merchant hooks (2026-09-14) ──────────────────────────────────────────────────────
@@ -736,6 +757,12 @@ class SlugRead:
     pc_declared: bool = False
     skip_reason: str | None = None
     span: tuple[int, int] | None = None
+    # « les 2 » (Romain 2026-09-26) — a BARE "xbox" token (not xbox-one / xbox-series /
+    # xbox-360): Xbox named without a generation, read like the title's bare "Xbox" (P4).
+    # ``xbox_pc``: a pc / windows token right next to such a bare "xbox" — ambiguous in the
+    # shared vocabulary (Play Anywhere? a PC key sold through Xbox Live?), never inferred.
+    xbox_undeclared: bool = False
+    xbox_pc: bool = False
 
 
 _UrlParse = SlugRead
@@ -752,6 +779,7 @@ def slug_families(tokens: Sequence[str]) -> SlugRead:
     xbox_360 = False
     pc_adjacent = False
     run_positions: list[tuple[int, int]] = []       # (start, end) of family runs
+    bare_xbox: list[int] = []                       # positions of a bare "xbox" token
     i = 0
     n = len(tokens)
     while i < n:
@@ -789,6 +817,8 @@ def slug_families(tokens: Sequence[str]) -> SlugRead:
             else:
                 found.append("SWITCH")
         else:
+            if t == "xbox":
+                bare_xbox.append(i)
             i += 1
             continue
         # swallow the "x-s" / "xs" / "x" spelling of Series
@@ -798,6 +828,9 @@ def slug_families(tokens: Sequence[str]) -> SlugRead:
             if fam not in families:
                 families.append(fam)
         run_positions.append((start, i))
+    xbox_pc = any((j > 0 and tokens[j - 1] in ("pc", "windows"))
+                  or (j + 1 < n and tokens[j + 1] in ("pc", "windows")) for j in bare_xbox)
+    xbox_undeclared = bool(bare_xbox)
     span: tuple[int, int] | None = None
     if families:
         # merge contiguous family runs (…-pc-ps5-ps4-xbox-series-x-s-xbox-one-…) and look
@@ -809,8 +842,9 @@ def slug_families(tokens: Sequence[str]) -> SlugRead:
         pc_adjacent = before in ("pc", "windows") or after in ("pc", "windows")
         span = (first, last)
     if xbox_360:
-        return SlugRead(tuple(families), pc_adjacent, SKIP_XBOX_360, span)
-    return SlugRead(tuple(families), pc_adjacent, None, span)
+        return SlugRead(tuple(families), pc_adjacent, SKIP_XBOX_360, span,
+                        xbox_undeclared, xbox_pc)
+    return SlugRead(tuple(families), pc_adjacent, None, span, xbox_undeclared, xbox_pc)
 
 
 _parse_url_generic = slug_families
@@ -848,7 +882,8 @@ def _hook_url_read(cfg: "MerchantConfig", url: str) -> tuple[tuple[str, ...], st
     validated: a None → nothing declared; a "console: …" string → that skip; families
     must be declarable (never XBOX_PC, never an unknown token) — anything else is a
     fail-closed skip, never a guess (2026-09-14). ``(XBOX_GENERATION_UNDECLARED,)`` ALONE
-    (P4, 2026-09-25) is passed through as is: "Xbox, no generation" — the caller infers."""
+    (P4, 2026-09-25) is passed through as is: "Xbox, no generation" — the caller infers;
+    ``(XBOX_WINDOWS_KEY,)`` ALONE (2026-09-26) too: "a PC key sold through Xbox Live"."""
 
     declared = cfg.console_url_families(url)  # type: ignore[misc]
     if declared is None:
@@ -857,8 +892,8 @@ def _hook_url_read(cfg: "MerchantConfig", url: str) -> tuple[tuple[str, ...], st
         if declared.startswith("console:"):
             return (), declared
         return (), _skip_hook_result(f"returned {declared!r}")
-    if tuple(declared) == (XBOX_GENERATION_UNDECLARED,):
-        return (XBOX_GENERATION_UNDECLARED,), None
+    if tuple(declared) in ((XBOX_GENERATION_UNDECLARED,), (XBOX_WINDOWS_KEY,)):
+        return tuple(declared), None
     families: list[str] = []
     for fam in declared:
         if fam not in _DECLARABLE:
@@ -985,13 +1020,19 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
     skip; shared title grammar (Xbox 360 → skip; a leading name run / "<Platform>
     Edition" suffix is not a declaration); the URL ONLY when the title declares no
     family — the merchant's ``console_url_families`` hook when it has one (may skip:
-    Xbox 360, PC-only, a card / subscription category), else the shared slug runs;
-    still no family → P4 (Romain 2026-09-25): an Xbox named WITHOUT a generation — a bare
-    "Xbox" / the "Xbox Live" store in a platform run, or the hook's
-    ``XBOX_GENERATION_UNDECLARED`` — and no PlayStation / Nintendo item is READ as the
+    Xbox 360, a card / subscription category), else the shared slug runs;
+    still no family → a PC key sold through Xbox Live (Romain 2026-09-26, « 1. »: PC /
+    Windows next to the "Xbox Live" STORE only — "(Windows) XBOX LIVE Key", "PC/XBOX LIVE
+    Key" — or the hook's ``XBOX_WINDOWS_KEY``) → a ``windows_key`` signal, families
+    ("XBOX_ONE", "XBOX_SERIES") inferred, ``pc_declared`` False: the matcher decides on
+    the AKS PC page (Play Anywhere / Microsoft Windows / refusal); then P4 (Romain
+    2026-09-25): an Xbox named WITHOUT a generation — a bare "Xbox" / the "Xbox Live" store
+    in a platform run, the hook's ``XBOX_GENERATION_UNDECLARED``, or (« les 2 », Romain
+    2026-09-26) a bare "xbox" token of the shared slug runs for a merchant without hook,
+    when the title names no PC store and no pc / windows token touches it — and no
+    PlayStation / Nintendo item is READ as the
     cross-gen ("XBOX_ONE", "XBOX_SERIES") with ``generation_inferred=True`` (PC / Windows in
-    the bare-Xbox run → ``pc_declared``); PC / Windows next to the "Xbox Live" STORE only →
-    "console: PC-only Xbox Live key (R45)"; anything else → "console: no declared
+    the bare-Xbox run → ``pc_declared``); anything else → "console: no declared
     generation (R45)" (bare "PSN" / "Playstation", bare "Nintendo" / "Switch", a name-only
     "Nintendo Switch 2 Edition"); a name suffix naming another platform than the
     declaration → skip. ``pc_declared`` = the shared title phrase
@@ -1014,9 +1055,9 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
     region_base, region_label = region_slot_of(region_words)
 
     def signal(families: tuple[str, ...], pc: bool, skip: str | None,
-               inferred: bool = False) -> ConsoleSignal:
+               inferred: bool = False, windows: bool = False) -> ConsoleSignal:
         return ConsoleSignal(families, pc, resolve_name, skip, region_base, region_label,
-                             region_words, inferred)
+                             region_words, inferred, windows)
 
     marker = _non_game_marker(name, url)
     if marker:
@@ -1028,7 +1069,7 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
     pc_declared = title.pc_declared
     if title.xbox_360:
         return signal(tuple(families), pc_declared, SKIP_XBOX_360)
-    hook_xbox_undeclared = False
+    hook_xbox_undeclared = hook_windows_key = url_xbox_undeclared = False
     if not families:
         if cfg is not None and cfg.console_url_families is not None:
             declared, skip = _hook_url_read(cfg, url)
@@ -1036,6 +1077,8 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
                 return signal(declared, pc_declared or _hook_pc_declared(cfg, name, url), skip)
             if declared == (XBOX_GENERATION_UNDECLARED,):
                 hook_xbox_undeclared, declared = True, ()
+            elif declared == (XBOX_WINDOWS_KEY,):
+                hook_windows_key, declared = True, ()
             families = list(declared)
             # AUDIT DU 2026-09-18 : la branche SANS hook complète `pc_declared` avec la lecture
             # générique du slug, la branche AVEC hook non — or les quatre marchands qui ont un
@@ -1053,6 +1096,7 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
                 return signal(read.families, pc_declared or read.pc_declared, read.skip_reason)
             families = list(read.families)
             pc_declared = pc_declared or read.pc_declared
+            url_xbox_undeclared = read.xbox_undeclared and not read.xbox_pc
     pc_declared = pc_declared or _hook_pc_declared(cfg, name, url)
     if not families:
         # P4 Xbox — DÉCIDÉ Romain 2026-09-25 : « Xbox sur les deux ». Un Xbox SANS génération
@@ -1063,13 +1107,25 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
         # déduit (« … PSN Download Key (Playstation) … » reste « no declared generation », P4
         # PlayStation = refus, même décision) ; PC / Windows à côté du seul magasin « Xbox
         # Live » (« Manor Lords (Windows) XBOX LIVE Key », « (PC) - Xbox Live Key ») est une clé
-        # PC vendue par Xbox Live → refus « PC-only », jamais des pages console.
+        # PC vendue par Xbox Live → jamais le « Xbox + PC » de P2 (voir juste dessous).
         url_other = any(t in ("psn", "playstation", "nintendo", "ps4", "ps5", "eshop")
                         for t in _path_tokens(url))
-        if title.xbox_live_pc_only and not title.xbox_pc and not hook_xbox_undeclared:
-            return signal((), False, SKIP_PC_ONLY)
-        if (title.xbox_undeclared or hook_xbox_undeclared) and not title.other_console \
-                and not url_other:
+        # Clé Windows / appli Xbox — Romain 2026-09-26 (« 1. ») : avant, refus « PC-only Xbox
+        # Live key ». La clé marche sur PC ; elle ne vaut AUSSI pour la console que si le JEU
+        # est Play Anywhere, ce que seule la page PC d'AKS dit — le matcher tranche.
+        # Le titre qui déclare LUI-MÊME « Xbox » + PC / Windows (« (XBOX AND WINDOWS) XBOX LIVE
+        # Key ») reste le cas P2 (Romain, 2026-09-26 : « Xbox + PC reste playanywhere »), même
+        # si le créneau d'URL finit sur « -windows- ».
+        windows = not title.xbox_pc and (hook_windows_key or (
+            title.xbox_live_pc_only and not hook_xbox_undeclared))
+        if windows and not title.other_console and not url_other:
+            return signal(("XBOX_ONE", "XBOX_SERIES"), False, None, inferred=True, windows=True)
+        # « les 2 » — Romain 2026-09-26 : le Xbox sans génération se lit dans le titre ET dans
+        # l'URL (etailcard « xbox-global-games-<jeu> », lootbar « …/<jeu>-xbox »). L'URL seule
+        # ne parle pas contre un titre qui nomme une boutique PC (« … (PC) Steam Key »).
+        url_xbox = url_xbox_undeclared and not _PC_STORE_TITLE_RE.search(_padded_upper(name))
+        if (title.xbox_undeclared or hook_xbox_undeclared or url_xbox) \
+                and not title.other_console and not url_other:
             return signal(("XBOX_ONE", "XBOX_SERIES"), pc_declared or title.xbox_pc, None,
                           inferred=True)
         return signal((), pc_declared, SKIP_NO_GENERATION)

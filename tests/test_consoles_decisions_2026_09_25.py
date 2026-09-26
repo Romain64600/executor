@@ -27,7 +27,7 @@ classifieur console est le vrai, seules les pages AKS sont simulées."""
 
 import unittest
 
-from src.console_keys import SKIP_NO_GENERATION, SKIP_PC_ONLY, classify_console
+from src.console_keys import SKIP_NO_GENERATION, classify_console
 from src.contracts import NormalizedOffer
 from src.matcher import AksResolution, Candidate, SkippedOffer, match_offer, precheck_skip
 
@@ -329,9 +329,11 @@ class P4XboxSansGenerationSurLesDeux(unittest.TestCase):
         self.assertEqual(_targets(res), [("XBOX_SERIES", "3000", "240", "1"), ("XBOX_PC", "1000", "240", "1")])
 
     def test_windows_a_cote_du_seul_magasin_xbox_live_est_une_cle_pc(self):
+        # Refus « PC-only » jusqu'au 26/09 ; depuis (Romain, « 1. ») un signal `windows_key`,
+        # jamais le « Xbox + PC » de P2 — voir tests/test_consoles_decisions_2026_09_26.py.
         sig = classify_console("Manor Lords (Windows) XBOX LIVE Key EUROPE",
                                "https://www.eneba.com/xbox-manor-lords-windows-xbox-live-key-europe", "Eneba")
-        self.assertEqual((sig.families, sig.skip_reason), ((), SKIP_PC_ONLY))
+        self.assertEqual((sig.skip_reason, sig.pc_declared, sig.windows_key), (None, False, True))
 
 
 class P4PlayStationEtSwitchSansGenerationRestentRefuses(unittest.TestCase):

@@ -46,11 +46,16 @@ the platform in the URL only): ``…-xbox-<run>-<cc>-…`` with the fused runs
 ``xboxoneseries`` / ``xbox-one-series`` / ``one-series`` (Xbox One + Series),
 ``xboxseries`` / ``xbox-series`` / ``series``, ``xboxone`` / ``one``, each optionally
 fused with ``windows`` / ``-pc`` / ``-windows`` / ``-xbox-pc`` (PC declared next to the
-console: Play Anywhere candidate); ``-xbox-pc-`` alone is a PC-only Xbox Live key (skip);
+console: Play Anywhere candidate); ``-xbox-pc-`` alone is a PC key sold through Xbox Live —
+``(XBOX_WINDOWS_KEY,)`` since 2026-09-26 (Romain, « 1. »; before: a "PC-only" skip);
 ``-xbox-xbox-windows-`` / ``-xbox-xboxwindows-`` is Xbox + Windows with no generation —
 since P4 (Romain 2026-09-25, « Xbox sur les deux ») the hook returns
 ``XBOX_GENERATION_UNDECLARED`` with PC declared: the classifier reads it as Xbox One + Series
 + PC, the Play Anywhere case of P2 (before: "no declared generation");
+« les 2 » (Romain 2026-09-26, the Xbox read in the title AND the URL): the Xbox store with
+NO platform segment — ``-xbox-<cc>-…`` (``necromunda-underhive-wars-xbox-us``) or ``-xbox``
+closing the slug (the second form, like the trailing ``-pc``) — is Xbox without generation
+too, and the run may follow an edition word (``…-xbox-standard-xboxoneseries-us-en``);
 ``-ps-ps5-`` / ``-psn-ps5-`` / ``-ps-ps4-ps5-``; ``-nintendo-nintendo-switch(-2)-``. The
 region is the title tail (``console_region_slot`` = ``title_tail``); the language code(s)
 before it ("EN", "EN/PL/CS/RU/TR") are Gamivo's furniture (``console_noise``).
@@ -61,7 +66,7 @@ from __future__ import annotations
 import re
 from urllib.parse import urlsplit
 
-from src.console_keys import SKIP_PC_ONLY, XBOX_GENERATION_UNDECLARED
+from src.console_keys import XBOX_GENERATION_UNDECLARED, XBOX_WINDOWS_KEY
 from src.merchant_config import MerchantConfig
 
 # ── title tail ───────────────────────────────────────────────────────────────────────
@@ -267,7 +272,7 @@ def resolve_name(name: str) -> str:
 # ── console hooks (R45, 2026-09-14) ──────────────────────────────────────────────────
 # The fused Xbox run between the game slug and the region code (see the module docstring).
 CONSOLE_XBOX_RUN_RE = re.compile(
-    r"-xbox-(?:"
+    r"-xbox-(?:standard-)?(?:"
     r"(?P<oneseries>(?:xbox-)?one-series|xboxoneseries)(?P<pcw1>windows|-pc|-windows|-xbox-pc)?"
     r"|(?P<series>(?:xbox-)?series|xboxseries)(?P<pcw2>windows|-pc|-windows|-xbox-pc)?"
     r"|(?P<one>xboxone|one)(?P<pcw3>-pc|-windows)?"
@@ -275,6 +280,13 @@ CONSOLE_XBOX_RUN_RE = re.compile(
     r"|(?P<nogen>xbox-windows|xboxwindows)"
     r")-"
 )
+# The Xbox store with no platform segment (« les 2 », 2026-09-26): ``-xbox-<cc>-`` — a region
+# code right after the store (``necromunda-underhive-wars-xbox-us``, ``wwe-2k26-xbox-eu-…``)
+# — or ``-xbox`` closing the slug (``minecraft-…-global-standard-xbox``). A PlayStation /
+# Nintendo run elsewhere in the slug still forbids the inference (the shared classifier).
+CONSOLE_XBOX_STORE_ONLY_RE = re.compile(
+    r"-xbox-(?:" + "|".join(sorted((re.escape(c) for c in (*SELLABLE_CODES, *FORBIDDEN_CODES)),
+                                     key=len, reverse=True)) + r")-|-xbox-$")
 CONSOLE_PS_RUN_RE = re.compile(r"-(?:ps|psn)-(?P<gen>ps4-ps5|ps5|ps4)-|-(?P<gen2>ps4-ps5)-")
 CONSOLE_NINTENDO_RUN_RE = re.compile(r"-nintendo-nintendo-switch(?P<two>-2)?-")
 # The language code(s) Gamivo writes before the region tail ("Ravenswatch EN United
@@ -295,7 +307,7 @@ def _console_run(url: str) -> tuple[tuple[str, ...] | str | None, bool]:
     m = CONSOLE_XBOX_RUN_RE.search(seg)
     if m:
         if m.group("pconly"):
-            return SKIP_PC_ONLY, False
+            return (XBOX_WINDOWS_KEY,), False     # a PC key sold through Xbox Live (2026-09-26)
         if m.group("nogen"):
             # "xbox-xbox-windows": Xbox + Windows, no generation — P4 « Xbox sur les deux »
             return (XBOX_GENERATION_UNDECLARED,), True
@@ -305,6 +317,9 @@ def _console_run(url: str) -> tuple[tuple[str, ...] | str | None, bool]:
         if m.group("series"):
             return ("XBOX_SERIES",), pc
         return ("XBOX_ONE",), pc
+    if CONSOLE_XBOX_STORE_ONLY_RE.search(seg):
+        # « les 2 » (2026-09-26) : le magasin Xbox SANS segment de plateforme — P4.
+        return (XBOX_GENERATION_UNDECLARED,), False
     m = CONSOLE_PS_RUN_RE.search(seg)
     if m:
         gen = m.group("gen") or m.group("gen2")
@@ -317,8 +332,9 @@ def _console_run(url: str) -> tuple[tuple[str, ...] | str | None, bool]:
 
 def console_url_families(url: str) -> tuple[str, ...] | str | None:
     """The families the URL run declares ("…-xbox-xboxoneseries-uk-standard" → Xbox One +
-    Series), "console: PC-only Xbox Live key (R45)" for "-xbox-pc-",
-    ``(XBOX_GENERATION_UNDECLARED,)`` for "-xbox-xbox-windows-" / "-xbox-xboxwindows-" (P4),
+    Series), ``(XBOX_WINDOWS_KEY,)`` for "-xbox-pc-" (2026-09-26),
+    ``(XBOX_GENERATION_UNDECLARED,)`` for "-xbox-xbox-windows-" / "-xbox-xboxwindows-" (P4)
+    and for the Xbox store with no platform segment ("-xbox-us-", a closing "-xbox"),
     None otherwise."""
 
     return _console_run(url)[0]

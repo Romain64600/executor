@@ -40,6 +40,7 @@ from src.console_keys import (
     CONSOLE_PLATFORM_LABEL,
     CONSOLE_REGION_IDS,
     CONSOLE_REGION_LABELS,
+    SKIP_WINDOWS_KEY_NO_PAGE,
     ConsoleSignal,
     account_signal,
     classify_console,
@@ -4100,7 +4101,21 @@ def _console_plan(
        → "Tarnished Edition Nintendo Switch 2") else skip; an empty editions map → R19;
     h. the primary family's page / bucket become the plan's resolution / region — the
        common flow (R44 → guards → R19 → edition block, untouched) runs on them, then
-       match_offer builds one :class:`Target` per page (edition checked on each)."""
+       match_offer builds one :class:`Target` per page (edition checked on each).
+
+    Clé Windows / appli Xbox (``sig.windows_key``, Romain 2026-09-26, « 1. » — « (Windows)
+    XBOX LIVE Key », « PC/XBOX LIVE Key », Gamivo ``-xbox-pc-``) : une clé PC vendue par Xbox
+    Live. L'ancre est la page PC, obligatoirement (jamais une page console seule). Sa ligne
+    « official platforms » tranche : « Xbox Play Anywhere » → les cibles Play Anywhere de (f),
+    pages Xbox qu'AKS A (déduites, P4) + page PC, cases XBOX/PC — la page PC seule si AKS n'a
+    aucune page Xbox ; sinon « Microsoft Windows » → une clé Microsoft Store : plateforme
+    MICROSOFT sur la page PC (Windows 10 : 246 / 244 / 245 / 249), le chemin commun comme une
+    clé PC ; ni l'un ni l'autre → refus. C'est ainsi qu'AKS range déjà ces clés (lu le
+    26/09 : Eneba « PC/XBOX LIVE » en XBOX/PC EU 241 sur les pages Play Anywhere — Death
+    Stranding DC, Aggelos 2, Tardy — ; Eneba / G2A / GameBoost / Gamivo en 246 / 244 sur les
+    pages « Microsoft Windows » — Fallout 76, Wolfenstein The Old Blood, Red Dead Redemption ;
+    le Microsoft Store officiel « Xbox FR / DE / IT / ES » en 246 sur Dishonored 2, page sans
+    Play Anywhere)."""
 
     families = tuple(sig.families)
     if not families:
@@ -4212,12 +4227,15 @@ def _console_plan(
     # dit « Xbox » sans génération, `sig.generation_inferred`) prend les pages qu'AKS A — sans
     # page PC, l'ancre console est cherchée sur Xbox One PUIS sur Xbox Series.
     inferred = bool(getattr(sig, "generation_inferred", False))
+    windows_key = bool(getattr(sig, "windows_key", False))
     primary = families[0]
     anchor_kind = "cd-key"
     try:
         pc_res = resolver(slug_name)
         anchor = pc_res
-        for fam in (families if inferred else (primary,)):
+        # Une clé Windows / appli Xbox n'a qu'une ancre : la page PC (la clé marche sur PC ;
+        # une page console seule ne dirait rien de Play Anywhere).
+        for fam in (() if windows_key else families if inferred else (primary,)):
             if anchor is not None:
                 break
             anchor_kind = CONSOLE_PAGE_KIND[fam]
@@ -4229,6 +4247,9 @@ def _console_plan(
     except AksPageUnparseable as exc:
         return SkippedOffer(offer, f"AKS page markup drifted — guard input unreadable (MA6): {exc}")
     if anchor is None:
+        if windows_key:
+            return SkippedOffer(
+                offer, "console: Windows / Xbox app key — no AKS PC page found for it (R45)")
         return SkippedOffer(offer, "no AKS product page found (console) (R45)")
 
     # (e) identity = the anchor name without its platform suffix.
@@ -4239,6 +4260,34 @@ def _console_plan(
 
     # (f) Play Anywhere is the PC page's truth (P2).
     pa = pc_res is not None and "XBOX PLAY ANYWHERE" in {p.upper() for p in pc_res.official_platforms}
+    # (f bis) Clé Windows / appli Xbox — Romain 2026-09-26 (« 1. ») : Play Anywhere seulement si
+    # la page PC le dit (alors (f) et (g) ci-dessous, comme P2) ; sinon une clé Microsoft Store
+    # si la page liste « Microsoft Windows » ; sinon refus. Jamais le « Xbox + PC = Play
+    # Anywhere » de P2 : le titre ne prouve pas que le JEU est Play Anywhere.
+    if windows_key and not pa:
+        if "MICROSOFT WINDOWS" not in {p.upper() for p in pc_res.official_platforms}:
+            return SkippedOffer(offer, SKIP_WINDOWS_KEY_NO_PAGE)
+        ms_rid = REGION_IDS["MICROSOFT"].get(base)
+        if ms_rid is None:
+            return SkippedOffer(offer, f"no region id for MICROSOFT/{label}")
+        if dlc_marker is not None:
+            refusal = r43_dlc_page_refusal(dlc_marker, pc_res, slug_name, guard_name,
+                                           stamp="R43, R45")
+            if refusal is not None:
+                return SkippedOffer(offer, f"console: MICROSOFT — {refusal}")
+        # Le chemin commun, comme une clé PC du Microsoft Store (aucune cible console).
+        return _Plan(
+            resolution=pc_res,
+            platform="MICROSOFT",
+            region_label=label,
+            region_id=ms_rid,
+            implicit=implicit,
+            declared_platform="MICROSOFT",
+            difmark_platform_verified=False,
+            dlc_page=dlc_marker is not None,
+            identity_name=identity_name,
+            guard_name=guard_name,
+        )
     xbox_declared = any(f in ("XBOX_ONE", "XBOX_SERIES") for f in families)
     # AUDIT DU 2026-09-20 : la garde Play Anywhere se déclenchait pour N'IMPORTE quelle
     # famille dès que « PC » était déclaré à côté, alors que Xbox Play Anywhere n'existe ni
@@ -4262,6 +4311,8 @@ def _console_plan(
     # (« PAC-MAN MUSEUM+ EU XBOX One / Xbox Series X|S / PC CD Key », « RIOT- Civil Unrest PC
     # EU XBOX One / Xbox Series X|S CD Key »). Sans page PC chez AKS, la cible PC n'existe pas :
     # refus, jamais une saisie partielle (§6).
+    # CONFIRMÉ par Romain le 2026-09-26 (« Xbox + PC reste playanywhere, pas de pb ») : pas de
+    # vérification de la page PC pour P2. Seule la clé Windows SEULE (f bis, plus bas) l'exige.
     if sig.pc_declared and pc_res is None:
         return SkippedOffer(
             offer,
@@ -4338,8 +4389,9 @@ def _console_plan(
         if isinstance(bucket, SkippedOffer):
             return bucket
         pages.append((fam, page, bucket[0], bucket[1]))
-    if not pages:
+    if not pages and not windows_key:
         # P4 : génération déduite, et AKS n'a ni la page Xbox One ni la page Xbox Series.
+        # (Une clé Windows Play Anywhere garde sa page PC, ajoutée juste dessous.)
         return SkippedOffer(offer, "no AKS product page found (console) (R45)")
     if pa_targets:
         # The PC page is an extra Play Anywhere target under the XBOX/PC bucket (the

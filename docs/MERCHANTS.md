@@ -48,7 +48,7 @@ Champs disponibles :
 | `url_platform(url)` | plateforme déclarée par la grammaire d'URL du marchand (Gamivo : run `-pc-steam-` entre le slug et le code région), consultée en premier par `explicit_platform_from_url` `[R46]` | — |
 | `guard_name(name)` | **`[R32e]` (2026-09-14)** — le titre lu par les gardes d'identité (R01 mots AKS manquants, R16 mots en trop, R01b qualificatif dangereux) et par `detect_edition` pour une ligne PC : le titre brut par défaut (aucun marchand sans le hook ne change) ; un marchand dont la grammaire ajoute une note qui n'est PAS un mot de produit la retire ici — et elle seule (Kinguin « (valid until <Month> <Year>) » en FIN de titre seulement — correctif de revue 14/09 —, le mot de livraison « Altergift » chez K4G et Kinguin — décisions de Romain du 14/09 : « Kinguin valid until juin 2027 on rentre », « Steam Altergift = Steam Gift on rentre »). Le hook ne blanchit jamais un titre : les mots qu'il laisse sont toujours comparés au nom AKS, une réponse vide → titre brut | titre brut |
 | `gift_delivery(name, url)` | **`[R32e]` (2026-09-14)** — le verdict « livraison gift » propre au marchand, superposé par `detect_region` comme bucket GIFT de la plateforme (Steam 25 / 259 / 2577 / 2572, Battle.net 570 / 567 / 568, Ubisoft 501 / 504 / 505 — les compartiments US / UK ont été mappés le 16/09, `[R50]` ; une base qu'une plateforme n'a vraiment pas garde le skip fail-closed « no region id ») : True / False l'emporte, None → lecture générique (segment d'URL `gift`, « GIFT » dans le titre). K4G / Kinguin « … Steam Altergift » dont le slug est d'accord → True (Romain 14/09 : « on rentre sous gift tous les altergifts ») ; le hook lit ses DEUX arguments : un conflit titre / URL (titre Altergift, slug `-cd-key`) ou un Altergift hors Steam n'est jamais un verdict — c'est le skip fail-closed du `precheck` marchand (correctifs de revue 14/09) | lecture générique |
-| `console_url_families(url)` | **console `[R45]` (2026-09-14)** — les familles que l'URL déclare, dans l'ordre (sous-ensemble de XBOX_ONE / XBOX_SERIES / PS4 / PS5 / SWITCH / SWITCH2), OU une chaîne de skip (`"console: Xbox 360 (R45)"`, `"console: PC-only Xbox Live key (R45)"`, `"console: <MARKER> — not a game (R45)"`), OU `None` (l'URL ne dit rien) ; consulté par le classifieur générique SEULEMENT quand le titre ne déclare aucune famille | — |
+| `console_url_families(url)` | **console `[R45]` (2026-09-14)** — les familles que l'URL déclare, dans l'ordre (sous-ensemble de XBOX_ONE / XBOX_SERIES / PS4 / PS5 / SWITCH / SWITCH2), OU une chaîne de skip (`"console: Xbox 360 (R45)"`, `"console: <MARKER> — not a game (R45)"`), OU l'un des deux marqueurs rendus SEULS — `(XBOX_GENERATION_UNDECLARED,)` (Xbox sans génération, P4) et `(XBOX_WINDOWS_KEY,)` (clé PC vendue par Xbox Live, 2026-09-26, à la place de l'ancien `"console: PC-only Xbox Live key (R45)"`) —, OU `None` (l'URL ne dit rien) ; consulté par le classifieur générique SEULEMENT quand le titre ne déclare aucune famille | — |
 | `console_pc_declared(name, url)` | **console `[R45]` (2026-09-14)** — True quand le marchand déclare PC / Windows à côté de la plateforme console (Gamivo : runs `-pc` / `-windows` ; Eneba : run `-windows-`) ; la lecture générique des phrases de titre (`/ Windows`, `PC/XBOX …`) reste générique | — |
 | `console_region_slot(name)` | **console `[R45]` (2026-09-14)** — le TEXTE de région que le marchand écrit à côté de la phrase plateforme, tel quel (`"US"`, `"CA"`, `"Europe"`, `"United Kingdom"`, `"Hong Kong"`, `"EUROPE"`) ; la correspondance texte → base (uk / us / eu / global) ou label interdit reste générique dans `console_keys` (vocabulaire partagé) ; hook absent → le classifieur retombe sur ses lectures partagées de queue / crochets | — |
 | `console_noise` | **console `[R45]` (2026-09-14)** — `tuple[str, ...]` de phrases marchandes à retirer de `resolve_name` EN PLUS des marqueurs partagés de magasin / livraison (`"Download Code"` MMOGA, `"Digital Key"` / `"Digital Code"` Driffle, `"CD Key"` Kinguin) ; un `re.Pattern` compilé est accepté pour les formes qu'un littéral ne sait pas écrire — la note `(valid until <Month> <Year>)` de Kinguin (`kinguin.VALID_UNTIL_RE`, un bruit depuis la décision de Romain du 14/09 : « Kinguin valid until juin 2027 on rentre ») | `()` |
@@ -266,8 +266,10 @@ matcher et le classifieur importent le registre.
   consoles du dernier lot ne sont détectables que par l'URL) ; run d'URL après le slug :
   `xbox-xbox-series` / `xbox-series` / `xbox-xboxseries` → Series ; `xbox-xbox-one-series` /
   `xbox-xboxoneseries` / `xbox-one-series` → One+Series ; `xbox-xboxone` → One ; suffixe `-pc`
-  / `-windows` / `…windows` fusionné → PC déclaré ; `xbox-pc` seul → skip « PC-only Xbox Live
-  key » ; `ps-ps5` / `psn-ps5` → PS5 ; `nintendo-nintendo-switch` → Switch ; région = queue
+  / `-windows` / `…windows` fusionné → PC déclaré ; `xbox-pc` seul → clé Windows / appli Xbox
+  (2026-09-26 : la page PC d'AKS tranche — Play Anywhere, sinon Microsoft Store, sinon refus ;
+  avant : skip « PC-only ») ; magasin Xbox SANS segment de plateforme (`-xbox-us`, `-xbox-eu-…`,
+  `-xbox` final) → Xbox sans génération (« les 2 », 26/09) ; `-xbox-standard-<run>` lu ; `ps-ps5` / `psn-ps5` → PS5 ; `nintendo-nintendo-switch` → Switch ; région = queue
   « EN <Pays> » du titre (slot région : `"United Kingdom"`, `"Colombia"`…), que
   `detect_region_base` porte aussi via le hook `title_region` (R46) dans la branche console
   (vérifié le 14/09 : « Ravenswatch EN United Kingdom » + `…-xbox-xboxoneseries-uk-standard` →
@@ -284,7 +286,8 @@ matcher et le classifieur importent le registre.
   (AKS 50562) — **à corriger à la main** ; `console_marker_in_url` (actif dans tous les modes)
   ferme la brèche.
 - **Hooks consoles (cible 14/09)** : `console_url_families` (les runs Gamivo ci-dessus →
-  familles ; `xbox-pc` seul → `"console: PC-only Xbox Live key (R45)"` ; rien → None) ;
+  familles ; `xbox-pc` seul → `(XBOX_WINDOWS_KEY,)` depuis le 26/09 ; `-xbox-<cc>` / `-xbox`
+  final → `(XBOX_GENERATION_UNDECLARED,)` ; rien → None) ;
   `console_pc_declared` (runs `-pc` / `-windows` / `windows` fusionné) ; `console_region_slot`
   (queue `[<LANGS>] <Région>` → texte de région tel quel). Pas de `console_noise` (aucune
   phrase de livraison propre).
@@ -512,7 +515,8 @@ matcher et le classifieur importent le registre.
   (`console_region_slot` → `"EUROPE"`, `"UNITED STATES"` ; un mot de région retiré du titre
   sans base vendable → skip, jamais GLOBAL implicite, 14/09) ; `-nintendo-switch-2-` → famille
   SWITCH2 (saisissable, 14/09) ; `(Xbox Series X|S)` 299, `(Windows/Xbox Series X|S)` 179 (PC
-  déclaré), `PC/XBOX LIVE Key` 172 (clé PC vendue via Xbox Live → skip « PC-only ») ; URL :
+  déclaré), `PC/XBOX LIVE Key` 172 (clé PC vendue via Xbox Live → depuis le 26/09 la page PC
+  d'AKS tranche : Play Anywhere, sinon Microsoft Store, sinon refus ; avant : skip « PC-only ») ; URL :
   segment de tête `xbox-` / `psn-` / `nintendo-` (préfixe de MAGASIN, PAS une génération :
   `xbox-one-last-breath-…` est le jeu « One Last Breath » — 13 des 16 lignes « Xbox One » du
   lot du 12/09 étaient cet artefact), puis `-xbox-series-x-s-xbox-live-key-`,
@@ -520,11 +524,14 @@ matcher et le classifieur importent le registre.
   1 659 lignes consoles, dont 704 « XBOX LIVE Key » sans génération** (ni titre ni URL) —
   refusées « no declared generation » jusqu'au 25/09 ; depuis **P4** (Romain, « Xbox sur les
   deux ») elles sont lues Xbox One + Series (les pages qu'AKS a), et « (Windows) XBOX LIVE Key »
-  est une clé PC vendue par Xbox Live → refus « PC-only ».
+  est une clé PC vendue par Xbox Live → depuis le 26/09 (Romain, « 1. ») la page PC d'AKS
+  tranche (Play Anywhere, sinon Microsoft Store, sinon refus). Le magasin `xbox-` écrit aussi
+  « (Windows) Key » sans « XBOX LIVE » (`…-windows-key-united-states`) : même règle.
 - **Hooks consoles (cible 14/09)** : `console_url_families` (segment de magasin en tête
   retiré, puis les runs Eneba `-xbox-series-x-s-` / `-ps4-ps5-` / `-ps5-` / `-ps4-` /
-  `-nintendo-switch(-2)-` → familles ; `-pc-xbox-live-key-` → `"console: PC-only Xbox Live
-  key (R45)"` ; rien → None → « no declared generation ») — avant le 14/09 `_parse_url_eneba`
+  `-nintendo-switch(-2)-` → familles ; `-pc-xbox-live-key-` / `-windows-xbox-live-key-` /
+  `xbox-…-windows-key-` → `(XBOX_WINDOWS_KEY,)` (26/09 ; avant `"console: PC-only Xbox Live
+  key (R45)"`) ; rien → None → « no declared generation ») — avant le 14/09 `_parse_url_eneba`
   et le retrait du segment de tête vivaient dans `console_keys` ; `console_pc_declared` (run
   `-windows-`) ; `console_region_slot` (mot après `XBOX LIVE Key` / `PSN Key` / `Nintendo
   Key`). Précision (implémentation du 14/09) : `console_url_families` ne lit QUE le slot

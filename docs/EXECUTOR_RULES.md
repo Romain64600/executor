@@ -1272,10 +1272,12 @@ config through the registry. Four more optional members of `MerchantConfig`, all
 functions of the feed row:
 - `console_url_families(url) -> tuple[family, ...] | str | None` — the families the URL
   DECLARES, in order (a subset of XBOX_ONE / XBOX_SERIES / PS4 / PS5 / SWITCH / SWITCH2),
-  or a fail-closed skip-reason string (`"console: Xbox 360 (R45)"`, `"console: PC-only
-  Xbox Live key (R45)"`, `"console: <MARKER> — not a game (R45)"`), or `None` (the URL
-  says nothing); the generic classifier consults it ONLY when the title declares no
-  family (MMOGA category segments, Gamivo runs, Eneba store prefix + runs, Kinguin /
+  or a fail-closed skip-reason string (`"console: Xbox 360 (R45)"`, `"console: <MARKER> —
+  not a game (R45)"`), or ONE of two markers returned alone — `(XBOX_GENERATION_UNDECLARED,)`
+  (Xbox without a generation, P4, 2026-09-25) and `(XBOX_WINDOWS_KEY,)` (a PC key sold
+  through Xbox Live, Romain 2026-09-26 « 1. » — it replaced the retired `"console: PC-only
+  Xbox Live key (R45)"`) —, or `None` (the URL says nothing); the generic classifier
+  consults it ONLY when the title declares no family (MMOGA category segments, Gamivo runs, Eneba store prefix + runs, Kinguin /
   Difmark account URLs);
 - `console_pc_declared(name, url) -> bool` — the merchant declares PC / Windows next to
   the console platform (Gamivo `-pc` / `-windows` runs, Eneba `-windows-` run); the
@@ -1642,15 +1644,22 @@ store-segment drop, `_GAMIVO_LANG_TAIL_RE`) are declared by the merchant files
   `xbox-xboxseries` → XBOX_SERIES; `xbox-xbox-one-series`, `xbox-xboxoneseries`,
   `xbox-one-series` → (XBOX_ONE, XBOX_SERIES); `xbox-xboxone`, `xbox-one` → XBOX_ONE;
   `ps-ps5`, `psn-ps5` → PS5; `ps4-ps5` → (PS4, PS5); `nintendo-nintendo-switch` → SWITCH;
-  `xbox-pc` alone → "console: PC-only Xbox Live key (R45)"; suffixes `-pc`, `-windows`,
-  fused `windows` (`xboxserieswindows`, `xboxoneserieswindows`) → `console_pc_declared`;
+  `xbox-pc` alone (and `xbox-xbox-pc`) → `(XBOX_WINDOWS_KEY,)` (2026-09-26; was "console:
+  PC-only Xbox Live key (R45)"); suffixes `-pc`, `-windows`, fused `windows`
+  (`xboxserieswindows`, `xboxoneserieswindows`) → `console_pc_declared`; « les 2 »
+  (2026-09-26): the run may follow an edition word (`-xbox-standard-xboxoneseries-us-en`),
+  and the Xbox store with NO platform segment — a region code right after it
+  (`necromunda-underhive-wars-xbox-us`, `wwe-2k26-xbox-eu-…`) or `-xbox` closing the slug
+  (`…-global-standard-xbox`) — → `(XBOX_GENERATION_UNDECLARED,)`;
 - `eneba.py` — the leading `xbox-` / `psn-` / `nintendo-` segment is a STORE prefix,
   never a generation (`xbox-one-last-breath-…` is not an Xbox One row) and is dropped
   first; then `-xbox-series-x-s-` → XBOX_SERIES, `-ps4-ps5-` → (PS4, PS5), `-ps5-` /
   `-ps4-`, `-nintendo-switch-2-` → SWITCH2 (2026-09-14; was a skip), `-nintendo-switch-`
-  → SWITCH; `-windows-xbox-series-x-s-` → `console_pc_declared`; `-pc-xbox-live-key-` →
-  "console: PC-only Xbox Live key (R45)"; an `xbox-…-xbox-live-key-` WITHOUT a generation
-  → `None` → "console: no declared generation (R45)";
+  → SWITCH; `-windows-xbox-series-x-s-` → `console_pc_declared`; `-pc-xbox-live-key-` /
+  `-windows-xbox-live-key-`, and the `xbox-` store's own `-windows-key-` / `-pc-key-` form
+  ("Call of Duty®: Black Ops II (2012) (Windows) Key UNITED STATES") → `(XBOX_WINDOWS_KEY,)`
+  (2026-09-26; was "console: PC-only Xbox Live key (R45)"); an `xbox-…-xbox-live-key-`
+  WITHOUT a generation → `None` (the title's "XBOX LIVE" is P4's);
 - `kinguin.py` — `-account` / `-online-account-activation` → "console: ACCOUNT — not a
   game (R45)" / ACCESS; `difmark.py` — `/buy-console-account-…-account-<id>` → "console:
   ACCOUNT — not a game (R45)" (the ACCOUNT title word itself is a shared marker);
@@ -1681,18 +1690,38 @@ SWITCH alone) — the fix of the Gamivo leak below.
   markers are merchant grammar returned as "console: <MARKER> — not a game (R45)" by
   `console_url_families` (`kinguin.py`, `difmark.py`, `mmoga.py`). V-BUCKS / VC / POINTS
   etc. stay covered by `CATEGORY_SKIP` upstream (§4.3);
-- "console: PC-only Xbox Live key (R45)" — Gamivo `xbox-pc` alone (`gamivo.py`), Eneba
-  `-pc-xbox-live-key-` (`eneba.py`) — both through `console_url_families` (a PC key sold
-  through Xbox Live / Microsoft Store is neither a console offer nor a proven Play
-  Anywhere one); since 2026-09-25 also the shared title reading: PC / Windows next to the
-  "Xbox Live" STORE only, with no bare "Xbox" and no family ("Manor Lords (Windows) XBOX
-  LIVE Key EUROPE", "(PC) - Xbox Live Key", "Windows 11/Xbox Live Key" — 40 rows of the
-  21/09 corpus, refused "no declared generation" before);
+- ~~"console: PC-only Xbox Live key (R45)"~~ — RETIRED 2026-09-26 (Romain, « 1. »), replaced
+  by the Windows-key signal below (the constant `SKIP_PC_ONLY` stays for importers, never
+  emitted);
+- **Clé Windows / appli Xbox `[DÉCIDÉ Romain 2026-09-26, « 1. »]`** — a PC key sold through
+  Xbox Live: PC / Windows next to the "Xbox Live" STORE only, with no bare "Xbox" and no
+  family, in the shared title reading ("Manor Lords (Windows) XBOX LIVE Key EUROPE",
+  "Cassette Beasts PC/XBOX LIVE Key EUROPE", "Wolfenstein: The Old Blood (PC) - Xbox Live Key
+  - GLOBAL", "Rhythm Doctor - Windows 11/Xbox Live Key - UNITED STATES"), or the hook's
+  `(XBOX_WINDOWS_KEY,)` (Gamivo `-xbox-pc-`, Eneba `-pc-xbox-live-key-` / `…-windows-key-`)
+  → `ConsoleSignal.windows_key = True`, `families = ("XBOX_ONE", "XBOX_SERIES")` with
+  `generation_inferred`, `pc_declared = False` (NOT P2's "Xbox + PC": the title does not
+  prove the GAME is Play Anywhere). A title that names Xbox + PC itself ("(XBOX AND WINDOWS)
+  XBOX LIVE Key", "(Xbox + PC)") stays the P2 case even when the URL slot ends on `-windows-`.
+  The matcher decides on the AKS PC page — 4.12.4 (f bis). Romain's answer was a pasted
+  explanation: such a key activates in the Xbox app / Microsoft Store on Windows and works on
+  PC; it ALSO unlocks the console only if the GAME is in the Xbox Play Anywhere programme —
+  « ne vous fiez pas au titre, vérifiez si le jeu est Play Anywhere ». Before: refused
+  "PC-only Xbox Live key" (266 rows of the 21/09 corpus: Eneba 235, Gamivo 19, GameBoost 11,
+  G2A 1);
 - **Xbox without a generation `[P4 — DÉCIDÉ Romain 2026-09-25, « Xbox sur les deux »]`** —
   no family anywhere, but the title names Xbox in a platform run (a bare "Xbox" or the "Xbox
   Live" store, never a leading name run) or the merchant hook answers
-  `XBOX_GENERATION_UNDECLARED` (Gamivo `-xbox-xbox-windows-` / `-xbox-xboxwindows-`), and
-  NO PlayStation / Nintendo item in the title or the URL → `families = ("XBOX_ONE",
+  `XBOX_GENERATION_UNDECLARED` (Gamivo `-xbox-xbox-windows-` / `-xbox-xboxwindows-`, and
+  since 2026-09-26 its store-only `-xbox-<cc>-` / closing `-xbox`), or — **« les 2 », Romain
+  2026-09-26: the Xbox is read in the title AND the URL** — for a merchant WITHOUT a hook, a
+  bare `xbox` token of the shared slug runs (`SlugRead.xbox_undeclared`: etailcard
+  `xbox-global-games-<game>`, lootbar `…/<game>-xbox`), provided no `pc` / `windows` token
+  touches it (`SlugRead.xbox_pc` — ambiguous in the shared vocabulary) and the title names no
+  PC store (`PC` / `STEAM` / `WINDOWS` / `GOG` / `EPIC`: the URL alone never turns "… (PC)
+  Steam Key" into an Xbox key); a generation the URL DECLARES (`xbox-one`, `xbox-series-x-s`)
+  is a declared platform (P1, that page only). Always: NO PlayStation / Nintendo item in the
+  title or the URL → `families = ("XBOX_ONE",
   "XBOX_SERIES")` with `generation_inferred=True`; PC / Windows in the bare-Xbox run ("(Xbox /
   Windows)", "Xbox/PC") or from the hook → `pc_declared` (the P2 case). Measured on the
   38 197 rows of the 21/09 corpus: 1 174 rows leave "no declared generation" (Eneba 792,
@@ -1790,7 +1819,25 @@ SWITCH alone) — the fix of the Gamivo leak below.
       "no AKS product page found (console) (R45)";
    e. identity: `identity_name = console_page_identity(anchor.aks_name)`; R01 / R16 /
       R01b on `guard_name`;
-   f. Play Anywhere **[P2 — DÉCIDÉ Romain 2026-09-25]**: `pa = pc_res is not None and
+   f bis. **Clé Windows / appli Xbox** (`sig.windows_key`, Romain 2026-09-26, « 1. »): the
+      anchor is the PC page ONLY (step d tries no console page; none → skip "console:
+      Windows / Xbox app key — no AKS PC page found for it (R45)"). Its official platforms
+      decide: « Xbox Play Anywhere » → the Play Anywhere targets of (f) / (g) — the Xbox pages
+      AKS HAS (inferred, P4) + the PC page, XBOX/PC buckets; the PC page ALONE when AKS has
+      no Xbox page; else « Microsoft Windows » → a Microsoft Store key: `platform =
+      "MICROSOFT"` on the PC page, `REGION_IDS["MICROSOFT"][base]` (Windows 10: 246 Global /
+      244 EU / 245 US / 249 UK), no console target, the common flow as for a PC key (a DLC
+      title goes through `r43_dlc_page_refusal` on the PC page first); neither → skip
+      "console: Windows / Xbox app key — the AKS PC page lists neither Xbox Play Anywhere nor
+      Microsoft Windows, not entered (R45)" (`SKIP_WINDOWS_KEY_NO_PAGE`). Never P2's « Xbox +
+      PC = Play Anywhere »: the title does not prove the game is Play Anywhere. Evidence
+      (read-only, UA `AKS/Staff`, 24 PC pages, 2026-09-26): AKS files Eneba's « PC/XBOX LIVE »
+      keys under XBOX/PC EU 241 on Play Anywhere pages (Death Stranding Director's Cut, Aggelos
+      2, Tardy) and Windows keys under 246 / 244 on « Microsoft Windows » pages (Fallout 76 —
+      Eneba, G2A, GameBoost, Gamivo —, Wolfenstein The Old Blood, Red Dead Redemption); the
+      official Microsoft Store (« Xbox FR / DE / IT / ES ») sits under 246 on Dishonored 2, a
+      page without Play Anywhere, and under 306 on Play Anywhere pages;
+   f. Play Anywhere **[P2 — DÉCIDÉ Romain 2026-09-25, CONFIRMÉ 2026-09-26]**: `pa = pc_res is not None and
       "XBOX PLAY ANYWHERE" in {p.upper() for p in pc_res.official_platforms}`. "PC" declared
       next to NO Xbox family → skip "console: merchant declares PC next to <FAMILIES> —
       contradictory delivery, not entered (R45)" (unchanged, 2026-09-20). Xbox + PC declared
@@ -1895,6 +1942,10 @@ guessed: doubt → skip with an explicit reason string.
   X|S / PC CD Key" → One + Series + PC in `241`). Until then it was a "contradiction" skip
   (~100 rows on the skipped.json of 22-25/09). No AKS PC page → skip (the PC target is
   unverifiable — never a partial entry). P1 and the 3-target cap are unchanged.
+  **CONFIRMÉ le 2026-09-26** (Romain : « Xbox + PC reste playanywhere, pas de pb »), après
+  vérification : 15 créations P2 depuis le 25/09 16:30 UTC, 11 jeux, et les 11 pages PC AKS
+  affichaient « Xbox Play Anywhere ». Pas de retour de la vérification de page pour P2 ; seule
+  la clé Windows SEULE (4.12.3, f bis) l'exige.
   **Domaine borné le 2026-09-20** : cette porte ne juge que les familles XBOX. Xbox Play
   Anywhere n'existe ni sur Nintendo ni sur PlayStation, et la garde se déclenchait pourtant
   dès que « PC » était déclaré à côté de N'IMPORTE quelle famille : « FINAL FANTASY VIII -
@@ -1923,7 +1974,11 @@ guessed: doubt → skip with an explicit reason string.
   generation = refused** ("… PSN Download Key (Playstation) UNITED STATES", CJS ~540 rows —
   "no declared generation"); Switch without a generation unchanged (refused). ~1 255 Xbox
   rows were refused "no declared generation" before (Eneba ~870, Gamerall ~186, GameBoost
-  ~136, Gamivo ~105, CJS).
+  ~136, Gamivo ~105, CJS). **« les 2 » — Romain 2026-09-26**: the generation-less Xbox is
+  read in the title AND the URL (4.12.3): etailcard / lootbar (192 + 4 rows of the 21/09
+  corpus, merchants outside the allowlist) and Gamivo's store-only `-xbox-<cc>` / closing
+  `-xbox` / `-xbox-standard-<run>` forms.
+- **Windows / Xbox app key — DÉCIDÉ Romain 2026-09-26 (« 1. »)**: 4.12.3 and (f bis) above.
 - **P5 console DLC / season pass — DÉCIDÉ Romain 2026-09-25 (« P5 A »)**: the PC DLC rule
   `[R43]` applied to consoles — the row enters only on the console page OF THE DLC ITSELF
   (full-name slug + console page kind), and that page must carry the DLC bucket (16);
@@ -1944,8 +1999,8 @@ leak of 2026-09-11, AKS product 50562, to be corrected by hand — §12) : CHANG
 
 **Reason-string vocabulary.** `console` — flag off, any console marker in title OR URL
 (unchanged text for titles). `console: … (R45)` — flag on, the classifier's and the
-branch's fail-closed skips (Xbox 360, not a game, PC-only Xbox Live key, no declared
-generation, "console: unparsed platform residue (R45)" and "console: product name suffix
+branch's fail-closed skips (Xbox 360, not a game, the Windows / Xbox app key refusals of
+(f bis), no declared generation, "console: unparsed platform residue (R45)" and "console: product name suffix
 '<Platform label> Edition' contradicts the declared platform <FAMILY> — not entered
 (R45)" — the two classifier skips of 2026-09-14 (4.12.3) — "console: <FAMILY> — <R43
 reason> (R43, R45)" (a console DLC off its own page, P5), gift delivery, "console: merchant
@@ -2822,7 +2877,11 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167, MMOGA 12 (its AKS page merchant i
     AGENTS.md "Reviewed decisions"). No "page alone" switch.
   - ~~**P2**~~ **CLOSED 2026-09-25** — Romain: « P2 saisir sur les xbox déclarées et sur PC
     (on le considère Play Anywhere) » — Xbox + PC declared on a page without PA = Play
-    Anywhere targets (§4.12 P2, AGENTS.md "Reviewed decisions").
+    Anywhere targets (§4.12 P2, AGENTS.md "Reviewed decisions"); CONFIRMED 2026-09-26: « Xbox
+    + PC reste playanywhere, pas de pb ».
+  - ~~**« (Windows) XBOX LIVE Key »**~~ **CLOSED 2026-09-26** — Romain's « 1. »: Play Anywhere
+    only if the AKS PC page says so, else Microsoft Store if it lists Microsoft Windows, else
+    refused (§4.12.3, f bis). ~~**Xbox in the URL only**~~ **CLOSED 2026-09-26** — « les 2 ».
   - ~~**P3**~~ **CLOSED 2026-09-25** — Romain: « P3 A » — PS5 EU / US / UK = `88eu` / `88us` /
     `88uk` (§4.12 P3, §10).
   - ~~**P4**~~ **CLOSED 2026-09-25** — Romain: Xbox without a generation « Xbox sur les

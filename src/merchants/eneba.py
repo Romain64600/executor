@@ -22,10 +22,14 @@ title "Nickelodeon Extreme Tennis: Next! (Xbox Series X|S) XBOX LIVE Key EUROPE"
   nintendo-switch-2 …); a run elsewhere in the slug is part of the game name
   ("nintendo-nintendo-switch-sports-eshop-key-europe" → nothing declared); no marker →
   the URL says nothing (fail-closed);
-* ``-pc-`` right before the marker with no console run is a PC key sold through Xbox
-  Live / the Microsoft Store → "console: PC-only Xbox Live key (R45)" (174 rows of the
-  2026-09-12 batch); ``-windows-`` / ``-pc-`` next to the run → PC declared
-  (``console_pc_declared``, a Play Anywhere candidate);
+* ``-pc-`` / ``-windows-`` right before the marker with no console run is a PC key sold
+  through Xbox Live / the Microsoft Store (174 rows of the 2026-09-12 batch) — and so is
+  the ``xbox-`` store's own ``-windows-key-`` / ``-pc-key-`` form ("Call of Duty®: Black
+  Ops II (2012) (Windows) Key UNITED STATES", ``xbox-call-of-duty-…-windows-key-united-
+  states``): the hook answers ``(XBOX_WINDOWS_KEY,)`` since 2026-09-26 (Romain, « 1. » — Play
+  Anywhere if the AKS PC page says so, else Microsoft Store if it lists Microsoft Windows,
+  else refusal; before: "console: PC-only Xbox Live key (R45)"); ``-windows-`` / ``-pc-``
+  next to the run → PC declared (``console_pc_declared``, a Play Anywhere candidate);
 * the region is the UPPERCASE text after the key word — "… XBOX LIVE Key EUROPE",
   "… eShop Key HONG KONG" (``console_region_slot``); the shared classifier maps it.
 
@@ -41,7 +45,7 @@ from __future__ import annotations
 
 import re
 
-from src.console_keys import SKIP_PC_ONLY, path_tokens, slug_families
+from src.console_keys import XBOX_WINDOWS_KEY, path_tokens, slug_families
 from src.merchant_config import MerchantConfig
 
 # Only prefixes we have a platform constant + region mapping for; console/currency/
@@ -64,6 +68,9 @@ CONSOLE_STORE_SEGMENTS = frozenset({"xbox", "psn", "nintendo"})
 # ("xbox-key-of-heaven-xbox-one-xbox-live-key-europe" opens with a game called "Key of
 # Heaven").
 CONSOLE_KEY_MARKER_RE = re.compile(r"(?:^|-)(?:xbox-live|xbox|psn|nintendo-eshop|eshop)-key(?=-|$)")
+# The ``xbox-`` store's Windows key (2026-09-26): "<Title> (Windows) Key <REGION>" →
+# ``xbox-<title slug>-windows-key-<region>`` — no store-key marker, the delivery closes it.
+CONSOLE_WINDOWS_KEY_RE = re.compile(r"-(?:windows|pc)-key(?=-|$)")
 # "<Title> (<Platform>) <STORE> Key <REGION>" — the region is the UPPERCASE tail after
 # the key word ("EUROPE", "UNITED STATES", "HONG KONG"; "EU" too).
 CONSOLE_REGION_AFTER_KEY_RE = re.compile(r"\bKey\s+([A-Z]{2,}(?:\s+[A-Z]{2,})*)\s*$")
@@ -88,6 +95,9 @@ def _console_slot(url: str) -> tuple[tuple[str, ...] | str | None, bool]:
 
     tokens = _slot_tokens(url)
     if tokens is None:
+        slug = (url or "").split("?", 1)[0].rstrip("/").rsplit("/", 1)[-1].lower()
+        if slug.startswith("xbox-") and CONSOLE_WINDOWS_KEY_RE.search(slug):
+            return (XBOX_WINDOWS_KEY,), False    # the Xbox store's "(Windows) Key" (2026-09-26)
         return None, False
     read = slug_families(tokens)
     if read.skip_reason:
@@ -97,14 +107,15 @@ def _console_slot(url: str) -> tuple[tuple[str, ...] | str | None, bool]:
         if not tail or tail in (["pc"], ["windows"]):
             return read.families, read.pc_declared
         return None, False                       # a run inside the game name, not the slot
-    if tokens and tokens[-1] == "pc":
-        return SKIP_PC_ONLY, False               # a PC key sold through Xbox Live / MS Store
+    if tokens and tokens[-1] in ("pc", "windows"):
+        return (XBOX_WINDOWS_KEY,), False        # a PC key sold through Xbox Live / MS Store
     return None, False
 
 
 def console_url_families(url: str) -> tuple[str, ...] | str | None:
-    """The families of the platform slot before the store-key marker, "console: PC-only
-    Xbox Live key (R45)" / "console: Xbox 360 (R45)", or None (no slot, no marker)."""
+    """The families of the platform slot before the store-key marker,
+    ``(XBOX_WINDOWS_KEY,)`` for a PC key sold through Xbox Live (2026-09-26), "console: Xbox
+    360 (R45)", or None (no slot, no marker)."""
 
     return _console_slot(url)[0]
 

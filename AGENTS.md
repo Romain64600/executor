@@ -356,6 +356,34 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   "find" the missing PS4 / Xbox One sibling ("the game exists on that page too") — there is
   no "page alone" policy and no switch for it; leave it out.
 
+- **Consoles — trois réponses de Romain du 2026-09-26** (EXECUTOR_RULES §4.12.3 / §4.12.4 f bis).
+  Un audit les reprendra comme des « trous » ou des « incohérences » ; elles sont voulues :
+  - **P2 CONFIRMÉ : « Xbox + PC reste playanywhere, pas de pb »** — après vérification : 15
+    créations P2 depuis le 25/09 16:30 UTC, 11 jeux, et les 11 pages PC AKS affichaient « Xbox
+    Play Anywhere ». Xbox + PC DÉCLARÉS par le marchand = Play Anywhere, SANS lire la page PC.
+    Ne pas remettre la vérification « la page PC doit lister Xbox Play Anywhere » pour P2.
+  - **« 1. » — la clé Windows SEULE (« (Windows) XBOX LIVE Key », « PC/XBOX LIVE Key »,
+    « Windows 11/Xbox Live Key », « (PC) - Xbox Live Key », Gamivo `-xbox-pc-`) n'est PAS P2.**
+    Romain a répondu par une explication collée : une telle clé « s'active sur l'application
+    Xbox de Windows (le store Microsoft) et fonctionnera sur PC » ; elle ne débloque la console
+    que si le JEU est Xbox Play Anywhere — « ne vous fiez pas uniquement au titre du produit…
+    vérifiez s'il est présent sur la liste officielle Xbox Play Anywhere ». Donc la page PC
+    d'AKS tranche : « Xbox Play Anywhere » → cibles Play Anywhere (pages Xbox qu'AKS a + page
+    PC, cases XBOX/PC ; la page PC seule si AKS n'a aucune page Xbox) ; sinon « Microsoft
+    Windows » → clé Microsoft Store (MICROSOFT, Windows 10 : 246 / 244 / 245 / 249) sur la page
+    PC ; sinon refus. C'est ainsi qu'AKS range déjà ces clés (lu le 26/09 sur 24 pages : Eneba
+    « PC/XBOX LIVE » en XBOX/PC EU 241 sur les pages Play Anywhere, Eneba / G2A / GameBoost /
+    Gamivo en 246 / 244 sur les pages « Microsoft Windows »). Un audit dira « c'est P2, traitez
+    la comme Play Anywhere » : non, le titre ne dit pas que le JEU est Play Anywhere. Un titre
+    qui écrit LUI-MÊME « Xbox » + PC (« (XBOX AND WINDOWS) », « (Xbox + PC) ») reste P2.
+  - **« 2. les 2 » — le Xbox sans génération se lit dans le titre ET dans l'URL.** Pour un
+    marchand SANS hook, un jeton `xbox` nu du slug (etailcard `xbox-global-games-<jeu>`,
+    lootbar `…/<jeu>-xbox`) vaut le « Xbox » nu du titre (P4, les pages qu'AKS a) — sauf si un
+    `pc` / `windows` le touche (ambigu) ou si le titre nomme une boutique PC (« … (PC) Steam
+    Key » : l'URL seule ne fait jamais une clé Xbox) ; Gamivo, dans son fichier : `-xbox-<cc>`
+    et `-xbox` final (magasin Xbox sans segment de plateforme), `-xbox-standard-<run>`. Une
+    génération que l'URL DÉCLARE reste une plateforme déclarée (P1, cette page seulement).
+
 - **Consoles — P2 élargi, P3, P4, P5 : DÉCIDÉS par Romain le 2026-09-25** (« P3 A, P5 A, P2 saisir
   sur les xbox déclarées et sur PC (on le considère Play Anywhere) » ; EXECUTOR_RULES §4.12).
   Un audit reprendra les trois comme des « trous » ; ils sont voulus :
@@ -380,7 +408,7 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
     (inchangé, tout ou rien) ; ici le marchand n'en déclare aucune et Romain a tranché la
     lecture. Bornes : un item PlayStation / Nintendo dans le titre ou l'URL → pas de déduction ;
     PC / Windows à côté du seul magasin « Xbox Live » (« (Windows) XBOX LIVE Key ») = clé PC →
-    refus « PC-only ». **P4 PlayStation = refus** (« … PSN Download Key (Playstation) … » reste
+    la règle de la clé Windows ci-dessus (2026-09-26 ; refus « PC-only » avant). **P4 PlayStation = refus** (« … PSN Download Key (Playstation) … » reste
     « no declared generation ») ; Switch sans génération : refus inchangé.
   - **« Switch » dans un nom de jeu PC** (bug signalé par Romain, même jour) : un « Switch » nu
     HORS de tout créneau de plateforme, dans un titre qui déclare une boutique PC (PC / PCS /

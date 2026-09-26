@@ -14,8 +14,8 @@ tested in tests/test_matcher.py.
 import unittest
 
 from src.console_keys import (
-    SKIP_PC_ONLY,
     XBOX_GENERATION_UNDECLARED,
+    XBOX_WINDOWS_KEY,
     ConsoleSignal,
     classify_console,
     resolve_name_and_regions,
@@ -27,7 +27,7 @@ from src.merchants.registry import merchant_config
 
 ONE_SERIES = ("XBOX_ONE", "XBOX_SERIES")
 NO_GEN = "console: no declared generation (R45)"
-PC_ONLY = "console: PC-only Xbox Live key (R45)"
+WINDOWS = "windows"         # the hook's ``(XBOX_WINDOWS_KEY,)`` — a PC key sold through Xbox Live
 
 # (title, url, families, pc_declared, skip_reason, resolve_name) — study §7 rows 26-30:
 # the platform is ONLY in the URL (569/572 console rows of the 2026-09-12 batch).
@@ -90,7 +90,13 @@ class UrlRunHookTests(unittest.TestCase):
         "xbox-xbox-one-series-xbox-pc": (ONE_SERIES, True, None),
         "xbox-xboxone": (("XBOX_ONE",), False, None),
         "xbox-one": (("XBOX_ONE",), False, None),
-        "xbox-pc": ((), False, PC_ONLY),
+        # « -xbox-pc- » = a PC key sold through Xbox Live (Romain 2026-09-26, « 1. »)
+        "xbox-pc": (ONE_SERIES, False, WINDOWS),
+        "xbox-xbox-pc": (ONE_SERIES, False, WINDOWS),
+        # « les 2 » (2026-09-26): the run after an edition word; the Xbox store with no
+        # platform segment (a region code right after it) → P4
+        "xbox-standard-xboxoneseries": (ONE_SERIES, False, None),
+        "xbox": (ONE_SERIES, False, "undeclared"),
         # Xbox + Windows, no generation — P4 + P2 (Romain 2026-09-25): One + Series, PC declared
         "xbox-xbox-windows": (ONE_SERIES, True, None),
         "xbox-xboxwindows": (ONE_SERIES, True, None),
@@ -105,12 +111,21 @@ class UrlRunHookTests(unittest.TestCase):
         for run, (families, pc, skip) in self.CASES.items():
             url = BASE.format(run=run)
             with self.subTest(run=run):
-                expected = PC_ONLY if skip == PC_ONLY else (families or None)
-                if run in ("xbox-xbox-windows", "xbox-xboxwindows"):
+                expected = families or None
+                if skip == WINDOWS:
+                    expected = (XBOX_WINDOWS_KEY,)
+                if run in ("xbox-xbox-windows", "xbox-xboxwindows") or skip == "undeclared":
                     expected = (XBOX_GENERATION_UNDECLARED,)         # the hook's P4 answer
                 self.assertEqual(gamivo.console_url_families(url), expected)
                 self.assertEqual(gamivo.console_pc_declared("Game EN United Kingdom", url), pc)
-        self.assertEqual(gamivo.console_url_families(BASE.format(run="xbox-pc")), SKIP_PC_ONLY)
+        self.assertEqual(gamivo.console_url_families(BASE.format(run="xbox-pc")), (XBOX_WINDOWS_KEY,))
+        # « les 2 »: the Xbox store closing the slug (the second form, like a trailing "-pc")
+        self.assertEqual(gamivo.console_url_families(
+            "https://www.gamivo.com/product/minecraft-marty-the-hippo-pet-official-website-global-standard-xbox"),
+            (XBOX_GENERATION_UNDECLARED,))
+        # …but a currency amount after the store is no region slot: nothing declared
+        self.assertIsNone(gamivo.console_url_families(
+            "https://www.gamivo.com/product/call-of-duty-warzone-xbox-5000-points-us"))
         # a PC run / no run → nothing
         self.assertIsNone(gamivo.console_url_families("https://www.gamivo.com/product/tiny-tinas-wonderlands-pc-steam-us-standard"))
         self.assertIsNone(gamivo.console_url_families(""))
@@ -120,7 +135,9 @@ class UrlRunHookTests(unittest.TestCase):
             with self.subTest(run=run):
                 sig = classify_console("Game EN United Kingdom", BASE.format(run=run), "Gamivo")
                 self.assertIsNotNone(sig, run)
-                self.assertEqual((sig.families, sig.pc_declared, sig.skip_reason), (families, pc, skip))
+                self.assertEqual((sig.families, sig.pc_declared, sig.skip_reason),
+                                 (families, pc, None if skip in (WINDOWS, "undeclared") else skip))
+                self.assertEqual(sig.windows_key, skip == WINDOWS)
                 self.assertEqual(sig.resolve_name, "Game")
                 self.assertEqual(_slot(sig), ("uk", None, ("United Kingdom",)))
 

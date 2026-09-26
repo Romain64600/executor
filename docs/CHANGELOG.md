@@ -3,6 +3,44 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-26 — Consoles : clé Windows / appli Xbox (« 1. »), Xbox lu aussi dans l'URL (« 2. les 2 »), P2 confirmé
+
+Trois réponses de Romain (EXECUTOR_RULES §4.12.3, §4.12.4 f bis, P2 / P4 ; AGENTS « Reviewed
+decisions ») :
+
+- **« 1. » — clé Windows / appli Xbox** (`src/console_keys.py`, `src/matcher.py`,
+  `src/merchants/eneba.py`, `src/merchants/gamivo.py`). « (Windows) XBOX LIVE Key », « PC/XBOX
+  LIVE Key », « Windows 11/Xbox Live Key », « (PC) - Xbox Live Key », Gamivo `-xbox-pc-`, Eneba
+  `xbox-…-windows-key-` : refus « PC-only Xbox Live key » jusqu'ici. Romain a répondu par une
+  explication collée : la clé s'active dans l'appli Xbox / le Microsoft Store sur Windows et marche
+  sur PC ; elle ne débloque la console que si le JEU est Play Anywhere. Le classifieur en fait un
+  signal `windows_key` (hooks : `(XBOX_WINDOWS_KEY,)`), jamais le « Xbox + PC » de P2 ; la page PC
+  d'AKS tranche : « Xbox Play Anywhere » → pages Xbox qu'AKS a + page PC en XBOX/PC (la page PC
+  seule s'il n'y a aucune page Xbox) ; sinon « Microsoft Windows » → clé Microsoft Store
+  (MICROSOFT, Windows 10 246 / 244 / 245 / 249) sur la page PC ; sinon refus
+  (`SKIP_WINDOWS_KEY_NO_PAGE`). Vérifié avant de coder, en lecture seule (UA AKS/Staff, 24 pages
+  PC) : AKS range déjà les « PC/XBOX LIVE » d'Eneba en XBOX/PC EU 241 sur les pages Play Anywhere
+  (Death Stranding DC, Aggelos 2, Tardy) et les clés Windows d'Eneba / G2A / GameBoost / Gamivo en
+  246 / 244 sur les pages « Microsoft Windows » (Fallout 76, Wolfenstein The Old Blood, Red Dead
+  Redemption). Un titre qui écrit lui-même « Xbox » + PC (« (XBOX AND WINDOWS) ») reste P2.
+- **« 2. les 2 » — le Xbox sans génération se lit dans le titre ET dans l'URL.** Sans hook : un
+  jeton `xbox` nu du slug (`SlugRead.xbox_undeclared` — etailcard, lootbar), sauf `pc` / `windows`
+  collé ou boutique PC nommée dans le titre ; Gamivo (son fichier) : `-xbox-<cc>`, `-xbox` final,
+  `-xbox-standard-<run>`. Une génération déclarée dans l'URL reste P1.
+- **P2 confirmé** : « Xbox + PC reste playanywhere, pas de pb » (15 créations P2 depuis le 25/09
+  16:30 UTC, 11 jeux, les 11 pages PC affichaient « Xbox Play Anywhere ») — rien ne change.
+- **Mesure.** Corpus du 21/09 (38 197 lignes, hors réseau) : 514 lignes changent de verdict, 401
+  passent désormais le precheck (Eneba 200, etailcard / lootbar 169 — hors liste blanche —, Gamivo
+  21, GameBoost 10, G2A 1), les autres tombent sur leur vrai refus (bundle, monnaie, région).
+  Rejeu du matcher en lecture seule sur les lignes RÉELLEMENT refusées des deux VM (14 jours,
+  UA AKS/Staff, sitemap de la VM, recherche AKS coupée) : clés Windows **0 → 122 candidates sur
+  217 rejouées** (Eneba 110 / 190, Gamivo 12 / 27) — Play Anywhere 118 (One + Series + PC 72, PC
+  seule 40, une Xbox + PC 6), Microsoft Store 4 ; refus restants : page ni Play Anywhere ni
+  Microsoft Windows 34, pas de page PC 31, bundles 16, DLC R43 7. Xbox de l'URL : **0 → 4 sur les
+  44** lignes encore « no declared generation » (le reste : monnaies / points 25, DLC R43 3…).
+- Tests : `tests/test_consoles_decisions_2026_09_26.py` (19) ; Eneba / Gamivo / 25-09 mis à jour ;
+  17 mutations, toutes rougies.
+
 ## 2026-09-26 — Console `/executor/auto` : la page EN COURS se voit
 
 Romain : « 4. Go », sur la proposition faite le 25/09 quand la console de l'ancienne VM est
