@@ -169,6 +169,16 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   (le balayage GameSeal du 19-20/09 en a écrit 62 à prix `0`) et voudra un skip « offre
   épuisée » ou un garde « prix nul » : NE PAS l'ajouter.
 
+- **`[R18c]` « <Jeu> <X> Edition » = jeu + DLC, jamais DLC(16) sur la page du DLC seul —
+  Romain, 2026-09-26** (« go pour A, et B en attendant » ; « que pour les jeux + DLC et pas
+  pour les DLC seuls » ; « faut pas se fier au prix … si tu ne trouves pas les infos sur la
+  page, tu skip »). AKS range ces offres sur la page du JEU, dans l'édition du même nom (lu
+  le 26/09 sur 11 jeux) ; 18 avaient été écrites en DLC(16) sur la page du DLC. Détection
+  structurelle (mot EDITION absent du nom de la page, hors « Standard Edition », titre sans
+  marqueur), JAMAIS le prix. Un audit « trouvera » un vrai DLC « … Edition » refusé : s'il est
+  vraiment seul, la page AKS porte le mot (« Special Edition Content ») et il entre ; sinon
+  c'est un doute, et un doute se refuse.
+
 - **[R18b] R18 se RETIRE quand le titre annonce un palier que la page ne nomme pas (2026-09-20,
   « le correctif que tu veux » — CONFIRMÉ le 2026-09-21 sur le cas concret, « garde ta règle »,
   après que Romain a lui-même écarté la lecture « ça rentre quand même » qui lui était proposée

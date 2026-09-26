@@ -3,6 +3,30 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-26 — `[R18c]` étape B : « <Jeu> <X> Edition » n'entre plus en DLC sur la page du DLC
+
+Romain : « go pour A, et B en attendant » (EXECUTOR_RULES §4.5 `[R18c]`, AGENTS). Une offre
+« <Jeu> <X> Edition » est le jeu + le DLC X ; AKS la range sur la page du JEU, édition « <X>
+Edition ». R18 la rangeait en DLC(16) sur la page du DLC seul. Désormais, quand R18 allait
+prendre le seau DLC pour un titre sans marqueur qui porte EDITION (hors « Standard Edition »)
+absent du nom de la page : refus « (R18c) ». L'étape A (saisie sur la page du jeu) suit.
+`src/matcher.py` (`edition_claim_off_page`) ; tests `tests/test_r18c_edition_jeu_plus_dlc.py`
+(7, titres réels ; 4 mutations rougies).
+
+**Écritures fausses à corriger à la main (18, page du DLC en DLC(16) au lieu de la page du
+jeu, édition du même nom)** : Gamerall 101111920 et GameSeal 100700366 (Black Ops 3 Zombies
+Chronicles [Deluxe] Edition) ; Gamivo 101044520, Kinguin 101004590, G2A 94546286 (Blasphemous
+2 Mea Culpa Edition) ; MMOGA 101040322 / 101040335 (Deceive Inc. Black Tie Edition), 101039913
+(Matchpoint Legends Edition), 101041060 + GOG 100386987 (Lords and Villeins The Great Houses
+Edition), MMOGA 101041174 (Alaskan Road Truckers Mother Truckers Edition), Gamivo 101037804
+(Kingdom Two Crowns Norse Lands Edition), Gamesplanet FR 100393532 (Jotunnslayer Conan
+Edition), MMOGA 101041758 (Dragon Ball Sparking! ZERO Super Limit-Breaking NEO), Kinguin
+100994053 + CJS 101142180 / 101142181 / 101142183 (Conan Exiles Isle of Siptah Edition, Xbox).
+Bonne page, mauvaise édition (DLC au lieu de l'édition nommée, écrites sous l'ancien R18
+d'avant le 17/09) : MMOGA 101040464 (Ad Infinitum Supporter Edition), 101040783 (Crown Wars
+Sacred Edition), 101040286 (ESO Necrom Deluxe Collection), K4G 100447923 (FFXV Episode Ardyn
+Complete).
+
 ## 2026-09-26 — `[R62]` clé Microsoft Store : la page AKS doit lister « Microsoft Windows », pour toutes les routes
 
 Romain : « … puis aligne l'ancien chemin Microsoft Store » (EXECUTOR_RULES §4.4 / `[R62]`,

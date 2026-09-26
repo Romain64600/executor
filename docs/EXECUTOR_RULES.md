@@ -443,6 +443,28 @@ réconciliation refuse en NOMMANT R18 au lieu de mentir (« not sold on the reso
 alors que la page le vend — motif faux, et qui alimente le routeur de tri des listes).
 Invariant : après le bloc édition, `edition_id == "16"` ne peut venir que de R18.
 
+**`[R18c]` « <Jeu> <X> Edition » = le jeu + le DLC X, jamais le DLC seul (2026-09-26).**
+Romain : « go pour A, et B en attendant » ; « ça sera que pour les jeux + DLC et pas pour les
+DLC seuls » ; et, sur la méthode : « faut pas se fier au prix. Si t'as des doutes, faut pouvoir
+ouvrir la page. Si tu trouves les infos sur la page, OK. Si t'arrives pas à ouvrir la page, tu
+ne trouves pas les infos sur la page, tu skip. » Constat du 26/09 (lecture seule) : AKS range
+ces offres sur la page du JEU, dans une édition du même nom — Call of Duty Black Ops 3
+« Zombies Chronicles Edition » (22 offres, 12 marchands), Blasphemous 2 « Mea Culpa Edition »
+(25), Deceive Inc. « Black Tie Edition » (48), Matchpoint « Legends Edition » (32), Lords and
+Villeins, Kingdom Two Crowns, Conan Exiles Xbox One, Alaskan Road Truckers, Jotunnslayer,
+Dragon Ball Sparking! ZERO — et la page du DLC seul ne vend que le DLC. R18 les rangeait en
+DLC(16) sur la page du DLC : 18 écritures fausses (liste dans le CHANGELOG du 26/09).
+- **Détection** (`edition_claim_off_page`, structurelle, jamais le prix) : titre SANS marqueur
+  DLC portant le mot EDITION, hors « Standard Edition », alors que le NOM de la page AKS ne le
+  porte pas. Épargnés : les DLC seuls dont le nom porte « Edition » — la page aussi (« Chivalry
+  2 Special Edition Content », « Prison Architect Psych Ward Warden's Edition ») —, les titres
+  marqués (R43), « … Standard Edition ».
+- **Étape B (en place)** : quand R18 allait prendre le seau DLC, refus « game + DLC, filed by
+  AKS on the game page (R18c) ». Le chemin console passe par le même bloc (toutes les pages
+  entrent l'édition de la page primaire).
+- **Étape A (à venir)** : saisir sur la page du jeu, dans l'édition « <X> Edition » quand la page
+  du jeu la porte ; sinon — ou page illisible — refus.
+
 **Console keys — see §4.12 `[R45]` (2026-09-12).** Romain's AKS feed tool OVERWRITES the
 region (= region/PLATFORM) and the edition PER TARGET PAGE, so one feed row can be filed on
 several AKS pages. The full rule — page model (§4.12.1: separate console product pages

@@ -1954,6 +1954,36 @@ def sitemap_shapes(slugs: list[str], page_kind: str = "cd-key") -> list[tuple[st
     return out
 
 
+# [R18c] (Romain, 2026-09-26 : « go pour A, et B en attendant »). Une offre « <Jeu> <X>
+# Edition » est le JEU + le DLC X : AKS la range sur la page du JEU, dans l'édition « <X>
+# Edition » (lu en direct le 26/09 : Call of Duty Black Ops 3 « Zombies Chronicles Edition »
+# 22 offres, Blasphemous 2 « Mea Culpa Edition » 25, Deceive Inc. « Black Tie Edition » 48,
+# Matchpoint « Legends Edition » 32…), jamais sur la page du DLC seul, qui ne vend que le
+# DLC (1-3 € contre 7-50 €). R18 la rangeait en DLC(16) sur cette page : 18 écritures
+# fausses, dont trois Conan Exiles « Isle of Siptah Edition » la nuit du 25-26/09.
+_EDITION_WORD_RE = re.compile(r"\bEDITION\b")
+_STANDARD_EDITION_RE = re.compile(r"\bSTANDARD\s+EDITION\b")
+
+
+def edition_claim_off_page(title: str, marker: str | None, aks_name: str) -> bool:
+    """[R18c] Le titre SANS marqueur DLC annonce-t-il « … Edition » alors que le nom de la
+    page AKS ne porte pas ce mot ? C'est alors le jeu + le DLC, pas le DLC seul : R18 ne doit
+    pas le ranger en DLC(16) sur cette page.
+
+    Épargnés, parce qu'ils SONT des DLC seuls : un titre marqué (« DLC », « Season Pass »…,
+    gouverné par R43) ; « Standard Edition », qui n'annonce rien (« … Wrath of the Druids
+    Standard Edition ») ; un DLC dont le NOM porte « Edition » — la page AKS le porte aussi
+    (« Chivalry 2 Special Edition Content », « Prison Architect Psych Ward Warden's
+    Edition », « PC Building Simulator Overclocked Edition Content »)."""
+
+    if marker is not None:
+        return False
+    t = (title or "").upper()
+    if not _EDITION_WORD_RE.search(t) or _STANDARD_EDITION_RE.search(t):
+        return False
+    return not _EDITION_WORD_RE.search((aks_name or "").upper())
+
+
 # [R57] (Romain, 2026-09-23 : « tu peux pas faire comme pour les autres marchands, et si on
 # a déjà des offres DLC on ajoute en DLC ? »). Le séparateur de sous-titre d'un nom de
 # produit : « Crusader Kings II: Holy Fury », « Talisman - The City Expansion ».
@@ -3801,9 +3831,22 @@ def match_offer(
         and _title_tier != "1"
         and _title_tier != detect_edition(resolution.aks_name or "")[1]
     )
-    if _dlc_edition_on_page(resolution.editions) and not _tier_the_page_does_not_name and (
+    _r18_takes_the_dlc_bucket = (
+        _dlc_edition_on_page(resolution.editions) and not _tier_the_page_does_not_name and (
             _marker is not None or len(resolution.editions) == 1
-            or derived_dlc_page(guard_name, _title_tier, _marker, resolution)):
+            or derived_dlc_page(guard_name, _title_tier, _marker, resolution)))
+    if _r18_takes_the_dlc_bucket and edition_claim_off_page(
+            guard_name, _marker, resolution.aks_name or ""):
+        # [R18c] étape B (refus d'attente) : « <Jeu> <X> Edition » = jeu + DLC, rangé par
+        # AKS sur la page du jeu. Jamais DLC(16) sur la page du DLC seul. Le chemin console
+        # passe ici aussi : toutes ses pages entrent l'édition résolue sur la page primaire.
+        return SkippedOffer(
+            offer,
+            f"title names an edition ('… Edition') that the DLC-only page "
+            f"{resolution.aks_name!r} does not — game + DLC, filed by AKS on the game page "
+            "(R18c)",
+        )
+    if _r18_takes_the_dlc_bucket:
         edition_label, edition_id = "DLC", "16"
     # AUDIT DU 2026-09-18 : le durcissement ci-dessus ne fermait qu'UNE porte sur trois.
     # Deux autres producteurs adoptaient le seau DLC par simple égalité de libellé, sans
