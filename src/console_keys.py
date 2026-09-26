@@ -173,6 +173,11 @@ XBOX_GENERATION_UNDECLARED = "XBOX"
 # once the platform phrase is removed means the grammar did not parse the whole phrase —
 # never a partial console entry.
 SKIP_RESIDUE = "console: unparsed platform residue (R45)"
+# Ré-audit de Romain (2026-09-26, P1) : une plateforme déclarée ne se PERD jamais. Un
+# « Switch » nu dans le même créneau qu'une famille non Nintendo (« PS4 / Switch ») est une
+# plateforme sans génération à côté d'une autre : la ligne entière est refusée, jamais une
+# saisie partielle qui consommerait l'offre sans elle.
+SKIP_PLATFORM_LOST = "console: Switch without generation next to another platform — never a partial entry (R45)"
 
 
 def skip_not_a_game(marker: str) -> str:
@@ -570,6 +575,7 @@ class _TitleParse:
     xbox_pc: bool = False
     xbox_live_pc_only: bool = False
     other_console: bool = False
+    switch_lost: bool = False       # a bare "Switch" next to a non-Nintendo family (refused)
 
 
 def _parse_title(name: str) -> _TitleParse:
@@ -581,7 +587,7 @@ def _parse_title(name: str) -> _TitleParse:
     xbox_360 = False
     edition_families: list[str] = []
     leading_tokens: tuple[str, ...] = ()
-    xbox_undeclared = xbox_pc = xbox_live_pc_only = other_console = False
+    xbox_undeclared = xbox_pc = xbox_live_pc_only = other_console = switch_lost = False
     for run in _RUN_RE.finditer(name):
         if _leading_name_run(run, name):
             leading_tokens = tuple(t for t in re.split(r"[^a-z0-9]+", run.group(0).lower()) if t)
@@ -591,7 +597,7 @@ def _parse_title(name: str) -> _TitleParse:
             edition_families.append(edition_family)
             continue
         run_families: list[str] = []
-        run_pc = run_xbox = run_xbox_live = False
+        run_pc = run_xbox = run_xbox_live = run_switch_bare = False
         for item in _ITEM_RE.finditer(run.group(0)):
             group = _item_group(item)
             if group == "x360":
@@ -610,6 +616,19 @@ def _parse_title(name: str) -> _TitleParse:
                     other_console = True
             elif group in ("nbare", "swbare"):
                 other_console = True
+                run_switch_bare = run_switch_bare or group == "swbare"
+        # Ré-audit de Romain (2026-09-26, P1) : « Super Mario Galaxy 2 Switch & Switch 2
+        # (Europe & UK) » (Loaded) ne donnait que SWITCH2 — le « Switch » nu était lu comme un
+        # Nintendo sans génération et tombait. À côté de « Switch 2 », dans le MÊME créneau, il
+        # ne peut désigner que la Switch : c'est la déclaration croisée des deux générations
+        # (P1 : les deux pages). À côté d'une famille NON Nintendo (« PS4 / Switch »), c'est une
+        # plateforme sans génération : refus de la ligne entière (SKIP_PLATFORM_LOST). À côté
+        # de « Nintendo Switch », c'est la même plateforme répétée : rien à faire.
+        if run_switch_bare:
+            if "SWITCH2" in run_families and "SWITCH" not in run_families:
+                run_families.insert(run_families.index("SWITCH2"), "SWITCH")
+            elif run_families and not ({"SWITCH", "SWITCH2"} & set(run_families)):
+                switch_lost = True
         # PC/Windows counts only NEXT TO a declared console family (the same run) —
         # "PC Building Simulator (Xbox One)" is not a PC declaration.
         if run_pc and run_families:
@@ -624,7 +643,8 @@ def _parse_title(name: str) -> _TitleParse:
             if fam not in families:
                 families.append(fam)
     return _TitleParse(tuple(families), pc_declared, xbox_360, tuple(edition_families),
-                       leading_tokens, xbox_undeclared, xbox_pc, xbox_live_pc_only, other_console)
+                       leading_tokens, xbox_undeclared, xbox_pc, xbox_live_pc_only, other_console,
+                       switch_lost)
 
 
 # ── non-game markers ─────────────────────────────────────────────────────────────────
@@ -1069,6 +1089,8 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
     pc_declared = title.pc_declared
     if title.xbox_360:
         return signal(tuple(families), pc_declared, SKIP_XBOX_360)
+    if title.switch_lost:
+        return signal(tuple(families), pc_declared, SKIP_PLATFORM_LOST)
     hook_xbox_undeclared = hook_windows_key = url_xbox_undeclared = False
     if not families:
         if cfg is not None and cfg.console_url_families is not None:

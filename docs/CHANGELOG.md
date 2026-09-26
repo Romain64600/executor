@@ -3,6 +3,21 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-26 — Ré-audit de Romain (4e7ca1e → a6da691) : deux P1 corrigés
+
+- **Loaded confondait ses offres** (`src/merchants/loaded.py`). Toutes les URL du feed sont le
+  même lien d'affiliation (`go.loaded.com/c/1297091/2640470/18216?u=…`) : l'identité P2-12 (le
+  chemin seul) était la même pour toutes. Demander la ligne 2 prenait la ligne 1
+  (`_pin_fresh_row`), et une sœur restée au feed empêchait de prouver une création.
+  `url_identity_params=("u",)`, comme Wyrel / CJS. Loaded n'a encore jamais été balayé.
+- **Une plateforme déclarée se perdait** (`src/console_keys.py`). « Super Mario Galaxy 2 Switch
+  & Switch 2 (Europe & UK) » ne donnait que SWITCH2 : le « Switch » nu tombait comme un Nintendo
+  sans génération. À côté de « Switch 2 » dans le même créneau, il est la Switch → les deux
+  pages (P1) ; à côté d'une famille non Nintendo (« PS4 / Switch »), refus de la ligne entière
+  (`SKIP_PLATFORM_LOST`), jamais une saisie partielle. Corpus du 21/09 : 2 lignes changent, 0
+  refusée.
+- Tests : `tests/test_merchants_loaded.py` (+7, reproductions de l'audit) ; 3 mutations rougies.
+
 ## 2026-09-26 — `[R18c]` étape B : « <Jeu> <X> Edition » n'entre plus en DLC sur la page du DLC
 
 Romain : « go pour A, et B en attendant » (EXECUTOR_RULES §4.5 `[R18c]`, AGENTS). Une offre

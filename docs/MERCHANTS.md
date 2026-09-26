@@ -1004,7 +1004,11 @@ matcher et le classifieur importent le registre.
   le slug quand le titre dit seulement « Xbox/PC » (`console_url_families` :
   `towerborne-xbox-series-x-s-pc-eu` → Xbox Series + PC, rangé XBOX/PC EU 241 comme AKS le fait
   déjà pour Loaded) ; sans génération nulle part (« Xbox/PC ») → P4 depuis le 25/09 : Xbox One +
-  Series + PC, le cas Play Anywhere de P2.
+  Series + PC, le cas Play Anywhere de P2. « Switch & Switch 2 » → les DEUX pages (ré-audit de
+  Romain du 26/09 : la Switch se perdait).
+- **Identité d'une offre = chemin + `u`** (`url_identity_params=("u",)`, ré-audit de Romain du
+  26/09) : le chemin `go.loaded.com/c/1297091/2640470/18216` est le même pour TOUTES les offres ;
+  sans `u`, la ligne 2 se faisait prendre pour la ligne 1 et une sœur bloquait la preuve.
 - **Essai à blanc** sur les 16 lignes du scan du 21/09 : 1 candidat (Towerborne, Xbox Series + PC,
   XBOX/PC EU) ; refus : 4 sans page AKS, 4 « Xbox/PC » sans génération, 2 North America, 2 bonus de
   précommande, 1 abonnement, 1 bundle. Le feed du jour reste à relire (les deux navigateurs étaient

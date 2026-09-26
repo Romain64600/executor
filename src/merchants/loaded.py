@@ -192,6 +192,11 @@ CONFIG = make_config(
     console_region_slot=console_region_slot,
     console_url_families=console_url_families,
     console_pc_declared=console_pc_declared,
+    # Ré-audit de Romain (2026-09-26, P1) : le CHEMIN du lien d'affiliation est le même pour
+    # toutes les offres (`go.loaded.com/c/1297091/2640470/18216`) — la fiche est dans `u`.
+    # Sans `u` dans l'identité (P2-12 ne garde que le chemin), demander la ligne 2 sélectionnait
+    # la ligne 1, et une sœur empêchait de prouver la disparition d'une offre créée.
+    url_identity_params=("u",),
     notes=("feed store 40 (ex-CDKeys). [R61] région = parenthèse finale du titre (« Europe & UK » "
            "→ Europe, sans parenthèse → GLOBAL implicite, décisions de Romain du 2026-09-25) ; "
            "boutique PC = slug de la fiche, dans le paramètre u du lien d'affiliation."),

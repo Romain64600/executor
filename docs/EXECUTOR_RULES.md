@@ -1787,6 +1787,14 @@ SWITCH alone) — the fix of the Gamivo leak below.
   Romain 2026-09-25: CJS "… PSN Download Key (Playstation) UNITED STATES", ~540 rows), bare
   "Nintendo" / eShop / "(Switch)" (unchanged), an Xbox word next to a PlayStation / Nintendo
   one;
+- **A declared platform is never LOST (Romain's re-audit, 2026-09-26, P1).** A bare "Switch"
+  in the SAME platform slot as "Switch 2" is the Switch — "Super Mario Galaxy 2 Switch &
+  Switch 2 (Europe & UK)" (Loaded) gave SWITCH2 alone and would have consumed the offer
+  without the Switch page; it now reads `("SWITCH", "SWITCH2")`, the cross-gen declaration of
+  P1 (both pages). A bare "Switch" next to a NON-Nintendo family ("PS4 / Switch") is refused
+  whole — "console: Switch without generation next to another platform — never a partial
+  entry (R45)" (`SKIP_PLATFORM_LOST`); next to "Nintendo Switch" it is the same platform
+  repeated. 21/09 corpus: 2 rows change (the two Loaded Super Mario Galaxy rows), 0 refused;
 - "console: unparsed platform residue (R45)" (2026-09-14, `SKIP_RESIDUE`) — a SERIES /
   ONE token still glued to a separator once the platform phrase is removed ("/Series",
   "& Series", "(Series", "Series)", "One /"): the grammar did not parse the whole phrase
@@ -2618,11 +2626,15 @@ sibling of another region kept every creation « STILL in feed » — 14 false f
 Wyrel on 24/09 (AKS had answered « Offer created … feed entry deleted » for all 14, none
 reappeared), 13 on CJS since 20/09. `MerchantConfig.url_identity_params` names the params
 that make the listing — Wyrel `("marketplace_id", "edition_id", "region")`, CJS
-`("variation",)` — and ONLY those join the key (`path?k=v&…`, sorted); `referal` /
+`("variation",)`, Loaded `("u",)` (Romain's re-audit 2026-09-26, P1: EVERY Loaded feed URL is
+the same affiliate path `go.loaded.com/c/1297091/2640470/18216`, the listing is the `u`
+product link — path-only, asking for row 2 pinned row 1 and a sibling blocked every proof) —
+and ONLY those join the key (`path?k=v&…`, sorted); `referal` /
 `coupon` / any other param stay out. A re-id of the SAME listing keeps the same key, so the
 K4G id-rotation guard holds; a merchant that declares nothing keeps P2-12 exactly. The feed
 SEARCH still searches the last PATH segment (`_url_path`): the search matches the stored
-URL's text.
+URL's text (for Loaded that segment is the shared `18216`: the search returns the whole
+small Loaded feed and the key — with `u` — picks the row).
 
 **One bounded retry of the proof on a CDP command TIMEOUT (Romain GO 2026-09-10;
 historique — the two MMOGA halts behind it : CHANGELOG 2026-09-10).** The AKS admin page
@@ -3246,7 +3258,9 @@ MMOGA en global ». `src/merchants/loaded.py` : région = parenthèse finale du 
 (« Europe & UK » → EU, « WW » → GLOBAL, verrou → refus, texte inconnu → refus nommé) ; sans
 parenthèse, le GLOBAL implicite générique ; boutique PC lue dans le slug de la fiche (paramètre `u`
 du lien `go.loaded.com`) ; lignes console : région du créneau et génération lue dans le slug quand
-le titre dit seulement « Xbox/PC ».
+le titre dit seulement « Xbox/PC ». Ré-audit de Romain (26/09, deux P1) : identité d'une offre =
+chemin + `u` (`url_identity_params=("u",)` — le chemin d'affiliation est le même pour toutes) ;
+« Switch & Switch 2 » garde les DEUX générations (§4.12, « a declared platform is never lost »).
 
 ### `[R60]` Discover.games (store 168) — plateforme et région sur la fiche (2026-09-25)
 

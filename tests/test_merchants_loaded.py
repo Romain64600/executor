@@ -103,6 +103,74 @@ class LesConsoles(unittest.TestCase):
         self.assertEqual(sig.region_base, "eu")
 
 
+class LIdentiteDUneOffreEstSaFiche(unittest.TestCase):
+    """Ré-audit de Romain (2026-09-26, P1) : le chemin du lien d'affiliation est le MÊME pour
+    toutes les offres Loaded ; l'offre est dans ``u``. Sans ``u`` dans l'identité, la ligne 2
+    se faisait prendre pour la ligne 1, et une sœur restée au feed empêchait de prouver la
+    disparition d'une offre créée."""
+
+    UN, DEUX = _aff("zero-caliber-2-remastered-pc-steam"), _aff("towerborne-xbox-series-x-s-pc-eu")
+
+    def test_deux_offres_deux_cles(self):
+        from src.submitter import _url_key
+        self.assertNotEqual(_url_key(self.UN), _url_key(self.DEUX))
+        self.assertEqual(_url_key(self.UN), _url_key(self.UN.replace("/18216?", "/18216?utm=x&")))
+
+    def _sub(self, session):
+        from src.submitter import Submitter
+        sub = Submitter(session)
+        sub.empty_retry_wait_s = 0
+        sub.empty_confirm_waits = (0,)
+        sub.feed_ui_render_waits = ()
+        sub.modal_ctx_waits = ()
+        return sub
+
+    def test_demander_la_ligne_2_prend_la_ligne_2(self):
+        from src.submitter import _url_key
+        from tests.test_submitter import FakeSubmitSession
+        session = FakeSubmitSession([["1", "2"]], rows={"1": {"url": self.UN}, "2": {"url": self.DEUX}})
+        session.navigate("https://x/feed")
+        row = self._sub(session)._pin_fresh_row("2", _url_key(self.DEUX))
+        self.assertEqual(str(row.get("id")), "2")
+
+    def test_une_soeur_restee_au_feed_ne_bloque_plus_la_preuve(self):
+        from tests.test_submitter import FakeSubmitSession
+        session = FakeSubmitSession([["2"]], rows={"2": {"url": self.DEUX}})
+        gone, _, _ = self._sub(session)._verify_gone("1", self.UN, "40", "aks-merchant-feeds-9", "all", 5)
+        self.assertTrue(gone)
+
+    def test_la_meme_offre_reidentifiee_reste_au_feed(self):
+        from tests.test_submitter import FakeSubmitSession
+        session = FakeSubmitSession([["9"]], rows={"9": {"url": self.UN}})
+        gone, _, _ = self._sub(session)._verify_gone("1", self.UN, "40", "aks-merchant-feeds-9", "all", 5)
+        self.assertFalse(gone)
+
+
+class SwitchEtSwitch2(unittest.TestCase):
+    """Ré-audit de Romain (2026-09-26, P1) : « Switch & Switch 2 » ne donnait que SWITCH2 —
+    la Switch déclarée se perdait, et la saisie aurait consommé l'offre sans elle."""
+
+    def test_les_deux_generations_sont_gardees(self):
+        for titre in ("Super Mario Galaxy 2 Switch & Switch 2 (Europe & UK)",
+                      "Super Mario Galaxy + Super Mario Galaxy 2 Switch & Switch 2 (Europe & UK)"):
+            with self.subTest(titre):
+                sig = classify_console(titre, _aff("super-mario-galaxy-2-switch-switch-2-eu"), "Loaded")
+                self.assertEqual((sig.families, sig.skip_reason, sig.region_base),
+                                 (("SWITCH", "SWITCH2"), None, "eu"))
+
+    def test_un_switch_nu_a_cote_d_une_autre_plateforme_est_refuse(self):
+        sig = classify_console("Some Game (PS4 / Switch)", "https://x.test/y", "Shop")
+        self.assertIn("never a partial entry", sig.skip_reason)
+
+    def test_la_meme_plateforme_repetee_ne_change_rien(self):
+        for titre, fams in (("Some Game (Nintendo Switch) Switch Key", ("SWITCH",)),
+                            ("NieR Automata (Europe) (Nintendo Switch) - Nintendo - Digital Key", ("SWITCH",)),
+                            ("Diablo IV (Europe) (Nintendo Switch 2) - Nintendo - Digital Key", ("SWITCH2",))):
+            with self.subTest(titre):
+                sig = classify_console(titre, "https://x.test/y", "Shop")
+                self.assertEqual((sig.families, sig.skip_reason), (fams, None))
+
+
 class Registre(unittest.TestCase):
     def test_le_store_40_est_loaded(self):
         self.assertEqual(merchant_for_store("40"), "Loaded")

@@ -263,7 +263,8 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   (2026-09-24).** P2-12 garde volontairement le CHEMIN seul comme identité d'une annonce (la
   query dérive chez G2A) et accepte qu'une sœur au même chemin fasse sortir une création
   « STILL in feed ». Chez Wyrel et CJS, la query EST l'annonce (région / édition / variation) :
-  14 fausses erreurs Wyrel le 24/09, 13 CJS depuis le 20/09. Seuls les paramètres qu'un
+  14 fausses erreurs Wyrel le 24/09, 13 CJS depuis le 20/09. Chez Loaded, TOUT le chemin est
+  le même lien d'affiliation et l'annonce est dans `u` (ré-audit de Romain, 26/09). Seuls les paramètres qu'un
   marchand DÉCLARE rejoignent la clé ; un marchand qui ne déclare rien garde P2-12 à
   l'identique, et une ré-identification de la MÊME annonce reste « encore au feed ». Un audit
   proposera de rendre toute la query identitaire, ou de retirer l'exception : ni l'un ni
