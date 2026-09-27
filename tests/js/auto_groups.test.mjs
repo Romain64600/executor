@@ -58,6 +58,19 @@ test("les deux groupes deviennent des boutons, avec leur charge", async () => {
             "les marchands du groupe ne sont indiqués nulle part");
 });
 
+test("la liste des marchands de chaque groupe est VISIBLE, pas seulement en infobulle", async () => {
+  // Romain, 2026-09-27 : « il manque la liste des marchands dans le groupe A et la liste des
+  // marchands dans le groupe B ».
+  const c = await demarrer();
+  const a = c.$("#group-list-A");
+  const b = c.$("#group-list-B");
+  assert.ok(a && b, "une ligne par groupe est attendue sous les boutons");
+  assert.ok(a.textContent.includes("GameSeal") && !a.textContent.includes("Gamivo"),
+            "la ligne du groupe A doit lister SES marchands : " + a.textContent);
+  assert.ok(b.textContent.includes("Gamivo") && !b.textContent.includes("GameSeal"),
+            "la ligne du groupe B doit lister SES marchands : " + b.textContent);
+});
+
 test("sans GO tapé, le bouton est inerte et rien ne part", async () => {
   const c = await demarrer();
   const b = c.$("#launch-group-A");

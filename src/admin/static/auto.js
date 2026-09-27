@@ -489,6 +489,11 @@ function syncListNote() {
 function renderGroups() {
   const zone = $("#group-buttons");
   const note = $("#groups-note");
+  // Romain, 2026-09-27 : « il manque la liste des marchands dans le groupe A et la liste des
+  // marchands dans le groupe B ». Elle n'était que dans l'infobulle du bouton, invisible sans
+  // survol. Chaque groupe a maintenant sa ligne, lue telle que le serveur l'envoie.
+  const lists = $("#group-lists");
+  if (lists) lists.replaceChildren();
   if (!zone) return;
   zone.textContent = "";
   if (!GROUPS.length) {
@@ -510,6 +515,13 @@ function renderGroups() {
       + " — toutes les pages, un arrêt fail-closed n'arrête pas les autres marchands.";
     b.addEventListener("click", () => launchGroup(g));
     zone.appendChild(b);
+    if (lists) {
+      lists.append(el("div", { class: "group-list", id: "group-list-" + g.name }, [
+        el("b", { text: "Groupe " + g.name }),
+        el("span", { class: "dim-inline", text: " (" + g.merchants.length + " marchand(s)) : " }),
+        el("span", { text: g.merchants.map((m) => m.name).join(", ") }),
+      ]));
+    }
   });
   syncGo();
 }

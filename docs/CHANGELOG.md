@@ -3,6 +3,16 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-27 — Console : la liste des marchands de chaque groupe est visible
+
+Romain : « Dans l'admin, tu as mis les boutons « Groupe A » et « Groupe B ». Il manque la liste
+des marchands dans le groupe A et la liste des marchands dans le groupe B. » Elle n'était que
+dans l'infobulle du bouton. `src/admin/static/auto.html` / `auto.js` / `auto.css` : une ligne par
+groupe sous les boutons (`#group-list-<nom>`), lue telle que `/api/data-entry/merchants` la
+renvoie. Le bouchon DOM des tests (`tests/js/dom_stub.mjs`) fait maintenant de l'attribut `id`
+la propriété `id`, comme le vrai DOM. Test exécuté : `tests/js/auto_groups.test.mjs` (+1, une
+mutation rougie). Fichiers statiques relus à chaque requête : actif sans redémarrer l'admin.
+
 ## 2026-09-26 — Recherche de preuve : AKS cherche sans la casse (trois UNKNOWN CJS)
 
 Romain : « go pour vérifier et corriger la recherche CJS » (EXECUTOR_RULES §6 proof, AGENTS).

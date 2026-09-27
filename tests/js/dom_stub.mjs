@@ -32,7 +32,9 @@ export function makeEl(tag = "div") {
       return el._text || el.children.map((c) => (typeof c === "string" ? c : c.textContent || "")).join("");
     },
     set textContent(v) { el._text = String(v); el.children = []; },
-    setAttribute(k, v) { el.attrs[k] = v; },
+    // Comme le vrai DOM : l'attribut `id` EST la propriété `id` (2026-09-27 — les lignes de
+    // groupe posées par `el(…, { id })` restaient introuvables par `#id` dans le bouchon).
+    setAttribute(k, v) { el.attrs[k] = v; if (k === "id") el.id = String(v); },
     getAttribute(k) { return el.attrs[k]; },
     addEventListener(kind, fn) { (listeners[kind] = listeners[kind] || []).push(fn); },
     fire(kind, ev) { return Promise.all((listeners[kind] || []).map((f) => f(ev || { target: el }))); },

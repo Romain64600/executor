@@ -511,7 +511,10 @@ python3 -c "import sys; sys.path.insert(0,'.'); from src.merchant_groups import 
 *account* (30) — `02_extract_feed --list 30` puis `05_submit --list 30`, à la main.
 
 **Dans la console** (2026-09-22) : la carte « Groupes » de l'onglet saisie auto liste A et B
-avec leurs marchands et leur charge estimée, un bouton par groupe. La console ne calcule rien
+avec leur charge estimée, un bouton par groupe, et — depuis le 2026-09-27 (Romain : « il manque
+la liste des marchands dans le groupe A et […] dans le groupe B ») — une ligne VISIBLE par
+groupe sous les boutons, « Groupe A (11 marchand(s)) : GameSeal, G2A, … » ; elle n'était
+jusque-là que dans l'infobulle du bouton. La console ne calcule rien
 — elle reçoit les groupes de `/api/data-entry/merchants` et renvoie le NOM du groupe, que le
 serveur détend lui-même sur la liste blanche. `group` ne se combine ni avec `targets` ni avec
 `all_allowlisted`. L'écran est vérifié en l'EXÉCUTANT (`tests/js/auto_groups.test.mjs`).
