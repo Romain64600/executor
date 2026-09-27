@@ -1,0 +1,975 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Saisie automatique des offres — AKS Controlled Executor</title>
+<style>
+  :root {
+    --surface: #fcfcfb; --fond: #e9e8e3; --encre: #0b0b0b; --encre-2: #52514e; --trait: #c9c7c0;
+    --bleu: #2a78d6; --bleu-clair: #e3eefb; --aqua: #1baf7a; --aqua-clair: #e0f5ec;
+    --orange: #eb6834; --orange-clair: #fde7dd; --rouge: #e34948; --rouge-clair: #fbe1e1;
+    --violet: #4a3aa7; --violet-clair: #e9e6f7; --gris: #f1f0ec;
+  }
+  html, body { margin: 0; height: 100%; background: var(--fond); color: var(--encre);
+    font-family: Inter, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .slide { display: none; position: relative; width: 100vw; height: 100vh; box-sizing: border-box;
+    padding: 5vh 6vw 7vh; background: var(--surface); overflow: hidden; }
+  .slide.active { display: flex; flex-direction: column; }
+  .slide.titre { justify-content: center; align-items: flex-start; background:
+    linear-gradient(135deg, var(--bleu-clair) 0%, var(--surface) 55%); }
+  h1 { font-size: 5.6vmin; line-height: 1.1; margin: 0 0 2vh; letter-spacing: -0.01em; }
+  h2 { font-size: 4.4vmin; line-height: 1.15; margin: 0 0 2.5vh; }
+  h3 { font-size: 3vmin; margin: 0 0 1vh; color: var(--encre); }
+  p, li { font-size: 2.55vmin; line-height: 1.45; margin: 0 0 1.2vh; }
+  ul { margin: 0 0 1vh 0; padding-left: 3vmin; }
+  li { margin-bottom: 0.9vh; }
+  .dim { color: var(--encre-2); }
+  .sous { font-size: 2.9vmin; color: var(--encre-2); margin-top: 0; }
+  .figure { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  .figure svg { width: 100%; height: 100%; }
+  .deux { display: grid; grid-template-columns: 1fr 1fr; gap: 3vw; flex: 1; min-height: 0; }
+  .colonne h3 { margin-top: 0; }
+  .tuiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2vmin; flex: 1; align-content: center; }
+  .tuile { background: var(--gris); border-radius: 1.6vmin; padding: 3vmin 2.6vmin; }
+  .tuile .n { font-size: 7vmin; font-weight: 700; letter-spacing: -0.02em; line-height: 1; color: var(--encre); }
+  .tuile .l { font-size: 2.1vmin; color: var(--encre-2); margin-top: 1.2vmin; line-height: 1.35; }
+  .tuile.accent { background: var(--bleu-clair); }
+  .tuile.preuve { background: var(--aqua-clair); }
+  table { border-collapse: collapse; width: 100%; font-size: 2.15vmin; }
+  th, td { text-align: left; padding: 1.1vmin 1.4vmin; border-bottom: 1px solid var(--trait); vertical-align: top; line-height: 1.35; }
+  th { color: var(--encre-2); font-weight: 600; font-size: 1.9vmin; text-transform: uppercase; letter-spacing: 0.04em; }
+  .etq { display: inline-block; padding: 0.3vmin 1vmin; border-radius: 0.8vmin; font-size: 1.9vmin; font-weight: 600; white-space: nowrap; }
+  .etq.ok { background: var(--aqua-clair); color: #0b5a3e; }
+  .etq.non { background: var(--orange-clair); color: #8a3410; }
+  .encart { background: var(--gris); border-radius: 1.4vmin; padding: 2vmin 2.6vmin; margin-top: auto; }
+  .encart p { margin: 0; font-size: 2.2vmin; }
+  .verbes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1.6vmin; margin: 2vh 0; }
+  .verbe { background: var(--bleu-clair); border-radius: 1.4vmin; padding: 2vmin; }
+  .verbe b { display: block; font-size: 3.2vmin; margin-bottom: 0.8vmin; color: var(--bleu); }
+  .verbe span { font-size: 2vmin; color: var(--encre-2); line-height: 1.35; }
+  .verbe.preuve { background: var(--aqua-clair); } .verbe.preuve b { color: #0b5a3e; }
+  .marchands { display: flex; flex-wrap: wrap; gap: 1vmin; margin: 1vh 0 2vh; }
+  .marchands span { background: var(--gris); border-radius: 0.9vmin; padding: 0.7vmin 1.4vmin; font-size: 2vmin; }
+  .marchands span.neuf { background: var(--bleu-clair); }
+  .etapes { counter-reset: e; list-style: none; padding: 0; }
+  .etapes li { counter-increment: e; position: relative; padding-left: 5vmin; }
+  .etapes li::before { content: counter(e); position: absolute; left: 0; top: 0.2vmin; width: 3.4vmin; height: 3.4vmin;
+    border-radius: 50%; background: var(--bleu); color: #fff; font-weight: 700; font-size: 2vmin; display: flex; align-items: center; justify-content: center; }
+  .pied { position: absolute; left: 6vw; right: 6vw; bottom: 2.4vh; display: flex; justify-content: space-between; align-items: center;
+    font-size: 1.8vmin; color: var(--encre-2); }
+  .progress { position: absolute; left: 0; bottom: 0; height: 0.6vh; background: var(--bleu); width: 0; transition: width .2s; }
+  .nav { position: fixed; right: 2vw; bottom: 1.6vh; display: flex; gap: 0.6vmin; z-index: 5; }
+  .nav button { font: inherit; font-size: 2vmin; border: 1px solid var(--trait); background: #fff; color: var(--encre-2);
+    border-radius: 0.8vmin; padding: 0.5vmin 1.4vmin; cursor: pointer; }
+  .nav button:hover { border-color: var(--bleu); color: var(--bleu); }
+  .notes { display: none; }
+  body.avec-notes .slide.active .notes { display: block; position: absolute; left: 0; right: 0; bottom: 0; max-height: 34vh; overflow: auto;
+    background: #fffbe6; border-top: 2px solid #e6d78a; padding: 1.6vh 6vw 4vh; font-size: 2vmin; line-height: 1.45; color: #3b3300; z-index: 4; }
+  .aide { position: fixed; left: 2vw; bottom: 1.6vh; font-size: 1.7vmin; color: var(--encre-2); z-index: 5; }
+  @media print {
+    @page { size: A4 landscape; margin: 8mm; }
+    html, body { background: #fff; }
+    .slide { display: flex !important; flex-direction: column; height: auto; min-height: 96vh; page-break-after: always; break-after: page; }
+    .slide:last-child { page-break-after: auto; }
+    .nav, .aide, .progress { display: none !important; }
+    .notes { display: block; margin-top: 2vh; padding: 1.2vh 1.6vw; background: #fffbe6; border: 1px solid #e6d78a; font-size: 1.9vmin; color: #3b3300; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 1 -->
+<section class="slide titre">
+  <p class="sous" style="color:var(--bleu);font-weight:600">AllKeyShop · outil « merchant feeds »</p>
+  <h1>Saisie automatique des offres marchands</h1>
+  <p class="sous">Un exécuteur déterministe qui lit le feed, trouve la page, décide, saisit — et prouve chaque saisie.</p>
+  <p class="dim" style="margin-top:6vh">Présentation du lundi 28 septembre 2026 · <span style="border-bottom:1px dashed var(--trait)">Romain (nom / rôle à compléter)</span></p>
+  <aside class="notes">Une phrase d'accroche : « on a des dizaines de milliers d'offres marchands qui attendent d'être ajoutées à la main ; on a construit une machine qui les ajoute, avec la même rigueur qu'un humain soigneux, et qui s'arrête au moindre doute ». Puis le plan : le problème, ce qu'on a construit, comment ça marche, ce que ça a donné, la suite.</aside>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <h2>Le problème : des dizaines de milliers d'offres en attente</h2>
+  <div class="deux">
+    <div class="colonne">
+      <ul>
+        <li>Les marchands nous envoient leurs offres par <b>feed</b> ; elles atterrissent dans l'outil « merchant feeds » de wp-admin, liste <b>Pending offers</b>.</li>
+        <li>Pour chaque offre, quelqu'un doit : <b>trouver la page AKS</b> du produit, choisir la <b>plateforme</b>, la <b>région</b>, l'<b>édition</b>, parfois plusieurs <b>pages</b> (consoles), remplir le formulaire, valider.</li>
+        <li>À la main : lent, répétitif, et une erreur de région ou d'édition met un prix faux en ligne.</li>
+      </ul>
+    </div>
+    <div class="colonne">
+      <div class="tuiles" style="grid-template-columns:1fr 1fr">
+        <div class="tuile accent"><div class="n">&gt; 50 000</div><div class="l">offres en attente dans la liste Pending (relevé du 25/09/2026)</div></div>
+        <div class="tuile"><div class="n">~ 6 850</div><div class="l">lignes console (PS, Xbox, Switch), longtemps hors périmètre</div></div>
+        <div class="tuile"><div class="n">3 102</div><div class="l">lignes hors jeu à écarter : cartes, monnaies, comptes, bundles</div></div>
+        <div class="tuile"><div class="n">1 589</div><div class="l">lignes en région non vendable (« Rest of World », Amérique du Nord…)</div></div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">Les chiffres du 25/09 viennent d'une relecture complète de la liste Pending (plus de 500 pages). Une partie de l'attente est ancienne : 80 % des lignes vues datent d'avant septembre. Il en arrive plusieurs centaines par jour. Point important : l'outil renvoyait les mêmes pages en boucle (tri instable sur la date de création) ; on a fixé le tri sur l'identifiant, ce qui a fait « apparaître » ~13 000 lignes jamais montrées.</aside>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <h2>Ce qu'on a construit</h2>
+  <p>Un <b>exécuteur déterministe</b> : pas d'improvisation, des règles écrites, un journal de chaque action, et une saisie faite par le vrai formulaire d'AKS.</p>
+  <div class="verbes">
+    <div class="verbe"><b>Il lit</b><span>le feed marchand, page par page, dans un vrai navigateur connecté (CDP)</span></div>
+    <div class="verbe"><b>Il trouve</b><span>la page produit AKS : sitemap d'abord, puis le nom, puis une recherche bornée</span></div>
+    <div class="verbe"><b>Il décide</b><span>plateforme, région, édition, page(s) cible — par des règles, jamais par le prix</span></div>
+    <div class="verbe"><b>Il saisit</b><span>via la modale officielle : champs visibles, bouton « Create » visible</span></div>
+    <div class="verbe preuve"><b>Il prouve</b><span>succès = l'offre a disparu du feed rafraîchi ; sinon, arrêt</span></div>
+  </div>
+  <div class="encart"><p><b>Le principe qui gouverne tout : fail-closed.</b> Au moindre doute, l'exécuteur refuse ou s'arrête et l'écrit. Il ne devine jamais une région, n'essaie jamais « pour voir », ne se reconnecte jamais tout seul.</p></div>
+  <aside class="notes">Insister sur « déterministe » : deux passages sur la même ligne donnent la même décision ; la décision est expliquée (motif de refus nommé). Et sur « le vrai formulaire » : on ne fabrique pas d'appel caché, on fait ce qu'un opérateur ferait, mais vérifié à chaque pas.</aside>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <h2>En chiffres</h2>
+  <div class="tuiles">
+    <div class="tuile accent"><div class="n">17 317</div><div class="l">offres créées et prouvées depuis le 6 juillet 2026 (deux machines)</div></div>
+    <div class="tuile"><div class="n">16 895</div><div class="l">depuis le 8 septembre : mise en service de la saisie automatique sur 2 VPS</div></div>
+    <div class="tuile"><div class="n">15 101</div><div class="l">sur les 14 derniers jours (14 → 27 septembre)</div></div>
+    <div class="tuile preuve"><div class="n">2 627</div><div class="l">le 26/09 : la meilleure journée (deux groupes en parallèle)</div></div>
+    <div class="tuile"><div class="n">21</div><div class="l">marchands en liste blanche, chacun avec son fichier de règles</div></div>
+    <div class="tuile"><div class="n">2 840</div><div class="l">tests automatisés, dont la console exécutée sous node</div></div>
+  </div>
+  <aside class="notes">Méthode du comptage : une offre est comptée quand le journal porte une saisie réussie ET prouvée (« gone from feed »). Les journaux des deux machines sont additionnés. Détail et par-marchand dans chiffres.md. Le record du 26/09 : le groupe A et la fin du groupe B tournaient en même temps, avec les nouvelles règles console.</aside>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <h2>Vue d'ensemble — qui parle à qui</h2>
+  <div class="figure"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="t-01_vue_d_ensemble d-01_vue_d_ensemble">
+<title id="t-01_vue_d_ensemble">Vue d'ensemble du système</title>
+<desc id="d-01_vue_d_ensemble">L'opérateur pilote, depuis la console d'admin, un exécuteur qui lit le feed AKS à travers un Chrome piloté par CDP, lit les pages AKS en HTTP, et écrit chaque action dans un journal. Deux VPS, un groupe de marchands chacun.</desc>
+<defs><marker id="pointe-01_vue_d_ensemble" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#52514e"/></marker></defs>
+<rect x="0" y="0" width="1600" height="900" fill="#fcfcfb"/>
+<text x="60" y="62" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:34px;font-weight:700;fill:#0b0b0b">Vue d'ensemble — qui parle à qui</text>
+<text x="60" y="96" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:normal;fill:#52514e;font-style:italic">Un VPS = une console, un exécuteur, un navigateur, un groupe de marchands. Deux VPS en parallèle.</text>
+<rect x="60" y="330" width="250" height="200" rx="14" ry="14" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="185.0" y="364" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">Opérateur</text>
+<text x="185.0" y="394" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">lance un groupe, un marchand</text>
+<text x="185.0" y="419" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">suit la page en cours</text>
+<text x="185.0" y="444" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">relit le récap</text>
+<text x="185.0" y="469" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">transfère les cookies</text>
+<text x="185.0" y="494" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">quand la session expire</text>
+<rect x="380" y="150" width="760" height="690" rx="22" ry="22" fill="#ffffff" stroke="#2a78d6" stroke-width="3" stroke-dasharray="10 8"/>
+<text x="400" y="190" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:22px;font-weight:600;fill:#2a78d6">VPS (×2 — chacun balaie un groupe de marchands, une nuit)</text>
+<rect x="420" y="220" width="300" height="150" rx="14" ry="14" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="570.0" y="254" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">Console d'admin</text>
+<text x="570.0" y="284" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">/executor/auto : groupes, pages</text>
+<text x="570.0" y="306" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">N→1, page en cours, récap, arrêt</text>
+<text x="570.0" y="328" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">/executor/tri : cookies (reconnexion)</text>
+<rect x="420" y="420" width="300" height="190" rx="14" ry="14" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="570.0" y="454" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">Exécuteur</text>
+<text x="570.0" y="484" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">scripts 02 → 05 par page :</text>
+<text x="570.0" y="506" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">extraction · matching · validation</text>
+<text x="570.0" y="528" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">· saisie · preuve</text>
+<text x="570.0" y="550" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">orchestrateur 10 (sweep),</text>
+<text x="570.0" y="572" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">StepGuard entre chaque étape</text>
+<rect x="420" y="660" width="300" height="150" rx="14" ry="14" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="570.0" y="694" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">Journal</text>
+<text x="570.0" y="724" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">logs/&lt;run&gt;.jsonl : chaque action</text>
+<text x="570.0" y="746" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">runs/&lt;run&gt;/ : offers, candidates,</text>
+<text x="570.0" y="768" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">approved, submit_plan, recap</text>
+<rect x="800" y="420" width="310" height="190" rx="14" ry="14" fill="#e9e6f7" stroke="#4a3aa7" stroke-width="2"/>
+<text x="955.0" y="454" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">Chrome piloté par CDP</text>
+<text x="955.0" y="484" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">session WordPress connectée</text>
+<text x="955.0" y="506" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">(cookies transférés par l'opérateur)</text>
+<text x="955.0" y="528" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">un seul onglet, un verrou :</text>
+<text x="955.0" y="550" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">un balayage à la fois par machine</text>
+<text x="955.0" y="572" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">UA officiel, endpoint officiel</text>
+<rect x="1220" y="200" width="330" height="230" rx="14" ry="14" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>
+<text x="1385.0" y="234" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">AKS — wp-admin</text>
+<text x="1385.0" y="264" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">outil « merchant feeds »</text>
+<text x="1385.0" y="289" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">Pending offers (liste 9)</text>
+<text x="1385.0" y="314" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">formulaire de création d'offre</text>
+<text x="1385.0" y="339" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">(région / édition / cibles)</text>
+<rect x="1220" y="480" width="330" height="200" rx="14" ry="14" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>
+<text x="1385.0" y="514" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">AKS — site public</text>
+<text x="1385.0" y="544" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">pages produit (éditions, régions,</text>
+<text x="1385.0" y="569" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">plateformes officielles)</text>
+<text x="1385.0" y="594" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">sitemap : 213 599 pages</text>
+<text x="1385.0" y="619" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">lecture HTTP, UA « AKS/Staff »</text>
+<rect x="1220" y="730" width="330" height="110" rx="14" ry="14" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="1385.0" y="764" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">Marchands</text>
+<text x="1385.0" y="794" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">feeds importés par AKS</text>
+<text x="1385.0" y="819" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">fiches produit (lues pour certains)</text>
+<line x1="310" y1="400" x2="420" y2="320" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-01_vue_d_ensemble)"/>
+<text x="365.0" y="346.0" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">navigateur</text>
+<line x1="570" y1="370" x2="570" y2="420" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-01_vue_d_ensemble)"/>
+<text x="640.0" y="395.0" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">lance, suit</text>
+<line x1="570" y1="610" x2="570" y2="660" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-01_vue_d_ensemble)"/>
+<text x="570.0" y="625.0" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">écrit</text>
+<line x1="720" y1="515" x2="800" y2="515" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-01_vue_d_ensemble)"/>
+<text x="760.0" y="503.0" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">CDP</text>
+<path d="M1110,470 L1170,470 L1170,315 L1220,315" fill="none" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-01_vue_d_ensemble)"/>
+<text x="1165" y="160" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">lit le feed · remplit · clique « Create »</text>
+<line x1="720" y1="560" x2="1220" y2="580" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-01_vue_d_ensemble)" stroke-dasharray="9 7"/>
+<text x="970.0" y="632.0" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">HTTP lecture seule (matching)</text>
+<line x1="1385" y1="730" x2="1385" y2="680" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-01_vue_d_ensemble)" stroke-dasharray="9 7"/>
+<text x="1395" y="712" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e;font-style:italic">import</text>
+<line x1="1385" y1="480" x2="1385" y2="430" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-01_vue_d_ensemble)" stroke-dasharray="9 7"/>
+<text x="1395" y="460" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e;font-style:italic">même catalogue</text>
+<path d="M1220,800 L1000,800 L1000,610" fill="none" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-01_vue_d_ensemble)" stroke-dasharray="9 7"/>
+<text x="1000" y="830" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">fiche marchand</text>
+</svg>
+</div>
+  <aside class="notes">Trois zones : l'opérateur (Romain), le VPS (console + exécuteur + navigateur piloté + journal) et AKS (wp-admin pour lire le feed et écrire ; le site public et son sitemap pour reconnaître les produits, en lecture HTTP). Deux VPS identiques, chacun un groupe de marchands. Le navigateur est un vrai Chrome avec la session WordPress : c'est lui qui écrit, jamais un appel fabriqué.</aside>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <h2>Le pipeline — ce qui arrive à une page du feed</h2>
+  <div class="figure"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="t-02_pipeline_page d-02_pipeline_page">
+<title id="t-02_pipeline_page">Le pipeline d'une page du feed</title>
+<desc id="d-02_pipeline_page">Cinq étapes enchaînées par page : extraction, matching, validation, saisie, preuve. Chaque étape lit et écrit des fichiers du run ; StepGuard sépare les étapes ; le journal JSONL reçoit chaque action.</desc>
+<defs><marker id="pointe-02_pipeline_page" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#52514e"/></marker></defs>
+<rect x="0" y="0" width="1600" height="900" fill="#fcfcfb"/>
+<text x="60" y="62" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:34px;font-weight:700;fill:#0b0b0b">Le pipeline — ce qui arrive à UNE page du feed (100 offres)</text>
+<text x="60" y="96" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:normal;fill:#52514e;font-style:italic">Le balayage prend les pages de la plus haute à la 1 ; chaque page repasse par les cinq étapes, avec le code du moment.</text>
+<rect x="60" y="150" width="280" height="300" rx="14" ry="14" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="200.0" y="184" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">1 · Extraction</text>
+<text x="200.0" y="214" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">02_extract_feed</text>
+<text x="200.0" y="236" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e"></text>
+<text x="200.0" y="258" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">lit la page du feed</text>
+<text x="200.0" y="280" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">via le navigateur (CDP)</text>
+<text x="200.0" y="302" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">lecture seule</text>
+<rect x="80" y="480" width="240" height="100" rx="14" ry="14" fill="#ffffff" stroke="#c9c7c0" stroke-width="2"/>
+<text x="200.0" y="514" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">offers.json</text>
+<text x="200.0" y="538" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">raw.json</text>
+<text x="200.0" y="472" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e;font-style:italic">écrit</text>
+<line x1="200.0" y1="450" x2="200.0" y2="480" stroke="#52514e" stroke-width="2" marker-end="url(#pointe-02_pipeline_page)"/>
+<line x1="340" y1="270" x2="362" y2="270" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-02_pipeline_page)"/>
+<circle cx="351.0" cy="210" r="14" fill="#52514e"/>
+<text x="351.0" y="216" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:700;fill:#ffffff">G</text>
+<rect x="362" y="150" width="280" height="300" rx="14" ry="14" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="502.0" y="184" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">2 · Matching</text>
+<text x="502.0" y="214" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">03_match</text>
+<text x="502.0" y="236" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e"></text>
+<text x="502.0" y="258" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">règles + HTTP lecture seule</text>
+<text x="502.0" y="280" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">sitemap → page AKS → plateforme,</text>
+<text x="502.0" y="302" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">région, édition, cibles</text>
+<rect x="382" y="480" width="240" height="130" rx="14" ry="14" fill="#ffffff" stroke="#c9c7c0" stroke-width="2"/>
+<text x="502.0" y="514" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">candidates.json</text>
+<text x="502.0" y="538" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">skipped.json</text>
+<text x="502.0" y="562" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">report.txt</text>
+<text x="502.0" y="472" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e;font-style:italic">écrit</text>
+<line x1="502.0" y1="450" x2="502.0" y2="480" stroke="#52514e" stroke-width="2" marker-end="url(#pointe-02_pipeline_page)"/>
+<line x1="642" y1="270" x2="664" y2="270" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-02_pipeline_page)"/>
+<circle cx="653.0" cy="210" r="14" fill="#52514e"/>
+<text x="653.0" y="216" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:700;fill:#ffffff">G</text>
+<rect x="664" y="150" width="280" height="300" rx="14" ry="14" fill="#e9e6f7" stroke="#4a3aa7" stroke-width="2"/>
+<text x="804.0" y="184" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">3 · Validation</text>
+<text x="804.0" y="214" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">approve</text>
+<text x="804.0" y="236" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e"></text>
+<text x="804.0" y="258" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">le lot validé est figé</text>
+<text x="804.0" y="280" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">(mode safe : tout le lot ;</text>
+<text x="804.0" y="302" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">learning/advanced : canary de 1)</text>
+<rect x="684" y="480" width="240" height="100" rx="14" ry="14" fill="#ffffff" stroke="#c9c7c0" stroke-width="2"/>
+<text x="804.0" y="514" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">approved.json</text>
+<text x="804.0" y="538" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">validation.json</text>
+<text x="804.0" y="472" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e;font-style:italic">écrit</text>
+<line x1="804.0" y1="450" x2="804.0" y2="480" stroke="#52514e" stroke-width="2" marker-end="url(#pointe-02_pipeline_page)"/>
+<line x1="944" y1="270" x2="966" y2="270" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-02_pipeline_page)"/>
+<circle cx="955.0" cy="210" r="14" fill="#52514e"/>
+<text x="955.0" y="216" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:700;fill:#ffffff">G</text>
+<rect x="966" y="150" width="280" height="300" rx="14" ry="14" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>
+<text x="1106.0" y="184" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">4 · Saisie</text>
+<text x="1106.0" y="214" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">05_submit</text>
+<text x="1106.0" y="236" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e"></text>
+<text x="1106.0" y="258" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">pour chaque candidate :</text>
+<text x="1106.0" y="280" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">retrouver la ligne (titre, URL,</text>
+<text x="1106.0" y="302" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">magasin), ouvrir la modale,</text>
+<text x="1106.0" y="324" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">vérifier, remplir, « Create »</text>
+<rect x="986" y="480" width="240" height="100" rx="14" ry="14" fill="#ffffff" stroke="#c9c7c0" stroke-width="2"/>
+<text x="1106.0" y="514" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">submit_plan.json</text>
+<text x="1106.0" y="538" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">guard_ledger.json</text>
+<text x="1106.0" y="472" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e;font-style:italic">écrit</text>
+<line x1="1106.0" y1="450" x2="1106.0" y2="480" stroke="#52514e" stroke-width="2" marker-end="url(#pointe-02_pipeline_page)"/>
+<line x1="1246" y1="270" x2="1268" y2="270" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-02_pipeline_page)"/>
+<circle cx="1257.0" cy="210" r="14" fill="#52514e"/>
+<text x="1257.0" y="216" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:700;fill:#ffffff">G</text>
+<rect x="1268" y="150" width="280" height="300" rx="14" ry="14" fill="#e0f5ec" stroke="#1baf7a" stroke-width="2"/>
+<text x="1408.0" y="184" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">5 · Preuve</text>
+<text x="1408.0" y="214" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">dans le submitter</text>
+<text x="1408.0" y="236" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e"></text>
+<text x="1408.0" y="258" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">feed rafraîchi :</text>
+<text x="1408.0" y="280" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">l'offre a disparu = succès</text>
+<text x="1408.0" y="302" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">sinon échec ; illisible après</text>
+<text x="1408.0" y="324" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">un clic = état INCONNU → arrêt</text>
+<rect x="1288" y="480" width="240" height="100" rx="14" ry="14" fill="#ffffff" stroke="#c9c7c0" stroke-width="2"/>
+<text x="1408.0" y="514" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">submit_report.txt</text>
+<text x="1408.0" y="538" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">recap.json</text>
+<text x="1408.0" y="472" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e;font-style:italic">écrit</text>
+<line x1="1408.0" y1="450" x2="1408.0" y2="480" stroke="#52514e" stroke-width="2" marker-end="url(#pointe-02_pipeline_page)"/>
+<text x="60" y="128" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e;font-style:italic">G = StepGuard : l'étape suivante ne démarre que si la précédente a rendu un résultat valide (fichier présent, lisible, complet). Un blocage = arrêt, pas de reprise « en discutant ».</text>
+<rect x="60" y="640" width="1480" height="100" rx="14" ry="14" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="800.0" y="674" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">Journal logs/&lt;run&gt;.jsonl — une ligne par action, horodatée : feed_page, match_progress, validation_saved, submit_offer (success, post_save), run_stopped…</text>
+<text x="800.0" y="698" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">recap.json — l'état du balayage, lu par la console : marchand, page en cours et son étape, créées, échecs, arrêts.</text>
+<rect x="60" y="770" width="1480" height="90" rx="14" ry="14" fill="#ffffff" stroke="#c9c7c0" stroke-width="2"/>
+<text x="800.0" y="804" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">Après la dernière page : le marchand suivant du groupe. Un arrêt fail-closed (état inconnu, 10 échecs, session perdue) arrête CE marchand ; le groupe continue.</text>
+<text x="800.0" y="828" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">Une panne passagère AVANT toute écriture (navigateur muet, feed illisible) : la page est refaite après 2, 5 puis 10 min, trois fois au plus.</text>
+</svg>
+</div>
+  <aside class="notes">Une page = 100 offres. Cinq étapes, séparées par StepGuard (l'étape suivante ne démarre que sur un résultat valide). Tout est écrit : les fichiers du run (offers, candidates, approved, submit_plan) et le journal JSONL. Le balayage prend les pages de la plus haute vers la 1 (les créations font remonter les lignes, donc on ne rate rien), marchand après marchand.</aside>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <h2>Le parcours d'une offre — six décisions</h2>
+  <div class="figure"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="t-03_parcours_offre d-03_parcours_offre">
+<title id="t-03_parcours_offre">Le parcours d'une offre dans le matching</title>
+<desc id="d-03_parcours_offre">Une ligne du feed traverse six décisions : precheck, page AKS, plateforme, région, édition, cibles. À chaque étape, un refus explicite est possible ; ce qui reste est une candidate.</desc>
+<defs><marker id="pointe-03_parcours_offre" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#52514e"/></marker></defs>
+<rect x="0" y="0" width="1600" height="900" fill="#fcfcfb"/>
+<text x="60" y="62" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:34px;font-weight:700;fill:#0b0b0b">Le parcours d'une offre — six décisions, et un refus possible à chacune</text>
+<text x="60" y="96" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:normal;fill:#52514e;font-style:italic">Chaque décision est une règle écrite ([Rnn] dans EXECUTOR_RULES.md) ou une grammaire propre au marchand (src/merchants/&lt;marchand&gt;.py).</text>
+<rect x="330" y="120" width="620" height="90" rx="12" ry="12" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="350" y="150" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:21px;font-weight:600;fill:#0b0b0b">Ligne du feed</text>
+<text x="350" y="172" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">titre · URL · marchand · prix</text>
+<text x="350" y="189" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">« Dune: Awakening US PS5 CD Key »</text>
+<line x1="640.0" y1="210" x2="640.0" y2="216" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-03_parcours_offre)"/>
+<rect x="330" y="216" width="620" height="90" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="350" y="246" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:21px;font-weight:600;fill:#0b0b0b">1 · Precheck</text>
+<text x="350" y="268" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">catégories hors jeu (cartes, monnaies,</text>
+<text x="350" y="285" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">comptes, bundles…), régions interdites,</text>
+<text x="350" y="302" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">console sans génération lisible</text>
+<line x1="640.0" y1="306" x2="640.0" y2="312" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-03_parcours_offre)"/>
+<rect x="1010" y="222" width="520" height="78" rx="10" ry="10" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>
+<text x="1026" y="246" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:600;fill:#eb6834">refus typiques :</text>
+<text x="1026" y="266" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">carte cadeau, points, compte</text>
+<text x="1026" y="282" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">région ROW / Amérique du Nord</text>
+<text x="1026" y="298" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">PlayStation sans PS4/PS5</text>
+<line x1="950" y1="261.0" x2="1010" y2="261.0" stroke="#eb6834" stroke-width="2" marker-end="url(#pointe-03_parcours_offre)"/>
+<rect x="330" y="312" width="620" height="90" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="350" y="342" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:21px;font-weight:600;fill:#0b0b0b">2 · Page AKS</text>
+<text x="350" y="364" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">sitemap d'abord (213 599 pages),</text>
+<text x="350" y="381" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">puis le slug, puis une recherche bornée ;</text>
+<text x="350" y="398" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">le nom doit correspondre (R01)</text>
+<line x1="640.0" y1="402" x2="640.0" y2="408" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-03_parcours_offre)"/>
+<rect x="1010" y="318" width="520" height="78" rx="10" ry="10" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>
+<text x="1026" y="342" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:600;fill:#eb6834">refus typiques :</text>
+<text x="1026" y="362" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">pas de page AKS</text>
+<text x="1026" y="378" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">produit différent ou élargi</text>
+<line x1="950" y1="357.0" x2="1010" y2="357.0" stroke="#eb6834" stroke-width="2" marker-end="url(#pointe-03_parcours_offre)"/>
+<rect x="330" y="408" width="620" height="90" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="350" y="438" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:21px;font-weight:600;fill:#0b0b0b">3 · Plateforme</text>
+<text x="350" y="460" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">Steam, Epic, GOG, Ubisoft, EA, Microsoft…</text>
+<text x="350" y="477" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">lue dans le titre, l'URL ou la fiche ;</text>
+<text x="350" y="494" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">la page AKS doit la vendre (R20)</text>
+<line x1="640.0" y1="498" x2="640.0" y2="504" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-03_parcours_offre)"/>
+<rect x="1010" y="414" width="520" height="78" rx="10" ry="10" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>
+<text x="1026" y="438" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:600;fill:#eb6834">refus typiques :</text>
+<text x="1026" y="458" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">plateforme non vendue sur la page</text>
+<text x="1026" y="474" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">« PC » sans boutique (sauf règle marchand)</text>
+<line x1="950" y1="453.0" x2="1010" y2="453.0" stroke="#eb6834" stroke-width="2" marker-end="url(#pointe-03_parcours_offre)"/>
+<rect x="330" y="504" width="620" height="90" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="350" y="534" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:21px;font-weight:600;fill:#0b0b0b">4 · Région</text>
+<text x="350" y="556" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">grammaire du marchand → case AKS :</text>
+<text x="350" y="573" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">GLOBAL (2), EU (9), US (8)… ;</text>
+<text x="350" y="590" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">consoles : PS5 EU → 88eu, Xbox US → 24us</text>
+<line x1="640.0" y1="594" x2="640.0" y2="600" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-03_parcours_offre)"/>
+<rect x="1010" y="510" width="520" height="78" rx="10" ry="10" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>
+<text x="1026" y="534" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:600;fill:#eb6834">refus typiques :</text>
+<text x="1026" y="554" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">verrou non vendable</text>
+<text x="1026" y="570" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">région absente et non implicite</text>
+<line x1="950" y1="549.0" x2="1010" y2="549.0" stroke="#eb6834" stroke-width="2" marker-end="url(#pointe-03_parcours_offre)"/>
+<rect x="330" y="600" width="620" height="90" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="350" y="630" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:21px;font-weight:600;fill:#0b0b0b">5 · Édition</text>
+<text x="350" y="652" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">Standard, Deluxe, Ultimate… ; DLC par R18/R43 ;</text>
+<text x="350" y="669" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">« &lt;Jeu&gt; &lt;X&gt; Edition » = jeu + DLC →</text>
+<text x="350" y="686" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">page du jeu, édition « X Edition » (R18c)</text>
+<line x1="640.0" y1="690" x2="640.0" y2="696" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-03_parcours_offre)"/>
+<rect x="1010" y="606" width="520" height="78" rx="10" ry="10" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>
+<text x="1026" y="630" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:600;fill:#eb6834">refus typiques :</text>
+<text x="1026" y="650" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">édition non vendue sur la page (E06)</text>
+<text x="1026" y="666" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">palier absent de la page (R18b)</text>
+<line x1="950" y1="645.0" x2="1010" y2="645.0" stroke="#eb6834" stroke-width="2" marker-end="url(#pointe-03_parcours_offre)"/>
+<rect x="330" y="696" width="620" height="90" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="350" y="726" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:21px;font-weight:600;fill:#0b0b0b">6 · Cibles</text>
+<text x="350" y="748" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">PC : la page ; consoles : une page par</text>
+<text x="350" y="765" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">plateforme déclarée (PS4/PS5, One/Series,</text>
+<text x="350" y="782" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">Switch) ; Xbox + PC = Play Anywhere</text>
+<rect x="1010" y="702" width="520" height="78" rx="10" ry="10" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>
+<text x="1026" y="726" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:600;fill:#eb6834">refus typiques :</text>
+<text x="1026" y="746" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">page console absente</text>
+<text x="1026" y="762" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">tout ou rien : jamais une cible sur deux</text>
+<line x1="950" y1="741.0" x2="1010" y2="741.0" stroke="#eb6834" stroke-width="2" marker-end="url(#pointe-03_parcours_offre)"/>
+<rect x="330" y="792" width="620" height="70" rx="12" ry="12" fill="#e0f5ec" stroke="#1baf7a" stroke-width="2"/>
+<text x="640.0" y="822" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:22px;font-weight:700;fill:#0b0b0b">Candidate</text>
+<text x="640.0" y="846" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">page(s) AKS · plateforme · case de région · édition — prête pour la validation, puis la saisie</text>
+<text x="60" y="200" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">Ce qui décide :</text>
+<text x="60" y="224" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e"></text>
+<text x="60" y="248" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">• le fichier du marchand</text>
+<text x="60" y="272" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">  (21 fichiers, un par</text>
+<text x="60" y="296" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">  marchand en liste blanche)</text>
+<text x="60" y="320" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e"></text>
+<text x="60" y="344" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">• les règles générales</text>
+<text x="60" y="368" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">  [R01] … [R62]</text>
+<text x="60" y="392" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e"></text>
+<text x="60" y="416" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">• jamais le prix</text>
+<text x="60" y="440" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">  (signal de routage,</text>
+<text x="60" y="464" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">  pas un juge)</text>
+<text x="60" y="488" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e"></text>
+<text x="60" y="512" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">• au moindre doute :</text>
+<text x="60" y="536" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">  refus explicite,</text>
+<text x="60" y="560" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">  jamais une valeur</text>
+<text x="60" y="584" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">  par défaut</text>
+</svg>
+</div>
+  <aside class="notes">La lecture se fait de haut en bas : à chaque étape, soit on avance, soit on refuse avec un motif écrit. À droite, les refus les plus fréquents. Ce qui décide : le fichier du marchand (sa grammaire de titre / URL / fiche) et les règles générales. Le prix n'est jamais un juge. En cas de doute, on refuse : la ligne reste dans le feed pour un humain.</aside>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <h2>Des décisions réelles (25–26 septembre 2026)</h2>
+  <table>
+    <tr><th>Offre du feed</th><th>Décision</th><th>Pourquoi</th></tr>
+    <tr><td>Eneba — « Nine Sols PC/XBOX LIVE Key EUROPE »</td><td><span class="etq ok">saisie</span> pages Xbox One + Xbox Series + PC, case Xbox/PC EU</td><td>la page PC d'AKS affiche « Xbox Play Anywhere » ; clé Xbox sans génération → les deux pages Xbox</td></tr>
+    <tr><td>Kinguin — « Dune: Awakening US PS5 CD Key »</td><td><span class="etq ok">saisie</span> page PS5, case PlayStation US</td><td>la région du titre, la case PlayStation de la génération (règle P3)</td></tr>
+    <tr><td>Gamivo — « Blasphemous 2 Mea Culpa Edition »</td><td><span class="etq ok">saisie</span> page du jeu Blasphemous 2, édition « Mea Culpa Edition »</td><td>c'est le jeu + le DLC : AKS le range sur la page du jeu (25 offres y sont déjà), pas sur la page du DLC</td></tr>
+    <tr><td>Gamesplanet FR — clé Steam, fiche « ONLY Europe » sans les USA</td><td><span class="etq ok">saisie</span> Steam EU</td><td>la région est lue sur la fiche marchand (pays exclus), selon la règle validée le 25/09</td></tr>
+    <tr><td>Gamivo — « Dishonored 2 » (xbox-pc-us)</td><td><span class="etq ok">saisie</span> Microsoft Store US</td><td>pas de Play Anywhere sur la page PC, mais elle vend « Microsoft Windows »</td></tr>
+    <tr><td>CJS — « … PSN Download Key (Playstation) UNITED STATES »</td><td><span class="etq non">refus</span></td><td>PS4 ou PS5 ? le marchand ne le dit pas : on ne devine pas</td></tr>
+    <tr><td>Wyrel — « … (PC) Rest of World »</td><td><span class="etq non">refus</span></td><td>une clé ROW n'entre que si on prouve qu'elle s'active en Europe ; rien ne le prouve</td></tr>
+  </table>
+  <aside class="notes">Ces lignes sont de vraies lignes des balayages des 25 et 26 septembre. Chaque décision correspond à une règle écrite et testée. Les deux refus illustrent le fail-closed : on préfère laisser une ligne à un humain plutôt que de mettre un prix au mauvais endroit.</aside>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <h2>Où vivent les règles</h2>
+  <div class="deux">
+    <div class="colonne">
+      <h3>Un fichier par marchand</h3>
+      <ul>
+        <li><code>src/merchants/&lt;marchand&gt;.py</code> — 21 fichiers : comment CE marchand écrit la plateforme, la région, l'édition, dans son titre, son URL ou sa fiche.</li>
+        <li>Exemples : Wyrel écrit la région deux fois (titre + URL) et les deux doivent concorder ; Gamesplanet FR et Discover.games donnent la région sur la fiche ; Loaded cache la fiche dans un lien d'affiliation.</li>
+        <li>Une règle marchande ne fuit jamais vers les autres.</li>
+      </ul>
+    </div>
+    <div class="colonne">
+      <h3>Des règles générales, numérotées</h3>
+      <ul>
+        <li><code>docs/EXECUTOR_RULES.md</code> — 59 règles [R01…R62] : nom (R01), plateforme vendue (R20), DLC (R18/R43), consoles (R45), Microsoft Store (R62), jeu + DLC (R18c)…</li>
+        <li>Chaque décision de Romain devient : une règle écrite, un test qui la fige, une entrée « décision revue » (AGENTS.md) pour qu'un audit ne la défasse pas.</li>
+        <li>Les cas limites sont mesurés avant d'être appliqués (rejeu en lecture seule sur les vraies lignes).</li>
+      </ul>
+    </div>
+  </div>
+  <aside class="notes">Le point à faire passer : la connaissance métier n'est pas dans la tête d'une personne ni dans un prompt ; elle est dans des fichiers relus, testés et versionnés. Quand on ajoute un marchand, on écrit son fichier ; quand Romain tranche un cas, on écrit la règle et le test le jour même.</aside>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <h2>La sécurité : fail-closed à chaque pas</h2>
+  <div class="figure"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="t-04_fail_closed d-04_fail_closed">
+<title id="t-04_fail_closed">Les gardes fail-closed de la saisie</title>
+<desc id="d-04_fail_closed">De l'ouverture du navigateur à la preuve : invariants, StepGuard, validation, vérification de la ligne et de la modale, clic sur le vrai bouton, preuve de disparition. Sur les côtés, ce qui arrête tout et ce qui est repris.</desc>
+<defs><marker id="pointe-04_fail_closed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#52514e"/></marker></defs>
+<rect x="0" y="0" width="1600" height="900" fill="#fcfcfb"/>
+<text x="60" y="62" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:34px;font-weight:700;fill:#0b0b0b">Fail-closed — on n'écrit que ce qu'on a prouvé, et on prouve ce qu'on a écrit</text>
+<text x="60" y="96" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:normal;fill:#52514e;font-style:italic">Chaque garde est du code déterministe et testé : jamais une appréciation « au jugé ».</text>
+<rect x="60" y="150" width="196" height="230" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<circle cx="88" cy="180" r="16" fill="#2a78d6"/>
+<text x="88" y="186" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;fill:#ffffff">1</text>
+<text x="114" y="186" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:600;fill:#0b0b0b">Invariants</text>
+<text x="76" y="224" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">VPS autoritaire,</text>
+<text x="76" y="244" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">endpoint CDP officiel,</text>
+<text x="76" y="264" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">UA officiel,</text>
+<text x="76" y="284" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">AKS joignable,</text>
+<text x="76" y="304" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">pas de VPN</text>
+<line x1="256" y1="265" x2="274" y2="265" stroke="#52514e" stroke-width="2" marker-end="url(#pointe-04_fail_closed)"/>
+<rect x="274" y="150" width="196" height="230" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<circle cx="302" cy="180" r="16" fill="#2a78d6"/>
+<text x="302" y="186" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;fill:#ffffff">2</text>
+<text x="328" y="186" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:600;fill:#0b0b0b">StepGuard</text>
+<text x="290" y="224" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">chaque étape rend</text>
+<text x="290" y="244" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">un résultat valide,</text>
+<text x="290" y="264" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">ou tout s'arrête ;</text>
+<text x="290" y="284" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">pas de « retry</text>
+<text x="290" y="304" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">en discutant »</text>
+<line x1="470" y1="265" x2="488" y2="265" stroke="#52514e" stroke-width="2" marker-end="url(#pointe-04_fail_closed)"/>
+<rect x="488" y="150" width="196" height="230" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<circle cx="516" cy="180" r="16" fill="#2a78d6"/>
+<text x="516" y="186" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;fill:#ffffff">3</text>
+<text x="542" y="186" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:600;fill:#0b0b0b">Validation</text>
+<text x="504" y="224" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">seul approved.json</text>
+<text x="504" y="244" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">est saisi ; son</text>
+<text x="504" y="264" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">empreinte est liée</text>
+<text x="504" y="284" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">à l'aperçu montré</text>
+<text x="504" y="304" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">au GO tapé</text>
+<line x1="684" y1="265" x2="702" y2="265" stroke="#52514e" stroke-width="2" marker-end="url(#pointe-04_fail_closed)"/>
+<rect x="702" y="150" width="196" height="230" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<circle cx="730" cy="180" r="16" fill="#2a78d6"/>
+<text x="730" y="186" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;fill:#ffffff">4</text>
+<text x="756" y="186" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:600;fill:#0b0b0b">La ligne</text>
+<text x="718" y="224" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">retrouvée sur le</text>
+<text x="718" y="244" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">feed courant : titre,</text>
+<text x="718" y="264" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">URL (identité) et</text>
+<text x="718" y="284" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">magasin vérifiés ;</text>
+<text x="718" y="304" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">sinon ignorée</text>
+<line x1="898" y1="265" x2="916" y2="265" stroke="#52514e" stroke-width="2" marker-end="url(#pointe-04_fail_closed)"/>
+<rect x="916" y="150" width="196" height="230" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<circle cx="944" cy="180" r="16" fill="#2a78d6"/>
+<text x="944" y="186" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;fill:#ffffff">5</text>
+<text x="970" y="186" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:600;fill:#0b0b0b">La modale</text>
+<text x="932" y="224" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">ouverte depuis</text>
+<text x="932" y="244" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">CETTE ligne ;</text>
+<text x="932" y="264" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">contexte vérifié ;</text>
+<text x="932" y="284" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">champs visibles :</text>
+<text x="932" y="304" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">région, édition, cibles</text>
+<line x1="1112" y1="265" x2="1130" y2="265" stroke="#52514e" stroke-width="2" marker-end="url(#pointe-04_fail_closed)"/>
+<rect x="1130" y="150" width="196" height="230" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<circle cx="1158" cy="180" r="16" fill="#2a78d6"/>
+<text x="1158" y="186" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;fill:#ffffff">6</text>
+<text x="1184" y="186" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:600;fill:#0b0b0b">Le clic</text>
+<text x="1146" y="224" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">le vrai bouton</text>
+<text x="1146" y="244" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">« Create », visible ;</text>
+<text x="1146" y="264" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">jamais un appel</text>
+<text x="1146" y="284" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">AJAX fabriqué</text>
+<line x1="1326" y1="265" x2="1344" y2="265" stroke="#52514e" stroke-width="2" marker-end="url(#pointe-04_fail_closed)"/>
+<rect x="1344" y="150" width="196" height="230" rx="12" ry="12" fill="#e0f5ec" stroke="#1baf7a" stroke-width="2"/>
+<circle cx="1372" cy="180" r="16" fill="#1baf7a"/>
+<text x="1372" y="186" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;fill:#ffffff">7</text>
+<text x="1398" y="186" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:600;fill:#0b0b0b">La preuve</text>
+<text x="1360" y="224" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">feed rafraîchi,</text>
+<text x="1360" y="244" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">même liste, même</text>
+<text x="1360" y="264" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">mode : l'offre a</text>
+<text x="1360" y="284" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">disparu = succès.</text>
+<text x="1360" y="304" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">Jamais un message</text>
+<text x="1360" y="324" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">de la page</text>
+<text x="60" y="440" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:22px;font-weight:700;fill:#e34948">Ce qui ARRÊTE (jamais repris automatiquement)</text>
+<rect x="60" y="470" width="720" height="52" rx="10" ry="10" fill="#fbe1e1" stroke="#e34948" stroke-width="2"/>
+<text x="76" y="492" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:600;fill:#0b0b0b">État inconnu après un clic</text>
+<text x="76" y="512" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">feed illisible ou session perdue juste après « Create » : arrêt, vérification à la main</text>
+<rect x="60" y="532" width="720" height="52" rx="10" ry="10" fill="#fbe1e1" stroke="#e34948" stroke-width="2"/>
+<text x="76" y="554" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:600;fill:#0b0b0b">Dix échecs d'affilée</text>
+<text x="76" y="574" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">garde inter-processus (guard ledger) : une série d'échecs arrête le marchand, la console le montre</text>
+<rect x="60" y="594" width="720" height="52" rx="10" ry="10" fill="#fbe1e1" stroke="#e34948" stroke-width="2"/>
+<text x="76" y="616" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:600;fill:#0b0b0b">Session perdue</text>
+<text x="76" y="636" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">arrêt du marchand ; la reconnexion est un transfert de cookies fait par l'opérateur, jamais par le code</text>
+<rect x="60" y="656" width="720" height="52" rx="10" ry="10" fill="#fbe1e1" stroke="#e34948" stroke-width="2"/>
+<text x="76" y="678" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:600;fill:#0b0b0b">Garde StepGuard bloquée</text>
+<text x="76" y="698" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">un fichier absent, illisible ou incohérent entre deux étapes : arrêt et rapport d'erreur</text>
+<text x="820" y="440" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:22px;font-weight:700;fill:#1baf7a">Ce qui est REPRIS (rien n'a pu être écrit)</text>
+<rect x="820" y="470" width="720" height="52" rx="10" ry="10" fill="#e0f5ec" stroke="#1baf7a" stroke-width="2"/>
+<text x="836" y="492" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:600;fill:#0b0b0b">Navigateur muet à la lecture</text>
+<text x="836" y="512" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">extraction ou sonde qui n'obtient pas de réponse : page refaite après 2, 5 puis 10 min</text>
+<rect x="820" y="532" width="720" height="52" rx="10" ry="10" fill="#e0f5ec" stroke="#1baf7a" stroke-width="2"/>
+<text x="836" y="554" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:600;fill:#0b0b0b">Feed illisible avant la première offre</text>
+<text x="836" y="574" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">contrôle de connexion, catalogue, scan d'index : aucune offre ouverte, aucun clic → reprise</text>
+<rect x="820" y="594" width="720" height="52" rx="10" ry="10" fill="#e0f5ec" stroke="#1baf7a" stroke-width="2"/>
+<text x="836" y="616" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:600;fill:#0b0b0b">Panne avant le clic « Create »</text>
+<text x="836" y="636" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">la modale n'a pas été soumise : l'offre est intacte → reprise de la page</text>
+<rect x="820" y="656" width="720" height="52" rx="10" ry="10" fill="#e0f5ec" stroke="#1baf7a" stroke-width="2"/>
+<text x="836" y="678" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:600;fill:#0b0b0b">Un doute sur une offre = un refus</text>
+<text x="836" y="698" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">pas une reprise, pas une valeur par défaut : la ligne reste au feed pour un humain</text>
+<rect x="60" y="740" width="1480" height="110" rx="14" ry="14" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="800.0" y="774" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">Hors du code, deux règles humaines : le submit n'est jamais « lancé et oublié » (processus attaché ou supervisé, code de sortie et plan relus avant toute suite),</text>
+<text x="800.0" y="796" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">et une décision de Romain devient une règle écrite, un test qui la fige, et une entrée « décision revue » pour qu'un audit futur ne la défasse pas.</text>
+</svg>
+</div>
+  <aside class="notes">Lire la frise de gauche à droite : rien ne démarre sans les invariants ; rien ne passe une étape sans résultat valide ; on ne saisit que ce qui a été validé ; la ligne et la modale sont vérifiées ; le vrai bouton ; la preuve. En bas : ce qui arrête (état inconnu, dix échecs, session perdue) et ce qui est repris (une panne avant toute écriture). La reconnexion n'est jamais automatique : c'est Romain qui transfère les cookies.</aside>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <h2>La preuve de saisie</h2>
+  <div class="deux">
+    <div class="colonne">
+      <h3>Ce qu'on appelle « succès »</h3>
+      <ul>
+        <li>Après le clic sur « Create », on <b>rafraîchit le feed</b> (même liste, même mode) et on cherche la ligne par son identité : <b>elle a disparu = créée</b>.</li>
+        <li>Jamais un message « offre créée » de la page : seul le feed fait foi.</li>
+        <li>L'identité d'une ligne, c'est son URL marchand ; pour certains marchands, la partie de l'URL qui distingue les variantes (région, édition, fiche).</li>
+      </ul>
+    </div>
+    <div class="colonne">
+      <h3>Ce qu'on fait quand on ne sait pas</h3>
+      <ul>
+        <li>Feed illisible ou session perdue <b>après</b> un clic : état <b>inconnu</b> → arrêt du marchand, l'offre est à vérifier à la main. Jamais de reprise automatique dans ce cas.</li>
+        <li>Panne <b>avant</b> tout clic : rien n'a pu être écrit → la page est reprise après 2, 5 puis 10 minutes.</li>
+        <li>La recherche qui sert de preuve doit prouver qu'elle est bien <b>la nôtre</b> (terme dans l'adresse, lignes cohérentes) : une page étrangère ne peut pas faire passer une offre pour disparue.</li>
+      </ul>
+    </div>
+  </div>
+  <aside class="notes">C'est le cœur de la confiance : on peut relire, pour chaque offre créée, la preuve de sa disparition du feed. Exemple récent : trois arrêts CJS venaient d'une recherche AKS insensible à la casse que notre contrôle prenait pour une page étrangère ; on a corrigé le contrôle sans affaiblir la preuve, et les trois offres étaient bien créées.</aside>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <h2>La console d'admin</h2>
+  <div class="deux">
+    <div class="colonne">
+      <h3>Lancer</h3>
+      <ul>
+        <li>Un marchand, tous les marchands, ou un <b>groupe</b> (A / B) ; toutes les pages ou <b>de la page N à la 1</b> ; la liste (Pending par défaut).</li>
+        <li>Un <b>GO</b> tapé pour toute écriture ; le mode <b>safe</b> saisit le lot validé.</li>
+        <li>Ajouter un marchand <b>à chaud</b> à un balayage en cours ; arrêter proprement.</li>
+      </ul>
+      <h3>Se reconnecter</h3>
+      <ul><li>AKS est en connexion sociale : la session se renouvelle par <b>transfert de cookies</b>, à la main, dans la console. Les valeurs ne sont jamais journalisées.</li></ul>
+    </div>
+    <div class="colonne">
+      <h3>Suivre</h3>
+      <ul>
+        <li>Le marchand dès son démarrage ; la <b>page en cours</b> avec son étape (lecture, matching, saisie) et ses compteurs en direct.</li>
+        <li>Le <b>récap</b> : par marchand, par page, chaque offre créée avec son id AKS ; les arrêts nommés.</li>
+        <li>La liste des marchands de chaque groupe et leur charge.</li>
+      </ul>
+      <h3>Trier</h3>
+      <ul><li>Un plan de tri lecture seule puis un déplacement par lots des lignes hors périmètre (comptes, cartes…) vers leurs listes.</li></ul>
+    </div>
+  </div>
+  <aside class="notes">Montrer la console en direct si possible (/executor/auto) : les boutons de groupe avec la liste des marchands, le récap d'un balayage, la page en cours. Rappeler que la console ne calcule rien : elle affiche ce que le serveur envoie et renvoie un nom de groupe, que le serveur re-valide.</aside>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <h2>L'exploitation — deux machines, deux groupes</h2>
+  <div class="figure"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="t-05_exploitation d-05_exploitation">
+<title id="t-05_exploitation">L'exploitation : deux VPS, deux groupes, des nuits de balayage</title>
+<desc id="d-05_exploitation">Le groupe A tourne sur un VPS, le groupe B sur l'autre. L'opérateur lance depuis la console, suit la page en cours, transfère les cookies quand la session expire.</desc>
+<defs><marker id="pointe-05_exploitation" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#52514e"/></marker></defs>
+<rect x="0" y="0" width="1600" height="900" fill="#fcfcfb"/>
+<text x="60" y="62" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:34px;font-weight:700;fill:#0b0b0b">L'exploitation — deux machines, deux groupes, une console par machine</text>
+<text x="60" y="96" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:normal;fill:#52514e;font-style:italic">Un balayage tient un onglet de navigateur ; une machine = un groupe. Les groupes sont équilibrés sur la charge en attente, et éditables.</text>
+<rect x="60" y="140" width="480" height="470" rx="18" ry="18" fill="#ffffff" stroke="#2a78d6" stroke-width="3"/>
+<text x="84" y="180" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:700;fill:#2a78d6">VPS n° 1 — groupe A</text>
+<text x="84" y="208" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e;font-style:italic">11 marchands · ~13 810 lignes en attente (21/09)</text>
+<rect x="84" y="230" width="200" height="60" rx="10" ry="10" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="184.0" y="264" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">Console</text>
+<rect x="316" y="230" width="200" height="60" rx="10" ry="10" fill="#e9e6f7" stroke="#4a3aa7" stroke-width="2"/>
+<text x="416.0" y="264" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">Chrome (CDP)</text>
+<rect x="84" y="310" width="432" height="60" rx="10" ry="10" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="300.0" y="344" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">Exécuteur — pages N → 1, marchand après marchand</text>
+<rect x="84" y="400" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="152" y="424" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">GameSeal</text>
+<rect x="230" y="400" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="298" y="424" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">G2A</text>
+<rect x="376" y="400" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="444" y="424" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">GameBoost</text>
+<rect x="84" y="448" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="152" y="472" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">Driffle</text>
+<rect x="230" y="448" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="298" y="472" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">Instant Gaming</text>
+<rect x="376" y="448" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="444" y="472" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">MMOGA</text>
+<rect x="84" y="496" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="152" y="520" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">GamersOutlet</text>
+<rect x="230" y="496" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="298" y="520" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">GOG</text>
+<rect x="376" y="496" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="444" y="520" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">Gamesplanet FR</text>
+<rect x="84" y="544" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="152" y="568" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">Discover.games</text>
+<rect x="230" y="544" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="298" y="568" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">Loaded</text>
+<rect x="580" y="140" width="480" height="470" rx="18" ry="18" fill="#ffffff" stroke="#2a78d6" stroke-width="3"/>
+<text x="604" y="180" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:700;fill:#2a78d6">VPS n° 2 — groupe B</text>
+<text x="604" y="208" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e;font-style:italic">9 marchands · ~15 555 lignes en attente (21/09)</text>
+<rect x="604" y="230" width="200" height="60" rx="10" ry="10" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="704.0" y="264" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">Console</text>
+<rect x="836" y="230" width="200" height="60" rx="10" ry="10" fill="#e9e6f7" stroke="#4a3aa7" stroke-width="2"/>
+<text x="936.0" y="264" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">Chrome (CDP)</text>
+<rect x="604" y="310" width="432" height="60" rx="10" ry="10" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="820.0" y="344" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">Exécuteur — pages N → 1, marchand après marchand</text>
+<rect x="604" y="400" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="672" y="424" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">Gamivo</text>
+<rect x="750" y="400" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="818" y="424" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">Eneba</text>
+<rect x="896" y="400" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="964" y="424" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">Kinguin</text>
+<rect x="604" y="448" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="672" y="472" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">CJS-CDKeys</text>
+<rect x="750" y="448" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="818" y="472" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">Gamerall</text>
+<rect x="896" y="448" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="964" y="472" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">Electronicfirst</text>
+<rect x="604" y="496" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="672" y="520" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">Allyouplay</text>
+<rect x="750" y="496" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="818" y="520" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">K4G</text>
+<rect x="896" y="496" width="136" height="36" rx="8" ry="8" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="964" y="520" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#0b0b0b">Wyrel</text>
+<text x="1130" y="180" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:600;fill:#0b0b0b">Difmark : hors groupe</text>
+<text x="1130" y="206" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">(ses lignes vivent dans la liste</text>
+<text x="1130" y="225" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">« account », saisie à la main)</text>
+<rect x="1130" y="270" width="410" height="150" rx="14" ry="14" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="1335.0" y="304" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">Opérateur</text>
+<text x="1335.0" y="334" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">tape GO, choisit le groupe, les pages (toutes,</text>
+<text x="1335.0" y="354" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">ou de N à 1) et la liste ; suit la page en cours ;</text>
+<text x="1335.0" y="374" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">relance un marchand arrêté ; transfère les cookies</text>
+<rect x="1130" y="450" width="410" height="160" rx="14" ry="14" fill="#e0f5ec" stroke="#1baf7a" stroke-width="2"/>
+<text x="1335.0" y="484" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">Cadence mesurée</text>
+<text x="1335.0" y="514" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">≈ 2,5 min pour lire et matcher une page</text>
+<text x="1335.0" y="534" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">≈ 1 min par offre créée (preuve comprise)</text>
+<text x="1335.0" y="554" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">une nuit de groupe : 20 à 40 h selon la charge</text>
+<text x="1335.0" y="574" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">record : 2 627 offres créées le 26/09</text>
+<rect x="60" y="650" width="1480" height="200" rx="14" ry="14" fill="#ffffff" stroke="#c9c7c0" stroke-width="2"/>
+<text x="800.0" y="684" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">Ce que voit l'opérateur pendant la nuit : le marchand dès son démarrage, la page en cours et son étape (lecture, matching, saisie), les créées et les échecs en direct,</text>
+<text x="800.0" y="706" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">puis le récap : par marchand, par page, chaque offre créée avec son id AKS. Un arrêt fail-closed est nommé (état inconnu, 10 échecs, session) et le groupe passe au marchand suivant.</text>
+<text x="800.0" y="728" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e"></text>
+<text x="800.0" y="750" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">Deux règles : jamais de submit « lancé et oublié » ; jamais de reconnexion automatique — la session est renouvelée par l'opérateur (transfert de cookies dans /executor/tri).</text>
+</svg>
+</div>
+  <aside class="notes">Deux VPS, un groupe chacun, lancés le soir et suivis le lendemain. Ordres de grandeur : 2,5 minutes pour lire et matcher une page, une minute par offre créée. Un groupe complet prend 20 à 40 heures selon la charge. Les groupes sont un point de départ : on les rééquilibre sur les durées observées.</aside>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <h2>Résultats — par marchand</h2>
+  <div class="figure"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="t-06_resultats d-06_resultats">
+<title id="t-06_resultats">Offres créées par marchand</title>
+<desc id="d-06_resultats">Diagramme en barres : 17 317 offres créées et prouvées disparues du feed, par marchand, du 6 juillet au 27 septembre 2026, sur les deux VPS.</desc>
+<defs><marker id="pointe-06_resultats" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#52514e"/></marker></defs>
+<rect x="0" y="0" width="1600" height="900" fill="#fcfcfb"/>
+<text x="60" y="62" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:34px;font-weight:700;fill:#0b0b0b">Offres créées par marchand — 17 317 au total (6 juillet → 27 septembre 2026, 2 VPS)</text>
+<text x="60" y="96" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:normal;fill:#52514e;font-style:italic">Une offre est comptée quand la saisie est PROUVÉE : l'offre a disparu du feed rafraîchi. Source : journaux JSONL des deux machines (méthode dans chiffres.md).</text>
+<text x="284" y="157" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#0b0b0b">GameSeal</text>
+<path d="M300,140 h1176.0 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 H300 Z" fill="#2a78d6"/>
+<text x="1492.0" y="157" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">5 908</text>
+<text x="284" y="197" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#0b0b0b">Gamerall</text>
+<path d="M300,180 h478.1462423832092 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 H300 Z" fill="#2a78d6"/>
+<text x="794.1462423832093" y="197" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">2 414</text>
+<text x="284" y="237" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#0b0b0b">MMOGA</text>
+<path d="M300,220 h338.7352742044685 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 H300 Z" fill="#2a78d6"/>
+<text x="654.7352742044685" y="237" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">1 716</text>
+<text x="284" y="277" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#0b0b0b">Gamivo</text>
+<path d="M300,260 h303.58293838862556 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 H300 Z" fill="#2a78d6"/>
+<text x="619.5829383886255" y="277" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">1 540</text>
+<text x="284" y="317" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#0b0b0b">CJS-CDKeys</text>
+<path d="M300,300 h167.5673662830061 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 H300 Z" fill="#2a78d6"/>
+<text x="483.5673662830061" y="317" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">859</text>
+<text x="284" y="357" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#0b0b0b">Eneba</text>
+<path d="M300,340 h162.37440758293837 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 H300 Z" fill="#2a78d6"/>
+<text x="478.3744075829384" y="357" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">833</text>
+<text x="284" y="397" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#0b0b0b">Kinguin</text>
+<path d="M300,380 h158.3798239675017 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 H300 Z" fill="#2a78d6"/>
+<text x="474.3798239675017" y="397" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">813</text>
+<text x="284" y="437" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#0b0b0b">GOG</text>
+<path d="M300,420 h153.186865267434 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 H300 Z" fill="#2a78d6"/>
+<text x="469.186865267434" y="437" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">787</text>
+<text x="284" y="477" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#0b0b0b">Wyrel</text>
+<path d="M300,460 h117.43534190927556 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 H300 Z" fill="#2a78d6"/>
+<text x="433.43534190927556" y="477" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">608</text>
+<text x="284" y="517" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#0b0b0b">GameBoost</text>
+<path d="M300,500 h78.28842247799594 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 H300 Z" fill="#2a78d6"/>
+<text x="394.28842247799594" y="517" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">412</text>
+<text x="284" y="557" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#0b0b0b">K4G</text>
+<path d="M300,540 h69.5003385240352 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 H300 Z" fill="#2a78d6"/>
+<text x="385.5003385240352" y="557" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">368</text>
+<text x="284" y="597" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#0b0b0b">G2A</text>
+<path d="M300,580 h68.3019634394042 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 H300 Z" fill="#2a78d6"/>
+<text x="384.3019634394042" y="597" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">362</text>
+<text x="284" y="637" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#0b0b0b">Gamesplanet FR</text>
+<path d="M300,620 h49.926878808395394 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 H300 Z" fill="#2a78d6"/>
+<text x="365.9268788083954" y="637" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">270</text>
+<text x="284" y="677" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#0b0b0b">Driffle</text>
+<path d="M300,660 h35.14691943127962 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 H300 Z" fill="#2a78d6"/>
+<text x="351.1469194312796" y="677" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">196</text>
+<text x="284" y="717" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#0b0b0b">Instant Gaming</text>
+<path d="M300,700 h26.35883547731889 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 H300 Z" fill="#2a78d6"/>
+<text x="342.3588354773189" y="717" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">152</text>
+<text x="284" y="757" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#0b0b0b">Difmark</text>
+<path d="M300,740 h7.584292484766419 a4,4 0 0 1 4,4 v14 a4,4 0 0 1 -4,4 H300 Z" fill="#2a78d6"/>
+<text x="323.5842924847664" y="757" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">58</text>
+<text x="284" y="797" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#0b0b0b">Electronicfirst</text>
+<path d="M300,780 h3.1956668923493567 a0,0 0 0 1 0,0 v22 a0,0 0 0 1 0,0 H300 Z" fill="#2a78d6"/>
+<text x="315.1956668923494" y="797" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">16</text>
+<text x="284" y="837" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#0b0b0b">GamersOutlet</text>
+<path d="M300,820 h0.998645903859174 a0,0 0 0 1 0,0 v22 a0,0 0 0 1 0,0 H300 Z" fill="#2a78d6"/>
+<text x="312.9986459038592" y="837" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">5</text>
+<line x1="300" y1="132" x2="300" y2="860" stroke="#c9c7c0" stroke-width="1.5"/>
+<text x="60" y="880" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e;font-style:italic">Les valeurs par marchand reflètent aussi la taille de leur file et la date de leur entrée en liste blanche (Wyrel le 24/09, Gamesplanet FR le 25/09, Discover.games et Loaded le 26/09 : pas encore balayés).</text>
+</svg>
+</div>
+  <aside class="notes">GameSeal domine parce que sa file est la plus grosse (5 500 lignes) et qu'elle a été balayée en entier plusieurs fois. Les petits chiffres ne sont pas des échecs : petites files (GamersOutlet, Electronicfirst) ou entrées récentes (Gamesplanet FR le 25/09 ; Discover.games et Loaded entrés le 26/09, pas encore balayés).</aside>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <h2>Résultats — par jour</h2>
+  <div class="figure"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="t-07_offres_par_jour d-07_offres_par_jour">
+<title id="t-07_offres_par_jour">Offres créées par jour, 14 derniers jours</title>
+<desc id="d-07_offres_par_jour">Diagramme en colonnes : offres créées chaque jour du 14 au 27 septembre 2026, deux VPS confondus.</desc>
+<defs><marker id="pointe-07_offres_par_jour" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#52514e"/></marker></defs>
+<rect x="0" y="0" width="1600" height="900" fill="#fcfcfb"/>
+<text x="60" y="62" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:34px;font-weight:700;fill:#0b0b0b">Offres créées par jour — 15 101 sur les 14 derniers jours (14 → 27 septembre 2026)</text>
+<text x="60" y="96" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:normal;fill:#52514e;font-style:italic">Les creux sont des jours sans balayage de nuit ou consacrés aux corrections ; le 27 est une journée partielle (arrêté le matin).</text>
+<line x1="120" y1="625.0" x2="1520" y2="625.0" stroke="#c9c7c0" stroke-width="1" stroke-dasharray="4 6"/>
+<text x="108" y="631.0" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">656</text>
+<line x1="120" y1="490.0" x2="1520" y2="490.0" stroke="#c9c7c0" stroke-width="1" stroke-dasharray="4 6"/>
+<text x="108" y="496.0" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">1 313</text>
+<line x1="120" y1="355.0" x2="1520" y2="355.0" stroke="#c9c7c0" stroke-width="1" stroke-dasharray="4 6"/>
+<text x="108" y="361.0" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">1 970</text>
+<line x1="120" y1="220.0" x2="1520" y2="220.0" stroke="#c9c7c0" stroke-width="1" stroke-dasharray="4 6"/>
+<text x="108" y="226.0" text-anchor="end" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">2 627</text>
+<line x1="120" y1="760" x2="1520" y2="760" stroke="#c9c7c0" stroke-width="1.5"/>
+<path d="M161.84615384615384,760 V647.2432432432432 a4,4 0 0 1 4,-4 h16 a4,4 0 0 1 4,4 V760 Z" fill="#2a78d6"/>
+<text x="173.84615384615384" y="788" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e">15/09</text>
+<path d="M269.53846153846155,760 V696.5770841263799 a4,4 0 0 1 4,-4 h16 a4,4 0 0 1 4,4 V760 Z" fill="#2a78d6"/>
+<text x="281.53846153846155" y="788" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e">16/09</text>
+<text x="281.53846153846155" y="682.5770841263799" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:600;fill:#0b0b0b">328</text>
+<path d="M377.2307692307692,760 V658.5489151122954 a4,4 0 0 1 4,-4 h16 a4,4 0 0 1 4,4 V760 Z" fill="#2a78d6"/>
+<text x="389.2307692307692" y="788" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e">17/09</text>
+<path d="M484.92307692307696,760 V665.9489912447659 a4,4 0 0 1 4,-4 h16 a4,4 0 0 1 4,4 V760 Z" fill="#2a78d6"/>
+<text x="496.92307692307696" y="788" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e">18/09</text>
+<path d="M592.6153846153845,760 V415.5797487628474 a4,4 0 0 1 4,-4 h16 a4,4 0 0 1 4,4 V760 Z" fill="#2a78d6"/>
+<text x="604.6153846153845" y="788" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e">19/09</text>
+<path d="M700.3076923076923,760 V237.56680624286253 a4,4 0 0 1 4,-4 h16 a4,4 0 0 1 4,4 V760 Z" fill="#2a78d6"/>
+<text x="712.3076923076923" y="788" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e">20/09</text>
+<path d="M808.0,760 V473.75256947087934 a4,4 0 0 1 4,-4 h16 a4,4 0 0 1 4,4 V760 Z" fill="#2a78d6"/>
+<text x="820.0" y="788" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e">21/09</text>
+<path d="M915.6923076923076,760 V509.93071945184624 a4,4 0 0 1 4,-4 h16 a4,4 0 0 1 4,4 V760 Z" fill="#2a78d6"/>
+<text x="927.6923076923076" y="788" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e">22/09</text>
+<path d="M1023.3846153846155,760 V587.8370765131328 a4,4 0 0 1 4,-4 h16 a4,4 0 0 1 4,4 V760 Z" fill="#2a78d6"/>
+<text x="1035.3846153846155" y="788" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e">23/09</text>
+<path d="M1131.076923076923,760 V626.6874762086029 a4,4 0 0 1 4,-4 h16 a4,4 0 0 1 4,4 V760 Z" fill="#2a78d6"/>
+<text x="1143.076923076923" y="788" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e">24/09</text>
+<path d="M1238.7692307692307,760 V481.56376094404266 a4,4 0 0 1 4,-4 h16 a4,4 0 0 1 4,4 V760 Z" fill="#2a78d6"/>
+<text x="1250.7692307692307" y="788" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e">25/09</text>
+<path d="M1346.4615384615383,760 V224.0 a4,4 0 0 1 4,-4 h16 a4,4 0 0 1 4,4 V760 Z" fill="#2a78d6"/>
+<text x="1358.4615384615383" y="788" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e">26/09</text>
+<text x="1358.4615384615383" y="210.0" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:600;fill:#0b0b0b">2 627</text>
+<path d="M1454.1538461538462,760 V602.6372287780739 a4,4 0 0 1 4,-4 h16 a4,4 0 0 1 4,4 V760 Z" fill="#2a78d6"/>
+<text x="1466.1538461538462" y="788" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e">27/09</text>
+<text x="1466.1538461538462" y="588.6372287780739" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:600;fill:#0b0b0b">785</text>
+<text x="60" y="850" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e;font-style:italic">Lecture : les gros jours (19-20/09, 26/09) sont des nuits de groupe complètes sur les deux machines ; le 26/09 cumule le groupe A, la fin du groupe B et les nouvelles règles console.</text>
+</svg>
+</div>
+  <aside class="notes">Les gros jours sont les nuits de groupe complètes. Les creux correspondent aux journées sans balayage ou consacrées aux corrections et aux nouvelles règles. Le 27 est une journée partielle.</aside>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <h2>Les marchands couverts — et comment on en ajoute un</h2>
+  <div class="marchands">
+    <span>GameSeal</span><span>Gamivo</span><span>Eneba</span><span>Kinguin</span><span>G2A</span><span>CJS-CDKeys</span><span>GameBoost</span><span>Gamerall</span><span>Driffle</span><span>Electronicfirst</span><span>Instant Gaming</span><span>Allyouplay</span><span>MMOGA</span><span>K4G</span><span>GamersOutlet</span><span>Difmark</span><span>GOG</span><span>Wyrel</span><span>Gamesplanet FR</span><span class="neuf">Discover.games</span><span class="neuf">Loaded (ex-CDKeys)</span>
+  </div>
+  <ol class="etapes">
+    <li><b>Étudier le feed</b> : où sont la plateforme, la région, l'édition — dans le titre, l'URL ou la fiche ? Combien de lignes, combien seraient saisissables ? (docs/PROCHAINS_MARCHANDS.md tient la trace)</li>
+    <li><b>Écrire le fichier du marchand</b> et ses tests sur des lignes réelles ; vérifier sur AKS comment ces offres sont déjà rangées.</li>
+    <li><b>Essai à blanc</b> (dry-run) sur 150 lignes : lire chaque refus, chaque candidate.</li>
+    <li><b>Première saisie</b> supervisée, puis <b>liste blanche</b> et affectation à un groupe.</li>
+  </ol>
+  <p class="dim">Trois marchands ont été ajoutés en trois jours (Wyrel, Gamesplanet FR, Discover.games/Loaded). Les prochains candidats : Gamebillet ; Pixelcodes et Software-codes dès que leurs feeds pointent vers des produits existants.</p>
+  <aside class="notes">La priorité va aux boutiques dont le feed dit tout (titre + URL) ; ensuite celles dont la fiche est lisible en HTTP (Gamesplanet, Discover.games) ; les boutiques derrière Cloudflare (Wyrel) ne peuvent pas être lues, on ne dépend donc jamais de leur page.</aside>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <h2>La qualité — comment on sait que ça marche</h2>
+  <div class="deux">
+    <div class="colonne">
+      <ul>
+        <li><b>2 840 tests automatisés</b>, dont les vraies lignes des incidents, et la console exécutée sous node (pas seulement relue).</li>
+        <li><b>Mutations</b> : chaque nouvelle règle est cassée volontairement pour vérifier qu'un test la protège.</li>
+        <li><b>Rejeu en lecture seule</b> avant toute règle : combien de lignes changent, lesquelles, vers quoi.</li>
+        <li><b>Audits</b> réguliers du code et des saisies, corrections consignées (CHANGELOG, AUDIT_*).</li>
+      </ul>
+    </div>
+    <div class="colonne">
+      <div class="tuiles" style="grid-template-columns:1fr 1fr">
+        <div class="tuile"><div class="n">~ 35 000</div><div class="l">lignes de Python (exécuteur, règles, console, scripts)</div></div>
+        <div class="tuile"><div class="n">521</div><div class="l">commits depuis le 1<sup>er</sup> juillet 2026</div></div>
+        <div class="tuile"><div class="n">59</div><div class="l">règles numérotées et documentées</div></div>
+        <div class="tuile preuve"><div class="n">1 / 1</div><div class="l">chaque offre créée a sa preuve dans le journal</div></div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">Deux exemples d'erreurs trouvées et corrigées grâce à ce dispositif : les éditions « jeu + DLC » rangées sur la page du DLC (18 offres, détectées le 26/09 en relisant les pages AKS, règle R18c le jour même) ; les faux « état inconnu » de la recherche CJS (recherche insensible à la casse). Dans les deux cas : mesure, correction, test, décision consignée.</aside>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <h2>Ce qui reste, et la suite</h2>
+  <div class="deux">
+    <div class="colonne">
+      <h3>À court terme</h3>
+      <ul>
+        <li>Corriger à la main les <b>22 offres</b> identifiées le 26/09 (mauvaise page ou mauvaise édition, liste dans le CHANGELOG).</li>
+        <li>Relancer les marchands arrêtés par les pannes de navigateur (reprise automatique maintenant en place).</li>
+        <li>Premiers balayages de <b>Discover.games</b> et <b>Loaded</b>.</li>
+        <li>Rééquilibrer les groupes A / B sur les durées observées.</li>
+      </ul>
+    </div>
+    <div class="colonne">
+      <h3>Chantiers</h3>
+      <ul>
+        <li><b>Prepaid — API import-router</b> : notes prises, 13 questions ouvertes ; rien de codé tant qu'elles ne sont pas tranchées.</li>
+        <li><b>Marchands suivants</b> : Gamebillet ; Pixelcodes / Software-codes quand leurs feeds seront corrigés (3 085 produits introuvables signalés).</li>
+        <li><b>Le reste du backlog</b> : lignes hors jeu à trier, régions non vendables, consoles sans génération lisible — à traiter avec les marchands ou à la main.</li>
+      </ul>
+    </div>
+  </div>
+  <aside class="notes">Ne pas promettre de dates sur le prepaid : les questions ouvertes (authentification, idempotence, format des erreurs) conditionnent tout. Sur les marchands : le rythme d'un marchand par jour est tenable quand le feed est lisible ; il tombe à zéro quand le feed pointe vers des produits qui n'existent plus, d'où la liste transmise aux marchands.</aside>
+</section>
+
+<!-- 19 -->
+<section class="slide titre">
+  <h1>Merci</h1>
+  <p class="sous">Questions ?</p>
+  <p class="dim" style="margin-top:6vh">Documentation : README.md · docs/EXECUTOR_RULES.md · docs/MERCHANTS.md · docs/CHANGELOG.md · docs/ARCHITECTURE.md</p>
+  <aside class="notes">Proposer une démonstration de la console si le public est technique : un essai à blanc sur une page d'un marchand, la lecture du rapport de refus, puis le récap d'un balayage de la nuit.</aside>
+</section>
+
+<div class="nav" aria-label="navigation">
+  <button type="button" id="prec" title="Précédent (←)">←</button>
+  <button type="button" id="suiv" title="Suivant (→ ou espace)">→</button>
+  <button type="button" id="notes-btn" title="Afficher / masquer les notes (N)">Notes</button>
+  <button type="button" id="plein" title="Plein écran (F)">⛶</button>
+</div>
+<div class="aide">← → naviguer · N notes · F plein écran · Ctrl+P imprimer</div>
+<div class="progress" id="progress"></div>
+
+<script>
+(function () {
+  var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
+  var i = 0;
+  slides.forEach(function (s, k) {
+    var pied = document.createElement("div");
+    pied.className = "pied";
+    pied.innerHTML = "<span>AKS Controlled Executor · 28/09/2026</span><span>" + (k + 1) + " / " + slides.length + "</span>";
+    s.appendChild(pied);
+  });
+  function montrer(n) {
+    n = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach(function (s, k) { s.classList.toggle("active", k === n); });
+    i = n;
+    document.getElementById("progress").style.width = ((n + 1) / slides.length * 100) + "%";
+    if (location.hash !== "#" + (n + 1)) history.replaceState(null, "", "#" + (n + 1));
+  }
+  function depuisHash() {
+    var n = parseInt((location.hash || "#1").slice(1), 10);
+    montrer(isNaN(n) ? 0 : n - 1);
+  }
+  document.addEventListener("keydown", function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    switch (e.key) {
+      case "ArrowRight": case " ": case "PageDown": case "j": montrer(i + 1); e.preventDefault(); break;
+      case "ArrowLeft": case "PageUp": case "k": montrer(i - 1); e.preventDefault(); break;
+      case "Home": montrer(0); e.preventDefault(); break;
+      case "End": montrer(slides.length - 1); e.preventDefault(); break;
+      case "n": case "N": document.body.classList.toggle("avec-notes"); break;
+      case "f": case "F": if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen(); break;
+    }
+  });
+  document.getElementById("prec").addEventListener("click", function () { montrer(i - 1); });
+  document.getElementById("suiv").addEventListener("click", function () { montrer(i + 1); });
+  document.getElementById("notes-btn").addEventListener("click", function () { document.body.classList.toggle("avec-notes"); });
+  document.getElementById("plein").addEventListener("click", function () {
+    if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+  });
+  window.addEventListener("hashchange", depuisHash);
+  depuisHash();
+})();
+</script>
+</body>
+</html>

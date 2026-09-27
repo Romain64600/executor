@@ -1,0 +1,25 @@
+%% Le pipeline d'une page du feed — source Mermaid (à coller dans mermaid.live ou un outil qui rend Mermaid)
+flowchart LR
+    F[(Feed AKS<br/>page N, 100 offres)]
+    E[1 · Extraction<br/>02_extract_feed<br/>navigateur CDP, lecture seule]
+    M[2 · Matching<br/>03_match<br/>règles + HTTP lecture seule]
+    V[3 · Validation<br/>approve<br/>lot figé, mode safe]
+    S[4 · Saisie<br/>05_submit<br/>ligne → modale → « Create »]
+    P{5 · Preuve<br/>feed rafraîchi :<br/>l'offre a disparu ?}
+    OK([créée — journal + recap])
+    KO([échec — offre laissée au feed])
+    UNK([état INCONNU — arrêt du marchand,<br/>vérification à la main])
+    J[[logs/&lt;run&gt;.jsonl<br/>runs/&lt;run&gt;/ : offers · candidates · approved · submit_plan · recap]]
+
+    F --> E -->|offers.json| M -->|candidates.json / skipped.json| V -->|approved.json| S --> P
+    P -->|oui| OK
+    P -->|non| KO
+    P -->|illisible après le clic| UNK
+    E -.-> J
+    M -.-> J
+    S -.-> J
+    P -.-> J
+
+    G1[/StepGuard/] -.- E
+    G2[/StepGuard/] -.- M
+    G3[/StepGuard/] -.- V

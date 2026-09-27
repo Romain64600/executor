@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Saisie automatique des offres — AKS Controlled Executor</title>
+<style>
+  :root {
+    --surface: #fcfcfb; --fond: #e9e8e3; --encre: #0b0b0b; --encre-2: #52514e; --trait: #c9c7c0;
+    --bleu: #2a78d6; --bleu-clair: #e3eefb; --aqua: #1baf7a; --aqua-clair: #e0f5ec;
+    --orange: #eb6834; --orange-clair: #fde7dd; --rouge: #e34948; --rouge-clair: #fbe1e1;
+    --violet: #4a3aa7; --violet-clair: #e9e6f7; --gris: #f1f0ec;
+  }
+  html, body { margin: 0; height: 100%; background: var(--fond); color: var(--encre);
+    font-family: Inter, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .slide { display: none; position: relative; width: 100vw; height: 100vh; box-sizing: border-box;
+    padding: 5vh 6vw 7vh; background: var(--surface); overflow: hidden; }
+  .slide.active { display: flex; flex-direction: column; }
+  .slide.titre { justify-content: center; align-items: flex-start; background:
+    linear-gradient(135deg, var(--bleu-clair) 0%, var(--surface) 55%); }
+  h1 { font-size: 5.6vmin; line-height: 1.1; margin: 0 0 2vh; letter-spacing: -0.01em; }
+  h2 { font-size: 4.4vmin; line-height: 1.15; margin: 0 0 2.5vh; }
+  h3 { font-size: 3vmin; margin: 0 0 1vh; color: var(--encre); }
+  p, li { font-size: 2.55vmin; line-height: 1.45; margin: 0 0 1.2vh; }
+  ul { margin: 0 0 1vh 0; padding-left: 3vmin; }
+  li { margin-bottom: 0.9vh; }
+  .dim { color: var(--encre-2); }
+  .sous { font-size: 2.9vmin; color: var(--encre-2); margin-top: 0; }
+  .figure { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  .figure svg { width: 100%; height: 100%; }
+  .deux { display: grid; grid-template-columns: 1fr 1fr; gap: 3vw; flex: 1; min-height: 0; }
+  .colonne h3 { margin-top: 0; }
+  .tuiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2vmin; flex: 1; align-content: center; }
+  .tuile { background: var(--gris); border-radius: 1.6vmin; padding: 3vmin 2.6vmin; }
+  .tuile .n { font-size: 7vmin; font-weight: 700; letter-spacing: -0.02em; line-height: 1; color: var(--encre); }
+  .tuile .l { font-size: 2.1vmin; color: var(--encre-2); margin-top: 1.2vmin; line-height: 1.35; }
+  .tuile.accent { background: var(--bleu-clair); }
+  .tuile.preuve { background: var(--aqua-clair); }
+  table { border-collapse: collapse; width: 100%; font-size: 2.15vmin; }
+  th, td { text-align: left; padding: 1.1vmin 1.4vmin; border-bottom: 1px solid var(--trait); vertical-align: top; line-height: 1.35; }
+  th { color: var(--encre-2); font-weight: 600; font-size: 1.9vmin; text-transform: uppercase; letter-spacing: 0.04em; }
+  .etq { display: inline-block; padding: 0.3vmin 1vmin; border-radius: 0.8vmin; font-size: 1.9vmin; font-weight: 600; white-space: nowrap; }
+  .etq.ok { background: var(--aqua-clair); color: #0b5a3e; }
+  .etq.non { background: var(--orange-clair); color: #8a3410; }
+  .encart { background: var(--gris); border-radius: 1.4vmin; padding: 2vmin 2.6vmin; margin-top: auto; }
+  .encart p { margin: 0; font-size: 2.2vmin; }
+  .verbes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1.6vmin; margin: 2vh 0; }
+  .verbe { background: var(--bleu-clair); border-radius: 1.4vmin; padding: 2vmin; }
+  .verbe b { display: block; font-size: 3.2vmin; margin-bottom: 0.8vmin; color: var(--bleu); }
+  .verbe span { font-size: 2vmin; color: var(--encre-2); line-height: 1.35; }
+  .verbe.preuve { background: var(--aqua-clair); } .verbe.preuve b { color: #0b5a3e; }
+  .marchands { display: flex; flex-wrap: wrap; gap: 1vmin; margin: 1vh 0 2vh; }
+  .marchands span { background: var(--gris); border-radius: 0.9vmin; padding: 0.7vmin 1.4vmin; font-size: 2vmin; }
+  .marchands span.neuf { background: var(--bleu-clair); }
+  .etapes { counter-reset: e; list-style: none; padding: 0; }
+  .etapes li { counter-increment: e; position: relative; padding-left: 5vmin; }
+  .etapes li::before { content: counter(e); position: absolute; left: 0; top: 0.2vmin; width: 3.4vmin; height: 3.4vmin;
+    border-radius: 50%; background: var(--bleu); color: #fff; font-weight: 700; font-size: 2vmin; display: flex; align-items: center; justify-content: center; }
+  .pied { position: absolute; left: 6vw; right: 6vw; bottom: 2.4vh; display: flex; justify-content: space-between; align-items: center;
+    font-size: 1.8vmin; color: var(--encre-2); }
+  .progress { position: absolute; left: 0; bottom: 0; height: 0.6vh; background: var(--bleu); width: 0; transition: width .2s; }
+  .nav { position: fixed; right: 2vw; bottom: 1.6vh; display: flex; gap: 0.6vmin; z-index: 5; }
+  .nav button { font: inherit; font-size: 2vmin; border: 1px solid var(--trait); background: #fff; color: var(--encre-2);
+    border-radius: 0.8vmin; padding: 0.5vmin 1.4vmin; cursor: pointer; }
+  .nav button:hover { border-color: var(--bleu); color: var(--bleu); }
+  .notes { display: none; }
+  body.avec-notes .slide.active .notes { display: block; position: absolute; left: 0; right: 0; bottom: 0; max-height: 34vh; overflow: auto;
+    background: #fffbe6; border-top: 2px solid #e6d78a; padding: 1.6vh 6vw 4vh; font-size: 2vmin; line-height: 1.45; color: #3b3300; z-index: 4; }
+  .aide { position: fixed; left: 2vw; bottom: 1.6vh; font-size: 1.7vmin; color: var(--encre-2); z-index: 5; }
+  @media print {
+    @page { size: A4 landscape; margin: 8mm; }
+    html, body { background: #fff; }
+    .slide { display: flex !important; flex-direction: column; height: auto; min-height: 96vh; page-break-after: always; break-after: page; }
+    .slide:last-child { page-break-after: auto; }
+    .nav, .aide, .progress { display: none !important; }
+    .notes { display: block; margin-top: 2vh; padding: 1.2vh 1.6vw; background: #fffbe6; border: 1px solid #e6d78a; font-size: 1.9vmin; color: #3b3300; }
+  }
+</style>
+</head>
+<body>
+
+<!-- 1 -->
+<section class="slide titre">
+  <p class="sous" style="color:var(--bleu);font-weight:600">AllKeyShop · outil « merchant feeds »</p>
+  <h1>Saisie automatique des offres marchands</h1>
+  <p class="sous">Un exécuteur déterministe qui lit le feed, trouve la page, décide, saisit — et prouve chaque saisie.</p>
+  <p class="dim" style="margin-top:6vh">Présentation du lundi 28 septembre 2026 · <span style="border-bottom:1px dashed var(--trait)">Romain (nom / rôle à compléter)</span></p>
+  <aside class="notes">Une phrase d'accroche : « on a des dizaines de milliers d'offres marchands qui attendent d'être ajoutées à la main ; on a construit une machine qui les ajoute, avec la même rigueur qu'un humain soigneux, et qui s'arrête au moindre doute ». Puis le plan : le problème, ce qu'on a construit, comment ça marche, ce que ça a donné, la suite.</aside>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <h2>Le problème : des dizaines de milliers d'offres en attente</h2>
+  <div class="deux">
+    <div class="colonne">
+      <ul>
+        <li>Les marchands nous envoient leurs offres par <b>feed</b> ; elles atterrissent dans l'outil « merchant feeds » de wp-admin, liste <b>Pending offers</b>.</li>
+        <li>Pour chaque offre, quelqu'un doit : <b>trouver la page AKS</b> du produit, choisir la <b>plateforme</b>, la <b>région</b>, l'<b>édition</b>, parfois plusieurs <b>pages</b> (consoles), remplir le formulaire, valider.</li>
+        <li>À la main : lent, répétitif, et une erreur de région ou d'édition met un prix faux en ligne.</li>
+      </ul>
+    </div>
+    <div class="colonne">
+      <div class="tuiles" style="grid-template-columns:1fr 1fr">
+        <div class="tuile accent"><div class="n">&gt; 50 000</div><div class="l">offres en attente dans la liste Pending (relevé du 25/09/2026)</div></div>
+        <div class="tuile"><div class="n">~ 6 850</div><div class="l">lignes console (PS, Xbox, Switch), longtemps hors périmètre</div></div>
+        <div class="tuile"><div class="n">3 102</div><div class="l">lignes hors jeu à écarter : cartes, monnaies, comptes, bundles</div></div>
+        <div class="tuile"><div class="n">1 589</div><div class="l">lignes en région non vendable (« Rest of World », Amérique du Nord…)</div></div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">Les chiffres du 25/09 viennent d'une relecture complète de la liste Pending (plus de 500 pages). Une partie de l'attente est ancienne : 80 % des lignes vues datent d'avant septembre. Il en arrive plusieurs centaines par jour. Point important : l'outil renvoyait les mêmes pages en boucle (tri instable sur la date de création) ; on a fixé le tri sur l'identifiant, ce qui a fait « apparaître » ~13 000 lignes jamais montrées.</aside>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <h2>Ce qu'on a construit</h2>
+  <p>Un <b>exécuteur déterministe</b> : pas d'improvisation, des règles écrites, un journal de chaque action, et une saisie faite par le vrai formulaire d'AKS.</p>
+  <div class="verbes">
+    <div class="verbe"><b>Il lit</b><span>le feed marchand, page par page, dans un vrai navigateur connecté (CDP)</span></div>
+    <div class="verbe"><b>Il trouve</b><span>la page produit AKS : sitemap d'abord, puis le nom, puis une recherche bornée</span></div>
+    <div class="verbe"><b>Il décide</b><span>plateforme, région, édition, page(s) cible — par des règles, jamais par le prix</span></div>
+    <div class="verbe"><b>Il saisit</b><span>via la modale officielle : champs visibles, bouton « Create » visible</span></div>
+    <div class="verbe preuve"><b>Il prouve</b><span>succès = l'offre a disparu du feed rafraîchi ; sinon, arrêt</span></div>
+  </div>
+  <div class="encart"><p><b>Le principe qui gouverne tout : fail-closed.</b> Au moindre doute, l'exécuteur refuse ou s'arrête et l'écrit. Il ne devine jamais une région, n'essaie jamais « pour voir », ne se reconnecte jamais tout seul.</p></div>
+  <aside class="notes">Insister sur « déterministe » : deux passages sur la même ligne donnent la même décision ; la décision est expliquée (motif de refus nommé). Et sur « le vrai formulaire » : on ne fabrique pas d'appel caché, on fait ce qu'un opérateur ferait, mais vérifié à chaque pas.</aside>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <h2>En chiffres</h2>
+  <div class="tuiles">
+    <div class="tuile accent"><div class="n">{{TOTAL}}</div><div class="l">offres créées et prouvées depuis le 6 juillet 2026 (deux machines)</div></div>
+    <div class="tuile"><div class="n">{{DEPUIS_0809}}</div><div class="l">depuis le 8 septembre : mise en service de la saisie automatique sur 2 VPS</div></div>
+    <div class="tuile"><div class="n">{{QUATORZE_JOURS}}</div><div class="l">sur les 14 derniers jours (14 → 27 septembre)</div></div>
+    <div class="tuile preuve"><div class="n">{{RECORD}}</div><div class="l">le {{RECORD_JOUR}} : la meilleure journée (deux groupes en parallèle)</div></div>
+    <div class="tuile"><div class="n">21</div><div class="l">marchands en liste blanche, chacun avec son fichier de règles</div></div>
+    <div class="tuile"><div class="n">2 840</div><div class="l">tests automatisés, dont la console exécutée sous node</div></div>
+  </div>
+  <aside class="notes">Méthode du comptage : une offre est comptée quand le journal porte une saisie réussie ET prouvée (« gone from feed »). Les journaux des deux machines sont additionnés. Détail et par-marchand dans chiffres.md. Le record du 26/09 : le groupe A et la fin du groupe B tournaient en même temps, avec les nouvelles règles console.</aside>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <h2>Vue d'ensemble — qui parle à qui</h2>
+  <div class="figure">{{svg:01_vue_d_ensemble}}</div>
+  <aside class="notes">Trois zones : l'opérateur (Romain), le VPS (console + exécuteur + navigateur piloté + journal) et AKS (wp-admin pour lire le feed et écrire ; le site public et son sitemap pour reconnaître les produits, en lecture HTTP). Deux VPS identiques, chacun un groupe de marchands. Le navigateur est un vrai Chrome avec la session WordPress : c'est lui qui écrit, jamais un appel fabriqué.</aside>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <h2>Le pipeline — ce qui arrive à une page du feed</h2>
+  <div class="figure">{{svg:02_pipeline_page}}</div>
+  <aside class="notes">Une page = 100 offres. Cinq étapes, séparées par StepGuard (l'étape suivante ne démarre que sur un résultat valide). Tout est écrit : les fichiers du run (offers, candidates, approved, submit_plan) et le journal JSONL. Le balayage prend les pages de la plus haute vers la 1 (les créations font remonter les lignes, donc on ne rate rien), marchand après marchand.</aside>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <h2>Le parcours d'une offre — six décisions</h2>
+  <div class="figure">{{svg:03_parcours_offre}}</div>
+  <aside class="notes">La lecture se fait de haut en bas : à chaque étape, soit on avance, soit on refuse avec un motif écrit. À droite, les refus les plus fréquents. Ce qui décide : le fichier du marchand (sa grammaire de titre / URL / fiche) et les règles générales. Le prix n'est jamais un juge. En cas de doute, on refuse : la ligne reste dans le feed pour un humain.</aside>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <h2>Des décisions réelles (25–26 septembre 2026)</h2>
+  <table>
+    <tr><th>Offre du feed</th><th>Décision</th><th>Pourquoi</th></tr>
+    <tr><td>Eneba — « Nine Sols PC/XBOX LIVE Key EUROPE »</td><td><span class="etq ok">saisie</span> pages Xbox One + Xbox Series + PC, case Xbox/PC EU</td><td>la page PC d'AKS affiche « Xbox Play Anywhere » ; clé Xbox sans génération → les deux pages Xbox</td></tr>
+    <tr><td>Kinguin — « Dune: Awakening US PS5 CD Key »</td><td><span class="etq ok">saisie</span> page PS5, case PlayStation US</td><td>la région du titre, la case PlayStation de la génération (règle P3)</td></tr>
+    <tr><td>Gamivo — « Blasphemous 2 Mea Culpa Edition »</td><td><span class="etq ok">saisie</span> page du jeu Blasphemous 2, édition « Mea Culpa Edition »</td><td>c'est le jeu + le DLC : AKS le range sur la page du jeu (25 offres y sont déjà), pas sur la page du DLC</td></tr>
+    <tr><td>Gamesplanet FR — clé Steam, fiche « ONLY Europe » sans les USA</td><td><span class="etq ok">saisie</span> Steam EU</td><td>la région est lue sur la fiche marchand (pays exclus), selon la règle validée le 25/09</td></tr>
+    <tr><td>Gamivo — « Dishonored 2 » (xbox-pc-us)</td><td><span class="etq ok">saisie</span> Microsoft Store US</td><td>pas de Play Anywhere sur la page PC, mais elle vend « Microsoft Windows »</td></tr>
+    <tr><td>CJS — « … PSN Download Key (Playstation) UNITED STATES »</td><td><span class="etq non">refus</span></td><td>PS4 ou PS5 ? le marchand ne le dit pas : on ne devine pas</td></tr>
+    <tr><td>Wyrel — « … (PC) Rest of World »</td><td><span class="etq non">refus</span></td><td>une clé ROW n'entre que si on prouve qu'elle s'active en Europe ; rien ne le prouve</td></tr>
+  </table>
+  <aside class="notes">Ces lignes sont de vraies lignes des balayages des 25 et 26 septembre. Chaque décision correspond à une règle écrite et testée. Les deux refus illustrent le fail-closed : on préfère laisser une ligne à un humain plutôt que de mettre un prix au mauvais endroit.</aside>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <h2>Où vivent les règles</h2>
+  <div class="deux">
+    <div class="colonne">
+      <h3>Un fichier par marchand</h3>
+      <ul>
+        <li><code>src/merchants/&lt;marchand&gt;.py</code> — 21 fichiers : comment CE marchand écrit la plateforme, la région, l'édition, dans son titre, son URL ou sa fiche.</li>
+        <li>Exemples : Wyrel écrit la région deux fois (titre + URL) et les deux doivent concorder ; Gamesplanet FR et Discover.games donnent la région sur la fiche ; Loaded cache la fiche dans un lien d'affiliation.</li>
+        <li>Une règle marchande ne fuit jamais vers les autres.</li>
+      </ul>
+    </div>
+    <div class="colonne">
+      <h3>Des règles générales, numérotées</h3>
+      <ul>
+        <li><code>docs/EXECUTOR_RULES.md</code> — 59 règles [R01…R62] : nom (R01), plateforme vendue (R20), DLC (R18/R43), consoles (R45), Microsoft Store (R62), jeu + DLC (R18c)…</li>
+        <li>Chaque décision de Romain devient : une règle écrite, un test qui la fige, une entrée « décision revue » (AGENTS.md) pour qu'un audit ne la défasse pas.</li>
+        <li>Les cas limites sont mesurés avant d'être appliqués (rejeu en lecture seule sur les vraies lignes).</li>
+      </ul>
+    </div>
+  </div>
+  <aside class="notes">Le point à faire passer : la connaissance métier n'est pas dans la tête d'une personne ni dans un prompt ; elle est dans des fichiers relus, testés et versionnés. Quand on ajoute un marchand, on écrit son fichier ; quand Romain tranche un cas, on écrit la règle et le test le jour même.</aside>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <h2>La sécurité : fail-closed à chaque pas</h2>
+  <div class="figure">{{svg:04_fail_closed}}</div>
+  <aside class="notes">Lire la frise de gauche à droite : rien ne démarre sans les invariants ; rien ne passe une étape sans résultat valide ; on ne saisit que ce qui a été validé ; la ligne et la modale sont vérifiées ; le vrai bouton ; la preuve. En bas : ce qui arrête (état inconnu, dix échecs, session perdue) et ce qui est repris (une panne avant toute écriture). La reconnexion n'est jamais automatique : c'est Romain qui transfère les cookies.</aside>
+</section>
+
+<!-- 11 -->
+<section class="slide">
+  <h2>La preuve de saisie</h2>
+  <div class="deux">
+    <div class="colonne">
+      <h3>Ce qu'on appelle « succès »</h3>
+      <ul>
+        <li>Après le clic sur « Create », on <b>rafraîchit le feed</b> (même liste, même mode) et on cherche la ligne par son identité : <b>elle a disparu = créée</b>.</li>
+        <li>Jamais un message « offre créée » de la page : seul le feed fait foi.</li>
+        <li>L'identité d'une ligne, c'est son URL marchand ; pour certains marchands, la partie de l'URL qui distingue les variantes (région, édition, fiche).</li>
+      </ul>
+    </div>
+    <div class="colonne">
+      <h3>Ce qu'on fait quand on ne sait pas</h3>
+      <ul>
+        <li>Feed illisible ou session perdue <b>après</b> un clic : état <b>inconnu</b> → arrêt du marchand, l'offre est à vérifier à la main. Jamais de reprise automatique dans ce cas.</li>
+        <li>Panne <b>avant</b> tout clic : rien n'a pu être écrit → la page est reprise après 2, 5 puis 10 minutes.</li>
+        <li>La recherche qui sert de preuve doit prouver qu'elle est bien <b>la nôtre</b> (terme dans l'adresse, lignes cohérentes) : une page étrangère ne peut pas faire passer une offre pour disparue.</li>
+      </ul>
+    </div>
+  </div>
+  <aside class="notes">C'est le cœur de la confiance : on peut relire, pour chaque offre créée, la preuve de sa disparition du feed. Exemple récent : trois arrêts CJS venaient d'une recherche AKS insensible à la casse que notre contrôle prenait pour une page étrangère ; on a corrigé le contrôle sans affaiblir la preuve, et les trois offres étaient bien créées.</aside>
+</section>
+
+<!-- 12 -->
+<section class="slide">
+  <h2>La console d'admin</h2>
+  <div class="deux">
+    <div class="colonne">
+      <h3>Lancer</h3>
+      <ul>
+        <li>Un marchand, tous les marchands, ou un <b>groupe</b> (A / B) ; toutes les pages ou <b>de la page N à la 1</b> ; la liste (Pending par défaut).</li>
+        <li>Un <b>GO</b> tapé pour toute écriture ; le mode <b>safe</b> saisit le lot validé.</li>
+        <li>Ajouter un marchand <b>à chaud</b> à un balayage en cours ; arrêter proprement.</li>
+      </ul>
+      <h3>Se reconnecter</h3>
+      <ul><li>AKS est en connexion sociale : la session se renouvelle par <b>transfert de cookies</b>, à la main, dans la console. Les valeurs ne sont jamais journalisées.</li></ul>
+    </div>
+    <div class="colonne">
+      <h3>Suivre</h3>
+      <ul>
+        <li>Le marchand dès son démarrage ; la <b>page en cours</b> avec son étape (lecture, matching, saisie) et ses compteurs en direct.</li>
+        <li>Le <b>récap</b> : par marchand, par page, chaque offre créée avec son id AKS ; les arrêts nommés.</li>
+        <li>La liste des marchands de chaque groupe et leur charge.</li>
+      </ul>
+      <h3>Trier</h3>
+      <ul><li>Un plan de tri lecture seule puis un déplacement par lots des lignes hors périmètre (comptes, cartes…) vers leurs listes.</li></ul>
+    </div>
+  </div>
+  <aside class="notes">Montrer la console en direct si possible (/executor/auto) : les boutons de groupe avec la liste des marchands, le récap d'un balayage, la page en cours. Rappeler que la console ne calcule rien : elle affiche ce que le serveur envoie et renvoie un nom de groupe, que le serveur re-valide.</aside>
+</section>
+
+<!-- 13 -->
+<section class="slide">
+  <h2>L'exploitation — deux machines, deux groupes</h2>
+  <div class="figure">{{svg:05_exploitation}}</div>
+  <aside class="notes">Deux VPS, un groupe chacun, lancés le soir et suivis le lendemain. Ordres de grandeur : 2,5 minutes pour lire et matcher une page, une minute par offre créée. Un groupe complet prend 20 à 40 heures selon la charge. Les groupes sont un point de départ : on les rééquilibre sur les durées observées.</aside>
+</section>
+
+<!-- 14 -->
+<section class="slide">
+  <h2>Résultats — par marchand</h2>
+  <div class="figure">{{svg:06_resultats}}</div>
+  <aside class="notes">GameSeal domine parce que sa file est la plus grosse (5 500 lignes) et qu'elle a été balayée en entier plusieurs fois. Les petits chiffres ne sont pas des échecs : petites files (GamersOutlet, Electronicfirst) ou entrées récentes (Gamesplanet FR le 25/09 ; Discover.games et Loaded entrés le 26/09, pas encore balayés).</aside>
+</section>
+
+<!-- 15 -->
+<section class="slide">
+  <h2>Résultats — par jour</h2>
+  <div class="figure">{{svg:07_offres_par_jour}}</div>
+  <aside class="notes">Les gros jours sont les nuits de groupe complètes. Les creux correspondent aux journées sans balayage ou consacrées aux corrections et aux nouvelles règles. Le 27 est une journée partielle.</aside>
+</section>
+
+<!-- 16 -->
+<section class="slide">
+  <h2>Les marchands couverts — et comment on en ajoute un</h2>
+  <div class="marchands">
+    <span>GameSeal</span><span>Gamivo</span><span>Eneba</span><span>Kinguin</span><span>G2A</span><span>CJS-CDKeys</span><span>GameBoost</span><span>Gamerall</span><span>Driffle</span><span>Electronicfirst</span><span>Instant Gaming</span><span>Allyouplay</span><span>MMOGA</span><span>K4G</span><span>GamersOutlet</span><span>Difmark</span><span>GOG</span><span>Wyrel</span><span>Gamesplanet FR</span><span class="neuf">Discover.games</span><span class="neuf">Loaded (ex-CDKeys)</span>
+  </div>
+  <ol class="etapes">
+    <li><b>Étudier le feed</b> : où sont la plateforme, la région, l'édition — dans le titre, l'URL ou la fiche ? Combien de lignes, combien seraient saisissables ? (docs/PROCHAINS_MARCHANDS.md tient la trace)</li>
+    <li><b>Écrire le fichier du marchand</b> et ses tests sur des lignes réelles ; vérifier sur AKS comment ces offres sont déjà rangées.</li>
+    <li><b>Essai à blanc</b> (dry-run) sur 150 lignes : lire chaque refus, chaque candidate.</li>
+    <li><b>Première saisie</b> supervisée, puis <b>liste blanche</b> et affectation à un groupe.</li>
+  </ol>
+  <p class="dim">Trois marchands ont été ajoutés en trois jours (Wyrel, Gamesplanet FR, Discover.games/Loaded). Les prochains candidats : Gamebillet ; Pixelcodes et Software-codes dès que leurs feeds pointent vers des produits existants.</p>
+  <aside class="notes">La priorité va aux boutiques dont le feed dit tout (titre + URL) ; ensuite celles dont la fiche est lisible en HTTP (Gamesplanet, Discover.games) ; les boutiques derrière Cloudflare (Wyrel) ne peuvent pas être lues, on ne dépend donc jamais de leur page.</aside>
+</section>
+
+<!-- 17 -->
+<section class="slide">
+  <h2>La qualité — comment on sait que ça marche</h2>
+  <div class="deux">
+    <div class="colonne">
+      <ul>
+        <li><b>2 840 tests automatisés</b>, dont les vraies lignes des incidents, et la console exécutée sous node (pas seulement relue).</li>
+        <li><b>Mutations</b> : chaque nouvelle règle est cassée volontairement pour vérifier qu'un test la protège.</li>
+        <li><b>Rejeu en lecture seule</b> avant toute règle : combien de lignes changent, lesquelles, vers quoi.</li>
+        <li><b>Audits</b> réguliers du code et des saisies, corrections consignées (CHANGELOG, AUDIT_*).</li>
+      </ul>
+    </div>
+    <div class="colonne">
+      <div class="tuiles" style="grid-template-columns:1fr 1fr">
+        <div class="tuile"><div class="n">~ 35 000</div><div class="l">lignes de Python (exécuteur, règles, console, scripts)</div></div>
+        <div class="tuile"><div class="n">521</div><div class="l">commits depuis le 1<sup>er</sup> juillet 2026</div></div>
+        <div class="tuile"><div class="n">59</div><div class="l">règles numérotées et documentées</div></div>
+        <div class="tuile preuve"><div class="n">1 / 1</div><div class="l">chaque offre créée a sa preuve dans le journal</div></div>
+      </div>
+    </div>
+  </div>
+  <aside class="notes">Deux exemples d'erreurs trouvées et corrigées grâce à ce dispositif : les éditions « jeu + DLC » rangées sur la page du DLC (18 offres, détectées le 26/09 en relisant les pages AKS, règle R18c le jour même) ; les faux « état inconnu » de la recherche CJS (recherche insensible à la casse). Dans les deux cas : mesure, correction, test, décision consignée.</aside>
+</section>
+
+<!-- 18 -->
+<section class="slide">
+  <h2>Ce qui reste, et la suite</h2>
+  <div class="deux">
+    <div class="colonne">
+      <h3>À court terme</h3>
+      <ul>
+        <li>Corriger à la main les <b>22 offres</b> identifiées le 26/09 (mauvaise page ou mauvaise édition, liste dans le CHANGELOG).</li>
+        <li>Relancer les marchands arrêtés par les pannes de navigateur (reprise automatique maintenant en place).</li>
+        <li>Premiers balayages de <b>Discover.games</b> et <b>Loaded</b>.</li>
+        <li>Rééquilibrer les groupes A / B sur les durées observées.</li>
+      </ul>
+    </div>
+    <div class="colonne">
+      <h3>Chantiers</h3>
+      <ul>
+        <li><b>Prepaid — API import-router</b> : notes prises, 13 questions ouvertes ; rien de codé tant qu'elles ne sont pas tranchées.</li>
+        <li><b>Marchands suivants</b> : Gamebillet ; Pixelcodes / Software-codes quand leurs feeds seront corrigés (3 085 produits introuvables signalés).</li>
+        <li><b>Le reste du backlog</b> : lignes hors jeu à trier, régions non vendables, consoles sans génération lisible — à traiter avec les marchands ou à la main.</li>
+      </ul>
+    </div>
+  </div>
+  <aside class="notes">Ne pas promettre de dates sur le prepaid : les questions ouvertes (authentification, idempotence, format des erreurs) conditionnent tout. Sur les marchands : le rythme d'un marchand par jour est tenable quand le feed est lisible ; il tombe à zéro quand le feed pointe vers des produits qui n'existent plus, d'où la liste transmise aux marchands.</aside>
+</section>
+
+<!-- 19 -->
+<section class="slide titre">
+  <h1>Merci</h1>
+  <p class="sous">Questions ?</p>
+  <p class="dim" style="margin-top:6vh">Documentation : README.md · docs/EXECUTOR_RULES.md · docs/MERCHANTS.md · docs/CHANGELOG.md · docs/ARCHITECTURE.md</p>
+  <aside class="notes">Proposer une démonstration de la console si le public est technique : un essai à blanc sur une page d'un marchand, la lecture du rapport de refus, puis le récap d'un balayage de la nuit.</aside>
+</section>
+
+<div class="nav" aria-label="navigation">
+  <button type="button" id="prec" title="Précédent (←)">←</button>
+  <button type="button" id="suiv" title="Suivant (→ ou espace)">→</button>
+  <button type="button" id="notes-btn" title="Afficher / masquer les notes (N)">Notes</button>
+  <button type="button" id="plein" title="Plein écran (F)">⛶</button>
+</div>
+<div class="aide">← → naviguer · N notes · F plein écran · Ctrl+P imprimer</div>
+<div class="progress" id="progress"></div>
+
+<script>
+(function () {
+  var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
+  var i = 0;
+  slides.forEach(function (s, k) {
+    var pied = document.createElement("div");
+    pied.className = "pied";
+    pied.innerHTML = "<span>AKS Controlled Executor · 28/09/2026</span><span>" + (k + 1) + " / " + slides.length + "</span>";
+    s.appendChild(pied);
+  });
+  function montrer(n) {
+    n = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach(function (s, k) { s.classList.toggle("active", k === n); });
+    i = n;
+    document.getElementById("progress").style.width = ((n + 1) / slides.length * 100) + "%";
+    if (location.hash !== "#" + (n + 1)) history.replaceState(null, "", "#" + (n + 1));
+  }
+  function depuisHash() {
+    var n = parseInt((location.hash || "#1").slice(1), 10);
+    montrer(isNaN(n) ? 0 : n - 1);
+  }
+  document.addEventListener("keydown", function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    switch (e.key) {
+      case "ArrowRight": case " ": case "PageDown": case "j": montrer(i + 1); e.preventDefault(); break;
+      case "ArrowLeft": case "PageUp": case "k": montrer(i - 1); e.preventDefault(); break;
+      case "Home": montrer(0); e.preventDefault(); break;
+      case "End": montrer(slides.length - 1); e.preventDefault(); break;
+      case "n": case "N": document.body.classList.toggle("avec-notes"); break;
+      case "f": case "F": if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen(); break;
+    }
+  });
+  document.getElementById("prec").addEventListener("click", function () { montrer(i - 1); });
+  document.getElementById("suiv").addEventListener("click", function () { montrer(i + 1); });
+  document.getElementById("notes-btn").addEventListener("click", function () { document.body.classList.toggle("avec-notes"); });
+  document.getElementById("plein").addEventListener("click", function () {
+    if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen();
+  });
+  window.addEventListener("hashchange", depuisHash);
+  depuisHash();
+})();
+</script>
+</body>
+</html>

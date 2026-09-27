@@ -3,6 +3,15 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-27 — Dossier de présentation du 28/09 (`docs/presentation_2026-09-28/`)
+
+Romain : « J'ai une présentation du projet pour lundi … Il me faudrait des schémas de notre
+système et des explications claires. » Un dossier autonome : `presentation.html` (19
+diapositives, schémas inclus, navigation clavier, impression), `schemas/` (7 SVG faits main +
+sources Mermaid), `notes_orateur.md`, `chiffres.md` (chaque nombre avec sa méthode et sa date :
+17 317 offres créées et prouvées du 06/07 au 27/09, 16 895 depuis le 08/09, record 2 627 le
+26/09), `outils/` (générateur des SVG et du diaporama, compteur des créations). Aucun secret.
+
 ## 2026-09-27 — Console : la liste des marchands de chaque groupe est visible
 
 Romain : « Dans l'admin, tu as mis les boutons « Groupe A » et « Groupe B ». Il manque la liste

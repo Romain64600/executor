@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-labelledby="t d">
+<title id="t">Vue d'ensemble du système</title>
+<desc id="d">L'opérateur pilote, depuis la console d'admin, un exécuteur qui lit le feed AKS à travers un Chrome piloté par CDP, lit les pages AKS en HTTP, et écrit chaque action dans un journal. Deux VPS, un groupe de marchands chacun.</desc>
+<defs><marker id="pointe" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#52514e"/></marker></defs>
+<rect x="0" y="0" width="1600" height="900" fill="#fcfcfb"/>
+<text x="60" y="62" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:34px;font-weight:700;fill:#0b0b0b">Vue d'ensemble — qui parle à qui</text>
+<text x="60" y="96" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:normal;fill:#52514e;font-style:italic">Un VPS = une console, un exécuteur, un navigateur, un groupe de marchands. Deux VPS en parallèle.</text>
+<rect x="60" y="330" width="250" height="200" rx="14" ry="14" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="185.0" y="364" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">Opérateur</text>
+<text x="185.0" y="394" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">lance un groupe, un marchand</text>
+<text x="185.0" y="419" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">suit la page en cours</text>
+<text x="185.0" y="444" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">relit le récap</text>
+<text x="185.0" y="469" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">transfère les cookies</text>
+<text x="185.0" y="494" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">quand la session expire</text>
+<rect x="380" y="150" width="760" height="690" rx="22" ry="22" fill="#ffffff" stroke="#2a78d6" stroke-width="3" stroke-dasharray="10 8"/>
+<text x="400" y="190" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:22px;font-weight:600;fill:#2a78d6">VPS (×2 — chacun balaie un groupe de marchands, une nuit)</text>
+<rect x="420" y="220" width="300" height="150" rx="14" ry="14" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="570.0" y="254" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">Console d'admin</text>
+<text x="570.0" y="284" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">/executor/auto : groupes, pages</text>
+<text x="570.0" y="306" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">N→1, page en cours, récap, arrêt</text>
+<text x="570.0" y="328" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">/executor/tri : cookies (reconnexion)</text>
+<rect x="420" y="420" width="300" height="190" rx="14" ry="14" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="570.0" y="454" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">Exécuteur</text>
+<text x="570.0" y="484" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">scripts 02 → 05 par page :</text>
+<text x="570.0" y="506" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">extraction · matching · validation</text>
+<text x="570.0" y="528" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">· saisie · preuve</text>
+<text x="570.0" y="550" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">orchestrateur 10 (sweep),</text>
+<text x="570.0" y="572" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">StepGuard entre chaque étape</text>
+<rect x="420" y="660" width="300" height="150" rx="14" ry="14" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="570.0" y="694" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">Journal</text>
+<text x="570.0" y="724" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">logs/&lt;run&gt;.jsonl : chaque action</text>
+<text x="570.0" y="746" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">runs/&lt;run&gt;/ : offers, candidates,</text>
+<text x="570.0" y="768" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">approved, submit_plan, recap</text>
+<rect x="800" y="420" width="310" height="190" rx="14" ry="14" fill="#e9e6f7" stroke="#4a3aa7" stroke-width="2"/>
+<text x="955.0" y="454" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">Chrome piloté par CDP</text>
+<text x="955.0" y="484" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">session WordPress connectée</text>
+<text x="955.0" y="506" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">(cookies transférés par l'opérateur)</text>
+<text x="955.0" y="528" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">un seul onglet, un verrou :</text>
+<text x="955.0" y="550" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">un balayage à la fois par machine</text>
+<text x="955.0" y="572" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">UA officiel, endpoint officiel</text>
+<rect x="1220" y="200" width="330" height="230" rx="14" ry="14" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>
+<text x="1385.0" y="234" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">AKS — wp-admin</text>
+<text x="1385.0" y="264" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">outil « merchant feeds »</text>
+<text x="1385.0" y="289" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">Pending offers (liste 9)</text>
+<text x="1385.0" y="314" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">formulaire de création d'offre</text>
+<text x="1385.0" y="339" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">(région / édition / cibles)</text>
+<rect x="1220" y="480" width="330" height="200" rx="14" ry="14" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>
+<text x="1385.0" y="514" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">AKS — site public</text>
+<text x="1385.0" y="544" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">pages produit (éditions, régions,</text>
+<text x="1385.0" y="569" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">plateformes officielles)</text>
+<text x="1385.0" y="594" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">sitemap : 213 599 pages</text>
+<text x="1385.0" y="619" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">lecture HTTP, UA « AKS/Staff »</text>
+<rect x="1220" y="730" width="330" height="110" rx="14" ry="14" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="1385.0" y="764" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">Marchands</text>
+<text x="1385.0" y="794" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">feeds importés par AKS</text>
+<text x="1385.0" y="819" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">fiches produit (lues pour certains)</text>
+<line x1="310" y1="400" x2="420" y2="320" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)"/>
+<text x="365.0" y="346.0" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">navigateur</text>
+<line x1="570" y1="370" x2="570" y2="420" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)"/>
+<text x="640.0" y="395.0" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">lance, suit</text>
+<line x1="570" y1="610" x2="570" y2="660" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)"/>
+<text x="570.0" y="625.0" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">écrit</text>
+<line x1="720" y1="515" x2="800" y2="515" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)"/>
+<text x="760.0" y="503.0" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">CDP</text>
+<path d="M1110,470 L1170,470 L1170,315 L1220,315" fill="none" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)"/>
+<text x="1165" y="160" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">lit le feed · remplit · clique « Create »</text>
+<line x1="720" y1="560" x2="1220" y2="580" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)" stroke-dasharray="9 7"/>
+<text x="970.0" y="632.0" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">HTTP lecture seule (matching)</text>
+<line x1="1385" y1="730" x2="1385" y2="680" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)" stroke-dasharray="9 7"/>
+<text x="1395" y="712" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e;font-style:italic">import</text>
+<line x1="1385" y1="480" x2="1385" y2="430" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)" stroke-dasharray="9 7"/>
+<text x="1395" y="460" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e;font-style:italic">même catalogue</text>
+<path d="M1220,800 L1000,800 L1000,610" fill="none" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)" stroke-dasharray="9 7"/>
+<text x="1000" y="830" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">fiche marchand</text>
+</svg>

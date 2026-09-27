@@ -1,0 +1,25 @@
+%% Le parcours d'une offre dans le matching — source Mermaid
+flowchart TD
+    L[Ligne du feed<br/>titre · URL · marchand · prix]
+    P1{1 · Precheck}
+    P2{2 · Page AKS<br/>sitemap → slug → recherche bornée<br/>le nom doit correspondre R01}
+    P3{3 · Plateforme<br/>titre / URL / fiche<br/>la page doit la vendre R20}
+    P4{4 · Région<br/>grammaire du marchand → case AKS}
+    P5{5 · Édition<br/>Standard, Deluxe… · DLC R18/R43<br/>jeu + DLC → page du jeu R18c}
+    P6{6 · Cibles<br/>PC ; consoles : une page par plateforme déclarée<br/>Xbox + PC = Play Anywhere}
+    C([Candidate<br/>page(s) · plateforme · case · édition])
+
+    R1([refus : carte, monnaie, compte, bundle,<br/>région interdite, console sans génération])
+    R2([refus : pas de page AKS,<br/>produit différent ou élargi])
+    R3([refus : plateforme non vendue sur la page])
+    R4([refus : verrou non vendable,<br/>région absente et non implicite])
+    R5([refus : édition non vendue E06,<br/>palier absent de la page R18b])
+    R6([refus : page console absente<br/>tout ou rien, jamais une cible sur deux])
+
+    L --> P1 -->|ok| P2 -->|ok| P3 -->|ok| P4 -->|ok| P5 -->|ok| P6 -->|ok| C
+    P1 -->|refus| R1
+    P2 -->|refus| R2
+    P3 -->|refus| R3
+    P4 -->|refus| R4
+    P5 -->|refus| R5
+    P6 -->|refus| R6

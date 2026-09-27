@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-labelledby="t d">
+<title id="t">Les gardes fail-closed de la saisie</title>
+<desc id="d">De l'ouverture du navigateur à la preuve : invariants, StepGuard, validation, vérification de la ligne et de la modale, clic sur le vrai bouton, preuve de disparition. Sur les côtés, ce qui arrête tout et ce qui est repris.</desc>
+<defs><marker id="pointe" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#52514e"/></marker></defs>
+<rect x="0" y="0" width="1600" height="900" fill="#fcfcfb"/>
+<text x="60" y="62" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:34px;font-weight:700;fill:#0b0b0b">Fail-closed — on n'écrit que ce qu'on a prouvé, et on prouve ce qu'on a écrit</text>
+<text x="60" y="96" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:normal;fill:#52514e;font-style:italic">Chaque garde est du code déterministe et testé : jamais une appréciation « au jugé ».</text>
+<rect x="60" y="150" width="196" height="230" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<circle cx="88" cy="180" r="16" fill="#2a78d6"/>
+<text x="88" y="186" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;fill:#ffffff">1</text>
+<text x="114" y="186" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:600;fill:#0b0b0b">Invariants</text>
+<text x="76" y="224" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">VPS autoritaire,</text>
+<text x="76" y="244" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">endpoint CDP officiel,</text>
+<text x="76" y="264" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">UA officiel,</text>
+<text x="76" y="284" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">AKS joignable,</text>
+<text x="76" y="304" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">pas de VPN</text>
+<line x1="256" y1="265" x2="274" y2="265" stroke="#52514e" stroke-width="2" marker-end="url(#pointe)"/>
+<rect x="274" y="150" width="196" height="230" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<circle cx="302" cy="180" r="16" fill="#2a78d6"/>
+<text x="302" y="186" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;fill:#ffffff">2</text>
+<text x="328" y="186" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:600;fill:#0b0b0b">StepGuard</text>
+<text x="290" y="224" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">chaque étape rend</text>
+<text x="290" y="244" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">un résultat valide,</text>
+<text x="290" y="264" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">ou tout s'arrête ;</text>
+<text x="290" y="284" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">pas de « retry</text>
+<text x="290" y="304" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">en discutant »</text>
+<line x1="470" y1="265" x2="488" y2="265" stroke="#52514e" stroke-width="2" marker-end="url(#pointe)"/>
+<rect x="488" y="150" width="196" height="230" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<circle cx="516" cy="180" r="16" fill="#2a78d6"/>
+<text x="516" y="186" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;fill:#ffffff">3</text>
+<text x="542" y="186" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:600;fill:#0b0b0b">Validation</text>
+<text x="504" y="224" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">seul approved.json</text>
+<text x="504" y="244" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">est saisi ; son</text>
+<text x="504" y="264" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">empreinte est liée</text>
+<text x="504" y="284" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">à l'aperçu montré</text>
+<text x="504" y="304" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">au GO tapé</text>
+<line x1="684" y1="265" x2="702" y2="265" stroke="#52514e" stroke-width="2" marker-end="url(#pointe)"/>
+<rect x="702" y="150" width="196" height="230" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<circle cx="730" cy="180" r="16" fill="#2a78d6"/>
+<text x="730" y="186" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;fill:#ffffff">4</text>
+<text x="756" y="186" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:600;fill:#0b0b0b">La ligne</text>
+<text x="718" y="224" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">retrouvée sur le</text>
+<text x="718" y="244" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">feed courant : titre,</text>
+<text x="718" y="264" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">URL (identité) et</text>
+<text x="718" y="284" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">magasin vérifiés ;</text>
+<text x="718" y="304" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">sinon ignorée</text>
+<line x1="898" y1="265" x2="916" y2="265" stroke="#52514e" stroke-width="2" marker-end="url(#pointe)"/>
+<rect x="916" y="150" width="196" height="230" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<circle cx="944" cy="180" r="16" fill="#2a78d6"/>
+<text x="944" y="186" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;fill:#ffffff">5</text>
+<text x="970" y="186" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:600;fill:#0b0b0b">La modale</text>
+<text x="932" y="224" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">ouverte depuis</text>
+<text x="932" y="244" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">CETTE ligne ;</text>
+<text x="932" y="264" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">contexte vérifié ;</text>
+<text x="932" y="284" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">champs visibles :</text>
+<text x="932" y="304" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">région, édition, cibles</text>
+<line x1="1112" y1="265" x2="1130" y2="265" stroke="#52514e" stroke-width="2" marker-end="url(#pointe)"/>
+<rect x="1130" y="150" width="196" height="230" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<circle cx="1158" cy="180" r="16" fill="#2a78d6"/>
+<text x="1158" y="186" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;fill:#ffffff">6</text>
+<text x="1184" y="186" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:600;fill:#0b0b0b">Le clic</text>
+<text x="1146" y="224" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">le vrai bouton</text>
+<text x="1146" y="244" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">« Create », visible ;</text>
+<text x="1146" y="264" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">jamais un appel</text>
+<text x="1146" y="284" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">AJAX fabriqué</text>
+<line x1="1326" y1="265" x2="1344" y2="265" stroke="#52514e" stroke-width="2" marker-end="url(#pointe)"/>
+<rect x="1344" y="150" width="196" height="230" rx="12" ry="12" fill="#e0f5ec" stroke="#1baf7a" stroke-width="2"/>
+<circle cx="1372" cy="180" r="16" fill="#1baf7a"/>
+<text x="1372" y="186" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;fill:#ffffff">7</text>
+<text x="1398" y="186" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:600;fill:#0b0b0b">La preuve</text>
+<text x="1360" y="224" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">feed rafraîchi,</text>
+<text x="1360" y="244" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">même liste, même</text>
+<text x="1360" y="264" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">mode : l'offre a</text>
+<text x="1360" y="284" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">disparu = succès.</text>
+<text x="1360" y="304" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">Jamais un message</text>
+<text x="1360" y="324" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">de la page</text>
+<text x="60" y="440" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:22px;font-weight:700;fill:#e34948">Ce qui ARRÊTE (jamais repris automatiquement)</text>
+<rect x="60" y="470" width="720" height="52" rx="10" ry="10" fill="#fbe1e1" stroke="#e34948" stroke-width="2"/>
+<text x="76" y="492" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:600;fill:#0b0b0b">État inconnu après un clic</text>
+<text x="76" y="512" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">feed illisible ou session perdue juste après « Create » : arrêt, vérification à la main</text>
+<rect x="60" y="532" width="720" height="52" rx="10" ry="10" fill="#fbe1e1" stroke="#e34948" stroke-width="2"/>
+<text x="76" y="554" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:600;fill:#0b0b0b">Dix échecs d'affilée</text>
+<text x="76" y="574" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">garde inter-processus (guard ledger) : une série d'échecs arrête le marchand, la console le montre</text>
+<rect x="60" y="594" width="720" height="52" rx="10" ry="10" fill="#fbe1e1" stroke="#e34948" stroke-width="2"/>
+<text x="76" y="616" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:600;fill:#0b0b0b">Session perdue</text>
+<text x="76" y="636" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">arrêt du marchand ; la reconnexion est un transfert de cookies fait par l'opérateur, jamais par le code</text>
+<rect x="60" y="656" width="720" height="52" rx="10" ry="10" fill="#fbe1e1" stroke="#e34948" stroke-width="2"/>
+<text x="76" y="678" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:600;fill:#0b0b0b">Garde StepGuard bloquée</text>
+<text x="76" y="698" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">un fichier absent, illisible ou incohérent entre deux étapes : arrêt et rapport d'erreur</text>
+<text x="820" y="440" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:22px;font-weight:700;fill:#1baf7a">Ce qui est REPRIS (rien n'a pu être écrit)</text>
+<rect x="820" y="470" width="720" height="52" rx="10" ry="10" fill="#e0f5ec" stroke="#1baf7a" stroke-width="2"/>
+<text x="836" y="492" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:600;fill:#0b0b0b">Navigateur muet à la lecture</text>
+<text x="836" y="512" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">extraction ou sonde qui n'obtient pas de réponse : page refaite après 2, 5 puis 10 min</text>
+<rect x="820" y="532" width="720" height="52" rx="10" ry="10" fill="#e0f5ec" stroke="#1baf7a" stroke-width="2"/>
+<text x="836" y="554" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:600;fill:#0b0b0b">Feed illisible avant la première offre</text>
+<text x="836" y="574" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">contrôle de connexion, catalogue, scan d'index : aucune offre ouverte, aucun clic → reprise</text>
+<rect x="820" y="594" width="720" height="52" rx="10" ry="10" fill="#e0f5ec" stroke="#1baf7a" stroke-width="2"/>
+<text x="836" y="616" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:600;fill:#0b0b0b">Panne avant le clic « Create »</text>
+<text x="836" y="636" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">la modale n'a pas été soumise : l'offre est intacte → reprise de la page</text>
+<rect x="820" y="656" width="720" height="52" rx="10" ry="10" fill="#e0f5ec" stroke="#1baf7a" stroke-width="2"/>
+<text x="836" y="678" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:600;fill:#0b0b0b">Un doute sur une offre = un refus</text>
+<text x="836" y="698" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">pas une reprise, pas une valeur par défaut : la ligne reste au feed pour un humain</text>
+<rect x="60" y="740" width="1480" height="110" rx="14" ry="14" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="800.0" y="774" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">Hors du code, deux règles humaines : le submit n'est jamais « lancé et oublié » (processus attaché ou supervisé, code de sortie et plan relus avant toute suite),</text>
+<text x="800.0" y="796" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">et une décision de Romain devient une règle écrite, un test qui la fige, et une entrée « décision revue » pour qu'un audit futur ne la défasse pas.</text>
+</svg>

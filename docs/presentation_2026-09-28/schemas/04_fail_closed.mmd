@@ -1,0 +1,25 @@
+%% Les gardes fail-closed de la saisie — source Mermaid
+flowchart LR
+    I[1 · Invariants<br/>VPS autoritaire · CDP officiel<br/>UA officiel · AKS joignable]
+    G[2 · StepGuard<br/>résultat valide ou arrêt]
+    V[3 · Validation<br/>seul approved.json est saisi<br/>empreinte liée au GO]
+    L[4 · La ligne<br/>retrouvée : titre, URL, magasin]
+    M[5 · La modale<br/>ouverte depuis CETTE ligne<br/>contexte vérifié, champs visibles]
+    K[6 · Le clic<br/>le vrai bouton « Create »]
+    P[7 · La preuve<br/>feed rafraîchi : l'offre a disparu]
+
+    I --> G --> V --> L --> M --> K --> P
+
+    subgraph ARRET[Ce qui ARRÊTE — jamais repris automatiquement]
+        A1[état inconnu après un clic]
+        A2[dix échecs d'affilée]
+        A3[session perdue → cookies transférés par l'opérateur]
+        A4[garde StepGuard bloquée]
+    end
+    subgraph REPRISE[Ce qui est REPRIS — rien n'a pu être écrit]
+        B1[navigateur muet à la lecture → 2, 5, 10 min]
+        B2[feed illisible avant la première offre]
+        B3[panne avant le clic « Create »]
+    end
+    P -.-> ARRET
+    L -.-> REPRISE

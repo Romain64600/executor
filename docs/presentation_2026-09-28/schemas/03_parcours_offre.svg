@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-labelledby="t d">
+<title id="t">Le parcours d'une offre dans le matching</title>
+<desc id="d">Une ligne du feed traverse six décisions : precheck, page AKS, plateforme, région, édition, cibles. À chaque étape, un refus explicite est possible ; ce qui reste est une candidate.</desc>
+<defs><marker id="pointe" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#52514e"/></marker></defs>
+<rect x="0" y="0" width="1600" height="900" fill="#fcfcfb"/>
+<text x="60" y="62" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:34px;font-weight:700;fill:#0b0b0b">Le parcours d'une offre — six décisions, et un refus possible à chacune</text>
+<text x="60" y="96" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:normal;fill:#52514e;font-style:italic">Chaque décision est une règle écrite ([Rnn] dans EXECUTOR_RULES.md) ou une grammaire propre au marchand (src/merchants/&lt;marchand&gt;.py).</text>
+<rect x="330" y="120" width="620" height="90" rx="12" ry="12" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="350" y="150" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:21px;font-weight:600;fill:#0b0b0b">Ligne du feed</text>
+<text x="350" y="172" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">titre · URL · marchand · prix</text>
+<text x="350" y="189" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">« Dune: Awakening US PS5 CD Key »</text>
+<line x1="640.0" y1="210" x2="640.0" y2="216" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)"/>
+<rect x="330" y="216" width="620" height="90" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="350" y="246" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:21px;font-weight:600;fill:#0b0b0b">1 · Precheck</text>
+<text x="350" y="268" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">catégories hors jeu (cartes, monnaies,</text>
+<text x="350" y="285" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">comptes, bundles…), régions interdites,</text>
+<text x="350" y="302" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">console sans génération lisible</text>
+<line x1="640.0" y1="306" x2="640.0" y2="312" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)"/>
+<rect x="1010" y="222" width="520" height="78" rx="10" ry="10" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>
+<text x="1026" y="246" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:600;fill:#eb6834">refus typiques :</text>
+<text x="1026" y="266" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">carte cadeau, points, compte</text>
+<text x="1026" y="282" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">région ROW / Amérique du Nord</text>
+<text x="1026" y="298" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">PlayStation sans PS4/PS5</text>
+<line x1="950" y1="261.0" x2="1010" y2="261.0" stroke="#eb6834" stroke-width="2" marker-end="url(#pointe)"/>
+<rect x="330" y="312" width="620" height="90" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="350" y="342" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:21px;font-weight:600;fill:#0b0b0b">2 · Page AKS</text>
+<text x="350" y="364" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">sitemap d'abord (213 599 pages),</text>
+<text x="350" y="381" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">puis le slug, puis une recherche bornée ;</text>
+<text x="350" y="398" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">le nom doit correspondre (R01)</text>
+<line x1="640.0" y1="402" x2="640.0" y2="408" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)"/>
+<rect x="1010" y="318" width="520" height="78" rx="10" ry="10" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>
+<text x="1026" y="342" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:600;fill:#eb6834">refus typiques :</text>
+<text x="1026" y="362" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">pas de page AKS</text>
+<text x="1026" y="378" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">produit différent ou élargi</text>
+<line x1="950" y1="357.0" x2="1010" y2="357.0" stroke="#eb6834" stroke-width="2" marker-end="url(#pointe)"/>
+<rect x="330" y="408" width="620" height="90" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="350" y="438" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:21px;font-weight:600;fill:#0b0b0b">3 · Plateforme</text>
+<text x="350" y="460" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">Steam, Epic, GOG, Ubisoft, EA, Microsoft…</text>
+<text x="350" y="477" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">lue dans le titre, l'URL ou la fiche ;</text>
+<text x="350" y="494" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">la page AKS doit la vendre (R20)</text>
+<line x1="640.0" y1="498" x2="640.0" y2="504" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)"/>
+<rect x="1010" y="414" width="520" height="78" rx="10" ry="10" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>
+<text x="1026" y="438" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:600;fill:#eb6834">refus typiques :</text>
+<text x="1026" y="458" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">plateforme non vendue sur la page</text>
+<text x="1026" y="474" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">« PC » sans boutique (sauf règle marchand)</text>
+<line x1="950" y1="453.0" x2="1010" y2="453.0" stroke="#eb6834" stroke-width="2" marker-end="url(#pointe)"/>
+<rect x="330" y="504" width="620" height="90" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="350" y="534" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:21px;font-weight:600;fill:#0b0b0b">4 · Région</text>
+<text x="350" y="556" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">grammaire du marchand → case AKS :</text>
+<text x="350" y="573" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">GLOBAL (2), EU (9), US (8)… ;</text>
+<text x="350" y="590" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">consoles : PS5 EU → 88eu, Xbox US → 24us</text>
+<line x1="640.0" y1="594" x2="640.0" y2="600" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)"/>
+<rect x="1010" y="510" width="520" height="78" rx="10" ry="10" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>
+<text x="1026" y="534" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:600;fill:#eb6834">refus typiques :</text>
+<text x="1026" y="554" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">verrou non vendable</text>
+<text x="1026" y="570" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">région absente et non implicite</text>
+<line x1="950" y1="549.0" x2="1010" y2="549.0" stroke="#eb6834" stroke-width="2" marker-end="url(#pointe)"/>
+<rect x="330" y="600" width="620" height="90" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="350" y="630" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:21px;font-weight:600;fill:#0b0b0b">5 · Édition</text>
+<text x="350" y="652" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">Standard, Deluxe, Ultimate… ; DLC par R18/R43 ;</text>
+<text x="350" y="669" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">« &lt;Jeu&gt; &lt;X&gt; Edition » = jeu + DLC →</text>
+<text x="350" y="686" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">page du jeu, édition « X Edition » (R18c)</text>
+<line x1="640.0" y1="690" x2="640.0" y2="696" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)"/>
+<rect x="1010" y="606" width="520" height="78" rx="10" ry="10" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>
+<text x="1026" y="630" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:600;fill:#eb6834">refus typiques :</text>
+<text x="1026" y="650" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">édition non vendue sur la page (E06)</text>
+<text x="1026" y="666" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">palier absent de la page (R18b)</text>
+<line x1="950" y1="645.0" x2="1010" y2="645.0" stroke="#eb6834" stroke-width="2" marker-end="url(#pointe)"/>
+<rect x="330" y="696" width="620" height="90" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="350" y="726" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:21px;font-weight:600;fill:#0b0b0b">6 · Cibles</text>
+<text x="350" y="748" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">PC : la page ; consoles : une page par</text>
+<text x="350" y="765" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">plateforme déclarée (PS4/PS5, One/Series,</text>
+<text x="350" y="782" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">Switch) ; Xbox + PC = Play Anywhere</text>
+<rect x="1010" y="702" width="520" height="78" rx="10" ry="10" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>
+<text x="1026" y="726" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:600;fill:#eb6834">refus typiques :</text>
+<text x="1026" y="746" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">page console absente</text>
+<text x="1026" y="762" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">tout ou rien : jamais une cible sur deux</text>
+<line x1="950" y1="741.0" x2="1010" y2="741.0" stroke="#eb6834" stroke-width="2" marker-end="url(#pointe)"/>
+<rect x="330" y="792" width="620" height="70" rx="12" ry="12" fill="#e0f5ec" stroke="#1baf7a" stroke-width="2"/>
+<text x="640.0" y="822" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:22px;font-weight:700;fill:#0b0b0b">Candidate</text>
+<text x="640.0" y="846" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:14px;font-weight:normal;fill:#52514e">page(s) AKS · plateforme · case de région · édition — prête pour la validation, puis la saisie</text>
+<text x="60" y="200" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">Ce qui décide :</text>
+<text x="60" y="224" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e"></text>
+<text x="60" y="248" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">• le fichier du marchand</text>
+<text x="60" y="272" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">  (21 fichiers, un par</text>
+<text x="60" y="296" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">  marchand en liste blanche)</text>
+<text x="60" y="320" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e"></text>
+<text x="60" y="344" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">• les règles générales</text>
+<text x="60" y="368" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">  [R01] … [R62]</text>
+<text x="60" y="392" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e"></text>
+<text x="60" y="416" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">• jamais le prix</text>
+<text x="60" y="440" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">  (signal de routage,</text>
+<text x="60" y="464" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">  pas un juge)</text>
+<text x="60" y="488" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e"></text>
+<text x="60" y="512" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">• au moindre doute :</text>
+<text x="60" y="536" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">  refus explicite,</text>
+<text x="60" y="560" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">  jamais une valeur</text>
+<text x="60" y="584" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">  par défaut</text>
+</svg>

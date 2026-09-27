@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" role="img" aria-labelledby="t d">
+<title id="t">Le pipeline d'une page du feed</title>
+<desc id="d">Cinq étapes enchaînées par page : extraction, matching, validation, saisie, preuve. Chaque étape lit et écrit des fichiers du run ; StepGuard sépare les étapes ; le journal JSONL reçoit chaque action.</desc>
+<defs><marker id="pointe" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#52514e"/></marker></defs>
+<rect x="0" y="0" width="1600" height="900" fill="#fcfcfb"/>
+<text x="60" y="62" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:34px;font-weight:700;fill:#0b0b0b">Le pipeline — ce qui arrive à UNE page du feed (100 offres)</text>
+<text x="60" y="96" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:20px;font-weight:normal;fill:#52514e;font-style:italic">Le balayage prend les pages de la plus haute à la 1 ; chaque page repasse par les cinq étapes, avec le code du moment.</text>
+<rect x="60" y="150" width="280" height="300" rx="14" ry="14" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="200.0" y="184" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">1 · Extraction</text>
+<text x="200.0" y="214" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">02_extract_feed</text>
+<text x="200.0" y="236" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e"></text>
+<text x="200.0" y="258" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">lit la page du feed</text>
+<text x="200.0" y="280" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">via le navigateur (CDP)</text>
+<text x="200.0" y="302" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">lecture seule</text>
+<rect x="80" y="480" width="240" height="100" rx="14" ry="14" fill="#ffffff" stroke="#c9c7c0" stroke-width="2"/>
+<text x="200.0" y="514" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">offers.json</text>
+<text x="200.0" y="538" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">raw.json</text>
+<text x="200.0" y="472" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e;font-style:italic">écrit</text>
+<line x1="200.0" y1="450" x2="200.0" y2="480" stroke="#52514e" stroke-width="2" marker-end="url(#pointe)"/>
+<line x1="340" y1="270" x2="362" y2="270" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)"/>
+<circle cx="351.0" cy="210" r="14" fill="#52514e"/>
+<text x="351.0" y="216" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:700;fill:#ffffff">G</text>
+<rect x="362" y="150" width="280" height="300" rx="14" ry="14" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
+<text x="502.0" y="184" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">2 · Matching</text>
+<text x="502.0" y="214" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">03_match</text>
+<text x="502.0" y="236" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e"></text>
+<text x="502.0" y="258" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">règles + HTTP lecture seule</text>
+<text x="502.0" y="280" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">sitemap → page AKS → plateforme,</text>
+<text x="502.0" y="302" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">région, édition, cibles</text>
+<rect x="382" y="480" width="240" height="130" rx="14" ry="14" fill="#ffffff" stroke="#c9c7c0" stroke-width="2"/>
+<text x="502.0" y="514" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">candidates.json</text>
+<text x="502.0" y="538" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">skipped.json</text>
+<text x="502.0" y="562" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">report.txt</text>
+<text x="502.0" y="472" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e;font-style:italic">écrit</text>
+<line x1="502.0" y1="450" x2="502.0" y2="480" stroke="#52514e" stroke-width="2" marker-end="url(#pointe)"/>
+<line x1="642" y1="270" x2="664" y2="270" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)"/>
+<circle cx="653.0" cy="210" r="14" fill="#52514e"/>
+<text x="653.0" y="216" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:700;fill:#ffffff">G</text>
+<rect x="664" y="150" width="280" height="300" rx="14" ry="14" fill="#e9e6f7" stroke="#4a3aa7" stroke-width="2"/>
+<text x="804.0" y="184" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">3 · Validation</text>
+<text x="804.0" y="214" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">approve</text>
+<text x="804.0" y="236" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e"></text>
+<text x="804.0" y="258" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">le lot validé est figé</text>
+<text x="804.0" y="280" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">(mode safe : tout le lot ;</text>
+<text x="804.0" y="302" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">learning/advanced : canary de 1)</text>
+<rect x="684" y="480" width="240" height="100" rx="14" ry="14" fill="#ffffff" stroke="#c9c7c0" stroke-width="2"/>
+<text x="804.0" y="514" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">approved.json</text>
+<text x="804.0" y="538" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">validation.json</text>
+<text x="804.0" y="472" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e;font-style:italic">écrit</text>
+<line x1="804.0" y1="450" x2="804.0" y2="480" stroke="#52514e" stroke-width="2" marker-end="url(#pointe)"/>
+<line x1="944" y1="270" x2="966" y2="270" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)"/>
+<circle cx="955.0" cy="210" r="14" fill="#52514e"/>
+<text x="955.0" y="216" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:700;fill:#ffffff">G</text>
+<rect x="966" y="150" width="280" height="300" rx="14" ry="14" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>
+<text x="1106.0" y="184" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">4 · Saisie</text>
+<text x="1106.0" y="214" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">05_submit</text>
+<text x="1106.0" y="236" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e"></text>
+<text x="1106.0" y="258" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">pour chaque candidate :</text>
+<text x="1106.0" y="280" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">retrouver la ligne (titre, URL,</text>
+<text x="1106.0" y="302" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">magasin), ouvrir la modale,</text>
+<text x="1106.0" y="324" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">vérifier, remplir, « Create »</text>
+<rect x="986" y="480" width="240" height="100" rx="14" ry="14" fill="#ffffff" stroke="#c9c7c0" stroke-width="2"/>
+<text x="1106.0" y="514" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">submit_plan.json</text>
+<text x="1106.0" y="538" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">guard_ledger.json</text>
+<text x="1106.0" y="472" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e;font-style:italic">écrit</text>
+<line x1="1106.0" y1="450" x2="1106.0" y2="480" stroke="#52514e" stroke-width="2" marker-end="url(#pointe)"/>
+<line x1="1246" y1="270" x2="1268" y2="270" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)"/>
+<circle cx="1257.0" cy="210" r="14" fill="#52514e"/>
+<text x="1257.0" y="216" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:700;fill:#ffffff">G</text>
+<rect x="1268" y="150" width="280" height="300" rx="14" ry="14" fill="#e0f5ec" stroke="#1baf7a" stroke-width="2"/>
+<text x="1408.0" y="184" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">5 · Preuve</text>
+<text x="1408.0" y="214" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">dans le submitter</text>
+<text x="1408.0" y="236" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e"></text>
+<text x="1408.0" y="258" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">feed rafraîchi :</text>
+<text x="1408.0" y="280" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">l'offre a disparu = succès</text>
+<text x="1408.0" y="302" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">sinon échec ; illisible après</text>
+<text x="1408.0" y="324" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:17px;font-weight:normal;fill:#52514e">un clic = état INCONNU → arrêt</text>
+<rect x="1288" y="480" width="240" height="100" rx="14" ry="14" fill="#ffffff" stroke="#c9c7c0" stroke-width="2"/>
+<text x="1408.0" y="514" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">submit_report.txt</text>
+<text x="1408.0" y="538" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">recap.json</text>
+<text x="1408.0" y="472" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e;font-style:italic">écrit</text>
+<line x1="1408.0" y1="450" x2="1408.0" y2="480" stroke="#52514e" stroke-width="2" marker-end="url(#pointe)"/>
+<text x="60" y="128" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e;font-style:italic">G = StepGuard : l'étape suivante ne démarre que si la précédente a rendu un résultat valide (fichier présent, lisible, complet). Un blocage = arrêt, pas de reprise « en discutant ».</text>
+<rect x="60" y="640" width="1480" height="100" rx="14" ry="14" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
+<text x="800.0" y="674" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">Journal logs/&lt;run&gt;.jsonl — une ligne par action, horodatée : feed_page, match_progress, validation_saved, submit_offer (success, post_save), run_stopped…</text>
+<text x="800.0" y="698" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">recap.json — l'état du balayage, lu par la console : marchand, page en cours et son étape, créées, échecs, arrêts.</text>
+<rect x="60" y="770" width="1480" height="90" rx="14" ry="14" fill="#ffffff" stroke="#c9c7c0" stroke-width="2"/>
+<text x="800.0" y="804" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">Après la dernière page : le marchand suivant du groupe. Un arrêt fail-closed (état inconnu, 10 échecs, session perdue) arrête CE marchand ; le groupe continue.</text>
+<text x="800.0" y="828" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">Une panne passagère AVANT toute écriture (navigateur muet, feed illisible) : la page est refaite après 2, 5 puis 10 min, trois fois au plus.</text>
+</svg>
