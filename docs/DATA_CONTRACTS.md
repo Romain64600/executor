@@ -878,6 +878,39 @@ de 30 h volait donc le marqueur : le sweep devenait INVISIBLE dans les consoles,
 Le sweep rend maintenant son marqueur à la FIN de `main()`, pas seulement à l'`atexit`.
 
 
+## `runs/<run>/loop.json` — la BOUCLE d'un balayage (2026-09-27)
+
+Romain : « 5 min de pause, sans limite, go pour la boucle ». `scripts/10 --loop` enchaîne des
+PASSES dans le même processus ; le dossier du LANCEMENT (`runs/<run-id>/`, celui du marqueur)
+porte l'état de la boucle, écrit atomiquement (`src/sweep_loop.py`) :
+
+```json
+{"run_id": "20260927-100000-auto", "loop": true, "dry_run": false,
+ "pause_s": 300, "empty_pause_s": 1800, "notify_configured": true,
+ "state": "running" | "pause" | "stopped", "pass": 3, "current_run_id": "20260927-100000-auto-pass3",
+ "started_at": "…Z", "updated_at": "…Z", "next_pass_at": "…Z" | null,
+ "targets": [{"merchant": "Gamivo", "store_id": "51"}, …],
+ "passes": [{"pass": 1, "run_id": "20260927-100000-auto", "started_at": "…Z", "finished_at": "…Z",
+             "total_created": 1343, "halted": null | "…", "halted_merchants": 2}, …],
+ "totals": {"created": 1553, "passes_finished": 2},
+ "stopped_reason": null | "operator_stop" | "session_expired" | "guard_blocked" | "all_merchants_halted",
+ "stopped_label": null | "session expirée — transfert de cookies requis", "stopped_at": null | "…Z"}
+```
+
+- **Une passe = un recap.** La passe 1 EST le lancement (`runs/<run-id>/recap.json`, inchangé) ;
+  la passe N ≥ 2 vit dans `runs/<run-id>-passN/recap.json`, ses pages dans
+  `runs/<run-id>-passN-<slug>-s<store>-p<page>/`. Un recap de passe porte `loop_pass` (n°) et
+  `launch_run_id` ; hors boucle, ces clés n'existent pas et rien ne change.
+- **`current_run_id`** est ce que `/api/data-entry/recap?run=<lancement>` sert : la route
+  renvoie le recap de la passe courante, `pass_run_id`, et `loop` (ce fichier). La console
+  suit toujours le run du lancement (le marqueur) et affiche le bandeau de la boucle.
+- **`state`** : `running` (une passe tourne), `pause` (`next_pass_at` dit quand la suivante
+  démarre ; `updated_at` bat toutes les ~60 s), `stopped` (avec `stopped_reason` /
+  `stopped_label`). Un arrêt opérateur pendant la pause est `stopped_reason: "operator_stop"`.
+- **`targets`** : la liste de cibles de CHAQUE passe (le groupe détendu au lancement). Les
+  ajouts « en cours de run » (`targets_queue.json`, ci-dessous) valent pour la passe où ils sont
+  pris.
+
 ## `runs/<run>/targets_queue.json` — ajouter un marchand à un sweep EN COURS (2026-09-19)
 
 Romain : « On a l'option pour ajouter un marchand à un sweep en cours ? ». Il n'y en avait
@@ -895,6 +928,14 @@ le balayage en cours.
 SEUL écrivain du fichier : elle lit, ajoute, réécrit atomiquement, sous son mutex. Le sweep est
 le SEUL lecteur : il ne réécrit jamais ce fichier, il retient en mémoire ce qu'il a déjà pris.
 Il n'y a donc aucune lecture-modification-écriture concurrente sur la file.
+
+**En BOUCLE (2026-09-27).** La file reste celle du dossier du LANCEMENT (la console y écrit,
+le marqueur porte cet id) ; chaque passe la relit et ignore ce que les passes précédentes ont
+déjà pris, refusé ou reconnu déjà cible (`consumed`, en mémoire). Un ajout vaut donc pour la
+passe où il est pris — la suivante repart sur le groupe seul ; une entrée arrivée TARD (après la
+dernière relecture d'une passe, ou pendant la pause) est prise par la passe suivante, à sa
+première relecture. Tant que la boucle vit (`state` running / pause), la console n'oppose
+jamais « le sweep se termine » : elle lit le recap de la passe courante pour les doublons.
 
 **L'état « fermée » vit dans le recap, pas dans un fichier à part.** `recap["queue_closed"]`
 est écrit par le sweep, atomiquement (`persist()`), et relu par la console à chaque ajout — elle

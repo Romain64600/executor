@@ -110,6 +110,33 @@ test("avec GO, le clic envoie le NOM du groupe — jamais une liste de cibles", 
                "un run en cours : l'autre groupe reste hors de portée sur CETTE machine");
 });
 
+test("la case « Boucler » voyage avec le groupe, en vrai booléen (Romain, 2026-09-27)", async () => {
+  // « 5 min de pause, sans limite, go pour la boucle » — décochée par défaut : un groupe
+  // lancé comme avant ne boucle pas ; cochée, `loop: true` part, le serveur fait le reste.
+  const c = await demarrer();
+  c.$("#go").value = "GO";
+  await c.$("#go").fire("input");
+  await tick();
+  c.$("#launch-group-A").fire("click");
+  await tick();
+  let envoi = c.net.calls.filter((x) => x.method === "POST" && x.url.includes("data-entry/auto")).pop();
+  assert.ok(envoi, "aucun lancement n'est parti");
+  assert.equal(envoi.body.loop, false, "sans la case, pas de boucle : " + JSON.stringify(envoi.body));
+  await c.net.release("data-entry/auto", { error: { message: "occupé" } }, false).catch(() => {});
+  await tick();
+  const c2 = await demarrer();
+  c2.$("#go").value = "GO";
+  await c2.$("#go").fire("input");
+  c2.$("#loop").checked = true;
+  await tick();
+  c2.$("#launch-group-B").fire("click");
+  await tick();
+  envoi = c2.net.calls.filter((x) => x.method === "POST" && x.url.includes("data-entry/auto")).pop();
+  assert.ok(envoi, "aucun lancement n'est parti (B)");
+  assert.equal(envoi.body.loop, true, "la case cochée doit voyager en `loop: true`");
+  assert.equal(envoi.body.group, "B");
+});
+
 test("la liste balayée est proposée, la Pending par défaut", async () => {
   const c = await demarrer();
   const sel = c.$("#work-list");

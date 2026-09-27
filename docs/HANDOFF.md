@@ -352,6 +352,13 @@ Ces décisions sont dans `AGENTS.md` § « Reviewed decisions ». Rappel :
 
 ## 6. Gotchas opérationnels (non évidents, étaient en mémoire)
 
+- **Boucle (2026-09-27, `--loop` / case « Boucler »)** : le marqueur `state/active_run.json`
+  porte l'id du LANCEMENT pendant toute la boucle ; la passe N vit dans `runs/<run-id>-passN/`
+  et `runs/<run-id>/loop.json` dit la passe courante (la console et `/api/data-entry/recap` le
+  lisent). Elle s'arrête seule sur une déconnexion (→ transfert de cookies), un garde bloqué, ou
+  une passe où tous les marchands se sont arrêtés. **Discord** : `AKS_DISCORD_WEBHOOK=https://…`
+  dans `.env` à la racine du clone live de chaque VPS, relu à chaque lancement (pas de
+  redémarrage) ; jamais commité, jamais journalisé.
 - **Succès submit = `prove-gone`** : l'offre a disparu du feed rafraîchi (même `available`
   mode que le run). **JAMAIS** `[data-success]` (faux positif prouvé — selectize silencieux).
   C'est LA règle du skill (`docs/EXECUTOR_RULES.md §7`). Ne jamais faire confiance au toast
@@ -445,6 +452,7 @@ python3 scripts/10_data_entry_auto.py --all-allowlisted --run-id <id> --max-page
 python3 scripts/10_data_entry_auto.py --targets "Kinguin:58,Eneba:19" --run-id <id> --dry-run   # APERÇU read-only (extract + match + plan, rien d'écrit)
 python3 scripts/10_data_entry_auto.py --targets "Kinguin:58,Eneba:19" --run-id <id>             # WRITE auto-approuvé (safe, défaut --max-pages 30) — sur GO
 python3 scripts/10_data_entry_auto.py --targets "Kinguin:58" --max-pages 30 --triage            # + plan Move-to-List des skips (WRITE) — sur GO
+python3 scripts/10_data_entry_auto.py --group B --all-pages --run-id <id> --continue-on-halt --sitemap-refresh --loop   # BOUCLE (2026-09-27) : passes sans limite, 5 min entre deux, jusqu'à Ctrl-C / « Arrêter »
 # Cap atteint = champ coverage du recap (pas une halte) ; le lot continue.
 # Recap live : runs/<run-id>/recap.json (par page, incrémental).
 ```

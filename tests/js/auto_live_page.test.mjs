@@ -67,6 +67,44 @@ test("SAISIE : la page en cours et ses compteurs, lus dans le journal de la page
   assert.ok(texte.includes("depuis 10:03 UTC"), "l'heure de l'étape : " + texte);
 });
 
+test("BOUCLE : le bandeau dit la passe, les passes finies et la prochaine (Romain, 2026-09-27)", async () => {
+  const dans4min = new Date(Date.now() + 4 * 60000).toISOString().replace(/\.\d{3}Z$/, "Z");
+  const rec = Object.assign(recap(null, { finished_at: "2026-09-26T12:00:00Z", total_created: 7 }), {
+    pass_run_id: SWEEP + "-pass2",
+    loop: { state: "pause", pass: 2, pause_s: 300, next_pass_at: dans4min,
+            passes: [{ pass: 1, run_id: SWEEP, finished_at: "t", total_created: 1343 },
+                     { pass: 2, run_id: SWEEP + "-pass2", finished_at: "t", total_created: 7 }] },
+  });
+  const c = await adopter(rec);
+  const bandeau = c.$("#loop-banner").textContent;
+  assert.ok(bandeau.includes("Boucle : passe 2 finie"), "la passe : " + bandeau);
+  assert.ok(bandeau.includes("2 passe(s) finie(s) (1343 + 7 créées)"), "les passes finies et leurs créations : " + bandeau);
+  assert.ok(bandeau.includes("prochaine passe (n° 3) dans 4 min"), "la prochaine passe : " + bandeau);
+  assert.ok(c.$("#recap-run").textContent.includes(SWEEP + "-pass2"), "le recap affiché est celui de la passe courante");
+  assert.ok(c.$("#stop-btn").has("click"), "« Arrêter » reste là, pause comprise");
+  assert.equal(c.$("#stop-btn").disabled, false, "…et actif");
+});
+
+test("BOUCLE arrêtée : le motif s'affiche et clôt le suivi", async () => {
+  const rec = Object.assign(recap(null, { finished_at: "2026-09-26T12:00:00Z", total_created: 0 }), {
+    loop: { state: "stopped", pass: 3, pause_s: 300, stopped_reason: "session_expired",
+            stopped_label: "session expirée — transfert de cookies requis",
+            passes: [{ pass: 1, run_id: SWEEP, finished_at: "t", total_created: 12 },
+                     { pass: 2, run_id: SWEEP + "-pass2", finished_at: "t", total_created: 3 },
+                     { pass: 3, run_id: SWEEP + "-pass3", finished_at: "t", total_created: 0 }] },
+  });
+  const c = await loadConsole(AUTO);
+  await c.net.release("api/data-entry/merchants", MARCHANDS);
+  await c.net.release("api/sort/runs", OCCUPE);          // resumeIfActive : un run adopté…
+  await c.net.release("api/sort/runs", { busy: null, runs: [] });   // …qui vient de finir
+  await c.net.release("data-entry/recap?run=" + SWEEP, rec);
+  await tick();
+  const bandeau = c.$("#loop-banner").textContent;
+  assert.ok(bandeau.includes("Boucle arrêtée après 3 passe(s) finie(s) (12 + 3 + 0 créées) : session expirée"), bandeau);
+  assert.ok(c.$("#loop-banner").className.includes("stopped"), "le bandeau d'arrêt est marqué");
+  assert.ok(c.$("#status").textContent.includes("Boucle arrêtée"), "le statut final dit l'arrêt de la boucle : " + c.$("#status").textContent);
+});
+
 test("MATCHING : l'étape s'affiche, sans aller chercher de compteurs", async () => {
   const c = await adopter(recap({ page: 5, run: SWEEP + "-x-s1-p5", stage: "match", offers: 100,
                                   since: "2026-09-26T10:00:00Z", stage_at: "2026-09-26T10:01:00Z" }));

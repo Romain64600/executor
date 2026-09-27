@@ -129,3 +129,7 @@ footer#status.busy { color:var(--warn); }
 .group-lists { margin-top: .5rem; font-size: .85rem; line-height: 1.5; }
 .group-list { margin: .15rem 0; }
 .group-list .dim-inline { opacity: .7; }
+/* La BOUCLE (Romain, 2026-09-27) : l'état des passes sous le titre du recap. */
+.loop-banner { margin:.3rem 0 .6rem; padding:.35rem .6rem; border:1px dashed var(--warn); border-radius:5px; font-size:.85rem; line-height:1.45; }
+.loop-banner.stopped { border-color:var(--bad); color:var(--bad); }
+.loop-banner.hidden { display:none; }

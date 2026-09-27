@@ -132,6 +132,7 @@ $("#launch").addEventListener("click", async () => {
   // précisément le lancement sélectif qu'on utilise pour reprendre après une halte. Cochée par
   // défaut, comme le sweep de nuit ; décocher = le lot s'arrête au premier marchand en échec.
   body.continue_on_halt = $("#continue-on-halt").checked;
+  body.loop = loopWanted();
   $("#launch").disabled = true;
   $("#launch-msg").textContent = "Lancement…";
   try {
@@ -159,6 +160,7 @@ $("#launch-all").addEventListener("click", async () => {
   catch (e) { $("#launch-all-msg").textContent = "✖ " + e.message; return; }
   body.consoles = $("#consoles").checked;
   body.continue_on_halt = true;   // one merchant's fail-closed stop must not end the night
+  body.loop = loopWanted();
   $("#launch-all").disabled = true;
   $("#launch-all-msg").textContent = "Lancement du sweep de nuit (" + rangeLabel(body) + ")…";
   try {
@@ -292,7 +294,9 @@ function startPolling(runId) {
     if (d) renderRecap(d, { running, live });
     if (!running) {
       const cov = rec && rec.coverage_incomplete && rec.coverage_incomplete.length ? rec.coverage_incomplete : [];
-      endSweepUi(rec && rec.halted ? ("Arrêté : " + rec.halted)
+      const loopEnd = d && d.loop && d.loop.state === "stopped" ? loopLine(d.loop) : null;
+      endSweepUi(loopEnd ? loopEnd.text
+                 : rec && rec.halted ? ("Arrêté : " + rec.halted)
                  : (cov.length ? "Sweep terminé — couverture partielle : " + cov.join(" ; ") : "Sweep terminé."));
     }
   };
@@ -358,11 +362,50 @@ function stageText(cur, live) {
   const depuis = hhmm(cur.stage_at);
   return txt + (depuis ? " · depuis " + depuis : "");
 }
+// ---- la BOUCLE (Romain, 2026-09-27 : « 5 min de pause, sans limite, go pour la boucle ») ----
+// La case « Boucler » vaut pour les trois boutons ; le serveur exige un vrai booléen. L'état
+// de la boucle (`loop`, lu dans runs/<run>/loop.json par la route recap) s'affiche sous le
+// titre du recap : passe en cours, passes finies et leurs créations, prochaine passe, ou le
+// motif d'arrêt. Le recap affiché est celui de la passe COURANTE (`pass_run_id`).
+function loopWanted() { const b = $("#loop"); return !!(b && b.checked); }
+function loopLine(loop) {
+  if (!loop) return null;
+  const fini = (loop.passes || []).filter((p) => p.finished_at);
+  const crees = fini.map((p) => p.total_created || 0);
+  const detail = fini.length ? " (" + crees.join(" + ") + " créées)" : "";
+  const finies = fini.length + " passe(s) finie(s)" + detail;
+  if (loop.state === "stopped") {
+    return { stopped: true, text: "Boucle arrêtée après " + finies + " : " + (loop.stopped_label || loop.stopped_reason || "?") };
+  }
+  if (loop.state === "pause") {
+    let dans = "";
+    if (loop.next_pass_at) {
+      const ms = Date.parse(loop.next_pass_at) - Date.now();
+      dans = " dans " + (ms > 0 ? Math.max(1, Math.round(ms / 60000)) + " min" : "un instant");
+    }
+    return { stopped: false, text: "Boucle : passe " + loop.pass + " finie · " + finies
+             + " · prochaine passe (n° " + ((loop.pass || 0) + 1) + ")" + dans };
+  }
+  return { stopped: false, text: "Boucle : passe " + loop.pass + " en cours · " + finies
+           + " · pause " + Math.round((loop.pause_s || 300) / 60) + " min entre deux passes"
+           + (loop.notify_configured ? " · Discord prévenu à l'arrêt" : "") };
+}
+function renderLoop(loop) {
+  const zone = $("#loop-banner");
+  if (!zone) return;
+  const line = loopLine(loop);
+  if (!line) { zone.textContent = ""; zone.className = "loop-banner hidden"; return; }
+  zone.textContent = line.text;
+  zone.className = "loop-banner" + (line.stopped ? " stopped" : "");
+}
 function renderRecap(d, opts) {
   const rec = d && d.recap;
   const running = !!(opts && opts.running);
   const live = (opts && opts.live) || null;
-  $("#recap-run").textContent = d && d.run_id ? "· " + d.run_id : "";
+  $("#recap-run").textContent = d && d.run_id
+    ? "· " + d.run_id + (d.pass_run_id && d.pass_run_id !== d.run_id ? " → " + d.pass_run_id : "")
+    : "";
+  renderLoop(d && d.loop);
   if (!rec) { $("#recap-summary").textContent = "En attente du premier scan…"; return; }
   const st = rec.finished_at ? (rec.halted ? "halted" : "done") : "running";
   const pill = $("#recap-status");
@@ -530,7 +573,7 @@ async function launchGroup(group) {
   if ($("#go").value.trim().toUpperCase() !== "GO" || SWEEP_RUNNING) return;
   const body = { group: group.name, confirm: "GO",
                  continue_on_halt: true, consoles: $("#consoles").checked,
-                 list: currentList() };
+                 list: currentList(), loop: loopWanted() };
   try { Object.assign(body, pageRange()); }
   catch (e) { $("#launch-group-msg").textContent = "✖ " + e.message; return; }
   GROUPS.forEach((g) => { const b = $("#launch-group-" + g.name); if (b) b.disabled = true; });

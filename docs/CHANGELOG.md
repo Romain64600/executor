@@ -3,6 +3,42 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-27 — La BOUCLE : un groupe se relance à sa fin, jusqu'à « Arrêter » ; message Discord
+
+Romain : « je voudrais […] qu'on puisse quand même aller l'arrêter, mais qu'il boucle », puis
+« 5 min de pause, sans limite, go pour la boucle » (EXECUTOR_RULES « La BOUCLE », DATA_CONTRACTS
+`loop.json`, AGENTS, README, HANDOFF).
+
+- **`scripts/10_data_entry_auto.py --loop`** (+ `--loop-pause-s`, défaut 300, minimum 60) : à
+  la fin du dernier marchand, pause de 5 min — 30 min si la passe n'a rien créé — puis une
+  nouvelle passe sur la même liste de cibles, sans limite. Un seul processus, enfant de l'admin ;
+  « Arrêter » agit pendant la pause (tranches de 5 s) et ne relance jamais. Le corps d'une passe
+  est `run_pass` (inchangé hors boucle), la boucle `run_loop`.
+- **Une passe = un recap** : passe 1 dans `runs/<run-id>/` (inchangé), passe N dans
+  `runs/<run-id>-passN/` (pages `<run-id>-passN-<slug>-s<store>-p<page>`), `loop_pass` /
+  `launch_run_id` dans le recap ; `runs/<run-id>/loop.json` (`src/sweep_loop.py`) : passe
+  courante, passes finies et leurs créations, prochaine passe, motif d'arrêt.
+- **Arrêts de sécurité** (`sweep_loop.stop_reason`) : session expirée (détail « not logged in »
+  d'une halte ou plan `not_logged_in` — jamais de re-auth), garde bloqué, tous les marchands de
+  la passe arrêtés. Un marchand arrêté seul est repris à la passe suivante.
+- **Console** (`auto.html` / `auto.js` / `auto.css`) : case « Boucler » (les trois boutons,
+  `loop: true`, vrai booléen exigé par la route, `bad_loop` sinon) ; bandeau de la boucle sous le
+  titre du recap ; `/api/data-entry/recap` sert le recap de la passe COURANTE (`pass_run_id`) et
+  `loop`. L'ajout « en cours de run » vaut pour la passe où il est pris ; tant que la boucle vit,
+  la file n'est jamais « fermée » (`add_sweep_target` lit le recap de la passe courante).
+- **`src/notify.py`** : webhook Discord `AKS_DISCORD_WEBHOOK` (environnement ou `.env` du clone,
+  relu à chaque lancement — pas de redémarrage de l'admin), `urllib` seul, 10 s, jamais une
+  exception ni un secret dans un journal ; événements `loop_pass_finished`, `loop_stopped`,
+  `session_expired` (journalisés `notify` / `notify_skipped` / `notify_failed` dans
+  `logs/<lancement>.jsonl`). Un arrêt opérateur ne notifie pas.
+- Tests : `tests/test_sweep_loop_2026_09_27.py` (27 : aides, orchestrateur bouclé avec
+  `run_sweep` bouchonné et pause remplacée, notificateur), `test_admin_submit_manager`
+  (`--loop`), `test_admin_app` (`loop` booléen, recap de la passe courante), harnais node
+  (`auto_groups` : la case voyage ; `auto_live_page` : bandeau en pause et à l'arrêt). 12
+  mutations, toutes rougies.
+- **Déploiement** : la case n'apparaît dans la console qu'au prochain redémarrage de l'admin
+  (route et gestionnaire chargés au démarrage) ; `--loop` au CLI est utilisable tout de suite.
+
 ## 2026-09-27 — Dossier de présentation du 28/09 (`docs/presentation_2026-09-28/`)
 
 Romain : « J'ai une présentation du projet pour lundi … Il me faudrait des schémas de notre

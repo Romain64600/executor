@@ -811,6 +811,28 @@ class DataEntryAutoTests(ManagerTestCase):
         r = m.start_data_entry_auto([("Kinguin", "58"), ("Eneba", "70")], by="Romain", continue_on_halt=True)
         self.assertIn("--continue-on-halt", r["argv"])
         self.assertTrue(m.wait_idle(timeout=10))
+    def test_argv_loop(self):
+        # Romain, 2026-09-27 : « 5 min de pause, sans limite, go pour la boucle ». Le drapeau
+        # atteint le CLI ; la pause ne voyage que si elle diffère du défaut ; jamais sous la minute.
+        m = self._m()
+        r = m.start_data_entry_auto([("Kinguin", "58")], by="Romain")
+        self.assertNotIn("--loop", r["argv"])
+        self.assertTrue(m.wait_idle(timeout=10))
+        m.clock = lambda: "2026-09-27T09:00:00Z"
+        r = m.start_data_entry_auto([("Kinguin", "58")], by="Romain", loop=True)
+        self.assertIn("--loop", r["argv"])
+        self.assertNotIn("--loop-pause-s", r["argv"])
+        self.assertTrue(m.wait_idle(timeout=10))
+        state = json.loads((self.runs / r["run_id"] / "admin_submit.json").read_text(encoding="utf-8"))
+        self.assertIs(state["loop"], True)
+        m.clock = lambda: "2026-09-27T09:01:00Z"
+        r = m.start_data_entry_auto([("Kinguin", "58")], by="Romain", loop=True, loop_pause_s=600)
+        self.assertEqual(r["argv"][r["argv"].index("--loop-pause-s") + 1], "600")
+        self.assertTrue(m.wait_idle(timeout=10))
+        m.clock = lambda: "2026-09-27T09:02:00Z"
+        with self.assertRaises(SubmitStartError):
+            m.start_data_entry_auto([("Kinguin", "58")], by="Romain", loop=True, loop_pause_s=10)
+
     def test_argv_consoles_default_and_opt_out(self):
         # [R45] Romain's decision « 1 » (2026-09-15): consoles BY DEFAULT — the argv carries
         # an EXPLICIT "--consoles" and the run meta (admin_submit.json) records consoles:

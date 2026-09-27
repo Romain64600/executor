@@ -27,8 +27,10 @@ import atexit
 import json
 import os
 import re
+import socket
 import sys
-from datetime import datetime, timezone
+import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +46,9 @@ from src.admin.runs import sha256_file  # noqa: E402
 from src.admin.auto_merchants import rejection_reason  # noqa: E402
 from src.aks_lists import PENDING_LIST_ID  # noqa: E402
 from src.child_runner import CooperativeChildRunner  # noqa: E402
+from src import sweep_loop  # noqa: E402
+from src.notify import configured as _notify_configured, notify as _send_notification  # noqa: E402
+from src.run_log import RunLogger  # noqa: E402
 from src.triage import execute_page_moves, plan_moves_from_skipped  # noqa: E402
 
 # La file Pending : le défaut de toutes les étapes, et le seul chemin d'écriture
@@ -563,215 +568,60 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
                   move=(move if triage else None), archive_attempt=archive_attempt)
 
 
-def main() -> int:
-    ap = argparse.ArgumentParser(description="Safe-auto data-entry sweep (real writes).")
-    ap.add_argument("--targets", help="Comma list 'Merchant:store_id[,Merchant:store_id...]'.")
-    ap.add_argument(
-        "--group",
-        help="Balaie un GROUPE de marchands, pour paralléliser sur plusieurs VPS (Romain, "
-             "2026-09-21). Deux formes : un groupe figé ('A', 'B' — src/merchant_groups.py) "
-             "ou 'i/n' ('2/4' = le 2e de 4 groupes équilibrés, calculés sur la charge en "
-             "attente). Un balayage tient un onglet par machine : une machine, un groupe.")
-    ap.add_argument(
-        "--all-allowlisted", action="store_true",
-        help="Sweep EVERY merchant of the safe-auto allowlist (src/admin/auto_merchants.py "
-             "AUTO_MERCHANTS), in its order. This is the NIGHT SWEEP entrypoint (Romain "
-             "2026-09-16: « donne moi la commande a jour pour lancer tout les marchands "
-             "whitelist … et maintien la dans le readme a chaque whitelist de nouveaux "
-             "marchands »): the target list is READ from the allowlist, so it can never "
-             "drift from it and no command has to be rewritten when a merchant is added. "
-             "Mutually exclusive with --targets / --merchant.")
-    ap.add_argument("--continue-on-halt", action="store_true",
-                    help="Multi-merchant batch: a fail-closed halt on one merchant (UNKNOWN offer, "
-                         "feed unreadable, 10 failures…) is recorded and the NEXT merchant is still "
-                         "swept (its feed is independent). Default: the first halt stops the batch. "
-                         "A login bounce is a halt like the others (Romain 2026-09-26: « le lot "
-                         "continue »): every stage re-checks the session before any write.")
-    ap.add_argument("--merchant", help="Single-target merchant (with --store-id).")
-    ap.add_argument("--store-id", help="Single-target store id.")
-    ap.add_argument("--run-id", default=None, help="Sweep run id (holds recap.json).")
-    ap.add_argument("--start-page", type=int, default=1)
-    ap.add_argument(
-        "--sitemap-refresh", action="store_true",
-        help="Relève l'index sitemap AKS au lancement s'il a plus de 20 h, s'il manque, s'il est "
-             "troué ou s'il ignore les pages anciennes (Romain 2026-09-24 : « oui pour le "
-             "refresh auto »). Une à deux minutes de lecture seule ; un échec n'arrête pas le "
-             "balayage (le matcher retombe sur les sondes d'avant). La console le passe toujours.")
-    ap.add_argument(
-        "--all-pages", action="store_true",
-        help="Couvre TOUTES les pages que le feed annonce, sans plafond (Romain 2026-09-18 : "
-             "« on fait toutes les pages sauf lors d'un arrêt pour sécurité »). Seul un arrêt "
-             "fail-closed — extract/match/submit en échec, ou stop opérateur — écourte alors "
-             "la passe. La nuit du 17/09, le plafond de 10 avait laissé de côté 97 pages chez "
-             "GameSeal, 54 chez Kinguin, 42 chez Gamivo, 36 chez Eneba et 23 chez G2A. "
-             "Incompatible avec --max-pages.")
-    ap.add_argument(
-        "--max-pages", type=int, default=30,
-        help="Cap pages processed per merchant (default 30). The sweep runs highest-page-"
-             "first down to page 1, and the submit index is only productive on the ~28-30 "
-             "shallowest pages — deeper pages are old/obscure titles that mostly 404 on "
-             "resolve (slowest matching, ~0 candidate). Capping skips that junk for a big "
-             "wall-clock win at ~0 productive loss; hitting the cap over a longer feed is "
-             "recorded as coverage=incomplete_max_pages in the merchant's recap (honest, never "
-             "a silent clean end) — it is NOT a halt: the batch continues and exits 0 (audit "
-             "2026-09-09). Raise it for a deliberate deep sweep.")
-    ap.add_argument("--available", default="all", choices=["all", "pending"])
-    ap.add_argument("--pace", default=None)
-    ap.add_argument("--triage", action="store_true",
-                    help="Unified per-page workflow: after the ADDs, also plan the "
-                         "routable skips' Move-to-List (dry-run plan by default).")
-    ap.add_argument("--move-execute", action="store_true",
-                    help="With --triage: REALLY move (06_move --mode safe, "
-                         "canary-authorized lists only). Default: dry-run plan only.")
-    ap.add_argument(
-        "--list", dest="list_id", type=int, default=PENDING_LIST,
-        help="Liste AKS balayée (9 = file Pending, défaut ; 30 = account…). La liste 8 "
-             "(Blacklist) est refusée par l'extracteur. La liste voyage jusqu'au submit, "
-             "qui prouve la disparition dans la MÊME file — sans quoi la preuve chercherait "
-             "l'offre dans une autre liste que celle d'où elle vient.")
-    ap.add_argument(
-        "--page-catalog", default="",
-        help="Catalogue des pages AKS alimenté par chaque match du balayage : chemin local "
-             "(ex. state/page_catalog.db) ou '<user>@<hôte>:<chemin>' pour la base PARTAGÉE. "
-             "Vide = aucun. Ce que le match a DÉJÀ lu y est écrit en un lot par page (~0,1 s "
-             "contre 145-226 s de match) ; jamais bloquant — base illisible ou hôte "
-             "injoignable sont ignorés, et un échec de résolution n'entre JAMAIS au catalogue.")
-    ap.add_argument("--prove-gone-scan", action="store_true",
-                    help="Prove each post-save disappearance by re-walking the WHOLE feed "
-                         "(the pre-2026-09-10 behaviour) instead of the feed SEARCH filtered "
-                         "by the offer URL (default since Romain's GO, ~50x faster per offer).")
-    ap.add_argument("--dry-run", action="store_true",
-                    help="Fully READ-ONLY preview: extract + match + triage plan, "
-                         "NO submit and NO move (nothing written). ADDs are counted "
-                         "from candidates.json, not created.")
-    ap.add_argument("--consoles", dest="consoles", action="store_true", default=True,
-                    help="[R45] match with the CONSOLE branch (03_match --consoles): console "
-                         "keys resolve their AKS platform pages (Xbox One / Series, PS4 / PS5, "
-                         "Switch / Switch 2) instead of the 'console' skip. This is the DEFAULT "
-                         "since Romain's decision « 1 » of 2026-09-15 (after the two modal-v2 "
-                         "canaries and the MMOGA console dry-run: 663 offers -> 174 console "
-                         "candidates) — the flag is kept as an explicit no-op; --no-consoles "
-                         "opts out. Real writes allowed since Romain's GO of 2026-09-15 (the "
-                         "per-target modal v2 was observed with --inspect and proven by two "
-                         "canaries: one target, then two targets); the --dry-run-only guard of "
-                         "2026-09-14 is lifted.")
-    ap.add_argument("--no-consoles", dest="consoles", action="store_false",
-                    help="[R45] PC-only sweep: console rows keep the 'console' skip (the "
-                         "pre-2026-09-15 behaviour). Recorded as recap.json['consoles'] = false "
-                         "and passed to 03_match as --no-consoles.")
-    args = ap.parse_args()
-    # [R45] the "--consoles requires --dry-run" guard (review fix 2026-09-14) was LIFTED on
-    # Romain's GO of 2026-09-15: the per-target modal v2 was observed (--inspect, run
-    # 20260914-inspect-consoles) and proven by two real canaries (Legend of Mana Switch, one
-    # target; Diablo 2 Resurrected Xbox One + Series, two targets via [data-add-target]).
-    # 05_submit still gates every entry one by one (shape targets_v2, cap 3, readbacks).
-    if args.all_pages and any(a.startswith("--max-pages") for a in sys.argv[1:]):
-        print(json.dumps({"aborted": True,
-                          "reason": "--all-pages et --max-pages sont exclusifs : choisis "
-                                    "la couverture complète ou un plafond explicite"}))
-        return 2
-    if args.max_pages < 1 or args.start_page < 1:
-        # Review 2026-09-09: with the cap now benign coverage (not a halt), a zero/negative
-        # cap would be a silent exit-0 "done" run that processes NO page. Fail loud instead.
-        print(json.dumps({"aborted": True,
-                          "reason": f"--max-pages ({args.max_pages}) and --start-page "
-                                    f"({args.start_page}) must be >= 1"}))
-        return 2
-
-    # Audit (Romain 2026-08-14): --move-execute only has an effect with --triage
-    # (the Move stage is installed only then). Accepting it silently would let an
-    # operator believe they requested real moves. Fail loud instead.
-    if args.move_execute and not args.triage:
-        print(json.dumps({"aborted": True, "reason": (
-            "--move-execute n'a d'effet qu'avec --triage (le pas Move n'est installé "
-            "que sous --triage). Ajoute --triage, ou retire --move-execute.")}))
-        return 2
-
-    if args.all_allowlisted and (args.targets or args.merchant or args.store_id or args.group):
-        print(json.dumps({"aborted": True, "reason": (
-            "--all-allowlisted balaie déjà toute la liste blanche — ne le combine pas avec "
-            "--targets / --merchant / --store-id / --group")}))
-        return 2
-    if args.group and (args.targets or args.merchant or args.store_id):
-        print(json.dumps({"aborted": True, "reason": (
-            "--group porte déjà sa liste de marchands — ne le combine pas avec "
-            "--targets / --merchant / --store-id")}))
-        return 2
-
-    targets: list[tuple[str, str]] = []
-    if args.all_allowlisted:
-        from src.admin.auto_merchants import AUTO_MERCHANTS
-        targets = [(name, store) for name, store in AUTO_MERCHANTS]
-    elif args.group:
-        # Un groupe inconnu, mal écrit ou désynchronisé de la liste blanche lève : on ne
-        # lance pas un balayage sur une liste de cibles approximative (fail-closed).
-        from src.merchant_groups import targets_for
-        try:
-            targets = targets_for(args.group)
-        except KeyError as exc:
-            print(json.dumps({"aborted": True, "reason": str(exc)}, ensure_ascii=False))
-            return 2
-    elif args.targets:
-        for tok in args.targets.split(","):
-            tok = tok.strip()
-            if not tok:
-                continue
-            if ":" not in tok:
-                print(json.dumps({"aborted": True, "reason": f"bad target {tok!r} — attendu Merchant:store_id"}))
-                return 2
-            m, s = tok.rsplit(":", 1)
-            targets.append((m.strip(), s.strip()))
-    elif args.merchant and args.store_id:
-        targets.append((args.merchant.strip(), args.store_id.strip()))
-    if not targets:
-        print(json.dumps({"aborted": True, "reason": "aucun marchand — --targets ou --merchant/--store-id"}))
-        return 2
-    for m, s in targets:
-        if not s.isdigit():
-            print(json.dumps({"aborted": True, "reason": f"store_id non numérique pour {m!r}: {s!r}"}))
-            return 2
-        # P2-2 (audit 2026-09-02): safe-auto WRITES without human validation, so the
-        # merchant allowlist is an AUTHORITATIVE gate, not a UI suggestion. The HTTP
-        # handler re-checks it (app.py _post_data_entry_auto), but this deterministic
-        # CLI entrypoint — the one that actually spawns the writes — only validated
-        # `store_id.isdigit()`, so `--targets 'Difmark:167'` (parked, non-vetted) could
-        # sweep and create offers bypassing the gate. Enforce the SAME allowlist here,
-        # fail-closed, refusing the whole batch on any miss (canonical store enforced).
-        reason = rejection_reason(m, s)
-        if reason is not None:
-            print(json.dumps({"aborted": True, "reason": reason}))
-            return 2
-
-    _RUNNER.install()
-
-    run_id = args.run_id or f"{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-auto"
-    sweep_dir = ROOT / "runs" / run_id
-    # Le marqueur AVANT la création du dossier : un refus ne doit pas laisser derrière lui un
-    # `runs/<run-id>/` vide (audit du 2026-09-18).
+def _hostname() -> str:
     try:
-        run_marker.write_marker(ROOT, run_id=run_id, kind="data_entry_auto", source="cli")
-    except run_marker.ActiveRunExists as exc:
-        print(json.dumps({"aborted": True, "reason": str(exc), "active": exc.marker},
-                         ensure_ascii=False, indent=2))
-        return 2
-    atexit.register(run_marker.clear_marker, ROOT, run_id)
-    # Réfuteur du 2026-09-19 : une relance explicite avec le MÊME --run-id héritait du
-    # `targets_queue.closed` du run précédent (tout ajout refusé « sweep_finishing » dès le
-    # premier marchand) ET de son ancienne file (un marchand non demandé rebalayé). Un
-    # lancement démarre avec un canal PROPRE : `--targets` est tout le plan. `missing_ok`
-    # couvre aussi le dossier absent, donc unlink → mkdir tient dans les deux cas.
-    # …mais SEULEMENT sur une relance (un recap.json existe déjà). Revue `/code-review` : la
-    # console déclare le run occupé (dossier créé, marqueur `_active`) AVANT de lancer ce
-    # processus — un ajout accepté pendant notre démarrage vivait déjà dans la file et
-    # l'effacement inconditionnel le détruisait. Un dossier neuf de la console ne contient
-    # qu'admin_submit.json : sa file est pour NOUS.
-    if (sweep_dir / "recap.json").exists():
-        (sweep_dir / TARGETS_QUEUE).unlink(missing_ok=True)
-    sweep_dir.mkdir(parents=True, exist_ok=True)
+        return socket.gethostname()
+    except OSError:
+        return "vps"
+
+
+def _notify(run_id: str, event: str, text: str) -> dict:
+    """Une notification sortante (src/notify.py), journalisée dans logs/<lancement>.jsonl —
+    jamais une exception, jamais l'URL du webhook (seule sa présence est écrite)."""
+
+    result = _send_notification(event, text)
+    record = {"event": "notify" if result.get("sent") else
+              ("notify_skipped" if result.get("reason") == "no_webhook" else "notify_failed"),
+              "kind": event, "sent": bool(result.get("sent")), "reason": result.get("reason")}
+    try:
+        (ROOT / "logs").mkdir(parents=True, exist_ok=True)
+        RunLogger(run_id, log_dir=ROOT / "logs", clock=_clock).log(record["event"], **{
+            k: v for k, v in record.items() if k != "event"})
+    except Exception:       # noqa: BLE001 — un journal indisponible n'arrête rien
+        pass
+    print(json.dumps(record, ensure_ascii=False), flush=True)
+    return result
+
+
+def _halted_merchants_text(recap: dict) -> str:
+    parts = []
+    for t in recap.get("targets") or []:
+        h = ((t or {}).get("recap") or {}).get("halted")
+        if h and h != "operator_stop":
+            parts.append(f"{t.get('merchant')} ({h})")
+    return ", ".join(parts)
+
+
+def run_pass(args, targets: list[tuple[str, str]], *, run_id: str, pass_dir: Path,
+             queue_dir: Path, consumed: set, loop_pass: int | None = None,
+             launch_run_id: str | None = None) -> dict:
+    """UNE passe : chaque marchand de ``targets`` (plus ceux que la console ajoute en cours de
+    route), de la dernière page du feed vers la page 1. Écrit ``<pass_dir>/recap.json``
+    incrémentalement et le rend. Hors boucle, ``pass_dir == queue_dir == runs/<run-id>/`` et
+    rien ne change ; en boucle, la passe N ≥ 2 a son propre dossier et lit la file d'ajouts du
+    dossier du LANCEMENT (celui où la console écrit), en ignorant ce que les passes
+    précédentes ont déjà pris ou refusé (``consumed``)."""
+
+    sweep_dir = pass_dir
     recap = {"run_id": run_id, "started_at": _clock(), "targets": [], "halted": None,
              "halted_merchants": [],
              "coverage_incomplete": [], "total_created": 0, "total_moved": 0,
              "consoles": bool(args.consoles)}          # [R45] console branch on? (default since 2026-09-15)
+    if loop_pass is not None:
+        # En boucle : la passe se nomme, et nomme son lancement (la console et un lecteur du
+        # recap savent d'où il vient sans parser l'id).
+        recap["loop_pass"] = int(loop_pass)
+        recap["launch_run_id"] = launch_run_id or run_id
     recap_path = sweep_dir / "recap.json"
 
     # DISCOVERY for the console (Romain 2026-09-17: « un monitoring sur l'admin même lorsqu'on
@@ -803,7 +653,8 @@ def main() -> int:
     persist()
     if args.sitemap_refresh:
         # L'index du jour AVANT la première page : le matcher le relit à chaque page (03_match),
-        # donc tout le balayage profite du relevé. Jamais une halte (voir `ensure_fresh`).
+        # donc tout le balayage profite du relevé. Jamais une halte (voir `ensure_fresh`). En
+        # boucle, chaque passe le re-vérifie : l'index ne vieillit jamais au-delà de 20 h.
         recap["sitemap_refresh"] = refresh_sitemap_if_stale()
         print(json.dumps({"event": "sitemap_refresh", **recap["sitemap_refresh"]},
                          ensure_ascii=False), flush=True)
@@ -816,7 +667,11 @@ def main() -> int:
     # marchand, et pour qu'un marchand déjà balayé ne soit pas rebalayé.
     planned = {(m.casefold(), str(sid)) for m, sid in targets}
     refused_keys: set[tuple[str, str]] = set()
-    taken_keys: set[tuple[str, str]] = set()
+    # En boucle, ce que les passes précédentes ont déjà pris, refusé ou ignoré dans la file du
+    # lancement ne se relit pas : un marchand ajouté vaut pour la passe où il a été pris. Une
+    # entrée arrivée TARD (après la dernière relecture d'une passe) reste due : la passe
+    # suivante la prend — la console avait répondu « queued: true ».
+    taken_keys: set[tuple[str, str]] = set(consumed)
     # Réfuteur du 2026-09-19 : la console ne POUVAIT pas savoir qu'un marchand était déjà cible
     # — `recap["targets"]` ne liste que ceux déjà démarrés. `planned` est le plan complet, tenu
     # à jour à chaque ajout pris ; la console le lit avant de promettre quoi que ce soit.
@@ -826,7 +681,7 @@ def main() -> int:
 
     def drain_queue() -> list[tuple[str, str]]:
         before = tuple(len(recap.get(k) or []) for k in ("targets_added", "targets_refused", "targets_ignored"))
-        new_targets = take_from_queue(sweep_dir, planned, refused_keys, recap, _clock, taken_keys)
+        new_targets = take_from_queue(queue_dir, planned, refused_keys, recap, _clock, taken_keys)
         targets.extend(new_targets)
         recap["planned"].extend({"merchant": m, "store_id": str(sid)} for m, sid in new_targets)
         after = tuple(len(recap.get(k) or []) for k in ("targets_added", "targets_refused", "targets_ignored"))
@@ -917,7 +772,8 @@ def main() -> int:
         # session (l'extract lit la page de login avant tout, le submit avant la 1re offre et
         # après chaque clic) ; une session vraiment perdue arrête donc chaque marchand suivant
         # à sa première lecture, sans rien écrire. La page elle-même reste une halte (jamais
-        # une reprise automatique : `transient_reason`).
+        # une reprise automatique : `transient_reason`). En BOUCLE, c'est la boucle qui
+        # s'arrête sur une déconnexion vue dans la passe (src/sweep_loop.stop_reason).
         if sweep.get("halted") and sweep["halted"] != "operator_stop":
             label = f"{merchant}: {sweep['halted']}"
             if args.continue_on_halt:
@@ -946,20 +802,363 @@ def main() -> int:
     # encore « ouverte », répondait `queued: true`, et l'entrée tombait APRÈS la relecture
     # finale : ni balayée, ni inscrite dans `targets_not_reached`. Promesse tenue par personne.
     # Publier d'abord rétablit le même happens-before que dans la boucle : un ajout accepté
-    # sans avoir vu la fermeture a été écrit avant elle, donc la relecture qui suit le voit.
+    # sans avoir vu la fermeture a été écrit avant elle, donc la relecture qui suit la voit.
     close_queue(True)
-    late = take_from_queue(sweep_dir, planned, refused_keys, recap, _clock, taken_keys)
+    late = take_from_queue(queue_dir, planned, refused_keys, recap, _clock, taken_keys)
     not_reached = [{"merchant": m, "store_id": str(sid)} for m, sid in targets[index:]]
     not_reached += [{"merchant": m, "store_id": str(sid)} for m, sid in late]
     if not_reached:
         recap["targets_not_reached"] = not_reached
     recap["finished_at"] = _clock()
     persist()
+    # Ce que CETTE passe a consommé dans la file — pris, refusé, ou reconnu déjà cible — ne se
+    # relit pas à la passe suivante (boucle). Les retardataires (`late`) ont été PRISES ici,
+    # donc consommées aussi : elles sont dans `targets_not_reached`, comme avant.
+    consumed.update(taken_keys)
+    consumed.update(refused_keys)
+    consumed.update((str(i.get("merchant", "")).casefold(), str(i.get("store_id")))
+                    for i in (recap.get("targets_ignored") or []) if isinstance(i, dict))
     print(json.dumps({"run_id": run_id, "total_created": recap["total_created"],
                       "total_moved": recap["total_moved"],
                       "halted": recap["halted"], "targets": len(recap["targets"]),
                       "coverage_incomplete": recap["coverage_incomplete"],
                       "recap": str(recap_path)}, ensure_ascii=False, indent=2))
+    return recap
+
+
+_loop_sleep = time.sleep      # couture de test : la pause de la boucle, remplaçable
+
+
+def run_loop(args, targets: list[tuple[str, str]], *, run_id: str, launch_dir: Path,
+             sleep=None) -> int:
+    """La BOUCLE (Romain, 2026-09-27) : des passes sans limite, une pause entre deux, jusqu'à
+    « Arrêter » ou l'un des trois arrêts de sécurité de `src/sweep_loop.py`. Le marqueur du run
+    reste celui du LANCEMENT d'un bout à l'autre ; chaque passe écrit son recap, et
+    `runs/<run-id>/loop.json` dit où en est la boucle. Rend le code de sortie : 2 dès qu'une
+    passe a connu une halte fail-closed, 0 sinon (arrêt opérateur compris — [34])."""
+
+    if sleep is None:
+        sleep = _loop_sleep
+    status = sweep_loop.new_status(run_id, targets, pause_s=args.loop_pause_s,
+                                   empty_pause_s=sweep_loop.EMPTY_PASS_PAUSE_S, clock=_clock,
+                                   dry_run=bool(args.dry_run))
+    status["notify_configured"] = bool(_notify_configured(root=ROOT))
+    sweep_loop.write_status(launch_dir, status, _clock)
+    consumed: set = set()
+    exit_code = 0
+    host = _hostname()
+    n = 0
+    while True:
+        n += 1
+        pass_id = sweep_loop.pass_run_id(run_id, n)
+        pass_dir = ROOT / "runs" / pass_id
+        pass_dir.mkdir(parents=True, exist_ok=True)
+        entry = {"pass": n, "run_id": pass_id, "started_at": _clock(), "finished_at": None,
+                 "total_created": 0, "halted": None, "halted_merchants": 0}
+        status["state"] = "running"
+        status["pass"] = n
+        status["current_run_id"] = pass_id
+        status["next_pass_at"] = None
+        status["passes"].append(entry)
+        sweep_loop.write_status(launch_dir, status, _clock)
+        # La MÊME liste de cibles à chaque passe (le groupe détendu au lancement) : `run_pass`
+        # allonge sa copie avec les ajouts de la console, la nôtre reste intacte.
+        recap = run_pass(args, list(targets), run_id=pass_id, pass_dir=pass_dir,
+                         queue_dir=launch_dir, consumed=consumed, loop_pass=n,
+                         launch_run_id=run_id)
+        entry.update(finished_at=recap.get("finished_at") or _clock(),
+                     total_created=int(recap.get("total_created") or 0),
+                     halted=recap.get("halted"),
+                     halted_merchants=len(recap.get("halted_merchants") or []))
+        status["totals"]["created"] += entry["total_created"]
+        status["totals"]["passes_finished"] = n
+        if recap.get("halted") not in (None, "operator_stop"):
+            exit_code = 2
+        reason = sweep_loop.stop_reason(recap, operator_stopped=_RUNNER.stopped)
+        if reason is None:
+            pause = sweep_loop.pause_after_pass(recap, pause_s=args.loop_pause_s,
+                                                empty_pause_s=sweep_loop.EMPTY_PASS_PAUSE_S)
+            status["state"] = "pause"
+            status["next_pass_at"] = (datetime.now(timezone.utc) + timedelta(seconds=pause)
+                                      ).strftime("%Y-%m-%dT%H:%M:%SZ")
+            sweep_loop.write_status(launch_dir, status, _clock)
+            halted_txt = _halted_merchants_text(recap)
+            _notify(run_id, "loop_pass_finished",
+                    f"AKS exécuteur · {host} · boucle {run_id} : passe {n} finie — "
+                    f"{entry['total_created']} offre(s) créée(s)"
+                    + (f" · arrêts : {halted_txt}" if halted_txt else "")
+                    + f" · prochaine passe dans {pause // 60} min")
+            print(json.dumps({"event": "loop_pause", "pass": n, "pause_s": pause,
+                              "next_pass_at": status["next_pass_at"]}), flush=True)
+            # Battement de cœur toutes les ~60 s : la console voit que la pause vit.
+            beats = {"n": 0}
+
+            def _beat(_restant: float) -> None:
+                beats["n"] += 1
+                if beats["n"] % 12 == 0:
+                    sweep_loop.write_status(launch_dir, status, _clock)
+
+            if not sweep_loop.cooperative_pause(pause, should_stop=lambda: _RUNNER.stopped,
+                                                sleep=sleep, on_tick=_beat):
+                reason = "operator_stop"
+        if reason is not None:
+            status["state"] = "stopped"
+            status["next_pass_at"] = None
+            status["stopped_reason"] = reason
+            status["stopped_label"] = sweep_loop.STOP_LABELS.get(reason, reason)
+            status["stopped_at"] = _clock()
+            sweep_loop.write_status(launch_dir, status, _clock)
+            total = status["totals"]["created"]
+            if reason == "session_expired":
+                _notify(run_id, "session_expired",
+                        f"🔑 AKS exécuteur · {host} · boucle {run_id} ARRÊTÉE après {n} passe(s), "
+                        f"{total} offre(s) créée(s) : session AKS expirée — transfert de cookies "
+                        f"requis dans la console (aucune reconnexion automatique)")
+            elif reason != "operator_stop":
+                _notify(run_id, "loop_stopped",
+                        f"⛔ AKS exécuteur · {host} · boucle {run_id} ARRÊTÉE après {n} passe(s), "
+                        f"{total} offre(s) créée(s) : {status['stopped_label']}")
+            break
+    run_marker.clear_marker(ROOT, run_id)
+    print(json.dumps({"run_id": run_id, "loop": {"passes": n, "total_created": status["totals"]["created"],
+                                                 "stopped_reason": reason,
+                                                 "stopped_label": status["stopped_label"]},
+                      "loop_status": str(launch_dir / sweep_loop.LOOP_FILE)},
+                     ensure_ascii=False, indent=2))
+    return exit_code
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Safe-auto data-entry sweep (real writes).")
+    ap.add_argument("--targets", help="Comma list 'Merchant:store_id[,Merchant:store_id...]'.")
+    ap.add_argument(
+        "--group",
+        help="Balaie un GROUPE de marchands, pour paralléliser sur plusieurs VPS (Romain, "
+             "2026-09-21). Deux formes : un groupe figé ('A', 'B' — src/merchant_groups.py) "
+             "ou 'i/n' ('2/4' = le 2e de 4 groupes équilibrés, calculés sur la charge en "
+             "attente). Un balayage tient un onglet par machine : une machine, un groupe.")
+    ap.add_argument(
+        "--all-allowlisted", action="store_true",
+        help="Sweep EVERY merchant of the safe-auto allowlist (src/admin/auto_merchants.py "
+             "AUTO_MERCHANTS), in its order. This is the NIGHT SWEEP entrypoint (Romain "
+             "2026-09-16: « donne moi la commande a jour pour lancer tout les marchands "
+             "whitelist … et maintien la dans le readme a chaque whitelist de nouveaux "
+             "marchands »): the target list is READ from the allowlist, so it can never "
+             "drift from it and no command has to be rewritten when a merchant is added. "
+             "Mutually exclusive with --targets / --merchant.")
+    ap.add_argument("--continue-on-halt", action="store_true",
+                    help="Multi-merchant batch: a fail-closed halt on one merchant (UNKNOWN offer, "
+                         "feed unreadable, 10 failures…) is recorded and the NEXT merchant is still "
+                         "swept (its feed is independent). Default: the first halt stops the batch. "
+                         "A login bounce is a halt like the others (Romain 2026-09-26: « le lot "
+                         "continue »): every stage re-checks the session before any write.")
+    ap.add_argument("--merchant", help="Single-target merchant (with --store-id).")
+    ap.add_argument("--store-id", help="Single-target store id.")
+    ap.add_argument("--run-id", default=None, help="Sweep run id (holds recap.json).")
+    ap.add_argument(
+        "--loop", action="store_true",
+        help="BOUCLE (Romain 2026-09-27 : « 5 min de pause, sans limite, go pour la boucle ») : à "
+             "la fin du dernier marchand, une pause puis une NOUVELLE passe sur la même liste de "
+             "cibles, de la dernière page vers la 1, sans limite de passes — jusqu'à « Arrêter » "
+             "(immédiat, pause comprise, ne relance jamais). Une passe = un recap "
+             "(runs/<run-id>-passN/), l'état de la boucle dans runs/<run-id>/loop.json. Elle "
+             "s'arrête d'elle-même sur une déconnexion (transfert de cookies requis — jamais de "
+             "re-auth), un blocage du garde, ou une passe où TOUS les marchands se sont arrêtés "
+             "(src/sweep_loop.py).")
+    ap.add_argument(
+        "--loop-pause-s", type=int, default=sweep_loop.DEFAULT_PAUSE_S,
+        help=f"Pause entre deux passes de --loop, en secondes (défaut {sweep_loop.DEFAULT_PAUSE_S} = "
+             f"5 min ; {sweep_loop.EMPTY_PASS_PAUSE_S // 60} min après une passe sans aucune "
+             f"création). Minimum {sweep_loop.MIN_PAUSE_S}.")
+    ap.add_argument("--start-page", type=int, default=1)
+    ap.add_argument(
+        "--sitemap-refresh", action="store_true",
+        help="Relève l'index sitemap AKS au lancement s'il a plus de 20 h, s'il manque, s'il est "
+             "troué ou s'il ignore les pages anciennes (Romain 2026-09-24 : « oui pour le "
+             "refresh auto »). Une à deux minutes de lecture seule ; un échec n'arrête pas le "
+             "balayage (le matcher retombe sur les sondes d'avant). La console le passe toujours.")
+    ap.add_argument(
+        "--all-pages", action="store_true",
+        help="Couvre TOUTES les pages que le feed annonce, sans plafond (Romain 2026-09-18 : "
+             "« on fait toutes les pages sauf lors d'un arrêt pour sécurité »). Seul un arrêt "
+             "fail-closed — extract/match/submit en échec, ou stop opérateur — écourte alors "
+             "la passe. La nuit du 17/09, le plafond de 10 avait laissé de côté 97 pages chez "
+             "GameSeal, 54 chez Kinguin, 42 chez Gamivo, 36 chez Eneba et 23 chez G2A. "
+             "Incompatible avec --max-pages.")
+    ap.add_argument(
+        "--max-pages", type=int, default=30,
+        help="Cap pages processed per merchant (default 30). The sweep runs highest-page-"
+             "first down to page 1, and the submit index is only productive on the ~28-30 "
+             "shallowest pages — deeper pages are old/obscure titles that mostly 404 on "
+             "resolve (slowest matching, ~0 candidate). Capping skips that junk for a big "
+             "wall-clock win at ~0 productive loss; hitting the cap over a longer feed is "
+             "recorded as coverage=incomplete_max_pages in the merchant's recap (honest, never "
+             "a silent clean end) — it is NOT a halt: the batch continues and exits 0 (audit "
+             "2026-09-09). Raise it for a deliberate deep sweep.")
+    ap.add_argument("--available", default="all", choices=["all", "pending"])
+    ap.add_argument("--pace", default=None)
+    ap.add_argument("--triage", action="store_true",
+                    help="Unified per-page workflow: after the ADDs, also plan the "
+                         "routable skips' Move-to-List (dry-run plan by default).")
+    ap.add_argument("--move-execute", action="store_true",
+                    help="With --triage: REALLY move (06_move --mode safe, "
+                         "canary-authorized lists only). Default: dry-run plan only.")
+    ap.add_argument(
+        "--list", dest="list_id", type=int, default=PENDING_LIST,
+        help="Liste AKS balayée (9 = file Pending, défaut ; 30 = account…). La liste 8 "
+             "(Blacklist) est refusée par l'extracteur. La liste voyage jusqu'au submit, "
+             "qui prouve la disparition dans la MÊME file — sans quoi la preuve chercherait "
+             "l'offre dans une autre liste que celle d'où elle vient.")
+    ap.add_argument(
+        "--page-catalog", default="",
+        help="Catalogue des pages AKS alimenté par chaque match du balayage : chemin local "
+             "(ex. state/page_catalog.db) ou '<user>@<hôte>:<chemin>' pour la base PARTAGÉE. "
+             "Vide = aucun. Ce que le match a DÉJÀ lu y est écrit en un lot par page (~0,1 s "
+             "contre 145-226 s de match) ; jamais bloquant — base illisible ou hôte "
+             "injoignable sont ignorés, et un échec de résolution n'entre JAMAIS au catalogue.")
+    ap.add_argument("--prove-gone-scan", action="store_true",
+                    help="Prove each post-save disappearance by re-walking the WHOLE feed "
+                         "(the pre-2026-09-10 behaviour) instead of the feed SEARCH filtered "
+                         "by the offer URL (default since Romain's GO, ~50x faster per offer).")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="Fully READ-ONLY preview: extract + match + triage plan, "
+                         "NO submit and NO move (nothing written). ADDs are counted "
+                         "from candidates.json, not created.")
+    ap.add_argument("--consoles", dest="consoles", action="store_true", default=True,
+                    help="[R45] match with the CONSOLE branch (03_match --consoles): console "
+                         "keys resolve their AKS platform pages (Xbox One / Series, PS4 / PS5, "
+                         "Switch / Switch 2) instead of the 'console' skip. This is the DEFAULT "
+                         "since Romain's decision « 1 » of 2026-09-15 (after the two modal-v2 "
+                         "canaries and the MMOGA console dry-run: 663 offers -> 174 console "
+                         "candidates) — the flag is kept as an explicit no-op; --no-consoles "
+                         "opts out. Real writes allowed since Romain's GO of 2026-09-15 (the "
+                         "per-target modal v2 was observed with --inspect and proven by two "
+                         "canaries: one target, then two targets); the --dry-run-only guard of "
+                         "2026-09-14 is lifted.")
+    ap.add_argument("--no-consoles", dest="consoles", action="store_false",
+                    help="[R45] PC-only sweep: console rows keep the 'console' skip (the "
+                         "pre-2026-09-15 behaviour). Recorded as recap.json['consoles'] = false "
+                         "and passed to 03_match as --no-consoles.")
+    args = ap.parse_args()
+    # [R45] the "--consoles requires --dry-run" guard (review fix 2026-09-14) was LIFTED on
+    # Romain's GO of 2026-09-15: the per-target modal v2 was observed (--inspect, run
+    # 20260914-inspect-consoles) and proven by two real canaries (Legend of Mana Switch, one
+    # target; Diablo 2 Resurrected Xbox One + Series, two targets via [data-add-target]).
+    # 05_submit still gates every entry one by one (shape targets_v2, cap 3, readbacks).
+    if args.all_pages and any(a.startswith("--max-pages") for a in sys.argv[1:]):
+        print(json.dumps({"aborted": True,
+                          "reason": "--all-pages et --max-pages sont exclusifs : choisis "
+                                    "la couverture complète ou un plafond explicite"}))
+        return 2
+    if args.loop_pause_s < sweep_loop.MIN_PAUSE_S:
+        print(json.dumps({"aborted": True,
+                          "reason": f"--loop-pause-s ({args.loop_pause_s}) doit valoir au moins "
+                                    f"{sweep_loop.MIN_PAUSE_S} s — une boucle ne martèle pas AKS"}))
+        return 2
+    if args.max_pages < 1 or args.start_page < 1:
+        # Review 2026-09-09: with the cap now benign coverage (not a halt), a zero/negative
+        # cap would be a silent exit-0 "done" run that processes NO page. Fail loud instead.
+        print(json.dumps({"aborted": True,
+                          "reason": f"--max-pages ({args.max_pages}) and --start-page "
+                                    f"({args.start_page}) must be >= 1"}))
+        return 2
+
+    # Audit (Romain 2026-08-14): --move-execute only has an effect with --triage
+    # (the Move stage is installed only then). Accepting it silently would let an
+    # operator believe they requested real moves. Fail loud instead.
+    if args.move_execute and not args.triage:
+        print(json.dumps({"aborted": True, "reason": (
+            "--move-execute n'a d'effet qu'avec --triage (le pas Move n'est installé "
+            "que sous --triage). Ajoute --triage, ou retire --move-execute.")}))
+        return 2
+
+    if args.all_allowlisted and (args.targets or args.merchant or args.store_id or args.group):
+        print(json.dumps({"aborted": True, "reason": (
+            "--all-allowlisted balaie déjà toute la liste blanche — ne le combine pas avec "
+            "--targets / --merchant / --store-id / --group")}))
+        return 2
+    if args.group and (args.targets or args.merchant or args.store_id):
+        print(json.dumps({"aborted": True, "reason": (
+            "--group porte déjà sa liste de marchands — ne le combine pas avec "
+            "--targets / --merchant / --store-id")}))
+        return 2
+
+    targets: list[tuple[str, str]] = []
+    if args.all_allowlisted:
+        from src.admin.auto_merchants import AUTO_MERCHANTS
+        targets = [(name, store) for name, store in AUTO_MERCHANTS]
+    elif args.group:
+        # Un groupe inconnu, mal écrit ou désynchronisé de la liste blanche lève : on ne
+        # lance pas un balayage sur une liste de cibles approximative (fail-closed).
+        from src.merchant_groups import targets_for
+        try:
+            targets = targets_for(args.group)
+        except KeyError as exc:
+            print(json.dumps({"aborted": True, "reason": str(exc)}, ensure_ascii=False))
+            return 2
+    elif args.targets:
+        for tok in args.targets.split(","):
+            tok = tok.strip()
+            if not tok:
+                continue
+            if ":" not in tok:
+                print(json.dumps({"aborted": True, "reason": f"bad target {tok!r} — attendu Merchant:store_id"}))
+                return 2
+            m, s = tok.rsplit(":", 1)
+            targets.append((m.strip(), s.strip()))
+    elif args.merchant and args.store_id:
+        targets.append((args.merchant.strip(), args.store_id.strip()))
+    if not targets:
+        print(json.dumps({"aborted": True, "reason": "aucun marchand — --targets ou --merchant/--store-id"}))
+        return 2
+    for m, s in targets:
+        if not s.isdigit():
+            print(json.dumps({"aborted": True, "reason": f"store_id non numérique pour {m!r}: {s!r}"}))
+            return 2
+        # P2-2 (audit 2026-09-02): safe-auto WRITES without human validation, so the
+        # merchant allowlist is an AUTHORITATIVE gate, not a UI suggestion. The HTTP
+        # handler re-checks it (app.py _post_data_entry_auto), but this deterministic
+        # CLI entrypoint — the one that actually spawns the writes — only validated
+        # `store_id.isdigit()`, so `--targets 'Difmark:167'` (parked, non-vetted) could
+        # sweep and create offers bypassing the gate. Enforce the SAME allowlist here,
+        # fail-closed, refusing the whole batch on any miss (canonical store enforced).
+        reason = rejection_reason(m, s)
+        if reason is not None:
+            print(json.dumps({"aborted": True, "reason": reason}))
+            return 2
+
+    _RUNNER.install()
+
+    run_id = args.run_id or f"{datetime.now(timezone.utc):%Y%m%d-%H%M%S}-auto"
+    sweep_dir = ROOT / "runs" / run_id
+    # Le marqueur AVANT la création du dossier : un refus ne doit pas laisser derrière lui un
+    # `runs/<run-id>/` vide (audit du 2026-09-18). En boucle, il porte l'id du LANCEMENT d'un
+    # bout à l'autre : la console suit ce run, et lit `loop.json` pour la passe courante.
+    try:
+        run_marker.write_marker(ROOT, run_id=run_id, kind="data_entry_auto", source="cli")
+    except run_marker.ActiveRunExists as exc:
+        print(json.dumps({"aborted": True, "reason": str(exc), "active": exc.marker},
+                         ensure_ascii=False, indent=2))
+        return 2
+    atexit.register(run_marker.clear_marker, ROOT, run_id)
+    # Réfuteur du 2026-09-19 : une relance explicite avec le MÊME --run-id héritait du
+    # `targets_queue.closed` du run précédent (tout ajout refusé « sweep_finishing » dès le
+    # premier marchand) ET de son ancienne file (un marchand non demandé rebalayé). Un
+    # lancement démarre avec un canal PROPRE : `--targets` est tout le plan. `missing_ok`
+    # couvre aussi le dossier absent, donc unlink → mkdir tient dans les deux cas.
+    # …mais SEULEMENT sur une relance (un recap.json existe déjà). Revue `/code-review` : la
+    # console déclare le run occupé (dossier créé, marqueur `_active`) AVANT de lancer ce
+    # processus — un ajout accepté pendant notre démarrage vivait déjà dans la file et
+    # l'effacement inconditionnel le détruisait. Un dossier neuf de la console ne contient
+    # qu'admin_submit.json : sa file est pour NOUS.
+    if (sweep_dir / "recap.json").exists():
+        (sweep_dir / TARGETS_QUEUE).unlink(missing_ok=True)
+        (sweep_dir / sweep_loop.LOOP_FILE).unlink(missing_ok=True)
+    sweep_dir.mkdir(parents=True, exist_ok=True)
+    if args.loop:
+        return run_loop(args, targets, run_id=run_id, launch_dir=sweep_dir)
+    recap = run_pass(args, targets, run_id=run_id, pass_dir=sweep_dir, queue_dir=sweep_dir,
+                     consumed=set())
     # [34] Fable re-audit 2026-09-06: exit non-zero when the sweep HALTED fail-closed, so
     # a supervising caller (manager / CI) sees the failure instead of a green exit 0. A
     # clean run or a cooperative operator stop is a 0.

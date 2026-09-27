@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from src import sweep_loop
 from src.admin.runs import (
     RunAccessError,
     list_runs,
@@ -855,13 +856,19 @@ class AdminHandler(BaseHTTPRequestHandler):
             # "false" avait déjà lancé les 14 marchands une fois (audit du 2026-09-16).
             raise ApiError(400, "bad_all_pages",
                            "all_pages doit être un booléen JSON (true / false)")
+        # La BOUCLE (Romain, 2026-09-27) : même exigence, un vrai booléen — une boucle est un
+        # balayage qui ne s'arrête qu'à « Arrêter » ou sur un arrêt de sécurité.
+        loop = body.get("loop", False)
+        if not isinstance(loop, bool):
+            raise ApiError(400, "bad_loop", "loop doit être un booléen JSON (true / false)")
         result = self.state.manager.start_data_entry_auto(
             targets, by=by, all_pages=all_pages,
             max_pages=_parse_int(body.get("max_pages")),
             start_page=_parse_int(body.get("start_page")),
             continue_on_halt=bool(body.get("continue_on_halt")),
             list_id=_parse_list_id(body),     # Romain 2026-09-23 : la liste est choisie ici
-            consoles=_parse_consoles(body))   # [R45] default True (Romain 2026-09-15)
+            consoles=_parse_consoles(body),   # [R45] default True (Romain 2026-09-15)
+            loop=loop, loop_pause_s=_parse_int(body.get("loop_pause_s")))
         self._send_json(200, result)
 
     def _post_data_entry_auto_add_target(self) -> None:
@@ -943,6 +950,18 @@ class AdminHandler(BaseHTTPRequestHandler):
             run_id = autos[0]
         run_dir = self._run_dir(run_id)
         recap_path = run_dir / "recap.json"
+        # En BOUCLE (2026-09-27), le run demandé est le LANCEMENT (le marqueur, ce que la
+        # console suit) ; le recap servi est celui de la passe COURANTE (`loop.json` →
+        # `current_run_id`), et l'état de la boucle part avec (`loop`). Lecture seule.
+        loop_status = sweep_loop.read_status(run_dir)
+        pass_run_id = sweep_loop.current_pass_run_id(run_dir)
+        if pass_run_id:
+            try:
+                recap_path = self._run_dir(pass_run_id) / "recap.json"
+            except ApiError:
+                # Une passe nommée dont le dossier manque : pas de recap plutôt que celui du
+                # lancement (la passe 1, finie), qui se lirait comme l'état courant.
+                recap_path = None
         # recap_sha256 binds the "Saisir" typed-GO to the EXACT preview shown (AS1):
         # the client echoes it, the manager re-checks the sha of the same recap.
         # P1 (2026-08-25 review): read ONCE and derive BOTH the displayed recap and
@@ -951,14 +970,18 @@ class AdminHandler(BaseHTTPRequestHandler):
         # (mirrors the manager's single-read; the old two reads — read_run_json then
         # sha256_file — could split across a flush).
         recap, sha = None, None
-        if recap_path.is_file():
+        if recap_path is not None and recap_path.is_file():
             try:
                 raw = recap_path.read_bytes()
                 recap = json.loads(raw)
                 sha = hashlib.sha256(raw).hexdigest()
             except (OSError, ValueError):
                 recap, sha = None, None
-        self._send_json(200, {"run_id": run_id, "recap": recap, "recap_sha256": sha})
+        payload: dict[str, Any] = {"run_id": run_id, "recap": recap, "recap_sha256": sha}
+        if loop_status is not None:
+            payload["loop"] = loop_status
+            payload["pass_run_id"] = pass_run_id or run_id
+        self._send_json(200, payload)
 
     def _post_data_entry_by_urls_submit(self) -> None:
         body = self._json_body()

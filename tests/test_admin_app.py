@@ -713,6 +713,25 @@ class DataEntryAutoAllowlistTests(AppTestCase):
             self.assertEqual(kwargs["max_pages"], 20, extra)
             self.assertIsNone(kwargs["start_page"], extra)
 
+    def test_loop_travels_as_a_real_boolean(self):
+        """Romain, 2026-09-27 : la case « Boucler » — un vrai booléen JSON, comme all_pages."""
+
+        vus = []
+        self.manager.start_data_entry_auto = lambda targets, **k: vus.append((targets, k)) or {"run_id": "r"}
+        response, _ = self._json("POST", "/api/data-entry/auto",
+                                 body={"group": "A", "confirm": "GO", "all_pages": True, "loop": True})
+        self.assertEqual(response.status, 200)
+        self.assertIs(vus[0][1]["loop"], True)
+        response, _ = self._json("POST", "/api/data-entry/auto",
+                                 body={"group": "A", "confirm": "GO", "all_pages": True})
+        self.assertEqual(response.status, 200)
+        self.assertIs(vus[1][1]["loop"], False)
+        response, data = self._json("POST", "/api/data-entry/auto",
+                                    body={"group": "A", "confirm": "GO", "all_pages": True, "loop": "true"})
+        self.assertEqual(response.status, 400)
+        self.assertEqual(data["error"]["code"], "bad_loop")
+        self.assertEqual(len(vus), 2, "rien n'est lancé sur un loop mal typé")
+
     def test_an_unknown_group_is_refused_without_launching(self):
         calls = []
         self.manager.start_data_entry_auto = lambda *a, **k: calls.append((a, k)) or {}
@@ -771,8 +790,9 @@ class DataEntryAutoAllowlistTests(AppTestCase):
     def test_suggested_merchant_accepted(self):
         seen = {}
         def fake(targets, *, by, max_pages=None, start_page=None, continue_on_halt=False,
-                 consoles=True, all_pages=False, list_id=None):
+                 consoles=True, all_pages=False, list_id=None, loop=False, loop_pause_s=None):
             seen["targets"] = targets
+            seen["loop"] = loop                # boucle (Romain 2026-09-27) — False par défaut
             seen["continue_on_halt"] = continue_on_halt
             seen["consoles"] = consoles
             seen["all_pages"] = all_pages      # couverture totale (Romain 2026-09-18)
@@ -824,6 +844,36 @@ class DataEntryRecapRouteTests(AppTestCase):
         response, body = self._json("GET", "/api/data-entry/recap")
         self.assertEqual(response.status, 200)
         self.assertIsNone(body["recap"])
+
+    def test_recap_of_a_loop_follows_the_current_pass(self):
+        """La BOUCLE (2026-09-27) : la console suit le run du LANCEMENT (le marqueur) ; la
+        route sert le recap de la passe COURANTE, et l'état de la boucle avec."""
+
+        launch = self._auto_run("20260927-080000-auto", created=5, finished="2026-09-27T09:00:00Z")
+        self._auto_run("20260927-080000-auto-pass2", created=2)
+        (self.runs / launch / "loop.json").write_text(json.dumps({
+            "run_id": launch, "loop": True, "state": "running", "pass": 2,
+            "current_run_id": launch + "-pass2", "pause_s": 300,
+            "passes": [{"pass": 1, "run_id": launch, "finished_at": "2026-09-27T09:00:00Z", "total_created": 5}],
+        }), encoding="utf-8")
+        response, body = self._json("GET", f"/api/data-entry/recap?run={launch}")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(body["run_id"], launch)
+        self.assertEqual(body["pass_run_id"], launch + "-pass2")
+        self.assertEqual(body["recap"]["total_created"], 2)
+        self.assertEqual(body["loop"]["pass"], 2)
+        # « le plus récent » = le lancement (les dossiers de passe ne finissent pas en -auto)
+        response, body = self._json("GET", "/api/data-entry/recap")
+        self.assertEqual(body["run_id"], launch)
+        self.assertEqual(body["recap"]["total_created"], 2)
+        # une passe courante dont le dossier manque : le recap du lancement, sans 500
+        (self.runs / launch / "loop.json").write_text(json.dumps({
+            "run_id": launch, "loop": True, "state": "running", "pass": 3,
+            "current_run_id": launch + "-pass3", "passes": []}), encoding="utf-8")
+        response, body = self._json("GET", f"/api/data-entry/recap?run={launch}")
+        self.assertEqual(response.status, 200)
+        self.assertIsNone(body["recap"])
+        self.assertEqual(body["loop"]["pass"], 3)
 
 
 class DataEntryByUrlsRouteTests(AppTestCase):

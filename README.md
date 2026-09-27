@@ -556,6 +556,43 @@ just halts each following merchant at its first read. The recap lands in `runs/<
 merchant with `created` and any `halted` reason. Consoles are INCLUDED by default `[R45]`;
 add `--no-consoles` for a PC-only pass.
 
+**Boucler — relancer le groupe à sa fin, jusqu'à « Arrêter » (2026-09-27, Romain : « 5 min de
+pause, sans limite, go pour la boucle »).** La case **« Boucler »** de la console (elle vaut pour
+les trois boutons) ou `--loop` au CLI : à la fin du dernier marchand, le sweep attend **5 min**
+(30 min si la passe n'a rien créé), puis repart du début de la même liste de cibles, de la
+dernière page vers la 1, **sans limite de passes**. Un seul processus, toujours enfant de
+l'admin : « Arrêter » agit à tout moment, pause comprise, et ne relance jamais. **Une passe = un
+recap** — la passe 1 dans `runs/<run-id>/`, la passe N dans `runs/<run-id>-passN/` (ses pages
+`<run-id>-passN-<slug>-s<store>-p<page>`) ; `runs/<run-id>/loop.json` dit où en est la boucle
+(`docs/DATA_CONTRACTS.md`), la route recap sert le recap de la passe COURANTE et la console
+affiche un bandeau « Boucle : passe 3 · 2 passes finies (1 343 + 210 créées) · prochaine passe
+dans 4 min ». **Elle s'arrête d'elle-même** (motif affiché) sur une déconnexion (« session
+expirée — transfert de cookies requis », jamais de re-auth), un blocage du garde, ou une passe
+où TOUS les marchands se sont arrêtés ; un marchand arrêté seul est repris à la passe suivante.
+Un marchand ajouté « en cours de run » vaut pour la passe où il est pris ; une entrée arrivée
+tard est prise par la passe suivante. Un marchand nouvellement allowlisté n'entre qu'au prochain
+lancement. Le sitemap est re-vérifié à chaque passe. Règle : `src/sweep_loop.py`.
+
+```bash
+# groupe B en boucle, toutes les pages, 5 min entre deux passes — Ctrl-C (ou « Arrêter ») pour finir
+python3 scripts/10_data_entry_auto.py --group B --all-pages --run-id <id> --continue-on-halt --sitemap-refresh --loop
+```
+
+**Discord : un message quand la boucle s'arrête (`src/notify.py`).** Un **webhook** du salon
+(Discord : paramètres du salon → Intégrations → Webhooks → Nouveau webhook → copier l'URL),
+posé dans le fichier **`.env` à la racine du clone LIVE de CHAQUE VPS** (jamais commité,
+`.gitignore`) :
+
+```
+AKS_DISCORD_WEBHOOK=https://discord.com/api/webhooks/<id>/<token>
+```
+
+Le balayage relit `.env` à CHAQUE lancement (un processus neuf, même depuis la console) : pas de
+redémarrage de l'admin. Messages : fin de passe (créées, arrêts, prochaine passe), arrêt de la
+boucle avec son motif, session expirée. L'URL n'est jamais journalisée ni affichée (seule sa
+présence l'est) ; un échec d'envoi est un événement `notify_failed` et n'arrête jamais rien ;
+sans webhook, rien ne part.
+
 **La page en cours se voit dans `/executor/auto` (2026-09-26).** Un marchand apparaît dès qu'il
 démarre, et la page qu'il traite s'affiche avec son étape — lecture du feed, matching, saisie,
 déplacement, pause après une erreur passagère — dans le résumé (« ▶ en cours : Gamesplanet FR ·

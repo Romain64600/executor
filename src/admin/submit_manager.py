@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 
 from src.aks_lists import PENDING_LIST_ID
-from src.admin.runs import RunAccessError, derive_merchant_store, run_file, sha256_file
+from src.admin.runs import RunAccessError, derive_merchant_store, run_file, safe_run_dir, sha256_file
 from src.run_log import RunLogger, redact
 from src.validation import ValidationError, verify_approved_against_source
 
@@ -109,6 +109,7 @@ def _write_atomic(path: Path, text: str) -> None:
 
 from src.browser_lock import lock_status
 from src.run_marker import read_marker
+from src import sweep_loop
 
 def _pid_alive(pid: int) -> bool:
     try:
@@ -796,11 +797,29 @@ class SubmitManager:
         if not run_dir.is_dir():
             refuse("no_run_dir", f"dossier de run introuvable pour {active_run!r}")
         with self._mutex:
-            recap = self._read_recap(run_dir)
+            # En BOUCLE (2026-09-27), le recap qui fait foi est celui de la passe COURANTE
+            # (`loop.json` → `current_run_id`), pas celui du lancement (la passe 1, finie).
+            # Et la file n'est jamais « fermée » tant que la boucle vit : une entrée arrivée
+            # après la dernière relecture d'une passe est prise par la passe suivante — pendant
+            # la pause, la relecture est la première chose que fait la passe qui démarre.
+            loop = sweep_loop.read_status(run_dir)
+            loop_alive = bool(loop) and loop.get("state") in ("running", "pause")
+            recap_dir = run_dir
+            pass_id = sweep_loop.current_pass_run_id(run_dir)
+            if pass_id:
+                try:
+                    recap_dir = safe_run_dir(self.repo_root / "runs", pass_id)
+                except RunAccessError:
+                    recap_dir = run_dir
+            recap = self._read_recap(recap_dir)
+            if loop and not loop_alive:
+                refuse("sweep_finishing",
+                       f"la boucle est arrêtée ({loop.get('stopped_label') or loop.get('state')}) — "
+                       "ajoute le marchand au prochain lancement")
             # Fermée = le sweep termine : refuser AVANT tout, même avant les doublons (revue
             # `/code-review` : une relance après une réponse « NON garantie » recevait 200
             # « déjà dans la file », qui se lisait comme une promesse).
-            if recap.get("queue_closed"):
+            if recap.get("queue_closed") and not loop_alive:
                 refuse("sweep_finishing",
                        "le sweep se termine — l'ajout n'aurait pas été traité ; "
                        "ajoute le marchand au prochain lancement")
@@ -835,7 +854,7 @@ class SubmitManager:
             # précédé la fermeture, donc la relecture qui la suit la voit : promesse tenue.
             # Apparue entre-temps → on ne sait pas de quel côté de la relecture l'écriture est
             # tombée : on le DIT au lieu de promettre (le recap fait foi).
-            if self._read_recap(run_dir).get("queue_closed"):
+            if not loop_alive and self._read_recap(recap_dir).get("queue_closed"):
                 if log is not None:
                     log.log("add_target_uncertain", merchant=merchant, store_id=store_id, by=by,
                             run_id=active_run)
@@ -853,6 +872,7 @@ class SubmitManager:
         max_pages: int | None = None, start_page: int | None = None,
         continue_on_halt: bool = False, consoles: bool = True,
         all_pages: bool = False, list_id: int | None = None,
+        loop: bool = False, loop_pause_s: int | None = None,
     ) -> dict[str, Any]:
         """Launch the safe-auto data-entry sweep (Romain's explicit go, 2026-08-04):
         for each ``(merchant, store_id)`` target, sweep the feed page by page —
@@ -920,12 +940,26 @@ class SubmitManager:
             # voit immédiatement dans l'argv du run.
             if list_id is not None and int(list_id) != int(PENDING_LIST_ID):
                 argv += ["--list", str(int(list_id))]
+            # La BOUCLE (Romain, 2026-09-27 : « 5 min de pause, sans limite, go pour la
+            # boucle ») : le même processus enchaîne les passes, le marqueur reste ce run —
+            # « Arrêter » l'arrête comme aujourd'hui, pause comprise. La pause ne voyage que si
+            # elle diffère du défaut (5 min) ; jamais sous la minute (le CLI refuse aussi).
+            if loop:
+                argv.append("--loop")
+                if loop_pause_s is not None and int(loop_pause_s) != sweep_loop.DEFAULT_PAUSE_S:
+                    if int(loop_pause_s) < sweep_loop.MIN_PAUSE_S:
+                        raise SubmitStartError(
+                            "bad_loop_pause",
+                            f"loop_pause_s doit valoir au moins {sweep_loop.MIN_PAUSE_S} s",
+                            http_status=400)
+                    argv += ["--loop-pause-s", str(int(loop_pause_s))]
             return self._spawn(
                 run_dir, kind="data_entry_auto", argv=argv,
                 meta={"targets": [{"merchant": m, "store_id": s} for m, s in clean],
                       "by": by, "run_id": run_id, "max_pages": max_pages,
                       "continue_on_halt": bool(continue_on_halt),
                       "consoles": bool(consoles),
+                      "loop": bool(loop),
                       "list_id": int(list_id) if list_id is not None else int(PENDING_LIST_ID)},
             )
 

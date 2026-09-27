@@ -1117,6 +1117,27 @@ doute après un clic reste une halte (Kinguin p2, offre 101140732, rebond wp-log
 « Create »). Tests : `tests/test_retry_gaps_2026_09_26.py` sur les vrais journaux élagués
 (`tests/fixtures/retry_2026_09_26/`).
 
+**La BOUCLE — relancer un groupe à sa fin, jusqu'à « Arrêter » (2026-09-27, Romain : « 5 min de
+pause, sans limite, go pour la boucle »).** `scripts/10 --loop` (case « Boucler » de la console,
+pour les trois boutons) enchaîne des passes dans le MÊME processus, enfant de l'admin : à la fin
+du dernier marchand, une pause de 5 min (30 min si la passe n'a rien créé), puis une nouvelle
+passe sur la MÊME liste de cibles — le groupe détendu au lancement —, de la dernière page vers la
+1, sans limite de passes. Le marqueur reste celui du lancement ; chaque passe a son recap
+(`runs/<run-id>-passN/`) et `runs/<run-id>/loop.json` dit la passe courante (DATA_CONTRACTS).
+« Arrêter » agit à tout moment, pause comprise (tranches de 5 s), et ne relance jamais. La
+boucle **s'arrête d'elle-même**, motif consigné et affiché, dans trois cas et trois seulement —
+boucler ne transforme jamais un arrêt fail-closed en martèlement d'AKS : (1) une déconnexion vue
+dans la passe (un marchand arrêté avec un détail « not logged in », ou un plan `not_logged_in`)
+→ « session expirée — transfert de cookies requis », jamais de reconnexion automatique ; (2) le
+garde StepGuard a bloqué ; (3) TOUS les marchands de la passe se sont arrêtés. Un marchand arrêté
+seul est repris à la passe suivante (c'est le but) ; un rebond wp-login vu seulement dans le
+texte d'une offre UNKNOWN (après un clic) ne compte pas seul — une session vraiment perdue
+arrête le marchand suivant à sa première lecture, et c'est là qu'on la voit. Le sitemap est
+re-vérifié à chaque passe (`--sitemap-refresh`), le catalogue et le disjoncteur R30 sont ceux de
+la passe. Un message Discord part à chaque fin de passe et à l'arrêt de la boucle si
+`AKS_DISCORD_WEBHOOK` est posé dans `.env` (`src/notify.py`, jamais journalisé, jamais une
+halte). Règle et arrêts : `src/sweep_loop.py` ; tests : `tests/test_sweep_loop_2026_09_27.py`.
+
 **Une page déjà entièrement vue n'est pas rejouée (2026-09-24, Romain : « go pour sauter les
 pages vides »).** Le feed d'AKS renvoie parfois la même centaine d'offres pour des numéros de page
 différents : le 24/09, Wyrel a lu cinq fois les mêmes lignes (pages 45 → 41) et retenté

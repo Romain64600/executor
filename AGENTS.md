@@ -250,6 +250,19 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   d'href » (c'est lui qui refuse une page périmée dont les lignes contiennent notre terme) :
   ni l'un ni l'autre.
 
+- **La BOUCLE d'un groupe — Romain, 2026-09-27** (« qu'on puisse quand même aller l'arrêter,
+  mais qu'il boucle », puis « 5 min de pause, sans limite, go pour la boucle »). `--loop` / case
+  « Boucler » : des passes sans limite dans le même processus supervisé, 5 min de pause (30 si la
+  passe n'a rien créé), « Arrêter » immédiat pause comprise. Elle s'arrête D'ELLE-MÊME dans trois
+  cas, et trois seulement : session expirée (→ transfert de cookies par Romain, jamais de
+  re-auth), garde bloqué, TOUS les marchands de la passe arrêtés. Un audit voudra (a) retirer
+  l'arrêt « tous arrêtés » (« un marchand seul se reprend, pourquoi pas tous ? ») — non : tous
+  arrêtés = une panne systématique, boucler la martèlerait ; (b) une reconnexion automatique pour
+  que la boucle survive à une session expirée — non, jamais (AGENTS « Mission ») ; (c) arrêter la
+  boucle au premier marchand arrêté — non, c'est précisément ce qu'elle doit reprendre. Le
+  webhook Discord (`AKS_DISCORD_WEBHOOK`, `.env`) est un secret : jamais journalisé, jamais
+  commité ; sans lui, aucune notification, et un échec d'envoi n'arrête rien.
+
 - **Déconnexion pendant un lot : le lot CONTINUE — Romain, 2026-09-26** (« le lot continue »).
   Avec `--continue-on-halt`, un « not logged in » arrête le marchand (halte de page, jamais une
   reprise automatique) puis le lot passe au suivant ; il arrêtait tout le lot avant. Aucune
