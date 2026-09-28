@@ -26,10 +26,10 @@ pour les questions des développeurs.
 |---|---:|---:|---:|
 | 1 — Titre | 12 s | 25 | 0:12 |
 | 2 — Le problème | 28 s | 58 | 0:40 |
-| 3 — La solution | 33 s | 71 | 1:13 |
+| 3 — La solution | 33 s | 70 | 1:13 |
 | 4 — Les résultats | 22 s | 39 | 1:35 |
 | 5 — La confiance | 34 s | 70 | 2:09 |
-| 6 — Ce que ça change pour vous | 29 s | 62 | 2:38 |
+| 6 — Ce que ça change pour vous | 29 s | 63 | 2:38 |
 | 7 — La suite, merci | 12 s | 26 | 2:50 |
 | **Total** | **170 s** | **351** | |
 
@@ -52,10 +52,10 @@ Conseil : sourire, poser le cadre, passer vite. Appuyer sur T (chrono) juste ava
 Conseil : montrer l'exemple à droite (le titre du marchand, puis les quatre choix). Marquer une
 pause après « 50 000 ».
 
-## 3 — La solution · 33 s · 71 mots
+## 3 — La solution · 33 s · 70 mots
 
 > Notre solution : un robot qui reprend les gestes répétitifs, en quatre étapes. Un : il lit la
-> file d'attente. Deux : il trouve la bonne fiche du jeu. Trois : il choisit la plateforme, la
+> file d'attente. Deux : il trouve la bonne page produit. Trois : il choisit la plateforme, la
 > région, l'édition, dans le vrai formulaire d'AllKeyShop. Et quatre, le plus important : il
 > retourne voir la file d'attente. Si l'offre n'y est plus, c'est qu'elle est bien enregistrée.
 > C'est sa preuve. Il tourne jour et nuit, sur deux serveurs.
@@ -80,10 +80,10 @@ du record (il dépend du fuseau horaire, voir les questions en fin de texte).
 
 Conseil : c'est le message le plus important pour le public non technique — le dire lentement.
 
-## 6 — Ce que ça change pour vous · 29 s · 62 mots
+## 6 — Ce que ça change pour vous · 29 s · 63 mots
 
 > Qu'est-ce que ça change pour vous ? Pour l'équipe data entry : le répétitif part au robot, les
-> cas délicats restent entre vos mains. Pour le SEO : plus de prix, sur plus de fiches, mis en
+> cas délicats restent entre vos mains. Pour le SEO : plus de prix, sur plus de pages produits, mis en
 > ligne plus vite. Pour les managers : des chiffres précis, offre par offre. Et pour toute
 > l'équipe : moins de copier-coller, plus de temps pour ce qui demande du jugement.
 
@@ -102,7 +102,7 @@ nouveaux marchands) reste à l'équipe. Ne rien promettre au nom des RH.
   une et testées. Si on insiste : il a été construit avec l'aide d'une IA, mais ce qui tourne suit
   des règles fixes.
 - **« Et s'il se trompe ? »** C'est rare. Quand on trouve une erreur, on corrige la règle et on
-  liste les offres concernées pour les reprendre : le 26/09, 22 offres mal rangées (18 sur la fiche
+  liste les offres concernées pour les reprendre : le 26/09, 22 offres mal rangées (18 sur la page produit
   d'un contenu additionnel au lieu de celle du jeu, 4 dans la mauvaise édition), règle corrigée le
   jour même.
 - **« Il en reste combien ? »** Les 50 000 sont le relevé du 25/09 ; la file bouge, il arrive
