@@ -54,7 +54,7 @@ plus haute vers la 1 : les créations font remonter les lignes, donc on ne rate 
 
 Lire de haut en bas : à chaque étape, on avance ou on refuse avec un motif écrit. À droite, les
 refus les plus fréquents. Ce qui décide : le fichier du marchand (sa grammaire de titre / URL /
-fiche) et les règles générales numérotées. Le prix n'est **jamais** un juge (Romain : « faut pas
+page produit) et les règles générales numérotées. Le prix n'est **jamais** un juge (Romain : « faut pas
 se fier au prix »). Un doute = un refus : la ligne reste au feed pour un humain.
 
 ## 8 — Des décisions réelles
@@ -63,7 +63,7 @@ Ce sont de vraies lignes des balayages des 25 et 26 septembre. Chaque décision 
 règle écrite et testée : Play Anywhere confirmé sur la page PC ; PS5 hors GLOBAL → case
 PlayStation de la génération (P3) ; « <Jeu> <X> Edition » = jeu + DLC → page du jeu (R18c, décidé
 le 26/09 après avoir relu comment AKS range déjà ces offres : 25 offres « Mea Culpa Edition » sur
-la page du jeu) ; Gamesplanet lit sa fiche ; Microsoft Store exige « Microsoft Windows » sur la
+la page du jeu) ; Gamesplanet lit sa page produit ; Microsoft Store exige « Microsoft Windows » sur la
 page (R62). Les deux refus illustrent le fail-closed.
 
 ## 9 — Où vivent les règles
@@ -119,7 +119,7 @@ balayage, ou consacrées aux corrections et aux nouvelles règles. Le 27 est une
 
 ## 16 — Les marchands couverts
 
-Priorité aux boutiques dont le feed dit tout (titre + URL) ; ensuite celles dont la fiche est
+Priorité aux boutiques dont le feed dit tout (titre + URL) ; ensuite celles dont la page produit est
 lisible en HTTP (Gamesplanet FR, Discover.games) ; les boutiques derrière Cloudflare (Wyrel) ne
 peuvent pas être lues, on ne dépend donc jamais de leur page. Trois marchands ajoutés en trois
 jours. Pixelcodes / Software-codes : 3 085 produits de leur feed introuvables sur leur site — la

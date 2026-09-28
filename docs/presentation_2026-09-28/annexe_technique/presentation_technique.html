@@ -198,7 +198,7 @@
 <rect x="1220" y="730" width="330" height="110" rx="14" ry="14" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
 <text x="1385.0" y="764" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">Marchands</text>
 <text x="1385.0" y="794" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">feeds importés par AKS</text>
-<text x="1385.0" y="819" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">fiches produit (lues pour certains)</text>
+<text x="1385.0" y="819" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">pages produits (lues pour certains)</text>
 <line x1="310" y1="400" x2="420" y2="320" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-01_vue_d_ensemble)"/>
 <text x="365.0" y="346.0" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">navigateur</text>
 <line x1="570" y1="370" x2="570" y2="420" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-01_vue_d_ensemble)"/>
@@ -216,7 +216,7 @@
 <line x1="1385" y1="480" x2="1385" y2="430" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-01_vue_d_ensemble)" stroke-dasharray="9 7"/>
 <text x="1395" y="460" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e;font-style:italic">même catalogue</text>
 <path d="M1220,800 L1000,800 L1000,610" fill="none" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-01_vue_d_ensemble)" stroke-dasharray="9 7"/>
-<text x="1000" y="830" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">fiche marchand</text>
+<text x="1000" y="830" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">page produit marchand</text>
 </svg>
 </div>
   <aside class="notes">Trois zones : l'opérateur (Romain), le VPS (console + exécuteur + navigateur piloté + journal) et AKS (wp-admin pour lire le feed et écrire ; le site public et son sitemap pour reconnaître les produits, en lecture HTTP). Deux VPS identiques, chacun un groupe de marchands. Le navigateur est un vrai Chrome avec la session WordPress : c'est lui qui écrit, jamais un appel fabriqué.</aside>
@@ -360,7 +360,7 @@
 <rect x="330" y="408" width="620" height="90" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
 <text x="350" y="438" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:21px;font-weight:600;fill:#0b0b0b">3 · Plateforme</text>
 <text x="350" y="460" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">Steam, Epic, GOG, Ubisoft, EA, Microsoft…</text>
-<text x="350" y="477" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">lue dans le titre, l'URL ou la fiche ;</text>
+<text x="350" y="477" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">lue dans le titre, l'URL ou la page produit ;</text>
 <text x="350" y="494" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">la page AKS doit la vendre (R20)</text>
 <line x1="640.0" y1="498" x2="640.0" y2="504" stroke="#52514e" stroke-width="3" marker-end="url(#pointe-03_parcours_offre)"/>
 <rect x="1010" y="414" width="520" height="78" rx="10" ry="10" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>
@@ -422,7 +422,7 @@
 <text x="60" y="584" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e">  par défaut</text>
 </svg>
 </div>
-  <aside class="notes">La lecture se fait de haut en bas : à chaque étape, soit on avance, soit on refuse avec un motif écrit. À droite, les refus les plus fréquents. Ce qui décide : le fichier du marchand (sa grammaire de titre / URL / fiche) et les règles générales. Le prix n'est jamais un juge. En cas de doute, on refuse : la ligne reste dans le feed pour un humain.</aside>
+  <aside class="notes">La lecture se fait de haut en bas : à chaque étape, soit on avance, soit on refuse avec un motif écrit. À droite, les refus les plus fréquents. Ce qui décide : le fichier du marchand (sa grammaire de titre / URL / page produit) et les règles générales. Le prix n'est jamais un juge. En cas de doute, on refuse : la ligne reste dans le feed pour un humain.</aside>
 </section>
 
 <!-- 8 -->
@@ -433,7 +433,7 @@
     <tr><td>Eneba — « Nine Sols PC/XBOX LIVE Key EUROPE »</td><td><span class="etq ok">saisie</span> pages Xbox One + Xbox Series + PC, case Xbox/PC EU</td><td>la page PC d'AKS affiche « Xbox Play Anywhere » ; clé Xbox sans génération → les deux pages Xbox</td></tr>
     <tr><td>Kinguin — « Dune: Awakening US PS5 CD Key »</td><td><span class="etq ok">saisie</span> page PS5, case PlayStation US</td><td>la région du titre, la case PlayStation de la génération (règle P3)</td></tr>
     <tr><td>Gamivo — « Blasphemous 2 Mea Culpa Edition »</td><td><span class="etq ok">saisie</span> page du jeu Blasphemous 2, édition « Mea Culpa Edition »</td><td>c'est le jeu + le DLC : AKS le range sur la page du jeu (25 offres y sont déjà), pas sur la page du DLC</td></tr>
-    <tr><td>Gamesplanet FR — clé Steam, fiche « ONLY Europe » sans les USA</td><td><span class="etq ok">saisie</span> Steam EU</td><td>la région est lue sur la fiche marchand (pays exclus), selon la règle validée le 25/09</td></tr>
+    <tr><td>Gamesplanet FR — clé Steam, page produit « ONLY Europe » sans les USA</td><td><span class="etq ok">saisie</span> Steam EU</td><td>la région est lue sur la page produit du marchand (pays exclus), selon la règle validée le 25/09</td></tr>
     <tr><td>Gamivo — « Dishonored 2 » (xbox-pc-us)</td><td><span class="etq ok">saisie</span> Microsoft Store US</td><td>pas de Play Anywhere sur la page PC, mais elle vend « Microsoft Windows »</td></tr>
     <tr><td>CJS — « … PSN Download Key (Playstation) UNITED STATES »</td><td><span class="etq non">refus</span></td><td>PS4 ou PS5 ? le marchand ne le dit pas : on ne devine pas</td></tr>
     <tr><td>Wyrel — « … (PC) Rest of World »</td><td><span class="etq non">refus</span></td><td>une clé ROW n'entre que si on prouve qu'elle s'active en Europe ; rien ne le prouve</td></tr>
@@ -448,8 +448,8 @@
     <div class="colonne">
       <h3>Un fichier par marchand</h3>
       <ul>
-        <li><code>src/merchants/&lt;marchand&gt;.py</code> — 21 fichiers : comment CE marchand écrit la plateforme, la région, l'édition, dans son titre, son URL ou sa fiche.</li>
-        <li>Exemples : Wyrel écrit la région deux fois (titre + URL) et les deux doivent concorder ; Gamesplanet FR et Discover.games donnent la région sur la fiche ; Loaded cache la fiche dans un lien d'affiliation.</li>
+        <li><code>src/merchants/&lt;marchand&gt;.py</code> — 21 fichiers : comment CE marchand écrit la plateforme, la région, l'édition, dans son titre, son URL ou sa page produit.</li>
+        <li>Exemples : Wyrel écrit la région deux fois (titre + URL) et les deux doivent concorder ; Gamesplanet FR et Discover.games donnent la région sur leur page produit ; Loaded cache sa page produit dans un lien d'affiliation.</li>
         <li>Une règle marchande ne fuit jamais vers les autres.</li>
       </ul>
     </div>
@@ -587,7 +587,7 @@
       <ul>
         <li>Après le clic sur « Create », on <b>rafraîchit le feed</b> (même liste, même mode) et on cherche la ligne par son identité : <b>elle a disparu = créée</b>.</li>
         <li>Jamais un message « offre créée » de la page : seul le feed fait foi.</li>
-        <li>L'identité d'une ligne, c'est son URL marchand ; pour certains marchands, la partie de l'URL qui distingue les variantes (région, édition, fiche).</li>
+        <li>L'identité d'une ligne, c'est son URL marchand ; pour certains marchands, la partie de l'URL qui distingue les variantes (région, édition, page produit).</li>
       </ul>
     </div>
     <div class="colonne">
@@ -854,13 +854,13 @@
     <span>GameSeal</span><span>Gamivo</span><span>Eneba</span><span>Kinguin</span><span>G2A</span><span>CJS-CDKeys</span><span>GameBoost</span><span>Gamerall</span><span>Driffle</span><span>Electronicfirst</span><span>Instant Gaming</span><span>Allyouplay</span><span>MMOGA</span><span>K4G</span><span>GamersOutlet</span><span>Difmark</span><span>GOG</span><span>Wyrel</span><span>Gamesplanet FR</span><span class="neuf">Discover.games</span><span class="neuf">Loaded (ex-CDKeys)</span>
   </div>
   <ol class="etapes">
-    <li><b>Étudier le feed</b> : où sont la plateforme, la région, l'édition — dans le titre, l'URL ou la fiche ? Combien de lignes, combien seraient saisissables ? (docs/PROCHAINS_MARCHANDS.md tient la trace)</li>
+    <li><b>Étudier le feed</b> : où sont la plateforme, la région, l'édition — dans le titre, l'URL ou la page produit du marchand ? Combien de lignes, combien seraient saisissables ? (docs/PROCHAINS_MARCHANDS.md tient la trace)</li>
     <li><b>Écrire le fichier du marchand</b> et ses tests sur des lignes réelles ; vérifier sur AKS comment ces offres sont déjà rangées.</li>
     <li><b>Essai à blanc</b> (dry-run) sur 150 lignes : lire chaque refus, chaque candidate.</li>
     <li><b>Première saisie</b> supervisée, puis <b>liste blanche</b> et affectation à un groupe.</li>
   </ol>
   <p class="dim">Trois marchands ont été ajoutés en trois jours (Wyrel, Gamesplanet FR, Discover.games/Loaded). Les prochains candidats : Gamebillet ; Pixelcodes et Software-codes dès que leurs feeds pointent vers des produits existants.</p>
-  <aside class="notes">La priorité va aux boutiques dont le feed dit tout (titre + URL) ; ensuite celles dont la fiche est lisible en HTTP (Gamesplanet, Discover.games) ; les boutiques derrière Cloudflare (Wyrel) ne peuvent pas être lues, on ne dépend donc jamais de leur page.</aside>
+  <aside class="notes">La priorité va aux boutiques dont le feed dit tout (titre + URL) ; ensuite celles dont la page produit est lisible en HTTP (Gamesplanet, Discover.games) ; les boutiques derrière Cloudflare (Wyrel) ne peuvent pas être lues, on ne dépend donc jamais de leur page.</aside>
 </section>
 
 <!-- 17 -->

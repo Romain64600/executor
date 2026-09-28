@@ -53,7 +53,7 @@
 <rect x="1220" y="730" width="330" height="110" rx="14" ry="14" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="2"/>
 <text x="1385.0" y="764" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:24px;font-weight:600;fill:#0b0b0b">Marchands</text>
 <text x="1385.0" y="794" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">feeds importés par AKS</text>
-<text x="1385.0" y="819" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">fiches produit (lues pour certains)</text>
+<text x="1385.0" y="819" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:19px;font-weight:normal;fill:#52514e">pages produits (lues pour certains)</text>
 <line x1="310" y1="400" x2="420" y2="320" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)"/>
 <text x="365.0" y="346.0" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">navigateur</text>
 <line x1="570" y1="370" x2="570" y2="420" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)"/>
@@ -71,5 +71,5 @@
 <line x1="1385" y1="480" x2="1385" y2="430" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)" stroke-dasharray="9 7"/>
 <text x="1395" y="460" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:16px;font-weight:normal;fill:#52514e;font-style:italic">même catalogue</text>
 <path d="M1220,800 L1000,800 L1000,610" fill="none" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)" stroke-dasharray="9 7"/>
-<text x="1000" y="830" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">fiche marchand</text>
+<text x="1000" y="830" text-anchor="middle" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:18px;font-weight:normal;fill:#52514e;font-style:italic">page produit marchand</text>
 </svg>

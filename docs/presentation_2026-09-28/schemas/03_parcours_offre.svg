@@ -36,7 +36,7 @@
 <rect x="330" y="408" width="620" height="90" rx="12" ry="12" fill="#e3eefb" stroke="#2a78d6" stroke-width="2"/>
 <text x="350" y="438" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:21px;font-weight:600;fill:#0b0b0b">3 · Plateforme</text>
 <text x="350" y="460" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">Steam, Epic, GOG, Ubisoft, EA, Microsoft…</text>
-<text x="350" y="477" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">lue dans le titre, l'URL ou la fiche ;</text>
+<text x="350" y="477" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">lue dans le titre, l'URL ou la page produit ;</text>
 <text x="350" y="494" text-anchor="start" style="font-family:Inter, 'Segoe UI', Helvetica, Arial, sans-serif;font-size:15px;font-weight:normal;fill:#52514e">la page AKS doit la vendre (R20)</text>
 <line x1="640.0" y1="498" x2="640.0" y2="504" stroke="#52514e" stroke-width="3" marker-end="url(#pointe)"/>
 <rect x="1010" y="414" width="520" height="78" rx="10" ry="10" fill="#fde7dd" stroke="#eb6834" stroke-width="2"/>

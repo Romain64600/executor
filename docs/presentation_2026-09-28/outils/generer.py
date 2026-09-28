@@ -188,7 +188,7 @@ def schema_vue_d_ensemble():
                                                         "sitemap : 213 599 pages",
                                                         "lecture HTTP, UA « AKS/Staff »"], fond=ORANGE_CLAIR, bord=ORANGE)
     s.boite(1220, 730, 330, 110, "Marchands", ["feeds importés par AKS",
-                                                "fiches produit (lues pour certains)"], fond=GRIS_CLAIR)
+                                                "pages produits (lues pour certains)"], fond=GRIS_CLAIR)
 
     # Flèches
     s.fleche(310, 400, 420, 320, "navigateur", decal=(0, -14))
@@ -202,7 +202,7 @@ def schema_vue_d_ensemble():
     s.texte(1395, 712, "import", 16, "normal", "start", ENCRE_2, italique=True)
     s.fleche(1385, 480, 1385, 430, "", pointille=True)
     s.texte(1395, 460, "même catalogue", 16, "normal", "start", ENCRE_2, italique=True)
-    s.coude([(1220, 800), (1000, 800), (1000, 610)], "fiche marchand",
+    s.coude([(1220, 800), (1000, 800), (1000, 610)], "page produit marchand",
             pointille=True, pos_etiquette=(1000, 840))
 
     s.ecrire(SCHEMAS / "01_vue_d_ensemble.svg")
@@ -272,7 +272,7 @@ def schema_parcours_offre():
          ["carte cadeau, points, compte", "région ROW / Amérique du Nord", "PlayStation sans PS4/PS5"]),
         ("2 · Page AKS", ["sitemap d'abord (213 599 pages),", "puis le slug, puis une recherche bornée ;", "le nom doit correspondre (R01)"], BLEU_CLAIR, BLEU,
          ["pas de page AKS", "produit différent ou élargi"]),
-        ("3 · Plateforme", ["Steam, Epic, GOG, Ubisoft, EA, Microsoft…", "lue dans le titre, l'URL ou la fiche ;", "la page AKS doit la vendre (R20)"], BLEU_CLAIR, BLEU,
+        ("3 · Plateforme", ["Steam, Epic, GOG, Ubisoft, EA, Microsoft…", "lue dans le titre, l'URL ou la page produit ;", "la page AKS doit la vendre (R20)"], BLEU_CLAIR, BLEU,
          ["plateforme non vendue sur la page", "« PC » sans boutique (sauf règle marchand)"]),
         ("4 · Région", ["grammaire du marchand → case AKS :", "GLOBAL (2), EU (9), US (8)… ;", "consoles : PS5 EU → 88eu, Xbox US → 24us"], BLEU_CLAIR, BLEU,
          ["verrou non vendable", "région absente et non implicite"]),
