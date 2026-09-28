@@ -111,7 +111,8 @@ nouveaux marchands) reste à l'équipe. Ne rien promettre au nom des RH.
 - **« Pourquoi des creux dans le graphique ? »** Ça dépend des marchands traités ce jour-là et de la
   part de leurs offres que le robot peut saisir ; les 13 et 14/09, aucune saisie.
 - **« Le jour du record ? »** Journées comptées en heure UTC : 2 627 le 26/09. En heure de Paris, le
-  record est 2 743 le 20/09. Dans les deux cas : « plus de 2 600 ».
+  jour du record change (le 20/09 selon la relecture). Dire « plus de 2 600 en une journée », sans
+  nommer le jour.
 - **« Combien de temps à la main ? »** Aucun chiffre mesuré : ne répondre que si tu en as un fiable.
   Le robot : environ une minute par offre, contrôle compris.
 - **Questions techniques** : ouvrir l'annexe `annexe_technique/presentation_technique.html`

@@ -23,7 +23,7 @@ d'attente, elle ne peut pas être comptée deux fois). Données fusionnées :
 - **Record : 2 627** le samedi 26/09/2026 (inchangé). Le 27/09, journée complète : **2 184**.
   **Les journées sont découpées en UTC** (le compteur prend les 10 premiers caractères de
   l'horodatage). En heure de Paris, le record est **2 743 le dimanche 20/09** (le 26/09 fait 2 646) :
-  recomptage de relecture, même coupure à 06:35 UTC. Le graphique n'est pas redécoupé ; le texte dit
+  recomptage de relecture, même coupure à 06:35 UTC, non reproduit ici. Le graphique n'est pas redécoupé ; le texte dit
   « plus de 2 600 en une seule journée », vrai dans les deux découpages, sans nommer le jour.
 - Par mois : 2026-07 : 216, 2026-08 : 181, 2026-09 : 18 662 (dont 343 le 28/09 avant 06 h 35 UTC).
 - **Marchands pris en charge : 21** = la liste blanche (`src/admin/auto_merchants.py`,

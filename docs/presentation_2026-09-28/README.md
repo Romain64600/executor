@@ -29,8 +29,8 @@ français, sans secret (aucun cookie, jeton, mot de passe ni adresse de machine 
 2. Ouvrir `presentation.html` dans un navigateur (Chrome, Firefox, Safari, Edge) — aucun réseau requis.
    Ouvrir d'avance l'annexe technique dans un second onglet, pour les questions des développeurs
    (ses chiffres datent du 27/09 : son total diffère de celui du jour).
-3. **F** : plein écran (F11 marche aussi). Les boutons de navigation disparaissent en plein écran
-   (ils reviennent au survol de la souris, en haut à droite).
+3. **F** : plein écran. Les boutons de navigation disparaissent alors (ils reviennent au survol de
+   la souris, en haut à droite). F11 met aussi en plein écran, mais laisse les boutons à peine visibles.
 4. **→ / espace / Entrée** : diapositive suivante ; **←** : précédente ; **Début / Fin** : première / dernière.
 5. **T au moment de commencer** : le chrono part au chargement de la page, T le remet à zéro.
 6. **N** : notes de l'orateur (le texte à dire) + le **chrono** en haut à gauche, qui indique la fin
