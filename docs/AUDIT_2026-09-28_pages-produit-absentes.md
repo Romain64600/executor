@@ -17,7 +17,8 @@ requête.
 verdicts (§1) et une revue adverse des correctifs proposés (§6). Trois lignes « absentes »
 étaient en fait des pages ratées, plusieurs chiffres de synthèse étaient mal présentés, et
 quatre propositions ne pouvaient pas partir telles qu'écrites. Tous les chiffres ci-dessous
-sont recalculés (`corrige/recalc.py`).
+sont recalculés (`corrige/recalc.py`) ; les marchands que la correction ne touche pas gardent
+leurs valeurs.
 
 ---
 
@@ -270,7 +271,7 @@ Notes :
 
 - **Ligne 1.** Elle compte les 3 lignes reclassées par la contre-vérification (Starpoint, Alone in the Dark, Destiny 2). Le correctif tel qu'écrit (Edition, Version, Collection) ne couvre que Destiny 2 ; « Gold Pack » et « The Trilogy 1+2+3 » restent hors de sa portée. Son taux d'entrée a été mesuré sur les 40 lignes de l'échantillon qui ont inspiré la règle : il est probablement optimiste.
 - **Ligne 3.** L'échantillon surestime cette famille. Deux lignes Kinguin « KING's Drop » y pèsent 140 chacune, alors que la population entière n'en compte que 10 (9 dans la portée). Le test sur la population entière donne la vraie portée.
-- **Lignes 2, 4, 7, 10.** Le test sur la population touche moins de 5 lignes de l'échantillon. La borne basse prend donc le taux le plus prudent entre ce test et la conversion de la famille dans l'échantillon. D'où LEGACY 9–35 et MOTS-VIDES 23–50. La version précédente avait pris 10 et 40 sans le dire.
+- **Lignes 2, 3 (partie sûre), 4, 7, 10.** Le test sur la population touche moins de 5 lignes de l'échantillon. La borne basse prend donc le taux le plus prudent entre ce test et la conversion de la famille dans l'échantillon. D'où LEGACY 9–35 et MOTS-VIDES 23–50. La version précédente avait pris 10 et 40 sans le dire.
 
 **Total des correctifs sûrs, après contraintes : environ 540 à 1 320 offres.** Ce total couvre
 les familles 1, 2, 3 (partie sûre), 4 (mots internes), 7, 8 (slug seul), 9, 10 et 11. Les
