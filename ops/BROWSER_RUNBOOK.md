@@ -385,7 +385,9 @@ d'invariants reste sans-dépendance. Vérifier depuis le repo :
    Si 149 a disparu de l'archive, le récupérer via
    https://snapshot.debian.org. Ne pas installer le 150 de **bookworm** (SIGTRAP, §1.1).
    Sur **Debian 13** : `chromium=150.0.7871.100-1~deb13u1` (+ `-common`, `-sandbox`),
-   testé sans SIGTRAP le 2026-09-09 (§1.1).
+   testé sans SIGTRAP le 2026-09-09 (§1.1). Le .100 a quitté l'archive : le
+   **150.0.7871.181-1~deb13u1** (même majeure, `--no-install-recommends`) tourne sans SIGTRAP
+   sur le VPS de secours depuis le 2026-09-28 (§4), invariants verts.
 2. **Hold** :
    ```sh
    sudo apt-mark hold chromium chromium-common chromium-sandbox
@@ -446,6 +448,77 @@ d'invariants reste sans-dépendance. Vérifier depuis le repo :
     `scripts/00b_login.py` / `AKS_WP_*` est retiré.
 11. **Tests** : `python3 -m unittest discover -s tests` — la suite doit être verte avant de
     reprendre l'exploitation.
+
+## 4. VPS de secours `vmi3615170` (169.58.5.63) — 2026-09-28
+
+Romain : « ce VPS sera dédié au projet price check […] Il serait bien que tu commences à
+l'installer en vue de l'avoir en fallback pour le data entry ». Troisième machine, **de secours**
+(« esclave ») : elle ne balaie que sur décision de Romain. Console :
+`https://169.58.5.63.sslip.io/executor/`, mêmes identifiants que les autres consoles (fichier de
+hachage htpasswd recopié, jamais le mot de passe). Journal d'installation détaillé sur la machine :
+`/home/debian/INSTALL_2026-09-28.md`.
+
+**Parité avec `vmi3565249`** (installée selon le §3 et `ops/INSTALL_ADMIN.md`) : unités
+`aks-chromium` / `hermes-cdp-proxy` / `aks-admin` et politique UA-Switcher identiques (md5),
+vhost nginx identique au nom d'hôte près, marqueur FC2 = `vmi3615170`, ufw avec les mêmes trois
+règles (§1.8), `.env` avec le webhook Discord. Invariants `ok: true` + `authoritative: true`.
+
+**Ce qui diffère :**
+- **Machine partagée** : le compte `hermes` (uid 1001) appartient au projet price check de
+  Romain — on n'y touche jamais (ni son dossier, ni ses processus). Le nom `hermes-cdp-proxy` et
+  `~/.hermes/` de l'exécuteur sont des noms historiques, **sans rapport** avec ce compte.
+- Chromium **150.0.7871.181** (le .100 de la référence n'est plus dans l'archive), hold posé,
+  UA forcé `Chrome/149.0.0.0` comme partout.
+- La clé `aks-executor` qui ouvre `debian` depuis la production est restreinte à
+  `from="217.76.57.126"` dans `authorized_keys`.
+- Clé GitHub **propre** à la machine, en lecture seule (`~/.ssh/github_deploy_ed25519`,
+  `SHA256:meVhgAswX8pgxjeXm8MuoVwHL0Cz+b89LnZDgePnO5M`, ajoutée par Romain le 28/09) ; la clé
+  de déploiement de la production n'y est **pas** copiée.
+- `state/` vide au départ : le premier balayage retélécharge l'index sitemap depuis SA propre IP
+  (`AKS/Staff`, 0,5 s entre deux fichiers).
+
+**Mettre son code à jour** (entre deux balayages, jamais pendant) :
+
+```sh
+# sur le secours, en debian — voie normale depuis que la clé lecture seule est ajoutée
+git -C /home/debian/executor pull --ff-only origin main
+# seulement si le code de la console a changé ET qu'aucun balayage ne tourne (pgrep -P MainPID) :
+sudo -n systemctl restart aks-admin
+# en secours, depuis vmi3565249 (root) — updateInstead met à jour l'arbre, refusé s'il est sale :
+GIT_SSH_COMMAND='ssh -i /root/.ssh/aks_executor_deploy -o BatchMode=yes' \
+  git -C /root/aks-code/executor push debian@169.58.5.63:/home/debian/executor main:main
+```
+
+**Exploitation.** Le verrou `state/browser.lock` ne vaut que pour UNE machine : deux VPS
+`authoritative` ne se voient pas. Règle : **jamais le même marchand ni le même groupe sur deux
+machines à la fois** — le secours prend sa propre tranche (`--group i/n`, README « En parallèle
+sur plusieurs VPS ») ou remplace une machine arrêtée. Avant tout balayage : transfert des cookies
+WP dans SA console (`/executor/tri` → 🔑 Se reconnecter, §1.7 ; profil vierge au 28/09).
+
+**Laissé à Romain (non fait le 28/09) :**
+- **Filtrage des ports locaux par compte** — le compte `hermes` peut joindre 9222 (CDP),
+  9223 et 8650 (console, qui fait confiance à nginx pour l'authentification) : une fois les
+  cookies transférés, un processus du projet price check pourrait piloter la session AKS. À
+  insérer dans `/etc/ufw/before.rules` **au-dessus** de `-A ufw-before-output -o lo -j ACCEPT`,
+  puis `sudo ufw reload` :
+  ```
+  -A ufw-before-output -o lo -p tcp -m multiport --dports 9222,9223,8650 -m conntrack --ctstate NEW -m owner --uid-owner 0 -j ACCEPT
+  -A ufw-before-output -o lo -p tcp -m multiport --dports 9222,9223,8650 -m conntrack --ctstate NEW -m owner --uid-owner 1000 -j ACCEPT
+  -A ufw-before-output -o lo -p tcp --dport 8650 -m conntrack --ctstate NEW -m owner --uid-owner 33 -j ACCEPT
+  -A ufw-before-output -o lo -p tcp -m multiport --dports 9222,9223,8650 -m conntrack --ctstate NEW -j REJECT --reject-with tcp-reset
+  ```
+  (root = socat, 1000 = debian, 33 = nginx.) Contrôle : les invariants restent verts,
+  `sudo -u www-data curl 127.0.0.1:8650/api/meta` → 200, `sudo -u nobody curl --max-time 3
+  127.0.0.1:9222/json/version` → refusé. Le projet price check lance alors son propre navigateur,
+  sur d'autres ports.
+- **sshd** : mot de passe accepté, root compris (~2 600 essais de force brute par jour). Romain
+  s'y connecte en root par mot de passe : d'abord installer SA clé et la tester dans une seconde
+  session, puis `/etc/ssh/sshd_config.d/10-durcissement.conf` = `PasswordAuthentication no` +
+  `PermitRootLogin prohibit-password`, `sshd -t`, `systemctl reload ssh` (option : `Match User
+  hermes` pour garder le mot de passe de ce compte seulement).
+- **Redémarrage** en attente (noyau 6.12.107 installé, 6.12.38 en cours) : les unités sont
+  `enabled` ; relancer les invariants après.
+- La clé `aks-executor` de la production figure aussi dans le compte `hermes` : décision de Romain.
 
 ## Sondes HTTP vers AKS : toujours `AKS/Staff` (2026-09-11)
 

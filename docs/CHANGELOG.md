@@ -3,6 +3,19 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-28 — VPS de secours `vmi3615170` (169.58.5.63)
+
+Romain : « Il serait bien que tu commences à l'installer en vue de l'avoir en fallback pour le
+data entry ». Troisième machine installée à parité avec `vmi3565249` (`ops/BROWSER_RUNBOOK.md
+§4`, README « Les machines », HANDOFF §2.1 et §6) ; après deux audits : ufw activé avec les
+règles de la référence, clé SSH de la production restreinte à `from="217.76.57.126"`, webhook
+Discord posé et testé. Laissés à Romain : filtrage des ports 9222 / 9223 / 8650 par compte local
+(machine partagée avec le projet price check), durcissement sshd, redémarrage.
+
+- **Test** : `test_submit_cli.test_browser_lock_busy_refuses_before_anything` ne remplaçait pas
+  `RunLogger` et écrivait `logs/20260708-000000-test.jsonl` dans le vrai dossier `logs/` du clone
+  (trouvé sur le secours) — patché avec `_FakeLogger`.
+
 ## 2026-09-28 — `[R63]` Clés EA « English only » : case 31, 3euen sinon 3eu en Europe
 
 Romain : « go pour les clés EA English only en case 31 », puis « Une clé english only n'est pas

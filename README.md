@@ -501,6 +501,19 @@ groupe. Sur chaque VPS, une seule commande change — le groupe :
 --group 1/4     --group 2/4     --group 3/4     --group 4/4
 ```
 
+**Les machines (au 2026-09-28)** — chacune a son clone live `/home/debian/executor`, sa console
+`https://<IP>.sslip.io/executor/` (mêmes identifiants) et sa propre session AKS (transfert de
+cookies dans SA console) :
+
+| Machine | IP | Rôle |
+|---|---|---|
+| `vmi3565249` | 217.76.57.126 | nouvelle VM, production (clone de dev + clé de déploiement) |
+| `vps-9ee9f9cf` | 51.38.37.254 | ancienne VM, production |
+| `vmi3615170` | 169.58.5.63 | **secours** (« esclave »), partagée avec le projet price check — [`ops/BROWSER_RUNBOOK.md §4`](ops/BROWSER_RUNBOOK.md) |
+
+Le verrou `state/browser.lock` ne vaut que pour une machine : **jamais le même marchand ni le
+même groupe sur deux machines à la fois**.
+
 `A` / `B` sont les groupes figés de `src/merchant_groups.py` ; `i/n` répartit à la volée les
 marchands allowlistés sur `n` machines (LPT sur la charge en attente, déterministe). Voir la
 répartition avec :

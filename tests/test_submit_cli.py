@@ -292,6 +292,9 @@ class SubmitCliTests(unittest.TestCase):
         out = io.StringIO()
         with contextlib.ExitStack() as stack:
             stack.enter_context(mock.patch.object(MOD, "browser_lock", busy_lock))
+            # sans ce patch, le RunLogger réel écrivait logs/20260708-000000-test.jsonl
+            # dans le clone (vu sur le VPS de secours, 2026-09-28)
+            stack.enter_context(mock.patch.object(MOD, "RunLogger", _FakeLogger))
             stack.enter_context(mock.patch.object(
                 sys, "argv", ["05_submit.py"] + self._base_argv(approved)
             ))

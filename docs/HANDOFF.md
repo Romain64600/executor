@@ -97,6 +97,17 @@ socat 1.8 ; nginx 1.26 ; certbot 4.0 ; console `https://217.76.57.126.sslip.io/e
 permission). Reste : le transfert des cookies WP (profil vierge). L'ancien VPS était
 `vps-9ee9f9cf`.
 
+**VPS de secours `vmi3615170` (169.58.5.63, Debian 13) — installé le 2026-09-28** (Romain : « en
+vue de l'avoir en fallback pour le data entry »), même nomenclature, parité vérifiée avec
+`vmi3565249` (unités et politique md5 identiques, même htpasswd, ufw mêmes règles, `.env` Discord,
+message de test envoyé). Chromium **150.0.7871.181** (le .100 a quitté l'archive), hold, UA forcé ;
+gate `ok:true` + `authoritative:true` ; suite 2 938 OK. Console
+`https://169.58.5.63.sslip.io/executor/`. Machine **partagée** avec le projet price check
+(compte `hermes`, à ne jamais toucher). Clé GitHub propre en lecture seule
+(`github_deploy_ed25519`) → `git pull --ff-only` y marche. Reste : cookies WP (profil vierge),
+et les décisions de sécurité listées dans `ops/BROWSER_RUNBOOK.md §4` (filtrage des ports
+locaux par compte, sshd, redémarrage).
+
 **Hermes (superviseur conversationnel) — PAS requis par l'executor :** services
 `hermes-gateway`, `hermes-web-ui` ; pip `litellm` / `openai` / `gunicorn`. Seul le pont CDP
 (`hermes-cdp-proxy`) partage le préfixe de nom mais EST requis. Ne pas réinstaller si tu ne
@@ -389,6 +400,12 @@ Ces décisions sont dans `AGENTS.md` § « Reviewed decisions ». Rappel :
   ramené au même commit (SSH `debian` + clé de déploiement, `git pull --ff-only origin main`,
   `sudo -n systemctl restart aks-admin`) et la suite de tests y est rejouée (Python 3.11).
   Sa session AKS reste expirée : transfert de cookies dans SA console avant tout run.
+- **VPS de secours (`169.58.5.63`, vmi3615170, 2026-09-28)** : même routine de déploiement,
+  mais la machine a sa propre clé GitHub en lecture seule — en `debian` :
+  `git -C /home/debian/executor pull --ff-only origin main`, puis `sudo -n systemctl restart
+  aks-admin` seulement si aucun balayage ne tourne. En secours, push depuis `vmi3565249`
+  (`ops/BROWSER_RUNBOOK.md §4`). Jamais le même marchand ni le même groupe que les deux VPS de
+  production en même temps (le verrou navigateur est par machine).
 - **Un seul onglet Chrome + verrou `state/browser.lock`** (flock machine-wide, non-bloquant,
   fail-closed) : pas de vrai parallèle browser. Swap marchand ET data-entry se disputent ce
   verrou → séquentiel.
