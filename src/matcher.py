@@ -753,12 +753,14 @@ def english_only_bucket(route: str, resolution: "AksResolution") -> tuple[str, s
 _R63_LOCK_WORD_RE = re.compile(
     r"(?<![A-Za-z0-9])(?:(?P<code>EU|US|USA|UK|GB)"
     r"|(?i:(?P<word>EUROPEAN|EUROPE|UNITED[\s-]+STATES|UNITED[\s-]+KINGDOM)))(?![A-Za-z0-9])")
-# Dans le chemin de l'URL (en minuscules, donc sans la casse qui sépare « US » de « Us ») :
-# les mots longs et « eu » seulement. Un « -us- » / « -uk- » en milieu de slug est un mot de
-# nom (« among-us ») — la lecture de région ne lit ces codes que dans le créneau de FIN
-# (P2-6b), et le titre, lu avec sa casse, les porte quand ils sont un verrou.
+# Dans le CHEMIN de l'URL (jamais l'hôte : un « eu. » de sous-domaine ou un « /eu/ » de locale
+# n'est pas un verrou) et en minuscules, donc sans la casse qui sépare « US » de « Us » : les
+# mots longs seulement. Un « -us- » / « -uk- » en milieu de slug est un mot de nom
+# (« among-us ») — la lecture de région ne lit ces codes que dans le créneau de FIN (P2-6b), et
+# le titre, lu avec sa casse, les porte quand ils sont un verrou. « -eu » n'y figure pas : la
+# lecture de région le lit partout, avant GLOBAL, il ne peut donc pas rester « non lu ».
 _R63_LOCK_URL_RE = re.compile(
-    r"(?:^|[-/_.])(?P<word>eu|europe|european|united-states|united-kingdom)(?=[-/_.]|$)")
+    r"(?:^|-)(?P<word>europe|european|united-states|united-kingdom)(?=[-/.]|$)")
 _R63_LOCK_BASE = {"EU": "eu", "EUROPE": "eu", "EUROPEAN": "eu", "US": "us", "USA": "us",
                   "UNITED STATES": "us", "UK": "uk", "GB": "uk", "UNITED KINGDOM": "uk"}
 
@@ -791,14 +793,14 @@ def english_only_region(offer: NormalizedOffer, platform: str,
 def _written_locks(offer: NormalizedOffer) -> list[tuple[str, str]]:
     """Les mots de région vendables (hors GLOBAL) ÉCRITS dans le titre sans la mention et
     dans le chemin de l'URL : ``[(base, mot)]``. Dans le titre, codes courts en capitales
-    seulement (« Among Us » n'est pas un verrou) ; dans l'URL, « eu » et les mots longs
+    seulement (« Among Us » n'est pas un verrou) ; dans le chemin de l'URL, les mots longs
     seulement (``_R63_LOCK_URL_RE``)."""
 
     found: list[tuple[str, str]] = []
     for m in _R63_LOCK_WORD_RE.finditer(strip_english_only(offer.name)):
         word = re.sub(r"[\s-]+", " ", (m.group("code") or m.group("word"))).upper()
         found.append((_R63_LOCK_BASE[word], word))
-    path = strip_merchant_url_noise(offer.url, offer.merchant).lower().split("?", 1)[0]
+    path = urlparse(strip_merchant_url_noise(offer.url, offer.merchant)).path.lower()
     for m in _R63_LOCK_URL_RE.finditer(path):
         word = m.group("word").replace("-", " ").upper()
         found.append((_R63_LOCK_BASE[word], word))

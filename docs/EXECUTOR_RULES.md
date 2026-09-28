@@ -3367,7 +3367,8 @@ verrouillée Europe. 0 faux positif sur 86 820 lignes distinctes des runs de cet
   retirerait aussi « [PC - Origin EU Key] ») ; un verrou lu par l'une OU l'autre lecture gagne,
   deux verrous différents → refus, un verrou ne s'élargit jamais ;
   (b) `english_only_unread_lock`, le filet : un mot de région vendable ÉCRIT (titre sans la
-  mention, codes courts en capitales ; chemin d'URL : « eu » et les mots longs) que la lecture n'a
+  mention, codes courts en capitales ; CHEMIN d'URL, jamais l'hôte : les mots longs « europe »,
+  « united-states », « united-kingdom ») que la lecture n'a
   pas retenu interdit la route — aucun EU / Europe / US / UK sur la route 31, aucun US / UK sur la
   route Europe. Il couvre « [EU] », « (EU Version) », « (Europe & UK) », que la lecture générique
   ne lit pas (même hors mention : sur main, ces formes entrent en EA GLOBAL(3) — lacune

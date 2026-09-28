@@ -704,6 +704,13 @@ class RevueP1_LeVerrouDansLeCreneauDeLaMention(unittest.TestCase):
         self.assertIsNone(english_only_unread_lock(
             _offer(("Among Us (English only)", "https://example.com/among-us-english-only", "CJS-CDKeys")),
             "en_only"))
+        # l'hôte et une locale ne sont pas des verrous ; un mot long du chemin, si
+        self.assertIsNone(english_only_unread_lock(
+            _offer(("Game (English only)", "https://eu.example.com/eu/game-english-only", "CJS-CDKeys")),
+            "en_only"))
+        self.assertIsNotNone(english_only_unread_lock(
+            _offer(("Game (English only)", "https://example.com/game-united-kingdom-global", "CJS-CDKeys")),
+            "en_only"))
 
 
 class RevueP2_UneListeDeLanguesSansConnecteur(unittest.TestCase):
