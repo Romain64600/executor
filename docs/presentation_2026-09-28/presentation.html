@@ -31,30 +31,37 @@
   .titre .kicker { font-size: 3.2vmin; font-weight: 700; color: var(--bleu-fonce); margin-bottom: 3vh; }
   .titre .sous { font-size: 4.2vmin; color: var(--encre-2); line-height: 1.3; }
   .titre .qui { margin-top: 7vh; font-size: 3.2vmin; color: var(--encre-2); }
-  .titre .qui span { border-bottom: 0.3vmin dashed var(--encre-2); }
   .titre .illus { height: 62vh; }
 
   /* 2 — problème */
-  .deux { display: grid; grid-template-columns: 1.25fr 1fr; gap: 4vw; align-items: center; flex: 1; min-height: 0; }
-  .hero { font-size: 22vmin; font-weight: 800; line-height: 0.95; letter-spacing: -0.04em; color: var(--bleu); }
-  .hero-l { font-size: 4.6vmin; font-weight: 600; margin: 1.5vh 0 5vh; }
-  .puces { display: flex; flex-wrap: wrap; gap: 1.6vmin; margin-top: 2vh; }
-  .puces span { font-size: 3.4vmin; background: var(--gris); border-radius: 5vmin; padding: 1vmin 2.6vmin; }
-  .illus-pile { height: 56vh; }
+  .deux { display: grid; grid-template-columns: 1.1fr 1fr; gap: 4vw; align-items: center; flex: 1; min-height: 0; }
+  .hero { font-size: min(20vmin, 12vw); font-weight: 800; line-height: 0.95; letter-spacing: -0.04em; color: var(--bleu); white-space: nowrap; }
+  .hero-l { font-size: 4.6vmin; font-weight: 600; margin: 1.5vh 0 0; }
+  .date { font-size: 3vmin; color: var(--encre-2); margin: 0.8vh 0 5vh; }
+  .enjeu { font-size: 4.2vmin; font-weight: 600; line-height: 1.25; color: var(--orange-fonce); }
+  .exemple { display: flex; flex-direction: column; gap: 2vh; }
+  .exemple .dim { font-size: 3.4vmin; }
+  .offre { font-size: 3.6vmin; font-weight: 600; line-height: 1.3; background: #fff; border: 0.5vmin solid var(--bleu);
+    border-radius: 1.8vmin; padding: 2.2vmin 2.8vmin; }
+  .vers { display: flex; justify-content: center; color: var(--trait); }
+  .vers svg { width: 7vmin; height: 7vmin; }
+  .choix { display: grid; grid-template-columns: 1fr 1fr; gap: 1.6vmin; }
+  .choix div { background: var(--bleu-clair); border-radius: 1.8vmin; padding: 1.4vmin 2.4vmin; font-size: min(4vmin, 2.6vw); font-weight: 700; color: var(--bleu-fonce); }
+  .choix span { display: block; font-size: 3vmin; font-weight: 500; color: var(--encre-2); }
 
   /* 3 — solution : 4 étapes */
   .etapes { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr; align-items: start; align-content: center; gap: 1.2vw; flex: 1; min-height: 0; }
   .etape { display: flex; flex-direction: column; align-items: center; text-align: center; }
-  .rond { position: relative; width: 25vmin; height: 25vmin; border-radius: 50%; background: var(--bleu-clair); color: var(--bleu);
+  .rond { position: relative; width: min(25vmin, 16vw); height: min(25vmin, 16vw); border-radius: 50%; background: var(--bleu-clair); color: var(--bleu);
     display: flex; align-items: center; justify-content: center; }
   .rond svg { width: 58%; height: 58%; }
   .rond .num { position: absolute; top: -0.6vmin; left: -0.6vmin; width: 6.4vmin; height: 6.4vmin; border-radius: 50%; background: var(--bleu);
     color: #fff; font-weight: 800; font-size: 3.6vmin; display: flex; align-items: center; justify-content: center; }
-  .etape p { margin-top: 3.5vh; font-size: 4vmin; font-weight: 700; line-height: 1.2; }
+  .etape p { margin-top: 3.5vh; font-size: min(4vmin, 2.6vw); font-weight: 700; line-height: 1.2; }
   .etape.preuve .rond { background: var(--aqua-clair); color: var(--aqua); }
   .etape.preuve .num { background: var(--aqua-fonce); }
   .etape.preuve p { color: var(--aqua-fonce); }
-  .fleche { width: 5vmin; height: 25vmin; color: var(--trait); display: flex; align-items: center; }
+  .fleche { width: 5vmin; height: min(25vmin, 16vw); color: var(--trait); display: flex; align-items: center; }
   .fleche svg { width: 100%; }
   .bandeau { display: flex; align-items: center; gap: 2vmin; margin-top: auto; }
   .bandeau svg { width: 6vmin; height: 6vmin; color: var(--bleu); flex: none; }
@@ -64,13 +71,13 @@
   .tuiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.4vmin; }
   .tuile { background: var(--gris); border-radius: 2vmin; padding: 2.6vmin 3vmin; }
   .tuile.premiere { background: var(--bleu-clair); }
-  .tuile .n { font-size: 10.5vmin; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+  .tuile .n { font-size: min(10.5vmin, 6vw); white-space: nowrap; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
   .tuile .l { font-size: 3.2vmin; color: var(--encre-2); margin-top: 1.2vmin; line-height: 1.25; }
   .graphe { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: 3vh; }
   .graphe .t { font-size: 3vmin; font-weight: 600; color: var(--encre-2); margin-bottom: 1vh; }
   .graphe .zone { flex: 1; min-height: 0; }
   .graphe svg { width: 100%; height: 100%; display: block; }
-  .source { font-size: 2.2vmin; color: var(--encre-2); margin-top: 1vh; }
+  .source { font-size: 3vmin; color: var(--encre-2); margin-top: 1vh; }
 
   /* 5 — confiance */
   .lignes { display: flex; flex-direction: column; gap: 4.5vh; justify-content: center; flex: 1; }
@@ -97,15 +104,16 @@
   .suite .ligne .ic { width: 12vmin; height: 12vmin; }
   .suite .ligne small { display: block; font-size: 3.2vmin; font-weight: 500; color: var(--encre-2); margin-top: 0.6vmin; }
   .merci { background: var(--bleu); color: #fff; border-radius: 3vmin; padding: 7vmin 5vmin; text-align: center; }
-  .merci .m { font-size: 13vmin; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+  .merci .m { font-size: min(13vmin, 7vw); white-space: nowrap; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
   .merci .q { font-size: 5vmin; margin-top: 3vh; }
 
   /* navigation, pied, notes */
   .pied { position: absolute; left: 7vw; right: 7vw; bottom: 2.6vh; display: flex; justify-content: space-between;
-    font-size: 2vmin; color: var(--encre-2); }
+    font-size: 2.4vmin; color: var(--encre-2); }
   .progress { position: fixed; left: 0; bottom: 0; height: 0.7vh; background: var(--bleu); width: 0; transition: width .2s; z-index: 6; }
   .nav { position: fixed; right: 1.6vw; top: 1.6vh; display: flex; gap: 0.6vmin; z-index: 5; opacity: 0.25; }
   .nav:hover { opacity: 1; }
+  :fullscreen .nav:not(:hover) { opacity: 0; }
   .nav button { font: inherit; font-size: 2vmin; border: 1px solid var(--trait); background: #fff; color: var(--encre-2);
     border-radius: 0.8vmin; padding: 0.5vmin 1.4vmin; cursor: pointer; }
   .notes { display: none; }
@@ -130,12 +138,12 @@
 <body>
 
 <!-- 1 — Titre -->
-<section class="slide titre" data-secondes="15">
+<section class="slide titre" data-secondes="12">
   <div>
     <p class="kicker">AllKeyShop · Data entry</p>
     <h1>Saisie automatique des offres marchands</h1>
-    <p class="sous">Un robot qui saisit les offres — et vérifie chacune.</p>
-    <p class="qui"><span>Romain · rôle à compléter</span> — lundi 28 septembre 2026</p>
+    <p class="sous">Un robot pour la saisie répétitive, qui contrôle chaque offre saisie.</p>
+    <p class="qui">Présenté par Romain · lundi 28 septembre 2026</p>
   </div>
   <div class="illus">
     <svg class="picto" viewBox="0 0 400 400" aria-hidden="true" focusable="false">
@@ -158,42 +166,37 @@
       <path d="M183 301 L195 313 L218 288" fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
     </svg>
   </div>
-  <aside class="notes"><b>Titre — 15 s (fin visée à 0:15)</b><br>Bonjour à tous ! En trois minutes, je vous présente un projet qui change la saisie des offres marchands : un robot qui saisit les offres comme le ferait un opérateur, et qui vérifie chacune de ses saisies.<br><i>Conseil : sourire, poser le cadre, passer vite.</i></aside>
+  <aside class="notes"><b>Titre — 12 s (fin visée à 0:12)</b><br>Bonjour à tous ! En trois minutes : un robot qui prend en charge la saisie répétitive des offres marchands, et qui contrôle chacune de ses saisies.<br><i>Conseil : sourire, poser le cadre, passer vite. Appuyer sur T (chrono) juste avant de commencer.</i></aside>
 </section>
 
 <!-- 2 — Le problème -->
-<section class="slide" data-secondes="25">
+<section class="slide" data-secondes="28">
   <h2>Le problème : des offres qui attendent</h2>
   <div class="deux">
     <div>
       <div class="hero">50&nbsp;000+</div>
-      <p class="hero-l">offres en attente de saisie</p>
-      <p class="dim">À la main, une par une :</p>
-      <div class="puces"><span>le jeu</span><span>la plateforme</span><span>la région</span><span>l'édition</span></div>
+      <p class="hero-l">offres en attente</p>
+      <p class="date">relevé du 25 septembre</p>
+      <p class="enjeu">Tant qu'une offre attend, son prix n'est pas sur le site.</p>
     </div>
-    <div class="illus-pile">
-      <svg class="picto" viewBox="0 0 400 400" aria-hidden="true" focusable="false">
-        <rect x="70" y="236" width="250" height="84" rx="16" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="4"/>
-        <rect x="60" y="190" width="250" height="84" rx="16" fill="#f1f0ec" stroke="#c9c7c0" stroke-width="4"/>
-        <rect x="50" y="144" width="250" height="84" rx="16" fill="#ffffff" stroke="#c9c7c0" stroke-width="4"/>
-        <rect x="40" y="98" width="250" height="84" rx="16" fill="#ffffff" stroke="#2a78d6" stroke-width="5"/>
-        <rect x="58" y="116" width="48" height="48" rx="8" fill="#e3eefb"/>
-        <rect x="122" y="122" width="120" height="12" rx="6" fill="#c9c7c0"/>
-        <rect x="122" y="146" width="80" height="12" rx="6" fill="#c9c7c0"/>
-        <circle cx="318" cy="96" r="54" fill="#fde7dd" stroke="#eb6834" stroke-width="7"/>
-        <path d="M318 62 L318 98 L342 112" fill="none" stroke="#8a3410" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
-        <circle cx="160" cy="352" r="7" fill="#c9c7c0"/>
-        <circle cx="190" cy="352" r="7" fill="#c9c7c0"/>
-        <circle cx="220" cy="352" r="7" fill="#c9c7c0"/>
-      </svg>
+    <div class="exemple">
+      <p class="dim">À la main, une par une&nbsp;:</p>
+      <div class="offre">WWE 2K24 - Deluxe Edition (Steam Key EU)</div>
+      <div class="vers"><svg viewBox="0 0 60 60" aria-hidden="true" focusable="false"><path d="M30 8 V48 M14 34 L30 50 L46 34" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      <div class="choix">
+        <div><span>Jeu</span>WWE 2K24</div>
+        <div><span>Plateforme</span>Steam</div>
+        <div><span>Région</span>Europe</div>
+        <div><span>Édition</span>Deluxe</div>
+      </div>
     </div>
   </div>
-  <aside class="notes"><b>Le problème — 25 s (fin visée à 0:40)</b><br>D'abord, le problème. Sur AllKeyShop, chaque prix affiché sur la fiche d'un jeu, c'est l'offre d'un marchand. Les marchands nous envoient leurs offres, et elles arrivent dans une file d'attente. Pour chacune, il faut trouver le bon jeu, la plateforme, la région, l'édition… à la main, une par une. La semaine dernière, plus de 50 000 offres attendaient.<br><i>Conseil : marquer une pause après « 50 000 ».</i></aside>
+  <aside class="notes"><b>Le problème — 28 s (fin visée à 0:40)</b><br>Le problème. Chaque prix affiché sur AllKeyShop, c'est l'offre d'un marchand. Ces offres arrivent dans une file d'attente, et tant qu'une offre attend, son prix n'est pas sur le site. Pour chacune, il faut trouver le jeu, la plateforme, la région, l'édition… à la main. La semaine dernière, plus de 50 000 attendaient, la plupart depuis des semaines.<br><i>Conseil : montrer l'exemple à droite (le titre du marchand, puis les quatre choix). Marquer une pause après « 50 000 ».</i></aside>
 </section>
 
 <!-- 3 — La solution -->
-<section class="slide" data-secondes="40">
-  <h2>Un robot qui saisit comme un opérateur</h2>
+<section class="slide" data-secondes="33">
+  <h2>Un robot qui reprend les gestes répétitifs</h2>
   <div class="etapes">
     <div class="etape">
       <div class="rond"><span class="num">1</span>
@@ -228,7 +231,7 @@
           <line x1="60" y1="78" x2="84" y2="78"/>
         </svg>
       </div>
-      <p>Remplir la bonne case</p>
+      <p>Choisir plateforme, région, édition</p>
     </div>
     <div class="fleche"><svg viewBox="0 0 40 60" aria-hidden="true" focusable="false"><path d="M10 10 L30 30 L10 50" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
     <div class="etape preuve">
@@ -247,16 +250,16 @@
     </svg>
     <p>Jour et nuit, sur 2 serveurs en parallèle</p>
   </div>
-  <aside class="notes"><b>La solution — 40 s (fin visée à 1:20)</b><br>Notre solution : un robot qui fait le travail d'un opérateur, en quatre étapes. Un : il lit la file d'attente. Deux : il trouve la bonne fiche du jeu. Trois : il remplit la bonne case — plateforme, région, édition — dans le vrai formulaire d'AllKeyShop. Et quatre, le plus important : il vérifie. Il retourne dans la file d'attente et contrôle que l'offre en est bien sortie. C'est sa preuve. Et il travaille jour et nuit, sur deux serveurs en parallèle.<br><i>Conseil : montrer chaque étape du doigt en disant son numéro ; appuyer sur « il vérifie ».</i></aside>
+  <aside class="notes"><b>La solution — 33 s (fin visée à 1:13)</b><br>Notre solution : un robot qui reprend les gestes répétitifs, en quatre étapes. Un : il lit la file d'attente. Deux : il trouve la bonne fiche du jeu. Trois : il choisit la plateforme, la région, l'édition, dans le vrai formulaire d'AllKeyShop. Et quatre, le plus important : il retourne voir la file d'attente. Si l'offre n'y est plus, c'est qu'elle est bien enregistrée. C'est sa preuve. Il tourne jour et nuit, sur deux serveurs.<br><i>Conseil : montrer chaque étape du doigt en disant son numéro ; appuyer sur l'étape 4.</i></aside>
 </section>
 
 <!-- 4 — Les résultats -->
-<section class="slide" data-secondes="30">
+<section class="slide" data-secondes="22">
   <h2>Les résultats</h2>
   <div class="tuiles">
-    <div class="tuile premiere"><div class="n">19 059</div><div class="l">offres saisies et vérifiées</div></div>
+    <div class="tuile premiere"><div class="n">19 059</div><div class="l">offres saisies, chacune contrôlée</div></div>
     <div class="tuile"><div class="n">2 627</div><div class="l">record en une journée</div></div>
-    <div class="tuile"><div class="n">21</div><div class="l">marchands couverts</div></div>
+    <div class="tuile"><div class="n">21</div><div class="l">marchands pris en charge</div></div>
   </div>
   <div class="graphe">
     <div class="t">Offres saisies chaque jour, du 8 au 27 septembre</div>
@@ -366,13 +369,13 @@
 <text x="1474.2" y="42" font-size="34" font-weight="700" fill="#0b0b0b" text-anchor="middle">2 627</text>
 <line x1="120" y1="344" x2="1584" y2="344" stroke="#c9c7c0" stroke-width="2"/>
 </svg></div>
-    <div class="source">Comptées le lundi 28/09/2026 à 8 h 35 (heure de Paris), sur les 2 serveurs.</div>
+    <div class="source">Compté le 28/09 à 8 h 35</div>
   </div>
-  <aside class="notes"><b>Les résultats — 30 s (fin visée à 1:50)</b><br>Les résultats. Depuis cet été, plus de 19 000 offres ont été saisies et vérifiées, presque toutes en septembre, depuis que le robot tourne en continu. Le record : plus de 2 600 offres en une seule journée, samedi dernier. Et 21 marchands sont déjà couverts. Chaque barre, c'est une journée : on voit bien la montée en puissance.<br><i>Conseil : laisser les trois chiffres parler ; ne pas commenter chaque barre.</i></aside>
+  <aside class="notes"><b>Les résultats — 22 s (fin visée à 1:35)</b><br>Les résultats. Depuis cet été, plus de 19 000 offres ont été saisies, chacune contrôlée. Le record : plus de 2 600 en une seule journée. Et 21 marchands sont pris en charge. Le graphique montre la montée en puissance.<br><i>Conseil : laisser les trois chiffres parler ; ne pas commenter chaque barre, ne pas donner le jour du record (il dépend du fuseau horaire, voir les questions en fin de texte).</i></aside>
 </section>
 
 <!-- 5 — La confiance -->
-<section class="slide" data-secondes="30">
+<section class="slide" data-secondes="34">
   <h2>Dans le doute, il ne saisit pas</h2>
   <div class="lignes">
     <div class="ligne">
@@ -380,7 +383,7 @@
         <path d="M60 10 L100 25 V58 C100 84 82 100 60 110 C38 100 20 84 20 58 V25 Z"/>
         <path d="M42 60 L55 73 L80 46"/>
       </svg></div>
-      <p>Chaque saisie est vérifiée</p>
+      <p>Une offre pas claire&nbsp;? Laissée à l'équipe</p>
     </div>
     <div class="ligne">
       <div class="ic alerte"><svg viewBox="0 0 120 120" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
@@ -389,21 +392,21 @@
         <path d="M50 96 C52 104 68 104 70 96"/>
         <line x1="60" y1="16" x2="60" y2="28"/>
       </svg></div>
-      <p>Au moindre problème, il s'arrête et prévient</p>
+      <p>Un problème&nbsp;? Il s'arrête et le signale</p>
     </div>
     <div class="ligne">
       <div class="ic humain"><svg viewBox="0 0 120 120" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="60" cy="38" r="20"/>
         <path d="M22 104 C22 80 40 68 60 68 C80 68 98 80 98 104"/>
       </svg></div>
-      <p>Un humain garde toujours la main</p>
+      <p>Un humain le lance et peut l'arrêter</p>
     </div>
   </div>
-  <aside class="notes"><b>La confiance — 30 s (fin visée à 2:20)</b><br>Mais aller vite ne sert à rien si c'est faux. Alors la règle d'or, c'est : dans le doute, il ne saisit pas. Si une offre n'est pas claire, il la laisse dans la file d'attente pour un humain, et il note pourquoi. Au moindre problème, il s'arrête et nous prévient sur Discord. Et c'est toujours un humain qui le lance, le surveille et l'arrête.<br><i>Conseil : c'est le message le plus important pour le public non technique — le dire lentement.</i></aside>
+  <aside class="notes"><b>La confiance — 34 s (fin visée à 2:09)</b><br>Aller vite ne sert à rien si c'est faux. La règle d'or : dans le doute, il ne saisit pas. Une offre pas claire ? Il la laisse à l'équipe, et note pourquoi. Au moindre problème, il s'arrête et le signale. Ce n'est pas une IA qui devine : il applique des règles écrites, vérifiées par près de 2 900 tests automatiques. Et un humain le lance, et peut l'arrêter à tout moment.<br><i>Conseil : c'est le message le plus important pour le public non technique — le dire lentement.</i></aside>
 </section>
 
 <!-- 6 — Ce que ça change pour vous -->
-<section class="slide" data-secondes="30">
+<section class="slide" data-secondes="29">
   <h2>Ce que ça change pour vous</h2>
   <div class="public">
     <div class="carte">
@@ -413,7 +416,7 @@
         <line x1="32" y1="64" x2="90" y2="64" stroke-dasharray="4 12"/>
         <line x1="40" y1="78" x2="80" y2="78"/>
       </svg></div>
-      <div><div class="qui">Data entry</div><p>Moins de saisie répétitive</p></div>
+      <div><div class="qui">Data entry</div><p>Le répétitif au robot, les cas délicats à vous</p></div>
     </div>
     <div class="carte">
       <div class="ic"><svg class="picto" viewBox="0 0 120 120" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
@@ -428,24 +431,25 @@
         <rect x="12" y="16" width="96" height="88" rx="12"/>
         <polyline points="28,82 48,60 64,72 92,40"/>
       </svg></div>
-      <div><div class="qui">Managers</div><p>Suivi en direct, chiffres vérifiés</p></div>
+      <div><div class="qui">Managers</div><p>Des chiffres précis, offre par offre</p></div>
     </div>
     <div class="carte">
       <div class="ic"><svg class="picto" viewBox="0 0 120 120" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="42,34 16,60 42,86"/>
-        <polyline points="78,34 104,60 78,86"/>
-        <line x1="68" y1="26" x2="52" y2="94"/>
+        <circle cx="42" cy="42" r="15"/>
+        <circle cx="82" cy="46" r="13"/>
+        <path d="M14 98 C14 78 26 68 42 68 C58 68 70 78 70 98"/>
+        <path d="M72 70 C90 68 106 78 106 98"/>
       </svg></div>
-      <div><div class="qui">Développeurs</div><p>Règles écrites et testées</p></div>
+      <div><div class="qui">Toute l'équipe</div><p>Du temps pour ce qui demande du jugement</p></div>
     </div>
   </div>
-  <aside class="notes"><b>Ce que ça change pour vous — 30 s (fin visée à 2:50)</b><br>Concrètement, qu'est-ce que ça change pour vous ? Pour l'équipe data entry : moins de saisie répétitive, et les cas délicats restent entre vos mains. Pour le SEO : plus de prix, sur plus de fiches, mis en ligne plus vite. Pour les managers : un suivi en direct et des chiffres vérifiables. Et pour les développeurs : chaque règle est écrite et protégée par près de 2 900 tests automatiques.<br><i>Conseil : regarder chaque groupe en parlant de lui. Si la question de l'emploi vient aux questions : le robot prend le répétitif ; tout ce qui demande du jugement (les offres qu'il refuse, les cas délicats, les corrections, les nouveaux marchands) reste à l'équipe.</i></aside>
+  <aside class="notes"><b>Ce que ça change pour vous — 29 s (fin visée à 2:38)</b><br>Qu'est-ce que ça change pour vous ? Pour l'équipe data entry : le répétitif part au robot, les cas délicats restent entre vos mains. Pour le SEO : plus de prix, sur plus de fiches, mis en ligne plus vite. Pour les managers : des chiffres précis, offre par offre. Et pour toute l'équipe : moins de copier-coller, plus de temps pour ce qui demande du jugement.<br><i>Conseil : regarder chaque groupe en parlant de lui. Si la question de l'emploi vient : le robot prend le répétitif ; tout ce qui demande du jugement (les offres qu'il refuse, les corrections, les nouveaux marchands) reste à l'équipe. Ne rien promettre au nom des RH.</i></aside>
 </section>
 
 <!-- 7 — La suite, merci -->
-<section class="slide fin" data-secondes="10">
+<section class="slide fin" data-secondes="12">
   <div>
-    <h2>Et ensuite ?</h2>
+    <h2>Et ensuite&nbsp;?</h2>
     <div class="suite">
       <div class="ligne">
         <div class="ic humain"><svg viewBox="0 0 120 120" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
@@ -462,15 +466,22 @@
           <path d="M32 36 H88 V56 C88 72 76 82 60 82 C44 82 32 72 32 56 Z"/>
           <line x1="60" y1="82" x2="60" y2="106"/>
         </svg></div>
-        <p>Une connexion directe au système d'AllKeyShop<small>à l'étude</small></p>
+        <p>Se brancher directement sur AllKeyShop<small>à l'étude — sans passer par le formulaire</small></p>
+      </div>
+      <div class="ligne">
+        <div class="ic humain"><svg viewBox="0 0 120 120" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M18 24 H102 V80 H56 L34 100 V80 H18 Z"/>
+          <line x1="36" y1="46" x2="84" y2="46"/><line x1="36" y1="62" x2="70" y2="62"/>
+        </svg></div>
+        <p>Vos retours sont les bienvenus</p>
       </div>
     </div>
   </div>
   <div class="merci">
-    <div class="m">Merci !</div>
-    <div class="q">Des questions ?</div>
+    <div class="m">Merci&nbsp;!</div>
+    <div class="q">Des questions&nbsp;?</div>
   </div>
-  <aside class="notes"><b>La suite, merci — 10 s (fin visée à 3:00)</b><br>La suite : ajouter de nouveaux marchands, et étudier une connexion directe au système d'AllKeyShop. Merci ! Je réponds volontiers à vos questions.<br><i>Conseil : pour les questions techniques, ouvrir l'annexe `annexe_technique/presentation_technique.html` (19 diapositives, schémas détaillés).</i></aside>
+  <aside class="notes"><b>La suite, merci — 12 s (fin visée à 2:50)</b><br>La suite : de nouveaux marchands, et, à l'étude, un branchement direct sur AllKeyShop, sans passer par le formulaire. Vos retours sont les bienvenus. Merci ! Des questions ?<br><br><b>Questions probables (réponses courtes)</b><br>• <b>« C'est de l'IA ? »</b> Il ne devine rien : il applique des règles écrites, décidées une par une et testées. Si on insiste : il a été construit avec l'aide d'une IA, mais ce qui tourne suit des règles fixes.<br>• <b>« Et s'il se trompe ? »</b> C'est rare. Quand on trouve une erreur, on corrige la règle et on liste les offres concernées pour les reprendre : le 26/09, 22 offres mal rangées (18 sur la fiche d'un contenu additionnel au lieu de celle du jeu, 4 dans la mauvaise édition), règle corrigée le jour même.<br>• <b>« Il en reste combien ? »</b> Les 50 000 sont le relevé du 25/09 ; la file bouge, il arrive plusieurs centaines d'offres par jour. Une partie n'est pas pour le robot : environ 3 100 hors jeu (cartes cadeaux, comptes…) et 1 600 dans des régions qu'on ne vend pas.<br>• <b>« Pourquoi des creux dans le graphique ? »</b> Ça dépend des marchands traités ce jour-là et de la part de leurs offres que le robot peut saisir ; les 13 et 14/09, aucune saisie.<br>• <b>« Le jour du record ? »</b> Journées comptées en heure UTC : 2 627 le 26/09. En heure de Paris, le record est 2 743 le 20/09. Dans les deux cas : « plus de 2 600 ».<br>• <b>« Combien de temps à la main ? »</b> Aucun chiffre mesuré : ne répondre que si tu en as un fiable. Le robot : environ une minute par offre, contrôle compris.<br>• <b>Questions techniques</b> : ouvrir l'annexe annexe_technique/presentation_technique.html (19 diapositives, schémas). Ses chiffres datent du 27/09 au matin (17 317 offres) : le total diffère de celui du jour, c'est normal.</aside>
 </section>
 
 <div class="nav" aria-label="navigation">

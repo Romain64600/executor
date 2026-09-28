@@ -4,9 +4,11 @@ Présentation du **lundi 28 septembre 2026**, pour toute l'équipe : RH, SEO, da
 managers, développeurs. Le diaporama à projeter est `presentation.html` (7 diapositives) ; ce
 texte y est repris tel quel dans les notes (touche **N**, avec un chrono).
 
-- **Durée visée : 3 minutes** (180 s). Débit de référence : ~140 mots par minute, à l'oral, en
-  comptant les changements de diapositive.
-- **Total : 378 mots** (≈ 2 min 40 s à 140 mots/min) — la marge couvre les enchaînements.
+- **Durée visée : moins de 3 minutes.** Les durées ci-dessous totalisent **2:50** (170 s) : les
+  10 dernières secondes sont une marge, pas un objectif. Débit de référence : ~130 mots par minute,
+  plus une seconde par changement de diapositive.
+- **Total : 351 mots** (≈ 2 min 42 s à 130 mots/min ; les nombres dits en toutes lettres,
+  « deux mille six cents », en ajoutent quelques-uns).
 - **Comptage des mots** : seules les lignes citées (`> …`) sont dites ; on compte les suites de
   caractères séparées par des espaces qui contiennent au moins une lettre ou un chiffre (« l'offre »
   = 1 mot, « 50 000 » = 2, un tiret seul = 0). `outils/generer_3min.py` refait ce compte et refuse
@@ -14,80 +16,104 @@ texte y est repris tel quel dans les notes (touche **N**, avec un chrono).
 - Les chiffres dits sont arrondis ; les chiffres exacts sont à l'écran et dans `chiffres.md`
   (comptage du 28/09 à 8 h 35).
 
+**Avant de commencer.** Imprimer ce texte (secours). Ouvrir `presentation.html`, **F** pour le
+plein écran, puis **T** au moment de parler : le chrono démarre au chargement de la page, T le
+remet à zéro. Si l'écran de l'ordinateur est recopié sur le projecteur, **ne pas appuyer sur N** :
+les notes s'afficheraient pour la salle. Ouvrir d'avance l'annexe technique dans un second onglet
+pour les questions des développeurs.
+
 | Diapositive | Durée visée | Mots | Fin visée |
 |---|---:|---:|---:|
-| 1 — Titre | 15 s | 36 | 0:15 |
-| 2 — Le problème | 25 s | 58 | 0:40 |
-| 3 — La solution | 40 s | 76 | 1:20 |
-| 4 — Les résultats | 30 s | 57 | 1:50 |
-| 5 — La confiance | 30 s | 64 | 2:20 |
-| 6 — Ce que ça change pour vous | 30 s | 66 | 2:50 |
-| 7 — La suite, merci | 10 s | 21 | 3:00 |
-| **Total** | **180 s** | **378** | |
+| 1 — Titre | 12 s | 25 | 0:12 |
+| 2 — Le problème | 28 s | 58 | 0:40 |
+| 3 — La solution | 33 s | 71 | 1:13 |
+| 4 — Les résultats | 22 s | 39 | 1:35 |
+| 5 — La confiance | 34 s | 70 | 2:09 |
+| 6 — Ce que ça change pour vous | 29 s | 62 | 2:38 |
+| 7 — La suite, merci | 12 s | 26 | 2:50 |
+| **Total** | **170 s** | **351** | |
 
 ---
 
-## 1 — Titre · 15 s · 36 mots
+## 1 — Titre · 12 s · 25 mots
 
-> Bonjour à tous ! En trois minutes, je vous présente un projet qui change la saisie des offres
-> marchands : un robot qui saisit les offres comme le ferait un opérateur, et qui vérifie
-> chacune de ses saisies.
+> Bonjour à tous ! En trois minutes : un robot qui prend en charge la saisie répétitive des
+> offres marchands, et qui contrôle chacune de ses saisies.
 
-Conseil : sourire, poser le cadre, passer vite.
+Conseil : sourire, poser le cadre, passer vite. Appuyer sur T (chrono) juste avant de commencer.
 
-## 2 — Le problème · 25 s · 58 mots
+## 2 — Le problème · 28 s · 58 mots
 
-> D'abord, le problème. Sur AllKeyShop, chaque prix affiché sur la fiche d'un jeu, c'est l'offre
-> d'un marchand. Les marchands nous envoient leurs offres, et elles arrivent dans une file
-> d'attente. Pour chacune, il faut trouver le bon jeu, la plateforme, la région, l'édition… à la
-> main, une par une. La semaine dernière, plus de 50 000 offres attendaient.
+> Le problème. Chaque prix affiché sur AllKeyShop, c'est l'offre d'un marchand. Ces offres
+> arrivent dans une file d'attente, et tant qu'une offre attend, son prix n'est pas sur le site.
+> Pour chacune, il faut trouver le jeu, la plateforme, la région, l'édition… à la main. La
+> semaine dernière, plus de 50 000 attendaient, la plupart depuis des semaines.
 
-Conseil : marquer une pause après « 50 000 ».
+Conseil : montrer l'exemple à droite (le titre du marchand, puis les quatre choix). Marquer une
+pause après « 50 000 ».
 
-## 3 — La solution · 40 s · 76 mots
+## 3 — La solution · 33 s · 71 mots
 
-> Notre solution : un robot qui fait le travail d'un opérateur, en quatre étapes. Un : il lit la
-> file d'attente. Deux : il trouve la bonne fiche du jeu. Trois : il remplit la bonne case —
-> plateforme, région, édition — dans le vrai formulaire d'AllKeyShop. Et quatre, le plus
-> important : il vérifie. Il retourne dans la file d'attente et contrôle que l'offre en est bien
-> sortie. C'est sa preuve. Et il travaille jour et nuit, sur deux serveurs en parallèle.
+> Notre solution : un robot qui reprend les gestes répétitifs, en quatre étapes. Un : il lit la
+> file d'attente. Deux : il trouve la bonne fiche du jeu. Trois : il choisit la plateforme, la
+> région, l'édition, dans le vrai formulaire d'AllKeyShop. Et quatre, le plus important : il
+> retourne voir la file d'attente. Si l'offre n'y est plus, c'est qu'elle est bien enregistrée.
+> C'est sa preuve. Il tourne jour et nuit, sur deux serveurs.
 
-Conseil : montrer chaque étape du doigt en disant son numéro ; appuyer sur « il vérifie ».
+Conseil : montrer chaque étape du doigt en disant son numéro ; appuyer sur l'étape 4.
 
-## 4 — Les résultats · 30 s · 57 mots
+## 4 — Les résultats · 22 s · 39 mots
 
-> Les résultats. Depuis cet été, plus de 19 000 offres ont été saisies et vérifiées, presque
-> toutes en septembre, depuis que le robot tourne en continu. Le record : plus de 2 600 offres
-> en une seule journée, samedi dernier. Et 21 marchands sont déjà couverts. Chaque barre, c'est
-> une journée : on voit bien la montée en puissance.
+> Les résultats. Depuis cet été, plus de 19 000 offres ont été saisies, chacune contrôlée. Le
+> record : plus de 2 600 en une seule journée. Et 21 marchands sont pris en charge. Le graphique
+> montre la montée en puissance.
 
-Conseil : laisser les trois chiffres parler ; ne pas commenter chaque barre.
+Conseil : laisser les trois chiffres parler ; ne pas commenter chaque barre, ne pas donner le jour
+du record (il dépend du fuseau horaire, voir les questions en fin de texte).
 
-## 5 — La confiance · 30 s · 64 mots
+## 5 — La confiance · 34 s · 70 mots
 
-> Mais aller vite ne sert à rien si c'est faux. Alors la règle d'or, c'est : dans le doute, il ne
-> saisit pas. Si une offre n'est pas claire, il la laisse dans la file d'attente pour un humain,
-> et il note pourquoi. Au moindre problème, il s'arrête et nous prévient sur Discord. Et c'est
-> toujours un humain qui le lance, le surveille et l'arrête.
+> Aller vite ne sert à rien si c'est faux. La règle d'or : dans le doute, il ne saisit pas. Une
+> offre pas claire ? Il la laisse à l'équipe, et note pourquoi. Au moindre problème, il s'arrête
+> et le signale. Ce n'est pas une IA qui devine : il applique des règles écrites, vérifiées par
+> près de 2 900 tests automatiques. Et un humain le lance, et peut l'arrêter à tout moment.
 
 Conseil : c'est le message le plus important pour le public non technique — le dire lentement.
 
-## 6 — Ce que ça change pour vous · 30 s · 66 mots
+## 6 — Ce que ça change pour vous · 29 s · 62 mots
 
-> Concrètement, qu'est-ce que ça change pour vous ? Pour l'équipe data entry : moins de saisie
-> répétitive, et les cas délicats restent entre vos mains. Pour le SEO : plus de prix, sur plus
-> de fiches, mis en ligne plus vite. Pour les managers : un suivi en direct et des chiffres
-> vérifiables. Et pour les développeurs : chaque règle est écrite et protégée par près de 2 900
-> tests automatiques.
+> Qu'est-ce que ça change pour vous ? Pour l'équipe data entry : le répétitif part au robot, les
+> cas délicats restent entre vos mains. Pour le SEO : plus de prix, sur plus de fiches, mis en
+> ligne plus vite. Pour les managers : des chiffres précis, offre par offre. Et pour toute
+> l'équipe : moins de copier-coller, plus de temps pour ce qui demande du jugement.
 
-Conseil : regarder chaque groupe en parlant de lui. Si la question de l'emploi vient aux
-questions : le robot prend le répétitif ; tout ce qui demande du jugement (les offres qu'il
-refuse, les cas délicats, les corrections, les nouveaux marchands) reste à l'équipe.
+Conseil : regarder chaque groupe en parlant de lui. Si la question de l'emploi vient : le robot
+prend le répétitif ; tout ce qui demande du jugement (les offres qu'il refuse, les corrections, les
+nouveaux marchands) reste à l'équipe. Ne rien promettre au nom des RH.
 
-## 7 — La suite, merci · 10 s · 21 mots
+## 7 — La suite, merci · 12 s · 26 mots
 
-> La suite : ajouter de nouveaux marchands, et étudier une connexion directe au système
-> d'AllKeyShop. Merci ! Je réponds volontiers à vos questions.
+> La suite : de nouveaux marchands, et, à l'étude, un branchement direct sur AllKeyShop, sans
+> passer par le formulaire. Vos retours sont les bienvenus. Merci ! Des questions ?
 
-Conseil : pour les questions techniques, ouvrir l'annexe `annexe_technique/presentation_technique.html`
-(19 diapositives, schémas détaillés).
+### Questions probables (réponses courtes)
+
+- **« C'est de l'IA ? »** Il ne devine rien : il applique des règles écrites, décidées une par
+  une et testées. Si on insiste : il a été construit avec l'aide d'une IA, mais ce qui tourne suit
+  des règles fixes.
+- **« Et s'il se trompe ? »** C'est rare. Quand on trouve une erreur, on corrige la règle et on
+  liste les offres concernées pour les reprendre : le 26/09, 22 offres mal rangées (18 sur la fiche
+  d'un contenu additionnel au lieu de celle du jeu, 4 dans la mauvaise édition), règle corrigée le
+  jour même.
+- **« Il en reste combien ? »** Les 50 000 sont le relevé du 25/09 ; la file bouge, il arrive
+  plusieurs centaines d'offres par jour. Une partie n'est pas pour le robot : environ 3 100 hors jeu
+  (cartes cadeaux, comptes…) et 1 600 dans des régions qu'on ne vend pas.
+- **« Pourquoi des creux dans le graphique ? »** Ça dépend des marchands traités ce jour-là et de la
+  part de leurs offres que le robot peut saisir ; les 13 et 14/09, aucune saisie.
+- **« Le jour du record ? »** Journées comptées en heure UTC : 2 627 le 26/09. En heure de Paris, le
+  record est 2 743 le 20/09. Dans les deux cas : « plus de 2 600 ».
+- **« Combien de temps à la main ? »** Aucun chiffre mesuré : ne répondre que si tu en as un fiable.
+  Le robot : environ une minute par offre, contrôle compris.
+- **Questions techniques** : ouvrir l'annexe `annexe_technique/presentation_technique.html`
+  (19 diapositives, schémas). Ses chiffres datent du 27/09 au matin (17 317 offres) : le total
+  diffère de celui du jour, c'est normal.

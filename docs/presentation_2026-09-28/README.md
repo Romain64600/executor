@@ -16,7 +16,7 @@ français, sans secret (aucun cookie, jeton, mot de passe ni adresse de machine 
 | Fichier | Ce que c'est |
 |---|---|
 | `presentation.html` | **Le diaporama de 3 minutes**, autonome (un seul fichier, aucune requête réseau) : 7 diapositives — titre, le problème, la solution en 4 étapes, les résultats, la confiance, ce que ça change pour chacun, la suite. |
-| `script_3min.md` | **Le texte à dire**, diapositive par diapositive, avec la durée visée et le nombre de mots (378 mots ≈ 2 min 40 s ; 3 min avec les enchaînements). Le même texte est dans les notes du diaporama (touche **N**). |
+| `script_3min.md` | **Le texte à dire**, diapositive par diapositive, avec la durée visée et le nombre de mots (351 mots, durées visées 2:50 ; 10 s de marge sous les 3 minutes), plus les **réponses courtes aux questions probables**. Le même texte est dans les notes du diaporama (touche **N**). **À imprimer** en secours. |
 | `chiffres.md` | Tous les chiffres cités, **avec leur méthode et leur date** : comptage du 28/09 à 06 h 35 UTC (diaporama de 3 minutes) et du 27/09 au matin (annexe). |
 | `annexe_technique/presentation_technique.html` | La version longue (19 diapositives, 25-30 min) : architecture, parcours d'une offre, règles, sécurité, exploitation, résultats par marchand. |
 | `annexe_technique/notes_orateur_technique.md` | Ses notes d'orateur (aussi dans le diaporama, touche **N**). |
@@ -25,21 +25,31 @@ français, sans secret (aucun cookie, jeton, mot de passe ni adresse de machine 
 
 ## Présenter (3 minutes)
 
-1. Ouvrir `presentation.html` dans un navigateur (Chrome, Firefox, Safari, Edge) — aucun réseau requis.
-2. **F** : plein écran (F11 marche aussi).
-3. **→ / espace / Entrée** : diapositive suivante ; **←** : précédente ; **Début / Fin** : première / dernière.
-4. **N** : notes de l'orateur (le texte à dire) + un **chrono** en haut à gauche, qui indique la fin
-   visée de la diapositive en cours (il change de couleur en cas de retard). **T** remet le chrono à zéro.
-5. Deux écrans : ouvrir une seconde fenêtre sur `presentation.html?notes` (notes affichées d'office)
-   pour l'orateur, et projeter l'autre.
-6. **Ctrl+P** : une diapositive par page (format 16:9, sans les notes — le texte est dans `script_3min.md`).
-7. Lien direct vers une diapositive : `presentation.html#4`.
+1. **Imprimer `script_3min.md`** (le texte dit et les réponses aux questions) : c'est le secours.
+2. Ouvrir `presentation.html` dans un navigateur (Chrome, Firefox, Safari, Edge) — aucun réseau requis.
+   Ouvrir d'avance l'annexe technique dans un second onglet, pour les questions des développeurs
+   (ses chiffres datent du 27/09 : son total diffère de celui du jour).
+3. **F** : plein écran (F11 marche aussi). Les boutons de navigation disparaissent en plein écran
+   (ils reviennent au survol de la souris, en haut à droite).
+4. **→ / espace / Entrée** : diapositive suivante ; **←** : précédente ; **Début / Fin** : première / dernière.
+5. **T au moment de commencer** : le chrono part au chargement de la page, T le remet à zéro.
+6. **N** : notes de l'orateur (le texte à dire) + le **chrono** en haut à gauche, qui indique la fin
+   visée de la diapositive en cours (il change de couleur en cas de retard). **Attention : les notes
+   s'affichent sur la diapositive elle-même.** Si l'écran de l'ordinateur est recopié sur le
+   projecteur, la salle les voit : ne pas appuyer sur N, garder la feuille imprimée.
+7. Deux fenêtres (`presentation.html?notes` affiche les notes d'office) : elles **ne sont pas
+   synchronisées**, chacune avance séparément. Réservé aux répétitions.
+8. **Ctrl+P** : une diapositive par page (format 16:9, sans les notes — le texte est dans `script_3min.md`).
+9. Lien direct vers une diapositive : `presentation.html#4`.
 
-Déroulé : 15 s titre · 25 s problème · 40 s solution · 30 s résultats · 30 s confiance · 30 s
-« pour vous » · 10 s suite et merci = **3:00**.
+Déroulé (durées visées) : 12 s titre · 28 s problème · 33 s solution · 22 s résultats · 34 s
+confiance · 29 s « pour vous » · 12 s suite et merci = **2:50**, 10 s de marge sous les 3 minutes.
 
-**À compléter par Romain** : diapositive 1, « Romain · rôle à compléter » (souligné en pointillé),
-dans `outils/presentation_3min.gabarit.html`, puis relancer le générateur (ci-dessous).
+Écrans : pensé pour le 16:9 (1920×1080) ; vérifié aussi en 4:3 (1024×768), rien n'est coupé.
+
+**À compléter par Romain (facultatif)** : la diapositive 1 dit « Présenté par Romain · lundi
+28 septembre 2026 ». Pour ajouter un nom de famille ou un rôle, modifier cette ligne dans
+`outils/presentation_3min.gabarit.html` (classe `qui`), puis relancer le générateur (ci-dessous).
 
 ## Modifier ou rafraîchir
 

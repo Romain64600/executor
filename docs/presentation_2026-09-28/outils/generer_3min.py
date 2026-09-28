@@ -15,7 +15,7 @@ Rafraîchir les chiffres le jour J (lecture seule sur les deux serveurs de produ
     python3 outils/compter_creations.py --base <clone de production> > nouvelle.json   # serveur 1
     python3 outils/compter_creations.py --base <clone de production> > ancienne.json   # serveur 2
     python3 outils/generer_3min.py --fusion nouvelle.json ancienne.json \\
-        --compte-le-utc "2026-09-28 06:35 UTC" --compte-le "lundi 28/09/2026 à 8 h 35 (heure de Paris)"
+        --compte-le-utc "2026-09-28 06:35 UTC" --compte-le "28/09 à 8 h 35"
 
 La fusion réécrit le fichier de données puis reconstruit le diaporama. Penser à reporter les
 nouveaux chiffres dans `../chiffres.md` (et, s'ils changent d'ordre de grandeur, dans le texte dit).
@@ -82,12 +82,20 @@ def lire_script() -> list[dict]:
             continue
         elif ligne.startswith("> "):
             cour["dit"].append(ligne[2:].strip())
-        elif ligne.strip() and not ligne.startswith("#"):
-            cour["conseil"].append(ligne.strip())
+        elif ligne.startswith("### "):
+            cour["conseil"].append(("titre", ligne[4:].strip()))
+        elif ligne.startswith("#") or ligne.startswith("---"):
+            continue
+        elif not ligne.strip():
+            cour["conseil"].append(("vide", ""))
+        elif ligne.startswith("- "):
+            cour["conseil"].append(("puce", ligne[2:].strip()))
+        else:
+            cour["conseil"].append(("suite", ligne.strip()))
     erreurs = []
     for k, s in enumerate(sections, 1):
         s["dit"] = " ".join(s["dit"])
-        s["conseil"] = " ".join(s["conseil"])
+        s["conseil"] = blocs_conseil(s["conseil"])
         s["mots"] = compter_mots(s["dit"])
         if s["n"] != k:
             erreurs.append(f"section {s['n']} : numéro attendu {k}")
@@ -116,11 +124,39 @@ def lire_script() -> list[dict]:
     return sections
 
 
+def blocs_conseil(lignes: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Regroupe les lignes hors citation : paragraphes (séparés par une ligne vide), puces
+    (« - … », leurs lignes de suite indentées comprises) et intertitres (« ### … »)."""
+    blocs: list[list[str]] = []
+    for genre, texte in lignes:
+        if genre == "vide":
+            blocs.append(["", ""])          # coupe : la ligne suivante ouvre un nouveau bloc
+        elif genre in ("titre", "puce"):
+            blocs.append([genre, texte])
+        elif blocs and blocs[-1][0] in ("para", "puce"):
+            blocs[-1][1] += " " + texte
+        else:
+            blocs.append(["para", texte])
+    return [(g, t) for g, t in blocs if g]
+
+
+def en_ligne(texte: str) -> str:
+    """Texte du script → HTML des notes : échappé, `code` et **gras** rendus sans les signes."""
+    t = html.escape(texte, quote=False)
+    t = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", t)
+    return re.sub(r"`([^`]+)`", r"\1", t)
+
+
 def notes_html(s: dict, fin: int) -> str:
     h = (f"<b>{html.escape(s['titre'], quote=False)} — {s['secondes']} s (fin visée à {mmss(fin)})</b><br>"
          f"{html.escape(s['dit'], quote=False)}")
-    if s["conseil"]:
-        h += f"<br><i>{html.escape(s['conseil'], quote=False)}</i>"
+    for genre, texte in s["conseil"]:
+        if genre == "titre":
+            h += f"<br><br><b>{en_ligne(texte)}</b>"
+        elif genre == "puce":
+            h += f"<br>• {en_ligne(texte)}"
+        else:
+            h += f"<br><i>{en_ligne(texte)}</i>"
     return h
 
 

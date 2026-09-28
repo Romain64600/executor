@@ -21,13 +21,23 @@ d'attente, elle ne peut pas être comptée deux fois). Données fusionnées :
 - **Depuis le 8 septembre** (saisie automatique sur les 2 serveurs) : **18 637**. Avant : 422.
 - **14 derniers jours complets (14 → 27 septembre)** : **16 500**.
 - **Record : 2 627** le samedi 26/09/2026 (inchangé). Le 27/09, journée complète : **2 184**.
+  **Les journées sont découpées en UTC** (le compteur prend les 10 premiers caractères de
+  l'horodatage). En heure de Paris, le record est **2 743 le dimanche 20/09** (le 26/09 fait 2 646) :
+  recomptage de relecture, même coupure à 06:35 UTC. Le graphique n'est pas redécoupé ; le texte dit
+  « plus de 2 600 en une seule journée », vrai dans les deux découpages, sans nommer le jour.
 - Par mois : 2026-07 : 216, 2026-08 : 181, 2026-09 : 18 662 (dont 343 le 28/09 avant 06 h 35 UTC).
-- **Marchands couverts : 21** = la liste blanche (`src/admin/auto_merchants.py`, `AUTO_MERCHANTS`,
-  21 entrées le 28/09). 20 ont déjà des créations ; **Allyouplay** n'a pas encore été balayé.
+- **Marchands pris en charge : 21** = la liste blanche (`src/admin/auto_merchants.py`,
+  `AUTO_MERCHANTS`, 21 entrées le 28/09). 20 ont déjà des créations ; **Allyouplay** a été balayé
+  3 fois (runs `20260917-160537`, `20260922-152601`, `20260925-194851`, 3 pages chacun) sans aucune
+  offre saisissable (`candidates.json` vide) — d'où « pris en charge » plutôt que « déjà saisis ».
   Discover.games (364) et Loaded (5), à 0 le 27/09, ont leurs premières créations.
 - **Tests automatisés : 2 871** (`python3 -c "import unittest; print(unittest.defaultTestLoader.discover('tests').countTestCases())"`
   sur `origin/main` du 28/09 ; 2 840 le 27/09). Le texte dit « près de 2 900 ».
-- **> 50 000** offres en attente : relevé du 25/09 (voir « Le backlog » plus bas), non refait le 28/09.
+- **> 50 000** offres en attente : relevé du 25/09 (voir « Le backlog » plus bas), non refait le 28/09 ;
+  l'écran le date (« relevé du 25 septembre »).
+- **Contre-vérification** : recomptage indépendant de relecture à 06:52 UTC, même méthode, en
+  lecture seule sur les 2 serveurs : **19 077** (10 136 + 8 941). Seul écart : la journée partielle
+  du 28/09 (343 → 361). Les chiffres du diaporama sont exacts à 06:35 UTC.
 
 Le graphique du diaporama montre les **journées complètes** du 8 au 27 septembre (le 28 est
 partiel) ; les jours sans barre (13 et 14/09) n'ont eu aucune création.

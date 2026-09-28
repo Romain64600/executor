@@ -1,6 +1,6 @@
 {
  "compte_le_utc": "2026-09-28 06:35 UTC",
- "compte_le": "lundi 28/09/2026 à 8 h 35 (heure de Paris)",
+ "compte_le": "28/09 à 8 h 35",
  "methode": "outils/compter_creations.py sur les clones de production des 2 serveurs (lecture seule), sorties additionnées — voir ../chiffres.md",
  "total": 19059,
  "serveur_1": 10118,

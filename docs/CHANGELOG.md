@@ -18,6 +18,24 @@ compte de mots vérifié par le générateur `outils/generer_3min.py`). Chiffres
 technique pour les questions des développeurs : `annexe_technique/presentation_technique.html`
 et `notes_orateur_technique.md` (chiffres du 27/09 inchangés ; `outils/generer.py` y écrit).
 
+**Relecture du même matin (public non technique + faits et minutage), appliquée.** Diapo 1 :
+« Présenté par Romain », plus de texte provisoire. Plus de « comme un opérateur » (lu « il me
+remplace ») : « un robot qui reprend les gestes répétitifs ». « Vérifiée » promettait « juste » :
+« chacune contrôlée », et l'étape 4 dit ce qui est contrôlé (l'offre a quitté la file d'attente).
+Diapo 2 : le 50 000 est daté (relevé du 25/09), l'enjeu est dit (« tant qu'une offre attend, son
+prix n'est pas sur le site ») et un vrai titre marchand montre les quatre choix. Diapo 5 : la
+promesse Discord est retirée (le balayage en cours sur un serveur n'envoie rien, et le message part
+en fin de passe) → « il s'arrête et le signale » ; « un humain le lance et peut l'arrêter » au lieu
+de « le surveille ». Diapo 6 : la carte « Développeurs » devient « Toute l'équipe » (les RH sont
+dans la salle), les tests passent à la diapo 5 avec « ce n'est pas une IA qui devine ». Diapo 7 :
+« se brancher directement sur AllKeyShop, sans passer par le formulaire (à l'étude) » et « vos
+retours sont les bienvenus ». Script ramené à **351 mots**, durées visées **170 s** (10 s de
+marge) ; réponses aux questions probables dans les notes de la diapo 7. « Samedi dernier » n'est
+plus dit (journées découpées en UTC : en heure de Paris, le record est le 20/09 — `chiffres.md`).
+« 21 marchands pris en charge » (Allyouplay balayé 3 fois sans offre saisissable, `chiffres.md`
+corrigé). Tient en 4:3 (1024×768) ; boutons masqués en plein écran ; README : les deux fenêtres
+ne sont pas synchronisées, T au départ, ne pas afficher les notes en recopie d'écran.
+
 ## 2026-09-28 — Boucle : 30 min de pause quand une passe crée moins de 10 offres
 
 Romain : « go pour 30 min si moins de 10 offres ». La nuit du 27-28/09, la boucle du groupe A a
