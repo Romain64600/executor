@@ -141,6 +141,34 @@ No degraded mode.
 These are deliberate, Romain-reviewed calls. An adversarial audit re-derives them as
 "findings" every time; leave them AS-IS unless Romain explicitly changes his mind.
 
+- **`[R63]` Clés EA « English only » : case 31 sans verrou, 3euen sinon 3eu en Europe —
+  Romain, 2026-09-28** : « go pour les clés EA English only en case 31 », puis, mot pour mot :
+  « Une clee english only n est pas forcement bloque a la region Europe, si on a une info comme
+  EU english only on renseignera EU en priorite si pas de region "EU english only" ». Lecture
+  codée : une clé EA (EA app / Origin) marquée English only SANS verrou → **31** ; marquée
+  English only ET verrouillée Europe → **3euen**, et si la page AKS ne porte pas 3euen → **3eu**
+  (le verrou Europe prime sur la mention de langue) ; **jamais 31 pour une clé verrouillée
+  Europe**. Le catalogue du formulaire porte TOUJOURS 3euen, donc « si pas de région "EU english
+  only" » ne peut viser que la PAGE. Les trois noms de chaque seau (ne pas les confondre) :
+  31 = formulaire « Origin English Only -OR- EN/PL -OR- EN/PL/RU (31) », filtre de page « EA
+  ENG/POL/RUS ONLY », page publique « IN ENGLISH ONLY » ; 3euen = « Origin EU English Only
+  (3euen) », « EA EU ENG ONLY », « EU IN ENGLISH ONLY » ; 3eu = « Origin EU (3eu) », « EA
+  EUROPE ». Un audit voudra :
+  (a) faire entrer EN/PL et EN/PL/RU en 31 « puisque le libellé AKS les nomme » — non, non
+  tranché, ils restent « language restriction » ;
+  (b) lire un EN / ENG / (EN) nu comme la mention — non, ONLY est obligatoire (Driffle « (EN) »,
+  GameBoost « ENG » restent des questions ouvertes) ;
+  (c) retirer l'exigence « la page porte 31 / 3euen / 3eu » au nom de `[R56]` (la liste de
+  filtre dit « déjà vendu », pas « le formulaire le propose ») — c'est exact, et c'est VOULU :
+  la consigne du 28/09 l'exige ; coût mesuré ce jour-là : 0 ligne ; ne la relâcher que sur un
+  nouveau go ;
+  (d) étendre la règle aux autres plateformes (Epic 476, Ubisoft EU 440, Steam Gift EU 472…) ou
+  aux verrous US / UK — non, refus explicites `(R63)`, questions ouvertes ;
+  (e) retirer la mention du titre partout — non : elle ne sort du slug et des gardes QUE sur la
+  route `[R63]` (ENGLISH / ONLY / ENG ne sont pas des mots de bruit, `resolution_name` et
+  l'export de la liste 22 la gardent).
+  EXECUTOR_RULES `[R63]`, `tests/test_english_only_r63.py`.
+
 - **Chemin by-urls : l'index de localisation EST remplacé par la preuve après chaque création —
   laisser tel quel (audit complet du 2026-09-18, constat écarté).** Sur `--locate-by-search`
   les deux drapeaux sont vrais, donc `keep_index` vaut False et l'index bâti par

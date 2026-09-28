@@ -57,6 +57,7 @@ from src.merchants.common import (
     make_config,
     normalise_region_text,
     sellable_base,
+    split_english_only_tail,
 )
 
 _DELIVERY = r"Keys?|Gift|Account|Trade|Code|Card|Top-?Up|Subscription|Pass|Voucher|Points|Coins"
@@ -78,14 +79,24 @@ _OLD_TAIL_RE = re.compile(
 
 def region_tail(name: str) -> str | None:
     """The uppercase region text of the title tail, verbatim ("EUROPE", "NORTH AMERICA",
-    "EUROPE / NORTH AMERICA", "SINGAPORE"), or None when the title has no region slot."""
+    "EUROPE / NORTH AMERICA", "SINGAPORE"), or None when the title has no region slot.
+
+    [R63] (2026-09-28): G2A writes the language restriction INSIDE the region slot —
+    "Battlefield V | Definitive Edition (PC) - In App Key - EUROPE ENG ONLY". The trailing
+    « ENG ONLY » / « ENGLISH ONLY » is peeled (``common.split_english_only_tail``): the slot
+    says EUROPE, and the mention stays in the title for the matcher's [R63] decision. Before,
+    the whole text fell outside the vocabulary and the row was refused « forbidden region:
+    EUROPE ENG ONLY » — a refusal by side effect, not a decision. A slot that is the mention
+    alone reads as no slot (None)."""
 
     for rx in (_TAIL_RE, _OLD_TAIL_RE):
         m = rx.search(name or "")
         if m:
-            text = m.group("region").strip()
+            text, _mark = split_english_only_tail(m.group("region").strip())
             if text:
                 return text
+            if _mark:
+                return None
     return None
 
 

@@ -12,7 +12,9 @@ Grammar seen live (``mmoga.com/<Platform>-Games/<Product>[-<REGION>-Key].html?re
 
 This module OVERRIDES three generic behaviours through the ``MerchantConfig`` hooks
 (``precheck`` / ``title_region`` / ``resolve_name``) — the matcher itself knows nothing
-about MMOGA. The region code is an UPPERCASE 2-letter code right before the trailing
+about MMOGA — plus, since [R63] (2026-09-28), ``english_only_name``: the whole delivery
+bracket around an « English only » mention, dropped from the slug of an EA English-only key
+the matcher ENTERS (never from ``resolve_name``). The region code is an UPPERCASE 2-letter code right before the trailing
 "Key": case-SENSITIVE on purpose — "Among Us Key" (Us) is a global key, "Borderlands 2
 US Key" (US) is US-locked. A code that maps to no AKS bucket (DE, FR, …) fails CLOSED
 (skip "forbidden region: <code>"), never an implicit worldwide entry; the price of that
@@ -125,6 +127,27 @@ def resolve_name(name: str) -> str:
     return REGION_CODE_TAIL_RE.sub("", REGION_CODE_KEY_RE.sub("", name)).rstrip()
 
 
+# [R63] (Romain, 2026-09-28 : « go pour les clés EA English only en case 31 »). MMOGA écrit la
+# mention DANS son crochet de livraison — « GRID Legends [EN Key - English Only] », « EA Sports
+# FC 25 [PC Version / EA App EN Key - English only] », « A Way Out [EA App Key EN - English
+# Only] - EU » — ou à côté d'un crochet de livraison — « FIFA 23 - Ultimate Edition [PC - Origin
+# EN Key] - English Only ». Un crochet qui porte « Key » ou la mention est du MOBILIER de
+# livraison : il sort ENTIER du nom de résolution. Retirer la seule phrase ne suffit pas : le
+# slug garde « -en-key », et « [… EN Key » lu par la grammaire « <CODE> Key » donnerait
+# « forbidden region: EN » (mesuré le 2026-09-28).
+_EN_ONLY_DELIVERY_BRACKET_RE = re.compile(
+    r"\s*\[[^\]]*\b(?:Key|English[\s-]+only)\b[^\]]*\]", re.IGNORECASE)
+
+
+def english_only_name(name: str) -> str:
+    """Le nom de résolution d'une clé EA English only que [R63] entre : les crochets de
+    livraison (« [… Key …] », « [… English only] ») retirés ENTIERS. Le matcher ne l'appelle
+    QUE sur une ligne où la route [R63] est active ; il retire ensuite la phrase restante
+    (« (English only) », « - English Only ») par ``common.strip_english_only``."""
+
+    return re.sub(r"\s+", " ", _EN_ONLY_DELIVERY_BRACKET_RE.sub(" ", name or "")).strip() or name
+
+
 # ── console hooks (R45, 2026-09-14) ──────────────────────────────────────────────────
 # (regex on the lower-cased URL path, families, skip). The category names the LOWER
 # generation only — a cross-gen title is filed under Xbox-One-Game-Keys, so the shared
@@ -179,6 +202,7 @@ CONFIG = MerchantConfig(
     precheck=precheck,
     title_region=title_region,
     resolve_name=resolve_name,
+    english_only_name=english_only_name,   # [R63] crochet de livraison « [… Key - English Only] »
     # console grammar (R45, 2026-09-14): category segment, "<CODE> Key" slot, delivery phrase
     console_url_families=console_url_families,
     console_region_slot=console_region_slot,

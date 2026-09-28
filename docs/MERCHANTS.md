@@ -48,6 +48,7 @@ Champs disponibles :
 | `url_platform(url)` | plateforme déclarée par la grammaire d'URL du marchand (Gamivo : run `-pc-steam-` entre le slug et le code région), consultée en premier par `explicit_platform_from_url` `[R46]` | — |
 | `guard_name(name)` | **`[R32e]` (2026-09-14)** — le titre lu par les gardes d'identité (R01 mots AKS manquants, R16 mots en trop, R01b qualificatif dangereux) et par `detect_edition` pour une ligne PC : le titre brut par défaut (aucun marchand sans le hook ne change) ; un marchand dont la grammaire ajoute une note qui n'est PAS un mot de produit la retire ici — et elle seule (Kinguin « (valid until <Month> <Year>) » en FIN de titre seulement — correctif de revue 14/09 —, le mot de livraison « Altergift » chez K4G et Kinguin — décisions de Romain du 14/09 : « Kinguin valid until juin 2027 on rentre », « Steam Altergift = Steam Gift on rentre »). Le hook ne blanchit jamais un titre : les mots qu'il laisse sont toujours comparés au nom AKS, une réponse vide → titre brut | titre brut |
 | `gift_delivery(name, url)` | **`[R32e]` (2026-09-14)** — le verdict « livraison gift » propre au marchand, superposé par `detect_region` comme bucket GIFT de la plateforme (Steam 25 / 259 / 2577 / 2572, Battle.net 570 / 567 / 568, Ubisoft 501 / 504 / 505 — les compartiments US / UK ont été mappés le 16/09, `[R50]` ; une base qu'une plateforme n'a vraiment pas garde le skip fail-closed « no region id ») : True / False l'emporte, None → lecture générique (segment d'URL `gift`, « GIFT » dans le titre). K4G / Kinguin « … Steam Altergift » dont le slug est d'accord → True (Romain 14/09 : « on rentre sous gift tous les altergifts ») ; le hook lit ses DEUX arguments : un conflit titre / URL (titre Altergift, slug `-cd-key`) ou un Altergift hors Steam n'est jamais un verdict — c'est le skip fail-closed du `precheck` marchand (correctifs de revue 14/09) | lecture générique |
+| `english_only_name(name)` | **`[R63]` (2026-09-28)** — le nom de résolution d'une clé EA English only que `[R63]` ENTRE (case 31 / 3euen / 3eu), débarrassé du mobilier que le marchand écrit autour de la mention (MMOGA : le crochet de livraison entier « [EA App Key EN - English Only] ») ; appelé SEULEMENT sur la route `[R63]`, sur le résultat de `resolve_name`, avant le retrait générique de la phrase (`merchants.common.strip_english_only`). Jamais lu hors `[R63]` : `resolution_name` (export liste 22) n'est pas touché | la phrase seule est retirée |
 | `console_url_families(url)` | **console `[R45]` (2026-09-14)** — les familles que l'URL déclare, dans l'ordre (sous-ensemble de XBOX_ONE / XBOX_SERIES / PS4 / PS5 / SWITCH / SWITCH2), OU une chaîne de skip (`"console: Xbox 360 (R45)"`, `"console: <MARKER> — not a game (R45)"`), OU l'un des deux marqueurs rendus SEULS — `(XBOX_GENERATION_UNDECLARED,)` (Xbox sans génération, P4) et `(XBOX_WINDOWS_KEY,)` (clé PC vendue par Xbox Live, 2026-09-26, à la place de l'ancien `"console: PC-only Xbox Live key (R45)"`) —, OU `None` (l'URL ne dit rien) ; consulté par le classifieur générique SEULEMENT quand le titre ne déclare aucune famille | — |
 | `console_pc_declared(name, url)` | **console `[R45]` (2026-09-14)** — True quand le marchand déclare PC / Windows à côté de la plateforme console (Gamivo : runs `-pc` / `-windows` ; Eneba : run `-windows-`) ; la lecture générique des phrases de titre (`/ Windows`, `PC/XBOX …`) reste générique | — |
 | `console_region_slot(name)` | **console `[R45]` (2026-09-14)** — le TEXTE de région que le marchand écrit à côté de la phrase plateforme, tel quel (`"US"`, `"CA"`, `"Europe"`, `"United Kingdom"`, `"Hong Kong"`, `"EUROPE"`) ; la correspondance texte → base (uk / us / eu / global) ou label interdit reste générique dans `console_keys` (vocabulaire partagé) ; hook absent → le classifieur retombe sur ses lectures partagées de queue / crochets | — |
@@ -212,6 +213,16 @@ matcher et le classifieur importent le registre.
   GLOBAL implicite → US), 30 slugs (21 DLC EU en 404 `…-dlc-eu` → `…-dlc`) ; 0 candidat
   touché ; 211 lignes consoles passent de « console » à un motif explicite en mode par défaut
   (CANADA 84, AUSTRALIA 77, ACCOUNT 37, …).
+- **English only `[R63]` (2026-09-28)** : Kinguin écrit « EN Language Only » / « English
+  Language only » dans la tête du titre (avant la région et la plateforme). Ce n'est plus une
+  « language restriction » : une clé EA (« … PC EA App CD Key ») entre en 31 — « Need for Speed
+  Rivals Complete Edition EN Language Only PC EA App CD Key » (Complete 91), « EA SPORTS FC 27
+  Ultimate Edition EN Language Only EA App CD Key » (Ultimate 21) ; Steam (22 lignes vues),
+  Battle.net, consoles → refus explicites `(R63)` ; un code interdit à côté (« … EN Language Only
+  AR XBOX One … ») garde « forbidden region: ARGENTINA ». Les LISTES (« EN/DE Languages Only »,
+  « EN/ES/FR/PT Languages Only ») restent « language restriction ». Aucun hook : la mention est
+  du vocabulaire partagé (`merchants.common`), le `resolve_name` Kinguin rend la tête et le
+  matcher en retire la phrase sur la route `[R63]` seulement.
 - **Statut live** : éprouvé en safe-auto (142 pages d'historique + nuit du 11/09).
 - **Résiduel** : consoles, bundles, monnaies, titres sans page AKS, variantes d'édition.
 
@@ -330,6 +341,13 @@ matcher et le classifieur importent le registre.
   2 prechecks (GIFT CARD → SINGAPORE, AFRICA → SOUTH AFRICA), 1 région (« Big Adventure:
   Trip to Europe 6 … Steam Gift - GLOBAL » : le générique lisait « Europe » dans le NOM →
   GIFT EU 259, la queue dit GLOBAL → GIFT 25) ; 0 candidat touché.
+- **English only `[R63]` (2026-09-28)** : G2A écrit la restriction DANS le slot région —
+  « Battlefield V | Definitive Edition (PC) - In App Key - EUROPE ENG ONLY ». `region_tail`
+  détache la mention finale (`common.split_english_only_tail`) : le slot dit EUROPE, la mention
+  reste dans le titre pour la décision `[R63]` du matcher. Avant : « forbidden region: EUROPE
+  ENG ONLY » (effet de bord). Cette ligne est désormais refusée « clé English only sans
+  plateforme déclarée » : « In App Key » ne déclare pas EA (non mappé, faute de preuve) ; si
+  elle l'était, sa page (Battlefield 5) n'a pas 3euen et la règle la mettrait en 3eu.
 - **Statut live** : éprouvé en safe-auto.
 - **Résiduel** : fort bruit hors jeux (2-3 % de rendement historique) : CIS / ROW / Turquie /
   Allemagne, monnaies, gift cards, skins.
@@ -350,6 +368,18 @@ matcher et le classifieur importent le registre.
   RU/TR/BR/AR/CN/KR/JP/PL/UA/MX/PH/VN/TH → `forbidden region: <LABEL>`, code inconnu →
   skip fail-closed), `title_region` (EU/US/UK/GB → région autoritaire), `resolve_name`
   (retire la queue de région avant la devinette de slug) `[R32e]`.
+- **English only `[R63]` (2026-09-28)** : MMOGA écrit la mention dans (ou à côté de) son
+  crochet de livraison — « GRID Legends [EN Key - English Only] », « EA Sports FC 25 [PC
+  Version / EA App EN Key - English only] », « A Way Out [EA App Key EN - English Only] - EU »,
+  « FIFA 23 - Ultimate Edition [PC - Origin EN Key] - English Only », « Need for Speed Heat
+  (English only) ». Le hook `english_only_name` retire le crochet de livraison ENTIER (un
+  retrait partiel laisse « EN Key » que la grammaire « <CODE> Key » lirait comme un code
+  région) — seulement sur la route `[R63]` : `resolve_name` est inchangé octet pour octet.
+  Rejeu du 28/09 : 5 lignes entrent (NFS Heat, FC 25, FIFA 23 Ultimate, GRID Legends en 31 ;
+  A Way Out - EU en 3euen) ; Battlefield V ×2 restent « no AKS product page » (« V » ≠ « 5 ») ;
+  « EA Sports FC 24 (PS5 Download Code EU) - English Only Key » → refus console `[R63]`.
+  MMOGA est en liste blanche : premier passage conseillé en `--mode learning` (canari de 1) —
+  la frappe de « -OR- » (libellé de la case 31) dans le filtre du formulaire n'est pas prouvée.
 - **Historique** : onboardé le 2026-09-10 directement en safe-auto (décision Romain) ; les
   DLC / Season Pass sont saisis sur leur page AKS propre depuis le 2026-09-11 `[R43]`.
 - **Grammaire console (R45)** : plateforme dans le titre, en parenthèses ou après un tiret
@@ -443,6 +473,9 @@ matcher et le classifieur importent le registre.
   entered », jamais le bucket gift d'une autre plateforme (Battle.net 570 / 567 existent),
   jamais une clé simple. Rejeu (lot du 12/09, 6 314 lignes tous marchands) : 1 seule ligne
   K4G change — Trine 5 (404 enregistré, désormais refus explicite) ; 0 candidate.
+- **English only `[R63]` (2026-09-28)** : « Assassin's Creed Unity (English Only) Ubisoft Connect
+  CD Key » est refusée explicitement « clé English only Ubisoft … (R63) » (avant : « extra
+  words: ['ENGLISH', 'ONLY'] », effet de bord). Seules les clés EA English only sont tranchées.
 - **Statut live** : éprouvé en safe-auto.
 - **Résiduel** : ~25 % de consoles, sans page AKS.
 
@@ -593,6 +626,12 @@ matcher et le classifieur importent le registre.
   espacées. Non-régression : sur les 1 090 lignes déjà écrites, 0 slug résolu perdu. La
   pelure est ancrée à la fin et faite UNE fois (« Christmas Gift Steam Key » → « Christmas
   Gift »), et les gardes d'identité (R01/R16) lisent toujours le titre BRUT.
+- **English only `[R63]` (2026-09-28)** : « Burnout Paradise Remastered EN Language Only (PC)
+  EA App Key - GLOBAL » entre en 31 (elle mourait sur « language restriction ») ; les lignes
+  Steam « EN Language Only » / « EN Only » (9 vues, dont « The Technomancer EN Only (PC) Steam
+  Key - GLOBAL ») → refus explicite `(R63)` ; « FIFA 23 EN/PL Languages Only … EA App Key »
+  reste « language restriction » (liste non tranchée) ; « Mass Effect Legendary Edition (ENG) … »
+  (ENG nu, sans ONLY) n'est pas la mention — question ouverte.
 - **Statut live** : dans la liste blanche mais **jamais balayé en safe-auto** ; dry-run
   d'abord (Romain, 2026-09-11). Premier balayage réel : 19-20/09 (`20260919-082932-auto`).
 
@@ -610,6 +649,13 @@ matcher et le classifieur importent le registre.
   chemin. Chemin seul, la sœur restée au feed faisait sortir chaque création « STILL in feed » :
   13 fausses erreurs depuis le 20/09, dont 8 avec la sœur visible sur la même page du feed.
   `variation` rejoint désormais la clé d'identité (`submitter._url_key`, EXECUTOR_RULES §7).
+- **English only `[R63]` (2026-09-28)** : CJS écrit la mention après la livraison — « Plants vs.
+  Zombies: Battle for Neighborville (EA App): English Only » entre en 31 ; « SimCity Limited
+  Edition (EA App): Standard Edition (English Only) » reste sans page AKS (seule
+  `simcity-origin-account` existe) ; « Tom Clancy's The Division Gold Edition Ubisoft Connect
+  Key: English Only … » → refus explicite Ubisoft `(R63)` (la variante « (Game + Season Pass) »
+  garde « possible multi-game bundle ») ; « Star Wars: Jedi Fallen Order EN/PL Language EA App
+  Key » reste « language restriction ». Aucun hook.
 - **Statut live** : dans la liste blanche, balayé en groupe B depuis le 22/09.
 
 ## Difmark (167, parqué) — **classe B** (Romain, 2026-09-21)
@@ -1030,6 +1076,12 @@ matcher et le classifieur importent le registre.
   la base.
 - La liste blanche est contrôlée côté serveur (`rejection_reason`) : un marchand absent est
   refusé même si l'interface est contournée.
+- La mention « English only » `[R63]` (2026-09-28) est du vocabulaire partagé
+  (`src/merchants/common.py` : `english_only_mark`, `strip_english_only`,
+  `split_english_only_tail`) ; la DÉCISION (EA → 31, Europe → 3euen sinon 3eu, tout le reste
+  refusé explicitement) vit dans le matcher. Un fichier marchand ne déclare que son MOBILIER
+  autour de la mention : le slot région G2A (`region_tail`), le crochet de livraison MMOGA
+  (`english_only_name`). EXECUTOR_RULES `[R63]`.
 
 ## Gamerall (store 13, marchand AKS 317, liste blanche safe-auto depuis le 2026-09-19)
 

@@ -202,6 +202,17 @@ class MerchantConfig:
     #       GOG, Ubisoft, EA, Microsoft, Xbox Play Anywhere, Direct Publisher…) laisse le refus
     #       R27 / [R51] d'avant. Défaut None = R27 inchangé pour tous les autres marchands.
     pc_key_without_store: Optional[Callable[[str, str], bool]] = None
+    #   english_only_name(name) -> str — [R63] (Romain, 2026-09-28 : « go pour les clés EA
+    #       English only en case 31 »). Le nom de RÉSOLUTION d'une clé EA English only que
+    #       [R63] entre (case 31 / 3euen / 3eu), débarrassé du MOBILIER que le marchand écrit
+    #       autour de la mention — MMOGA : le crochet de livraison entier « [EA App Key EN -
+    #       English Only] », qu'un retrait partiel laisserait lire « EN Key » comme un code
+    #       région. Appelé par le matcher SEULEMENT quand la route [R63] est active, sur le
+    #       résultat de ``resolve_name`` ; le retrait générique de la phrase
+    #       (``merchants.common.strip_english_only``) passe ensuite. Défaut None = la phrase
+    #       seule est retirée. Jamais lu pour une ligne hors [R63] : la mention reste alors
+    #       dans le titre, et l'export de la liste 22 (``resolution_name``) n'est pas touché.
+    english_only_name: Optional[Callable[[str], str]] = None
     # Console-side hooks (R32 / R45, 2026-09-14 — Romain: « pour la détection région /
     # édition / plateforme, tu as un fichier de config par marchand. Et si tu ne l'as pas,
     # tu dois l'avoir. »). The shared classifier ``src.console_keys.classify_console`` owns

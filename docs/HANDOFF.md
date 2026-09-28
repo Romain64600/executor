@@ -349,6 +349,11 @@ Ces décisions sont dans `AGENTS.md` § « Reviewed decisions ». Rappel :
 - **Software region catch-all** (`resolve_software_region`, finding Fable [7], DÉCLINÉ
   2026-09-07) : région GLOBAL/PUBLISHER unique de page → on classe l'offre dessus même si son
   label région semble US/EU-locké. Ne pas fail-close ça.
+- **`[R63]` clés EA English only** (2026-09-28) : sans verrou → 31, Europe → 3euen sinon 3eu,
+  jamais 31 pour une clé Europe ; la page AKS doit porter le seau (plus strict que `[R56]`,
+  voulu) ; EN/PL, EN/PL/RU, EN / ENG nus, autres plateformes, verrous US / UK : non tranchés,
+  refus explicites. Premier passage conseillé en `--mode learning` (frappe de « -OR- » non
+  prouvée).
 
 ## 6. Gotchas opérationnels (non évidents, étaient en mémoire)
 

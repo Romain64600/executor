@@ -18,6 +18,9 @@ would be circular):
   ``SELLABLE_TAILS`` / ``FORBIDDEN_TAILS`` — kept in sync by hand (no import possible);
 * the console skip-reason strings of the R45 hook contract (byte-exact mirrors of
   ``src.console_keys`` — ``feed_status`` routes on the ``console:`` prefix);
+* the « English only » mention of ``[R63]`` (2026-09-28): ``english_only_mark`` /
+  ``strip_english_only`` / ``split_english_only_tail`` — vocabulary only; the decision (EA →
+  bucket 31 / 3euen / 3eu, everything else refused) lives in the matcher;
 * :func:`make_config` — the ``MerchantConfig`` constructor tolerant to the console hooks
   (``console_url_families`` / ``console_pc_declared`` / ``console_region_slot`` /
   ``console_noise``) not yet being fields of the dataclass (agent M1 adds them,
@@ -44,6 +47,80 @@ def skip_not_a_game(marker: str) -> str:
     (ACCOUNT / ACCESS / GIFT CARD / GAME PASS …)."""
 
     return f"console: {marker} — not a game (R45)"
+
+
+# ── la mention « English only » ([R63], 2026-09-28) ──────────────────────────────────
+# Romain, 2026-09-28 : « go pour les clés EA English only en case 31 », puis « Une clé
+# english only n'est pas forcément bloquée à la région Europe, si on a une info comme EU
+# english only on renseignera EU en priorité si pas de région "EU english only" ». La
+# DÉCISION (seaux 31 / 3euen / 3eu, refus explicites) vit dans le matcher ; ce module ne
+# porte que le VOCABULAIRE, lisible par les fichiers marchands comme par le matcher.
+#
+# Les écritures réelles des feeds (68 lignes, 10/09 → 28/09) : « (English only) », « English
+# Only », « EN Language Only », « English Language only », « EN Only », « ENG ONLY » (queue
+# G2A « - EUROPE ENG ONLY »), « English-only ». Trois choix, chacun pour une raison mesurée :
+#   * ONLY est OBLIGATOIRE — « Little Busters! English Edition », « Learn English… »,
+#     « Multi-Language (English + …) » ne sont pas des restrictions ;
+#   * EN et ENG ne comptent qu'écrits en CAPITALES — Gamivo et CJS écrivent « EN » comme
+#     simple créneau de langue sur des centaines de lignes qui entrent (retrait de MA7) ;
+#   * « EN » devant « Language Only » fait partie de la phrase — sinon le slug garde un « -en ».
+# Une phrase précédée d'un connecteur de LISTE (« Polish/English Language Only », « French &
+# English Only », « German, English only », « Polish and English only ») n'est PAS la
+# mention : c'est une liste de langues, et elle reste « language restriction ».
+ENGLISH_ONLY_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?:IN[\s-]+)?(?:English|(?-i:ENG|EN))(?:[\s-]+Language)?[\s-]+Only"
+    r"(?![A-Za-z0-9])",
+    re.IGNORECASE,
+)
+_LANGUAGE_LIST_BEFORE_RE = re.compile(r"(?:[/&+,]|\b(?:and|or|und|et)\b)\s*$", re.IGNORECASE)
+
+
+def _english_only_matches(text: str) -> list["re.Match[str]"]:
+    """Les occurrences de la phrase qui SONT la mention (pas le dernier terme d'une liste)."""
+
+    text = text or ""
+    return [m for m in ENGLISH_ONLY_RE.finditer(text)
+            if not _LANGUAGE_LIST_BEFORE_RE.search(text[:m.start()])]
+
+
+def english_only_mark(text: str) -> str | None:
+    """La mention « English only » telle qu'écrite dans ``text`` (« English only », « EN
+    Language Only », « ENG ONLY »…), ou None. Lue sur le titre BRUT : la casse compte (« EN » /
+    « ENG » en capitales seulement)."""
+
+    found = _english_only_matches(text)
+    return found[0].group(0) if found else None
+
+
+def strip_english_only(text: str) -> str:
+    """``text`` sans la mention, puis sans les ``()`` / ``[]`` qu'elle a vidés et sans les
+    séparateurs laissés en queue (« - », « : », « , »). Inchangé quand la mention est
+    absente. N'est appelé par le matcher QUE quand [R63] entre la ligne (cases 31 / 3euen /
+    3eu) : ailleurs, la mention reste dans le titre et les gardes la pèsent comme avant."""
+
+    text = text or ""
+    found = _english_only_matches(text)
+    if not found:
+        return text
+    out = text
+    for m in reversed(found):
+        out = out[:m.start()] + " " + out[m.end():]
+    out = re.sub(r"\s*[-–—:,]+\s*(?=[)\]])", "", out)      # « [EN Key - ] » → « [EN Key] »
+    out = re.sub(r"\(\s*\)|\[\s*\]", " ", out)
+    out = re.sub(r"\s+", " ", out).strip()
+    return out.rstrip(" -–—:,").strip()
+
+
+def split_english_only_tail(text: str) -> tuple[str, bool]:
+    """Un créneau de région qui se termine par la mention — « EUROPE ENG ONLY » (queue G2A) →
+    ``("EUROPE", True)`` ; sans mention en queue → ``(text, False)``. La mention seule
+    (« ENG ONLY ») → ``("", True)``."""
+
+    text = text or ""
+    found = _english_only_matches(text)
+    if not found or text[found[-1].end():].strip():
+        return text, False
+    return text[:found[-1].start()].rstrip(" -–—:,").strip(), True
 
 
 # ── region vocabulary ────────────────────────────────────────────────────────────────

@@ -95,6 +95,8 @@ from src.merchants import (  # noqa: F401
 # matcher. Re-exported here — same dict object, same function — so every caller and every
 # test patching ``src.matcher.MERCHANT_CONFIGS`` in place keeps working.
 from src.merchants.registry import MERCHANT_CONFIGS, merchant_config  # noqa: F401
+# [R63] the « English only » vocabulary — shared with the merchant files (G2A region slot).
+from src.merchants.common import english_only_mark, strip_english_only  # noqa: E402
 
 AKS_BUY_URL = "https://www.allkeyshop.com/blog/buy-{slug}-cd-key-compare-prices/"
 # Legacy page shape (pages created around 2021 — "Minecraft" & co, Romain 2026-09-10):
@@ -594,8 +596,13 @@ REGION_IDS = {
                 "gmg_gift": "60", "gmg_gift_eu": "58", "gmg_gift_us": "59"},
     "EPIC": {"global": "80", "eu": "80eu", "us": "80us", "uk": "805",
              "gmg_gift": "633", "gmg_gift_us": "635"},
+    # [R63] (Romain, 2026-09-28) ``en_only`` / ``eu_en_only`` are the English-only buckets of
+    # the EA family — read ONLY by the [R63] route (``english_only_route``), never by a
+    # region scan (``_detect_region_parts`` yields global / eu / us / uk only). See
+    # EA_ENGLISH_ONLY_LABELS below for the three names each bucket carries.
     "EA": {"global": "3", "eu": "3eu", "us": "3us", "uk": "3uk",
-           "gmg_gift": "35", "gmg_gift_eu": "36", "gmg_gift_us": "37"},
+           "gmg_gift": "35", "gmg_gift_eu": "36", "gmg_gift_us": "37",
+           "en_only": "31", "eu_en_only": "3euen"},
     # Rockstar: the PLAIN "Rockstar (15)" option is the GLOBAL bucket — same shape as
     # "Publisher (1)", the dropdown carries no "Rockstar GLOBAL" label (Romain 2026-09-16:
     # « pour les regions Rockstar on a toutes les regions dont tu as besoin meme la globale,
@@ -628,6 +635,104 @@ REGION_IDS = {
 # family lacks (PS5 has GLOBAL only) is absent → the usual "no region id" fail-closed skip.
 # Merged here so validation_io / the console /api/meta accept the families automatically.
 REGION_IDS.update(CONSOLE_REGION_IDS)
+
+# [R63] (Romain, 2026-09-28 : « go pour les clés EA English only en case 31 », puis « Une clé
+# english only n'est pas forcément bloquée à la région Europe, si on a une info comme EU
+# english only on renseignera EU en priorité si pas de région "EU english only" »).
+#
+# Chaque seau porte TROIS noms, qu'il ne faut pas confondre :
+#   id      libellé du formulaire (catalog.json)                 filtre de page (extract_regions)   page publique
+#   31      « Origin English Only -OR- EN/PL -OR- EN/PL/RU (31) » « EA ENG/POL/RUS ONLY »            « IN ENGLISH ONLY »
+#   3euen   « Origin EU English Only (3euen) »                    « EA EU ENG ONLY »                 « EU IN ENGLISH ONLY »
+#   3eu     « Origin EU (3eu) »                                   « EA EUROPE »                      —
+# Le ``region_label`` d'un candidat [R63] est le libellé du FORMULAIRE sans « (id) » — la même
+# convention que ``CONSOLE_REGION_LABELS`` : au moment de la saisie, ``resolve_catalog_id``
+# (src/submitter.py) le retrouve par LIBELLÉ, de façon unique sur les 867 options (vérifié sur
+# le catalogue du 26/09 et épinglé par tests/test_english_only_r63.py), donc un renumérotage
+# d'AKS ne ferait pas écrire un autre seau ; ``select_via_trusted`` tape ensuite ce texte et
+# clique ``[data-value="<id>"]``. Le repli 3eu garde le libellé « EU », résolu par ID comme
+# toute clé EA EU depuis toujours. Le libellé AKS de 31 couvre aussi EN/PL et EN/PL/RU : ces
+# listes NE sont PAS tranchées et restent « language restriction » (precheck_skip).
+EA_ENGLISH_ONLY_LABELS: dict[str, str] = {
+    "31": "Origin English Only -OR- EN/PL -OR- EN/PL/RU",
+    "3euen": "Origin EU English Only",
+}
+_R63_SCOPE = "seules les clés EA English only sont tranchées (case 31)"
+SKIP_R63_NO_PLATFORM = (
+    f"clé English only sans plateforme déclarée (titre / URL) — {_R63_SCOPE}, non entré (R63)")
+SKIP_R63_CONSOLE = (
+    "console: English only — non tranché, seules les clés EA English only PC le sont "
+    "(case 31) (R63, R45)")
+
+
+def skip_r63_platform(platform: str) -> str:
+    """[R63] une clé English only d'une autre plateforme qu'EA — non tranché."""
+
+    return (f"clé English only {PLATFORM_LABEL.get(platform, platform)} — {_R63_SCOPE}, "
+            "non entré (R63)")
+
+
+def english_only_route(declared_platform: str | None, platform: str,
+                       region_label: str) -> tuple[str | None, str | None]:
+    """[R63] — la route d'une ligne qui porte la mention English only : ``(route, None)``
+    avec ``route`` ∈ ``"en_only"`` (sans verrou → 31) / ``"eu_en_only"`` (Europe → 3euen,
+    sinon 3eu), ou ``(None, raison)`` — le refus EXPLICITE de tout ce que Romain n'a pas
+    tranché :
+
+    * plateforme non déclarée (titre / URL / page marchande) → refus ; la plateforme par
+      défaut (STEAM) ou les branches R27 / [R58] / PUBLISHER ne décident jamais pour une clé
+      English only ;
+    * plateforme autre qu'EA → refus ;
+    * EA verrouillée US / UK (cas c) → refus, question ouverte ;
+    * EA dans un autre seau (cadeau GMG, compte…) → refus.
+
+    Le contrôle de PAGE (31, ou 3euen / 3eu, portés par la page résolue) vient après la
+    résolution, dans :func:`_pc_plan`."""
+
+    if declared_platform is None:
+        return None, SKIP_R63_NO_PLATFORM
+    if platform != "EA":
+        return None, skip_r63_platform(platform)
+    if region_label == "GLOBAL":
+        return "en_only", None
+    if region_label == "EU":
+        return "eu_en_only", None
+    if region_label in ("US", "UK"):
+        return None, (f"clé EA English only verrouillée {region_label} — question ouverte, non "
+                      "tranché (Romain 2026-09-28 : sans verrou → 31, Europe → 3euen sinon "
+                      "3eu), non entré (R63)")
+    return None, (f"clé EA English only en {region_label} — seules les clés EA English only "
+                  "sans verrou (31) ou Europe (3euen / 3eu) sont tranchées, non entré (R63)")
+
+
+def english_only_bucket(route: str, resolution: "AksResolution") -> tuple[str, str] | str:
+    """[R63] le seau d'une route contre la page AKS résolue : ``(region_id, region_label)``,
+    ou la raison du refus. La page doit PORTER le seau (``resolution.regions``, la liste de
+    filtre de la page) :
+
+    * ``en_only`` → 31 si la page le porte, sinon refus ;
+    * ``eu_en_only`` → 3euen si la page le porte, sinon 3eu (« EU » : le verrou Europe prime
+      sur la mention de langue) si la page le porte, sinon refus. JAMAIS 31 : ce serait
+      perdre le verrou Europe.
+
+    NB — plus strict que le raisonnement de [R56] : la liste de filtre dit « déjà vendu sous
+    ce seau », pas « le formulaire le propose » (le formulaire est un catalogue global). C'est
+    voulu ici (consigne du 2026-09-28) ; coût mesuré ce jour-là : 0 ligne."""
+
+    ea = REGION_IDS["EA"]
+    if route == "en_only":
+        rid = ea["en_only"]
+        if rid in resolution.regions:
+            return rid, EA_ENGLISH_ONLY_LABELS[rid]
+        return (f"clé EA English only sans verrou — la page AKS {resolution.slug!r} ne porte pas "
+                f"la case {rid} (« IN ENGLISH ONLY »), non entré (R63)")
+    rid = ea["eu_en_only"]
+    if rid in resolution.regions:
+        return rid, EA_ENGLISH_ONLY_LABELS[rid]
+    if ea["eu"] in resolution.regions:
+        return ea["eu"], "EU"
+    return (f"clé EA English only Europe — la page AKS {resolution.slug!r} ne porte ni "
+            f"{rid} (« EU IN ENGLISH ONLY ») ni {ea['eu']} (« EA EUROPE »), non entré (R63)")
 # Tokens that do NOT count as a "significant extra" word (platform / region /
 # format / edition / stopwords). Used by the different-product guard.
 NOISE_TOKENS = {
@@ -1112,6 +1217,7 @@ def precheck_skip(offer: NormalizedOffer, *, consoles: bool = False) -> str | No
     _account_row = bool(
         cfg is not None and cfg.account_row is not None
         and cfg.account_row(offer.name, offer.url))
+    _console_row = False                      # [R63] a classified console row (consoles=True)
     if _account_row:
         # La ligne part vers la branche compte — mais les marqueurs NON-JEU du classifieur
         # restent dus : une « PSN Card 20 EUR (Account) » ou un « Game Pass (Account) » sont
@@ -1141,6 +1247,7 @@ def precheck_skip(offer: NormalizedOffer, *, consoles: bool = False) -> str | No
         if sig.region_label:
             return f"forbidden region: {sig.region_label}"
         # A classified console row keeps going through the remaining categorical scans.
+        _console_row = True
     _locked = _forbidden_region_in(padded)
     if _locked:
         return f"forbidden region: {_locked}"
@@ -1235,7 +1342,14 @@ def precheck_skip(offer: NormalizedOffer, *, consoles: bool = False) -> str | No
     if re.search(r"(?:DELUXE|GOLD|PREMIUM|ULTIMATE|COMPLETE|STANDARD|DEFINITIVE|GOTY)\s*&"
                  r"|&\s*(?:DELUXE|GOLD|PREMIUM|ULTIMATE|COMPLETE|STANDARD|DEFINITIVE|GOTY)", upper):
         return "two editions joined by '&'"
-    if "LANGUAGES ONLY" in upper or "LANGUAGE ONLY" in upper:
+    # [R63] (2026-09-28) the « LANGUAGE(S) ONLY » test reads the title WITHOUT the English-only
+    # mention (« EN Language Only », « English Language only » — Kinguin / GameSeal): that
+    # mention is decided below, explicitly. Any OTHER « … Language(s) Only » stays a language
+    # restriction, and so do the language LISTS (EN/PL, EN/PL/RU — the pair scan right after
+    # reads the RAW title), even though AKS's bucket 31 label names them: not ruled.
+    _en_mark = english_only_mark(offer.name)
+    _lang_upper = fold_accents(strip_english_only(offer.name)).upper() if _en_mark else upper
+    if "LANGUAGES ONLY" in _lang_upper or "LANGUAGE ONLY" in _lang_upper:
         return "language restriction"
     if re.search(r"\b(EN|FR|ES|DE|IT|PT|CS|PL|RU)\s*/\s*(EN|FR|ES|DE|IT|PT|CS|PL|RU)\b", upper):
         return "language restriction"
@@ -1251,6 +1365,27 @@ def precheck_skip(offer: NormalizedOffer, *, consoles: bool = False) -> str | No
         if signal is not None:
             return (f"skip category: ACCOUNT (account listing — the {signal} says account; "
                     "never entered as a key)")
+    # [R63] (Romain, 2026-09-28 : « go pour les clés EA English only en case 31 ») — LAST, so
+    # every existing reason keeps its label and its routing (a forbidden region next to the
+    # mention, a category, an account). What remains of a row that carries the mention is
+    # refused HERE, explicitly, unless it can be an EA key: a console row (R45), a platform
+    # the title / URL declares that is not EA, or no declared platform at all when the
+    # merchant has no page source (Instant Gaming's page / Difmark's page decide in
+    # _pc_plan, which repeats every check). Before, these rows died by SIDE EFFECT — the
+    # R01 extras ['ENGLISH', 'ONLY'], a 404 slug, or « language restriction ». The sort
+    # (sort_plan) reads this function too: a refused row is never counted a candidate.
+    if _en_mark is not None:
+        if _console_row:
+            return SKIP_R63_CONSOLE
+        _platform = declared_platform_of(offer, cfg)
+        if _platform is None:
+            _page_source = cfg is not None and (
+                cfg.offer_page_resolver is not None
+                or offer.merchant.strip().upper() == "DIFMARK")
+            if not _page_source:
+                return SKIP_R63_NO_PLATFORM
+        elif _platform != "EA":
+            return skip_r63_platform(_platform)
     return None
 
 
@@ -1395,6 +1530,23 @@ def explicit_platform_from_url(url: str, merchant: str = "") -> str | None:
     if cfg.url_platform_scan:
         return _url_platform_scan(path)
     return None
+
+
+def declared_platform_of(offer: NormalizedOffer, cfg: Any = None) -> str | None:
+    """The platform the merchant DECLARES for this row in its title or URL, or None — the
+    read :func:`_pc_plan` starts from (before any merchant offer-page resolver). Platform
+    source is per-merchant (R32b, 2026-08-27 — Romain: "ça dépend du marchand"): the TITLE
+    by default, but a merchant whose titles are unreliable for the platform (G2A) reads it
+    from the URL instead (``title_is_platform_source=False``). The URL fallback runs for
+    every merchant, so a title-sourced merchant that simply omitted the token still picks
+    up a URL-declared platform when one is present. Shared with ``precheck_skip`` ([R63],
+    2026-09-28) so the English-only refusal reads the same declaration."""
+
+    if cfg is None:
+        cfg = merchant_config(offer.merchant)
+    title_src = cfg is None or cfg.title_is_platform_source
+    return (explicit_platform(offer.name) if title_src else None) \
+        or explicit_platform_from_url(offer.url, offer.merchant)
 
 
 def detect_platform(title: str) -> str:
@@ -3211,10 +3363,11 @@ class _Plan:
     # Console only: (family, page, bucket label, bucket id) per declared platform page,
     # primary first (the page `resolution` IS). () for PC.
     console_targets: tuple[tuple[str, AksResolution, str, str], ...] = ()
-    # Console only ([R45] review fix, 2026-09-14): the BASE region label ("US" / "EU" /
-    # "UK" / "GLOBAL") the buckets were derived from — `region_label` is the bucket text
-    # ("Xbox Game Code US"), which R44 cannot look up. None for PC (region_label is the
-    # base label there already).
+    # The BASE region label ("US" / "EU" / "UK" / "GLOBAL") the bucket was derived from,
+    # when `region_label` is a bucket TEXT R44 cannot look up: a console plan ([R45] review
+    # fix, 2026-09-14 — "Xbox Game Code US") and a PC [R63] English-only plan (2026-09-28 —
+    # "Origin English Only -OR- EN/PL -OR- EN/PL/RU" → GLOBAL, 3euen / 3eu → EU). None for
+    # every other PC plan (region_label is the base label there already).
     base_label: str | None = None
 
     @property
@@ -3288,9 +3441,7 @@ def _pc_plan(
     # the platform (G2A) reads it from the URL instead (title_is_platform_source=False).
     # The URL fallback runs for every merchant, so a title-sourced merchant that simply
     # omitted the token still picks up a URL-declared platform when one is present.
-    _title_src = _cfg is None or _cfg.title_is_platform_source
-    declared_platform = (explicit_platform(offer.name) if _title_src else None) \
-        or explicit_platform_from_url(offer.url, offer.merchant)
+    declared_platform = declared_platform_of(offer, _cfg)
     # R32 (2026-08-11): merchant config — when the platform is not in the title,
     # read it from the merchant's OWN offer page (Instant Gaming: token-less titles
     # hide a Steam key; a whole IG sweep wrongly defaulted to Publisher). Fail
@@ -3491,6 +3642,21 @@ def _pc_plan(
         else:
             return SkippedOffer(offer, f"forbidden region: {_page_region_label}")
 
+    # [R63] (Romain, 2026-09-28 : « go pour les clés EA English only en case 31 », puis « … si
+    # on a une info comme EU english only on renseignera EU en priorité si pas de région "EU
+    # english only" »). A row that carries the English-only mention takes the [R63] route
+    # once its platform and region are FINAL (merchant page, Difmark, R33 included): EA with
+    # no lock → 31, EA locked Europe → 3euen else 3eu (page check after resolution), anything
+    # else refused explicitly (english_only_route). precheck_skip already refused what the
+    # title / URL alone decide; this is the second net, and the only one for the merchants
+    # whose platform comes from their offer page. Refusing an undeclared platform here also
+    # keeps the R27 / [R58] / PUBLISHER branches — which re-run detect_region — away from it.
+    en_route: str | None = None
+    if english_only_mark(offer.name) is not None:
+        en_route, en_refusal = english_only_route(declared_platform, platform, region_label)
+        if en_refusal is not None:
+            return SkippedOffer(offer, en_refusal)
+
     # Account offers resolve AKS's dedicated account PAGE, not the game key
     # page (Romain 2026-07-18). The account page is a distinct product (own id
     # / editions / prices), and its name ends with the page-kind words
@@ -3511,6 +3677,14 @@ def _pc_plan(
     # northgard-svardilfari-clan-of-the-horse); Season/Expansion Pass words are kept.
     dlc_marker = title_dlc_marker(offer, _cfg)
     resolve_name = resolution_name(offer, _cfg)
+    if en_route is not None:
+        # [R63] the mention leaves the SLUG only on the [R63] route: the merchant's own
+        # furniture around it first (MMOGA's whole « [EA App Key EN - English Only] »
+        # bracket, `english_only_name`), then the phrase itself. Never in resolution_name,
+        # which also feeds the list-22 export.
+        if _cfg is not None and _cfg.english_only_name is not None:
+            resolve_name = _cfg.english_only_name(resolve_name) or resolve_name
+        resolve_name = strip_english_only(resolve_name) or resolve_name
     try:
         if account_page_kind is not None:
             resolution = account_resolver(resolve_name, page_kind=account_page_kind)
@@ -3539,6 +3713,14 @@ def _pc_plan(
         if refusal is not None:
             return SkippedOffer(offer, refusal)
 
+    # [R63] the bucket the page must CARRY: 31 (no lock), 3euen then 3eu (Europe) — see
+    # english_only_bucket. After R43 so a DLC-page refusal keeps its own reason.
+    if en_route is not None:
+        bucket = english_only_bucket(en_route, resolution)
+        if isinstance(bucket, str):
+            return SkippedOffer(offer, bucket)
+        region_id, region_label = bucket
+
     # R01 / different-product guards compare against the game-identity name.
     # For an account page that means stripping the "<platform> Account" suffix;
     # a suffix-less account page (None) is a fail-closed "not really an account
@@ -3561,6 +3743,11 @@ def _pc_plan(
     # K4G "Altergift"). The raw title for every merchant without the hook (unchanged); an
     # empty answer falls back to the raw title (the stricter read — never an empty guard).
     guard_name = (_cfg.guard_name(offer.name) if _cfg is not None and _cfg.guard_name else "") or offer.name
+    if en_route is not None:
+        # [R63] the phrase alone leaves the guards' text, and ONLY on the [R63] route: every
+        # other word the merchant wrote (EA App, Key, EN, PC Version…) is still weighed by
+        # R01 / R16 / R01b. Off the route, « English only » stays an extra word as before.
+        guard_name = strip_english_only(guard_name) or guard_name
 
     return _Plan(
         resolution=resolution,
@@ -3573,6 +3760,10 @@ def _pc_plan(
         dlc_page=dlc_page,
         identity_name=identity_name,
         guard_name=guard_name,
+        # [R63] the bucket text (« Origin English Only -OR- … ») is not a base R44 can look
+        # up: it reads the BASE the route came from, like a console plan.
+        base_label=({"en_only": "GLOBAL", "eu_en_only": "EU"}[en_route]
+                    if en_route is not None else None),
     )
 
 

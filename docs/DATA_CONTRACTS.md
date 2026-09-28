@@ -172,8 +172,10 @@ what an operator override rewrites; `validation_io` keeps `targets[0]` mirrored)
 following ones are the other AKS platform pages the same feed row must be filed on
 (Romain's per-target region/edition overwrite, EXECUTOR_RULES §4.12). Console region labels
 are the modal master label without its " (id)" suffix and without BOM
-(`CONSOLE_REGION_LABELS`: "PS5", "Xbox/PC GLOBAL", "Playstation Game Code EUROPE"); the
-contract carries labels verbatim (they never enter the fingerprint).
+(`CONSOLE_REGION_LABELS`: "PS5", "Xbox/PC GLOBAL", "Playstation Game Code EUROPE"); the same
+convention holds for the EA English-only buckets of `[R63]` (2026-09-28, `EA_ENGLISH_ONLY_LABELS`:
+"Origin English Only -OR- EN/PL -OR- EN/PL/RU" for 31, "Origin EU English Only" for 3euen — the
+3eu fallback keeps "EU"); the contract carries labels verbatim (they never enter the fingerprint).
 
 **`normalize_targets(candidate)`** — no `targets` key (pre-R45 file), `null`, a non-list,
 an empty list or a SINGLE entry (whatever it holds: `[{}]`, `["x"]`, a drifted hand edit)

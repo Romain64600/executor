@@ -3,6 +3,49 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-28 — `[R63]` Clés EA « English only » : case 31, 3euen sinon 3eu en Europe
+
+Romain : « go pour les clés EA English only en case 31 », puis « Une clé english only n'est pas
+forcément bloquée à la région Europe, si on a une info comme EU english only on renseignera EU en
+priorité si pas de région "EU english only" » (EXECUTOR_RULES `[R63]`, §4.3, §4.4, §10 ;
+MERCHANTS ; AGENTS « Reviewed decisions »).
+
+- **Avant** : aucune ligne English only n'entrait, mais par EFFET DE BORD — garde R01 (« extra
+  words: ['ENGLISH', 'ONLY'] »), slug pollué (« no AKS product page found »), « language
+  restriction » sur « EN Language Only », « forbidden region: EUROPE ENG ONLY » chez G2A.
+- **Vocabulaire partagé** (`src/merchants/common.py`) : `english_only_mark` (ONLY obligatoire,
+  EN / ENG en capitales seulement, une phrase après un connecteur de liste « / & + , and or » n'est
+  pas la mention), `strip_english_only`, `split_english_only_tail`.
+- **Matcher** (`src/matcher.py`) : `REGION_IDS["EA"]` gagne `en_only` = 31 et `eu_en_only` =
+  3euen ; `EA_ENGLISH_ONLY_LABELS` (texte du formulaire sans « (id) », résolu par libellé
+  unique au moment de la saisie) ; `english_only_route` / `english_only_bucket` ;
+  `declared_platform_of` (lecture titre / URL partagée par `precheck_skip` et `_pc_plan`).
+  `precheck_skip` : le test « LANGUAGE(S) ONLY » ignore la mention ; en DERNIER, refus
+  explicites `(R63)` — console, plateforme non-EA, plateforme non déclarée (sauf marchand à page :
+  Instant Gaming, Difmark). `_pc_plan` : route après R33 (EA sans verrou → 31, EA Europe → 3euen
+  sinon 3eu, US / UK → « question ouverte », autre seau → refus), page AKS qui doit PORTER le seau
+  (après R43), mention retirée du slug et des gardes SUR LA ROUTE SEULEMENT, `base_label` pour R44.
+- **Marchands** : MMOGA `english_only_name` (crochet de livraison entier, route `[R63]`
+  seulement — nouveau champ `MerchantConfig.english_only_name`) ; G2A `region_tail` détache
+  « ENG ONLY » du slot région.
+- **Effet voulu sur la console d'admin** : 31 et 3euen appartiennent désormais à la famille EA
+  de `REGION_IDS` ; `validation_io` refuse donc qu'un opérateur les choisisse sur un candidat
+  d'une autre plateforme (id étranger, `platform_region_mismatch`), comme tout autre seau.
+- **Rejeu du 28/09** (74 lignes réelles, pages AKS en UA AKS/Staff, 2,5 s entre requêtes) :
+  9 entrent — 8 en 31 (MMOGA NFS Heat, FC 25, FIFA 23 Ultimate, GRID Legends ; CJS PvZ BfN ;
+  GameSeal Burnout ; Kinguin NFS Rivals Complete, FC 27 Ultimate), 1 en 3euen (MMOGA A Way Out -
+  EU) ; refus explicites : Steam 31, Ubisoft 2, Battle.net 1, console 7, sans plateforme 1 ;
+  inchangés : EN/PL ×4 « language restriction » (la 5e meurt avant, sur R47), verrous AR / AU,
+  collection de DLC, bundle.
+  Corpus de 86 820 lignes distinctes (runs de la VM) : 0 différence de `precheck_skip`,
+  `resolution_name`, `detect_region_base`, slug MMOGA ou queue G2A sur les 86 744 lignes sans la
+  mention.
+- **Non prouvé** : la frappe de « -OR- » (libellé de 31) dans le filtre Selectize du formulaire —
+  un échec serait un NO_OPTION fail-closed. Premier passage conseillé en `--mode learning` sur une
+  page MMOGA.
+- Tests : `tests/test_english_only_r63.py` (44) ; fixture `tests/fixtures/region_catalog_2026-09-26.json`
+  (les 867 options de région, clé + texte) ; 24 mutations rougies.
+
 ## 2026-09-28 — Présentation : version de 3 minutes pour toute l'équipe
 
 Romain, sur le diaporama du 27/09 : « je la trouve compliquée, retravaille-la en prenant en compte
@@ -35,7 +78,6 @@ plus dit (journées découpées en UTC : en heure de Paris, le record est le 20/
 « 21 marchands pris en charge » (Allyouplay balayé 3 fois sans offre saisissable, `chiffres.md`
 corrigé). Tient en 4:3 (1024×768) ; boutons masqués en plein écran ; README : les deux fenêtres
 ne sont pas synchronisées, T au départ, ne pas afficher les notes en recopie d'écran.
-
 ## 2026-09-28 — Boucle : 30 min de pause quand une passe crée moins de 10 offres
 
 Romain : « go pour 30 min si moins de 10 offres ». La nuit du 27-28/09, la boucle du groupe A a
