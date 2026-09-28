@@ -352,8 +352,10 @@ Ces décisions sont dans `AGENTS.md` § « Reviewed decisions ». Rappel :
 - **`[R63]` clés EA English only** (2026-09-28) : sans verrou → 31, Europe → 3euen sinon 3eu,
   jamais 31 pour une clé Europe ; la page AKS doit porter le seau (plus strict que `[R56]`,
   voulu) ; EN/PL, EN/PL/RU, EN / ENG nus, autres plateformes, verrous US / UK : non tranchés,
-  refus explicites. Premier passage conseillé en `--mode learning` (frappe de « -OR- » non
-  prouvée).
+  refus explicites ; un verrou collé à la mention (« (EU English Only) ») est relu sans elle, un
+  verrou écrit mais illisible (« [EU] ») interdit 31. Premier passage conseillé en `--mode
+  learning` (les caractères « / » et « - » du libellé de 31 sont prouvés en production, pas
+  encore une sélection de la valeur 31 elle-même).
 
 ## 6. Gotchas opérationnels (non évidents, étaient en mémoire)
 

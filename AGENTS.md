@@ -166,7 +166,17 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   aux verrous US / UK — non, refus explicites `(R63)`, questions ouvertes ;
   (e) retirer la mention du titre partout — non : elle ne sort du slug et des gardes QUE sur la
   route `[R63]` (ENGLISH / ONLY / ENG ne sont pas des mots de bruit, `resolution_name` et
-  l'export de la liste 22 la gardent).
+  l'export de la liste 22 la gardent) ;
+  (f) retirer le filet « verrou écrit mais non lu » (`english_only_unread_lock`) parce que
+  « [EU] » / « (EU Version) » / « (Europe & UK) » SANS la mention entrent en EA GLOBAL(3) — non :
+  c'est une lacune préexistante de la lecture générique, signalée à Romain et non tranchée ; sur
+  la route `[R63]` le verrou écrit interdit 31 (revue adverse du 28/09 : « (EU English Only) »
+  partait en 31, verrou perdu — d'où la relecture sans la mention, `english_only_region`) ;
+  (g) lire « (DE  EN Only) », « Polish English Only » comme la mention — non : une langue juste
+  avant la phrase en fait une liste, « language restriction » ; mais « (Europe, English Only) »
+  EST la mention (une région n'est pas une langue) ;
+  (h) remettre un compte English only en « language restriction » — non : il suit la règle de
+  tous les comptes, « skip category: ACCOUNT » → liste 30.
   EXECUTOR_RULES `[R63]`, `tests/test_english_only_r63.py`.
 
 - **Chemin by-urls : l'index de localisation EST remplacé par la preuve après chaque création —

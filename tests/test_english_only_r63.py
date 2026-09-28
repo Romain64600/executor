@@ -578,5 +578,263 @@ class HorsPerimetre(unittest.TestCase):
         self.assertEqual(asked[0], "Battlefield V")
 
 
+
+# ════════════════════════════════════════════════════════════════════════════════════════
+# Revue adverse du 2026-09-28 (branche ea-english-only-31) — chaque classe fige un constat.
+# Les TITRES de ces classes sont SYNTHÉTIQUES (formes jamais vues dans les feeds, mais
+# plausibles : CJS écrit ses libellés de variation entre parenthèses, en listes séparées par
+# des espaces) ; les pages sont celles lues le 28/09.
+PVZ_URL = CJS_PVZ[1]
+PVZ_BASE = "Plants vs. Zombies: Battle for Neighborville (EA App): Standard Edition "
+PVZ_BFN_3EUEN = _page(PVZ_BFN.slug, PVZ_BFN.aks_name, PVZ_BFN.editions,
+                      {**PVZ_BFN.regions, "3euen": "EA EU ENG ONLY"}, PVZ_BFN.official_platforms)
+
+
+def _cjs(suffix):
+    return (PVZ_BASE + suffix, PVZ_URL, "CJS-CDKeys")
+
+
+class RevueP1_LeVerrouDansLeCreneauDeLaMention(unittest.TestCase):
+    """P1 : quand la mention partage la parenthèse / le crochet du mot de région, la lecture
+    de région ne voyait plus le verrou et la clé partait en 31 — verrou PERDU. Deux couches :
+    relecture de la région sans la mention (clés EA), puis filet « verrou écrit mais non lu »."""
+
+    EU_FORMS = ("(EU English Only)", "(Europe English Only)", "(EUROPE ENG ONLY)",
+                "(EU - English Only)", "(English Only EU)", "(Europe, English Only)",
+                "(EU/English Only)")
+
+    def test_europe_dans_le_creneau_3eu_quand_la_page_n_a_pas_3euen(self):
+        for suffix in self.EU_FORMS:
+            with self.subTest(suffix):
+                res, _ = _match(_cjs(suffix), PVZ_BFN)
+                self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+                self.assertEqual((res.platform, res.region_id, res.region_label), ("EA", "3eu", "EU"))
+
+    def test_europe_dans_le_creneau_3euen_quand_la_page_le_porte(self):
+        for suffix in self.EU_FORMS:
+            with self.subTest(suffix):
+                res, _ = _match(_cjs(suffix), PVZ_BFN_3EUEN)
+                self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+                self.assertEqual(res.region_id, "3euen")
+
+    def test_europe_apres_deux_points(self):
+        row = ("Plants vs. Zombies: Battle for Neighborville (EA App): Europe: English Only",
+               PVZ_URL, "CJS-CDKeys")
+        res, _ = _match(row, PVZ_BFN)
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+        self.assertEqual(res.region_id, "3eu")
+
+    def test_us_uk_dans_le_creneau_restent_le_cas_c(self):
+        for suffix, lock in (("(US English Only)", "US"), ("(UK English Only)", "UK"),
+                             ("(United States English Only)", "US")):
+            with self.subTest(suffix):
+                res, asked = _match(_cjs(suffix), PVZ_BFN)
+                self.assertIsInstance(res, SkippedOffer)
+                self.assertIn(f"verrouillée {lock} — question ouverte", res.reason)
+                self.assertEqual(asked, [])
+
+    def test_un_verrou_ecrit_mais_illisible_est_refuse(self):
+        # « [EU] », « (EU Version) », « (Europe & UK) » : la lecture de région ne les voit pas
+        # (même sur main, hors mention) — sur la route [R63] ils ne deviennent JAMAIS 31.
+        for suffix in ("[EU] English Only", "(EU Version) English Only",
+                       "(Europe & UK) English Only"):
+            with self.subTest(suffix):
+                res, asked = _match(_cjs(suffix), PVZ_BFN)
+                self.assertIsInstance(res, SkippedOffer)
+                self.assertIn("non lu", res.reason)
+                self.assertIn("(R63)", res.reason)
+                self.assertEqual(asked, [])
+
+    def test_jamais_31_des_qu_un_verrou_est_ecrit(self):
+        forms = self.EU_FORMS + ("(US English Only)", "(UK English Only)", "[EU] English Only",
+                                 "(EU Version) English Only", "(Europe & UK) English Only",
+                                 "(English Only) - EU", "(EU) (English Only)")
+        for suffix in forms:
+            for page in (PVZ_BFN, PVZ_BFN_3EUEN, _without(PVZ_BFN, "3eu")):
+                with self.subTest(suffix, page=sorted(page.regions)):
+                    res, _ = _match(_cjs(suffix), page)
+                    self.assertNotEqual(getattr(res, "region_id", None), "31")
+
+    def test_deux_verrous_contradictoires(self):
+        row = ("Plants vs. Zombies: Battle for Neighborville (EA App) (EU English Only) - US",
+               PVZ_URL, "CJS-CDKeys")
+        res, _ = _match(row, PVZ_BFN)
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("deux verrous de région contradictoires (US / EU)", res.reason)
+        self.assertIn("(R63)", res.reason)
+
+    def test_la_relecture_seule(self):
+        from src.matcher import detect_region, english_only_region
+        offer = _offer(_cjs("(EU English Only)"))
+        first = detect_region(offer, "EA")
+        self.assertEqual(first[0], "GLOBAL")                  # la mention cachait le verrou
+        self.assertEqual(english_only_region(offer, "EA", first), ("EU", "3eu", False))
+        # deux verrous différents → refus ; un verrou lu sur le titre brut ne s'élargit jamais
+        self.assertIn("contradictoires (UK / EU)", english_only_region(offer, "EA", ("UK", "3uk", False)))
+        self.assertEqual(english_only_region(offer, "EA", ("EU", "3eu", False)), ("EU", "3eu", False))
+        offer = _offer(MMOGA_NFS_HEAT)
+        self.assertEqual(english_only_region(offer, "EA", ("US", "3us", False)), ("US", "3us", False))
+
+    def test_mmoga_code_eu_dans_le_crochet_de_livraison(self):
+        # La relecture n'emprunte JAMAIS le crochet MMOGA (english_only_name retire tout
+        # crochet qui porte « Key », donc aussi « [PC - Origin EU Key] ») : le verrou reste.
+        row = ("FIFA 23 [PC - Origin EU Key] - English Only",
+               "https://www.mmoga.com/EA-Games/FIFA-23-PC-Origin-EU-Key-English-Only.html?ref=615", "MMOGA")
+        res, _ = _match(row, FIFA_23)
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+        self.assertEqual(res.region_id, "3euen")
+        res, _ = _match(row, _without(FIFA_23, "3euen"))
+        self.assertEqual(getattr(res, "region_id", None), "3eu")
+
+    def test_le_filet_seul(self):
+        from src.matcher import english_only_unread_lock
+        self.assertIsNotNone(english_only_unread_lock(_offer(_cjs("[EU] English Only")), "en_only"))
+        self.assertIsNotNone(english_only_unread_lock(
+            _offer(("Game (English only) US", "https://example.com/game", "CJS-CDKeys")), "en_only"))
+        self.assertIsNotNone(english_only_unread_lock(
+            _offer(("Game [UK] English only - EU", "https://example.com/game", "CJS-CDKeys")),
+            "eu_en_only"))
+        self.assertIsNone(english_only_unread_lock(_offer(MMOGA_A_WAY_OUT), "eu_en_only"))
+        # aucune des lignes réelles qui entrent en 31 ne déclenche le filet
+        for row in (MMOGA_NFS_HEAT, MMOGA_FC_25, MMOGA_FIFA_23, MMOGA_GRID, CJS_PVZ,
+                    GAMESEAL_BURNOUT, KINGUIN_NFS_RIVALS, KINGUIN_FC_27):
+            with self.subTest(row[0]):
+                self.assertIsNone(english_only_unread_lock(_offer(row), "en_only"))
+        # « Among Us », « Us » : un code court ne compte qu'en capitales
+        self.assertIsNone(english_only_unread_lock(
+            _offer(("Among Us (English only)", "https://example.com/among-us-english-only", "CJS-CDKeys")),
+            "en_only"))
+
+
+class RevueP2_UneListeDeLanguesSansConnecteur(unittest.TestCase):
+    """P2 : « DE  EN Only » (CJS sépare ses langues par des espaces) n'est PAS la mention —
+    c'est une liste de langues, non tranchée : « language restriction »."""
+
+    LISTS = ("Titanfall (EA App): Standard Edition (DE  EN Only)",
+             "Titanfall (EA App): Standard Edition (FR  EN Only)",
+             "FIFA 23 DE EN Only EA App CD Key",
+             "FIFA 23 PL EN Language Only EA App CD Key",
+             "FIFA 23 PL-EN Language Only EA App CD Key",
+             "FIFA 23 Polish English Only EA App CD Key",
+             "FIFA 23 Polish-English Only EA App CD Key")
+
+    def test_ce_n_est_pas_la_mention(self):
+        for title in self.LISTS:
+            with self.subTest(title):
+                self.assertIsNone(english_only_mark(title))
+
+    def test_un_verrou_devant_la_mention_reste_un_verrou(self):
+        self.assertEqual(english_only_mark("FIFA 23 EU EN Only EA App CD Key"), "EN Only")
+        self.assertEqual(english_only_mark("FIFA 23 UK English Only EA App CD Key"), "English Only")
+
+    def test_language_restriction_explicite(self):
+        for row in ((self.LISTS[0], PVZ_URL, "CJS-CDKeys"), (self.LISTS[1], PVZ_URL, "CJS-CDKeys"),
+                    (self.LISTS[2], "https://www.kinguin.net/category/1/fifa-23-de-en-only-ea-app-cd-key", "Kinguin"),
+                    (self.LISTS[5], "https://www.kinguin.net/category/1/fifa-23", "Kinguin"),
+                    ("Game French & English Only EA App Key", "https://www.kinguin.net/category/1/g", "Kinguin")):
+            with self.subTest(row[0]):
+                self.assertEqual(precheck_skip(_offer(row), consoles=True), "language restriction")
+
+    def test_jamais_candidate(self):
+        for title in self.LISTS:
+            with self.subTest(title):
+                res, _ = _match((title, PVZ_URL, "CJS-CDKeys"), PVZ_BFN)
+                self.assertIsInstance(res, SkippedOffer)
+
+
+class RevueP2_UneVirguleApresUneRegion(unittest.TestCase):
+    """P2 : « (Europe, English Only) » — la virgule suit une RÉGION, pas une langue : c'est la
+    mention, verrouillée Europe (refus à tort avant, jamais d'écriture)."""
+
+    def test_c_est_la_mention(self):
+        for text in ("(Europe, English Only)", "(EU, English Only)", "(EU/English Only)",
+                     "(Europe/English Only)", "(United Kingdom, English Only)"):
+            with self.subTest(text):
+                self.assertIsNotNone(english_only_mark("Game " + text))
+
+    def test_une_langue_avant_la_virgule_reste_une_liste(self):
+        self.assertIsNone(english_only_mark("Game German, English only (EA App)"))
+        self.assertIsNone(english_only_mark("Game Polish/English Language Only EA App Key"))
+
+    def test_le_retrait_laisse_la_region_lisible(self):
+        self.assertEqual(strip_english_only("Game (Europe, English Only)"), "Game (Europe)")
+        self.assertEqual(strip_english_only("Game (EU/English Only)"), "Game (EU)")
+        self.assertEqual(strip_english_only("Game (English Only EU)"), "Game (EU)")
+        self.assertEqual(strip_english_only("Game (EU English Only)"), "Game (EU)")
+
+
+class RevueP3_G2A_UnCreneauQuiNeDitQueLaLangue(unittest.TestCase):
+    """P3 : G2A remplit son créneau de région pour les clés ; un créneau qui ne contient QUE
+    la mention ne déclare pas de région — l'ancien refus reste."""
+
+    ROW = ("Battlefield V (PC) - Origin Key - ENG ONLY",
+           "https://www.g2a.com/battlefield-v-pc-origin-key-eng-only-i10000155679071", "G2A")
+
+    def test_le_refus_d_avant(self):
+        self.assertEqual(g2a.region_tail(self.ROW[0]), "ENG ONLY")
+        self.assertEqual(g2a.precheck(self.ROW[0], self.ROW[1]), "forbidden region: ENG ONLY")
+        self.assertEqual(precheck_skip(_offer(self.ROW), consoles=True), "forbidden region: ENG ONLY")
+        self.assertEqual(g2a.region_tail(G2A_BF_V[0]), "EUROPE")
+
+
+class RevueP3_CategorieEtCompte(unittest.TestCase):
+    def test_un_refus_r63_rockstar_n_est_pas_la_categorie_rockstar(self):
+        row = ("Red Dead Redemption 2 EN Language Only Rockstar CD Key",           # synthétique
+               "https://www.kinguin.net/category/1/red-dead-redemption-2-en-language-only-rockstar-cd-key",
+               "Kinguin")
+        reason = precheck_skip(_offer(row), consoles=True)
+        self.assertIn("(R63)", reason)
+        self.assertEqual(categorize_reason(reason), "other")
+        for reason in (skip_r63_platform("ROCKSTAR"), SKIP_R63_NO_PLATFORM,
+                       english_only_bucket("en_only", _without(_page(
+                           "software-rockstar-cd-key", "X", {"1": "Standard"}, {"3": "EA GLOBAL"},
+                           ("EA app",)), "31"))):
+            with self.subTest(reason):
+                self.assertEqual(categorize_reason(reason), "other")
+
+    def test_un_compte_english_only_suit_la_regle_des_comptes(self):
+        # La mention n'est plus une « language restriction » : la ligne descend jusqu'au
+        # contrôle ACCOUNT, et part en liste 30 comme tout compte (AGENTS.md, 2026-09-25).
+        row = ("FIFA 23 EN Language Only (PC) EA App Account - GLOBAL",            # synthétique
+               "https://gameseal.com/fifa-23-en-language-only-pc-ea-app-account-global", "GameSeal")
+        reason = precheck_skip(_offer(row), consoles=True)
+        self.assertTrue(reason.startswith("skip category: ACCOUNT"), reason)
+        self.assertEqual(suggest_target_list(reason), "30")
+
+
+class RevueP3_LaSaisie(unittest.TestCase):
+    """Du candidat au texte tapé dans le formulaire : ``_SubmitterBase._resolve_from_catalog``."""
+
+    EDITIONS = [{"key": "1", "text": "Standard"}, {"key": "21", "text": "Ultimate"}]
+
+    def _entry(self, row, page):
+        from src.submitter import _SubmitterBase
+        res, _ = _match(row, page)
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+        sb = _SubmitterBase(session=None)
+        sb._load_catalog({"regions": {"master_options": CATALOG},
+                          "editions": {"master_options": self.EDITIONS}})
+        entry = {}
+        sb._resolve_from_catalog(entry, json.loads(json.dumps(res.to_dict())))
+        self.assertIsNone(entry.get("blocker"))
+        return entry
+
+    def test_31_par_libelle(self):
+        entry = self._entry(MMOGA_FC_25, FC_25)
+        self.assertEqual(entry["region_id"], "31")
+        self.assertEqual(entry["region_text"], "Origin English Only -OR- EN/PL -OR- EN/PL/RU (31)")
+        self.assertEqual(entry["region_resolution"]["source"], "label")
+
+    def test_3euen_par_libelle(self):
+        entry = self._entry(MMOGA_A_WAY_OUT, A_WAY_OUT)
+        self.assertEqual((entry["region_id"], entry["region_text"], entry["region_resolution"]["source"]),
+                         ("3euen", "Origin EU English Only (3euen)", "label"))
+
+    def test_repli_3eu_par_id(self):
+        entry = self._entry(MMOGA_A_WAY_OUT, _without(A_WAY_OUT, "3euen"))
+        self.assertEqual((entry["region_id"], entry["region_text"], entry["region_resolution"]["source"]),
+                         ("3eu", "Origin EU (3eu)", "id"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -347,7 +347,10 @@ matcher et le classifieur importent le registre.
   reste dans le titre pour la décision `[R63]` du matcher. Avant : « forbidden region: EUROPE
   ENG ONLY » (effet de bord). Cette ligne est désormais refusée « clé English only sans
   plateforme déclarée » : « In App Key » ne déclare pas EA (non mappé, faute de preuve) ; si
-  elle l'était, sa page (Battlefield 5) n'a pas 3euen et la règle la mettrait en 3eu.
+  elle l'était, sa page (Battlefield 5) n'a pas 3euen et la règle la mettrait en 3eu. Un
+  créneau qui ne contient QUE la mention (« … - Origin Key - ENG ONLY », jamais vu) garde son
+  texte, donc le refus « forbidden region: ENG ONLY » (revue du 28/09) : G2A remplit son
+  créneau pour les clés, un créneau qui ne nomme que la langue ne déclare aucune région.
 - **Statut live** : éprouvé en safe-auto.
 - **Résiduel** : fort bruit hors jeux (2-3 % de rendement historique) : CIS / ROW / Turquie /
   Allemagne, monnaies, gift cards, skins.
@@ -379,7 +382,10 @@ matcher et le classifieur importent le registre.
   A Way Out - EU en 3euen) ; Battlefield V ×2 restent « no AKS product page » (« V » ≠ « 5 ») ;
   « EA Sports FC 24 (PS5 Download Code EU) - English Only Key » → refus console `[R63]`.
   MMOGA est en liste blanche : premier passage conseillé en `--mode learning` (canari de 1) —
-  la frappe de « -OR- » (libellé de la case 31) dans le filtre du formulaire n'est pas prouvée.
+  les caractères du libellé de la case 31 (« / », « - ») sont prouvés en production, pas encore
+  une sélection de la valeur 31 elle-même. La relecture de région `[R63]` n'emprunte JAMAIS
+  `english_only_name` (qui retirerait aussi un « [PC - Origin EU Key] ») : « FIFA 23 [PC - Origin
+  EU Key] - English Only » reste verrouillée Europe (3euen / 3eu).
 - **Historique** : onboardé le 2026-09-10 directement en safe-auto (décision Romain) ; les
   DLC / Season Pass sont saisis sur leur page AKS propre depuis le 2026-09-11 `[R43]`.
 - **Grammaire console (R45)** : plateforme dans le titre, en parenthèses ou après un tiret
@@ -655,7 +661,12 @@ matcher et le classifieur importent le registre.
   `simcity-origin-account` existe) ; « Tom Clancy's The Division Gold Edition Ubisoft Connect
   Key: English Only … » → refus explicite Ubisoft `(R63)` (la variante « (Game + Season Pass) »
   garde « possible multi-game bundle ») ; « Star Wars: Jedi Fallen Order EN/PL Language EA App
-  Key » reste « language restriction ». Aucun hook.
+  Key » reste « language restriction ». Aucun hook. Revue du 28/09 (formes plausibles, jamais
+  vues) : CJS écrit ses libellés de variation entre parenthèses et ses listes de langues séparées
+  par des ESPACES (« (BP  CS  DE  ES  FR  IT  KO  TC) », réel) et son URL ne porte pas la
+  variation — « (DE  EN Only) » est une liste (« language restriction »), « (EU English Only) » /
+  « (Europe, English Only) » sont verrouillées Europe (3euen, sinon 3eu), « [EU] English Only »
+  est refusée (verrou écrit mais non lu), jamais 31.
 - **Statut live** : dans la liste blanche, balayé en groupe B depuis le 22/09.
 
 ## Difmark (167, parqué) — **classe B** (Romain, 2026-09-21)
@@ -1077,9 +1088,10 @@ matcher et le classifieur importent le registre.
 - La liste blanche est contrôlée côté serveur (`rejection_reason`) : un marchand absent est
   refusé même si l'interface est contournée.
 - La mention « English only » `[R63]` (2026-09-28) est du vocabulaire partagé
-  (`src/merchants/common.py` : `english_only_mark`, `strip_english_only`,
-  `split_english_only_tail`) ; la DÉCISION (EA → 31, Europe → 3euen sinon 3eu, tout le reste
-  refusé explicitement) vit dans le matcher. Un fichier marchand ne déclare que son MOBILIER
+  (`src/merchants/common.py` : `english_only_mark`, `english_only_listed`,
+  `strip_english_only`, `split_english_only_tail`) ; la DÉCISION (EA → 31, Europe → 3euen sinon
+  3eu, tout le reste refusé explicitement, relecture du verrou et filet `english_only_region` /
+  `english_only_unread_lock`) vit dans le matcher. Un fichier marchand ne déclare que son MOBILIER
   autour de la mention : le slot région G2A (`region_tail`), le crochet de livraison MMOGA
   (`english_only_name`). EXECUTOR_RULES `[R63]`.
 

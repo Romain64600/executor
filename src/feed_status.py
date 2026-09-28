@@ -79,6 +79,13 @@ def categorize_reason(reason: str) -> str:
     # editions map) lands here too, never in stub_page.
     if low == "console" or low.startswith("console:") or _R45_STAMP_RE.search(low):
         return "console"
+    # [R63] (2026-09-28) the explicit English-only refusals ("clé English only ROCKSTAR —
+    # …", "… la page AKS 'x' ne porte pas la case 31 …") interpolate a platform / a slug: a
+    # free substring test below ("rockstar", "software") would file them under another
+    # diagnosis. They are "other", like the "language restriction" they replace. The console
+    # one ("console: English only … (R63, R45)") is caught just above.
+    if "(r63)" in low:
+        return "other"
     if low.startswith("no aks") and "product page found" in low:
         return "no_page"
     if "(r43)" in low or low == "dlc in title":

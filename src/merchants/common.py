@@ -19,8 +19,9 @@ would be circular):
 * the console skip-reason strings of the R45 hook contract (byte-exact mirrors of
   ``src.console_keys`` — ``feed_status`` routes on the ``console:`` prefix);
 * the « English only » mention of ``[R63]`` (2026-09-28): ``english_only_mark`` /
-  ``strip_english_only`` / ``split_english_only_tail`` — vocabulary only; the decision (EA →
-  bucket 31 / 3euen / 3eu, everything else refused) lives in the matcher;
+  ``english_only_listed`` / ``strip_english_only`` / ``split_english_only_tail`` — vocabulary
+  only; the decision (EA → bucket 31 / 3euen / 3eu, everything else refused) lives in the
+  matcher;
 * :func:`make_config` — the ``MerchantConfig`` constructor tolerant to the console hooks
   (``console_url_families`` / ``console_pc_declared`` / ``console_region_slot`` /
   ``console_noise``) not yet being fields of the dataclass (agent M1 adds them,
@@ -67,20 +68,93 @@ def skip_not_a_game(marker: str) -> str:
 # Une phrase précédée d'un connecteur de LISTE (« Polish/English Language Only », « French &
 # English Only », « German, English only », « Polish and English only ») n'est PAS la
 # mention : c'est une liste de langues, et elle reste « language restriction ».
+#
+# Revue adverse du 2026-09-28 (deux constats P2, corrigés ici) :
+#   * une liste SANS connecteur — CJS sépare ses langues par des espaces (« (BP  CS  DE  ES  FR
+#     IT  KO  TC) », réel) : « (DE  EN Only) », « PL EN Language Only », « PL-EN … », « Polish
+#     English Only » sont aussi des listes. Une LANGUE (code en capitales ou nom) juste avant la
+#     phrase, séparée par des espaces ou un trait d'union seulement, en fait une liste. EU n'est
+#     pas une langue (« EU EN Only » reste la mention, verrouillée Europe) ; UK non plus, ici :
+#     « UK English Only » reste la mention, verrouillée UK — le cas (c), refusé ;
+#   * une virgule ou une barre qui suit une RÉGION (« (Europe, English Only) », « EU/English
+#     Only ») n'ouvre PAS de liste : une région n'est pas une langue. Seulement « , » et « / » ;
+#     « & », « + », and / or gardent la lecture « liste ».
 ENGLISH_ONLY_RE = re.compile(
     r"(?<![A-Za-z0-9])(?:IN[\s-]+)?(?:English|(?-i:ENG|EN))(?:[\s-]+Language)?[\s-]+Only"
     r"(?![A-Za-z0-9])",
     re.IGNORECASE,
 )
-_LANGUAGE_LIST_BEFORE_RE = re.compile(r"(?:[/&+,]|\b(?:and|or|und|et)\b)\s*$", re.IGNORECASE)
+_LANGUAGE_LIST_BEFORE_RE = re.compile(
+    r"(?P<conn>[/&+,]|\b(?:and|or|und|et)\b)\s*$", re.IGNORECASE)
+# Codes de langue (en CAPITALES seulement : « De », « It » sont des mots de titre) — le jeu
+# ISO 639-1 du matcher (``matcher.LANGUAGE_TOKENS``, recopié : pas d'import possible) sans EN
+# ni UK, plus les codes que CJS écrit (BP, TC, SC) et les codes pays qui servent de code de
+# langue dans les feeds (CZ, JP, CN, KR, BR).
+_LANGUAGE_CODES_BEFORE = frozenset({
+    "FR", "DE", "ES", "IT", "PT", "NL", "PL", "RU", "SV", "DA", "NO", "FI", "CS", "SK", "HU",
+    "RO", "BG", "HR", "SL", "ET", "LV", "LT", "EL", "TR", "JA", "KO", "ZH", "AR", "HE", "TH",
+    "VI", "ID", "MS", "HI", "FA", "UA", "BP", "TC", "SC", "CZ", "JP", "CN", "KR", "BR",
+})
+_LANGUAGE_NAMES_BEFORE = frozenset({
+    "FRENCH", "GERMAN", "SPANISH", "ITALIAN", "PORTUGUESE", "BRAZILIAN", "POLISH", "RUSSIAN",
+    "CZECH", "DUTCH", "JAPANESE", "KOREAN", "CHINESE", "TURKISH", "HUNGARIAN", "SWEDISH",
+    "DANISH", "FINNISH", "NORWEGIAN", "UKRAINIAN", "ARABIC", "GREEK", "ROMANIAN", "SLOVAK",
+    "BULGARIAN", "CROATIAN", "THAI", "VIETNAMESE", "HEBREW", "DEUTSCH", "FRANCAIS", "ESPANOL",
+    "ITALIANO", "POLSKI",
+})
+_WORD_RIGHT_BEFORE_RE = re.compile(r"(?<![A-Za-z0-9])(?P<word>[A-Za-z]+)[\s-]*$")
+_TRAILING_WORDS_RE = re.compile(r"(?<![A-Za-z0-9])(?P<words>[A-Za-z]+(?:\s+[A-Za-z]+)?)[)\]]*\s*$")
+
+
+def _ends_with_region(text: str) -> bool:
+    """``text`` (ce qui précède un « , » / « / ») se termine par un mot de RÉGION vendable
+    (« Europe », « EU », « United Kingdom », « GLOBAL »…, un crochet fermant toléré) — lu par
+    :func:`region_kind`, donc un code court ne compte qu'en capitales."""
+
+    m = _TRAILING_WORDS_RE.search(text or "")
+    if m is None:
+        return False
+    words = m.group("words").split()
+    for n in (len(words), 1):
+        kind = region_kind(" ".join(words[-n:]))
+        if kind is not None and kind[0] == "base":
+            return True
+    return False
+
+
+def _is_language_list(before: str) -> bool:
+    """Ce qui précède la phrase en fait le dernier terme d'une LISTE de langues."""
+
+    conn = _LANGUAGE_LIST_BEFORE_RE.search(before)
+    if conn is not None:
+        if conn.group("conn") in (",", "/") and _ends_with_region(before[:conn.start()]):
+            return False                      # « (Europe, English Only) » : une région
+        return True
+    word = _WORD_RIGHT_BEFORE_RE.search(before)
+    if word is None:
+        return False
+    w = word.group("word")
+    return (w == w.upper() and w in _LANGUAGE_CODES_BEFORE) or w.upper() in _LANGUAGE_NAMES_BEFORE
+
+
+def _english_only_scan(text: str) -> tuple[list["re.Match[str]"], bool]:
+    """``(mentions, listed)`` : les occurrences de la phrase qui SONT la mention, et si une
+    occurrence a été écartée comme terme d'une liste de langues."""
+
+    text = text or ""
+    mentions, listed = [], False
+    for m in ENGLISH_ONLY_RE.finditer(text):
+        if _is_language_list(text[:m.start()]):
+            listed = True
+        else:
+            mentions.append(m)
+    return mentions, listed
 
 
 def _english_only_matches(text: str) -> list["re.Match[str]"]:
     """Les occurrences de la phrase qui SONT la mention (pas le dernier terme d'une liste)."""
 
-    text = text or ""
-    return [m for m in ENGLISH_ONLY_RE.finditer(text)
-            if not _LANGUAGE_LIST_BEFORE_RE.search(text[:m.start()])]
+    return _english_only_scan(text)[0]
 
 
 def english_only_mark(text: str) -> str | None:
@@ -92,11 +166,23 @@ def english_only_mark(text: str) -> str | None:
     return found[0].group(0) if found else None
 
 
+def english_only_listed(text: str) -> bool:
+    """La phrase est écrite, mais comme dernier terme d'une LISTE de langues (« French &
+    English Only », « (DE  EN Only) », « Polish English Only ») : non tranché — le matcher
+    refuse la ligne « language restriction » (revue du 2026-09-28), au lieu de la laisser
+    mourir par effet de bord sur la garde R01."""
+
+    return _english_only_scan(text)[1]
+
+
 def strip_english_only(text: str) -> str:
-    """``text`` sans la mention, puis sans les ``()`` / ``[]`` qu'elle a vidés et sans les
-    séparateurs laissés en queue (« - », « : », « , »). Inchangé quand la mention est
-    absente. N'est appelé par le matcher QUE quand [R63] entre la ligne (cases 31 / 3euen /
-    3eu) : ailleurs, la mention reste dans le titre et les gardes la pèsent comme avant."""
+    """``text`` sans la mention, puis sans les séparateurs qu'elle laisse contre un crochet
+    (« [EN Key - ] » → « [EN Key] », « (Europe, ) » → « (Europe) », « ( - EU) » → « (EU) »),
+    sans les ``()`` / ``[]`` qu'elle a vidés, crochets resserrés (« (EU ) » → « (EU) » : la
+    lecture de région teste « (EU) » à la lettre) et sans les séparateurs laissés en queue
+    (« - », « : », « , », « / »). Inchangé quand la mention est absente. Le matcher ne l'appelle
+    que sur une ligne qui porte la mention : relecture de région d'une clé EA, puis slug et
+    gardes sur la route [R63] ; ailleurs, la mention reste dans le titre."""
 
     text = text or ""
     found = _english_only_matches(text)
@@ -105,10 +191,13 @@ def strip_english_only(text: str) -> str:
     out = text
     for m in reversed(found):
         out = out[:m.start()] + " " + out[m.end():]
-    out = re.sub(r"\s*[-–—:,]+\s*(?=[)\]])", "", out)      # « [EN Key - ] » → « [EN Key] »
+    out = re.sub(r"\s*[-–—:,/]+\s*(?=[)\]])", "", out)    # « [EN Key - ] » → « [EN Key] »
+    out = re.sub(r"(?<=[(\[])\s*[-–—:,/]+\s*", "", out)    # « ( - EU) » → « (EU) »
     out = re.sub(r"\(\s*\)|\[\s*\]", " ", out)
+    out = re.sub(r"([(\[])\s+", r"\1", out)                  # « ( EU) » → « (EU) »
+    out = re.sub(r"\s+([)\]])", r"\1", out)                  # « (EU ) » → « (EU) »
     out = re.sub(r"\s+", " ", out).strip()
-    return out.rstrip(" -–—:,").strip()
+    return out.rstrip(" -–—:,/").strip()
 
 
 def split_english_only_tail(text: str) -> tuple[str, bool]:
@@ -120,7 +209,7 @@ def split_english_only_tail(text: str) -> tuple[str, bool]:
     found = _english_only_matches(text)
     if not found or text[found[-1].end():].strip():
         return text, False
-    return text[:found[-1].start()].rstrip(" -–—:,").strip(), True
+    return text[:found[-1].start()].rstrip(" -–—:,/").strip(), True
 
 
 # ── region vocabulary ────────────────────────────────────────────────────────────────

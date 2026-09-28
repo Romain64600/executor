@@ -40,11 +40,37 @@ MERCHANTS ; AGENTS « Reviewed decisions »).
   Corpus de 86 820 lignes distinctes (runs de la VM) : 0 différence de `precheck_skip`,
   `resolution_name`, `detect_region_base`, slug MMOGA ou queue G2A sur les 86 744 lignes sans la
   mention.
-- **Non prouvé** : la frappe de « -OR- » (libellé de 31) dans le filtre Selectize du formulaire —
+- **Frappe du libellé de 31** : ses caractères sont prouvés en production (2 826 sélections
+  `SELECTED` d'un texte tapé avec « / » — « XBOX/PC US (242) »… — et 9 avec « - » dans les
+  `submit_plan.json` de la VM) ; reste non prouvée une PREMIÈRE sélection de la valeur 31 —
   un échec serait un NO_OPTION fail-closed. Premier passage conseillé en `--mode learning` sur une
   page MMOGA.
-- Tests : `tests/test_english_only_r63.py` (44) ; fixture `tests/fixtures/region_catalog_2026-09-26.json`
-  (les 867 options de région, clé + texte) ; 24 mutations rougies.
+- **Revue adverse (même jour), corrigée** :
+  - **P1 — verrou perdu** : « (EU English Only) », « (English Only EU) », « (EU - English Only) »,
+    « (Europe, English Only) », « … : Europe: English Only » (et « (US / UK English Only) ») se
+    lisaient GLOBAL implicite → 31. Relecture de la région sans la mention pour les clés EA
+    (`english_only_region` : un verrou lu par l'une ou l'autre lecture gagne, deux verrous
+    différents → refus) + filet `english_only_unread_lock` (un mot EU / Europe / US / UK écrit
+    mais non lu interdit 31 ; US / UK interdisent 3euen / 3eu) — « [EU] », « (EU Version) »,
+    « (Europe & UK) » sont refusés. `strip_english_only` resserre les crochets (« (EU ) » →
+    « (EU) ») et retire « / » en séparateur.
+  - **P2 — liste sans connecteur** : « (DE  EN Only) », « PL EN Language Only », « Polish
+    English Only » ne sont plus la mention ; `precheck_skip` les refuse « language restriction »
+    (`english_only_listed`) — « DE EN Only » entrait en 31.
+  - **P2 — virgule après une région** : « (Europe, English Only) », « (EU/English Only) » sont la
+    mention (verrouillée Europe), plus une liste.
+  - **P3 — G2A** : un créneau qui ne contient QUE la mention (« - Origin Key - ENG ONLY ») garde
+    « forbidden region: ENG ONLY » (il ne déclare aucune région).
+  - **P3 — `feed_status.categorize_reason`** : toute raison `(R63)` → « other » (« clé English
+    only ROCKSTAR » tombait dans « rockstar »).
+  - **P3 — doc** : un compte English only suit la règle des comptes (« skip category: ACCOUNT »,
+    liste 30), la ligne « compte : inchangé » du tableau était fausse ; épinglé par un test.
+  - Mesure : corpus de 86 820 lignes, 0 différence entre la branche d'avant et celle-ci (précheck
+    consoles on / off, `resolution_name`, slug MMOGA, queue G2A, `detect_region_base`) ; rejeu
+    des 74 lignes identique (0 requête AKS réelle, pages en cache).
+- Tests : `tests/test_english_only_r63.py` (67 ; les 23 de la revue écrits rouges avant leurs
+  correctifs, 14 mutations de ces correctifs toutes rougies) ; fixture `tests/fixtures/region_catalog_2026-09-26.json` (les 867 options de région,
+  clé + texte) ; 24 mutations rougies.
 
 ## 2026-09-28 — Présentation : version de 3 minutes pour toute l'équipe
 

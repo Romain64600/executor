@@ -25,7 +25,7 @@ import os
 import re
 import time
 import unicodedata
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace as dc_replace
 from pathlib import Path
 from typing import Any, Callable, Iterable
 from urllib.parse import quote, urlparse
@@ -96,7 +96,9 @@ from src.merchants import (  # noqa: F401
 # test patching ``src.matcher.MERCHANT_CONFIGS`` in place keeps working.
 from src.merchants.registry import MERCHANT_CONFIGS, merchant_config  # noqa: F401
 # [R63] the « English only » vocabulary — shared with the merchant files (G2A region slot).
-from src.merchants.common import english_only_mark, strip_english_only  # noqa: E402
+from src.merchants.common import (  # noqa: E402
+    english_only_listed, english_only_mark, strip_english_only,
+)
 
 AKS_BUY_URL = "https://www.allkeyshop.com/blog/buy-{slug}-cd-key-compare-prices/"
 # Legacy page shape (pages created around 2021 — "Minecraft" & co, Romain 2026-09-10):
@@ -733,6 +735,88 @@ def english_only_bucket(route: str, resolution: "AksResolution") -> tuple[str, s
         return ea["eu"], "EU"
     return (f"clé EA English only Europe — la page AKS {resolution.slug!r} ne porte ni "
             f"{rid} (« EU IN ENGLISH ONLY ») ni {ea['eu']} (« EA EUROPE »), non entré (R63)")
+
+
+# [R63] revue adverse du 2026-09-28 (constat P1) — le VERROU écrit dans le créneau de la
+# mention. « (EU English Only) », « (English Only EU) », « (Europe, English Only) », « (US
+# English Only) » : la mention collée au mot de région casse la lecture de région
+# (``_detect_region_parts`` teste « (EU) » à la lettre, « EUROPE » entre espaces, la queue
+# « - EU »), la ligne se lisait GLOBAL implicite, et la route [R63] l'envoyait en 31 — verrou
+# Europe (ou US / UK) PERDU. Deux couches, sur les clés EA qui portent la mention seulement :
+#   (a) ``english_only_region`` relit la région sur le titre SANS la mention (crochets
+#       resserrés) : un verrou lu par l'une OU l'autre lecture gagne, deux verrous différents
+#       → refus, jamais d'élargissement ;
+#   (b) ``english_only_unread_lock`` : un mot de région vendable écrit dans le titre (ou le
+#       chemin de l'URL) que la lecture n'a PAS retenu — « [EU] », « (EU Version) », « (Europe
+#       & UK) » — interdit la route : jamais 31 s'il reste un verrou écrit, jamais 3euen / 3eu
+#       s'il reste un verrou US / UK.
+_R63_LOCK_WORD_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?:(?P<code>EU|US|USA|UK|GB)"
+    r"|(?i:(?P<word>EUROPEAN|EUROPE|UNITED[\s-]+STATES|UNITED[\s-]+KINGDOM)))(?![A-Za-z0-9])")
+# Dans le chemin de l'URL (en minuscules, donc sans la casse qui sépare « US » de « Us ») :
+# les mots longs et « eu » seulement. Un « -us- » / « -uk- » en milieu de slug est un mot de
+# nom (« among-us ») — la lecture de région ne lit ces codes que dans le créneau de FIN
+# (P2-6b), et le titre, lu avec sa casse, les porte quand ils sont un verrou.
+_R63_LOCK_URL_RE = re.compile(
+    r"(?:^|[-/_.])(?P<word>eu|europe|european|united-states|united-kingdom)(?=[-/_.]|$)")
+_R63_LOCK_BASE = {"EU": "eu", "EUROPE": "eu", "EUROPEAN": "eu", "US": "us", "USA": "us",
+                  "UNITED STATES": "us", "UK": "uk", "GB": "uk", "UNITED KINGDOM": "uk"}
+
+
+def english_only_region(offer: NormalizedOffer, platform: str,
+                        first: tuple[str, str | None, bool]) -> tuple[str, str | None, bool] | str:
+    """[R63] (a) — la région d'une clé EA qui porte la mention, relue sur le titre SANS elle
+    (``strip_english_only`` : la phrase seule, crochets resserrés — JAMAIS le crochet marchand
+    ``english_only_name``, qui retirerait aussi un « [PC - Origin EU Key] »). ``first`` est la
+    lecture du titre brut. Rend ``(label, id, implicit)`` ou la raison d'un refus :
+
+    * mêmes libellés → ``first`` (l'explicite l'emporte sur l'implicite) ;
+    * brut GLOBAL, relu verrouillé → la relecture (le verrou que la mention cachait) ;
+    * brut verrouillé, relu GLOBAL → ``first`` (un verrou ne s'élargit jamais) ;
+    * deux verrous différents → refus."""
+
+    label1, _rid1, implicit1 = first
+    second = detect_region(dc_replace(offer, name=strip_english_only(offer.name)), platform)
+    label2, _rid2, implicit2 = second
+    if label2 == label1:
+        return second if implicit1 and not implicit2 else first
+    if label1 == "GLOBAL":
+        return second
+    if label2 == "GLOBAL":
+        return first
+    return (f"clé EA English only — deux verrous de région contradictoires ({label1} / "
+            f"{label2}), non entré (R63)")
+
+
+def _written_locks(offer: NormalizedOffer) -> list[tuple[str, str]]:
+    """Les mots de région vendables (hors GLOBAL) ÉCRITS dans le titre sans la mention et
+    dans le chemin de l'URL : ``[(base, mot)]``. Dans le titre, codes courts en capitales
+    seulement (« Among Us » n'est pas un verrou) ; dans l'URL, « eu » et les mots longs
+    seulement (``_R63_LOCK_URL_RE``)."""
+
+    found: list[tuple[str, str]] = []
+    for m in _R63_LOCK_WORD_RE.finditer(strip_english_only(offer.name)):
+        word = re.sub(r"[\s-]+", " ", (m.group("code") or m.group("word"))).upper()
+        found.append((_R63_LOCK_BASE[word], word))
+    path = strip_merchant_url_noise(offer.url, offer.merchant).lower().split("?", 1)[0]
+    for m in _R63_LOCK_URL_RE.finditer(path):
+        word = m.group("word").replace("-", " ").upper()
+        found.append((_R63_LOCK_BASE[word], word))
+    return found
+
+
+def english_only_unread_lock(offer: NormalizedOffer, route: str) -> str | None:
+    """[R63] (b) — le filet : la raison du refus quand un verrou ÉCRIT contredit la route, ou
+    None. Route ``en_only`` (→ 31, « sans verrou ») : aucun mot EU / Europe / US / UK ne doit
+    rester écrit. Route ``eu_en_only`` (→ 3euen / 3eu) : aucun mot US / UK."""
+
+    refused = ("eu", "us", "uk") if route == "en_only" else ("us", "uk")
+    for base, word in _written_locks(offer):
+        if base in refused:
+            target = "la case 31 (sans verrou)" if route == "en_only" else "3euen / 3eu (Europe)"
+            return (f"clé EA English only — verrou de région écrit (« {word} ») mais non lu comme "
+                    f"tel : jamais {target}, non entré (R63)")
+    return None
 # Tokens that do NOT count as a "significant extra" word (platform / region /
 # format / edition / stopwords). Used by the different-product guard.
 NOISE_TOKENS = {
@@ -1352,6 +1436,12 @@ def precheck_skip(offer: NormalizedOffer, *, consoles: bool = False) -> str | No
     if "LANGUAGES ONLY" in _lang_upper or "LANGUAGE ONLY" in _lang_upper:
         return "language restriction"
     if re.search(r"\b(EN|FR|ES|DE|IT|PT|CS|PL|RU)\s*/\s*(EN|FR|ES|DE|IT|PT|CS|PL|RU)\b", upper):
+        return "language restriction"
+    # [R63] revue du 2026-09-28 : la phrase « English only » écrite comme dernier terme d'une
+    # LISTE de langues (« French & English Only », « (DE  EN Only) », « Polish English Only »)
+    # — non tranché, refusé EXPLICITEMENT au lieu de mourir sur la garde R01 (ou, pour « DE EN
+    # Only », d'entrer en 31 : DE est un code de langue que R01 tait après le nom du jeu).
+    if english_only_listed(offer.name):
         return "language restriction"
     # ACCOUNT (2026-09-25) — LAST, so every existing reason keeps its label ("skip category:
     # STEAM ACCOUNT", "console: ACCOUNT — not a game (R45)", a merchant hook's own refusal).
@@ -3592,6 +3682,14 @@ def _pc_plan(
             "page, not openable yet (R32c); pending browser page-read")
     platform = declared_platform or "STEAM"  # default — R20 verifies it below
     region_label, region_id, implicit = detect_region(offer, platform)
+    if platform == "EA" and english_only_mark(offer.name) is not None:
+        # [R63] (a) revue du 2026-09-28 : la mention collée au mot de région (« (EU English
+        # Only) ») cachait le verrou — relecture sans elle, clés EA seulement (la seule
+        # plateforme que [R63] entre ; les autres gardent leur raison de refus d'avant).
+        _reread = english_only_region(offer, platform, (region_label, region_id, implicit))
+        if isinstance(_reread, str):
+            return SkippedOffer(offer, _reread)
+        region_label, region_id, implicit = _reread
     if implicit and is_difmark:
         # Some Steam EUROPE offers carry no region signal in the URL or
         # title at all. Doubt still goes to skip (G02): a page/API that
@@ -3654,6 +3752,9 @@ def _pc_plan(
     en_route: str | None = None
     if english_only_mark(offer.name) is not None:
         en_route, en_refusal = english_only_route(declared_platform, platform, region_label)
+        if en_refusal is None:
+            # (b) le filet : un verrou ÉCRIT que la lecture n'a pas retenu interdit la route.
+            en_refusal = english_only_unread_lock(offer, en_route)
         if en_refusal is not None:
             return SkippedOffer(offer, en_refusal)
 

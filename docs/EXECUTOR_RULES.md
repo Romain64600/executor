@@ -281,7 +281,9 @@ restrictions (EN/FR/ES "… Languages Only", EN/CS — the LISTS EN/PL, EN/PL/RU
 though AKS's bucket 31 names them: not ruled). **The « English only » mention is no longer a
 language restriction** (`[R63]`, 2026-09-28): an EA key → bucket 31 (no lock) or 3euen / 3eu
 (Europe); every other English-only row is refused with an EXPLICIT `(R63)` reason — non-EA
-platform, no declared platform, console, US / UK lock — see the `[R63]` section;
+platform, no declared platform, console, US / UK lock, a lock written but not read — see the
+`[R63]` section; the phrase written as the LAST TERM of a language list (« French & English
+Only », « (DE  EN Only) », « Polish English Only ») stays « language restriction »;
 **`CATEGORY_SKIP` is matched WORD-BOUNDARY, not raw substring** `[P2-7]` (audit
 2026-09-02): a raw substring silently over-skipped valid games ("Stratagems"→GEMS,
 "Checkpoints"→POINTS, "Laptop Upgrade"→"TOP UP"). Each token now matches as whole
@@ -3317,8 +3319,16 @@ ou « forbidden region: EUROPE ENG ONLY » chez G2A.
 « in English only ». ONLY est obligatoire ; EN / ENG ne comptent qu'en CAPITALES (le créneau de
 langue Gamivo / CJS « EN » n'est pas la mention — MA7 reste retiré) ; une phrase précédée d'un
 connecteur de liste (« Polish/English Language Only », « French & English only ») est une LISTE
-de langues, pas la mention. 0 faux positif sur 86 820 lignes distinctes des runs de cette
-machine ; 76 lignes portent la mention.
+de langues, pas la mention. Revue adverse du 28/09 : une LANGUE juste avant la phrase, sans
+connecteur (code en capitales ou nom : « (DE  EN Only) » — CJS sépare ses langues par des
+espaces —, « PL EN Language Only », « PL-EN … », « Polish English Only ») en fait aussi une liste,
+et `precheck_skip` refuse alors la ligne « language restriction » EXPLICITEMENT
+(`merchants.common.english_only_listed`) — « DE EN Only » entrait en 31 (DE est un code de
+langue que R01 tait après le nom du jeu) ; EU et UK ne sont pas des langues ici (« EU EN Only »
+reste la mention, verrouillée Europe). À l'inverse une virgule ou une barre qui suit une RÉGION
+(« (Europe, English Only) », « (EU/English Only) ») n'ouvre pas de liste : c'est la mention,
+verrouillée Europe. 0 faux positif sur 86 820 lignes distinctes des runs de cette machine ;
+76 lignes portent la mention.
 
 **La règle** (`src/matcher.py` : `english_only_route`, `english_only_bucket`, le bloc `[R63]` de
 `precheck_skip` et de `_pc_plan`) :
@@ -3326,14 +3336,18 @@ machine ; 76 lignes portent la mention.
 | Ligne | Seau / refus |
 |---|---|
 | EA (titre, URL ou page marchande), aucun verrou (GLOBAL explicite ou implicite) | **31** si la page AKS le porte, sinon refus « ne porte pas la case 31 » |
-| EA verrouillée Europe (« - EU », « EUROPE ENG ONLY », « EU English only ») | **3euen** si la page le porte ; sinon **3eu** (le verrou Europe prime sur la langue) si la page le porte ; sinon refus. **Jamais 31** : ce serait perdre le verrou |
-| EA verrouillée US / UK (cas c) | refus « question ouverte » (non tranché) |
+| EA verrouillée Europe (« - EU », « EUROPE ENG ONLY », « EU English only », « (EU English Only) », « (English Only EU) », « (Europe, English Only) ») | **3euen** si la page le porte ; sinon **3eu** (le verrou Europe prime sur la langue) si la page le porte ; sinon refus. **Jamais 31** : ce serait perdre le verrou |
+| EA verrouillée US / UK (cas c), y compris « (US English Only) », « (UK English Only) » | refus « question ouverte » (non tranché) |
+| EA, verrou ÉCRIT mais illisible (« [EU] », « (EU Version) », « (Europe & UK) ») | refus « verrou de région écrit … mais non lu comme tel » — jamais 31 |
+| EA, deux verrous qui se contredisent (« (EU English Only) - US ») | refus « deux verrous de région contradictoires » |
 | EA en cadeau GMG, compte… | refus |
 | autre plateforme (Steam, Ubisoft, Battle.net…) | refus `clé English only <plateforme>` |
 | plateforme non déclarée (G2A « In App Key ») | refus `clé English only sans plateforme déclarée` — jamais le défaut STEAM, jamais R27 / `[R58]` / PUBLISHER |
 | console (`--consoles`) | refus `console: English only …` (catégorie console) |
-| verrou interdit (AR, AU…), catégorie, bundle, compte | la raison d'avant, inchangée (elles passent AVANT) |
-| listes EN/PL, EN/PL/RU, « … Languages Only » | « language restriction », inchangé |
+| verrou interdit (AR, AU…), catégorie, bundle | la raison d'avant, inchangée (elles passent AVANT) |
+| compte (« … EA App Account », URL `-account`) | « skip category: ACCOUNT » → liste 30, la règle de TOUS les comptes (AGENTS.md, 2026-09-25) — sur main, « EN Language Only » la faisait mourir avant, sur « language restriction » (Kinguin, dont le précheck marchand dit ACCOUNT d'abord, n'a jamais changé) |
+| G2A, créneau de région qui ne contient QUE la mention (« - Origin Key - ENG ONLY ») | « forbidden region: ENG ONLY », inchangé : G2A remplit son créneau pour les clés, un créneau qui ne nomme que la langue ne déclare aucune région |
+| listes EN/PL, EN/PL/RU, « … Languages Only », « French & English Only », « (DE  EN Only) », « Polish English Only » | « language restriction » |
 
 - **Ordre.** `precheck_skip` refuse en DERNIER (après ACCOUNT) ce que le titre / l'URL décident
   seuls — plateforme non-EA, plateforme absente chez un marchand sans page (Instant Gaming et
@@ -3341,6 +3355,25 @@ machine ; 76 lignes portent la mention.
   ces lignes comme candidates. `_pc_plan` refait tous les contrôles une fois plateforme et
   région FINALES (page marchande, Difmark, R33), avant toute page AKS ; le contrôle de seau suit
   la résolution et R43.
+- **Le verrou écrit dans le créneau de la mention (revue adverse du 28/09, constat P1).** La
+  mention collée au mot de région — « (EU English Only) », « (English Only EU) », « (US English
+  Only) » — cassait la lecture de région (`_detect_region_parts` teste « (EU) » à la lettre,
+  « EUROPE » entre espaces, la queue « - EU ») : la ligne se lisait GLOBAL implicite et partait en
+  31, verrou PERDU (sur main : refus R01 « extra words ['ENGLISH', 'ONLY'] », aucune écriture ;
+  chez CJS l'URL ne porte pas la variation, rien ne rattrapait). Deux couches, clés EA qui portent
+  la mention seulement :
+  (a) `english_only_region` relit la région sur le titre SANS la mention (`strip_english_only` :
+  la phrase seule, crochets resserrés — jamais le crochet MMOGA `english_only_name`, qui
+  retirerait aussi « [PC - Origin EU Key] ») ; un verrou lu par l'une OU l'autre lecture gagne,
+  deux verrous différents → refus, un verrou ne s'élargit jamais ;
+  (b) `english_only_unread_lock`, le filet : un mot de région vendable ÉCRIT (titre sans la
+  mention, codes courts en capitales ; chemin d'URL : « eu » et les mots longs) que la lecture n'a
+  pas retenu interdit la route — aucun EU / Europe / US / UK sur la route 31, aucun US / UK sur la
+  route Europe. Il couvre « [EU] », « (EU Version) », « (Europe & UK) », que la lecture générique
+  ne lit pas (même hors mention : sur main, ces formes entrent en EA GLOBAL(3) — lacune
+  préexistante de la lecture générique, hors `[R63]`, signalée à Romain, non modifiée ici).
+  Mesure : 0 ligne réelle touchée (la relecture ne change aucune des 76 lignes marquées du
+  corpus, le filet n'en refuse aucune ; rejeu identique).
 - **Slug et gardes : la mention ne sort QUE sur la route `[R63]`.** `_pc_plan` applique d'abord
   le crochet marchand `english_only_name` (MMOGA : le crochet de livraison « [EA App Key EN -
   English Only] » ENTIER — un retrait partiel laisse « EN Key » lu comme un code région), puis
@@ -3352,9 +3385,15 @@ machine ; 76 lignes portent la mention.
   English Only » (3euen) — `resolve_catalog_id` les retrouve par LIBELLÉ, de façon unique sur
   les 867 options (identiques dans les 32 catalogues du 10 au 26/09) ; le repli 3eu garde « EU »,
   résolu par ID comme toute clé EA EU. `select_via_trusted` tape ensuite le texte du catalogue
-  et clique `[data-value="<id>"]`. **Non prouvé en production : la frappe de « -OR- » dans le
-  filtre Selectize** ; un échec serait un NO_OPTION (fail-closed), jamais une mauvaise écriture.
-  Premier passage conseillé en `--mode learning` (canari de 1) sur une page MMOGA.
+  et clique `[data-value="<id>"]`. **Les caractères du libellé sont prouvés en production** : les
+  `submit_plan.json` de la VM portent 2 826 sélections réussies (`SELECTED`) d'un texte tapé
+  avec « / » (« XBOX/PC US (242) » ×1 208, « XBOX/PC EU (241) » ×888, « XBOX/PC UK (240) » ×540,
+  « Xbox/PC GLOBAL (306) » ×188…) et 9 avec « - » (« X-Factor Edition », « All-Star Edition »,
+  « Cross-Gen Edition ») ; `resolve_from_catalog` rend pour un candidat 31 le texte « Origin
+  English Only -OR- EN/PL -OR- EN/PL/RU (31) », résolu par libellé, sans blocage (épinglé par
+  `RevueP3_LaSaisie`). **Reste non prouvée une PREMIÈRE sélection de la valeur 31 elle-même** ;
+  un échec serait un NO_OPTION (fail-closed), jamais une mauvaise écriture. Premier passage
+  conseillé en `--mode learning` (canari de 1) sur une page MMOGA.
 - **Trois noms par seau** : 31 = formulaire « Origin English Only -OR- EN/PL -OR- EN/PL/RU (31) »,
   filtre de page « EA ENG/POL/RUS ONLY », page publique « IN ENGLISH ONLY » ; 3euen = « Origin EU
   English Only (3euen) », « EA EU ENG ONLY », « EU IN ENGLISH ONLY » ; 3eu = « Origin EU (3eu) »,
@@ -3377,7 +3416,11 @@ machine ; 76 lignes portent la mention.
   « (EN) » entre EA GLOBAL(3) alors qu'AKS range l'Ultimate de Driffle en 31) ; EN/PL et
   EN/PL/RU malgré le libellé AKS de 31 ; English only verrouillée US / UK ; English only sur une
   autre plateforme (cases 476, 440, 472, 469, 471… existent, non tranchées) ; « In App Key » → EA.
-- Tests : `tests/test_english_only_r63.py` (44, titres et pages réels), 24 mutations rougies.
+- Tests : `tests/test_english_only_r63.py` (67, titres et pages réels ; les 23 des classes
+  `Revue…` du 28/09 portent des formes synthétiques, plausibles mais jamais vues), 24 mutations
+  rougies à la première écriture ; les classes `Revue…` ont été écrites ROUGES avant leurs
+  correctifs (71 sous-tests en échec + 1 erreur, puis verts), et 14 mutations de ces correctifs
+  les rougissent toutes.
 
 ### `[R62]` Clé Microsoft Store — la page AKS doit lister « Microsoft Windows » (2026-09-26)
 

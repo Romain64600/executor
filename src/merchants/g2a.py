@@ -86,17 +86,22 @@ def region_tail(name: str) -> str | None:
     « ENG ONLY » / « ENGLISH ONLY » is peeled (``common.split_english_only_tail``): the slot
     says EUROPE, and the mention stays in the title for the matcher's [R63] decision. Before,
     the whole text fell outside the vocabulary and the row was refused « forbidden region:
-    EUROPE ENG ONLY » — a refusal by side effect, not a decision. A slot that is the mention
-    alone reads as no slot (None)."""
+    EUROPE ENG ONLY » — a refusal by side effect, not a decision.
+
+    A slot that is the mention ALONE (« - Origin Key - ENG ONLY ») keeps its verbatim text,
+    hence the old « forbidden region: ENG ONLY » refusal (review of 2026-09-28, P3): G2A fills
+    its slot for keys, so a slot that only names the language declares NO region — unknown,
+    never the implicit GLOBAL that would send an EA key to bucket 31."""
 
     for rx in (_TAIL_RE, _OLD_TAIL_RE):
         m = rx.search(name or "")
         if m:
-            text, _mark = split_english_only_tail(m.group("region").strip())
+            raw = m.group("region").strip()
+            text, _mark = split_english_only_tail(raw)
             if text:
                 return text
-            if _mark:
-                return None
+            if raw:                 # the mention alone: verbatim → « forbidden region: ENG ONLY »
+                return raw
     return None
 
 
