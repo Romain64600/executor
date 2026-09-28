@@ -27,8 +27,9 @@ transformer un arrêt fail-closed en martèlement d'AKS :
 3. ``all_merchants_halted`` — TOUS les marchands de la passe se sont arrêtés : quelque chose
    casse systématiquement.
 
-Un marchand arrêté seul est simplement repris à la passe suivante. Une passe qui n'a rien créé
-n'arrête pas la boucle : elle allonge la pause (30 min au lieu de 5).
+Un marchand arrêté seul est simplement repris à la passe suivante. Une passe qui a créé MOINS DE
+10 offres n'arrête pas la boucle : elle allonge la pause (30 min au lieu de 5 — Romain,
+2026-09-28 : « go pour 30 min si moins de 10 offres » ; avant, seulement une passe à 0).
 
 **`loop.json`** (`runs/<run-id>/loop.json`, écriture atomique) :
 
@@ -54,7 +55,11 @@ from typing import Any
 
 LOOP_FILE = "loop.json"
 DEFAULT_PAUSE_S = 300          # Romain, 2026-09-27 : « 5 min de pause »
-EMPTY_PASS_PAUSE_S = 1800      # une passe sans aucune création : le feed n'avait rien de neuf
+EMPTY_PASS_PAUSE_S = 1800      # une passe qui rapporte peu : le feed se remplit moins vite qu'on ne le vide
+# Romain, 2026-09-28 : « go pour 30 min si moins de 10 offres ». Mesure qui l'a motivé : la boucle
+# du groupe A, nuit du 27 au 28/09 — passe 1 : 383 créées, passe 2 : 6, passe 3 : 0. Avant, seule
+# une passe à 0 allongeait la pause (la passe 2 repartait après 5 min pour 6 offres).
+LOW_YIELD_CREATED = 10
 MIN_PAUSE_S = 60
 
 STOP_LABELS: dict[str, str] = {
@@ -192,9 +197,11 @@ def stop_reason(recap: dict[str, Any], *, operator_stopped: bool) -> str | None:
 
 
 def pause_after_pass(recap: dict[str, Any], *, pause_s: int, empty_pause_s: int) -> int:
-    """5 min (Romain) ; 30 min quand la passe n'a rien créé — le feed n'avait rien de neuf."""
+    """5 min (Romain) ; 30 min quand la passe a créé moins de ``LOW_YIELD_CREATED`` (10) offres —
+    le feed se remplit moins vite que la boucle ne le vide (Romain, 2026-09-28)."""
 
-    return int(empty_pause_s) if int(recap.get("total_created") or 0) == 0 else int(pause_s)
+    created = int(recap.get("total_created") or 0)
+    return int(empty_pause_s) if created < LOW_YIELD_CREATED else int(pause_s)
 
 
 def cooperative_pause(seconds: float, *, should_stop, sleep, slice_s: float = 5.0,

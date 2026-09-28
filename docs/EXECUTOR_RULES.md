@@ -1120,7 +1120,8 @@ doute après un clic reste une halte (Kinguin p2, offre 101140732, rebond wp-log
 **La BOUCLE — relancer un groupe à sa fin, jusqu'à « Arrêter » (2026-09-27, Romain : « 5 min de
 pause, sans limite, go pour la boucle »).** `scripts/10 --loop` (case « Boucler » de la console,
 pour les trois boutons) enchaîne des passes dans le MÊME processus, enfant de l'admin : à la fin
-du dernier marchand, une pause de 5 min (30 min si la passe n'a rien créé), puis une nouvelle
+du dernier marchand, une pause de 5 min (30 min si la passe a créé moins de 10 offres, Romain 2026-09-28 — c'était
+0 le 27/09), puis une nouvelle
 passe sur la MÊME liste de cibles — le groupe détendu au lancement —, de la dernière page vers la
 1, sans limite de passes. Le marqueur reste celui du lancement ; chaque passe a son recap
 (`runs/<run-id>-passN/`) et `runs/<run-id>/loop.json` dit la passe courante (DATA_CONTRACTS).

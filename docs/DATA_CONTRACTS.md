@@ -897,6 +897,10 @@ porte l'état de la boucle, écrit atomiquement (`src/sweep_loop.py`) :
  "stopped_label": null | "session expirée — transfert de cookies requis", "stopped_at": null | "…Z"}
 ```
 
+- **`pause_s` / `empty_pause_s`** : la pause après une passe — `pause_s` (5 min) si la passe a créé
+  au moins 10 offres, `empty_pause_s` (30 min) en dessous (`sweep_loop.LOW_YIELD_CREATED`,
+  Romain 2026-09-28 ; le nom de la clé date du seuil « 0 » du 27/09 et reste pour ne pas casser
+  les `loop.json` existants).
 - **Une passe = un recap.** La passe 1 EST le lancement (`runs/<run-id>/recap.json`, inchangé) ;
   la passe N ≥ 2 vit dans `runs/<run-id>-passN/recap.json`, ses pages dans
   `runs/<run-id>-passN-<slug>-s<store>-p<page>/`. Un recap de passe porte `loop_pass` (n°) et

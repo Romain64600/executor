@@ -253,7 +253,8 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
 - **La BOUCLE d'un groupe — Romain, 2026-09-27** (« qu'on puisse quand même aller l'arrêter,
   mais qu'il boucle », puis « 5 min de pause, sans limite, go pour la boucle »). `--loop` / case
   « Boucler » : des passes sans limite dans le même processus supervisé, 5 min de pause (30 si la
-  passe n'a rien créé), « Arrêter » immédiat pause comprise. Elle s'arrête D'ELLE-MÊME dans trois
+  passe a créé moins de 10 offres — Romain, 2026-09-28 : « go pour 30 min si moins de 10
+  offres » ; c'était 0 le 27/09), « Arrêter » immédiat pause comprise. Elle s'arrête D'ELLE-MÊME dans trois
   cas, et trois seulement : session expirée (→ transfert de cookies par Romain, jamais de
   re-auth), garde bloqué, TOUS les marchands de la passe arrêtés. Un audit voudra (a) retirer
   l'arrêt « tous arrêtés » (« un marchand seul se reprend, pourquoi pas tous ? ») — non : tous

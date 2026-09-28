@@ -3,6 +3,16 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-28 — Boucle : 30 min de pause quand une passe crée moins de 10 offres
+
+Romain : « go pour 30 min si moins de 10 offres ». La nuit du 27-28/09, la boucle du groupe A a
+créé 383 offres (passe 1), puis 6, puis 0 : la passe 2 repartait après 5 min pour 6 offres. La
+pause longue (30 min) vaut désormais pour toute passe à moins de 10 créations
+(`sweep_loop.LOW_YIELD_CREATED`), au lieu de 0 seulement ; au-dessus, 5 min (ou la pause choisie
+par `--loop-pause-s`). `src/sweep_loop.py` ; tests `tests/test_sweep_loop_2026_09_27.py`
+(seuils 0 / 6 / 9 / 10 / 383, passe réelle à 9 créations) ; libellé de la case « Boucler ».
+Effet au prochain lancement de boucle (un processus en cours garde le code chargé).
+
 ## 2026-09-27 — La BOUCLE : un groupe se relance à sa fin, jusqu'à « Arrêter » ; message Discord
 
 Romain : « je voudrais […] qu'on puisse quand même aller l'arrêter, mais qu'il boucle », puis

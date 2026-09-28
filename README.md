@@ -559,7 +559,7 @@ add `--no-consoles` for a PC-only pass.
 **Boucler — relancer le groupe à sa fin, jusqu'à « Arrêter » (2026-09-27, Romain : « 5 min de
 pause, sans limite, go pour la boucle »).** La case **« Boucler »** de la console (elle vaut pour
 les trois boutons) ou `--loop` au CLI : à la fin du dernier marchand, le sweep attend **5 min**
-(30 min si la passe n'a rien créé), puis repart du début de la même liste de cibles, de la
+(30 min si la passe a créé moins de 10 offres — Romain, 2026-09-28), puis repart du début de la même liste de cibles, de la
 dernière page vers la 1, **sans limite de passes**. Un seul processus, toujours enfant de
 l'admin : « Arrêter » agit à tout moment, pause comprise, et ne relance jamais. **Une passe = un
 recap** — la passe 1 dans `runs/<run-id>/`, la passe N dans `runs/<run-id>-passN/` (ses pages

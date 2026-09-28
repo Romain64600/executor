@@ -101,9 +101,16 @@ class LesAidesDeLaBoucle(unittest.TestCase):
                   _recap("CJS-CDKeys", 618))
         self.assertIsNone(sweep_loop.stop_reason(p, operator_stopped=False))
 
-    def test_la_pause_5_min_ou_30_sans_creation(self):
-        self.assertEqual(sweep_loop.pause_after_pass({"total_created": 7}, pause_s=300, empty_pause_s=1800), 300)
-        self.assertEqual(sweep_loop.pause_after_pass({"total_created": 0}, pause_s=300, empty_pause_s=1800), 1800)
+    def test_la_pause_5_min_ou_30_sous_10_creations(self):
+        # Romain, 2026-09-28 : « go pour 30 min si moins de 10 offres » (nuit du 27-28/09 :
+        # 383, puis 6, puis 0 créées).
+        for cree, attendu in ((0, 1800), (6, 1800), (9, 1800), (10, 300), (383, 300)):
+            with self.subTest(cree=cree):
+                self.assertEqual(sweep_loop.pause_after_pass({"total_created": cree}, pause_s=300,
+                                                             empty_pause_s=1800), attendu)
+        # la pause choisie par l'opérateur vaut au-dessus du seuil, jamais en dessous
+        self.assertEqual(sweep_loop.pause_after_pass({"total_created": 12}, pause_s=120, empty_pause_s=1800), 120)
+        self.assertEqual(sweep_loop.pause_after_pass({"total_created": 3}, pause_s=120, empty_pause_s=1800), 1800)
 
     def test_la_pause_cooperative_s_arrete_sur_demande(self):
         dormi = []
@@ -187,7 +194,7 @@ class LOrchestrateurBoucle(unittest.TestCase):
     def test_une_passe_finie_en_relance_une_autre_dans_son_propre_dossier(self):
         rc, calls, loop, _ = self._run(
             ["--loop"],
-            [_recap("Kinguin", 3), _recap("Eneba", 2, store="19"),          # passe 1
+            [_recap("Kinguin", 7), _recap("Eneba", 5, store="19"),          # passe 1 (12 ≥ 10 : 5 min)
              _recap("Kinguin", 1), _recap("Eneba", 0, store="19")],         # passe 2
             stop_after_sleeps=61)                                            # « Arrêter » pendant la 2e pause
         self.assertEqual(rc, 0)
@@ -196,14 +203,14 @@ class LOrchestrateurBoucle(unittest.TestCase):
                          "la passe 2 a ses propres ids de page")
         r1 = json.loads((self.MOD.ROOT / "runs" / "t-loop" / "recap.json").read_text(encoding="utf-8"))
         r2 = json.loads((self.MOD.ROOT / "runs" / "t-loop-pass2" / "recap.json").read_text(encoding="utf-8"))
-        self.assertEqual((r1["run_id"], r1["loop_pass"], r1["total_created"]), ("t-loop", 1, 5))
+        self.assertEqual((r1["run_id"], r1["loop_pass"], r1["total_created"]), ("t-loop", 1, 12))
         self.assertEqual((r2["run_id"], r2["loop_pass"], r2["launch_run_id"], r2["total_created"]),
                          ("t-loop-pass2", 2, "t-loop", 1))
         self.assertEqual(loop["state"], "stopped")
         self.assertEqual(loop["stopped_reason"], "operator_stop")
         self.assertEqual([p["run_id"] for p in loop["passes"]], ["t-loop", "t-loop-pass2"])
-        self.assertEqual([p["total_created"] for p in loop["passes"]], [5, 1])
-        self.assertEqual(loop["totals"], {"created": 6, "passes_finished": 2})
+        self.assertEqual([p["total_created"] for p in loop["passes"]], [12, 1])
+        self.assertEqual(loop["totals"], {"created": 13, "passes_finished": 2})
         self.assertTrue(all(p["finished_at"] for p in loop["passes"]))
         # la 1re pause : 5 min (des créations) — 60 tranches de 5 s
         self.assertEqual(sum(self.dormi[:60]), 300)
@@ -233,8 +240,13 @@ class LOrchestrateurBoucle(unittest.TestCase):
         self._run(["--loop"], [_recap("Kinguin", 0), _recap("Eneba", 0, store="19")], stop_after_sleeps=360)
         self.assertEqual((len(self.dormi), sum(self.dormi)), (360, 1800))
 
+    def test_une_passe_a_9_creations_attend_30_min(self):
+        # Au-delà de 60 tranches (5 min), la pause continue : c'est bien 30 min.
+        self._run(["--loop"], [_recap("Kinguin", 6), _recap("Eneba", 3, store="19")], stop_after_sleeps=360)
+        self.assertEqual((len(self.dormi), sum(self.dormi)), (360, 1800))
+
     def test_la_pause_choisie_par_l_operateur(self):
-        self._run(["--loop", "--loop-pause-s", "120"], [_recap("Kinguin", 2), _recap("Eneba", 0, store="19")],
+        self._run(["--loop", "--loop-pause-s", "120"], [_recap("Kinguin", 12), _recap("Eneba", 0, store="19")],
                   stop_after_sleeps=24)
         self.assertEqual((len(self.dormi), sum(self.dormi)), (24, 120))
 
@@ -273,7 +285,7 @@ class LOrchestrateurBoucle(unittest.TestCase):
         rc, calls, loop, _ = self._run(
             ["--loop"],
             [_recap("Kinguin", 0, halted="extract_failed_p38", detail="exit 1 (CdpTimeoutError)"),
-             _recap("Eneba", 4, store="19"),
+             _recap("Eneba", 12, store="19"),
              _recap("Kinguin", 2), _recap("Eneba", 1, store="19")],
             stop_after_sleeps=61)
         self.assertEqual(len(calls), 4, "Kinguin est rebalayé à la passe 2")
@@ -321,7 +333,7 @@ class LOrchestrateurBoucle(unittest.TestCase):
             json.dumps([{"merchant": "G2A", "store_id": "38", "by": "romain", "at": "t"}]), encoding="utf-8")
         rc, calls, loop, _ = self._run(
             ["--loop"],
-            [_recap("Kinguin", 3), _recap("Eneba", 2, store="19"), _recap("G2A", 1, store="38"),   # passe 1
+            [_recap("Kinguin", 8), _recap("Eneba", 2, store="19"), _recap("G2A", 1, store="38"),   # passe 1
              _recap("Kinguin", 1), _recap("Eneba", 0, store="19")],                                # passe 2
             stop_after_sleeps=61)
         self.assertEqual([c.split("-s")[0] for c in calls],
