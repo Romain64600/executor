@@ -3,6 +3,21 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-28 — Présentation : version de 3 minutes pour toute l'équipe
+
+Romain, sur le diaporama du 27/09 : « je la trouve compliquée, retravaille-la en prenant en compte
+que je vais présenter le projet pas seulement à des devs mais aussi aux RH, SEO, manager data
+entry, etc. Ma présentation doit durer 3 minutes maximum. » `docs/presentation_2026-09-28/` :
+`presentation.html` est maintenant le diaporama de **3 minutes** (7 diapositives, une idée
+chacune, gros caractères, pictogrammes, zéro jargon : le problème, le robot en 4 étapes, les
+résultats, « dans le doute, il ne saisit pas », ce que ça change pour chacun, la suite), avec
+notes et chrono (touche N) ; `script_3min.md` est le texte dit (378 mots, durée par diapositive,
+compte de mots vérifié par le générateur `outils/generer_3min.py`). Chiffres recomptés le 28/09
+à 06 h 35 UTC, en lecture seule sur les 2 serveurs : **19 059** offres créées et prouvées, record
+2 627 le 26/09, 21 marchands (`chiffres.md`). La version longue de la veille devient l'annexe
+technique pour les questions des développeurs : `annexe_technique/presentation_technique.html`
+et `notes_orateur_technique.md` (chiffres du 27/09 inchangés ; `outils/generer.py` y écrit).
+
 ## 2026-09-28 — Boucle : 30 min de pause quand une passe crée moins de 10 offres
 
 Romain : « go pour 30 min si moins de 10 offres ». La nuit du 27-28/09, la boucle du groupe A a

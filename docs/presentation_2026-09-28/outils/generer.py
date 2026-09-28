@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Génère les schémas SVG (`../schemas/`) et assemble `../presentation.html`.
+"""Génère les schémas SVG (`../schemas/`) et assemble l'annexe technique
+`../annexe_technique/presentation_technique.html` (19 diapositives, chiffres arrêtés au 27/09).
+
+Le diaporama de 3 minutes (`../presentation.html`) a son propre générateur : `generer_3min.py`.
 
 Python 3 standard uniquement (pas de graphviz, pas de bibliothèque). Les schémas sont
 dessinés « à la main » : des boîtes, des flèches, du texte — lisibles en 1920×1080 et à
@@ -523,7 +526,7 @@ def assembler():
     reste = re.findall(r"\{\{[^}]+\}\}", html)
     if reste:
         raise SystemExit(f"jetons non remplacés : {reste}")
-    (DOSSIER / "presentation.html").write_text(html, encoding="utf-8")
+    (DOSSIER / "annexe_technique" / "presentation_technique.html").write_text(html, encoding="utf-8")
 
 
 if __name__ == "__main__":
@@ -536,4 +539,4 @@ if __name__ == "__main__":
     schema_resultats()
     schema_par_jour()
     assembler()
-    print("ok :", sorted(p.name for p in SCHEMAS.glob("*.svg")), "→ presentation.html")
+    print("ok :", sorted(p.name for p in SCHEMAS.glob("*.svg")), "→ annexe_technique/presentation_technique.html")

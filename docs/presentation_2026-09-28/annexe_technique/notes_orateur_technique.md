@@ -1,6 +1,8 @@
-# Notes de l'orateur — présentation du 28 septembre 2026
+# Notes de l'orateur — annexe technique (version longue, 19 diapositives)
 
-Une entrée par diapositive. Les mêmes notes sont dans `presentation.html` (touche **N**).
+Une entrée par diapositive. Les mêmes notes sont dans `presentation_technique.html` (touche **N**).
+C'est la version longue, pour les questions des développeurs ; la présentation de 3 minutes est
+`../presentation.html` (script : `../script_3min.md`). Chiffres arrêtés le 27/09 au matin.
 Durée visée : 25 à 30 minutes, questions comprises. Les diapositives 5 à 7 et 10 sont les
 « schémas » : y passer du temps, le reste va vite.
 
