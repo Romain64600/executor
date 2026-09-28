@@ -3,6 +3,15 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-28 — Audit « pas de page produit AKS » (lecture seule)
+
+Romain : « go pour l'étude des pas de page produit ». Rapport :
+[`AUDIT_2026-09-28_pages-produit-absentes.md`](AUDIT_2026-09-28_pages-produit-absentes.md). Sur
+14 255 lignes refusées « no AKS product page found » (groupe A pass 9 + groupe B), la page manque
+vraiment pour 47 % (IC 40–54 %), elle existe mais le résolveur la rate pour 41 % (84 % côté
+console), 3 % ne sont pas des produits. Liste des pages à créer (7 663 produits) et correctifs
+classés par gain ; aucun code modifié, aucune écriture AKS, 364 requêtes AKS/Staff en tout.
+
 ## 2026-09-28 — VPS de secours `vmi3615170` (169.58.5.63)
 
 Romain : « Il serait bien que tu commences à l'installer en vue de l'avoir en fallback pour le
