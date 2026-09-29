@@ -1071,6 +1071,21 @@ so a raw `&currency=EUR` in a query string survives instead of becoming
 URL domain matches the merchant (e.g. must contain `kinguin.net` for Kinguin)
 `[KINGUIN]`.
 
+**Lien d'affiliation sur un hôte tiers (2026-09-30, Allyouplay — branche
+`allyouplay-affiliate`).** Un marchand peut déclarer `MerchantConfig.affiliate_hosts` : les
+hôtes d'un redirecteur dont le paramètre `u` porte SA fiche (Allyouplay :
+`anandadigitalbv.sjv.io/c/1297091/2866230/30655?…&u=https://www.allyouplay.com/pc/<slug>`).
+`landing_url` rend la fiche seulement si le lien est sur un hôte déclaré ET que `u` est sur
+`domain` (ou un sous-domaine) ; sinon l'URL du feed, et le contrôle de domaine refuse comme
+avant (motif « affiliate link without a … product page in u »). La fiche est lue pour le
+contrôle de domaine et les SIGNAUX (région, région interdite, verrous `[R63]`, plateforme
+d'URL, classifieur console, jeton `account`) — jamais pour l'édition, qui reste au titre (les
+slugs Allyouplay contredisent le titre : « Deluxe » ↔ `…-premium-edition-2`). L'URL stockée,
+affichée et comparée reste celle du feed ; l'identité suit `url_identity_params` (`u`), que
+`merchants.registry` associe aussi à l'hôte d'affiliation. Règle de Romain : « accepter le
+lien d'affiliation seulement si u pointe vers allyouplay.com, et u sert d'identité comme
+Loaded ».
+
 **Every HTTP request to allkeyshop.com carries the `AKS/Staff` User-Agent — by default
 (2026-09-11).** `http_get` switches to `AKS_STAFF_UA` for any allkeyshop.com host when no
 UA is given (an explicit UA is honoured; the staff UA stays forbidden on any other host,
@@ -1481,8 +1496,9 @@ safe-auto allowlist has its file** — `kinguin.py` (the inline `domain="kinguin
 registry entry moves there), `k4g.py`, `driffle.py`, `gameseal.py`, `allyouplay.py`,
 `cjs.py` are created on 2026-09-14 next to `mmoga.py`, `gamivo.py`, `eneba.py`,
 `g2a.py`, `instant_gaming.py` (`difmark.py` parked); a file that declares no hook yet
-(Allyouplay, CJS-CDKeys: never swept, no data) is the documented statement "no data, dry-run
-first", never an omission. Per-merchant grammar and hooks: [`MERCHANTS.md`](MERCHANTS.md).
+(CJS-CDKeys and Allyouplay on 2026-09-14; both have since been swept — Allyouplay's file
+declares its affiliate link since 2026-09-30, §4.6) is the documented statement "no data,
+dry-run first", never an omission. Per-merchant grammar and hooks: [`MERCHANTS.md`](MERCHANTS.md).
 Historique (the before / after measurement of the 2026-09-14 move — 2 990 console rows
 identical, 0 recorded candidate changing class — and the per-merchant table) : CHANGELOG
 2026-09-14.

@@ -765,7 +765,8 @@ def account_signal(name: str, url: str, merchant: str = "") -> str | None:
     if cfg is not None and cfg.account_row is not None:
         return "merchant" if cfg.account_row(name, url) else None
     noise = tuple(cfg.url_ignore_substrings) if cfg is not None else ()
-    if url_path_account_token(url, noise):
+    # Lien d'affiliation déclaré (2026-09-30) : le jeton `account` se lit dans la fiche.
+    if url_path_account_token(cfg.landing_url(url) if cfg is not None else url, noise):
         return "url"
     return None
 
@@ -1178,9 +1179,14 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
     up by NAME in the registry — the URL host is irrelevant (2026-09-14).
     """
 
+    cfg = _config_of(merchant)
+    # La fiche d'un lien d'affiliation déclaré (``MerchantConfig.affiliate_hosts``,
+    # 2026-09-30 — Allyouplay) : le chemin du redirecteur ne dit rien, la fiche dit `/xbox/…`,
+    # `…-xbox-one`. Tous les autres marchands : l'URL telle quelle.
+    if cfg is not None:
+        url = cfg.landing_url(url)
     if not console_marker_in_title(name) and not console_marker_in_url(url):
         return None
-    cfg = _config_of(merchant)
     text = _normalise_title(name)
     resolve_name, stripped_words = resolve_name_and_regions(name, merchant)
     slot_text = _hook_region_slot(cfg, name)

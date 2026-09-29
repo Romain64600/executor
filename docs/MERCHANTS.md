@@ -42,6 +42,8 @@ Champs disponibles :
 | `url_platform_scan` | scanner le slug de l'URL pour la plateforme | False |
 | `offer_page_resolver` | lire la page marchande de l'offre pour plateforme + région (Instant Gaming, Difmark) | — |
 | `offer_page_readable` | False = la page marchande n'est pas lisible en HTTP (G2A 403) → fail-closed | True |
+| `url_identity_params` | paramètres de query qui font partie de l'identité d'une annonce (`submitter._url_key`) : Wyrel, CJS `variation`, Loaded et Allyouplay `u` (2026-09-24 / 26 / 30) | `()` = chemin seul (P2-12) |
+| `affiliate_hosts` | **2026-09-30 (Allyouplay)** — hôtes d'un redirecteur d'affiliation dont le paramètre `u` porte la fiche du marchand. `MerchantConfig.landing_url` rend cette fiche SEULEMENT si le lien est sur un hôte déclaré ET que `u` est sur `domain` (ou un sous-domaine) ; elle est lue par le contrôle de domaine, `strip_merchant_url_noise` (région, région interdite, verrous `[R63]`), `explicit_platform_from_url`, le classifieur console et `account_signal` — **pas** par `detect_edition` (l'édition reste au titre). L'URL stockée n'est jamais réécrite ; `merchants.registry` range l'hôte avec le marchand pour l'identité. Un lien sans `u` ou dont `u` pointe ailleurs reste « merchant-domain mismatch » (motif « affiliate link without a … product page in u ») | `()` |
 | `precheck(name, url)` | skip catégorique propre au marchand, avant les scans génériques `[R32e]` | — |
 | `title_region(name)` | région déclarée par la grammaire du titre, autoritaire `[R32e]` | — |
 | `resolve_name(name)` | texte remis à la résolution AKS (slug), les contrôles d'identité gardent le titre brut `[R32e]` | — |
@@ -115,7 +117,7 @@ du feed.
 | Driffle | 127 | `driffle.py` (**nouveau**) | PC : `precheck`, `title_region` (1re parenthèse) ; console : `console_url_families`, `console_region_slot`, `console_noise` | oui | 6 |
 | Instant Gaming | 28 | `instant_gaming.py` | PC : `offer_page_resolver` ; console : `console_url_families` → toujours None (déclaré : l'URL ne dit rien ; une plateforme console lue sur la page IG → plateforme None → skip R32) | oui | 4-5 |
 | Eneba | 19 | `eneba.py` | `console_url_families`, `console_pc_declared`, `console_region_slot` | **non — dry-run du 12/09 fait (32 candidats, 90 % consoles), sweep réel sur go** | ≥ 30 |
-| Allyouplay | 17 | `allyouplay.py` (**nouveau**, identité seule) | `domain="allyouplay.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
+| Allyouplay | 17 | `allyouplay.py` (lien d'affiliation, 30/09 — branche `allyouplay-affiliate`) | `domain="allyouplay.com"`, `affiliate_hosts=("anandadigitalbv.sjv.io",)`, `url_identity_params=("u",)` — aucun hook de grammaire (région / plateforme / catégories à trancher par Romain) | **non** — balayé 6 fois (groupe B, 17/09 → 26/09) mais 100 % refusé au contrôle de domaine : 0 saisie | 3 |
 | GameSeal | 126 | `gameseal.py` | `domain` ; PC : `precheck`, `title_region` (queue ` - <RÉGION>`), `resolve_name` (queue pelée, 20/09) ; console : `console_url_families`, `console_region_slot` | oui (1er balayage 19/09) | 1 090 écrites, 1 089 justes (audit du 20/09) |
 | CJS-CDKeys | 30 | `cjs.py` (**nouveau**, identité seule) | `domain="cjs-cdkeys.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
 | Difmark | 167 | `difmark.py` | `console_url_families` (comptes) | parqué (hors liste blanche) | — |
@@ -646,16 +648,40 @@ matcher et le classifieur importent le registre.
 
 ## Allyouplay (store 17)
 
-- **Fichier** : `src/merchants/allyouplay.py` (**nouveau, 2026-09-14**, identité seule :
-  store 17, `domain="allyouplay.com"` — à confirmer au premier dry-run ; un hôte faux fait
-  échouer fermé chaque ligne (« offer URL not on allyouplay.com »), jamais une saisie).
-- **Grammaire PC / console** : **aucune donnée** — jamais balayé, pas d'historique. Le fichier
-  existe pour porter la règle (chaque marchand a son fichier) et recevoir la grammaire
-  relevée au dry-run ; tant qu'il ne déclare rien, seuls le vocabulaire partagé et le
-  générique s'appliquent (fail-closed).
-- **Hooks** : `domain` seul (aucun hook de grammaire inventé sans lot observé).
-- **Statut live** : dans la liste blanche mais **jamais balayé** ; un dry-run
-  (`scripts/10 … --dry-run`) est exigé avant tout sweep réel (Romain, 2026-09-11).
+- **Fichier** : `src/merchants/allyouplay.py` (identité seule le 14/09 ; **lien d'affiliation le
+  2026-09-30**, branche `allyouplay-affiliate`, pas en ligne tant que Romain n'a pas validé
+  l'aperçu).
+- **Ce qu'on croyait / ce qui s'est passé.** « Jamais balayé » était faux depuis le 17/09 :
+  Allyouplay est dans le groupe B et a été balayé six fois (17, 18, 21, 22, 25, 26/09 — 296
+  lignes distinctes). **Les 296 ont été refusées « offer URL not on allyouplay.com »** : le feed
+  ne porte pas d'URL allyouplay.com mais un redirecteur Impact,
+  `https://anandadigitalbv.sjv.io/c/1297091/2866230/30655?prodsku=42863&u=<fiche encodée>&intsrc=CATF_22827`
+  (hôte, chemin, `prodsku`, `intsrc` identiques pour toutes les lignes). Aucune offre Allyouplay
+  n'a jamais été saisie. Vu le 29/09 à l'aperçu par page de Nivalis Nights / Transport Fever 3.
+- **Règle de Romain (30/09, « Go »)** : « accepter le lien d'affiliation seulement si u pointe
+  vers allyouplay.com, et u sert d'identité comme Loaded ». Codé par `affiliate_hosts`
+  (`MerchantConfig.landing_url`, contrat ci-dessus) + `url_identity_params=("u",)`. L'édition
+  reste lue au TITRE : la fiche porte du bruit de fournisseur et contredit le titre sur 2
+  lignes (« Elder Scrolls Online: Deluxe Edition » ↔ `…-2025-premium-edition-2`).
+- **Grammaire observée (296 lignes) — non codée, décisions de Romain** : premier segment de la
+  fiche `/pc/` 228, `/xbox/` 31, `/cash-points/` 25, `/subscription/` 11 (Tinder Gold / Plus),
+  `/bundle/` 1 ; titres PC **sans plateforme ni région** (quelques « [Mac] ») ; titres Xbox avec
+  la génération en queue, une fois un pays (« … - Xbox Series X|S - BE ») ; codes glissés dans
+  des slugs (`-ga-ste-`, `-ga-gog-`, `-row-<uuid>`, `-ww-<uuid>`, `cnprc`, `res30`, `t2wwd`,
+  `glok2`, `pointnxs`, suffixes `-2` … `-11`). Le `-row-` est lu par le scan générique des
+  régions interdites (4 lignes refusées ROW, dont une fausse : « Saints Row Classic Chaos
+  Bundle », refusée de toute façon comme bundle — le faux « Saints Row » = ROW est générique,
+  préexistant, chez tous les marchands).
+- **Page produit lisible en HTTP** (200, pas de Cloudflare, 29/09) : attribut « Platform:
+  Steam » et `available_countries` dans le payload Nuxt. Un lecteur (comme Gamesplanet FR
+  `[R59]`) est une option, non codée.
+- **Mesure hors ligne (30/09, branche, sans réseau)** : 45 refus au precheck (bundles 17,
+  monnaies / points / crédits / gemmes 15, ROW 4, AMERICAS 1, multi-jeux 3, Xbox 360 1…), 251
+  passent : 32 lignes console (fiche `/xbox/` ou `…-xbox-one` lue — sans la fiche, « Pac-Man CE
+  2 » serait partie en Steam), 219 lignes PC lues **Steam par défaut, GLOBAL implicite**
+  (dont 10 Tinder). Détail : CHANGELOG 2026-09-30.
+- **Statut live** : liste blanche (groupe B) ; la branche n'est **pas** en ligne — l'aperçu
+  (lecture seule) passe d'abord, puis la validation de Romain.
 
 ## GameSeal (store 126)
 

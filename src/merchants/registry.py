@@ -133,6 +133,12 @@ def _identity_params_for_host(host: str) -> tuple[str, ...]:
         dom = (cfg.domain or "").lower()
         if dom and cfg.url_identity_params and (host == dom or host.endswith("." + dom)):
             return tuple(cfg.url_identity_params)
+        # L'hôte d'un lien d'affiliation DÉCLARÉ (``MerchantConfig.affiliate_hosts``,
+        # 2026-09-30 — Allyouplay, `anandadigitalbv.sjv.io`) : toutes les offres y partagent
+        # le même chemin, l'annonce est dans `u`. Sans cette ligne, l'hôte tiers ne rejoignait
+        # aucun domaine et toutes les offres du marchand avaient UNE identité.
+        if cfg.url_identity_params and host in {h.lower() for h in cfg.affiliate_hosts}:
+            return tuple(cfg.url_identity_params)
     return ()
 
 

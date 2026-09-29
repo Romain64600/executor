@@ -1286,8 +1286,15 @@ def precheck_skip(offer: NormalizedOffer, *, consoles: bool = False) -> str | No
     cfg = merchant_config(offer.merchant)
     domain = cfg.domain if cfg else None
     if domain:
-        host = urlparse(offer.url).netloc.lower()
+        # Un lien d'affiliation DÉCLARÉ (``MerchantConfig.affiliate_hosts``, 2026-09-30 —
+        # Allyouplay) est jugé sur la fiche de son paramètre ``u`` ; sans ``u``, ou avec un
+        # ``u`` hors du domaine, ``landing_url`` rend l'URL du feed et le refus tient.
+        host = urlparse(cfg.landing_url(offer.url)).netloc.lower()
         if host != domain and not host.endswith("." + domain):
+            raw_host = urlparse(offer.url).netloc.lower()
+            if raw_host in {h.lower() for h in cfg.affiliate_hosts}:
+                return (f"offer URL not on {domain} (affiliate link without a {domain} "
+                        f"product page in u — merchant-domain mismatch)")
             return f"offer URL not on {domain} (merchant-domain mismatch)"
     # Merchant-config override hook (R32e, 2026-09-10): the merchant's own categorical
     # skip, before the generic scans (MMOGA "<Product> <CODE> Key" locks).
@@ -1336,7 +1343,8 @@ def precheck_skip(offer: NormalizedOffer, *, consoles: bool = False) -> str | No
         _reason_account = _sig_account.skip_reason if _sig_account is not None else None
         if _reason_account and "ACCOUNT — not a game" not in _reason_account:
             return _reason_account
-    elif console_marker_in_title(fold_accents(offer.name)) or console_marker_in_url(offer.url):
+    elif (console_marker_in_title(fold_accents(offer.name))
+          or console_marker_in_url(cfg.landing_url(offer.url) if cfg is not None else offer.url)):
         if not consoles:
             return "console"
         sig = classify_console(offer.name, offer.url, offer.merchant)
@@ -1637,7 +1645,8 @@ def explicit_platform_from_url(url: str, merchant: str = "") -> str | None:
         hooked = cfg.url_platform(url)
         if hooked is not None:
             return hooked
-    path = urlparse(url).path.strip("/").lower()
+    # La fiche d'un lien d'affiliation déclaré (2026-09-30) ; l'URL elle-même sinon.
+    path = urlparse(cfg.landing_url(url)).path.strip("/").lower()
     if cfg.url_platform_prefixes:
         return cfg.url_platform_prefixes.get(path.split("-", 1)[0])
     if cfg.url_platform_scan:
@@ -1899,13 +1908,19 @@ def account_identity(aks_name: str, page_kind: str) -> str | None:
 # re-exported above; register a new merchant module THERE.
 
 
-def strip_merchant_url_noise(url: str, merchant: str) -> str:
+def strip_merchant_url_noise(url: str, merchant: str, *, landing: bool = True) -> str:
     """Remove merchant-specific URL boilerplate before deriving ANY matching
     signal (region, edition) from the URL. Case-insensitive — never touches
-    the stored/reported offer URL itself (EXECUTOR_RULES §4.6)."""
+    the stored/reported offer URL itself (EXECUTOR_RULES §4.6).
 
-    cleaned = url
+    ``landing`` (2026-09-30) : la FICHE derrière un lien d'affiliation déclaré
+    (``MerchantConfig.affiliate_hosts``, Allyouplay) remplace le lien — c'est elle qui parle
+    du produit, le chemin du redirecteur est le même pour toutes les offres. ``False`` garde
+    l'URL du feed : c'est la lecture de l'ÉDITION (``detect_edition``), qui reste au titre
+    chez ces marchands. Tous les autres marchands : l'URL telle quelle, comme avant."""
+
     cfg = merchant_config(merchant)
+    cleaned = cfg.landing_url(url) if (cfg and landing) else url
     for noise in (cfg.url_ignore_substrings if cfg else ()):
         cleaned = re.sub(re.escape(noise), "", cleaned, flags=re.IGNORECASE)
     return cleaned
@@ -1926,7 +1941,12 @@ def slug_edition_text(url: str) -> str:
 def detect_edition(title: str, url: str = "", merchant: str = "") -> tuple[str, str]:
     # Driffle carries the edition in the URL slug (Romain, 2026-07-07); it is the
     # canonical merchant identity, so it wins over the AKS-normalized feed title.
-    cleaned_url = strip_merchant_url_noise(url, merchant)
+    # Lien d'affiliation déclaré (2026-09-30, Allyouplay) : la fiche de `u` n'est PAS lue ici
+    # (``landing=False``) — ses slugs portent du bruit de fournisseur et contredisent le titre
+    # (« Elder Scrolls Online: Deluxe Edition » ↔ `the-elder-scrolls-online-2025-premium-
+    # edition-2`, 2 lignes sur 251 : Deluxe au titre, Premium au slug). L'édition reste celle
+    # du TITRE, comme avant le 30/09 ; le doute ne devient jamais un palier.
+    cleaned_url = strip_merchant_url_noise(url, merchant, landing=False)
     for source in (slug_edition_text(cleaned_url), title.upper()):
         if not source:
             continue

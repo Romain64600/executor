@@ -22,6 +22,7 @@ without importing the matcher).
 
 from __future__ import annotations
 
+import urllib.parse
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional, Pattern, Union
 
@@ -123,6 +124,22 @@ class MerchantConfig:
     # Les paramètres nommés ICI, et eux seuls, rejoignent la clé d'identité. Vide = P2-12 à
     # l'identique.
     url_identity_params: tuple[str, ...] = ()
+    # LIEN D'AFFILIATION SUR UN HÔTE TIERS (2026-09-30, Romain : « go » pour « accepter le lien
+    # d'affiliation seulement si u pointe vers allyouplay.com, et u sert d'identité comme
+    # Loaded »). Les URL du feed Allyouplay ne sont PAS sur allyouplay.com : elles passent par
+    # un redirecteur (`anandadigitalbv.sjv.io/c/1297091/2866230/30655?…&u=<fiche>`) dont le
+    # paramètre `u` porte la vraie fiche. Le contrôle de domaine refusait donc 100 % des lignes
+    # (296 distinctes, 6 balayages du groupe B depuis le 17/09, aucune jamais saisie). Les
+    # hôtes nommés ICI, et eux seuls, sont acceptés — à condition que `u` pointe vers
+    # `domain` (ou un sous-domaine) : ``landing_url`` rend alors la fiche, que lisent le
+    # contrôle de domaine et toutes les lectures de signaux d'URL (``strip_merchant_url_noise``,
+    # ``explicit_platform_from_url``). Un lien sans `u`, ou dont `u` pointe ailleurs, reste
+    # l'URL du feed → « merchant-domain mismatch », comme avant. L'URL STOCKÉE n'est jamais
+    # réécrite (EXECUTOR_RULES §4.6) ; l'identité de l'annonce, elle, suit
+    # ``url_identity_params`` (Allyouplay y déclare `u`, `merchants.registry` y range l'hôte
+    # d'affiliation). Vide = comportement d'avant, pour tous les autres marchands — Loaded
+    # (`go.loaded.com`, sous-domaine de loaded.com) n'en a pas besoin et ne le déclare pas.
+    affiliate_hosts: tuple[str, ...] = ()
     # Generic-behaviour OVERRIDE hooks (Romain 2026-09-10: « un fichier de config marchand
     # par marchand, qui peut ajouter, overwrite, modifier des comportements génériques »).
     # Each is optional; the matcher calls it FIRST and falls through to the generic rule
@@ -258,3 +275,44 @@ class MerchantConfig:
     # Free-form notes / extension point for future per-merchant knobs.
     notes: str = ""
     extra: dict[str, Any] = field(default_factory=dict)
+
+    def landing_url(self, url: str) -> str:
+        """La fiche du marchand derrière un lien d'affiliation DÉCLARÉ (``affiliate_hosts``),
+        ou ``url`` telle quelle. La fiche n'est rendue que si le lien est sur un hôte déclaré,
+        porte un paramètre ``u`` et que ``u`` est sur ``domain`` (ou un sous-domaine) ; dans
+        tous les autres cas l'URL du feed revient inchangée — le contrôle de domaine la
+        refuse alors, comme avant (2026-09-30)."""
+
+        return affiliate_landing(url, self.affiliate_hosts, self.domain)
+
+
+def _host_of(url: str) -> str:
+    try:
+        host = urllib.parse.urlsplit(str(url or "")).netloc.lower()
+    except ValueError:
+        return ""
+    return host.split("@")[-1].split(":")[0]
+
+
+def affiliate_landing(url: str, affiliate_hosts: tuple[str, ...], domain: Optional[str]) -> str:
+    """Voir ``MerchantConfig.landing_url``. Fonction pure, sans réseau."""
+
+    if not affiliate_hosts or not domain:
+        return url
+    host = _host_of(url)
+    if host not in {h.lower() for h in affiliate_hosts}:
+        return url
+    try:
+        cible = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query).get("u")
+    except ValueError:
+        return url
+    if not cible:
+        return url
+    landing = cible[0].strip()
+    lhost = _host_of(landing)
+    dom = domain.lower()
+    if not landing.lower().startswith(("https://", "http://")):
+        return url
+    if lhost == dom or lhost.endswith("." + dom):
+        return landing
+    return url

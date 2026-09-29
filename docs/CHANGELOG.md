@@ -3,6 +3,39 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-30 — Allyouplay : le lien d'affiliation (branche `allyouplay-affiliate`, pas en ligne — en attente de la validation de Romain après aperçu)
+
+Romain (« Go ») : « accepter le lien d'affiliation seulement si u pointe vers allyouplay.com,
+et u sert d'identité comme Loaded ; ensuite un aperçu seul ». Constat du 29/09 (aperçu par page
+de Nivalis Nights et Transport Fever 3 sur le VPS de secours) : les 3 offres Allyouplay refusées
+« offer URL not on allyouplay.com ». En remontant les runs : **Allyouplay (groupe B) a été
+balayé six fois depuis le 17/09, 296 lignes distinctes, 100 % refusées par ce contrôle — zéro
+saisie**. Le feed ne porte pas d'URL allyouplay.com : toutes les lignes passent par le
+redirecteur Impact `anandadigitalbv.sjv.io/c/1297091/2866230/30655?prodsku=42863&u=<fiche>&intsrc=…`.
+
+- **`MerchantConfig.affiliate_hosts` + `landing_url`** (`src/merchant_config.py`) : la fiche
+  de `u` est rendue seulement si le lien est sur un hôte DÉCLARÉ et que `u` est sur `domain` ;
+  sinon l'URL du feed, et le refus de domaine tient (motif nommé « affiliate link without a
+  allyouplay.com product page in u »). Lue par le contrôle de domaine (`precheck_skip`),
+  `strip_merchant_url_noise` (région, régions interdites, verrous `[R63]`),
+  `explicit_platform_from_url`, `classify_console` / `console_marker_in_url` et
+  `account_signal`. **Pas** par `detect_edition` (`landing=False`) : la fiche contredit le
+  titre sur 2 lignes (« Elder Scrolls Online: Deluxe Edition » ↔ `…-2025-premium-edition-2`),
+  l'édition reste celle du titre. L'URL stockée n'est jamais réécrite.
+- **Identité** : `url_identity_params=("u",)` comme Loaded, et `merchants.registry` range
+  l'hôte d'affiliation avec le marchand — sans cette ligne, l'hôte tiers ne rejoignait aucun
+  domaine et les 296 offres partageaient UNE clé (chemin commun). Le terme de recherche de la
+  preuve reste `30655` (dernier segment du chemin) : recherche filtrée par store 17 → toutes
+  les lignes Allyouplay, ≤ 3 pages sur un budget de 10, départagées par la clé chemin + `u`.
+- **Aucune grammaire nouvelle** : région, plateforme, catégories et lecteur de page restent à
+  trancher par Romain. Mesure hors ligne sur les 296 lignes : 45 refus au precheck, 32 lignes
+  console (la fiche `/xbox/…` ou `…-xbox-one` est lue — « Pac-Man CE 2 » n'est plus une clé
+  Steam), 219 lignes PC lues Steam par défaut, GLOBAL implicite ; 4 `-row-` refusées ROW (dont
+  « Saints Row Classic Chaos Bundle », faux positif générique préexistant, refusée comme bundle
+  de toute façon). Détail et décisions ouvertes : `docs/MERCHANTS.md` §Allyouplay.
+- Tests : `tests/test_merchants_allyouplay.py` (23), `test_merchants_misc` mis à jour ;
+  mutation du registre → 4 tests rouges.
+
 ## 2026-09-29 — Console `/executor/auto` : l'heure de début du sweep (et de chaque marchand, chaque page)
 
 Romain : « Depuis l'admin, j'aimerais savoir quand le sweep a commencé ». Le recap savait déjà
