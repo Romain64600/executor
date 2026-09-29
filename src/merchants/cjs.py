@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import re
 
-from src.merchants.common import forbidden_reason, make_config
+from src.merchants.common import forbidden_reason, make_config, sellable_base
 
 # Le créneau : ce qui suit le DERNIER « Key: » / « Code: » / « Account: » / « ): ».
 _SLOT_RE = re.compile(r"(?:\bKey|\bCode|\bAccount|\))\s*:\s*(?P<slot>[^:]+?)\s*$", re.IGNORECASE)
@@ -62,9 +62,17 @@ def _looks_like_place(slot: str) -> bool:
         re.search(r"\bregion\b", slot, re.IGNORECASE) and not re.search(r"region free", slot, re.IGNORECASE))
 
 
+def _base(slot: str) -> str | None:
+    """La base d'un créneau vendable : la table CJS d'abord (« Europe & UK »…), puis le
+    vocabulaire partagé (« UK », « GB », « Worldwide », « WW », « United States »…) — audit de
+    Romain du 29/09 (P2) : « UK » et « Worldwide » étaient refusés comme des pays."""
+
+    return REGION_SLOTS.get(slot.lower()) or sellable_base(slot)
+
+
 def title_region(name: str) -> str | None:
     slot = region_slot(name)
-    return REGION_SLOTS.get(slot.lower()) if slot else None
+    return _base(slot) if slot else None
 
 
 def precheck(name: str, url: str) -> str | None:
@@ -72,7 +80,7 @@ def precheck(name: str, url: str) -> str | None:
     monde) : refus nommé. Jamais le GLOBAL implicite d'une clé verrouillée."""
 
     slot = region_slot(name)
-    if not slot or slot.lower() in REGION_SLOTS or not _looks_like_place(slot):
+    if not slot or _base(slot) or not _looks_like_place(slot):
         return None
     return forbidden_reason(slot) or f"CJS : région « {slot} » (pays ou zone) non vendable — non entré (R67)"
 

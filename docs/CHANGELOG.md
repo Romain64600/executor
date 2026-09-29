@@ -3,6 +3,15 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-29 — `[R67]` CJS : « UK », « Worldwide », « WW »… ne sont pas des pays (audit de Romain, P2)
+
+Audit de Romain (2a438ca → 3f8be38) : « Des régions valides sont désormais refusées —
+src/merchants/cjs.py:75. Les variantes UK et Worldwide, absentes de REGION_SLOTS, deviennent
+« région non vendable ». » Romain : « Worldwide est Global, UK est UK ». Le créneau CJS se lit
+maintenant par la table CJS PUIS par le vocabulaire partagé (`sellable_base`) : UK / GB → UK,
+Worldwide / WW → monde, United States → US, European Union → Europe. Tests sur ces variantes,
+une mutation rougie.
+
 ## 2026-09-29 — `[R65]` règle 2b, revue adverse : trois trous fermés, aucune écriture fausse trouvée
 
 Revue adverse de la règle 2b (≈ 95 entrées construites dans le vrai `match_offer`, 2 lectures

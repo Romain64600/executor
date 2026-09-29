@@ -40,6 +40,23 @@ class LeCreneauDeRegion(unittest.TestCase):
             with self.subTest(nom):
                 self.assertEqual(detect_region(_o(nom), "STEAM")[:2], attendu)
 
+    def test_les_autres_orthographes_vendables_ne_sont_pas_des_pays(self):
+        # Audit de Romain (2026-09-29, P2) : « UK » et « Worldwide » étaient refusés comme des
+        # pays. « Worldwide est Global, UK est UK. »
+        for nom, plateforme, attendu in (
+            ("DYSMANTLE Steam Key: UK", "STEAM", ("UK", "71")),
+            ("DYSMANTLE Steam Key: GB", "STEAM", ("UK", "71")),
+            ("DYSMANTLE Steam Key: Worldwide", "STEAM", ("GLOBAL", "2")),
+            ("DYSMANTLE Steam Key: WW", "STEAM", ("GLOBAL", "2")),
+            ("DYSMANTLE Steam Key: United States", "STEAM", ("US", "8")),
+            ("DYSMANTLE Steam Key: European Union", "STEAM", ("EU", "9")),
+        ):
+            with self.subTest(nom):
+                o = _o(nom)
+                self.assertIsNone(precheck_skip(o, consoles=True))
+                self.assertEqual(detect_region(o, plateforme)[:2], attendu)
+                self.assertFalse(detect_region(o, plateforme)[2], "région lue, pas implicite")
+
     def test_un_pays_ou_une_zone_est_refuse_jamais_le_monde(self):
         for nom in ("Quantum Break Steam Key: China",
                     "Darksiders Warmastered Edition EN/DE/FR/IT Steam Key: Italy",

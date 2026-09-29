@@ -3900,7 +3900,9 @@ titre que sous la forme « UK ». Mesuré le 29/09 sur les deux VPS : 122 écrit
 GLOBAL 120, Epic GLOBAL 1, EA GLOBAL 1), toutes « United Kingdom ». `src/merchants/cjs.py` lit le
 créneau qui suit le dernier « Key: » / « Code: » / « Account: » / « ): » : Global → monde ;
 Europe, EU, Europe & UK, « EU Multi-Language … (region free) » → Europe ; USA → US ; United Kingdom
-→ UK. Un créneau qui NOMME un autre lieu (lettres seulement, sans mot d'édition ou de contenu, ou
+→ UK — et toute orthographe que le vocabulaire partagé sait vendre (`sellable_base` : UK, GB,
+Worldwide, WW, United States, European Union…), ajout du 29/09 après l'audit de Romain (P2 :
+« UK » et « Worldwide » étaient refusés comme des pays). Un créneau qui NOMME un autre lieu (lettres seulement, sans mot d'édition ou de contenu, ou
 « … Region … ») est refusé — `forbidden region: …` quand le vocabulaire partagé le connaît,
 « CJS : région « X » (pays ou zone) non vendable » sinon. Un créneau d'édition ou de contenu
 laisse la lecture générique inchangée. Les lignes console gardaient déjà le bon seau UK (classifieur
