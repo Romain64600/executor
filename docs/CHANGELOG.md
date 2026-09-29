@@ -3,6 +3,50 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-29 — `[R65]` règle 2b : un Xbox sans génération entre sur la page combinée déclarée Xbox Series
+
+Romain, après avoir vérifié les pages Microsoft des exemples : « go pour la règle Xbox sans
+génération ». Le refus « 2b, non tranché » de `[R65]` est remplacé par la règle (EXECUTOR_RULES
+`[R65]` règle 2b et §4.12 P4 ; AGENTS « Reviewed decisions » ; code : la boucle (g) de
+`_console_plan`, `src/matcher.py:5606`-`5622`).
+
+- **La règle.** Une clé Xbox SANS génération déclarée (P4 : « XBOX LIVE Key », « (Xbox Live) »)
+  dont le jeu n'a, côté Xbox Series, que la page COMBINÉE `<slug>-xbox-key` (méta Xbox Series X)
+  y entre en XBOX_SERIES, dans la région de la clé, jamais élargie (UK 305, EU 302, US 303, sans
+  région 300), jamais la page PC par cette règle (P2 / clé Windows inchangés). Quand AKS a aussi
+  une page Xbox One, P4 inchangé : les pages qui existent. Deux pages pour une console : le refus
+  `[R65]` inchangé. Une combinée qui se déclarerait Xbox ONE : refus explicite, hors du go.
+- **Tests** (`tests/test_resolver_repli_r64_r65.py`, classe `R65Regle2b` ; pages AKS réelles
+  réduites, 8 nouvelles lues le 29/09 ; toute page simulée le dit) : Case Solved US → 303, Sora UK
+  → 305, Gamerall NBA 2K27 → 300, Hidden Legends 2 EU / UK / US → One 24eu / 226 / 24us + combinée
+  302 / 305 / 303, Destiny 2 The Collection US → 24us + 303, 14 Couch Multiplayer Games (ni page
+  PC) → 24eu + 302 ; Grizzy et Far Cry 3 → R19 (combinée sans offre) ; combinée déclarée One →
+  refus ; deux pages Series → refus ; page PC Play Anywhere → P2 inchangé ; clé Windows Play
+  Anywhere → One + combinée + PC en 241. Le test de bout en bout `[R66]` Destiny passe du refus 2b
+  aux deux pages. **8 mutations, toutes rouges** (refus restauré, combinée One acceptée, région
+  élargie au GLOBAL, UK → EU, page PC ajoutée, méta ignorée, point 4 oublié, clé Windows exclue).
+- **Rejeu en lecture seule** (vrai code avant / après, index sitemap du 28/09, pages AKS en cache +
+  **13 lectures AKS/Staff** le 29/09, ≥ 3 s d'écart ; aucune écriture) sur 46 653 lignes distinctes
+  — population de l'audit du 28/09, derniers `skipped.json` des deux VPS (par page de marchand,
+  runs ≥ 24/09), lignes créées de cette machine — dont **3 700 Xbox sans génération**, seules à
+  pouvoir atteindre 2b. **13 refus 2b avant, 0 après** ; aucune autre issue ne change.
+  **10 lignes entrent** (Eneba 9, Gamerall 1) : 14 Couch Multiplayer Games EU / UK / US
+  (`-xbox-one-key` 24eu / 226 / 24us + combinée 302 / 305 / 303), Case Solved: The London Files
+  US (combinée 303), Destiny 2: The Collection US (100392601 : `-xbox-one-key` 24us + combinée
+  303), Hidden Legends 2 EU / UK / US (101015625 / 101015620 / 101035305 : One 24eu / 226 / 24us +
+  combinée 302 / 305 / 303), Sora: Songs of the Stone UK (101048384 : combinée 305), Gamerall NBA
+  2K27 (101109023 : combinée 300) — toutes Standard(1). **3 passent de 2b à R19** (page combinée
+  sans offre, relue le 29/09) : Grizzy EU / US (101045917, 101043362) et la ligne déjà créée
+  Gamerall « Far Cry 3 - Classic Edition (Xbox Live) » (101109116). **Hors d'atteinte hors
+  ligne** : 232 lignes P4 dont l'index publie une page combinée au slug attendu restent « page non
+  lue » (Eneba surtout). 57 d'entre elles sont déjà créées, toutes des clés Windows « PC/XBOX
+  LIVE » (38 créées en XBOX/PC sur la seule page PC, Play Anywhere) : une nouvelle offre de même
+  forme, si la page PC relie `-xbox-one-key` et la combinée, prendrait désormais One + combinée +
+  PC en XBOX/PC (avant ce go, `[R65]` la refusait « 2b » quand la page PC relie ces pages ; sans
+  ces onglets, rien ne change : XBOX/PC sur la page PC seule, comme Wrap House Simulator au rejeu).
+  Sur les 13 refus 2b, 6 étaient déjà dans le rejeu de la revue `[R66]` (pages en cache), 7 ne
+  sont apparus qu'avec les lectures du 29/09. Effet à la page suivante de tout sweep.
+
 ## 2026-09-29 — `[R67]` CJS : « Steam Key: United Kingdom » n'est plus écrit en GLOBAL (correctif)
 
 Trouvé par la relecture de la branche resolver-fixes. CJS écrit la région après « Key: » ; la

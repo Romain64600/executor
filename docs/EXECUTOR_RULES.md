@@ -1666,8 +1666,10 @@ the adversarial review of 2026-09-12 fixed on 2026-09-14, the canaries) : CHANGE
 
 **`[R65]` (2026-09-29) — gabarits console « -key » / « -code ».** Une console a plusieurs
 gabarits de page (`CONSOLE_FAMILY_TEMPLATES`), et la page Xbox combinée `-xbox-key` est
-rangée selon sa MÉTA. Tout est dans la section `[R65]` plus bas ; ce qui suit (§4.12.1 →
-§4.12.4) décrit les gabarits standard, toujours essayés en premier.
+rangée selon sa MÉTA ; déclarée Xbox Series, elle sert aussi un Xbox SANS génération (P4) —
+**règle 2b**, Romain 2026-09-29 : « go pour la règle Xbox sans génération ». Tout est dans la
+section `[R65]` plus bas ; ce qui suit (§4.12.1 → §4.12.4) décrit les gabarits standard,
+toujours essayés en premier.
 
 **4.12.1 Page model — verified read-only 2026-09-12 (UA `AKS/Staff`).** AKS has SEPARATE
 console product pages: `buy-<slug>-<kind>-compare-prices/`, kind ∈ `ps4` / `ps5` /
@@ -2181,7 +2183,13 @@ guessed: doubt → skip with an explicit reason string.
   ~136, Gamivo ~105, CJS). **« les 2 » — Romain 2026-09-26**: the generation-less Xbox is
   read in the title AND the URL (4.12.3): etailcard / lootbar (192 + 4 rows of the 21/09
   corpus, merchants outside the allowlist) and Gamivo's store-only `-xbox-<cc>` / closing
-  `-xbox` / `-xbox-standard-<run>` forms.
+  `-xbox` / `-xbox-standard-<run>` forms. **Règle 2b — Romain 2026-09-29 (« go pour la règle
+  Xbox sans génération »)**: when AKS files the game's Xbox Series side under the COMBINED page
+  `<slug>-xbox-key` (its meta says Xbox Series X), that page IS the Xbox Series page of P4 — alone
+  (Sora: Songs of the Stone UK → 305) or next to the Xbox One page AKS has (Hidden Legends 2:
+  `-xbox-one-key` + combined); the key's own region, never widened (300 / 302 / 303 / 305); never
+  the PC page by this rule (P2 / Windows key unchanged); a combined page declared Xbox ONE stays
+  refused for a deduced generation. Details, cases and measures: `[R65]`.
 - **Windows / Xbox app key — DÉCIDÉ Romain 2026-09-26 (« 1. »)**: 4.12.3 and (f bis) above.
 - **P5 console DLC / season pass — DÉCIDÉ Romain 2026-09-25 (« P5 A »)**: the PC DLC rule
   `[R43]` applied to consoles — the row enters only on the console page OF THE DLC ITSELF
@@ -3411,7 +3419,8 @@ gabarits console standard, aux replis `[R65]` et à la page combinée — la pag
 n'était jamais essayée. Mesuré en configuration de production (session posée) : Eneba « Destiny 2:
 The Collection XBOX LIVE Key UNITED STATES » (génération déduite) **entrait sur
 `destiny-2-xbox-one-code`, la page Xbox One du JEU DE BASE, en Collection(98)**, au lieu du refus
-« 2b, non tranché » ; « Priest Simulator: Vampire Show » et « Worms Armageddon: Anniversary
+« 2b, non tranché » (depuis la règle 2b du même jour : `destiny-2-the-collection-xbox-one-key`
+24us + la page combinée 303) ; « Priest Simulator: Vampire Show » et « Worms Armageddon: Anniversary
 Edition » étaient refusés. Désormais `_console_plan` appelle l'ancre PC avec `catalog="off"`,
 puis les gabarits console standard, les replis `[R65]`, la page combinée, et SEULEMENT ensuite
 `catalog="only"` (la recherche seule : les passes 1-4 ont déjà répondu, la soupape du rang 1
@@ -3615,9 +3624,9 @@ barre d'onglets les ignorait et la branche console ne les sondait pas : 84 % des
   (`src/matcher.py:2927`, slug capturé NU).
 - **Sonder** (`resolve_aks`, `src/matcher.py:3035`) : un gabarit de repli n'est sondé que si
   l'index sitemap le PUBLIE — ni soupape, ni forme année / ancienne, ni passe 3 ; sans index
-  frais, rien. L'ancre console (`_console_plan`, `:5032`) essaie, faute de page PC et de page
+  frais, rien. L'ancre console (`_console_plan`, `:5257`) essaie, faute de page PC et de page
   au gabarit standard, les gabarits de repli de la famille, puis la page combinée.
-- **Une page par console, jamais deux** (`_console_family_pages`, `:4744` ; refus `:5157`) :
+- **Une page par console, jamais deux** (`_console_family_pages`, `:5169` ; refus `:5605`) :
   les pages CONNUES d'une famille sont l'ancre, les onglets de ses gabarits, et ce que l'index
   publie au MÊME slug sous un autre de ses gabarits (`star-wars-battlefront-2-xbox-one` ET
   `…-xbox-one-code`). Deux pages différentes → refus `console: AKS has 2 different <F> pages …
@@ -3626,13 +3635,48 @@ barre d'onglets les ignorait et la branche console ne les sondait pas : 84 % des
 - **La méta reste le juge ; P1 inchangé.** Une page de repli qui se déclare une autre
   génération refuse la ligne (règle du 2026-09-18). Seules les familles DÉCLARÉES (ou déduites
   par P4) ont des pages.
-- **2b — la page Xbox combinée `-xbox-key`** (`_combined_xbox_page`, `:4784`) : lue une fois
-  quand elle est connue (onglet, ancre, ou index au même slug qu'une page Xbox connue), rangée
-  selon sa MÉTA (« Xbox Series X » pour NHL 27, Hidden Legends 2, Destiny 2 The Collection, Far
-  Cry 3) ; une méta muette ou qui ne nomme pas une génération VISÉE → elle ne sert à rien. Elle
-  sert une génération **déclarée** égale (G2A « NHL 27 | Deluxe Edition (Xbox Series X/S) » →
-  Xbox Series, Deluxe(7)) ; pour une génération **déduite** (P4), c'est un refus explicite
-  `… the combined Xbox page … — 2b, non tranché (R65)` (`:5162`) — la décision attend Romain.
+- **2b — la page Xbox combinée `-xbox-key`** (`_combined_xbox_page`, `src/matcher.py:5209`) : lue
+  une fois quand elle est connue (onglet, ancre, ou index au même slug qu'une page Xbox connue),
+  rangée selon sa MÉTA (« Xbox Series X » pour NHL 27, Hidden Legends 2, Destiny 2 The
+  Collection, Far Cry 3, Case Solved, Sora, NBA 2K27, Grizzy) ; une méta muette ou qui ne nomme
+  pas une génération VISÉE → elle ne sert à rien. Elle sert une génération **déclarée** égale
+  (G2A « NHL 27 | Deluxe Edition (Xbox Series X/S) » → Xbox Series, Deluxe(7)).
+- **Règle 2b — génération DÉDUITE (P4) sur la page combinée : DÉCIDÉ Romain 2026-09-29** (« go
+  pour la règle Xbox sans génération », après avoir vérifié les pages Microsoft des exemples ;
+  jusque-là refus « 2b, non tranché »). Code : la boucle (g) de `_console_plan`
+  (`src/matcher.py:5606`-`5622`, lignes du 29/09), rien d'autre ne change.
+  1. Une clé Xbox SANS génération déclarée (P4 : « XBOX LIVE Key », « (Xbox Live) ») dont le jeu
+     n'a, côté Xbox, que la page COMBINÉE `<slug>-xbox-key` — sa méta déclare Xbox Series X — y
+     entre comme **XBOX_SERIES**. La page combinée peut être l'ancre elle-même (Sora : ni page PC
+     ni page Xbox One) ou l'onglet de la page PC (Case Solved, NBA 2K27).
+  2. **Dans la région que la clé dit, jamais élargie** (`_bucket`, le même chemin que toute page
+     console) : UK → Xbox Series UK **305**, EU → **302**, US → **303**, sans région → **300**
+     GLOBAL. Eneba « Sora: Songs of the Stone XBOX LIVE Key UNITED KINGDOM » → 305, jamais 302.
+  3. **Jamais la page PC par cette règle** : ces clés ne déclarent ni PC ni Windows. P2 et la clé
+     Windows sont INCHANGÉS — si la page PC liste « Xbox Play Anywhere », P2 s'applique comme
+     avant (cases XBOX/PC + page PC) ; une clé Windows Play Anywhere prend « les pages Xbox qu'AKS
+     a » (P4), la combinée déclarée Series en fait partie.
+  4. **Quand AKS a des pages distinctes, P4 est inchangé** : les pages qui existent — Xbox One
+     (standard, `-xbox-one-key`, `-xbox-one-code`) + Xbox Series (standard, `-xbox-series-key`,
+     `-xbox-series-x`, ou la combinée déclarée Series). Deux pages pour une même console restent
+     le refus `… AKS has 2 different XBOX_SERIES pages … (R65)` (`:5605`) ; la méta reste le juge.
+  5. **Hors du go → refus explicite** : une page combinée dont la méta déclare Xbox ONE, pour une
+     génération déduite — `… which declares XBOX_ONE — rule 2b covers a combined page declared
+     Xbox Series only, not entered (R65)`. Aucun cas réel connu ; c'est une supposition qu'on ne
+     fait pas.
+  Cas réels (tests `R65Regle2b`, `tests/test_resolver_repli_r64_r65.py`, pages AKS réelles
+  réduites lues les 28-29/09) : Eneba « Case Solved: The London Files … UNITED STATES » → 303 ;
+  « Sora: Songs of the Stone … UNITED KINGDOM » → 305 ; Gamerall « NBA 2K27 (Xbox Live) »
+  (`…-xbox-live-global`) → 300 ; « Hidden Legends 2 … EUROPE / UNITED KINGDOM / UNITED STATES » →
+  `hidden-legends-2-xbox-one-key` (24eu / 226 / 24us) + `hidden-legends-2-xbox-key` (302 / 305 /
+  303) ; « Destiny 2: The Collection … UNITED STATES » → `…-xbox-one-key` 24us + combinée 303 ;
+  « 14 Couch Multiplayer Games » (ni page PC) → `-xbox-one-key` + combinée. **La porte s'ouvre,
+  R19 ferme** quand la page combinée n'a aucune offre (aucune carte d'éditions, relu le 29/09) :
+  Eneba « Grizzy and the Lemmings - Crazy Party … EUROPE / UNITED STATES » et la ligne déjà créée
+  Gamerall « Far Cry 3 - Classic Edition (Xbox Live) » (101109116 — Xbox One `classic` + combinée
+  vide : la ligne ENTIÈRE est refusée, P4 « toute autre anomalie refuse la ligne ») sont refusées
+  `AKS XBOX_SERIES page carries no editions map — edition unverifiable (R19, R45)`, comme Kinguin
+  « Grizzy … Xbox Series X|S » (génération déclarée). Elles entreront quand AKS y aura une offre.
 - **Préalable — le nom de pays reste dans le nom de garde console** (`src/console_keys.py:1074`
   `country_is_product_name`, `:1085`, `:1190` ; `src/matcher.py:1997`, `:5021`). Miroir de
   `_TRAILING_NOISE_PHRASES_KEEP_COUNTRY` (PC, 2026-09-18), même règle : la région est la
@@ -3650,8 +3694,9 @@ barre d'onglets les ignorait et la branche console ne les sondait pas : 84 % des
 classifieur console inchangé sur les 2 954 lignes console, aucune cible dont la console a deux
 pages publiées au même slug, **une** ligne qui bascule — Gamerall « Far Cry 3 - Classic Edition
 (Xbox Live) » (offre 101109116, créée le 25/09 sur la seule page Xbox One) : la page combinée
-`far-cry-3-xbox-key` se déclare Xbox Series, génération déduite → refus 2b. Rejeu de la
-population de l'audit : voir CHANGELOG 2026-09-29. Tests : `tests/test_resolver_repli_r64_r65.py`
+`far-cry-3-xbox-key` se déclare Xbox Series, génération déduite → refus 2b ; depuis la règle 2b
+(même jour), elle devient la page Series de la ligne et R19 refuse (page combinée sans offre).
+Rejeu de la population de l'audit : voir CHANGELOG 2026-09-29 (`[R65]`, puis règle 2b). Tests : `tests/test_resolver_repli_r64_r65.py`
 (pages AKS réelles réduites, `tests/fixtures/pages_r64_r65/`).
 
 ---

@@ -412,14 +412,16 @@ class ConsoleDeBoutEnBout(_Prod):
     def test_eneba_destiny_2_collection_generation_deduite_2b(self):
         """Offre 100392601 (génération DÉDUITE). Avant, en production : ENTRE sur
         `destiny-2-xbox-one-code` — la page Xbox One du JEU DE BASE — en XBOX_ONE 24us,
-        Collection(98). Attendu : le refus « 2b, non tranché » (AGENTS, [R65] (c)), que la
-        branche donnait sans session."""
+        Collection(98). Puis le refus « 2b, non tranché » jusqu'au go de Romain du 2026-09-29
+        (« go pour la règle Xbox sans génération ») : désormais la page Xbox One de la Collection
+        en 24us ET sa page combinée (méta Xbox Series X) en 303 — jamais le jeu de base."""
 
         res = self.match("Eneba", "Destiny 2: The Collection XBOX LIVE Key UNITED STATES",
                          "https://www.eneba.com/xbox-destiny-2-legacy-collection-xbox-live-key-united-states",
                          store_id="19")
-        self.assertIsInstance(res, SkippedOffer, "jamais sur la page du jeu de base")
-        self.assertIn("2b, non tranché (R65)", res.reason)
+        self.assertEqual(self.targets(res), [
+            (_url("destiny-2-the-collection-xbox-key"), "303", "1"),
+            (_url("destiny-2-the-collection-xbox-one-key"), "24us", "1")])
         self.assertNotIn(_url("destiny-2-xbox-one-code"), self.asked)
         self.assertEqual(self.api_asked, [], "aucune question au catalogue : un gabarit a répondu")
 

@@ -69,12 +69,21 @@ INDEX_28_09 = {
     "tomb-raider-definitive-edition-xbox-one-code", "tomb-raider-definitive-edition-xbox-series-key",
     "tomb-raider-definitive-edition-ps4-key", "tomb-raider-definitive-edition-nintendo-switch",
     "far-cry-3-xbox-one", "far-cry-3-xbox-key", "far-cry-3-xbox-360-code",
+    # Règle 2b (2026-09-29) — mêmes entrées réelles du relevé du 28/09.
+    "case-solved-the-london-files-key", "case-solved-the-london-files-nintendo-switch",
+    "case-solved-the-london-files-ps5-key", "case-solved-the-london-files-xbox-key",
+    "sora-songs-of-the-stone-nintendo-switch", "sora-songs-of-the-stone-ps5-key",
+    "sora-songs-of-the-stone-xbox-key",
+    "nba-2k27-key", "nba-2k27-key-nintendo-switch-2", "nba-2k27-nintendo-switch-2-account",
+    "nba-2k27-ps5-account", "nba-2k27-ps5-key", "nba-2k27-steam-account", "nba-2k27-xbox-account",
+    "nba-2k27-xbox-key",
+    "14-couch-multiplayer-games-xbox-key", "14-couch-multiplayer-games-xbox-one-key",
 }
 
 
-def _index(entries=INDEX_28_09):
+def _index(entries=INDEX_28_09, legacy=frozenset()):
     return SitemapIndex(entries=frozenset(entries), fetched_at="2099-01-01T00:00:00Z",
-                        incomplete=False, legacy=frozenset(), legacy_indexed=True)
+                        incomplete=False, legacy=frozenset(legacy), legacy_indexed=True)
 
 
 def _fixture_pages():
@@ -402,48 +411,6 @@ class R65Saisie(_Base):
         self.assertEqual(self.asked[-2:], [_url("tomb-raider-definitive-edition-xbox-one-code"),
                                            _url("tomb-raider-definitive-edition-xbox-series-key")])
 
-    def test_ligne_deja_creee_far_cry_3_devient_2b(self):
-        """LA régression mesurée sur les 11 503 lignes créées de cette machine : Gamerall « Far
-        Cry 3 - Classic Edition (Xbox Live) » (offre 101109116, créée le 25/09 sur la page Xbox
-        One seule). AKS a AUSSI la page combinée `far-cry-3-xbox-key`, qui se déclare Xbox
-        Series X (lue le 29/09) : pour une génération DÉDUITE, c'est 2b — refus, au lieu d'une
-        saisie qui perd la page Series. Page PC et page Xbox One SIMULÉES (onglet et éditions
-        d'après la création du 25/09) ; page combinée réelle."""
-        pc = M.AksResolution(slug="far-cry-3", url=f"{AKS}compare-and-buy-cd-key-for-digital-download-far-cry-3/",
-                             product_id="10", aks_name="Far Cry 3",
-                             editions={"1": {"name": "Standard"}, "classic": {"name": "Classic"}},
-                             official_platforms=("Ubisoft Connect",),
-                             console_pages={"xbox-one": _url("far-cry-3-xbox-one")})
-        one = M.AksResolution(slug="far-cry-3", url=_url("far-cry-3-xbox-one"), product_id="11",
-                              aks_name="Far Cry 3 Xbox One",
-                              editions={"1": {"name": "Standard"}, "classic": {"name": "Classic"}},
-                              page_platform="Xbox One")
-        combined = resolve_aks_url(_url("far-cry-3-xbox-key"), self.get)
-        by_url = {one.url: one, combined.url: combined}
-        offer = NormalizedOffer(offer_id="101109116", name="Far Cry 3 - Classic Edition (Xbox Live)",
-                                url="https://gamerall.com/xbox/far-cry-3-classic-edition-classic-edition-xbox-live-europe",
-                                merchant="Gamerall")
-        res = match_offer(offer, lambda name, **kw: pc if "page_kind" not in kw else None,
-                          page_resolver=by_url.get, consoles=True)
-        self.assertIsInstance(res, SkippedOffer)
-        self.assertIn("2b, non tranché", res.reason)
-
-    def test_2b_generation_deduite_sur_la_page_combinee_reste_refusee(self):
-        """Eneba, « XBOX LIVE Key » sans génération (P4). Grizzy : la page PC (`-key`) relie
-        la page combinée, qui se déclare Xbox Series. Hidden Legends 2 : une page Xbox One
-        `-xbox-one-key` ET la combinée pour Series — jamais une saisie One seule en perdant
-        la page Series qu'AKS A."""
-        for titre, url in (
-                ("Grizzy and the Lemmings - Crazy Party XBOX LIVE Key EUROPE",
-                 "https://www.eneba.com/xbox-grizzy-and-the-lemmings-crazy-party-xbox-live-key-europe"),
-                ("Hidden Legends 2 XBOX LIVE Key EUROPE",
-                 "https://www.eneba.com/xbox-hidden-legends-2-xbox-live-key-europe")):
-            with self.subTest(titre):
-                res = self.match("Eneba", titre, url)
-                self.assertIsInstance(res, SkippedOffer)
-                self.assertIn("2b, non tranché", res.reason)
-                self.assertIn("XBOX_SERIES", res.reason)
-
     def test_generation_declaree_la_page_combinee_sert_la_generation_qu_elle_declare(self):
         """Kinguin déclare One ET Series : `-xbox-one-key` pour One, la combinée (méta Xbox
         Series X) pour Series — les deux pages réelles de « Destiny 2 The Collection »."""
@@ -500,6 +467,210 @@ class R65Saisie(_Base):
                                       page_kind="xbox-series-key"))
         self.assertEqual(self.asked, [])
 
+
+
+# ─────────────────── [R65] règle 2b — Xbox sans génération sur la page combinée ─────────────
+def _page_simulee(nom, meta, onglets=(), editions='{"1":{"name":"Standard"}}', officielles=None,
+                  product_id="900"):
+    """PAGE SIMULÉE (pas une lecture AKS) — mêmes blocs que les pages réelles réduites : og:title,
+    méta de plateforme, id produit, barre d'onglets, « official platforms », carte d'éditions."""
+    tabs = "".join(f'<li><a href="{u}" class="inactive" title=" x">x</a></li>' for u in onglets)
+    return ("<!-- PAGE SIMULÉE pour un test 2b — aucune lecture AKS -->\n"
+            f'<meta property="og:title" content="Buy {nom} Compare Prices" />'
+            + (f'<meta data-itemprop="platform" content="{meta}" />' if meta else "")
+            + f'<div data-product-id="{product_id}"></div>'
+            + f'<ul class="aks-offer-tabulations">{tabs}</ul>'
+            + (f"<p>official platforms: {officielles}.</p>" if officielles else "")
+            + f'<script>var aks={{"editions":{editions}}};</script>')
+
+
+class R65Regle2b(_Base):
+    """Règle 2b — Romain, 2026-09-29, après avoir vérifié les pages Microsoft des exemples :
+    « go pour la règle Xbox sans génération ». Une clé Xbox SANS génération déclarée (P4 :
+    « XBOX LIVE Key », « (Xbox Live) ») dont le jeu n'a, côté Xbox, que la page COMBINÉE
+    `<slug>-xbox-key` (méta Xbox Series X) y entre en XBOX_SERIES, dans la région de la clé
+    (UK 305, EU 302, US 303, sans région 300), jamais la page PC ; quand AKS a aussi une page
+    Xbox One, P4 inchangé : les pages qui existent. Pages AKS RÉELLES réduites (lues le 28 ou le
+    29/09), titres et URL réels ; toute page simulée le dit dans son nom de test et son corps."""
+
+    def cibles(self, res):
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", None))
+        return [(t.platform, t.aks_url, t.region_id, t.edition_id) for t in res.all_targets]
+
+    def test_sora_uk_page_combinee_seule_305_jamais_eu(self):
+        """Eneba 101048384. AKS n'a NI page PC NI page Xbox One : la page combinée est l'ANCRE
+        (son gabarit de repli, publié par l'index) et la seule page Xbox. UNITED KINGDOM → Xbox
+        Series UK 305 — jamais 302 (EU), jamais 300 (GLOBAL)."""
+        res = self.match("Eneba", "Sora: Songs of the Stone XBOX LIVE Key UNITED KINGDOM",
+                         "https://www.eneba.com/xbox-sora-songs-of-the-stone-xbox-live-key-united-kingdom")
+        self.assertEqual(self.cibles(res), [
+            ("XBOX_SERIES", _url("sora-songs-of-the-stone-xbox-key"), "305", "1")])
+
+    def test_case_solved_us_303_la_page_pc_n_est_jamais_une_cible(self):
+        """Eneba 101043443. La page PC existe (`-key`, « official platforms: Steam » — pas Play
+        Anywhere) et relie la page combinée : elle reste l'ancre, jamais une cible."""
+        res = self.match("Eneba", "Case Solved: The London Files XBOX LIVE Key UNITED STATES",
+                         "https://www.eneba.com/xbox-case-solved-the-london-files-xbox-live-key-united-states")
+        self.assertEqual(self.cibles(res), [
+            ("XBOX_SERIES", _url("case-solved-the-london-files-xbox-key"), "303", "1")])
+        self.assertIn(_url("case-solved-the-london-files-key"), self.asked)
+
+    def test_gamerall_nba_2k27_sans_region_300(self):
+        """Gamerall 101109023, « NBA 2K27 (Xbox Live) », URL `…-standard-edition-xbox-live-global`
+        → GLOBAL : Xbox Series 300, Standard(1). La page PC `nba-2k27-key` (Steam) n'est pas une
+        cible."""
+        res = self.match("Gamerall", "NBA 2K27 (Xbox Live)",
+                         "https://gamerall.com/xbox/nba-2k27-standard-edition-xbox-live-global")
+        self.assertEqual(self.cibles(res), [
+            ("XBOX_SERIES", _url("nba-2k27-xbox-key"), "300", "1")])
+
+    def test_hidden_legends_2_one_et_combinee_dans_les_trois_regions(self):
+        """Eneba 101015625 / 101015620 / 101035305 : AKS a `-xbox-one-key` (méta Xbox One) ET la
+        combinée (méta Xbox Series X) — P4 inchangé, les deux pages, chacune dans SA case de la
+        région de la clé."""
+        for oid, region, one, series in (("101015625", "EUROPE", "24eu", "302"),
+                                         ("101015620", "UNITED KINGDOM", "226", "305"),
+                                         ("101035305", "UNITED STATES", "24us", "303")):
+            with self.subTest(oid):
+                res = self.match("Eneba", f"Hidden Legends 2 XBOX LIVE Key {region}",
+                                 "https://www.eneba.com/xbox-hidden-legends-2-xbox-live-key-"
+                                 + region.lower().replace(" ", "-"))
+                self.assertEqual(self.cibles(res), [
+                    ("XBOX_ONE", _url("hidden-legends-2-xbox-one-key"), one, "1"),
+                    ("XBOX_SERIES", _url("hidden-legends-2-xbox-key"), series, "1")])
+
+    def test_destiny_2_the_collection_us_one_24us_et_combinee_303(self):
+        """Eneba 100392601 : `destiny-2-the-collection-xbox-one-key` en 24us + la combinée en 303 —
+        jamais `destiny-2-xbox-one-code`, la page du jeu de base."""
+        res = self.match("Eneba", "Destiny 2: The Collection XBOX LIVE Key UNITED STATES",
+                         "https://www.eneba.com/xbox-destiny-2-legacy-collection-xbox-live-key-united-states")
+        self.assertEqual(self.cibles(res), [
+            ("XBOX_ONE", _url("destiny-2-the-collection-xbox-one-key"), "24us", "1"),
+            ("XBOX_SERIES", _url("destiny-2-the-collection-xbox-key"), "303", "1")])
+        self.assertNotIn(_url("destiny-2-xbox-one-code"), self.asked)
+
+    def test_14_couch_sans_page_pc_one_key_et_combinee(self):
+        """Eneba 101015258 : ni page PC, `-xbox-one-key` + combinée (lues le 29/09) — l'ancre est
+        la page Xbox One de repli, la combinée vient de son onglet."""
+        res = self.match("Eneba", "14 Couch Multiplayer Games XBOX LIVE Key EUROPE",
+                         "https://www.eneba.com/xbox-14-couch-multiplayer-games-xbox-live-key-europe")
+        self.assertEqual(self.cibles(res), [
+            ("XBOX_ONE", _url("14-couch-multiplayer-games-xbox-one-key"), "24eu", "1"),
+            ("XBOX_SERIES", _url("14-couch-multiplayer-games-xbox-key"), "302", "1")])
+
+    def test_grizzy_la_porte_2b_s_ouvre_r19_refuse_la_page_vide(self):
+        """Eneba 101045917 / 101043362. La page combinée RÉELLE (relue le 29/09) n'a AUCUNE offre,
+        donc aucune carte d'éditions : la règle 2b la prend comme page Xbox Series, puis R19
+        refuse — édition invérifiable, comme pour Kinguin « Grizzy … Xbox Series X|S » (génération
+        déclarée). Ce n'est plus le refus 2b."""
+        for oid, region in (("101045917", "EUROPE"), ("101043362", "UNITED STATES")):
+            with self.subTest(oid):
+                res = self.match("Eneba", f"Grizzy and the Lemmings - Crazy Party XBOX LIVE Key {region}",
+                                 "https://www.eneba.com/xbox-grizzy-and-the-lemmings-crazy-party-xbox-live-key-"
+                                 + region.lower().replace(" ", "-"))
+                self.assertIsInstance(res, SkippedOffer)
+                self.assertEqual(res.reason, "AKS XBOX_SERIES page carries no editions map — "
+                                             "edition unverifiable (R19, R45)")
+
+    def test_grizzy_page_combinee_simulee_avec_une_offre_302_et_303(self):
+        """PAGE COMBINÉE SIMULÉE : la vraie page Grizzy, plus une carte d'éditions (le jour où AKS
+        y aura une offre). EUROPE → 302, UNITED STATES → 303, Xbox Series seule."""
+        vraie = self.pages[_url("grizzy-and-the-lemmings-crazy-party-xbox-key")]
+        self.pages[_url("grizzy-and-the-lemmings-crazy-party-xbox-key")] = vraie.replace(
+            "</head>", '<script>var aks={"editions":{"1":{"name":"Standard"}}};</script>\n</head>')
+        for region, rid in (("EUROPE", "302"), ("UNITED STATES", "303")):
+            with self.subTest(region):
+                res = self.match("Eneba", f"Grizzy and the Lemmings - Crazy Party XBOX LIVE Key {region}",
+                                 "https://www.eneba.com/xbox-grizzy-and-the-lemmings-crazy-party-xbox-live-key-"
+                                 + region.lower().replace(" ", "-"))
+                self.assertEqual(self.cibles(res), [
+                    ("XBOX_SERIES", _url("grizzy-and-the-lemmings-crazy-party-xbox-key"), rid, "1")])
+
+    def test_far_cry_3_ligne_deja_creee_la_page_series_vide_refuse(self):
+        """Gamerall 101109116, « Far Cry 3 - Classic Edition (Xbox Live) », créée le 25/09 sur la
+        seule page Xbox One. Pages RÉELLES (29/09) : page PC ancienne (sans Play Anywhere), Xbox One
+        (`classic`), combinée Xbox Series X SANS offre. La règle 2b en fait la page Series, P4 la
+        garde à côté de la One, et R19 refuse la ligne entière — jamais une saisie One seule qui
+        perdrait la page Series qu'AKS a."""
+        M.set_sitemap_index(_index(INDEX_28_09, legacy={"far-cry-3"}))
+        self.pages["https://www.allkeyshop.com/blog/compare-and-buy-cd-key-for-digital-download-far-cry-3/"] = (
+            (FIX / "legacy" / "far-cry-3.html").read_text(encoding="utf-8"))
+        res = self.match("Gamerall", "Far Cry 3 - Classic Edition (Xbox Live)",
+                         "https://gamerall.com/xbox/far-cry-3-classic-edition-classic-edition-xbox-live-europe")
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertEqual(res.reason, "AKS XBOX_SERIES page carries no editions map — "
+                                     "edition unverifiable (R19, R45)")
+        self.assertIn(_url("far-cry-3-xbox-one"), self.asked)
+
+    def test_page_combinee_simulee_declaree_xbox_one_refus(self):
+        """PAGE COMBINÉE SIMULÉE dont la méta déclare Xbox ONE : hors du go (qui ne nomme que la
+        page déclarée Xbox Series) — refus explicite, jamais une saisie Xbox One devinée."""
+        self.pages[_url("sora-songs-of-the-stone-xbox-key")] = _page_simulee(
+            "Sora Songs of the Stone Xbox Key", "Xbox One")
+        res = self.match("Eneba", "Sora: Songs of the Stone XBOX LIVE Key UNITED KINGDOM",
+                         "https://www.eneba.com/xbox-sora-songs-of-the-stone-xbox-live-key-united-kingdom")
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("rule 2b covers a combined page declared Xbox Series only", res.reason)
+        self.assertIn("declares XBOX_ONE", res.reason)
+
+    def test_pages_simulees_deux_pages_series_refus(self):
+        """PAGES SIMULÉES : la page PC relie `-xbox-series` (standard) ET la combinée déclarée
+        Series — deux pages pour une même console, le refus [R65] existant (on ne choisit pas)."""
+        M.set_sitemap_index(_index(INDEX_28_09 | {"sora-songs-of-the-stone-cd-key",
+                                                  "sora-songs-of-the-stone-xbox-series"}))
+        self.pages[_url("sora-songs-of-the-stone-cd-key")] = _page_simulee(
+            "Sora Songs of the Stone CD Key", "PC", officielles="Steam",
+            onglets=(_url("sora-songs-of-the-stone-xbox-series"),
+                     _url("sora-songs-of-the-stone-xbox-key")))
+        self.pages[_url("sora-songs-of-the-stone-xbox-series")] = _page_simulee(
+            "Sora Songs of the Stone Xbox Series", "Xbox Series X")
+        res = self.match("Eneba", "Sora: Songs of the Stone XBOX LIVE Key UNITED KINGDOM",
+                         "https://www.eneba.com/xbox-sora-songs-of-the-stone-xbox-live-key-united-kingdom")
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("2 different XBOX_SERIES pages", res.reason)
+
+    def test_pages_simulees_page_pc_play_anywhere_p2_inchange(self):
+        """PAGES SIMULÉES : si la page PC de Case Solved listait « Xbox Play Anywhere », P2
+        s'appliquerait comme avant (la règle 2b n'y touche pas) : page combinée en XBOX/PC US 242
+        + la page PC. C'est P2 qui ajoute la page PC, jamais la règle 2b."""
+        vraie = self.pages[_url("case-solved-the-london-files-key")]
+        self.pages[_url("case-solved-the-london-files-key")] = vraie.replace(
+            "official platforms: Steam.", "official platforms: Xbox Play Anywhere, Steam.")
+        self.assertIn("Xbox Play Anywhere", self.pages[_url("case-solved-the-london-files-key")])
+        res = self.match("Eneba", "Case Solved: The London Files XBOX LIVE Key UNITED STATES",
+                         "https://www.eneba.com/xbox-case-solved-the-london-files-xbox-live-key-united-states")
+        self.assertEqual(self.cibles(res), [
+            ("XBOX_SERIES", _url("case-solved-the-london-files-xbox-key"), "242", "1"),
+            ("XBOX_PC", _url("case-solved-the-london-files-key"), "242", "1")])
+
+    def test_pages_simulees_cle_windows_play_anywhere_regle_inchangee(self):
+        """PAGES SIMULÉES (index réel : `kabuto-park-cd-key`, `-xbox-one-key`, `-xbox-key`). Eneba
+        « Kabuto Park PC/XBOX LIVE Key EUROPE » (offre 101046284, créée le 26/09 en XBOX/PC EU 241
+        sur la seule page PC) : une clé Windows dont la page PC est Play Anywhere prend « les pages
+        Xbox qu'AKS a » (P4) + la page PC — la combinée déclarée Series en fait partie, comme pour
+        toute clé P4 ; la règle de la clé Windows est inchangée (ancre PC, case XBOX/PC)."""
+        M.set_sitemap_index(_index(INDEX_28_09 | {"kabuto-park-cd-key", "kabuto-park-xbox-one-key",
+                                                  "kabuto-park-xbox-key", "kabuto-park-nintendo-switch"}))
+        self.pages[_url("kabuto-park-cd-key")] = _page_simulee(
+            "Kabuto Park CD Key", "PC", officielles="Xbox Play Anywhere, Steam",
+            onglets=(_url("kabuto-park-xbox-one-key"), _url("kabuto-park-xbox-key")))
+        self.pages[_url("kabuto-park-xbox-one-key")] = _page_simulee(
+            "Kabuto Park Xbox One Key", "Xbox One", product_id="901")
+        self.pages[_url("kabuto-park-xbox-key")] = _page_simulee(
+            "Kabuto Park Xbox Key", "Xbox Series X", product_id="902")
+        res = self.match("Eneba", "Kabuto Park PC/XBOX LIVE Key EUROPE",
+                         "https://www.eneba.com/xbox-kabuto-park-pc-xbox-live-key-europe")
+        self.assertEqual(self.cibles(res), [
+            ("XBOX_ONE", _url("kabuto-park-xbox-one-key"), "241", "1"),
+            ("XBOX_SERIES", _url("kabuto-park-xbox-key"), "241", "1"),
+            ("XBOX_PC", _url("kabuto-park-cd-key"), "241", "1")])
+
+    def test_generation_declaree_inchangee_nhl_27(self):
+        """Témoin : une génération DÉCLARÉE sur la combinée ne passe pas par la règle 2b — G2A
+        « NHL 27 | Deluxe Edition (Xbox Series X/S) » garde 302, Deluxe(7)."""
+        res = self.match("G2A", "NHL 27 | Deluxe Edition (Xbox Series X/S) - Xbox Live Key - EUROPE",
+                         "https://www.g2a.com/nhl-27-deluxe-edition-xbox-series-x-s-xbox-live-key-europe-i10000515909006")
+        self.assertEqual(self.cibles(res), [("XBOX_SERIES", _url("nhl-27-xbox-key"), "302", "7")])
 
 if __name__ == "__main__":
     unittest.main()

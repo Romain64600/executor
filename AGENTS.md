@@ -212,17 +212,37 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
 - **`[R65]` Pages console « -key » / « -code » et page Xbox combinée — Romain, 2026-09-29** (même
   go, proposition 2). Sept gabarits de repli (`CONSOLE_FAMILY_TEMPLATES`), standard d'abord,
   sondés seulement si l'index les publie ; deux pages pour une même console → refus ; la méta de
-  la page reste le juge ; P1 inchangé ; la page `-xbox-key` est rangée selon sa MÉTA et ne sert
-  qu'une génération DÉCLARÉE. Un audit voudra : (a) allonger `CONSOLE_PAGE_KINDS` — non, il
+  la page reste le juge ; P1 inchangé ; la page `-xbox-key` est rangée selon sa MÉTA et sert une
+  génération DÉCLARÉE égale — et, depuis la règle 2b ci-dessous, un Xbox sans génération quand
+  elle se déclare Xbox Series. Un audit voudra : (a) allonger `CONSOLE_PAGE_KINDS` — non, il
   nourrit `_AKS_PAGE_URL_RE` et `[R18c]` ; (b) choisir entre deux pages d'une même console
-  (« la standard gagne ») — non, refus ; (c) utiliser la page combinée pour une génération
-  DÉDUITE (P4) — **non tranché (2b)** : Romain a demandé des exemples avant de décider, le refus
-  explicite « 2b, non tranché » reste jusqu'à sa réponse ; il coûte une ligne déjà créée,
-  Gamerall « Far Cry 3 - Classic Edition (Xbox Live) » (page combinée Series), voulu ; (d) ajouter
+  (« la standard gagne ») — non, refus ; (c) la page combinée pour une génération DÉDUITE (P4) —
+  **tranché le 2026-09-29, règle 2b ci-dessous** (« 2b, non tranché » jusque-là) ; (d) ajouter
   `ps4-game-code` / `key-nintendo-switch-2` — hors du go (5 lignes) ; (e) retirer le PRÉALABLE
   (un nom de pays suivi d'une région vendable reste dans le nom de garde console et dans le slug,
   `keep_country`) — non : sans lui, « Assassin's Creed Chronicles China (Europe) » entrerait sur
   la page de la trilogie. EXECUTOR_RULES `[R65]`.
+
+- **Règle 2b `[R65]` — un Xbox SANS génération entre sur la page combinée déclarée Xbox Series —
+  Romain, 2026-09-29**, après avoir vérifié les pages Microsoft des exemples, mot pour mot :
+  « go pour la règle Xbox sans génération ». Une clé « XBOX LIVE Key » / « (Xbox Live) » (P4)
+  dont le jeu n'a, côté Xbox Series, que la page `<slug>-xbox-key` (méta Xbox Series X) y entre
+  en XBOX_SERIES, dans la région que la clé dit (UK 305, EU 302, US 303, sans région 300) ; quand
+  AKS a aussi une page Xbox One, P4 inchangé : les deux pages. Un audit voudra : (a) élargir la
+  région (« une clé UK sur une page combinée, autant GLOBAL ») — non, jamais : Eneba « Sora:
+  Songs of the Stone XBOX LIVE Key UNITED KINGDOM » → 305, jamais 302 ni 300 ; (b) ajouter la
+  page PC « puisque le jeu y est aussi » — non : ces clés ne déclarent ni PC ni Windows ; seuls
+  P2 (page PC Play Anywhere, ou Xbox + PC déclarés) et la clé Windows l'ajoutent, inchangés ;
+  (c) accepter une page combinée qui se déclare Xbox ONE — non, hors du go, refus explicite
+  (`rule 2b covers a combined page declared Xbox Series only`) ; (d) choisir entre la combinée et
+  une page Xbox Series standard — non, deux pages pour une console restent le refus `[R65]` ;
+  (e) laisser entrer la page combinée SANS offre (Grizzy, Far Cry 3 — aucune carte d'éditions) —
+  non, R19 la refuse comme toute page vide, et avec elle la ligne entière (P4) : Gamerall « Far
+  Cry 3 - Classic Edition (Xbox Live) », créée le 25/09 sur la seule page Xbox One, est refusée
+  tant que la page Series n'a pas d'offre — voulu, on ne perd pas une page qu'AKS a ; (f) la
+  retirer aux clés Windows Play Anywhere — non : elles prennent « les pages Xbox qu'AKS a » (P4),
+  la combinée déclarée Series en est une. EXECUTOR_RULES `[R65]` (règle 2b) et §4.12 P4,
+  `tests/test_resolver_repli_r64_r65.py` (`R65Regle2b`).
 
 - **`[R63]` Clés EA « English only » : case 31 sans verrou, 3euen sinon 3eu en Europe —
   Romain, 2026-09-28** : « go pour les clés EA English only en case 31 », puis, mot pour mot :

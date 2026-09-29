@@ -5216,7 +5216,9 @@ def _combined_xbox_page(
     vise aucune Xbox, qu'aucune page combinée n'est connue, qu'elle a disparu (404) ou que sa
     méta ne nomme pas une génération VISÉE par la ligne (P1) ; un ``str`` = motif de refus
     (page illisible). Connue = l'ancre elle-même, un onglet de l'ancre, ou — index frais — la
-    page publiée au même slug qu'une page Xbox connue ou que l'ancre console. Lue une fois."""
+    page publiée au même slug qu'une page Xbox connue ou que l'ancre console. Lue une fois.
+    Ce qu'une génération DÉDUITE (P4) peut en faire — la règle 2b du 2026-09-29 — se décide
+    dans la boucle de `_console_plan`, pas ici."""
 
     xbox = [f for f in families if f in ("XBOX_ONE", "XBOX_SERIES")]
     if not xbox:
@@ -5584,7 +5586,8 @@ def _console_plan(
     # famille sont l'ancre (si son gabarit est de la famille), les onglets de ses gabarits, et
     # les pages que l'index publie au MÊME slug sous un autre de ses gabarits. Deux pages
     # différentes pour une même console → refus : on ne choisit pas. La page Xbox combinée
-    # `-xbox-key` est rangée selon sa MÉTA, jamais selon son gabarit (`_combined_xbox_page`).
+    # `-xbox-key` est rangée selon sa MÉTA, jamais selon son gabarit (`_combined_xbox_page`) ;
+    # déclarée Xbox Series, elle sert aussi une génération DÉDUITE (règle 2b, plus bas).
     known = _console_family_pages(families, anchor, anchor_kind)
     combined = _combined_xbox_page(families, anchor, anchor_kind, known, page_resolver)
     if isinstance(combined, str):
@@ -5600,11 +5603,23 @@ def _console_plan(
                 offer,
                 f"console: AKS has {len(candidates)} different {fam} pages "
                 f"({', '.join(u for _k, u in candidates)}) — ambiguous page, not entered (R65)")
-        if candidates and candidates[0][0] == XBOX_COMBINED_TEMPLATE and inferred:
+        # [R65] règle 2b — DÉCIDÉ Romain 2026-09-29 (« go pour la règle Xbox sans génération »,
+        # après avoir vérifié les pages Microsoft des exemples). Une clé Xbox SANS génération
+        # déclarée (P4 : « XBOX LIVE Key », « (Xbox Live) ») prend la page combinée
+        # `<slug>-xbox-key` comme page XBOX_SERIES quand sa MÉTA déclare Xbox Series — seule
+        # (Eneba « Sora: Songs of the Stone … UNITED KINGDOM » → 305) ou à côté de la page
+        # Xbox One qu'AKS a aussi (« Hidden Legends 2 » : `-xbox-one-key` + combinée). La région
+        # est celle de la clé, jamais élargie (`_bucket` : 300 / 302 / 303 / 305) ; jamais la
+        # page PC par cette règle (seuls P2 et la clé Windows l'ajoutent, inchangés) ; deux
+        # pages pour une même console restent le refus du dessus. Une page combinée dont la
+        # méta déclare Xbox ONE n'est pas dans le go : refus explicite, pas une supposition.
+        if (candidates and candidates[0][0] == XBOX_COMBINED_TEMPLATE and inferred
+                and fam != "XBOX_SERIES"):
             return SkippedOffer(
                 offer,
                 f"console: generation deduced (P4) and the only {fam} page is the combined Xbox "
-                f"page {candidates[0][1]} — 2b, non tranché (R65)")
+                f"page {candidates[0][1]}, which declares {fam} — rule 2b covers a combined page "
+                "declared Xbox Series only, not entered (R65)")
         kind, url = candidates[0] if candidates else (CONSOLE_PAGE_KIND[fam], "")
         if anchor_kind == kind and url == anchor.url:
             page = anchor

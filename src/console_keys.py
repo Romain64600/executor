@@ -113,9 +113,9 @@ CONSOLE_FAMILY_TEMPLATES: dict[str, tuple[str, ...]] = {
 }
 # [R65] 2b — la page Xbox COMBINÉE `buy-<slug>-xbox-key-compare-prices/` : son gabarit ne dit
 # pas la génération, sa MÉTA de plateforme si (NHL 27, Hidden Legends 2, Destiny 2 The
-# Collection : « Xbox Series X »). Elle ne sert QUE pour une génération DÉCLARÉE égale à celle
-# que la page déclare ; une génération DÉDUITE (P4) sur cette page reste refusée (« 2b, non
-# tranché » — la décision attend Romain).
+# Collection : « Xbox Series X »). Elle sert une génération DÉCLARÉE égale à celle que la page
+# déclare ; et, règle 2b (Romain 2026-09-29, « go pour la règle Xbox sans génération »), une
+# génération DÉDUITE (P4) quand la page se déclare Xbox Series — jamais Xbox One par ce chemin.
 XBOX_COMBINED_TEMPLATE = "xbox-key"
 CONSOLE_TEMPLATE_FAMILY: dict[str, str] = {
     t: fam for fam, templates in CONSOLE_FAMILY_TEMPLATES.items() for t in templates}

@@ -371,7 +371,8 @@ Deux autres lignes ont bien une page mais auraient dû être refusées pour une 
 
 Aucune n'a été codée : **tout attend ton go.** *(Mise à jour du 29/09 : go de Romain pour 1 et 2 —
 « go pour les corrections 1 et 2 et les vérifications » — codées sous `[R64]` et `[R65]`,
-EXECUTOR_RULES ; 2b reste non tranché. Même jour : la proposition 11 — « La recherche AKS en dernier
+EXECUTOR_RULES ; 2b tranché le même jour — « go pour la règle Xbox sans génération », règle 2b de
+`[R65]`. Même jour : la proposition 11 — « La recherche AKS en dernier
 recours me semble indispensable » — codée sous `[R66]` : 21 pages connues sur 24 dans la réponse
 de l'API au rejeu, 1 entrée, 0 page proposée pour 12 lignes vraiment absentes.)* Chacune respecte « config par marchand » pour
 ce qui relève de la grammaire d'un marchand. Chacune se relit sur un corpus figé avant d'être
