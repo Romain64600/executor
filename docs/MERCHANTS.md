@@ -388,7 +388,7 @@ matcher et le classifieur importent le registre.
   crochet produit (« [Remake] », « [VR] », « [2014] », « [DLC] », « [Banjo & Kazooie] »).
   `resolve_name` retire ces crochets du SLUG — et le « - XX » qui en suit un en fin de titre —,
   les gardes lisent toujours le titre brut (« Card », « Gamecard », « Official », « Greencode »
-  restent des mots en trop). Le code DANS le crochet (deux capitales hors PC / EA / EN) et le
+  restent des mots en trop). Le code DANS le crochet (deux capitales qui ne sont ni un mot de livraison — PC, EA, CD — ni EN) et le
   « - XX » qui le suit sont LUS par `region_code` : vendable → `title_region` ; inconnu (DE) →
   `forbidden region: DE` ; deux codes différents → « MMOGA region conflict … — not entered ».
   **Pourquoi la lecture du code est un préalable, pas un extra** : la lecture générique ne voit
@@ -407,7 +407,9 @@ matcher et le classifieur importent le registre.
   3eu ; Days Gone, The Last of Us Part I en STEAM GLOBAL 2 ; ESO Necrom Collection en
   Collection 98), 2 corrections de région (GLOBAL → EU, ci-dessus), 2 refus explicites
   « forbidden region: DE » (au lieu de R16 / 404), 5 refus « extra words » (Card / Gamecard) ;
-  signaux console identiques sur les 2 137 titres MMOGA.
+  signaux console identiques sur les 2 137 titres MMOGA. Reste ouvert (préexistant, non modifié) : une queue « - DE » SANS
+  crochet devant n'est pas lue (GLOBAL implicite ; 0 ligne de ce type sur les 2 137 titres) —
+  seul le créneau qui suit un crochet de livraison l'est.
 - **English only `[R63]` (2026-09-28)** : MMOGA écrit la mention dans (ou à côté de) son
   crochet de livraison — « GRID Legends [EN Key - English Only] », « EA Sports FC 25 [PC
   Version / EA App EN Key - English only] », « A Way Out [EA App Key EN - English Only] - EU »,

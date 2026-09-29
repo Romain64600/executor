@@ -89,9 +89,10 @@ proposition 6 de l'audit du 28/09 (crochets MMOGA hors du slug) codée avec (EXE
   passent de « no AKS product page found » à **STEAM GIFT EU (259)** ; 45 lignes MMOGA à crochet
   de livraison → 13 nouvelles candidates, 2 corrections de région, 2 refus DE explicites ;
   signaux console identiques sur les 2 137 titres MMOGA.
-- **Tests** : `tests/test_altergift_generic_r32f.py` (19 tests, titres et pages réels ;
+- **Tests** : `tests/test_altergift_generic_r32f.py` (20 tests, titres et pages réels ;
   mutations vérifiées : lecture cadeau générique, garde Steam, retrait des gardes / du slug,
-  lecture du code du crochet, mots produit, exclusion EN, False de K4G / Kinguin) ; les tests
+  lecture du code du crochet, mots produit, exclusion EN et CD, False de K4G / Kinguin ;
+  les trois nouvelles raisons restent « garder », jamais une liste de déplacement) ; les tests
   K4G / Kinguin qui décrivaient l'ancien générique (« extra words: ['ALTERGIFT'] » sans fichier)
   décrivent le nouveau.
 

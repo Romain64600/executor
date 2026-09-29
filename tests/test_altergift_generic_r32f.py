@@ -41,6 +41,7 @@ from src.merchants import k4g, kinguin, mmoga  # noqa: E402
 from src.merchants.common import (  # noqa: E402
     SKIP_ALTERGIFT_NOT_STEAM, drop_altergift, is_altergift, names_steam_alone,
 )
+from src.aks_lists import suggest_target_list  # noqa: E402
 from src.submitter import resolve_catalog_id  # noqa: E402
 
 CATALOG = json.loads((ROOT / "tests" / "fixtures" / "region_catalog_2026-09-26.json")
@@ -320,6 +321,7 @@ class MmogaDeliveryBracketTests(unittest.TestCase):
             ("Returnal [PC - Steam Key]", None, None),
             ("FIFA 23 - Ultimate Edition [PC - Origin EN Key] - English Only", None, None),   # EN ≠ région
             ("A Way Out [EA App Key EN - English Only] - EU", None, None),   # [R63] bracket: generic tail
+            ("Game [EU CD Key]", "EU", "eu"),     # synthétique : « CD » est un mot de livraison, pas un code
         ):
             with self.subTest(title=title):
                 self.assertEqual(mmoga.region_code(title), code)
@@ -373,6 +375,15 @@ class MmogaDeliveryBracketTests(unittest.TestCase):
                 r = match_offer(_offer("MMOGA", title, url), resolver=lambda name, **kw: page, consoles=True)
                 self.assertIsInstance(r, SkippedOffer)
                 self.assertIn("extra words", r.reason)
+
+    def test_new_reasons_are_kept_never_moved(self):
+        # a Blacklist label skips the present-on-target check and MOVES the feed row (§14): the
+        # three reasons this change introduces must route to « garder » (None), never a list
+        for reason in (SKIP_ALTERGIFT_NOT_STEAM,
+                       mmoga.precheck("Game [Steam Key US] - EU", ""),
+                       mmoga.precheck("EA Sports FC 25 [PC Version / EA Gamecard] - DE", "")):
+            with self.subTest(reason=reason):
+                self.assertIsNone(suggest_target_list(reason))
 
     def test_console_rows_unchanged(self):
         sig = classify_console("Ride 4 - Xbox One Download Code [EU Key]",

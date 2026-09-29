@@ -545,7 +545,7 @@ route only, and EN is never a region), never a product bracket ("[Remake]", "[VR
 title — from the SLUG only (`firewatch`, not the 404 `firewatch-eu-steam-altergift`); the
 identity guards keep reading the raw title, so "[Steam Game Card]" / "[… Gamecard]" /
 "[Official Key]" stay extra words (R16) and "[Greencode Key]" too; (2) the region code INSIDE
-a delivery bracket (two capitals other than PC / EA / EN) and the " - XX" slot right after one
+a delivery bracket (two capitals that are neither a delivery word — PC / EA / CD, "[EU CD Key]" has ONE code — nor EN) and the " - XX" slot right after one
 are READ by `region_code` — a sellable code → `title_region` (authoritative), an unmapped code
 (DE) → `forbidden region: DE`, two different codes in one title → "MMOGA region conflict: … —
 not entered", never one of the two. (2) is a PREREQUISITE of (1), not an extra: the generic scan
@@ -554,7 +554,9 @@ enters an EU key as implicit GLOBAL(2) — which already happened twice where th
 block the slug (offers 101040244 "Horizon Forbidden West - Complete Edition [Steam PC Key EU]"
 and 101039968 "Marvel's Spider-Man Remastered [PC - Steam Key EU]", created STEAM GLOBAL(2) on
 2026-09-11 — to correct by hand, Romain's call). Measured over the 2 137 MMOGA titles of all
-runs: 45 change, all carrying a delivery bracket; console signals identical.
+runs: 45 change, all carrying a delivery bracket; console signals identical. Open (pre-existing, not
+changed): a bare " - DE" tail with NO bracket before it is still unread and would fall to implicit
+GLOBAL (0 such row among the 2 137 MMOGA titles); only the slot right after a delivery bracket is read.
 **A region phrase that is part of the AKS PRODUCT NAME is identity, not a lock
 `[R44]`** (R43 dry-run 2026-09-11): "Age of Empires III Definitive Edition - United
 States Civilization (DLC)" carries `-united-states-` in its merchant slug and the URL

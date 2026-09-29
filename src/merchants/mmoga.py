@@ -114,8 +114,9 @@ DELIVERY_BRACKET_WORDS = frozenset({
     "ORIGIN", "EPIC", "GAMES", "STORE", "OFFICIAL", "GREENCODE", "UBISOFT", "CONNECT", "GOG",
     "ROCKSTAR",
 })
-# Deux capitales qui ne sont PAS une région : la plateforme (PC, EA) et la langue (EN, [R63]).
-_NOT_REGION_CODES = frozenset({"PC", "EA", "EN"})
+# Deux capitales qui ne sont PAS une région : tout mot du vocabulaire de livraison écrit en deux
+# lettres (PC, EA, CD — « [EU CD Key] » n'a qu'UN code) et la langue (EN, [R63]).
+_NOT_REGION_CODES = frozenset({w for w in DELIVERY_BRACKET_WORDS if len(w) == 2} | {"EN"})
 _CODE_TOKEN_RE = re.compile(r"[A-Z]{2}")
 # « … [<crochet de livraison>] - DE » : le créneau de région écrit juste APRÈS le crochet
 # (« EA Sports FC 25 [PC Version / EA Gamecard] - DE », « Immortals of Aveum [PC Version, EA App
