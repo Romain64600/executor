@@ -3,6 +3,17 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-29 — `[R67]` CJS : « Steam Key: United Kingdom » n'est plus écrit en GLOBAL (correctif)
+
+Trouvé par la relecture de la branche resolver-fixes. CJS écrit la région après « Key: » ; la
+lecture générique ne connaît que la queue « - X » : « United Kingdom » tombait au GLOBAL
+implicite. **122 écritures fausses** relevées sur les deux VPS (Steam GLOBAL 120, Epic 1, EA 1),
+toutes « United Kingdom » ; aucune clé d'un autre pays n'a été écrite (elles étaient refusées
+ailleurs ou jamais atteintes). Liste pour correction manuelle : `/tmp/tri/cjs_uk_ecrites_en_global.csv`
+sur la nouvelle VM. `src/merchants/cjs.py` lit maintenant le créneau (EXECUTOR_RULES `[R67]`,
+MERCHANTS) ; tout autre pays ou zone est refusé par son nom. Tests :
+`tests/test_merchants_cjs_r67.py`. Effet à la page suivante de tout sweep.
+
 ## 2026-09-29 — Boucle : dix échecs d'affilée l'arrêtent aussi (audit de Romain, P1)
 
 Audit de Romain (436573a → 599fa87) : « La boucle redémarre après un blocage du StepGuard —

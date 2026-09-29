@@ -116,8 +116,19 @@ class CommonVocabularyTests(unittest.TestCase):
 
 
 class NeverSweptMerchantsTests(unittest.TestCase):
-    def test_allyouplay_and_cjs_declare_identity_only(self):
-        for mod, name, domain in ((allyouplay, "Allyouplay", "allyouplay.com"), (cjs, "CJS-CDKeys", "cjs-cdkeys.com")):
+    def test_cjs_declares_its_region_slot_since_r67(self):
+        # CJS n'est plus « jamais balayé » depuis le 19/09 : son créneau de région après « Key: »
+        # est lu par son fichier depuis le 2026-09-29 ([R67] — 122 « United Kingdom » écrites en
+        # GLOBAL auparavant). Ses autres hooks restent vides.
+        cfg = cjs.CONFIG
+        self.assertEqual((cfg.name, cfg.domain), ("CJS-CDKeys", "cjs-cdkeys.com"))
+        self.assertIs(cfg.precheck, cjs.precheck)
+        self.assertIs(cfg.title_region, cjs.title_region)
+        for hook in ("resolve_name", "url_platform", "offer_page_resolver"):
+            self.assertIsNone(getattr(cfg, hook), hook)
+
+    def test_allyouplay_declares_identity_only(self):
+        for mod, name, domain in ((allyouplay, "Allyouplay", "allyouplay.com"),):
             with self.subTest(merchant=name):
                 cfg = mod.CONFIG
                 self.assertIsInstance(cfg, MerchantConfig)
@@ -129,7 +140,7 @@ class NeverSweptMerchantsTests(unittest.TestCase):
                     if config_has_field(hook):
                         self.assertEqual(getattr(cfg, hook), () if hook == "console_noise" else None, hook)
                 self.assertNotIn("console_hooks_pending", cfg.extra)
-                self.assertTrue(pathlib.Path(mod.__file__).name in ("allyouplay.py", "cjs.py"))
+                self.assertTrue(pathlib.Path(mod.__file__).name == "allyouplay.py")
 
     def test_registry_names_of_auto_merchants(self):
         # the spellings the allowlist uses must be the CONFIG names (case-folded by the registry)

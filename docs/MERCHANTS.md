@@ -649,7 +649,17 @@ matcher et le classifieur importent le registre.
 - **Grammaire PC / console** : **aucune donnée** — jamais balayé, pas d'historique ; même
   logique qu'Allyouplay : le fichier porte la règle et recevra la grammaire relevée au
   dry-run, rien n'est inventé d'ici là.
-- **Hooks** : `domain` et, depuis le 24/09, `url_identity_params=("variation",)`.
+- **Hooks** : `domain` et, depuis le 24/09, `url_identity_params=("variation",)` ; depuis le
+  29/09, `title_region` + `precheck` (`[R67]`, ci-dessous).
+- **Créneau de région `[R67]` (2026-09-29, correctif).** CJS écrit la région APRÈS « Key: » /
+  « Code: » / « (Steam): » : « DYSMANTLE Steam Key: United Kingdom ». La lecture générique ne lit
+  que la queue « - X » : **120 clés Steam « United Kingdom »** (plus une EA, une Epic) ont été
+  écrites en **GLOBAL** au lieu du seau UK (liste à corriger à la main : CHANGELOG du 29/09).
+  Désormais : Global / GLOBAL → monde ; Europe / EU / Europe & UK / « EU Multi-Language … (region
+  free) » → Europe ; USA → US ; United Kingdom → UK (Steam 71, EA 3uk…) ; tout autre pays ou zone
+  (China, Italy, Nigeria, MENA, « US Region (North America) »…) → refus nommé, jamais le GLOBAL
+  implicite. Un créneau d'édition ou de contenu (« Standard Edition », « Include Nuketown 2025
+  pack », « English Only ») laisse la main à la lecture générique. Relevé : 6 275 titres CJS.
 - **`variation=` est l'identité de l'annonce (2026-09-24).** « …/Ash-of-Gods%3A-The-Way-Steam-
   Key.html?variation=609 » et « …?variation=608 » sont deux annonces (deux régions) sur le MÊME
   chemin. Chemin seul, la sœur restée au feed faisait sortir chaque création « STILL in feed » :

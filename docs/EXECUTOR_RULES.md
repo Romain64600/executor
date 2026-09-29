@@ -3426,6 +3426,20 @@ verrouillée Europe. 0 faux positif sur 86 820 lignes distinctes des runs de cet
   correctifs (71 sous-tests en échec + 1 erreur, puis verts), et 14 mutations de ces correctifs
   les rougissent toutes.
 
+### `[R67]` CJS-CDKeys — le créneau de région après « Key: » (2026-09-29, correctif)
+
+« DYSMANTLE Steam Key: United Kingdom » tombait au GLOBAL implicite : la lecture générique
+(`_detect_region_parts`) ne lit la queue qu'après « - », et « UNITED KINGDOM » n'est lu en plein
+titre que sous la forme « UK ». Mesuré le 29/09 sur les deux VPS : 122 écritures fausses (Steam
+GLOBAL 120, Epic GLOBAL 1, EA GLOBAL 1), toutes « United Kingdom ». `src/merchants/cjs.py` lit le
+créneau qui suit le dernier « Key: » / « Code: » / « Account: » / « ): » : Global → monde ;
+Europe, EU, Europe & UK, « EU Multi-Language … (region free) » → Europe ; USA → US ; United Kingdom
+→ UK. Un créneau qui NOMME un autre lieu (lettres seulement, sans mot d'édition ou de contenu, ou
+« … Region … ») est refusé — `forbidden region: …` quand le vocabulaire partagé le connaît,
+« CJS : région « X » (pays ou zone) non vendable » sinon. Un créneau d'édition ou de contenu
+laisse la lecture générique inchangée. Les lignes console gardaient déjà le bon seau UK (classifieur
+partagé) : inchangées. Tests : `tests/test_merchants_cjs_r67.py` (4 mutations rougies).
+
 ### `[R62]` Clé Microsoft Store — la page AKS doit lister « Microsoft Windows » (2026-09-26)
 
 Romain : « … puis aligne l'ancien chemin Microsoft Store ». La branche « (Windows) XBOX LIVE
