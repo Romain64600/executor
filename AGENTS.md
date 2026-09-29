@@ -141,6 +141,27 @@ No degraded mode.
 These are deliberate, Romain-reviewed calls. An adversarial audit re-derives them as
 "findings" every time; leave them AS-IS unless Romain explicitly changes his mind.
 
+- **`[R66]` Recherche catalogue AKS en dernier recours — Romain, 2026-09-29** (« La recherche
+  AKS en dernier recours me semble indispensable », proposition 11 de l'audit « pas de page
+  produit » du 28/09). Passe 5 de `resolve_aks`, index frais ou non, page clé PC seulement :
+  l'API que le front du site appelle (`…/api/v2-1-250304/vakrs_catalogv2.php`, ≈ 500 o), des
+  CANDIDATS seulement, chaque page relue et jugée par toutes les gardes. Elle revient
+  VOLONTAIREMENT en partie sur « sitemap d'abord » (24/09) : au plus une requête par offre sans
+  page, bornée par un budget de 1 000 par balayage et un cache de 14 jours (réponses vides
+  comprises). Un audit voudra : (a) retirer la requête « puisque l'index fait autorité » — non,
+  c'est la décision de Romain, l'index n'est pas exhaustif et ne devine aucun nom ; (b) deviner
+  la nouvelle version quand l'API change (404, JSON différent) — non : refus nommé `(R66)`,
+  recherche coupée pour le balayage, un humain relit `/blog/products/` ; (c) lâcher le filtre
+  « chaque mot du nom du catalogue est dans le titre » pour gagner du rappel — non, c'est le côté
+  requis de R01 (21 pages connues trouvées par l'API sur 24 au rejeu ; 15 non proposées — 12 par
+  ce filtre, 3 pages console par la grammaire —, toutes refusées par R01 de toute façon) ; les alias (« COD », « GTA 5 ») restent une décision de
+  Romain ; (d) laisser entrer Standard(1) / DLC(16) ou un logiciel sur une page dont le nom n'a pas
+  tous les mots du titre — non, même règle que `[R64]` (« Marvel's Midnight Suns Digital+
+  Edition » entrerait en Standard) ; (e) raccourcir la durée de vie des réponses vides — non :
+  elles dominent (≈ 47 % des lignes n'ont vraiment pas de page), le budget ne suivrait plus ;
+  (f) réutiliser `?s=` — morte depuis le 22/09, atteinte seulement sans session. EXECUTOR_RULES
+  `[R66]`, `tests/test_aks_search_r66.py`.
+
 - **`[R64]` Rang de repli « nom d'édition retiré, confirmé par l'index » — Romain, 2026-09-29**
   (« go pour les corrections 1 et 2 et les vérifications », proposition 1 de l'audit « pas de page
   produit » du 28/09). « The Secret of Monkey Island: Special Edition » → la page de base

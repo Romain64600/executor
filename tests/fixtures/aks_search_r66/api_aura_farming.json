@@ -1,0 +1,5 @@
+{
+ "query": "Aura Farming",
+ "fetched": "2026-09-29, AKS/Staff, API v2-1-250304 (lecture seule)",
+ "body": "{\"products\":[],\"pagination\":{\"total\":0,\"per_page\":24,\"pagenum\":1,\"total_pages\":0,\"took\":3},\"facets\":{}}"
+}

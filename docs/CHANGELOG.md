@@ -14,6 +14,42 @@ sur la nouvelle VM. `src/merchants/cjs.py` lit maintenant le créneau (EXECUTOR_
 MERCHANTS) ; tout autre pays ou zone est refusé par son nom. Tests :
 `tests/test_merchants_cjs_r67.py`. Effet à la page suivante de tout sweep.
 
+## 2026-09-29 — `[R66]` recherche catalogue AKS en dernier recours
+
+Romain : « La recherche AKS en dernier recours me semble indispensable » — proposition 11 de
+l'audit du 28/09. EXECUTOR_RULES `[R66]` (+ §4.7 passe 5, R30 et son disjoncteur) ; AGENTS
+« Reviewed decisions » ; README ; tests `tests/test_aks_search_r66.py` (54 tests, réponses réelles
+de l'API et pages AKS réelles réduites, `tests/fixtures/aks_search_r66/`) ; 35 mutations, toutes
+rouges.
+
+- **Nouveau module `src/aks_search.py`** : l'API catalogue que le front de `/blog/products/`
+  appelle (`…/api/v2-1-250304/vakrs_catalogv2.php`, relue le 29/09, `fields=id,name,link,type`,
+  ≈ 500 o), agent `AKS/Staff`, ≥ 1 s entre deux appels, une reprise sur 5xx / transport / corps
+  vide (jamais sur 429) ; budget par balayage (1 000, `--aks-search-budget`, compté dans
+  `<balayage>/aks_search.json` — `--aks-search-state`, passé par `scripts/10`) ; cache persistant
+  `state/aks_search_cache.json` (14 jours, réponses vides comprises, jamais une erreur ; clé =
+  version d'API + version du filtre + gabarit + titre normalisé ; écriture atomique fusionnée).
+  API changée (404 / 410, pas du JSON, forme différente) → refus nommé `(R66)`, recherche coupée
+  pour le match et le balayage, version jamais devinée.
+- **`src/matcher.py`** : passe 5 de `resolve_aks` (index frais ou non, clé PC seulement, cache seul
+  quand le disjoncteur R30 est ouvert) ; `catalog_page` (grammaire des pages clé PC, gabarit le
+  plus long), `catalog_candidates` (côté requis de R01 sur le nom du catalogue, ≤ 3, le plus précis
+  d'abord), `catalog_leftover` + `AksResolution.found_by` / `catalog_leftover` → `_Plan` : jamais
+  Standard(1) / DLC(16) ni logiciel quand le nom de la page n'a pas tous les mots du titre (même
+  principe que `[R64]`). Les échecs de l'API alimentent le disjoncteur R30 ; un 429 arrête le match.
+  Sans session, le comportement d'avant (`?s=` n'est plus atteinte qu'ainsi).
+- **`scripts/03_match.py`** : `--aks-search-budget` / `--aks-search-state` / `--aks-search-cache`
+  / `--no-aks-search` ; session posée pour le match puis retirée ; état et cache écrits même sur
+  un abandon ; `match_meta.json["aks_search"]`.
+- **Vérification en lecture seule (29/09, 45 requêtes AKS/Staff, ≥ 3 s d'écart)** : la page de
+  recherche du site embarque toujours `v2-1-250304` (`_app.version=2026-02-13`) ; l'API répond
+  `application/json` ; une version inconnue (`v2-1-000000`) répond 404 à corps vide. Rejeu de
+  40 lignes de l'audit que le code actuel refuse encore « pas de page » : 24 ratées à nom non
+  dérivable → page connue dans la réponse 21 fois, proposée 6 fois, **1 entrée** (Driffle « The
+  Elder Scrolls Online Collection Necrom », STEAM EU(9), Collection(98)), 5 refusées par une garde
+  inchangée ; 12 vraiment absentes → **0 candidat, 0 entrée** ; 4 « aucun indice » à mot
+  d'édition → 1 page lue, refusée. La règle des mots restants ne change aucune de ces 40 issues.
+
 ## 2026-09-29 — `[R64]` rang de repli « nom d'édition retiré » et `[R65]` pages console « -key » / « -code »
 
 Romain : « go pour les corrections 1 et 2 et les vérifications » — propositions 1 et 2 de

@@ -1072,7 +1072,10 @@ avant lui. Quand il fait autorité :
   l'index », APRÈS tous les rangs ci-dessus, seulement des URL que l'index publie — voir
   `[R64]` plus bas. Et une page console sous un gabarit de REPLI (`-xbox-one-key`, `-ps5-key`,
   `-xbox-key`…) n'est sondée par `resolve_aks` que si l'index la publie — voir `[R65]`.
-- **La recherche R30 n'est plus appelée** (morte depuis le 22/09 : `HTTP 200`, corps vide).
+- **Passe 5 — `[R66]`** (2026-09-29) : la recherche **catalogue** d'AKS en dernier recours, index
+  frais ou non, quand rien d'autre n'a trouvé de page — voir `[R66]` plus bas. Elle remplace la
+  recherche `?s=` de R30 (morte depuis le 22/09 : `HTTP 200`, corps vide), qui n'est plus
+  atteinte que sans session de recherche, c'est-à-dire jamais en production.
 - `match_meta.json.sitemap_first` dit pour chaque page si le mode était actif, contre quel
   relevé, et combien de sondes il a évitées (`probes_skipped`) ou laissées à la soupape
   (`valve_unconfirmed`).
@@ -1191,6 +1194,9 @@ abort (they say nothing about the product pages AKS throttles); after
 guessed slugs all 404 are then "no AKS product page found" without the 20 s wait, and
 `match_meta.json.search_circuit_open_offers` counts them (a second pass once AKS search
 works again is worthwhile); `search_failures` and `throttle_graces` are recorded too.
+**Since `[R66]` (2026-09-29) the breaker counts the AKS CATALOGUE search failures** (5xx after
+its one retry, timeout, empty body, API changed) exactly like the old `?s=` ones; while it is
+open the catalogue is read from its CACHE only — no request to the API.
 **Sweep-scoped persistence (Romain GO 2026-09-10, "gagner du temps"):** `scripts/10` hands
 `03_match --search-circuit-file <sweep>/search_circuit.json`; a page that trips the breaker
 arms the file, the next pages start with the circuit OPEN (`search_circuit_preopened`, no
@@ -1256,6 +1262,11 @@ games" filler, so a search hit is **not** trusted on its own — it is just
 another candidate page, subject to the exact same R01/R01b identity checks as
 a guessed slug — search only ever *proposes* a page, it never bypasses the identity gate
 (historique — live verification on an Eneba batch : CHANGELOG 2026-07-16).
+**Superseded by `[R66]` (2026-09-29):** the WordPress `?s=` search died on 2026-09-22 (`HTTP
+200`, empty body, both VPS); the last resort is now AKS's own CATALOGUE API (the endpoint its
+`/blog/products/` search front calls). It is still plain HTTP + JSON — deterministic, no model —
+and it still only PROPOSES pages that go through every guard. `search_aks_slugs` (`?s=`) is
+reached only when no catalogue session is set (never in production: `03_match` sets one).
 
 **`[E06]` L'édition retenue doit être VENDUE par la page (2026-09-21, Romain : « normalement
 tu es censé aller voir la page AKS comme pour les jeux normaux, voir si on est en standard ou
@@ -3314,6 +3325,116 @@ même décision que le sweep : `--consoles` est le **défaut** sur les deux scri
 5. **Saisie** (`scripts/12`) : flag accepté, transmis à rien ; groupement par store inchangé
    (dicts candidats entiers, empreinte étendue R45) ; `05_submit` lit `targets` dans
    `approved.json`.
+
+---
+
+### `[R66]` Recherche catalogue AKS en dernier recours (2026-09-29)
+
+Romain, 2026-09-29 : « La recherche AKS en dernier recours me semble indispensable » —
+proposition 11 de l'audit [`AUDIT_2026-09-28_pages-produit-absentes.md`](AUDIT_2026-09-28_pages-produit-absentes.md)
+(§4.4 « la recherche de secours R30 n'est jamais appelée en production », §6). Avec un index
+sitemap frais, `resolve_aks` rendait `None` avant la recherche `?s=` — de toute façon morte — :
+**aucun filet** pour un nom qu'on ne sait pas deviner. Revient en partie sur « sitemap d'abord »
+(24/09) : **au plus une requête d'environ 500 octets par offre sans page**, bornée par un budget et
+un cache.
+
+**L'adresse — un fait relu, jamais deviné** (`src/aks_search.py:56`) :
+`https://www.allkeyshop.com/api/v2-1-250304/vakrs_catalogv2.php?action=CatalogV2&locale=en&currency=EUR&price_mode=price_card&search_name=<titre>&sort_field=popularity&sort_order=desc&pagenum=1&per_page=24&fields=id,name,link,type`.
+C'est l'`apiUrl` que la page `/blog/products/?search_name=…` embarque pour son propre front
+(`_app.version=2026-02-13`), relue le 29/09 (extrait :
+`tests/fixtures/aks_search_r66/products_page_apiurl_excerpt.txt`) ; les paramètres sont ceux du
+front, réduits à quatre champs (≈ 500 o, ≈ 0,1 s, `application/json`). **Une version retirée
+répond `404`, corps vide** (vérifié sur `v2-1-000000`).
+
+**Où** : passe 5 de `resolve_aks` (`src/matcher.py:3313`), APRÈS les passes 1-4 (`[R64]`
+compris), pour une page **clé PC** seulement (`page_kind == "cd-key"` : ni compte, ni gabarit
+console) — l'ancre PC d'une ligne console en profite, ses pages console viennent ensuite de la
+barre d'onglets comme avant. La session (`AksCatalogSearch`, posée par `03_match`, retirée à la
+fin du match) décide ; sans session, le comportement d'avant (index frais → `None`, sinon `?s=`).
+
+**Candidats seulement** (`catalog_candidates`, `:3018`). Un produit n'est proposé que si :
+1. son lien est une page clé PC que le résolveur sait lire (`catalog_page`, `:2992`) —
+   `buy-<slug>-cd-key|key|game-code|download-code-compare-prices/` ou l'ancienne
+   `compare-and-buy-…-<slug>/`, le gabarit le **plus long** gagnant (`…-xbox-series-key` est une
+   page console, jamais « key »), l'URL reconstruite depuis nos gabarits ; toute autre forme
+   (console, compte, carte cadeau, `…-digital-download-best-price/`, `…-compare-prices-2/`) n'est
+   **jamais lue** ;
+2. son type n'est pas `account` et son nom n'est pas fait que de mots de bruit ;
+3. **chacun des mots de son nom est dans le titre** — le côté REQUIS de R01, appliqué d'avance sur
+   le nom du catalogue : le remplissage de popularité (« WinZip 12 for Mac Pro Version » →
+   Windows 11 Pro, Minecraft, Baldur's Gate 3…) tombe sans lire une page. Au rejeu, chaque page
+   connue que ce filtre écarte manque d'au moins un mot requis par R01 sur le titre brut
+   (« GreedFall 2 », « GTA 5 », « EA SPORTS Madden NFL 27 », « Hunt Showdown 1896 »…) : il
+   n'écarte rien que R01 accepterait ;
+4. au plus 3, le nom le plus long d'abord, puis l'ordre de l'API.
+
+Chaque page candidate est lue **exactement comme une page devinée** : 404 → la suivante ; toute
+autre réponse douteuse lève tout de suite (`MA1`) ; nom illisible → `AksNameUnreadable` ; une URL
+déjà sondée par les passes 1-4 n'est pas redemandée. La première page lue est rendue, marquée
+`found_by="catalogue"` : **toutes les gardes décident, inchangées** (R01, R01b, R16, R20, R27 /
+`[R51]`, R43, R18, E06, R31…).
+
+**Un resserrement, pas un assouplissement — les mots restants** (`catalog_leftover`, `:3056`).
+La recherche propose des pages dont le nom est PLUS COURT que le titre. Quand les mots qui
+manquent au nom de la page (hors THE / OF / AND / A / AN) sont tous du bruit (EDITION, VERSION,
+DIGITAL, EPIC, COLLECTION…), la garde des mots en trop ne voit rien et `detect_edition` rend
+Standard : c'est exactement le défaut que la revue adverse de `[R64]` a mesuré (35 lignes). Même
+règle que `[R64]`, sous sa propre marque (`AksResolution.catalog_leftover` → `_Plan`, ancre PC
+d'une ligne console comprise) : **jamais Standard(1) ni DLC(16)** par la recherche quand des mots
+restent (`:4814`, AVANT E06), et **jamais un logiciel** (`:4372` : le chemin logiciel saute la
+garde des mots en trop et `resolve_software_edition` peut adopter un seau unique). « Marvel's
+Midnight Suns Digital+ Edition » sur `marvels-midnight-suns` : sans la règle, STEAM GLOBAL
+Standard(1) — le mauvais palier ; avec, refus `… found by the AKS catalogue search lacks 'DIGITAL
+EDITION' … (R66)`. Un palier NOMMÉ entre : « … Legendary Edition … Europe & UK » → Legendary,
+« The Elder Scrolls Online Collection Necrom » → Collection(98). Coût au rejeu : 0 ligne.
+
+**Budget, rythme, cache** (`src/aks_search.py`) :
+- **budget par balayage** `DEFAULT_BUDGET` = 1 000 requêtes (`--aks-search-budget`), compté
+  dans `<dossier du balayage>/aks_search.json` (`--aks-search-state`, passé par `scripts/10` ;
+  chaque passe d'une boucle a son dossier, donc son budget). Budget épuisé → la ligne ressort
+  « no AKS product page found » sans recherche (compté : `budget_exhausted_offers`). Un fichier
+  d'état illisible vaut budget épuisé. Arithmétique : ≈ 8 800 lignes « pas de page » au groupe B,
+  une passe ≈ 30 h ; à 1 000 par passe et 14 jours de cache, le stock est couvert en ~9 passes et
+  le régime permanent demande ≈ 790 requêtes par passe ; ≈ 0,6 requête par minute ;
+- **rythme** : une seconde au moins entre deux appels, une seule reprise après 2 s sur un 5xx /
+  une erreur de transport / un corps vide, **jamais sur un 429** ; agent `AKS/Staff` toujours ;
+- **cache persistant** `state/aks_search_cache.json` (`--aks-search-cache`), clé = version d'API
+  + version du filtre (`CATALOG_FILTER_VERSION`) + gabarit de page + titre normalisé, **14 jours
+  pour les réponses pleines ET vides** (les vides dominent : une durée plus courte ferait expirer
+  le stock plus vite que le budget ne le couvre), **jamais une erreur** ; écriture atomique,
+  fusionnée avec ce que le fichier contient (le plus récent gagne). Le cache est servi même
+  budget épuisé, disjoncteur ouvert ou API coupée : ce sont des réponses de l'API d'avant, et
+  chaque page candidate est relue.
+
+**Fail-closed sur un changement d'API.** Un `404` / `410`, un corps qui n'est pas du JSON ou un
+JSON qui n'a plus la forme lue (`products` liste, `pagination.total` entier, chaque produit avec
+`id` / `name` / `link` / `type`) → `AksSearchChanged` → la ligne est refusée `AKS probe
+unreliable (throttled?): AKS catalogue search API changed — v2-1-250304 : … ; search off for
+this sweep, the new version is never guessed (R66)`, la recherche se coupe pour le reste du match
+ET du balayage (`disabled_reason`, persisté), et la nouvelle version n'est **jamais devinée** : un
+humain relit `/blog/products/` et met la constante à jour. Un 5xx / délai / corps vide après la
+reprise → `AksProbeUnreliable` sur la clé `site-search` : **le disjoncteur R30** le compte (3 de
+suite → cache seul pour le reste du match, persistance 30 min inchangée) ; un 429 → `AksThrottled`,
+le match s'arrête (inchangé).
+
+**Traçabilité.** `match_meta.json["aks_search"]` : `active`, `api_version`, `budget`,
+`used_before` / `used_after` (compteur du balayage), `requests`, `queries`, `cache_hits`, `hits`,
+`empty`, `failures`, `budget_exhausted_offers`, `disabled_offers`, `search_off_offers`,
+`candidate_pages_read`, `resolved`, `disabled_reason` ; événements `aks_search` /
+`aks_search_done` au journal. `--no-aks-search` : le résolveur d'avant, `{"active": false}`.
+
+**Mesures (29/09, lecture seule, 45 requêtes AKS/Staff).** 40 lignes de l'audit que le code
+actuel (`[R64]`/`[R65]` compris) refuse encore « pas de page » : 24 « ratées » à nom non
+dérivable (familles NOM-AKS, TITRE-MARCHAND, HORS-INDEX), 12 « absentes » du seau « aucun
+indice », 4 lignes « aucun indice » à mot d'édition. Page connue dans la réponse de l'API : 21 sur
+24 ; retenue par le filtre : 6 (plus, pour GOG « FORCED SHOWDOWN: Deluxe Content », la page du
+jeu de base à la place de celle du contenu — lue, refusée « CONTENT ») ; **entrée : 1** (Driffle « The Elder Scrolls Online Collection
+Necrom », STEAM EU(9), Collection(98)) ; les 5 autres refusées par une garde inchangée (mots en
+trop « NCSOFT », « 40TH » ×2, « PART 1 », R31). Absentes : 10 sur 12 sans aucun produit, 0
+candidat, **0 entrée** ; « aucun indice » à mot d'édition : 1 page candidate lue, refusée
+(« CHARACTER »). La règle des mots restants ne change l'issue d'aucune de ces 40 lignes. Tests :
+`tests/test_aks_search_r66.py` (réponses réelles de l'API et pages AKS réelles réduites,
+`tests/fixtures/aks_search_r66/`).
 
 ---
 

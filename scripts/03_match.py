@@ -27,8 +27,9 @@ from src.aks_env import AKS_DIRECT_URL, AKS_STAFF_UA, http_get, validate_aks_dir
 from src.contracts import NormalizedFeed, NormalizedOffer  # noqa: E402
 from src.matcher import (  # noqa: E402
     SITEMAP_FIRST_STATS, AksThrottled, match_feed, reset_sitemap_first_stats, resolve_aks,
-    resolve_aks_url, sitemap_index,
+    resolve_aks_url, set_aks_search, sitemap_index,
 )
+from src import aks_search  # noqa: E402
 from src.page_catalog import CatalogRecorder, catalog_from_spec  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
 
@@ -138,6 +139,24 @@ def main() -> int:
              "trips the breaker the file is (re)written with a fresh expiry; a run whose "
              "search worked clears it.")
     parser.add_argument(
+        "--aks-search-budget", type=int, default=aks_search.DEFAULT_BUDGET,
+        help="[R66] Plafond de requêtes vers la recherche catalogue AKS (dernier recours du "
+             "résolveur) pour le BALAYAGE entier — compté dans --aks-search-state. 0 = cache "
+             "seul, aucune requête.")
+    parser.add_argument(
+        "--aks-search-state", default=None,
+        help="[R66] Fichier d'état du balayage (requêtes déjà dépensées, recherche coupée "
+             "sur une API changée). scripts/10 passe <dossier du balayage>/aks_search.json ; "
+             "sans lui, le budget vaut pour ce seul match.")
+    parser.add_argument(
+        "--aks-search-cache", default=None,
+        help="[R66] Cache persistant des réponses (titre normalisé + gabarit, 14 jours, "
+             "réponses vides comprises). Défaut : <racine>/" + aks_search.DEFAULT_CACHE_PATH)
+    parser.add_argument(
+        "--no-aks-search", action="store_true",
+        help="[R66] Sans recherche catalogue : le résolveur s'arrête après l'index sitemap, "
+             "comme avant le 2026-09-29.")
+    parser.add_argument(
         "--consoles", dest="consoles", action="store_true", default=True,
         help="[R45] enter CONSOLE keys (Xbox One / Series, PS4 / PS5, Switch / Switch 2) on "
              "their AKS platform pages, one target per declared platform page (design "
@@ -188,6 +207,32 @@ def main() -> int:
     # (~0,1 s) contre les 145-226 s que prend le match d'une page de 100 offres.
     catalog = catalog_from_spec(args.page_catalog, source=f"03_match {feed.run_id}")
     recorder = CatalogRecorder(catalog, source=f"03_match {feed.run_id}")
+    # [R66] (Romain, 2026-09-29 : « La recherche AKS en dernier recours me semble
+    # indispensable ») — la recherche catalogue AKS, dernier recours de `resolve_aks`. Budget
+    # du BALAYAGE (fichier d'état), cache persistant sous state/, coupure sur une API changée.
+    # La session ne vit que le temps de ce match : retirée dans le `finally`.
+    search = None
+    if not args.no_aks_search:
+        used, disabled = aks_search.load_sweep_state(args.aks_search_state,
+                                                     args.aks_search_budget)
+        search = aks_search.AksCatalogSearch(
+            budget=args.aks_search_budget, used=used, disabled_reason=disabled,
+            cache_path=args.aks_search_cache or str(ROOT / aks_search.DEFAULT_CACHE_PATH))
+        logger.log("aks_search", budget=search.budget, used_before=search.used_before,
+                   disabled_reason=search.disabled_reason or None,
+                   api_version=aks_search.API_VERSION)
+    set_aks_search(search)
+
+    search_closed: list[bool] = []
+
+    def _search_close() -> None:
+        # Les requêtes dépensées et les réponses reçues sont des faits, abandon ou non (même
+        # sur un crash : le budget du balayage ne doit pas oublier ce qu'il a dépensé).
+        if search is not None and not search_closed:
+            search_closed.append(True)
+            aks_search.save_sweep_state(args.aks_search_state, search)
+            logger.log("aks_search_done", written=search.flush(), **search.meta())
+
     try:
         candidates, skipped = match_feed(
             feed, resolve_aks, max_candidates=args.max_candidates,
@@ -215,7 +260,11 @@ def main() -> int:
         # Les pages LUES avant le throttle sont de vraies lectures : elles entrent quand
         # même au catalogue. Un abandon n'invalide pas ce qu'on a appris.
         logger.log("page_catalog", written=recorder.flush(), aborted=True)
+        _search_close()
         return 2
+    finally:
+        _search_close()
+        set_aks_search(None)
     if aborted_path.exists():
         aborted_path.unlink()      # a clean match supersedes a previous abort of this dir
     _search_circuit_persist(args.search_circuit_file, stats, circuit_open)
@@ -262,6 +311,10 @@ def main() -> int:
                 "legacy_indexed": bool(getattr(_sitemap, "legacy_indexed", False)),
                 **{k: int(v) for k, v in SITEMAP_FIRST_STATS.items()},
             },
+            # [R66] la recherche catalogue AKS de ce match : budget du balayage avant / après,
+            # requêtes, cache, candidats lus, coupure (API changée) — un « pas de page AKS » se
+            # lit aussi avec ces champs (budget épuisé = pas cherché).
+            "aks_search": search.meta() if search is not None else {"active": False},
         }, indent=2),
         encoding="utf-8",
     )

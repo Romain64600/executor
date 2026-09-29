@@ -310,6 +310,11 @@ def _make_stages(merchant: str, store_id: str, available: str, pace: str | None,
             # Romain GO 2026-09-10: the R30 breaker state travels across the sweep's pages
             # (no 3 × timeout tax per page while AKS search is down; expires on its own).
             argv += ["--search-circuit-file", str(sweep_dir / "search_circuit.json")]
+            # [R66] (Romain 2026-09-29 : « La recherche AKS en dernier recours me semble
+            # indispensable ») : le budget de la recherche catalogue AKS vaut pour le BALAYAGE
+            # (chaque passe d'une boucle a son dossier, donc son budget) ; une API changée la
+            # coupe pour les pages suivantes du même balayage.
+            argv += ["--aks-search-state", str(sweep_dir / "aks_search.json")]
         # [R45] console branch of the matcher — the DEFAULT since Romain's decision « 1 » of
         # 2026-09-15 (after the two modal-v2 canaries and the MMOGA console dry-run: 174
         # candidates). Explicit either way so a run dir's argv shows the mode; --no-consoles

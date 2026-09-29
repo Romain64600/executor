@@ -2644,6 +2644,11 @@ class AksResolution:
     # repli « nom d'édition retiré, confirmé par l'index » (« Special Edition »), "" sinon. Le
     # bloc édition de `match_offer` exige alors que la page porte le palier NOMMÉ par le titre.
     edition_rank: str = ""
+    # [R66] "catalogue" quand la page a été PROPOSÉE par la recherche catalogue AKS (dernier
+    # recours), "" sinon ; et les mots du titre (nettoyé) que le nom de cette page n'a PAS
+    # (`catalog_leftover`). Non vide → comme pour [R64], ni Standard(1) ni DLC(16), ni logiciel.
+    found_by: str = ""
+    catalog_leftover: str = ""
 
 
 class AksProbeUnreliable(Exception):
@@ -2942,6 +2947,168 @@ def resolve_aks_url(url: str, http_get_fn: Callable[..., Any] = http_get) -> Aks
     return resolution
 
 
+# -- [R66] recherche catalogue AKS, dernier recours ------------------------------------------
+# Romain, 2026-09-29 : « La recherche AKS en dernier recours me semble indispensable ». La session
+# (`src/aks_search.py` : API, budget du balayage, cache persistant) est posée par 03_match pour
+# son processus, comme l'index sitemap ; sans session, `resolve_aks` garde son comportement
+# d'avant (index frais → None, sinon l'ancienne recherche `?s=`). Ici vit ce qui dépend de la
+# grammaire des pages : quels liens du catalogue sont des candidats pour une page CLÉ PC.
+_AKS_SEARCH_SESSION: list[Any] = []
+# Changer le filtre ci-dessous = incrémenter ce numéro : il fait partie de la clé du cache.
+CATALOG_FILTER_VERSION = 1
+_CATALOG_PAGE_RE = re.compile(r"https://www\.allkeyshop\.com/blog/buy-([a-z0-9-]+)-compare-prices/")
+_CATALOG_LEGACY_RE = re.compile(
+    r"https://www\.allkeyshop\.com/blog/compare-and-buy-cd-key-for-digital-download-([a-z0-9-]+)/")
+# Les mots-outils que le nom AKS omet souvent (« Heroes of Might & Magic » pour « … and … ») :
+# leur absence n'est pas un palier retiré. Rien d'autre — EDITION, VERSION, DIGITAL, EPIC…
+# restent comptés, c'est précisément eux que [R64] a vus mener à un Standard(1) non prouvé.
+_CATALOG_LEFTOVER_IGNORED = frozenset({"THE", "OF", "AND", "A", "AN"})
+
+
+def set_aks_search(session: Any) -> None:
+    """[R66] pose (ou retire, ``None``) la session de recherche catalogue pour ce processus."""
+
+    _AKS_SEARCH_SESSION.clear()
+    if session is not None:
+        _AKS_SEARCH_SESSION.append(session)
+
+
+def aks_search_session() -> Any:
+    return _AKS_SEARCH_SESSION[0] if _AKS_SEARCH_SESSION else None
+
+
+def _catalog_known_kinds() -> tuple[str, ...]:
+    """Tous les gabarits de page connus, du plus LONG au plus court : `…-xbox-series-key`
+    doit se lire « xbox-series-key » (console), jamais « key » ; `…-ps4-game-code` doit se lire
+    « ps4-game-code », jamais « game-code »."""
+
+    from src import aks_sitemap
+    kinds = set(aks_sitemap.PAGE_KINDS) | set(CONSOLE_FALLBACK_TEMPLATES) | {
+        "xbox-one-code", "key-nintendo-switch-2", "nintendo-switch-key", "ps4-game-code",
+        "ps5-game-code"}
+    return tuple(sorted(kinds, key=lambda k: (-len(k), k)))
+
+
+def catalog_page(link: str) -> tuple[str, str] | None:
+    """[R66] ``(slug nu, url)`` d'un lien du catalogue qui est une page CLÉ PC que le résolveur
+    sait lire — `buy-<slug>-cd-key-…`, `-key`, `-game-code`, `-download-code`, ou l'ancienne
+    `compare-and-buy-…-<slug>/` — ``None`` pour tout le reste : pages console, compte, carte
+    cadeau, et toute forme hors grammaire (`…-digital-download-best-price/`,
+    `…-compare-prices-2/`), qu'on ne lit jamais. L'URL rendue est RECONSTRUITE depuis nos
+    gabarits (hôte, casse, slash final, aucune query) : la grammaire stricte ci-dessus garantit
+    qu'elle est le lien lui-même, et on ne demande jamais une adresse que l'API a fabriquée."""
+
+    link = (link or "").strip()
+    m = _CATALOG_LEGACY_RE.fullmatch(link)
+    if m:
+        return m.group(1), AKS_LEGACY_URL.format(slug=m.group(1))
+    m = _CATALOG_PAGE_RE.fullmatch(link)
+    if not m:
+        return None
+    tail = m.group(1)
+    for kind in _catalog_known_kinds():
+        if tail.endswith("-" + kind):
+            if kind not in ("cd-key",) + SITEMAP_KEY_KINDS:
+                return None                         # console / compte / carte cadeau
+            slug = tail[: -len(kind) - 1]
+            return (slug, AKS_COMPARE_URL.format(slug=slug, kind=kind)) if slug else None
+    return None                                     # gabarit inconnu : jamais lu
+
+
+def catalog_candidates(products: list[Any], query: str,
+                       limit: int = AKS_SEARCH_CANDIDATE_LIMIT) -> list[tuple[str, str, str]]:
+    """[R66] Les ``(slug, url, nom)`` que la recherche catalogue PROPOSE pour ``query`` (le
+    titre nettoyé), au plus ``limit``, du plus au moins précis. Un produit n'est gardé que si :
+
+    * son type n'est pas ``account`` et son lien est une page clé PC (:func:`catalog_page`) ;
+    * son nom n'est pas fait que de mots de bruit ;
+    * chacun de ses mots est dans le titre — le côté REQUIS de R01, appliqué d'avance sur le
+      nom du catalogue : le « remplissage » de popularité (« Fallout 76 » pour « Fallout
+      Legacy ») tombe sans lire une seule page.
+
+    Ordre : le nom le plus LONG d'abord (le plus précis), puis l'ordre de l'API. Ce n'est qu'un
+    tri de candidats : la page est ensuite lue, et `match_offer` refait R01 sur le nom LU."""
+
+    q_tokens = set(tokenize(query))
+    kept: list[tuple[int, int, str, str, str]] = []
+    seen: set[str] = set()
+    for i, product in enumerate(products):
+        if str(getattr(product, "type", "")).lower() == "account":
+            continue
+        parsed = catalog_page(getattr(product, "link", ""))
+        if parsed is None:
+            continue
+        slug, url = parsed
+        name = str(getattr(product, "name", ""))
+        toks = tokenize(name)
+        if not toks or all(t in NOISE_TOKENS for t in toks):
+            continue
+        if any(t not in q_tokens for t in toks):
+            continue
+        if url in seen:
+            continue
+        seen.add(url)
+        kept.append((-len(set(toks)), i, slug, url, name))
+    kept.sort()
+    return [(slug, url, name) for _, _, slug, url, name in kept[:limit]]
+
+
+def catalog_leftover(query: str, aks_name: str) -> str:
+    """[R66] les mots du titre nettoyé que le nom de la page LUE n'a pas (hors mots-outils),
+    dans l'ordre du titre. Non vide → `match_offer` refuse Standard(1) / DLC(16) / logiciel."""
+
+    page = set(tokenize(aks_name))
+    out = [t for t in tokenize(query) if t not in page and t not in _CATALOG_LEFTOVER_IGNORED]
+    return " ".join(dict.fromkeys(out))
+
+
+def _resolve_by_catalog(name: str, http_get_fn: Callable[..., Any], session: Any,
+                        sondees: set[str], *, keep_country: bool, allow_request: bool
+                        ) -> AksResolution | None:
+    """[R66] le dernier recours de :func:`resolve_aks`. Les candidats de la session (cache ou
+    API), puis chaque page candidate lue EXACTEMENT comme une page devinée : 404 propre →
+    suivante ; toute autre réponse douteuse lève tout de suite (`MA1`) ; nom illisible →
+    :class:`AksNameUnreadable`. La première page lue est rendue, marquée : les gardes de
+    `match_offer` décident. Une réponse douteuse de l'API lève :class:`AksProbeUnreliable` sur
+    la clé ``site-search`` — le disjoncteur R30 la compte, et un 429 arrête le match."""
+
+    from src.aks_search import AksSearchChanged, AksSearchUnavailable
+    query = " ".join(cleaned_title(name, keep_country=keep_country).split())
+    if not query:
+        return None
+    try:
+        candidates = session.lookup(
+            "cd-key", query, http_get_fn, lambda products: catalog_candidates(products, query),
+            filter_version=CATALOG_FILTER_VERSION, allow_request=allow_request)
+    except AksSearchChanged as exc:
+        raise AksProbeUnreliable(
+            f"AKS catalogue search API changed — {exc}; search off for this sweep, the new "
+            "version is never guessed (R66)", status=exc.status, slug=SEARCH_SLUG_KEY) from None
+    except AksSearchUnavailable as exc:
+        raise AksProbeUnreliable(f"{exc} (R66)", status=exc.status,
+                                 slug=SEARCH_SLUG_KEY) from None
+    for slug, url, _catalog_name in candidates or ():
+        if url in sondees:
+            continue                                # déjà demandée : même question, même réponse
+        sondees.add(url)
+        session.stats["candidate_pages_read"] += 1
+        probe = _probe_guessed_page(url, http_get_fn)
+        if probe is None:
+            continue                                # page retirée depuis : candidat suivant
+        if not (probe.ok and probe.status == 200 and probe.body):
+            raise AksProbeUnreliable(f"{slug} -> {probe.status or probe.error}",
+                                     status=probe.status, slug=slug)
+        resolution = _resolution_from_body(slug, url, probe.body)
+        if resolution is None:
+            if not extract_product_id(probe.body):
+                continue
+            raise AksNameUnreadable(slug)
+        session.stats["resolved"] += 1
+        return dc_replace(resolution, found_by="catalogue",
+                          catalog_leftover=catalog_leftover(query, resolution.aks_name))
+    return None
+
+
 def search_aks_slugs(
     name: str, http_get_fn: Callable[..., Any] = http_get, limit: int = AKS_SEARCH_CANDIDATE_LIMIT
 ) -> list[str]:
@@ -3098,6 +3265,7 @@ def resolve_aks(
             # URL quand le slug exact est dans l'index. La même question aurait la même
             # réponse — une requête de moins, rien d'autre.
             continue
+        sondees.add(url)          # [R66] la recherche catalogue ne la redemandera pas
         probe = _probe_guessed_page(url, http_get_fn)
         if probe is None:
             # Le sitemap est une PHOTO : une page publiée hier peut avoir été retirée. Un
@@ -3135,9 +3303,19 @@ def resolve_aks(
                 raise AksNameUnreadable(variant)
             return dc_replace(resolution, edition_rank=retires)
 
-    if page_kind != "cd-key" or not search:
-        # no site-search fallback for account pages (see docstring), nor once the R30
-        # circuit breaker is open for this run (_ThrottleGuard, 2026-09-10)
+    if page_kind != "cd-key":
+        return None            # no site-search fallback for account pages (see docstring)
+    # [R66] (Romain, 2026-09-29 : « La recherche AKS en dernier recours me semble
+    # indispensable ») — la recherche CATALOGUE d'AKS, index frais ou non, quand une session est
+    # posée (03_match en pose une par défaut). Disjoncteur R30 ouvert (``search=False``) → le
+    # cache seul, aucune requête vers l'API. Elle REMPLACE l'ancienne recherche `?s=`, morte
+    # depuis le 22/09, qui n'est plus atteinte que sans session — jamais en production.
+    session = aks_search_session()
+    if session is not None:
+        return _resolve_by_catalog(name, http_get_fn, session, sondees,
+                                   keep_country=keep_country, allow_request=search)
+    if not search:
+        # nor once the R30 circuit breaker is open for this run (_ThrottleGuard, 2026-09-10)
         return None
     if sitemap_is_authoritative():
         # R30 n'est pas retirée — la décision de Romain du 2026-07-16 tient — mais la
@@ -3632,6 +3810,9 @@ class _Plan:
     # anchor's tab bar), "" otherwise. Non-empty → the edition must be a tier the TITLE names
     # and the page sells: never Standard(1), never DLC(16), never a sole-bucket guess (E06).
     edition_rank: str = ""
+    # [R66] same carrier for a page PROPOSED by the AKS catalogue search: the title words the
+    # page name lacks (`AksResolution.catalog_leftover`) — non-empty → same refusals as [R64].
+    catalog_leftover: str = ""
 
     @property
     def console(self) -> bool:
@@ -4039,6 +4220,7 @@ def _pc_plan(
         base_label=({"en_only": "GLOBAL", "eu_en_only": "EU"}[en_route]
                     if en_route is not None else None),
         edition_rank=getattr(resolution, "edition_rank", "") or "",
+        catalog_leftover=getattr(resolution, "catalog_leftover", "") or "",     # [R66]
     )
 
 
@@ -4187,6 +4369,16 @@ def match_offer(
             offer,
             f"page {resolution.aks_name!r} reached by removing {plan.edition_rank!r} from the "
             "title — software is not entered through the edition fallback rank (R64)")
+    if sw and plan.catalog_leftover:
+        # [R66] la recherche catalogue propose des pages dont le nom est PLUS COURT que le
+        # titre (« VMware vSphere 8 » pour « … vSphere Hypervisor 8 Enterprise Plus »). Le
+        # chemin logiciel saute la garde des mots en trop et `resolve_software_edition` peut
+        # adopter le seau UNIQUE de la page : rien ne rattraperait un autre produit. Refus.
+        return SkippedOffer(
+            offer,
+            f"page {resolution.aks_name!r} found by the AKS catalogue search lacks "
+            f"{plan.catalog_leftover!r} from the title — software is not entered through "
+            "the catalogue search (R66)")
     if sw:
         sw_edition = resolve_software_edition(offer, resolution.editions)
         if sw_edition is None:
@@ -4611,6 +4803,22 @@ def match_offer(
             f"title, but it sells no edition those words name — page sells "
             f"{sorted(_edition_entry_name(v) for v in resolution.editions.values())}; never "
             "Standard or DLC through the edition fallback rank (R64)")
+
+    # [R66] (Romain, 2026-09-29 : « La recherche AKS en dernier recours me semble
+    # indispensable ») — la page a été PROPOSÉE par la recherche catalogue et son nom n'a pas
+    # certains mots du titre nettoyé (hors mots-outils). Quand ces mots sont tous du BRUIT
+    # (EDITION, VERSION, DIGITAL, EPIC, COLLECTION…), la garde des mots en trop ne voit rien et
+    # `detect_edition` rend Standard : exactement le défaut que la revue adverse de [R64] a
+    # mesuré (35 lignes). Même règle : la page doit vendre un palier que le titre NOMME, jamais
+    # Standard(1) ni DLC(16). Un resserrement, pas un assouplissement : aucune garde ne change.
+    if plan.catalog_leftover and edition_id in ("1", "16"):
+        return SkippedOffer(
+            offer,
+            f"page {resolution.aks_name!r} found by the AKS catalogue search lacks "
+            f"{plan.catalog_leftover!r} from the title, and it sells no edition those words "
+            f"name — page sells "
+            f"{sorted(_edition_entry_name(v) for v in resolution.editions.values())}; never "
+            "Standard or DLC through the catalogue search (R66)")
 
     # [E06] L'ÉDITION RETENUE DOIT ÊTRE VENDUE PAR LA PAGE — STANDARD COMPRIS (Romain,
     # 2026-09-21 : « normalement tu es censé aller voir la page AKS comme pour les jeux
@@ -5092,6 +5300,7 @@ def _console_plan(
             identity_name=identity_name,
             guard_name=guard_name,
             edition_rank=getattr(pc_res, "edition_rank", "") or "",     # [R64]
+            catalog_leftover=getattr(pc_res, "catalog_leftover", "") or "",     # [R66]
         )
     xbox_declared = any(f in ("XBOX_ONE", "XBOX_SERIES") for f in families)
     # AUDIT DU 2026-09-20 : la garde Play Anywhere se déclenchait pour N'IMPORTE quelle
@@ -5265,6 +5474,8 @@ def _console_plan(
         # edition fallback rank carries its mark to the common flow (the primary console page
         # itself was read by URL and knows nothing of it).
         edition_rank=getattr(anchor, "edition_rank", "") or "",
+        # [R66] likewise for an anchor PROPOSED by the AKS catalogue search.
+        catalog_leftover=getattr(anchor, "catalog_leftover", "") or "",
     )
 
 
