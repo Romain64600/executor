@@ -30,11 +30,17 @@ redirecteur Impact `anandadigitalbv.sjv.io/c/1297091/2866230/30655?prodsku=42863
 - **Aucune grammaire nouvelle** : région, plateforme, catégories et lecteur de page restent à
   trancher par Romain. Mesure hors ligne sur les 296 lignes : 45 refus au precheck, 32 lignes
   console (la fiche `/xbox/…` ou `…-xbox-one` est lue — « Pac-Man CE 2 » n'est plus une clé
-  Steam), 219 lignes PC lues Steam par défaut, GLOBAL implicite ; 4 `-row-` refusées ROW (dont
+  Steam), 219 lignes PC ; 4 `-row-` refusées ROW (dont
   « Saints Row Classic Chaos Bundle », faux positif générique préexistant, refusée comme bundle
   de toute façon). Détail et décisions ouvertes : `docs/MERCHANTS.md` §Allyouplay.
 - Tests : `tests/test_merchants_allyouplay.py` (23), `test_merchants_misc` mis à jour ;
   mutation du registre → 4 tests rouges.
+- **Aperçu complet (lecture seule, VPS de secours, branche, `03_match --consoles` sur les 296
+  lignes, 30/09 23:35 UTC)** : **6 candidats, tous Xbox** (Duke Nukem 3D 20th Anniversary en
+  Xbox One 24 ; NHL 27 ×2 sur la page combinée, Xbox Series 300 ; Onimusha: Way of the Sword ×3
+  en Xbox Series + page PC Play Anywhere, 306), régions implicites ; **aucune ligne PC** — un
+  titre PC nu s'arrête sur R27 / `[R51]` (126 lignes), le défaut STEAM n'est jamais atteint.
+  Refus : pas de page AKS 81, autre produit 31, bundles 17, monnaies / points 15, ROW 4.
 
 ## 2026-09-29 — Console `/executor/auto` : l'heure de début du sweep (et de chaque marchand, chaque page)
 

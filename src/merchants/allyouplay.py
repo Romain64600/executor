@@ -42,8 +42,10 @@ vers allyouplay.com, et u sert d'identité comme Loaded ». D'où, ici :
   payload Nuxt porte l'attribut « Platform: Steam » et ``available_countries``. Un lecteur de
   page (comme Gamesplanet FR ``[R59]``) est une option, pas codée.
 
-Tant que Romain n'a pas tranché, les lignes suivent la lecture générique : plateforme par
-défaut STEAM (vérifiée contre la page AKS, R20), région GLOBAL implicite, édition du titre.
+Tant que Romain n'a pas tranché, les lignes suivent la lecture générique. Un titre PC nu (ni
+plateforme ni boutique) est REFUSÉ par R27 / ``[R51]`` — le défaut STEAM de ``detect_platform``
+n'est jamais atteint (aperçu du 30/09 : 0 candidat PC sur 219). Les lignes Xbox prennent la
+génération du titre, région GLOBAL implicite (6 candidats à l'aperçu). Édition du titre.
 Branche ``allyouplay-affiliate`` — pas en ligne tant que l'aperçu n'est pas validé.
 """
 

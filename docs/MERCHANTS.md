@@ -678,8 +678,18 @@ matcher et le classifieur importent le registre.
 - **Mesure hors ligne (30/09, branche, sans réseau)** : 45 refus au precheck (bundles 17,
   monnaies / points / crédits / gemmes 15, ROW 4, AMERICAS 1, multi-jeux 3, Xbox 360 1…), 251
   passent : 32 lignes console (fiche `/xbox/` ou `…-xbox-one` lue — sans la fiche, « Pac-Man CE
-  2 » serait partie en Steam), 219 lignes PC lues **Steam par défaut, GLOBAL implicite**
-  (dont 10 Tinder). Détail : CHANGELOG 2026-09-30.
+  2 » serait partie en Steam), 219 lignes PC (dont 10 Tinder). Détail : CHANGELOG 2026-09-30.
+- **Aperçu complet (30/09, lecture seule, VPS de secours, branche, `03_match --consoles` sur les
+  296 lignes)** : **6 candidats, tous Xbox** — Duke Nukem 3D 20th Anniversary (Xbox One, 24),
+  NHL 27 ×2 (page combinée `nhl-27-xbox-key`, Xbox Series sans région 300), Onimusha: Way of
+  the Sword ×3 (Xbox Series + page PC Play Anywhere, XBOX/PC GLOBAL 306) — régions toutes
+  **implicites**. **Aucune ligne PC n'entre** : un titre PC nu (ni plateforme, ni boutique)
+  s'arrête sur R27 / `[R51]` (« no platform in title and AKS page does not confirm Direct
+  Publisher » 120, « no platform in title or URL » 6) — le défaut STEAM de `detect_platform`
+  n'est jamais atteint. Autres refus : pas de page AKS 65 (+ 16 console), autre produit 31,
+  bundles 17, monnaies / points 15, ROW 4. Faire entrer les lignes PC demande une source de
+  plateforme : le lecteur de la fiche (« Platform », `available_countries`), ou une règle comme
+  Wyrel `[R58]` — décision de Romain.
 - **Statut live** : liste blanche (groupe B) ; la branche n'est **pas** en ligne — l'aperçu
   (lecture seule) passe d'abord, puis la validation de Romain.
 
