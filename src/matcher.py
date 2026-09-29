@@ -35,18 +35,23 @@ from src import candidate_contract
 # [R45] (2026-09-12) console keys — the pure classifier / page grammar lives in its own
 # module (no matcher import there); the matcher only wires it in (design §3).
 from src.console_keys import (
+    CONSOLE_FALLBACK_TEMPLATES,
+    CONSOLE_FAMILY_TEMPLATES,
     CONSOLE_PAGE_KIND,
     CONSOLE_PAGE_KINDS,
     CONSOLE_PLATFORM_LABEL,
     CONSOLE_REGION_IDS,
     CONSOLE_REGION_LABELS,
+    CONSOLE_TEMPLATE_FAMILY,
     SKIP_WINDOWS_KEY_NO_PAGE,
+    XBOX_COMBINED_TEMPLATE,
     ConsoleSignal,
     account_signal,
     classify_console,
     console_marker_in_title,
     console_marker_in_url,
     console_page_identity,
+    console_template_of,
     distinct_region_bases,
     page_platform_family,
     extract_console_pages,
@@ -1973,7 +1978,7 @@ def _strip_trailing_phrases(text: str, phrases: tuple[str, ...]) -> str:
     return text
 
 
-def cleaned_title(name: str) -> str:
+def cleaned_title(name: str, *, keep_country: bool = False) -> str:
     """Parens + trailing market noise stripped, apostrophes normalized.
 
     The shared first step for both slug-guessing (build_slug_candidates) and
@@ -1985,12 +1990,16 @@ def cleaned_title(name: str) -> str:
 
     without_parens = re.sub(r"\([^)]*\)", " ", normalize_apostrophes(name)).strip()
     padded = " " + re.sub(r"[^A-Z0-9]+", " ", fold_accents(name).upper()) + " "
-    phrases = (_TRAILING_NOISE_PHRASES if _forbidden_region_in(padded)
+    # [R65] ``keep_country`` : l'appelant a DÉJÀ établi, sur le titre complet, qu'un nom de pays
+    # restant est du nom de produit (branche console : le classifieur a retiré le créneau de
+    # région « (Europe) » qui le suivait — `ConsoleSignal.country_in_name`). Sans lui, « …
+    # Chronicles China » se lirait comme un verrou en queue et perdrait CHINA.
+    phrases = (_TRAILING_NOISE_PHRASES if not keep_country and _forbidden_region_in(padded)
                else _TRAILING_NOISE_PHRASES_KEEP_COUNTRY)
     return _strip_trailing_phrases(without_parens, phrases)
 
 
-def build_slug_candidates(name: str) -> list[str]:
+def build_slug_candidates(name: str, *, keep_country: bool = False) -> list[str]:
     """Ordered AKS slug guesses, most specific first.
 
     Tier 1: full name, parens + trailing market noise stripped (keeps dashed
@@ -2003,9 +2012,10 @@ def build_slug_candidates(name: str) -> list[str]:
 
     name = fold_franchise_spellings(name)   # « Warhammer 40,000 » → le `40k` d'AKS
     without_parens = re.sub(r"\([^)]*\)", " ", normalize_apostrophes(name)).strip()
-    full = cleaned_title(name)
+    full = cleaned_title(name, keep_country=keep_country)
     head = re.split(r"\s[-–—]\s", without_parens)[0]
-    head = _strip_trailing_phrases(head, _TRAILING_NOISE_PHRASES)
+    head = _strip_trailing_phrases(
+        head, _TRAILING_NOISE_PHRASES_KEEP_COUNTRY if keep_country else _TRAILING_NOISE_PHRASES)
     bases = [
         full,
         _strip_trailing_phrases(full, _TRAILING_EDITION_PHRASES),
@@ -2195,6 +2205,103 @@ def sitemap_shapes(slugs: list[str], page_kind: str = "cd-key") -> list[tuple[st
             if url not in vus:
                 vus.add(url)
                 out.append((nu, url))
+    return out
+
+
+# [R64] RANG DE REPLI « NOM D'ÉDITION RETIRÉ, CONFIRMÉ PAR L'INDEX » — audit du 2026-09-28
+# (« pas de page produit », proposition 1), Romain le 2026-09-29 : « go pour les corrections 1
+# et 2 et les vérifications ». Famille n°1 des pages ratées (≈ 2 070 lignes) : le titre nomme un
+# palier que `_TRAILING_EDITION_PHRASES` ne connaît pas — « The Secret of Monkey Island: Special
+# Edition » cherchait `…-special`, jamais `the-secret-of-monkey-island`, dont la page vend le
+# seau Special (41) ; « WWE 2K26 | King of Kings Edition » → `wwe-2k26`, seau 10860. Les
+# conditions de la revue adverse, toutes tenues ici :
+#   * un rang À PART, lu par `resolve_aks` SEUL, APRÈS tous les rangs existants — pas dans
+#     `build_slug_candidates`, que [R57] (`derived_dlc_page`) lit : 52 titres y auraient
+#     basculé ; placé après le rang 1, il changeait la page de 15 lignes DÉJÀ créées ;
+#   * actif seulement avec un index sitemap frais, et la base n'est sondée que si l'index la
+#     PUBLIE — aucune sonde à l'aveugle, pas de soupape ;
+#   * jamais DEFINITIVE / REMASTERED / ANNIVERSARY… retirés (décision revue de
+#     `_TRAILING_EDITION_PHRASES`) ;
+#   * rien n'est retiré quand le nom COMPLET est publié sous un autre gabarit
+#     (`f1-25-2026-season-edition-xbox-key`) : AKS en fait un produit distinct ;
+#   * jamais Standard(1) par ce rang : la page de base doit porter le palier NOMMÉ par le titre,
+#     sinon refus (`match_offer`, marque ``AksResolution.edition_rank``).
+_EDITION_RANK_HEADS = frozenset({"EDITION", "EDITON", "VERSION", "COLLECTION"})
+_EDITION_RANK_PROTECTED = frozenset({
+    "DEFINITIVE", "REMASTERED", "REMASTER", "ANNIVERSARY", "REMAKE", "REDUX", "UPGRADE", "HD",
+    "REBOOT"})
+_EDITION_RANK_MAX_WORDS = 3
+# Un séparateur de sous-titre SEUL (« - », « | », « : ») ou collé en fin de mot (« 2: »).
+_EDITION_RANK_SEPARATOR_RE = re.compile(r"^[-–—:|]+$|[:|]$")
+# Les gabarits de page CLÉ PC sous lesquels la base peut répondre (ceux des passes 1 et 3).
+_EDITION_RANK_KINDS: tuple[str, ...] = ("cd-key",) + SITEMAP_KEY_KINDS
+
+
+def edition_rank_bases(name: str, *, keep_country: bool = False) -> list[tuple[str, str]]:
+    """[R64] ``(base, mots retirés)`` du nom nettoyé dont le DERNIER mot est EDITION / EDITON /
+    VERSION / COLLECTION : 1, puis 2, puis 3 mots retirés avant lui, du plus au moins précis
+    (« WWE 2K26 | King of Kings Edition » → ``("WWE 2K26", "King of Kings Edition")`` à 3 mots).
+    Arrêt net sur un mot protégé (DEFINITIVE, REMASTERED, ANNIVERSARY…) ou sur un séparateur de
+    sous-titre (on ne mange jamais le nom au-delà de « : » / « | » / « - ») ; au moins un mot
+    reste. Aucune lecture d'index ici."""
+
+    base = cleaned_title(fold_franchise_spellings(name), keep_country=keep_country)
+    toks = base.split()
+    if len(toks) < 3 or re.sub(r"[^A-Z]", "", toks[-1].upper()) not in _EDITION_RANK_HEADS:
+        return []
+    out: list[tuple[str, str]] = []
+    for k in range(1, _EDITION_RANK_MAX_WORDS + 1):
+        keep = len(toks) - 1 - k
+        if keep < 1:
+            break
+        retires = toks[keep:]
+        if any(_EDITION_RANK_SEPARATOR_RE.search(w) for w in retires[:-1]):
+            break
+        if {re.sub(r"[^A-Z]", "", w.upper()) for w in retires} & _EDITION_RANK_PROTECTED:
+            break
+        head = " ".join(toks[:keep]).rstrip(" -–—:|,")
+        if head:
+            out.append((head, " ".join(retires)))
+    return out
+
+
+def _full_name_published_elsewhere(name: str, index: Any, *, keep_country: bool = False) -> bool:
+    """[R64] condition 3 de la revue : le nom COMPLET (tiers 1-2 de `build_slug_candidates`)
+    est-il publié sous N'IMPORTE quel gabarit connu — clé, compte, console standard ou de
+    repli, page Xbox combinée ? AKS en fait alors un produit distinct : on ne retire rien."""
+
+    from src import aks_sitemap
+    kinds = tuple(dict.fromkeys(aks_sitemap.PAGE_KINDS + CONSOLE_FALLBACK_TEMPLATES
+                                + ("key-nintendo-switch-2", "nintendo-switch-key")))
+    return any(index.kinds_for(slug, kinds)
+               for slug in build_slug_candidates(name, keep_country=keep_country)[:2])
+
+
+def edition_rank_probes(name: str, *, keep_country: bool = False) -> list[tuple[str, str, str]]:
+    """[R64] Les ``(slug, url, mots retirés)`` du rang de repli que l'index sitemap PUBLIE,
+    dans l'ordre de :func:`edition_rank_bases`. Vide sans index frais (rien n'est deviné), ou
+    quand le nom complet est publié sous un autre gabarit. Formes : la courante sous un gabarit
+    clé PC (`-cd-key`, `-key`, `-game-code`, `-download-code`) et l'ancienne
+    `compare-and-buy-…` quand l'index l'a relevée — jamais une forme qu'il n'a pas vue."""
+
+    index = sitemap_index()
+    if index is None:
+        return []
+    bases = edition_rank_bases(name, keep_country=keep_country)
+    if not bases or _full_name_published_elsewhere(name, index, keep_country=keep_country):
+        return []
+    out: list[tuple[str, str, str]] = []
+    vus: set[str] = set()
+    for base, retires in bases:
+        for variant in _slug_variants(base):
+            urls = [AKS_COMPARE_URL.format(slug=variant, kind=k)
+                    for k in _EDITION_RANK_KINDS if index.has_page(f"{variant}-{k}")]
+            if index.has_legacy(variant) is True:
+                urls.append(AKS_LEGACY_URL.format(slug=variant))
+            for url in urls:
+                if url not in vus:
+                    vus.add(url)
+                    out.append((variant, url, retires))
     return out
 
 
@@ -2533,6 +2640,10 @@ class AksResolution:
     console_pages: dict[str, str] = field(default_factory=dict)
     # `<meta data-itemprop="platform" content="PC">` of the active tab ("" when absent).
     page_platform: str = ""
+    # [R64] les mots de palier RETIRÉS du nom quand cette page a été atteinte par le rang de
+    # repli « nom d'édition retiré, confirmé par l'index » (« Special Edition »), "" sinon. Le
+    # bloc édition de `match_offer` exige alors que la page porte le palier NOMMÉ par le titre.
+    edition_rank: str = ""
 
 
 class AksProbeUnreliable(Exception):
@@ -2807,9 +2918,16 @@ def resolve_aks_url(url: str, http_get_fn: Callable[..., Any] = http_get) -> Aks
     (fail-closed: not a page we know how to read)."""
 
     match = _AKS_PAGE_URL_RE.search(url.split("?", 1)[0])
-    if not match:
-        return None
-    slug = match.group(1)
+    if match:
+        slug = match.group(1)
+    else:
+        # [R65] un onglet sous un gabarit console de REPLI (`…-xbox-series-key-…`,
+        # `…-xbox-one-code-…`, `…-xbox-key-…`) : sa propre grammaire, slug capturé NU (R43 le
+        # compare aux slugs du titre) — `_AKS_PAGE_URL_RE` / CONSOLE_PAGE_KINDS inchangés.
+        template = console_template_of(url)
+        if template is None:
+            return None
+        slug = template[0]
     probe = _probe_guessed_page(url, http_get_fn)
     if probe is None:
         return None                                    # clean 404/410
@@ -2889,7 +3007,7 @@ def _probe_guessed_page(url: str, http_get_fn: Callable[..., Any]) -> Any:
 
 def resolve_aks(
     name: str, http_get_fn: Callable[..., Any] = http_get, *, page_kind: str = "cd-key",
-    search: bool = True,
+    search: bool = True, keep_country: bool = False,
 ) -> AksResolution | None:
     """Try each candidate slug read-only; return the first real product page.
 
@@ -2912,7 +3030,32 @@ def resolve_aks(
     # 200 on "some-game" silently resolves the wrong product tier. That is
     # exactly what the docstring always promised ("fails closed immediately")
     # and what the old collect-then-maybe-raise code did not do.
-    slugs = build_slug_candidates(name)
+    # [R65] ``keep_country`` — see `cleaned_title` (console rows whose country is a name word).
+    slugs = build_slug_candidates(name, keep_country=keep_country)
+    if page_kind in CONSOLE_FALLBACK_TEMPLATES:
+        # [R65] un gabarit console de REPLI (`-xbox-one-key`, `-ps5-key`, `-xbox-key`…) n'est
+        # sondé que si l'index sitemap le PUBLIE : ni soupape, ni forme année / ancienne, ni
+        # passe 3, ni recherche. Sans index frais → None (jamais une sonde à l'aveugle).
+        index = sitemap_index()
+        if index is None:
+            return None
+        for variant in slugs:
+            if not index.has_page(f"{variant}-{page_kind}"):
+                continue
+            url = aks_url(variant, page_kind)
+            probe = _probe_guessed_page(url, http_get_fn)
+            if probe is None:
+                continue
+            if not (probe.ok and probe.status == 200 and probe.body):
+                raise AksProbeUnreliable(f"{variant} -> {probe.status or probe.error}",
+                                         status=probe.status, slug=variant)
+            resolution = _resolution_from_body(variant, url, probe.body)
+            if resolution is None:
+                if not extract_product_id(probe.body):
+                    continue
+                raise AksNameUnreadable(variant)
+            return resolution
+        return None
     # Pass 1 — the current URL shape for every slug tier (most → least specific): the
     # common case, unchanged cost. Pass 2 (cd-key only) — the alternate shapes of the MOST
     # specific slug: year-suffixed (new AKS pages, e.g. buy-fable-2026-…) then legacy
@@ -2968,6 +3111,29 @@ def resolve_aks(
         resolution = _resolution_from_body(variant, url, probe.body)
         if resolution is not None:
             return resolution
+
+    # Passe 4 — [R64] le rang de repli « nom d'édition retiré, confirmé par l'index » (Romain,
+    # 2026-09-29 : « go pour les corrections 1 et 2 »). APRÈS tous les rangs existants : il ne
+    # peut donc changer la page d'aucune ligne qu'ils résolvent déjà. Seulement des URL que
+    # l'index publie (vide sans index frais), `MA1` comme les passes 1-2 ; la page rendue porte
+    # les mots retirés (`edition_rank`) pour que `match_offer` exige le palier NOMMÉ.
+    if page_kind == "cd-key":
+        for variant, url, retires in edition_rank_probes(name, keep_country=keep_country):
+            if url in sondees:
+                continue
+            sondees.add(url)
+            probe = _probe_guessed_page(url, http_get_fn)
+            if probe is None:
+                continue                               # photo périmée : page retirée depuis
+            if not (probe.ok and probe.status == 200 and probe.body):
+                raise AksProbeUnreliable(f"{variant} -> {probe.status or probe.error}",
+                                         status=probe.status, slug=variant)
+            resolution = _resolution_from_body(variant, url, probe.body)
+            if resolution is None:
+                if not extract_product_id(probe.body):
+                    continue
+                raise AksNameUnreadable(variant)
+            return dc_replace(resolution, edition_rank=retires)
 
     if page_kind != "cd-key" or not search:
         # no site-search fallback for account pages (see docstring), nor once the R30
@@ -3461,6 +3627,11 @@ class _Plan:
     # "Origin English Only -OR- EN/PL -OR- EN/PL/RU" → GLOBAL, 3euen / 3eu → EU). None for
     # every other PC plan (region_label is the base label there already).
     base_label: str | None = None
+    # [R64] the words the fallback rank removed to reach the page this plan stands on (the PC
+    # page of a PC plan, the ANCHOR of a console plan — its console pages come from that
+    # anchor's tab bar), "" otherwise. Non-empty → the edition must be a tier the TITLE names
+    # and the page sells: never Standard(1), never DLC(16), never a sole-bucket guess (E06).
+    edition_rank: str = ""
 
     @property
     def console(self) -> bool:
@@ -3867,6 +4038,7 @@ def _pc_plan(
         # up: it reads the BASE the route came from, like a console plan.
         base_label=({"en_only": "GLOBAL", "eu_en_only": "EU"}[en_route]
                     if en_route is not None else None),
+        edition_rank=getattr(resolution, "edition_rank", "") or "",
     )
 
 
@@ -4007,6 +4179,14 @@ def match_offer(
     # token and software pages often list no official_platforms. Fail closed when
     # the edition or region can't be pinned to THIS page — no guessing. Games are
     # untouched (is_software is precise: brand tokens + software-only page labels).
+    if sw and plan.edition_rank:
+        # [R64] un logiciel atteint en retirant des mots du nom : ses éditions sont des types
+        # de licence, pas des paliers, et `resolve_software_edition` peut adopter le seau
+        # UNIQUE d'une page sans que le titre le nomme. On ne le fait pas par ce rang.
+        return SkippedOffer(
+            offer,
+            f"page {resolution.aks_name!r} reached by removing {plan.edition_rank!r} from the "
+            "title — software is not entered through the edition fallback rank (R64)")
     if sw:
         sw_edition = resolve_software_edition(offer, resolution.editions)
         if sw_edition is None:
@@ -4415,6 +4595,23 @@ def match_offer(
                     f"AKS page — guessed edition unverified (audit P1-1)",
                 )
 
+    # [R64] (Romain, 2026-09-29 : « go pour les corrections 1 et 2 ») — la page a été atteinte
+    # en RETIRANT des mots de palier du titre (« Special Edition » → `the-secret-of-monkey-
+    # island`). Elle n'est la bonne que si elle vend le palier que ces mots NOMMENT : ici, à la
+    # sortie du bloc édition, tout id autre que 1 / 16 vient d'une édition de la page nommée par
+    # le titre (`edition_from_extras`, adoption E05 / R23 ou réconciliation P1-1). Standard(1)
+    # voudrait dire que les mots retirés n'ont trouvé aucun seau — « Marvel's Midnight Suns
+    # Digital+ Edition » sur `marvels-midnight-suns`, un autre palier ; DLC(16) viendrait de R18
+    # sur la page d'un autre produit. Refus AVANT E06, dont l'adoption du seau unique est une
+    # supposition, pas un palier nommé. Revue adverse du 28/09 : 35 lignes en Standard sinon.
+    if plan.edition_rank and edition_id in ("1", "16"):
+        return SkippedOffer(
+            offer,
+            f"page {resolution.aks_name!r} reached by removing {plan.edition_rank!r} from the "
+            f"title, but it sells no edition those words name — page sells "
+            f"{sorted(_edition_entry_name(v) for v in resolution.editions.values())}; never "
+            "Standard or DLC through the edition fallback rank (R64)")
+
     # [E06] L'ÉDITION RETENUE DOIT ÊTRE VENDUE PAR LA PAGE — STANDARD COMPRIS (Romain,
     # 2026-09-21 : « normalement tu es censé aller voir la page AKS comme pour les jeux
     # normaux, voir si on est en standard ou en DLC sur cette page »).
@@ -4531,6 +4728,103 @@ def _identity_tokens(name: str) -> list[str]:
     (normalize_apostrophes); the ASCII apostrophe is removed here, empty tokens dropped."""
 
     return [t for t in (tok.replace("'", "") for tok in tokenize(name)) if t]
+
+
+def _page_bare_slug(url: str) -> str | None:
+    """[R65] Le slug NU d'une URL de page AKS connue — gabarit standard
+    (`_AKS_PAGE_URL_RE`) ou de repli (`console_template_of`) —, ``None`` hors grammaire."""
+
+    m = _AKS_PAGE_URL_RE.search((url or "").split("?", 1)[0])
+    if m:
+        return m.group(1)
+    template = console_template_of(url)
+    return template[0] if template else None
+
+
+def _console_family_pages(
+    families: tuple[str, ...], anchor: AksResolution, anchor_kind: str,
+) -> dict[str, list[tuple[str, str]]]:
+    """[R65] Pour chaque famille déclarée (P1 : jamais une autre), les pages CONNUES, dans
+    l'ordre des gabarits (standard d'abord) : l'ancre si son gabarit est de la famille, les
+    onglets de la barre de l'ancre sous un gabarit de la famille, puis — index sitemap frais —
+    les pages que l'index publie au MÊME slug qu'une page déjà connue, sous un autre gabarit de
+    la famille (`star-wars-battlefront-2-xbox-one` et `…-xbox-one-code`). Jamais le slug de la
+    page PC seule : sous un autre gabarit, ce peut être un autre produit, et la barre d'onglets
+    d'AKS est ce qui relie les pages d'un même jeu. ``[(gabarit, url)]`` sans doublon."""
+
+    index = sitemap_index()
+    out: dict[str, list[tuple[str, str]]] = {}
+    for fam in families:
+        templates = CONSOLE_FAMILY_TEMPLATES.get(fam, (CONSOLE_PAGE_KIND[fam],))
+        cles: set[tuple[str, str]] = set()
+        cands: list[tuple[str, str]] = []
+
+        def ajoute(kind: str, url: str) -> None:
+            cle = (_page_bare_slug(url) or url, kind)
+            if cle not in cles:
+                cles.add(cle)
+                cands.append((kind, url))
+
+        for kind in templates:
+            if anchor_kind == kind:
+                ajoute(kind, anchor.url)
+            url = anchor.console_pages.get(kind)
+            if url:
+                ajoute(kind, url)
+        if index is not None:
+            for _kind, url in list(cands):
+                slug = _page_bare_slug(url)
+                for kind in templates:
+                    if slug and index.has_page(f"{slug}-{kind}"):
+                        ajoute(kind, aks_url(slug, kind))
+        out[fam] = cands
+    return out
+
+
+def _combined_xbox_page(
+    families: tuple[str, ...], anchor: AksResolution, anchor_kind: str,
+    known: dict[str, list[tuple[str, str]]],
+    page_resolver: Callable[[str], AksResolution | None],
+) -> tuple[str, AksResolution] | str | None:
+    """[R65] 2b — la page Xbox COMBINÉE `buy-<slug>-xbox-key-compare-prices/` de ce jeu, rangée
+    selon la génération que sa MÉTA déclare, ``(famille, page)`` ; ``None`` quand la ligne ne
+    vise aucune Xbox, qu'aucune page combinée n'est connue, qu'elle a disparu (404) ou que sa
+    méta ne nomme pas une génération VISÉE par la ligne (P1) ; un ``str`` = motif de refus
+    (page illisible). Connue = l'ancre elle-même, un onglet de l'ancre, ou — index frais — la
+    page publiée au même slug qu'une page Xbox connue ou que l'ancre console. Lue une fois."""
+
+    xbox = [f for f in families if f in ("XBOX_ONE", "XBOX_SERIES")]
+    if not xbox:
+        return None
+    if anchor_kind == XBOX_COMBINED_TEMPLATE:
+        page: AksResolution | None = anchor
+    else:
+        url = anchor.console_pages.get(XBOX_COMBINED_TEMPLATE, "")
+        index = sitemap_index()
+        if not url and index is not None:
+            slugs = [_page_bare_slug(u) for f in xbox for _k, u in known.get(f, [])]
+            if anchor_kind in CONSOLE_TEMPLATE_FAMILY:
+                slugs.append(anchor.slug)
+            for slug in dict.fromkeys(s for s in slugs if s):
+                if index.has_page(f"{slug}-{XBOX_COMBINED_TEMPLATE}"):
+                    url = aks_url(slug, XBOX_COMBINED_TEMPLATE)
+                    break
+        if not url:
+            return None
+        try:
+            page = page_resolver(url)
+        except AksProbeUnreliable as exc:
+            return f"AKS probe unreliable (throttled?): {exc}"
+        except AksNameUnreadable as exc:
+            return f"AKS page name unreadable — cannot verify product (R01): {exc}"
+        except AksPageUnparseable as exc:
+            return f"AKS page markup drifted — guard input unreadable (MA6): {exc}"
+        if page is None:
+            return None
+    fam = page_platform_family(getattr(page, "page_platform", "") or "")
+    if fam not in xbox:
+        return None
+    return fam, page
 
 
 def _console_plan(
@@ -4714,8 +5008,19 @@ def _console_plan(
     windows_key = bool(getattr(sig, "windows_key", False))
     primary = families[0]
     anchor_kind = "cd-key"
+    # [R65] PRÉALABLE : un nom de pays que le classifieur a gardé dans le nom (il n'est pas le
+    # verrou de la ligne) reste dans le SLUG — sinon « … Chronicles China » chercherait
+    # `assassins-creed-chronicles`, la trilogie, que les gabarits « -code » publient. Un
+    # résolveur qui ne sait pas le garder ne résout pas cette ligne (fail-closed).
+    resolve_kw: dict[str, Any] = {}
+    if getattr(sig, "country_in_name", False):
+        if not _accepts_kwarg(resolver, "keep_country"):
+            return SkippedOffer(
+                offer, "console: a country is part of the product name and the resolver cannot "
+                       "keep it in the slug — not entered (R65)")
+        resolve_kw["keep_country"] = True
     try:
-        pc_res = resolver(slug_name)
+        pc_res = resolver(slug_name, **resolve_kw)
         anchor = pc_res
         # Une clé Windows / appli Xbox n'a qu'une ancre : la page PC (la clé marche sur PC ;
         # une page console seule ne dirait rien de Play Anywhere).
@@ -4723,7 +5028,22 @@ def _console_plan(
             if anchor is not None:
                 break
             anchor_kind = CONSOLE_PAGE_KIND[fam]
-            anchor = resolver(slug_name, page_kind=anchor_kind)
+            anchor = resolver(slug_name, page_kind=anchor_kind, **resolve_kw)
+        # [R65] ni page PC ni page console au gabarit standard : les gabarits de REPLI de la
+        # même famille (`-xbox-series-key`, `-xbox-one-code`…), puis la page Xbox combinée —
+        # `resolve_aks` ne les sonde que si l'index sitemap les publie (aucune sonde à
+        # l'aveugle). Standard d'abord, toujours : ce bloc ne s'ouvre qu'après lui.
+        if anchor is None and not windows_key:
+            anchor_families = families if inferred else (primary,)
+            fallback_kinds = [k for fam in anchor_families
+                              for k in CONSOLE_FAMILY_TEMPLATES.get(fam, ())[1:]]
+            if any(f in ("XBOX_ONE", "XBOX_SERIES") for f in anchor_families):
+                fallback_kinds.append(XBOX_COMBINED_TEMPLATE)
+            for kind in fallback_kinds:
+                anchor = resolver(slug_name, page_kind=kind, **resolve_kw)
+                if anchor is not None:
+                    anchor_kind = kind
+                    break
     except AksProbeUnreliable as exc:
         return SkippedOffer(offer, f"AKS probe unreliable (throttled?): {exc}")
     except AksNameUnreadable as exc:
@@ -4771,6 +5091,7 @@ def _console_plan(
             dlc_page=dlc_marker is not None,
             identity_name=identity_name,
             guard_name=guard_name,
+            edition_rank=getattr(pc_res, "edition_rank", "") or "",     # [R64]
         )
     xbox_declared = any(f in ("XBOX_ONE", "XBOX_SERIES") for f in families)
     # AUDIT DU 2026-09-20 : la garde Play Anywhere se déclenchait pour N'IMPORTE quelle
@@ -4817,13 +5138,38 @@ def _console_plan(
     # « seulement les pages qu'AKS a » ; les deux absentes → « no AKS product page found ».
     # Toute AUTRE anomalie (onglet vers un autre produit, autre génération, carte d'éditions
     # vide) refuse la ligne entière, comme pour une génération déclarée.
+    # [R65] (Romain, 2026-09-29 : « go pour les corrections 1 et 2 ») — chaque console a
+    # plusieurs gabarits (`CONSOLE_FAMILY_TEMPLATES`, standard d'abord) : les pages CONNUES d'une
+    # famille sont l'ancre (si son gabarit est de la famille), les onglets de ses gabarits, et
+    # les pages que l'index publie au MÊME slug sous un autre de ses gabarits. Deux pages
+    # différentes pour une même console → refus : on ne choisit pas. La page Xbox combinée
+    # `-xbox-key` est rangée selon sa MÉTA, jamais selon son gabarit (`_combined_xbox_page`).
+    known = _console_family_pages(families, anchor, anchor_kind)
+    combined = _combined_xbox_page(families, anchor, anchor_kind, known, page_resolver)
+    if isinstance(combined, str):
+        return SkippedOffer(offer, combined)
+    if combined is not None:
+        _combined_fam, _combined_res = combined
+        known[_combined_fam].append((XBOX_COMBINED_TEMPLATE, _combined_res.url))
     pages: list[tuple[str, AksResolution, str, str]] = []
     for fam in families:
-        kind = CONSOLE_PAGE_KIND[fam]
-        if anchor_kind == kind:
+        candidates = known.get(fam, [])
+        if len(candidates) > 1:
+            return SkippedOffer(
+                offer,
+                f"console: AKS has {len(candidates)} different {fam} pages "
+                f"({', '.join(u for _k, u in candidates)}) — ambiguous page, not entered (R65)")
+        if candidates and candidates[0][0] == XBOX_COMBINED_TEMPLATE and inferred:
+            return SkippedOffer(
+                offer,
+                f"console: generation deduced (P4) and the only {fam} page is the combined Xbox "
+                f"page {candidates[0][1]} — 2b, non tranché (R65)")
+        kind, url = candidates[0] if candidates else (CONSOLE_PAGE_KIND[fam], "")
+        if anchor_kind == kind and url == anchor.url:
             page = anchor
+        elif combined is not None and url and url == combined[1].url:
+            page = combined[1]
         else:
-            url = anchor.console_pages.get(kind)
             if not url and inferred:
                 continue
             if not url:
@@ -4915,6 +5261,10 @@ def _console_plan(
         guard_name=guard_name,
         console_targets=tuple(pages),
         base_label=label,
+        # [R64] the console pages come from the ANCHOR's tab bar: an anchor reached through the
+        # edition fallback rank carries its mark to the common flow (the primary console page
+        # itself was read by URL and knows nothing of it).
+        edition_rank=getattr(anchor, "edition_rank", "") or "",
     )
 
 

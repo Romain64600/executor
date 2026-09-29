@@ -1068,6 +1068,10 @@ avant lui. Quand il fait autorité :
 - **Passe 3** : les gabarits de clé que les passes 1-2 ne sondent pas (`-key`, `-game-code`,
   `-download-code`) et la même question à la ponctuation près (`flat_page`), jamais une page
   compte ni console. Une URL déjà sondée en passe 1-2 n'est pas re-sondée.
+- **Passe 4 — `[R64]`** (2026-09-29) : le rang de repli « nom d'édition retiré, confirmé par
+  l'index », APRÈS tous les rangs ci-dessus, seulement des URL que l'index publie — voir
+  `[R64]` plus bas. Et une page console sous un gabarit de REPLI (`-xbox-one-key`, `-ps5-key`,
+  `-xbox-key`…) n'est sondée par `resolve_aks` que si l'index la publie — voir `[R65]`.
 - **La recherche R30 n'est plus appelée** (morte depuis le 22/09 : `HTTP 200`, corps vide).
 - `match_meta.json.sitemap_first` dit pour chaque page si le mode était actif, contre quel
   relevé, et combien de sondes il a évitées (`probes_skipped`) ou laissées à la soupape
@@ -1598,6 +1602,11 @@ generation: « Xbox sur les deux »; PlayStation without a generation: refused).
 OFF phase of 2026-09-12 → 14, the "`--consoles` requires `--dry-run`" guard of 2026-09-14,
 the adversarial review of 2026-09-12 fixed on 2026-09-14, the canaries) : CHANGELOG
 2026-09-12, 2026-09-14, 2026-09-15.
+
+**`[R65]` (2026-09-29) — gabarits console « -key » / « -code ».** Une console a plusieurs
+gabarits de page (`CONSOLE_FAMILY_TEMPLATES`), et la page Xbox combinée `-xbox-key` est
+rangée selon sa MÉTA. Tout est dans la section `[R65]` plus bas ; ce qui suit (§4.12.1 →
+§4.12.4) décrit les gabarits standard, toujours essayés en premier.
 
 **4.12.1 Page model — verified read-only 2026-09-12 (UA `AKS/Staff`).** AKS has SEPARATE
 console product pages: `buy-<slug>-<kind>-compare-prices/`, kind ∈ `ps4` / `ps5` /
@@ -3305,6 +3314,119 @@ même décision que le sweep : `--consoles` est le **défaut** sur les deux scri
 5. **Saisie** (`scripts/12`) : flag accepté, transmis à rien ; groupement par store inchangé
    (dicts candidats entiers, empreinte étendue R45) ; `05_submit` lit `targets` dans
    `approved.json`.
+
+---
+
+### `[R65]` Pages console sous les gabarits « -key » / « -code » (2026-09-29)
+
+Romain, 2026-09-29 : « go pour les corrections 1 et 2 et les vérifications » — proposition 2 de
+l'audit [`AUDIT_2026-09-28_pages-produit-absentes.md`](AUDIT_2026-09-28_pages-produit-absentes.md)
+(§4.3, §6, §6.1). AKS publie beaucoup de pages console sous d'autres gabarits que
+`buy-<slug>-<console>-compare-prices/` : `-xbox-series-key` (Priest Simulator: Vampire Show),
+`-xbox-one-code` (onglet Xbox One de Destiny 2, Firewatch, GTA 5…), `-xbox-series-x` (Call of
+Duty Black Ops Cold War), `-ps5-key`, `-ps4-key`, `-xbox-one-key`, `-nintendo-switch-2-key`. La
+barre d'onglets les ignorait et la branche console ne les sondait pas : 84 % des refus console
+« pas de page » avaient pourtant leur page.
+
+- **La table** (`src/console_keys.py:106`, `CONSOLE_FAMILY_TEMPLATES`) : famille → gabarits,
+  dans l'ordre d'essai, **standard d'abord** : XBOX_ONE `xbox-one` / `xbox-one-key` /
+  `xbox-one-code` ; XBOX_SERIES `xbox-series` / `xbox-series-key` / `xbox-series-x` ; PS4 `ps4`
+  / `ps4-key` ; PS5 `ps5` / `ps5-key` ; SWITCH `nintendo-switch` ; SWITCH2 `nintendo-switch-2` /
+  `nintendo-switch-2-key`. Exactement les sept gabarits de la proposition ; `ps4-game-code` et
+  `key-nintendo-switch-2` n'en font pas partie (le second est déjà lu comme `nintendo-switch-2`,
+  slug « …-key », comme avant). La grammaire de la barre d'onglets (`_PAGE_KIND_RE`, `:1306`)
+  et `console_template_of` (`:1314`) les lisent sous LEUR nom. **`CONSOLE_PAGE_KINDS` n'est pas
+  allongé** : il nourrit `matcher._AKS_PAGE_URL_RE` et le routage `[R18c]`, qui ne passent
+  jamais par un gabarit de repli ; `resolve_aks_url` lit ces URL par leur propre grammaire
+  (`src/matcher.py:2927`, slug capturé NU).
+- **Sonder** (`resolve_aks`, `src/matcher.py:3035`) : un gabarit de repli n'est sondé que si
+  l'index sitemap le PUBLIE — ni soupape, ni forme année / ancienne, ni passe 3 ; sans index
+  frais, rien. L'ancre console (`_console_plan`, `:5032`) essaie, faute de page PC et de page
+  au gabarit standard, les gabarits de repli de la famille, puis la page combinée.
+- **Une page par console, jamais deux** (`_console_family_pages`, `:4744` ; refus `:5157`) :
+  les pages CONNUES d'une famille sont l'ancre, les onglets de ses gabarits, et ce que l'index
+  publie au MÊME slug sous un autre de ses gabarits (`star-wars-battlefront-2-xbox-one` ET
+  `…-xbox-one-code`). Deux pages différentes → refus `console: AKS has 2 different <F> pages …
+  (R65)`. Jamais le slug de la page PC seule : sous un autre gabarit, ce peut être un autre
+  produit — la barre d'onglets est ce qui relie les pages d'un même jeu.
+- **La méta reste le juge ; P1 inchangé.** Une page de repli qui se déclare une autre
+  génération refuse la ligne (règle du 2026-09-18). Seules les familles DÉCLARÉES (ou déduites
+  par P4) ont des pages.
+- **2b — la page Xbox combinée `-xbox-key`** (`_combined_xbox_page`, `:4784`) : lue une fois
+  quand elle est connue (onglet, ancre, ou index au même slug qu'une page Xbox connue), rangée
+  selon sa MÉTA (« Xbox Series X » pour NHL 27, Hidden Legends 2, Destiny 2 The Collection, Far
+  Cry 3) ; une méta muette ou qui ne nomme pas une génération VISÉE → elle ne sert à rien. Elle
+  sert une génération **déclarée** égale (G2A « NHL 27 | Deluxe Edition (Xbox Series X/S) » →
+  Xbox Series, Deluxe(7)) ; pour une génération **déduite** (P4), c'est un refus explicite
+  `… the combined Xbox page … — 2b, non tranché (R65)` (`:5162`) — la décision attend Romain.
+- **Préalable — le nom de pays reste dans le nom de garde console** (`src/console_keys.py:1074`
+  `country_is_product_name`, `:1085`, `:1190` ; `src/matcher.py:1997`, `:5021`). Miroir de
+  `_TRAILING_NOISE_PHRASES_KEEP_COUNTRY` (PC, 2026-09-18), même règle : la région est la
+  DERNIÈRE chose déclarée. Un nom de pays suivi d'un mot de région vendable (Europe, EU, US, UK,
+  Global…) est du nom de produit : gardé dans `resolve_name`, absent des `region_words`, et le
+  slug est construit SANS le retirer en queue (`keep_country`). Driffle « Assassin's Creed
+  Chronicles China (Europe) (Xbox One / Xbox Series X|S) » entre sur `…-chronicles-china-xbox-one`
+  / `-xbox-series`, jamais sur la trilogie `assassins-creed-chronicles-xbox-one-code`.
+  « … Xbox Live Key CHINA » reste un verrou. Un résolveur qui ne sait pas garder le pays ne
+  résout pas une telle ligne (fail-closed).
+- **Nom d'une page « -code »** (`src/console_keys.py:1282`) : « Tomb Raider Definitive Edition
+  Xbox One Code » — CODE (ou « Game Code ») qui suit le suffixe de plateforme en fait partie.
+
+**Mesures.** Relecture sur les **11 503 lignes créées** de cette machine (4 403 cibles console) :
+classifieur console inchangé sur les 2 954 lignes console, aucune cible dont la console a deux
+pages publiées au même slug, **une** ligne qui bascule — Gamerall « Far Cry 3 - Classic Edition
+(Xbox Live) » (offre 101109116, créée le 25/09 sur la seule page Xbox One) : la page combinée
+`far-cry-3-xbox-key` se déclare Xbox Series, génération déduite → refus 2b. Rejeu de la
+population de l'audit : voir CHANGELOG 2026-09-29. Tests : `tests/test_resolver_repli_r64_r65.py`
+(pages AKS réelles réduites, `tests/fixtures/pages_r64_r65/`).
+
+---
+
+### `[R64]` Rang de repli « nom d'édition retiré, confirmé par l'index » (2026-09-29)
+
+Romain, 2026-09-29 : « go pour les corrections 1 et 2 et les vérifications » — proposition 1 de
+l'audit du 2026-09-28 (famille n°1 des pages ratées, ≈ 2 070 lignes). Le titre nomme un palier
+que `_TRAILING_EDITION_PHRASES` ne connaît pas : « The Secret of Monkey Island: Special Edition »
+cherchait `…-special`, jamais `the-secret-of-monkey-island`, dont la page vend le seau Special
+(41). **Toutes les conditions de la revue adverse (§6.1) sont tenues :**
+
+1. **Un rang à part, lu par `resolve_aks` seul, après TOUS les rangs existants** (passe 4,
+   `src/matcher.py:3115`, `edition_rank_probes` `:2280`) — jamais dans `build_slug_candidates`,
+   que `[R57]` (`derived_dlc_page`) lit (52 titres y auraient basculé) ; placé après le rang 1,
+   il changeait la page de 15 lignes déjà créées. Une page que les rangs existants trouvent
+   n'est donc jamais remplacée par la base.
+2. **Index frais seulement, aucune sonde à l'aveugle** : la base n'est sondée que si l'index
+   publie `buy-<base>-<gabarit clé PC>-compare-prices/` (`cd-key`, `key`, `game-code`,
+   `download-code`) ou la forme ancienne relevée ; pas de soupape. Sans index frais, le rang
+   n'existe pas.
+3. **Les bases** (`edition_rank_bases`, `:2240`) : le nom nettoyé finit par EDITION / EDITON /
+   VERSION / COLLECTION ; 1, puis 2, puis 3 mots retirés avant lui, du plus au moins précis ;
+   au moins un mot reste ; arrêt net sur un séparateur de sous-titre (« - », « | », « : », « 2: »
+   — on ne mange jamais le nom au-delà) et sur un mot protégé : **DEFINITIVE, REMASTERED,
+   REMASTER, ANNIVERSARY, REMAKE, REDUX, UPGRADE, HD, REBOOT** (décision revue de
+   `_TRAILING_EDITION_PHRASES`).
+4. **Rien n'est retiré quand le nom complet est publié sous un autre gabarit**
+   (`_full_name_published_elsewhere`, `:2268`) : les tiers 1-2 du nom, sous n'importe quel
+   gabarit connu (clé, compte, console standard ou de repli, `-xbox-key`) —
+   `f1-25-2026-season-edition-xbox-key`, `destiny-2-the-collection-xbox-key` : AKS en fait un
+   produit distinct.
+5. **Jamais Standard(1), jamais DLC(16) par ce rang** (`:4607`) : la page porte la marque
+   `AksResolution.edition_rank` (les mots retirés) — et, pour une ligne console, `_Plan.edition_rank`
+   depuis l'ANCRE PC, la page console primaire étant lue par URL. À la sortie du bloc édition,
+   seul un id que la page vend ET que les mots du titre nomment passe (`edition_from_extras`,
+   adoption E05 / R23, réconciliation P1-1) ; sinon refus `… reached by removing '<mots>' from
+   the title, but it sells no edition those words name — page sells [...] (R64)`, AVANT E06
+   (dont l'adoption du seau unique est une supposition). « Marvel's Midnight Suns Digital+
+   Edition » : la page vend « Digital+ Edition », mais DIGITAL et EDITION sont du bruit de format,
+   aucun mot ne NOMME le seau → refus, jamais Standard. **Un logiciel** atteint par ce rang est
+   refusé (`:4182`) : `resolve_software_edition` adopterait un seau de licence UNIQUE que le titre
+   ne nomme pas.
+6. Aucune garde n'est assouplie : R01, R01b (mots en trop), R27 / R51, R43 (un DLC marqué sur la
+   page de base est refusé — `resolved_on_own_page` est faux par construction), R39, E06.
+
+**Mesures.** Zéro régression par construction : le rang ne s'ouvre que quand tous les rangs
+existants ont rendu « pas de page ». Rejeu de la population de l'audit (14 364 offres, vrai code,
+relevé du 28/09) : la base est trouvée pour 999 offres ; voir CHANGELOG 2026-09-29.
 
 ---
 

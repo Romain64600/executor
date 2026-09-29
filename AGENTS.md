@@ -141,6 +141,37 @@ No degraded mode.
 These are deliberate, Romain-reviewed calls. An adversarial audit re-derives them as
 "findings" every time; leave them AS-IS unless Romain explicitly changes his mind.
 
+- **`[R64]` Rang de repli « nom d'édition retiré, confirmé par l'index » — Romain, 2026-09-29**
+  (« go pour les corrections 1 et 2 et les vérifications », proposition 1 de l'audit « pas de page
+  produit » du 28/09). « The Secret of Monkey Island: Special Edition » → la page de base
+  `the-secret-of-monkey-island`, seau Special(41) ; « WWE 2K26 | King of Kings Edition » → 10860.
+  Un audit voudra : (a) mettre ce rang dans `build_slug_candidates` ou juste après le rang 1 —
+  non : `[R57]` lit `build_slug_candidates` (52 bascules) et, après le rang 1, 15 lignes déjà
+  créées changeaient de page ; il vient APRÈS tous les rangs, dans `resolve_aks` seul ; (b)
+  laisser entrer Standard(1) quand les mots retirés ne nomment aucun seau — non, c'est le cœur de
+  la règle (« Marvel's Midnight Suns Digital+ Edition » serait entrée sur le mauvais palier) ;
+  (c) retirer aussi DEFINITIVE / REMASTERED / ANNIVERSARY / REMAKE / HD… — non, décision revue ;
+  (d) sonder la base sans que l'index la publie, ou lui donner une soupape — non ; (e) retirer les
+  mots même quand le nom complet est publié sous un autre gabarit (`…-xbox-key`, compte…) — non,
+  AKS en fait un autre produit ; (f) laisser un logiciel entrer par ce rang — non, refus voulu
+  (licence unique adoptée sans être nommée). EXECUTOR_RULES `[R64]`,
+  `tests/test_resolver_repli_r64_r65.py`.
+
+- **`[R65]` Pages console « -key » / « -code » et page Xbox combinée — Romain, 2026-09-29** (même
+  go, proposition 2). Sept gabarits de repli (`CONSOLE_FAMILY_TEMPLATES`), standard d'abord,
+  sondés seulement si l'index les publie ; deux pages pour une même console → refus ; la méta de
+  la page reste le juge ; P1 inchangé ; la page `-xbox-key` est rangée selon sa MÉTA et ne sert
+  qu'une génération DÉCLARÉE. Un audit voudra : (a) allonger `CONSOLE_PAGE_KINDS` — non, il
+  nourrit `_AKS_PAGE_URL_RE` et `[R18c]` ; (b) choisir entre deux pages d'une même console
+  (« la standard gagne ») — non, refus ; (c) utiliser la page combinée pour une génération
+  DÉDUITE (P4) — **non tranché (2b)** : Romain a demandé des exemples avant de décider, le refus
+  explicite « 2b, non tranché » reste jusqu'à sa réponse ; il coûte une ligne déjà créée,
+  Gamerall « Far Cry 3 - Classic Edition (Xbox Live) » (page combinée Series), voulu ; (d) ajouter
+  `ps4-game-code` / `key-nintendo-switch-2` — hors du go (5 lignes) ; (e) retirer le PRÉALABLE
+  (un nom de pays suivi d'une région vendable reste dans le nom de garde console et dans le slug,
+  `keep_country`) — non : sans lui, « Assassin's Creed Chronicles China (Europe) » entrerait sur
+  la page de la trilogie. EXECUTOR_RULES `[R65]`.
+
 - **`[R63]` Clés EA « English only » : case 31 sans verrou, 3euen sinon 3eu en Europe —
   Romain, 2026-09-28** : « go pour les clés EA English only en case 31 », puis, mot pour mot :
   « Une clee english only n est pas forcement bloque a la region Europe, si on a une info comme

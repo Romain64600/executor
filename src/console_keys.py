@@ -89,6 +89,39 @@ CONSOLE_PAGE_KIND = {
 }
 CONSOLE_PAGE_KINDS = ("ps4", "ps5", "xbox-one", "xbox-series", "nintendo-switch",
                       "nintendo-switch-2", "cd-key")
+# [R65] GABARITS CONSOLE « -key » / « -code » — audit du 2026-09-28 (« pas de page produit »,
+# proposition 2), Romain le 2026-09-29 : « go pour les corrections 1 et 2 et les
+# vérifications ». AKS publie aussi ses pages console sous d'autres gabarits que
+# `buy-<slug>-<console>-compare-prices/` : `-xbox-series-key` (Priest Simulator: Vampire Show),
+# `-xbox-one-code` (onglet Xbox One de Destiny 2, Firewatch, GTA 5…), `-ps5-key`, `-ps4-key`,
+# `-xbox-one-key`, `-xbox-series-x` (Call of Duty Black Ops Cold War), `-nintendo-switch-2-key`.
+# L'extraction de la barre d'onglets les ignorait et la branche console ne les sondait jamais :
+# 84 % des refus console « pas de page » avaient pourtant leur page.
+# Table famille → gabarits, dans l'ORDRE D'ESSAI : le gabarit standard (celui de
+# CONSOLE_PAGE_KIND) d'abord, les replis ensuite. Exactement les sept gabarits de la
+# proposition ; `key-nintendo-switch-2` (déjà lu comme `nintendo-switch-2` au slug « …-key »)
+# et `ps4-game-code` n'en font pas partie. CONSOLE_PAGE_KINDS n'est PAS allongé : il nourrit la
+# grammaire des URL de page connues (`matcher._AKS_PAGE_URL_RE`) et le routage [R18c], qui ne
+# passent jamais par un gabarit de repli.
+CONSOLE_FAMILY_TEMPLATES: dict[str, tuple[str, ...]] = {
+    "XBOX_ONE": ("xbox-one", "xbox-one-key", "xbox-one-code"),
+    "XBOX_SERIES": ("xbox-series", "xbox-series-key", "xbox-series-x"),
+    "PS4": ("ps4", "ps4-key"),
+    "PS5": ("ps5", "ps5-key"),
+    "SWITCH": ("nintendo-switch",),
+    "SWITCH2": ("nintendo-switch-2", "nintendo-switch-2-key"),
+}
+# [R65] 2b — la page Xbox COMBINÉE `buy-<slug>-xbox-key-compare-prices/` : son gabarit ne dit
+# pas la génération, sa MÉTA de plateforme si (NHL 27, Hidden Legends 2, Destiny 2 The
+# Collection : « Xbox Series X »). Elle ne sert QUE pour une génération DÉCLARÉE égale à celle
+# que la page déclare ; une génération DÉDUITE (P4) sur cette page reste refusée (« 2b, non
+# tranché » — la décision attend Romain).
+XBOX_COMBINED_TEMPLATE = "xbox-key"
+CONSOLE_TEMPLATE_FAMILY: dict[str, str] = {
+    t: fam for fam, templates in CONSOLE_FAMILY_TEMPLATES.items() for t in templates}
+CONSOLE_FALLBACK_TEMPLATES: tuple[str, ...] = tuple(
+    t for templates in CONSOLE_FAMILY_TEMPLATES.values() for t in templates[1:]
+) + (XBOX_COMBINED_TEMPLATE,)
 # family → {base region: catalog id} (§0 table). [P3] PS5 — DÉCIDÉ Romain 2026-09-25 (« P3
 # A ») : GLOBAL garde sa case propre `88ps5h` « PS5 » ; Europe / US / UK prennent les cases
 # PlayStation `88eu` / `88us` / `88uk`, celles de PS4. C'est ce qu'AKS fait déjà : lu en direct
@@ -259,6 +292,12 @@ class ConsoleSignal:
     # le matcher lit la page PC d'AKS — « Xbox Play Anywhere » → cibles Play Anywhere, sinon
     # « Microsoft Windows » → clé Microsoft Store (MICROSOFT), sinon refus.
     windows_key: bool = False
+    # [R65] PRÉALABLE (2026-09-29) : True quand un nom de pays est resté dans ``resolve_name``
+    # parce qu'il n'est pas le verrou de la ligne (« Assassin's Creed Chronicles China
+    # (Europe) … »). Le matcher construit alors les slugs SANS le retirer en queue
+    # (`matcher.cleaned_title(..., keep_country=True)`) : c'est le classifieur, qui a vu le
+    # créneau de région, qui a tranché.
+    country_in_name: bool = False
 
 
 # ── merchant hooks (2026-09-14) ──────────────────────────────────────────────────────
@@ -998,17 +1037,91 @@ def _merchant_noise(merchant: str) -> tuple["Pattern[str]", ...]:
     return _compile_noise(cfg.console_noise)
 
 
+# [R65] PRÉALABLE — les noms de pays restent dans le nom de garde console, sauf verrou RÉEL.
+# Revue adverse de l'audit du 2026-09-28 : Driffle « Assassin's Creed Chronicles China (Europe)
+# (Xbox One / Xbox Series X|S) » perdait CHINA, lu comme mot de région du créneau de
+# plateforme ; le nom restant, « Assassin's Creed Chronicles », est celui de la TRILOGIE, et
+# les gabarits « -code » l'auraient trouvée (`assassins-creed-chronicles-xbox-one-code`) :
+# l'épisode Chine seul serait entré sur la page de la trilogie. Le chemin PC a corrigé ce même
+# défaut le 2026-09-18 (`matcher._TRAILING_NOISE_PHRASES_KEEP_COUNTRY`) ; c'est son miroir, avec
+# SA règle (`matcher._forbidden_region_in`) : « la région est la DERNIÈRE chose déclarée ». La
+# dernière occurrence d'un nom de pays / de zone suivie, plus loin, d'un mot de région vendable
+# (Europe, EU, US, UK, Global…) n'est pas un verrou : TOUS les noms de pays du titre sont alors
+# du nom de produit, gardés dans ``resolve_name`` et absents des ``region_words``. Sinon (le pays
+# est bien la dernière région déclarée : « … Xbox Live Key CHINA »), rien ne change. Noms en
+# toutes lettres seulement, jamais les codes de deux lettres. Module pur : la liste est celle
+# des noms longs de `_REGION_ALT` (celle que le créneau retire), moins les bases vendables et
+# « EU West » (une région de serveur, jamais un nom de jeu).
+_COUNTRY_NAME_ALT = (
+    r"UNITED\s+ARAB\s+EMIRATES|NORTH\s+AMERICA|SOUTH\s+AMERICA|LATIN\s+AMERICA|SOUTH\s+AFRICA|"
+    r"SOUTH\s+KOREA|SOUTH\s+EAST\s+ASIA|EASTERN\s+EUROPE|MIDDLE\s+EAST|HONG\s+KONG|NEW\s+ZEALAND|"
+    r"LATAM|EMEA|MENA|ASIA|AMERICAS|OCEANIA|CANADA|AUSTRALIA|ARGENTINA|TURKEY|POLAND|COLOMBIA|"
+    r"MEXICO|JAPAN|GERMANY|AUSTRIA|ROMANIA|SINGAPORE|INDIA|BRAZIL|CHINA|KOREA|RUSSIA|"
+    r"NETHERLANDS|UKRAINE|PHILIPPINES|THAILAND|MALAYSIA|INDONESIA|SWITZERLAND|TAIWAN|CHILE|PERU|"
+    r"PORTUGAL"
+)
+_COUNTRY_NAME_RE = re.compile(
+    r"(?<![A-Za-z0-9'])(?:" + _COUNTRY_NAME_ALT + r")(?![A-Za-z0-9])", re.IGNORECASE)
+# Les mots de région VENDABLES, avec la casse de `_REGION_ALT` : noms longs sans casse, codes
+# en capitales seulement (« Among Us » n'est pas « US »).
+_SELLABLE_REGION_RE = re.compile(
+    r"(?<![A-Za-z0-9'])(?:(?i:EUROPEAN\s+UNION|UNITED\s+STATES|UNITED\s+KINGDOM|EUROPE|GLOBAL|"
+    r"WORLDWIDE|USA)|EU|US|UK|GB|WW)(?![A-Za-z0-9])")
+_COUNTRY_GUARD = "{}"
+_COUNTRY_GUARD_RE = re.compile("(\\d+)")
+
+
+def country_is_product_name(text: str) -> bool:
+    """[R65] ``text`` porte-t-il un nom de pays qui n'est PAS un verrou — sa dernière
+    occurrence est suivie d'un mot de région vendable ? Miroir console de
+    ``matcher._forbidden_region_in`` (qui répond, lui, « quel pays verrouille »)."""
+
+    last = None
+    for m in _COUNTRY_NAME_RE.finditer(text or ""):
+        last = m
+    return last is not None and _SELLABLE_REGION_RE.search(text, last.end()) is not None
+
+
+def _guard_country_names(text: str) -> tuple[str, list[str]]:
+    """[R65] Remplace chaque nom de pays par un jeton que la grammaire des créneaux ne lit pas,
+    quand ces noms sont du nom de produit (:func:`country_is_product_name`)."""
+
+    if not country_is_product_name(text):
+        return text, []
+    kept: list[str] = []
+
+    def repl(m: "re.Match[str]") -> str:
+        kept.append(m.group(0))
+        return _COUNTRY_GUARD.format(len(kept) - 1)
+
+    return _COUNTRY_NAME_RE.sub(repl, text), kept
+
+
 def resolve_name_and_regions(name: str, merchant: str = "") -> tuple[str, tuple[str, ...]]:
     """``(resolve_name, region_words)``: the merchant title without its platform phrase
     (+ brackets), store / delivery markers and region tails; the merchant's own
     ``console_noise`` (a language tail, a delivery phrase) stripped FIRST when
     ``merchant`` names a configured merchant; edition words KEPT; separators normalised
     ("Game - - EU" → "Game"); never empty (falls back to the input) — and every region
-    word the shared strip removed, verbatim, in order."""
+    word the shared strip removed, verbatim, in order. [R65]: a country name that is NOT the
+    row's lock (a sellable region word follows it) is part of the product name — kept here,
+    never reported as a region word."""
 
     text = _normalise_title(name)
     for rx in _merchant_noise(merchant):
         text = rx.sub(" ", text)
+    text, kept_countries = _guard_country_names(text)
+    if kept_countries:
+        resolved, regions = _resolve_name_loop(text)
+        restored = _COUNTRY_GUARD_RE.sub(lambda m: kept_countries[int(m.group(1))], resolved)
+        return (restored or name), regions
+    resolved, regions = _resolve_name_loop(text)
+    return (resolved or name), regions
+
+
+def _resolve_name_loop(text: str) -> tuple[str, tuple[str, ...]]:
+    """The furniture strip of :func:`resolve_name_and_regions` (unchanged since 2026-09-14)."""
+
     regions: list[str] = []
     for _ in range(4):                                  # tails uncover more tails
         stripped, found = _strip_furniture_runs(text)
@@ -1021,7 +1134,7 @@ def resolve_name_and_regions(name: str, merchant: str = "") -> tuple[str, tuple[
         if stripped == text:
             break
         text = stripped
-    return (text or name), tuple(regions)
+    return text, tuple(regions)
 
 
 def resolve_name_of(name: str, merchant: str = "") -> str:
@@ -1074,10 +1187,13 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
     region_words = (slot_text,) if slot_text is not None else stripped_words
     region_base, region_label = region_slot_of(region_words)
 
+    country_in_name = bool(_COUNTRY_NAME_RE.search(resolve_name)) and country_is_product_name(
+        _normalise_title(name))
+
     def signal(families: tuple[str, ...], pc: bool, skip: str | None,
                inferred: bool = False, windows: bool = False) -> ConsoleSignal:
         return ConsoleSignal(families, pc, resolve_name, skip, region_base, region_label,
-                             region_words, inferred, windows)
+                             region_words, inferred, windows, country_in_name)
 
     marker = _non_game_marker(name, url)
     if marker:
@@ -1159,9 +1275,14 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
 
 
 # ── AKS page side ────────────────────────────────────────────────────────────────────
+# [R65] les pages au gabarit `-xbox-one-code` s'appellent « <jeu> Xbox One Code » (Tomb Raider
+# Definitive Edition, lu le 29/09) : le mot CODE (ou « Game Code ») qui SUIT le suffixe de
+# plateforme en fait partie. Sans lui, l'identité gardait « Xbox One Code » et R01 aurait exigé
+# CODE dans le titre marchand — la page d'une autre génération n'était jamais « le même jeu ».
 _PAGE_SUFFIX_RE = re.compile(
     r"\s*[(\[]?\s*(?:PS5|PS4|XBOX\s+SERIES(?:\s*X(?:\s*[|/]\s*S)?)?|XBOX\s+ONE|"
-    r"NINTENDO\s+SWITCH\s*2|NINTENDO\s+SWITCH|SWITCH\s*2|SWITCH)\s*[)\]]?\s*$",
+    r"NINTENDO\s+SWITCH\s*2|NINTENDO\s+SWITCH|SWITCH\s*2|SWITCH)\s*[)\]]?"
+    r"(?:\s+(?:GAME\s+)?CODE)?\s*$",
     re.IGNORECASE,
 )
 
@@ -1178,15 +1299,38 @@ def console_page_identity(aks_name: str) -> str:
 
 _TAB_BAR_RE = re.compile(r'<ul\s+class="aks-offer-tabulations"[^>]*>(.*?)</ul>', re.S | re.I)
 _TAB_HREF_RE = re.compile(r'<a\s+[^>]*href="([^"]+)"', re.I)
+# [R65] les gabarits de repli rejoignent la grammaire de la barre d'onglets — alternance du plus
+# long au plus court, pour que `-xbox-one-key` ne soit jamais lu `-xbox-one` suivi de « -key ».
+# `…-key-nintendo-switch-2-` reste lu comme aujourd'hui (gabarit `nintendo-switch-2`, slug
+# « …-key ») : ce gabarit n'est pas dans la table.
 _PAGE_KIND_RE = re.compile(
-    r"/buy-(?P<slug>.+?)-(?P<kind>" + "|".join(sorted(CONSOLE_PAGE_KINDS, key=len, reverse=True))
+    r"/buy-(?P<slug>.+?)-(?P<kind>"
+    + "|".join(re.escape(k) for k in sorted(CONSOLE_PAGE_KINDS + CONSOLE_FALLBACK_TEMPLATES,
+                                            key=len, reverse=True))
     + r")-compare-prices/?$"
 )
 
 
+def console_template_of(url: str) -> tuple[str, str] | None:
+    """[R65] ``(slug nu, gabarit)`` d'une URL de page console sous un gabarit de REPLI
+    (``…-nhl-27-xbox-key-compare-prices/`` → ``("nhl-27", "xbox-key")``), ``None`` pour toute
+    autre URL — les gabarits standard gardent leur grammaire (``matcher._AKS_PAGE_URL_RE``)."""
+
+    try:
+        path = urlparse((url or "").split("?", 1)[0]).path
+    except ValueError:
+        return None
+    m = _PAGE_KIND_RE.search(path)
+    if not m or m.group("kind") not in CONSOLE_FALLBACK_TEMPLATES:
+        return None
+    return m.group("slug"), m.group("kind")
+
+
 def extract_console_pages(body: str) -> dict[str, str]:
     """The tab bar ``<ul class="aks-offer-tabulations">`` → ``{kind: url}`` for every
-    LINKED platform tab (kind ∈ CONSOLE_PAGE_KINDS). The active tab is a ``<span>`` without
+    LINKED platform tab (kind ∈ CONSOLE_PAGE_KINDS, and since [R65] a fallback template of
+    CONSOLE_FALLBACK_TEMPLATES — ``xbox-one-key``, ``xbox-series-x``, ``xbox-key``… — under its
+    OWN name, never folded into the standard kind). The active tab is a ``<span>`` without
     href (the page itself) → not listed. A tab may point to ANOTHER product (Elden Ring →
     "Elden Ring Tarnished Edition Nintendo Switch 2"): the caller re-checks identity.
     {} when the page has no tab bar. First link wins for a duplicated kind."""

@@ -14,6 +14,39 @@ sur la nouvelle VM. `src/merchants/cjs.py` lit maintenant le créneau (EXECUTOR_
 MERCHANTS) ; tout autre pays ou zone est refusé par son nom. Tests :
 `tests/test_merchants_cjs_r67.py`. Effet à la page suivante de tout sweep.
 
+## 2026-09-29 — `[R64]` rang de repli « nom d'édition retiré » et `[R65]` pages console « -key » / « -code »
+
+Romain : « go pour les corrections 1 et 2 et les vérifications » — propositions 1 et 2 de
+l'audit du 28/09, avec toutes les contraintes de sa revue adverse (§6.1). EXECUTOR_RULES `[R64]`,
+`[R65]` (+ §4.7, §4.12) ; AGENTS « Reviewed decisions » ; tests
+`tests/test_resolver_repli_r64_r65.py` sur des pages AKS réelles réduites
+(`tests/fixtures/pages_r64_r65/`).
+
+- **`[R64]`** (`src/matcher.py`) : `edition_rank_bases` / `edition_rank_probes`, passe 4 de
+  `resolve_aks` APRÈS tous les rangs, seulement des URL que l'index publie ; jamais DEFINITIVE /
+  REMASTERED / ANNIVERSARY… ; rien retiré quand le nom complet est publié sous un autre gabarit ;
+  marque `AksResolution.edition_rank` / `_Plan.edition_rank` (ancre PC d'une ligne console
+  comprise) → jamais Standard(1) ni DLC(16) par ce rang, et pas de logiciel.
+- **`[R65]`** (`src/console_keys.py`, `src/matcher.py`) : `CONSOLE_FAMILY_TEMPLATES` (7 gabarits de
+  repli + la page combinée `-xbox-key`), lus par la barre d'onglets et `resolve_aks_url` sans
+  toucher `CONSOLE_PAGE_KINDS` ; `resolve_aks` ne sonde un gabarit de repli que s'il est publié ;
+  ancre console : standard d'abord, puis replis ; deux pages pour une console → refus ; page
+  combinée rangée selon sa méta, génération déduite → refus « 2b, non tranché ». Préalable : un
+  nom de pays suivi d'une région vendable reste dans le nom de garde console ET dans le slug
+  (`ConsoleSignal.country_in_name`, `cleaned_title(keep_country=)`). Le nom d'une page « -code »
+  (« … Xbox One Code ») est reconnu par `console_page_identity`.
+- **Relecture sur les 11 503 lignes créées de cette machine** (lecture seule des `submit_plan.json`) :
+  classifieur console identique sur 2 954 lignes ; 0 cible console avec deux pages publiées au
+  même slug ; 1 ligne bascule en refus 2b (Gamerall « Far Cry 3 - Classic Edition (Xbox Live) »,
+  offre 101109116 : `far-cry-3-xbox-key` se déclare Xbox Series). `[R64]` : zéro par construction.
+- **Rejeu de la population de l'audit** (14 364 offres, vrai code, relevé sitemap du 28/09, pages
+  AKS en cache + 40 lectures AKS/Staff le 29/09, aucune autre requête) : avant, 0 offre n'entre ;
+  après, la page est trouvée pour 999 offres par `[R64]`, 204 par `[R65]` (+ jusqu'à 243 parmi les
+  304 dont l'ancre PC n'était déjà pas en cache), 2 par le préalable ; **73 entrent** sur pages
+  lues, 64 sont refusées par une garde une fois la page trouvée (mots en trop R01b 39, 2b 6, R64 4,
+  R43 4, R01 3, R27 3, R51 3, R45 1, R19 1), 1 068 ont une page trouvée non lue hors ligne ; 364 offres (Gamesplanet FR, Instant
+  Gaming, Discover, 5 Gamerall) ne se rejouent pas hors ligne (fiche marchande R32).
+
 ## 2026-09-29 — Boucle : dix échecs d'affilée l'arrêtent aussi (audit de Romain, P1)
 
 Audit de Romain (436573a → 599fa87) : « La boucle redémarre après un blocage du StepGuard —
