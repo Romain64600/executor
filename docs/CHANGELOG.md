@@ -3,6 +3,16 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-29 — Boucle : dix échecs d'affilée l'arrêtent aussi (audit de Romain, P1)
+
+Audit de Romain (436573a → 599fa87) : « La boucle redémarre après un blocage du StepGuard —
+src/sweep_loop.py:169. Elle reconnaît uniquement guard_blocked, alors que le submitter renvoie
+ten_consecutive_failures après dix échecs. » Reproduit : dix échecs, `stop_reason = None`, la
+boucle repartait si un autre marchand finissait normalement. `pass_saw_guard_block` lit
+maintenant les deux formes, dans l'arrêt, l'abandon ou l'erreur d'une page, saisie comme
+déplacement (`move_stopped` / `move_aborted`). Tests de régression (unitaire + orchestrateur),
+2 mutations rougies. Effet au prochain lancement de boucle.
+
 ## 2026-09-28 — Audit « pas de page produit AKS » (lecture seule)
 
 Romain : « go pour l'étude des pas de page produit ». Rapport :

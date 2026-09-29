@@ -1141,7 +1141,10 @@ boucle **s'arrête d'elle-même**, motif consigné et affiché, dans trois cas e
 boucler ne transforme jamais un arrêt fail-closed en martèlement d'AKS : (1) une déconnexion vue
 dans la passe (un marchand arrêté avec un détail « not logged in », ou un plan `not_logged_in`)
 → « session expirée — transfert de cookies requis », jamais de reconnexion automatique ; (2) le
-garde StepGuard a bloqué ; (3) TOUS les marchands de la passe se sont arrêtés. Un marchand arrêté
+garde StepGuard a bloqué — une page arrêtée `guard_blocked` OU `ten_consecutive_failures` (le garde
+qui se bloque sur le dixième échec), en saisie comme en déplacement (audit de Romain du 29/09 :
+seule la première forme était lue, et la boucle repartait après dix échecs si un autre marchand
+finissait normalement) ; (3) TOUS les marchands de la passe se sont arrêtés. Un marchand arrêté
 seul est repris à la passe suivante (c'est le but) ; un rebond wp-login vu seulement dans le
 texte d'une offre UNKNOWN (après un clic) ne compte pas seul — une session vraiment perdue
 arrête le marchand suivant à sa première lecture, et c'est là qu'on la voit. Le sitemap est

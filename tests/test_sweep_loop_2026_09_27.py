@@ -82,6 +82,15 @@ class LesAidesDeLaBoucle(unittest.TestCase):
                              pages=[{"page": 5, "stopped": "guard_blocked", "error": "submit: guard_blocked"}]),
                       _recap("Eneba", 4))
         self.assertEqual(sweep_loop.stop_reason(garde, operator_stopped=False), "guard_blocked")
+        dix = _pass(_recap("Kinguin", 0, halted="submit_not_clean_p5",
+                           pages=[{"page": 5, "stopped": "ten_consecutive_failures",
+                                   "error": "submit: ten_consecutive_failures"}]),
+                    _recap("Eneba", 4))
+        self.assertEqual(sweep_loop.stop_reason(dix, operator_stopped=False), "guard_blocked")
+        tri = _pass(_recap("GameSeal", 3, halted="move_not_clean_p7",
+                           pages=[{"page": 7, "move_stopped": "ten_consecutive_failures"}]),
+                    _recap("Eneba", 4))
+        self.assertEqual(sweep_loop.stop_reason(tri, operator_stopped=False), "guard_blocked")
         tous = _pass(_recap("Kinguin", 0, halted="extract_failed_p38", detail="exit 1 (CdpTimeoutError)"),
                      _recap("Eneba", 0, halted="submit_not_clean_p66", detail=None))
         self.assertEqual(sweep_loop.stop_reason(tous, operator_stopped=False), "all_merchants_halted")
@@ -292,6 +301,18 @@ class LOrchestrateurBoucle(unittest.TestCase):
         self.assertEqual(loop["passes"][0]["halted_merchants"], 1)
         self.assertIn("arrêts : Kinguin (extract_failed_p38)", self.sent[0][1])
         self.assertEqual(rc, 2)
+
+    def test_dix_echecs_d_affilee_arretent_la_boucle(self):
+        # Audit de Romain (2026-09-29, P1) : le submitter rend ``ten_consecutive_failures`` quand le
+        # garde se bloque sur le dixième échec. Un autre marchand finit normalement : la boucle ne
+        # doit PAS repartir.
+        rc, calls, loop, _ = self._run(
+            ["--loop"],
+            [_recap("Kinguin", 0, halted="submit_not_clean_p5",
+                    pages=[{"page": 5, "created": 0, "stopped": "ten_consecutive_failures",
+                            "error": "submit: ten_consecutive_failures"}]),
+             _recap("Eneba", 12, store="19")])
+        self.assertEqual((len(calls), loop["stopped_reason"]), (2, "guard_blocked"))
 
     def test_le_garde_bloque_arrete_la_boucle(self):
         rc, calls, loop, _ = self._run(

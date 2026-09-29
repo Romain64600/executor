@@ -160,14 +160,27 @@ def pass_saw_login_bounce(recap: dict[str, Any]) -> bool:
     return False
 
 
+# Les DEUX façons dont le garde StepGuard arrête une page. Le submitter écrit ``guard_blocked``
+# quand le garde refuse la tentative suivante, et ``ten_consecutive_failures`` quand le garde
+# vient de se bloquer sur le dixième échec (src/submitter.py ; le mover fait de même).
+# Audit de Romain (2026-09-29, P1) : seule la première forme était reconnue — « dix échecs, mais
+# stop_reason = None » : un autre marchand finissait normalement et la boucle repartait à la
+# passe suivante, garde bloqué.
+_GUARD_STOPS = ("guard_blocked", "ten_consecutive_failures")
+_GUARD_FIELDS = ("stopped", "aborted", "error", "move_stopped", "move_aborted")
+
+
 def pass_saw_guard_block(recap: dict[str, Any]) -> bool:
-    """Le garde StepGuard a bloqué une page de la passe (``guard_blocked`` dans le plan ou
-    l'erreur d'une page)."""
+    """Le garde StepGuard a bloqué une page de la passe : ``guard_blocked`` ou
+    ``ten_consecutive_failures`` dans l'arrêt, l'abandon ou l'erreur d'une page — saisie OU
+    déplacement (mover)."""
 
     for t in recap.get("targets") or []:
         for p in _pages((t or {}).get("recap")):
-            if any("guard_blocked" in str(p.get(k) or "") for k in ("stopped", "aborted", "error")):
-                return True
+            for k in _GUARD_FIELDS:
+                value = str(p.get(k) or "")
+                if any(stop in value for stop in _GUARD_STOPS):
+                    return True
     return False
 
 
