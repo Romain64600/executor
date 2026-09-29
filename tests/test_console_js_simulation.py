@@ -183,6 +183,13 @@ class AutoConsoleLivePageSimulationTests(unittest.TestCase):
             "résumé": ('cur ? el("div", { class: "live-line"', 'false ? el("div", { class: "live-line"'),
             "run vivant": ("const pc = running && !rec.finished_at ? sr.current : null;",
                            "const pc = sr.current;"),
+            # 2026-09-29 (« quand le sweep a commencé ») : la ligne de début, les heures du
+            # marchand, celles des pages.
+            "heure de début": ("renderStart(rec, d && d.loop, running);", ""),
+            "heures du marchand": ('" · couverture : " + sr.coverage : "") + merchantTimes(t)',
+                                   '" · couverture : " + sr.coverage : "")'),
+            "heures des pages": ('isStamp(p.finished_at) ? el("span", { class: "pg-t"',
+                                 'false ? el("span", { class: "pg-t"'),
         }
         for nom, (avant, apres) in mutations.items():
             with self.subTest(nom):

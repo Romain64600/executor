@@ -336,6 +336,67 @@ function currentPage(rec) {
   return null;
 }
 const hhmm = (ts) => (typeof ts === "string" && ts.length >= 16 ? ts.slice(11, 16) + " UTC" : "");
+// ---- les HEURES du balayage (Romain, 2026-09-29 : « depuis l'admin, j'aimerais savoir quand
+// le sweep a commencé ») ----
+// Un balayage dure des heures (30 h pour trois marchands le 19/09) : l'heure seule ne suffit
+// pas, le jour part avec. Tout est en UTC, comme les journaux et `stage_at`. Un horodatage
+// absent (recap d'avant le 29/09) n'affiche rien — jamais une heure inventée.
+const isStamp = (ts) => typeof ts === "string" && ts.length >= 16 && !Number.isNaN(Date.parse(ts));
+const jourHeure = (ts) => (isStamp(ts) ? ts.slice(8, 10) + "/" + ts.slice(5, 7) + " à " + ts.slice(11, 16) + " UTC" : "");
+function duree(a, b) {
+  if (!isStamp(a) || !isStamp(b)) return "";
+  const min = Math.max(0, Math.round((Date.parse(b) - Date.parse(a)) / 60000));
+  if (min < 60) return min + " min";
+  const h = Math.floor(min / 60), m = min % 60;
+  return h + " h " + String(m).padStart(2, "0");
+}
+const maintenant = () => new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+// « 16:20 → 16:45 UTC » pour une page ; le jour seulement quand la page passe minuit.
+function plage(a, b) {
+  if (!isStamp(a)) return "";
+  if (!isStamp(b)) return "commencée à " + hhmm(a);
+  if (a.slice(0, 10) !== b.slice(0, 10)) return jourHeure(a) + " → " + jourHeure(b);
+  return a.slice(11, 16) + " → " + hhmm(b);
+}
+// La ligne de DÉBUT du recap : le lancement (et, en boucle, la passe courante), puis la fin
+// ou le temps écoulé. `running` : seulement un run VIVANT se dit « en cours ».
+function startLine(rec, loop, running) {
+  const debutPasse = rec && rec.started_at;
+  const debutBoucle = loop && loop.started_at;
+  if (!isStamp(debutPasse) && !isStamp(debutBoucle)) return "";
+  const parts = [];
+  if (isStamp(debutBoucle)) {
+    parts.push("Boucle lancée le " + jourHeure(debutBoucle));
+    if (isStamp(debutPasse)) parts.push("passe " + (loop.pass || "?") + " commencée le " + jourHeure(debutPasse));
+  } else {
+    parts.push("Sweep commencé le " + jourHeure(debutPasse));
+  }
+  const origine = isStamp(debutBoucle) ? debutBoucle : debutPasse;
+  if (loop && loop.state === "stopped") {
+    const fin = loop.stopped_at || loop.updated_at;
+    if (isStamp(fin)) parts.push("arrêtée le " + jourHeure(fin) + " (" + duree(origine, fin) + ")");
+  } else if (!loop && rec && isStamp(rec.finished_at)) {
+    parts.push("fini le " + jourHeure(rec.finished_at) + " (" + duree(origine, rec.finished_at) + ")");
+  } else if (running) {
+    parts.push("en cours depuis " + duree(origine, maintenant()));
+  }
+  return parts.join(" · ");
+}
+function renderStart(rec, loop, running) {
+  const zone = $("#recap-started");
+  if (!zone) return;
+  const txt = startLine(rec, loop, running);
+  zone.textContent = txt;
+  zone.className = "recap-started" + (txt ? "" : " hidden");
+}
+// Le titre d'un marchand : son début, et sa fin quand son balayage a rendu la main.
+function merchantTimes(t) {
+  if (!isStamp(t.started_at)) return "";
+  const debut = " · commencé le " + jourHeure(t.started_at);
+  return isStamp(t.finished_at)
+    ? debut + " · fini le " + jourHeure(t.finished_at) + " (" + duree(t.started_at, t.finished_at) + ")"
+    : debut;
+}
 function stageText(cur, live) {
   const n = (v) => (v == null ? "?" : String(v));
   const essai = cur.attempt ? " — essai " + cur.attempt : "";
@@ -406,6 +467,7 @@ function renderRecap(d, opts) {
     ? "· " + d.run_id + (d.pass_run_id && d.pass_run_id !== d.run_id ? " → " + d.pass_run_id : "")
     : "";
   renderLoop(d && d.loop);
+  renderStart(rec, d && d.loop, running);
   if (!rec) { $("#recap-summary").textContent = "En attente du premier scan…"; return; }
   const st = rec.finished_at ? (rec.halted ? "halted" : "done") : "running";
   const pill = $("#recap-status");
@@ -440,7 +502,7 @@ function renderRecap(d, opts) {
   wrap.replaceChildren();
   for (const t of (rec.targets || [])) {
     const sr = t.recap || {};
-    wrap.append(el("h3", { class: "t-title", text: t.merchant + " (store " + t.store_id + ") — " + (sr.total_created || 0) + " créées" + (sr.halted ? " · " + sr.halted : "") + (sr.coverage ? " · couverture : " + sr.coverage : "") }));
+    wrap.append(el("h3", { class: "t-title", text: t.merchant + " (store " + t.store_id + ") — " + (sr.total_created || 0) + " créées" + (sr.halted ? " · " + sr.halted : "") + (sr.coverage ? " · couverture : " + sr.coverage : "") + merchantTimes(t) }));
     if (running && !t.recap && !rec.finished_at) {
       wrap.append(el("div", { class: "pg live" }, [el("div", { class: "pg-head" }, [
         el("span", { class: "pg-n", text: "démarrage" }),
@@ -457,6 +519,7 @@ function renderRecap(d, opts) {
       const head = el("div", { class: "pg-head" }, [
         el("span", { class: "pg-n", text: "page " + p.page }),
         el("span", { class: "pg-m", text: (p.offers != null ? p.offers + " offres" : "") + (p.candidates != null ? " · " + p.candidates + " candidats" : "") + (p.created != null ? " · " + p.created + " créées" : "") }),
+        isStamp(p.finished_at) ? el("span", { class: "pg-t", text: plage(p.started_at, p.finished_at) || ("finie à " + hhmm(p.finished_at)) }) : null,
         tags.length ? el("span", { class: "pg-tag", text: tags.join(" · ") }) : null,
       ]);
       const kids = [head];
@@ -476,6 +539,7 @@ function renderRecap(d, opts) {
       wrap.append(el("div", { class: "pg live" }, [el("div", { class: "pg-head" }, [
         el("span", { class: "pg-n", text: "page " + pc.page + " — en cours" }),
         el("span", { class: "pg-m", text: stageText(pc, live) }),
+        isStamp(pc.since) ? el("span", { class: "pg-t", text: "commencée à " + hhmm(pc.since) }) : null,
       ])]));
     }
   }

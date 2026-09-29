@@ -625,6 +625,14 @@ pour Gamesplanet FR le 25/09. Actif pour les sweeps lancés APRÈS le déploieme
 écrit l'étape dans `recap.json` → `current`, `docs/DATA_CONTRACTS.md`) ; un sweep lancé avant
 garde l'affichage page par page.
 
+**L'heure de début se voit aussi (2026-09-29).** Romain : « depuis l'admin, j'aimerais savoir
+quand le sweep a commencé ». Sous le titre du recap : « Sweep commencé le 29/09 à 14:03 UTC ·
+en cours depuis 1 h 42 » (ou « fini le … (5 h 12) ») ; en boucle, « Boucle lancée le 27/09 à
+14:55 UTC · passe 25 commencée le 29/09 à 15:42 UTC ». Chaque marchand dit quand il a commencé
+et fini, chaque page sa plage horaire (« 14:03 → 14:20 UTC »), la page en cours son début.
+Tout en UTC, comme les journaux. Les heures par marchand et par page viennent des sweeps lancés
+APRÈS le déploiement ; un sweep plus ancien montre seulement l'heure de lancement.
+
 **Tri par SQL — console `/sql` (2026-09-18).** Romain exécute lui-même les `UPDATE` de tri
 dans phpMyAdmin ; la console les **génère et les mesure**, elle n'exécute rien et n'importe
 aucun pilote de base. Chaque requête s'affiche avec ce qu'elle toucherait sur le dernier scan

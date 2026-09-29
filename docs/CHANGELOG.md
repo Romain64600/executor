@@ -3,6 +3,21 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-29 — Console `/executor/auto` : l'heure de début du sweep (et de chaque marchand, chaque page)
+
+Romain : « Depuis l'admin, j'aimerais savoir quand le sweep a commencé ». Le recap savait déjà
+`started_at` (la passe) et `loop.json` le lancement de la boucle, mais la console ne les
+montrait pas. Elle affiche maintenant, sous le titre du recap, « Sweep commencé le 29/09 à
+14:03 UTC · en cours depuis 1 h 42 » (« fini le … (durée) » à la fin) ou, en boucle, « Boucle
+lancée le … · passe N commencée le … » (« arrêtée le … » à l'arrêt). L'orchestrateur
+(`scripts/10_data_entry_auto.py`) écrit `started_at` / `finished_at` pour chaque marchand,
+`run_sweep` (`src/data_entry_auto.py`) pour chaque page finie (début = premier essai de la page,
+pauses comprises) : le titre du marchand dit quand il a commencé et fini, chaque page sa plage
+horaire. Pur affichage, rien ne décide d'une écriture. Tests : 5 scénarios node
+(`tests/js/auto_live_page.test.mjs`) + 3 mutations qui rougissent le harnais, 3 tests Python
+(`tests/test_sweep_live_page.py`, classe `ChaquePagePorteSesHeures`) et l'orchestrateur ;
+`docs/DATA_CONTRACTS.md`, README.
+
 ## 2026-09-29 — `[R67]` CJS : « UK », « Worldwide », « WW »… ne sont pas des pays (audit de Romain, P2)
 
 Audit de Romain (2a438ca → 3f8be38) : « Des régions valides sont désormais refusées —

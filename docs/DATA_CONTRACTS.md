@@ -322,6 +322,17 @@ validation triple's shape is load-bearing (FC5, audit 2026-07-17).
   `logs/<run>.jsonl` — route existante, aucune route nouvelle). Pur affichage : rien ne décide
   d'une écriture sur `current`, et un `on_progress` en échec est ignoré.
 
+- **Les HEURES du balayage depuis le 2026-09-29** (Romain : « depuis l'admin, j'aimerais savoir
+  quand le sweep a commencé »). Le recap du balayage avait déjà `started_at` / `finished_at`
+  (la passe, en boucle), et `loop.json` le `started_at` du lancement. S'y ajoutent : chaque
+  cible (`targets[]`) porte `started_at` dès que son marchand démarre et `finished_at` quand
+  son `run_sweep` rend la main ; chaque page finie (`pages[]`) porte `started_at` (le `since`
+  de la page en cours : premier essai, pauses comprises — absent si la page n'a jamais été
+  « en cours ») et `finished_at`. Même format que les `ts` des journaux, en UTC. La console
+  `/executor/auto` les affiche (ligne « Sweep commencé le … » ou « Boucle lancée le … · passe
+  N commencée le … », titre du marchand, plage horaire de chaque page) ; un recap plus ancien,
+  sans ces champs, n'affiche rien d'inventé. Pur affichage.
+
 Consumers: `scripts/05_submit.py` and the admin's `SubmitManager` refuse a REAL
 submit whose declared mode implies a **wider** batch than the matched mode — a
 run matched under an unlock (canary of 1) must never take the full-batch `safe`

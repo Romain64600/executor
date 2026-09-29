@@ -342,6 +342,14 @@ def run_sweep(
         return not should_stop()
 
     def finish_page(entry: dict[str, Any]) -> None:
+        # Ses heures de début et de fin (2026-09-29, Romain : « quand le sweep a commencé ») :
+        # le début est le `since` de la page en cours — le premier essai de CETTE page, pauses
+        # comprises. Affichage seulement ; une page sans `current` (vieux appelant) n'a que sa fin.
+        cur = recap.get("current")
+        if (isinstance(cur, dict) and cur.get("page") == entry.get("page")
+                and cur.get("run") == entry.get("run") and cur.get("since")):
+            entry.setdefault("started_at", cur["since"])
+        entry.setdefault("finished_at", clock())
         recap["current"] = None          # la page est finie : plus rien « en cours »
         recap["pages"].append(entry)
         recap["total_created"] = sum(p.get("created", 0) for p in recap["pages"])

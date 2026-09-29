@@ -149,6 +149,79 @@ test("un recap FINI ne montre rien « en cours », même s'il traîne un current
   assert.ok(!c.net.waiting().some((u) => u.includes("api/runs/")), "aucun compteur demandé");
 });
 
+// ---- les HEURES (Romain, 2026-09-29 : « depuis l'admin, j'aimerais savoir quand le sweep a
+// commencé ») : le lancement, la passe en boucle, chaque marchand, chaque page. ----
+const il_y_a = (min) => new Date(Date.now() - min * 60000).toISOString().replace(/\.\d{3}Z$/, "Z");
+const jh = (ts) => ts.slice(8, 10) + "/" + ts.slice(5, 7) + " à " + ts.slice(11, 16) + " UTC";
+
+test("HEURES : le sweep dit quand il a commencé, et depuis combien de temps", async () => {
+  const debut = il_y_a(102);
+  const c = await adopter(recap({ page: 3, run: PAGE, stage: "match", offers: 100,
+                                  since: "2026-09-29T10:00:00Z", stage_at: "2026-09-29T10:01:00Z" },
+                                { started_at: debut }));
+  const ligne = c.$("#recap-started").textContent;
+  assert.ok(ligne.includes("Sweep commencé le " + jh(debut)), "le début, jour compris : " + ligne);
+  assert.ok(/en cours depuis 1 h 4[12]/.test(ligne), "le temps écoulé : " + ligne);
+  assert.ok(!c.$("#recap-started").className.includes("hidden"), "la ligne est visible");
+  assert.ok(c.$("#recap-pages").textContent.includes("commencée à 10:00 UTC"),
+            "la page en cours dit son début : " + ecran(c));
+});
+
+test("HEURES : chaque marchand et chaque page finie portent leur début et leur fin", async () => {
+  const rec = { run_id: SWEEP, recap: {
+    run_id: SWEEP, started_at: "2026-09-29T14:03:00Z", total_created: 5, halted: null,
+    targets: [{ merchant: "Gamesplanet FR", store_id: "55",
+                started_at: "2026-09-29T14:03:00Z", finished_at: "2026-09-29T15:45:00Z",
+                recap: { total_created: 5, current: null, pages: [
+                  { page: 2, run: "a", offers: 100, created: 5,
+                    started_at: "2026-09-29T14:03:10Z", finished_at: "2026-09-29T14:20:40Z" },
+                  { page: 1, run: "b", offers: 40, created: 0,
+                    started_at: "2026-09-29T23:55:00Z", finished_at: "2026-09-30T00:10:00Z" }] } },
+              { merchant: "K4G", store_id: "7", started_at: "2026-09-29T15:45:05Z", recap: null }],
+  } };
+  const c = await adopter(rec);
+  const pages = c.$("#recap-pages").textContent;
+  assert.ok(pages.includes("commencé le 29/09 à 14:03 UTC · fini le 29/09 à 15:45 UTC (1 h 42)"),
+            "le marchand fini : " + pages);
+  assert.ok(pages.includes("K4G (store 7) — 0 créées · commencé le 29/09 à 15:45 UTC"),
+            "le marchand en cours, sans fin inventée : " + pages);
+  assert.ok(pages.includes("14:03 → 14:20 UTC"), "la page finie : " + pages);
+  assert.ok(pages.includes("29/09 à 23:55 UTC → 30/09 à 00:10 UTC"), "une page qui passe minuit : " + pages);
+});
+
+test("HEURES en BOUCLE : le lancement de la boucle ET le début de la passe courante", async () => {
+  const debutBoucle = il_y_a(26 * 60);
+  const rec = Object.assign(recap(null, { started_at: "2026-09-28T03:10:00Z" }), {
+    pass_run_id: SWEEP + "-pass2",
+    loop: { state: "running", pass: 2, pause_s: 300, started_at: debutBoucle,
+            passes: [{ pass: 1, run_id: SWEEP, finished_at: "t", total_created: 383 }] },
+  });
+  const c = await adopter(rec);
+  const ligne = c.$("#recap-started").textContent;
+  assert.ok(ligne.includes("Boucle lancée le " + jh(debutBoucle)), ligne);
+  assert.ok(ligne.includes("passe 2 commencée le 28/09 à 03:10 UTC"), ligne);
+  assert.ok(/en cours depuis 2[56] h/.test(ligne), "compté depuis le lancement de la boucle : " + ligne);
+});
+
+test("HEURES d'un sweep FINI : la fin et la durée, rien « en cours »", async () => {
+  const c = await loadConsole(AUTO);
+  await c.net.release("api/data-entry/merchants", MARCHANDS);
+  await c.net.release("api/sort/runs", { busy: null, runs: [] });
+  await c.net.release("api/data-entry/recap", recap(null, {
+    started_at: "2026-09-29T08:00:00Z", finished_at: "2026-09-29T13:12:00Z" }));
+  await tick();
+  const ligne = c.$("#recap-started").textContent;
+  assert.ok(ligne.includes("Sweep commencé le 29/09 à 08:00 UTC · fini le 29/09 à 13:12 UTC (5 h 12)"), ligne);
+  assert.ok(!ligne.includes("en cours"), ligne);
+});
+
+test("HEURES absentes (recap d'avant le 29/09) : rien d'inventé", async () => {
+  const c = await adopter(recap(null));
+  assert.equal(c.$("#recap-started").textContent, "", "pas de ligne de début sans horodatage");
+  assert.ok(c.$("#recap-started").className.includes("hidden"), "la ligne est cachée");
+  assert.ok(!ecran(c).includes("commencé"), ecran(c));
+});
+
 let rouges = 0;
 for (const [nom, fn] of essais) {
   try { await fn(); console.log("ok   -", nom); }

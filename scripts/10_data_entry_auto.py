@@ -740,7 +740,11 @@ def run_pass(args, targets: list[tuple[str, str]], *, run_id: str, pass_dir: Pat
                               dry_run=args.dry_run, prove_gone_scan=args.prove_gone_scan,
                               sweep_dir=sweep_dir, consoles=args.consoles,
                               page_catalog=args.page_catalog, list_id=args.list_id)
-        target_entry = {"merchant": merchant, "store_id": store_id, "recap": None}
+        # L'heure de DÉBUT de chaque marchand (Romain, 2026-09-29 : « depuis l'admin,
+        # j'aimerais savoir quand le sweep a commencé ») — la console l'affiche à côté de son
+        # nom, avec `finished_at` quand son balayage rend la main. Affichage seulement.
+        target_entry = {"merchant": merchant, "store_id": store_id, "started_at": _clock(),
+                        "recap": None}
         recap["targets"].append(target_entry)
         # Romain, 2026-09-26 (« 4. Go ») : le marchand s'affiche DÈS qu'il démarre. Avant, le
         # recap n'était réécrit qu'à la fin de la première page — extraction, matching et
@@ -760,6 +764,7 @@ def run_pass(args, targets: list[tuple[str, str]], *, run_id: str, pass_dir: Pat
                           should_stop=lambda: _RUNNER.stopped, on_page=on_page,
                           on_progress=on_page, clock=_clock)
         target_entry["recap"] = sweep
+        target_entry["finished_at"] = _clock()
         if sweep.get("coverage"):
             # Benign coverage cap (max_pages / feed grew): surfaced at batch level for the
             # operator, but NOT a halt — the next merchant is still swept (audit 2026-09-09).

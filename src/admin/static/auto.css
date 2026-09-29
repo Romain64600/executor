@@ -133,3 +133,7 @@ footer#status.busy { color:var(--warn); }
 .loop-banner { margin:.3rem 0 .6rem; padding:.35rem .6rem; border:1px dashed var(--warn); border-radius:5px; font-size:.85rem; line-height:1.45; }
 .loop-banner.stopped { border-color:var(--bad); color:var(--bad); }
 .loop-banner.hidden { display:none; }
+.recap-started { margin:0 0 .5rem; font-size:.85rem; color:var(--dim); }
+.recap-started.hidden { display:none; }
+.pg-t { margin-left:auto; font-size:.78rem; color:var(--dim); white-space:nowrap; }
+.pg-t + .pg-tag { margin-left:0; }

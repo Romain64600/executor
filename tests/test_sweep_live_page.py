@@ -166,8 +166,9 @@ class LAffichageNeChangeRienAuBalayage(unittest.TestCase):
     def test_meme_recap_avec_ou_sans_on_progress(self):
         cfg = SweepConfig(merchant="Gamesplanet FR", store_id="55", max_pages=None,
                           transient_retry_waits=(1.0,))
+        # La même horloge des deux côtés : les pages portent leurs heures depuis le 29/09.
         sans = run_sweep(cfg, _stages(extracts={2: [TIMEOUT]}), page_run_id=lambda p: f"r-p{p}",
-                         sleep=lambda s: None)
+                         sleep=lambda s: None, clock=_Horloge())
         avec, _ = _balayer(_stages(extracts={2: [TIMEOUT]}), waits=(1.0,))
         self.assertEqual(self._sans_current(sans), self._sans_current(avec))
         self.assertIsNone(sans["current"])
@@ -180,6 +181,34 @@ class LAffichageNeChangeRienAuBalayage(unittest.TestCase):
         self.assertIsNone(recap["halted"])
         self.assertEqual(recap["total_created"], 3)
         self.assertEqual(len(vus), 10)
+
+
+class ChaquePagePorteSesHeures(unittest.TestCase):
+    """Romain, 2026-09-29 : « depuis l'admin, j'aimerais savoir quand le sweep a commencé ».
+    Une page finie garde son début (le ``since`` de la page en cours : premier essai, pauses
+    comprises) et sa fin."""
+
+    def test_debut_et_fin_de_chaque_page(self):
+        recap, vus = _balayer(_stages())
+        for p in recap["pages"]:
+            with self.subTest(page=p["page"]):
+                premier = next(c for c in vus if c["page"] == p["page"] and c["run"] == p["run"]
+                               and c["stage"] == "extract")
+                self.assertEqual(p["started_at"], premier["since"])
+                self.assertLess(p["started_at"], p["finished_at"])
+        fins = [p["finished_at"] for p in recap["pages"]]
+        self.assertEqual(fins, sorted(fins), "les pages finissent dans l'ordre du balayage")
+
+    def test_une_reprise_garde_le_debut_du_premier_essai(self):
+        recap, vus = _balayer(_stages(extracts={2: [TIMEOUT]}))
+        p2 = next(p for p in recap["pages"] if p["page"] == 2)
+        self.assertEqual(p2["started_at"], next(c for c in vus if c["page"] == 2)["since"])
+
+    def test_une_sonde_en_echec_a_ses_heures(self):
+        recap, _ = _balayer(_stages(extracts={1: ["boom"]}))
+        self.assertTrue(recap["halted"])
+        (seule,) = recap["pages"]
+        self.assertTrue(seule["started_at"] and seule["finished_at"], seule)
 
 
 class LOrchestrateurEcritLaPageEnCours(unittest.TestCase):
@@ -229,12 +258,17 @@ class LOrchestrateurEcritLaPageEnCours(unittest.TestCase):
         cible = vu["au_demarrage"]["targets"]
         self.assertEqual([(t["merchant"], t["store_id"], t["recap"]) for t in cible],
                          [("Gamesplanet FR", "55", None)])
+        # 2026-09-29 : l'heure de début du marchand, dès son démarrage ; sa fin, au retour.
+        self.assertRegex(cible[0]["started_at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        self.assertNotIn("finished_at", cible[0])
+        self.assertRegex(vu["au_demarrage"]["started_at"], r"^\d{4}-\d\d-\d\dT")
         cur = vu["pendant"]["targets"][0]["recap"]["current"]
         self.assertEqual((cur["page"], cur["stage"], cur["candidates"]), (3, "submit", 52))
         self.assertRegex(cur["stage_at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$",
                          "même format que les ts des journaux de page")
         fin = json.loads(chemin.read_text(encoding="utf-8"))
         self.assertIsNone(fin["targets"][0]["recap"]["current"])
+        self.assertLessEqual(fin["targets"][0]["started_at"], fin["targets"][0]["finished_at"])
         self.assertEqual(fin["total_created"], 52)
 
 
