@@ -12,6 +12,7 @@ part à l'aveugle. Les titres sont ceux de la population de l'audit (refus « no
 found » des balayages A pass 9 / groupe B)."""
 
 import functools
+import socket
 import unittest
 import unittest.mock
 from pathlib import Path
@@ -80,6 +81,14 @@ class _Base(unittest.TestCase):
     extra_pages: dict = {}
 
     def setUp(self):
+        # Aucune requête réseau, quoi qu'il arrive : une lecture de fiche marchande (R32) ou une
+        # page AKS oubliée dans les fixtures doit faire ÉCHOUER le test, pas partir sur le réseau.
+        def _no_network(*_a, **_kw):
+            raise AssertionError("requête réseau pendant un test [R64]/[R65]")
+        for target in (unittest.mock.patch.object(socket.socket, "connect", _no_network),
+                       unittest.mock.patch.object(socket, "create_connection", _no_network)):
+            target.start()
+            self.addCleanup(target.stop)
         saved = list(M._SITEMAP_CACHE)
         self.addCleanup(lambda: (M._SITEMAP_CACHE.clear(), M._SITEMAP_CACHE.extend(saved)))
         M.set_sitemap_index(_index())
@@ -205,11 +214,11 @@ class R64Saisie(_Base):
         """Revue adverse : « mauvais palier ». La page de base vend « Digital+ Edition », mais
         DIGITAL et EDITION sont du bruit de format : aucun mot du titre ne NOMME ce seau, le bloc
         édition sortirait Standard(1). Refus, jamais Standard."""
-        res = self.match("Gamesplanet FR", "Marvel's Midnight Suns Digital+ Edition",
-                         "https://fr.gamesplanet.com/game/marvel-s-midnight-suns-digital-edition-steam-key--5306-2")
-        if isinstance(res, SkippedOffer) and "(R32)" in res.reason:
-            # Gamesplanet lit sa fiche (R32) : même titre, chez un marchand sans fiche.
-            res = self.match("GameSeal", "Marvel's Midnight Suns Digital+ Edition (PC) Steam Key - GLOBAL")
+        from src.merchants import gamesplanet
+        # Gamesplanet lit la région sur SA fiche ([R59]) : fiche SIMULÉE, aucun pays exclu.
+        with unittest.mock.patch.object(gamesplanet, "fetch_region", return_value=("global", "")):
+            res = self.match("Gamesplanet FR", "Marvel's Midnight Suns Digital+ Edition",
+                             "https://fr.gamesplanet.com/game/marvel-s-midnight-suns-digital-edition-steam-key--5306-2")
         self.assertIsInstance(res, SkippedOffer)
         self.assertIn("(R64)", res.reason)
         self.assertIn("Digital+ Edition", res.reason, "le motif dit ce que la page vend")
