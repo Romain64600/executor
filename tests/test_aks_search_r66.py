@@ -415,14 +415,14 @@ class BudgetEtCache(_Base):
 
     def test_etat_du_balayage(self):
         path = Path(self.tmp.name) / "aks_search.json"
-        self.assertEqual(aks_search.load_sweep_state(str(path), 1000), (0, ""))
+        self.assertEqual(aks_search.load_sweep_state(str(path), 1000), (0, "", 0.0))
         path.write_text("garbage")
-        self.assertEqual(aks_search.load_sweep_state(str(path), 1000), (1000, ""),
+        self.assertEqual(aks_search.load_sweep_state(str(path), 1000), (1000, "", 0.0),
                          "un compteur illisible = budget épuisé, jamais 1 000 requêtes de plus")
         s = self.session(budget=1000, used=7)
         resolve_aks("Aura Farming", self.get)
         aks_search.save_sweep_state(str(path), s)
-        self.assertEqual(aks_search.load_sweep_state(str(path), 1000), (8, ""))
+        self.assertEqual(aks_search.load_sweep_state(str(path), 1000), (8, "", 0.0))
 
 
 # ─────────────────────────── API changée, disjoncteur, throttle ──────────────────────────
@@ -617,7 +617,9 @@ class LesGardesDecident(_Base):
                          store_id="12")
         self.assertIsInstance(res, SkippedOffer)
         self.assertIn("(R31)", res.reason)
-        self.assertNotIn("(R66)", res.reason)
+        self.assertNotIn("catalogue search lacks", res.reason, "[R66] se tait")
+        # Revue du 2026-09-29 : le motif dit que la page vient de la recherche catalogue.
+        self.assertTrue(res.reason.endswith(M.CATALOG_REFUSAL_NOTE), res.reason)
 
 
 # ─────────────────────────── 03_match : état du balayage, méta, session ──────────────────

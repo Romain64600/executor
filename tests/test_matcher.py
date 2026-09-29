@@ -4839,7 +4839,10 @@ class ConsoleMatchR45Tests(unittest.TestCase):
                       console_pages_by_kind={"nintendo-switch": _page("Hades Nintendo Switch", "47979", sw_url)},
                       calls=calls)
         self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
-        self.assertEqual(calls, [("Hades", {}), ("Hades", {"page_kind": "nintendo-switch"})])
+        # [R66] (revue du 2026-09-29) : l'ancre PC est cherchée SANS la recherche catalogue,
+        # qui ne part qu'après tous les gabarits console — ici la page Switch répond d'abord.
+        self.assertEqual(calls, [("Hades", {"catalog": "off"}),
+                                 ("Hades", {"page_kind": "nintendo-switch"})])
         self.assertEqual((r.platform, r.aks_product_id, r.aks_url), ("SWITCH", "47979", sw_url))
 
     def test_no_page_at_all_skips(self):
@@ -5336,7 +5339,8 @@ class ConsoleReviewFixesR45Tests(unittest.TestCase):
                            pc=None, console_pages_by_kind={"nintendo-switch-2": _page("Street Fighter 6 Nintendo Switch 2", "188436", self.SF6_SW2)},
                            calls=calls)
         self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
-        self.assertEqual(calls, [("Street Fighter 6", {}), ("Street Fighter 6", {"page_kind": "nintendo-switch-2"})])
+        self.assertEqual(calls, [("Street Fighter 6", {"catalog": "off"}),      # [R66] revue 29/09
+                                 ("Street Fighter 6", {"page_kind": "nintendo-switch-2"})])
         self.assertEqual((r.platform, r.aks_product_id), ("SWITCH2", "188436"))
 
     def test_elden_ring_switch_2_tab_is_another_product(self):

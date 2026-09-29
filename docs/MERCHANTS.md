@@ -242,6 +242,16 @@ matcher et le classifieur importent le registre.
   `pc-ubisoft-connect`, `pc-battlenet`, `battle-net-gift`, `pc-gog`…) est ENTRE le slug et le
   code région, l'édition vient APRÈS le code (`tiny-tinas-wonderlands-pc-steam-us-standard`) ;
   variante avec `-pc` en fin (`…-steam-eu-standard-pc`). Édition = règle générique du titre.
+  **Deux éditions dans une URL → refus (2026-09-29, rejeu de `[R65]`)** : le DERNIER segment
+  est la variante vendue (`-standard`, `-deluxe`) ; le slug de PRODUIT peut nommer un palier que
+  ni la variante ni le titre ne nomment — « Gotham Knights EN United States »,
+  `gotham-knights-deluxe-edition-xbox-xboxseries-us-en-standard` (offre 100394637 ; sa sœur
+  100394636 « … Deluxe Edition … » finit en `-deluxe`). `detect_edition` lit tout le slug et
+  rendait Deluxe(7) ; le `precheck` refuse désormais « Gamivo edition contradiction: the URL
+  product slug names DELUXE, its edition slot says STANDARD and the title names no tier … (R46) »
+  (`edition_conflict` ; reste en attente, jamais déplacée). Mesure : 1 ligne sur ≈ 35 000 refus
+  relus (A passe 22, B), 0 sur les 11 503 lignes créées. Une lecture « la variante fait
+  l'édition » (qui la ferait entrer en Standard) attend l'avis de Romain.
   Lot du 12/09 (1 000 lignes) : queues United Kingdom 372, Colombia 310, Global 70, EU 64,
   United States 46, ROW 45, Canada 18, Netherlands 12, Australia 8, North America 6, Turkey
   6, CIS 3, Poland 3, Asia 2, Mexico 2, 22 sans queue (abonnements, cartes, logiciels) ;

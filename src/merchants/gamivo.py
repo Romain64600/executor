@@ -226,6 +226,29 @@ def title_region(name: str) -> str | None:
     return SELLABLE_TAILS.get(title_tail(name) or "")
 
 
+# L'édition (revue du 2026-09-29, rejeu de [R65]) : le DERNIER segment de l'URL est la VARIANTE
+# vendue (« -standard », « -deluxe ») ; le slug de PRODUIT, lui, peut nommer un palier que ni la
+# variante ni le titre ne nomment — « gotham-knights-deluxe-edition-xbox-xboxseries-us-en-standard »,
+# titre « Gotham Knights EN United States » (offre 100394637 ; sa sœur 100394636, « … Deluxe
+# Edition EN United States », finit en « -deluxe »). `detect_edition` lit tout le slug et rendait
+# Deluxe(7) : deux lectures de l'édition, on ne choisit pas. Une seule ligne sur ≈ 35 000 relues
+# (refus des balayages A / B), 0 sur les 11 503 lignes créées.
+_URL_TIER_WORDS = ("deluxe", "ultimate", "gold", "premium", "complete", "goty", "collector",
+                   "legendary", "platinum")
+
+
+def edition_conflict(name: str, url: str) -> str | None:
+    """Le palier que le slug de PRODUIT nomme alors que la variante (dernier segment) dit
+    « standard » et que le titre ne le nomme pas — ``None`` sinon."""
+
+    tokens = _path_tokens(url)
+    if len(tokens) < 2 or tokens[-1] != "standard":
+        return None
+    title = set(re.findall(r"[a-z0-9]+", (name or "").lower()))
+    tiers = [w for w in _URL_TIER_WORDS if w in tokens[:-1] and w not in title]
+    return tiers[0].upper() if tiers else None
+
+
 def precheck(name: str, url: str) -> str | None:
     """Fail-closed region gate, before the generic scans.
 
@@ -238,8 +261,15 @@ def precheck(name: str, url: str) -> str | None:
        <LABEL|CODE>``; ``us`` / ``uk`` → skip too (the generic URL scan cannot read a
        mid-slug code and would enter implicit GLOBAL — the 2026-09-11 failure);
        ``eu`` / ``global`` → None (the generic ``-eu`` / ``-global`` scan reads them).
-    4. Neither (top-ups, cards…) → None, the generic scans decide."""
+    4. Neither (top-ups, cards…) → None, the generic scans decide.
 
+    0. (2026-09-29) Une URL qui nomme deux éditions — un palier dans le slug de produit, « standard »
+       en variante — sans que le titre nomme ce palier → refus (`edition_conflict`)."""
+
+    tier = edition_conflict(name, url)
+    if tier is not None:
+        return (f"Gamivo edition contradiction: the URL product slug names {tier}, its "
+                f"edition slot says STANDARD and the title names no tier — not entered (R46)")
     tail = title_tail(name)
     if tail is not None and tail not in SELLABLE_TAILS:
         return f"forbidden region: {FORBIDDEN_TAILS[tail]}"

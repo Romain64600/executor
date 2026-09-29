@@ -159,8 +159,39 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   tous les mots du titre — non, même règle que `[R64]` (« Marvel's Midnight Suns Digital+
   Edition » entrerait en Standard) ; (e) raccourcir la durée de vie des réponses vides — non :
   elles dominent (≈ 47 % des lignes n'ont vraiment pas de page), le budget ne suivrait plus ;
-  (f) réutiliser `?s=` — morte depuis le 22/09, atteinte seulement sans session. EXECUTOR_RULES
-  `[R66]`, `tests/test_aks_search_r66.py`.
+  (f) réutiliser `?s=` — morte depuis le 22/09, atteinte seulement sans session.
+  **Revue adverse du même jour, en configuration de PRODUCTION (session posée — les tests `[R64]`
+  / `[R65]` tournaient sans) : trois écritures fausses et des refus à tort, corrigés.** R01 / R16
+  comparent des ENSEMBLES : « Nope Nope Nope Nope Nurses » (GameSeal 100698305, GOG 100461290)
+  entrait sur « Nope Nope Nurses », « Legacy of Ancestors » (Kinguin 100997924) sur « Ancestor's
+  Legacy » ; et la recherche passait AVANT les gabarits console : Eneba « Destiny 2: The Collection
+  XBOX LIVE Key UNITED STATES » entrait sur `destiny-2-xbox-one-code` (le JEU DE BASE),
+  Collection(98), pendant que « Priest Simulator: Vampire Show » et « Worms Armageddon:
+  Anniversary Edition » étaient refusés. Désormais le nom proposé ET le nom lu doivent être
+  COHÉRENTS avec le titre brut (`catalog_name_mismatch` : mots comptés, pas de mot répété en
+  moins, article de tête gardé, même ordre ; le bruit seulement présent), la condition 3 de
+  `[R64]` vaut pour la recherche, et une ligne console n'interroge le catalogue qu'après TOUS ses
+  gabarits (`catalog="off"` puis `"only"`). La promesse (d) est donc vraie mot pour mot. Un audit
+  voudra : (g) ne lire que les candidats que l'index publie, pour borner les lectures de pages —
+  non : l'index n'est pas exhaustif (audit du 28/09 §4.4, `clue-cluedo-the-classic-mystery-game-
+  cd-key` vivante et absente), la recherche est précisément le filet de ces trous ; `resolve_aks`
+  rend la PREMIÈRE page cohérente, ≈ une lecture par ligne à candidat et par passe, mesurée ;
+  (h) un budget par marchand — non : une part égale (1 000 / 8 = 125) ne couvrirait jamais GameSeal
+  dans la durée de vie du cache (≈ 210 requêtes par passe), le budget partagé couvre le stock en ~9
+  passes ; le coût est un délai pour les derniers marchands, dit dans `match_meta` (`budget_scope`) ;
+  (i) remettre la recherche avant les gabarits console « pour trouver plus » — non, c'est l'écriture
+  Destiny ; (j) relâcher la cohérence en ensembles, ou lire le bruit comme un mot compté — non,
+  c'est l'écriture Nope, et « Microsoft Flight Simulator (Microsoft Store) » serait refusé à tort ;
+  (k) faire entrer DRAGON BALL Z KAKAROT « Daima Edition » (3 offres) ou Starpoint Gemini 2
+  « Gold Pack » (2) sur la page de base qui vend le seau du même nom, alors que le nom complet est
+  publié ailleurs (Switch 2, Xbox) — non tranché : c'est la condition 3 de `[R64]`, un refus
+  (jamais une écriture) ; pour Destiny 2 « The Collection », la page `destiny-2` vend AUSSI
+  « Legacy Collection » : le seau n'y est pas certain ; (l) une coupure sans échéance sur un corps
+  illisible — non : 30 min comme R30, seul un 404 / 410 (version retirée) coupe le balayage ;
+  (m) laisser entrer, par ces rangs de repli, un palier nommé MOINS précis qu'un autre que la page
+  vend et que le titre nomme (CJS / Gamerall « ESO Deluxe Collection: Necrom » en Deluxe(7), la
+  page vend « Deluxe Collection Edition ») — non, refus. EXECUTOR_RULES `[R66]`,
+  `tests/test_aks_search_r66.py`, `tests/test_aks_search_r66_revue.py`.
 
 - **`[R64]` Rang de repli « nom d'édition retiré, confirmé par l'index » — Romain, 2026-09-29**
   (« go pour les corrections 1 et 2 et les vérifications », proposition 1 de l'audit « pas de page

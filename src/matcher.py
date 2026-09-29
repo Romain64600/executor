@@ -2745,6 +2745,10 @@ class _ThrottleGuard:
     (two independent guards doubled the budget and the graces). The R30 search breaker
     stays per instance (page reads never hit the search endpoint)."""
 
+    # Lu par `_accepts_kwarg` (revue du 2026-09-29) : la garde transmet ses kwargs au résolveur
+    # qu'elle garde — c'est lui qui dit s'il connaît `keep_country` / `catalog`.
+    _guards_a_resolver = True
+
     def __init__(self, resolver: Callable[..., AksResolution | None],
                  limit: int = THROTTLE_MAX_CONSECUTIVE_UNRELIABLE, *,
                  sleep: Callable[[float], None] = time.sleep,
@@ -2884,8 +2888,15 @@ class _ThrottleGuard:
 
 
 def _accepts_kwarg(fn: Callable[..., Any], kw: str) -> bool:
-    """True if ``fn`` can be called with ``kw=...`` (a keyword or **kwargs parameter)."""
+    """True if ``fn`` can be called with ``kw=...`` (a keyword or **kwargs parameter).
 
+    Revue du 2026-09-29 : la garde de throttle (`_ThrottleGuard`) prend ``**kwargs`` et les
+    TRANSMET à son résolveur — la question vaut donc pour le résolveur qu'elle garde. Sans ce
+    regard, `match_feed` (qui enveloppe TOUJOURS) répondait « oui » pour tout résolveur, et un
+    résolveur qui ne connaît pas ``keep_country`` / ``catalog`` levait `TypeError`."""
+
+    if getattr(fn, "_guards_a_resolver", False):
+        return _accepts_kwarg(fn._resolver, kw)
     try:
         params = inspect.signature(fn).parameters
     except (TypeError, ValueError):
@@ -2978,8 +2989,15 @@ def resolve_aks_url(url: str, http_get_fn: Callable[..., Any] = http_get) -> Aks
 # d'avant (index frais → None, sinon l'ancienne recherche `?s=`). Ici vit ce qui dépend de la
 # grammaire des pages : quels liens du catalogue sont des candidats pour une page CLÉ PC.
 _AKS_SEARCH_SESSION: list[Any] = []
+# Les pages que la recherche catalogue a fait RENDRE pendant le `match_offer` en cours (remis à
+# zéro à l'entrée de chaque offre) : un refus qui suit porte alors la mention « page proposée par
+# la recherche catalogue AKS (R66) » — sinon un motif comme « no AKS product page found
+# (console) » masquerait qu'une page a bien été trouvée (revue du 2026-09-29).
+_CATALOG_HITS: list[str] = []
 # Changer le filtre ci-dessous = incrémenter ce numéro : il fait partie de la clé du cache.
-CATALOG_FILTER_VERSION = 1
+# 2 (revue du 2026-09-29) : cohérence du nom (`catalog_name_mismatch`), mots du nom brut, pages
+# PS3 / 3DS / Wii U / Oculus écartées.
+CATALOG_FILTER_VERSION = 2
 _CATALOG_PAGE_RE = re.compile(r"https://www\.allkeyshop\.com/blog/buy-([a-z0-9-]+)-compare-prices/")
 _CATALOG_LEGACY_RE = re.compile(
     r"https://www\.allkeyshop\.com/blog/compare-and-buy-cd-key-for-digital-download-([a-z0-9-]+)/")
@@ -2987,6 +3005,17 @@ _CATALOG_LEGACY_RE = re.compile(
 # leur absence n'est pas un palier retiré. Rien d'autre — EDITION, VERSION, DIGITAL, EPIC…
 # restent comptés, c'est précisément eux que [R64] a vus mener à un Standard(1) non prouvé.
 _CATALOG_LEFTOVER_IGNORED = frozenset({"THE", "OF", "AND", "A", "AN"})
+# …sauf EN TÊTE du titre (revue du 2026-09-29) : « The Fire » n'est pas « Fire ». L'index du 28/09
+# porte 77 paires `the-x` / `x` qu'AKS range comme des produits DISTINCTS (`the-bunker` /
+# `bunker`, `the-crow` / `crow`…), et la décision « article en tête » (proposition 4) n'est pas
+# prise : la recherche catalogue ne la prend pas à sa place.
+_CATALOG_LEADING_ARTICLES = frozenset({"THE", "A", "AN"})
+# Des gabarits de clé (`-game-code`, `-download-code`, `-cd-key`) portés par des pages qui ne
+# vendent PAS une clé PC : PS3 (737 pages à l'index du 28/09), 3DS (421), Wii U (210), boutique
+# Oculus (4). Lus pour ce qu'ils sont — jamais des candidats (revue du 2026-09-29). « -mac-cd-key »
+# reste lu : le nom de ces pages porte « for Mac », que R01 exige alors du titre.
+_CATALOG_NOT_PC_KINDS = ("ps3-game-code", "nintendo-3ds-download-code", "3ds-download-code",
+                         "nintendo-wii-u-download-code", "wii-u-download-code", "oculus-cd-key")
 
 
 def set_aks_search(session: Any) -> None:
@@ -3009,7 +3038,7 @@ def _catalog_known_kinds() -> tuple[str, ...]:
     from src import aks_sitemap
     kinds = set(aks_sitemap.PAGE_KINDS) | set(CONSOLE_FALLBACK_TEMPLATES) | {
         "xbox-one-code", "key-nintendo-switch-2", "nintendo-switch-key", "ps4-game-code",
-        "ps5-game-code"}
+        "ps5-game-code"} | set(_CATALOG_NOT_PC_KINDS)
     return tuple(sorted(kinds, key=lambda k: (-len(k), k)))
 
 
@@ -3017,7 +3046,7 @@ def catalog_page(link: str) -> tuple[str, str] | None:
     """[R66] ``(slug nu, url)`` d'un lien du catalogue qui est une page CLÉ PC que le résolveur
     sait lire — `buy-<slug>-cd-key-…`, `-key`, `-game-code`, `-download-code`, ou l'ancienne
     `compare-and-buy-…-<slug>/` — ``None`` pour tout le reste : pages console, compte, carte
-    cadeau, et toute forme hors grammaire (`…-digital-download-best-price/`,
+    cadeau, pages PS3 / 3DS / Wii U / Oculus (`_CATALOG_NOT_PC_KINDS`), et toute forme hors grammaire (`…-digital-download-best-price/`,
     `…-compare-prices-2/`), qu'on ne lit jamais. L'URL rendue est RECONSTRUITE depuis nos
     gabarits (hôte, casse, slash final, aucune query) : la grammaire stricte ci-dessus garantit
     qu'elle est le lien lui-même, et on ne demande jamais une adresse que l'API a fabriquée."""
@@ -3039,21 +3068,83 @@ def catalog_page(link: str) -> tuple[str, str] | None:
     return None                                     # gabarit inconnu : jamais lu
 
 
+def catalog_name_mismatch(raw: str, query: str, aks_name: str) -> str:
+    """[R66] Pourquoi le nom ``aks_name`` (proposé par le catalogue, ou lu sur la page) n'est PAS
+    le nom du titre — "" s'il l'est. ``raw`` = le nom que le résolveur a reçu (bruit compris :
+    « The Tartarus Key (PC) Steam Gift »), ``query`` = ce titre nettoyé, envoyé à l'API
+    (« The Tartarus »). Revue adverse du 2026-09-29 : R01 et R16 comparent des ENSEMBLES de mots,
+    et avant [R66] aucun chemin ne proposait un nom qui n'était pas le slug du titre. Quatre
+    contrôles, mots-outils à part :
+
+    * chaque mot du nom est dans le titre brut, AUTANT de fois (le côté requis de R01, compté) ;
+    * le titre ne répète pas un mot du nom plus souvent que le nom — « Nope Nope Nope Nope
+      Nurses » n'est pas « Nope Nope Nurses » (GOG en vend quatre fiches distinctes) ;
+    * un article en tête du titre (THE / A / AN) ouvre aussi le nom — « The Fire » ≠ « Fire » ;
+    * les mots du nom que le titre nettoyé porte viennent dans le MÊME ordre (chiffres à part :
+      « Office 2019 Home & Business » = « Office Home & Business 2019 ») — « Legacy of
+      Ancestors » n'est pas « Ancestor's Legacy ».
+
+    Les mots de BRUIT (`NOISE_TOKENS` : STEAM, KEY, MICROSOFT, STORE, EDITION…) ne sont ni comptés
+    ni ordonnés — seulement présents : le mobilier marchand les répète (« Microsoft Flight
+    Simulator (Microsoft Store) »), R01 / R16 ne les lisent pas comme des mots du nom.
+
+    Une incohérence écarte le nom : jamais Standard, jamais un palier nommé non plus — ce n'est
+    pas une question d'édition, c'est un autre nom."""
+
+    from collections import Counter
+
+    name = tokenize(aks_name)
+    if not name:
+        return "nom vide"
+    q = tokenize(query)
+    n_count, q_count, raw_count = Counter(name), Counter(q), Counter(tokenize(raw) or q)
+    # Le bruit (STEAM, KEY, MICROSOFT, STORE, EDITION…) est présent ou non, jamais compté : un
+    # marchand le répète en mobilier (« Microsoft Flight Simulator (Microsoft Store) »).
+    absent = [t for t in n_count if (raw_count[t] == 0 if t in NOISE_TOKENS
+                                     else n_count[t] > raw_count[t])]
+    if absent:
+        return "mots absents du titre : " + " ".join(absent)
+    repeated = [t for t in n_count
+                if t not in _CATALOG_LEFTOVER_IGNORED and t not in NOISE_TOKENS
+                and q_count[t] > n_count[t]]
+    if repeated:
+        return "le titre répète " + ", ".join(
+            f"{t} {q_count[t]} fois (le nom {n_count[t]})" for t in repeated)
+    if q and q[0] in _CATALOG_LEADING_ARTICLES and name[0] != q[0]:
+        return f"article en tête du titre absent du nom : {q[0]}"
+    in_query = set(q)
+
+    def _ordered(tokens: list[str]) -> list[str]:
+        return [t for t in tokens if t in in_query and not t.isdigit()
+                and t not in _CATALOG_LEFTOVER_IGNORED and t not in NOISE_TOKENS]
+
+    rest = iter(_ordered(q))
+    if not all(t in rest for t in _ordered(name)):
+        return "mots du nom dans un autre ordre que le titre"
+    return ""
+
+
 def catalog_candidates(products: list[Any], query: str,
-                       limit: int = AKS_SEARCH_CANDIDATE_LIMIT) -> list[tuple[str, str, str]]:
+                       limit: int = AKS_SEARCH_CANDIDATE_LIMIT, *,
+                       raw: str | None = None) -> list[tuple[str, str, str]]:
     """[R66] Les ``(slug, url, nom)`` que la recherche catalogue PROPOSE pour ``query`` (le
     titre nettoyé), au plus ``limit``, du plus au moins précis. Un produit n'est gardé que si :
 
     * son type n'est pas ``account`` et son lien est une page clé PC (:func:`catalog_page`) ;
     * son nom n'est pas fait que de mots de bruit ;
-    * chacun de ses mots est dans le titre — le côté REQUIS de R01, appliqué d'avance sur le
-      nom du catalogue : le « remplissage » de popularité (« Fallout 76 » pour « Fallout
-      Legacy ») tombe sans lire une seule page.
+    * son nom est COHÉRENT avec le titre (:func:`catalog_name_mismatch`) : chacun de ses mots est
+      dans le titre BRUT ``raw`` (le côté REQUIS de R01, appliqué d'avance et compté — le
+      « remplissage » de popularité, « Fallout 76 » pour « Fallout Legacy », tombe sans lire une
+      seule page), sans mot répété en moins, sans article de tête perdu, dans le même ordre.
+      Le titre BRUT et non la requête (revue du 2026-09-29) : `cleaned_title` retire les mots de
+      fin KEY / STEAM / PC… même quand ils sont du nom — « The Tartarus Key (PC) Steam Gift »
+      donne la requête « The Tartarus », et la page « The Tartarus Key » que l'API rend tombait.
 
     Ordre : le nom le plus LONG d'abord (le plus précis), puis l'ordre de l'API. Ce n'est qu'un
-    tri de candidats : la page est ensuite lue, et `match_offer` refait R01 sur le nom LU."""
+    tri de candidats : la page est ensuite lue, son nom LU repasse le même contrôle, et
+    `match_offer` refait R01 sur lui."""
 
-    q_tokens = set(tokenize(query))
+    raw = query if raw is None else raw
     kept: list[tuple[int, int, str, str, str]] = []
     seen: set[str] = set()
     for i, product in enumerate(products):
@@ -3067,7 +3158,7 @@ def catalog_candidates(products: list[Any], query: str,
         toks = tokenize(name)
         if not toks or all(t in NOISE_TOKENS for t in toks):
             continue
-        if any(t not in q_tokens for t in toks):
+        if catalog_name_mismatch(raw, query, name):
             continue
         if url in seen:
             continue
@@ -3079,11 +3170,21 @@ def catalog_candidates(products: list[Any], query: str,
 
 def catalog_leftover(query: str, aks_name: str) -> str:
     """[R66] les mots du titre nettoyé que le nom de la page LUE n'a pas (hors mots-outils),
-    dans l'ordre du titre. Non vide → `match_offer` refuse Standard(1) / DLC(16) / logiciel."""
+    dans l'ordre du titre, COMPTÉS (revue du 2026-09-29 : un mot répété manquant reste
+    manquant). Non vide → `match_offer` refuse Standard(1) / DLC(16) / logiciel."""
 
-    page = set(tokenize(aks_name))
-    out = [t for t in tokenize(query) if t not in page and t not in _CATALOG_LEFTOVER_IGNORED]
-    return " ".join(dict.fromkeys(out))
+    from collections import Counter
+
+    page = Counter(tokenize(aks_name))
+    out: list[str] = []
+    for t in tokenize(query):
+        if t in _CATALOG_LEFTOVER_IGNORED:
+            continue
+        if page[t] > 0:
+            page[t] -= 1
+            continue
+        out.append(t)
+    return " ".join(out)
 
 
 def _resolve_by_catalog(name: str, http_get_fn: Callable[..., Any], session: Any,
@@ -3100,10 +3201,16 @@ def _resolve_by_catalog(name: str, http_get_fn: Callable[..., Any], session: Any
     query = " ".join(cleaned_title(name, keep_country=keep_country).split())
     if not query:
         return None
+    # Le filtre lit le titre BRUT : ses mots (triés — le filtre compte, il ne lit pas l'ordre du
+    # brut) entrent dans la clé du cache, pour que deux titres qui partagent la requête (« The
+    # Tartarus Key (PC) Steam Gift » / « The Tartarus (PC) Steam ») ne partagent pas leurs
+    # candidats filtrés. Chaque candidat repasse de toute façon le contrôle contre CE titre.
     try:
         candidates = session.lookup(
-            "cd-key", query, http_get_fn, lambda products: catalog_candidates(products, query),
-            filter_version=CATALOG_FILTER_VERSION, allow_request=allow_request)
+            "cd-key", query, http_get_fn,
+            lambda products: catalog_candidates(products, query, raw=name),
+            filter_version=CATALOG_FILTER_VERSION, allow_request=allow_request,
+            context=" ".join(sorted(tokenize(name))))
     except AksSearchChanged as exc:
         raise AksProbeUnreliable(
             f"AKS catalogue search API changed — {exc}; search off for this sweep, the new "
@@ -3111,9 +3218,21 @@ def _resolve_by_catalog(name: str, http_get_fn: Callable[..., Any], session: Any
     except AksSearchUnavailable as exc:
         raise AksProbeUnreliable(f"{exc} (R66)", status=exc.status,
                                  slug=SEARCH_SLUG_KEY) from None
-    for slug, url, _catalog_name in candidates or ():
+    # La condition 3 de [R64], ici aussi (revue du 2026-09-29) : quand le nom COMPLET du titre
+    # est publié sous un autre gabarit (`destiny-2-the-collection-xbox-key`…), AKS en fait un
+    # produit distinct — une page au nom PLUS COURT (`destiny-2`, qui vend « Collection »,
+    # « Legacy Collection », « Legacy Collection 2023 ») n'est pas proposée. Sans index frais,
+    # rien n'est connu : la règle se tait, les gardes décident.
+    index = sitemap_index()
+    full_name_elsewhere = bool(index is not None and _full_name_published_elsewhere(
+        name, index, keep_country=keep_country))
+    for slug, url, catalog_name in candidates or ():
         if url in sondees:
             continue                                # déjà demandée : même question, même réponse
+        if catalog_name_mismatch(name, query, catalog_name):
+            continue                                # jamais attendu après la clé ci-dessus
+        if full_name_elsewhere and catalog_leftover(query, catalog_name):
+            continue
         sondees.add(url)
         session.stats["candidate_pages_read"] += 1
         probe = _probe_guessed_page(url, http_get_fn)
@@ -3127,9 +3246,16 @@ def _resolve_by_catalog(name: str, http_get_fn: Callable[..., Any], session: Any
             if not extract_product_id(probe.body):
                 continue
             raise AksNameUnreadable(slug)
+        leftover = catalog_leftover(query, resolution.aks_name)
+        if catalog_name_mismatch(name, query, resolution.aks_name) or (
+                full_name_elsewhere and leftover):
+            # Le nom LU contredit le titre (le catalogue abrège parfois : « Ancestors Legacy »
+            # pour la page « Ancestor's Legacy ») : mêmes contrôles, candidat suivant.
+            session.stats["rejected_after_read"] = session.stats.get("rejected_after_read", 0) + 1
+            continue
         session.stats["resolved"] += 1
-        return dc_replace(resolution, found_by="catalogue",
-                          catalog_leftover=catalog_leftover(query, resolution.aks_name))
+        _CATALOG_HITS.append(url)
+        return dc_replace(resolution, found_by="catalogue", catalog_leftover=leftover)
     return None
 
 
@@ -3198,9 +3324,14 @@ def _probe_guessed_page(url: str, http_get_fn: Callable[..., Any]) -> Any:
 
 def resolve_aks(
     name: str, http_get_fn: Callable[..., Any] = http_get, *, page_kind: str = "cd-key",
-    search: bool = True, keep_country: bool = False,
+    search: bool = True, keep_country: bool = False, catalog: str = "last",
 ) -> AksResolution | None:
     """Try each candidate slug read-only; return the first real product page.
+
+    ``catalog`` ([R66], revue du 2026-09-29) — la place de la recherche catalogue AKS :
+    ``"last"`` (défaut) après toutes les passes ; ``"off"`` jamais ; ``"only"`` elle SEULE (les
+    passes 1-4 ont déjà répondu « rien » dans un appel ``"off"`` précédent — la branche console
+    la garde pour après ses gabarits console, sans repayer la soupape du rang 1).
 
     ``page_kind`` selects the AKS page family (``cd-key`` default, or an
     account kind like ``steam-account`` — Romain 2026-07-18). Falls back to
@@ -3222,6 +3353,14 @@ def resolve_aks(
     # exactly what the docstring always promised ("fails closed immediately")
     # and what the old collect-then-maybe-raise code did not do.
     # [R65] ``keep_country`` — see `cleaned_title` (console rows whose country is a name word).
+    if catalog not in ("last", "off", "only"):
+        raise ValueError(f"catalog={catalog!r} — 'last', 'off' or 'only'")
+    if catalog == "only":
+        session = aks_search_session()
+        if page_kind != "cd-key" or session is None:
+            return None
+        return _resolve_by_catalog(name, http_get_fn, session, set(),
+                                   keep_country=keep_country, allow_request=search)
     slugs = build_slug_candidates(name, keep_country=keep_country)
     if page_kind in CONSOLE_FALLBACK_TEMPLATES:
         # [R65] un gabarit console de REPLI (`-xbox-one-key`, `-ps5-key`, `-xbox-key`…) n'est
@@ -3336,6 +3475,8 @@ def resolve_aks(
     # depuis le 22/09, qui n'est plus atteinte que sans session — jamais en production.
     session = aks_search_session()
     if session is not None:
+        if catalog == "off":
+            return None
         return _resolve_by_catalog(name, http_get_fn, session, sondees,
                                    keep_country=keep_country, allow_request=search)
     if not search:
@@ -4253,7 +4394,36 @@ def _pc_plan(
     )
 
 
+CATALOG_REFUSAL_NOTE = " — page proposée par la recherche catalogue AKS (R66)"
+
+
 def match_offer(
+    offer: NormalizedOffer,
+    resolver: Callable[..., AksResolution | None] = resolve_aks,
+    difmark_offer_resolver: Callable[[str], DifmarkOfferAttributes] = resolve_difmark_offer,
+    account_resolver: Callable[..., AksResolution | None] = resolve_aks,
+    *,
+    page_resolver: Callable[[str], AksResolution | None] = resolve_aks_url,
+    consoles: bool = False,
+    _r18c_route: bool = False,
+) -> Candidate | SkippedOffer:
+    """Match one offer (see :func:`_match_offer`). [R66] (revue du 2026-09-29) : quand la
+    recherche catalogue a rendu une page pendant CETTE offre et que l'offre est refusée, le motif
+    le dit (``CATALOG_REFUSAL_NOTE``) — « no AKS product page found (console) » après une ancre
+    trouvée par le catalogue était un motif faux. Le suffixe ne contient pas « console » : le
+    tri de la liste 22 (`sort_sql_ids`) lit ce mot."""
+
+    if not _r18c_route:
+        _CATALOG_HITS.clear()
+    result = _match_offer(offer, resolver, difmark_offer_resolver, account_resolver,
+                          page_resolver=page_resolver, consoles=consoles, _r18c_route=_r18c_route)
+    if (not _r18c_route and _CATALOG_HITS and isinstance(result, SkippedOffer)
+            and "(R66)" not in result.reason):
+        result = SkippedOffer(result.offer, result.reason + CATALOG_REFUSAL_NOTE)
+    return result
+
+
+def _match_offer(
     offer: NormalizedOffer,
     resolver: Callable[..., AksResolution | None] = resolve_aks,
     difmark_offer_resolver: Callable[[str], DifmarkOfferAttributes] = resolve_difmark_offer,
@@ -4849,6 +5019,24 @@ def match_offer(
             f"{sorted(_edition_entry_name(v) for v in resolution.editions.values())}; never "
             "Standard or DLC through the catalogue search (R66)")
 
+    # [R64] / [R66] (revue du 2026-09-29, rejeu final) — le palier NOMMÉ doit être le PLUS PRÉCIS
+    # que le titre nomme. « The Elder Scrolls Online Deluxe Collection: Necrom » (CJS ×3, Gamerall)
+    # sur `the-elder-scrolls-online-necrom`, qui vend Deluxe(7) ET « Deluxe Collection Edition »
+    # (2497) : `detect_edition` s'arrête au premier palier connu, Deluxe — le moins précis des deux.
+    # Par ces rangs de repli, une page qui vend un AUTRE seau dont la signature contient celle du
+    # seau retenu et que le titre nomme tout entier est un doute : refus, jamais un choix.
+    if (plan.edition_rank or plan.catalog_leftover) and edition_id not in ("1", "16"):
+        _named = set(tokenize(guard_name))
+        _chosen = _edition_key(edition_label)
+        _wider = sorted(_edition_entry_name(v) for k, v in resolution.editions.items()
+                        if k != edition_id and _chosen < _edition_key(_edition_entry_name(v)) <= _named)
+        if _wider:
+            return SkippedOffer(
+                offer,
+                f"edition {edition_label!r}({edition_id}) is not the most precise tier the title "
+                f"names — the page also sells {_wider} — "
+                f"{'edition fallback rank (R64)' if plan.edition_rank else 'catalogue search (R66)'}")
+
     # [E06] L'ÉDITION RETENUE DOIT ÊTRE VENDUE PAR LA PAGE — STANDARD COMPRIS (Romain,
     # 2026-09-21 : « normalement tu es censé aller voir la page AKS comme pour les jeux
     # normaux, voir si on est en standard ou en DLC sur cette page »).
@@ -5256,8 +5444,17 @@ def _console_plan(
                 offer, "console: a country is part of the product name and the resolver cannot "
                        "keep it in the slug — not entered (R65)")
         resolve_kw["keep_country"] = True
+    # [R66] (revue du 2026-09-29) — la recherche catalogue est le DERNIER recours, console
+    # comprise : elle rend volontiers une page PC PLUS COURTE (« Priest Simulator » pour
+    # « Priest Simulator: Vampire Show », « Destiny 2 » pour « Destiny 2: The Collection »),
+    # qui, prise pour ancre, fermait la porte aux gabarits console standard et [R65] — la page
+    # du produit lui-même n'était jamais essayée, et « Destiny 2: The Collection » entrait sur
+    # la page Xbox One du jeu de base. L'ancre PC est donc cherchée SANS elle ; elle ne part
+    # qu'après l'échec de tous les gabarits console. Une clé Windows n'a pas d'autre ancre que
+    # la page PC : son appel reste celui d'une clé PC (recherche en dernier recours comprise).
+    catalog_last = not windows_key and _accepts_kwarg(resolver, "catalog")
     try:
-        pc_res = resolver(slug_name, **resolve_kw)
+        pc_res = resolver(slug_name, **resolve_kw, **({"catalog": "off"} if catalog_last else {}))
         anchor = pc_res
         # Une clé Windows / appli Xbox n'a qu'une ancre : la page PC (la clé marche sur PC ;
         # une page console seule ne dirait rien de Play Anywhere).
@@ -5281,6 +5478,12 @@ def _console_plan(
                 if anchor is not None:
                     anchor_kind = kind
                     break
+        # [R66] ni page PC, ni page console à aucun gabarit : la recherche catalogue, en
+        # dernier. La page qu'elle rend est une page PC — l'ancre, comme la page PC du slug.
+        if anchor is None and catalog_last:
+            pc_res = resolver(slug_name, catalog="only", **resolve_kw)
+            if pc_res is not None:
+                anchor, anchor_kind = pc_res, "cd-key"
     except AksProbeUnreliable as exc:
         return SkippedOffer(offer, f"AKS probe unreliable (throttled?): {exc}")
     except AksNameUnreadable as exc:

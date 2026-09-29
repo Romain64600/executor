@@ -24,10 +24,15 @@ Ce que ce module fait — et seulement ça :
   (``v2-1-250304``) qui peut changer sans préavis. Une version retirée répond ``404`` à corps vide
   (vérifié le 29/09 sur ``v2-1-000000``). Un 404 / 410, un corps qui n'est pas du JSON ou un JSON
   qui n'a plus la forme attendue lèvent :class:`AksSearchChanged` avec une raison NOMMÉE, et la
-  recherche se coupe pour le reste de la page ET du balayage (état persisté). On ne devine jamais
-  la nouvelle version : c'est une constante qu'un humain met à jour ;
+  recherche se coupe (état persisté dans le dossier du balayage). On ne devine jamais la nouvelle
+  version : c'est une constante qu'un humain met à jour. Revue du 2026-09-29 : un 404 / 410
+  (version retirée) coupe pour TOUT le balayage ; un corps illisible (HTML de maintenance, JSON
+  d'une autre forme) ne coupe que ``UNREADABLE_DISABLE_S`` — la même demi-heure que le
+  disjoncteur R30, qui a perdu son « pour tout le balayage » le 20/09 pour la même raison : une
+  passe dure ~30 h, une page de maintenance quelques minutes ;
 * **le budget** : un plafond de requêtes PAR BALAYAGE (``DEFAULT_BUDGET``), compté dans un fichier
-  d'état du dossier du balayage, recopié dans ``match_meta.json`` ;
+  d'état du dossier du balayage, recopié dans ``match_meta.json``. Il est PARTAGÉ par les
+  marchands de la passe, dans leur ordre de passage (voir ``DEFAULT_BUDGET``) ;
 * **le cache** : persistant (``state/``), par titre normalisé + gabarit de page, avec une durée de
   vie (``CACHE_TTL_S``) ; les réponses VIDES sont gardées aussi — les boucles relisent les mêmes
   lignes à chaque passe ; une erreur ne l'est jamais.
@@ -73,7 +78,26 @@ RETRY_WAIT_S = 2.0
 # tient. 1 000 requêtes sur 30 h font ≈ 0,6 par minute : rien à côté des sondes de pages. Les
 # bans passés (28/08, 11/09) venaient de l'agent navigateur et de rafales, pas du rythme
 # « AKS/Staff ».
+#
+# PARTAGÉ par les marchands de la passe, dans leur ORDRE (revue du 2026-09-29) : un seul fichier
+# d'état par dossier de balayage. Le premier marchand (GameSeal, ≈ 2 300 lignes « pas de page »)
+# peut épuiser la passe ; les suivants attendent une passe ou deux. Voulu : une part égale par
+# marchand (1 000 / 8 = 125) ne couvrirait JAMAIS GameSeal dans la durée de vie du cache
+# (≈ 2 300 / 11 passes ≈ 210 par passe > 125) — ses réponses expireraient avant d'être toutes
+# obtenues —, alors que le budget partagé couvre tout le stock en ~9 passes (ci-dessus). Le coût
+# est un DÉLAI pour les derniers marchands, jamais une ligne mal saisie ; `meta()["budget_scope"]`
+# le dit dans chaque match_meta.json.
+#
+# Ce budget ne compte QUE l'API. Les pages candidates qu'elle fait lire sont des sondes de page
+# ordinaires (rythme `AKS_PROBE_DELAY_S`, garde de throttle) : `resolve_aks` rend la PREMIÈRE
+# page qui répond, donc ≈ UNE lecture par ligne qui a un candidat, à chaque passe tant que la
+# réponse est en cache — exactement le coût d'une page devinée que les gardes refusent ensuite.
+# Mesuré au rejeu du 29/09 (population de l'audit) : voir EXECUTOR_RULES [R66].
 DEFAULT_BUDGET = 1000
+BUDGET_SCOPE = "balayage — partagé par les marchands de la passe, dans leur ordre"
+# Une coupure pour corps ILLISIBLE expire au bout de la même demi-heure que le disjoncteur R30
+# (`scripts/03_match.py` SEARCH_CIRCUIT_TTL_S) ; une version RETIRÉE (404 / 410) ne l'est pas.
+UNREADABLE_DISABLE_S = 30 * 60
 # Une seule durée pour les réponses pleines et vides. Les vides dominent (≈ 47 % des lignes
 # n'ont vraiment pas de page) : une durée plus courte pour elles ferait expirer le stock plus
 # vite que le budget ne le couvre, et on ne ré-interrogerait que de vieux « rien ». Une page
@@ -115,11 +139,17 @@ def normalize_query(query: str) -> str:
     return " ".join(str(query or "").lower().split())
 
 
-def cache_key(kind: str, query: str, filter_version: int) -> str:
+def cache_key(kind: str, query: str, filter_version: int, context: str = "") -> str:
     """La clé : version d'API + version du filtre + gabarit de page + titre normalisé. Changer
-    l'une des deux constantes invalide tout le cache, sans rien effacer à la main."""
+    l'une des deux constantes invalide tout le cache, sans rien effacer à la main.
 
-    return f"{API_VERSION}|f{int(filter_version)}|{kind}|{normalize_query(query)}"
+    ``context`` (revue du 2026-09-29) : ce dont le FILTRE dépend en plus de la requête — le
+    matcher y met les mots du titre BRUT, contre lesquels il vérifie chaque nom. Deux titres qui
+    partagent une requête (« The Tartarus Key (PC) Steam Gift » et « The Tartarus (PC) Steam »
+    donnent tous deux « The Tartarus ») ne partagent donc pas leurs candidats filtrés."""
+
+    key = f"{API_VERSION}|f{int(filter_version)}|{kind}|{normalize_query(query)}"
+    return f"{key}|{normalize_query(context)}" if context else key
 
 
 def parse_response(body: str) -> list[CatalogProduct]:
@@ -170,11 +200,13 @@ class AksCatalogSearch:
     plafond du balayage. ``disabled_reason`` non vide (lu dans l'état du balayage, ou posé ici
     sur une API changée) coupe tout appel réseau — le cache reste servi : ce sont des réponses
     de l'API d'avant, dans leur durée de vie, et chaque page candidate est relue de toute façon.
+    ``disabled_until`` (horodatage, 0 = jusqu'à la fin du balayage) : l'échéance d'une coupure
+    pour corps illisible ; passée, la recherche reprend (et se recoupe si l'API l'est encore).
     """
 
     def __init__(self, *, budget: int = DEFAULT_BUDGET, used: int = 0,
                  cache_path: str | None = None, ttl_s: float = CACHE_TTL_S,
-                 disabled_reason: str = "",
+                 disabled_reason: str = "", disabled_until: float = 0.0,
                  now: Callable[[], float] = time.time,
                  sleep: Callable[[float], None] = time.sleep,
                  min_interval_s: float = MIN_INTERVAL_S,
@@ -185,6 +217,7 @@ class AksCatalogSearch:
         self.cache_path = cache_path
         self.ttl_s = float(ttl_s)
         self.disabled_reason = str(disabled_reason or "")
+        self.disabled_until = float(disabled_until or 0.0) if self.disabled_reason else 0.0
         self._now = now
         self._sleep = sleep
         self._min_interval_s = float(min_interval_s)
@@ -204,12 +237,26 @@ class AksCatalogSearch:
             "search_off_offers": 0,   # disjoncteur R30 ouvert : cache seulement
             "candidate_pages_read": 0,
             "resolved": 0,            # une page candidate a répondu (les gardes décident ensuite)
+            # revue du 29/09 : une page lue dont le NOM contredit le titre (mot répété, ordre,
+            # article en tête) est écartée — candidat suivant (`catalog_name_mismatch`).
+            "rejected_after_read": 0,
         }
 
     # -- lecture -----------------------------------------------------------------------------
     @property
     def remaining(self) -> int:
         return max(0, self.budget - self.used)
+
+    def _is_disabled(self) -> bool:
+        """La coupure tient-elle encore ? Une coupure à échéance (corps illisible) passée est
+        levée ici : la recherche reprend, et se recoupe si l'API est toujours illisible."""
+
+        if not self.disabled_reason:
+            return False
+        if self.disabled_until and self._now() >= self.disabled_until:
+            self.disabled_reason, self.disabled_until = "", 0.0
+            return False
+        return True
 
     def _cached(self, key: str) -> list[tuple[str, str, str]] | None:
         entry = self._fresh.get(key) or self._cache.get(key)
@@ -226,14 +273,14 @@ class AksCatalogSearch:
 
     def lookup(self, kind: str, query: str, http_get_fn: Callable[..., Any],
                select: Callable[[list[CatalogProduct]], list[tuple[str, str, str]]], *,
-               filter_version: int, allow_request: bool = True
+               filter_version: int, allow_request: bool = True, context: str = ""
                ) -> list[tuple[str, str, str]] | None:
         """Les candidats ``(slug, url, nom)`` pour ``query``, ``[]`` si l'API n'en a aucun, ou
         ``None`` si elle n'a PAS été interrogée (disjoncteur, API coupée, budget épuisé) — le
         résolveur rend alors « pas de page », comme avant. Lève :class:`AksSearchUnavailable`
         / :class:`AksSearchChanged` sur une réponse douteuse."""
 
-        key = cache_key(kind, query, filter_version)
+        key = cache_key(kind, query, filter_version, context)
         cached = self._cached(key)
         if cached is not None:
             self.stats["cache_hits"] += 1
@@ -241,7 +288,7 @@ class AksCatalogSearch:
         if not allow_request:
             self.stats["search_off_offers"] += 1
             return None
-        if self.disabled_reason:
+        if self._is_disabled():
             self.stats["disabled_offers"] += 1
             return None
         if self.used >= self.budget:
@@ -276,7 +323,10 @@ class AksCatalogSearch:
                 try:
                     return parse_response(body)
                 except AksSearchChanged as exc:
-                    self._disable(f"{API_VERSION} : {exc}")
+                    # Corps illisible : coupure à ÉCHÉANCE (revue du 29/09) — une page de
+                    # maintenance ne doit pas couper les ~30 h d'une passe.
+                    self._disable(f"{API_VERSION} : {exc}",
+                                  until=self._now() + UNREADABLE_DISABLE_S)
                     raise AksSearchChanged(self.disabled_reason, status=status) from None
             if status in (404, 410):
                 # Une version retirée : 404 à corps vide (vérifié le 29/09). Jamais « rien ».
@@ -294,9 +344,12 @@ class AksCatalogSearch:
             raise AksSearchUnavailable(f"AKS search -> {detail}", status=status)
         raise AssertionError("unreachable")                 # pragma: no cover
 
-    def _disable(self, reason: str) -> None:
+    def _disable(self, reason: str, *, until: float = 0.0) -> None:
+        """``until`` = 0 : pour le reste du balayage (version retirée) ; sinon l'échéance."""
+
         self.stats["failures"] += 1
         self.disabled_reason = reason
+        self.disabled_until = float(until)
 
     # -- écriture ----------------------------------------------------------------------------
     def flush(self) -> int:
@@ -334,25 +387,32 @@ class AksCatalogSearch:
         """Le bloc ``match_meta.json['aks_search']``."""
 
         return {"active": True, "api_version": API_VERSION, "budget": self.budget,
+                "budget_scope": BUDGET_SCOPE,
                 "used_before": self.used_before, "used_after": self.used,
-                "disabled_reason": self.disabled_reason, **dict(self.stats)}
+                "disabled_reason": self.disabled_reason,
+                "disabled_until": self.disabled_until, **dict(self.stats)}
 
 
 # -- état du balayage (budget + coupure) ----------------------------------------------------
-def load_sweep_state(path: str | None, budget: int) -> tuple[int, str]:
-    """``(requêtes déjà dépensées, raison de coupure)`` du balayage. Fichier absent → ``(0, "")``.
-    Fichier ILLISIBLE → budget réputé épuisé : un compteur qu'on ne sait plus lire ne doit pas
-    rouvrir 1 000 requêtes (le cache reste servi)."""
+def load_sweep_state(path: str | None, budget: int, *,
+                     now: Callable[[], float] = time.time) -> tuple[int, str, float]:
+    """``(requêtes déjà dépensées, raison de coupure, échéance)`` du balayage. Fichier absent →
+    ``(0, "", 0.0)``. Fichier ILLISIBLE → budget réputé épuisé : un compteur qu'on ne sait plus
+    lire ne doit pas rouvrir 1 000 requêtes (le cache reste servi). Une coupure dont l'échéance
+    est passée est rendue levée ; ``0.0`` = coupure pour tout le balayage (version retirée)."""
 
     if not path or not Path(path).exists():
-        return 0, ""
+        return 0, "", 0.0
     try:
         raw = json.loads(Path(path).read_text(encoding="utf-8"))
         used = int(raw["requests_used"])
         reason = str(raw.get("disabled_reason") or "")
+        until = float(raw.get("disabled_until") or 0.0)
     except (OSError, ValueError, TypeError, KeyError):
-        return max(0, int(budget)), ""
-    return max(0, used), reason
+        return max(0, int(budget)), "", 0.0
+    if not reason or (until and now() >= until):
+        return max(0, used), "", 0.0
+    return max(0, used), reason, until
 
 
 def save_sweep_state(path: str | None, session: AksCatalogSearch) -> None:
@@ -364,6 +424,7 @@ def save_sweep_state(path: str | None, session: AksCatalogSearch) -> None:
             "budget": session.budget,
             "api_version": API_VERSION,
             "disabled_reason": session.disabled_reason,
+            "disabled_until": session.disabled_until,
             "written_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }, indent=2), encoding="utf-8")
     except OSError:

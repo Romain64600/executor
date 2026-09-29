@@ -12,12 +12,16 @@ part à l'aveugle. Les titres sont ceux de la population de l'audit (refus « no
 found » des balayages A pass 9 / groupe B)."""
 
 import functools
+import json
 import socket
+import tempfile
 import unittest
 import unittest.mock
 from pathlib import Path
+from urllib.parse import unquote
 
 import src.matcher as M
+from src import aks_search
 from src.aks_env import HttpProbeResult
 from src.aks_sitemap import SitemapIndex
 from src.console_keys import (
@@ -95,8 +99,28 @@ class _Base(unittest.TestCase):
         self.pages = dict(_fixture_pages())
         self.pages.update(self.extra_pages)
         self.asked = []
+        # Revue du 2026-09-29 : la configuration de PRODUCTION — 03_match pose une session de
+        # recherche catalogue [R66] par défaut, et ces tests tournaient sans elle. L'API répond
+        # la réponse RÉELLE enregistrée pour la requête exacte (`aks_search_r66/api_*.json`),
+        # sinon « aucun produit ».
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.api = {}
+        for f in (FIX.parent / "aks_search_r66").glob("api_*.json"):
+            raw = json.loads(f.read_text(encoding="utf-8"))
+            self.api[raw["query"]] = raw["body"]
+        self.api_asked = []
+        self.addCleanup(M.set_aks_search, None)
+        M.set_aks_search(aks_search.AksCatalogSearch(
+            cache_path=str(Path(self._tmp.name) / "aks_search_cache.json"), sleep=lambda s: None))
 
     def get(self, url, **_kw):
+        if "vakrs_catalogv2.php" in url:
+            self.api_asked.append(url)
+            q = unquote(url.split("search_name=", 1)[1].split("&", 1)[0])
+            return HttpProbeResult(url=url, ok=True, status=200, body=self.api.get(
+                q, '{"products":[],"pagination":{"total":0,"per_page":24,"pagenum":1,'
+                   '"total_pages":0,"took":1},"facets":{}}'))
         self.asked.append(url)
         body = self.pages.get(url)
         if body:

@@ -1120,7 +1120,10 @@ avant lui. Quand il fait autorité :
 - **Passe 5 — `[R66]`** (2026-09-29) : la recherche **catalogue** d'AKS en dernier recours, index
   frais ou non, quand rien d'autre n'a trouvé de page — voir `[R66]` plus bas. Elle remplace la
   recherche `?s=` de R30 (morte depuis le 22/09 : `HTTP 200`, corps vide), qui n'est plus
-  atteinte que sans session de recherche, c'est-à-dire jamais en production.
+  atteinte que sans session de recherche, c'est-à-dire jamais en production. Sa place se règle
+  (`resolve_aks(..., catalog="last" | "off" | "only")`) : pour une ligne console, l'ancre PC est
+  cherchée `"off"`, et la recherche ne part (`"only"`) qu'après TOUS les gabarits console (revue
+  adverse du 29/09).
 - `match_meta.json.sitemap_first` dit pour chaque page si le mode était actif, contre quel
   relevé, et combien de sondes il a évitées (`probes_skipped`) ou laissées à la soupape
   (`valve_unconfirmed`).
@@ -3395,35 +3398,81 @@ C'est l'`apiUrl` que la page `/blog/products/?search_name=…` embarque pour son
 front, réduits à quatre champs (≈ 500 o, ≈ 0,1 s, `application/json`). **Une version retirée
 répond `404`, corps vide** (vérifié sur `v2-1-000000`).
 
-**Où** : passe 5 de `resolve_aks` (`src/matcher.py:3313`), APRÈS les passes 1-4 (`[R64]`
+**Où** : passe 5 de `resolve_aks` (`src/matcher.py`), APRÈS les passes 1-4 (`[R64]`
 compris), pour une page **clé PC** seulement (`page_kind == "cd-key"` : ni compte, ni gabarit
-console) — l'ancre PC d'une ligne console en profite, ses pages console viennent ensuite de la
-barre d'onglets comme avant. La session (`AksCatalogSearch`, posée par `03_match`, retirée à la
-fin du match) décide ; sans session, le comportement d'avant (index frais → `None`, sinon `?s=`).
+console). La session (`AksCatalogSearch`, posée par `03_match`, retirée à la fin du match)
+décide ; sans session, le comportement d'avant (index frais → `None`, sinon `?s=`).
 
-**Candidats seulement** (`catalog_candidates`, `:3018`). Un produit n'est proposé que si :
-1. son lien est une page clé PC que le résolveur sait lire (`catalog_page`, `:2992`) —
+**Une ligne console : la recherche APRÈS tous les gabarits console** (revue adverse du 29/09).
+La recherche rend volontiers une page PC PLUS COURTE que le titre (« Priest Simulator » pour
+« Priest Simulator: Vampire Show », « Destiny 2 » pour « Destiny 2: The Collection »,
+« Worms Armageddon » pour « … Anniversary Edition ») ; prise pour ancre, elle fermait la porte aux
+gabarits console standard, aux replis `[R65]` et à la page combinée — la page du produit lui-même
+n'était jamais essayée. Mesuré en configuration de production (session posée) : Eneba « Destiny 2:
+The Collection XBOX LIVE Key UNITED STATES » (génération déduite) **entrait sur
+`destiny-2-xbox-one-code`, la page Xbox One du JEU DE BASE, en Collection(98)**, au lieu du refus
+« 2b, non tranché » ; « Priest Simulator: Vampire Show » et « Worms Armageddon: Anniversary
+Edition » étaient refusés. Désormais `_console_plan` appelle l'ancre PC avec `catalog="off"`,
+puis les gabarits console standard, les replis `[R65]`, la page combinée, et SEULEMENT ensuite
+`catalog="only"` (la recherche seule : les passes 1-4 ont déjà répondu, la soupape du rang 1
+n'est pas repayée). La page qu'elle rend est une page PC — l'ancre, `anchor_kind="cd-key"`. Une
+**clé Windows** (« (Windows) XBOX LIVE Key ») n'a pas d'autre ancre que la page PC : son appel
+unique garde la recherche en dernier recours, comme une clé PC. La garde de throttle transmet ses
+kwargs au résolveur qu'elle garde : `_accepts_kwarg` regarde SOUS elle (sans quoi `match_feed`,
+qui enveloppe toujours, répondait « oui » pour tout résolveur et un résolveur ignorant
+`keep_country` / `catalog` levait `TypeError`).
+
+**Candidats seulement** (`catalog_candidates`). Un produit n'est proposé que si :
+1. son lien est une page clé PC que le résolveur sait lire (`catalog_page`) —
    `buy-<slug>-cd-key|key|game-code|download-code-compare-prices/` ou l'ancienne
    `compare-and-buy-…-<slug>/`, le gabarit le **plus long** gagnant (`…-xbox-series-key` est une
    page console, jamais « key »), l'URL reconstruite depuis nos gabarits ; toute autre forme
    (console, compte, carte cadeau, `…-digital-download-best-price/`, `…-compare-prices-2/`) n'est
-   **jamais lue** ;
+   **jamais lue**. Revue du 29/09 : des gabarits de « clé » portés par des pages qui ne vendent
+   PAS une clé PC sont lus pour ce qu'ils sont (`_CATALOG_NOT_PC_KINDS`) — `-ps3-game-code`
+   (737 pages à l'index du 28/09), `-nintendo-3ds-download-code` / `-3ds-download-code` (421),
+   `-wii-u-download-code` (210), `-oculus-cd-key` (4) ; `-mac-cd-key` reste lu (le nom de ces
+   pages porte « for Mac », que R01 exige du titre) ;
 2. son type n'est pas `account` et son nom n'est pas fait que de mots de bruit ;
-3. **chacun des mots de son nom est dans le titre** — le côté REQUIS de R01, appliqué d'avance sur
-   le nom du catalogue : le remplissage de popularité (« WinZip 12 for Mac Pro Version » →
-   Windows 11 Pro, Minecraft, Baldur's Gate 3…) tombe sans lire une page. Au rejeu, chaque page
-   connue que ce filtre écarte manque d'au moins un mot requis par R01 sur le titre brut
-   (« GreedFall 2 », « GTA 5 », « EA SPORTS Madden NFL 27 », « Hunt Showdown 1896 »…) : il
-   n'écarte rien que R01 accepterait ;
-4. au plus 3, le nom le plus long d'abord, puis l'ordre de l'API.
+3. **son nom est COHÉRENT avec le titre** (`catalog_name_mismatch`, revue adverse du 29/09) :
+   - chacun de ses mots est dans le titre **brut** (le nom que le résolveur a reçu, bruit compris),
+     **autant de fois** — le côté REQUIS de R01, appliqué d'avance et COMPTÉ : le remplissage de
+     popularité (« WinZip 12 for Mac Pro Version » → Windows 11 Pro, Minecraft…) tombe sans lire
+     une page. Le titre BRUT et non la requête : `cleaned_title` retire KEY / STEAM / PC… en fin
+     de titre même quand ils sont du nom — GameSeal « The Tartarus Key (PC) Steam Gift - GLOBAL »
+     donne la requête « The Tartarus », et la page « The Tartarus Key » que l'API rend tombait ;
+   - le titre ne répète pas un mot du nom plus souvent que le nom : R01 / R16 comparent des
+     ENSEMBLES, et GameSeal « Nope Nope Nope Nope Nurses » (offre 100698305) comme GOG « Nope Nope
+     Nope Nurses » (100461290) **entraient sur « Nope Nope Nurses »** (GOG vend quatre fiches
+     distinctes) ;
+   - un article en tête du titre (THE / A / AN) ouvre aussi le nom : « The Fire » ≠ « Fire » (l'index
+     porte 77 paires `the-x` / `x` qu'AKS range comme produits distincts ; la décision « article en
+     tête » de la proposition 4 n'est pas prise, la recherche ne la prend pas à sa place) ;
+   - les mots du nom que la requête porte viennent dans le **même ordre** (chiffres et mots-outils à
+     part : « Office 2019 Home & Business » = « Office Home & Business 2019 ») : Kinguin « Legacy of
+     Ancestors » (offre 100997924) **entrait sur « Ancestor's Legacy »**.
+
+   Au rejeu du 29/09, chaque page connue que ce filtre écarte manque d'au moins un mot requis par
+   R01 sur le titre brut (« GreedFall 2 », « GTA 5 », « EA SPORTS Madden NFL 27 »…) ou est un autre
+   nom (ci-dessus) : il n'écarte rien que R01 accepterait à raison ;
+4. au plus 3, le nom le plus long d'abord, puis l'ordre de l'API ;
+5. **la condition 3 de `[R64]`** : quand le nom COMPLET du titre est publié sous un autre gabarit
+   (`destiny-2-the-collection-xbox-key`, `-ps4-key`…), AKS en fait un produit distinct — une page
+   au nom plus court (`destiny-2`, qui vend Collection, Legacy Collection, Legacy Collection 2023)
+   n'est pas proposée (MMOGA « Destiny 2: The Collection », clé PC, **entrait** en Collection(98)).
+   Sans index frais, la règle se tait.
 
 Chaque page candidate est lue **exactement comme une page devinée** : 404 → la suivante ; toute
 autre réponse douteuse lève tout de suite (`MA1`) ; nom illisible → `AksNameUnreadable` ; une URL
-déjà sondée par les passes 1-4 n'est pas redemandée. La première page lue est rendue, marquée
+déjà sondée par les passes 1-4 n'est pas redemandée. Le NOM LU repasse les contrôles 3 et 5 (le
+catalogue abrège parfois : « Ancestors Legacy » pour la page « Ancestor's Legacy ») : incohérent →
+candidat suivant (`rejected_after_read`). La première page cohérente est rendue, marquée
 `found_by="catalogue"` : **toutes les gardes décident, inchangées** (R01, R01b, R16, R20, R27 /
-`[R51]`, R43, R18, E06, R31…).
+`[R51]`, R43, R18, E06, R31…). Un candidat écarté ne laisse que « no AKS product page found » :
+c'est la bonne issue (liste 22) pour un produit qu'AKS n'a pas sous ce nom.
 
-**Un resserrement, pas un assouplissement — les mots restants** (`catalog_leftover`, `:3056`).
+**Un resserrement, pas un assouplissement — les mots restants** (`catalog_leftover`, COMPTÉS
+depuis le 29/09 : un mot répété manquant reste manquant).
 La recherche propose des pages dont le nom est PLUS COURT que le titre. Quand les mots qui
 manquent au nom de la page (hors THE / OF / AND / A / AN) sont tous du bruit (EDITION, VERSION,
 DIGITAL, EPIC, COLLECTION…), la garde des mots en trop ne voit rien et `detect_edition` rend
@@ -3436,6 +3485,12 @@ Midnight Suns Digital+ Edition » sur `marvels-midnight-suns` : sans la règle, 
 Standard(1) — le mauvais palier ; avec, refus `… found by the AKS catalogue search lacks 'DIGITAL
 EDITION' … (R66)`. Un palier NOMMÉ entre : « … Legendary Edition … Europe & UK » → Legendary,
 « The Elder Scrolls Online Collection Necrom » → Collection(98). Coût au rejeu : 0 ligne.
+**Et le palier le PLUS PRÉCIS** (revue du 29/09, rejeu final ; vaut aussi pour `[R64]`) : quand la
+page vend un AUTRE seau dont la signature (`_edition_key`) contient celle du seau retenu et que le
+titre nomme tout entier, c'est un doute — refus `edition '…' is not the most precise tier the title
+names — the page also sells [...]`. CJS « The Elder Scrolls Online Deluxe Collection: Necrom »
+(×3, Gamerall ×1) entrait en Deluxe(7) alors que la page vend « Deluxe Collection Edition »
+(2497) : `detect_edition` s'arrête au premier palier connu.
 
 **Budget, rythme, cache** (`src/aks_search.py`) :
 - **budget par balayage** `DEFAULT_BUDGET` = 1 000 requêtes (`--aks-search-budget`), compté
@@ -3447,8 +3502,21 @@ EDITION' … (R66)`. Un palier NOMMÉ entre : « … Legendary Edition … Europ
   le régime permanent demande ≈ 790 requêtes par passe ; ≈ 0,6 requête par minute ;
 - **rythme** : une seconde au moins entre deux appels, une seule reprise après 2 s sur un 5xx /
   une erreur de transport / un corps vide, **jamais sur un 429** ; agent `AKS/Staff` toujours ;
+- **budget PARTAGÉ par les marchands de la passe, dans leur ordre** (un fichier d'état par dossier
+  de balayage ; `meta()["budget_scope"]` le dit). Le premier marchand (GameSeal, ≈ 2 300 lignes
+  « pas de page ») peut épuiser une passe ; les suivants attendent une ou deux passes. Voulu : une
+  part égale (1 000 / 8 = 125) ne couvrirait JAMAIS GameSeal dans la durée de vie du cache
+  (≈ 2 300 / 11 passes ≈ 210 par passe) — ses réponses expireraient avant d'être toutes
+  obtenues —, alors que le budget partagé couvre le stock en ~9 passes. Un délai, jamais une
+  ligne mal saisie ;
+- **les pages que la recherche fait lire ne sont pas au budget** : ce sont des sondes de page
+  ordinaires (rythme `AKS_PROBE_DELAY_S`, garde de throttle). `resolve_aks` rend la PREMIÈRE page
+  cohérente, donc ≈ une lecture par ligne qui a un candidat, à chaque passe tant que la réponse
+  est en cache — le coût d'une page devinée que les gardes refusent ensuite (mesure plus bas) ;
 - **cache persistant** `state/aks_search_cache.json` (`--aks-search-cache`), clé = version d'API
-  + version du filtre (`CATALOG_FILTER_VERSION`) + gabarit de page + titre normalisé, **14 jours
+  + version du filtre (`CATALOG_FILTER_VERSION`, 2 depuis le 29/09) + gabarit de page + titre
+  normalisé + mots du titre BRUT (le filtre les lit : deux titres qui partagent la requête ne
+  partagent pas leurs candidats), **14 jours
   pour les réponses pleines ET vides** (les vides dominent : une durée plus courte ferait expirer
   le stock plus vite que le budget ne le couvre), **jamais une erreur** ; écriture atomique,
   fusionnée avec ce que le fichier contient (le plus récent gagne). Le cache est servi même
@@ -3459,18 +3527,53 @@ EDITION' … (R66)`. Un palier NOMMÉ entre : « … Legendary Edition … Europ
 JSON qui n'a plus la forme lue (`products` liste, `pagination.total` entier, chaque produit avec
 `id` / `name` / `link` / `type`) → `AksSearchChanged` → la ligne est refusée `AKS probe
 unreliable (throttled?): AKS catalogue search API changed — v2-1-250304 : … ; search off for
-this sweep, the new version is never guessed (R66)`, la recherche se coupe pour le reste du match
-ET du balayage (`disabled_reason`, persisté), et la nouvelle version n'est **jamais devinée** : un
-humain relit `/blog/products/` et met la constante à jour. Un 5xx / délai / corps vide après la
+this sweep, the new version is never guessed (R66)`, la recherche se coupe (`disabled_reason`,
+persisté dans l'état du balayage), et la nouvelle version n'est **jamais devinée** : un humain
+relit `/blog/products/` et met la constante à jour. **Durée de la coupure** (revue du 29/09) : un
+`404` / `410` (version retirée) coupe pour TOUT le balayage ; un corps ILLISIBLE (HTML de
+maintenance, JSON d'une autre forme) ne coupe que `UNREADABLE_DISABLE_S` = 30 min
+(`disabled_until`, persisté) — la même demi-heure que le disjoncteur R30, qui a perdu son « pour
+tout le balayage » le 20/09 pour la même raison (une passe dure ~30 h, une page de maintenance
+quelques minutes). Passée l'échéance, la recherche reprend, et se recoupe si l'API est toujours
+illisible : une requête par demi-heure au plus. Un 5xx / délai / corps vide après la
 reprise → `AksProbeUnreliable` sur la clé `site-search` : **le disjoncteur R30** le compte (3 de
 suite → cache seul pour le reste du match, persistance 30 min inchangée) ; un 429 → `AksThrottled`,
 le match s'arrête (inchangé).
 
 **Traçabilité.** `match_meta.json["aks_search"]` : `active`, `api_version`, `budget`,
-`used_before` / `used_after` (compteur du balayage), `requests`, `queries`, `cache_hits`, `hits`,
-`empty`, `failures`, `budget_exhausted_offers`, `disabled_offers`, `search_off_offers`,
-`candidate_pages_read`, `resolved`, `disabled_reason` ; événements `aks_search` /
-`aks_search_done` au journal. `--no-aks-search` : le résolveur d'avant, `{"active": false}`.
+`budget_scope`, `used_before` / `used_after` (compteur du balayage), `requests`, `queries`,
+`cache_hits`, `hits`, `empty`, `failures`, `budget_exhausted_offers`, `disabled_offers`,
+`search_off_offers`, `candidate_pages_read`, `resolved`, `rejected_after_read`,
+`disabled_reason`, `disabled_until` ; événements `aks_search` / `aks_search_done` au journal.
+`--no-aks-search` : le résolveur d'avant, `{"active": false}`. **Le motif d'un refus le dit**
+(revue du 29/09) : quand la recherche a rendu une page pendant l'offre et que l'offre est refusée,
+le motif se termine par ` — page proposée par la recherche catalogue AKS (R66)` (sans le mot
+« console », que le tri de la liste 22 lit) — « no AKS product page found (console) » après une
+ancre trouvée par la recherche était un motif faux.
+
+**Revue adverse du 29/09 — rejeu final** (hors ligne, vrai `match_offer`, index du 28/09, session
+POSÉE comme en production ; population de l'audit + derniers `skipped.json` des deux groupes —
+A passe 22, B balayages des 26 et 29/09 —, 35 088 lignes distinctes ; code de production
+`2a438ca` → code final). **+115 lignes entrent (116 offres), aucune ne sort, aucune cible ne
+change** : `[R64]` 62, `[R65]` 28 (+1 préalable pays), `[R66]` 19 (9 sur réponse RÉELLE de l'API,
+10 sur réponse simulée depuis l'index — borne haute), `[R32f]` 5. Contre la branche avant revue
+(`ed1221a`, même session) : −16 (Nope ×2, Legacy of Ancestors, Destiny 2 « The Collection » ×3,
+DBZ Kakarot « Daima Edition » ×3 et Starpoint Gemini 2 « Gold Pack » ×2 par la condition 3 de
+`[R64]`, ESO « Deluxe Collection » ×4 par le palier le plus précis, Gamivo « Gotham Knights EN
+United States » par l'édition de son URL — MERCHANTS, Gamivo), +11 (« The Tartarus Key » ; Little
+Strays 2 ×5, Cute Puppy Academy ×2, Priest Simulator: Vampire Show et Kinguin Destiny 2 « The
+Collection » sur leurs pages console propres — la recherche passée en premier proposait
+`light-cd-key`, `dream-cd-key`, `priest-simulator`, `destiny-2`).
+Lignes DÉJÀ CRÉÉES (11 034 relues) : 1 338 rejouables jusqu'au bout, identiques avant / après ;
+la recherche n'est interrogée AVANT la page créée que pour une ligne (Gamerall « Warhammer 40,000:
+Gladius - Craftworld Aeldari - DLC », qu'elle retrouve) ; Gamerall « Far Cry 3 - Classic Edition
+(Xbox Live) » change d'ancre (`[R64]`, puis 2b). **Charge des pages candidates** : sur une passe
+sans cache des deux groupes, 12 811 questions à l'API et 5 902 pages candidates lues avec la
+réponse simulée ; sur 15 lignes tirées au hasard et interrogées en vrai, 7 ont un candidat (15 en
+simulé) — soit ≈ 2 750 lectures par passe pour les deux groupes, ≈ 0,8 par minute et par groupe,
+contre ≈ 1,16 sonde par offre déjà faite (+ ≈ 7 %). Sur ces 15 lignes réelles, 3 entrent, toutes
+justes (« Warhammer 40,000: Space Marine - Master Crafted Edition » sur sa propre page, « Spore
+Complete Pack » en Complete Pack(92), « Train Simulator Classic 2024 » en 2024 Edition(4018)).
 
 **Mesures (29/09, lecture seule, 45 requêtes AKS/Staff).** 40 lignes de l'audit que le code
 actuel (`[R64]`/`[R65]` compris) refuse encore « pas de page » : 24 « ratées » à nom non
@@ -3483,7 +3586,8 @@ trop « NCSOFT », « 40TH » ×2, « PART 1 », R31). Absentes : 10 sur 12 sans
 candidat, **0 entrée** ; « aucun indice » à mot d'édition : 1 page candidate lue, refusée
 (« CHARACTER »). La règle des mots restants ne change l'issue d'aucune de ces 40 lignes. Tests :
 `tests/test_aks_search_r66.py` (réponses réelles de l'API et pages AKS réelles réduites,
-`tests/fixtures/aks_search_r66/`).
+`tests/fixtures/aks_search_r66/`) et, en configuration de production (session + index),
+`tests/test_aks_search_r66_revue.py` ; les tests `[R64]` / `[R65]` posent désormais une session.
 
 ---
 

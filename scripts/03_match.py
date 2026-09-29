@@ -213,10 +213,11 @@ def main() -> int:
     # La session ne vit que le temps de ce match : retirée dans le `finally`.
     search = None
     if not args.no_aks_search:
-        used, disabled = aks_search.load_sweep_state(args.aks_search_state,
-                                                     args.aks_search_budget)
+        used, disabled, disabled_until = aks_search.load_sweep_state(args.aks_search_state,
+                                                                     args.aks_search_budget)
         search = aks_search.AksCatalogSearch(
             budget=args.aks_search_budget, used=used, disabled_reason=disabled,
+            disabled_until=disabled_until,
             cache_path=args.aks_search_cache or str(ROOT / aks_search.DEFAULT_CACHE_PATH))
         logger.log("aks_search", budget=search.budget, used_before=search.used_before,
                    disabled_reason=search.disabled_reason or None,

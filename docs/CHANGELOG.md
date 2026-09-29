@@ -14,6 +14,51 @@ sur la nouvelle VM. `src/merchants/cjs.py` lit maintenant le créneau (EXECUTOR_
 MERCHANTS) ; tout autre pays ou zone est refusé par son nom. Tests :
 `tests/test_merchants_cjs_r67.py`. Effet à la page suivante de tout sweep.
 
+## 2026-09-29 — `[R66]` revue adverse : configuration de production, noms cohérents, recherche après les gabarits console
+
+Deux revues adverses de la branche (`ed1221a`) ont rejoué `[R64]` / `[R65]` / `[R66]` avec une
+session de recherche POSÉE — ce que fait `03_match` et qu'aucun test ne faisait. EXECUTOR_RULES
+`[R66]` (+ §4.7 passe 5) ; AGENTS « Reviewed decisions » `[R66]` (revue, (g)–(l)) ; MERCHANTS
+(Gamivo) ; README ; tests `tests/test_aks_search_r66_revue.py` (43 tests, réponses RÉELLES de
+l'API et pages AKS réelles réduites ; tous rouges sur `ed1221a` là où ils testent un défaut),
+`tests/test_resolver_repli_r64_r65.py` en configuration de production ; 30 mutations, toutes
+rouges.
+
+- **Écritures fausses corrigées (P1).** R01 / R16 et le filtre comparaient des ENSEMBLES de mots :
+  GameSeal « Nope Nope Nope Nope Nurses » (100698305) et GOG « Nope Nope Nope Nurses » (100461290)
+  entraient sur « Nope Nope Nurses », Kinguin « Legacy of Ancestors » (100997924) sur « Ancestor's
+  Legacy ». `catalog_name_mismatch` : le nom proposé ET le nom lu doivent être dans le titre
+  BRUT, mots comptés, sans mot répété en moins, article de tête gardé, même ordre (chiffres,
+  mots-outils et bruit à part) ; `catalog_leftover` compte. `CATALOG_FILTER_VERSION` = 2.
+- **La recherche APRÈS les gabarits console (P1/P2).** Eneba « Destiny 2: The Collection XBOX
+  LIVE Key UNITED STATES » entrait sur `destiny-2-xbox-one-code` (jeu de base), Collection(98) ;
+  « Priest Simulator: Vampire Show », Little Strays 2, Cute Puppy Academy, Kinguin « Destiny 2:
+  The Collection » étaient refusés ou déviés. `resolve_aks(..., catalog="last"|"off"|"only")` ;
+  `_console_plan` : ancre PC `"off"`, gabarits standard, replis `[R65]`, page combinée, puis
+  `"only"` ; la clé Windows garde son appel PC unique. `_accepts_kwarg` regarde sous la garde de
+  throttle (un résolveur ignorant `keep_country` / `catalog` levait `TypeError` sous `match_feed`).
+- **Titre brut (P2).** Le filtre lisait la requête nettoyée : « The Tartarus Key (PC) Steam
+  Gift » → requête « The Tartarus » → la page « The Tartarus Key » tombait. Elle entre (25). La
+  clé du cache porte les mots du titre brut.
+- **Article de tête (P2)**, **pages PS3 / 3DS / Wii U / Oculus** jamais candidates.
+- **Trouvés au rejeu final, corrigés :** condition 3 de `[R64]` appliquée à la recherche (MMOGA /
+  Gamerall « Destiny 2: The Collection » entraient en Collection(98) sur `destiny-2`, qui vend aussi
+  Legacy Collection) ; le palier le PLUS PRÉCIS que le titre nomme (CJS / Gamerall « ESO Deluxe
+  Collection: Necrom » entraient en Deluxe(7), la page vend « Deluxe Collection Edition ») ; Gamivo
+  « Gotham Knights EN United States » entrait en Deluxe(7) par le slug de produit de son URL
+  (`…-deluxe-edition-…-standard`) — refus `precheck` (`gamivo.edition_conflict`).
+- **Robustesse (P3).** Un corps illisible ne coupe la recherche que 30 min (`disabled_until`,
+  persisté), un 404 / 410 tout le balayage ; le budget, PARTAGÉ par les marchands d'une passe, le
+  dit (`budget_scope`) — une part égale ne couvrirait jamais GameSeal dans la durée du cache ;
+  les lectures de pages candidates sont mesurées (≈ +7 % de sondes par passe) plutôt que bornées
+  à l'index, qui n'est pas exhaustif ; tests du rythme, de la reprise et de son budget ; un refus
+  après une page du catalogue le dit (` — page proposée par la recherche catalogue AKS (R66)`).
+- **Rejeu final** (hors ligne, 35 088 lignes : population de l'audit + derniers `skipped.json`
+  des groupes A et B ; `2a438ca` → final) : +115 lignes entrent (`[R64]` 62, `[R65]` 29, `[R66]`
+  19, `[R32f]` 5), aucune ne sort ; 11 034 lignes déjà créées relues, 1 338 rejouables identiques.
+  Coût accepté, non tranché : DBZ Kakarot « Daima Edition » ×3 et Starpoint Gemini 2 « Gold Pack »
+  ×2 restent refusées (nom complet publié sur console).
+
 ## 2026-09-29 — `[R66]` recherche catalogue AKS en dernier recours
 
 Romain : « La recherche AKS en dernier recours me semble indispensable » — proposition 11 de
