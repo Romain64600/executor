@@ -239,10 +239,19 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   (e) laisser entrer la page combinée SANS offre (Grizzy, Far Cry 3 — aucune carte d'éditions) —
   non, R19 la refuse comme toute page vide, et avec elle la ligne entière (P4) : Gamerall « Far
   Cry 3 - Classic Edition (Xbox Live) », créée le 25/09 sur la seule page Xbox One, est refusée
-  tant que la page Series n'a pas d'offre — voulu, on ne perd pas une page qu'AKS a ; (f) la
-  retirer aux clés Windows Play Anywhere — non : elles prennent « les pages Xbox qu'AKS a » (P4),
-  la combinée déclarée Series en est une. EXECUTOR_RULES `[R65]` (règle 2b) et §4.12 P4,
-  `tests/test_resolver_repli_r64_r65.py` (`R65Regle2b`).
+  tant que la page Series n'a pas d'offre — voulu, on ne perd pas une page qu'AKS a ; (f) une clé
+  Windows Play Anywhere prend aujourd'hui One + combinée + page PC (« les pages Xbox qu'AKS a »,
+  P4) — **À CONFIRMER PAR ROMAIN, pas une décision revue** : c'est une conséquence du même `if`,
+  hors des quatre exemples du go, soumise dans le rapport du 29/09 ; ne pas la citer comme
+  tranchée. **Revue adverse du même jour** (correctifs fail-closed de l'implémentation, soumis à
+  Romain dans le rapport, pas des décisions de Romain) : (g) une combinée dont la méta ne nomme
+  aucune génération Xbox (absente, « Xbox », « PC », deux générations) refuse la ligne — le
+  gabarit combiné ne dit pas la génération, on ne saurait pas si c'est une seconde page de la
+  console visée (une page STANDARD à méta muette reste acceptée) ; (h) une page Xbox Series
+  publiée au même slug que la combinée compte : deux pages → refus ; (i) G2A
+  `…-xbox-live-key-xbox-one-<région>-i<id>` est un Xbox One DÉCLARÉ (grammaire G2A seule, jamais
+  générique). Les assouplir demande un go de Romain. EXECUTOR_RULES `[R65]` (règle 2b) et §4.12
+  P4, `tests/test_resolver_repli_r64_r65.py` (`R65Regle2b`, `R65Regle2bRevue`).
 
 - **`[R63]` Clés EA « English only » : case 31 sans verrou, 3euen sinon 3eu en Europe —
   Romain, 2026-09-28** : « go pour les clés EA English only en case 31 », puis, mot pour mot :

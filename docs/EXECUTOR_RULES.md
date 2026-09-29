@@ -1861,7 +1861,9 @@ store-segment drop, `_GAMIVO_LANG_TAIL_RE`) are declared by the merchant files
   game (R45)" / ACCESS; `difmark.py` — `/buy-console-account-…-account-<id>` → "console:
   ACCOUNT — not a game (R45)" (the ACCOUNT title word itself is a shared marker);
 - `k4g.py`, `driffle.py` (`xbox-series-xs` spelling, `-p<id>` ignored), `g2a.py`
-  (`-i<id>` ignored), `gameseal.py` — the shared runs on their slug; `allyouplay.py`,
+  (`-i<id>` ignored; when no run precedes the key marker, the run right AFTER `-key-` /
+  `-gift-` — `…-xbox-live-key-xbox-one-global-i…` → XBOX_ONE, offer 100404075, review of rule
+  2b 2026-09-29), `gameseal.py` — the shared runs on their slug; `allyouplay.py`,
   `cjs.py` — identity only (`domain`, to confirm at the first dry-run; never swept, no data).
 `console_marker_in_url(url) -> bool` = a console token in the URL PATH (XBOX /
 PLAYSTATION / PSN / NINTENDO / PS4 / PS5 as hyphen- or slash-delimited segments; not
@@ -2189,7 +2191,9 @@ guessed: doubt → skip with an explicit reason string.
   (Sora: Songs of the Stone UK → 305) or next to the Xbox One page AKS has (Hidden Legends 2:
   `-xbox-one-key` + combined); the key's own region, never widened (300 / 302 / 303 / 305); never
   the PC page by this rule (P2 / Windows key unchanged); a combined page declared Xbox ONE stays
-  refused for a deduced generation. Details, cases and measures: `[R65]`.
+  refused for a deduced generation; a combined page whose meta names no Xbox generation refuses
+  the row, and a Series page published at the combined page's slug makes it two Series pages →
+  refused (adversarial review, same day). Details, cases and measures: `[R65]`.
 - **Windows / Xbox app key — DÉCIDÉ Romain 2026-09-26 (« 1. »)**: 4.12.3 and (f bis) above.
 - **P5 console DLC / season pass — DÉCIDÉ Romain 2026-09-25 (« P5 A »)**: the PC DLC rule
   `[R43]` applied to consoles — the row enters only on the console page OF THE DLC ITSELF
@@ -3621,15 +3625,18 @@ barre d'onglets les ignorait et la branche console ne les sondait pas : 84 % des
   et `console_template_of` (`:1314`) les lisent sous LEUR nom. **`CONSOLE_PAGE_KINDS` n'est pas
   allongé** : il nourrit `matcher._AKS_PAGE_URL_RE` et le routage `[R18c]`, qui ne passent
   jamais par un gabarit de repli ; `resolve_aks_url` lit ces URL par leur propre grammaire
-  (`src/matcher.py:2927`, slug capturé NU).
-- **Sonder** (`resolve_aks`, `src/matcher.py:3035`) : un gabarit de repli n'est sondé que si
+  (`src/matcher.py:2964`, slug capturé NU).
+- **Sonder** (`resolve_aks`, `src/matcher.py:3325`) : un gabarit de repli n'est sondé que si
   l'index sitemap le PUBLIE — ni soupape, ni forme année / ancienne, ni passe 3 ; sans index
-  frais, rien. L'ancre console (`_console_plan`, `:5257`) essaie, faute de page PC et de page
+  frais, rien. L'ancre console (`_console_plan`, `:5267`) essaie, faute de page PC et de page
   au gabarit standard, les gabarits de repli de la famille, puis la page combinée.
-- **Une page par console, jamais deux** (`_console_family_pages`, `:5169` ; refus `:5605`) :
+- **Une page par console, jamais deux** (`_console_family_pages`, `:5169` ; refus `:5628`) :
   les pages CONNUES d'une famille sont l'ancre, les onglets de ses gabarits, et ce que l'index
   publie au MÊME slug sous un autre de ses gabarits (`star-wars-battlefront-2-xbox-one` ET
-  `…-xbox-one-code`). Deux pages différentes → refus `console: AKS has 2 different <F> pages …
+  `…-xbox-one-code`) — y compris au slug de la page combinée, pour la famille que sa méta
+  déclare (revue adverse du 29/09, `:5614`) : Case Solved, dont la page PC ne relie que la
+  combinée, serait refusée si l'index publiait aussi `case-solved-the-london-files-xbox-series`.
+  Deux pages différentes → refus `console: AKS has 2 different <F> pages …
   (R65)`. Jamais le slug de la page PC seule : sous un autre gabarit, ce peut être un autre
   produit — la barre d'onglets est ce qui relie les pages d'un même jeu.
 - **La méta reste le juge ; P1 inchangé.** Une page de repli qui se déclare une autre
@@ -3638,13 +3645,18 @@ barre d'onglets les ignorait et la branche console ne les sondait pas : 84 % des
 - **2b — la page Xbox combinée `-xbox-key`** (`_combined_xbox_page`, `src/matcher.py:5209`) : lue
   une fois quand elle est connue (onglet, ancre, ou index au même slug qu'une page Xbox connue),
   rangée selon sa MÉTA (« Xbox Series X » pour NHL 27, Hidden Legends 2, Destiny 2 The
-  Collection, Far Cry 3, Case Solved, Sora, NBA 2K27, Grizzy) ; une méta muette ou qui ne nomme
-  pas une génération VISÉE → elle ne sert à rien. Elle sert une génération **déclarée** égale
+  Collection, Far Cry 3, Case Solved, Sora, NBA 2K27, Grizzy) ; une méta qui nomme l'AUTRE
+  génération Xbox → elle n'est pas une page de la ligne (P1) ; une méta muette ou illisible
+  (absente, « Xbox », « PC », deux générations) → **refus** de la ligne, `console: la page Xbox
+  combinée … ne déclare aucune génération Xbox lisible (méta « … ») — page invérifiable, non
+  entré (R65)` (revue adverse du 29/09, `:5251` : Hidden Legends 2 entrait sur la seule page
+  Xbox One en perdant la combinée ; seul le gabarit combiné ne dit pas la génération — une page
+  STANDARD à méta muette reste acceptée, règle du 2026-09-18). Elle sert une génération **déclarée** égale
   (G2A « NHL 27 | Deluxe Edition (Xbox Series X/S) » → Xbox Series, Deluxe(7)).
 - **Règle 2b — génération DÉDUITE (P4) sur la page combinée : DÉCIDÉ Romain 2026-09-29** (« go
   pour la règle Xbox sans génération », après avoir vérifié les pages Microsoft des exemples ;
   jusque-là refus « 2b, non tranché »). Code : la boucle (g) de `_console_plan`
-  (`src/matcher.py:5606`-`5622`, lignes du 29/09), rien d'autre ne change.
+  (`src/matcher.py:5630`-`5646`), rien d'autre ne change.
   1. Une clé Xbox SANS génération déclarée (P4 : « XBOX LIVE Key », « (Xbox Live) ») dont le jeu
      n'a, côté Xbox, que la page COMBINÉE `<slug>-xbox-key` — sa méta déclare Xbox Series X — y
      entre comme **XBOX_SERIES**. La page combinée peut être l'ancre elle-même (Sora : ni page PC
@@ -3655,11 +3667,12 @@ barre d'onglets les ignorait et la branche console ne les sondait pas : 84 % des
   3. **Jamais la page PC par cette règle** : ces clés ne déclarent ni PC ni Windows. P2 et la clé
      Windows sont INCHANGÉS — si la page PC liste « Xbox Play Anywhere », P2 s'applique comme
      avant (cases XBOX/PC + page PC) ; une clé Windows Play Anywhere prend « les pages Xbox qu'AKS
-     a » (P4), la combinée déclarée Series en fait partie.
+     a » (P4), la combinée déclarée Series en fait partie — **à confirmer par Romain** : c'est une
+     conséquence du même `if`, hors des quatre exemples de son go (rapport du 29/09).
   4. **Quand AKS a des pages distinctes, P4 est inchangé** : les pages qui existent — Xbox One
      (standard, `-xbox-one-key`, `-xbox-one-code`) + Xbox Series (standard, `-xbox-series-key`,
      `-xbox-series-x`, ou la combinée déclarée Series). Deux pages pour une même console restent
-     le refus `… AKS has 2 different XBOX_SERIES pages … (R65)` (`:5605`) ; la méta reste le juge.
+     le refus `… AKS has 2 different XBOX_SERIES pages … (R65)` (`:5628`) ; la méta reste le juge.
   5. **Hors du go → refus explicite** : une page combinée dont la méta déclare Xbox ONE, pour une
      génération déduite — `… which declares XBOX_ONE — rule 2b covers a combined page declared
      Xbox Series only, not entered (R65)`. Aucun cas réel connu ; c'est une supposition qu'on ne
@@ -3677,8 +3690,20 @@ barre d'onglets les ignorait et la branche console ne les sondait pas : 84 % des
   vide : la ligne ENTIÈRE est refusée, P4 « toute autre anomalie refuse la ligne ») sont refusées
   `AKS XBOX_SERIES page carries no editions map — edition unverifiable (R19, R45)`, comme Kinguin
   « Grizzy … Xbox Series X|S » (génération déclarée). Elles entreront quand AKS y aura une offre.
+  **Revue adverse du 29/09 (même jour) — trois trous fermés** (tests `R65Regle2bRevue`) ; rejeu
+  hors ligne des 11 143 lignes Xbox de la population (déclarées ou déduites) : **une** ligne
+  change, et de refus à refus. (1) G2A écrit parfois la génération APRÈS le marqueur de clé :
+  `…-advanced-arsenal-xbox-live-key-xbox-one-global-i10000048840001` (offre 100404075, titre
+  sans génération) est un Xbox One DÉCLARÉ (P1), plus un Xbox sans génération que la règle 2b
+  enverrait sur la combinée Series — `g2a.py` (`_URL_RUN_AFTER_KEY_RE`), lu seulement quand
+  aucun run ne précède le marqueur, grammaire G2A seule ; sur les 2 145 lignes G2A, seule
+  100404075 change (DLC sans page : refus avant, refus après). (2) Une page Xbox Series publiée
+  au même slug que la combinée n'était pas vue quand la page PC ne relie que la combinée : elle
+  l'est → refus `2 different XBOX_SERIES pages` (1 slug sur 1 465 combinées de l'index du 28/09,
+  `world-of-warships-legends-dawns-guardian`, déjà refusé pour deux pages One). (3) Une combinée
+  à méta illisible → refus (ci-dessus), plus jamais « la page Xbox One seule ».
 - **Préalable — le nom de pays reste dans le nom de garde console** (`src/console_keys.py:1074`
-  `country_is_product_name`, `:1085`, `:1190` ; `src/matcher.py:1997`, `:5021`). Miroir de
+  `country_is_product_name`, `:1085`, `:1190` ; `src/matcher.py:2005` / `:2017`, `:5453`). Miroir de
   `_TRAILING_NOISE_PHRASES_KEEP_COUNTRY` (PC, 2026-09-18), même règle : la région est la
   DERNIÈRE chose déclarée. Un nom de pays suivi d'un mot de région vendable (Europe, EU, US, UK,
   Global…) est du nom de produit : gardé dans `resolve_name`, absent des `region_words`, et le
@@ -3710,7 +3735,7 @@ cherchait `…-special`, jamais `the-secret-of-monkey-island`, dont la page vend
 (41). **Toutes les conditions de la revue adverse (§6.1) sont tenues :**
 
 1. **Un rang à part, lu par `resolve_aks` seul, après TOUS les rangs existants** (passe 4,
-   `src/matcher.py:3115`, `edition_rank_probes` `:2280`) — jamais dans `build_slug_candidates`,
+   `src/matcher.py:3446`, `edition_rank_probes` `:2304`) — jamais dans `build_slug_candidates`,
    que `[R57]` (`derived_dlc_page`) lit (52 titres y auraient basculé) ; placé après le rang 1,
    il changeait la page de 15 lignes déjà créées. Une page que les rangs existants trouvent
    n'est donc jamais remplacée par la base.

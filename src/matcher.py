@@ -5214,8 +5214,8 @@ def _combined_xbox_page(
     """[R65] 2b — la page Xbox COMBINÉE `buy-<slug>-xbox-key-compare-prices/` de ce jeu, rangée
     selon la génération que sa MÉTA déclare, ``(famille, page)`` ; ``None`` quand la ligne ne
     vise aucune Xbox, qu'aucune page combinée n'est connue, qu'elle a disparu (404) ou que sa
-    méta ne nomme pas une génération VISÉE par la ligne (P1) ; un ``str`` = motif de refus
-    (page illisible). Connue = l'ancre elle-même, un onglet de l'ancre, ou — index frais — la
+    méta nomme l'AUTRE génération Xbox (P1) ; un ``str`` = motif de refus (page illisible, ou
+    méta qui ne nomme aucune génération Xbox — revue du 2026-09-29). Connue = l'ancre elle-même, un onglet de l'ancre, ou — index frais — la
     page publiée au même slug qu'une page Xbox connue ou que l'ancre console. Lue une fois.
     Ce qu'une génération DÉDUITE (P4) peut en faire — la règle 2b du 2026-09-29 — se décide
     dans la boucle de `_console_plan`, pas ici."""
@@ -5248,9 +5248,19 @@ def _combined_xbox_page(
             return f"AKS page markup drifted — guard input unreadable (MA6): {exc}"
         if page is None:
             return None
-    fam = page_platform_family(getattr(page, "page_platform", "") or "")
+    meta = getattr(page, "page_platform", "") or ""
+    fam = page_platform_family(meta)
+    if fam not in ("XBOX_ONE", "XBOX_SERIES"):
+        # Revue adverse de la règle 2b (2026-09-29) : le gabarit `-xbox-key` ne dit pas la
+        # génération, la MÉTA seule range la page. Muette ou illisible (« Xbox », « PC », deux
+        # générations), on ne sait pas si c'est une SECONDE page d'une console visée : refus,
+        # jamais « elle ne sert à rien » — Hidden Legends 2 entrait sur la seule page Xbox One
+        # en perdant la page combinée qu'AKS a. (Une page STANDARD à méta muette reste
+        # acceptée : son gabarit dit la génération — règle du 2026-09-18, inchangée.)
+        return (f"console: la page Xbox combinée {page.url} ne déclare aucune génération Xbox "
+                f"lisible (méta « {meta} ») — page invérifiable, non entré (R65)")
     if fam not in xbox:
-        return None
+        return None                     # P1 : l'autre génération, pas une page de la ligne
     return fam, page
 
 
@@ -5595,6 +5605,20 @@ def _console_plan(
     if combined is not None:
         _combined_fam, _combined_res = combined
         known[_combined_fam].append((XBOX_COMBINED_TEMPLATE, _combined_res.url))
+        # Revue adverse de la règle 2b (2026-09-29) : l'extension « index au même slug » de
+        # `_console_family_pages` ne partait que des pages DÉJÀ connues de la famille ; la
+        # combinée, ajoutée ici, y échappait — Case Solved (page PC qui ne relie que la
+        # combinée) + `case-solved-the-london-files-xbox-series` à l'index entrait sur la
+        # combinée sans voir l'autre page Series. Même extension depuis la combinée, pour SA
+        # famille seulement : deux pages → le refus « 2 different … pages » juste dessous.
+        _index = sitemap_index()
+        _slug = _page_bare_slug(_combined_res.url)
+        if _index is not None and _slug:
+            _vus = {(_page_bare_slug(u) or u, k) for k, u in known[_combined_fam]}
+            for kind in CONSOLE_FAMILY_TEMPLATES.get(_combined_fam, ()):
+                if (_slug, kind) not in _vus and _index.has_page(f"{_slug}-{kind}"):
+                    _vus.add((_slug, kind))
+                    known[_combined_fam].append((kind, aks_url(_slug, kind)))
     pages: list[tuple[str, AksResolution, str, str]] = []
     for fam in families:
         candidates = known.get(fam, [])

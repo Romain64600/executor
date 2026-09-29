@@ -344,7 +344,10 @@ matcher et le classifieur importent le registre.
   pays non vendu → `forbidden region`, 14/09) ; `(Nintendo Switch 2)` → famille SWITCH2
   (saisissable) ; **One et Series sont des lignes séparées** (One+Series : 1 ligne sur 1 544
   toutes runs). URL `<slug>-xbox-series-x-s[-pc]-xbox-live-key-<région>-i<id>`
-  (`url_platform_scan` déjà actif pour le PC ; runs = vocabulaire partagé). Dernier lot :
+  (`url_platform_scan` déjà actif pour le PC ; runs = vocabulaire partagé) ; parfois la
+  génération APRÈS le marqueur de clé (`…-xbox-live-key-xbox-one-global-i<id>`, offre 100404075) :
+  lue par `console_url_families` quand aucun run ne précède le marqueur — un Xbox One DÉCLARÉ,
+  jamais un Xbox sans génération (revue de la règle 2b `[R65]`, 29/09). Dernier lot :
   **42 / 806**.
 - **Hooks (14/09)** : `title_is_platform_source=False`, `url_platform_scan=True`,
   `offer_page_readable=False` (inchangés) ; PC — `precheck` / `title_region` : la queue

@@ -139,6 +139,15 @@ _URL_RUN_RE = re.compile(
     r"-(?P<run>(?:(?:pc|ps4|ps5|xbox-one|xbox-series-x-s|nintendo-switch-2|nintendo-switch)-)+)"
     r"(?:[a-z0-9]+-){0,4}?(?:key|gift)-"
 )
+# Revue adverse de la règle 2b (2026-09-29) : G2A écrit PARFOIS la génération APRÈS le marqueur
+# de clé — offre réelle 100404075, `…-advanced-arsenal-xbox-live-key-xbox-one-global-i10000048840001`
+# (titre « … Xbox Live Key GLOBAL », sans génération). Lue seulement quand la forme habituelle
+# (`_URL_RUN_RE`, avant le marqueur) ne trouve rien, et SEULEMENT juste après `-key-` / `-gift-` :
+# sans elle, la ligne passait pour un Xbox sans génération (P4) et la règle 2b l'envoyait sur la
+# page combinée Xbox Series. Grammaire G2A, jamais générique (l'artefact Eneba `xbox-one-last-breath`).
+_URL_RUN_AFTER_KEY_RE = re.compile(
+    r"-(?:key|gift)-(?P<run>(?:(?:pc|ps4|ps5|xbox-one|xbox-series-x-s|nintendo-switch-2|nintendo-switch)-)+)"
+)
 _URL_TOKEN_FAMILY = {
     "xbox-one": "XBOX_ONE", "xbox-series-x-s": "XBOX_SERIES", "ps4": "PS4", "ps5": "PS5",
     "nintendo-switch-2": "SWITCH2", "nintendo-switch": "SWITCH",
@@ -149,10 +158,12 @@ def console_url_families(url: str) -> tuple[str, ...] | str | None:
     """Families the G2A slug declares before the store key marker (the ``-i<id>`` suffix
     ignored): ``…-xbox-series-x-s-pc-xbox-live-key-united-kingdom-i…`` → XBOX_SERIES;
     ``…-ps5-ps4-xbox-series-x-s-xbox-one-call-of-duty-official-key-…`` → PS5, PS4,
-    XBOX_SERIES, XBOX_ONE; ``…-nintendo-switch-2-nintendo-eshop-key-…`` → SWITCH2."""
+    XBOX_SERIES, XBOX_ONE; ``…-nintendo-switch-2-nintendo-eshop-key-…`` → SWITCH2; faute de
+    run avant le marqueur, celui qui le SUIT (``…-xbox-live-key-xbox-one-global-i…`` →
+    XBOX_ONE, revue de la règle 2b du 2026-09-29)."""
 
     path = urlsplit(url or "").path.lower()
-    m = _URL_RUN_RE.search(path)
+    m = _URL_RUN_RE.search(path) or _URL_RUN_AFTER_KEY_RE.search(path)
     if not m:
         return None
     families: list[str] = []

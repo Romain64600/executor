@@ -13,6 +13,7 @@ found » des balayages A pass 9 / groupe B)."""
 
 import functools
 import json
+import re
 import socket
 import tempfile
 import unittest
@@ -671,6 +672,144 @@ class R65Regle2b(_Base):
         res = self.match("G2A", "NHL 27 | Deluxe Edition (Xbox Series X/S) - Xbox Live Key - EUROPE",
                          "https://www.g2a.com/nhl-27-deluxe-edition-xbox-series-x-s-xbox-live-key-europe-i10000515909006")
         self.assertEqual(self.cibles(res), [("XBOX_SERIES", _url("nhl-27-xbox-key"), "302", "7")])
+
+
+def _meta(body, meta):
+    """La méta de plateforme d'une page réelle réduite remplacée (``None`` = retirée) — ce qui en
+    sort est une PAGE SIMULÉE, le nom du test le dit."""
+    if meta is None:
+        return re.sub(r'<meta\s+data-itemprop="platform"\s+content="[^"]*"\s*/?>', "", body)
+    return re.sub(r'(<meta\s+data-itemprop="platform"\s+content=")[^"]*(")',
+                  lambda m: m.group(1) + meta + m.group(2), body)
+
+
+class R65Regle2bRevue(_Base):
+    """Revue adverse de la règle 2b (2026-09-29) — les trois constats de code confirmés, chacun
+    reproduit AVANT correction : (1) G2A écrit parfois la génération APRÈS le marqueur de clé ;
+    (2) une page Xbox Series publiée au même slug que la combinée n'était pas vue ; (3) une
+    combinée dont la méta ne se lit pas était écartée en silence."""
+
+    cibles = R65Regle2b.cibles
+
+    # ── (1) G2A « …-xbox-live-key-xbox-one-<région>-i<id> » ──────────────────────────────────
+    def test_g2a_generation_apres_le_marqueur_de_cle_ligne_reelle_100404075(self):
+        """Offre RÉELLE 100404075 : le titre ne dit pas la génération, l'URL la dit APRÈS
+        `-xbox-live-key-`. C'est un Xbox One DÉCLARÉ (P1), jamais une génération déduite (P4)."""
+        sig = classify_console(
+            "Call of Duty: Advanced Warfare - Advanced Arsenal Xbox Live Key GLOBAL",
+            "https://www.g2a.com/call-of-duty-advanced-warfare-advanced-arsenal-xbox-live-key-"
+            "xbox-one-global-i10000048840001?___currency=EUR&adid=allkeyshop.com", "G2A")
+        self.assertEqual((sig.families, sig.generation_inferred, sig.skip_reason),
+                         (("XBOX_ONE",), False, None))
+
+    def test_g2a_generation_apres_la_cle_temoins_inchanges(self):
+        """Témoins : la génération AVANT le marqueur (forme habituelle) et un « Xbox Live Key »
+        G2A sans génération (Battlefield 3 - Armored Kill, P4) sont lus comme avant."""
+        for url, attendu in (
+                ("https://www.g2a.com/hidden-legends-2-xbox-one-xbox-live-key-europe-i10000000000012",
+                 (("XBOX_ONE",), False)),
+                ("https://www.g2a.com/battlefield-3-armored-kill-xbox-live-key-europe-i10000043368002",
+                 (("XBOX_ONE", "XBOX_SERIES"), True))):
+            with self.subTest(url):
+                sig = classify_console("Hidden Legends 2 Xbox Live Key EUROPE", url, "G2A")
+                self.assertEqual((sig.families, sig.generation_inferred), attendu)
+
+    def test_g2a_sora_xbox_one_apres_la_cle_jamais_la_combinee_series(self):
+        """URL de la forme 100404075 : Sora est un Xbox One DÉCLARÉ, AKS n'a pas de page Xbox One
+        → refus ; jamais la page combinée en XBOX_SERIES 305 (règle 2b)."""
+        res = self.match("G2A", "Sora: Songs of the Stone Xbox Live Key UNITED KINGDOM",
+                         "https://www.g2a.com/sora-songs-of-the-stone-xbox-live-key-xbox-one-united-"
+                         "kingdom-i10000000000009")
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("AKS has no XBOX_ONE page", res.reason)
+
+    def test_g2a_hidden_legends_2_xbox_one_apres_la_cle_page_one_seule(self):
+        """Même forme d'URL : Hidden Legends 2 entre sur sa page Xbox One SEULE (24eu), jamais
+        aussi sur la combinée Series."""
+        res = self.match("G2A", "Hidden Legends 2 Xbox Live Key EUROPE",
+                         "https://www.g2a.com/hidden-legends-2-xbox-live-key-xbox-one-europe-i10000000000010")
+        self.assertEqual(self.cibles(res), [
+            ("XBOX_ONE", _url("hidden-legends-2-xbox-one-key"), "24eu", "1")])
+
+    # ── (2) une page Xbox Series au MÊME slug que la combinée ───────────────────────────────
+    def test_pages_simulees_page_series_au_meme_slug_que_la_combinee_refus(self):
+        """PAGE SIMULÉE (index réel + une entrée ajoutée) : Case Solved — la page PC relie la
+        combinée seule, l'index publie aussi `case-solved-the-london-files-<gabarit Series>`.
+        Deux pages pour une même console → le refus [R65], quel que soit le gabarit Series ; la
+        combinée n'est plus prise faute d'avoir vu l'autre."""
+        for kind in ("xbox-series", "xbox-series-key", "xbox-series-x"):
+            with self.subTest(kind):
+                extra = f"case-solved-the-london-files-{kind}"
+                M.set_sitemap_index(_index(INDEX_28_09 | {extra}))
+                self.pages[_url(extra)] = _page_simulee(
+                    "Case Solved: The London Files Xbox Series", "Xbox Series X", product_id="777")
+                res = self.match(
+                    "Eneba", "Case Solved: The London Files XBOX LIVE Key UNITED STATES",
+                    "https://www.eneba.com/xbox-case-solved-the-london-files-xbox-live-key-united-states")
+                self.assertIsInstance(res, SkippedOffer)
+                self.assertIn("2 different XBOX_SERIES pages", res.reason)
+                self.assertIn(_url(extra), res.reason)
+
+    def test_pages_simulees_generation_series_declaree_meme_slug_refus(self):
+        """PAGE SIMULÉE : même trou pour une génération Series DÉCLARÉE — Eneba « Case Solved: The
+        London Files (Xbox Series X|S) … » entre sur la combinée seule (témoin), et, quand l'index
+        publie aussi `case-solved-the-london-files-xbox-series`, est refusée."""
+        titre = "Case Solved: The London Files (Xbox Series X|S) XBOX LIVE Key UNITED STATES"
+        url = ("https://www.eneba.com/xbox-case-solved-the-london-files-xbox-series-x-s-xbox-live-"
+               "key-united-states")
+        self.assertEqual(self.cibles(self.match("Eneba", titre, url)), [
+            ("XBOX_SERIES", _url("case-solved-the-london-files-xbox-key"), "303", "1")])
+        M.set_sitemap_index(_index(INDEX_28_09 | {"case-solved-the-london-files-xbox-series"}))
+        self.pages[_url("case-solved-the-london-files-xbox-series")] = _page_simulee(
+            "Case Solved: The London Files Xbox Series", "Xbox Series X", product_id="778")
+        res = self.match("Eneba", titre, url)
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("2 different XBOX_SERIES pages", res.reason)
+
+    # ── (3) une combinée dont la méta ne dit aucune génération ──────────────────────────────
+    def test_pages_simulees_combinee_meta_illisible_refus_jamais_one_seule(self):
+        """PAGE COMBINÉE SIMULÉE (la vraie page Hidden Legends 2, méta retirée ou illisible) : on
+        ne sait plus où ranger la combinée — la ligne est refusée, jamais saisie sur la seule page
+        Xbox One en perdant une page qu'AKS a."""
+        vraie = self.pages[_url("hidden-legends-2-xbox-key")]
+        for meta in (None, "", "Xbox", "PC", "Xbox One, Xbox Series X", "Xbox Series S"):
+            with self.subTest(meta=meta):
+                self.pages[_url("hidden-legends-2-xbox-key")] = _meta(vraie, meta)
+                res = self.match("Eneba", "Hidden Legends 2 XBOX LIVE Key EUROPE",
+                                 "https://www.eneba.com/xbox-hidden-legends-2-xbox-live-key-europe")
+                self.assertIsInstance(res, SkippedOffer)
+                self.assertIn("ne déclare aucune génération Xbox lisible", res.reason)
+                self.assertTrue(res.reason.startswith("console: "), res.reason)
+
+    def test_pages_simulees_combinee_ancre_meta_illisible_refus(self):
+        """PAGE COMBINÉE SIMULÉE : Sora — la combinée est l'ANCRE ; méta retirée → le même refus
+        (et pas « no AKS product page found »)."""
+        self.pages[_url("sora-songs-of-the-stone-xbox-key")] = _meta(
+            self.pages[_url("sora-songs-of-the-stone-xbox-key")], None)
+        res = self.match("Eneba", "Sora: Songs of the Stone XBOX LIVE Key UNITED KINGDOM",
+                         "https://www.eneba.com/xbox-sora-songs-of-the-stone-xbox-live-key-united-kingdom")
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("ne déclare aucune génération Xbox lisible", res.reason)
+
+    def test_pages_simulees_combinee_meta_illisible_generation_declaree_refus(self):
+        """PAGE COMBINÉE SIMULÉE : génération Series DÉCLARÉE (NHL 27) et méta illisible — la
+        combinée pourrait être une seconde page Series : refus, pas une supposition."""
+        self.pages[_url("nhl-27-xbox-key")] = _meta(self.pages[_url("nhl-27-xbox-key")], "Xbox")
+        res = self.match("G2A", "NHL 27 | Deluxe Edition (Xbox Series X/S) - Xbox Live Key - EUROPE",
+                         "https://www.g2a.com/nhl-27-deluxe-edition-xbox-series-x-s-xbox-live-key-europe-i10000515909006")
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("ne déclare aucune génération Xbox lisible", res.reason)
+
+    def test_pages_simulees_combinee_d_une_autre_generation_temoin_p1(self):
+        """Témoin P1 inchangé : une génération Series DÉCLARÉE et une combinée qui se déclare
+        Xbox ONE (lisible) — ce n'est pas la page de la ligne, elle est écartée ; sans autre page
+        Series, le refus « pas de page » habituel."""
+        self.pages[_url("nhl-27-xbox-key")] = _meta(self.pages[_url("nhl-27-xbox-key")], "Xbox One")
+        res = self.match("G2A", "NHL 27 | Deluxe Edition (Xbox Series X/S) - Xbox Live Key - EUROPE",
+                         "https://www.g2a.com/nhl-27-deluxe-edition-xbox-series-x-s-xbox-live-key-europe-i10000515909006")
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("AKS has no XBOX_SERIES page", res.reason)
+
 
 if __name__ == "__main__":
     unittest.main()

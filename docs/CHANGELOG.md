@@ -3,12 +3,52 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-29 — `[R65]` règle 2b, revue adverse : trois trous fermés, aucune écriture fausse trouvée
+
+Revue adverse de la règle 2b (≈ 95 entrées construites dans le vrai `match_offer`, 2 lectures
+AKS/Staff) : aucune écriture fausse sur les quatre points de Romain ; trois trous de sévérité
+basse, chacun reproduit puis fermé test d'abord (`tests/test_resolver_repli_r64_r65.py`, classe
+`R65Regle2bRevue`, 10 tests ; EXECUTOR_RULES `[R65]`, §4.12 P4 et §4.12.3 ; MERCHANTS G2A ; AGENTS).
+
+- **G2A : la génération APRÈS le marqueur de clé** (`src/merchants/g2a.py`,
+  `_URL_RUN_AFTER_KEY_RE`). `…-advanced-arsenal-xbox-live-key-xbox-one-global-i10000048840001`
+  (offre réelle 100404075, titre sans génération) était lu comme un Xbox sans génération (P4) :
+  la règle 2b l'aurait envoyé sur une combinée Series (« Sora … » de même forme → 305), et
+  « Hidden Legends 2 » de même forme entrait One + Series. C'est un Xbox One DÉCLARÉ (P1). Lu
+  seulement quand aucun run ne précède le marqueur, juste après `-key-` / `-gift-` ; grammaire
+  G2A seule (une règle générique casserait l'artefact Eneba `xbox-one-last-breath`). Sur les
+  2 145 lignes G2A de la population, seule 100404075 change (DLC sans page : refusée avant et
+  après, sous un autre motif).
+- **Une page Xbox Series au MÊME slug que la combinée** (`_console_plan`, boucle (g)). L'extension
+  « index au même slug » ne partait que des pages déjà connues de la famille ; la combinée,
+  ajoutée après, y échappait : Case Solved (page PC qui ne relie que la combinée) + une page
+  `…-xbox-series` à l'index entrait sur la combinée, en P4 comme en génération Series déclarée.
+  Même extension depuis la combinée, pour la famille que sa méta déclare → le refus
+  `2 different XBOX_SERIES pages (R65)`. Index du 28/09 : 1 slug sur 1 465 combinées
+  (`world-of-warships-legends-dawns-guardian`, déjà refusé pour deux pages One).
+- **Une combinée dont la méta ne se lit pas** (`_combined_xbox_page`). Absente, « Xbox », « PC »,
+  deux générations : la page était écartée en silence, et Hidden Legends 2 entrait sur la seule
+  page Xbox One en perdant la combinée qu'AKS a. Désormais `console: la page Xbox combinée … ne
+  déclare aucune génération Xbox lisible (méta « … ») — page invérifiable, non entré (R65)`, pour
+  une génération déduite comme déclarée (la combinée pourrait être une seconde page de la
+  console visée). Une méta qui nomme l'AUTRE génération reste « pas une page de la ligne » (P1) ;
+  une page STANDARD à méta muette reste acceptée (règle du 2026-09-18, son gabarit dit la
+  génération). Les 11 combinées lues les 28-29/09 déclarent toutes « Xbox Series X ».
+- **Docs.** Renvois de ligne `[R65]` / `[R64]` d'EXECUTOR_RULES remis à jour (décalés par
+  `[R66]` puis par ce correctif). AGENTS, règle 2b point (f) : la clé Windows Play Anywhere qui
+  prend One + combinée + PC est une conséquence de l'implémentation, hors des quatre exemples du
+  go — marquée **à confirmer par Romain**, plus présentée comme une décision revue.
+- **Rejeu hors ligne** (index du 28/09, pages en cache, aucune requête) des **11 143 lignes Xbox**
+  de la population (déclarées ou déduites), code `dbcea62` contre ce correctif : **une** ligne
+  change (100404075, refus → refus) ; les 58 entrées, dont 19 sur une page combinée, sont
+  identiques. Suite complète : 3 119 tests OK. Effet à la page suivante de tout sweep.
+
 ## 2026-09-29 — `[R65]` règle 2b : un Xbox sans génération entre sur la page combinée déclarée Xbox Series
 
 Romain, après avoir vérifié les pages Microsoft des exemples : « go pour la règle Xbox sans
 génération ». Le refus « 2b, non tranché » de `[R65]` est remplacé par la règle (EXECUTOR_RULES
 `[R65]` règle 2b et §4.12 P4 ; AGENTS « Reviewed decisions » ; code : la boucle (g) de
-`_console_plan`, `src/matcher.py:5606`-`5622`).
+`_console_plan`, `src/matcher.py:5630`-`5646` après la revue adverse du même jour).
 
 - **La règle.** Une clé Xbox SANS génération déclarée (P4 : « XBOX LIVE Key », « (Xbox Live) »)
   dont le jeu n'a, côté Xbox Series, que la page COMBINÉE `<slug>-xbox-key` (méta Xbox Series X)
