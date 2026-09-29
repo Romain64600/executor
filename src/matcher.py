@@ -103,6 +103,7 @@ from src.merchants.registry import MERCHANT_CONFIGS, merchant_config  # noqa: F4
 # [R63] the « English only » vocabulary — shared with the merchant files (G2A region slot).
 from src.merchants.common import (  # noqa: E402
     english_only_listed, english_only_mark, strip_english_only,
+    SKIP_ALTERGIFT_NOT_STEAM, drop_altergift, is_altergift, names_steam_alone,
 )
 
 AKS_BUY_URL = "https://www.allkeyshop.com/blog/buy-{slug}-cd-key-compare-prices/"
@@ -361,6 +362,9 @@ def resolution_name(offer: "NormalizedOffer", cfg: Any = None) -> str:
     if cfg is None:
         cfg = merchant_config(offer.merchant)
     nom = cfg.resolve_name(offer.name) if cfg is not None and cfg.resolve_name else offer.name
+    # [R32f] (2026-09-29) « Altergift » n'est jamais un mot de produit, chez aucun marchand :
+    # il ne va pas dans le slug (« firewatch », jamais « firewatch-eu-steam-altergift »).
+    nom = drop_altergift(nom) or nom
     if title_dlc_marker(offer, cfg) is not None:
         nom = strip_dlc_marker(nom)
     return nom or offer.name
@@ -1291,6 +1295,18 @@ def precheck_skip(offer: NormalizedOffer, *, consoles: bool = False) -> str | No
         hook_reason = cfg.precheck(offer.name, offer.url)
         if hook_reason:
             return hook_reason
+    # [R32f] (Romain, 2026-09-29 : « Oui pour etendre Altergift a MMOGA et a tous marchant
+    # existant et futur ») — « Steam Altergift = Steam Gift » (14/09) vaut pour TOUS les
+    # marchands. Sa borne de sûreté aussi : Steam SEULEMENT. Un titre Altergift qui ne nomme
+    # pas Steam seul (« … Battle.net Altergift », « Some ALTERGIFT Thing ») est refusé ici,
+    # jamais le seau cadeau d'une autre plateforme (Battle.net 570 / 567), jamais une clé. Un
+    # marchand qui a SA grammaire de livraison (`gift_delivery` non None : K4G, Kinguin) a déjà
+    # tranché dans son `precheck` — il n'est pas relu ici (comportement inchangé pour eux).
+    if is_altergift(offer.name) and not names_steam_alone(offer.name):
+        own = (cfg.gift_delivery(offer.name, offer.url)
+               if cfg is not None and cfg.gift_delivery is not None else None)
+        if own is None:
+            return SKIP_ALTERGIFT_NOT_STEAM
     # (MA7 retired 2026-09-01, Romain: "EN = english only … enterrable") — a
     # Gamivo '-en-' URL segment used to skip as an EN-only language restriction;
     # a language variant is now entered as the same product (see LANGUAGE_TOKENS).
@@ -1690,10 +1706,18 @@ def _detect_region_parts(offer: NormalizedOffer) -> tuple[str, str, bool, bool, 
         # 'gift' must be its own URL segment (audit 2026-07-17, MA4): the bare
         # substring matched slug words like "the-gifted-rabbit" and proposed
         # GIFT(25) for a regular key.
+        # [R32f] (Romain, 2026-09-29 : « Oui pour etendre Altergift a MMOGA et a tous
+        # marchant existant et futur ») : le mot entier ALTERGIFT du titre est une livraison
+        # Steam GIFT chez TOUS les marchands — « Firewatch [EU Steam Altergift] » (MMOGA) va en
+        # STEAM GIFT EU (259), jamais en STEAM EU (9), le seau des clés. Un Altergift hors
+        # Steam n'arrive pas jusqu'ici (precheck_skip). Pas de lecture générique du mot dans
+        # l'URL : le segment « -gift- » la couvre déjà (« …-alter-gift-… »), et l'accord titre /
+        # slug reste la grammaire du marchand (k4g.py, kinguin.py).
         is_gift = (
             re.search(r"(?:^|[-/])gift(?:[-/]|$)", url) is not None
             or " GIFT " in padded
             or "GIFT)" in padded
+            or is_altergift(offer.name)
         )
     tail = offer.name.rsplit(" - ", 1)[-1].strip().upper() if " - " in offer.name else ""
     # Merchant-config override hook (R32e, 2026-09-10): the region the merchant's title
@@ -4198,6 +4222,11 @@ def _pc_plan(
     # K4G "Altergift"). The raw title for every merchant without the hook (unchanged); an
     # empty answer falls back to the raw title (the stricter read — never an empty guard).
     guard_name = (_cfg.guard_name(offer.name) if _cfg is not None and _cfg.guard_name else "") or offer.name
+    # [R32f] (Romain, 2026-09-29 : Altergift « a tous marchant existant et futur ») : le mot de
+    # livraison sort du titre des gardes chez TOUS les marchands — et lui seul (avant, seuls
+    # K4G et Kinguin le retiraient ; « Firewatch [EU Steam Altergift] » mourait sur R16
+    # « extra words: ['ALTERGIFT'] »). Les autres mots (magasin, région, crochets) restent pesés.
+    guard_name = drop_altergift(guard_name) or guard_name
     if en_route is not None:
         # [R63] the phrase alone leaves the guards' text, and ONLY on the [R63] route: every
         # other word the merchant wrote (EA App, Key, EN, PC Version…) is still weighed by

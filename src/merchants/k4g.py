@@ -91,36 +91,31 @@ from __future__ import annotations
 import re
 from urllib.parse import urlsplit
 
-from src.merchants.common import (
+from src.merchants.common import (  # noqa: F401 — is_altergift / drop_altergift re-exported
     REGION_SLUGS,
+    drop_altergift,
     forbidden_reason,
+    is_altergift,
     make_config,
+    names_steam_alone,
     region_alternation,
     sellable_base,
 )
 
 # DECIDED (Romain 2026-09-14): « Steam Altergift = Steam Gift on rentre sous gift tous les
-# altergifts ». The word, whole and case-insensitive ("Altergift" in the title, "altergift" /
-# "alter-gift" in the slug): the delivery marker of a Steam gift sent from a K4G account —
-# a Steam GIFT bucket row (gift_delivery), never a product word (guard_name / resolve_name).
-_ALTERGIFT_RE = re.compile(r"\bAltergift\b", re.IGNORECASE)
+# altergifts » — GENERIC since 2026-09-29 ([R32f], Romain: « Oui pour etendre Altergift a
+# MMOGA et a tous marchant existant et futur »): the word itself (``is_altergift`` /
+# ``drop_altergift``, re-exported here) and the Steam-alone check are shared vocabulary in
+# ``src/merchants/common.py``, the generic gift read / guard / slug drop live in the matcher.
+# What stays HERE is K4G's own grammar: the in-grammar store run ("<Game> … Steam Altergift")
+# and the slug agreement below.
 # The slug's delivery segments (review fix 2026-09-14, finding [1] — the URL must agree with
 # the title's "Altergift"): a gift segment "altergift" / "alter-gift" (217 / 218 rows), the
 # key segment "cd-key" ("…-steam-global-instant-cd-key-48V2PFDZ", the Trine 5 row).
 _URL_GIFT_SEGMENT_RE = re.compile(r"(?:^|[-/])(?:altergift|alter-gift)(?:[-/]|$)")
 _URL_KEY_SEGMENT_RE = re.compile(r"(?:^|[-/])cd-key(?:[-/]|$)")
-_STEAM_RE = re.compile(r"\bSteam\b", re.IGNORECASE)
-# A store / console phrase that is NOT Steam, anywhere in an out-of-grammar title (review fix
-# 2026-09-14, finding [4] — « Steam Altergift = Steam Gift »: the Steam collocation is part
-# of the ruling). The bare "PC" / "Mac" / "Windows" items are not stores; a bare "Origin" is
-# a name word for the matcher too (R14) and is left out.
-_STORE_ITEM = (
-    r"GOG(?:\.com)?|Epic\s+Games(?:\s+Store)?|EA\s+App|EA\s+Origin|Ubisoft\s+Connect|Uplay|"
-    r"Rockstar(?:\s+Games)?(?:\s+Launcher)?|Battle\.net|Microsoft\s+Store|Official\s+Website"
-)
-_OTHER_PLATFORM_RE = re.compile(
-    rf"\b(?:{_STORE_ITEM}|XBOX|PS4|PS5|PSN|PlayStation|Nintendo)\b", re.IGNORECASE
-)
+# Out of the grammar, the Steam collocation (review fix 2026-09-14, finding [4]) is the shared
+# ``names_steam_alone`` (common.py — the same store / console vocabulary this file carried).
 
 # ── title grammar ────────────────────────────────────────────────────────────────────
 _PC_ITEM = (
@@ -157,22 +152,6 @@ def region_text(name: str) -> str | None:
     return m.group("region") if m else None
 
 
-def is_altergift(name: str) -> bool:
-    """The title carries the whole word ALTERGIFT (case-insensitive) — K4G's Steam-gift
-    delivery ("Seafrog Steam Altergift"); "Thief Simulator Europe Steam CD Key" does not."""
-
-    return _ALTERGIFT_RE.search(name or "") is not None
-
-
-def drop_altergift(name: str) -> str:
-    """``name`` without the word "Altergift" — and nothing else (whitespace collapsed);
-    unchanged when the word is absent."""
-
-    if not is_altergift(name):
-        return name or ""
-    return re.sub(r"\s+", " ", _ALTERGIFT_RE.sub(" ", name)).strip()
-
-
 def is_steam_altergift(name: str) -> bool:
     """The title is an Altergift AND its store phrase is Steam — Romain's « Steam Altergift
     = Steam Gift » (2026-09-14). In the grammar: the run right before "Altergift" is exactly
@@ -187,7 +166,7 @@ def is_steam_altergift(name: str) -> bool:
     if m is not None:
         return (m.group("delivery").upper() == "ALTERGIFT"
                 and re.sub(r"\s+", " ", m.group("run").strip()).upper() == "STEAM")
-    return _STEAM_RE.search(name) is not None and _OTHER_PLATFORM_RE.search(name) is None
+    return names_steam_alone(name)
 
 
 def url_delivery(url: str) -> str | None:
@@ -261,11 +240,15 @@ def gift_delivery(name: str, url: str) -> bool | None:
     """K4G's own gift-delivery verdict for ``detect_region`` (Romain 2026-09-14: « on rentre
     sous gift tous les altergifts »): True when :func:`altergift_verdict` says ``"gift"`` —
     a Steam Altergift whose slug agrees → the Steam GIFT bucket layered on the base region
-    (25 / 259); None otherwise → the generic read decides (a "… Steam Gift" row keeps its
-    " GIFT " reading; a refused Altergift row was already stopped by ``precheck`` — the
-    merchant does not vouch for it, review fix 2026-09-14)."""
+    (25 / 259 / 2577 / 2572); False for an Altergift title the grammar REFUSES (slug conflict,
+    not Steam — already stopped by ``precheck``, review fixes 2026-09-14): since the generic
+    read knows the word ([R32f], 2026-09-29), the merchant must say « not a gift » explicitly,
+    or a refused row would read GIFT there; None otherwise → the generic read decides (a
+    "… Steam Gift" row keeps its " GIFT " reading)."""
 
-    return True if altergift_verdict(name, url) == "gift" else None
+    if altergift_verdict(name, url) == "gift":
+        return True
+    return False if is_altergift(name) else None
 
 
 def guard_name(name: str) -> str:

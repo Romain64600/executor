@@ -212,6 +212,66 @@ def split_english_only_tail(text: str) -> tuple[str, bool]:
     return text[:found[-1].start()].rstrip(" -–—:,/").strip(), True
 
 
+# ── la livraison « Altergift » ([R32f], 2026-09-29) ───────────────────────────────────
+# Romain, 2026-09-14 : « Steam Altergift = Steam Gift on rentre sous gift tous les
+# altergifts » (K4G, puis Kinguin le soir même) ; 2026-09-29 : « Oui pour etendre Altergift a
+# MMOGA et a tous marchant existant et futur ». Le mot est donc du VOCABULAIRE partagé, plus
+# une grammaire de marchand : la DÉCISION générique (seau Steam GIFT posé sur la région de
+# base, refus hors Steam, mot jamais lu comme un mot de produit) vit dans le matcher ; un
+# fichier marchand garde seulement ce qui est à LUI (l'accord du slug chez K4G / Kinguin).
+#
+# Le mot entier, insensible à la casse, tel que les feeds l'écrivent (K4G 472 lignes, Kinguin
+# 198, MMOGA 4, CJS 3 au 2026-09-29) : « … Steam Altergift », « [EU Steam Altergift] ».
+# « Altergifted » n'est pas le mot ; « Alter Gift » en deux mots n'a jamais été vu (il se lit
+# « GIFT » par la lecture générique et laisse « ALTER » à la garde R16 : refus, fail-closed).
+ALTERGIFT_RE = re.compile(r"\bAltergift\b", re.IGNORECASE)
+_STEAM_WORD_RE = re.compile(r"\bSteam\b", re.IGNORECASE)
+# Une phrase magasin / console qui n'est PAS Steam, n'importe où dans le titre (revue K4G du
+# 2026-09-14, constat [4] : la collocation Steam fait partie de la décision). « PC » / « Mac »
+# / « Windows » ne sont pas des magasins ; un « Origin » nu est un mot de nom (R14), laissé
+# dehors. Union des deux copies qui vivaient dans k4g.py (avec PSN) et kinguin.py (sans).
+_NON_STEAM_STORE_ITEM = (
+    r"GOG(?:\.com)?|Epic\s+Games(?:\s+Store)?|EA\s+App|EA\s+Origin|Ubisoft\s+Connect|Uplay|"
+    r"Rockstar(?:\s+Games)?(?:\s+Launcher)?|Battle\.net|Microsoft\s+Store|Official\s+Website"
+)
+NON_STEAM_PLATFORM_RE = re.compile(
+    rf"\b(?:{_NON_STEAM_STORE_ITEM}|XBOX|PS4|PS5|PSN|PlayStation|Nintendo)\b", re.IGNORECASE
+)
+SKIP_ALTERGIFT_NOT_STEAM = (
+    "Altergift outside the Steam collocation (the title does not name Steam alone) — not "
+    "entered (Romain 2026-09-14: « Steam Altergift = Steam Gift »; all merchants since "
+    "2026-09-29, [R32f])")
+
+
+def is_altergift(name: str) -> bool:
+    """Le titre porte le mot entier ALTERGIFT (insensible à la casse) — « Seafrog Steam
+    Altergift », « Firewatch [EU Steam Altergift] » ; « Thief Simulator Europe Steam CD Key »
+    et « Altergifted … » non."""
+
+    return ALTERGIFT_RE.search(name or "") is not None
+
+
+def drop_altergift(name: str) -> str:
+    """``name`` sans le mot « Altergift » — et rien d'autre (blancs resserrés, y compris le
+    blanc qu'il laisse devant un crochet fermant : « [EU Steam Altergift] » → « [EU Steam] »).
+    Inchangé quand le mot est absent."""
+
+    if not is_altergift(name):
+        return name or ""
+    out = re.sub(r"\s+", " ", ALTERGIFT_RE.sub(" ", name))
+    return re.sub(r"\s+([\])])", r"\1", out).strip()
+
+
+def names_steam_alone(name: str) -> bool:
+    """Le titre nomme Steam (mot entier) et AUCUNE autre phrase magasin / console — la
+    collocation « Steam Altergift » lue sans grammaire de marchand (« Firewatch [EU Steam
+    Altergift] » oui ; « … Battle.net Altergift », « … Steam / Epic Games Altergift »,
+    « Some ALTERGIFT Thing » non)."""
+
+    return (_STEAM_WORD_RE.search(name or "") is not None
+            and NON_STEAM_PLATFORM_RE.search(name or "") is None)
+
+
 # ── region vocabulary ────────────────────────────────────────────────────────────────
 # Sellable region words → detect_region base (REGION_IDS keys). Keys are upper-cased,
 # space-normalised; the 2/3-letter codes are only read when the merchant WROTE them in

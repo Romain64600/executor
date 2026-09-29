@@ -161,7 +161,13 @@ class MerchantConfig:
     #       altergifts »). The hook reads BOTH arguments: a title / URL delivery conflict
     #       (title Altergift, slug "-cd-key") or a non-Steam Altergift is never a verdict —
     #       it is the merchant ``precheck``'s fail-closed skip (review fixes 2026-09-14), so
-    #       no row is filed under a bucket class the row itself contradicts.
+    #       no row is filed under a bucket class the row itself contradicts. Since [R32f]
+    #       (2026-09-29, Romain: « Oui pour etendre Altergift a MMOGA et a tous marchant
+    #       existant et futur ») the GENERIC read knows the word ALTERGIFT itself, and the
+    #       matcher drops it from the guards' title and the slug for every merchant; a
+    #       merchant hook therefore answers False — not None — for an Altergift its grammar
+    #       refuses (K4G / Kinguin), and a non-None answer exempts the row from the generic
+    #       Steam-only gate of ``precheck_skip`` (the merchant already decided).
     # MMOGA uses the first three ("<Product> <CODE> Key", src/merchants/mmoga.py); Gamivo
     # uses the first four (src/merchants/gamivo.py); Kinguin and K4G add guard_name +
     # gift_delivery (2026-09-14).

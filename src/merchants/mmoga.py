@@ -43,6 +43,7 @@ from urllib.parse import urlsplit
 
 from src.console_keys import SKIP_XBOX_360, skip_not_a_game
 from src.merchant_config import MerchantConfig
+from src.merchants.common import english_only_mark
 
 # URL category segment (lowercased, before the first "-") → platform token. Only prefixes
 # with a REGION_IDS entry are mapped; console / software / gift-card categories stay
@@ -86,8 +87,92 @@ FORBIDDEN_CODES = {
 }
 
 
-def region_code(name: str) -> str | None:
-    """The uppercase 2-letter code right before a trailing Key, or None ("Among Us Key" → None)."""
+# ── crochets de LIVRAISON (2026-09-29 — [R32f] + proposition 6 de l'audit du 2026-09-28) ──
+# Romain, 2026-09-29 : « Oui pour etendre Altergift a MMOGA et a tous marchant existant et
+# futur ». MMOGA écrit sa livraison entre crochets : « Firewatch [EU Steam Altergift] »,
+# « Borderlands 2 [EU Key] », « Ghost of Tsushima - Director's Cut [PC Version - Steam Key EU] »,
+# « Planet Coaster 2 [Steam Game Card EU] », « The Last of Us : Part I [PC] [Steam] ». Le crochet
+# restait dans le slug (« firewatch-eu-steam-altergift » : 404) — proposition 6 : il en sort.
+# Mais le crochet porte aussi la RÉGION, et la lecture générique ne la voit pas (« EU] » n'est
+# pas « EU », « -eu.html » n'est pas un créneau) : sortir le crochet du slug SANS lire son code
+# ferait entrer une clé EU en GLOBAL implicite. C'est déjà arrivé, le crochet ne bloquait pas
+# tout : « Horizon Forbidden West - Complete Edition [Steam PC Key EU] » (101040244) et
+# « Marvel's Spider-Man Remastered [PC - Steam Key EU] » (101039968), créées STEAM GLOBAL(2)
+# le 2026-09-11. Le code du crochet est donc lu ici, comme le « (… Key EU) » entre parenthèses.
+#
+# Un crochet de livraison : chaque mot est du vocabulaire de livraison ci-dessous OU un code
+# de deux capitales, avec AU MOINS un mot de livraison — « [VR] », « [Remake] », « [2014] »,
+# « [DLC] », « [Banjo & Kazooie] » sont des mots de PRODUIT et restent (« Silent Hill 2
+# [Remake] » n'est pas « Silent Hill 2 »). Jamais un crochet console (« [Xbox One / Series X|S
+# Download Code] » : la branche console a sa propre lecture, inchangée), jamais un crochet qui
+# porte la mention « English only » ou le code EN ([R63] : la mention ne sort du slug que sur sa
+# route, par ``english_only_name``, et EN n'est jamais un code de région).
+_BRACKET_RE = re.compile(r"\[([^\[\]]*)\]")
+_BRACKET_TOKEN_SPLIT_RE = re.compile(r"[\s/,|\-]+")
+DELIVERY_BRACKET_WORDS = frozenset({
+    "KEY", "CD", "STEAM", "ALTERGIFT", "GAMECARD", "GAME", "CARD", "PC", "VERSION", "EA", "APP",
+    "ORIGIN", "EPIC", "GAMES", "STORE", "OFFICIAL", "GREENCODE", "UBISOFT", "CONNECT", "GOG",
+    "ROCKSTAR",
+})
+# Deux capitales qui ne sont PAS une région : la plateforme (PC, EA) et la langue (EN, [R63]).
+_NOT_REGION_CODES = frozenset({"PC", "EA", "EN"})
+_CODE_TOKEN_RE = re.compile(r"[A-Z]{2}")
+# « … [<crochet de livraison>] - DE » : le créneau de région écrit juste APRÈS le crochet
+# (« EA Sports FC 25 [PC Version / EA Gamecard] - DE », « Immortals of Aveum [PC Version, EA App
+# Key] - EU »), ancré en fin de titre.
+_BRACKET_DASH_CODE_RE = re.compile(r"\[(?P<content>[^\[\]]*)\]\s+-\s+(?P<code>[A-Z]{2})\s*$")
+
+
+def _bracket_tokens(content: str) -> list[str]:
+    return [t for t in _BRACKET_TOKEN_SPLIT_RE.split(content or "") if t]
+
+
+def is_delivery_bracket(content: str) -> bool:
+    """Le CONTENU d'un crochet (sans les crochets) est de la livraison MMOGA — « EU Steam
+    Altergift », « EU Key », « PC Version - Steam Key EU », « Steam Game Card », « PC » — et pas
+    un mot de produit (« Remake », « VR », « 2014 »), une plateforme console, ni la mention
+    English only / le code EN ([R63])."""
+
+    if english_only_mark(content or "") is not None:
+        return False
+    tokens = _bracket_tokens(content)
+    words = 0
+    for tok in tokens:
+        if tok == "EN":
+            return False
+        if tok.upper() in DELIVERY_BRACKET_WORDS:
+            words += 1
+        elif not _CODE_TOKEN_RE.fullmatch(tok):
+            return False
+    return words > 0
+
+
+def delivery_bracket_codes(name: str) -> tuple[str, ...]:
+    """Les codes de région écrits DANS les crochets de livraison du titre, puis dans le
+    créneau « ] - XX » qui suit l'un d'eux — distincts, dans l'ordre : « Firewatch [EU Steam
+    Altergift] » → ("EU",) ; « … [PC Version - Steam Key EU] » → ("EU",) ; « … [PC Version /
+    EA Gamecard] - DE » → ("DE",) ; « Returnal [PC - Steam Key] » → () ; « … [PC - Origin EN
+    Key] » → () (EN n'est pas une région, et le crochet reste à [R63])."""
+
+    codes: list[str] = []
+    for m in _BRACKET_RE.finditer(name or ""):
+        content = m.group(1)
+        if not is_delivery_bracket(content):
+            continue
+        for tok in _bracket_tokens(content):
+            if _CODE_TOKEN_RE.fullmatch(tok) and tok not in _NOT_REGION_CODES and tok not in codes:
+                codes.append(tok)
+    tail = _BRACKET_DASH_CODE_RE.search(name or "")
+    if tail and is_delivery_bracket(tail.group("content")):
+        code = tail.group("code")
+        if code not in _NOT_REGION_CODES and code not in codes:
+            codes.append(code)
+    return tuple(codes)
+
+
+def _tail_region_code(name: str) -> str | None:
+    """Les deux lectures historiques (2026-09-10 / 2026-09-11) : « <CODE> Key » en fin de
+    titre, puis « (… Key XX) » / « [XX] » / « (XX) » en fin de titre."""
 
     m = REGION_CODE_KEY_RE.search(name or "")
     if m:
@@ -102,29 +187,80 @@ def region_code(name: str) -> str | None:
     return code if code in SELLABLE_CODES or code in FORBIDDEN_CODES else None
 
 
+def region_codes(name: str) -> tuple[str, ...]:
+    """Tous les codes de région que la grammaire MMOGA lit dans le titre, distincts : la queue
+    historique d'abord, puis les crochets de livraison (2026-09-29). Plus d'un code → la ligne
+    se contredit, ``precheck`` la refuse (jamais un choix entre deux verrous)."""
+
+    codes: list[str] = []
+    first = _tail_region_code(name)
+    if first:
+        codes.append(first)
+    for code in delivery_bracket_codes(name):
+        if code not in codes:
+            codes.append(code)
+    return tuple(codes)
+
+
+def region_code(name: str) -> str | None:
+    """The one region code the MMOGA grammar reads, or None ("Among Us Key" → None; two
+    different codes → None here, and ``precheck`` refuses the row)."""
+
+    codes = region_codes(name)
+    return codes[0] if len(codes) == 1 else None
+
+
 def precheck(name: str, url: str) -> str | None:
     """A forbidden or unmapped region code before Key is a lock we must never enter
-    worldwide → categorical skip (fail-closed). Sellable codes pass (title_region maps them)."""
+    worldwide → categorical skip (fail-closed). Sellable codes pass (title_region maps them).
+    Two different codes in the same title (2026-09-29) → refused, never one of the two."""
 
-    code = region_code(name)
+    codes = region_codes(name)
+    if len(codes) > 1:
+        return (f"MMOGA region conflict: {' / '.join(codes)} written in the same title — not "
+                "entered (2026-09-29)")
+    code = codes[0] if codes else None
     if code is None or code in SELLABLE_CODES:
         return None
     return f"forbidden region: {FORBIDDEN_CODES.get(code, code)}"
 
 
 def title_region(name: str) -> str | None:
-    """"Borderlands 2 US Key" → "us"; "Borderlands 2 EU Key" → "eu"; no code → None (generic)."""
+    """"Borderlands 2 US Key" → "us"; "Borderlands 2 EU Key" → "eu"; "Firewatch [EU Steam
+    Altergift]" → "eu" (2026-09-29); no code → None (generic)."""
 
     return SELLABLE_CODES.get(region_code(name) or "")
 
 
+def strip_delivery_brackets(name: str) -> str:
+    """``name`` sans ses crochets de LIVRAISON — et le créneau « - XX » qui en suit un en fin de
+    titre — rien d'autre (proposition 6 de l'audit du 2026-09-28, 2026-09-29) : « Firewatch [EU
+    Steam Altergift] » → « Firewatch » ; « The Last of Us : Part I [PC] [Steam] » → « The Last of
+    Us : Part I » ; « EA Sports FC 25 [PC Version / Steam Gamecard] - EU » → « EA Sports FC 25 » ;
+    « Silent Hill 2 [Remake] », « Metro Awakening [VR] - Deluxe Edition », « GRID Legends [EN
+    Key - English Only] » inchangés. Pour le SLUG seulement : les gardes lisent le titre brut
+    (un « [Steam Game Card] » ou un « [Official Key] » y reste un mot en trop)."""
+
+    text = name or ""
+    if not any(is_delivery_bracket(m.group(1)) for m in _BRACKET_RE.finditer(text)):
+        return name                          # no delivery bracket: byte-identical
+    tail = _BRACKET_DASH_CODE_RE.search(text)
+    if tail and is_delivery_bracket(tail.group("content")):
+        text = text[:tail.start()] + "[" + tail.group("content") + "]"
+    out = _BRACKET_RE.sub(lambda m: " " if is_delivery_bracket(m.group(1)) else m.group(0), text)
+    return re.sub(r"\s+", " ", out).strip(" -–—:,/").strip() or name
+
+
 def resolve_name(name: str) -> str:
     """The title handed to AKS resolution: the "<CODE> Key" tail peeled off, so the slug is
-    "borderlands-2", not the 404 "borderlands-2-eu". Untouched when there is no code."""
+    "borderlands-2", not the 404 "borderlands-2-eu"; and, since 2026-09-29, the DELIVERY
+    brackets (``strip_delivery_brackets`` — "firewatch", not "firewatch-eu-steam-altergift").
+    Untouched when there is neither."""
 
-    if not region_code(name):
-        return name
-    return REGION_CODE_TAIL_RE.sub("", REGION_CODE_KEY_RE.sub("", name)).rstrip()
+    out = name
+    if _tail_region_code(name):
+        out = REGION_CODE_TAIL_RE.sub("", REGION_CODE_KEY_RE.sub("", name)).rstrip()
+    return strip_delivery_brackets(out) or name
 
 
 # [R63] (Romain, 2026-09-28 : « go pour les clés EA English only en case 31 »). MMOGA écrit la

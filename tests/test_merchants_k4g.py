@@ -182,7 +182,9 @@ class HooksTests(_Registry):
         self.assertTrue(is_altergift(title))
         self.assertFalse(is_steam_altergift(title))
         self.assertEqual((guard_name(title), drop_altergift(title), resolve_name(title)), ("Some Thing", "Some Thing", "Some Thing"))
-        self.assertIsNone(gift_delivery(title, GIFT_URL))
+        # [R32f] (2026-09-29): the generic read knows the word now — a REFUSED Altergift row is
+        # an explicit False (« not a gift »), never None (which would let the generic read say GIFT)
+        self.assertIs(gift_delivery(title, GIFT_URL), False)
         self.assertEqual(precheck(title, GIFT_URL), NOT_STEAM)
         # a forbidden region stays the precheck skip, Altergift or not
         self.assertEqual(precheck("Mato Anomalies North America Steam Altergift", GIFT_URL), "forbidden region: NORTH AMERICA")
@@ -252,8 +254,11 @@ class AltergiftPipelineTests(_Registry):
         self._use(None)                                 # generic: the URL "alter-gift" segment already read gift…
         self.assertEqual(detect_region(offer, "STEAM"), ("GIFT EU", "259", False))
         r = match_offer(offer, resolver=resolver)
-        self.assertIsInstance(r, SkippedOffer)          # …but the raw guard counted the word
-        self.assertEqual(r.reason, "different/expanded product — extra words: ['ALTERGIFT']")
+        # …and since [R32f] (Romain 2026-09-29: « Oui pour etendre Altergift a MMOGA et a tous
+        # marchant existant et futur ») the GENERIC guard drops the word too: the row enters
+        # without the K4G file (before: R16 "extra words: ['ALTERGIFT']")
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.platform, r.region_label, r.region_id), ("STEAM", "GIFT EU", "259"))
         self._use(CONFIG)
         self.assertEqual(detect_region(offer, "STEAM"), ("GIFT EU", "259", False))
         r = match_offer(offer, resolver=resolver)
@@ -277,10 +282,12 @@ class AltergiftPipelineTests(_Registry):
         self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
         self.assertEqual((r.region_label, r.region_id, r.region_implicit), ("GIFT", "25", False))
         # review fix (2026-09-14, finding [1]): the hook reads the slug too — a slug WITHOUT any
-        # delivery segment is outside the K4G URL grammar → the merchant does not vouch (None →
-        # the generic plain-key read) and the precheck refuses the row before that read matters
+        # delivery segment is outside the K4G URL grammar → the merchant does not vouch (False
+        # since [R32f], 2026-09-29: the generic read knows the word, so « not a gift » must be
+        # said explicitly → the plain-key read) and the precheck refuses the row before that
+        # read matters
         wirm = _offer("Wirm Steam Altergift", "https://k4g.com/product/wirm-steam-global-K0SYH8QV")
-        self.assertIsNone(gift_delivery(wirm.name, wirm.url))
+        self.assertIs(gift_delivery(wirm.name, wirm.url), False)
         self.assertEqual(detect_region(wirm, "STEAM"), ("GLOBAL", "2", False))
         self.assertEqual(precheck_skip(wirm), CONFLICT_NONE)
         r = match_offer(wirm, resolver=lambda name, **kw: self._page("wirm", "Wirm"))
@@ -371,10 +378,13 @@ class AltergiftGatesTests(_Registry):
         # slugs carry "-alter-gift-"). Gift (25) or key (GLOBAL 2) cannot be known from the row.
         offer = _offer(TRINE_TITLE, TRINE_URL)
         self.assertEqual(altergift_verdict(TRINE_TITLE, TRINE_URL), CONFLICT_KEY)
-        self.assertIsNone(gift_delivery(TRINE_TITLE, TRINE_URL))          # the merchant does not vouch
-        self._use(None)                                                    # generic: a plain key…
-        self.assertEqual(detect_region(offer, "STEAM"), ("GLOBAL", "2", False))
-        self._use(CONFIG)                                                  # …and the hooks never turn it into GIFT (25)
+        self.assertIs(gift_delivery(TRINE_TITLE, TRINE_URL), False)        # the merchant does not vouch
+        # [R32f] (Romain 2026-09-29: « Oui pour etendre Altergift a MMOGA et a tous marchant
+        # existant et futur »): WITHOUT the K4G file the generic read takes the title's word —
+        # GIFT (25). The slug agreement is K4G's grammar, it lives in k4g.py only…
+        self._use(None)
+        self.assertEqual(detect_region(offer, "STEAM"), ("GIFT", "25", False))
+        self._use(CONFIG)                                                  # …and with it the hooks never turn it into GIFT (25)
         self.assertEqual(detect_region(offer, "STEAM"), ("GLOBAL", "2", False))
         self.assertEqual(precheck_skip(offer), CONFLICT_KEY)
         self.assertEqual(precheck_skip(offer, consoles=True), CONFLICT_KEY)
@@ -427,7 +437,7 @@ class AltergiftGatesTests(_Registry):
                 self.assertTrue(is_altergift(title))
                 self.assertFalse(is_steam_altergift(title))
                 self.assertEqual(altergift_verdict(title, GIFT_URL), NOT_STEAM)
-                self.assertIsNone(gift_delivery(title, GIFT_URL))
+                self.assertIs(gift_delivery(title, GIFT_URL), False)       # [R32f]: explicit « not a gift »
                 offer = _offer(title, GIFT_URL)
                 self.assertEqual(precheck_skip(offer), NOT_STEAM)
                 r = match_offer(offer, resolver=lambda name, **kw: self._page("seafrog", "Seafrog", ("Battle.net", "Epic Games", "GOG", "Steam")))

@@ -389,11 +389,14 @@ class AltergiftTests(_Registry):
             asked.append(name)
             return self._page()
 
-        self._use(GENERIC)                    # before: plain key read + R16 on the word
-        self.assertEqual(detect_region_base(offer)[:3], ("global", "GLOBAL", True))
+        # the pre-2026-09-14 registry entry: until [R32f] (Romain 2026-09-29: « Oui pour etendre
+        # Altergift a MMOGA et a tous marchant existant et futur ») a plain key read + R16 on the
+        # word; the generic layer now reads « Steam Altergift » as the Steam GIFT by itself
+        self._use(GENERIC)
+        self.assertEqual(detect_region_base(offer), ("global", "GLOBAL", True, True))
         r = match_offer(offer, resolver=resolver)
-        self.assertIsInstance(r, SkippedOffer)
-        self.assertEqual(r.reason, "different/expanded product — extra words: ['ALTERGIFT']")
+        self.assertIsInstance(r, Candidate, getattr(r, "reason", None))
+        self.assertEqual((r.platform, r.region_label, r.region_id), ("STEAM", "GIFT", "25"))
         self._use(CONFIG)
         self.assertTrue(is_steam_altergift(self.SONS))
         self.assertEqual(altergift_verdict(self.SONS, self.SONS_URL), "gift")
@@ -435,7 +438,7 @@ class AltergiftTests(_Registry):
         self._use(CONFIG)
         conflict = _offer(self.SONS, "https://www.kinguin.net/category/1/sons-of-the-forest-pc-steam-cd-key")
         self.assertEqual(altergift_verdict(conflict.name, conflict.url), ALTERGIFT_CONFLICT)
-        self.assertIsNone(gift_delivery(conflict.name, conflict.url))
+        self.assertIs(gift_delivery(conflict.name, conflict.url), False)   # [R32f]: explicit « not a gift »
         self.assertEqual(precheck_skip(conflict), ALTERGIFT_CONFLICT)
         r = match_offer(conflict, resolver=lambda name, **kw: self._page())
         self.assertIsInstance(r, SkippedOffer)
@@ -450,7 +453,7 @@ class AltergiftTests(_Registry):
             with self.subTest(title=title):
                 self.assertFalse(is_steam_altergift(title))
                 self.assertEqual(altergift_verdict(title, self.SONS_URL), ALTERGIFT_NOT_STEAM)
-                self.assertIsNone(gift_delivery(title, self.SONS_URL))
+                self.assertIs(gift_delivery(title, self.SONS_URL), False)  # [R32f]: explicit « not a gift »
                 offer = _offer(title, self.SONS_URL)
                 self.assertEqual(precheck_skip(offer), ALTERGIFT_NOT_STEAM)
                 r = match_offer(offer, resolver=lambda name, **kw: self._page(official=("Steam", "Epic Games", "Battle.net", "GOG")))

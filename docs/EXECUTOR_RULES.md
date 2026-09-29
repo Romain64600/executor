@@ -528,6 +528,33 @@ only for a KNOWN sellable / forbidden code, so "(PC)" is not a region; a "(… K
 takes any code, unmapped → skip), `resolve_name` strips the tail before slug building
 (historique — the 9 EU-tail offers entered GLOBAL before this rule, to correct by hand :
 CHANGELOG 2026-09-11).
+**MMOGA delivery BRACKETS `[R32f]` (2026-09-29 — audit proposal 6 + Romain: « Oui pour etendre
+Altergift a MMOGA et a tous marchant existant et futur »).** MMOGA also writes its delivery
+INSIDE a bracket, with or without a region code: "Firewatch [EU Steam Altergift]", "Borderlands
+2 [EU Key]", "Ghost of Tsushima - Director's Cut [PC Version - Steam Key EU]", "Planet Coaster 2
+[Steam Game Card EU]", "The Last of Us : Part I [PC] [Steam]", "EA Sports FC 25 [PC Version /
+EA Gamecard] - DE". A **delivery bracket** (`mmoga.is_delivery_bracket`) is one whose every word
+is delivery vocabulary (Key, CD, Steam, Altergift, Gamecard, Game, Card, PC, Version, EA, App,
+Origin, Epic, Games, Store, Official, Greencode, Ubisoft, Connect, GOG, Rockstar) or a code of
+two capitals, with at least one delivery word; never a console bracket ("[Xbox One / Series X|S
+Download Code]": the console classifier keeps its own read, byte-identical), never a bracket
+carrying the English-only mention or the code EN (`[R63]`: the mention leaves the slug on its
+route only, and EN is never a region), never a product bracket ("[Remake]", "[VR]", "[2014]",
+"[DLC]", "[Banjo & Kazooie]" — "Silent Hill 2 [Remake]" is not "Silent Hill 2"). Rules:
+(1) `resolve_name` drops the delivery brackets — and a " - XX" code right after one, end of
+title — from the SLUG only (`firewatch`, not the 404 `firewatch-eu-steam-altergift`); the
+identity guards keep reading the raw title, so "[Steam Game Card]" / "[… Gamecard]" /
+"[Official Key]" stay extra words (R16) and "[Greencode Key]" too; (2) the region code INSIDE
+a delivery bracket (two capitals other than PC / EA / EN) and the " - XX" slot right after one
+are READ by `region_code` — a sellable code → `title_region` (authoritative), an unmapped code
+(DE) → `forbidden region: DE`, two different codes in one title → "MMOGA region conflict: … —
+not entered", never one of the two. (2) is a PREREQUISITE of (1), not an extra: the generic scan
+does not see "EU]" nor a "-eu.html" slot, so a bracket out of the slug with its code unread
+enters an EU key as implicit GLOBAL(2) — which already happened twice where the bracket did not
+block the slug (offers 101040244 "Horizon Forbidden West - Complete Edition [Steam PC Key EU]"
+and 101039968 "Marvel's Spider-Man Remastered [PC - Steam Key EU]", created STEAM GLOBAL(2) on
+2026-09-11 — to correct by hand, Romain's call). Measured over the 2 137 MMOGA titles of all
+runs: 45 change, all carrying a delivery bracket; console signals identical.
 **A region phrase that is part of the AKS PRODUCT NAME is identity, not a lock
 `[R44]`** (R43 dry-run 2026-09-11): "Age of Empires III Definitive Edition - United
 States Civilization (DLC)" carries `-united-states-` in its merchant slug and the URL
@@ -544,25 +571,41 @@ Derive region from the offer URL when the merchant encodes it there
 (e.g. Gamivo `…-steam-global` / `-eu` / `-gift-eu`; look for
 `-gift-`) `[GAMIVO]`. Kinguin Steam titles often omit the region → accept as
 **GLOBAL implicit** unless a forbidden region is present `[KINGUIN]`.
-**Kinguin "(valid until <Month> <Year>)" and K4G / Kinguin "Steam Altergift" — Romain's
+**Kinguin "(valid until <Month> <Year>)" and "Steam Altergift" — Romain's
 rulings (2026-09-14): « Kinguin valid until juin 2027 on rentre, Steam Altergift = Steam Gift
-on rentre sous gift tous les altergifts » — reviewed decisions (AGENTS.md « Reviewed
-decisions »: an audit must not re-flag them; historique, corpus counts and replays :
-CHANGELOG 2026-09-14).** Rules in force: (1) the Kinguin note is an activation deadline, not
+on rentre sous gift tous les altergifts » — and, for EVERY merchant since 2026-09-29 `[R32f]`:
+« Oui pour etendre Altergift a MMOGA et a tous marchant existant et futur » — reviewed
+decisions (AGENTS.md « Reviewed decisions »: an audit must not re-flag them; historique,
+corpus counts and replays : CHANGELOG 2026-09-14 and 2026-09-29).** Rules in force: (1) the Kinguin note is an activation deadline, not
 a product word — `kinguin.guard_name` strips it, and only it, from the title the `[R01]` /
 `[R16]` / `[R01b]` guards and `detect_edition` read (`guard_name` hook, §4.10), `resolve_name`
 peels it for the slug, `console_noise` carries it for console rows; the row is entered like
 any Kinguin title (implicit GLOBAL unless a code says otherwise); ONLY the "(valid until
 <Month>[,] <Year>)" spelling, anchored to the title END (`kinguin.VALID_UNTIL_RE`, `\s*$`),
 is stripped — a mid-title note or any other form stays in the guard and is the fail-closed
-`extra words: ['VALID', 'UNTIL', …]` skip. (2) An Altergift is a Steam GIFT:
-`k4g.gift_delivery` / `kinguin.gift_delivery` → True for the whole word ALTERGIFT
-(`gift_delivery` hook, §4.10) and `detect_region` layers the Steam GIFT bucket on the base
+`extra words: ['VALID', 'UNTIL', …]` skip. (2) An Altergift is a Steam GIFT **at every
+merchant, existing and future** (`[R32f]`, 2026-09-29 — the word is shared vocabulary,
+`merchants.common.is_altergift` / `drop_altergift` / `names_steam_alone`; the decision is
+generic, in the matcher): the whole word ALTERGIFT in the title is a gift for the generic read
+of `_detect_region_parts` (a merchant's own `gift_delivery` verdict still wins —
+`k4g.gift_delivery` / `kinguin.gift_delivery` → True when their slug agrees, **False** — not
+None — for an Altergift title their grammar refuses, so the generic read never calls a refused
+row a gift) and `detect_region` layers the Steam GIFT bucket on the base
 region the title / URL declare — GIFT (25) for no region / Global, GIFT EU (259) for Europe;
 a US / UK base takes GIFT US (2577) / GIFT UK (2572) since `[R50]` (2026-09-16 — the buckets
 were in the dropdown all along); a base a platform really lacks keeps the fail-closed "no region id"
-skip; forbidden regions (North America, Americas) keep their precheck skip; `guard_name` /
-`resolve_name` drop the word "Altergift" (never a product word). Fail-closed gates on (2):
+skip; forbidden regions (North America, Americas) keep their precheck skip; the word
+"Altergift" is never a product word — the matcher drops it, for EVERY merchant, from the
+guards' title (after the merchant's `guard_name`) and from `resolution_name` (after its
+`resolve_name`, so the list-22 export too). **Steam only, generically** (`precheck_skip`, right
+after the merchant `precheck`): an Altergift title that does not name Steam ALONE (Steam as a
+whole word, no other store / console phrase — « … Battle.net Altergift », « … Steam / Epic Games
+Altergift ») is refused "Altergift outside the Steam collocation (the title does not name Steam
+alone) — not entered …" unless the merchant's `gift_delivery` has its own verdict (K4G /
+Kinguin keep their grammar and their reasons). No generic read of the word in the URL (the
+`-gift-` segment already covers `-alter-gift-`); the title / slug agreement stays merchant
+grammar. MMOGA's "[EU Steam Altergift]" → STEAM GIFT EU (259) through its delivery-bracket
+grammar (above) — never STEAM EU (9), the key bucket. Fail-closed gates of K4G / Kinguin on (2):
 the slug must AGREE (`k4g.altergift_verdict`: `-altergift-` / `-alter-gift-` in the K4G
 slug; Kinguin's often-truncated slug may be silent but must not carry a `-cd-key` / `-key` /
 account tail) — a `-cd-key` slug against an Altergift title is the precheck skip "K4G
@@ -1371,15 +1414,17 @@ generic rule when it returns `None`, so the generic modules stay merchant-agnost
   name, an empty answer falls back to the raw title. Romain's rulings of 2026-09-14: Kinguin
   "(valid until <Month> <Year>)" — « Kinguin valid until juin 2027 on rentre » (trailing
   only, review fix); the delivery word "Altergift", K4G and Kinguin — « Steam Altergift =
-  Steam Gift on rentre »;
+  Steam Gift on rentre » — dropped by the MATCHER for every merchant since `[R32f]`
+  (2026-09-29), after this hook;
 - `gift_delivery(name, url) -> bool | None` (2026-09-14) — the merchant's OWN gift-delivery
   verdict, consulted first by the region scan and layered by `detect_region` as the
   platform's GIFT bucket (Steam 25 / 259 / 2577 / 2572, Battle.net 570 / 567 / 568, Ubisoft
   501 / 504 / 505 — US / UK mapped by `[R50]` 2026-09-16; a base a platform really lacks keeps
   the fail-closed "no region id" skip); True / False wins, None → the
-  generic read (a `gift` URL segment, " GIFT " / "GIFT)" in the title). K4G / Kinguin: a
-  "… Steam Altergift" row whose slug agrees → True (Romain: « on rentre sous gift tous les
-  altergifts »). The hook reads BOTH arguments — a title / URL delivery conflict (title
+  generic read (a `gift` URL segment, " GIFT " / "GIFT)" in the title, the whole word
+  ALTERGIFT since `[R32f]`, 2026-09-29). K4G / Kinguin: a "… Steam Altergift" row whose slug
+  agrees → True (Romain: « on rentre sous gift tous les altergifts »), an Altergift their
+  grammar refuses → False (the generic read knows the word now). The hook reads BOTH arguments — a title / URL delivery conflict (title
   Altergift, slug `-cd-key`) or a non-Steam Altergift is never a verdict: it is the merchant
   `precheck`'s fail-closed skip (review fixes 2026-09-14, §4.4), so no row is filed under a
   bucket class the row itself contradicts.
@@ -2890,7 +2935,9 @@ Gamivo 51, Allyouplay 17, GOG 34, Difmark 167, MMOGA 12 (its AKS page merchant i
   code (DE, FR, …) skips `forbidden region: <CODE>` — fail-closed, never an implicit
   worldwide entry (price: a rare false skip on "… GO Key"-style acronyms). Resolution uses
   the title with the `<CODE> Key` tail peeled (`borderlands-2`, not the 404
-  `borderlands-2-eu`); edition from the generic title rule (`Battlefield 4 Premium` →
+  `borderlands-2-eu`) and, since 2026-09-29, the delivery brackets dropped (`firewatch`, not
+  `firewatch-eu-steam-altergift`) — their region code READ, never lost (§4.4 "MMOGA delivery
+  BRACKETS `[R32f]`"; "[EU Steam Altergift]" → STEAM GIFT EU 259); edition from the generic title rule (`Battlefield 4 Premium` →
   Premium); `?ref=615` is affiliate noise kept verbatim (§4.6) and ignored by every signal;
   a non-`mmoga.com` URL fails closed. In the safe-auto allowlist since 2026-09-10 on
   Romain's explicit decision (« je préfère passer directement par /auto »), before any

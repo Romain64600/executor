@@ -50,6 +50,51 @@ rouges.
   inchangée ; 12 vraiment absentes → **0 candidat, 0 entrée** ; 4 « aucun indice » à mot
   d'édition → 1 page lue, refusée. La règle des mots restants ne change aucune de ces 40 issues.
 
+## 2026-09-29 — `[R32f]` « Altergift = Steam Gift » pour tous les marchands + crochets MMOGA hors du slug
+
+Romain : « Oui pour etendre Altergift a MMOGA et a tous marchant existant et futur » ; la
+proposition 6 de l'audit du 28/09 (crochets MMOGA hors du slug) codée avec (EXECUTOR_RULES §4.4 et
+§4.10 ; MERCHANTS : MMOGA, K4G, Kinguin, table des hooks ; AGENTS « Reviewed decisions »).
+
+- **Générique** (`src/merchants/common.py` : `is_altergift`, `drop_altergift`,
+  `names_steam_alone`, `SKIP_ALTERGIFT_NOT_STEAM` ; `src/matcher.py`) : le mot entier ALTERGIFT
+  est une livraison Steam GIFT pour la lecture générique de région (seau posé sur la base : 25 /
+  259 / 2577 / 2572, région interdite inchangée, jamais d'élargissement d'un cadeau verrouillé) ;
+  il sort du nom des gardes et de `resolution_name` (donc du slug et de l'export liste 22) chez
+  TOUT marchand, avec ou sans fichier. Garde « Steam seulement » générique dans `precheck_skip`,
+  juste après le `precheck` marchand : un titre Altergift qui ne nomme pas Steam seul est refusé
+  « Altergift outside the Steam collocation … » — sauf si le marchand a son propre verdict
+  (`gift_delivery` non None).
+- **K4G / Kinguin** : comportement identique ligne pour ligne (472 + 198 lignes Altergift des
+  runs rejouées hors ligne : précheck, région, nom de résolution identiques). Les deux fichiers
+  importent le vocabulaire partagé (réexporté) et gardent LEUR grammaire (phrase magasin, accord
+  du slug) ; `gift_delivery` rend désormais **False** (et non None) pour un Altergift que leur
+  grammaire refuse, sinon la lecture générique aurait dit GIFT (Trine 5, 101030313).
+- **CJS** : les 3 lignes « … Battle.net Altergift » sont refusées explicitement « outside the
+  Steam collocation » (avant : R16 « extra words: […, 'ALTERGIFT'] », effet de bord).
+- **MMOGA — crochets de livraison** (`mmoga.is_delivery_bracket`, `strip_delivery_brackets`,
+  `delivery_bracket_codes`, `region_codes`) : « [EU Steam Altergift] », « [EU Key] », « [PC
+  Version - Steam Key EU] », « [Steam Game Card EU] », « [PC] [Steam] » sortent du SLUG (les
+  gardes lisent toujours le titre brut) ; les crochets produit (« [Remake] », « [VR] », « [2014] »,
+  « [DLC] »), console et `[R63]` restent. Le code de région DU crochet (et le « - XX » qui le suit)
+  est LU — préalable, pas extra : sans lui la proposition 6 ferait entrer des clés EU en GLOBAL
+  implicite. Code inconnu (DE) → `forbidden region: DE` ; deux codes → « MMOGA region conflict ».
+- **Trouvé en route** (à corriger à la main, décision de Romain) : **101040244** « Horizon
+  Forbidden West - Complete Edition [Steam PC Key EU] » et **101039968** « Marvel's Spider-Man
+  Remastered [PC - Steam Key EU] », créées STEAM GLOBAL(2) le 2026-09-11 alors que ce sont des
+  clés EU (le code du crochet n'était pas lu) ; le code les range désormais en STEAM EU (9).
+- **Mesure** (lecture seule ; runs figés A/B du 28/09 + runs vivants ; pages AKS en cache +
+  14 requêtes AKS/Staff le 29/09) : 677 lignes Altergift distinctes (K4G 472, Kinguin 198,
+  MMOGA 4, CJS 3). Les 4 MMOGA (Firewatch, High On Life, Tetris Effect Connected, EA Sports FC 25)
+  passent de « no AKS product page found » à **STEAM GIFT EU (259)** ; 45 lignes MMOGA à crochet
+  de livraison → 13 nouvelles candidates, 2 corrections de région, 2 refus DE explicites ;
+  signaux console identiques sur les 2 137 titres MMOGA.
+- **Tests** : `tests/test_altergift_generic_r32f.py` (19 tests, titres et pages réels ;
+  mutations vérifiées : lecture cadeau générique, garde Steam, retrait des gardes / du slug,
+  lecture du code du crochet, mots produit, exclusion EN, False de K4G / Kinguin) ; les tests
+  K4G / Kinguin qui décrivaient l'ancien générique (« extra words: ['ALTERGIFT'] » sans fichier)
+  décrivent le nouveau.
+
 ## 2026-09-29 — `[R64]` rang de repli « nom d'édition retiré » et `[R65]` pages console « -key » / « -code »
 
 Romain : « go pour les corrections 1 et 2 et les vérifications » — propositions 1 et 2 de

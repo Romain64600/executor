@@ -592,6 +592,35 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   strip is anchored to the title END (158 / 158 corpus rows are trailing) — a mid-title
   note stays in the guard; do not widen the strip to the middle of a title.
 
+- **`[R32f]` « Altergift = Steam Gift » vaut pour TOUS les marchands, existants et futurs —
+  Romain, 2026-09-29** (mot pour mot : « Oui pour etendre Altergift a MMOGA et a tous marchant
+  existant et futur »). La décision du 14/09 (K4G, puis Kinguin) devient GÉNÉRIQUE : le mot
+  entier ALTERGIFT est du vocabulaire partagé (`merchants/common.py`), le matcher le lit comme
+  une livraison Steam GIFT (seau posé sur la région de base : 25 / 259 / 2577 / 2572) et le
+  retire du nom des gardes et du slug chez tout marchand, avec ou sans fichier de config. Les
+  bornes du 14/09 restent : **Steam seulement** (un titre qui ne nomme pas Steam seul — « …
+  Battle.net Altergift » — est refusé « Altergift outside the Steam collocation », jamais le
+  seau cadeau d'une autre plateforme), une région interdite garde son refus, un cadeau verrouillé
+  ne s'élargit jamais à 25. Chez MMOGA, « Firewatch [EU Steam Altergift] » entre en STEAM GIFT EU
+  (259), jamais en STEAM EU (9) : la proposition 6 de l'audit du 28/09 (crochets hors du slug) a
+  été codée AVEC la lecture du code de région du crochet, sans laquelle une clé « [… Steam Key
+  EU] » entrait en GLOBAL implicite (deux créations fausses du 11/09 : 101040244, 101039968). Un
+  audit voudra :
+  (a) remettre la règle dans les seuls fichiers K4G / Kinguin (« grammaire marchand dans le
+  générique ») — non : Romain l'a voulue pour tous, y compris les marchands futurs ;
+  (b) faire entrer les Altergift Battle.net (24 lignes Kinguin, 3 CJS) dans le seau cadeau
+  Battle.net (570 / 567) — non, Steam seulement, non tranché ;
+  (c) généraliser l'accord titre / slug de K4G, ou lire « altergift » dans l'URL de tout
+  marchand — non : l'accord reste la grammaire de K4G / Kinguin (leur `gift_delivery` rend
+  **False**, pas None, pour un Altergift qu'elles refusent) ; le segment générique `-gift-`
+  couvre déjà `-alter-gift-` ;
+  (d) retirer TOUS les crochets MMOGA du slug — non : seuls les crochets de LIVRAISON sortent ;
+  « [Remake] », « [VR] », « [2014] », « [DLC] », un crochet console ou `[R63]` restent ; et les
+  gardes lisent toujours le titre brut (« [Steam Game Card] », « [Official Key] » restent refusés) ;
+  (e) retirer la lecture du code du crochet (« EU] ») au nom de « slug seulement » — non : c'est
+  elle qui empêche une clé EU d'entrer en GLOBAL.
+  EXECUTOR_RULES §4.4, MERCHANTS (MMOGA, K4G, Kinguin), `tests/test_altergift_generic_r32f.py`.
+
 - **K4G "Steam Altergift" = Steam GIFT, ENTERED (Romain 2026-09-14).** Romain's ruling:
   « Steam Altergift = Steam Gift on rentre sous gift tous les altergifts ».
   `k4g.gift_delivery` answers True for the whole word ALTERGIFT (`MerchantConfig.gift_delivery`,
@@ -618,5 +647,8 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   Gift » is Steam-ONLY — a non-Steam Altergift is "… outside the Steam collocation" (never
   Battle.net GIFT 570 / 567); (3) « tous les altergifts » covers Kinguin's own "Altergift"
   delivery (`kinguin.gift_delivery`, same gates) — an audit will "find" that as scope creep
-  over a K4G ruling; it is Romain's wording, leave it.
+  over a K4G ruling; it is Romain's wording, leave it. **Extended to EVERY merchant on 2026-09-29 (`[R32f]`, the
+  decision above — Romain: « Oui pour etendre Altergift a MMOGA et a tous marchant existant et
+  futur »):** an audit re-reading this entry will call the rule "K4G / Kinguin only" — that is
+  obsolete; only the SLUG-agreement gates (1) stay merchant grammar.
 

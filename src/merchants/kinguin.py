@@ -102,11 +102,14 @@ from __future__ import annotations
 import re
 from urllib.parse import urlsplit
 
-from src.merchants.common import (
+from src.merchants.common import (  # noqa: F401 — is_altergift / drop_altergift re-exported
     FORBIDDEN_WORDS,
     SELLABLE_WORDS,
+    drop_altergift,
     forbidden_reason,
+    is_altergift,
     make_config,
+    names_steam_alone,
     region_kind,
     sellable_base,
     skip_not_a_game,
@@ -165,23 +168,15 @@ VALID_UNTIL_RE = re.compile(_VALID_UNTIL + r"\s*$", re.IGNORECASE)
 _ACCOUNT_DELIVERIES = frozenset({"ACCOUNT", "ACCESS"})
 _ACCOUNT_URL_RE = re.compile(r"(?:-account|-access)/?$|online-account-activation")
 # DECIDED (Romain 2026-09-14): « Steam Altergift = Steam Gift on rentre sous gift tous les
-# altergifts » — Kinguin's own "Altergift" delivery too (review fix 2026-09-14). The word,
-# whole and case-insensitive; the slug tails that AGREE ("-altergift", "-gift": the same
-# GIFT bucket class) and the tails that CONTRADICT it ("-cd-key", "-key", "-activation-
-# link", the account / access markers); a truncated slug says nothing (accepted).
-_ALTERGIFT_RE = re.compile(r"\bAltergift\b", re.IGNORECASE)
+# altergifts » — Kinguin's own "Altergift" delivery too (review fix 2026-09-14), GENERIC
+# since 2026-09-29 ([R32f], « Oui pour etendre Altergift a MMOGA et a tous marchant existant
+# et futur »): the word (``is_altergift`` / ``drop_altergift``, re-exported here) and the
+# Steam-alone check are shared vocabulary (``src/merchants/common.py``). What stays HERE is
+# Kinguin's grammar: the in-grammar platform run, and the slug tails that AGREE
+# ("-altergift", "-gift": the same GIFT bucket class) or CONTRADICT it ("-cd-key", "-key",
+# "-activation-link", the account / access markers); a truncated slug says nothing (accepted).
 _URL_GIFT_TAIL_RE = re.compile(r"-(?:altergift|gift)/?$")
 _URL_KEY_TAIL_RE = re.compile(r"-(?:cd-key|key|activation-link)/?$")
-_STEAM_RE = re.compile(r"\bSteam\b", re.IGNORECASE)
-# A store / console phrase that is NOT Steam (the bare "PC" / "Mac" / "Windows" items are not
-# stores; a bare "Origin" is a name word for the matcher too, R14).
-_STORE_ITEM = (
-    r"GOG(?:\.com)?|Epic\s+Games(?:\s+Store)?|EA\s+App|EA\s+Origin|Ubisoft\s+Connect|Uplay|"
-    r"Rockstar(?:\s+Games)?(?:\s+Launcher)?|Battle\.net|Microsoft\s+Store|Official\s+Website"
-)
-_OTHER_PLATFORM_RE = re.compile(
-    rf"\b(?:{_STORE_ITEM}|Xbox|PS4|PS5|PlayStation|Nintendo)\b", re.IGNORECASE
-)
 _NOT_A_STORE_RE = re.compile(r"\b(?:PC|Mac|Windows(?:\s+1[01])?)\b", re.IGNORECASE)
 
 
@@ -212,28 +207,12 @@ def is_account_listing(name: str, url: str) -> bool:
     return _ACCOUNT_URL_RE.search(path) is not None
 
 
-def is_altergift(name: str) -> bool:
-    """The title carries the whole word ALTERGIFT (case-insensitive) — Kinguin's Steam-gift
-    delivery ("Sons Of The Forest DE PC Steam Altergift"); "… PC Steam Gift" does not."""
-
-    return _ALTERGIFT_RE.search(name or "") is not None
-
-
-def drop_altergift(name: str) -> str:
-    """``name`` without the word "Altergift" — and nothing else (whitespace collapsed);
-    unchanged when the word is absent."""
-
-    if not is_altergift(name):
-        return name or ""
-    return re.sub(r"\s+", " ", _ALTERGIFT_RE.sub(" ", name)).strip()
-
-
 def is_steam_altergift(name: str) -> bool:
     """The title is an Altergift AND its platform phrase is Steam — Romain's « Steam
     Altergift = Steam Gift » (2026-09-14). In the grammar: the run before "Altergift", its
     PC / Mac / Windows items removed, is exactly "Steam" ("PC Steam Altergift", "Steam
     Altergift"; "PC Epic Games Altergift" is not). Outside the grammar: the whole word Steam
-    is present and no other store / console phrase is."""
+    is present and no other store / console phrase is (the shared ``names_steam_alone``)."""
 
     if not is_altergift(name):
         return False
@@ -241,7 +220,7 @@ def is_steam_altergift(name: str) -> bool:
     if m is not None:
         run = re.sub(r"\s+", " ", _NOT_A_STORE_RE.sub(" ", m.group("run")).replace("/", " ")).strip()
         return m.group("delivery").upper() == "ALTERGIFT" and run.upper() == "STEAM"
-    return _STEAM_RE.search(name) is not None and _OTHER_PLATFORM_RE.search(name) is None
+    return names_steam_alone(name)
 
 
 def url_delivery(url: str) -> str | None:
@@ -307,12 +286,15 @@ def precheck(name: str, url: str) -> str | None:
 def gift_delivery(name: str, url: str) -> bool | None:
     """Kinguin's own gift-delivery verdict for ``detect_region`` (Romain 2026-09-14: « on
     rentre sous gift tous les altergifts »): True when :func:`altergift_verdict` says
-    ``"gift"`` → the Steam GIFT bucket layered on the base region (25 / 259); None
-    otherwise → the generic read decides ("… PC Steam Gift" keeps its " GIFT " reading; a
-    refused Altergift row was already stopped by ``precheck`` — the merchant does not vouch
-    for it)."""
+    ``"gift"`` → the Steam GIFT bucket layered on the base region (25 / 259 / 2577 / 2572);
+    False for an Altergift title the grammar REFUSES (not Steam, slug conflict — already
+    stopped by ``precheck``): since the generic read knows the word ([R32f], 2026-09-29), the
+    merchant says « not a gift » explicitly, or a refused row would read GIFT there; None
+    otherwise → the generic read decides ("… PC Steam Gift" keeps its " GIFT " reading)."""
 
-    return True if altergift_verdict(name, url) == "gift" else None
+    if altergift_verdict(name, url) == "gift":
+        return True
+    return False if is_altergift(name) else None
 
 
 def title_region(name: str) -> str | None:

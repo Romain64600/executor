@@ -134,7 +134,10 @@ state and cannot be argued away by a language model.
   Key`" grammar lives entirely in `src/merchants/mmoga.py`; Gamivo's title-tail + URL-run
   grammar in `src/merchants/gamivo.py`, `[R46]` 2026-09-12; Kinguin's "(valid until <Month>
   <Year>)" note entered and K4G's "Steam Altergift" = Steam Gift — Romain's rulings of
-  2026-09-14 — in `src/merchants/kinguin.py` / `k4g.py`, §4.4). **One config file per
+  2026-09-14 — in `src/merchants/kinguin.py` / `k4g.py`, §4.4; "Altergift = Steam Gift" is
+  GENERIC for every merchant, existing and future, since 2026-09-29 `[R32f]` — « Oui pour
+  etendre Altergift a MMOGA et a tous marchant existant et futur » — with MMOGA's delivery
+  brackets out of the slug and their region code read). **One config file per
   merchant — Romain's rule (repeated since 2026-08-11, ultimatum 2026-09-14):** « pour la
   détection région / édition / plateforme, tu as un fichier de config par marchand. Et si
   tu ne l'as pas, tu dois l'avoir » — **every merchant of the safe-auto allowlist has its
