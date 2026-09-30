@@ -597,6 +597,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     signal.signal(signal.SIGHUP, signal.SIG_IGN)
     st = status()
     plan = plan_for(st, args.reboot)
+    if args.dry_run and plan["stop"] and not plan["blocked"]:
+        # À blanc : montrer ce qui serait relancé et si l'arrêt serait possible tout de suite.
+        run_dir = ROOT / "runs" / str(plan["stop"])
+        plan["relaunch"] = relaunch_spec(run_dir)
+        plan["safe_to_stop_now"] = safe_to_stop(run_dir)[1]
     if args.dry_run or plan["blocked"]:
         emit({"dry_run": args.dry_run, "status": st, "plan": plan})
         return EXIT_BUSY if plan["blocked"] else EXIT_OK
