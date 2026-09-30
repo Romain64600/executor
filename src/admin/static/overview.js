@@ -66,9 +66,10 @@ function ageText(sec) {
 const nombre = (n) => (typeof n === "number" ? n.toLocaleString("fr-FR") : String(n));
 
 // ---- les versions : les machines sont-elles sur le même commit ? ----
+const liste = (v) => (Array.isArray(v) ? v : []);
 function versionWarning(hosts) {
   const shas = [];
-  for (const h of hosts || []) {
+  for (const h of liste(hosts)) {
     const code = h && h.snapshot && h.snapshot.code;
     if (code && code.sha) shas.push([h.name, code.sha]);
   }
@@ -97,9 +98,15 @@ function taskMeta(task) {
   const last = task.last_sweep;
   if (last && last.run_id) {
     let t = "Dernier balayage : " + last.run_id + " — " + nombre(last.created || 0) + " créée(s)";
-    if (isStamp(last.ended_at)) t += ", fini le " + jourHeure(last.ended_at);
-    if (last.stopped_label) t += " (" + last.stopped_label + ")";
-    else if (last.halted) t += " (" + last.halted + ")";
+    if (last.interrupted) {
+      // Processus disparu (redémarrage de l'admin, OOM, SIGKILL) : jamais « fini le … ».
+      t += ", INTERROMPU sans fin propre";
+      if (isStamp(last.last_seen_at)) t += " — dernière trace le " + jourHeure(last.last_seen_at);
+    } else {
+      if (isStamp(last.ended_at)) t += ", fini le " + jourHeure(last.ended_at);
+      if (last.stopped_label) t += " (" + last.stopped_label + ")";
+      else if (last.halted) t += " (" + last.halted + ")";
+    }
     out.push(t);
   }
   return out;
@@ -119,7 +126,7 @@ function facts(s) {
   return rows;
 }
 function logList(logs) {
-  return el("ol", { class: "log" }, (logs || []).map((it) => el("li", { class: "log-line" + (/ABANDON|arrêt :|UNKNOWN|ÉCHEC/.test(it.text || "") ? " bad" : "") }, [
+  return el("ol", { class: "log" }, logs.map((it) => el("li", { class: "log-line" + (/ABANDON|arrêt :|UNKNOWN|ÉCHEC/.test(it.text || "") ? " bad" : "") }, [
     el("span", { class: "log-ts", text: isStamp(it.ts) ? it.ts.slice(11, 19) : "" }),
     it.merchant ? el("span", { class: "log-where", text: it.merchant + (it.page != null ? " p" + it.page : "") }) : null,
     el("span", { class: "log-text", text: it.text || it.event || "" }),
@@ -136,20 +143,25 @@ function renderHost(h) {
     ]),
     el("span", { class: "badge " + (up ? "up" : "down"), text: up ? "UP" : "DOWN" }),
   ]));
-  if (!up && (h.down_reasons || []).length) {
-    card.append(el("ul", { class: "down-reasons" }, h.down_reasons.map((r) => el("li", { text: r }))));
+  const reasons = liste(h.down_reasons);
+  if (!up && reasons.length) {
+    card.append(el("ul", { class: "down-reasons" }, reasons.map((r) => el("li", { text: String(r) }))));
   }
   if (s) {
     const task = s.task || {};
     card.append(el("div", { class: "task task-" + (task.type || "autre"), text: task.label || "Rien en cours" }));
     const meta = taskMeta(task);
     if (meta.length) card.append(el("div", { class: "task-meta" }, meta.map((t) => el("span", { text: t }))));
-    if ((s.alerts || []).length) card.append(el("ul", { class: "alerts" }, s.alerts.map((a) => el("li", { text: a }))));
+    // Une photo d'une autre version peut avoir une autre forme (revue adverse du 2026-09-30) :
+    // le serveur la normalise déjà, la page revérifie ce qu'elle parcourt.
+    const alerts = liste(s.alerts);
+    if (alerts.length) card.append(el("ul", { class: "alerts" }, alerts.map((a) => el("li", { text: String(a) }))));
     card.append(el("div", { class: "facts" }, facts(s)));
     const open = LOGS_OPEN[h.name] !== false;
+    const logs = liste(s.logs).filter((it) => it && typeof it === "object");
     const det = el("details", { class: "logs" }, [
-      el("summary", { text: (s.logs_live ? "Journal du run en cours" : "Journal du dernier run") + " — " + (s.logs || []).length + " événement(s)" }),
-      (s.logs || []).length ? logList(s.logs) : el("p", { class: "dim-note", text: "Aucun événement." }),
+      el("summary", { text: (s.logs_live ? "Journal du run en cours" : "Journal du dernier run") + " — " + logs.length + " événement(s)" }),
+      logs.length ? logList(logs) : el("p", { class: "dim-note", text: "Aucun événement." }),
     ]);
     if (open) det.setAttribute("open", "");
     det.addEventListener("toggle", () => { LOGS_OPEN[h.name] = !!det.open; });
@@ -166,9 +178,24 @@ function renderHost(h) {
 // ---- la page ----
 let LAST_OK = null;      // Date.now() du dernier rafraîchissement réussi
 let SEQ = 0;
+// Une carte qui ne se dessine pas n'emporte pas les autres : elle dit pourquoi, à sa place.
+function cardOrError(h) {
+  try { return renderHost(h); }
+  catch (e) {
+    const name = String((h && h.name) || "?");
+    const up = !!h && h.status === "up";
+    return el("article", { class: "card host " + (up ? "up" : "down"), id: "host-" + name }, [
+      el("header", { class: "host-head" }, [
+        el("div", { class: "host-id" }, [el("h2", { class: "host-name", text: name })]),
+        el("span", { class: "badge " + (up ? "up" : "down"), text: up ? "UP" : "DOWN" }),
+      ]),
+      el("ul", { class: "down-reasons" }, [el("li", { text: "carte illisible — " + ((e && e.message) || e) })]),
+    ]);
+  }
+}
 function render(d) {
-  const hosts = (d && d.hosts) || [];
-  $("#ov-hosts").replaceChildren(...hosts.map(renderHost));
+  const hosts = liste(d && d.hosts);
+  $("#ov-hosts").replaceChildren(...hosts.map(cardOrError));
   const warn = versionWarning(hosts);
   const v = $("#ov-version");
   v.textContent = warn || "";
@@ -180,7 +207,7 @@ function render(d) {
   else if (!c.configured) note = "Seule cette machine est affichée — les autres se déclarent dans " + (c.file || "state/overview_hosts.json") + " (voir ops/VUE_D_ENSEMBLE.md).";
   cfg.textContent = note;
   cfg.className = "ov-note" + (note ? (c.error ? " bad" : "") : " hidden");
-  const down = hosts.filter((h) => h.status !== "up").length;
+  const down = hosts.filter((h) => !h || h.status !== "up").length;
   setStatus(hosts.length + " machine(s) · " + (down ? down + " DOWN" : "toutes UP"), false);
 }
 function tickAge() {
@@ -201,9 +228,14 @@ async function refresh() {
     return;
   }
   if (seq !== SEQ) return;   // une réponse plus ancienne que la dernière demandée n'écrase rien
+  try { render(d); }
+  catch (e) {
+    setStatus("✖ affichage impossible — " + ((e && e.message) || e) + " (dernière photo gardée)", false);
+    tickAge();
+    return;
+  }
   // L'âge affiché est celui de la PHOTO du serveur (gardée 10 s), pas celui de la requête.
   LAST_OK = Date.now() - 1000 * (d && typeof d.age_s === "number" ? d.age_s : 0);
-  render(d);
   tickAge();
 }
 $("#ov-refresh").addEventListener("click", () => { refresh(); });

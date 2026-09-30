@@ -8,16 +8,21 @@ L'onglet **Vue d'ensemble** (`https://<VPS>/executor/overview`, alias `/vue-d-en
 une carte par machine, rafraîchie toutes les 15 s (« mis à jour il y a N s ») :
 
 * un badge **UP / DOWN** — DOWN quand la machine ne répond pas, que son admin ne répond pas, ou
-  qu'un service clé (`aks-admin`, `aks-chromium`, `hermes-cdp-proxy`, `nginx`) est arrêté ; le
-  motif est écrit sous le badge. Un service **absent** de la machine n'est pas une panne ;
+  qu'un service clé (`aks-admin`, `aks-chromium`, `hermes-cdp-proxy`, `nginx`) est arrêté, ou que
+  sa photo est d'un autre format / mal formée (machine sur un autre commit) ; le motif est écrit
+  sous le badge. Un service **absent** de la machine n'est pas une panne ;
 * la **tâche en cours** en clair : « Balayage groupe A en boucle — passe 3, GOG page 12, saisie
   depuis 14:03 UTC », « Balayage groupe B en boucle — passe 2 finie, pause jusqu'à 15:35 UTC »,
   « Saisie par page — aperçu… », « Tri des listes — canary (écriture) », « Maintenance de cette
-  machine en cours… », « Rien en cours » (avec le dernier balayage et pourquoi il s'est arrêté) ;
+  machine en cours… », « Rien en cours » (avec le dernier balayage et pourquoi il s'est arrêté ;
+  « … le dernier balayage s'est interrompu sans fin propre » quand son processus a disparu —
+  admin redémarré, OOM, SIGKILL —, avec une alerte rouge : à relancer depuis la console),
+  « Tâche inconnue » quand l'admin répond sans dire quel run tourne ;
 * les offres créées (total de la boucle, passe en cours, page en cours), l'heure de lancement,
   la version du code (un avertissement quand les machines ne sont pas sur le même commit),
   l'uptime, la charge, le disque, la mémoire, la dernière maintenance ;
-* les **alertes** en rouge : marchand arrêté, boucle arrêtée et pourquoi, offres à l'état
+* les **alertes** en rouge : marchand arrêté, boucle arrêtée et pourquoi, balayage interrompu
+  sans fin propre (processus disparu), offres à l'état
   INCONNU, session AKS perdue (« not logged in »), redémarrage requis par Debian, dernière
   maintenance en échec, disque plein à plus de 90 % ;
 * les **20 derniers événements** du journal du run en cours (lancement + page en cours), les plus
@@ -49,7 +54,11 @@ ouvrirait un shell. Toutes les machines sont lues en parallèle, **10 s au plus*
 DOWN « délai de 10 s dépassé ») ; le résultat est gardé **10 s** côté serveur, donc plusieurs
 onglets ouverts ne multiplient pas les connexions.
 
-La photo (`scripts/20_vps_snapshot.py`, lecture seule, < 3 s, jamais une exception) : voir
+La photo (`scripts/20_vps_snapshot.py`, lecture seule, jamais une exception) prend < 3 s
+d'ordinaire : l'admin est jugé joignable sur `/api/meta` (réponse constante, 2,5 s), et
+`/api/sort/runs` — qui parcourt tout `runs/` pour dire quel run tourne — part en même temps avec
+**6 s** ; s'il se tait, la photo retombe sur le marqueur `state/active_run.json` (« Tâche
+inconnue » sans marqueur), sans mettre la machine DOWN. 6 s au pire, dans les 10 s du ssh. Voir
 [`docs/DATA_CONTRACTS.md`](../docs/DATA_CONTRACTS.md) « La photo d'une machine ». À la main, sur
 n'importe quelle machine : `python3 scripts/20_vps_snapshot.py --pretty`.
 
@@ -149,5 +158,9 @@ Le chemin de la clé ssh ne part pas dans la réponse. Les textes sont tronqués
 | DOWN « ssh : … Host key verification failed » | la machine a changé de clé d'hôte : vérifier, puis `ssh-keygen -R <IP>` sous `debian` |
 | DOWN « aucune réponse … can't open file » | code pas encore déployé sur la machine distante |
 | DOWN « clé ssh absente » | `ssh_key` ne pointe pas sur un fichier lisible par `debian` |
-| DOWN « admin injoignable » | `aks-admin` arrêté ou qui ne répond pas sur 127.0.0.1:8650 |
+| DOWN « admin injoignable » | `aks-admin` arrêté ou qui ne répond pas sur 127.0.0.1:8650 (`/api/meta`) |
+| DOWN « photo au format N inconnu » | la machine n'est pas sur le même commit que celle qui affiche : déployer |
+| DOWN « photo mal formée : … » | idem (une autre version du code), ou une photo abîmée — lancer le script à la main sur la machine |
+| « Tâche inconnue » | l'admin répond mais n'a pas listé ses runs en 6 s (machine très chargée) et aucun marqueur : un tri ou une lecture peut tourner — voir sa console |
+| « … interrompu sans fin propre » | le balayage a perdu son processus (admin redémarré, OOM, SIGKILL) : relancer depuis la console |
 | DOWN « service aks-chromium failed » | le navigateur de saisie est tombé : `systemctl status aks-chromium` |

@@ -30,7 +30,9 @@ machine remplace ``ssh_key``. Une entrée invalide s'affiche en DOWN avec son mo
 silence.
 
 Toutes les machines sont lues EN PARALLÈLE, 10 s au plus chacune ; une machine qui ne répond pas
-est DOWN avec son erreur, jamais une exception. Le résultat est gardé 10 s : plusieurs onglets
+est DOWN avec son erreur, jamais une exception. Une photo d'un autre format (``schema``) ou mal
+formée (un champ que la page lit n'a pas la forme attendue) est DOWN et NOMMÉE, jamais relayée
+telle quelle : une seule machine d'une autre version ne met pas la page en panne. Le résultat est gardé 10 s : plusieurs onglets
 ouverts ne multiplient pas les connexions ssh (un seul calcul à la fois, les autres attendent
 puis relisent le cache). Bibliothèque standard seule.
 """
@@ -178,9 +180,60 @@ def load_config(path: Path) -> dict[str, Any]:
     return out
 
 
+def normalize_snapshot(snap: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    """La photo mise dans la forme que la page sait dessiner, et ce qui n'y était pas.
+
+    Revue adverse du 2026-09-30 : une machine sur un autre commit (la page le signale) peut
+    envoyer une autre forme — ``services: {"nginx": {"state": …}}``, ``alerts: "…"`` — et un seul
+    champ inattendu faisait lever ``health()`` HORS de la garde de ``_read`` : HTTP 500 pour
+    TOUTES les machines, cache jamais écrit (un ssh par machine à chaque requête), et la page
+    figée. Chaque champ que la page lit est donc vérifié ici ; un champ mal formé est remplacé
+    par sa forme vide (ou « illisible ») et NOMMÉ — il devient un motif de DOWN."""
+
+    out = dict(snap)
+    problems: list[str] = []
+    services = out.get("services")
+    if services is not None:
+        if not isinstance(services, dict):
+            out["services"] = None
+            problems.append("services")
+        else:
+            clean: dict[str, str] = {}
+            for name, state in services.items():
+                if isinstance(state, str):
+                    clean[str(name)] = state
+                else:
+                    clean[str(name)] = "illisible"
+                    problems.append(f"services.{name}")
+            out["services"] = clean
+    for key in ("admin", "task", "errors", "code", "disk", "mem", "last_maintenance"):
+        if out.get(key) is not None and not isinstance(out[key], dict):
+            out[key] = None
+            problems.append(key)
+    for key in ("alerts", "logs"):
+        value = out.get(key)
+        if value is None:
+            out[key] = []
+        elif not isinstance(value, list):
+            out[key] = []
+            problems.append(key)
+    kept = [a for a in out["alerts"] if isinstance(a, str)]
+    if len(kept) != len(out["alerts"]):
+        problems.append("alerts[]")
+    out["alerts"] = kept
+    kept_logs = [it for it in out["logs"] if isinstance(it, dict)]
+    if len(kept_logs) != len(out["logs"]):
+        problems.append("logs[]")
+    out["logs"] = kept_logs
+    if out.get("load") is not None and not isinstance(out["load"], list):
+        out["load"] = None
+        problems.append("load")
+    return out, problems
+
+
 def health(host: dict[str, Any]) -> list[str]:
     """Pourquoi la machine est DOWN — liste vide = UP. Injoignable, admin qui ne répond pas, un
-    service clé arrêté : chacun est NOMMÉ."""
+    service clé arrêté, une photo d'un format inconnu ou mal formée : chacun est NOMMÉ."""
 
     if host.get("error"):
         return [str(host["error"])]
@@ -188,17 +241,29 @@ def health(host: dict[str, Any]) -> list[str]:
     if not isinstance(snap, dict):
         return ["pas de photo de la machine"]
     reasons: list[str] = []
+    schema = snap.get("schema")
+    if schema != vps_snapshot.SCHEMA:
+        reasons.append(f"photo au format {scrub_text(schema, 20)} inconnu (cette console lit le "
+                       f"format {vps_snapshot.SCHEMA}) — mettre les machines au même commit")
+    if host.get("malformed"):
+        reasons.append("photo mal formée : " + ", ".join(host["malformed"])[:160])
     admin = snap.get("admin") if isinstance(snap.get("admin"), dict) else {}
     if not admin.get("reachable"):
-        reasons.append("admin injoignable" + (f" ({admin['error']})" if admin.get("error") else ""))
+        reasons.append("admin injoignable" + (f" ({scrub_text(admin['error'], 160)})"
+                                              if admin.get("error") else ""))
     services = snap.get("services")
     if not isinstance(services, dict):
-        why = (snap.get("errors") or {}).get("services") if isinstance(snap.get("errors"), dict) else None
-        reasons.append("services illisibles" + (f" ({why})" if why else ""))
+        errors = snap.get("errors") if isinstance(snap.get("errors"), dict) else {}
+        why = errors.get("services")
+        reasons.append("services illisibles" + (f" ({scrub_text(why, 160)})" if why else ""))
     else:
         for name in KEY_SERVICES:
             state = services.get(name)
-            if state is not None and state not in OK_SERVICE_STATES:
+            if state is None:
+                continue
+            if not isinstance(state, str):
+                reasons.append(f"service {name} : état illisible")
+            elif state not in OK_SERVICE_STATES:
                 reasons.append(f"service {name} {state}")
     return reasons
 
@@ -245,8 +310,11 @@ class Overview:
             host.update(reachable=False, error=scrub_text(f"photo locale en échec : "
                                                           f"{type(exc).__name__}: {exc}", 200))
             return host
+        snap, problems = normalize_snapshot(snap) if isinstance(snap, dict) else (None, ["photo"])
         host.update(reachable=True, snapshot=snap,
                     latency_ms=int((time.monotonic() - started) * 1000))
+        if problems:
+            host["malformed"] = problems
         return host
 
     def _read_remote(self, spec: dict[str, Any], *, into: dict[str, Any]) -> dict[str, Any]:
@@ -272,8 +340,12 @@ class Overview:
                 why = f"aucune réponse (code {res.returncode}) : {detail}"
             host.update(reachable=False, error=scrub_text(why, 240))
             return host
-        # Défense en profondeur : la machine distante filtre déjà, on refiltre ce qu'on relaie.
-        host.update(reachable=True, snapshot=scrub(snap))
+        # Défense en profondeur : la machine distante filtre déjà, on refiltre ce qu'on relaie —
+        # et on vérifie sa FORME avant de la relayer (une autre version du code, un autre format).
+        snap, problems = normalize_snapshot(scrub(snap))
+        host.update(reachable=True, snapshot=snap)
+        if problems:
+            host["malformed"] = problems
         return host
 
     def _read(self, host: dict[str, Any]) -> dict[str, Any]:
@@ -293,7 +365,12 @@ class Overview:
                 self._read_remote(dict(base, key=host["key"]), into=base)
         except Exception as exc:              # noqa: BLE001 — une machine DOWN, jamais une page en panne
             base.update(reachable=False, error=scrub_text(f"{type(exc).__name__}: {exc}", 200))
-        reasons = health(base)
+        # Le verdict aussi est sous garde (revue adverse du 2026-09-30) : il lit la photo d'une
+        # AUTRE machine, peut-être d'une autre version — s'il levait, c'était un 500 pour toutes.
+        try:
+            reasons = health(base)
+        except Exception as exc:              # noqa: BLE001
+            reasons = [scrub_text(f"photo illisible : {type(exc).__name__}: {exc}", 200)]
         base["status"] = "down" if reasons else "up"
         base["down_reasons"] = reasons
         return base

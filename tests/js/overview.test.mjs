@@ -192,6 +192,42 @@ test("CONFIGURATION : seule cette machine, et où déclarer les autres", async (
   assert.ok(!note.className.includes("hidden"));
 });
 
+test("FORMES : une carte mal formée n'emporte ni les autres ni la page (revue adverse du 30/09)", async () => {
+  const c = await ouvrir();
+  await c.net.release("api/overview", payload([PROD]));
+  c.every(15000).fn();
+  const neuf = Object.assign({}, PROD, { snapshot: snap({ task: { type: "aucune", label: "NEUF" } }) });
+  // une machine sur un autre commit : alertes / journal / motifs qui ne sont pas des listes
+  const tordue = {
+    name: "tordue", status: "down", down_reasons: "pas une liste", reachable: true,
+    snapshot: snap({ task: { type: "autre", label: "TACHE-X" }, alerts: "pas une liste",
+                     logs: { a: 1 }, code: { sha: "abc1234" } }),
+  };
+  await c.net.release("api/overview", payload([neuf, tordue, null]));
+  assert.ok(texte(carte(c, "cette-vm")).includes("NEUF"), "la page n'est pas figée : " + texte(carte(c, "cette-vm")));
+  const t = carte(c, "tordue");
+  assert.ok(t, "la carte mal formée est là");
+  assert.equal(texte(t.querySelector(".badge")), "DOWN");
+  assert.ok(texte(t).includes("TACHE-X"), "sa tâche reste lisible : " + texte(t));
+  const illisible = carte(c, "?");
+  assert.ok(illisible && texte(illisible).includes("carte illisible"), "une entrée illisible le dit, à sa place");
+  assert.ok(c.$("#status").textContent.includes("3 machine(s)"), c.$("#status").textContent);
+});
+
+test("INTERROMPU : un balayage tué n'est jamais « fini le … »", async () => {
+  const c = await ouvrir();
+  const tue = Object.assign({}, PROD, { snapshot: snap({
+    task: { type: "aucune", label: "Rien en cours — le dernier balayage s'est interrompu sans fin propre",
+            last_sweep: { run_id: "20260930-080000-auto", loop: true, created: 622, interrupted: true,
+                          last_seen_at: "2026-09-30T12:00:00Z" } },
+    alerts: ["Boucle 20260930-080000-auto interrompue sans fin propre (processus disparu)"] }) });
+  await c.net.release("api/overview", payload([tue]));
+  const txt = texte(carte(c, "cette-vm"));
+  assert.ok(txt.includes("INTERROMPU sans fin propre — dernière trace le 30/09 à 12:00 UTC"), txt);
+  assert.ok(txt.includes("622 créée(s)"), txt);
+  assert.ok(!txt.includes("fini le"), "jamais « fini le » : " + txt);
+});
+
 let rouges = 0;
 for (const [nom, fn] of essais) {
   try { await fn(); console.log("ok   -", nom); }

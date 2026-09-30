@@ -3,6 +3,54 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-30 — Vue d'ensemble : revue adverse avant mise en ligne (trois constats, trois correctifs)
+
+Revue adverse de la branche `overview`, chaque constat vérifié puis corrigé avec un test qui
+rougit sans le correctif :
+
+- **[P2] Une photo d'une autre forme mettait TOUTE la page en panne.** Une machine sur un autre
+  commit (la page le signale déjà) qui envoie `services: {"nginx": {"state": …}}` faisait lever
+  `health()` HORS de la garde de `_read` : HTTP 500 pour toutes les machines, cache jamais écrit
+  (un ssh par machine à chaque requête), page figée ; côté client, `alerts` / `logs` / `down_reasons`
+  qui ne sont pas des listes figeaient aussi l'écran. Désormais : le verdict est sous garde, la
+  photo relayée est remise en forme (`normalize_snapshot` : `services` en chaînes, `alerts` /
+  `logs` en listes, `task` / `admin` / … en objets) et chaque champ mal formé est un motif de DOWN
+  nommé (« photo mal formée : … ») ; un `schema` inconnu est DOWN (« photo au format N inconnu —
+  mettre les machines au même commit »). Le `schema` reste 1 : les champs ajoutés ci-dessous
+  sont additifs (le changer mettrait chaque déploiement en DOWN le temps d'aligner les machines).
+  La page dessine chaque carte à part (une carte illisible le dit à sa place) et revérifie les
+  listes qu'elle parcourt.
+- **[P1] Un balayage TUÉ s'affichait comme fini.** Redémarrage de l'admin (qui tue ses enfants),
+  OOM, SIGKILL : `loop.json` encore `running` / `pause`, ou un recap sans `finished_at`, donnait
+  « Rien en cours », « fini le … », aucune alerte, et les créations de la passe inachevée
+  manquaient. Or un balayage qui finit ÉCRIT sa fin (`stopped`, `finished_at`) AVANT de rendre son
+  marqueur : au repos, ces traces veulent dire « processus disparu ». Le dernier balayage porte
+  alors `interrupted`, sa dernière trace (`last_seen_at`) et jamais `ended_at` ; la tâche dit
+  « Rien en cours — le dernier balayage s'est interrompu sans fin propre », une alerte rouge dit
+  où (« Boucle … interrompue sans fin propre (processus disparu) — GOG page 7 — dernière trace le
+  … — à relancer depuis la console ») et les créées comptent la passe inachevée ET la page tuée
+  (lue à son journal). Un dossier sans recap (lancement en cours ou refusé) n'est pas « tué ».
+  Même règle de compte pour une boucle vivante (`loop_created`) : tant que `loop.json` dit
+  `running`, la passe courante n'est pas dans ses totaux, même si son recap est déjà fini.
+- **[P2] « (lancé au terminal) » à tort, et un admin lent affiché DOWN.** `scripts/10` et
+  `scripts/05` écrivent toujours `source: "cli"` dans le marqueur, même lancés par l'admin : quand
+  l'admin ne répondait pas, un balayage lancé depuis la console était dit « lancé au terminal ».
+  C'est désormais `runs/<id>/admin_submit.json` qui le dit (écrit par `SubmitManager._spawn` seul,
+  avec le pid de l'enfant = celui du marqueur ; un autre pid = relance au terminal avec le même
+  `--run-id`). Et la joignabilité se lisait sur `/api/sort/runs`, qui parcourt tout `runs/` et
+  relit chaque `sort_plan.json`, en 2,5 s : un admin sain mais chargé passait DOWN. Elle se lit
+  maintenant sur `/api/meta` (réponse constante) ; `/api/sort/runs` part EN MÊME TEMPS avec 6 s
+  pour dire `busy` ; s'il se tait, la photo retombe sur le marqueur et, sans marqueur, dit
+  « Tâche inconnue » — jamais « Rien en cours ». La photo prend < 3 s d'ordinaire, 6 s au pire
+  (dans les 10 s du ssh).
+- Tests : `tests/test_vps_overview.py` (57, dont 19 nouveaux : photo d'un autre format et mal
+  formée sans 500 et avec cache, verdict qui lève, route ; boucle tuée en passe, en pause, entre
+  fin de passe et `loop.json`, balayage simple tué, fin propre et dossier sans recap inchangés ;
+  lancement admin / relance au terminal / saisie validée ; sonde réelle contre de vrais serveurs
+  locaux — sain, lent à lister ses runs, muet, connexion refusée ; `run_cmd` / `run_ssh` sur un
+  vrai `sleep` → 124 « délai dépassé »). `tests/js/overview.test.mjs` : 10 scénarios, 10
+  mutations qui rougissent (garde des alertes, carte isolée, balayage interrompu en plus).
+
 ## 2026-09-30 — Onglet « Vue d'ensemble » : les trois VPS sur une page, en lecture seule
 
 Romain : « Est-ce que tu penses qu'il serait bien, dans l'admin, d'avoir un onglet pour monitor
@@ -19,7 +67,8 @@ sont up, le type de tâche actuel, etc. », puis « Go pour l'onglet vue d'ensem
   disque / mémoire, alertes en rouge, 20 derniers événements, lien « Ouvrir la console ». Lisible
   sur téléphone (une colonne).
 - **`src/vps_snapshot.py` + `scripts/20_vps_snapshot.py`** : la photo d'UNE machine, lecture
-  seule, < 3 s (git, systemctl et l'admin sondés en parallèle), jamais une exception (une section
+  seule, < 3 s d'ordinaire (git, systemctl et l'admin sondés en parallèle ; 6 s au pire depuis la
+  revue adverse ci-dessus), jamais une exception (une section
   illisible est nommée dans `errors`). Lue comme `auto.js` lit déjà le balayage (`sweep_loop`,
   recap de la passe courante, `current`, `offer_submit_history` pour la page en cours ; le groupe
   retrouvé par l'ensemble des marchands) ; marqueur `state/active_run.json` quand l'admin ne répond

@@ -236,12 +236,16 @@ class OverviewConsoleSimulationTests(unittest.TestCase):
         js = (ROOT / "src" / "admin" / "static" / "overview.js").read_text(encoding="utf-8")
         mutations = {
             "badge DOWN": ('text: up ? "UP" : "DOWN"', 'text: "UP"'),
-            "motif du DOWN": ("if (!up && (h.down_reasons || []).length) {", "if (false) {"),
+            "motif du DOWN": ("if (!up && reasons.length) {", "if (false) {"),
             "avertissement de version": ("const warn = versionWarning(hosts);", "const warn = null;"),
             "rafraîchissement": ("  setInterval(refresh, REFRESH_MS);\n", ""),
             "garde d'ordre": ("  if (seq !== SEQ) return;   // une réponse plus ancienne", "  //"),
             "lien filtré": ("const url = safeUrl(h.console_url);", "const url = h.console_url;"),
             "âge de la photo": ("a.textContent = ageText(sec);", ""),
+            # revue adverse du 2026-09-30
+            "garde des alertes": ("const alerts = liste(s.alerts);", "const alerts = s.alerts || [];"),
+            "carte isolée": ("hosts.map(cardOrError)", "hosts.map(renderHost)"),
+            "balayage interrompu": ("    if (last.interrupted) {", "    if (false) {"),
         }
         for nom, (avant, apres) in mutations.items():
             with self.subTest(nom):

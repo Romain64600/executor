@@ -13,8 +13,9 @@ l'appelle en processus) ; ce script l'imprime, pour les AUTRES machines :
 * à la main, pour voir la même chose que la console : ``python3 scripts/20_vps_snapshot.py``
   (``--pretty`` pour l'indenter).
 
-Lecture seule, < 3 s, n'échoue jamais : code de sortie 0 et une ligne JSON, même quand une
-section n'a pas pu être lue (son motif est dans ``errors``). Aucun argument venu de ssh n'est lu
+Lecture seule, < 3 s d'ordinaire (6 s au pire quand l'admin tarde à lister ses runs), n'échoue
+jamais : code de sortie 0 et une ligne JSON, même quand une section n'a pas pu être lue (son motif
+est dans ``errors``). Aucun argument venu de ssh n'est lu
 (la commande forcée n'en passe pas ; ``SSH_ORIGINAL_COMMAND`` est ignorée).
 """
 

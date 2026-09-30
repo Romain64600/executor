@@ -526,9 +526,11 @@ même groupe sur deux machines à la fois**.
 
 **Vue d'ensemble (2026-09-30)** — l'onglet `/overview` de la console (« Vue d'ensemble ») montre
 les trois machines sur une page, rafraîchie toutes les 15 s : UP / DOWN et pourquoi (injoignable,
-admin muet, service clé arrêté), la tâche en clair (« Balayage groupe A en boucle — passe 3, GOG
-page 12, saisie depuis 14:03 UTC »), les créées, la version du code (avertissement si les machines
-divergent), la charge, les alertes en rouge et les 20 derniers événements. **Lecture seule** :
+admin muet, service clé arrêté, photo d'une autre version), la tâche en clair (« Balayage groupe A
+en boucle — passe 3, GOG page 12, saisie depuis 14:03 UTC » ; un balayage dont le processus a
+disparu est dit « interrompu sans fin propre », en rouge, jamais « fini »), les créées, la version
+du code (avertissement si les machines divergent), la charge, les alertes en rouge et les 20
+derniers événements. **Lecture seule** :
 aucune action n'est relayée, « Ouvrir la console » mène à celle de la machine. Les autres
 machines sont lues par ssh avec une clé dédiée bridée par une commande forcée
 (`scripts/20_vps_snapshot.py`) ; sans `state/overview_hosts.json`, seule la machine qui sert la

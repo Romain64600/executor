@@ -19,8 +19,10 @@ Deux lecteurs, un seul code :
 
 **Lecture seule, rapide, jamais une exception.** Rien n'est écrit, aucun verrou n'est pris (le
 verrou navigateur est lu par son étiquette, comme ``lock_status``), aucun appel à AKS. Les trois
-sondes lentes (git, systemctl, admin) partent en parallèle, chacune avec son délai : < 3 s même
-quand l'une ne répond pas. Chaque section qui échoue laisse son champ vide et écrit POURQUOI
+sondes lentes (git, systemctl, admin) partent en parallèle, chacune avec son délai : < 3 s
+d'ordinaire, 6 s au pire — la liste des runs de l'admin (``/api/sort/runs``, qui parcourt tout
+``runs/``) a plus de marge que les autres, sa joignabilité se lit sur ``/api/meta`` (revue adverse
+du 2026-09-30). Chaque section qui échoue laisse son champ vide et écrit POURQUOI
 dans ``errors`` — une photo partielle vaut mieux qu'une machine affichée « injoignable ».
 
 **Aucun secret.** Les événements passent par ``src.run_log.redact`` (clés sensibles), puis par
@@ -54,6 +56,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = 1
 ADMIN_URL = "http://127.0.0.1:8650"
 ADMIN_TIMEOUT_S = 2.5
+# `/api/sort/runs` parcourt tout `runs/` et relit chaque `sort_plan.json` (≈ 1,1 s au repos pour
+# 30 000 dossiers, davantage pendant un balayage) : plus de marge que les autres sondes — la
+# maintenance lui en donne 20. 6 s au pire, dans les 10 s du ssh de la vue d'ensemble.
+ADMIN_BUSY_TIMEOUT_S = 6.0
 PROBE_TIMEOUT_S = 2.5
 # Les services qu'on surveille — les mêmes que la maintenance (scripts/18_vps_maintenance.py).
 # Un service ABSENT de la machine (``LoadState=not-found``) n'est pas une panne : il est dit
@@ -91,7 +97,7 @@ KIND_LABELS = {
     "sort_canary": "Tri des listes — canary (écriture)",
     "sort_batch": "Tri des listes — lot (écriture)",
 }
-TASK_TYPES = ("aucune", "balayage", "saisie_par_page", "tri", "maintenance", "autre")
+TASK_TYPES = ("aucune", "balayage", "saisie_par_page", "tri", "maintenance", "autre", "inconnue")
 
 # ── le filtre de texte (secrets) ──────────────────────────────────────────────────────
 REDACTED = "***REDACTED***"
@@ -252,21 +258,62 @@ def services_state(runner: Runner = run_cmd, services: tuple[str, ...] = SERVICE
     return out
 
 
-def admin_probe_http(url: str = ADMIN_URL, timeout: float = ADMIN_TIMEOUT_S) -> dict[str, Any]:
-    """L'admin local répond-il ? ``GET /api/sort/runs`` — la route que les consoles et la
-    maintenance lisent déjà (``busy`` retombe sur le marqueur d'un run lancé au terminal)."""
+def _admin_get(url: str, timeout: float) -> tuple[Any, int]:
+    """``GET`` une route de l'admin : ``(json, latence_ms)`` ; lève si elle ne répond pas."""
 
     started = time.monotonic()
-    req = urllib.request.Request(url + "/api/sort/runs", headers={"X-AKS-Admin": "1"})
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8") or "{}")
-    except (urllib.error.URLError, OSError, ValueError) as exc:
-        return {"reachable": False, "busy": None,
-                "error": scrub_text(f"{type(exc).__name__}: {exc}", 160)}
-    return {"reachable": True, "busy": data.get("busy") if isinstance(data, dict) else None,
-            "browser": data.get("browser") if isinstance(data, dict) else None,
-            "latency_ms": int((time.monotonic() - started) * 1000), "error": None}
+    req = urllib.request.Request(url, headers={"X-AKS-Admin": "1"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = json.loads(resp.read().decode("utf-8") or "{}")
+    return data, int((time.monotonic() - started) * 1000)
+
+
+def _probe_error(exc: BaseException, timeout: float) -> str:
+    if isinstance(exc, TimeoutError) or "timed out" in str(exc):
+        return f"délai de {timeout:g} s dépassé"
+    return scrub_text(f"{type(exc).__name__}: {exc}", 160)
+
+
+def admin_probe_http(url: str = ADMIN_URL, timeout: float = ADMIN_TIMEOUT_S,
+                     busy_timeout: float = ADMIN_BUSY_TIMEOUT_S) -> dict[str, Any]:
+    """L'admin local répond-il, et quel run déclare-t-il ? Deux lectures EN PARALLÈLE (revue
+    adverse du 2026-09-30) :
+
+    * ``GET /api/meta`` — réponse constante : c'est elle qui dit « joignable ». Avant, la
+      joignabilité se lisait sur ``/api/sort/runs``, qui parcourt tout ``runs/`` et relit
+      chaque ``sort_plan.json`` : un admin sain mais chargé (balayage en cours) passait DOWN ;
+    * ``GET /api/sort/runs`` — le ``busy`` que les consoles lisent déjà, avec PLUS de marge
+      (``busy_timeout``). S'il ne répond pas à temps alors que ``/api/meta`` a répondu, l'admin
+      reste joignable et ``busy_unknown`` le dit : la photo retombe sur le marqueur, et ne
+      conclut jamais « rien en cours » d'un silence."""
+
+    def meta() -> tuple[Any, int]:
+        return _admin_get(url + "/api/meta", timeout)
+
+    def runs() -> tuple[Any, int]:
+        return _admin_get(url + "/api/sort/runs", busy_timeout)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f_meta, f_runs = pool.submit(meta), pool.submit(runs)
+        try:
+            _, meta_ms = f_meta.result()
+            meta_error = None
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            meta_ms, meta_error = None, _probe_error(exc, timeout)
+        try:
+            data, runs_ms = f_runs.result()
+            runs_error = None if isinstance(data, dict) else "réponse inattendue de /api/sort/runs"
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            data, runs_ms, runs_error = None, None, _probe_error(exc, busy_timeout)
+    if meta_error and runs_error:
+        return {"reachable": False, "busy": None, "error": meta_error}
+    out: dict[str, Any] = {"reachable": True, "error": None,
+                           "latency_ms": meta_ms if meta_ms is not None else runs_ms}
+    if runs_error:
+        out.update(busy=None, busy_unknown=True, busy_error=f"liste des runs : {runs_error}")
+    else:
+        out.update(busy=data.get("busy"), browser=data.get("browser"))
+    return out
 
 
 # ── la maintenance ────────────────────────────────────────────────────────────────────
@@ -386,6 +433,29 @@ def detect_group(names: list[str]) -> str | None:
     return None
 
 
+def launched_from_terminal(runs_dir: Path, busy: dict[str, Any]) -> bool:
+    """Le run a-t-il été lancé AU TERMINAL ? Revue adverse du 2026-09-30 : le marqueur ne le
+    dit PAS — ``scripts/10`` et ``scripts/05`` écrivent toujours ``source: "cli"``, même quand
+    l'admin les a lancés. Quand l'admin ne répond pas (redémarrage, lenteur), la photo retombe
+    sur le marqueur et un balayage lancé depuis la console s'affichait « (lancé au terminal) ».
+
+    Ce qui le dit : ``runs/<id>/admin_submit.json``, que SEUL ``SubmitManager._spawn`` écrit, avec
+    le pid de l'enfant — le processus Python lui-même (``argv[0]`` = l'interpréteur), donc le pid
+    du marqueur. Un ``admin_submit.json`` d'un AUTRE pid = une relance au terminal avec le même
+    ``--run-id`` : terminal."""
+
+    if busy.get("source") == "admin":
+        return False
+    run_dir = _safe_dir(runs_dir, busy.get("run_id"))
+    launch = read_json(run_dir / "admin_submit.json") if run_dir is not None else None
+    if not isinstance(launch, dict):
+        return True
+    pid, launch_pid = busy.get("pid"), launch.get("pid")
+    if isinstance(pid, int) and isinstance(launch_pid, int) and pid != launch_pid:
+        return True
+    return False
+
+
 def _cli_flags(proc_root: Path, pid: Any) -> dict[str, Any]:
     """``--group X`` / ``--loop`` / ``--all-allowlisted`` d'un balayage lancé au terminal."""
 
@@ -419,6 +489,19 @@ def current_page(recap: Any) -> dict[str, Any] | None:
                     "since": cur.get("since"), "stage_at": cur.get("stage_at"),
                     "candidates": cur.get("approved", cur.get("candidates"))}
     return None
+
+
+def loop_created(loop: dict[str, Any], recap: dict[str, Any] | None) -> int:
+    """Les créations d'une boucle : les passes finies (``totals``), plus la passe COURANTE tant
+    que ``loop.json`` dit ``running``. ``run_loop`` n'ajoute une passe aux totaux qu'en
+    réécrivant ``loop.json`` en ``pause`` ou ``stopped`` : tant qu'il dit ``running``, la passe
+    courante n'y est pas — même si son recap porte déjà ``finished_at`` (processus tué entre les
+    deux). En pause, elle y est déjà : ne pas la recompter."""
+
+    total = int(((loop or {}).get("totals") or {}).get("created") or 0)
+    if (loop or {}).get("state") == "running" and isinstance(recap, dict):
+        total += int(recap.get("total_created") or 0)
+    return total
 
 
 def _page_created_live(root: Path, runs_dir: Path, log_dir: Path, page_run: Any) -> int | None:
@@ -476,7 +559,8 @@ def sweep_task(root: Path, busy: dict[str, Any], *, runs_dir: Path, log_dir: Pat
     recap = read_json(pass_dir / "recap.json") if pass_dir is not None else None
     recap = recap if isinstance(recap, dict) else None
 
-    flags = _cli_flags(proc_root, busy.get("pid")) if busy.get("source") == "cli" else {}
+    terminal = launched_from_terminal(runs_dir, busy)
+    flags = _cli_flags(proc_root, busy.get("pid")) if terminal else {}
     names = (_target_names(launch.get("targets")) or _target_names((loop or {}).get("targets"))
              or _target_names((recap or {}).get("planned")))
     group = flags.get("group") or detect_group(names)
@@ -490,12 +574,7 @@ def sweep_task(root: Path, busy: dict[str, Any], *, runs_dir: Path, log_dir: Pat
     created_pass = int((recap or {}).get("total_created") or 0)
     created_page = _page_created_live(root, runs_dir, log_dir, cur.get("run")) \
         if cur and cur.get("stage") == "submit" else None
-    if loop is not None:
-        # En pause, la passe finie est DÉJÀ dans les totaux de la boucle : ne pas la recompter.
-        pass_running = state == "running" and recap is not None and not recap.get("finished_at")
-        total = created_loop + (created_pass if pass_running else 0)
-    else:
-        total = created_pass
+    total = loop_created(loop, recap) if loop is not None else created_pass
     total += created_page or 0
 
     halted = [scrub_text(h, 160) for h in ((recap or {}).get("halted_merchants") or [])]
@@ -527,10 +606,11 @@ def sweep_task(root: Path, busy: dict[str, Any], *, runs_dir: Path, log_dir: Pat
     label = "Balayage" + (f" {who}" if who else "") + (" en boucle" if is_loop else "")
     if parts:
         label += " — " + ", ".join(parts)
-    if busy.get("source") == "cli":
+    if terminal:
         label += " (lancé au terminal)"
     task.update({
         "label": label, "group": group, "merchants": names, "loop": is_loop, "state": state,
+        "from_terminal": terminal,
         "pass": pass_no, "pass_run_id": pass_id if pass_id != run_id else None,
         "next_pass_at": (loop or {}).get("next_pass_at"),
         "stopped_label": (loop or {}).get("stopped_label"),
@@ -569,17 +649,31 @@ def by_urls_task(busy: dict[str, Any], *, runs_dir: Path) -> dict[str, Any]:
             label += f" : {done}/{totals.get('games')} page(s) lue(s)"
             if totals.get("candidates") is not None:
                 label += f", {totals.get('candidates')} candidat(s)"
-    if busy.get("source") == "cli":
+    terminal = launched_from_terminal(runs_dir, busy)
+    if terminal:
         label += " (lancé au terminal)"
     return {"type": "saisie_par_page", "kind": kind, "run_id": run_id, "label": label,
-            "source": busy.get("source"), "pid": busy.get("pid"),
+            "source": busy.get("source"), "pid": busy.get("pid"), "from_terminal": terminal,
             "started_at": recap.get("started_at") or busy.get("started_at"),
             "created": {"total": created} if created is not None else None}
 
 
-def last_sweep(runs_dir: Path) -> dict[str, Any] | None:
+INTERRUPTED_LABEL = "arrêté sans fin propre (processus disparu)"
+
+
+def last_sweep(runs_dir: Path, log_dir: Path | None = None) -> dict[str, Any] | None:
     """Le DERNIER balayage (``*-auto`` le plus récent, comme la route recap sans run) : quand
-    rien ne tourne, c'est lui qui dit pourquoi la machine est au repos."""
+    rien ne tourne, c'est lui qui dit pourquoi la machine est au repos.
+
+    **Fini, ou disparu ?** (revue adverse du 2026-09-30.) Un balayage qui finit ÉCRIT sa fin
+    avant de rendre son marqueur : ``run_loop`` passe ``loop.json`` à ``stopped``, ``run_pass``
+    pose ``finished_at`` sur le recap. Quand plus rien ne tourne, une boucle encore ``running``
+    ou ``pause``, ou un recap commencé sans ``finished_at``, ne peut donc dire qu'une chose : le
+    processus a disparu — redémarrage de l'admin (qui tue ses enfants), OOM, SIGKILL. Il était
+    affiché « fini le … », sans alerte, et sans les créations de la passe inachevée. Il est
+    désormais ``interrupted``, avec sa dernière trace (``last_seen_at``) et jamais ``ended_at``.
+    Un dossier SANS recap n'est pas « interrompu » : l'admin le crée avant que l'enfant n'écrive
+    quoi que ce soit (lancement en cours, ou refusé au démarrage)."""
 
     try:
         names = sorted((p.name for p in runs_dir.glob("*-auto") if p.is_dir()), reverse=True)
@@ -591,31 +685,50 @@ def last_sweep(runs_dir: Path) -> dict[str, Any] | None:
     loop = sweep_loop.read_status(run_dir)
     pass_id = sweep_loop.current_pass_run_id(run_dir) or run_dir.name
     pass_dir = _safe_dir(runs_dir, pass_id)
-    recap = read_json(pass_dir / "recap.json") if pass_dir is not None else None
-    recap = recap if isinstance(recap, dict) else {}
+    raw = read_json(pass_dir / "recap.json") if pass_dir is not None else None
+    recap = raw if isinstance(raw, dict) else {}
     out: dict[str, Any] = {"run_id": run_dir.name, "loop": loop is not None,
                            "started_at": (loop or {}).get("started_at") or recap.get("started_at"),
                            "halted_merchants": [scrub_text(h, 160)
                                                 for h in recap.get("halted_merchants") or []]}
     if loop is not None:
-        out["created"] = int(((loop.get("totals") or {}).get("created")) or 0)
-        out["ended_at"] = loop.get("stopped_at") or loop.get("updated_at")
+        interrupted = loop.get("state") in ("running", "pause")
+        out["created"] = loop_created(loop, recap)
         out["stopped_reason"] = loop.get("stopped_reason")
         out["stopped_label"] = loop.get("stopped_label")
         out["passes"] = loop.get("pass")
+        if not interrupted:
+            out["ended_at"] = loop.get("stopped_at") or loop.get("updated_at")
     else:
+        interrupted = bool(isinstance(raw, dict) and raw.get("started_at")
+                           and not raw.get("finished_at"))
         out["created"] = int(recap.get("total_created") or 0)
-        out["ended_at"] = recap.get("finished_at") or recap.get("updated_at")
         out["halted"] = scrub_text(recap.get("halted"), 200) if recap.get("halted") else None
+        if not interrupted:
+            out["ended_at"] = recap.get("finished_at") or recap.get("updated_at")
+    if interrupted:
+        # La page où il est mort : ses créations ne sont qu'à SON journal (une page n'entre au
+        # recap qu'à sa fin), lues comme pour un balayage vivant.
+        cur = current_page(recap)
+        if cur and cur.get("stage") == "submit" and log_dir is not None:
+            out["created"] += _page_created_live(runs_dir.parent, runs_dir, log_dir,
+                                                 cur.get("run")) or 0
+        stamps = [s for s in ((loop or {}).get("updated_at"), recap.get("updated_at"))
+                  if isinstance(s, str) and s]
+        out.update(interrupted=True, interrupted_label=INTERRUPTED_LABEL,
+                   last_seen_at=max(stamps) if stamps else None, stopped_at_page=cur)
     out["_recap"] = recap
     out["_loop"] = loop
     return out
 
 
 def classify_task(root: Path, busy: Any, *, runs_dir: Path, log_dir: Path,
-                  proc_root: Path = PROC) -> dict[str, Any]:
+                  proc_root: Path = PROC, busy_unknown: bool = False) -> dict[str, Any]:
     """La tâche de la machine, typée et dite en français. ``busy`` = le run que l'admin (ou le
-    marqueur) déclare — ``{run_id, kind, source, pid?, started_at?}`` — ou None."""
+    marqueur) déclare — ``{run_id, kind, source, pid?, started_at?}`` — ou None.
+    ``busy_unknown`` : l'admin répond mais n'a pas dit quel run tourne, et le marqueur est vide
+    — « Tâche inconnue », jamais « Rien en cours » (un run lancé par l'admin sans marqueur, un
+    tri par exemple, peut tourner)."""
 
     maint = maintenance_state(root, proc_root)
     task: dict[str, Any]
@@ -627,20 +740,28 @@ def classify_task(root: Path, busy: Any, *, runs_dir: Path, log_dir: Path,
             task = by_urls_task(busy, runs_dir=runs_dir)
         else:
             label = KIND_LABELS.get(kind, f"Run « {kind or '?'} »")
-            if busy.get("source") == "cli":
+            terminal = launched_from_terminal(runs_dir, busy)
+            if terminal:
                 label += " (lancé au terminal)"
             task = {"type": "tri" if kind.startswith("sort_") else "autre", "kind": kind,
                     "run_id": busy.get("run_id"), "label": label, "source": busy.get("source"),
-                    "pid": busy.get("pid"), "started_at": busy.get("started_at")}
+                    "pid": busy.get("pid"), "started_at": busy.get("started_at"),
+                    "from_terminal": terminal}
         if maint:
             task["label"] += " · " + maint["label"][0].lower() + maint["label"][1:]
     elif maint:
         task = {"type": "maintenance", "kind": "maintenance", "label": maint["label"]}
     else:
-        task = {"type": "aucune", "kind": None, "label": "Rien en cours"}
-        last = last_sweep(runs_dir)
+        if busy_unknown:
+            task = {"type": "inconnue", "kind": None,
+                    "label": "Tâche inconnue — l'admin répond, mais n'a pas dit quel run tourne"}
+        else:
+            task = {"type": "aucune", "kind": None, "label": "Rien en cours"}
+        last = last_sweep(runs_dir, log_dir)
         if last:
             task["last_sweep"] = last
+            if last.get("interrupted") and not busy_unknown:
+                task["label"] = "Rien en cours — le dernier balayage s'est interrompu sans fin propre"
     task["maintenance"] = maint
     return task
 
@@ -825,6 +946,15 @@ def build_alerts(*, task: dict[str, Any], logs: list[dict[str, Any]], disk: Any,
                                                        or loop.get("stopped_reason") or "?", 160))
     last = task.get("last_sweep")
     if isinstance(last, dict):
+        if last.get("interrupted"):
+            where = last.get("stopped_at_page") or {}
+            what = "Boucle {} interrompue" if last.get("loop") else "Balayage {} interrompu"
+            alerts.append(what.format(last.get("run_id")) + " sans fin propre (processus disparu)"
+                          + (f" — {scrub_text(where.get('merchant'), 40)} page {where.get('page')}"
+                             if where.get("merchant") else "")
+                          + (f" — dernière trace le {jour_heure(last.get('last_seen_at'))}"
+                             if last.get("last_seen_at") else "")
+                          + " — à relancer depuis la console")
         if last.get("loop") and last.get("stopped_reason") not in (None, "operator_stop"):
             alerts.append(f"Dernière boucle ({last.get('run_id')}) arrêtée : "
                           + scrub_text(last.get("stopped_label") or last.get("stopped_reason"), 160)
@@ -883,10 +1013,10 @@ def snapshot(root: Path = ROOT, *, admin_probe: Callable[[], dict[str, Any]] | N
     """La photo de CETTE machine. Ne lève jamais : une section en échec laisse son champ vide
     et son motif dans ``errors``.
 
-    ``admin_probe`` : l'état de l'admin, ``{reachable, busy, error?}`` — l'admin passe le sien
-    (en processus) ; par défaut, ``GET /api/sort/runs`` en local. Quand l'admin ne répond pas,
-    le run déclaré retombe sur le marqueur ``state/active_run.json`` (un run lancé au terminal
-    reste visible)."""
+    ``admin_probe`` : l'état de l'admin, ``{reachable, busy, busy_unknown?, error?}`` — l'admin
+    passe le sien (en processus) ; par défaut, ``admin_probe_http`` en local (``/api/meta`` pour
+    la joignabilité, ``/api/sort/runs`` pour ``busy``). Quand l'admin ne répond pas, ou pas sur
+    la liste de ses runs, le run déclaré retombe sur le marqueur ``state/active_run.json``."""
 
     root = Path(root)
     runs_dir = Path(runs_dir) if runs_dir is not None else root / "runs"
@@ -904,6 +1034,8 @@ def snapshot(root: Path = ROOT, *, admin_probe: Callable[[], dict[str, Any]] | N
 
     snap["host"] = guard("host", lambda: hostname or socket.gethostname())
     probe = admin_probe or admin_probe_http
+    # git, systemctl et l'admin partent ensemble (l'admin fait lui-même ses deux lectures en
+    # parallèle) : 2,5 s d'ordinaire, 6 s au pire quand l'admin tarde à lister ses runs.
     with ThreadPoolExecutor(max_workers=3) as pool:
         f_code = pool.submit(code_version, root, runner)
         f_svc = pool.submit(services_state, runner)
@@ -913,23 +1045,29 @@ def snapshot(root: Path = ROOT, *, admin_probe: Callable[[], dict[str, Any]] | N
         admin = guard("admin", f_admin.result, {"reachable": False, "busy": None,
                                                 "error": "sonde en échec"})
     snap.update(guard("system", lambda: system_facts(proc_root, disk_path), {}) or {})
-    busy = admin.get("busy") if isinstance(admin, dict) else None
-    if not (isinstance(admin, dict) and admin.get("reachable")):
-        # L'admin ne répond pas : le marqueur dit encore s'il y a un run (lancé au terminal).
+    admin = admin if isinstance(admin, dict) else {"reachable": False, "busy": None}
+    busy = admin.get("busy")
+    busy_unknown = bool(admin.get("busy_unknown"))
+    if not admin.get("reachable") or busy_unknown:
+        # L'admin ne répond pas, ou pas sur la liste de ses runs : le marqueur dit encore s'il y
+        # a un balayage ou une saisie (ils l'écrivent, qu'ils viennent de l'admin ou du terminal).
         marker = guard("marker", lambda: run_marker.read_marker(root))
         if isinstance(marker, dict):
             busy = {"run_id": marker.get("run_id"), "kind": marker.get("kind"),
                     "source": marker.get("source", "cli"), "pid": marker.get("pid"),
                     "started_at": marker.get("started_at")}
-    snap["admin"] = {k: v for k, v in (admin or {}).items() if k in
-                     ("reachable", "error", "latency_ms", "via")}
+            busy_unknown = False
+    snap["admin"] = {k: v for k, v in admin.items() if k in
+                     ("reachable", "error", "latency_ms", "via", "busy_unknown", "busy_error")}
     snap["admin"]["busy"] = scrub(busy) if isinstance(busy, dict) else None
     task = guard("task", lambda: classify_task(root, busy, runs_dir=runs_dir, log_dir=log_dir,
-                                               proc_root=proc_root),
+                                               proc_root=proc_root, busy_unknown=busy_unknown),
                  {"type": "autre", "label": "Tâche illisible", "kind": None})
     logs = guard("logs", lambda: collect_logs(log_dir, log_sources(task)), []) or []
     snap["logs"] = logs
-    snap["logs_live"] = task.get("type") != "aucune"
+    # « Journal du run en cours » seulement quand un run est déclaré ; sinon ce sont les lignes
+    # du dernier balayage (repos, tâche inconnue, maintenance).
+    snap["logs_live"] = bool(task.get("run_id"))
     snap["reboot_required"] = bool(guard("reboot_required", reboot_flag.exists, False))
     snap["last_maintenance"] = guard("last_maintenance", lambda: last_maintenance(root))
     snap["alerts"] = guard("alerts", lambda: build_alerts(

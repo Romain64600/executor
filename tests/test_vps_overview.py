@@ -12,9 +12,11 @@ Deux moitiés, toutes deux sans réseau ni machine réelle :
 
 from __future__ import annotations
 
+import http.server
 import io
 import json
 import os
+import socket
 import subprocess
 import sys
 import tempfile
@@ -98,12 +100,17 @@ class SnapshotCase(unittest.TestCase):
                                            "error": None if reachable else "refusé"}))
 
     def group_a_sweep(self, *, state="running", pass_no=3, current=True, halted=None,
-                      offers_created=None):
+                      offers_created=None, admin=True, admin_pid=None):
         names = group_targets("A")
-        self.write(f"runs/{LAUNCH}/admin_submit.json", {
-            "state": "running", "kind": "data_entry_auto", "started_at": "2026-09-30T08:00:00Z",
-            "targets": [{"merchant": m, "store_id": s} for m, s in names], "loop": True,
-            "list_id": 9})
+        if admin:
+            # `SubmitManager._spawn` l'écrit, avec le pid de l'enfant (= celui du marqueur)
+            launch = {"state": "running", "kind": "data_entry_auto",
+                      "started_at": "2026-09-30T08:00:00Z",
+                      "targets": [{"merchant": m, "store_id": s} for m, s in names], "loop": True,
+                      "list_id": 9}
+            if admin_pid is not None:
+                launch["pid"] = admin_pid
+            self.write(f"runs/{LAUNCH}/admin_submit.json", launch)
         pass_id = f"{LAUNCH}-pass{pass_no}"
         self.write(f"runs/{LAUNCH}/loop.json", {
             "run_id": LAUNCH, "loop": True, "state": state, "pass": pass_no,
@@ -264,7 +271,7 @@ class SnapshotClassificationTests(SnapshotCase):
         self.assertEqual(s["task"]["label"], "Maintenance à blanc (lecture seule)")
 
     def test_admin_injoignable_le_marqueur_montre_le_run_lance_au_terminal(self):
-        self.group_a_sweep()
+        self.group_a_sweep(admin=False)
         (self.root / "state" / "active_run.json").write_text(json.dumps({
             "run_id": LAUNCH, "kind": "data_entry_auto", "source": "cli", "pid": os.getpid(),
             "started_at": "2026-09-30T08:00:00Z"}))
@@ -425,6 +432,257 @@ class AlertTests(SnapshotCase):
                                                    reboot_required=False, last_maint={"exit": 42}), [])
 
 
+# ── revue adverse du 2026-09-30 ─────────────────────────────────────────────────────────
+class InterruptedSweepTests(SnapshotCase):
+    """Un balayage TUÉ (redémarrage de l'admin qui tue ses enfants, OOM, SIGKILL) n'est jamais
+    affiché « fini » : ``run_loop`` écrit ``stopped`` et ``run_pass`` pose ``finished_at`` AVANT
+    de rendre le marqueur — machine au repos + boucle ``running`` / ``pause`` ou recap sans
+    ``finished_at`` = processus disparu."""
+
+    def killed_loop(self, *, state="running", finished=False):
+        pass_id = f"{LAUNCH}-pass3"
+        page_run = f"{pass_id}-gog-s34-p7"
+        self.write(f"runs/{LAUNCH}/loop.json", {
+            "run_id": LAUNCH, "loop": True, "state": state, "pass": 3, "current_run_id": pass_id,
+            "started_at": "2026-09-30T08:00:00Z", "updated_at": "2026-09-30T11:00:00Z",
+            "next_pass_at": "2026-09-30T12:30:00Z" if state == "pause" else None,
+            "totals": {"created": 500, "passes_finished": 2 if state == "running" else 3},
+            "stopped_reason": None, "stopped_label": None, "stopped_at": None})
+        recap = {"run_id": pass_id, "started_at": "2026-09-30T11:00:00Z",
+                 "updated_at": "2026-09-30T12:00:00Z", "total_created": 120,
+                 "halted_merchants": [], "loop_pass": 3,
+                 "targets": [{"merchant": "GOG", "store_id": "34", "recap": {
+                     "total_created": 120, "pages": [],
+                     "current": None if (finished or state == "pause") else
+                     {"page": 7, "run": page_run, "stage": "submit",
+                      "stage_at": "2026-09-30T11:58:00Z"}}}]}
+        if finished or state == "pause":
+            recap["finished_at"] = "2026-09-30T12:00:00Z"
+        self.write(f"runs/{pass_id}/recap.json", recap)
+        self.log(page_run,
+                 {"ts": "2026-09-30T11:59:00Z", "event": "submit_offer", "offer_id": "1", "success": True},
+                 {"ts": "2026-09-30T11:59:30Z", "event": "submit_offer", "offer_id": "2", "success": True})
+        return pass_id
+
+    def test_boucle_tuee_en_pleine_passe(self):
+        self.killed_loop()
+        s = self.snap(None)
+        t = s["task"]
+        self.assertEqual(t["type"], "aucune")
+        self.assertEqual(t["label"], "Rien en cours — le dernier balayage s'est interrompu sans fin propre")
+        last = t["last_sweep"]
+        self.assertTrue(last["interrupted"])
+        self.assertNotIn("ended_at", last, "jamais « fini le … » pour un processus disparu")
+        self.assertEqual(last["last_seen_at"], "2026-09-30T12:00:00Z")
+        # 500 (passes finies) + 120 (pages finies de la passe tuée) + 2 (page tuée, lues au journal)
+        self.assertEqual(last["created"], 622)
+        self.assertIn(f"Boucle {LAUNCH} interrompue sans fin propre (processus disparu) — GOG page 7 "
+                      "— dernière trace le 30/09 à 12:00 UTC — à relancer depuis la console",
+                      s["alerts"])
+        self.assertFalse(s["logs_live"], "le journal du DERNIER run, pas d'un run en cours")
+
+    def test_boucle_tuee_pendant_la_pause_ne_recompte_pas_la_passe(self):
+        self.killed_loop(state="pause")
+        last = self.snap(None)["task"]["last_sweep"]
+        self.assertTrue(last["interrupted"])
+        self.assertEqual(last["created"], 500, "en pause, la passe finie est déjà dans les totaux")
+
+    def test_boucle_tuee_entre_la_fin_de_passe_et_l_ecriture_de_loop_json(self):
+        # recap fini, loop.json encore « running » (totaux pas encore mis à jour) : la passe compte
+        self.killed_loop(finished=True)
+        last = self.snap(None)["task"]["last_sweep"]
+        self.assertTrue(last["interrupted"])
+        self.assertEqual(last["created"], 620)
+
+    def test_balayage_simple_tue(self):
+        run = "20260930-090000-auto"
+        self.write(f"runs/{run}/admin_submit.json", {"targets": [{"merchant": "K4G", "store_id": "92"}]})
+        self.write(f"runs/{run}/recap.json", {
+            "run_id": run, "started_at": "2026-09-30T09:00:00Z", "updated_at": "2026-09-30T10:00:00Z",
+            "total_created": 12, "halted": None, "halted_merchants": [], "targets": []})
+        s = self.snap(None)
+        last = s["task"]["last_sweep"]
+        self.assertTrue(last["interrupted"])
+        self.assertNotIn("ended_at", last)
+        self.assertIn(f"Balayage {run} interrompu sans fin propre (processus disparu) — dernière trace "
+                      "le 30/09 à 10:00 UTC — à relancer depuis la console", s["alerts"])
+
+    def test_une_fin_propre_reste_une_fin(self):
+        run = "20260930-090000-auto"
+        self.write(f"runs/{run}/recap.json", {
+            "run_id": run, "started_at": "2026-09-30T09:00:00Z", "updated_at": "2026-09-30T10:00:00Z",
+            "finished_at": "2026-09-30T10:00:00Z", "total_created": 12, "halted_merchants": [],
+            "targets": []})
+        s = self.snap(None)
+        last = s["task"]["last_sweep"]
+        self.assertNotIn("interrupted", last)
+        self.assertEqual(last["ended_at"], "2026-09-30T10:00:00Z")
+        self.assertEqual(s["task"]["label"], "Rien en cours")
+        self.assertEqual(s["alerts"], [])
+        # une boucle arrêtée par l'opérateur non plus
+        self.write(f"runs/{LAUNCH}/loop.json", {
+            "run_id": LAUNCH, "loop": True, "state": "stopped", "pass": 2, "totals": {"created": 9},
+            "stopped_reason": "operator_stop", "stopped_at": "2026-09-30T11:00:00Z"})
+        self.assertEqual(self.snap(None)["alerts"], [])
+
+    def test_un_dossier_sans_recap_n_est_pas_un_balayage_tue(self):
+        # l'admin crée le dossier (admin_submit.json) avant que l'enfant n'écrive quoi que ce soit
+        run = "20260930-090000-auto"
+        self.write(f"runs/{run}/admin_submit.json", {"targets": [{"merchant": "K4G", "store_id": "92"}]})
+        s = self.snap(None)
+        self.assertNotIn("interrupted", s["task"]["last_sweep"])
+        self.assertEqual(s["alerts"], [])
+
+
+class LaunchSourceTests(SnapshotCase):
+    """« (lancé au terminal) » se lit sur ``admin_submit.json`` (écrit par ``_spawn`` seul, avec
+    le pid de l'enfant), jamais sur ``marker.source`` : ``scripts/10`` et ``scripts/05`` écrivent
+    toujours ``source: "cli"``, même lancés par l'admin."""
+
+    def marker(self, run_id, kind, pid):
+        (self.root / "state" / "active_run.json").write_text(json.dumps({
+            "run_id": run_id, "kind": kind, "source": "cli", "pid": pid,
+            "started_at": "2026-09-30T08:00:00Z"}))
+
+    def test_admin_injoignable_balayage_lance_par_l_admin(self):
+        self.group_a_sweep(admin_pid=os.getpid())
+        self.marker(LAUNCH, "data_entry_auto", os.getpid())
+        s = self.snap(None, reachable=False)
+        self.assertEqual(s["admin"]["busy"]["source"], "cli", "le marqueur dit toujours « cli »")
+        self.assertFalse(s["task"]["from_terminal"])
+        self.assertEqual(s["task"]["group"], "A")
+        self.assertFalse(s["task"]["label"].endswith("(lancé au terminal)"), s["task"]["label"])
+
+    def test_relance_au_terminal_avec_le_meme_run_id(self):
+        self.group_a_sweep(admin_pid=os.getpid() + 100000)
+        self.marker(LAUNCH, "data_entry_auto", os.getpid())
+        s = self.snap(None, reachable=False)
+        self.assertTrue(s["task"]["from_terminal"])
+        self.assertTrue(s["task"]["label"].endswith("(lancé au terminal)"))
+
+    def test_saisie_validee_lancee_par_l_admin(self):
+        run = "20260930-150000-k4g"
+        self.write(f"runs/{run}/admin_submit.json", {"state": "running", "kind": "submit",
+                                                     "pid": os.getpid()})
+        self.marker(run, "submit", os.getpid())
+        s = self.snap(None, reachable=False)
+        self.assertEqual(s["task"]["label"], "Saisie validée (Validation & Submit)")
+        (self.runs / run / "admin_submit.json").unlink()
+        s = self.snap(None, reachable=False)
+        self.assertEqual(s["task"]["label"], "Saisie validée (Validation & Submit) (lancé au terminal)")
+
+    def test_liste_des_runs_muette_retombe_sur_le_marqueur_jamais_sur_rien(self):
+        probe = lambda: {"reachable": True, "busy": None, "busy_unknown": True,  # noqa: E731
+                         "busy_error": "liste des runs : délai de 6 s dépassé", "error": None}
+        s = self.snap(None, probe=probe)
+        self.assertEqual(s["task"]["type"], "inconnue")
+        self.assertIn("Tâche inconnue", s["task"]["label"])
+        self.assertTrue(s["admin"]["reachable"])
+        self.assertTrue(s["admin"]["busy_unknown"])
+        self.group_a_sweep(admin_pid=os.getpid())
+        self.marker(LAUNCH, "data_entry_auto", os.getpid())
+        s = self.snap(None, probe=probe)
+        self.assertEqual(s["task"]["type"], "balayage")
+        self.assertTrue(s["task"]["label"].startswith("Balayage groupe A en boucle — passe 3"))
+
+
+class _Admin(http.server.BaseHTTPRequestHandler):
+    """Un faux admin : ``/api/meta`` tout de suite, ``/api/sort/runs`` après ``runs_delay``."""
+
+    meta_delay = 0.0
+    runs_delay = 0.0
+
+    def do_GET(self):  # noqa: N802
+        delay = self.meta_delay if self.path == "/api/meta" else self.runs_delay
+        if delay:
+            time.sleep(delay)
+        body = {"platforms": []} if self.path == "/api/meta" else \
+            {"runs": [], "busy": {"run_id": "r1", "kind": "sort_scan", "source": "admin"}}
+        data = json.dumps(body).encode()
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        except OSError:
+            pass
+
+    def log_message(self, *args):
+        pass
+
+
+class AdminProbeTests(unittest.TestCase):
+    """La sonde RÉELLE de l'admin, contre de vrais serveurs locaux (jamais le port 8650)."""
+
+    def serve(self, *, meta_delay=0.0, runs_delay=0.0):
+        handler = type("H", (_Admin,), {"meta_delay": meta_delay, "runs_delay": runs_delay})
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_address[1]}"
+
+    def test_admin_sain(self):
+        out = vps_snapshot.admin_probe_http(self.serve(), timeout=1.0, busy_timeout=1.0)
+        self.assertTrue(out["reachable"])
+        self.assertEqual(out["busy"]["run_id"], "r1")
+        self.assertNotIn("busy_unknown", out)
+
+    def test_admin_lent_a_lister_ses_runs_reste_joignable(self):
+        url = self.serve(runs_delay=1.5)
+        t0 = time.monotonic()
+        out = vps_snapshot.admin_probe_http(url, timeout=0.5, busy_timeout=0.5)
+        self.assertLess(time.monotonic() - t0, 1.3, "les deux lectures partent ensemble")
+        self.assertTrue(out["reachable"], out)
+        self.assertIsNone(out["busy"])
+        self.assertTrue(out["busy_unknown"])
+        self.assertIn("délai de 0.5 s dépassé", out["busy_error"])
+
+    def test_admin_qui_ne_repond_plus(self):
+        out = vps_snapshot.admin_probe_http(self.serve(meta_delay=1.5, runs_delay=1.5),
+                                            timeout=0.4, busy_timeout=0.4)
+        self.assertFalse(out["reachable"])
+        self.assertIn("délai de 0.4 s dépassé", out["error"])
+
+    def test_admin_arrete_connexion_refusee(self):
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+        sock.close()
+        out = vps_snapshot.admin_probe_http(f"http://127.0.0.1:{port}", timeout=0.5, busy_timeout=0.5)
+        self.assertFalse(out["reachable"])
+        self.assertTrue(out["error"])
+        self.assertIsNone(out["busy"])
+
+
+class RealTimeoutTests(unittest.TestCase):
+    """Le code 124 n'est pas fabriqué par un faux : un vrai processus qui dépasse son délai."""
+
+    def test_run_cmd_et_run_ssh_rendent_124(self):
+        for fn in (vps_snapshot.run_cmd, ov.run_ssh):
+            t0 = time.monotonic()
+            res = fn(["sleep", "5"], 0.3)
+            self.assertLess(time.monotonic() - t0, 3.0)
+            self.assertEqual(res.returncode, 124, fn.__name__)
+            self.assertIn("délai de 0.3 s dépassé", res.stderr)
+        self.assertEqual(ov.run_ssh(["/nonexistent/ssh-absent"], 1.0).returncode, 127)
+
+    def test_une_machine_qui_ne_repond_pas_a_temps_est_down_delai_depasse(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+            key = d / "k"
+            key.write_text("x")
+            cfg = d / "c.json"
+            cfg.write_text(json.dumps({"ssh_key": str(key), "hosts": [{"name": "lente",
+                                                                       "ssh": "debian@10.0.0.9"}]}))
+            o = ov.Overview(d, config_path=cfg, local_snapshot=lambda: local_snap(), timeout=0.3,
+                            runner=lambda argv, t: ov.run_ssh(["sleep", "5"], t))
+            by = {h["name"]: h for h in o.payload()["hosts"]}
+        self.assertEqual(by["lente"]["status"], "down")
+        self.assertEqual(by["lente"]["down_reasons"], ["délai de 0.3 s dépassé"])
+
+
 class SnapshotScriptTests(unittest.TestCase):
     """``scripts/20_vps_snapshot.py`` : UNE ligne JSON, code 0, même quand tout casse."""
 
@@ -494,6 +752,15 @@ class FakeSsh:
             return subprocess.CompletedProcess(argv, 0, json.dumps(snap), "")
         if kind == "chromium_down":
             snap = local_snap(services={"aks-admin": "active", "aks-chromium": "failed", "nginx": "active"})
+            return subprocess.CompletedProcess(argv, 0, json.dumps(snap), "")
+        if kind == "skew":
+            # une machine sur un autre commit : autre format, autre forme
+            snap = local_snap(schema=2, services={"aks-admin": "active", "nginx": {"state": "active"}},
+                              alerts="pas une liste", logs={"0": "pas une liste"})
+            return subprocess.CompletedProcess(argv, 0, json.dumps(snap), "")
+        if kind == "malformed":
+            snap = local_snap(alerts=["ok", {"x": 1}], logs=[None, {"ts": "t", "event": "e", "text": "t"}],
+                              services={"aks-admin": "active", "nginx": ["active"]}, task="texte")
             return subprocess.CompletedProcess(argv, 0, json.dumps(snap), "")
         if kind == "admin_down":
             snap = local_snap(admin={"reachable": False, "error": "URLError: refused", "busy": None})
@@ -591,6 +858,48 @@ class OverviewUnitTests(unittest.TestCase):
         o, _ = self.make([{"name": "a", "ssh": "debian@10.0.0.1"}], {"debian@10.0.0.1": "secret"})
         self.assertNotIn("LEAKED", json.dumps(o.payload()))
 
+    def test_une_photo_d_un_autre_format_est_down_jamais_un_500(self):
+        """Revue adverse du 2026-09-30 : ``services.nginx`` en objet faisait lever ``health()``
+        HORS de la garde — 500 pour toutes les machines, cache jamais écrit."""
+
+        now = [100.0]
+        o, fake = self.make([{"name": "saine", "ssh": "debian@10.0.0.1"},
+                             {"name": "autre-version", "ssh": "debian@10.0.0.2"},
+                             {"name": "tordue", "ssh": "debian@10.0.0.3"}],
+                            {"debian@10.0.0.1": "up", "debian@10.0.0.2": "skew",
+                             "debian@10.0.0.3": "malformed"}, clock=lambda: now[0])
+        d = o.payload()
+        by = {h["name"]: h for h in d["hosts"]}
+        self.assertEqual(by["saine"]["status"], "up")
+        self.assertEqual(by["cette-vm"]["status"], "up")
+        skew = by["autre-version"]
+        self.assertEqual(skew["status"], "down")
+        self.assertTrue(any("format 2 inconnu" in r for r in skew["down_reasons"]), skew["down_reasons"])
+        self.assertIn("service nginx illisible", skew["down_reasons"])
+        self.assertTrue(any(r.startswith("photo mal formée : ") and "alerts" in r and "logs" in r
+                            for r in skew["down_reasons"]), skew["down_reasons"])
+        # ce qui est relayé a la forme que la page sait dessiner
+        self.assertEqual(skew["snapshot"]["alerts"], [])
+        self.assertEqual(skew["snapshot"]["logs"], [])
+        self.assertEqual(skew["snapshot"]["services"]["nginx"], "illisible")
+        bad = by["tordue"]
+        self.assertEqual(bad["status"], "down")
+        self.assertEqual(bad["snapshot"]["alerts"], ["ok"])
+        self.assertEqual(bad["snapshot"]["logs"], [{"ts": "t", "event": "e", "text": "t"}])
+        self.assertIsNone(bad["snapshot"]["task"])
+        json.dumps(d)
+        # le cache est écrit : un second onglet ne relance aucun ssh
+        now[0] += 3
+        self.assertTrue(o.payload()["cached"])
+        self.assertEqual(len(fake.calls), 3)
+
+    def test_un_verdict_qui_leve_est_une_machine_down(self):
+        o, _ = self.make([{"name": "a", "ssh": "debian@10.0.0.1"}], {"debian@10.0.0.1": "up"})
+        with mock.patch.object(ov, "health", side_effect=TypeError("unhashable type: 'dict'")):
+            d = o.payload()
+        self.assertEqual({h["status"] for h in d["hosts"]}, {"down"})
+        self.assertTrue(d["hosts"][1]["down_reasons"][0].startswith("photo illisible : TypeError"))
+
     def test_sans_configuration_seule_cette_machine(self):
         o = ov.Overview(self.dir, config_path=self.dir / "absent.json",
                         runner=FakeSsh({}), local_snapshot=lambda: local_snap())
@@ -673,6 +982,14 @@ class OverviewRouteTests(AppTestCase):
         self.assertEqual([h["name"] for h in data["hosts"]], ["prod", "ancienne-vm"])
         self.assertEqual({h["status"] for h in data["hosts"]}, {"up"})
         self.assertEqual(response.getheader("Cache-Control"), "no-store")
+
+    def test_une_machine_d_une_autre_version_ne_met_pas_la_route_en_panne(self):
+        self.fake.answers["debian@10.0.0.1"] = "skew"
+        response, data = self._json("GET", "/api/overview")
+        self.assertEqual(response.status, 200)
+        by = {h["name"]: h for h in data["hosts"]}
+        self.assertEqual(by["prod"]["status"], "up")
+        self.assertEqual(by["ancienne-vm"]["status"], "down")
 
     def test_la_route_est_en_lecture_seule(self):
         for method in ("POST", "PUT", "DELETE"):

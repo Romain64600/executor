@@ -33,7 +33,7 @@ main.ov-main { max-width:1400px; }
 .task { font-size:1rem; font-weight:600; line-height:1.35; overflow-wrap:anywhere; }
 .task.task-aucune { color:var(--dim); font-weight:400; }
 .task.task-balayage, .task.task-saisie_par_page { color:var(--accent); }
-.task.task-maintenance { color:var(--warn); }
+.task.task-maintenance, .task.task-inconnue { color:var(--warn); }
 .task-meta { display:flex; flex-wrap:wrap; gap:.2rem .9rem; color:var(--dim); font-size:.8rem; }
 .task-meta span { overflow-wrap:anywhere; }
 .facts { display:grid; grid-template-columns:auto 1fr; gap:.1rem .7rem; font-size:.8rem; }

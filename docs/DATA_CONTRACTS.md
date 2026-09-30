@@ -1018,8 +1018,11 @@ transaction ; il est nommé plutôt que nié.
 
 L'onglet « Vue d'ensemble » (`ops/VUE_D_ENSEMBLE.md`). Produite par `src/vps_snapshot.snapshot`
 — en processus par l'admin pour sa propre machine, sur UNE ligne JSON par le script pour les
-autres (commande forcée de la clé ssh dédiée). Lecture seule, < 3 s, jamais une exception :
-chaque section illisible vaut `null` et son motif est dans `errors`.
+autres (commande forcée de la clé ssh dédiée). Lecture seule, < 3 s d'ordinaire (6 s au pire,
+quand l'admin tarde à lister ses runs), jamais une exception : chaque section illisible vaut
+`null` et son motif est dans `errors`. **`schema`** ne change que sur un changement de forme
+INCOMPATIBLE : un champ ajouté ne le touche pas (une machine d'un autre `schema` est affichée DOWN
+« photo au format N inconnu » jusqu'à ce que les machines soient au même commit).
 
 ```json
 {"schema": 1, "at": "…Z", "host": "vmi3565249",
@@ -1030,10 +1033,12 @@ chaque section illisible vaut `null` et son motif est dans `errors`.
  "disk": {"path": "/", "used_pct": 2.9, "free_gb": 274.6, "total_gb": 295.1},
  "mem": {"total_mb": 24038, "available_mb": 19319, "used_pct": 19.6}, "boot_id": "…",
  "admin": {"reachable": true, "latency_ms": 113, "error": null,
+           "busy_unknown"?: true, "busy_error"?: "liste des runs : délai de 6 s dépassé",
            "busy": {"run_id": "…", "kind": "data_entry_auto", "source": "admin"} | null},
- "task": {"type": "aucune | balayage | saisie_par_page | tri | maintenance | autre",
+ "task": {"type": "aucune | balayage | saisie_par_page | tri | maintenance | autre | inconnue",
           "label": "Balayage groupe A en boucle — passe 3, GOG page 12, saisie depuis 14:03 UTC",
           "kind": "data_entry_auto", "run_id": "…", "source": "admin | cli",
+          "from_terminal": false,
           "group": "A | B | liste blanche | null", "merchants": ["…"], "loop": true,
           "state": "running | pause | stopped | fini | démarrage", "pass": 3,
           "pass_run_id": "…-pass3", "next_pass_at": "…Z", "started_at": "…Z",
@@ -1042,8 +1047,10 @@ chaque section illisible vaut `null` et son motif est dans `errors`.
           "created": {"total": 1595, "loop_finished_passes": 1553, "pass": 40, "page": 2},
           "halted_merchants": ["GameSeal: extract_failed_p3"], "unknown_offers": 0,
           "maintenance": null | {"pending": false, "processes": [...], "label": "…"},
-          "last_sweep": {"run_id": "…", "created": 900, "ended_at": "…Z",
-                         "stopped_reason": "session_expired", "stopped_label": "…"}},
+          "last_sweep": {"run_id": "…", "loop": true, "created": 900, "ended_at": "…Z",
+                         "stopped_reason": "session_expired", "stopped_label": "…",
+                         "interrupted"?: true, "interrupted_label"?: "…",
+                         "last_seen_at"?: "…Z", "stopped_at_page"?: {"merchant": "GOG", "page": 7, …}}},
  "logs": [{"ts": "…Z", "event": "submit_offer", "text": "offre 8 : créée",
            "run": "…-p12", "merchant": "GOG", "page": 12}],
  "logs_live": true, "alerts": ["…"], "reboot_required": false,
@@ -1060,6 +1067,18 @@ chaque section illisible vaut `null` et son motif est dans `errors`.
   d'un balayage lancé au terminal (`--group`). Quand l'admin ne répond pas, le run déclaré
   retombe sur `state/active_run.json`. **Maintenance** : `state/maintenance/pending.json`, ou un
   processus `18_vps_maintenance.py run|postboot` / `19_restart_vps.py` (jamais `status`).
+  **`from_terminal`** (et « (lancé au terminal) » dans `label`) se lit sur
+  `runs/<id>/admin_submit.json`, jamais sur `source` : `scripts/10` et `scripts/05` écrivent
+  toujours `source: "cli"` dans le marqueur, même lancés par l'admin ; `admin_submit.json` n'est
+  écrit que par `SubmitManager._spawn`, avec le pid de l'enfant (celui du marqueur) — un autre pid
+  = relance au terminal avec le même `--run-id`. **`inconnue`** : l'admin répond (`/api/meta`)
+  mais pas la liste de ses runs (`/api/sort/runs`, 6 s), et aucun marqueur — jamais « Rien en
+  cours » d'un silence. **`last_sweep.interrupted`** : la machine est au repos mais la boucle dit
+  encore `running` / `pause`, ou le recap d'un balayage simple n'a pas `finished_at` — un
+  balayage qui finit écrit sa fin AVANT de rendre son marqueur, donc le processus a disparu
+  (admin redémarré, OOM, SIGKILL) ; jamais d'`ended_at` alors, `last_seen_at` = sa dernière
+  trace, et les créées comptent la passe inachevée et la page tuée (lue à son journal). Un
+  dossier SANS recap n'est pas interrompu (lancement en cours ou refusé).
 * **`logs`** — les 20 derniers événements utiles de `logs/<lancement>.jsonl` et du journal de la
   page en cours (ou de la dernière page finie), les plus récents d'abord ; sans `guard_snapshot`,
   `pacing`, `*_wait` ; une seule ligne par type de progression. Chaque enregistrement passe par
@@ -1070,5 +1089,10 @@ chaque section illisible vaut `null` et son motif est dans `errors`.
 `{"ssh_key": "<chemin absolu>", "hosts": [{"name", "label", "ssh": "user@hôte" | null,
 "key"?, "console_url"?}]}` ; `ssh: null` = la machine qui sert la page. Format complet et ligne
 `authorized_keys` : `ops/VUE_D_ENSEMBLE.md`. `GET /api/overview` rend `{at, hosts: [{name, label,
-console_url, local, ssh, reachable, latency_ms, snapshot | null, error, status: "up" | "down",
-down_reasons: [...]}], config: {file, configured, error}, ttl_s, cached, age_s}`.
+console_url, local, ssh, reachable, latency_ms, snapshot | null, error, malformed?: [...],
+status: "up" | "down", down_reasons: [...]}], config: {file, configured, error}, ttl_s, cached,
+age_s}`. La photo relayée est REMISE EN FORME avant d'être rendue (`normalize_snapshot`) :
+`services` en chaînes (sinon `"illisible"`), `alerts` liste de chaînes, `logs` liste d'objets,
+`task` / `admin` / `errors` / `code` / `disk` / `mem` / `last_maintenance` objets ou `null` ;
+chaque champ corrigé est nommé dans `malformed` et fait un motif de DOWN. Une machine d'une autre
+version ne met jamais la route en panne.
