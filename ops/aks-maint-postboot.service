@@ -1,0 +1,21 @@
+# Fin de maintenance au démarrage (scripts/18_vps_maintenance.py, 2026-09-30).
+# Installé et activé par `18_vps_maintenance.py run` juste avant un redémarrage. Ne fait rien
+# au démarrage ordinaire : il ne part que si une maintenance a laissé `pending.json`, puis il
+# vérifie services / invariants / session AKS et relance le balayage arrêté — et retire le
+# fichier, quoi qu'il arrive (une seule tentative par maintenance).
+[Unit]
+Description=AKS executor - fin de maintenance apres redemarrage (controles + relance)
+Wants=network-online.target
+After=network-online.target aks-admin.service aks-chromium.service
+ConditionPathExists=/home/debian/executor/state/maintenance/pending.json
+
+[Service]
+Type=oneshot
+User=debian
+Group=debian
+WorkingDirectory=/home/debian/executor
+ExecStart=/usr/bin/python3 /home/debian/executor/scripts/18_vps_maintenance.py postboot
+TimeoutStartSec=1800
+
+[Install]
+WantedBy=multi-user.target

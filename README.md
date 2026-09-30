@@ -233,7 +233,9 @@ executor/
 │   ├── 11_data_entry_by_urls.py         # entry from AKS page URLs — read-only preview (PC and console pages)
 │   ├── 12_data_entry_by_urls_submit.py  # entry from AKS page URLs — submit of a validated preview (safe)
 │   ├── 13_aks_ping.py          # the ONLY sanctioned AKS reachability probe (AKS/Staff UA)
-│   └── 14_feed_status.py       # per-merchant feed state → docs/feeds/<Merchant>.md (read-only on runs/)
+│   ├── 14_feed_status.py       # per-merchant feed state → docs/feeds/<Merchant>.md (read-only on runs/)
+│   ├── 18_vps_maintenance.py   # maintenance d'UN VPS : arrêt propre, apt sûr, reboot si requis, relance prouvée
+│   └── 19_restart_vps.py       # pilote de la maintenance, VPS par VPS (à blanc par défaut) — ops/MAINTENANCE_VPS.md
 ├── manual_launch/
 │   └── run_executor.sh         # terminal-only launcher: prepare / check / dry-run / submit
 ├── ops/                        # admin page install: systemd unit, nginx vhost, runbook
@@ -519,6 +521,10 @@ cookies dans SA console) :
 
 Le verrou `state/browser.lock` ne vaut que pour une machine : **jamais le même marchand ni le
 même groupe sur deux machines à la fois**.
+
+**Maintenance (mise à jour Debian, redémarrage, relance)** : `scripts/19_restart_vps.py`, à blanc
+par défaut, un VPS après l'autre, la machine qui pilote en dernier — [`ops/MAINTENANCE_VPS.md`](ops/MAINTENANCE_VPS.md)
+(2026-09-30). Jamais de redémarrage du VPS de secours sans `--reboot-secours`.
 
 `A` / `B` sont les groupes figés de `src/merchant_groups.py` ; `i/n` répartit à la volée les
 marchands allowlistés sur `n` machines (LPT sur la charge en attente, déterministe). Voir la

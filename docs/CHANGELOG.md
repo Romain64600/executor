@@ -3,6 +3,35 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-30 — Maintenance des VPS : `scripts/18_vps_maintenance.py` + `scripts/19_restart_vps.py`
+
+Romain : « on va pouvoir travailler sur un script de restart, que tu feras passer sur les VPS
+esclaves puis le tien », puis, après la revue de son premier jet, « go pour la v2 » — « ne teste
+pas sur le VPS de secours, il travaille sur une urgence top 1 ». Le premier jet (bash) aurait
+coupé les saisies en cours (les balayages sont des enfants d'`aks-admin`, pas de tmux), laissé
+`needrestart` redémarrer l'admin, écrasé des fichiers de config, tué les sessions tmux, et son
+étape d'attente était inversée (et sans fin). La v2 (`ops/MAINTENANCE_VPS.md`) :
+
+- **Agent sur chaque VPS** (`18`) : `status` / `run [--dry-run]` / `postboot`. Arrêt coopératif du
+  balayage `data_entry_auto` de l'admin et attente de zéro enfant, sinon rien ; tout autre run →
+  reporté. apt avec `NEEDRESTART_MODE=l` + `NEEDRESTART_SUSPEND`, `--force-confdef/confold`,
+  `DPkg::Lock::Timeout` ; Chromium bloqué vérifié. Redémarrage seulement si
+  `/var/run/reboot-required` et politique `auto`, programmé par `systemd-run` (code 42) ; la fin
+  (services, invariants faisant foi, session wp-admin prouvée, relance) est faite par
+  `ops/aks-maint-postboot.service` au démarrage, ou tout de suite sans redémarrage. Relance :
+  un balayage simple reprend au marchand en cours, une boucle repart en boucle.
+- **Pilote** (`19`) : à blanc par défaut ; `secours` → `ancienne-vm` → `cette-vm` (toujours la
+  dernière) ; retour prouvé par un nouveau `boot_id` (15 min) puis `last_result` (25 min) ;
+  s'arrête au premier VPS pas au vert. Le VPS de secours n'est jamais redémarré sans
+  `--reboot-secours` (et pas si `hermes` a des processus, sauf `--allow-hermes`).
+- **Revue adverse avant premier usage** (3 lecteurs, 9 vérificateurs) : 8 constats confirmés,
+  corrigés, chacun épinglé par un test qui rougit sans son correctif — arrêt seulement à un moment
+  sûr (la grâce d'« Arrêter » est fixe : 75 s / 120 s), redémarrage relu APRÈS apt, relance lue
+  dans le recap final (ajouts de la console), panne après l'arrêt jamais muette (code 7),
+  « script absent » distinct d'une panne (127), plus de `git pull` par le pilote (l'agent tire
+  après l'arrêt), Chromium non bloqué → reporté, SIGHUP ignoré, pilote jusqu'à 5 h.
+- Tests : `tests/test_vps_maintenance.py` (41, doublures seulement, aucun VPS touché).
+
 ## 2026-09-30 — `[R68]` Allyouplay : la fiche produit fait foi (EN LIGNE le 30/09 — Romain : « go pour la mise en ligne »)
 
 Romain : « go pour 1 » — « lire la page Allyouplay de chaque offre, comme pour Gamesplanet FR :
