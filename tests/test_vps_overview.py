@@ -820,8 +820,8 @@ class OverviewUnitTests(unittest.TestCase):
         self.assertIn("Connection refused", by["eteinte"]["error"])
         # la ligne ssh : la clé dédiée seule, sans commande après la cible
         argv = next(c for c in fake.calls if c[-1] == "debian@10.0.0.1")
-        self.assertEqual(argv[:4], ["ssh", "-i", str(self.key), "-T"])
-        for opt in ("BatchMode=yes", "ConnectTimeout=5", "StrictHostKeyChecking=accept-new",
+        self.assertEqual(argv[:6], ["ssh", "-F", "/dev/null", "-i", str(self.key), "-T"])
+        for opt in ("BatchMode=yes", "ConnectTimeout=5", "StrictHostKeyChecking=yes",
                     "IdentitiesOnly=yes"):
             self.assertIn(opt, argv)
         self.assertEqual(argv[-1], "debian@10.0.0.1", "aucune commande envoyée : c'est la commande forcée")
@@ -958,7 +958,8 @@ class OverviewUnitTests(unittest.TestCase):
         o = ov.Overview(self.dir, config_path=self.config, runner=fake, local_snapshot=lambda: local_snap())
         by = {h["name"]: h for h in o.payload()["hosts"]}
         self.assertEqual(by["opt"]["status"], "down")
-        self.assertIn("clé ssh absente", by["nokey"]["down_reasons"][0])
+        self.assertIn("clé ssh de lecture absente", by["nokey"]["down_reasons"][0])
+        self.assertNotIn(str(self.dir / "absente"), json.dumps(by["nokey"]), "jamais le chemin de la clé")
         self.assertEqual(fake.calls, [])
 
     def test_photo_locale_en_echec(self):

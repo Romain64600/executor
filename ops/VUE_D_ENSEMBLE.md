@@ -45,12 +45,15 @@ La ligne ssh de l'admin **ne porte aucune commande** ; c'est la commande forcée
 s'exécute, et elle ne sait faire qu'une chose — imprimer la photo :
 
 ```
-ssh -i <clé> -T -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=accept-new \
+ssh -F /dev/null -i <clé> -T -o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=yes \
     -o IdentitiesOnly=yes debian@<IP>
 ```
 
 `IdentitiesOnly=yes` : seule la clé dédiée est présentée — jamais une autre clé de `debian` qui
-ouvrirait un shell. Toutes les machines sont lues en parallèle, **10 s au plus** chacune (au-delà :
+ouvrirait un shell. `-F /dev/null` : aucun `ssh_config` ne peut y ajouter une clé, un proxy ou une
+option. `StrictHostKeyChecking=yes` : la clé d'hôte de chaque machine est posée À L'INSTALLATION,
+vérifiée (étape 3), jamais acceptée en silence par un rafraîchissement de la page (revue adverse
+du 30/09). Toutes les machines sont lues en parallèle, **10 s au plus** chacune (au-delà :
 DOWN « délai de 10 s dépassé ») ; le résultat est gardé **10 s** côté serveur, donc plusieurs
 onglets ouverts ne multiplient pas les connexions.
 
@@ -72,8 +75,7 @@ est la commande forcée : absent, la machine s'affiche DOWN « can't open file �
 habituel, entre deux balayages : `sudo -u debian -H git -C /home/debian/executor pull --ff-only`
 puis, si aucun run ne tourne, `sudo systemctl restart aks-admin` sur la machine qui affiche.
 
-**1. La clé dédiée**, générée **sous `debian`** (le service `aks-admin` tourne sous `debian` ;
-`accept-new` écrit dans `/home/debian/.ssh/known_hosts`) :
+**1. La clé dédiée**, générée **sous `debian`** (le service `aks-admin` tourne sous `debian`) :
 
 ```bash
 sudo -u debian -H ssh-keygen -t ed25519 -N '' -C 'aks-overview@vmi3565249' \
@@ -96,7 +98,20 @@ command="python3 /home/debian/executor/scripts/20_vps_snapshot.py",restrict,no-p
   distante est un jour jointe par un nom qui résout en IPv6, ajouter l'IPv6 source à la liste
   (`from="217.76.57.126,<ipv6>"`) — sinon la clé est refusée (DOWN « Permission denied »).
 
-**3. La configuration** : `/home/debian/executor/state/overview_hosts.json` (jamais commité —
+
+**3. La clé d'hôte de chaque machine distante**, dans `/home/debian/.ssh/known_hosts` — vérifiée,
+jamais acceptée à l'aveugle. La référence : les entrées déjà connues de `root` sur cette machine
+(clé de déploiement, confiance posée à la première connexion d'administration) :
+
+```bash
+for ip in 51.38.37.254 169.58.5.63; do
+  ssh-keygen -F "$ip" -f /root/.ssh/known_hosts | grep -v '^#'   # l'entrée de référence
+  ssh-keyscan -t ed25519 "$ip" 2>/dev/null                      # ce que la machine présente
+done   # les deux empreintes doivent être IDENTIQUES, puis :
+ssh-keygen -F 51.38.37.254 -f /root/.ssh/known_hosts | grep -v '^#' | sudo -u debian tee -a /home/debian/.ssh/known_hosts
+```
+
+**4. La configuration** : `/home/debian/executor/state/overview_hosts.json` (jamais commité —
 `state/`), propriétaire `debian` :
 
 ```json
@@ -126,7 +141,7 @@ L'ordre des cartes est celui du fichier. Une entrée invalide (cible ssh qui com
 clé relative ou absente, nom en double…) s'affiche **DOWN avec son motif** et aucun ssh ne part.
 Le fichier est relu à chaque calcul (toutes les 10 s au plus) : pas de redémarrage de l'admin.
 
-**4. Vérifier**, depuis `vmi3565249` :
+**5. Vérifier**, depuis `vmi3565249` :
 
 ```bash
 # la photo de la machine distante, telle que l'admin la lira

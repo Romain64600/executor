@@ -77,10 +77,14 @@ def _utc_now() -> str:
 def ssh_argv(key: str, target: str) -> list[str]:
     """La ligne ssh — SANS commande : c'est la commande forcée de la clé qui s'exécute."""
 
-    return ["ssh", "-i", key, "-T",
+    # Revue adverse du 30/09 (P3) : ``-F /dev/null`` — aucun ssh_config (utilisateur ni système)
+    # ne peut ajouter une clé, un proxy ou une option ; ``StrictHostKeyChecking=yes`` — la clé
+    # d'hôte est posée à l'installation, VÉRIFIÉE (ops/VUE_D_ENSEMBLE.md), jamais acceptée en
+    # silence par un rafraîchissement de la page.
+    return ["ssh", "-F", "/dev/null", "-i", key, "-T",
             "-o", "BatchMode=yes",
             "-o", f"ConnectTimeout={CONNECT_TIMEOUT_S}",
-            "-o", "StrictHostKeyChecking=accept-new",
+            "-o", "StrictHostKeyChecking=yes",
             "-o", "IdentitiesOnly=yes",
             target]
 
@@ -359,7 +363,7 @@ class Overview:
             elif base["local"]:
                 self._read_local(base)
             elif not self.key_exists(host["key"]):
-                base["error"] = f"clé ssh absente : {host['key']}"
+                base["error"] = "clé ssh de lecture absente (voir ops/VUE_D_ENSEMBLE.md)"
             else:
                 # la clé sert à la ligne ssh ; elle ne part pas dans la réponse
                 self._read_remote(dict(base, key=host["key"]), into=base)
