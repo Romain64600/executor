@@ -302,6 +302,33 @@ def remaining_after_stop(recap: dict | None) -> list[dict] | None:
     return out
 
 
+RESOLV_CONF = Path("/etc/resolv.conf")
+# Le fichier de /run que chaque gestionnaire DNS régénère au démarrage → son service.
+DNS_MANAGERS = (("/run/resolvconf/", "resolvconf"), ("/run/systemd/resolve/", "systemd-resolved"))
+
+
+def dns_survives_reboot(runner: Runner = run_cmd) -> tuple[bool, str]:
+    """Le DNS reviendra-t-il après un redémarrage ? Leçon du 2026-09-30 (ancienne VM) : son
+    ``/etc/resolv.conf`` pointe vers ``/run/resolvconf/resolv.conf``, que personne ne régénérait
+    au démarrage (``resolvconf.service`` désactivé) — après le redémarrage, plus aucun nom ne se
+    résolvait, AKS injoignable, rien relancé. /run est effacé à chaque démarrage : le service qui
+    le remplit doit être activé."""
+
+    try:
+        target = os.path.realpath(RESOLV_CONF)
+    except OSError:
+        return False, "resolv.conf illisible"
+    for prefix, service in DNS_MANAGERS:
+        if target.startswith(prefix):
+            res = runner(["systemctl", "is-enabled", service], timeout=20)
+            state = (res.stdout or "").strip()
+            if state in ("enabled", "static", "enabled-runtime", "alias"):
+                return True, f"{service} activé"
+            return False, (f"/etc/resolv.conf → {target}, mais {service} n'est pas activé "
+                           f"({state or 'inconnu'}) : le DNS ne reviendrait pas après un redémarrage")
+    return True, f"resolv.conf fixe ({target})"
+
+
 def admin_children(runner: Runner = run_cmd) -> int | None:
     """Le nombre de processus enfants du service aks-admin (None si illisible)."""
 
@@ -335,6 +362,7 @@ def status(runner: Runner = run_cmd, admin: Callable[..., dict] = admin_request)
     out["sudo"] = runner(["sudo", "-n", "true"], timeout=20).returncode == 0
     hermes = runner(["pgrep", "-u", "hermes"], timeout=20)
     out["hermes_processes"] = len((hermes.stdout or "").split()) if hermes.returncode == 0 else 0
+    out["dns_boot_ok"], out["dns_boot"] = dns_survives_reboot(runner)
     out["pending"] = (STATE_DIR / PENDING).exists()
     out["last_result"] = read_json(STATE_DIR / LAST)
     return out
@@ -368,6 +396,10 @@ def plan_for(st: dict[str, Any], reboot_policy: str) -> dict[str, Any]:
     elif st.get("admin_children"):
         plan["blocked"] = (f"{st.get('admin_children')} processus sous aks-admin sans run déclaré "
                            "— maintenance reportée")
+        return plan
+    if st.get("reboot_required") and st.get("dns_boot_ok") is False and reboot_policy == "auto":
+        plan["reboot"] = False
+        plan["reboot_note"] = f"redémarrage requis mais NON fait : {st.get('dns_boot')}"
         return plan
     if st.get("reboot_required"):
         if reboot_policy != "auto":
@@ -404,7 +436,7 @@ def stop_and_wait(run_id: str, *, timeout: int, runner: Runner = run_cmd,
             busy = "?"
         kids = admin_children(runner)
         if busy is None and kids == 0:
-            return True, f"arrêté ({answer.get('stopped') or run_id}) en {waited} s"
+            return True, f"arrêté ({run_id}, {why_safe}) en {waited} s"
         sleep(10)
         waited += 10
     return False, f"toujours actif après {timeout} s — rien d'autre n'est fait"
@@ -569,6 +601,9 @@ def reboot_decision(policy: str, allow_hermes: bool, *, runner: Runner = run_cmd
         return False, "pas de redémarrage requis"
     if policy != "auto":
         return False, "redémarrage requis par Debian, NON fait (politique « never »)"
+    dns_ok, dns_why = dns_survives_reboot(runner)
+    if not dns_ok:
+        return False, f"redémarrage requis, NON fait : {dns_why}"
     try:
         busy = admin("/api/sort/runs").get("busy")
     except Exception as exc:                  # noqa: BLE001

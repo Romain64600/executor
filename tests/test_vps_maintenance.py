@@ -300,6 +300,8 @@ class LeRedemarrageEstReluJusteAvant(unittest.TestCase):
                 return _cp(1, "")
             if cmd[:3] == ["pgrep", "-u", "hermes"]:
                 return _cp(0 if hermes else 1, hermes)
+            if cmd[:2] == ["systemctl", "is-enabled"]:
+                return _cp(0, "enabled\n")
             return _cp(0)
         return runner
 
@@ -351,6 +353,46 @@ class LaRelanceSeLitDansLeRecapFinal(unittest.TestCase):
                                                      stop_timeout=60, pull=False))
         self.assertEqual(code, 0)
         self.assertEqual([t["merchant"] for t in vu["relaunch"]["targets"]], ["Eneba", "K4G"])
+
+
+class LeDnsDoitSurvivreAuRedemarrage(unittest.TestCase):
+    """2026-09-30, ancienne VM : resolv.conf → /run/resolvconf/…, resolvconf.service désactivé —
+    après le redémarrage, plus de DNS, AKS injoignable, rien relancé."""
+
+    def _avec(self, cible, etat):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        lien = pathlib.Path(tmp.name) / "resolv.conf"
+        lien.symlink_to(cible)
+        p = mock.patch.object(M, "RESOLV_CONF", lien)
+        p.start()
+        self.addCleanup(p.stop)
+        return lambda cmd, timeout=0: _cp(0 if etat == "enabled" else 1, etat + "\n")
+
+    def test_resolvconf_desactive_interdit_le_redemarrage(self):
+        runner = self._avec("/run/resolvconf/resolv.conf", "disabled")
+        ok, why = M.dns_survives_reboot(runner)
+        self.assertFalse(ok)
+        self.assertIn("resolvconf", why)
+        with tempfile.TemporaryDirectory() as tmp:
+            requis = pathlib.Path(tmp) / "reboot-required"
+            requis.write_text("x")
+            with mock.patch.object(M, "REBOOT_REQUIRED", requis):
+                ok, why = M.reboot_decision("auto", False, runner=runner,
+                                            admin=lambda p, b=None: {"busy": None})
+        self.assertFalse(ok)
+        self.assertIn("DNS", why)
+
+    def test_les_bons_cas(self):
+        self.assertTrue(M.dns_survives_reboot(self._avec("/run/resolvconf/resolv.conf", "enabled"))[0])
+        self.assertTrue(M.dns_survives_reboot(self._avec("/run/systemd/resolve/resolv.conf", "enabled"))[0])
+
+    def test_le_plan_le_dit(self):
+        plan = M.plan_for({"admin": "ok", "sudo": True, "busy": None, "admin_children": 0,
+                           "reboot_required": True, "hermes_processes": 0, "dns_boot_ok": False,
+                           "dns_boot": "resolvconf n'est pas activé"}, "auto")
+        self.assertFalse(plan["reboot"])
+        self.assertIn("resolvconf", plan["reboot_note"])
 
 
 class UnePanneApresLArretNEstJamaisMuette(unittest.TestCase):

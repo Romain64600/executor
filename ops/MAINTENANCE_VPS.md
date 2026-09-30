@@ -23,6 +23,15 @@ jamais muette (code 7, `last_result.json`, Discord) et arrête le pilote au lieu
 (`--pull`), jamais sous un run ; un Chromium non bloqué en version reporte la maintenance ; une
 connexion ssh coupée n'interrompt pas l'agent (SIGHUP ignoré), et le pilote attend jusqu'à 5 h.
 
+**Premier passage réel — ancienne VM, 2026-09-30 14:26 UTC.** Arrêt de la boucle A à un moment
+sûr, 9 paquets, redémarrage (requis par Debian) : la machine est revenue en 1 min, mais **sans
+DNS** — `/etc/resolv.conf` y pointe vers `/run/resolvconf/resolv.conf`, et `resolvconf.service`
+était DÉSACTIVÉ : /run étant vidé au démarrage, plus aucun nom ne se résolvait. Les invariants
+ont vu AKS injoignable, rien n'a été relancé (comportement voulu). Réparé (`resolvconf -u`,
+`systemctl enable resolvconf`), fin reprise, boucle A relancée par l'admin
+(`20260930-143231-auto`). **Garde ajoutée** : un redémarrage n'est plus autorisé si le service
+qui régénère `resolv.conf` (resolvconf, ou systemd-resolved) n'est pas activé (`dns_boot_ok`).
+
 ## Les deux scripts
 
 * **`scripts/18_vps_maintenance.py`** — sur CHAQUE VPS, sous `debian` (sudo sans mot de passe) :

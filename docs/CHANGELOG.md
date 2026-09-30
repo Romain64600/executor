@@ -30,7 +30,12 @@ coupé les saisies en cours (les balayages sont des enfants d'`aks-admin`, pas d
   dans le recap final (ajouts de la console), panne après l'arrêt jamais muette (code 7),
   « script absent » distinct d'une panne (127), plus de `git pull` par le pilote (l'agent tire
   après l'arrêt), Chromium non bloqué → reporté, SIGHUP ignoré, pilote jusqu'à 5 h.
-- Tests : `tests/test_vps_maintenance.py` (41, doublures seulement, aucun VPS touché).
+- Tests : `tests/test_vps_maintenance.py` (44, doublures seulement, aucun VPS touché).
+- **Premier passage réel (ancienne VM, 14:26 UTC)** : arrêt sûr de la boucle A, 9 paquets,
+  redémarrage — revenue sans DNS (`resolv.conf` → `/run/resolvconf/…`, `resolvconf.service`
+  désactivé) ; invariants rouges, rien relancé, comme voulu. Réparé et rendu persistant
+  (`systemctl enable resolvconf`), boucle A relancée par l'admin (`20260930-143231-auto`).
+  Garde ajoutée : pas de redémarrage si le service qui régénère `resolv.conf` n'est pas activé.
 
 ## 2026-09-30 — `[R68]` Allyouplay : la fiche produit fait foi (EN LIGNE le 30/09 — Romain : « go pour la mise en ligne »)
 
