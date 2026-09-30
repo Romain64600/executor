@@ -403,10 +403,13 @@ CONFIG = make_config(
     precheck=precheck,
     url_platform=url_platform,
     offer_page_resolver=offer_signals,
+    # Revue adverse du 30/09 : sans ce drapeau, un titre Xbox « … - UK » prenait sa région du
+    # titre sans ouvrir la fiche, et une fiche « Platform: Steam » sur une ligne Xbox passait.
+    console_page_authoritative=True,
     notes=("feed store 17 — liens d'affiliation `anandadigitalbv.sjv.io/…?u=<fiche "
            "allyouplay.com>` : la fiche de `u` fait foi pour le domaine et les signaux d'URL, "
            "`u` est l'identité. [R68] plateforme = titre, puis codes du slug (-ga-ste- / "
            "-ga-gog-), puis l'attribut « Platform » de la fiche ; région = available_countries "
-           "de la fiche, règle [R59] de Romain ; « [Mac] » refusé (2026-09-30, branche "
-           "allyouplay-affiliate)."),
+           "de la fiche, règle [R59] de Romain ; « [Mac] » refusé (2026-09-30, en ligne le "
+           "30/09)."),
 )

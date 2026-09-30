@@ -396,6 +396,68 @@ class DeBoutEnBout(unittest.TestCase):
                                 or "BELGIUM" in res.reason, res.reason)
 
 
+class LaFicheFaitFoiSurLaBrancheConsole(unittest.TestCase):
+    """Revue adverse du 30/09 (deux P1) : sur la branche console, un créneau de région du titre
+    (« - UK », « - WW »…) passait AVANT la fiche, qui n'était jamais ouverte ; et la plateforme de
+    la fiche n'y était pas lue — une fiche « Platform: Steam » sur une ligne Xbox entrait sur les
+    pages Xbox. `MerchantConfig.console_page_authoritative` : la fiche est lue pour toute ligne
+    console, le titre ne peut que la confirmer."""
+
+    TOUS = frozenset(set(a.ISO2_TO_NAME) | {"JP", "BR"})
+
+    def _xbox(self, pays, plateforme="XBOX CONSOLE"):
+        page = a.ProductPage(platform_text=plateforme, operating_systems=(),
+                             available_countries=frozenset(pays))
+        appels = []
+
+        def fetch(url, http_get_fn=None):
+            appels.append(url)
+            return page
+        return fetch, appels
+
+    def _match(self, nom, fetch):
+        with mock.patch.object(a, "fetch_product_page", side_effect=fetch):
+            return match_offer(_offre(nom, "xbox/onimusha-way-of-the-sword-xbox-series-xs"),
+                               resolver=lambda n, **k: None, consoles=True)
+
+    def test_le_drapeau_est_declare(self):
+        self.assertTrue(merchant_config("Allyouplay").console_page_authoritative)
+        for autre in ("Instant Gaming", "Gamerall", "Kinguin", "Loaded"):
+            with self.subTest(autre):
+                cfg = merchant_config(autre)
+                self.assertFalse(cfg is not None and cfg.console_page_authoritative)
+
+    def test_un_creneau_du_titre_n_evite_plus_la_fiche(self):
+        fetch, appels = self._xbox({"BE"})
+        res = self._match("Onimusha: Way of the Sword - Xbox Series X|S - UK", fetch)
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertEqual(len(appels), 1, "la fiche doit être ouverte malgré « - UK »")
+        self.assertIn("forbidden region", res.reason)
+
+    def test_titre_et_fiche_en_desaccord_c_est_un_refus(self):
+        fetch, appels = self._xbox(self.TOUS)          # fiche : monde
+        res = self._match("Onimusha: Way of the Sword - Xbox Series X|S - UK", fetch)
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("region contradiction", res.reason)
+        self.assertIn("(R68)", res.reason)
+
+    def test_une_fiche_de_boutique_pc_sur_une_ligne_console_est_un_conflit(self):
+        fetch, appels = self._xbox(self.TOUS, plateforme="STEAM")
+        res = self._match("Onimusha: Way of the Sword - Xbox Series X|S", fetch)
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("platform conflict: console row vs offer page=STEAM", res.reason)
+
+    def test_titre_muet_et_fiche_monde_la_ligne_continue(self):
+        # La fiche seule décide ; la suite (page AKS) refuse ici faute de page simulée — mais
+        # jamais sur la région ni la plateforme.
+        fetch, appels = self._xbox(self.TOUS)
+        res = self._match("Onimusha: Way of the Sword - Xbox Series X|S", fetch)
+        self.assertEqual(len(appels), 1)
+        reason = getattr(res, "reason", "")
+        for motif in ("forbidden region", "region contradiction", "platform conflict", "unreadable"):
+            self.assertNotIn(motif, reason)
+
+
 class LesAutresMarchandsNeBougentPas(unittest.TestCase):
     def test_seul_allyouplay_lit_cette_fiche(self):
         self.assertIs(merchant_config("Allyouplay").offer_page_resolver, a.offer_signals)

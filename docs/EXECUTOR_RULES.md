@@ -1071,8 +1071,7 @@ so a raw `&currency=EUR` in a query string survives instead of becoming
 URL domain matches the merchant (e.g. must contain `kinguin.net` for Kinguin)
 `[KINGUIN]`.
 
-**Lien d'affiliation sur un hôte tiers (2026-09-30, Allyouplay — branche
-`allyouplay-affiliate`).** Un marchand peut déclarer `MerchantConfig.affiliate_hosts` : les
+**Lien d'affiliation sur un hôte tiers (2026-09-30, Allyouplay — en ligne le 30/09).** Un marchand peut déclarer `MerchantConfig.affiliate_hosts` : les
 hôtes d'un redirecteur dont le paramètre `u` porte SA fiche (Allyouplay :
 `anandadigitalbv.sjv.io/c/1297091/2866230/30655?…&u=https://www.allyouplay.com/pc/<slug>`).
 `landing_url` rend la fiche seulement si le lien est sur un hôte déclaré ET que `u` est sur
@@ -3909,6 +3908,18 @@ verrouillée Europe. 0 faux positif sur 86 820 lignes distinctes des runs de cet
   les rougissent toutes.
 
 ### `[R68]` Allyouplay (store 17) — la fiche produit fait foi : plateforme et pays autorisés (2026-09-30)
+
+**En ligne le 2026-09-30** (Romain : « go pour la mise en ligne », après l'aperçu final en lecture
+seule sur les 296 lignes : 119 candidats PC Steam — GLOBAL 109, US 7, EU 3 — et toutes les lignes
+Xbox refusées sur leurs pays).
+
+**Revue adverse avant mise en ligne (30/09) — trois correctifs.** (1) La recherche de preuve
+« partie du feed » cherche le slug de la FICHE (`u`) et non plus `30655`, segment commun à toutes
+les offres (la page de recherche ne pagine pas et s'arrête à 300 lignes, `[P2-13]`) ; et pour tout
+marchand, une page de recherche de 300 lignes ou plus n'est jamais une preuve (UNKNOWN). (2)(3)
+`console_page_authoritative` : sur la branche console, la fiche est lue pour TOUTE ligne (un
+créneau de région du titre doit s'accorder avec elle) et une fiche « Platform: Steam / GOG… » sur
+une ligne console est un conflit, refusé `(R68)`.
 
 Romain : « go pour 1 ». L'option retenue, mot pour mot : « lire la page Allyouplay de chaque offre,
 comme pour Gamesplanet FR : elle s'ouvre sans blocage et donne la plateforme (Platform: Steam) et

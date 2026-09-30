@@ -142,6 +142,30 @@ def _identity_params_for_host(host: str) -> tuple[str, ...]:
     return ()
 
 
+def landing_url(url: str) -> str:
+    """La fiche du marchand derrière un lien d'affiliation DÉCLARÉ (``MerchantConfig.
+    affiliate_hosts``), retrouvée par l'HÔTE du lien comme ``url_identity_params`` ; ``url``
+    telle quelle pour tout autre hôte (2026-09-30, Allyouplay). Sert au terme de la recherche de
+    preuve du soumetteur : le chemin du lien est commun à toutes les offres, la fiche non."""
+
+    try:
+        host = urllib.parse.urlparse(str(url or "")).netloc.lower().split("@")[-1].split(":")[0]
+    except ValueError:
+        return url
+    cfg = _affiliate_config_for_host(host)
+    return cfg.landing_url(url) if cfg is not None else url
+
+
+@functools.lru_cache(maxsize=512)
+def _affiliate_config_for_host(host: str) -> MerchantConfig | None:
+    if not host:
+        return None
+    for cfg in MERCHANT_CONFIGS.values():
+        if host in {h.lower() for h in cfg.affiliate_hosts}:
+            return cfg
+    return None
+
+
 def merchant_config(merchant: str) -> MerchantConfig | None:
     """The config of ``merchant`` (case / whitespace-insensitive name), or None."""
 

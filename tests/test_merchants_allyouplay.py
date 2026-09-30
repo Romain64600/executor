@@ -186,14 +186,53 @@ class LIdentiteDUneOffreEstSaFiche(unittest.TestCase):
         gone, _, _ = self._sub(session)._verify_gone("1", self.UN, "17", "aks-merchant-feeds-9", "all", 5)
         self.assertFalse(gone)
 
-    def test_le_terme_de_recherche_reste_le_dernier_segment(self):
-        # Recherche filtrée par store (17) : toutes les lignes Allyouplay (≤ 3 pages sur 10 de
-        # budget), puis la clé d'identité (chemin + u) départage — comme Loaded.
+    def test_le_terme_de_recherche_est_le_slug_de_la_fiche(self):
+        # Revue adverse du 30/09 (P1) : « 30655 », dernier segment du chemin COMMUN, rendait tout
+        # le magasin, et la page de recherche s'arrête à 300 lignes sans paginer ([P2-13]) — une
+        # offre au-delà passait pour « partie ». Le terme est le slug de la fiche (`u`), présent
+        # mot pour mot dans l'URL stockée.
         from src.submitter import search_term
-        self.assertEqual(search_term(self.UN), "30655")
+        self.assertEqual(search_term(self.UN), "nivalis-nights-2")
+        self.assertIn("nivalis-nights-2", self.UN)
+
+    def test_un_slug_absent_du_texte_stocke_garde_l_ancien_terme(self):
+        # Le serveur cherche dans le texte STOCKÉ : un slug qui n'y figure pas tel quel (encodé
+        # autrement) ne peut pas servir de terme — l'ancien terme reste, et le plafond de
+        # `_scan_search` refuse une page pleine.
+        from src.submitter import search_term
+        encode = HOTE + "?prodsku=42863&u=https%3A%2F%2Fwww.allyouplay.com%2Fpc%2Fcaf%C3%A9&intsrc=X"
+        self.assertEqual(search_term(encode), "30655")
+
+    def test_une_page_de_recherche_pleine_ne_prouve_rien(self):
+        from src.submitter import FeedScanError
+        from tests.test_submitter import FakeSubmitSession
+        ids = [str(i) for i in range(1, 301)]
+        session = FakeSubmitSession([ids], rows={i: {"url": self.UN} for i in ids})
+        with self.assertRaises(FeedScanError) as ctx:
+            self._sub(session)._verify_gone("999", self.UN, "17", "aks-merchant-feeds-9", "all", 5,
+                                            search_locate=True)
+        self.assertIn("capped at 300", str(ctx.exception))
+
+    def test_la_preuve_par_recherche_trouve_l_offre_restee(self):
+        from tests.test_submitter import FakeSubmitSession
+        session = FakeSubmitSession([["1", "2"]], rows={"1": {"url": self.UN}, "2": {"url": self.UN}})
+        gone, _, _ = self._sub(session)._verify_gone("1", self.UN, "17", "aks-merchant-feeds-9", "all", 5,
+                                                     search_locate=True)
+        self.assertFalse(gone)
+        self.assertIn("search%5Bsearch%5D=nivalis-nights-2", session.nav[-1])
 
 
 class LesAutresMarchandsNeBougentPas(unittest.TestCase):
+    def test_le_terme_de_recherche_des_autres_ne_change_pas(self):
+        from src.submitter import search_term
+        for url, attendu in (
+            ("https://go.loaded.com/c/1297091/2640470/18216?u=https://www.loaded.com/x-pc-steam", "18216"),
+            ("https://www.kinguin.net/category/928664/nivalis-nights-pc-steam-cd-key", "nivalis-nights-pc-steam-cd-key"),
+            ("https://www.g2a.com/nivalis-nights-pc-steam-key-global-i10000515894001?adid=x", "nivalis-nights-pc-steam-key-global-i10000515894001"),
+        ):
+            with self.subTest(url):
+                self.assertEqual(search_term(url), attendu)
+
     def test_loaded_garde_son_identite(self):
         self.assertEqual(url_identity_params("https://go.loaded.com/c/1/2/3?u=https://www.loaded.com/x"),
                          ("u",))

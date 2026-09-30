@@ -3,7 +3,7 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
-## 2026-09-30 — `[R68]` Allyouplay : la fiche produit fait foi (branche `allyouplay-affiliate`, pas en ligne)
+## 2026-09-30 — `[R68]` Allyouplay : la fiche produit fait foi (EN LIGNE le 30/09 — Romain : « go pour la mise en ligne »)
 
 Romain : « go pour 1 » — « lire la page Allyouplay de chaque offre, comme pour Gamesplanet FR :
 elle s'ouvre sans blocage et donne la plateforme (Platform: Steam) et la liste complète des pays
@@ -31,6 +31,37 @@ où la clé s'active ». L'aperçu du même jour montrait 0 candidat PC (titres 
   (pas de « Platform »), X-COM Apocalypse (`-ga-gog-` contre « Platform: Steam »).
 - Tests : `tests/test_merchants_allyouplay_r68.py` (31, fiches réelles `tests/fixtures/allyouplay/`,
   bout en bout par `match_offer`) ; `test_merchants_misc` / `test_merchants_allyouplay` mis à jour.
+- **Aperçu final et mise en ligne (30/09).** Répétition en lecture seule sur les 296 lignes, VPS de
+  secours, 10:35 UTC : **119 candidats, tous PC Steam** — GLOBAL 109, US 7, EU 3 (Standard pour la
+  plupart, 11 DLC, Deluxe, Early Access, GOTY…) ; les 14 lignes Xbox refusées sur leurs pays
+  (« ALLYOUPLAY LOCK (EU + US) », 31 refus au total avec des points et 4 PC) — les 6 candidats
+  Xbox « région implicite » de la veille auraient été des écritures fausses. Refus : pas de page
+  AKS 38, autre produit 22, bundles 17, monnaies / points 15, « [Mac] » 10, fiche sans « Platform »
+  (Tinder) 10, Mac OS seul 6, ROW 4, plateforme inconnue (ESO) 2, conflit URL / fiche (X-COM) 2.
+  Les 3 offres de la saisie par page du 29/09 (Nivalis Nights, Transport Fever 3 et sa Deluxe) :
+  Steam GLOBAL. Romain : « go pour la mise en ligne ». Groupe B : Allyouplay est saisi à son
+  prochain passage.
+- **Revue adverse avant mise en ligne (30/09, 3 lecteurs + 3 vérificateurs, lecture seule) : trois
+  constats confirmés, corrigés AVANT la mise en ligne, chacun épinglé par un test qui rougit sans
+  son correctif.**
+  1. **(P1, chemin d'écriture) Preuve « partie du feed » aveugle au-delà de 300 lignes.** Le terme
+     de la recherche de preuve était le dernier segment du CHEMIN — `30655`, commun aux 296 offres
+     Allyouplay — donc la recherche rendait tout le magasin ; or la page de recherche ne pagine
+     pas et s'arrête à 300 lignes (`[P2-13]`) : au-delà, une offre encore au feed aurait été
+     déclarée « créée ». Correctif : le terme est le slug de la FICHE (`u`) quand il figure mot
+     pour mot dans l'URL stockée (`submitter.search_term`, `merchants.registry.landing_url`), la
+     vérification des lignes rendues le cherche dans la fiche ; et, pour TOUS les marchands, une
+     page de recherche de 300 lignes ou plus n'est plus une preuve (`FeedScanError` → UNKNOWN,
+     jamais « partie »). Loaded (terme `18216` commun, 16 lignes) garde son terme, protégé par ce
+     plafond.
+  2. **(P1) Branche console : un créneau de région du titre (« - UK », « - WW »…) évitait la
+     fiche.** 3. **(P1) Branche console : la plateforme de la fiche n'était pas lue** — une fiche
+     « Platform: Steam » sur une ligne Xbox serait entrée sur les pages Xbox. Correctif commun :
+     `MerchantConfig.console_page_authoritative` (Allyouplay seul) — la fiche est lue pour toute
+     ligne console, une boutique PC sur la fiche est un conflit, un créneau du titre doit
+     s'accorder avec la fiche (sinon refus `(R68)`). Instant Gaming / Gamerall inchangés.
+  Aucune de ces trois failles n'était déclenchée par les 296 lignes de l'aperçu (0 ligne console
+  à créneau vendable, magasin sous 300 lignes) : ce sont des écritures fausses possibles, fermées.
 - **Moteur de la requête** (corrigé après la première répétition, VPS de secours, 30/09 10:25 UTC :
   241 fiches sur 241 en 403 « Attention Required! | Cloudflare », donc 0 candidat) : le moteur
   keep-alive partagé (`aks_env.http_get` → `requests`) envoie l'en-tête « User-agent » tel
@@ -41,7 +72,7 @@ où la clé s'active ». L'aperçu du même jour montrait 0 candidat PC (titres 
   toutes les requêtes vers AKS — reste identique. Les tests à fiches figées ne pouvaient pas le
   voir : ils remplacent la requête.
 
-## 2026-09-30 — Allyouplay : le lien d'affiliation (branche `allyouplay-affiliate`, pas en ligne — en attente de la validation de Romain après aperçu)
+## 2026-09-30 — Allyouplay : le lien d'affiliation (en ligne le 30/09 avec `[R68]`, après l'aperçu validé par Romain)
 
 Romain (« Go ») : « accepter le lien d'affiliation seulement si u pointe vers allyouplay.com,
 et u sert d'identité comme Loaded ; ensuite un aperçu seul ». Constat du 29/09 (aperçu par page

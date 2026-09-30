@@ -5400,7 +5400,43 @@ def _console_plan(
     # conflit (PSN / NINTENDO ne sont pas des familles PC).
     _page_resolver = _cfg_console.offer_page_resolver if _cfg_console is not None else None
     grammar_base = sig.region_base
-    if grammar_base is not None:
+    _page_first = bool(_page_resolver is not None and _cfg_console is not None
+                       and _cfg_console.console_page_authoritative)
+    if _page_first:
+        # `[R68]` (Allyouplay, revue adverse du 2026-09-30) : la fiche fait foi pour TOUTE ligne
+        # console du marchand — région ET plateforme. Le titre ne peut que confirmer.
+        if len(distinct_region_bases(sig.region_words)) > 1:
+            return SkippedOffer(
+                offer,
+                f"console: merchant region contradiction {' / '.join(sig.region_words)} — "
+                "no single sellable base, not entered (R45)")
+        try:
+            _psig = _page_resolver(offer.url, offer.name)
+        except Exception as exc:  # noqa: BLE001 — page illisible → fail closed
+            return SkippedOffer(
+                offer,
+                f"console: {offer.merchant} offer page unreadable — unverifiable "
+                f"(R32/R45): {exc}")
+        if _psig.platform is not None:
+            return SkippedOffer(
+                offer,
+                f"console: {offer.merchant} platform conflict: console row vs offer page="
+                f"{_psig.platform} — not entered (R68)")
+        if not _psig.region_resolved:
+            return SkippedOffer(
+                offer,
+                f"console: {offer.merchant} offer page gives no region — "
+                "never an implicit GLOBAL for this merchant (R32/R45)")
+        if _psig.region_base is None:
+            return SkippedOffer(offer, f"forbidden region: {_psig.region_label}")
+        if grammar_base is not None and grammar_base != _psig.region_base:
+            return SkippedOffer(
+                offer,
+                f"console: region contradiction (title {grammar_base} vs {offer.merchant} offer "
+                f"page {_psig.region_base}) — not entered (R68)")
+        base, implicit = _psig.region_base, False
+        label = "GLOBAL" if _psig.region_base == "global" else str(_psig.region_base).upper()
+    elif grammar_base is not None:
         if not generic_implicit and generic_base != grammar_base:
             return SkippedOffer(
                 offer, "console: region contradiction (title/grammar vs URL) — not entered (R45)")

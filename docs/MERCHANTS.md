@@ -43,6 +43,7 @@ Champs disponibles :
 | `offer_page_resolver` | lire la page marchande de l'offre pour plateforme + région (Instant Gaming, Difmark) | — |
 | `offer_page_readable` | False = la page marchande n'est pas lisible en HTTP (G2A 403) → fail-closed | True |
 | `url_identity_params` | paramètres de query qui font partie de l'identité d'une annonce (`submitter._url_key`) : Wyrel, CJS `variation`, Loaded et Allyouplay `u` (2026-09-24 / 26 / 30) | `()` = chemin seul (P2-12) |
+| `console_page_authoritative` | **2026-09-30 (Allyouplay, `[R68]`, revue adverse)** — la fiche du marchand (`offer_page_resolver`) fait foi AUSSI sur la branche console : lue pour toute ligne console (même quand le titre porte un créneau de région, qui doit alors s'accorder avec elle), et une fiche qui nomme une boutique PC sur une ligne console est un conflit → refus. Défaut False : la branche console ne lit la fiche que si le titre se tait, et n'en lit que la région (Instant Gaming, Gamerall) | `False` |
 | `affiliate_hosts` | **2026-09-30 (Allyouplay)** — hôtes d'un redirecteur d'affiliation dont le paramètre `u` porte la fiche du marchand. `MerchantConfig.landing_url` rend cette fiche SEULEMENT si le lien est sur un hôte déclaré ET que `u` est sur `domain` (ou un sous-domaine) ; elle est lue par le contrôle de domaine, `strip_merchant_url_noise` (région, région interdite, verrous `[R63]`), `explicit_platform_from_url`, le classifieur console et `account_signal` — **pas** par `detect_edition` (l'édition reste au titre). L'URL stockée n'est jamais réécrite ; `merchants.registry` range l'hôte avec le marchand pour l'identité. Un lien sans `u` ou dont `u` pointe ailleurs reste « merchant-domain mismatch » (motif « affiliate link without a … product page in u ») | `()` |
 | `precheck(name, url)` | skip catégorique propre au marchand, avant les scans génériques `[R32e]` | — |
 | `title_region(name)` | région déclarée par la grammaire du titre, autoritaire `[R32e]` | — |
@@ -117,7 +118,7 @@ du feed.
 | Driffle | 127 | `driffle.py` (**nouveau**) | PC : `precheck`, `title_region` (1re parenthèse) ; console : `console_url_families`, `console_region_slot`, `console_noise` | oui | 6 |
 | Instant Gaming | 28 | `instant_gaming.py` | PC : `offer_page_resolver` ; console : `console_url_families` → toujours None (déclaré : l'URL ne dit rien ; une plateforme console lue sur la page IG → plateforme None → skip R32) | oui | 4-5 |
 | Eneba | 19 | `eneba.py` | `console_url_families`, `console_pc_declared`, `console_region_slot` | **non — dry-run du 12/09 fait (32 candidats, 90 % consoles), sweep réel sur go** | ≥ 30 |
-| Allyouplay | 17 | `allyouplay.py` (lien d'affiliation + lecteur de fiche `[R68]`, 30/09 — branche `allyouplay-affiliate`) | `domain="allyouplay.com"`, `affiliate_hosts=("anandadigitalbv.sjv.io",)`, `url_identity_params=("u",)` ; `[R68]` : `precheck` (« [Mac] »), `url_platform` (`-ga-ste-` / `-ga-gog-`), `offer_page_resolver` (fiche : « Platform », `available_countries`, règle `[R59]`) | **non** — balayé 6 fois (groupe B, 17/09 → 26/09) mais 100 % refusé au contrôle de domaine : 0 saisie | 3 |
+| Allyouplay | 17 | `allyouplay.py` (lien d'affiliation + lecteur de fiche `[R68]`, en ligne le 30/09) | `domain="allyouplay.com"`, `affiliate_hosts=("anandadigitalbv.sjv.io",)`, `url_identity_params=("u",)` ; `[R68]` : `precheck` (« [Mac] »), `url_platform` (`-ga-ste-` / `-ga-gog-`), `offer_page_resolver` (fiche : « Platform », `available_countries`, règle `[R59]`), `console_page_authoritative` | **non** — balayé 6 fois (groupe B, 17/09 → 26/09) mais 100 % refusé au contrôle de domaine : 0 saisie | 3 |
 | GameSeal | 126 | `gameseal.py` | `domain` ; PC : `precheck`, `title_region` (queue ` - <RÉGION>`), `resolve_name` (queue pelée, 20/09) ; console : `console_url_families`, `console_region_slot` | oui (1er balayage 19/09) | 1 090 écrites, 1 089 justes (audit du 20/09) |
 | CJS-CDKeys | 30 | `cjs.py` (**nouveau**, identité seule) | `domain="cjs-cdkeys.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
 | Difmark | 167 | `difmark.py` | `console_url_families` (comptes) | parqué (hors liste blanche) | — |
@@ -649,8 +650,8 @@ matcher et le classifieur importent le registre.
 ## Allyouplay (store 17)
 
 - **Fichier** : `src/merchants/allyouplay.py` (identité seule le 14/09 ; **lien d'affiliation le
-  2026-09-30**, branche `allyouplay-affiliate`, pas en ligne tant que Romain n'a pas validé
-  l'aperçu).
+  2026-09-30**, lecteur de fiche `[R68]` le même jour — en ligne le 30/09 après l'aperçu validé
+  par Romain : « go pour la mise en ligne »).
 - **Ce qu'on croyait / ce qui s'est passé.** « Jamais balayé » était faux depuis le 17/09 :
   Allyouplay est dans le groupe B et a été balayé six fois (17, 18, 21, 22, 25, 26/09 — 296
   lignes distinctes). **Les 296 ont été refusées « offer URL not on allyouplay.com »** : le feed
@@ -701,8 +702,10 @@ matcher et le classifieur importent le registre.
   (Belgique seule), Onimusha / Pac-Man CE 2 (22 pays), Trove (21) → refus « ALLYOUPLAY LOCK
   (EU + US) » ; Tinder Gold FR → pas de « Platform », refus ; ESO → « Platform: Elder Scrolls
   Online », refus. Fiches de test : `tests/fixtures/allyouplay/`.
-- **Statut live** : liste blanche (groupe B) ; la branche n'est **pas** en ligne — l'aperçu
-  (lecture seule) passe d'abord, puis la validation de Romain.
+- **Statut live** : liste blanche (groupe B), **en ligne le 30/09**. Aperçu final (lecture seule,
+  296 lignes) : 119 candidats PC Steam (GLOBAL 109, US 7, EU 3), toutes les lignes Xbox refusées
+  sur leurs pays. L'ancienne VM (51.38.37.254) est bloquée par le Cloudflare d'Allyouplay (403) :
+  la fiche y serait illisible, donc chaque ligne refusée — sans écriture fausse.
 
 ## GameSeal (store 126)
 

@@ -42,7 +42,7 @@ from src.extractor import (
     feed_url,
 )
 from src.console_keys import account_signal
-from src.merchants.registry import url_identity_params
+from src.merchants.registry import landing_url, url_identity_params
 from src.pacing import Pacer
 from src.run_log import RunLogger
 from src.step_guard import StepGuard
@@ -267,6 +267,9 @@ EMPTY_CONFIRM_WAITS = (1.0, 2.0, 4.0)
 # pages the coverage is unproven and the scan raises FeedScanError (never a false
 # "gone"). ~1000 matching rows for one slug is already pathological.
 SEARCH_SCAN_MAX_PAGES = 10
+# [P2-13] (sondé le 2026-09-04) : la page `aks-merchant-feeds-search` ne pagine pas et rend au
+# plus 300 lignes — même valeur que `scripts/11_data_entry_by_urls.SEARCH_RESULT_CAP`.
+SEARCH_RESULT_CAP = 300
 
 # Post-save proof retry (Romain GO 2026-09-10): twice in ~100 MMOGA creations the AKS
 # admin page took > 45 s to answer the proof navigation right after a successful Create
@@ -341,7 +344,27 @@ def search_term(url: str) -> str:
     probe runs exactly the production search."""
 
     key = _url_path(str(url or ""))
-    return key.rstrip("/").rsplit("/", 1)[-1] or key
+    term = key.rstrip("/").rsplit("/", 1)[-1] or key
+    # LIEN D'AFFILIATION (revue adverse du 2026-09-30, P1, Allyouplay) : les 296 offres partagent
+    # le chemin `/c/1297091/2866230/30655`, donc le terme « 30655 » rendait TOUT le magasin — et
+    # la page de recherche ne pagine pas, elle s'arrête à 300 lignes ([P2-13]) : au-delà, une
+    # offre encore au feed aurait été déclarée « partie ». Le terme est alors le slug de la FICHE
+    # (paramètre `u`), à condition qu'il figure MOT POUR MOT dans l'URL stockée (le serveur
+    # cherche dans ce texte-là) ; sinon l'ancien terme, et le plafond de `_scan_search` refuse.
+    landing = landing_url(str(url or ""))
+    if landing != str(url or ""):
+        slug = _url_path(landing).rstrip("/").rsplit("/", 1)[-1]
+        if slug and slug in str(url or ""):
+            return slug
+    return term
+
+
+def _search_haystack(url: str) -> str:
+    """Le texte où le terme de recherche DOIT figurer pour qu'une ligne rendue soit sur notre
+    recherche : le chemin de l'URL — ou, derrière un lien d'affiliation déclaré, le chemin de la
+    fiche (`u`), où vit le terme de ``search_term``."""
+
+    return _url_path(landing_url(str(url or "")))
 
 
 def _href_search_term(href: str) -> str | None:
@@ -1109,7 +1132,7 @@ class _SubmitterBase:
                     f"search page {page} is on term {on_term!r}, expected {term!r} "
                     "— not proven on this search (stale/foreign DOM)")
             folded = term.casefold()
-            if not all(folded in _url_path(str(r.get("url") or "")).casefold() for r in rows):
+            if not all(folded in _search_haystack(str(r.get("url") or "")).casefold() for r in rows):
                 raise FeedScanError(
                     f"search page {page} rows do not all match term {term!r} "
                     "— stale/foreign DOM re-served")
@@ -1117,6 +1140,15 @@ class _SubmitterBase:
             # simulation conclut gone=True sans couverture complète ». Une page dont TOUTES les
             # lignes ont déjà été lues n'a rien couvert : les pages glissent (tri instable) et
             # des lignes n'ont jamais été montrées. L'absence n'est alors pas une preuve.
+            # [P2-13] La page de recherche ne pagine pas et s'arrête à 300 lignes (sondé le
+            # 04/09) : une page PLEINE ne prouve pas qu'il n'y a rien après — une offre au-delà
+            # passerait pour « partie ». Revue adverse du 2026-09-30 (Allyouplay, terme commun à
+            # tout le magasin). Refus, jamais une preuve.
+            if len(rows) >= SEARCH_RESULT_CAP:
+                raise FeedScanError(
+                    f"search page {page} for {term!r} returned {len(rows)} rows — the search is "
+                    f"capped at {SEARCH_RESULT_CAP} and does not paginate ([P2-13]), coverage "
+                    "unproven (never a 'gone' proof)")
             _ids_page = {str(r.get("id") or "") for r in rows} - {""}
             if page > 1 and _ids_page and _ids_page <= set(index):
                 raise FeedScanError(

@@ -140,6 +140,14 @@ class MerchantConfig:
     # d'affiliation). Vide = comportement d'avant, pour tous les autres marchands — Loaded
     # (`go.loaded.com`, sous-domaine de loaded.com) n'en a pas besoin et ne le déclare pas.
     affiliate_hosts: tuple[str, ...] = ()
+    # LA FICHE FAIT FOI AUSSI SUR LA BRANCHE CONSOLE (`[R68]`, revue adverse du 2026-09-30,
+    # Allyouplay). Par défaut, la branche console lit la région du TITRE d'abord et n'ouvre la
+    # fiche du marchand (``offer_page_resolver``) que si le titre se tait ; elle ignore la
+    # plateforme de la fiche (PSN / NINTENDO ne sont pas des boutiques PC : Instant Gaming,
+    # Gamerall). True = la fiche est lue pour TOUTE ligne console : un créneau de région du titre
+    # doit s'accorder avec elle, et une fiche qui nomme une boutique PC (Steam, GOG…) sur une
+    # ligne console est un conflit — refus, jamais un choix.
+    console_page_authoritative: bool = False
     # Generic-behaviour OVERRIDE hooks (Romain 2026-09-10: « un fichier de config marchand
     # par marchand, qui peut ajouter, overwrite, modifier des comportements génériques »).
     # Each is optional; the matcher calls it FIRST and falls through to the generic rule

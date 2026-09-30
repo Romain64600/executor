@@ -141,6 +141,29 @@ No degraded mode.
 These are deliberate, Romain-reviewed calls. An adversarial audit re-derives them as
 "findings" every time; leave them AS-IS unless Romain explicitly changes his mind.
 
+- **`[R68]` Allyouplay : la FICHE produit fait foi (plateforme + pays autorisés) — Romain,
+  2026-09-30** (« go pour 1 », puis « go pour la mise en ligne » après l'aperçu : 119 candidats PC
+  Steam sur 296 lignes, toutes les lignes Xbox refusées sur leurs pays). Le feed Allyouplay passe
+  par le redirecteur `anandadigitalbv.sjv.io` (la fiche est dans `u`, qui est aussi l'identité —
+  `MerchantConfig.affiliate_hosts`, comme Loaded) ; les titres PC ne disent NI plateforme NI
+  région. Ordre titre → codes du slug (`-ga-ste-` / `-ga-gog-`) → fiche ; région = règle `[R59]`
+  sur les pays ABSENTS de `available_countries`. Un audit voudra : (a) retomber sur STEAM /
+  GLOBAL quand la fiche est illisible, ou quand elle n'a pas « Platform » — non, refus (c'est
+  exactement ce que `[R51]` interdit ; l'aperçu de la veille montrait 6 clés Xbox « GLOBAL
+  implicite » qui étaient bridées à quelques pays) ; (b) lire la fiche par `aks_env.http_get` —
+  non : son moteur `requests` envoie « User-agent » et le Cloudflare d'Allyouplay répond 403
+  (241 / 241 au premier essai) ; `allyouplay.page_get` (bibliothèque standard) est voulu, et le
+  moteur partagé des requêtes AKS ne doit pas changer pour ce marchand ; (c) faire entrer les
+  « [Mac] », une clé « Mac OS » seule, « Platform: Elder Scrolls Online », ou X-COM (`-ga-gog-`
+  contre « Platform: Steam ») — non, refus nommés ; (d) élargir `affiliate_hosts` à d'autres
+  hôtes ou lire `u` pour un marchand qui ne le déclare pas — non ; (e) lire la région dans le
+  titre ou l'URL « pour économiser la requête » — non, chez ce marchand ils n'en disent rien ;
+  (f) sur la branche console, laisser un créneau de région du titre passer avant la fiche, ou
+  ignorer la plateforme de la fiche (`console_page_authoritative`, revue adverse du 30/09) — non ;
+  (g) revenir au terme de recherche `30655` (commun à tout le magasin) ou accepter une page de
+  recherche de 300 lignes comme preuve de disparition — non, `[P2-13]` : elle ne pagine pas.
+  EXECUTOR_RULES `[R68]`, `tests/test_merchants_allyouplay.py`, `tests/test_merchants_allyouplay_r68.py`.
+
 - **`[R66]` Recherche catalogue AKS en dernier recours — Romain, 2026-09-29** (« La recherche
   AKS en dernier recours me semble indispensable », proposition 11 de l'audit « pas de page
   produit » du 28/09). Passe 5 de `resolve_aks`, index frais ou non, page clé PC seulement :
