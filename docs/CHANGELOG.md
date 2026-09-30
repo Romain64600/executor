@@ -29,8 +29,17 @@ où la clé s'active ». L'aperçu du même jour montrait 0 candidat PC (titres 
   NHL 26 « - BE », Onimusha, Pac-Man CE 2, Trove (pays), Civilization VI « Persia and Macedon »
   (Mac OS seul, titre sans « [Mac] »), ESO (« Platform: Elder Scrolls Online »), Tinder Gold FR
   (pas de « Platform »), X-COM Apocalypse (`-ga-gog-` contre « Platform: Steam »).
-- Tests : `tests/test_merchants_allyouplay_r68.py` (27, fiches réelles `tests/fixtures/allyouplay/`,
+- Tests : `tests/test_merchants_allyouplay_r68.py` (31, fiches réelles `tests/fixtures/allyouplay/`,
   bout en bout par `match_offer`) ; `test_merchants_misc` / `test_merchants_allyouplay` mis à jour.
+- **Moteur de la requête** (corrigé après la première répétition, VPS de secours, 30/09 10:25 UTC :
+  241 fiches sur 241 en 403 « Attention Required! | Cloudflare », donc 0 candidat) : le moteur
+  keep-alive partagé (`aks_env.http_get` → `requests`) envoie l'en-tête « User-agent » tel
+  qu'urllib le range, et le Cloudflare d'Allyouplay refuse cette forme venant de `requests`
+  (mesuré depuis deux machines, même fiche, même seconde : « User-agent » → 403, « User-Agent » →
+  200, urllib → 200). La fiche est désormais lue par la bibliothèque standard
+  (`allyouplay.page_get`, hôte final vérifié, jamais d'exception) ; le moteur partagé — celui de
+  toutes les requêtes vers AKS — reste identique. Les tests à fiches figées ne pouvaient pas le
+  voir : ils remplacent la requête.
 
 ## 2026-09-30 — Allyouplay : le lien d'affiliation (branche `allyouplay-affiliate`, pas en ligne — en attente de la validation de Romain après aperçu)
 

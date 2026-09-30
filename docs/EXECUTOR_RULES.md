@@ -3925,7 +3925,10 @@ de Romain du 18/09 (« un check du titre par défaut avant d'ouvrir la page ») 
 2. **URL** (slug de `u`) — deux codes OBSERVÉS : `-ga-ste-` → STEAM (16 lignes), `-ga-gog-` → GOG
    (2 lignes) ; le `-row-` reste le refus générique ROW ; rien d'autre n'est deviné du slug.
 3. **Fiche** `https://www.allyouplay.com/<rayon>/<slug>` (HTTP, UA navigateur, ~1 requête / s, une
-   par fiche et par processus), payload Nuxt `__NUXT_DATA__` : plateforme = attribut « Platform »
+   par fiche et par processus ; lue par la bibliothèque standard, `allyouplay.page_get`, JAMAIS par
+   `aks_env.http_get` — son moteur `requests` envoie « User-agent » et le Cloudflare d'Allyouplay
+   répond 403 à cette forme : 241 fiches sur 241 à la première répétition du 30/09 ; le moteur
+   partagé, par où passe chaque requête vers AKS, n'est pas touché), payload Nuxt `__NUXT_DATA__` : plateforme = attribut « Platform »
    (« Steam » → STEAM ; « Xbox Console » → ligne console, la région seule sert ; toute autre valeur
    → refus NOMMÉ — « Elder Scrolls Online » vu le 30/09) ; une clé PC dont « Operating System » ne
    cite pas Windows (« Mac OS » seul) → refus ; région = `available_countries` (codes ISO-2 du

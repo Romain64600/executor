@@ -89,11 +89,13 @@ from __future__ import annotations
 import json
 import re
 import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from typing import Any, Callable
 from urllib.parse import urlsplit
 
-from src.aks_env import REQUIRED_USER_AGENT, http_get
+from src.aks_env import REQUIRED_USER_AGENT, HttpProbeResult
 from src.merchant_config import MerchantOfferSignals, affiliate_landing
 from src.merchants.common import make_config
 from src.merchants.gamesplanet import EU_MEMBERS, UK, US, region_from_lock
@@ -302,6 +304,40 @@ def page_region(page: ProductPage) -> tuple[str | None, str]:
     return region_from_lock(("ONLY", names), label="ALLYOUPLAY")
 
 
+# ── la requête ────────────────────────────────────────────────────────────────────────
+# PAS `aks_env.http_get` (répétition du 30/09 sur le VPS de secours : 241 fiches sur 241 en
+# 403 « Attention Required! | Cloudflare »). Son moteur keep-alive (`requests`) reçoit l'en-tête
+# tel qu'urllib le range — `User-agent` — et le Cloudflare d'Allyouplay refuse cette forme-là
+# venant de `requests` : mesuré le même jour depuis le VPS de secours ET cette machine, même
+# seconde, même fiche — `requests` + « User-agent » → 403, `requests` + « User-Agent » → 200,
+# urllib → 200. On ne touche pas au moteur partagé (chaque requête vers AKS passe par lui, et le
+# pare-feu d'AKS a déjà banni une IP pour un en-tête le 11/09) : cette fiche est lue par la
+# bibliothèque standard, sans nouvelle dépendance, et le contrat reste celui de `http_get`
+# (un `HttpProbeResult`, jamais d'exception).
+_MAX_BODY = 2_000_000
+
+
+def page_get(url: str, timeout: int = 20,
+             user_agent: str = REQUIRED_USER_AGENT) -> HttpProbeResult:
+    """GET d'une fiche allyouplay.com (redirections suivies, hôte final vérifié)."""
+
+    request = urllib.request.Request(url, headers={"User-Agent": user_agent})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            final = response.geturl()
+            body = response.read(_MAX_BODY).decode("utf-8", errors="replace")
+            status = response.status
+    except urllib.error.HTTPError as exc:
+        return HttpProbeResult(url=url, ok=False, status=exc.code, body="", error=str(exc))
+    except Exception as exc:                  # noqa: BLE001 — tout échec = réponse ratée
+        return HttpProbeResult(url=url, ok=False, status=None, body="",
+                               error=f"{type(exc).__name__}: {exc}")
+    if not _on_domain(final):
+        return HttpProbeResult(url=url, ok=False, status=status, body="",
+                               error=f"redirigé hors d'allyouplay.com : {final}")
+    return HttpProbeResult(url=url, ok=status == 200, status=status, body=body)
+
+
 _CACHE: dict[str, ProductPage | str] = {}
 
 
@@ -309,7 +345,7 @@ def clear_cache() -> None:
     _CACHE.clear()
 
 
-def fetch_product_page(url: str, http_get_fn: Callable[..., Any] = http_get) -> ProductPage:
+def fetch_product_page(url: str, http_get_fn: Callable[..., Any] = page_get) -> ProductPage:
     """Ouvre la fiche allyouplay.com de ``u`` (une fois par processus). Lève si illisible."""
 
     target = landing(url)
@@ -322,7 +358,7 @@ def fetch_product_page(url: str, http_get_fn: Callable[..., Any] = http_get) -> 
         return cached
     if isinstance(cached, str):
         raise AllyouplayPageUnreadable(cached)
-    if http_get_fn is http_get:
+    if http_get_fn is page_get:
         time.sleep(PROBE_DELAY_S)
     try:
         try:
@@ -343,7 +379,7 @@ def fetch_product_page(url: str, http_get_fn: Callable[..., Any] = http_get) -> 
 
 
 def offer_signals(url: str, name: str = "",
-                  http_get_fn: Callable[..., Any] = http_get) -> MerchantOfferSignals:
+                  http_get_fn: Callable[..., Any] = page_get) -> MerchantOfferSignals:
     """Le résolveur ``[R68]`` : la fiche donne la plateforme (confrontée par le matcher à celle
     du titre / de l'URL) et TOUJOURS la région — le titre et l'URL n'en disent rien chez ce
     marchand. Une fiche illisible lève → le matcher refuse (R32)."""

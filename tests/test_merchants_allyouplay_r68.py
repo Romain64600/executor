@@ -284,6 +284,54 @@ class LaRequete(unittest.TestCase):
             a.offer_signals(_aff("pc/transport-fever-3"), http_get_fn=get)
 
 
+class LeMoteurDeLaRequete(unittest.TestCase):
+    """Répétition du 30/09 (VPS de secours) : 241 fiches sur 241 en 403 Cloudflare. Le moteur
+    keep-alive partagé (`aks_env.http_get` → `requests`) envoie « User-agent », que le Cloudflare
+    d'Allyouplay refuse venant de `requests` ; la bibliothèque standard passe. La fiche est donc
+    lue par `page_get`, jamais par `http_get` — et le moteur partagé (AKS) reste intact."""
+
+    def test_le_moteur_par_defaut_est_page_get_pas_http_get(self):
+        import inspect
+        from src import aks_env
+        for fn in (a.fetch_product_page, a.offer_signals):
+            with self.subTest(fn.__name__):
+                defaut = inspect.signature(fn).parameters["http_get_fn"].default
+                self.assertIs(defaut, a.page_get)
+                self.assertIsNot(defaut, aks_env.http_get)
+
+    def _ouvrir(self, final, status=200, corps=b"<html>ok</html>"):
+        reponse = mock.MagicMock()
+        reponse.__enter__.return_value = reponse
+        reponse.geturl.return_value = final
+        reponse.status = status
+        reponse.read.return_value = corps
+        return mock.patch("urllib.request.urlopen", return_value=reponse)
+
+    def test_la_requete_porte_le_ua_navigateur(self):
+        with self._ouvrir("https://allyouplay.com/pc/mesmer") as ouvert:
+            r = a.page_get("https://www.allyouplay.com/pc/mesmer")
+        requete = ouvert.call_args.args[0]
+        self.assertEqual(requete.get_header("User-agent"), a.REQUIRED_USER_AGENT)
+        self.assertEqual((r.ok, r.status, r.body), (True, 200, "<html>ok</html>"))
+
+    def test_une_redirection_hors_d_allyouplay_est_une_reponse_ratee(self):
+        with self._ouvrir("https://ailleurs.example/pc/mesmer"):
+            r = a.page_get("https://www.allyouplay.com/pc/mesmer")
+        self.assertFalse(r.ok)
+        self.assertEqual(r.body, "")
+        self.assertIn("hors d'allyouplay.com", r.error)
+
+    def test_un_403_ou_une_panne_ne_leve_jamais(self):
+        import urllib.error
+        erreur = urllib.error.HTTPError("u", 403, "Forbidden", {}, None)
+        with mock.patch("urllib.request.urlopen", side_effect=erreur):
+            r = a.page_get("https://www.allyouplay.com/pc/mesmer")
+        self.assertEqual((r.ok, r.status), (False, 403))
+        with mock.patch("urllib.request.urlopen", side_effect=TimeoutError("lent")):
+            r = a.page_get("https://www.allyouplay.com/pc/mesmer")
+        self.assertEqual((r.ok, r.status), (False, None))
+
+
 class DeBoutEnBout(unittest.TestCase):
     """Par ``match_offer`` : la page AKS est simulée, la fiche Allyouplay est la vraie."""
 
