@@ -3,6 +3,35 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-30 — `[R68]` Allyouplay : la fiche produit fait foi (branche `allyouplay-affiliate`, pas en ligne)
+
+Romain : « go pour 1 » — « lire la page Allyouplay de chaque offre, comme pour Gamesplanet FR :
+elle s'ouvre sans blocage et donne la plateforme (Platform: Steam) et la liste complète des pays
+où la clé s'active ». L'aperçu du même jour montrait 0 candidat PC (titres nus → R27 / `[R51]`) et
+6 candidats Xbox en région implicite. `src/merchants/allyouplay.py` (EXECUTOR_RULES `[R68]`) :
+
+- **Ordre titre → URL → fiche** (Romain, 18/09). « [Mac] » → refus nommé au precheck (10 lignes,
+  AKS range les clés Mac sur des pages « for Mac », et MAC est un mot de bruit des gardes) ;
+  `url_platform` lit deux codes OBSERVÉS du slug de `u` (`-ga-ste-` → STEAM, 16 lignes ;
+  `-ga-gog-` → GOG, 2) ; `offer_page_resolver` ouvre la fiche (HTTP, UA navigateur, ~1 req/s, une
+  fois par fiche et par processus) et lit le payload Nuxt : attribut « Platform » (« Steam » ;
+  « Xbox Console » = ligne console ; autre valeur → refus nommé), « Operating System » (clé PC sans
+  Windows → refus), `available_countries` (codes ISO-2 du produit ; ceux du visiteur ignorés).
+- **Région = règle `[R59]` de Romain** sur les pays absents, par la MÊME fonction
+  (`gamesplanet.region_from_lock`, qui prend désormais le nom du marchand pour son libellé de
+  refus ; Gamesplanet inchangé) — une table de l'UE, pas deux (l'import casse si les deux
+  divergent).
+- **Fail-closed** : fiche injoignable / ≠ 200 / non identifiée (lien canonique) / sans payload,
+  sans produit unique, sans « Platform » ou sans pays → refus R32, jamais STEAM ni GLOBAL par
+  défaut ; seule la fiche allyouplay.com de `u` est lue ; URL et fiche en désaccord → refus.
+- **Relevé sur 17 fiches réelles (30/09)** : GLOBAL pour Nivalis Nights, Kingdom Come II,
+  Civilization VI, Stubbs, Torn ; EU pour Human Fall Flat ; US pour Frostpunk GOTY ; refus pour
+  NHL 26 « - BE », Onimusha, Pac-Man CE 2, Trove (pays), Civilization VI « Persia and Macedon »
+  (Mac OS seul, titre sans « [Mac] »), ESO (« Platform: Elder Scrolls Online »), Tinder Gold FR
+  (pas de « Platform »), X-COM Apocalypse (`-ga-gog-` contre « Platform: Steam »).
+- Tests : `tests/test_merchants_allyouplay_r68.py` (27, fiches réelles `tests/fixtures/allyouplay/`,
+  bout en bout par `match_offer`) ; `test_merchants_misc` / `test_merchants_allyouplay` mis à jour.
+
 ## 2026-09-30 — Allyouplay : le lien d'affiliation (branche `allyouplay-affiliate`, pas en ligne — en attente de la validation de Romain après aperçu)
 
 Romain (« Go ») : « accepter le lien d'affiliation seulement si u pointe vers allyouplay.com,

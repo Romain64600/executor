@@ -127,16 +127,20 @@ class NeverSweptMerchantsTests(unittest.TestCase):
         for hook in ("resolve_name", "url_platform", "offer_page_resolver"):
             self.assertIsNone(getattr(cfg, hook), hook)
 
-    def test_allyouplay_declares_its_affiliate_link_only(self):
-        # Depuis le 2026-09-30 (go de Romain) : l'hôte du redirecteur et `u` comme identité —
-        # et RIEN d'autre. Région, plateforme et catégories restent à trancher par Romain
-        # (tests/test_merchants_allyouplay.py).
+    def test_allyouplay_declares_its_affiliate_link_and_its_page_reader(self):
+        # 2026-09-30 (go de Romain) : l'hôte du redirecteur et `u` comme identité ; puis
+        # `[R68]` (« go pour 1 ») : le refus « [Mac] », les codes observés du slug, et la
+        # fiche (plateforme, pays autorisés). Rien d'autre : pas de région lue dans le titre,
+        # pas de nom réécrit (tests/test_merchants_allyouplay*.py).
         cfg = allyouplay.CONFIG
         self.assertIsInstance(cfg, MerchantConfig)
         self.assertEqual((cfg.name, cfg.domain), ("Allyouplay", "allyouplay.com"))
         self.assertEqual(cfg.affiliate_hosts, ("anandadigitalbv.sjv.io",))
         self.assertEqual(cfg.url_identity_params, ("u",))
-        for hook in ("precheck", "title_region", "resolve_name", "url_platform", "offer_page_resolver"):
+        self.assertIs(cfg.precheck, allyouplay.precheck)
+        self.assertIs(cfg.url_platform, allyouplay.url_platform)
+        self.assertIs(cfg.offer_page_resolver, allyouplay.offer_signals)
+        for hook in ("title_region", "resolve_name"):
             self.assertIsNone(getattr(cfg, hook), hook)
         for hook in CONSOLE_HOOK_FIELDS:
             if config_has_field(hook):

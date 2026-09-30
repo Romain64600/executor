@@ -99,9 +99,11 @@ class LaFicheParleDuProduit(unittest.TestCase):
             with self.subTest(nom):
                 self.assertEqual(precheck_skip(_offre(nom, chemin), consoles=True), "forbidden region: ROW")
 
-    def test_une_ligne_sans_rien_reste_global_implicite(self):
-        # La décision « région d'une ligne PC muette » appartient à Romain : la lecture reste
-        # la lecture générique (GLOBAL implicite), rien n'est inventé ici.
+    def test_le_titre_et_l_url_ne_disent_pas_la_region(self):
+        # La lecture générique d'une ligne muette reste « GLOBAL implicite » — mais depuis
+        # `[R68]` la région d'Allyouplay vient TOUJOURS de la fiche (``offer_page_resolver``,
+        # qui l'emporte : tests/test_merchants_allyouplay_r68.py). Ce test garde la lecture
+        # générique telle quelle : rien n'y est inventé pour ce marchand.
         self.assertEqual(detect_region(_offre("Nivalis Nights", "pc/nivalis-nights-2"), "STEAM"),
                          ("GLOBAL", "2", True))
 

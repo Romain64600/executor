@@ -158,9 +158,14 @@ def parse_region_lock(body: str) -> tuple[str, frozenset[str]] | None:
     return mode.group(1), pays
 
 
-def region_from_lock(lock: tuple[str, frozenset[str]] | None) -> tuple[str | None, str]:
+def region_from_lock(lock: tuple[str, frozenset[str]] | None, *,
+                     label: str = "GAMESPLANET") -> tuple[str | None, str]:
     """La règle de Romain (2026-09-25). Rend ``(base, libellé)`` : base ``global`` / ``eu`` /
-    ``us`` pour entrer, ou ``None`` + un libellé pour le refus « forbidden region: … »."""
+    ``us`` pour entrer, ou ``None`` + un libellé pour le refus « forbidden region: … ».
+
+    ``label`` nomme le marchand dans le libellé de refus : Allyouplay `[R68]` (2026-09-30)
+    applique la MÊME règle à sa liste de pays autorisés (« ONLY ») — une seule table, pas
+    une copie."""
 
     if lock is None:
         return "global", ""
@@ -178,8 +183,8 @@ def region_from_lock(lock: tuple[str, frozenset[str]] | None) -> tuple[str | Non
     if eu_exclu and not us_exclu:
         return "us", ""
     if eu_exclu and us_exclu:
-        return None, "GAMESPLANET LOCK (EU + US)"
-    return None, "GAMESPLANET LOCK (UK)"
+        return None, f"{label} LOCK (EU + US)"
+    return None, f"{label} LOCK (UK)"
 
 
 def fetch_region(url: str, http_get_fn: Callable[..., Any] = http_get) -> tuple[str | None, str]:

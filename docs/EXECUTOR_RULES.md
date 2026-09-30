@@ -3908,6 +3908,44 @@ verrouillée Europe. 0 faux positif sur 86 820 lignes distinctes des runs de cet
   correctifs (71 sous-tests en échec + 1 erreur, puis verts), et 14 mutations de ces correctifs
   les rougissent toutes.
 
+### `[R68]` Allyouplay (store 17) — la fiche produit fait foi : plateforme et pays autorisés (2026-09-30)
+
+Romain : « go pour 1 ». L'option retenue, mot pour mot : « lire la page Allyouplay de chaque offre,
+comme pour Gamesplanet FR : elle s'ouvre sans blocage et donne la plateforme (Platform: Steam) et
+la liste complète des pays où la clé s'active ». Constat qui l'a amenée (aperçu du 30/09, lecture
+seule, 296 lignes, branche `allyouplay-affiliate`) : une fois le lien d'affiliation accepté, AUCUNE
+ligne PC n'entrait — un titre PC nu (« Nivalis Nights ») s'arrête sur R27 / `[R51]` (126 lignes) —
+et les 6 candidats Xbox entraient en région IMPLICITE. `src/merchants/allyouplay.py`, dans l'ordre
+de Romain du 18/09 (« un check du titre par défaut avant d'ouvrir la page ») :
+
+1. **Titre** — la génération Xbox (grammaire console partagée, inchangée) ; « [Mac] » → refus
+   nommé au precheck (`Allyouplay : clé Mac …`, 10 lignes), sans ouvrir la page : AKS range les
+   clés Mac sur des pages « for Mac » à part, et MAC est un mot de bruit des gardes — « Civilization
+   VI [Mac] » tomberait sinon sur la page PC.
+2. **URL** (slug de `u`) — deux codes OBSERVÉS : `-ga-ste-` → STEAM (16 lignes), `-ga-gog-` → GOG
+   (2 lignes) ; le `-row-` reste le refus générique ROW ; rien d'autre n'est deviné du slug.
+3. **Fiche** `https://www.allyouplay.com/<rayon>/<slug>` (HTTP, UA navigateur, ~1 requête / s, une
+   par fiche et par processus), payload Nuxt `__NUXT_DATA__` : plateforme = attribut « Platform »
+   (« Steam » → STEAM ; « Xbox Console » → ligne console, la région seule sert ; toute autre valeur
+   → refus NOMMÉ — « Elder Scrolls Online » vu le 30/09) ; une clé PC dont « Operating System » ne
+   cite pas Windows (« Mac OS » seul) → refus ; région = `available_countries` (codes ISO-2 du
+   PRODUIT — `customer_country` / `is_available_for_country` décrivent le visiteur, ignorés), lue
+   par la règle `[R59]` (`gamesplanet.region_from_lock`, la même table) sur les pays ABSENTS :
+   ni UE, ni UK, ni USA absents → GLOBAL ; UE complète sans USA → EU ; USA présents, un pays de
+   l'UE absent → US ; UE incomplète et USA absents → `forbidden region: ALLYOUPLAY LOCK (EU + US)` ;
+   UE et USA présents, UK seul absent → `… (UK)`.
+
+La région ne se lit JAMAIS dans le titre ni dans l'URL chez ce marchand : toute ligne qui atteint le
+résolveur ouvre sa fiche. La plateforme du titre / de l'URL est confrontée à celle de la fiche par
+le matcher (« platform conflict … (audit #1) ») — X-COM Apocalypse : `-ga-gog-` dans le slug,
+« Platform: Steam » sur la fiche → refus. Fail-closed : fiche injoignable, statut ≠ 200, lien
+canonique absent ou autre que la fiche demandée, payload absent / illisible / sans produit unique,
+pas de « Platform », `available_countries` absent ou vide → refus R32, JAMAIS STEAM ni GLOBAL par
+défaut ; seule une fiche allyouplay.com (celle de `u`) est lue. La page AKS doit vendre la
+plateforme lue (R20). Lignes console : la fiche donne la région (`_console_plan`, étape c) — NHL 26
+« … - BE » (Belgique seule) et Onimusha (22 pays) sont refusés, jamais GLOBAL.
+Tests : `tests/test_merchants_allyouplay_r68.py` (fiches réelles, `tests/fixtures/allyouplay/`).
+
 ### `[R67]` CJS-CDKeys — le créneau de région après « Key: » (2026-09-29, correctif)
 
 « DYSMANTLE Steam Key: United Kingdom » tombait au GLOBAL implicite : la lecture générique

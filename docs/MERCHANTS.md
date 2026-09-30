@@ -117,7 +117,7 @@ du feed.
 | Driffle | 127 | `driffle.py` (**nouveau**) | PC : `precheck`, `title_region` (1re parenthèse) ; console : `console_url_families`, `console_region_slot`, `console_noise` | oui | 6 |
 | Instant Gaming | 28 | `instant_gaming.py` | PC : `offer_page_resolver` ; console : `console_url_families` → toujours None (déclaré : l'URL ne dit rien ; une plateforme console lue sur la page IG → plateforme None → skip R32) | oui | 4-5 |
 | Eneba | 19 | `eneba.py` | `console_url_families`, `console_pc_declared`, `console_region_slot` | **non — dry-run du 12/09 fait (32 candidats, 90 % consoles), sweep réel sur go** | ≥ 30 |
-| Allyouplay | 17 | `allyouplay.py` (lien d'affiliation, 30/09 — branche `allyouplay-affiliate`) | `domain="allyouplay.com"`, `affiliate_hosts=("anandadigitalbv.sjv.io",)`, `url_identity_params=("u",)` — aucun hook de grammaire (région / plateforme / catégories à trancher par Romain) | **non** — balayé 6 fois (groupe B, 17/09 → 26/09) mais 100 % refusé au contrôle de domaine : 0 saisie | 3 |
+| Allyouplay | 17 | `allyouplay.py` (lien d'affiliation + lecteur de fiche `[R68]`, 30/09 — branche `allyouplay-affiliate`) | `domain="allyouplay.com"`, `affiliate_hosts=("anandadigitalbv.sjv.io",)`, `url_identity_params=("u",)` ; `[R68]` : `precheck` (« [Mac] »), `url_platform` (`-ga-ste-` / `-ga-gog-`), `offer_page_resolver` (fiche : « Platform », `available_countries`, règle `[R59]`) | **non** — balayé 6 fois (groupe B, 17/09 → 26/09) mais 100 % refusé au contrôle de domaine : 0 saisie | 3 |
 | GameSeal | 126 | `gameseal.py` | `domain` ; PC : `precheck`, `title_region` (queue ` - <RÉGION>`), `resolve_name` (queue pelée, 20/09) ; console : `console_url_families`, `console_region_slot` | oui (1er balayage 19/09) | 1 090 écrites, 1 089 justes (audit du 20/09) |
 | CJS-CDKeys | 30 | `cjs.py` (**nouveau**, identité seule) | `domain="cjs-cdkeys.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
 | Difmark | 167 | `difmark.py` | `console_url_families` (comptes) | parqué (hors liste blanche) | — |
@@ -673,8 +673,7 @@ matcher et le classifieur importent le registre.
   Bundle », refusée de toute façon comme bundle — le faux « Saints Row » = ROW est générique,
   préexistant, chez tous les marchands).
 - **Page produit lisible en HTTP** (200, pas de Cloudflare, 29/09) : attribut « Platform:
-  Steam » et `available_countries` dans le payload Nuxt. Un lecteur (comme Gamesplanet FR
-  `[R59]`) est une option, non codée.
+  Steam » et `available_countries` dans le payload Nuxt — lue depuis `[R68]` (ci-dessous).
 - **Mesure hors ligne (30/09, branche, sans réseau)** : 45 refus au precheck (bundles 17,
   monnaies / points / crédits / gemmes 15, ROW 4, AMERICAS 1, multi-jeux 3, Xbox 360 1…), 251
   passent : 32 lignes console (fiche `/xbox/` ou `…-xbox-one` lue — sans la fiche, « Pac-Man CE
@@ -690,6 +689,18 @@ matcher et le classifieur importent le registre.
   bundles 17, monnaies / points 15, ROW 4. Faire entrer les lignes PC demande une source de
   plateforme : le lecteur de la fiche (« Platform », `available_countries`), ou une règle comme
   Wyrel `[R58]` — décision de Romain.
+- **`[R68]` — la fiche fait foi (Romain, 30/09 : « go pour 1 »)**, EXECUTOR_RULES `[R68]`.
+  Ordre titre → URL → fiche : « [Mac] » refusé au precheck (10 lignes, sans ouvrir la page) ;
+  `-ga-ste-` → STEAM (16), `-ga-gog-` → GOG (2) — rien d'autre du slug ; la fiche donne la
+  plateforme (« Platform » : « Steam » ; « Xbox Console » → ligne console ; autre valeur → refus
+  nommé) et TOUJOURS la région (`available_countries`, règle `[R59]` sur les pays absents). Une
+  clé PC « Mac OS » seule est refusée ; URL et fiche en désaccord → refus (X-COM Apocalypse :
+  `-ga-gog-` / « Platform: Steam »). Relevé sur 17 fiches réelles le 30/09 : Nivalis Nights,
+  Kingdom Come II, Civilization VI, Stubbs, Torn → GLOBAL ; Human Fall Flat (50 pays, sans les
+  USA) → EU ; Frostpunk GOTY (sans Chypre, Tchéquie, Hongrie, Pologne) → US ; NHL 26 « - BE »
+  (Belgique seule), Onimusha / Pac-Man CE 2 (22 pays), Trove (21) → refus « ALLYOUPLAY LOCK
+  (EU + US) » ; Tinder Gold FR → pas de « Platform », refus ; ESO → « Platform: Elder Scrolls
+  Online », refus. Fiches de test : `tests/fixtures/allyouplay/`.
 - **Statut live** : liste blanche (groupe B) ; la branche n'est **pas** en ligne — l'aperçu
   (lecture seule) passe d'abord, puis la validation de Romain.
 
