@@ -71,11 +71,18 @@ Notes:
    typing `GO` and shows the exact command.
 7. A second submit while one runs must be refused (`submit_in_progress`).
 
+## 6. Vue d'ensemble des VPS (facultatif, 2026-09-30)
+
+L'onglet `/overview` montre cette machine sans rien installer. Pour y voir aussi les autres VPS
+(clé ssh dédiée à commande forcée, `state/overview_hosts.json`) : [`VUE_D_ENSEMBLE.md`](VUE_D_ENSEMBLE.md).
+
 ## Files
 
 - `scripts/07_admin_server.py` — CLI entry (loopback bind, orphan recovery).
 - `src/admin/` — `app.py` (HTTP), `runs.py` (safe run access),
   `validation_io.py` (triple regeneration), `submit_manager.py` (supervised
-  subprocess), `static/` (frontend).
+  subprocess), `overview.py` (vue d'ensemble des VPS, lecture seule), `static/` (frontend).
+- `scripts/20_vps_snapshot.py` — la photo d'une machine (commande forcée de la clé de la vue
+  d'ensemble).
 - `runs/<id>/admin_submit.json` — submit supervision state (gitignored with
   the rest of `runs/`).

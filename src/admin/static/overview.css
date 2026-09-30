@@ -1,0 +1,54 @@
+/* Vue d'ensemble des VPS (2026-09-30) — mêmes jetons que auto.css (chargée avant). Une colonne
+   sur téléphone, jusqu'à trois sur un écran large. */
+main.ov-main { max-width:1400px; }
+@media (max-width: 720px) {
+  .tabs { flex-wrap:wrap; }
+  .topbar { gap:.5rem; }
+}
+.ov-head { padding:.7rem 1rem; }
+.ov-head-row { display:flex; align-items:center; gap:.8rem; flex-wrap:wrap; }
+.ov-head-row h2 { margin:0; }
+.ov-age { color:var(--dim); font-size:.82rem; }
+.ov-age.stale { color:var(--warn); font-weight:600; }
+.ov-btn { margin-left:auto; font:inherit; background:var(--panel-2); color:var(--ink); border:1px solid var(--line); border-radius:5px; padding:.3rem .7rem; cursor:pointer; }
+.ov-btn:hover { border-color:var(--accent); }
+.ov-warnline { margin-top:.6rem; padding:.4rem .6rem; border:1px solid var(--warn); border-radius:5px; color:var(--warn); font-size:.85rem; }
+.ov-note { margin-top:.5rem; color:var(--dim); font-size:.82rem; }
+.ov-note.bad { color:var(--bad); }
+
+.ov-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(min(100%, 360px), 1fr)); gap:1rem; align-items:start; }
+.host { display:flex; flex-direction:column; gap:.55rem; min-width:0; border-top:3px solid var(--line); }
+.host.up { border-top-color:var(--good); }
+.host.down { border-top-color:var(--bad); }
+.host-head { display:flex; align-items:flex-start; gap:.6rem; }
+.host-id { min-width:0; }
+.host-name { margin:0; font-size:1.05rem; }
+.host-label { display:block; color:var(--dim); font-size:.78rem; overflow-wrap:anywhere; }
+.badge { margin-left:auto; font-weight:800; font-size:1.15rem; letter-spacing:.04em; padding:.2rem .7rem; border-radius:5px; border:2px solid currentColor; white-space:nowrap; }
+.badge.up { color:var(--good); }
+.badge.down { color:var(--bad); }
+.down-reasons, .alerts { margin:0; padding:0 0 0 1.1rem; color:var(--bad); font-size:.85rem; }
+.down-reasons li, .alerts li { margin:.1rem 0; overflow-wrap:anywhere; }
+.alerts { padding:.4rem .6rem .4rem 1.6rem; border:1px solid var(--bad); border-radius:5px; }
+.task { font-size:1rem; font-weight:600; line-height:1.35; overflow-wrap:anywhere; }
+.task.task-aucune { color:var(--dim); font-weight:400; }
+.task.task-balayage, .task.task-saisie_par_page { color:var(--accent); }
+.task.task-maintenance { color:var(--warn); }
+.task-meta { display:flex; flex-wrap:wrap; gap:.2rem .9rem; color:var(--dim); font-size:.8rem; }
+.task-meta span { overflow-wrap:anywhere; }
+.facts { display:grid; grid-template-columns:auto 1fr; gap:.1rem .7rem; font-size:.8rem; }
+.fact { display:contents; }
+.fk { color:var(--dim); white-space:nowrap; }
+.fv { overflow-wrap:anywhere; }
+.logs { border:1px solid var(--line); border-radius:5px; }
+.logs summary { cursor:pointer; padding:.35rem .6rem; font-size:.82rem; color:var(--dim); background:var(--panel-2); }
+.log { list-style:none; margin:0; padding:.2rem 0; max-height:18rem; overflow-y:auto; font-size:.76rem; }
+.log-line { display:flex; gap:.45rem; padding:.12rem .6rem; border-top:1px solid var(--line); align-items:baseline; }
+.log-line:first-child { border-top:none; }
+.log-line.bad .log-text { color:var(--bad); }
+.log-ts { font-family:var(--mono); color:var(--dim); white-space:nowrap; }
+.log-where { color:var(--accent); white-space:nowrap; }
+.log-text { min-width:0; overflow-wrap:anywhere; }
+.dim-note { margin:.4rem .6rem; color:var(--dim); font-size:.8rem; }
+.console-link { align-self:flex-start; color:var(--accent); font-size:.85rem; text-decoration:none; border:1px solid var(--accent); border-radius:5px; padding:.25rem .6rem; }
+.console-link:hover { background:var(--accent); color:var(--accent-ink); }

@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AKS Executor — Vue d'ensemble</title>
+  <link rel="stylesheet" href="auto.css">
+  <link rel="stylesheet" href="overview.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <h1>Vue d'ensemble <span class="sub">— les VPS en direct</span></h1>
+    </div>
+    <nav class="tabs">
+      <a href="." class="tab">Validation &amp; Submit</a>
+      <a href="tri" class="tab">Tri des listes</a>
+      <a href="auto" class="tab">Data Entry Auto</a>
+      <a href="games" class="tab">Saisie par jeux</a>
+      <a href="sql" class="tab">Tri SQL</a>
+      <a href="overview" class="tab active" aria-current="page">Vue d'ensemble</a>
+    </nav>
+    <div class="topbar-right">
+      <button id="doc-btn" type="button" title="Aide / Help">📖 Doc</button>
+      <button id="theme" type="button" title="Basculer le thème">◐</button>
+    </div>
+  </header>
+
+  <dialog id="doc-modal" class="doc-modal">
+    <div class="doc-box">
+      <header class="doc-head">
+        <h3>📖 Vue d'ensemble — Aide / Help</h3>
+        <form method="dialog"><button class="doc-x" aria-label="Fermer / Close">✕</button></form>
+      </header>
+      <div class="doc-body">
+        <section>
+          <h4>Ce que montre la page · What it shows</h4>
+          <p lang="fr">Une carte par machine de l'exécuteur : <b>UP / DOWN</b> (DOWN = injoignable, admin qui ne
+            répond pas, ou un service clé arrêté — le motif est écrit), la <b>tâche en cours</b> en clair (balayage,
+            groupe, boucle, passe, marchand, page, étape), les offres créées, la version du code, la charge, les
+            <b>alertes</b> en rouge et les <b>20 derniers événements</b> du journal. Rafraîchi toutes les 15 s.</p>
+          <p class="en" lang="en">One card per executor machine: UP / DOWN (with the reason), the current task in plain
+            words, created offers, code version, load, alerts in red and the last 20 log events. Refreshed every 15 s.</p>
+        </section>
+        <section>
+          <h4>Lecture seule · Read-only</h4>
+          <p lang="fr">Cette page ne pilote <b>rien</b> : aucun bouton ne lance ni n'arrête quoi que ce soit. Pour agir sur
+            une machine, « Ouvrir la console » mène à SA console. Les autres machines sont lues par ssh avec une clé
+            dédiée qui ne sait faire qu'une chose : prendre la photo (<code>ops/VUE_D_ENSEMBLE.md</code>).</p>
+          <p class="en" lang="en">This page drives nothing. To act on a machine, open its own console. Remote machines are
+            read over ssh with a dedicated key restricted to the snapshot command.</p>
+        </section>
+        <section>
+          <h4>Les machines · The machines</h4>
+          <p lang="fr">Elles viennent de <code>state/overview_hosts.json</code> sur cette machine. Sans ce fichier, seule
+            cette machine est affichée.</p>
+        </section>
+      </div>
+    </div>
+  </dialog>
+
+  <main id="app" class="ov-main">
+    <section class="card ov-head">
+      <div class="ov-head-row">
+        <h2>Les machines</h2>
+        <span id="ov-age" class="ov-age">chargement…</span>
+        <button id="ov-refresh" type="button" class="ov-btn" title="Relire maintenant (le serveur garde la photo 10 s)">Rafraîchir</button>
+      </div>
+      <div id="ov-version" class="ov-warnline hidden"></div>
+      <div id="ov-config" class="ov-note hidden"></div>
+    </section>
+    <div id="ov-hosts" class="ov-grid"></div>
+  </main>
+
+  <footer id="status" class="idle">Prêt</footer>
+  <script src="overview.js"></script>
+</body>
+</html>

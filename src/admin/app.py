@@ -59,6 +59,7 @@ from src.admin.learning_io import (
 )
 from src.admin.validation_io import ValidationIOError, apply_overrides_and_validate
 from src.admin.login_manager import LoginError, LoginManager
+from src.admin.overview import Overview
 from src.admin.auto_merchants import allowed_list as auto_allowed_list, rejection_reason
 from src.aks_lists import LISTS as AKS_LISTS, PENDING_LIST_ID, is_blacklist_label
 from src.extractor import FEED_LIST_BLACKLIST
@@ -106,6 +107,10 @@ STATIC_FILES = {
     "urls.html": "text/html; charset=utf-8",
     "urls.js": "application/javascript; charset=utf-8",
     "urls.css": "text/css; charset=utf-8",
+    # Vue d'ensemble des VPS (Romain, 2026-09-30 : « Go pour l'onglet vue d'ensemble »).
+    "overview.html": "text/html; charset=utf-8",
+    "overview.js": "application/javascript; charset=utf-8",
+    "overview.css": "text/css; charset=utf-8",
 }
 MAX_BODY_BYTES = 2 * 1024 * 1024
 RUN_ROUTE = re.compile(r"^/api/runs/([^/]+)(/.*)?$")
@@ -232,6 +237,11 @@ class AppState:
         self.manager = manager or SubmitManager(repo_root, log_dir=self.log_dir)
         self.login = LoginManager(repo_root)
         self.validation_lock = threading.Lock()
+        # La vue d'ensemble des VPS (2026-09-30) : lecture seule, cache de 10 s. La photo de
+        # CETTE machine est prise en processus avec le `busy()` du manager — jamais un appel
+        # HTTP de l'admin vers lui-même. Remplaçable par les tests (coutures d'`Overview`).
+        self.overview = Overview(repo_root, runs_dir=self.runs_dir, log_dir=self.log_dir,
+                                 busy=lambda: self.manager.busy())
 
 
 class AdminHandler(BaseHTTPRequestHandler):
@@ -352,6 +362,12 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._serve_static("sql.html")
         if path in ("/games", "/urls"):
             return self._serve_static("urls.html")
+        if path in ("/overview", "/vue-d-ensemble"):
+            return self._serve_static("overview.html")
+        if path == "/api/overview":
+            # LECTURE SEULE (Romain, 2026-09-30) : l'état des VPS, aucune action relayée — pour
+            # agir sur une machine, on ouvre SA console. Aucune route POST ne lui correspond.
+            return self._send_json(200, self.state.overview.payload())
         if path == "/api/data-entry/recap":
             run = parse_qs(parsed.query).get("run", [""])[0]
             return self._get_data_entry_recap(run)
@@ -497,7 +513,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         # their current bytes. Even a tab open across a redeploy pulls the new
         # JS/CSS on its next reload (index.html itself is no-store). Deterministic
         # (content hash, no timestamps).
-        if name in ("index.html", "sort.html", "auto.html", "urls.html"):
+        if name in ("index.html", "sort.html", "auto.html", "urls.html", "overview.html"):
             body = self._version_assets(body)
         self._send_bytes(200, STATIC_FILES[name], body)
 
@@ -507,7 +523,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         # open across a redeploy pulls the new asset on its next reload (the HTML
         # itself is no-store). Covers both pages' assets; a no-op for those absent.
         for asset in ("app.js", "style.css", "sort.js", "sort.css", "auto.js", "auto.css",
-                      "urls.js", "urls.css"):
+                      "urls.js", "urls.css", "overview.js", "overview.css"):
             asset_path = STATIC_DIR / asset
             if not asset_path.is_file():
                 continue

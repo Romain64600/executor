@@ -3,6 +3,43 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-09-30 — Onglet « Vue d'ensemble » : les trois VPS sur une page, en lecture seule
+
+Romain : « Est-ce que tu penses qu'il serait bien, dans l'admin, d'avoir un onglet pour monitor
+les logs des trois VPS en direct sur la même page ? », puis « Qu'on puisse voir si les serveurs
+sont up, le type de tâche actuel, etc. », puis « Go pour l'onglet vue d'ensemble ».
+
+- **`/overview`** (alias `/vue-d-ensemble`, onglet ajouté à toutes les pages de la console) : une
+  carte par machine, rafraîchie toutes les 15 s avec « mis à jour il y a N s » ; badge UP / DOWN
+  (DOWN = injoignable, admin muet ou service clé arrêté — le motif est écrit ; un service absent
+  n'est pas une panne) ; la tâche en clair (« Balayage groupe A en boucle — passe 3, GOG page 12,
+  saisie depuis 14:03 UTC », pause de boucle et prochaine passe, saisie par page, tri,
+  maintenance, « Rien en cours » avec le dernier balayage) ; créées, heure de lancement, version
+  du code (avertissement quand les machines ne sont pas sur le même commit), uptime / charge /
+  disque / mémoire, alertes en rouge, 20 derniers événements, lien « Ouvrir la console ». Lisible
+  sur téléphone (une colonne).
+- **`src/vps_snapshot.py` + `scripts/20_vps_snapshot.py`** : la photo d'UNE machine, lecture
+  seule, < 3 s (git, systemctl et l'admin sondés en parallèle), jamais une exception (une section
+  illisible est nommée dans `errors`). Lue comme `auto.js` lit déjà le balayage (`sweep_loop`,
+  recap de la passe courante, `current`, `offer_submit_history` pour la page en cours ; le groupe
+  retrouvé par l'ensemble des marchands) ; marqueur `state/active_run.json` quand l'admin ne répond
+  pas. Journal filtré (`redact` + filtre de texte : webhook, cookies `wordpress_*`, autorisation).
+- **`GET /api/overview`** (`src/admin/overview.py`) : cette machine en processus (le `busy()` de
+  l'admin, jamais un HTTP vers soi-même), les autres par `ssh` avec une **clé dédiée** et une
+  **commande forcée** côté distant — la ligne ssh ne porte aucune commande, `IdentitiesOnly=yes`.
+  Toutes en parallèle, 10 s au plus chacune, cache de 10 s partagé par les onglets ; machines
+  déclarées dans `state/overview_hosts.json` (jamais commité ; sans lui, seule cette machine) ;
+  une entrée invalide (cible `-o…`, clé relative, lien `javascript:`) est refusée et affichée
+  DOWN. Aucune route d'écriture.
+- Tests : `tests/test_vps_overview.py` (38 : balayage de groupe en boucle, pause sans double
+  compte, saisie par page, tri, maintenance, run lancé au terminal quand l'admin ne répond pas,
+  secrets du journal, alertes, faux ssh UP / délai / JSON illisible / cache / onglets
+  simultanés, route en lecture seule) ; `tests/js/overview.test.mjs` exécute la page (8
+  scénarios) et rougit sur 7 mutations (`tests/test_console_js_simulation.py`).
+- Installation (clé, ligne `authorized_keys`, format de la configuration) :
+  [`ops/VUE_D_ENSEMBLE.md`](../ops/VUE_D_ENSEMBLE.md) ; contrat de la photo :
+  [`DATA_CONTRACTS.md`](DATA_CONTRACTS.md).
+
 ## 2026-09-30 — Maintenance des VPS : `scripts/18_vps_maintenance.py` + `scripts/19_restart_vps.py`
 
 Romain : « on va pouvoir travailler sur un script de restart, que tu feras passer sur les VPS

@@ -205,5 +205,57 @@ class AutoConsoleLivePageSimulationTests(unittest.TestCase):
                                     f"le harnais passe sans « {nom} » :\n{proc.stdout}")
 
 
+OVERVIEW_HARNESS = ROOT / "tests" / "js" / "overview.test.mjs"
+
+
+@unittest.skipIf(NODE is None, "node absent (dépendance de test)")
+class OverviewConsoleSimulationTests(unittest.TestCase):
+    """La VUE D'ENSEMBLE des VPS (Romain, 2026-09-30 : « Go pour l'onglet vue d'ensemble »),
+    exécutée : UP / DOWN et son motif, la tâche en clair, les alertes, l'avertissement de
+    version, le rafraîchissement de 15 s et « mis à jour il y a N s », des GET seulement."""
+
+    def test_the_harness_targets_the_shipped_page(self):
+        self.assertTrue(OVERVIEW_HARNESS.is_file(), OVERVIEW_HARNESS)
+        self.assertIn('"src", "admin", "static", "overview.js"',
+                      OVERVIEW_HARNESS.read_text(encoding="utf-8"))
+
+    def test_every_scenario_passes(self):
+        proc = subprocess.run([NODE, str(OVERVIEW_HARNESS)], cwd=ROOT, capture_output=True,
+                              text=True, timeout=120)
+        self.assertEqual(proc.returncode, 0,
+                         f"\n--- sortie node ---\n{proc.stdout}\n{proc.stderr}")
+        self.assertIn("tout passe", proc.stdout)
+
+    def test_the_harness_goes_red_on_each_removed_piece(self):
+        """Vert ne prouve rien tant que rouge n'est pas prouvé : sans le badge DOWN, sans
+        l'avertissement de version, sans le rafraîchissement, sans la garde d'ordre des
+        réponses, ou avec un lien de console non filtré, le harnais doit rougir."""
+
+        import os
+        import tempfile
+        js = (ROOT / "src" / "admin" / "static" / "overview.js").read_text(encoding="utf-8")
+        mutations = {
+            "badge DOWN": ('text: up ? "UP" : "DOWN"', 'text: "UP"'),
+            "motif du DOWN": ("if (!up && (h.down_reasons || []).length) {", "if (false) {"),
+            "avertissement de version": ("const warn = versionWarning(hosts);", "const warn = null;"),
+            "rafraîchissement": ("  setInterval(refresh, REFRESH_MS);\n", ""),
+            "garde d'ordre": ("  if (seq !== SEQ) return;   // une réponse plus ancienne", "  //"),
+            "lien filtré": ("const url = safeUrl(h.console_url);", "const url = h.console_url;"),
+            "âge de la photo": ("a.textContent = ageText(sec);", ""),
+        }
+        for nom, (avant, apres) in mutations.items():
+            with self.subTest(nom):
+                self.assertIn(avant, js, f"la forme de « {nom} » a changé")
+                casse = js.replace(avant, apres, 1)
+                with tempfile.TemporaryDirectory() as tmp:
+                    faux = pathlib.Path(tmp) / "overview.js"
+                    faux.write_text(casse, encoding="utf-8")
+                    proc = subprocess.run([NODE, str(OVERVIEW_HARNESS)], cwd=ROOT,
+                                          capture_output=True, text=True, timeout=120,
+                                          env=dict(os.environ, OVERVIEW_JS=str(faux)))
+                self.assertNotEqual(proc.returncode, 0,
+                                    f"le harnais passe sans « {nom} » :\n{proc.stdout}")
+
+
 if __name__ == "__main__":
     unittest.main()

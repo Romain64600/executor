@@ -235,7 +235,8 @@ executor/
 │   ├── 13_aks_ping.py          # the ONLY sanctioned AKS reachability probe (AKS/Staff UA)
 │   ├── 14_feed_status.py       # per-merchant feed state → docs/feeds/<Merchant>.md (read-only on runs/)
 │   ├── 18_vps_maintenance.py   # maintenance d'UN VPS : arrêt propre, apt sûr, reboot si requis, relance prouvée
-│   └── 19_restart_vps.py       # pilote de la maintenance, VPS par VPS (à blanc par défaut) — ops/MAINTENANCE_VPS.md
+│   ├── 19_restart_vps.py       # pilote de la maintenance, VPS par VPS (à blanc par défaut) — ops/MAINTENANCE_VPS.md
+│   └── 20_vps_snapshot.py      # photo LECTURE SEULE de cette machine (une ligne JSON) — onglet « Vue d'ensemble », commande forcée ssh
 ├── manual_launch/
 │   └── run_executor.sh         # terminal-only launcher: prepare / check / dry-run / submit
 ├── ops/                        # admin page install: systemd unit, nginx vhost, runbook
@@ -244,8 +245,9 @@ executor/
 │   │                           #   validation triple regen (validation_io.py), supervised
 │   │                           #   submit (submit_manager.py), cookie-transfer re-auth
 │   │                           #   (login_manager.py), Learning annotations (learning_io.py),
-│   │                           #   static/ UI
+│   │                           #   vue d'ensemble des VPS (overview.py, lecture seule), static/ UI
 │   ├── aks_env.py              # constants, pure validators, env classification, HTTP probes
+│   ├── vps_snapshot.py         # la photo d'une machine (tâche en clair, journal filtré, alertes) — lecture seule, 2026-09-30
 │   ├── browser_lock.py         # advisory flock on state/browser.lock — one tab, one navigator (OP1)
 │   ├── cdp_client.py           # read-only CDP /json/version client (no browser actions)
 │   ├── cdp_session.py          # read-only CDP WebSocket session (navigate + evaluate)
@@ -521,6 +523,16 @@ cookies dans SA console) :
 
 Le verrou `state/browser.lock` ne vaut que pour une machine : **jamais le même marchand ni le
 même groupe sur deux machines à la fois**.
+
+**Vue d'ensemble (2026-09-30)** — l'onglet `/overview` de la console (« Vue d'ensemble ») montre
+les trois machines sur une page, rafraîchie toutes les 15 s : UP / DOWN et pourquoi (injoignable,
+admin muet, service clé arrêté), la tâche en clair (« Balayage groupe A en boucle — passe 3, GOG
+page 12, saisie depuis 14:03 UTC »), les créées, la version du code (avertissement si les machines
+divergent), la charge, les alertes en rouge et les 20 derniers événements. **Lecture seule** :
+aucune action n'est relayée, « Ouvrir la console » mène à celle de la machine. Les autres
+machines sont lues par ssh avec une clé dédiée bridée par une commande forcée
+(`scripts/20_vps_snapshot.py`) ; sans `state/overview_hosts.json`, seule la machine qui sert la
+page est affichée — installation et ligne `authorized_keys` : [`ops/VUE_D_ENSEMBLE.md`](ops/VUE_D_ENSEMBLE.md).
 
 **Maintenance (mise à jour Debian, redémarrage, relance)** : `scripts/19_restart_vps.py`, à blanc
 par défaut, un VPS après l'autre, la machine qui pilote en dernier — [`ops/MAINTENANCE_VPS.md`](ops/MAINTENANCE_VPS.md)

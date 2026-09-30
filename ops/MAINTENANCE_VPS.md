@@ -62,6 +62,10 @@ python3 scripts/19_restart_vps.py --apply                 # tout, dans l'ordre
 python3 scripts/19_restart_vps.py --apply --only secours --reboot-secours   # redémarrage autorisé
 ```
 
+**Suivre depuis la console** : l'onglet « Vue d'ensemble » (`/overview`, [`VUE_D_ENSEMBLE.md`](VUE_D_ENSEMBLE.md))
+dit pour chaque VPS « Maintenance … en cours » (processus `18 … run|postboot`, `19 --apply`, ou
+`pending.json`), « redémarrage requis par Debian » et le code de la dernière maintenance.
+
 En `--apply`, l'agent de chaque VPS tire le code (`git pull --ff-only`) APRÈS avoir arrêté le
 balayage — jamais sous un run. Un VPS où le script n'est pas encore déployé est « reporté » (127).
 **Lancer le pilote dans tmux** : il peut durer plusieurs heures.

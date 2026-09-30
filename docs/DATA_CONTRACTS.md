@@ -1013,3 +1013,62 @@ fichiers.
 (`no_sweep_running`, le marqueur ayant un pid mort), mais cet ajout-là ne se retrouve qu'en
 comparant `targets_queue.json` et `targets_added`. C'est le prix d'un canal fichier sans
 transaction ; il est nommé plutôt que nié.
+
+## La photo d'une machine — `scripts/20_vps_snapshot.py` (schema 1, 2026-09-30)
+
+L'onglet « Vue d'ensemble » (`ops/VUE_D_ENSEMBLE.md`). Produite par `src/vps_snapshot.snapshot`
+— en processus par l'admin pour sa propre machine, sur UNE ligne JSON par le script pour les
+autres (commande forcée de la clé ssh dédiée). Lecture seule, < 3 s, jamais une exception :
+chaque section illisible vaut `null` et son motif est dans `errors`.
+
+```json
+{"schema": 1, "at": "…Z", "host": "vmi3565249",
+ "code": {"sha": "2272e92", "date": "…", "branch": "main", "subject": "…"} | null,
+ "services": {"aks-admin": "active", "aks-chromium": "active",
+              "hermes-cdp-proxy": "absent", "nginx": "active"} | null,
+ "uptime_s": 1900241, "load": [2.36, 2.32, 2.29], "cpus": 8,
+ "disk": {"path": "/", "used_pct": 2.9, "free_gb": 274.6, "total_gb": 295.1},
+ "mem": {"total_mb": 24038, "available_mb": 19319, "used_pct": 19.6}, "boot_id": "…",
+ "admin": {"reachable": true, "latency_ms": 113, "error": null,
+           "busy": {"run_id": "…", "kind": "data_entry_auto", "source": "admin"} | null},
+ "task": {"type": "aucune | balayage | saisie_par_page | tri | maintenance | autre",
+          "label": "Balayage groupe A en boucle — passe 3, GOG page 12, saisie depuis 14:03 UTC",
+          "kind": "data_entry_auto", "run_id": "…", "source": "admin | cli",
+          "group": "A | B | liste blanche | null", "merchants": ["…"], "loop": true,
+          "state": "running | pause | stopped | fini | démarrage", "pass": 3,
+          "pass_run_id": "…-pass3", "next_pass_at": "…Z", "started_at": "…Z",
+          "current": {"merchant": "GOG", "page": 12, "run": "…-p12", "stage": "submit",
+                      "stage_label": "saisie", "since": "…Z", "stage_at": "…Z"},
+          "created": {"total": 1595, "loop_finished_passes": 1553, "pass": 40, "page": 2},
+          "halted_merchants": ["GameSeal: extract_failed_p3"], "unknown_offers": 0,
+          "maintenance": null | {"pending": false, "processes": [...], "label": "…"},
+          "last_sweep": {"run_id": "…", "created": 900, "ended_at": "…Z",
+                         "stopped_reason": "session_expired", "stopped_label": "…"}},
+ "logs": [{"ts": "…Z", "event": "submit_offer", "text": "offre 8 : créée",
+           "run": "…-p12", "merchant": "GOG", "page": 12}],
+ "logs_live": true, "alerts": ["…"], "reboot_required": false,
+ "last_maintenance": {"finished_at": "…Z", "exit": 0, "…": "…"} | null,
+ "errors": {"<section>": "<motif>"}}
+```
+
+* **`task`** — lu comme `auto.js` et la route recap le lisent : `admin_submit.json` du lancement,
+  `loop.json` (`src/sweep_loop.read_status` / `current_pass_run_id`), `recap.json` de la passe
+  COURANTE, `current` du marchand en cours ; les créées de la page en cours comme
+  `api/runs/<run>` (`offer_submit_history`). En pause, la passe finie est déjà dans les totaux
+  de la boucle (pas de double compte). Le **groupe** n'est écrit nulle part : il est retrouvé par
+  l'ensemble des marchands (`merchant_groups.group_targets`), ou lu dans la ligne de commande
+  d'un balayage lancé au terminal (`--group`). Quand l'admin ne répond pas, le run déclaré
+  retombe sur `state/active_run.json`. **Maintenance** : `state/maintenance/pending.json`, ou un
+  processus `18_vps_maintenance.py run|postboot` / `19_restart_vps.py` (jamais `status`).
+* **`logs`** — les 20 derniers événements utiles de `logs/<lancement>.jsonl` et du journal de la
+  page en cours (ou de la dernière page finie), les plus récents d'abord ; sans `guard_snapshot`,
+  `pacing`, `*_wait` ; une seule ligne par type de progression. Chaque enregistrement passe par
+  `redact` puis par un filtre de texte (webhook, cookies `wordpress_*`, autorisation).
+* **`services`** — `systemctl show` : `absent` = unité inconnue de la machine (jamais une panne).
+
+**`state/overview_hosts.json`** (jamais commité) — la liste des machines de la vue d'ensemble :
+`{"ssh_key": "<chemin absolu>", "hosts": [{"name", "label", "ssh": "user@hôte" | null,
+"key"?, "console_url"?}]}` ; `ssh: null` = la machine qui sert la page. Format complet et ligne
+`authorized_keys` : `ops/VUE_D_ENSEMBLE.md`. `GET /api/overview` rend `{at, hosts: [{name, label,
+console_url, local, ssh, reachable, latency_ms, snapshot | null, error, status: "up" | "down",
+down_reasons: [...]}], config: {file, configured, error}, ttl_s, cached, age_s}`.
