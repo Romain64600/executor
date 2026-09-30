@@ -43,11 +43,12 @@ rougit sans le correctif :
   pour dire `busy` ; s'il se tait, la photo retombe sur le marqueur et, sans marqueur, dit
   « Tâche inconnue » — jamais « Rien en cours ». La photo prend < 3 s d'ordinaire, 6 s au pire
   (dans les 10 s du ssh).
-- Tests : `tests/test_vps_overview.py` (57, dont 19 nouveaux : photo d'un autre format et mal
+- Tests : `tests/test_vps_overview.py` (58, dont 20 nouveaux : photo d'un autre format et mal
   formée sans 500 et avec cache, verdict qui lève, route ; boucle tuée en passe, en pause, entre
   fin de passe et `loop.json`, balayage simple tué, fin propre et dossier sans recap inchangés ;
   lancement admin / relance au terminal / saisie validée ; sonde réelle contre de vrais serveurs
-  locaux — sain, lent à lister ses runs, muet, connexion refusée ; `run_cmd` / `run_ssh` sur un
+  locaux — sain, lent à lister ses runs, liste des runs coupée net (`IncompleteRead`, une
+  `HTTPException` et non une `OSError`), muet, connexion refusée ; `run_cmd` / `run_ssh` sur un
   vrai `sleep` → 124 « délai dépassé »). `tests/js/overview.test.mjs` : 10 scénarios, 10
   mutations qui rougissent (garde des alertes, carte isolée, balayage interrompu en plus).
 

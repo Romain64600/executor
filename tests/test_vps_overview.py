@@ -591,6 +591,7 @@ class _Admin(http.server.BaseHTTPRequestHandler):
 
     meta_delay = 0.0
     runs_delay = 0.0
+    runs_truncated = False
 
     def do_GET(self):  # noqa: N802
         delay = self.meta_delay if self.path == "/api/meta" else self.runs_delay
@@ -599,10 +600,15 @@ class _Admin(http.server.BaseHTTPRequestHandler):
         body = {"platforms": []} if self.path == "/api/meta" else \
             {"runs": [], "busy": {"run_id": "r1", "kind": "sort_scan", "source": "admin"}}
         data = json.dumps(body).encode()
+        # une réponse coupée : Content-Length annonce plus que ce qui part
+        extra = 100 if self.runs_truncated and self.path != "/api/meta" else 0
         try:
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Content-Length", str(len(data) + extra))
+            if extra:
+                self.send_header("Connection", "close")
+                self.close_connection = True
             self.end_headers()
             self.wfile.write(data)
         except OSError:
@@ -615,8 +621,9 @@ class _Admin(http.server.BaseHTTPRequestHandler):
 class AdminProbeTests(unittest.TestCase):
     """La sonde RÉELLE de l'admin, contre de vrais serveurs locaux (jamais le port 8650)."""
 
-    def serve(self, *, meta_delay=0.0, runs_delay=0.0):
-        handler = type("H", (_Admin,), {"meta_delay": meta_delay, "runs_delay": runs_delay})
+    def serve(self, *, meta_delay=0.0, runs_delay=0.0, runs_truncated=False):
+        handler = type("H", (_Admin,), {"meta_delay": meta_delay, "runs_delay": runs_delay,
+                                        "runs_truncated": runs_truncated})
         server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         self.addCleanup(server.server_close)
@@ -638,6 +645,13 @@ class AdminProbeTests(unittest.TestCase):
         self.assertIsNone(out["busy"])
         self.assertTrue(out["busy_unknown"])
         self.assertIn("délai de 0.5 s dépassé", out["busy_error"])
+
+    def test_liste_des_runs_coupee_net_l_admin_reste_joignable(self):
+        out = vps_snapshot.admin_probe_http(self.serve(runs_truncated=True), timeout=1.0,
+                                            busy_timeout=1.0)
+        self.assertTrue(out["reachable"], out)
+        self.assertTrue(out["busy_unknown"])
+        self.assertIn("IncompleteRead", out["busy_error"])
 
     def test_admin_qui_ne_repond_plus(self):
         out = vps_snapshot.admin_probe_http(self.serve(meta_delay=1.5, runs_delay=1.5),

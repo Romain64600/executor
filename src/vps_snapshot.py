@@ -37,6 +37,7 @@ le marqueur ``state/active_run.json`` quand l'admin ne répond pas).
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import re
@@ -268,6 +269,10 @@ def _admin_get(url: str, timeout: float) -> tuple[Any, int]:
     return data, int((time.monotonic() - started) * 1000)
 
 
+# Une réponse coupée (``IncompleteRead``) est une ``HTTPException``, pas une ``OSError``.
+_PROBE_ERRORS = (urllib.error.URLError, OSError, ValueError, http.client.HTTPException)
+
+
 def _probe_error(exc: BaseException, timeout: float) -> str:
     if isinstance(exc, TimeoutError) or "timed out" in str(exc):
         return f"délai de {timeout:g} s dépassé"
@@ -298,12 +303,12 @@ def admin_probe_http(url: str = ADMIN_URL, timeout: float = ADMIN_TIMEOUT_S,
         try:
             _, meta_ms = f_meta.result()
             meta_error = None
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except _PROBE_ERRORS as exc:
             meta_ms, meta_error = None, _probe_error(exc, timeout)
         try:
             data, runs_ms = f_runs.result()
             runs_error = None if isinstance(data, dict) else "réponse inattendue de /api/sort/runs"
-        except (urllib.error.URLError, OSError, ValueError) as exc:
+        except _PROBE_ERRORS as exc:
             data, runs_ms, runs_error = None, None, _probe_error(exc, busy_timeout)
     if meta_error and runs_error:
         return {"reachable": False, "busy": None, "error": meta_error}
