@@ -36,7 +36,8 @@ class InternalLinksAreRelativeTests(unittest.TestCase):
             "liens absolus — ils ignorent le préfixe /executor/ :\n" + "\n".join(offenders))
 
     def test_the_sql_tab_bar_points_at_the_same_targets_as_the_others(self):
-        """Les cinq onglets doivent être les mêmes partout, sinon la navigation diverge."""
+        """Les six onglets doivent être les mêmes partout, sinon la navigation diverge
+        (« Price check » ajouté le 2026-10-01)."""
 
         import re as _re
         def tabs(name):
@@ -45,8 +46,8 @@ class InternalLinksAreRelativeTests(unittest.TestCase):
             block = block[:block.index("</nav>")]
             return _re.findall(r'href="([^"]+)"', block)
         ref = tabs("sort.html")
-        self.assertEqual(ref, [".", "tri", "auto", "games", "sql"], ref)
-        for page in ("auto.html", "urls.html", "sql.html"):
+        self.assertEqual(ref, [".", "tri", "auto", "games", "sql", "price-check"], ref)
+        for page in ("auto.html", "urls.html", "sql.html", "pricecheck.html"):
             with self.subTest(page=page):
                 self.assertEqual(tabs(page), ref)
 

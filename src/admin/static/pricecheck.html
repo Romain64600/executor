@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AKS Executor — Price check</title>
+  <link rel="stylesheet" href="auto.css">
+  <link rel="stylesheet" href="pricecheck.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <h1>Price check <span class="sub">— premiers prix AllKeyShop</span></h1>
+    </div>
+    <nav class="tabs">
+      <a href="." class="tab">Validation &amp; Submit</a>
+      <a href="tri" class="tab">Tri des listes</a>
+      <a href="auto" class="tab">Data Entry Auto</a>
+      <a href="games" class="tab">Saisie par jeux</a>
+      <a href="sql" class="tab">Tri SQL</a>
+      <a href="price-check" class="tab active" aria-current="page">Price check</a>
+    </nav>
+    <div class="topbar-right">
+      <button id="refresh" type="button" title="Relire les reports du moniteur">↻ Rafraîchir</button>
+      <button id="doc-btn" type="button" title="Aide / Help">📖 Doc</button>
+      <button id="theme" type="button" title="Basculer le thème">◐</button>
+    </div>
+  </header>
+
+  <dialog id="doc-modal" class="doc-modal">
+    <div class="doc-box">
+      <header class="doc-head">
+        <h3>📖 Price check — Aide / Help</h3>
+        <form method="dialog"><button class="doc-x" aria-label="Fermer / Close">✕</button></form>
+      </header>
+      <div class="doc-body">
+        <section>
+          <h4>Ce que montre cette page · What it shows</h4>
+          <p lang="fr">Le moniteur <b>price-check</b> (service <code>price-check</code>, dépôt à part)
+            contrôle la <b>première offre</b> de chaque page AllKeyShop suivie : le top 5 Popular, le
+            top 4 Coming soon PC et tous les jeux des tops clicks de la home. Il alerte sur Discord
+            quand cette offre ne correspond pas au produit ou au marché : autre produit, autre région,
+            autre plateforme, compte vendu comme clé, DLC vendu comme le jeu, autre édition.</p>
+          <p lang="fr">Chaque carte est un <b>report</b> : l'offre, le verdict, la raison, la page
+            AllKeyShop et l'URL du marchand. <b>SUSPECT</b> = alerte envoyée ; <b>À VÉRIFIER</b> = le
+            nom n'est lisible ni dans l'URL ni sur la page, mais l'offre est le premier prix d'une page
+            d'un top ou d'un coming soon (alerte envoyée) ; <b>NON VÉRIFIABLE</b> = même cas ailleurs,
+            noté sans alerte.</p>
+          <p class="en" lang="en">The price-check monitor checks the first offer of every followed
+            AllKeyShop page and alerts on Discord when it does not match the product or the market.
+            Each card is one report: offer, verdict, reason, AllKeyShop page and merchant URL.</p>
+        </section>
+        <section>
+          <h4>Trancher · Deciding</h4>
+          <p lang="fr"><b>Vrai positif</b> : l'erreur est réelle, l'alerte était juste.
+            <b>Faux positif</b> : l'offre est correcte, l'alerte n'aurait pas dû partir.
+            <b>À discuter</b> : on en parle. La note dit pourquoi (ex. « la page AKS est bien DLC ») :
+            c'est elle qui sert à corriger les règles du moniteur.</p>
+          <p lang="fr">La décision s'ajoute à <code>decisions.jsonl</code>, signée de ton identifiant
+            de connexion ; le moniteur la relit avant son passage suivant. Une nouvelle décision sur la
+            même offre remplace la précédente (l'historique reste). Rien n'est envoyé, aucune offre
+            AllKeyShop n'est modifiée.</p>
+          <p class="en" lang="en">True positive / false positive / to discuss, with a note. The
+            decision is appended to decisions.jsonl under your login; the monitor re-reads it before
+            its next pass. A later decision on the same offer replaces the earlier one. Nothing is
+            sent, no AllKeyShop offer is changed.</p>
+        </section>
+        <section>
+          <h4>Fraîcheur · Freshness</h4>
+          <p lang="fr">Le moniteur réécrit les reports à chaque passage. Si l'export a plus de 45
+            minutes, la page le signale : le service est peut-être arrêté. Une offre qui n'est plus
+            le premier prix depuis plus d'une heure porte la mention « Plus vu en premier prix » ;
+            la case « encore en tête seulement » la masque. Un lien
+            <code>…/executor/price-check#offer-&lt;id&gt;</code> ouvre la page sur un seul report.</p>
+          <p class="en" lang="en">The monitor rewrites the reports after every pass; an export older
+            than 45 minutes is flagged. An offer no longer first price for over an hour is marked;
+            « encore en tête seulement » hides it. <code>#offer-&lt;id&gt;</code> opens one report.</p>
+        </section>
+      </div>
+    </div>
+  </dialog>
+
+  <main class="pc-main">
+    <section class="card">
+      <div class="recap-head">
+        <h2>Reports <span id="pc-fresh" class="dim"></span></h2>
+      </div>
+      <div id="pc-stale" class="warn hidden"></div>
+      <div id="pc-error" class="warn hidden"></div>
+      <div id="pc-summary" class="summary"></div>
+      <div class="pc-filters">
+        <label>Verdict
+          <select id="f-verdict">
+            <option value="">Tous</option>
+            <option value="SUSPECT">SUSPECT</option>
+            <option value="À VÉRIFIER">À VÉRIFIER</option>
+            <option value="NON VÉRIFIABLE">NON VÉRIFIABLE</option>
+          </select>
+        </label>
+        <label>Décision
+          <select id="f-decision">
+            <option value="">Toutes</option>
+            <option value="none">Sans décision</option>
+            <option value="vrai">Vrai positif</option>
+            <option value="faux">Faux positif</option>
+            <option value="a_discuter">À discuter</option>
+          </select>
+        </label>
+        <label>Recherche <input id="f-text" type="search" placeholder="jeu, marchand, raison…" autocomplete="off"></label>
+        <label><input id="f-live" type="checkbox"> encore en tête seulement</label>
+      </div>
+    </section>
+    <section id="pc-list" class="pc-list" aria-live="polite"></section>
+  </main>
+
+  <footer id="status" class="idle">Chargement…</footer>
+  <script src="pricecheck.js"></script>
+</body>
+</html>

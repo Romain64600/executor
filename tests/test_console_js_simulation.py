@@ -205,5 +205,54 @@ class AutoConsoleLivePageSimulationTests(unittest.TestCase):
                                     f"le harnais passe sans « {nom} » :\n{proc.stdout}")
 
 
+PRICECHECK_HARNESS = ROOT / "tests" / "js" / "pricecheck.test.mjs"
+
+
+@unittest.skipIf(NODE is None, "node absent (dépendance de test)")
+class PriceCheckConsoleSimulationTests(unittest.TestCase):
+    """La page PRICE CHECK, exécutée (2026-10-01). Romain : « ce rapport interactif de price check devrait
+    être dans l'admin ». Le harnais charge le vrai ``pricecheck.js``, sert la forme réelle de
+    ``api/price-check/reports`` et regarde ce qui s'affiche et ce qui part quand on tranche."""
+
+    def test_the_harness_targets_the_shipped_console(self):
+        self.assertTrue(PRICECHECK_HARNESS.is_file(), PRICECHECK_HARNESS)
+        self.assertIn('"src", "admin", "static", "pricecheck.js"',
+                      PRICECHECK_HARNESS.read_text(encoding="utf-8"))
+
+    def test_every_scenario_passes(self):
+        proc = subprocess.run([NODE, str(PRICECHECK_HARNESS)], cwd=ROOT, capture_output=True,
+                              text=True, timeout=120)
+        self.assertEqual(proc.returncode, 0,
+                         f"\n--- sortie node ---\n{proc.stdout}\n{proc.stderr}")
+        self.assertNotIn("FAIL", proc.stdout)
+
+    def test_the_harness_goes_red_on_each_removed_guard(self):
+        """Vert ne prouve rien tant que rouge n'est pas prouvé : sans la garde des liens, sans la note
+        envoyée, sans le refus affiché, sans les boutons bloqués pendant l'envoi, le harnais rougit."""
+
+        import os
+        import tempfile
+        js = (ROOT / "src" / "admin" / "static" / "pricecheck.js").read_text(encoding="utf-8")
+        mutations = {
+            "lien sûr": ('const safe = /^https?:\\/\\//i.test(String(url || ""));', "const safe = true;"),
+            "note": ("body: JSON.stringify({ offer, decision: key, note })", "body: JSON.stringify({ offer, decision: key })"),
+            "refus affiché": ("ERRORS[offer] = e.message;", ""),
+            "envoi en cours": ("b.disabled = BUSY.has(offer);", "b.disabled = false;"),
+            "export ancien": ('$("#pc-stale").classList.toggle("hidden", !stale);', ""),
+        }
+        for name, (before, after) in mutations.items():
+            with self.subTest(name):
+                self.assertIn(before, js, f"la forme de « {name} » a changé")
+                broken = js.replace(before, after, 1)
+                with tempfile.TemporaryDirectory() as tmp:
+                    fake = pathlib.Path(tmp) / "pricecheck.js"
+                    fake.write_text(broken, encoding="utf-8")
+                    proc = subprocess.run([NODE, str(PRICECHECK_HARNESS)], cwd=ROOT,
+                                          capture_output=True, text=True, timeout=120,
+                                          env=dict(os.environ, PRICECHECK_JS=str(fake)))
+                self.assertNotEqual(proc.returncode, 0,
+                                    f"le harnais passe sans « {name} » :\n{proc.stdout}")
+
+
 if __name__ == "__main__":
     unittest.main()

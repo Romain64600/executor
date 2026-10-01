@@ -40,6 +40,12 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8650)
     parser.add_argument("--root", default=str(ROOT), help="Repo root (test seam).")
     parser.add_argument(
+        "--price-check-dir",
+        default=None,
+        help="Shared directory of the price-check monitor (reports.json in, decisions.jsonl "
+        "out). Default: /var/lib/price-check.",
+    )
+    parser.add_argument(
         "--allow-external",
         action="store_true",
         help="Allow a non-loopback bind. NOT recommended: auth lives in nginx, "
@@ -55,7 +61,10 @@ def main() -> int:
         )
         return 2
 
-    state = AppState(Path(args.root).resolve())
+    state = AppState(
+        Path(args.root).resolve(),
+        price_check_dir=Path(args.price_check_dir) if args.price_check_dir else None,
+    )
     orphans = state.manager.recover_orphans(state.runs_dir)
     print(
         json.dumps(
