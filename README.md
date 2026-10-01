@@ -245,7 +245,8 @@ executor/
 │   │                           #   validation triple regen (validation_io.py), supervised
 │   │                           #   submit (submit_manager.py), cookie-transfer re-auth
 │   │                           #   (login_manager.py), Learning annotations (learning_io.py),
-│   │                           #   vue d'ensemble des VPS (overview.py, lecture seule), static/ UI
+│   │                           #   vue d'ensemble des VPS (overview.py, lecture seule),
+│   │                           #   price-check reports + decisions (price_check_io.py), static/ UI
 │   ├── aks_env.py              # constants, pure validators, env classification, HTTP probes
 │   ├── vps_snapshot.py         # la photo d'une machine (tâche en clair, journal filtré, alertes) — lecture seule, 2026-09-30
 │   ├── browser_lock.py         # advisory flock on state/browser.lock — one tab, one navigator (OP1)
@@ -652,6 +653,22 @@ en cours depuis 1 h 42 » (ou « fini le … (5 h 12) ») ; en boucle, « Boucle
 et fini, chaque page sa plage horaire (« 14:03 → 14:20 UTC »), la page en cours son début.
 Tout en UTC, comme les journaux. Les heures par marchand et par page viennent des sweeps lancés
 APRÈS le déploiement ; un sweep plus ancien montre seulement l'heure de lancement.
+
+**Price check — console `/price-check` (2026-10-01).** Romain : « ce rapport interactif de price
+check devrait être dans l'admin ». Le moniteur des premiers prix AllKeyShop (dépôt `price-check`,
+service `price-check`, sous root) écrit à chaque passage `reports.json` dans
+`/var/lib/price-check` (root:debian, 2775) : chaque offre SUSPECT, À VÉRIFIER ou NON VÉRIFIABLE,
+avec sa page AllKeyShop, son URL marchand, sa raison et son rang dans l'édition. La console les
+affiche (filtres verdict / décision / texte, « encore en tête seulement »), signale un export de
+plus de 45 min, et tranche chaque report : **Vrai positif**, **Faux positif** ou **À discuter**,
+avec une note. La décision est AJOUTÉE à `decisions.jsonl` dans le même dossier (une ligne JSON,
+signée de l'identité Basic de nginx, jamais d'un champ du corps ; la dernière par offre l'emporte) ;
+le moniteur la relit avant son passage suivant. Rien d'autre n'est écrit : aucune page n'est
+ouverte, aucune offre AKS n'est touchée, aucun message n'est envoyé. Fail-closed : sans
+`reports.json` lisible, la page affiche l'erreur et aucune décision n'est acceptée ; une offre
+absente de l'export ou une décision que le moniteur ne connaît pas est refusée. Le dossier se
+change par `scripts/07_admin_server.py --price-check-dir`. Lien direct vers un report :
+`/executor/price-check#offer-<id>`.
 
 **Tri par SQL — console `/sql` (2026-09-18).** Romain exécute lui-même les `UPDATE` de tri
 dans phpMyAdmin ; la console les **génère et les mesure**, elle n'exécute rien et n'importe

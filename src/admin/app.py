@@ -60,6 +60,7 @@ from src.admin.learning_io import (
 from src.admin.validation_io import ValidationIOError, apply_overrides_and_validate
 from src.admin.login_manager import LoginError, LoginManager
 from src.admin.overview import Overview
+from src.admin import price_check_io
 from src.admin.auto_merchants import allowed_list as auto_allowed_list, rejection_reason
 from src.aks_lists import LISTS as AKS_LISTS, PENDING_LIST_ID, is_blacklist_label
 from src.extractor import FEED_LIST_BLACKLIST
@@ -111,6 +112,10 @@ STATIC_FILES = {
     "overview.html": "text/html; charset=utf-8",
     "overview.js": "application/javascript; charset=utf-8",
     "overview.css": "text/css; charset=utf-8",
+    # Price check — les reports du moniteur de premiers prix (dépôt price-check), à trancher.
+    "pricecheck.html": "text/html; charset=utf-8",
+    "pricecheck.js": "application/javascript; charset=utf-8",
+    "pricecheck.css": "text/css; charset=utf-8",
 }
 MAX_BODY_BYTES = 2 * 1024 * 1024
 RUN_ROUTE = re.compile(r"^/api/runs/([^/]+)(/.*)?$")
@@ -230,10 +235,12 @@ class AppState:
         runs_dir: Path | None = None,
         log_dir: Path | None = None,
         manager: SubmitManager | None = None,
+        price_check_dir: Path | None = None,
     ) -> None:
         self.repo_root = repo_root
         self.runs_dir = runs_dir or (repo_root / "runs")
         self.log_dir = log_dir or (repo_root / "logs")
+        self.price_check_dir = price_check_dir or price_check_io.DEFAULT_DIR
         self.manager = manager or SubmitManager(repo_root, log_dir=self.log_dir)
         self.login = LoginManager(repo_root)
         self.validation_lock = threading.Lock()
@@ -368,6 +375,10 @@ class AdminHandler(BaseHTTPRequestHandler):
             # LECTURE SEULE (Romain, 2026-09-30) : l'état des VPS, aucune action relayée — pour
             # agir sur une machine, on ouvre SA console. Aucune route POST ne lui correspond.
             return self._send_json(200, self.state.overview.payload())
+        if path in ("/price-check", "/pricecheck"):
+            return self._serve_static("pricecheck.html")
+        if path == "/api/price-check/reports":
+            return self._get_price_check_reports()
         if path == "/api/data-entry/recap":
             run = parse_qs(parsed.query).get("run", [""])[0]
             return self._get_data_entry_recap(run)
@@ -513,7 +524,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         # their current bytes. Even a tab open across a redeploy pulls the new
         # JS/CSS on its next reload (index.html itself is no-store). Deterministic
         # (content hash, no timestamps).
-        if name in ("index.html", "sort.html", "auto.html", "urls.html", "overview.html"):
+        if name in ("index.html", "sort.html", "auto.html", "urls.html", "overview.html", "pricecheck.html"):
             body = self._version_assets(body)
         self._send_bytes(200, STATIC_FILES[name], body)
 
@@ -523,13 +534,41 @@ class AdminHandler(BaseHTTPRequestHandler):
         # open across a redeploy pulls the new asset on its next reload (the HTML
         # itself is no-store). Covers both pages' assets; a no-op for those absent.
         for asset in ("app.js", "style.css", "sort.js", "sort.css", "auto.js", "auto.css",
-                      "urls.js", "urls.css", "overview.js", "overview.css"):
+                      "urls.js", "urls.css", "overview.js", "overview.css", "pricecheck.js",
+                      "pricecheck.css"):
             asset_path = STATIC_DIR / asset
             if not asset_path.is_file():
                 continue
             tag = hashlib.sha256(asset_path.read_bytes()).hexdigest()[:8]
             text = text.replace(f'"{asset}"', f'"{asset}?v={tag}"')
         return text.encode("utf-8")
+
+    # -- Price check ---------------------------------------------------------------
+    # Les reports du moniteur price-check (src/admin/price_check_io.py). Lecture de
+    # reports.json, ajout d'une ligne à decisions.jsonl : rien d'autre, aucun accès AKS.
+
+    def _get_price_check_reports(self) -> None:
+        try:
+            payload = price_check_io.load_reports(self.state.price_check_dir)
+        except price_check_io.PriceCheckError as exc:
+            raise ApiError(exc.http_status, exc.code, exc.message) from exc
+        self._send_json(200, payload)
+
+    def _post_price_check_decision(self) -> None:
+        body = self._json_body()
+        # La décision est signée dans un registre que toute l'équipe relit : l'identité est
+        # celle de l'auth Basic de nginx, jamais un champ du corps, et sans elle on refuse.
+        authed = self._basic_user()
+        if not authed:
+            raise ApiError(403, "authentication_required",
+                           "décision refusée : identité Basic authentifiée requise")
+        try:
+            entry = price_check_io.record_decision(
+                self.state.price_check_dir, body.get("offer"), body.get("decision"),
+                body.get("note"), by=authed)
+        except price_check_io.PriceCheckError as exc:
+            raise ApiError(exc.http_status, exc.code, exc.message) from exc
+        self._send_json(200, {"recorded": entry})
 
     def _get_validation(self, run_dir: Path) -> None:
         candidates = read_run_json(run_dir, "candidates.json")
@@ -673,6 +712,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._post_data_entry_by_urls_submit()
         if path == "/api/sort/stop":
             return self._send_json(200, self.state.manager.stop_active())
+        if path == "/api/price-check/decision":
+            return self._post_price_check_decision()
         if path == "/api/sort/scan":
             body = self._json_body()
             by = str(self._basic_user() or body.get("by") or "operateur")  # [35] authed wins; body "by" cannot forge attribution

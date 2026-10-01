@@ -37,7 +37,8 @@ class InternalLinksAreRelativeTests(unittest.TestCase):
 
     def test_the_sql_tab_bar_points_at_the_same_targets_as_the_others(self):
         """Les onglets doivent être les mêmes partout, sinon la navigation diverge. Le sixième,
-        « Vue d'ensemble » (2026-09-30), est sur toutes les pages — y compris la sienne."""
+        « Vue d'ensemble » (2026-09-30), est sur toutes les pages — y compris la sienne ; le septième,
+        « Price check » (2026-10-01), aussi."""
 
         import re as _re
         def tabs(name):
@@ -46,8 +47,8 @@ class InternalLinksAreRelativeTests(unittest.TestCase):
             block = block[:block.index("</nav>")]
             return _re.findall(r'href="([^"]+)"', block)
         ref = tabs("sort.html")
-        self.assertEqual(ref, [".", "tri", "auto", "games", "sql", "overview"], ref)
-        for page in ("auto.html", "urls.html", "sql.html", "overview.html"):
+        self.assertEqual(ref, [".", "tri", "auto", "games", "sql", "overview", "price-check"], ref)
+        for page in ("auto.html", "urls.html", "sql.html", "overview.html", "pricecheck.html"):
             with self.subTest(page=page):
                 self.assertEqual(tabs(page), ref)
 
