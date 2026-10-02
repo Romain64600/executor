@@ -299,9 +299,9 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             "mode du lancement": ("body: JSON.stringify({ mode })", "body: JSON.stringify({})"),
             "bouton grisé pendant le passage": ("btn.disabled = !!pending || !!m.running;", "btn.disabled = false;"),
             # 02/10/2026 : le recontrôle (réparées)
-            "réparée affichée": ('const pill = isRuleCleared(r) ? "FAUX POSITIF LEVÉ" : isFixed(r) ? "RÉPARÉE" : (r.verdict || "?");',
+            "réparée affichée": ('const pill = isRuleCleared(r) ? "FAUX POSITIF LEVÉ" : isVerified(r) ? "VÉRIFIÉE OK" : isFixed(r) ? "RÉPARÉE" : (r.verdict || "?");',
                                  'const pill = r.verdict || "?";'),
-            "faux positif levé ≠ réparée": ('const isRepaired = (r) => isFixed(r) && r.fixed_kind !== "rule";',
+            "faux positif levé ≠ réparée": ('const isRepaired = (r) => isFixed(r) && r.fixed_kind !== "rule" && r.fixed_kind !== "verified";',
                                             "const isRepaired = (r) => isFixed(r);"),
         }
         for name, (before, after) in mutations.items():

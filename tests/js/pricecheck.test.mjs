@@ -37,6 +37,10 @@ const TRAP = {
 const FIXED = { ...TORO, offer: "140000002", verdict: "OK", product: "Réparé", reasons: [], decision: null, history: [],
   fixed_at: "2026-10-02 18:30", fixed_how: "recontrôle OK", fixed_from: "SUSPECT", seen_lag_seconds: 60 };
 const STILL = { ...TORO, offer: "140000003", product: "Toujours faux", still_wrong_at: "2026-10-02 18:31", seen_lag_seconds: 60 };
+// 02/10/2026: an offer that could not be verified (NON VÉRIFIABLE) and is verified OK at a re-check
+const VERIFIED = { ...TORO, offer: "140000005", verdict: "OK", product: "Vérifiée", reasons: [], decision: null, history: [],
+  fixed_at: "2026-10-02 22:10", fixed_kind: "verified", fixed_how: "vérifiée OK au recontrôle", fixed_from: "NON VÉRIFIABLE",
+  seen_lag_seconds: 60 };
 // 02/10/2026: UFC 5 at Eneba, found OK at the 18:37 re-check with nothing changed: a rule cleared an old false positive
 const RULE = { ...TORO, offer: "140000004", verdict: "OK", product: "UFC 5", reasons: [], decision: null, history: [],
   fixed_at: "2026-10-02 18:37", fixed_kind: "rule", fixed_how: "ancien faux positif : rien n'a changé, levé par une règle",
@@ -180,7 +184,7 @@ test("the two run buttons show the monitor's state and send the mode", async () 
   const post = lastPost(c);
   assert.ok(post && post.url === "api/price-check/run", "no run request left the page");
   assert.deepEqual(post.body, { mode: "top-games" });
-  assert.ok(c.$("#launch-top-games").disabled, "the button stays clickable while the request is sent");
+  assert.ok(c.$("#launch-top-games").disabled, "the button must be disabled while the request is sent");
   await c.net.release("api/price-check/run", { requested: { mode: "top-games", by: "romain", at: "2026-10-02T15:01:00+02:00" } });
   await tick();
   assert.ok(c.$("#msg-top-games").textContent.includes("Demande déposée par romain"), c.$("#msg-top-games").textContent);
@@ -215,6 +219,22 @@ test("re-check: a false positive cleared by a rule is not a repair", async () =>
   c.$("#f-verdict").value = "rule";
   await c.$("#f-verdict").fire("change");
   assert.deepEqual(shown(c), ["offer-" + RULE.offer]);
+});
+
+test("re-check: an offer verified OK is neither repaired nor a false positive", async () => {
+  const c = await start({ ...REPORTS, reports: [TORO, FIXED, RULE, VERIFIED] });
+  const v = card(c, VERIFIED.offer);
+  assert.ok(v.textContent.includes("VÉRIFIÉE OK") && !v.textContent.includes("RÉPARÉE") && !v.textContent.includes("FAUX POSITIF"),
+            v.textContent);
+  assert.ok(v.textContent.includes("Vérifiée OK au recontrôle le 02/10 22:10 : vérifiée OK au recontrôle (était NON VÉRIFIABLE)"),
+            v.textContent);
+  const summary = c.$("#pc-summary").textContent;
+  assert.ok(summary.includes("1réparées") && summary.includes("1faux positifs levés") && summary.includes("1vérifiées OK"), summary);
+  for (const [value, offer] of [["fixed", FIXED.offer], ["rule", RULE.offer], ["verified", VERIFIED.offer]]) {
+    c.$("#f-verdict").value = value;
+    await c.$("#f-verdict").fire("change");
+    assert.deepEqual(shown(c), ["offer-" + offer], value);
+  }
 });
 
 test("the state line tells the last re-check", async () => {

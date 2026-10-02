@@ -80,4 +80,5 @@ main.pc-main { max-width:1100px; }
 .v-rule .pc-verdict { color:var(--dim); border-color:var(--dim); }
 .kpi.k-rule .kpi-n { color:var(--dim); }
 .pc-rule { color:var(--dim); font-size:.8rem; font-weight:600; }
+.kpi.k-verified .kpi-n { color:var(--good); }
 .pc-still { color:var(--bad); font-size:.8rem; }

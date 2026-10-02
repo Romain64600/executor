@@ -1,7 +1,7 @@
 """Price check — the first-price monitor's reports, read and decided from the admin page.
 
 The price-check monitor (its own repository, systemd unit ``price-check``, runs as root)
-checks the first offer of every AllKeyShop page it follows. After every pass it writes
+checks the first prices of every edition (top-offers) of every AllKeyShop page it follows. After every pass it writes
 ``reports.json`` into a shared directory (``/var/lib/price-check``, root:debian, mode 2775):
 every SUSPECT, À VÉRIFIER or NON VÉRIFIABLE offer with its AllKeyShop URL, its merchant URL
 and its reason (Romain, 2026-10-01: « ce rapport interactif de price check devrait être dans

@@ -45,10 +45,12 @@ const VERDICT_CLASS = { "SUSPECT": "v-suspect", "À VÉRIFIER": "v-verifier", "N
 // re-check (Romain, 02/10/2026: « on saura si elles sont réparées ou pas »): a flagged offer found OK again, or gone
 // from its page, carries fixed_at; one found wrong again carries still_wrong_at. fixed_kind tells why it is OK:
 // "repaired", the offer changed (URL, region, platform, edition) or left its page; "rule", nothing changed and a
-// rule added since clears it: the alert was a false positive. An entry fixed before fixed_kind existed is "repaired".
+// rule added since clears it: the alert was a false positive; "verified", it could not be verified before and is now
+// verified OK (neither repaired nor a false positive). An entry fixed before fixed_kind existed is "repaired".
 const isFixed = (r) => !!r.fixed_at;
 const isRuleCleared = (r) => isFixed(r) && r.fixed_kind === "rule";
-const isRepaired = (r) => isFixed(r) && r.fixed_kind !== "rule";
+const isVerified = (r) => isFixed(r) && r.fixed_kind === "verified";
+const isRepaired = (r) => isFixed(r) && r.fixed_kind !== "rule" && r.fixed_kind !== "verified";
 
 let DATA = null;         // last answer of api/price-check/reports
 let LOADING = false;
@@ -93,7 +95,8 @@ function matchesFilters(r) {
   const v = $("#f-verdict").value;
   const d = $("#f-decision").value;
   const q = String($("#f-text").value || "").trim().toLowerCase();
-  if (v === "fixed" ? !isRepaired(r) : v === "rule" ? !isRuleCleared(r) : v && (r.verdict !== v || isFixed(r))) return false;
+  if (v === "fixed" ? !isRepaired(r) : v === "rule" ? !isRuleCleared(r) : v === "verified" ? !isVerified(r)
+    : v && (r.verdict !== v || isFixed(r))) return false;
   if (d === "none" && decisionKey(r)) return false;
   if (d && d !== "none" && decisionKey(r) !== d) return false;
   if ($("#f-live").checked && isGone(r)) return false;
@@ -116,6 +119,7 @@ function renderSummary(reports) {
     kpi("k-nv", n((r) => r.verdict === "NON VÉRIFIABLE"), "NON VÉRIFIABLE"),
     kpi("k-fixed", n(isRepaired), "réparées"),
     kpi("k-rule", n(isRuleCleared), "faux positifs levés"),
+    kpi("k-verified", n(isVerified), "vérifiées OK"),
     kpi("", reports.length, "reports"));
 }
 
@@ -150,9 +154,11 @@ function renderItem(r) {
   const recheck = isRuleCleared(r)
     ? el("div", { class: "pc-rule", text: "Faux positif levé par une règle le " + stamp(r.fixed_at) + " : " +
       (r.fixed_how || "rien n'a changé dans l'offre") + was })
+    : isVerified(r) ? el("div", { class: "pc-fixed", text: "Vérifiée OK au recontrôle le " + stamp(r.fixed_at) + " : " +
+      (r.fixed_how || "vérifiée OK") + was })
     : isFixed(r) ? el("div", { class: "pc-fixed", text: "Réparée le " + stamp(r.fixed_at) + " : " + (r.fixed_how || "recontrôle OK") + was })
     : r.still_wrong_at ? el("div", { class: "pc-still", text: "Toujours en erreur au recontrôle du " + stamp(r.still_wrong_at) }) : null;
-  const pill = isRuleCleared(r) ? "FAUX POSITIF LEVÉ" : isFixed(r) ? "RÉPARÉE" : (r.verdict || "?");
+  const pill = isRuleCleared(r) ? "FAUX POSITIF LEVÉ" : isVerified(r) ? "VÉRIFIÉE OK" : isFixed(r) ? "RÉPARÉE" : (r.verdict || "?");
   const tone = isRuleCleared(r) ? "v-rule" : isFixed(r) ? "v-fixed" : (VERDICT_CLASS[r.verdict] || "v-nv");
   return el("article", { class: "pc-item " + tone + (cur ? " decided" : ""),
     id: "offer-" + offer }, [
@@ -317,7 +323,8 @@ function renderRuns() {
     if (rc && rc.at) {
       parts.push((rc.kind === "all" ? "Recontrôle complet " : "Recontrôle des offres signalées ") + stamp(rc.at) + " : " +
         (rc.checked || 0) + " offre(s), " + (rc.fixed || 0) + " réparée(s), " +
-        (rc.rules ? rc.rules + " faux positif(s) levé(s) par une règle, " : "") + (rc.new || 0) + " nouvelle(s) erreur(s), " +
+        (rc.rules ? rc.rules + " faux positif(s) levé(s) par une règle, " : "") +
+        (rc.verified ? rc.verified + " vérifiée(s) OK, " : "") + (rc.new || 0) + " nouvelle(s) erreur(s), " +
         (rc.still || 0) + " toujours en erreur");
     }
     if (!m.running && m.next_at) parts.push("prochain passage " + stamp(m.next_at));
