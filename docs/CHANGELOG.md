@@ -3,6 +3,18 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-10-02 — Maintenance des VPS : ré-audit de Romain (5 défauts) corrigé ; vue d'ensemble : VPS 3 ajouté
+
+- **Ré-audit de `2272e92` par Romain (01/10), 5 défauts confirmés, corrigés** (`scripts/18`, `19`,
+  `tests/test_vps_maintenance.py`, classe `ReAuditDu0110`, mutations rougies) : le matching n'est
+  plus un moment sûr d'arrêt (et une bascule vers la saisie est signalée) ; contrôle et
+  redémarrage sous le verrou du navigateur, `systemctl reboot` immédiat, le pilote lit
+  « rebooting » même si ssh se coupe ; relance d'une boucle avec ses ajouts de la console ;
+  processus illisibles = pas de redémarrage ; garde DNS sans `enabled-runtime`, `static` seulement
+  actif. Détail : `ops/MAINTENANCE_VPS.md`.
+- **Vue d'ensemble : VPS 3 (secours) ajouté** sur le go de Romain — clé d'hôte vérifiée contre celle
+  de root, clé de lecture à commande forcée installée, `state/overview_hosts.json` à trois machines.
+
 ## 2026-09-30 — Vue d'ensemble : revue adverse avant mise en ligne (trois constats, trois correctifs)
 
 Revue adverse de la branche `overview`, chaque constat vérifié puis corrigé avec un test qui

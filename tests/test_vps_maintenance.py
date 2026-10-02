@@ -68,13 +68,13 @@ class LaMiseAJourNeCoupeRien(unittest.TestCase):
             source = (ROOT / "scripts" / f).read_text(encoding="utf-8")
             with self.subTest(f):
                 self.assertNotIn('"kill-server"', source)
-        # le seul redémarrage : programmé par systemd-run, pour que la connexion se ferme
+        # le seul redémarrage : `systemctl reboot`, sous le verrou du navigateur (ré-audit 01/10)
         agent = (ROOT / "scripts" / "18_vps_maintenance.py").read_text(encoding="utf-8")
         lignes = [ln for ln in agent.splitlines() if '"systemctl", "reboot"' in ln]
         self.assertEqual(len(lignes), 1, lignes)
         self.assertNotIn('["sudo", "reboot"]', agent)
         self.assertNotIn('"shutdown"', agent)
-        self.assertIn('"systemd-run", "--on-active=10"', agent)
+        self.assertIn('with browser_lock(ROOT, label="maintenance: redémarrage imminent")', agent)
 
 
 class CeQuiEstRelance(unittest.TestCase):
@@ -202,7 +202,7 @@ class LeMomentSur(unittest.TestCase):
     def test_les_etapes(self):
         with tempfile.TemporaryDirectory() as tmp:
             for current, attendu in ((None, True), ({"stage": "extract"}, True),
-                                     ({"stage": "match"}, True), ({"stage": "pause"}, True),
+                                     ({"stage": "match"}, False), ({"stage": "pause"}, True),
                                      ({"stage": "probe"}, True), ({"stage": "submit", "page": 7}, False),
                                      ({"stage": "move"}, False), ({"stage": "inconnue"}, False)):
                 with self.subTest(current):
@@ -393,6 +393,101 @@ class LeDnsDoitSurvivreAuRedemarrage(unittest.TestCase):
                            "dns_boot": "resolvconf n'est pas activé"}, "auto")
         self.assertFalse(plan["reboot"])
         self.assertIn("resolvconf", plan["reboot_note"])
+
+
+class ReAuditDu0110(unittest.TestCase):
+    """Ré-audit de 2272e92 (Romain, 01/10) : cinq défauts confirmés, chacun épinglé ici."""
+
+    def test_p1_le_matching_n_est_plus_un_moment_sur(self):
+        # « match » précède la saisie : il peut basculer en `submit` entre la lecture et l'arrêt.
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertFalse(M.safe_to_stop(_recap_dir(tmp, {"stage": "match"}))[0])
+            self.assertTrue(M.safe_to_stop(_recap_dir(tmp, {"stage": "extract"}))[0])
+
+    def test_p1_bascule_vers_l_ecriture_signalee_apres_l_arret(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = _recap_dir(tmp, {"stage": "extract"})
+            etats = iter([{"busy": None}])
+
+            def admin(path, body=None):
+                if path == "/api/sort/stop":
+                    # pendant la demande, l'étape bascule en saisie
+                    (run / "recap.json").write_text(json.dumps({"targets": [{"merchant": "K4G",
+                        "recap": {"current": {"stage": "submit", "page": 2}}}]}), encoding="utf-8")
+                    return {"stopped": True}
+                return next(etats, {"busy": None})
+            ok, why = M.stop_and_wait("r", timeout=30, run_dir=run, admin=admin,
+                                      runner=lambda cmd, timeout=0: _cp(0, "1234") if cmd[:2] == ["systemctl", "show"] else _cp(1, ""),
+                                      sleep=lambda s: None)
+        self.assertTrue(ok)
+        self.assertIn("ATTENTION", why)
+
+    def test_p1_le_redemarrage_tient_le_verrou_du_navigateur(self):
+        from src.browser_lock import browser_lock
+        args = M.argparse.Namespace(reboot="auto", allow_hermes=False)
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(M, "ROOT", pathlib.Path(tmp)), \
+                mock.patch.object(M, "STATE_DIR", pathlib.Path(tmp) / "state" / "maintenance"), \
+                mock.patch.object(M, "reboot_decision", return_value=(True, "requis")) as dec, \
+                mock.patch.object(M, "install_postboot_unit", return_value=(True, "ok")), \
+                mock.patch.object(M, "schedule_reboot", return_value=(True, "")) as rb:
+            # un run tient déjà le navigateur → aucun redémarrage, motif nommé
+            with browser_lock(pathlib.Path(tmp), label="run en cours"):
+                ctx = {}
+                self.assertIsNone(M.reboot_under_lock(args, ctx, None, sleep=lambda s: None))
+            self.assertIn("navigateur tenu", ctx["reboot"])
+            rb.assert_not_called()
+            dec.assert_not_called()
+            # navigateur libre → contrôle ET redémarrage sous le verrou
+            ctx = {}
+            self.assertEqual(M.reboot_under_lock(args, ctx, None, sleep=lambda s: None), M.EXIT_REBOOT)
+            rb.assert_called_once()
+
+    def test_p2_une_boucle_garde_ses_ajouts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launch = pathlib.Path(tmp) / "20261001-100000-auto"
+            launch.mkdir()
+            passe = pathlib.Path(tmp) / "20261001-100000-auto-pass2"
+            passe.mkdir()
+            (launch / "loop.json").write_text(json.dumps({"loop": True, "current_run_id": passe.name}))
+            (passe / "recap.json").write_text(json.dumps({
+                "planned": [{"merchant": "GOG", "store_id": "34"}, {"merchant": "K4G", "store_id": "92"}],
+                "targets_refused": [{"merchant": "Difmark", "store_id": "167"}]}))
+            (launch / "targets_queue.json").write_text(json.dumps([
+                {"merchant": "Wyrel", "store_id": "162"}, {"merchant": "Difmark", "store_id": "167"}]))
+            out = M.loop_targets([{"merchant": "GOG", "store_id": "34"}], launch)
+        self.assertEqual([t["merchant"] for t in out], ["GOG", "K4G", "Wyrel"])
+
+    def test_p2_processus_illisibles_pas_de_redemarrage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            requis = pathlib.Path(tmp) / "reboot-required"
+            requis.write_text("x")
+
+            def runner(cmd, timeout=0):
+                if cmd[:2] == ["systemctl", "is-enabled"]:
+                    return _cp(0, "enabled\n")
+                if cmd[:2] == ["systemctl", "show"]:
+                    return _cp(1, "")            # MainPID illisible
+                return _cp(1, "")
+            with mock.patch.object(M, "REBOOT_REQUIRED", requis):
+                ok, why = M.reboot_decision("auto", False, runner=runner,
+                                            admin=lambda p, b=None: {"busy": None})
+        self.assertFalse(ok)
+        self.assertIn("illisibles", why)
+
+    def test_p2_enabled_runtime_n_est_pas_une_activation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lien = pathlib.Path(tmp) / "resolv.conf"
+            lien.symlink_to("/run/resolvconf/resolv.conf")
+            with mock.patch.object(M, "RESOLV_CONF", lien):
+                for etat, actif, attendu in (("enabled-runtime", 0, False), ("static", 1, False),
+                                             ("static", 0, True), ("enabled", 1, True)):
+                    def runner(cmd, timeout=0, etat=etat, actif=actif):
+                        if cmd[:2] == ["systemctl", "is-enabled"]:
+                            return _cp(0 if etat == "enabled" else 1, etat + "\n")
+                        return _cp(actif, "")
+                    with self.subTest(etat=etat, actif=actif):
+                        self.assertEqual(M.dns_survives_reboot(runner)[0], attendu)
 
 
 class UnePanneApresLArretNEstJamaisMuette(unittest.TestCase):
@@ -628,6 +723,14 @@ class LePilote(unittest.TestCase):
             P.main(["--apply", "--only", "ancienne-vm"], runner=runner, sleep=lambda s: None)
         self.assertTrue(all("git" not in c for c in vus), vus)
         self.assertTrue(vus[0].endswith("--pull"), "l'agent tire APRÈS l'arrêt")
+
+    def test_ssh_coupe_par_le_redemarrage_vaut_42(self):
+        # Le redémarrage est immédiat : ssh peut finir en 255 après avoir imprimé « rebooting ».
+        def runner(cmd, timeout=0):
+            return _cp(255, json.dumps({"rebooting": True, "context": {"boot_id_before": "a"}}))
+        with mock.patch.object(P, "notify"):
+            code = P.main(["--apply", "--only", "cette-vm"], runner=runner, sleep=lambda s: None)
+        self.assertEqual(code, 42)
 
     def test_vps_inconnu(self):
         self.assertEqual(P.main(["--only", "nulle-part"], runner=lambda *a, **k: _cp(0)), 2)

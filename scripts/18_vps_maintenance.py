@@ -91,7 +91,12 @@ EXIT_REBOOT = 42
 # 75 s de grâce (et l'admin tue 10 à 120 s) — une offre longue peut être coupée entre le clic
 # « Create » et sa preuve. On ne demande donc l'arrêt QUE hors écriture : entre deux pages, en
 # lecture / matching, en pause — jamais pendant `submit` ni `move`.
-SAFE_STAGES = frozenset({"probe", "extract", "match", "pause"})
+# Ré-audit du 01/10 (P1) : « match » n'en fait plus partie — c'est l'étape qui PRÉCÈDE la saisie,
+# et elle peut basculer en `submit` entre la lecture du recap et la demande d'arrêt. Depuis
+# `probe` / `extract` / `pause`, l'étape suivante n'est jamais une écriture : l'arrêt coopératif
+# est vu par 10 avant tout lancement de 05 (`should_stop` avant la saisie).
+SAFE_STAGES = frozenset({"probe", "extract", "pause"})
+WRITE_STAGES = frozenset({"submit", "move"})
 
 # La mise à jour : jamais d'invite, jamais de service redémarré par needrestart, les fichiers de
 # config locaux gardés, le verrou d'apt attendu (unattended-upgrades).
@@ -322,8 +327,14 @@ def dns_survives_reboot(runner: Runner = run_cmd) -> tuple[bool, str]:
         if target.startswith(prefix):
             res = runner(["systemctl", "is-enabled", service], timeout=20)
             state = (res.stdout or "").strip()
-            if state in ("enabled", "static", "enabled-runtime", "alias"):
+            # Ré-audit du 01/10 (P2) : `enabled-runtime` est une activation TEMPORAIRE (perdue au
+            # redémarrage) ; `static` (sans [Install]) ne compte que s'il tourne déjà, donc tiré
+            # par une dépendance.
+            if state in ("enabled", "alias"):
                 return True, f"{service} activé"
+            if state == "static" and runner(["systemctl", "is-active", "--quiet", service],
+                                            timeout=20).returncode == 0:
+                return True, f"{service} statique et actif"
             return False, (f"/etc/resolv.conf → {target}, mais {service} n'est pas activé "
                            f"({state or 'inconnu'}) : le DNS ne reviendrait pas après un redémarrage")
     return True, f"resolv.conf fixe ({target})"
@@ -428,6 +439,14 @@ def stop_and_wait(run_id: str, *, timeout: int, runner: Runner = run_cmd,
         answer = admin("/api/sort/stop", {})
     except Exception as exc:                  # noqa: BLE001
         return False, f"arrêt refusé : {exc}"
+    # Filet (ré-audit du 01/10) : si l'étape a basculé en écriture entre la lecture et l'arrêt,
+    # on le DIT — l'arrêt coopératif finit l'offre en cours, mais la grâce de 75 s existe.
+    rec = live_recap(run_dir or (ROOT / "runs" / run_id)) or {}
+    cur = ((rec.get("targets") or [{}])[-1].get("recap") or {}).get("current") or {}
+    note = ""
+    if str(cur.get("stage") or "") in WRITE_STAGES:
+        note = (f" — ATTENTION : une {cur.get('stage')} a démarré entre la lecture et l'arrêt "
+                f"(page {cur.get('page')}) ; vérifier ses offres UNKNOWN")
     waited = 0
     while waited <= timeout:
         try:
@@ -436,7 +455,7 @@ def stop_and_wait(run_id: str, *, timeout: int, runner: Runner = run_cmd,
             busy = "?"
         kids = admin_children(runner)
         if busy is None and kids == 0:
-            return True, f"arrêté ({run_id}, {why_safe}) en {waited} s"
+            return True, f"arrêté ({run_id}, {why_safe}) en {waited} s{note}"
         sleep(10)
         waited += 10
     return False, f"toujours actif après {timeout} s — rien d'autre n'est fait"
@@ -478,8 +497,10 @@ def install_postboot_unit(runner: Runner = run_cmd) -> tuple[bool, str]:
 
 
 def schedule_reboot(runner: Runner = run_cmd) -> tuple[bool, str]:
-    res = runner(["sudo", "systemd-run", "--on-active=10", "--unit=aks-maint-reboot",
-                  "systemctl", "reboot"], timeout=60)
+    """Redémarre TOUT DE SUITE (``systemctl reboot``, asynchrone). Appelé sous le verrou du
+    navigateur, que l'appelant garde jusqu'à l'extinction : aucun run ne peut écrire entre-temps."""
+
+    res = runner(["sudo", "systemctl", "reboot"], timeout=60)
     return res.returncode == 0, (res.stderr or res.stdout).strip()[:200]
 
 
@@ -611,6 +632,8 @@ def reboot_decision(policy: str, allow_hermes: bool, *, runner: Runner = run_cmd
     if busy:
         return False, f"redémarrage requis, NON fait : un run a démarré entre-temps ({busy.get('run_id')})"
     kids = admin_children(runner)
+    if kids is None:
+        return False, "redémarrage requis, NON fait : processus d'aks-admin illisibles"
     if kids:
         return False, f"redémarrage requis, NON fait : {kids} processus sous aks-admin"
     hermes = runner(["pgrep", "-u", "hermes"], timeout=20)
@@ -625,6 +648,67 @@ def git_pull(runner: Runner = run_cmd) -> str:
     head = runner(["git", "-C", str(ROOT), "log", "--oneline", "-1"], timeout=30)
     return ("à jour : " if res.returncode == 0 else f"pull refusé ({res.stderr.strip()[:120]}) : ") + \
         (head.stdout or "").strip()[:80]
+
+
+def reboot_under_lock(args: argparse.Namespace, context: dict[str, Any],
+                      relaunch: dict | None, *, hold_s: float = 120.0,
+                      sleep: Callable[[float], None] = time.sleep) -> int | None:
+    """Décide et déclenche le redémarrage sous le verrou du navigateur. Rend 42 si la machine
+    redémarre (après avoir émis le résultat), None sinon (``context["reboot"]`` dit pourquoi)."""
+
+    from src.browser_lock import BrowserBusyError, browser_lock
+    try:
+        with browser_lock(ROOT, label="maintenance: redémarrage imminent"):
+            reboot, context["reboot"] = reboot_decision(args.reboot, args.allow_hermes)
+            if not reboot:
+                return None
+            ok_unit, why_unit = install_postboot_unit()
+            if not ok_unit:
+                context["reboot"] = f"non fait : {why_unit}"
+                return None
+            write_json(STATE_DIR / PENDING, {"context": context, "relaunch": relaunch,
+                                             "at": utc_now()})
+            ok_rb, why_rb = schedule_reboot()
+            if not ok_rb:
+                (STATE_DIR / PENDING).unlink(missing_ok=True)
+                context["reboot"] = f"redémarrage refusé : {why_rb}"
+                return None
+            emit({"rebooting": True, "context": context})
+            sleep(hold_s)                      # le verrou tient jusqu'à l'extinction
+            return EXIT_REBOOT
+    except BrowserBusyError as exc:
+        context["reboot"] = f"redémarrage requis, NON fait : navigateur tenu par un run ({exc})"
+        return None
+
+
+def loop_targets(meta_targets: list[dict], run_dir: Path) -> list[dict]:
+    """Les cibles d'une BOUCLE à relancer (ré-audit du 01/10, P2) : celles du lancement, plus
+    les marchands AJOUTÉS depuis la console — déjà pris par la passe courante (``planned`` de
+    son recap) ou encore en file (``targets_queue.json`` du lancement) —, moins ceux que la
+    passe a refusés (``targets_refused``). Ordre : lancement, puis ajouts."""
+
+    out: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(m: Any, s: Any) -> None:
+        key = (str(m or "").casefold(), str(s or ""))
+        if key[0] and key[1] and key not in seen:
+            seen.add(key)
+            out.append({"merchant": str(m), "store_id": str(s)})
+
+    for t in meta_targets:
+        add(t.get("merchant"), t.get("store_id"))
+    rec = live_recap(run_dir) or {}
+    refused = {(str(t.get("merchant") or "").casefold(), str(t.get("store_id") or ""))
+               for t in (rec.get("targets_refused") or []) if isinstance(t, dict)}
+    for t in rec.get("planned") or []:
+        if isinstance(t, dict):
+            add(t.get("merchant"), t.get("store_id"))
+    queue = read_json(run_dir / "targets_queue.json")
+    for t in queue if isinstance(queue, list) else []:
+        if isinstance(t, dict):
+            add(t.get("merchant"), t.get("store_id"))
+    return [t for t in out if (t["merchant"].casefold(), t["store_id"]) not in refused]
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -664,27 +748,24 @@ def cmd_run(args: argparse.Namespace) -> int:
                 relaunch["targets"] = rest
             if not relaunch["targets"]:
                 relaunch = None               # il était au bout : rien à relancer
+        elif stopped:
+            relaunch["targets"] = loop_targets(relaunch["targets"], ROOT / "runs" / str(plan["stop"]))
         if relaunch is not None:
             write_json(STATE_DIR / "relaunch.json", relaunch)
         if args.pull:
             context["code"] = git_pull()
         ok_apt, context["apt"] = apt_upgrade(
             log=STATE_DIR / f"apt-{time.strftime('%Y%m%d-%H%M%S')}.log")
-        reboot, context["reboot"] = (reboot_decision(args.reboot, args.allow_hermes) if ok_apt
-                                     else (False, "non fait : mise à jour en échec"))
-        if reboot:
-            ok_unit, why_unit = install_postboot_unit()
-            if ok_unit:
-                write_json(STATE_DIR / PENDING, {"context": context, "relaunch": relaunch,
-                                                 "at": utc_now()})
-                ok_rb, why_rb = schedule_reboot()
-                if ok_rb:
-                    emit({"rebooting": True, "context": context})
-                    return EXIT_REBOOT
-                (STATE_DIR / PENDING).unlink(missing_ok=True)
-                context["reboot"] = f"programmation refusée : {why_rb}"
-            else:
-                context["reboot"] = f"non fait : {why_unit}"
+        if ok_apt:
+            # Ré-audit du 01/10 (P1) : un run pouvait démarrer entre le contrôle et le
+            # redémarrage. Le VERROU DU NAVIGATEUR est pris AVANT le contrôle et gardé jusqu'à
+            # l'extinction : un run déjà lancé le tient (→ pas de redémarrage, motif nommé), un
+            # run lancé après ne peut rien lire ni écrire (le navigateur lui est refusé).
+            code_rb = reboot_under_lock(args, context, relaunch)
+            if code_rb is not None:
+                return code_rb
+        else:
+            context["reboot"] = "non fait : mise à jour en échec"
         code, result = finish(relaunch, context=context)
         emit(result)
         return EXIT_APT if not ok_apt else code

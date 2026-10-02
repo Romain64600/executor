@@ -167,7 +167,9 @@ def maintain(host: dict[str, Any], args: argparse.Namespace, *, runner: Runner =
         out.update(ok=not plan.get("blocked"), blocked=bool(plan.get("blocked")),
                    why=plan.get("blocked") or "plan prêt")
         return out
-    if res.returncode == EXIT_REBOOT:
+    # Le redémarrage est immédiat sous le verrou du navigateur (ré-audit du 01/10) : ssh peut se
+    # fermer AVANT le code 42 — c'est le JSON « rebooting » qui fait foi.
+    if res.returncode == EXIT_REBOOT or bool((payload or {}).get("rebooting")):
         if not host.get("ssh"):
             out.update(ok=True, rebooting_self=True,
                        why="cette machine redémarre — la fin est faite sur place au démarrage")

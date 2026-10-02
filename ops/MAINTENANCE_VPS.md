@@ -32,6 +32,18 @@ ont vu AKS injoignable, rien n'a été relancé (comportement voulu). Réparé (
 (`20260930-143231-auto`). **Garde ajoutée** : un redémarrage n'est plus autorisé si le service
 qui régénère `resolv.conf` (resolvconf, ou systemd-resolved) n'est pas activé (`dns_boot_ok`).
 
+**Ré-audit de Romain (01/10, sur `2272e92`) — 5 défauts confirmés, corrigés le 02/10 :**
+(P1) le matching n'est plus un « moment sûr » — il précède la saisie et peut basculer entre la
+lecture et l'arrêt ; si l'étape bascule quand même, le motif de l'arrêt le signale (« ATTENTION »)
+— seuls probe / extract / pause restent ; (P1) le contrôle d'avant redémarrage et le redémarrage
+se font SOUS le verrou du navigateur, gardé jusqu'à l'extinction (`systemctl reboot` immédiat) :
+un run qui tient le navigateur empêche le redémarrage, un run lancé après ne peut plus rien
+écrire ; le pilote reconnaît le redémarrage à la ligne « rebooting », même si ssh se coupe avant
+le code 42 ; (P2) une boucle relancée garde les marchands ajoutés depuis la console (`planned`
+de la passe + file `targets_queue.json`, moins les refusés) ; (P2) des processus d'`aks-admin`
+illisibles interdisent le redémarrage ; (P2) le garde DNS refuse `enabled-runtime` (activation
+temporaire) et n'accepte `static` que si le service tourne.
+
 ## Les deux scripts
 
 * **`scripts/18_vps_maintenance.py`** — sur CHAQUE VPS, sous `debian` (sudo sans mot de passe) :
