@@ -37,6 +37,10 @@ const TRAP = {
 const FIXED = { ...TORO, offer: "140000002", verdict: "OK", product: "Réparé", reasons: [], decision: null, history: [],
   fixed_at: "2026-10-02 18:30", fixed_how: "recontrôle OK", fixed_from: "SUSPECT", seen_lag_seconds: 60 };
 const STILL = { ...TORO, offer: "140000003", product: "Toujours faux", still_wrong_at: "2026-10-02 18:31", seen_lag_seconds: 60 };
+// 02/10/2026: UFC 5 at Eneba, found OK at the 18:37 re-check with nothing changed: a rule cleared an old false positive
+const RULE = { ...TORO, offer: "140000004", verdict: "OK", product: "UFC 5", reasons: [], decision: null, history: [],
+  fixed_at: "2026-10-02 18:37", fixed_kind: "rule", fixed_how: "ancien faux positif : rien n'a changé, levé par une règle",
+  fixed_from: "SUSPECT", seen_lag_seconds: 60 };
 const REPORTS = {
   dir: "/var/lib/price-check", generated_at: "2026-10-01T12:38:40+0200", age_seconds: 120,
   decisions: DECISIONS, reports: [TORO, TRAP],
@@ -197,14 +201,33 @@ test("re-check: a repaired offer says so, its filter finds it, a still-wrong one
   assert.ok(!shown(c).includes("offer-" + FIXED.offer), "a repaired offer is not a SUSPECT");
 });
 
+test("re-check: a false positive cleared by a rule is not a repair", async () => {
+  const c = await start({ ...REPORTS, reports: [TORO, FIXED, RULE] });
+  const rule = card(c, RULE.offer);
+  assert.ok(rule.textContent.includes("FAUX POSITIF LEVÉ") && !rule.textContent.includes("RÉPARÉE"), rule.textContent);
+  assert.ok(rule.textContent.includes("Faux positif levé par une règle le 02/10 18:37 : ancien faux positif : rien n'a changé, levé par une règle (était SUSPECT)"),
+            rule.textContent);
+  const summary = c.$("#pc-summary").textContent;
+  assert.ok(summary.includes("1réparées") && summary.includes("1faux positifs levés"), summary);
+  c.$("#f-verdict").value = "fixed";
+  await c.$("#f-verdict").fire("change");
+  assert.deepEqual(shown(c), ["offer-" + FIXED.offer], "the repaired filter lists the rule-cleared offer");
+  c.$("#f-verdict").value = "rule";
+  await c.$("#f-verdict").fire("change");
+  assert.deepEqual(shown(c), ["offer-" + RULE.offer]);
+});
+
 test("the state line tells the last re-check", async () => {
   const c = await start();
   const st = JSON.parse(JSON.stringify(STATUS));
   st.modes["top-games"].last_recheck = { at: "2026-10-02T18:30:00+0200", kind: "all", checked: 70, fixed: 2, new: 1, still: 3, unknown: 0 };
+  st.modes["homepage"].last_recheck = { at: "2026-10-02T18:37:00+0200", kind: "flagged", checked: 9, fixed: 0, rules: 4, new: 0, still: 5, unknown: 0 };
   await c.net.release("api/price-check/status", st);
   await tick();
   const top = c.$("#state-top-games").textContent;
   assert.ok(top.includes("Recontrôle complet 02/10 18:30 : 70 offre(s), 2 réparée(s), 1 nouvelle(s) erreur(s), 3 toujours en erreur"), top);
+  const home = c.$("#state-homepage").textContent;
+  assert.ok(home.includes("Recontrôle des offres signalées 02/10 18:37 : 9 offre(s), 0 réparée(s), 4 faux positif(s) levé(s) par une règle, 0 nouvelle(s) erreur(s), 5 toujours en erreur"), home);
 });
 
 test("a quiet pass says there was nothing new to check", async () => {

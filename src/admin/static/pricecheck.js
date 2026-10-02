@@ -43,8 +43,12 @@ const GONE_SECONDS = 60 * 60;   // offer not seen as first price for this long w
 const REFRESH_MS = 2 * 60 * 1000;
 const VERDICT_CLASS = { "SUSPECT": "v-suspect", "À VÉRIFIER": "v-verifier", "NON VÉRIFIABLE": "v-nv" };
 // re-check (Romain, 02/10/2026: « on saura si elles sont réparées ou pas »): a flagged offer found OK again, or gone
-// from its page, is "réparée"; one found wrong again carries still_wrong_at
+// from its page, carries fixed_at; one found wrong again carries still_wrong_at. fixed_kind tells why it is OK:
+// "repaired", the offer changed (URL, region, platform, edition) or left its page; "rule", nothing changed and a
+// rule added since clears it: the alert was a false positive. An entry fixed before fixed_kind existed is "repaired".
 const isFixed = (r) => !!r.fixed_at;
+const isRuleCleared = (r) => isFixed(r) && r.fixed_kind === "rule";
+const isRepaired = (r) => isFixed(r) && r.fixed_kind !== "rule";
 
 let DATA = null;         // last answer of api/price-check/reports
 let LOADING = false;
@@ -89,7 +93,7 @@ function matchesFilters(r) {
   const v = $("#f-verdict").value;
   const d = $("#f-decision").value;
   const q = String($("#f-text").value || "").trim().toLowerCase();
-  if (v === "fixed" ? !isFixed(r) : v && (r.verdict !== v || isFixed(r))) return false;
+  if (v === "fixed" ? !isRepaired(r) : v === "rule" ? !isRuleCleared(r) : v && (r.verdict !== v || isFixed(r))) return false;
   if (d === "none" && decisionKey(r)) return false;
   if (d && d !== "none" && decisionKey(r) !== d) return false;
   if ($("#f-live").checked && isGone(r)) return false;
@@ -110,7 +114,8 @@ function renderSummary(reports) {
     kpi("k-suspect", n((r) => r.verdict === "SUSPECT"), "SUSPECT"),
     kpi("k-verifier", n((r) => r.verdict === "À VÉRIFIER"), "À VÉRIFIER"),
     kpi("k-nv", n((r) => r.verdict === "NON VÉRIFIABLE"), "NON VÉRIFIABLE"),
-    kpi("k-fixed", n(isFixed), "réparées"),
+    kpi("k-fixed", n(isRepaired), "réparées"),
+    kpi("k-rule", n(isRuleCleared), "faux positifs levés"),
     kpi("", reports.length, "reports"));
 }
 
@@ -141,14 +146,18 @@ function renderItem(r) {
     "offre " + offer,
   ].filter(Boolean).join(" · ");
   const before = (r.history || []).slice(0, -1).reverse();
-  const recheck = isFixed(r)
-    ? el("div", { class: "pc-fixed", text: "Réparée le " + stamp(r.fixed_at) + " : " + (r.fixed_how || "recontrôle OK") +
-      (r.fixed_from ? " (était " + r.fixed_from + ")" : "") })
+  const was = r.fixed_from ? " (était " + r.fixed_from + ")" : "";
+  const recheck = isRuleCleared(r)
+    ? el("div", { class: "pc-rule", text: "Faux positif levé par une règle le " + stamp(r.fixed_at) + " : " +
+      (r.fixed_how || "rien n'a changé dans l'offre") + was })
+    : isFixed(r) ? el("div", { class: "pc-fixed", text: "Réparée le " + stamp(r.fixed_at) + " : " + (r.fixed_how || "recontrôle OK") + was })
     : r.still_wrong_at ? el("div", { class: "pc-still", text: "Toujours en erreur au recontrôle du " + stamp(r.still_wrong_at) }) : null;
-  return el("article", { class: "pc-item " + (isFixed(r) ? "v-fixed" : (VERDICT_CLASS[r.verdict] || "v-nv")) + (cur ? " decided" : ""),
+  const pill = isRuleCleared(r) ? "FAUX POSITIF LEVÉ" : isFixed(r) ? "RÉPARÉE" : (r.verdict || "?");
+  const tone = isRuleCleared(r) ? "v-rule" : isFixed(r) ? "v-fixed" : (VERDICT_CLASS[r.verdict] || "v-nv");
+  return el("article", { class: "pc-item " + tone + (cur ? " decided" : ""),
     id: "offer-" + offer }, [
     el("div", { class: "pc-head" }, [
-      el("span", { class: "pc-verdict", text: isFixed(r) ? "RÉPARÉE" : (r.verdict || "?") }),
+      el("span", { class: "pc-verdict", text: pill }),
       el("span", { class: "pc-product", text: (r.product || "?") + (r.edition ? " · " + r.edition : "") }),
       rankLabel(r) ? el("span", { class: "pc-rank", text: rankLabel(r) }) : null,
       el("span", { class: "pc-merchant", text: [r.merchant, price(r.price)].filter(Boolean).join(" · ") }),
@@ -307,7 +316,8 @@ function renderRuns() {
     const rc = m.last_recheck;
     if (rc && rc.at) {
       parts.push((rc.kind === "all" ? "Recontrôle complet " : "Recontrôle des offres signalées ") + stamp(rc.at) + " : " +
-        (rc.checked || 0) + " offre(s), " + (rc.fixed || 0) + " réparée(s), " + (rc.new || 0) + " nouvelle(s) erreur(s), " +
+        (rc.checked || 0) + " offre(s), " + (rc.fixed || 0) + " réparée(s), " +
+        (rc.rules ? rc.rules + " faux positif(s) levé(s) par une règle, " : "") + (rc.new || 0) + " nouvelle(s) erreur(s), " +
         (rc.still || 0) + " toujours en erreur");
     }
     if (!m.running && m.next_at) parts.push("prochain passage " + stamp(m.next_at));
