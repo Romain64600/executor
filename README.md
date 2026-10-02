@@ -673,7 +673,10 @@ change par `scripts/07_admin_server.py --price-check-dir`. Lien direct vers un r
 `run-<mode>.request` dans le dossier partagé (identité Basic, un fichier par mode, 409 si une demande attend
 déjà), le moniteur le lit en quelques secondes ; `status.json`, écrit par le moniteur, donne l'état de chaque
 mode (en cours, avancement, dernier et prochain passage), rafraîchi toutes les 10 s. L'admin n'exécute rien
-lui-même.
+lui-même. Un passage lancé ainsi **recontrôle toutes les offres retenues** de ses pages (Romain : « on saura si
+elles sont réparées ou pas ») : une offre signalée trouvée OK ou retirée de sa page s'affiche **RÉPARÉE** (filtre
+« Réparées »), une offre toujours fausse « toujours en erreur au recontrôle du … » ; le dernier recontrôle s'affiche
+dans la ligne d'état du mode.
 
 **Tri par SQL — console `/sql` (2026-09-18).** Romain exécute lui-même les `UPDATE` de tri
 dans phpMyAdmin ; la console les **génère et les mesure**, elle n'exécute rien et n'importe

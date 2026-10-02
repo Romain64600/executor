@@ -70,3 +70,10 @@ main.pc-main { max-width:1100px; }
 .pc-launch:hover:not(:disabled) { background:var(--accent-2); }
 .pc-launch:disabled { opacity:.45; cursor:not-allowed; }
 @media (max-width: 640px) { .pc-runs { grid-template-columns:1fr; } }
+
+/* recontrôle (02/10/2026) : réparée / toujours en erreur */
+.pc-item.v-fixed { border-left-color:var(--good); opacity:.85; }
+.v-fixed .pc-verdict { color:var(--good); border-color:var(--good); }
+.kpi.k-fixed .kpi-n { color:var(--good); }
+.pc-fixed { color:var(--good); font-size:.8rem; font-weight:600; }
+.pc-still { color:var(--bad); font-size:.8rem; }

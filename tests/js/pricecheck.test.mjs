@@ -34,6 +34,9 @@ const TRAP = {
   history: [{ decision: "faux", note: "", by: "remi", at: "2026-10-01T11:00:00+02:00" }],
   seen_at: "2026-09-30 08:00", seen_lag_seconds: 90000, edition_rank: 1,
 };
+const FIXED = { ...TORO, offer: "140000002", verdict: "OK", product: "Réparé", reasons: [], decision: null, history: [],
+  fixed_at: "2026-10-02 18:30", fixed_how: "recontrôle OK", fixed_from: "SUSPECT", seen_lag_seconds: 60 };
+const STILL = { ...TORO, offer: "140000003", product: "Toujours faux", still_wrong_at: "2026-10-02 18:31", seen_lag_seconds: 60 };
 const REPORTS = {
   dir: "/var/lib/price-check", generated_at: "2026-10-01T12:38:40+0200", age_seconds: 120,
   decisions: DECISIONS, reports: [TORO, TRAP],
@@ -177,6 +180,31 @@ test("the two run buttons show the monitor's state and send the mode", async () 
   await c.net.release("api/price-check/run", { requested: { mode: "top-games", by: "romain", at: "2026-10-02T15:01:00+02:00" } });
   await tick();
   assert.ok(c.$("#msg-top-games").textContent.includes("Demande déposée par romain"), c.$("#msg-top-games").textContent);
+});
+
+test("re-check: a repaired offer says so, its filter finds it, a still-wrong one says so", async () => {
+  const c = await start({ ...REPORTS, reports: [TORO, FIXED, STILL] });
+  const fixed = card(c, FIXED.offer);
+  assert.ok(fixed.textContent.includes("RÉPARÉE") && fixed.textContent.includes("Réparée le 02/10 18:30 : recontrôle OK (était SUSPECT)"),
+            fixed.textContent);
+  assert.ok(card(c, STILL.offer).textContent.includes("Toujours en erreur au recontrôle du 02/10 18:31"));
+  assert.ok(c.$("#pc-summary").textContent.includes("réparées"));
+  c.$("#f-verdict").value = "fixed";
+  await c.$("#f-verdict").fire("change");
+  assert.deepEqual(shown(c), ["offer-" + FIXED.offer]);
+  c.$("#f-verdict").value = "SUSPECT";
+  await c.$("#f-verdict").fire("change");
+  assert.ok(!shown(c).includes("offer-" + FIXED.offer), "a repaired offer is not a SUSPECT");
+});
+
+test("the state line tells the last re-check", async () => {
+  const c = await start();
+  const st = JSON.parse(JSON.stringify(STATUS));
+  st.modes["top-games"].last_recheck = { at: "2026-10-02T18:30:00+0200", kind: "all", checked: 70, fixed: 2, new: 1, still: 3, unknown: 0 };
+  await c.net.release("api/price-check/status", st);
+  await tick();
+  const top = c.$("#state-top-games").textContent;
+  assert.ok(top.includes("Recontrôle complet 02/10 18:30 : 70 offre(s), 2 réparée(s), 1 nouvelle(s) erreur(s), 3 toujours en erreur"), top);
 });
 
 test("a quiet pass says there was nothing new to check", async () => {

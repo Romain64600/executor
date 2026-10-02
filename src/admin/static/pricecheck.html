@@ -71,7 +71,11 @@
           <h4>Lancer un passage · Running a pass</h4>
           <p lang="fr">Le moniteur passe seul toutes les 2 min 30 sur les top games et toutes les 15 min sur la
             homepage. Les deux boutons <b>Lancer le price check top</b> et <b>Lancer le price check homepage</b>
-            déclenchent un passage tout de suite : la demande est déposée dans le dossier partagé, le moniteur la lit
+            déclenchent un passage tout de suite, qui <b>recontrôle toutes les offres retenues</b> de ses pages, déjà vues
+            ou non (sauf les faux positifs tranchés) : une offre signalée trouvée OK, ou retirée de sa page, devient
+            <b>réparée</b> ; une offre OK trouvée en erreur est une nouvelle alerte. Un récapitulatif part sur Discord. Le
+            passage homepage complet est long (environ 3 000 offres, 2 à 3 h ; les top games continuent de passer pendant
+            ce temps). En automatique, les offres signalées sont recontrôlées une fois par heure. Le passage : la demande est déposée dans le dossier partagé, le moniteur la lit
             dans les secondes qui viennent. Le bouton est grisé pendant le passage du mode ou quand une demande attend ;
             l'état (en cours, avancement, dernier et prochain passage) se rafraîchit toutes les 10 s. Un passage ne contrôle
             que les offres <b>jamais vues</b> : « aucune nouvelle offre à contrôler » est le cas normal quand les premiers
@@ -131,6 +135,7 @@
             <option value="SUSPECT">SUSPECT</option>
             <option value="À VÉRIFIER">À VÉRIFIER</option>
             <option value="NON VÉRIFIABLE">NON VÉRIFIABLE</option>
+            <option value="fixed">Réparées</option>
           </select>
         </label>
         <label>Décision

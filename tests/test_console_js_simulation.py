@@ -298,6 +298,8 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             # 02/10/2026 : les deux boutons de lancement
             "mode du lancement": ("body: JSON.stringify({ mode })", "body: JSON.stringify({})"),
             "bouton grisé pendant le passage": ("btn.disabled = !!pending || !!m.running;", "btn.disabled = false;"),
+            # 02/10/2026 : le recontrôle (réparées)
+            "réparée affichée": ('text: isFixed(r) ? "RÉPARÉE" : (r.verdict || "?")', 'text: r.verdict || "?"'),
         }
         for name, (before, after) in mutations.items():
             with self.subTest(name):

@@ -42,6 +42,9 @@ const STALE_SECONDS = 45 * 60;  // export older than this: the monitor may be st
 const GONE_SECONDS = 60 * 60;   // offer not seen as first price for this long when exported
 const REFRESH_MS = 2 * 60 * 1000;
 const VERDICT_CLASS = { "SUSPECT": "v-suspect", "À VÉRIFIER": "v-verifier", "NON VÉRIFIABLE": "v-nv" };
+// re-check (Romain, 02/10/2026: « on saura si elles sont réparées ou pas »): a flagged offer found OK again, or gone
+// from its page, is "réparée"; one found wrong again carries still_wrong_at
+const isFixed = (r) => !!r.fixed_at;
 
 let DATA = null;         // last answer of api/price-check/reports
 let LOADING = false;
@@ -86,7 +89,7 @@ function matchesFilters(r) {
   const v = $("#f-verdict").value;
   const d = $("#f-decision").value;
   const q = String($("#f-text").value || "").trim().toLowerCase();
-  if (v && r.verdict !== v) return false;
+  if (v === "fixed" ? !isFixed(r) : v && (r.verdict !== v || isFixed(r))) return false;
   if (d === "none" && decisionKey(r)) return false;
   if (d && d !== "none" && decisionKey(r) !== d) return false;
   if ($("#f-live").checked && isGone(r)) return false;
@@ -103,10 +106,11 @@ function renderSummary(reports) {
   const kpi = (cls, value, label) => el("div", { class: "kpi " + cls }, [
     el("div", { class: "kpi-n", text: String(value) }), el("div", { class: "kpi-l", text: label })]);
   $("#pc-summary").replaceChildren(
-    kpi("k-open", n((r) => !decisionKey(r)), "sans décision"),
+    kpi("k-open", n((r) => !decisionKey(r) && !isFixed(r)), "sans décision"),
     kpi("k-suspect", n((r) => r.verdict === "SUSPECT"), "SUSPECT"),
     kpi("k-verifier", n((r) => r.verdict === "À VÉRIFIER"), "À VÉRIFIER"),
     kpi("k-nv", n((r) => r.verdict === "NON VÉRIFIABLE"), "NON VÉRIFIABLE"),
+    kpi("k-fixed", n(isFixed), "réparées"),
     kpi("", reports.length, "reports"));
 }
 
@@ -137,16 +141,21 @@ function renderItem(r) {
     "offre " + offer,
   ].filter(Boolean).join(" · ");
   const before = (r.history || []).slice(0, -1).reverse();
-  return el("article", { class: "pc-item " + (VERDICT_CLASS[r.verdict] || "v-nv") + (cur ? " decided" : ""),
+  const recheck = isFixed(r)
+    ? el("div", { class: "pc-fixed", text: "Réparée le " + stamp(r.fixed_at) + " : " + (r.fixed_how || "recontrôle OK") +
+      (r.fixed_from ? " (était " + r.fixed_from + ")" : "") })
+    : r.still_wrong_at ? el("div", { class: "pc-still", text: "Toujours en erreur au recontrôle du " + stamp(r.still_wrong_at) }) : null;
+  return el("article", { class: "pc-item " + (isFixed(r) ? "v-fixed" : (VERDICT_CLASS[r.verdict] || "v-nv")) + (cur ? " decided" : ""),
     id: "offer-" + offer }, [
     el("div", { class: "pc-head" }, [
-      el("span", { class: "pc-verdict", text: r.verdict || "?" }),
+      el("span", { class: "pc-verdict", text: isFixed(r) ? "RÉPARÉE" : (r.verdict || "?") }),
       el("span", { class: "pc-product", text: (r.product || "?") + (r.edition ? " · " + r.edition : "") }),
       rankLabel(r) ? el("span", { class: "pc-rank", text: rankLabel(r) }) : null,
       el("span", { class: "pc-merchant", text: [r.merchant, price(r.price)].filter(Boolean).join(" · ") }),
       el("span", { class: "pc-where", text: where }),
     ]),
     (r.reasons || []).length ? el("ul", { class: "pc-reasons" }, r.reasons.map((x) => el("li", { text: x }))) : null,
+    recheck,
     el("div", { class: "pc-meta", text: meta }),
     isGone(r) ? el("div", { class: "pc-gone",
       text: "Plus vu en premier prix depuis le " + stamp(r.seen_at) + " : l'offre n'est plus en tête." }) : null,
@@ -294,6 +303,12 @@ function renderRuns() {
       parts.push("Dernier passage " + stamp(m.last_start) + (about ? " (" + about + ")" : "") + " : " +
         (m.last_checked ? m.last_checked + " nouvelle(s) offre(s) contrôlée(s)" : "aucune nouvelle offre à contrôler") +
         ", " + (m.last_alerts || 0) + " alerte(s)");
+    }
+    const rc = m.last_recheck;
+    if (rc && rc.at) {
+      parts.push((rc.kind === "all" ? "Recontrôle complet " : "Recontrôle des offres signalées ") + stamp(rc.at) + " : " +
+        (rc.checked || 0) + " offre(s), " + (rc.fixed || 0) + " réparée(s), " + (rc.new || 0) + " nouvelle(s) erreur(s), " +
+        (rc.still || 0) + " toujours en erreur");
     }
     if (!m.running && m.next_at) parts.push("prochain passage " + stamp(m.next_at));
     if (pending) parts.push("demande en attente" + (pending.by ? " (" + pending.by + ")" : ""));
