@@ -254,6 +254,21 @@ const RUN_MODES = ["top-games", "homepage"];
 const STATUS_MS = 10 * 1000;
 let STATUS = null;
 
+// "2026-10-02T17:55:21+0200" → seconds since midnight, as the server wrote it (no re-zoning)
+function clockSeconds(s) {
+  const m = /T(\d{2}):(\d{2}):(\d{2})/.exec(String(s || ""));
+  return m ? (+m[1]) * 3600 + (+m[2]) * 60 + (+m[3]) : null;
+}
+function duration(start, end) {
+  const a = clockSeconds(start), b = clockSeconds(end);
+  if (a == null || b == null) return "";
+  let d = b - a;
+  if (d < 0) d += 86400;
+  if (d < 60) return d + " s";
+  if (d < 3600) return Math.floor(d / 60) + " min " + String(d % 60).padStart(2, "0") + " s";
+  return Math.floor(d / 3600) + " h " + String(Math.floor((d % 3600) / 60)).padStart(2, "0") + " min";
+}
+
 function renderRuns() {
   const st = STATUS;
   $("#pc-runs-note").textContent = st && st.available ? "— état du moniteur " + ago(st.age_seconds) : "";
@@ -273,8 +288,12 @@ function renderRuns() {
       parts.push("En cours" + (m.progress ? " : page " + m.progress[0] + " / " + m.progress[1] : "") +
         (m.requested_by ? " (demandé par " + m.requested_by + ")" : ""));
     } else if (m.last_end) {
-      parts.push("Dernier passage " + stamp(m.last_start) + " → " + stamp(m.last_end) + " : " +
-        (m.last_checked || 0) + " offre(s) contrôlée(s), " + (m.last_alerts || 0) + " alerte(s)");
+      // a pass only checks offers never seen before: a quiet pass is the normal case, say so
+      const about = [duration(m.last_start, m.last_end), m.pages ? m.pages + " pages lues" : "",
+        m.last_requested_by ? "lancé depuis l'admin par " + m.last_requested_by : ""].filter(Boolean).join(", ");
+      parts.push("Dernier passage " + stamp(m.last_start) + (about ? " (" + about + ")" : "") + " : " +
+        (m.last_checked ? m.last_checked + " nouvelle(s) offre(s) contrôlée(s)" : "aucune nouvelle offre à contrôler") +
+        ", " + (m.last_alerts || 0) + " alerte(s)");
     }
     if (!m.running && m.next_at) parts.push("prochain passage " + stamp(m.next_at));
     if (pending) parts.push("demande en attente" + (pending.by ? " (" + pending.by + ")" : ""));

@@ -73,7 +73,9 @@
             homepage. Les deux boutons <b>Lancer le price check top</b> et <b>Lancer le price check homepage</b>
             déclenchent un passage tout de suite : la demande est déposée dans le dossier partagé, le moniteur la lit
             dans les secondes qui viennent. Le bouton est grisé pendant le passage du mode ou quand une demande attend ;
-            l'état (en cours, avancement, dernier et prochain passage) se rafraîchit toutes les 10 s.</p>
+            l'état (en cours, avancement, dernier et prochain passage) se rafraîchit toutes les 10 s. Un passage ne contrôle
+            que les offres <b>jamais vues</b> : « aucune nouvelle offre à contrôler » est le cas normal quand les premiers
+            prix n'ont pas changé.</p>
           <p class="en" lang="en">The monitor runs on its own; the two buttons ask it to run a mode now. The request is a
             file in the shared directory, read by the monitor within seconds. The button is disabled while that mode is
             running or a request is pending.</p>

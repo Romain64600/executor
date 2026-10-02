@@ -151,7 +151,8 @@ const STATUS = {
   available: true, age_seconds: 3, offers: "top-offers", updated_at: "2026-10-02T15:00:03+0200",
   modes: {
     "top-games": { label: "Price check top", running: false, pages: 9, last_start: "2026-10-02T15:00:00+0200",
-                   last_end: "2026-10-02T15:00:40+0200", last_checked: 3, last_alerts: 1, next_at: "2026-10-02T15:03:10+0200" },
+                   last_end: "2026-10-02T15:00:40+0200", last_checked: 3, last_alerts: 1, next_at: "2026-10-02T15:03:10+0200",
+                   last_requested_by: "romain" },
     "homepage": { label: "Price check homepage", running: true, pages: 430, progress: [120, 430], requested_by: "romain" },
   },
   pending: { "top-games": null, "homepage": null },
@@ -162,7 +163,8 @@ test("the two run buttons show the monitor's state and send the mode", async () 
   await c.net.release("api/price-check/status", JSON.parse(JSON.stringify(STATUS)));
   await tick();
   const top = c.$("#state-top-games").textContent, home = c.$("#state-homepage").textContent;
-  assert.ok(top.includes("3 offre(s)") && top.includes("1 alerte(s)") && top.includes("prochain passage 02/10 15:03"), top);
+  assert.ok(top.includes("3 nouvelle(s) offre(s)") && top.includes("1 alerte(s)") && top.includes("prochain passage 02/10 15:03"), top);
+  assert.ok(top.includes("40 s") && top.includes("9 pages lues") && top.includes("lancé depuis l'admin par romain"), top);
   assert.ok(home.includes("En cours : page 120 / 430") && home.includes("romain"), home);
   assert.ok(c.$("#launch-homepage").disabled, "the homepage button must be disabled while that pass runs");
   assert.ok(!c.$("#launch-top-games").disabled, "the top button must be clickable");
@@ -175,6 +177,19 @@ test("the two run buttons show the monitor's state and send the mode", async () 
   await c.net.release("api/price-check/run", { requested: { mode: "top-games", by: "romain", at: "2026-10-02T15:01:00+02:00" } });
   await tick();
   assert.ok(c.$("#msg-top-games").textContent.includes("Demande déposée par romain"), c.$("#msg-top-games").textContent);
+});
+
+test("a quiet pass says there was nothing new to check", async () => {
+  const c = await start();
+  const quiet = JSON.parse(JSON.stringify(STATUS));
+  quiet.modes["top-games"].last_checked = 0;
+  quiet.modes["top-games"].last_alerts = 0;
+  delete quiet.modes["top-games"].last_requested_by;
+  await c.net.release("api/price-check/status", quiet);
+  await tick();
+  const top = c.$("#state-top-games").textContent;
+  assert.ok(top.includes("aucune nouvelle offre à contrôler, 0 alerte(s)"), top);
+  assert.ok(!top.includes("lancé depuis"), top);
 });
 
 test("a refused launch says why and gives the button back", async () => {
