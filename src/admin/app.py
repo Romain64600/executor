@@ -379,6 +379,9 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._serve_static("pricecheck.html")
         if path == "/api/price-check/reports":
             return self._get_price_check_reports()
+        if path == "/api/price-check/status":
+            # L'état du moniteur (status.json) et les demandes en attente : jamais une erreur sans le fichier.
+            return self._send_json(200, price_check_io.read_status(self.state.price_check_dir))
         if path == "/api/data-entry/recap":
             run = parse_qs(parsed.query).get("run", [""])[0]
             return self._get_data_entry_recap(run)
@@ -570,6 +573,21 @@ class AdminHandler(BaseHTTPRequestHandler):
             raise ApiError(exc.http_status, exc.code, exc.message) from exc
         self._send_json(200, {"recorded": entry})
 
+    def _post_price_check_run(self) -> None:
+        # Romain, 02/10/2026 : « Price check top » / « Price check homepage ». Un fichier de demande dans le dossier
+        # partagé, signé de l'identité Basic ; le moniteur (processus root, à part) le lit et lance le passage.
+        # L'admin n'exécute rien lui-même.
+        body = self._json_body()
+        authed = self._basic_user()
+        if not authed:
+            raise ApiError(403, "authentication_required",
+                           "lancement refusé : identité Basic authentifiée requise")
+        try:
+            entry = price_check_io.request_run(self.state.price_check_dir, body.get("mode"), by=authed)
+        except price_check_io.PriceCheckError as exc:
+            raise ApiError(exc.http_status, exc.code, exc.message) from exc
+        self._send_json(200, {"requested": entry})
+
     def _get_validation(self, run_dir: Path) -> None:
         candidates = read_run_json(run_dir, "candidates.json")
         if not isinstance(candidates, list):
@@ -714,6 +732,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._send_json(200, self.state.manager.stop_active())
         if path == "/api/price-check/decision":
             return self._post_price_check_decision()
+        if path == "/api/price-check/run":
+            return self._post_price_check_run()
         if path == "/api/sort/scan":
             body = self._json_body()
             by = str(self._basic_user() or body.get("by") or "operateur")  # [35] authed wins; body "by" cannot forge attribution

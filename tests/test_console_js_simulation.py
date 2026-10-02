@@ -295,6 +295,9 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             "refus affiché": ("ERRORS[offer] = e.message;", ""),
             "envoi en cours": ("b.disabled = BUSY.has(offer);", "b.disabled = false;"),
             "export ancien": ('$("#pc-stale").classList.toggle("hidden", !stale);', ""),
+            # 02/10/2026 : les deux boutons de lancement
+            "mode du lancement": ("body: JSON.stringify({ mode })", "body: JSON.stringify({})"),
+            "bouton grisé pendant le passage": ("btn.disabled = !!pending || !!m.running;", "btn.disabled = false;"),
         }
         for name, (before, after) in mutations.items():
             with self.subTest(name):

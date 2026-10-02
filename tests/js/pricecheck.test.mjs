@@ -147,6 +147,57 @@ test("an unreadable export is an error on screen, never an empty list", async ()
   assert.ok(c.$("#pc-error").textContent.includes("reports.json absent"));
 });
 
+const STATUS = {
+  available: true, age_seconds: 3, offers: "top-offers", updated_at: "2026-10-02T15:00:03+0200",
+  modes: {
+    "top-games": { label: "Price check top", running: false, pages: 9, last_start: "2026-10-02T15:00:00+0200",
+                   last_end: "2026-10-02T15:00:40+0200", last_checked: 3, last_alerts: 1, next_at: "2026-10-02T15:03:10+0200" },
+    "homepage": { label: "Price check homepage", running: true, pages: 430, progress: [120, 430], requested_by: "romain" },
+  },
+  pending: { "top-games": null, "homepage": null },
+};
+
+test("the two run buttons show the monitor's state and send the mode", async () => {
+  const c = await start();
+  await c.net.release("api/price-check/status", JSON.parse(JSON.stringify(STATUS)));
+  await tick();
+  const top = c.$("#state-top-games").textContent, home = c.$("#state-homepage").textContent;
+  assert.ok(top.includes("3 offre(s)") && top.includes("1 alerte(s)") && top.includes("prochain passage 02/10 15:03"), top);
+  assert.ok(home.includes("En cours : page 120 / 430") && home.includes("romain"), home);
+  assert.ok(c.$("#launch-homepage").disabled, "the homepage button must be disabled while that pass runs");
+  assert.ok(!c.$("#launch-top-games").disabled, "the top button must be clickable");
+  c.$("#launch-top-games").fire("click");
+  await tick();
+  const post = lastPost(c);
+  assert.ok(post && post.url === "api/price-check/run", "no run request left the page");
+  assert.deepEqual(post.body, { mode: "top-games" });
+  assert.ok(c.$("#launch-top-games").disabled, "the button stays clickable while the request is sent");
+  await c.net.release("api/price-check/run", { requested: { mode: "top-games", by: "romain", at: "2026-10-02T15:01:00+02:00" } });
+  await tick();
+  assert.ok(c.$("#msg-top-games").textContent.includes("Demande déposée par romain"), c.$("#msg-top-games").textContent);
+});
+
+test("a refused launch says why and gives the button back", async () => {
+  const c = await start();
+  await c.net.release("api/price-check/status", JSON.parse(JSON.stringify(STATUS)));
+  await tick();
+  c.$("#launch-top-games").fire("click");
+  await tick();
+  await c.net.release("api/price-check/run", { error: { code: "already_requested", message: "un passage est déjà demandé" } }, false);
+  await tick();
+  assert.ok(c.$("#msg-top-games").textContent.includes("Refusé : un passage est déjà demandé"));
+  assert.ok(!c.$("#launch-top-games").disabled, "the button must come back after a refusal");
+});
+
+test("without status.json the buttons still work and say the state is unknown", async () => {
+  const c = await start();
+  await c.net.release("api/price-check/status", { available: false, modes: {}, pending: { "top-games": null, "homepage": { by: "remi" } } });
+  await tick();
+  assert.ok(c.$("#state-top-games").textContent.includes("inconnu"));
+  assert.ok(!c.$("#launch-top-games").disabled);
+  assert.ok(c.$("#launch-homepage").disabled, "a pending request disables its button");
+});
+
 let red = 0;
 for (const [name, fn] of tests) {
   try { await fn(); console.log("ok   -", name); }

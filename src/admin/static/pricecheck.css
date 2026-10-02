@@ -58,3 +58,15 @@ main.pc-main { max-width:1100px; }
   .pc-where { margin-left:0; white-space:normal; }
   .pc-link { grid-template-columns:1fr; gap:0; }
 }
+
+/* Passages : les deux boutons (Romain, 02/10/2026) */
+.pc-runs { display:grid; grid-template-columns:1fr 1fr; gap:.8rem; }
+.pc-run { background:var(--panel-2); border:1px solid var(--line); border-radius:5px; padding:.7rem .9rem; display:flex; flex-direction:column; gap:.3rem; }
+.pc-run h3 { margin:0; font-size:.95rem; }
+.pc-run-desc { margin:0; color:var(--dim); font-size:.78rem; }
+.pc-run-state { margin:.2rem 0; font-size:.82rem; min-height:1.2rem; }
+.pc-launch { align-self:flex-start; font:inherit; font-size:.85rem; font-weight:600; background:var(--accent); color:var(--accent-ink);
+  border:0; border-radius:5px; padding:.45rem .9rem; cursor:pointer; }
+.pc-launch:hover:not(:disabled) { background:var(--accent-2); }
+.pc-launch:disabled { opacity:.45; cursor:not-allowed; }
+@media (max-width: 640px) { .pc-runs { grid-template-columns:1fr; } }

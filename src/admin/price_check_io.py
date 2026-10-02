@@ -35,6 +35,9 @@ DEFAULT_DECISIONS = {
     "a_discuter": "À discuter",
 }
 MAX_NOTE = 1000
+STATUS_FILE = "status.json"          # written by the monitor: state of each page mode
+REQUEST_FILE = "run-%s.request"      # written by the admin: run this mode now
+RUN_MODES = ("top-games", "homepage")  # Romain, 02/10/2026: « Price check top », « Price check homepage »
 OFFER_ID = re.compile(r"^[0-9]{1,20}$")
 _APPEND_LOCK = threading.Lock()  # one line at a time from this process (ThreadingHTTPServer)
 
@@ -192,4 +195,58 @@ def record_decision(directory: Path, offer: Any, decision: Any, note: Any, *, by
             os.fsync(fd)
         finally:
             os.close(fd)
+    return entry
+
+
+def pending_requests(directory: Path) -> dict[str, Any]:
+    """The run requests not yet consumed by the monitor, per mode (None when none; {} when unreadable)."""
+
+    out: dict[str, Any] = {}
+    for mode in RUN_MODES:
+        path = directory / (REQUEST_FILE % mode)
+        try:
+            out[mode] = json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+        except (OSError, ValueError):
+            out[mode] = {}
+    return out
+
+
+def read_status(directory: Path, *, now=time.time) -> dict[str, Any]:
+    """status.json, written by the monitor every few seconds and at each step of a pass. Never an
+    error: without it the page still shows the reports, and says the monitor's state is unknown."""
+
+    path = directory / STATUS_FILE
+    base = {"available": False, "modes": {}, "pending": pending_requests(directory)}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        age = max(0, int(now() - path.stat().st_mtime))
+    except (OSError, ValueError):
+        return base
+    if not isinstance(payload, dict) or not isinstance(payload.get("modes"), dict):
+        return base
+    base.update(available=True, age_seconds=age, offers=payload.get("offers"),
+                updated_at=payload.get("updated_at"), modes=payload["modes"])
+    return base
+
+
+def request_run(directory: Path, mode: Any, *, by: str, clock=_now_iso) -> dict[str, Any]:
+    """Ask the monitor to run one page mode now: one request file per mode, created exclusively
+    (two operators clicking at once make one request), consumed by the monitor within seconds."""
+
+    if not isinstance(mode, str) or mode not in RUN_MODES:
+        raise PriceCheckError("bad_mode", f"mode inconnu : {mode!r} (attendu : {', '.join(RUN_MODES)})")
+    path = directory / (REQUEST_FILE % mode)
+    entry = {"mode": mode, "by": by, "at": clock()}
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o664)
+    except FileExistsError as exc:
+        raise PriceCheckError(
+            "already_requested",
+            "un passage est déjà demandé pour ce mode — le moniteur le lit dans les secondes qui viennent",
+            http_status=409) from exc
+    except OSError as exc:
+        raise PriceCheckError("request_unwritable", f"{path} : écriture impossible : {exc}",
+                              http_status=500) from exc
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, ensure_ascii=False))
     return entry

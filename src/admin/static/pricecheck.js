@@ -246,3 +246,63 @@ setInterval(() => {
 }, REFRESH_MS);
 
 load();
+
+// ---- the two run buttons (Romain, 02/10/2026: « Price check top », « Price check homepage ») ----
+// The admin never runs anything itself: it drops run-<mode>.request in the shared directory and the
+// monitor (its own root process) reads it within seconds. status.json, written by the monitor, feeds the state.
+const RUN_MODES = ["top-games", "homepage"];
+const STATUS_MS = 10 * 1000;
+let STATUS = null;
+
+function renderRuns() {
+  const st = STATUS;
+  $("#pc-runs-note").textContent = st && st.available ? "— état du moniteur " + ago(st.age_seconds) : "";
+  for (const mode of RUN_MODES) {
+    const state = $("#state-" + mode), btn = $("#launch-" + mode);
+    const pending = st && st.pending && st.pending[mode];
+    if (!st || !st.available) {
+      state.textContent = "État du moniteur inconnu (status.json absent) : le bouton dépose quand même la demande." +
+        (pending ? " Demande en attente." : "");
+      btn.disabled = !!pending;
+      continue;
+    }
+    const m = st.modes[mode];
+    if (!m) { state.textContent = "Mode non suivi par le moniteur."; btn.disabled = true; continue; }
+    const parts = [];
+    if (m.running) {
+      parts.push("En cours" + (m.progress ? " : page " + m.progress[0] + " / " + m.progress[1] : "") +
+        (m.requested_by ? " (demandé par " + m.requested_by + ")" : ""));
+    } else if (m.last_end) {
+      parts.push("Dernier passage " + stamp(m.last_start) + " → " + stamp(m.last_end) + " : " +
+        (m.last_checked || 0) + " offre(s) contrôlée(s), " + (m.last_alerts || 0) + " alerte(s)");
+    }
+    if (!m.running && m.next_at) parts.push("prochain passage " + stamp(m.next_at));
+    if (pending) parts.push("demande en attente" + (pending.by ? " (" + pending.by + ")" : ""));
+    state.textContent = parts.join(" · ") || "Aucun passage encore.";
+    btn.disabled = !!pending || !!m.running;
+  }
+}
+
+async function loadStatus() {
+  try { STATUS = await api("api/price-check/status"); } catch (e) { STATUS = null; }
+  renderRuns();
+}
+
+async function launch(mode) {
+  const btn = $("#launch-" + mode), msg = $("#msg-" + mode);
+  btn.disabled = true;
+  msg.textContent = "";
+  try {
+    const r = await api("api/price-check/run", { method: "POST", body: JSON.stringify({ mode }) });
+    const who = r && r.requested && r.requested.by ? " par " + r.requested.by : "";
+    msg.textContent = "Demande déposée" + who + " : le moniteur la lit dans les secondes qui viennent.";
+  } catch (e) {
+    msg.textContent = "Refusé : " + e.message;
+    btn.disabled = false;
+  }
+  await loadStatus();
+}
+
+for (const mode of RUN_MODES) $("#launch-" + mode).addEventListener("click", () => launch(mode));
+setInterval(() => { if (document.visibilityState !== "hidden") loadStatus(); }, STATUS_MS);
+loadStatus();

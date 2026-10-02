@@ -244,5 +244,58 @@ class PriceCheckRoutesTests(AppTestCase):
         self.assertEqual(body["error"]["code"], "bad_decision")
 
 
+class RunRequestTests(AppTestCase):
+    """Romain, 02/10/2026 : « on prépare les deux différents boutons » — Price check top / homepage. The admin
+    writes a request file; the monitor (root, its own process) runs the pass. Nothing is executed here."""
+
+    def setUp(self):
+        super().setUp()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.pc_dir = Path(tmp.name)
+        self.state.price_check_dir = self.pc_dir
+
+    def test_status_without_the_monitor_is_not_an_error(self):
+        response, body = self._json("GET", "/api/price-check/status")
+        self.assertEqual(response.status, 200)
+        self.assertEqual((body["available"], body["modes"], body["pending"]),
+                         (False, {}, {"top-games": None, "homepage": None}))
+
+    def test_status_from_the_monitor_file(self):
+        (self.pc_dir / "status.json").write_text(json.dumps({
+            "offers": "top-offers", "updated_at": "2026-10-02T15:00:00+0200",
+            "modes": {"top-games": {"label": "Price check top", "running": False, "pages": 9, "last_checked": 3,
+                                    "last_alerts": 1, "next_at": "2026-10-02T15:02:30+0200"},
+                      "homepage": {"label": "Price check homepage", "running": True, "progress": [120, 430]}}}),
+            encoding="utf-8")
+        (self.pc_dir / "run-top-games.request").write_text('{"mode": "top-games", "by": "romain", "at": "x"}', encoding="utf-8")
+        response, body = self._json("GET", "/api/price-check/status")
+        self.assertEqual(response.status, 200)
+        self.assertTrue(body["available"])
+        self.assertEqual(body["modes"]["homepage"]["progress"], [120, 430])
+        self.assertEqual(body["pending"]["top-games"]["by"], "romain")
+        self.assertIsNone(body["pending"]["homepage"])
+        self.assertIsInstance(body["age_seconds"], int)
+
+    def test_a_run_request_is_a_file_signed_by_the_operator_once(self):
+        response, body = self._json("POST", "/api/price-check/run", {"mode": "homepage", "by": "quelquun"})
+        self.assertEqual(response.status, 200, body)
+        self.assertEqual((body["requested"]["mode"], body["requested"]["by"]), ("homepage", "operateur"))
+        on_disk = json.loads((self.pc_dir / "run-homepage.request").read_text(encoding="utf-8"))
+        self.assertEqual(on_disk["by"], "operateur")  # what the monitor logs: « passage demandé par operateur »
+        response, body = self._json("POST", "/api/price-check/run", {"mode": "homepage"})
+        self.assertEqual((response.status, body["error"]["code"]), (409, "already_requested"))
+        self.assertFalse((self.pc_dir / "run-top-games.request").exists())
+
+    def test_run_refusals(self):
+        response, body = self._json("POST", "/api/price-check/run", {"mode": "full-page"})
+        self.assertEqual((response.status, body["error"]["code"]), (400, "bad_mode"))
+        response, body = self._json("POST", "/api/price-check/run", {"mode": "top-games"}, csrf=False)
+        self.assertEqual((response.status, body["error"]["code"]), (403, "csrf"))
+        response, body = self._json("POST", "/api/price-check/run", {"mode": "top-games"}, headers={"Authorization": ""})
+        self.assertEqual((response.status, body["error"]["code"]), (403, "authentication_required"))
+        self.assertEqual(list(self.pc_dir.iterdir()), [], "a refused request left a file")
+
+
 if __name__ == "__main__":
     unittest.main()

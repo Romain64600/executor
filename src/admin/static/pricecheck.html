@@ -68,6 +68,17 @@
             sent, no AllKeyShop offer is changed.</p>
         </section>
         <section>
+          <h4>Lancer un passage · Running a pass</h4>
+          <p lang="fr">Le moniteur passe seul toutes les 2 min 30 sur les top games et toutes les 15 min sur la
+            homepage. Les deux boutons <b>Lancer le price check top</b> et <b>Lancer le price check homepage</b>
+            déclenchent un passage tout de suite : la demande est déposée dans le dossier partagé, le moniteur la lit
+            dans les secondes qui viennent. Le bouton est grisé pendant le passage du mode ou quand une demande attend ;
+            l'état (en cours, avancement, dernier et prochain passage) se rafraîchit toutes les 10 s.</p>
+          <p class="en" lang="en">The monitor runs on its own; the two buttons ask it to run a mode now. The request is a
+            file in the shared directory, read by the monitor within seconds. The button is disabled while that mode is
+            running or a request is pending.</p>
+        </section>
+        <section>
           <h4>Fraîcheur · Freshness</h4>
           <p lang="fr">Le moniteur réécrit les reports à chaque passage. Si l'export a plus de 45
             minutes, la page le signale : le service est peut-être arrêté. Une offre qui n'est plus
@@ -83,6 +94,27 @@
   </dialog>
 
   <main class="pc-main">
+    <section class="card" id="pc-runs">
+      <div class="recap-head">
+        <h2>Passages <span id="pc-runs-note" class="dim"></span></h2>
+      </div>
+      <div class="pc-runs">
+        <div class="pc-run">
+          <h3>Price check top</h3>
+          <p class="pc-run-desc">Top 5 Popular + top 4 Coming soon PC (9 pages), toutes les 2 min 30, salon des top games.</p>
+          <p class="pc-run-state" id="state-top-games">…</p>
+          <button type="button" class="pc-launch" id="launch-top-games" title="Lancer un passage sur les top games maintenant">Lancer le price check top</button>
+          <p class="pc-msg" id="msg-top-games"></p>
+        </div>
+        <div class="pc-run">
+          <h3>Price check homepage</h3>
+          <p class="pc-run-desc">Tous les jeux des top clics de la home (~430 pages, 9 min), toutes les 15 min, salon des top clics.</p>
+          <p class="pc-run-state" id="state-homepage">…</p>
+          <button type="button" class="pc-launch" id="launch-homepage" title="Lancer un passage sur la homepage maintenant">Lancer le price check homepage</button>
+          <p class="pc-msg" id="msg-homepage"></p>
+        </div>
+      </div>
+    </section>
     <section class="card">
       <div class="recap-head">
         <h2>Reports <span id="pc-fresh" class="dim"></span></h2>

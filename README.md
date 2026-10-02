@@ -668,7 +668,12 @@ ouverte, aucune offre AKS n'est touchée, aucun message n'est envoyé. Fail-clos
 `reports.json` lisible, la page affiche l'erreur et aucune décision n'est acceptée ; une offre
 absente de l'export ou une décision que le moniteur ne connaît pas est refusée. Le dossier se
 change par `scripts/07_admin_server.py --price-check-dir`. Lien direct vers un report :
-`/executor/price-check#offer-<id>`.
+`/executor/price-check#offer-<id>`. Depuis le 02/10/2026, deux boutons, **Lancer le price check top** et
+**Lancer le price check homepage**, demandent au moniteur un passage immédiat : l'admin dépose
+`run-<mode>.request` dans le dossier partagé (identité Basic, un fichier par mode, 409 si une demande attend
+déjà), le moniteur le lit en quelques secondes ; `status.json`, écrit par le moniteur, donne l'état de chaque
+mode (en cours, avancement, dernier et prochain passage), rafraîchi toutes les 10 s. L'admin n'exécute rien
+lui-même.
 
 **Tri par SQL — console `/sql` (2026-09-18).** Romain exécute lui-même les `UPDATE` de tri
 dans phpMyAdmin ; la console les **génère et les mesure**, elle n'exécute rien et n'importe
