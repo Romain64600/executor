@@ -31,6 +31,8 @@ main.pc-main { max-width:1100px; }
 .pc-mode { font-size:.68rem; font-weight:700; letter-spacing:.04em; padding:.05rem .4rem; border-radius:5px; border:1px solid currentColor; }
 .pc-mode.m-top { color:var(--accent); }
 .pc-mode.m-home { color:var(--dim); }
+.pc-mode.m-first { color:var(--bad); }
+.kpi.k-first .kpi-n { color:var(--bad); }
 .kpi.k-top .kpi-n { color:var(--accent); }
 .pc-merchant { color:var(--dim); }
 .pc-where { margin-left:auto; color:var(--dim); font-size:.78rem; white-space:nowrap; }

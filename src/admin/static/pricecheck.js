@@ -60,6 +60,10 @@ const MODE_TITLE = {
   "homepage": "Price check homepage : la page est dans les listes de la homepage (top clics, TOP 50)",
 };
 const isOpen = (r) => !decisionKey(r) && !isFixed(r);
+// Romain, 03/10/2026: « je voudrais séparer les problèmes de premiers prix … premier prix = les 3 prix les moins chers
+// par édition ». The monitor exports `first_price`; an older export: the rank in the edition (not an account offer).
+const isFirstPrice = (r) => (typeof r.first_price === "boolean" ? r.first_price
+  : Number.isInteger(r.edition_rank) && r.edition_rank >= 1 && r.edition_rank <= 3 && !r.account);
 
 let DATA = null;         // last answer of api/price-check/reports
 let LOADING = false;
@@ -106,6 +110,7 @@ function matchesFilters(r) {
   const q = String($("#f-text").value || "").trim().toLowerCase();
   const m = $("#f-mode").value;
   if (m && r.mode !== m) return false;
+  if ($("#f-first").checked && !isFirstPrice(r)) return false;
   if (v === "fixed" ? !isRepaired(r) : v === "rule" ? !isRuleCleared(r) : v === "verified" ? !isVerified(r)
     : v && (r.verdict !== v || isFixed(r))) return false;
   if (d === "none" && decisionKey(r)) return false;
@@ -127,6 +132,7 @@ function renderSummary(reports) {
     kpi("k-open", n(isOpen), "sans décision"),
     kpi("k-top", n((r) => isOpen(r) && r.mode === "top-games"), "tops à trancher"),
     kpi("k-home", n((r) => isOpen(r) && r.mode === "homepage"), "homepage à trancher"),
+    kpi("k-first", n((r) => isOpen(r) && r.verdict === "SUSPECT" && isFirstPrice(r)), "premiers prix en erreur"),
     kpi("k-suspect", n((r) => r.verdict === "SUSPECT"), "SUSPECT"),
     kpi("k-verifier", n((r) => r.verdict === "À VÉRIFIER"), "À VÉRIFIER"),
     kpi("k-nv", n((r) => r.verdict === "NON VÉRIFIABLE"), "NON VÉRIFIABLE"),
@@ -179,6 +185,8 @@ function renderItem(r) {
       el("span", { class: "pc-verdict", text: pill }),
       MODE_BADGE[r.mode] ? el("span", { class: "pc-mode " + MODE_BADGE[r.mode][1], title: MODE_TITLE[r.mode],
         text: MODE_BADGE[r.mode][0] }) : null,
+      isFirstPrice(r) ? el("span", { class: "pc-mode m-first", text: "PREMIER PRIX",
+        title: "L'une des 3 offres de clé les moins chères de son édition : un SUSPECT part sur le salon des urgences" }) : null,
       el("span", { class: "pc-product", text: (r.product || "?") + (r.edition ? " · " + r.edition : "") }),
       rankLabel(r) ? el("span", { class: "pc-rank", text: rankLabel(r) }) : null,
       el("span", { class: "pc-merchant", text: [r.merchant, price(r.price)].filter(Boolean).join(" · ") }),
@@ -266,7 +274,7 @@ async function decide(offer, key) {
   }
 }
 
-for (const id of ["#f-verdict", "#f-mode", "#f-decision", "#f-live"]) $(id).addEventListener("change", render);
+for (const id of ["#f-verdict", "#f-mode", "#f-decision", "#f-live", "#f-first"]) $(id).addEventListener("change", render);
 $("#f-text").addEventListener("input", render);
 $("#refresh").addEventListener("click", load);
 

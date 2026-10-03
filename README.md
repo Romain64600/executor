@@ -680,7 +680,9 @@ si elle n'avait pas pu être vérifiée (champ `fixed_kind` du moniteur : `repai
 toujours fausse « toujours en erreur au recontrôle du … » ; le dernier recontrôle s'affiche dans la ligne d'état du
 mode. Depuis le 03/10/2026, chaque report porte une pastille **TOP** ou **HOMEPAGE** (champ `mode` du
 moniteur : TOP quand la page est dans les tops en ce moment, HOMEPAGE sinon), un filtre **Mode** les sépare et le résumé
-compte les reports à trancher de chacun.
+compte les reports à trancher de chacun. La pastille **PREMIER PRIX** marque une offre parmi les 3 de clé les moins chères de son édition
+(champ `first_price`) : un SUSPECT sur un premier prix est une urgence, envoyée sur le salon Discord des urgences ; case
+« premiers prix seulement », compteur « premiers prix en erreur ».
 
 **Tri par SQL — console `/sql` (2026-09-18).** Romain exécute lui-même les `UPDATE` de tri
 dans phpMyAdmin ; la console les **génère et les mesure**, elle n'exécute rien et n'importe

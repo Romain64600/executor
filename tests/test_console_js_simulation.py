@@ -304,6 +304,8 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             # 03/10/2026 : les reports des tops identifiés de ceux de la homepage
             "mode affiché": ('MODE_BADGE[r.mode] ? el("span"', 'false ? el("span"'),
             "filtre de mode": ("if (m && r.mode !== m) return false;", ""),
+            "premier prix affiché": ('isFirstPrice(r) ? el("span"', 'false ? el("span"'),
+            "filtre premiers prix": ('if ($("#f-first").checked && !isFirstPrice(r)) return false;', ""),
             "faux positif levé ≠ réparée": ('const isRepaired = (r) => isFixed(r) && r.fixed_kind !== "rule" && r.fixed_kind !== "verified";',
                                             "const isRepaired = (r) => isFixed(r);"),
         }

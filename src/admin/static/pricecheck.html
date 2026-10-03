@@ -50,7 +50,9 @@
             d'un top ou d'un coming soon (alerte envoyée) ; <b>NON VÉRIFIABLE</b> = même cas ailleurs,
             noté sans alerte. La pastille <b>TOP</b> ou <b>HOMEPAGE</b> dit d'où vient le report : TOP quand la page est
             dans les tops en ce moment (elle est aussi dans le TOP 50 de la homepage), HOMEPAGE sinon ; une page sortie
-            des listes garde le mode qui l'a contrôlée. Le filtre <b>Mode</b> sépare les deux.</p>
+            des listes garde le mode qui l'a contrôlée. Le filtre <b>Mode</b> sépare les deux. La pastille <b>PREMIER
+            PRIX</b> marque une offre parmi les 3 offres de clé les moins chères de son édition : un SUSPECT sur un
+            premier prix est une urgence, envoyée sur le salon Discord des urgences premiers prix.</p>
           <p class="en" lang="en">The price-check monitor checks the first offer of every followed
             AllKeyShop page and alerts on Discord when it does not match the product or the market.
             Each card is one report: offer, verdict, reason, AllKeyShop page and merchant URL.</p>
@@ -163,6 +165,7 @@
         </label>
         <label>Recherche <input id="f-text" type="search" placeholder="jeu, marchand, raison…" autocomplete="off"></label>
         <label><input id="f-live" type="checkbox"> encore en tête seulement</label>
+        <label><input id="f-first" type="checkbox"> premiers prix seulement</label>
       </div>
     </section>
     <section id="pc-list" class="pc-list" aria-live="polite"></section>

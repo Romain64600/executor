@@ -262,6 +262,22 @@ test("each report says whether it is a top games or a homepage problem, and the 
   assert.equal(shown(c).length, 3);
 });
 
+test("first-price problems are marked and can be shown alone", async () => {
+  // Romain, 03/10/2026: « séparer les problèmes de premiers prix … premier prix = les 3 prix les moins chers par édition »
+  const FIRST = { ...TORO, offer: "140000008", product: "Monster Hunter Wilds", edition_rank: 2, first_price: true };
+  const LOW = { ...TORO, offer: "140000009", product: "F1 25", edition_rank: 11, first_price: false };
+  const OLDRANK = { ...TORO, offer: "140000010", product: "Ancien export", edition_rank: 3 };
+  delete OLDRANK.first_price;
+  const c = await start({ ...REPORTS, reports: [FIRST, LOW, OLDRANK] });
+  assert.ok(card(c, FIRST.offer).textContent.includes("PREMIER PRIX"), card(c, FIRST.offer).textContent);
+  assert.ok(!card(c, LOW.offer).textContent.includes("PREMIER PRIX"), card(c, LOW.offer).textContent);
+  assert.ok(card(c, OLDRANK.offer).textContent.includes("PREMIER PRIX"), "an older export: the rank in the edition decides");
+  assert.ok(c.$("#pc-summary").textContent.includes("2premiers prix en erreur"), c.$("#pc-summary").textContent);
+  c.$("#f-first").checked = true;
+  await c.$("#f-first").fire("change");
+  assert.deepEqual(shown(c), ["offer-" + FIRST.offer, "offer-" + OLDRANK.offer]);
+});
+
 test("the state line tells the last re-check", async () => {
   const c = await start();
   const st = JSON.parse(JSON.stringify(STATUS));
