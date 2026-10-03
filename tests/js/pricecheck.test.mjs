@@ -278,6 +278,18 @@ test("first-price problems are marked and can be shown alone", async () => {
   assert.deepEqual(shown(c), ["offer-" + FIRST.offer, "offer-" + OLDRANK.offer]);
 });
 
+test("a report links its Discord feedback thread, never a non-http one", async () => {
+  // 03/10/2026: each alert has a feedback thread on Discord, where one can decide too
+  const WITH = { ...TORO, offer: "140000011", discord_thread: "https://discord.com/channels/77/903" };
+  const BAD = { ...TORO, offer: "140000012", discord_thread: "javascript:alert(1)" };
+  const c = await start({ ...REPORTS, reports: [TORO, WITH, BAD] });
+  const a = anchors(card(c, WITH.offer)).find((x) => x.getAttribute("href") === WITH.discord_thread);
+  assert.ok(a && card(c, WITH.offer).textContent.includes("Fil Discord"), card(c, WITH.offer).textContent);
+  assert.ok(!card(c, TORO.offer).textContent.includes("Fil Discord"), "no thread, no link");
+  assert.ok(!anchors(card(c, BAD.offer)).some((x) => String(x.getAttribute("href")).startsWith("javascript")),
+            "a javascript: thread link is never clickable");
+});
+
 test("the state line tells the last re-check", async () => {
   const c = await start();
   const st = JSON.parse(JSON.stringify(STATUS));

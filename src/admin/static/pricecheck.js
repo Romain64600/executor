@@ -200,6 +200,8 @@ function renderItem(r) {
     (r.notes || []).length ? el("ul", { class: "pc-notes" }, r.notes.map((x) => el("li", { text: x }))) : null,
     link("Page AllKeyShop", r.page_url),
     link("Offre marchand", r.merchant_url),
+    // 03/10/2026 : le fil de feedback Discord de l'alerte (le bot l'ouvre ; on peut y trancher aussi)
+    r.discord_thread ? link("Fil Discord", r.discord_thread) : null,
     el("div", { class: "pc-decide" }, [...buttons, note]),
     r.decision ? el("div", { class: "pc-decision", text: decisionLine(r.decision) }) : null,
     before.length ? el("div", { class: "pc-history", text: "Avant : " + before.map((h) =>
