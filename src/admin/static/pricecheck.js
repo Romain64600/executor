@@ -51,6 +51,15 @@ const isFixed = (r) => !!r.fixed_at;
 const isRuleCleared = (r) => isFixed(r) && r.fixed_kind === "rule";
 const isVerified = (r) => isFixed(r) && r.fixed_kind === "verified";
 const isRepaired = (r) => isFixed(r) && r.fixed_kind !== "rule" && r.fixed_kind !== "verified";
+// Romain, 03/10/2026: « que le report des problèmes sur les tops soit identifié des problèmes home page ». The monitor
+// exports `mode`: "top-games" when the offer's page is in the tops right now (first 5 Popular, first 4 Coming soon PC),
+// otherwise "homepage"; a top page is also in the homepage TOP 50 (`modes` lists both). An older export has no mode.
+const MODE_BADGE = { "top-games": ["TOP", "m-top"], "homepage": ["HOMEPAGE", "m-home"] };
+const MODE_TITLE = {
+  "top-games": "Price check top : la page est dans les tops (5 premiers Popular, 4 premiers Coming soon PC)",
+  "homepage": "Price check homepage : la page est dans les listes de la homepage (top clics, TOP 50)",
+};
+const isOpen = (r) => !decisionKey(r) && !isFixed(r);
 
 let DATA = null;         // last answer of api/price-check/reports
 let LOADING = false;
@@ -95,6 +104,8 @@ function matchesFilters(r) {
   const v = $("#f-verdict").value;
   const d = $("#f-decision").value;
   const q = String($("#f-text").value || "").trim().toLowerCase();
+  const m = $("#f-mode").value;
+  if (m && r.mode !== m) return false;
   if (v === "fixed" ? !isRepaired(r) : v === "rule" ? !isRuleCleared(r) : v === "verified" ? !isVerified(r)
     : v && (r.verdict !== v || isFixed(r))) return false;
   if (d === "none" && decisionKey(r)) return false;
@@ -113,7 +124,9 @@ function renderSummary(reports) {
   const kpi = (cls, value, label) => el("div", { class: "kpi " + cls }, [
     el("div", { class: "kpi-n", text: String(value) }), el("div", { class: "kpi-l", text: label })]);
   $("#pc-summary").replaceChildren(
-    kpi("k-open", n((r) => !decisionKey(r) && !isFixed(r)), "sans décision"),
+    kpi("k-open", n(isOpen), "sans décision"),
+    kpi("k-top", n((r) => isOpen(r) && r.mode === "top-games"), "tops à trancher"),
+    kpi("k-home", n((r) => isOpen(r) && r.mode === "homepage"), "homepage à trancher"),
     kpi("k-suspect", n((r) => r.verdict === "SUSPECT"), "SUSPECT"),
     kpi("k-verifier", n((r) => r.verdict === "À VÉRIFIER"), "À VÉRIFIER"),
     kpi("k-nv", n((r) => r.verdict === "NON VÉRIFIABLE"), "NON VÉRIFIABLE"),
@@ -164,6 +177,8 @@ function renderItem(r) {
     id: "offer-" + offer }, [
     el("div", { class: "pc-head" }, [
       el("span", { class: "pc-verdict", text: pill }),
+      MODE_BADGE[r.mode] ? el("span", { class: "pc-mode " + MODE_BADGE[r.mode][1], title: MODE_TITLE[r.mode],
+        text: MODE_BADGE[r.mode][0] }) : null,
       el("span", { class: "pc-product", text: (r.product || "?") + (r.edition ? " · " + r.edition : "") }),
       rankLabel(r) ? el("span", { class: "pc-rank", text: rankLabel(r) }) : null,
       el("span", { class: "pc-merchant", text: [r.merchant, price(r.price)].filter(Boolean).join(" · ") }),
@@ -251,7 +266,7 @@ async function decide(offer, key) {
   }
 }
 
-for (const id of ["#f-verdict", "#f-decision", "#f-live"]) $(id).addEventListener("change", render);
+for (const id of ["#f-verdict", "#f-mode", "#f-decision", "#f-live"]) $(id).addEventListener("change", render);
 $("#f-text").addEventListener("input", render);
 $("#refresh").addEventListener("click", load);
 

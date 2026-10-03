@@ -39,15 +39,18 @@
         <section>
           <h4>Ce que montre cette page · What it shows</h4>
           <p lang="fr">Le moniteur <b>price-check</b> (service <code>price-check</code>, dépôt à part)
-            contrôle la <b>première offre</b> de chaque page AllKeyShop suivie : le top 5 Popular, le
-            top 4 Coming soon PC et tous les jeux des tops clicks de la home. Il alerte sur Discord
+            contrôle les <b>premiers prix</b> (les 3 premiers de chaque édition) de chaque page AllKeyShop suivie : le top 5
+            Popular, le top 4 Coming soon PC (<b>Price check top</b>) et tous les jeux des tops clicks de la home
+            (<b>Price check homepage</b>). Il alerte sur Discord
             quand cette offre ne correspond pas au produit ou au marché : autre produit, autre région,
             autre plateforme, compte vendu comme clé, DLC vendu comme le jeu, autre édition.</p>
           <p lang="fr">Chaque carte est un <b>report</b> : l'offre, le verdict, la raison, la page
             AllKeyShop et l'URL du marchand. <b>SUSPECT</b> = alerte envoyée ; <b>À VÉRIFIER</b> = le
             nom n'est lisible ni dans l'URL ni sur la page, mais l'offre est le premier prix d'une page
             d'un top ou d'un coming soon (alerte envoyée) ; <b>NON VÉRIFIABLE</b> = même cas ailleurs,
-            noté sans alerte.</p>
+            noté sans alerte. La pastille <b>TOP</b> ou <b>HOMEPAGE</b> dit d'où vient le report : TOP quand la page est
+            dans les tops en ce moment (elle est aussi dans le TOP 50 de la homepage), HOMEPAGE sinon ; une page sortie
+            des listes garde le mode qui l'a contrôlée. Le filtre <b>Mode</b> sépare les deux.</p>
           <p class="en" lang="en">The price-check monitor checks the first offer of every followed
             AllKeyShop page and alerts on Discord when it does not match the product or the market.
             Each card is one report: offer, verdict, reason, AllKeyShop page and merchant URL.</p>
@@ -140,6 +143,13 @@
             <option value="fixed">Réparées</option>
             <option value="rule">Faux positifs levés par une règle</option>
             <option value="verified">Vérifiées OK (n'avaient pas pu être vérifiées)</option>
+          </select>
+        </label>
+        <label>Mode
+          <select id="f-mode">
+            <option value="">Tous</option>
+            <option value="top-games">Price check top</option>
+            <option value="homepage">Price check homepage</option>
           </select>
         </label>
         <label>Décision

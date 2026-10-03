@@ -27,6 +27,7 @@ const TORO = {
   page_url: "https://www.allkeyshop.com/blog/buy-toro-2-nintendo-switch-compare-prices/",
   list: "TOP 50 · Nintendo Popular", rank: 56, at: "2026-09-30 16:15", decision: null, history: [],
   edition_rank: 2, account: false, page_first: false, seen_at: "2026-10-01 12:39", seen_lag_seconds: 600,
+  mode: "homepage", modes: ["homepage"], mode_label: "Price check homepage",
 };
 const TRAP = {
   ...TORO, offer: "140000001", verdict: "NON VÉRIFIABLE", product: "Piège", reasons: ["URL sans nom du produit"],
@@ -235,6 +236,30 @@ test("re-check: an offer verified OK is neither repaired nor a false positive", 
     await c.$("#f-verdict").fire("change");
     assert.deepEqual(shown(c), ["offer-" + offer], value);
   }
+});
+
+test("each report says whether it is a top games or a homepage problem, and the mode filter separates them", async () => {
+  // Romain, 03/10/2026: « que le report des problèmes sur les tops soit identifié des problèmes home page »
+  const TOP = { ...TORO, offer: "140000006", product: "EA SPORTS FC 27", list: "Popular", rank: 1, mode: "top-games",
+    modes: ["top-games", "homepage"], mode_label: "Price check top" };
+  const OLD = { ...TORO, offer: "140000007", product: "Ancien export" };
+  delete OLD.mode;
+  const c = await start({ ...REPORTS, reports: [TORO, TOP, OLD] });
+  assert.ok(card(c, TOP.offer).textContent.includes("TOP") && !card(c, TOP.offer).textContent.includes("HOMEPAGE"),
+            card(c, TOP.offer).textContent);
+  assert.ok(card(c, TORO.offer).textContent.includes("HOMEPAGE"), card(c, TORO.offer).textContent);
+  assert.ok(!/TOP|HOMEPAGE/.test(card(c, OLD.offer).textContent.replace("TOP 50", "")), "an export without mode shows no badge");
+  const summary = c.$("#pc-summary").textContent;
+  assert.ok(summary.includes("1tops à trancher") && summary.includes("1homepage à trancher"), summary);
+  c.$("#f-mode").value = "top-games";
+  await c.$("#f-mode").fire("change");
+  assert.deepEqual(shown(c), ["offer-" + TOP.offer]);
+  c.$("#f-mode").value = "homepage";
+  await c.$("#f-mode").fire("change");
+  assert.deepEqual(shown(c), ["offer-" + TORO.offer]);
+  c.$("#f-mode").value = "";
+  await c.$("#f-mode").fire("change");
+  assert.equal(shown(c).length, 3);
 });
 
 test("the state line tells the last re-check", async () => {

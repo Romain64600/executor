@@ -678,7 +678,9 @@ elles sont réparées ou pas ») : une offre signalée trouvée OK s'affiche **R
 sa page (filtre « Réparées »), **FAUX POSITIF LEVÉ** si rien n'a changé et qu'une règle la blanchit, **VÉRIFIÉE OK**
 si elle n'avait pas pu être vérifiée (champ `fixed_kind` du moniteur : `repaired`, `rule`, `verified`) ; une offre
 toujours fausse « toujours en erreur au recontrôle du … » ; le dernier recontrôle s'affiche dans la ligne d'état du
-mode.
+mode. Depuis le 03/10/2026, chaque report porte une pastille **TOP** ou **HOMEPAGE** (champ `mode` du
+moniteur : TOP quand la page est dans les tops en ce moment, HOMEPAGE sinon), un filtre **Mode** les sépare et le résumé
+compte les reports à trancher de chacun.
 
 **Tri par SQL — console `/sql` (2026-09-18).** Romain exécute lui-même les `UPDATE` de tri
 dans phpMyAdmin ; la console les **génère et les mesure**, elle n'exécute rien et n'importe
