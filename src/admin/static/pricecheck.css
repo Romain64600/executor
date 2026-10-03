@@ -32,6 +32,9 @@ main.pc-main { max-width:1100px; }
 .pc-mode.m-top { color:var(--accent); }
 .pc-mode.m-home { color:var(--dim); }
 .pc-mode.m-first { color:var(--bad); }
+.topbar-link { font:inherit; background:var(--panel-2); color:var(--ink); border:1px solid var(--line); border-radius:5px;
+  padding:.3rem .6rem; text-decoration:none; }
+.topbar-link:hover { border-color:var(--accent); }
 .kpi.k-first .kpi-n { color:var(--bad); }
 .kpi.k-top .kpi-n { color:var(--accent); }
 .pc-merchant { color:var(--dim); }

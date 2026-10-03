@@ -116,6 +116,11 @@ STATIC_FILES = {
     "pricecheck.html": "text/html; charset=utf-8",
     "pricecheck.js": "application/javascript; charset=utf-8",
     "pricecheck.css": "text/css; charset=utf-8",
+    # Le guide de l'équipe (Romain, 2026-10-03 : « quelqu'un qui a accès à l'admin a accès à ce guide ») : une page
+    # générée par price-check/tools/guide_html.py depuis le Markdown du guide (FR + EN), rien en ligne (CSP).
+    "pricecheck-guide.html": "text/html; charset=utf-8",
+    "pricecheck-guide.js": "application/javascript; charset=utf-8",
+    "pricecheck-guide.css": "text/css; charset=utf-8",
 }
 MAX_BODY_BYTES = 2 * 1024 * 1024
 RUN_ROUTE = re.compile(r"^/api/runs/([^/]+)(/.*)?$")
@@ -377,6 +382,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._send_json(200, self.state.overview.payload())
         if path in ("/price-check", "/pricecheck"):
             return self._serve_static("pricecheck.html")
+        if path in ("/price-check-guide", "/pricecheck-guide"):
+            return self._serve_static("pricecheck-guide.html")
         if path == "/api/price-check/reports":
             return self._get_price_check_reports()
         if path == "/api/price-check/status":
@@ -527,7 +534,8 @@ class AdminHandler(BaseHTTPRequestHandler):
         # their current bytes. Even a tab open across a redeploy pulls the new
         # JS/CSS on its next reload (index.html itself is no-store). Deterministic
         # (content hash, no timestamps).
-        if name in ("index.html", "sort.html", "auto.html", "urls.html", "overview.html", "pricecheck.html"):
+        if name in ("index.html", "sort.html", "auto.html", "urls.html", "overview.html", "pricecheck.html",
+                    "pricecheck-guide.html"):
             body = self._version_assets(body)
         self._send_bytes(200, STATIC_FILES[name], body)
 
@@ -538,7 +546,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         # itself is no-store). Covers both pages' assets; a no-op for those absent.
         for asset in ("app.js", "style.css", "sort.js", "sort.css", "auto.js", "auto.css",
                       "urls.js", "urls.css", "overview.js", "overview.css", "pricecheck.js",
-                      "pricecheck.css"):
+                      "pricecheck.css", "pricecheck-guide.js", "pricecheck-guide.css"):
             asset_path = STATIC_DIR / asset
             if not asset_path.is_file():
                 continue

@@ -8,6 +8,7 @@ These tests hold the contract of both files and the guards of the two routes.
 
 import json
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -193,6 +194,32 @@ class PriceCheckRoutesTests(AppTestCase):
                 self.assertRegex(html, r'pricecheck\.css\?v=[0-9a-f]{8}')
                 self.assertRegex(html, r'auto\.css\?v=[0-9a-f]{8}')
         for asset in ("/pricecheck.js", "/pricecheck.css"):
+            response, _ = self._request("GET", asset)
+            self.assertEqual(response.status, 200, asset)
+
+    def test_the_team_guide_is_a_page_of_the_admin(self):
+        # Romain, 03/10/2026 : « je préférerais que tu l'intègres à l'admin. Quelqu'un qui a accès à l'admin a accès à
+        # ce guide. » La page Price check y mène (en-tête, aide) ; le guide est servi par l'admin, en français et en anglais
+        response, data = self._request("GET", "/price-check")
+        page = data.decode("utf-8")
+        self.assertIn('id="guide-link" class="topbar-link" href="price-check-guide"', page)
+        self.assertNotIn("claude.ai/code/artifact", page)  # plus de lien vers une doc qu'il faudrait partager
+        for path in ("/price-check-guide", "/pricecheck-guide", "/pricecheck-guide.html"):
+            with self.subTest(path=path):
+                response, data = self._request("GET", path)
+                self.assertEqual(response.status, 200)
+                html = data.decode("utf-8")
+                self.assertRegex(html, r'pricecheck-guide\.js\?v=[0-9a-f]{8}')
+                self.assertRegex(html, r'pricecheck-guide\.css\?v=[0-9a-f]{8}')
+        self.assertIn('<article id="guide-fr" lang="fr"', html)
+        self.assertIn('<article id="guide-en" lang="en"', html)
+        for words in ("Les trois salons Discord", "The three Discord channels", "Une alerte est suivie jusqu’à sa réparation",
+                      "An alert is followed until it is fixed"):
+            self.assertIn(words, html)
+        self.assertNotRegex(html, r"\sstyle=|<script>[^<]")  # rien en ligne : la CSP de l'admin le refuserait
+        for link in re.findall(r'<a [^>]*href="https?://[^"]*"[^>]*>', html):
+            self.assertIn('rel="noopener noreferrer"', link)
+        for asset in ("/pricecheck-guide.js", "/pricecheck-guide.css"):
             response, _ = self._request("GET", asset)
             self.assertEqual(response.status, 200, asset)
 

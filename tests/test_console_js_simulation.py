@@ -323,5 +323,38 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
                                     f"le harnais passe sans « {name} » :\n{proc.stdout}")
 
 
+
+GUIDE_HARNESS = ROOT / "tests" / "js" / "pricecheck-guide.test.mjs"
+
+
+@unittest.skipIf(NODE is None, "node absent (dépendance de test)")
+class PriceCheckGuideSimulationTests(unittest.TestCase):
+    """Le GUIDE DE L'ÉQUIPE de la page Price check (2026-10-03), exécuté. Romain : « quelqu'un qui a accès à l'admin
+    a accès à ce guide ». La page porte les deux langues ; le script en montre une et garde le choix."""
+
+    def test_every_scenario_passes(self):
+        proc = subprocess.run([NODE, str(GUIDE_HARNESS)], cwd=ROOT, capture_output=True, text=True, timeout=120)
+        self.assertEqual(proc.returncode, 0, f"\n--- sortie node ---\n{proc.stdout}\n{proc.stderr}")
+        self.assertNotIn("FAIL", proc.stdout)
+
+    def test_the_harness_goes_red_on_each_removed_guard(self):
+        import os
+        import tempfile
+        js = (ROOT / "src" / "admin" / "static" / "pricecheck-guide.js").read_text(encoding="utf-8")
+        mutations = {
+            "bascule de langue": ('$("#guide-" + l).classList.toggle("hidden", l !== lang);', ""),
+            "#en dans l'adresse": ('hash.startsWith("#en") ? "en" : ', ""),
+        }
+        for name, (before, after) in mutations.items():
+            with self.subTest(name):
+                self.assertIn(before, js, f"la forme de « {name} » a changé")
+                with tempfile.TemporaryDirectory() as tmp:
+                    fake = pathlib.Path(tmp) / "pricecheck-guide.js"
+                    fake.write_text(js.replace(before, after, 1), encoding="utf-8")
+                    proc = subprocess.run([NODE, str(GUIDE_HARNESS)], cwd=ROOT, capture_output=True, text=True,
+                                          timeout=120, env=dict(os.environ, PRICECHECK_GUIDE_JS=str(fake)))
+                self.assertNotEqual(proc.returncode, 0, f"le harnais passe sans « {name} » :\n{proc.stdout}")
+
+
 if __name__ == "__main__":
     unittest.main()
