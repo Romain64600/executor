@@ -55,6 +55,14 @@ const isRepaired = (r) => isFixed(r) && r.fixed_kind !== "rule" && r.fixed_kind 
 // exports `mode`: "top-games" when the offer's page is in the tops right now (first 5 Popular, first 4 Coming soon PC),
 // otherwise "homepage"; a top page is also in the homepage TOP 50 (`modes` lists both). An older export has no mode.
 const MODE_BADGE = { "top-games": ["TOP", "m-top"], "homepage": ["HOMEPAGE", "m-home"] };
+// Romain, 05/10/2026 : « je voudrais que les reports top soient différenciables des reports homepage » : la liste en
+// deux parties (les tops d'abord), chacune sous son titre ; une carte des tops porte une bande et un badge pleins.
+const MODE_CARD = { "top-games": "mode-top", "homepage": "mode-home" };
+const MODE_GROUPS = [
+  ["top-games", "g-top", "Price check top", "les tops : 5 premiers Popular, 4 premiers Coming soon PC", "Aucun report sur les tops pour ces filtres."],
+  ["homepage", "g-home", "Price check homepage", "toute la homepage : widgets de la home, TOP 50 de chaque plateforme",
+    "Aucun report sur la homepage pour ces filtres."],
+];
 const MODE_TITLE = {
   "top-games": "Price check top : la page est dans les tops (5 premiers Popular, 4 premiers Coming soon PC)",
   "homepage": "Price check homepage : la page est dans les listes de la homepage (top clics, TOP 50)",
@@ -217,7 +225,7 @@ function renderItem(r) {
     : r.still_wrong_at ? el("div", { class: "pc-still", text: "Toujours en erreur au recontrôle du " + stamp(r.still_wrong_at) }) : null;
   const pill = isRuleCleared(r) ? "FAUX POSITIF LEVÉ" : isVerified(r) ? "VÉRIFIÉE OK" : isFixed(r) ? "RÉPARÉE" : (r.verdict || "?");
   const tone = isRuleCleared(r) ? "v-rule" : isFixed(r) ? "v-fixed" : (VERDICT_CLASS[r.verdict] || "v-nv");
-  return el("article", { class: "pc-item " + tone + (cur ? " decided" : ""),
+  return el("article", { class: "pc-item " + tone + (cur ? " decided" : "") + (MODE_CARD[r.mode] ? " " + MODE_CARD[r.mode] : ""),
     id: "offer-" + offer }, [
     el("div", { class: "pc-head" }, [
       el("span", { class: "pc-verdict", text: pill }),
@@ -278,8 +286,27 @@ function render() {
   renderSummary(reports);
   renderOperators(reports);
   const shown = reports.filter(matchesFilters);
-  $("#pc-list").replaceChildren(...(shown.length ? shown.map(renderItem) : [el("div", { class: "pc-empty",
-    text: reports.length ? "Aucun report pour ces filtres." : "Aucun report : le moniteur n'a rien signalé." })]));
+  if (!reports.length) {
+    $("#pc-list").replaceChildren(el("div", { class: "pc-empty", text: "Aucun report : le moniteur n'a rien signalé." }));
+    return;
+  }
+  const only = $("#f-mode").value;
+  const parts = [];
+  for (const [mode, cls, label, what, none] of MODE_GROUPS) {
+    if (only && only !== mode) continue;
+    const items = shown.filter((r) => r.mode === mode);
+    const open = items.filter(isOpen).length;
+    parts.push(el("h3", { class: "pc-group-title " + cls }, [
+      el("span", { class: "pc-group-name", text: label }),
+      el("span", { class: "pc-group-what", text: " · " + what }),
+      el("span", { class: "pc-group-count", text: " — " + items.length + " report" + (items.length > 1 ? "s" : "") +
+        (open ? ", dont " + open + " à traiter" : "") }),
+    ]));
+    parts.push(...(items.length ? items.map(renderItem) : [el("div", { class: "pc-empty", text: none })]));
+  }
+  // un export plus ancien, sans mode : après les deux parties
+  parts.push(...shown.filter((r) => !MODE_CARD[r.mode]).map(renderItem));
+  $("#pc-list").replaceChildren(...parts);
 }
 
 function renderFreshness() {

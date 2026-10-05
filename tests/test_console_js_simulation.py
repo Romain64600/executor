@@ -322,6 +322,10 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             "traité par, en tête de carte": ('text: "✔ Traité par " + (handledBy(r) || "?") + " · " + labelOf(cur) })',
                                              'text: "" })'),
             "filtre traité par": ('if (by === "none" ? !isOpen(r) : by && handledBy(r) !== by) return false;', ""),
+            # 05/10/2026 : les reports des tops séparés de ceux de la homepage
+            "tops d'abord, sous leur titre": ("for (const [mode, cls, label, what, none] of MODE_GROUPS) {",
+                                              "for (const [mode, cls, label, what, none] of MODE_GROUPS.slice().reverse()) {"),
+            "carte des tops marquée": ('(MODE_CARD[r.mode] ? " " + MODE_CARD[r.mode] : "")', '""'),
         }
         for name, (before, after) in mutations.items():
             with self.subTest(name):

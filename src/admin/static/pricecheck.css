@@ -21,6 +21,13 @@ main.pc-main { max-width:1100px; }
 .pc-item.v-suspect { border-left-color:var(--bad); }
 .pc-item.v-verifier { border-left-color:var(--warn); }
 .pc-item.decided { opacity:.85; }
+/* 05/10/2026 (Romain) : les reports des tops se distinguent de ceux de la homepage */
+.pc-item.mode-top { border-top:3px solid var(--accent); }
+.pc-group-title { display:flex; flex-wrap:wrap; align-items:baseline; gap:.15rem; margin:.9rem 0 .1rem; padding:.4rem .7rem;
+  border-radius:5px; font-size:.95rem; }
+.pc-group-title.g-top { background:var(--accent); color:#fff; }
+.pc-group-title.g-home { background:var(--panel-2); color:var(--ink); border:1px solid var(--line); }
+.pc-group-what, .pc-group-count { font-weight:400; font-size:.84rem; }
 .pc-head { display:flex; align-items:baseline; gap:.6rem; flex-wrap:wrap; }
 .pc-verdict { font-size:.72rem; font-weight:700; padding:.08rem .45rem; border-radius:5px; border:1px solid var(--line); }
 .v-suspect .pc-verdict { color:var(--bad); border-color:var(--bad); }
@@ -29,7 +36,7 @@ main.pc-main { max-width:1100px; }
 .pc-product { font-weight:600; }
 .pc-rank { color:var(--dim); font-size:.78rem; }
 .pc-mode { font-size:.68rem; font-weight:700; letter-spacing:.04em; padding:.05rem .4rem; border-radius:5px; border:1px solid currentColor; }
-.pc-mode.m-top { color:var(--accent); }
+.pc-mode.m-top { color:#fff; background:var(--accent); border-color:var(--accent); }
 .pc-mode.m-home { color:var(--dim); }
 .pc-mode.m-first { color:var(--bad); }
 .topbar-link { font:inherit; background:var(--panel-2); color:var(--ink); border:1px solid var(--line); border-radius:5px;

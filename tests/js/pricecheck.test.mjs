@@ -395,6 +395,26 @@ test("each report says whether it is a top games or a homepage problem, and the 
   assert.equal(shown(c).length, 3);
 });
 
+// Romain, 05/10/2026 : « je voudrais que les reports top soient différenciables des reports homepage ».
+test("top and homepage reports are listed apart, the tops first, each under its title, and an empty part says so", async () => {
+  const TOPR = { ...TORO, offer: "140000008", product: "EA SPORTS FC 27", list: "Popular", rank: 1, mode: "top-games",
+    modes: ["top-games", "homepage"], mode_label: "Price check top" };
+  const c = await start({ ...REPORTS, reports: [TORO, TOPR] });
+  const order = c.$("#pc-list").children.filter((n) => typeof n !== "string")
+    .map((n) => (n.tagName === "ARTICLE" ? n.id : n.tagName + ":" + n.textContent));
+  assert.equal(order.length, 4, order.join(" | "));
+  assert.ok(order[0].startsWith("H3:Price check top") && order[0].endsWith(" — 1 report, dont 1 à traiter"), order[0]);
+  assert.equal(order[1], "offer-" + TOPR.offer, "the tops do not come first");
+  assert.ok(order[2].startsWith("H3:Price check homepage"), order[2]);
+  assert.equal(order[3], "offer-" + TORO.offer);
+  assert.ok(card(c, TOPR.offer).classList.contains("mode-top"), "a top card is not marked");
+  assert.ok(card(c, TORO.offer).classList.contains("mode-home"));
+  const only = await start({ ...REPORTS, reports: [TORO] });
+  const empty = only.$("#pc-list").children.find((n) => n.classList && n.classList.contains("pc-empty"));
+  assert.ok(empty, "no top report: the tops part is silent");
+  assert.equal(empty.textContent, "Aucun report sur les tops pour ces filtres.");
+});
+
 test("first-price problems are marked and can be shown alone", async () => {
   // Romain, 03/10/2026: « séparer les problèmes de premiers prix … premier prix = les 3 prix les moins chers par édition »
   const FIRST = { ...TORO, offer: "140000008", product: "Monster Hunter Wilds", edition_rank: 2, first_price: true };
