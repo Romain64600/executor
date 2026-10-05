@@ -308,6 +308,11 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             "filtre premiers prix": ('if ($("#f-first").checked && !isFirstPrice(r)) return false;', ""),
             "faux positif levé ≠ réparée": ('const isRepaired = (r) => isFixed(r) && r.fixed_kind !== "rule" && r.fixed_kind !== "verified";',
                                             "const isRepaired = (r) => isFixed(r);"),
+            # 05/10/2026 : une note tapée après la décision (les commentaires de Rémy, jamais enregistrés)
+            "note seule avec Entrée": ("if (cur && unsavedNote(offer, r)) decide(offer, cur);", ""),
+            "note non enregistrée signalée": ("pending.hidden = !open;", "pending.hidden = true;"),
+            "garde avant de quitter la page": ("if (!reports.some((r) => unsavedNote(String(r.offer), r))) return undefined;",
+                                               "return undefined;"),
         }
         for name, (before, after) in mutations.items():
             with self.subTest(name):

@@ -661,7 +661,11 @@ service `price-check`, sous root) écrit à chaque passage `reports.json` dans
 avec sa page AllKeyShop, son URL marchand, sa raison et son rang dans l'édition. La console les
 affiche (filtres verdict / décision / texte, « encore en tête seulement »), signale un export de
 plus de 45 min, et tranche chaque report : **Vrai positif**, **Faux positif** ou **À discuter**,
-avec une note. La décision est AJOUTÉE à `decisions.jsonl` dans le même dossier (une ligne JSON,
+avec une note. La note part avec le clic sur la décision ; tapée après coup sur un report déjà
+tranché, elle s'enregistre avec **Entrée** ou **Enregistrer la note** (la même décision, de nouveau,
+avec la note : Romain, 2026-10-05, les commentaires de Rémy tapés après le clic n'étaient jamais
+partis). Une note pas encore enregistrée est signalée sur sa carte, et quitter la page avec une
+telle note demande confirmation. La décision est AJOUTÉE à `decisions.jsonl` dans le même dossier (une ligne JSON,
 signée de l'identité Basic de nginx, jamais d'un champ du corps ; la dernière par offre l'emporte) ;
 le moniteur la relit avant son passage suivant. Rien d'autre n'est écrit : aucune page n'est
 ouverte, aucune offre AKS n'est touchée, aucun message n'est envoyé. Fail-closed : sans

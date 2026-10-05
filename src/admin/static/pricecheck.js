@@ -147,14 +147,42 @@ function decisionLine(d) {
     (d.at ? " le " + stamp(d.at) : "") + (d.note ? " — « " + d.note + " »" : "");
 }
 
+// A note typed and not saved yet (Romain, 05/10/2026 : Rémy typed his comments AFTER clicking the
+// decision; the note had left, empty, with the click, and his comments stayed in the fields, never
+// saved). On a decided report it is saved on its own: Entrée or « Enregistrer la note » records the
+// same decision again, with the note. The card says a note is not saved, and leaving the page asks.
+function unsavedNote(offer, r) {
+  const typed = String(NOTES[offer] || "").trim();
+  return Boolean(typed) && typed !== String((r && r.decision && r.decision.note) || "").trim();
+}
+
 function renderItem(r) {
   const offer = String(r.offer);
   const labels = (DATA && DATA.decisions) || {};
   const cur = decisionKey(r);
   const note = el("input", { class: "pc-note", type: "text", maxlength: "1000", autocomplete: "off",
-    placeholder: "note : pourquoi (facultatif)", "aria-label": "Note de décision" });
+    placeholder: cur ? "note : pourquoi (Entrée pour l'enregistrer)" : "note : pourquoi (facultatif)",
+    "aria-label": "Note de décision" });
   note.value = NOTES[offer] != null ? NOTES[offer] : "";
-  note.addEventListener("input", () => { NOTES[offer] = note.value; });
+  const saveNote = cur ? el("button", { type: "button", class: "pc-save-note", text: "Enregistrer la note",
+    title: "Enregistre la note avec la décision déjà prise (" + labelOf(cur) + ")", onclick: () => decide(offer, cur) }) : null;
+  const pending = el("span", { class: "pc-unsaved", text: cur
+    ? "Note non enregistrée : Entrée ou « Enregistrer la note »"
+    : "Note non enregistrée : elle part avec la décision, choisis-en une" });
+  const showPending = () => {
+    const open = unsavedNote(offer, r);
+    note.classList.toggle("unsaved", open);
+    pending.hidden = !open;
+    if (saveNote) saveNote.hidden = !open;
+  };
+  showPending();
+  note.addEventListener("input", () => { NOTES[offer] = note.value; showPending(); });
+  note.addEventListener("keydown", (ev) => {
+    if (!ev || ev.key !== "Enter") return;
+    if (ev.preventDefault) ev.preventDefault();
+    if (cur && unsavedNote(offer, r)) decide(offer, cur);
+  });
+  if (saveNote) saveNote.disabled = BUSY.has(offer);
   const buttons = Object.keys(labels).map((k) => {
     const b = el("button", { type: "button", class: "d-" + k + (cur === k ? " on" : ""), title: labels[k],
       text: shortLabel(labels[k]), onclick: () => decide(offer, k) });
@@ -202,7 +230,7 @@ function renderItem(r) {
     link("Offre marchand", r.merchant_url),
     // 03/10/2026 : le fil de feedback Discord de l'alerte (le bot l'ouvre ; on peut y trancher aussi)
     r.discord_thread ? link("Fil Discord", r.discord_thread) : null,
-    el("div", { class: "pc-decide" }, [...buttons, note]),
+    el("div", { class: "pc-decide" }, [...buttons, note, saveNote, pending]),
     r.decision ? el("div", { class: "pc-decision", text: decisionLine(r.decision) }) : null,
     before.length ? el("div", { class: "pc-history", text: "Avant : " + before.map((h) =>
       labelOf(h.decision) + (h.by ? " (" + h.by + (h.at ? ", " + stamp(h.at) : "") + ")" : "")).join(" ; ") }) : null,
@@ -253,8 +281,9 @@ async function decide(offer, key) {
   BUSY.add(offer);
   delete ERRORS[offer];
   const note = NOTES[offer] || "";
+  const was = decisionKey(((DATA && DATA.reports) || []).find((x) => String(x.offer) === offer) || {});
   render();
-  setStatus("Enregistrement de la décision…", true);
+  setStatus(was === key ? "Enregistrement de la note…" : "Enregistrement de la décision…", true);
   try {
     const res = await api("api/price-check/decision", { method: "POST",
       body: JSON.stringify({ offer, decision: key, note }) });
@@ -266,7 +295,8 @@ async function decide(offer, key) {
       target.decision = rec;
     }
     delete NOTES[offer];
-    setStatus("Décision enregistrée : " + ((target && target.product) || offer) + " — " + labelOf(key), false);
+    setStatus((was === key ? "Note enregistrée : " : "Décision enregistrée : ") + ((target && target.product) || offer) +
+      " — " + labelOf(key) + (note.trim() ? " — « " + note.trim() + " »" : ""), false);
   } catch (e) {
     ERRORS[offer] = e.message;
     setStatus("Décision non enregistrée : " + e.message, false);
@@ -295,6 +325,17 @@ setInterval(() => {
 }, REFRESH_MS);
 
 load();
+
+// Leaving or reloading the page with a typed note not saved yet: the browser asks first (05/10/2026).
+if (typeof window !== "undefined" && window.addEventListener) {
+  window.addEventListener("beforeunload", (ev) => {
+    const reports = (DATA && DATA.reports) || [];
+    if (!reports.some((r) => unsavedNote(String(r.offer), r))) return undefined;
+    ev.preventDefault();
+    ev.returnValue = "";
+    return "";
+  });
+}
 
 // ---- the two run buttons (Romain, 02/10/2026: « Price check top », « Price check homepage ») ----
 // The admin never runs anything itself: it drops run-<mode>.request in the shared directory and the

@@ -125,6 +125,76 @@ test("a refused decision is shown on its card and the buttons come back", async 
   assert.ok(!el.textContent.includes("Décision :"), "a refused decision is shown as recorded");
 });
 
+// Romain, 05/10/2026: Rémy typed his comments AFTER clicking the decision; the note had left, empty,
+// with the click, and his comments stayed in the fields, never saved. A note on a decided report is
+// now saved on its own, an unsaved note says so, and leaving the page with one asks first.
+const DECIDED = { ...TORO, offer: "140000006", product: "Décidé", seen_lag_seconds: 60,
+  decision: { decision: "faux", note: "", by: "remy", at: "2026-10-05T15:20:00+02:00" },
+  history: [{ decision: "faux", note: "", by: "remy", at: "2026-10-05T15:20:00+02:00" }] };
+const posts = (c) => c.net.calls.filter((x) => x.method === "POST").length;
+
+test("a note typed after the decision is saved on its own, with Enter or its button", async () => {
+  const c = await start({ ...REPORTS, reports: [TORO, DECIDED] });
+  let el = card(c, DECIDED.offer);
+  assert.ok(el.querySelector(".pc-save-note").hidden, "the save button shows with nothing to save");
+  assert.ok(el.querySelector(".pc-unsaved").hidden, "an empty note says it is not saved");
+  const note = el.querySelector(".pc-note");
+  note.value = "la page AKS est bien un DLC";
+  await note.fire("input");
+  assert.ok(!el.querySelector(".pc-unsaved").hidden, "an unsaved note does not say so");
+  assert.ok(note.classList.contains("unsaved"), "an unsaved note is not marked");
+  assert.ok(!el.querySelector(".pc-save-note").hidden, "no way to save the note alone");
+  const before = posts(c);
+  await note.fire("keydown", { key: "Enter", preventDefault() {} });
+  await tick();
+  assert.equal(posts(c), before + 1, "Enter sent nothing");
+  assert.deepEqual(lastPost(c).body, { offer: DECIDED.offer, decision: "faux", note: "la page AKS est bien un DLC" });
+  await c.net.release("api/price-check/decision", { recorded: { offer: DECIDED.offer, decision: "faux",
+    note: "la page AKS est bien un DLC", by: "remy", at: "2026-10-05T15:40:00+02:00" } });
+  await tick();
+  el = card(c, DECIDED.offer);
+  assert.ok(el.textContent.includes("« la page AKS est bien un DLC »"), "the saved note is not shown: " + el.textContent);
+  assert.ok(el.querySelector(".pc-unsaved").hidden, "a saved note still says it is not saved");
+  const again = el.querySelector(".pc-note");
+  again.value = "vu avec Romain";
+  await again.fire("input");
+  el.querySelector(".pc-save-note").fire("click");
+  await tick();
+  assert.deepEqual(lastPost(c).body, { offer: DECIDED.offer, decision: "faux", note: "vu avec Romain" });
+});
+
+test("a note typed before any decision says it leaves with the decision, and Enter sends nothing", async () => {
+  const c = await start();
+  const el = card(c, TORO.offer);
+  assert.equal(el.querySelector(".pc-save-note"), null, "a note cannot be saved without a decision");
+  const note = el.querySelector(".pc-note");
+  note.value = "Metal Garden";
+  await note.fire("input");
+  const pending = el.querySelector(".pc-unsaved");
+  assert.ok(!pending.hidden && pending.textContent.includes("elle part avec la décision"), "the note does not say how it is saved");
+  const before = posts(c);
+  await note.fire("keydown", { key: "Enter", preventDefault() {} });
+  await tick();
+  assert.equal(posts(c), before, "Enter recorded a decision nobody chose");
+});
+
+test("leaving the page with an unsaved note asks first, never without one", async () => {
+  const handlers = {};
+  const c = await loadConsole(CONSOLE, { window: { addEventListener(kind, fn) { handlers[kind] = fn; } } });
+  await c.net.release("api/price-check/reports", JSON.parse(JSON.stringify(REPORTS)));
+  await tick();
+  assert.ok(handlers.beforeunload, "no guard on leaving the page");
+  const quiet = { prevented: false, preventDefault() { this.prevented = true; } };
+  handlers.beforeunload(quiet);
+  assert.ok(!quiet.prevented, "leaving is held with nothing unsaved");
+  const note = card(c, TORO.offer).querySelector(".pc-note");
+  note.value = "Metal Garden";
+  await note.fire("input");
+  const ev = { prevented: false, returnValue: undefined, preventDefault() { this.prevented = true; } };
+  handlers.beforeunload(ev);
+  assert.ok(ev.prevented && ev.returnValue === "", "leaving with an unsaved note does not ask");
+});
+
 test("an old export is flagged, a fresh one is not", async () => {
   const fresh = await start();
   assert.ok(fresh.$("#pc-stale").classList.contains("hidden"), "a fresh export is flagged");
