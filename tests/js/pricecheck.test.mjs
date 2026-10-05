@@ -258,6 +258,36 @@ test("the « Traité par » filter shows one operator's reports or the ones nobo
   assert.equal(c.$("#pc-by").textContent, "Traités par : remi 1 · remy 1");
 });
 
+// Romain, 05/10/2026 : « lorsqu'on a traité une offre, elle disparaît trop vite … je me suis retrouvé à valider l'autre
+// sans la lire en pensant que c'était toujours la même ».
+test("a report just decided stays in place, marked, then fades out of a list that no longer keeps it", async () => {
+  const timers = [];
+  const c = await loadConsole(CONSOLE, { setTimeout: (fn, ms) => { timers.push([fn, ms]); return timers.length; } });
+  await c.net.release("api/price-check/reports", JSON.parse(JSON.stringify(REPORTS)));
+  await tick();
+  c.$("#f-decision").value = "none";
+  await c.$("#f-decision").fire("change");
+  assert.deepEqual(shown(c), ["offer-" + TORO.offer]);
+  buttons(card(c, TORO.offer)).find((b) => b.textContent === "Vrai positif").fire("click");
+  await tick();
+  await c.net.release("api/price-check/decision",
+    { recorded: { offer: TORO.offer, decision: "vrai", note: "", by: "romain", at: "2026-10-05T17:03:02+02:00" } });
+  await tick();
+  assert.deepEqual(shown(c), ["offer-" + TORO.offer], "the decided card left at once, under the operator's cursor");
+  const kept = card(c, TORO.offer);
+  assert.ok(kept.classList.contains("pc-just-done"), "the decided card is not marked");
+  assert.equal(kept.querySelector(".pc-done-banner").textContent,
+    "✔ Décision enregistrée : Vrai positif — la carte quitte cette liste dans quelques secondes");
+  const stay = timers.find(([, ms]) => ms === 4000);
+  assert.ok(stay, "no delay before the card leaves");
+  stay[0]();
+  assert.ok(card(c, TORO.offer).classList.contains("pc-leaving"), "the card does not fade out");
+  const fade = timers.find(([, ms]) => ms === 600);
+  assert.ok(fade, "no fade before the list moves");
+  fade[0]();
+  assert.deepEqual(shown(c), [], "the card stays after its fade");
+});
+
 test("an old export is flagged, a fresh one is not", async () => {
   const fresh = await start();
   assert.ok(fresh.$("#pc-stale").classList.contains("hidden"), "a fresh export is flagged");

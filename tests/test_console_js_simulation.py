@@ -326,6 +326,8 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             "tops d'abord, sous leur titre": ("for (const [mode, cls, label, what, none] of MODE_GROUPS) {",
                                               "for (const [mode, cls, label, what, none] of MODE_GROUPS.slice().reverse()) {"),
             "carte des tops marquée": ('(MODE_CARD[r.mode] ? " " + MODE_CARD[r.mode] : "")', '""'),
+            # 05/10/2026 : un report tranché reste quelques secondes avant de quitter la liste
+            "report tranché gardé quelques secondes": ("if (!strict && JUST_DONE.has(String(r.offer))) return true;", ""),
         }
         for name, (before, after) in mutations.items():
             with self.subTest(name):

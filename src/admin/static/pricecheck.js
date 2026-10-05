@@ -112,7 +112,31 @@ function link(label, url) {
   ]);
 }
 
-function matchesFilters(r) {
+// Romain, 05/10/2026 : « lorsqu'on a traité une offre, elle disparaît trop vite … je me suis retrouvé à valider l'autre
+// sans la lire en pensant que c'était toujours la même ». A report just decided stays in place, marked, for a few
+// seconds even when the filters no longer keep it; then it fades out, and only then do the cards below move up.
+const JUST_DONE_MS = 4000;
+const FADE_MS = 600;
+const JUST_DONE = new Map();  // offer -> { state: "kept" | "leaving", token }
+
+function keepJustDone(offer) {
+  const token = {};
+  JUST_DONE.set(offer, { state: "kept", token });
+  setTimeout(() => {
+    const cur = JUST_DONE.get(offer);
+    if (!cur || cur.token !== token) return;  // decided again meanwhile: its own timer runs
+    cur.state = "leaving";
+    const card = $("#offer-" + offer);
+    if (card && card.classList) card.classList.add("pc-leaving");
+    setTimeout(() => {
+      const now = JUST_DONE.get(offer);
+      if (now && now.token === token) { JUST_DONE.delete(offer); render(); }
+    }, FADE_MS);
+  }, JUST_DONE_MS);
+}
+
+function matchesFilters(r, strict) {
+  if (!strict && JUST_DONE.has(String(r.offer))) return true;
   const v = $("#f-verdict").value;
   const d = $("#f-decision").value;
   const q = String($("#f-text").value || "").trim().toLowerCase();
@@ -225,8 +249,12 @@ function renderItem(r) {
     : r.still_wrong_at ? el("div", { class: "pc-still", text: "Toujours en erreur au recontrôle du " + stamp(r.still_wrong_at) }) : null;
   const pill = isRuleCleared(r) ? "FAUX POSITIF LEVÉ" : isVerified(r) ? "VÉRIFIÉE OK" : isFixed(r) ? "RÉPARÉE" : (r.verdict || "?");
   const tone = isRuleCleared(r) ? "v-rule" : isFixed(r) ? "v-fixed" : (VERDICT_CLASS[r.verdict] || "v-nv");
-  return el("article", { class: "pc-item " + tone + (cur ? " decided" : "") + (MODE_CARD[r.mode] ? " " + MODE_CARD[r.mode] : ""),
+  const just = JUST_DONE.get(offer);
+  return el("article", { class: "pc-item " + tone + (cur ? " decided" : "") + (MODE_CARD[r.mode] ? " " + MODE_CARD[r.mode] : "") +
+    (just ? " pc-just-done" + (just.state === "leaving" ? " pc-leaving" : "") : ""),
     id: "offer-" + offer }, [
+    just && cur ? el("div", { class: "pc-done-banner", role: "status", text: "✔ Décision enregistrée : " + labelOf(cur) +
+      (matchesFilters(r, true) ? "" : " — la carte quitte cette liste dans quelques secondes") }) : null,
     el("div", { class: "pc-head" }, [
       el("span", { class: "pc-verdict", text: pill }),
       cur ? el("span", { class: "pc-done d-" + cur, title: "Traité par " + (handledBy(r) || "?") +
@@ -359,6 +387,7 @@ async function decide(offer, key) {
       target.decision = rec;
     }
     delete NOTES[offer];
+    keepJustDone(offer);
     setStatus((was === key ? "Note enregistrée : " : "Décision enregistrée : ") + ((target && target.product) || offer) +
       " — " + labelOf(key) + (note.trim() ? " — « " + note.trim() + " »" : ""), false);
   } catch (e) {
