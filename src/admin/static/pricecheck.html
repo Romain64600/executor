@@ -71,7 +71,8 @@
           <h4>Trancher · Deciding</h4>
           <p lang="fr"><b>Vrai positif</b> : l'erreur est réelle, l'alerte était juste.
             <b>Faux positif</b> : l'offre est correcte, l'alerte n'aurait pas dû partir.
-            <b>À discuter</b> : on en parle. La note dit pourquoi (ex. « la page AKS est bien DLC ») :
+            <b>À discuter</b> : on en parle. D'accord avec l'erreur décrite sur le report : pas de note, il n'y
+            a rien à commenter. Sinon, la note dit pourquoi (ex. « la page AKS est bien DLC ») ;
             c'est elle qui sert à corriger les règles du moniteur. La note part avec le clic sur la
             décision ; tapée après coup, elle s'enregistre avec <b>Entrée</b> ou <b>Enregistrer la note</b>
             (une note pas encore enregistrée est signalée sur sa carte).</p>
@@ -79,7 +80,8 @@
             de connexion ; le moniteur la relit avant son passage suivant. Une nouvelle décision sur la
             même offre remplace la précédente (l'historique reste). Rien n'est envoyé, aucune offre
             AllKeyShop n'est modifiée.</p>
-          <p class="en" lang="en">True positive / false positive / to discuss, with a note: it leaves
+          <p class="en" lang="en">True positive / false positive / to discuss. Agree with the error described: no
+            note needed; otherwise a note says why: it leaves
             with the click on the decision; typed afterwards, press Enter or « Enregistrer la note ». The
             decision is appended to decisions.jsonl under your login; the monitor re-reads it before
             its next pass. A later decision on the same offer replaces the earlier one. Nothing is
@@ -181,6 +183,27 @@
         <label><input id="f-first" type="checkbox"> premiers prix seulement</label>
       </div>
     </section>
+    <details id="pc-howto" class="card pc-howto-box" open>
+      <summary>Comment trancher un report</summary>
+      <p class="pc-howto-rule"><b>D'accord avec l'erreur décrite sur le report ? Clique Vrai positif, sans note :
+        il n'y a rien à commenter.</b> La note sert seulement à dire pourquoi tu n'es pas d'accord, ou à préciser.</p>
+      <ol>
+        <li><b>Lis la raison</b> : ce que le moniteur a trouvé.</li>
+        <li><b>Vérifie les deux pages</b> : « Page AllKeyShop » (édition, région et son nom de filtre,
+          plateforme) et « Offre marchand » (ce qui est vraiment vendu).</li>
+        <li><b>① Pourquoi ?</b> Seulement si besoin : pour un Faux positif, un À discuter ou une précision, écris en
+          une phrase ce que tu as vu, par exemple « la fiche du marchand dit ROW ». D'accord avec l'erreur décrite :
+          rien à écrire.</li>
+        <li><b>② Ta décision</b> : <b>Vrai positif</b> (l'erreur est réelle), <b>Faux positif</b> (l'offre est
+          correcte) ou <b>À discuter</b>. La note part avec le clic, s'il y en a une.</li>
+      </ol>
+      <p>Après coup : modifie la note, puis « Mettre à jour la note » (ou Entrée ; Maj+Entrée pour aller à la ligne).
+        Une note pas encore enregistrée est signalée en orange, et la page prévient avant de se fermer.
+        Tout est expliqué dans le <a href="price-check-guide">guide de l'équipe</a>.</p>
+      <p class="pc-howto-en" lang="en">EN: agree with the error described on the report? Click your decision, no note needed.
+        Otherwise write why (1), then click your decision (2): both are saved together.
+        <a href="price-check-guide#en">Team guide</a>.</p>
+    </details>
     <section id="pc-list" class="pc-list" aria-live="polite"></section>
   </main>
 

@@ -197,6 +197,20 @@ class PriceCheckRoutesTests(AppTestCase):
             response, _ = self._request("GET", asset)
             self.assertEqual(response.status, 200, asset)
 
+
+    def test_the_page_explains_how_to_decide(self):
+        """Romain, 05/10/2026 : « mettre le texte à gauche, les boutons à droite et spécifier ça dans
+        l'admin » — un encadré « Comment trancher » au-dessus des reports, repliable, sans style en ligne."""
+        response, data = self._request("GET", "/price-check")
+        self.assertEqual(response.status, 200)
+        html = data.decode("utf-8")
+        start = html.index('<details id="pc-howto"')
+        box = html[start:html.index("</details>", start)]
+        for words in ("Comment trancher un report", "D'accord avec l'erreur décrite sur le report ? Clique Vrai positif, sans note",
+                      "① Pourquoi ?", "② Ta décision", "La note part avec le clic",
+                      "Mettre à jour la note", 'href="price-check-guide"'):
+            self.assertIn(words, box)
+        self.assertNotIn("style=", box)
     def test_the_team_guide_is_a_page_of_the_admin(self):
         # Romain, 03/10/2026 : « je préférerais que tu l'intègres à l'admin. Quelqu'un qui a accès à l'admin a accès à
         # ce guide. » La page Price check y mène (en-tête, aide) ; le guide est servi par l'admin, en français et en anglais

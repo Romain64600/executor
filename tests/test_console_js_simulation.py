@@ -313,6 +313,11 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             "note non enregistrée signalée": ("pending.hidden = !open;", "pending.hidden = true;"),
             "garde avant de quitter la page": ("if (!reports.some((r) => unsavedNote(String(r.offer), r))) return undefined;",
                                                "return undefined;"),
+            # 05/10/2026 : la décision en deux étapes, la note gardée quand on change d'avis
+            "note gardée au changement de décision": (
+                'const note = NOTES[offer] != null ? NOTES[offer] : ((current.decision && current.decision.note) || "");',
+                'const note = NOTES[offer] || "";'),
+            "deux étapes": ('el("div", { class: "pc-step pc-step-note" }', 'el("div", { class: "pc-step-note" }'),
         }
         for name, (before, after) in mutations.items():
             with self.subTest(name):

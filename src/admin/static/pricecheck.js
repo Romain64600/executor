@@ -143,32 +143,36 @@ function renderSummary(reports) {
 }
 
 function decisionLine(d) {
-  return "Décision : " + labelOf(d.decision) + (d.by ? " — par " + d.by : "") +
+  return "✔ Enregistré : " + labelOf(d.decision) + (d.by ? " — par " + d.by : "") +
     (d.at ? " le " + stamp(d.at) : "") + (d.note ? " — « " + d.note + " »" : "");
 }
 
 // A note typed and not saved yet (Romain, 05/10/2026 : Rémy typed his comments AFTER clicking the
 // decision; the note had left, empty, with the click, and his comments stayed in the fields, never
-// saved). On a decided report it is saved on its own: Entrée or « Enregistrer la note » records the
-// same decision again, with the note. The card says a note is not saved, and leaving the page asks.
+// saved). On a decided report it is saved on its own: Entrée or « Mettre à jour la note » records
+// the same decision again, with the note. The card says a note is not saved, and leaving the page
+// asks. The field shows the saved note: a note changed (or emptied) is a note not saved yet.
 function unsavedNote(offer, r) {
-  const typed = String(NOTES[offer] || "").trim();
-  return Boolean(typed) && typed !== String((r && r.decision && r.decision.note) || "").trim();
+  if (NOTES[offer] == null) return false;
+  return String(NOTES[offer]).trim() !== String((r && r.decision && r.decision.note) || "").trim();
 }
+
+const step = (n, title) => el("div", { class: "pc-step-title" }, [el("span", { class: "pc-num", text: String(n) }), title]);
 
 function renderItem(r) {
   const offer = String(r.offer);
   const labels = (DATA && DATA.decisions) || {};
   const cur = decisionKey(r);
-  const note = el("input", { class: "pc-note", type: "text", maxlength: "1000", autocomplete: "off",
-    placeholder: cur ? "note : pourquoi (Entrée pour l'enregistrer)" : "note : pourquoi (facultatif)",
-    "aria-label": "Note de décision" });
-  note.value = NOTES[offer] != null ? NOTES[offer] : "";
-  const saveNote = cur ? el("button", { type: "button", class: "pc-save-note", text: "Enregistrer la note",
-    title: "Enregistre la note avec la décision déjà prise (" + labelOf(cur) + ")", onclick: () => decide(offer, cur) }) : null;
+  // Romain, 05/10/2026 : « mettre le texte à gauche, les boutons à droite et spécifier ça dans
+  // l'admin » : ① Pourquoi ? (the note) on the left, ② Ta décision on the right, one click sends both.
+  const note = el("textarea", { class: "pc-note", rows: "2", maxlength: "1000", autocomplete: "off",
+    placeholder: "seulement si besoin, ex. « la fiche du marchand dit ROW »", "aria-label": "Pourquoi ? (note, seulement si besoin)" });
+  note.value = NOTES[offer] != null ? NOTES[offer] : ((r.decision && r.decision.note) || "");
+  const saveNote = cur ? el("button", { type: "button", class: "pc-save-note", text: "Mettre à jour la note",
+    title: "Enregistre la note modifiée avec la décision déjà prise (" + labelOf(cur) + ")", onclick: () => decide(offer, cur) }) : null;
   const pending = el("span", { class: "pc-unsaved", text: cur
-    ? "Note non enregistrée : Entrée ou « Enregistrer la note »"
-    : "Note non enregistrée : elle part avec la décision, choisis-en une" });
+    ? "Note modifiée, pas encore enregistrée : « Mettre à jour la note » ou Entrée"
+    : "Note pas encore enregistrée : elle part avec ta décision ②" });
   const showPending = () => {
     const open = unsavedNote(offer, r);
     note.classList.toggle("unsaved", open);
@@ -178,7 +182,7 @@ function renderItem(r) {
   showPending();
   note.addEventListener("input", () => { NOTES[offer] = note.value; showPending(); });
   note.addEventListener("keydown", (ev) => {
-    if (!ev || ev.key !== "Enter") return;
+    if (!ev || ev.key !== "Enter" || ev.shiftKey) return;  // Maj+Entrée : à la ligne
     if (ev.preventDefault) ev.preventDefault();
     if (cur && unsavedNote(offer, r)) decide(offer, cur);
   });
@@ -230,7 +234,14 @@ function renderItem(r) {
     link("Offre marchand", r.merchant_url),
     // 03/10/2026 : le fil de feedback Discord de l'alerte (le bot l'ouvre ; on peut y trancher aussi)
     r.discord_thread ? link("Fil Discord", r.discord_thread) : null,
-    el("div", { class: "pc-decide" }, [...buttons, note, saveNote, pending]),
+    el("div", { class: "pc-decide" }, [
+      el("div", { class: "pc-step pc-step-note" }, [step(1, "Pourquoi ? (seulement si besoin)"), note, pending, saveNote]),
+      el("div", { class: "pc-step pc-step-decision" }, [step(2, "Ta décision"), el("div", { class: "pc-buttons" }, buttons)]),
+      el("p", { class: "pc-howto", text: cur
+        ? "Pour changer la note : modifie-la, puis « Mettre à jour la note ». Pour changer d'avis : clique une autre décision, la note la suit."
+        : "D'accord avec l'erreur décrite ? Clique directement ta décision, sans note. La note sert à dire pourquoi tu "
+          + "n'es pas d'accord ou à préciser : écrite avant le clic, elle part avec ta décision." }),
+    ]),
     r.decision ? el("div", { class: "pc-decision", text: decisionLine(r.decision) }) : null,
     before.length ? el("div", { class: "pc-history", text: "Avant : " + before.map((h) =>
       labelOf(h.decision) + (h.by ? " (" + h.by + (h.at ? ", " + stamp(h.at) : "") + ")" : "")).join(" ; ") }) : null,
@@ -280,8 +291,10 @@ async function decide(offer, key) {
   if (BUSY.has(offer)) return;
   BUSY.add(offer);
   delete ERRORS[offer];
-  const note = NOTES[offer] || "";
-  const was = decisionKey(((DATA && DATA.reports) || []).find((x) => String(x.offer) === offer) || {});
+  const current = ((DATA && DATA.reports) || []).find((x) => String(x.offer) === offer) || {};
+  const was = decisionKey(current);
+  // the note in the field: typed, or the saved one (another decision keeps it)
+  const note = NOTES[offer] != null ? NOTES[offer] : ((current.decision && current.decision.note) || "");
   render();
   setStatus(was === key ? "Enregistrement de la note…" : "Enregistrement de la décision…", true);
   try {
@@ -325,6 +338,16 @@ setInterval(() => {
 }, REFRESH_MS);
 
 load();
+
+// The « Comment trancher » box (05/10/2026): folded once, it stays folded on this browser.
+(() => {
+  const box = $("#pc-howto");
+  if (!box) return;
+  try { if (localStorage.getItem("pc-howto") === "closed") box.open = false; } catch (e) { /* no storage */ }
+  box.addEventListener("toggle", () => {
+    try { localStorage.setItem("pc-howto", box.open ? "open" : "closed"); } catch (e) { /* no storage */ }
+  });
+})();
 
 // Leaving or reloading the page with a typed note not saved yet: the browser asks first (05/10/2026).
 if (typeof window !== "undefined" && window.addEventListener) {

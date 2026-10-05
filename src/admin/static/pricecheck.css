@@ -49,7 +49,16 @@ main.pc-main { max-width:1100px; }
 .pc-link a, .pc-link .pc-raw { font-family:var(--mono); font-size:.74rem; word-break:break-all; color:var(--accent); }
 .pc-link .pc-raw { color:var(--ink); }
 
-.pc-decide { display:flex; gap:.4rem; flex-wrap:wrap; align-items:center; margin-top:.2rem; }
+/* 05/10/2026 (Romain) : la décision en deux étapes, ① la note à gauche, ② les boutons à droite */
+.pc-decide { display:grid; grid-template-columns:minmax(0, 1fr) auto; gap:.45rem 1.2rem; align-items:start;
+  margin-top:.35rem; padding-top:.55rem; border-top:1px dashed var(--line); }
+.pc-step { display:flex; flex-direction:column; gap:.3rem; min-width:0; }
+.pc-step-title { display:flex; align-items:center; gap:.4rem; font-size:.76rem; font-weight:600; color:var(--ink); }
+.pc-num { display:inline-flex; align-items:center; justify-content:center; width:1.2rem; height:1.2rem;
+  border-radius:50%; background:var(--accent); color:#fff; font-size:.72rem; font-weight:700; }
+.pc-buttons { display:flex; flex-direction:column; gap:.3rem; min-width:8.5rem; }
+.pc-howto { grid-column:1 / -1; margin:0; font-size:.74rem; color:var(--dim); }
+.pc-save-note { align-self:flex-start; }
 .pc-decide button { font:inherit; font-size:.8rem; background:var(--panel-2); color:var(--ink);
   border:1px solid var(--line); border-radius:5px; padding:.25rem .65rem; cursor:pointer; }
 .pc-decide button:hover:not(:disabled) { border-color:var(--accent); }
@@ -57,8 +66,8 @@ main.pc-main { max-width:1100px; }
 .pc-decide button.on.d-vrai { background:var(--bad); border-color:var(--bad); color:#fff; }
 .pc-decide button.on.d-faux { background:var(--good); border-color:var(--good); color:#fff; }
 .pc-decide button.on.d-a_discuter { background:var(--warn); border-color:var(--warn); color:#fff; }
-.pc-note { flex:1; min-width:12rem; background:var(--panel-2); border:1px solid var(--line); border-radius:5px;
-  padding:.28rem .5rem; color:var(--ink); font:inherit; font-size:.8rem; }
+.pc-note { width:100%; min-height:3rem; resize:vertical; background:var(--panel-2); border:1px solid var(--line);
+  border-radius:5px; padding:.35rem .5rem; color:var(--ink); font:inherit; font-size:.8rem; }
 .pc-decision { font-size:.78rem; }
 /* 05/10/2026 : une note tapée et pas encore enregistrée se voit */
 .pc-note.unsaved { border-color:var(--warn); }
@@ -70,7 +79,16 @@ main.pc-main { max-width:1100px; }
 @media (max-width: 640px) {
   .pc-where { margin-left:0; white-space:normal; }
   .pc-link { grid-template-columns:1fr; gap:0; }
+  .pc-decide { grid-template-columns:1fr; }
+  .pc-buttons { flex-direction:row; flex-wrap:wrap; }
 }
+/* L'encadré « Comment trancher » (05/10/2026) */
+.pc-howto-box summary { cursor:pointer; font-weight:600; }
+.pc-howto-box .pc-howto-rule { margin:.5rem 0 0; padding:.45rem .6rem; border-left:3px solid var(--good); background:var(--panel-2); }
+.pc-howto-box ol { margin:.5rem 0 .3rem; padding-left:1.3rem; }
+.pc-howto-box li { margin:.15rem 0; }
+.pc-howto-box p { margin:.3rem 0 0; font-size:.85rem; }
+.pc-howto-box .pc-howto-en { color:var(--dim); font-size:.8rem; }
 
 /* Passages : les deux boutons (Romain, 02/10/2026) */
 .pc-runs { display:grid; grid-template-columns:1fr 1fr; gap:.8rem; }

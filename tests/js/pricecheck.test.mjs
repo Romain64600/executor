@@ -108,7 +108,7 @@ test("deciding sends the offer, the decision and the note, then shows who decide
     { recorded: { offer: TORO.offer, decision: "vrai", note: "Metal Garden", by: "romain", at: "2026-10-01T12:45:00+02:00" } });
   await tick();
   const after = card(c, TORO.offer);
-  assert.ok(after.textContent.includes("Décision : Vrai positif — par romain le 01/10 12:45"), after.textContent);
+  assert.ok(after.textContent.includes("✔ Enregistré : Vrai positif — par romain le 01/10 12:45"), after.textContent);
   assert.ok(buttons(after).find((b) => b.textContent === "Vrai positif").classList.contains("on"));
   assert.ok(buttons(after).every((b) => !b.disabled), "the buttons stay disabled after the answer");
 });
@@ -122,7 +122,7 @@ test("a refused decision is shown on its card and the buttons come back", async 
   const el = card(c, TORO.offer);
   assert.ok(el.textContent.includes("Non enregistrée : décision inconnue"), "the refusal is not shown");
   assert.ok(buttons(el).every((b) => !b.disabled), "the buttons stay disabled after a refusal");
-  assert.ok(!el.textContent.includes("Décision :"), "a refused decision is shown as recorded");
+  assert.ok(!el.textContent.includes("Enregistré :"), "a refused decision is shown as recorded");
 });
 
 // Romain, 05/10/2026: Rémy typed his comments AFTER clicking the decision; the note had left, empty,
@@ -171,7 +171,7 @@ test("a note typed before any decision says it leaves with the decision, and Ent
   note.value = "Metal Garden";
   await note.fire("input");
   const pending = el.querySelector(".pc-unsaved");
-  assert.ok(!pending.hidden && pending.textContent.includes("elle part avec la décision"), "the note does not say how it is saved");
+  assert.ok(!pending.hidden && pending.textContent.includes("elle part avec ta décision"), "the note does not say how it is saved");
   const before = posts(c);
   await note.fire("keydown", { key: "Enter", preventDefault() {} });
   await tick();
@@ -193,6 +193,43 @@ test("leaving the page with an unsaved note asks first, never without one", asyn
   const ev = { prevented: false, returnValue: undefined, preventDefault() { this.prevented = true; } };
   handlers.beforeunload(ev);
   assert.ok(ev.prevented && ev.returnValue === "", "leaving with an unsaved note does not ask");
+});
+
+// Romain, 05/10/2026 : « mettre le texte à gauche, les boutons à droite et spécifier ça dans l'admin ».
+test("the decision reads in two steps: ① the note on the left, ② the decision on the right", async () => {
+  const c = await start();
+  const zone = card(c, TORO.offer).querySelector(".pc-decide");
+  const steps = zone.children.filter((n) => n.classList && n.classList.contains("pc-step"));
+  assert.equal(steps.length, 2, "the decision is not in two steps");
+  assert.ok(steps[0].classList.contains("pc-step-note") && steps[0].querySelector(".pc-note"), "the note is not the first step");
+  assert.ok(steps[0].textContent.includes("1Pourquoi ? (seulement si besoin)"), steps[0].textContent);
+  assert.ok(steps[1].classList.contains("pc-step-decision") && steps[1].textContent.includes("2Ta décision"), steps[1].textContent);
+  assert.deepEqual(steps[1].querySelectorAll("button").map((b) => b.textContent), ["Vrai positif", "Faux positif", "À discuter"]);
+  // Romain, 05/10/2026 : « si on est d'accord avec l'erreur décrite sur le report, il n'y a pas de raison de commenter »
+  assert.ok(zone.textContent.includes("D'accord avec l'erreur décrite ? Clique directement ta décision, sans note."), zone.textContent);
+});
+
+test("a decided report shows its saved note, and another decision keeps it", async () => {
+  const saved = { ...DECIDED.decision, note: "la fiche dit ROW" };
+  const NOTED = { ...DECIDED, offer: "140000007", decision: saved, history: [saved] };
+  const c = await start({ ...REPORTS, reports: [NOTED] });
+  const el = card(c, NOTED.offer);
+  assert.equal(el.querySelector(".pc-note").value, "la fiche dit ROW", "the saved note is not in the field");
+  assert.ok(el.querySelector(".pc-unsaved").hidden, "a saved note is flagged as not saved");
+  assert.ok(el.querySelector(".pc-decide").textContent.includes("la note la suit"), "the card does not say how to change");
+  buttons(el).find((b) => b.textContent === "Vrai positif").fire("click");
+  await tick();
+  assert.deepEqual(lastPost(c).body, { offer: NOTED.offer, decision: "vrai", note: "la fiche dit ROW" });
+});
+
+test("the « Comment trancher » box remembers being folded", async () => {
+  const store = { "pc-howto": "closed" };
+  const c = await loadConsole(CONSOLE, { localStorage: { getItem: (k) => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = v; } } });
+  const box = c.$("#pc-howto");
+  assert.equal(box.open, false, "a folded box opens again");
+  box.open = true;
+  await box.fire("toggle");
+  assert.equal(store["pc-howto"], "open", "opening the box is not remembered");
 });
 
 test("an old export is flagged, a fresh one is not", async () => {
