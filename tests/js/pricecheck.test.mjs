@@ -108,7 +108,7 @@ test("deciding sends the offer, the decision and the note, then shows who decide
     { recorded: { offer: TORO.offer, decision: "vrai", note: "Metal Garden", by: "romain", at: "2026-10-01T12:45:00+02:00" } });
   await tick();
   const after = card(c, TORO.offer);
-  assert.ok(after.textContent.includes("✔ Enregistré : Vrai positif — par romain le 01/10 12:45"), after.textContent);
+  assert.ok(after.textContent.includes("✔ Traité par romain le 01/10 12:45 : Vrai positif"), after.textContent);
   assert.ok(buttons(after).find((b) => b.textContent === "Vrai positif").classList.contains("on"));
   assert.ok(buttons(after).every((b) => !b.disabled), "the buttons stay disabled after the answer");
 });
@@ -122,7 +122,7 @@ test("a refused decision is shown on its card and the buttons come back", async 
   const el = card(c, TORO.offer);
   assert.ok(el.textContent.includes("Non enregistrée : décision inconnue"), "the refusal is not shown");
   assert.ok(buttons(el).every((b) => !b.disabled), "the buttons stay disabled after a refusal");
-  assert.ok(!el.textContent.includes("Enregistré :"), "a refused decision is shown as recorded");
+  assert.ok(!el.textContent.includes("Traité par"), "a refused decision is shown as recorded");
 });
 
 // Romain, 05/10/2026: Rémy typed his comments AFTER clicking the decision; the note had left, empty,
@@ -230,6 +230,32 @@ test("the « Comment trancher » box remembers being folded", async () => {
   box.open = true;
   await box.fire("toggle");
   assert.equal(store["pc-howto"], "open", "opening the box is not remembered");
+});
+
+// Romain, 05/10/2026 : « rend plus clair le fait qu'une tâche a été traitée par un opérateur et quel opérateur l'a traitée ».
+test("a handled report says who handled it at the top of its card, an open one says it is to handle", async () => {
+  const c = await start({ ...REPORTS, reports: [TORO, DECIDED] });
+  const done = card(c, DECIDED.offer).querySelector(".pc-done");
+  assert.ok(done, "a handled report does not say so at the top of its card");
+  assert.equal(done.textContent, "✔ Traité par remy · Faux positif");
+  assert.ok(done.classList.contains("d-faux"), "the badge does not take the decision's colour");
+  assert.ok(card(c, DECIDED.offer).querySelector(".pc-decision").textContent.startsWith("✔ Traité par remy le 05/10 15:20 : Faux positif"),
+    card(c, DECIDED.offer).querySelector(".pc-decision").textContent);
+  assert.equal(card(c, TORO.offer).querySelector(".pc-done"), null, "an open report says it was handled");
+  assert.equal(card(c, TORO.offer).querySelector(".pc-todo").textContent, "À traiter");
+});
+
+test("the « Traité par » filter shows one operator's reports or the ones nobody handled, and counts them", async () => {
+  const c = await start({ ...REPORTS, reports: [TORO, DECIDED, TRAP] });
+  const sel = c.$("#f-by");
+  assert.deepEqual(sel.children.filter((o) => o.tagName === "OPTION").map((o) => o.getAttribute("value")), ["", "none", "remi", "remy"]);
+  sel.value = "remy";
+  await sel.fire("change");
+  assert.deepEqual(shown(c), ["offer-" + DECIDED.offer]);
+  sel.value = "none";
+  await sel.fire("change");
+  assert.deepEqual(shown(c), ["offer-" + TORO.offer]);
+  assert.equal(c.$("#pc-by").textContent, "Traités par : remi 1 · remy 1");
 });
 
 test("an old export is flagged, a fresh one is not", async () => {

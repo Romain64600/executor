@@ -318,6 +318,10 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
                 'const note = NOTES[offer] != null ? NOTES[offer] : ((current.decision && current.decision.note) || "");',
                 'const note = NOTES[offer] || "";'),
             "deux étapes": ('el("div", { class: "pc-step pc-step-note" }', 'el("div", { class: "pc-step-note" }'),
+            # 05/10/2026 : qui a traité le report
+            "traité par, en tête de carte": ('text: "✔ Traité par " + (handledBy(r) || "?") + " · " + labelOf(cur) })',
+                                             'text: "" })'),
+            "filtre traité par": ('if (by === "none" ? !isOpen(r) : by && handledBy(r) !== by) return false;', ""),
         }
         for name, (before, after) in mutations.items():
             with self.subTest(name):

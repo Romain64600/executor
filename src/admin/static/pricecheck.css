@@ -68,7 +68,14 @@ main.pc-main { max-width:1100px; }
 .pc-decide button.on.d-a_discuter { background:var(--warn); border-color:var(--warn); color:#fff; }
 .pc-note { width:100%; min-height:3rem; resize:vertical; background:var(--panel-2); border:1px solid var(--line);
   border-radius:5px; padding:.35rem .5rem; color:var(--ink); font:inherit; font-size:.8rem; }
-.pc-decision { font-size:.78rem; }
+.pc-decision { font-size:.82rem; }
+/* 05/10/2026 : qui a traité le report, en tête de carte (Romain) */
+.pc-done { font-size:.72rem; font-weight:700; padding:.08rem .45rem; border-radius:5px; color:#fff; background:var(--dim); }
+.pc-done.d-vrai { background:var(--bad); }
+.pc-done.d-faux { background:var(--good); }
+.pc-done.d-a_discuter { background:var(--warn); }
+.pc-todo { font-size:.72rem; font-weight:700; padding:.06rem .45rem; border-radius:5px; border:1px dashed var(--accent); color:var(--accent); }
+.pc-by-count { margin:-.3rem 0 .7rem; font-size:.82rem; color:var(--dim); }
 /* 05/10/2026 : une note tapée et pas encore enregistrée se voit */
 .pc-note.unsaved { border-color:var(--warn); }
 .pc-unsaved { color:var(--warn); font-size:.76rem; }

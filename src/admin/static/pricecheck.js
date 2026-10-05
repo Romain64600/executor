@@ -116,6 +116,8 @@ function matchesFilters(r) {
   if (d === "none" && decisionKey(r)) return false;
   if (d && d !== "none" && decisionKey(r) !== d) return false;
   if ($("#f-live").checked && isGone(r)) return false;
+  const by = $("#f-by").value;
+  if (by === "none" ? !isOpen(r) : by && handledBy(r) !== by) return false;
   if (q) {
     const hay = [r.offer, r.product, r.edition, r.merchant, r.region, r.region_filter, r.list,
       r.merchant_url, ...(r.reasons || [])].join(" ").toLowerCase();
@@ -142,10 +144,14 @@ function renderSummary(reports) {
     kpi("", reports.length, "reports"));
 }
 
+// Romain, 05/10/2026 : « rend plus clair le fait qu'une tâche a été traitée par un opérateur et quel
+// opérateur l'a traitée » : « ✔ Traité par <opérateur> » en tête de carte et sous la décision, un
+// filtre « Traité par » et le décompte par opérateur.
 function decisionLine(d) {
-  return "✔ Enregistré : " + labelOf(d.decision) + (d.by ? " — par " + d.by : "") +
-    (d.at ? " le " + stamp(d.at) : "") + (d.note ? " — « " + d.note + " »" : "");
+  return el("div", { class: "pc-decision" }, ["✔ Traité par ", el("b", { text: d.by || "?" }),
+    (d.at ? " le " + stamp(d.at) : "") + " : " + labelOf(d.decision) + (d.note ? " — « " + d.note + " »" : "")]);
 }
+const handledBy = (r) => (r.decision && r.decision.by) || "";
 
 // A note typed and not saved yet (Romain, 05/10/2026 : Rémy typed his comments AFTER clicking the
 // decision; the note had left, empty, with the click, and his comments stayed in the fields, never
@@ -215,6 +221,9 @@ function renderItem(r) {
     id: "offer-" + offer }, [
     el("div", { class: "pc-head" }, [
       el("span", { class: "pc-verdict", text: pill }),
+      cur ? el("span", { class: "pc-done d-" + cur, title: "Traité par " + (handledBy(r) || "?") +
+        (r.decision.at ? " le " + stamp(r.decision.at) : ""), text: "✔ Traité par " + (handledBy(r) || "?") + " · " + labelOf(cur) })
+        : isOpen(r) ? el("span", { class: "pc-todo", text: "À traiter" }) : null,
       MODE_BADGE[r.mode] ? el("span", { class: "pc-mode " + MODE_BADGE[r.mode][1], title: MODE_TITLE[r.mode],
         text: MODE_BADGE[r.mode][0] }) : null,
       isFirstPrice(r) ? el("span", { class: "pc-mode m-first", text: "PREMIER PRIX",
@@ -242,17 +251,32 @@ function renderItem(r) {
         : "D'accord avec l'erreur décrite ? Clique directement ta décision, sans note. La note sert à dire pourquoi tu "
           + "n'es pas d'accord ou à préciser : écrite avant le clic, elle part avec ta décision." }),
     ]),
-    r.decision ? el("div", { class: "pc-decision", text: decisionLine(r.decision) }) : null,
+    r.decision ? decisionLine(r.decision) : null,
     before.length ? el("div", { class: "pc-history", text: "Avant : " + before.map((h) =>
       labelOf(h.decision) + (h.by ? " (" + h.by + (h.at ? ", " + stamp(h.at) : "") + ")" : "")).join(" ; ") }) : null,
     ERRORS[offer] ? el("div", { class: "pc-msg", text: "Non enregistrée : " + ERRORS[offer] }) : null,
   ]);
 }
 
+// Who handled what: the « Traité par » options (the choice is kept across refreshes) and the count.
+function renderOperators(reports) {
+  const count = {};
+  for (const r of reports) if (handledBy(r)) count[handledBy(r)] = (count[handledBy(r)] || 0) + 1;
+  const names = Object.keys(count).sort((a, b) => count[b] - count[a] || a.localeCompare(b));
+  const sel = $("#f-by");
+  const keep = sel.value;
+  const opt = (value, text) => el("option", { value, text });
+  sel.replaceChildren(opt("", "Tous"), opt("none", "Personne (à traiter)"), ...names.map((n) => opt(n, n)));
+  sel.value = keep === "none" || names.includes(keep) ? keep : "";
+  $("#pc-by").textContent = names.length
+    ? "Traités par : " + names.map((n) => n + " " + count[n]).join(" · ") : "Aucun report traité pour l'instant.";
+}
+
 function render() {
   if (!DATA) return;
   const reports = DATA.reports || [];
   renderSummary(reports);
+  renderOperators(reports);
   const shown = reports.filter(matchesFilters);
   $("#pc-list").replaceChildren(...(shown.length ? shown.map(renderItem) : [el("div", { class: "pc-empty",
     text: reports.length ? "Aucun report pour ces filtres." : "Aucun report : le moniteur n'a rien signalé." })]));
@@ -319,7 +343,7 @@ async function decide(offer, key) {
   }
 }
 
-for (const id of ["#f-verdict", "#f-mode", "#f-decision", "#f-live", "#f-first"]) $(id).addEventListener("change", render);
+for (const id of ["#f-verdict", "#f-mode", "#f-decision", "#f-by", "#f-live", "#f-first"]) $(id).addEventListener("change", render);
 $("#f-text").addEventListener("input", render);
 $("#refresh").addEventListener("click", load);
 

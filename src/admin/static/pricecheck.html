@@ -150,6 +150,7 @@
       <div id="pc-stale" class="warn hidden"></div>
       <div id="pc-error" class="warn hidden"></div>
       <div id="pc-summary" class="summary"></div>
+      <div id="pc-by" class="pc-by-count"></div>
       <div class="pc-filters">
         <label>Verdict
           <select id="f-verdict">
@@ -176,6 +177,12 @@
             <option value="vrai">Vrai positif</option>
             <option value="faux">Faux positif</option>
             <option value="a_discuter">À discuter</option>
+          </select>
+        </label>
+        <label>Traité par
+          <select id="f-by">
+            <option value="">Tous</option>
+            <option value="none">Personne (à traiter)</option>
           </select>
         </label>
         <label>Recherche <input id="f-text" type="search" placeholder="jeu, marchand, raison…" autocomplete="off"></label>
