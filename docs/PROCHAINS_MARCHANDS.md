@@ -19,6 +19,7 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 | 5 | **Discover.games** (168) | 440 | 370 (84 %) | — | **fichier écrit le 25/09 (`[R60]`), essai à blanc : 106 candidats sur 150 lignes ; en liste blanche le 26/09, groupe A** |
 | 6 | **CDKeys → « Loaded »** (40) | 16 (21/09) | — | feed du jour à relire | **fichier écrit le 25/09 (`[R61]`, « Europe & UK » → Europe, sans région → GLOBAL) ; essai à blanc sur 16 lignes : 1 candidat ; en liste blanche le 26/09, groupe A** |
 | — | Greenmangaming (22) | 482 | 318 (66 %) | URL d'affiliation illisible (sjv.io), titre muet | pas prioritaire |
+| 7 | **Indiegala** (95) | 175 (21/09) | 30 (19 %, slug strict) | plateforme et région : ni titre ni URL ; la **fiche** les donne (« is provided via Steam Key », listes de pays, « Region locked product ») | **étudié le 06/10** : faisable comme Gamesplanet FR / Allyouplay (lecteur de fiche), rendement faible ; décision de Romain sur la règle de région (section du 06/10) |
 
 \* Mesuré sur le scan tous-magasins du 21/09, **avant** la correction du tri du feed (`orderBy=id`,
 24/09) : ces comptes sont des minimums. Un nouveau scan tous-magasins les rafraîchira.
@@ -27,6 +28,54 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 (19/09), GameBoost / Electronicfirst / GamersOutlet (16/09), Difmark (21/09).
 
 ---
+
+## 2026-10-06 — Indiegala (95) : « regarde si possible de se former sur l'ajout auto »
+
+**Mesure** (lecture seule ; feed = les 175 lignes du scan tous-magasins du 21/09, donc un
+minimum ; 8 fiches lues en HTTP, 5 pages AKS lues) :
+
+- **Grammaire du feed** : titre = nom du jeu seul (« Reach », « Monster Hunter Wilds Gold
+  Edition », « SCUM Specialist Scout Pack ») ; URL `indiegala.com/store/game/<slug>/<id steam>[_del|_us|…]`.
+  **Ni plateforme ni région** dans le titre ou l'URL (0 / 175), sauf 7 suffixes « (US) » / « (EU) »
+  (SILENT HILL: Townfall ×2, PAC-MAN World 2 ×2, Katamari, Castlevania Belmont's Curse ×2).
+  30 lignes bundle / pack / DLC / upgrade, 21 avec un palier (Deluxe, Gold, Ultimate…), 5 titres
+  multilingues « A / B / C ». Les règles génériques en refusent 14 au precheck (bundles, DLC pack,
+  pass) ; les 161 autres tomberaient aujourd'hui sur R27 / `[R51]` (plateforme inconnue) — zéro
+  écriture possible sans lecteur de fiche.
+- **La fiche est lisible** (HTTP 200, pas de Cloudflare, UA navigateur, 8 / 8) et dit tout :
+  * plateforme : « *<Nom>* is provided via **Steam Key** » (8 / 8 Steam ; titre de page
+    « <Nom> Steam Key | … ») — une autre valeur serait un refus nommé ;
+  * DLC : « This content requires the base product » ;
+  * région, trois blocs distincts à ne pas confondre :
+    1. un encart latéral « Region locked product — It will only work in the region from where it
+       is bought » (7 fiches sur 8, absent de Thunder Ray) : la clé est liée à la région d'ACHAT ;
+    2. un avertissement d'article « **Region locked product** — The keys of this product can only
+       be activated in the country they were purchased » (Reach seul) : verrou PAYS ;
+    3. « **Country availability** » / « **Banned countries** » + liste de pays où la vente est
+       interdite « as per publisher request » (MHW Gold 19 pays, SCUM 59, LBA2 78, Belmont's Curse
+       (EU) 127, Castlevania bundle 219, SH Townfall (US) 227).
+  Le bloc 3 est exactement la matière de la règle `[R59]` de Romain (Gamesplanet FR, pays
+  EXCLUS) : ni UE, ni UK, ni USA exclus → GLOBAL ; UE autorisée sans USA → EU ; USA sans l'UE →
+  US ; sinon refus. Les suffixes « (US) » / « (EU) » du titre concordent avec leurs listes (227 et
+  127 pays interdits).
+- **Pages AKS** : 30 des 161 lignes ont une page au slug strict (19 %) — des jeux indés pour
+  l'essentiel absents d'AKS ; le reste relève de R64 / R66 (éditions, recherche catalogue).
+  **AKS n'affiche aucune offre Indiegala** sur les 5 pages lues (le marchand existe dans sa
+  liste d'icônes) : aucun précédent pour la région, c'est à Romain de la fixer.
+- **Fiche périmée** : 1 / 8 (Attack on Titan 3 Digital Deluxe) renvoie à l'accueil → refus
+  « fiche non identifiée » comme chez Allyouplay (lien canonique).
+
+**Classement** : faisable, **même modèle qu'Allyouplay `[R68]`** (fichier `src/merchants/indiegala.py`
+: `domain`, `offer_page_resolver` par bibliothèque standard, plateforme = « provided via », DLC =
+« requires the base product », région = liste des pays interdits par `[R59]`, refus nommés pour
+le verrou pays et la fiche périmée, `url_identity_params` inutile : l'id Steam est dans le chemin).
+**Rendement faible** : ≈ 30 candidats sur 175 au premier passage, puis un filet. Coût : une
+demi-journée (fichier + fixtures réelles + tests + aperçu à blanc sur le feed du jour).
+
+**Ce que Romain doit trancher avant de coder** : (1) la règle de région — `[R59]` sur la liste
+des pays interdits (proposé), et que fait-on de l'encart « liée à la région d'achat » présent
+sur presque toutes les fiches (ignoré, comme la politique de vente de Gamesplanet ?) ; (2) le
+verrou PAYS explicite (Reach) = refus (proposé) ; (3) go ou pas, vu le rendement.
 
 ## 2026-09-25 (suite) — CDKeys, devenu « Loaded » (store 40)
 
