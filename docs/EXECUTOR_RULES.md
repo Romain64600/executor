@@ -3978,8 +3978,13 @@ fois le code tiré sur les clones vivants.
 **Un audit voudra** : (a) lire un « NA » nu en plein titre comme la région — non, collision avec
 des mots de jeux, seul un créneau compte ; (b) retomber sur US (8) ou GLOBAL quand la plateforme
 n'a pas de case NA — non, refus nommé ; (c) accepter « EU NA » comme NA ou comme EU — non, deux
-régions = verrou ; (d) accepter « Americas » — non, Amérique du Sud comprise. Tests :
-`tests/test_region_na_r70.py`.
+régions = verrou ; (d) accepter « Americas » — non, Amérique du Sud comprise ; (e) retirer
+« NORTH AMERICA » de `_TRAILING_NOISE_PHRASES` et NORTH / AMERICA de `NOISE_TOKENS` « pour protéger
+un DLC dont le nom finirait par la phrase » — risque ACCEPTÉ, le même que « Europe » aujourd'hui :
+un tel DLC sans page AKS propre retomberait sur la page du jeu de base en NA ; zéro cas sur les
+1 260 lignes de l'aperçu (Planet Zoo « North America Animal Pack » a sa page et son `-global`), et
+sans ce retrait la queue « North America » de K4G / G2A / GameSeal resterait dans le slug (404 sur
+toute la ligne). Tests : `tests/test_region_na_r70.py`.
 
 ### `[R69]` Indiegala (store 95) — la fiche produit fait foi : plateforme, DLC, pays interdits (2026-10-06)
 

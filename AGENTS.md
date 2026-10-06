@@ -753,7 +753,7 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   `k4g.gift_delivery` answers True for the whole word ALTERGIFT (`MerchantConfig.gift_delivery`,
   R32e) and `detect_region` layers the Steam GIFT bucket on the base region — GIFT (25) for
   no region / Global, GIFT EU (259) for Europe, GIFT US (2577) and GIFT UK (2572) for those
-  bases; forbidden regions (North America, Americas) keep their precheck skip.
+  bases; forbidden regions (Americas, Canada…) keep their precheck skip — North America is a BASE since `[R70]` (2026-10-06).
   **Corrected 2026-09-16 (`[R50]`, Romain: « si ça existe le fichier marchand ne devrait pas
   affirmer le contraire, fix la config marchand »):** this decision used to state that a US /
   UK base "has no Steam gift bucket" and therefore failed closed. That premise was FALSE —
