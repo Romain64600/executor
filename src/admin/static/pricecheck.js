@@ -305,6 +305,9 @@ function renderItem(r) {
         : isOpen(r) ? el("span", { class: "pc-todo", text: "À traiter" }) : null,
       MODE_BADGE[r.mode] ? el("span", { class: "pc-mode " + MODE_BADGE[r.mode][1], title: MODE_TITLE[r.mode],
         text: MODE_BADGE[r.mode][0] }) : null,
+      // 06/10/2026 : une page sortie des tops garde ses reports ouverts dans « Price check top », jusqu'à leur décision
+      r.left_tops_at ? el("span", { class: "pc-left-tops", text: "sortie des tops le " + stamp(r.left_tops_at),
+        title: "La page n'est plus dans les tops : le report reste dans « Price check top » jusqu'à sa décision" }) : null,
       isFirstPrice(r) ? el("span", { class: "pc-mode m-first", text: "PREMIER PRIX",
         title: "L'une des 3 offres de clé les moins chères de son édition : un SUSPECT part sur le salon des urgences" }) : null,
       el("span", { class: "pc-product", text: (r.product || "?") + (r.edition ? " · " + r.edition : "") }),
@@ -375,7 +378,8 @@ function render() {
   renderSummary(reports);
   renderOperators(reports);
   renderTabs(reports);
-  const shown = reports.filter(matchesFilters).filter((r) => shownTab(r) === TAB);
+  // never `filter(matchesFilters)`: the index would be taken for `strict` (audit Codex, 06/10/2026)
+  const shown = reports.filter((r) => matchesFilters(r)).filter((r) => shownTab(r) === TAB);
   if (!reports.length) {
     $("#pc-list").replaceChildren(el("div", { class: "pc-empty", text: "Aucun report : le moniteur n'a rien signalé." }));
     return;
@@ -446,6 +450,7 @@ async function decide(offer, key) {
   const part = shownPart(current), tab = shownTab(current);  // where the card is: it stays there a few seconds once decided
   // the note in the field: typed, or the saved one (another decision keeps it)
   const note = NOTES[offer] != null ? NOTES[offer] : ((current.decision && current.decision.note) || "");
+  const typed = NOTES[offer];  // the field as it leaves: a note changed while saving is kept (audit Codex, 06/10/2026)
   render();
   setStatus(was === key ? "Enregistrement de la note…" : "Enregistrement de la décision…", true);
   try {
@@ -458,7 +463,7 @@ async function decide(offer, key) {
       target.history = [...(target.history || []), rec];
       target.decision = rec;
     }
-    delete NOTES[offer];
+    if (NOTES[offer] === typed) delete NOTES[offer];
     keepJustDone(offer, part, tab);
     setStatus((was === key ? "Note enregistrée : " : "Décision enregistrée : ") + ((target && target.product) || offer) +
       " — " + labelOf(key) + (note.trim() ? " — « " + note.trim() + " »" : ""), false);

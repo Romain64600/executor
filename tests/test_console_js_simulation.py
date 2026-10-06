@@ -345,14 +345,19 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             # 06/10/2026 : les reports traités archivés dans un autre onglet
             "archives à part": ("const isArchived = (r) => !isOpen(r) && !isToDiscuss(r);", "const isArchived = (r) => false;"),
             "à discuter jamais archivé": ("const isArchived = (r) => !isOpen(r) && !isToDiscuss(r);", "const isArchived = (r) => !isOpen(r);"),
-            "onglet suivi": ("const shown = reports.filter(matchesFilters).filter((r) => shownTab(r) === TAB);",
-                             "const shown = reports.filter(matchesFilters);"),
+            "onglet suivi": ("const shown = reports.filter((r) => matchesFilters(r)).filter((r) => shownTab(r) === TAB);",
+                             "const shown = reports.filter((r) => matchesFilters(r));"),
             "carte gardée dans son onglet": (
                 "const shownTab = (r) => { const j = JUST_DONE.get(String(r.offer)); return j && j.tab ? j.tab : tabOf(r); };",
                 "const shownTab = (r) => tabOf(r);"),
             "lien vers un report archivé": ("if (target) TAB = tabOf(target);", ""),
             # 06/10/2026 : on tranche sur l'offre, pas sur le commentaire : le sens des boutons en clair
             "sens des boutons en clair": ('(cur === "a_discuter" && MEANING[k] ? " : " + MEANING[k] : "")', '""'),
+            # 06/10/2026 : une page sortie des tops : la carte le dit
+            "sortie des tops affichée": ('r.left_tops_at ? el("span", { class: "pc-left-tops"', 'false ? el("span", { class: "pc-left-tops"'),
+            # audit Codex du 06/10/2026 : la 2e carte tranchée disparaissait aussitôt ; une note retouchée pendant l'envoi perdue
+            "toutes les cartes tranchées restent": ("reports.filter((r) => matchesFilters(r))", "reports.filter(matchesFilters)"),
+            "note retouchée pendant l'envoi gardée": ("if (NOTES[offer] === typed) delete NOTES[offer];", "delete NOTES[offer];"),
         }
         for name, (before, after) in mutations.items():
             with self.subTest(name):

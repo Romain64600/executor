@@ -57,6 +57,8 @@ main.pc-main { max-width:1100px; }
 .pc-mode.m-top { color:#fff; background:var(--accent); border-color:var(--accent); }
 .pc-mode.m-home { color:var(--dim); }
 .pc-mode.m-first { color:var(--bad); }
+/* 06/10/2026 : une page sortie des tops garde ses reports ouverts dans les tops */
+.pc-left-tops { font-size:.72rem; font-weight:600; padding:.06rem .45rem; border-radius:5px; border:1px dashed var(--accent); color:var(--accent); }
 .topbar-link { font:inherit; background:var(--panel-2); color:var(--ink); border:1px solid var(--line); border-radius:5px;
   padding:.3rem .6rem; text-decoration:none; }
 .topbar-link:hover { border-color:var(--accent); }

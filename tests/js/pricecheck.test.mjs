@@ -297,6 +297,56 @@ test("a report just decided stays in place, marked, then fades out of a list tha
   assert.deepEqual(shown(c), [], "the card stays after its fade");
 });
 
+// Audit Codex du 06/10/2026 (2c5cb19) : `reports.filter(matchesFilters)` passait l'index de la carte en 2e argument
+// (« strict ») : seule la PREMIÈRE carte de l'export restait quelques secondes, les autres disparaissaient aussitôt.
+test("any report just decided stays in place, not only the first one of the export", async () => {
+  const timers = [];
+  const c = await loadConsole(CONSOLE, { setTimeout: (fn, ms) => { timers.push([fn, ms]); return timers.length; } });
+  const SECOND = { ...TORO, offer: "140000011", product: "Deuxième" };
+  await c.net.release("api/price-check/reports", JSON.parse(JSON.stringify({ ...REPORTS, reports: [TORO, SECOND, TRAP] })));
+  await tick();
+  c.$("#f-decision").value = "none";
+  await c.$("#f-decision").fire("change");
+  buttons(card(c, SECOND.offer)).find((b) => b.textContent === "Faux positif").fire("click");
+  await tick();
+  await c.net.release("api/price-check/decision",
+    { recorded: { offer: SECOND.offer, decision: "faux", note: "", by: "remy", at: "2026-10-06T13:00:00+02:00" } });
+  await tick();
+  assert.deepEqual(shown(c), ["offer-" + TORO.offer, "offer-" + SECOND.offer], "the second card left at once, under the cursor");
+  assert.ok(card(c, SECOND.offer).classList.contains("pc-just-done"));
+});
+
+// Audit Codex du 06/10/2026 : une note retouchée pendant l'enregistrement était effacée au retour du serveur.
+test("a note changed while the decision is being saved is kept, and flagged as not saved yet", async () => {
+  const c = await start();
+  let note = card(c, TORO.offer).querySelector(".pc-note");
+  note.value = "première version";
+  await note.fire("input");
+  buttons(card(c, TORO.offer)).find((b) => b.textContent === "Vrai positif").fire("click");
+  await tick();
+  assert.deepEqual(lastPost(c).body, { offer: TORO.offer, decision: "vrai", note: "première version" });
+  note = card(c, TORO.offer).querySelector(".pc-note");  // the card was drawn again while sending
+  note.value = "première version, complétée";
+  await note.fire("input");
+  await c.net.release("api/price-check/decision",
+    { recorded: { offer: TORO.offer, decision: "vrai", note: "première version", by: "romain", at: "2026-10-06T13:05:00+02:00" } });
+  await tick();
+  const after = card(c, TORO.offer);
+  assert.equal(after.querySelector(".pc-note").value, "première version, complétée", "the note typed while saving is lost");
+  assert.ok(!after.querySelector(".pc-unsaved").hidden, "the newer note does not say it is not saved");
+  // une note inchangée pendant l'envoi : enregistrée, plus rien à signaler
+  const d = await start();
+  const n2 = card(d, TORO.offer).querySelector(".pc-note");
+  n2.value = "ok";
+  await n2.fire("input");
+  buttons(card(d, TORO.offer)).find((b) => b.textContent === "Vrai positif").fire("click");
+  await tick();
+  await d.net.release("api/price-check/decision",
+    { recorded: { offer: TORO.offer, decision: "vrai", note: "ok", by: "romain", at: "2026-10-06T13:06:00+02:00" } });
+  await tick();
+  assert.ok(card(d, TORO.offer).querySelector(".pc-unsaved").hidden, "a saved note still says it is not saved");
+});
+
 test("an old export is flagged, a fresh one is not", async () => {
   const fresh = await start();
   assert.ok(fresh.$("#pc-stale").classList.contains("hidden"), "a fresh export is flagged");
@@ -594,6 +644,18 @@ test("a link to an archived report opens the archives on it", async () => {
   assert.equal(c.$("#f-text").value, TRAP.offer);
   assert.ok(c.$("#tab-archive").classList.contains("on"), "the link lands on a tab without its report");
   assert.deepEqual(shown(c), ["offer-" + TRAP.offer]);
+});
+
+// Romain, 06/10/2026 : The Witcher 3 sortie du top 5 Popular à 12:03, ses reports ouverts restent dans les tops
+test("a report whose page left the tops stays in the tops part and says since when", async () => {
+  const LEFT = { ...TOPR, offer: "132441884", product: "The Witcher 3 Wild Hunt", edition: "GOTY", merchant: "Instant Gaming",
+    modes: ["homepage"], left_tops_at: "2026-10-06 12:03" };
+  const c = await start({ ...REPORTS, reports: [TORO, LEFT] });
+  assert.equal(partOfCard(c, LEFT.offer), "Price check top");
+  const badge = card(c, LEFT.offer).querySelector(".pc-left-tops");
+  assert.ok(badge, "the card does not say its page left the tops");
+  assert.equal(badge.textContent, "sortie des tops le 06/10 12:03");
+  assert.equal(card(c, TORO.offer).querySelector(".pc-left-tops"), null, "a homepage card says it left the tops");
 });
 
 test("first-price problems are marked and can be shown alone", async () => {
