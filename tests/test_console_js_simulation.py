@@ -363,6 +363,10 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             # audit Codex du 06/10/2026 : la 2e carte tranchée disparaissait aussitôt ; une note retouchée pendant l'envoi perdue
             "toutes les cartes tranchées restent": ("reports.filter((r) => matchesFilters(r))", "reports.filter(matchesFilters)"),
             "note retouchée pendant l'envoi gardée": ("if (NOTES[offer] === typed) delete NOTES[offer];", "delete NOTES[offer];"),
+            # 06/10/2026 : un widget par concurrent, vert si AllKeyShop est moins cher, rouge sinon
+            "couleurs des concurrents": ('const TONE = { "aks": "pc-win", "competitor": "pc-lose" };', 'const TONE = {};'),
+            "concurrent bloqué dit pourquoi": ('el("p", { class: "pc-comp-msg", text: site.message || "" })', 'el("p", { class: "pc-comp-msg" })'),
+            "premier prix AKS à côté": ('text: a ? euros(a.price) + " · " + (a.merchant || "?")', 'text: a ? "" + (a.merchant || "?")'),
         }
         for name, (before, after) in mutations.items():
             with self.subTest(name):

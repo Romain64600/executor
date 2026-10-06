@@ -318,6 +318,25 @@ class RunRequestTests(AppTestCase):
         self.assertIsNone(body["pending"]["homepage"])
         self.assertIsInstance(body["age_seconds"], int)
 
+    def test_competitors_without_the_file_is_not_an_error(self):
+        # Romain, 06/10/2026 : un widget par concurrent ; le moniteur écrit competitors.json toutes les 30 min
+        response, body = self._json("GET", "/api/price-check/competitors")
+        self.assertEqual(response.status, 200)
+        self.assertEqual((body["available"], body["sites"]), (False, []))
+
+    def test_competitors_from_the_monitor_file(self):
+        (self.pc_dir / "competitors.json").write_text(json.dumps({
+            "generated_at": "2026-10-06T17:22:54+0200", "every": 1800, "scope": "Price check top",
+            "sites": [{"id": "dlcompare", "label": "dlcompare.fr", "status": "ok", "rows": [
+                {"product": "STAR WARS Galactic Racer", "aks": {"price": 30.87}, "competitor": {"price": 32.48},
+                 "cheaper": "aks", "gap": 1.61}]}, "pas un site"]}), encoding="utf-8")
+        response, body = self._json("GET", "/api/price-check/competitors")
+        self.assertEqual(response.status, 200)
+        self.assertTrue(body["available"])
+        self.assertEqual([s["id"] for s in body["sites"]], ["dlcompare"])
+        self.assertEqual(body["sites"][0]["rows"][0]["cheaper"], "aks")
+        self.assertIsInstance(body["age_seconds"], int)
+
     def test_a_run_request_is_a_file_signed_by_the_operator_once(self):
         response, body = self._json("POST", "/api/price-check/run", {"mode": "homepage", "by": "quelquun"})
         self.assertEqual(response.status, 200, body)

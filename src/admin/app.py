@@ -442,6 +442,9 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._serve_static("pricecheck-guide.html")
         if path == "/api/price-check/reports":
             return self._get_price_check_reports()
+        if path == "/api/price-check/competitors":
+            # Les prix des concurrents pour les pages des tops (competitors.json) : jamais une erreur sans le fichier.
+            return self._send_json(200, price_check_io.read_competitors(self.state.price_check_dir))
         if path == "/api/price-check/status":
             # L'état du moniteur (status.json) et les demandes en attente : jamais une erreur sans le fichier.
             return self._send_json(200, price_check_io.read_status(self.state.price_check_dir))

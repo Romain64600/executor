@@ -60,6 +60,17 @@ main.pc-main { max-width:1100px; }
 .pc-mode.m-top { color:#fff; background:var(--accent); border-color:var(--accent); }
 .pc-mode.m-home { color:var(--dim); }
 .pc-mode.m-first { color:var(--bad); }
+/* 06/10/2026 (Romain) : un widget par concurrent, pour les pages des tops */
+.pc-competitors { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:.8rem; }
+.pc-comp-card { background:var(--panel-2); border:1px solid var(--line); border-radius:5px; padding:.6rem .7rem; min-width:0; }
+.pc-comp-card.blocked { opacity:.85; }
+.pc-comp-head { display:flex; justify-content:space-between; align-items:baseline; gap:.5rem; flex-wrap:wrap; margin-bottom:.4rem; font-weight:600; }
+.pc-comp-score, .pc-comp-msg, .pc-comp-legend { font-size:.8rem; color:var(--dim); font-weight:400; }
+.pc-comp-blocked { font-size:.72rem; font-weight:700; padding:.06rem .45rem; border-radius:5px; border:1px dashed var(--warn); color:var(--warn); }
+.pc-comp-table { width:100%; border-collapse:collapse; font-size:.8rem; }
+.pc-comp-table th, .pc-comp-table td { text-align:left; padding:.25rem .35rem; border-bottom:1px solid var(--line); vertical-align:top; }
+.pc-win { color:var(--good); font-weight:700; }
+.pc-lose { color:var(--bad); font-weight:700; }
 /* 06/10/2026 : une page sortie des tops garde ses reports ouverts dans les tops */
 .pc-left-tops { font-size:.72rem; font-weight:600; padding:.06rem .45rem; border-radius:5px; border:1px dashed var(--accent); color:var(--accent); }
 .topbar-link { font:inherit; background:var(--panel-2); color:var(--ink); border:1px solid var(--line); border-radius:5px;
