@@ -3,6 +3,31 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-10-06 — `[R69]` Indiegala (store 95) : fichier marchand avec lecteur de fiche (HORS liste blanche — aperçu à blanc à venir)
+
+- **Romain : « Si on peut ouvrir la page, on trouvera les infos »** (après l'étude du 06/10,
+  `docs/PROCHAINS_MARCHANDS.md`). `src/merchants/indiegala.py`, sur le modèle d'Allyouplay `[R68]`
+  (EXECUTOR_RULES `[R69]`) : la fiche `indiegala.com/store/game/<slug>/<id>` est lue par la
+  bibliothèque standard (`page_get`, UA navigateur, ~1 req / s, une par fiche et par processus) ;
+  lien canonique = identité (fiche périmée → accueil `/store` → refus) ; plateforme = « is
+  provided via **Steam Key** » (jamais STEAM par défaut) ; DLC « requires the base product » exposé
+  (`is_dlc`), non routé ; région = liste des pays interdits (« Country availability » / « Banned
+  countries ») par la règle `[R59]` (même table que Gamesplanet FR / Allyouplay) ; h3 « Region
+  locked product » = verrou pays → refus ; l'encart « région d'achat » est ignoré.
+- **Titre** : suffixe « (US) / (EU) / (UK) » en queue = `title_region`, retiré du nom résolu et des
+  gardes, et qui doit s'accorder avec la fiche ; titre multilingue « A / B / C » réduit à sa
+  première partie quand les autres sont dans une autre écriture ; « Attack on Titan 3 / A.O.T. 3 »
+  reste entier (refus R01 au pire, jamais un nom deviné).
+- **Règle de région PROPOSÉE, à confirmer par Romain à l'aperçu** (pas une décision revue — AKS
+  n'affiche aucune offre Indiegala). Sur les 8 fiches réelles : 4 GLOBAL, SH Townfall (US) → US,
+  Castlevania LoS2 bundle → EU (bundle, refusé au precheck), Reach → verrou pays, **Belmont's Curse
+  (EU) → refus « INDIEGALA LOCK (EU + US) »** (Chypre ET les USA interdits : UE non entière).
+- Registre : `"INDIEGALA"`, store `95`. **PAS dans `auto_merchants`, PAS dans un groupe** (épinglé
+  par un test). Aucune autre règle, aucun autre marchand touché.
+- Tests : `tests/test_merchants_indiegala_r69.py` (fiches réelles `tests/fixtures/indiegala/`, 9
+  fichiers relevés le 06/10). Docs : EXECUTOR_RULES `[R69]`, MERCHANTS (section + tableau),
+  PROCHAINS_MARCHANDS (ligne 7).
+
 ## 2026-10-02 — Maintenance des VPS : ré-audit de Romain (5 défauts) corrigé ; vue d'ensemble : VPS 3 ajouté
 
 - **Ré-audit de `2272e92` par Romain (01/10), 5 défauts confirmés, corrigés** (`scripts/18`, `19`,

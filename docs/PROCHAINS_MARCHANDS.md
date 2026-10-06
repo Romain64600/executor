@@ -19,7 +19,7 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 | 5 | **Discover.games** (168) | 440 | 370 (84 %) | — | **fichier écrit le 25/09 (`[R60]`), essai à blanc : 106 candidats sur 150 lignes ; en liste blanche le 26/09, groupe A** |
 | 6 | **CDKeys → « Loaded »** (40) | 16 (21/09) | — | feed du jour à relire | **fichier écrit le 25/09 (`[R61]`, « Europe & UK » → Europe, sans région → GLOBAL) ; essai à blanc sur 16 lignes : 1 candidat ; en liste blanche le 26/09, groupe A** |
 | — | Greenmangaming (22) | 482 | 318 (66 %) | URL d'affiliation illisible (sjv.io), titre muet | pas prioritaire |
-| 7 | **Indiegala** (95) | 175 (21/09) | 30 (19 %, slug strict) | plateforme et région : ni titre ni URL ; la **fiche** les donne (« is provided via Steam Key », listes de pays, « Region locked product ») | **étudié le 06/10** : faisable comme Gamesplanet FR / Allyouplay (lecteur de fiche), rendement faible ; décision de Romain sur la règle de région (section du 06/10) |
+| 7 | **Indiegala** (95) | 175 (21/09) | 30 (19 %, slug strict) | plateforme et région : ni titre ni URL ; la **fiche** les donne (« is provided via Steam Key », listes de pays, « Region locked product ») | **fichier écrit le 06/10** (`[R69]`, branche `indiegala`, Romain : « Si on peut ouvrir la page, on trouvera les infos ») — **hors liste blanche**, aperçu à blanc à venir ; règle de région PROPOSÉE à confirmer par Romain (Belmont's Curse (EU) refusée : Chypre ET les USA interdits) |
 
 \* Mesuré sur le scan tous-magasins du 21/09, **avant** la correction du tri du feed (`orderBy=id`,
 24/09) : ces comptes sont des minimums. Un nouveau scan tous-magasins les rafraîchira.
@@ -76,6 +76,20 @@ demi-journée (fichier + fixtures réelles + tests + aperçu à blanc sur le fee
 des pays interdits (proposé), et que fait-on de l'encart « liée à la région d'achat » présent
 sur presque toutes les fiches (ignoré, comme la politique de vente de Gamesplanet ?) ; (2) le
 verrou PAYS explicite (Reach) = refus (proposé) ; (3) go ou pas, vu le rendement.
+
+**Suite (06/10, même jour)** — Romain : « Si on peut ouvrir la page, on trouvera les infos ».
+Fichier écrit sur la branche `indiegala` : `src/merchants/indiegala.py` (`[R69]`, EXECUTOR_RULES ;
+MERCHANTS « Indiegala (store 95) »), tests `tests/test_merchants_indiegala_r69.py` sur les 8 fiches
+réelles (`tests/fixtures/indiegala/`), registre store 95 — **hors liste blanche, hors groupe**.
+Codé tel que proposé : (1) `[R59]` sur les pays interdits, encart « région d'achat » ignoré ;
+(2) verrou pays = refus. **À confirmer par Romain à l'aperçu** (règle proposée, pas revue) :
+sur les 8 fiches, MHW Gold / SCUM / LBA2 / Thunder Ray → GLOBAL, SH Townfall (US) → US, le bundle
+Castlevania → EU (refusé bundle), Reach → verrou, et **Belmont's Curse (EU) → refus « LOCK (EU +
+US) »** : sa liste interdit les USA ET Chypre, donc l'UE n'est pas entière — tel quel (aucune
+écriture fausse), ou « (EU) du titre + UE quasi complète → EU » ? Autre point : « Attack on Titan
+3 / A.O.T. 3 » (2 lignes) reste entier → refus R01 au pire ; couper l'alias demande un go.
+Prochaine étape : aperçu à blanc (`03_match`, lecture seule) sur le feed du jour, puis liste
+blanche / groupe sur le go de Romain.
 
 ## 2026-09-25 (suite) — CDKeys, devenu « Loaded » (store 40)
 

@@ -262,6 +262,7 @@ executor/
 │   │   ├── common.py           #   shared by the merchant files ONLY (region words, R45 skip strings, make_config) — never imports matcher / console_keys
 │   │   ├── kinguin.py  k4g.py  driffle.py  gameseal.py  allyouplay.py  cjs.py   # new 2026-09-14
 │   │   ├── mmoga.py  gamivo.py  eneba.py  g2a.py  instant_gaming.py                     # existing
+│   │   ├── indiegala.py        #   [R69] 2026-10-06 — product-page reader (Allyouplay model), NOT allowlisted: dry preview first
 │   │   └── difmark.py          #   parked merchant (outside the safe-auto allowlist)
 │   ├── console_keys.py         # R45 console classifier — SHARED vocabulary only (families, title phrases, page kinds, bucket table); merchant grammar via hooks — pure
 │   ├── data_entry_auto.py      # safe-auto sweep engine (scripts/10) + by-urls submit core (scripts/12)
@@ -792,7 +793,11 @@ allyouplay.com » — its feed links go through the affiliate redirector
 listing identity) and its product-page reader (`[R68]`, Romain's « go pour 1 »: platform from the
 page's « Platform » attribute, region from its `available_countries` under the `[R59]` rule,
 « [Mac] » refused) sit on branch `allyouplay-affiliate`, not live until Romain validates a
-read-only preview (CHANGELOG 2026-09-30).
+read-only preview (CHANGELOG 2026-09-30). **Indiegala 95 (2026-10-06, `[R69]`, branch
+`indiegala`)** follows the same model — platform from the page's « is provided via », region
+from its banned-countries list under `[R59]` (a rule PROPOSED, to be confirmed by Romain at the
+preview), country lock refused — and is **not allowlisted**: dry preview first
+(`docs/PROCHAINS_MARCHANDS.md`, CHANGELOG 2026-10-06).
 
 ---
 
