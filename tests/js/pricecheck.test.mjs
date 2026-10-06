@@ -354,7 +354,7 @@ const COMPETITORS = {
   available: true, age_seconds: 120, generated_at: "2026-10-06T17:22:54+0200", every: 1800, scope: "Price check top",
   sites: [
     { id: "gg-deals", label: "gg.deals", home: "https://gg.deals/", status: "blocked", rows: [],
-      message: "gg.deals bloque le serveur (403, Cloudflare) : possible avec son API officielle" },
+      message: "clé de l'API gg.deals pas encore active : confirmer l'adresse e-mail du compte gg.deals" },
     { id: "dlcompare", label: "dlcompare.fr", home: "https://www.dlcompare.fr/", status: "ok", rows: [
       { product: "STAR WARS Galactic Racer", page_url: "https://www.allkeyshop.com/blog/buy-star-wars-galactic-racer-cd-key-compare-prices/",
         aks: { price: 30.87, merchant: "Kinguin", account: true, edition: "Standard" },
@@ -385,18 +385,22 @@ test("one widget per competitor: green when AllKeyShop is cheaper, orange at the
   const widgets = c.$("#pc-competitors").children.filter((n) => n.tagName === "SECTION");
   assert.equal(widgets.length, 2);
   const [gg, dl] = widgets;
-  assert.ok(gg.textContent.includes("bloqué") && gg.textContent.includes("API officielle"), gg.textContent);
+  assert.ok(gg.textContent.includes("bloqué") && gg.textContent.includes("confirmer l'adresse e-mail"), gg.textContent);
   assert.ok(dl.textContent.includes("1 AKS moins cher · 2 même prix · 1 concurrent moins cher · 1 introuvable · 1 page console non comparée"),
     dl.textContent);
   const cells = dl.querySelectorAll("td").filter((td) => td.classList.contains("pc-comp-price"));
   assert.deepEqual(cells.map((td) => ["pc-win", "pc-even", "pc-lose"].filter((k) => td.classList.contains(k))),
     [["pc-win"], ["pc-lose"], [], ["pc-even"], [], ["pc-even"]]);
   assert.deepEqual(cells.map((td) => td.textContent).slice(2, 5), ["introuvable", "44,50 € · Eneba", "page console, non comparée"]);
-  const gaps = dl.querySelectorAll("td").filter((td) => td.classList.contains("pc-comp-gap")).map((td) => td.textContent);
-  assert.deepEqual(gaps.slice(3), ["même prix", "", "même prix"]);
+  // « à la place de l'écart, mets le prix AKS » (Romain, 06/10/2026): the AKS price right after the competitor's, no gap
+  assert.deepEqual(dl.querySelectorAll("th").map((th) => th.textContent), ["Jeu", "Meilleur prix dlcompare.fr", "Premier prix AKS"]);
+  const rowsOf = dl.querySelectorAll("tr").filter((tr) => tr.querySelectorAll("td").length);
+  assert.deepEqual(rowsOf.map((tr) => tr.querySelectorAll("td").map((td) => td.classList.contains("pc-comp-price") ? "concurrent"
+    : td.classList.contains("pc-comp-aks") ? "aks" : "jeu")), rowsOf.map(() => ["jeu", "concurrent", "aks"]));
+  assert.equal(rowsOf[0].querySelectorAll("td")[2].textContent, "30,87 € · Kinguin (compte)");
   assert.ok(dl.textContent.includes("36,71 € · BuyGames (compte)"), "a console page lost AllKeyShop's first price");
   assert.ok(dl.textContent.includes("30,87 € · Kinguin (compte)"), "AKS's first price is not beside");
-  assert.ok(dl.textContent.includes("AKS moins cher de 1,61 €") && dl.textContent.includes("AKS plus cher de 19,27 €"), dl.textContent);
+  assert.ok(!dl.textContent.includes("Écart") && !dl.textContent.includes("AKS moins cher de"), "the gap is still shown");
   assert.ok(!anchors(dl).some((a) => String(a.getAttribute("href")).startsWith("javascript")), "a javascript: URL became a link");
   assert.ok(c.$("#pc-comp-note").textContent.includes("relevé du 06/10 17:22"), c.$("#pc-comp-note").textContent);
   const none = await loadConsole(CONSOLE);

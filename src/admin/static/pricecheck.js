@@ -557,14 +557,6 @@ const cents = (n) => Math.round(n * 100);
 const outcome = (r) => (r.aks && r.competitor && typeof r.aks.price === "number" && typeof r.competitor.price === "number"
   && cents(r.aks.price) === cents(r.competitor.price) ? "same" : r.cheaper);
 
-function gapLabel(r) {
-  if (outcome(r) === "same") return "même prix";
-  if (typeof r.gap !== "number") return "";
-  if (r.gap > 0) return "AKS moins cher de " + euros(r.gap);
-  if (r.gap < 0) return "AKS plus cher de " + euros(-r.gap);
-  return "même prix";
-}
-
 function competitorWidget(site) {
   const rows = site.rows || [];
   const won = rows.filter((r) => outcome(r) === "aks").length;
@@ -586,17 +578,17 @@ function competitorWidget(site) {
   if (blocked) return el("section", { class: "pc-comp-card blocked" }, [head, el("p", { class: "pc-comp-msg", text: site.message || "" })]);
   const body = rows.map((r) => {
     const a = r.aks, c = r.competitor, tone = TONE[outcome(r)] || "";
+    // « à la place de l'écart, mets le prix AKS » (Romain, 06/10/2026) : AllKeyShop's first price right beside the competitor's
     return el("tr", {}, [
       el("td", {}, [safeLink(r.page_url, r.product || "?")]),
-      el("td", { class: "pc-comp-aks", text: a ? euros(a.price) + " · " + (a.merchant || "?") + (a.account ? " (compte)" : "") : "—" }),
       el("td", { class: "pc-comp-price " + tone }, c ? [safeLink(c.url, euros(c.price)), " · " + (c.seller || "?")]
         : [r.skipped === "console" ? "page console, non comparée" : "introuvable"]),
-      el("td", { class: "pc-comp-gap", text: gapLabel(r) }),
+      el("td", { class: "pc-comp-aks", text: a ? euros(a.price) + " · " + (a.merchant || "?") + (a.account ? " (compte)" : "") : "—" }),
     ]);
   });
   return el("section", { class: "pc-comp-card" }, [head, el("div", { class: "table-wrap" }, [el("table", { class: "pc-comp-table" }, [
-    el("thead", {}, [el("tr", {}, [el("th", { text: "Jeu" }), el("th", { text: "Premier prix AKS" }),
-      el("th", { text: "Meilleur prix " + (site.label || site.id) }), el("th", { text: "Écart" })])]),
+    el("thead", {}, [el("tr", {}, [el("th", { text: "Jeu" }), el("th", { text: "Meilleur prix " + (site.label || site.id) }),
+      el("th", { text: "Premier prix AKS" })])]),
     el("tbody", {}, body)])])]);
 }
 

@@ -373,6 +373,8 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             "égalité d'un ancien relevé en orange": ('&& cents(r.aks.price) === cents(r.competitor.price) ? "same" : r.cheaper',
                                                     '&& false ? "same" : r.cheaper'),
             "concurrent bloqué dit pourquoi": ('el("p", { class: "pc-comp-msg", text: site.message || "" })', 'el("p", { class: "pc-comp-msg" })'),
+            # 06/10/2026 : « à la place de l'écart, mets le prix AKS »
+            "prix AKS à la place de l'écart": ('el("th", { text: "Premier prix AKS" })', 'el("th", { text: "Écart" })'),
             "premier prix AKS à côté": ('text: a ? euros(a.price) + " · " + (a.merchant || "?")', 'text: a ? "" + (a.merchant || "?")'),
         }
         for name, (before, after) in mutations.items():
