@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AKS Executor — Romain</title>
+  <link rel="stylesheet" href="auto.css">
+  <link rel="stylesheet" href="pricecheck.css">
+  <link rel="stylesheet" href="romain.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <h1>Romain <span class="sub">— les questions en cours</span></h1>
+    </div>
+    <nav class="tabs">
+      <a href="." class="tab">Validation &amp; Submit</a>
+      <a href="tri" class="tab">Tri des listes</a>
+      <a href="auto" class="tab">Data Entry Auto</a>
+      <a href="games" class="tab">Saisie par jeux</a>
+      <a href="sql" class="tab">Tri SQL</a>
+      <a href="overview" class="tab">Vue d'ensemble</a>
+      <a href="price-check" class="tab">Price check</a>
+      <a href="romain" class="tab active" aria-current="page">Romain</a>
+    </nav>
+    <div class="topbar-right">
+      <button id="refresh" type="button" title="Relire les questions">↻ Rafraîchir</button>
+      <button id="theme" type="button" title="Basculer le thème">◐</button>
+    </div>
+  </header>
+
+  <main class="pc-main">
+    <section class="card" id="rm-open">
+      <div class="recap-head">
+        <h2>Questions en cours <span id="rm-count" class="dim"></span></h2>
+      </div>
+      <p class="rm-legend">Tout ce qui attend la décision de Romain : les questions posées dans la
+        <a href="price-check">console</a> (par Rémy, Garance, Lionel ou Claude) et les points de la récolte des décisions.
+        Tout le monde les consulte ; seul Romain les règle. <span id="rm-who"></span></p>
+      <div id="rm-questions" class="rm-list"></div>
+    </section>
+    <section class="card" id="rm-discuss">
+      <div class="recap-head">
+        <h2>Reports à discuter <span id="rm-discuss-count" class="dim"></span></h2>
+      </div>
+      <p class="rm-legend">Les reports tranchés « À discuter » attendent leur décision finale, sur la page
+        <a href="price-check">Price check</a>.</p>
+      <div id="rm-reports" class="rm-list"></div>
+    </section>
+    <section class="card" id="rm-closed">
+      <div class="recap-head">
+        <h2>Questions réglées <span id="rm-closed-count" class="dim"></span></h2>
+      </div>
+      <div id="rm-settled" class="rm-list"></div>
+    </section>
+  </main>
+
+  <footer id="status" class="idle">Chargement…</footer>
+  <script src="romain.js"></script>
+</body>
+</html>

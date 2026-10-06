@@ -374,7 +374,22 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
                                                     '&& false ? "same" : r.cheaper'),
             "concurrent bloqué dit pourquoi": ('el("p", { class: "pc-comp-msg", text: site.message || "" })', 'el("p", { class: "pc-comp-msg" })'),
             # 06/10/2026 : « à la place de l'écart, mets le prix AKS »
-            "prix AKS à la place de l'écart": ('el("th", { text: "Premier prix AKS" })', 'el("th", { text: "Écart" })'),
+            "prix AKS à la place de l'écart": ('el("th", { text: account ? "Premier compte AKS" : "Première clé AKS" })',
+                                               'el("th", { text: "Écart" })'),
+            # 06/10/2026 : « on compare clé avec clé et compte avec compte. On ne mélange pas »
+            "comptes à part": ("const accounts = site.accounts || [];", "const accounts = [];"),
+            # 06/10/2026 : fee / error, « plus ou moins d'euros », par concurrent, page et genre
+            "fee envoyé avec son genre": ("body: JSON.stringify({ site: siteId, page_url: r.page_url, kind, value })",
+                                          "body: JSON.stringify({ site: siteId, page_url: r.page_url, value })"),
+            "prix corrigé du fee": ("return f == null ? null : Math.round((r.competitor.price + f) * 100) / 100;", "return null;"),
+            "couleur avec le fee": ("if (withFee != null && r.aks && typeof r.aks.price === \"number\") {", "if (false) {"),
+            "fee tapé gardé après un refus": ("box.value = FEE_DRAFTS[key] != null ? FEE_DRAFTS[key] : (r.fee ? feeText(r.fee.value) : \"\");",
+                                              "box.value = r.fee ? feeText(r.fee.value) : \"\";"),
+            # 06/10/2026 : la console, réservée à Romain et à l'équipe ; la récolte à Romain seul
+            "console réservée": ('$("#pc-console").classList.toggle("hidden", !d);', '$("#pc-console").classList.toggle("hidden", false);'),
+            "récolte réservée à Romain": ('$("#pc-harvest").classList.toggle("hidden", !owner);', '$("#pc-harvest").classList.toggle("hidden", false);'),
+            "message envoyé": ('if (await sendChat("api/price-check/console", { text },', 'if (await sendChat("api/price-check/console", {},'),
+            "lien vers l'onglet Romain": ('el("a", { href: "romain", text: "Romain" })', 'el("span", { text: "Romain" })'),
             "premier prix AKS à côté": ('text: a ? euros(a.price) + " · " + (a.merchant || "?")', 'text: a ? "" + (a.merchant || "?")'),
         }
         for name, (before, after) in mutations.items():
@@ -422,6 +437,45 @@ class PriceCheckGuideSimulationTests(unittest.TestCase):
                     proc = subprocess.run([NODE, str(GUIDE_HARNESS)], cwd=ROOT, capture_output=True, text=True,
                                           timeout=120, env=dict(os.environ, PRICECHECK_GUIDE_JS=str(fake)))
                 self.assertNotEqual(proc.returncode, 0, f"le harnais passe sans « {name} » :\n{proc.stdout}")
+
+
+ROMAIN_HARNESS = ROOT / "tests" / "js" / "romain.test.mjs"
+
+
+@unittest.skipIf(NODE is None, "node absent (dépendance de test)")
+class RomainTabSimulationTests(unittest.TestCase):
+    """L'onglet ROMAIN, exécuté (2026-10-06). Romain : « un onglet Romain où il y a toutes les questions en cours, que
+    tout le monde peut consulter, mais il n'y a que moi qui peux agir dessus »."""
+
+    def test_the_harness_targets_the_shipped_page(self):
+        self.assertTrue(ROMAIN_HARNESS.is_file(), ROMAIN_HARNESS)
+        self.assertIn('"src", "admin", "static", "romain.js"', ROMAIN_HARNESS.read_text(encoding="utf-8"))
+
+    def test_every_scenario_passes(self):
+        proc = subprocess.run([NODE, str(ROMAIN_HARNESS)], cwd=ROOT, capture_output=True, text=True, timeout=120)
+        self.assertEqual(proc.returncode, 0, f"\n--- sortie node ---\n{proc.stdout}\n{proc.stderr}")
+        self.assertNotIn("FAIL", proc.stdout)
+
+    def test_the_harness_goes_red_on_each_removed_guard(self):
+        import os
+        import tempfile
+        js = (ROOT / "src" / "admin" / "static" / "romain.js").read_text(encoding="utf-8")
+        mutations = {
+            "boutons réservés à Romain": ("} else if (owner) {", "} else if (true) {"),
+            "réponse envoyée": ('body: JSON.stringify({ question: id, note: ANSWERS[id] || "" })', "body: JSON.stringify({ question: id })"),
+            "reports à discuter": ('r.decision.decision === "a_discuter"', "false"),
+            "réglée une seule fois": ("SENT.add(id);", ""),
+            "refus affiché": ('setStatus(id + " non réglée : " + e.message, false);', ""),
+        }
+        for name, (before, after) in mutations.items():
+            with self.subTest(name):
+                self.assertIn(before, js, f"la forme de « {name} » a changé")
+                with tempfile.TemporaryDirectory() as tmp:
+                    fake = pathlib.Path(tmp) / "romain.js"
+                    fake.write_text(js.replace(before, after, 1), encoding="utf-8")
+                    proc = subprocess.run([NODE, str(ROMAIN_HARNESS)], cwd=ROOT, capture_output=True, text=True,
+                                          timeout=120, env=dict(os.environ, ROMAIN_JS=str(fake)))
+                self.assertNotEqual(proc.returncode, 0, f"« {name} » retiré, le harnais reste vert :\n{proc.stdout}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,11 @@
+/* L'onglet Romain (06/10/2026) : les questions en cours, visibles par tous, réglées par Romain seul. */
+.rm-list { display:flex; flex-direction:column; gap:.6rem; }
+.rm-item { background:var(--panel-2); border:1px solid var(--line); border-left:3px solid var(--warn); border-radius:5px; padding:.55rem .7rem; }
+.rm-item.settled { border-left-color:var(--good); }
+.rm-head { font-size:.78rem; color:var(--dim); }
+.rm-text { margin:.25rem 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.rm-answer-shown { margin:.2rem 0 0; font-size:.85rem; color:var(--good); white-space:pre-wrap; }
+.rm-actions { display:flex; gap:.5rem; align-items:flex-end; margin-top:.35rem; }
+.rm-actions textarea { flex:1; font:inherit; min-height:2.4rem; resize:vertical; }
+.rm-legend { font-size:.82rem; color:var(--dim); margin:0 0 .6rem; }
+.rm-pending { font-size:.8rem; color:var(--warn); margin:.2rem 0 0; }
