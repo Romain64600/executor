@@ -45,6 +45,9 @@ main.pc-main { max-width:1100px; }
 .pc-group-title.g-discuss { background:var(--warn); color:#fff; }
 .pc-question { background:var(--panel-2); border-left:3px solid var(--warn); border-radius:5px; padding:.35rem .6rem; font-size:.84rem; }
 .kpi.k-discuss .kpi-n { color:var(--warn); }
+/* 06/10/2026 : un vrai positif pas encore corrigé reste en cours, « à corriger » */
+.kpi.k-tofix .kpi-n { color:var(--bad); }
+.pc-tofix { color:var(--bad); font-size:.8rem; font-weight:600; }
 .kpi.k-discuss.hot { border-color:var(--warn); box-shadow:inset 0 0 0 1px var(--warn); }
 .pc-head { display:flex; align-items:baseline; gap:.6rem; flex-wrap:wrap; }
 .pc-verdict { font-size:.72rem; font-weight:700; padding:.08rem .45rem; border-radius:5px; border:1px solid var(--line); }

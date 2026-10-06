@@ -6,6 +6,7 @@
 .guide-title { margin:.1rem 0 .2rem; font-size:1.35rem; }
 .guide h2 { margin:1.6rem 0 .5rem; font-size:1.1rem; color:var(--accent); scroll-margin-top:4rem; }
 .guide h2.guide-title { margin-top:.1rem; color:var(--ink); }
+.guide h3 { margin:1.1rem 0 .4rem; font-size:.98rem; color:var(--ink); scroll-margin-top:4rem; }  /* « Les compteurs » (06/10/2026) */
 .guide p { margin:.45rem 0; }
 .guide ul, .guide ol { margin:.4rem 0 .6rem; padding-left:1.4rem; }
 .guide li { margin:.2rem 0; }

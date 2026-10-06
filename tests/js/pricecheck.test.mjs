@@ -79,7 +79,7 @@ test("each report is shown with its reason, its rank and its two URLs", async ()
   const hrefs = anchors(el).map((a) => a.getAttribute("href"));
   assert.ok(hrefs.includes(TORO.page_url), "no link to the AllKeyShop page");
   assert.ok(hrefs.includes(TORO.merchant_url), "no link to the merchant");
-  assert.ok(c.$("#pc-summary").textContent.includes("sans décision"), "the summary is missing");
+  assert.ok(c.$("#pc-summary").textContent.includes("à traiter"), "the summary is missing");
 });
 
 test("a javascript: URL from the file is never a clickable link", async () => {
@@ -613,28 +613,61 @@ test("handled reports are archived in another tab, what is left to do stays in �
   assert.ok(order[0].startsWith("H3:Price check top"), order[0]);
   assert.equal(order[1], "DIV:Aucun report archivé sur les tops pour ces filtres.");
   assert.deepEqual(shown(c), ["offer-" + TRAP.offer, "offer-" + FIXED.offer]);
-  assert.ok(c.$("#pc-tab-note").textContent.startsWith("Les reports tranchés"), c.$("#pc-tab-note").textContent);
+  assert.ok(c.$("#pc-tab-note").textContent.startsWith("Les reports réglés"), c.$("#pc-tab-note").textContent);
 });
 
-test("a report decided Vrai positif stays in place a few seconds, then goes to the archives", async () => {
+// Romain, 06/10/2026 : « les stats semblent fausses » (En cours 0, Archives 69, 8 SUSPECT) : un vrai positif dont l'offre n'a
+// pas encore changé reste en cours, « à corriger » ; un faux positif passe dans les archives.
+test("a report decided Vrai positif stays in progress, to fix; one decided Faux positif goes to the archives", async () => {
   const timers = [];
   const c = await loadConsole(CONSOLE, { setTimeout: (fn, ms) => { timers.push([fn, ms]); return timers.length; } });
   await c.net.release("api/price-check/reports", JSON.parse(JSON.stringify({ ...REPORTS, reports: [TORO, TOPR] })));
   await tick();
+  const settle = () => {
+    timers.filter(([, ms]) => ms === 4000).pop()[0]();
+    timers.filter(([, ms]) => ms === 600).pop()[0]();
+  };
   buttons(card(c, TORO.offer)).find((b) => b.textContent === "Vrai positif").fire("click");
   await tick();
   await c.net.release("api/price-check/decision",
     { recorded: { offer: TORO.offer, decision: "vrai", note: "", by: "remy", at: "2026-10-06T09:20:00+02:00" } });
   await tick();
-  assert.deepEqual(shown(c), ["offer-" + TOPR.offer, "offer-" + TORO.offer], "the decided card left at once, under the cursor");
   assert.equal(card(c, TORO.offer).querySelector(".pc-done-banner").textContent,
-    "✔ Décision enregistrée : Vrai positif — dans quelques secondes, la carte passe dans les archives");
-  timers.filter(([, ms]) => ms === 4000).pop()[0]();
-  timers.filter(([, ms]) => ms === 600).pop()[0]();
-  assert.deepEqual(shown(c), ["offer-" + TOPR.offer]);
-  assert.equal(c.$("#tab-archive").textContent, "Archives (1)");
-  await openTab(c, "archive");
+    "✔ Décision enregistrée : Vrai positif — la carte reste en cours, « à corriger », jusqu'à ce que l'offre change");
+  settle();
+  assert.deepEqual(shown(c), ["offer-" + TOPR.offer, "offer-" + TORO.offer], "a confirmed error still there left « En cours »");
+  const tofix = card(c, TORO.offer);
+  assert.ok(tofix.textContent.includes("✔ Traité par remy · Vrai positif · à corriger"), tofix.textContent);
+  assert.ok(tofix.textContent.includes("🔧 À corriger : l'erreur est confirmée"), tofix.textContent);
+  assert.equal(c.$("#tab-current").textContent, "En cours (2)");
+  buttons(card(c, TOPR.offer)).find((b) => b.textContent === "Faux positif").fire("click");
+  await tick();
+  await c.net.release("api/price-check/decision",
+    { recorded: { offer: TOPR.offer, decision: "faux", note: "", by: "remy", at: "2026-10-06T09:21:00+02:00" } });
+  await tick();
+  assert.equal(card(c, TOPR.offer).querySelector(".pc-done-banner").textContent,
+    "✔ Décision enregistrée : Faux positif — dans quelques secondes, la carte passe dans les archives");
+  settle();
   assert.deepEqual(shown(c), ["offer-" + TORO.offer]);
+  assert.equal(c.$("#tab-archive").textContent, "Archives (1)");
+});
+
+test("each report has one state, and the counters add up to the total", async () => {
+  const VRAI = { ...TORO, offer: "140000020", product: "Vrai pas corrigé", edition_rank: 1, first_price: true,
+    decision: { decision: "vrai", note: "", by: "remy", at: "2026-10-06T09:00:00+02:00" },
+    history: [{ decision: "vrai", note: "", by: "remy", at: "2026-10-06T09:00:00+02:00" }] };
+  const OPEN_FIRST = { ...TORO, offer: "140000021", product: "Premier prix à traiter", edition_rank: 1, first_price: true };
+  const DISC_FIXED = { ...DISC, offer: "140000022", fixed_at: "2026-10-06 10:00", fixed_how: "offre retirée de la page" };
+  const c = await start({ ...REPORTS, reports: [TORO, TOPR, DISC, DISC_FIXED, VRAI, OPEN_FIRST, TRAP, FIXED, RULE, VERIFIED] });
+  const kpis = Object.fromEntries(c.$("#pc-summary").children.filter((n) => n.classList)
+    .map((n) => [n.children[1].textContent, Number(n.children[0].textContent)]));
+  // premiers prix en erreur : les SUSPECT en cours sur l'un des 3 premiers prix de l'édition, tranchés vrai compris, réparés exclus
+  assert.deepEqual(kpis, { "à traiter": 3, "à discuter": 2, "à corriger": 1, "premiers prix en erreur": 5, "tops à trancher": 1,
+    "homepage à trancher": 2, "réparées": 1, "faux positifs levés": 1, "vérifiées OK": 1, "faux positifs jugés": 1, "reports": 10 });
+  // en cours = à traiter + à discuter + à corriger ; archives = réparées + levés + vérifiées + faux positifs jugés
+  assert.equal(c.$("#tab-current").textContent, "En cours (6)");
+  assert.equal(c.$("#tab-archive").textContent, "Archives (4)");
+  assert.ok(shown(c).includes("offer-" + DISC_FIXED.offer), "a report to discuss left « En cours » once repaired");
 });
 
 test("a link to an archived report opens the archives on it", async () => {
