@@ -59,12 +59,6 @@ PENDING_2026_09_21 = {
 EXCLUDED: dict[str, str] = {
     "Difmark": ("file Pending vide — ses lignes sont dans la liste account (30), que le "
                 "balayage ne lit pas ; saisie à la main avec --list 30"),
-    # Romain, 2026-10-06 : « go pour la liste blanche » — le groupe n'a pas été dit. Un groupe
-    # est SON choix (il l'a nommé pour Gamesplanet FR, Discover.games, Loaded) : Indiegala attend
-    # le sien ici plutôt que d'être rangé à sa place. En attendant, il se balaie seul (console,
-    # « Lancer » avec Indiegala:95) ou s'ajoute à une boucle en cours pour une passe.
-    "Indiegala": ("en liste blanche le 2026-10-06 (go de Romain), groupe à choisir par Romain — "
-                  "balayage seul ou ajout à une boucle en attendant"),
 }
 
 GROUPS: dict[str, tuple[str, ...]] = {
@@ -82,8 +76,10 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # ~15 555 lignes : trois files moyennes et le reste — et Wyrel, entré en liste blanche le
     # 2026-09-24 avec 4 725 lignes, dont une bonne part refusée d'office (non-jeux, ROW).
     # Mis ici parce que le B était le plus léger ; le B passe donc devant le A (12 828).
+    # + Indiegala (175 lignes), entré le 2026-10-06 (Romain : « groupe B pour Indiegala ») : ses
+    # fiches ont été lues depuis cette VM, l'ancienne VM n'a jamais été sondée pour lui.
     "B": ("Gamivo", "Eneba", "Kinguin", "CJS-CDKeys", "Gamerall", "Electronicfirst",
-          "Allyouplay", "K4G", "Wyrel"),
+          "Allyouplay", "K4G", "Wyrel", "Indiegala"),
 }
 
 
