@@ -40,9 +40,36 @@ se font SOUS le verrou du navigateur, gardé jusqu'à l'extinction (`systemctl r
 un run qui tient le navigateur empêche le redémarrage, un run lancé après ne peut plus rien
 écrire ; le pilote reconnaît le redémarrage à la ligne « rebooting », même si ssh se coupe avant
 le code 42 ; (P2) une boucle relancée garde les marchands ajoutés depuis la console (`planned`
-de la passe + file `targets_queue.json`, moins les refusés) ; (P2) des processus d'`aks-admin`
+de la passe + file `targets_queue.json`, moins les refusés — **remplacé le 06/10**, voir
+ci-dessous : ils ne deviennent plus des cibles permanentes) ; (P2) des processus d'`aks-admin`
 illisibles interdisent le redémarrage ; (P2) le garde DNS refuse `enabled-runtime` (activation
 temporaire) et n'accepte `static` que si le service tourne.
+
+**Ré-audit Codex de `2c5cb19` (Romain, 06/10) — 4 défauts de maintenance confirmés, corrigés le
+06/10 (les 2 défauts Price check du même audit sont corrigés dans la session du VPS 3) :**
+(P1) **un recap périmé ne donne plus un moment sûr** — une écriture de `recap.json` qui échoue est
+avalée par le balayage, un processus figé ne l'écrit plus, et le fichier pouvait dire « extract »
+pendant une saisie ; deux gardes lues sans rien toucher : le **verrou du navigateur** (tenu par un
+pid vivant autre qu'un `02_extract` — `05_submit`, `06_move`, transfert de cookies… — = jamais sûr,
+quoi que dise le recap) et la **fraîcheur des horodatages** (`stage_at` d'une étape sûre ≤ 15 min,
+pause de reprise ≤ `wait_s` + 5 min, `updated_at` du recap entre deux pages ≤ 15 min, `loop.json`
+en pause ≤ 5 min — sans horodatage, rien n'est sûr) ; au-delà, « recap périmé », on réessaie
+10 s plus tard (au pire la maintenance est reportée, jamais une saisie coupée) ;
+(P1) **le `git pull` se fait SOUS le verrou du navigateur**, après un contrôle RELU sous ce verrou
+(admin `busy`, enfants d'`aks-admin`) : un run démarré entre l'arrêt et le pull → « pull NON
+fait », motif nommé, la maintenance continue ; un run lancé pendant le pull ne peut pas ouvrir le
+navigateur ; (P2) **une erreur de `pgrep` n'est jamais « zéro processus »** : code 1 = aucun, tout
+autre code = illisible → maintenance reportée (`plan`), pull non fait, redémarrage refusé ; même
+règle pour `pgrep -u hermes` (`getent` d'abord : un compte absent — VM A, B — vaut zéro, un pgrep
+en erreur sur un compte présent interdit le redémarrage) ; (P2) **un ajout de la console à une
+boucle reste un ajout d'UNE passe** (c'est ce que fait `scripts/10` : `consumed`) — la relance du
+01/10 en faisait une cible PERMANENTE ; désormais la boucle repart sur ses cibles de lancement et
+les ajouts encore dus (en file, ni refusés, ni pris par une passe finie, ni balayés jusqu'au bout
+par la passe interrompue) sont **remis en file** après la relance par la route de la console
+(`POST /api/data-entry/auto/add-target`, GO, run relancé), une fois chacun ; le résultat les
+liste (`additions`), Discord compte « ajouts remis en file : n/m ». « Une passe ou permanent »
+pour la boucle elle-même reste la décision 4 de l'audit du 02/10. Tests : classe `ReAuditDu0610`,
+chaque correctif rougi par mutation.
 
 ## Les deux scripts
 
@@ -79,7 +106,10 @@ dit pour chaque VPS « Maintenance … en cours » (processus `18 … run|postbo
 `pending.json`), « redémarrage requis par Debian » et le code de la dernière maintenance.
 
 En `--apply`, l'agent de chaque VPS tire le code (`git pull --ff-only`) APRÈS avoir arrêté le
-balayage — jamais sous un run. Un VPS où le script n'est pas encore déployé est « reporté » (127).
+balayage, SOUS le verrou du navigateur et après un contrôle relu — jamais sous un run (un run
+démarré entre-temps → « pull NON fait »). Un VPS où le script n'est pas encore déployé est
+« reporté » (127) ; un correctif de l'agent lui-même ne vaut qu'à partir du passage SUIVANT (le
+passage qui le tire tourne encore avec l'ancien agent).
 **Lancer le pilote dans tmux** : il peut durer plusieurs heures.
 
 ## Règles
@@ -90,8 +120,9 @@ balayage — jamais sous un run. Un VPS où le script n'est pas encore déployé
   processus de `hermes`.
 * **Seuls les balayages `data_entry_auto` lancés par l'admin sont arrêtés et relancés.** Un
   balayage simple repart au marchand qui était en cours (depuis sa page la plus haute) avec ceux
-  qui suivent ; une boucle repart entière, en boucle. Une saisie par page, un tri, un run lancé au
-  terminal : maintenance reportée.
+  qui suivent ; une boucle repart entière, en boucle, sur ses cibles de lancement — ses ajouts de
+  console encore dus sont remis en file, une passe chacun. Une saisie par page, un tri, un run
+  lancé au terminal : maintenance reportée.
 * **La relance est une écriture** : elle n'a lieu que sur preuve (services actifs, admin qui
   répond, `01_check_invariants.py` vert et faisant foi, tableau de bord wp-admin prouvé). Une
   session AKS perdue au redémarrage = transfert de cookies par Romain, jamais par le code.

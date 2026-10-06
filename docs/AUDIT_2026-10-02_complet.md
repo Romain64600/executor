@@ -44,7 +44,9 @@ d'hygiène — et **neuf décisions à prendre par Romain**.
    écrire dans `eneba.py`), refus, ou lecture de la page Eneba (elle répond 200) ? 104 créations
    déjà faites en GLOBAL implicite, aucune erreur prouvée.
 4. **Marchand ajouté en cours de boucle** (C4) : une passe (comportement actuel de la boucle) ou
-   permanent (comportement de la relance de maintenance) ? Les deux doivent s'aligner.
+   permanent (comportement de la relance de maintenance) ? Les deux doivent s'aligner. — *06/10 :
+   la relance de maintenance suit désormais la boucle (une passe : ajouts dus remis en file,
+   ré-audit Codex) ; reste à trancher si la boucle elle-même doit les garder.*
 5. **Garde bloqué / dix échecs** (C5) : la passe continue sur les autres marchands (somme de deux
    décisions revues) — garder, ou arrêter la passe tout de suite ?
 6. **Les adresses IP des connexions ssh root** (G1) : sont-elles toutes les tiennes ? Si une seule

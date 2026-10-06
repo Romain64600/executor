@@ -29,6 +29,10 @@ def _charger(nom, fichier):
 
 M = _charger("vps_maintenance", "18_vps_maintenance.py")
 P = _charger("restart_vps", "19_restart_vps.py")
+# Le navigateur est LIBRE pour tous les tests, sauf ceux qui posent un détenteur (ré-audit du
+# 06/10) : `safe_to_stop` lit le vrai `state/browser.lock` sinon.
+LIBRE = {"held": False, "label": None, "pid": None, "since": None}
+M.browser_holder = lambda: dict(LIBRE)
 
 
 def _cp(code=0, out="", err=""):
@@ -183,14 +187,25 @@ class LePlan(unittest.TestCase):
         self.assertIn("hermes", hermes["reboot_note"])
 
 
-def _recap_dir(tmp, current=None, loop_state=None, targets=None):
+def _stamp(age_s=0):
+    """Un horodatage du dépôt vieux de `age_s` secondes."""
+    return M.time.strftime("%Y-%m-%dT%H:%M:%SZ", M.time.gmtime(M.time.time() - age_s))
+
+
+def _recap_dir(tmp, current=None, loop_state=None, targets=None, age_s=0, loop_age_s=0):
+    """Un run avec un recap FRAIS (horodatages d'il y a `age_s` secondes — ré-audit du 06/10 : sans
+    horodatage frais, rien n'est un moment sûr)."""
     run = pathlib.Path(tmp) / "20260930-100000-auto"
     run.mkdir(exist_ok=True)
+    if isinstance(current, dict) and "stage_at" not in current:
+        current = dict(current, stage_at=_stamp(age_s))
     if targets is None:
         targets = [{"merchant": "CJS-CDKeys", "store_id": "30", "recap": {"current": current}}]
-    (run / "recap.json").write_text(json.dumps({"targets": targets}), encoding="utf-8")
+    (run / "recap.json").write_text(json.dumps({"targets": targets, "updated_at": _stamp(age_s)}),
+                                    encoding="utf-8")
     if loop_state is not None:
-        (run / "loop.json").write_text(json.dumps({"loop": True, "state": loop_state}), encoding="utf-8")
+        (run / "loop.json").write_text(json.dumps({"loop": True, "state": loop_state,
+                                                   "updated_at": _stamp(loop_age_s)}), encoding="utf-8")
     return run
 
 
@@ -443,20 +458,26 @@ class ReAuditDu0110(unittest.TestCase):
             self.assertEqual(M.reboot_under_lock(args, ctx, None, sleep=lambda s: None), M.EXIT_REBOOT)
             rb.assert_called_once()
 
-    def test_p2_une_boucle_garde_ses_ajouts(self):
+    def test_p2_une_boucle_ne_perd_pas_ses_ajouts(self):
+        # 01/10 : « une boucle relancée garde ses ajouts ». Depuis le ré-audit du 06/10 ils ne
+        # sont plus des CIBLES de la relance (permanents) : ils sont dus UNE fois, remis en file.
         with tempfile.TemporaryDirectory() as tmp:
             launch = pathlib.Path(tmp) / "20261001-100000-auto"
             launch.mkdir()
             passe = pathlib.Path(tmp) / "20261001-100000-auto-pass2"
             passe.mkdir()
-            (launch / "loop.json").write_text(json.dumps({"loop": True, "current_run_id": passe.name}))
+            (launch / "loop.json").write_text(json.dumps({"loop": True, "current_run_id": passe.name,
+                                                          "passes": [{"run_id": passe.name}]}))
             (passe / "recap.json").write_text(json.dumps({
                 "planned": [{"merchant": "GOG", "store_id": "34"}, {"merchant": "K4G", "store_id": "92"}],
+                "targets_added": [{"merchant": "K4G", "store_id": "92"}],
                 "targets_refused": [{"merchant": "Difmark", "store_id": "167"}]}))
             (launch / "targets_queue.json").write_text(json.dumps([
-                {"merchant": "Wyrel", "store_id": "162"}, {"merchant": "Difmark", "store_id": "167"}]))
-            out = M.loop_targets([{"merchant": "GOG", "store_id": "34"}], launch)
-        self.assertEqual([t["merchant"] for t in out], ["GOG", "K4G", "Wyrel"])
+                {"merchant": "K4G", "store_id": "92"}, {"merchant": "Wyrel", "store_id": "162"},
+                {"merchant": "Difmark", "store_id": "167"}]))
+            out = M.loop_additions_due([{"merchant": "GOG", "store_id": "34"}], launch)
+        self.assertEqual([t["merchant"] for t in out], ["K4G", "Wyrel"])
+        self.assertFalse(hasattr(M, "loop_targets"), "les ajouts ne sont plus des cibles de relance")
 
     def test_p2_processus_illisibles_pas_de_redemarrage(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -488,6 +509,336 @@ class ReAuditDu0110(unittest.TestCase):
                         return _cp(actif, "")
                     with self.subTest(etat=etat, actif=actif):
                         self.assertEqual(M.dns_survives_reboot(runner)[0], attendu)
+
+
+class ReAuditDu0610(unittest.TestCase):
+    """Ré-audit Codex de 2c5cb19 (Romain, 06/10) : quatre défauts de maintenance, chacun épinglé.
+    (Les deux défauts Price check du même audit sont corrigés dans la session du VPS 3.)"""
+
+    # ── P1 : un recap PÉRIMÉ ne donne plus un moment sûr ──────────────────────────────
+    def test_p1_une_etape_sure_perimee_n_est_pas_un_moment_sur(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for current, age, attendu in (
+                    ({"stage": "extract"}, 60, True),
+                    ({"stage": "extract"}, M.STAGE_FRESH_S + 1, False),
+                    ({"stage": "probe"}, M.STAGE_FRESH_S + 1, False),
+                    ({"stage": "pause", "wait_s": 600}, 600 + 60, True),
+                    ({"stage": "pause", "wait_s": 600}, 600 + M.PAUSE_MARGIN_S + 1, False),
+                    ({"stage": "pause"}, M.PAUSE_MARGIN_S + 1, False),
+                    (None, 60, True),                              # entre deux pages, recap frais
+                    (None, M.STAGE_FRESH_S + 1, False)):           # … recap périmé
+                with self.subTest(current=current, age=age):
+                    ok, why = M.safe_to_stop(_recap_dir(tmp, current, age_s=age))
+                    self.assertEqual(ok, attendu, why)
+                    if not attendu:
+                        self.assertIn("périmé", why)
+
+    def test_p1_sans_horodatage_rien_n_est_sur(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = _recap_dir(tmp, {"stage": "extract", "stage_at": "hier"})
+            self.assertFalse(M.safe_to_stop(run)[0])
+            (run / "recap.json").write_text(json.dumps({"targets": [{"merchant": "K4G", "recap": {
+                "current": {"stage": "extract"}}}]}), encoding="utf-8")     # aucun stage_at
+            self.assertFalse(M.safe_to_stop(run)[0])
+            (run / "recap.json").write_text(json.dumps({"targets": []}), encoding="utf-8")
+            ok, why = M.safe_to_stop(run)                             # pas d'updated_at
+            self.assertFalse(ok)
+            self.assertIn("sans horodatage", why)
+
+    def test_p1_la_pause_de_boucle_exige_un_battement_recent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertTrue(M.safe_to_stop(_recap_dir(tmp, {"stage": "submit"}, loop_state="pause",
+                                                      loop_age_s=90))[0])
+            ok, why = M.safe_to_stop(_recap_dir(tmp, {"stage": "submit"}, loop_state="pause",
+                                                loop_age_s=M.LOOP_PAUSE_FRESH_S + 1))
+            self.assertFalse(ok)
+            self.assertIn("loop.json périmé", why)
+
+    def test_p1_le_navigateur_tenu_par_une_saisie_interdit_l_arret_quoi_que_dise_le_recap(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run = _recap_dir(tmp, {"stage": "extract"})           # le recap dit « extract »…
+            for label, attendu in (("05_submit --submit --approved runs/x/approved.json", False),
+                                   ("06_move --plan …", False), ("admin_cookie_login", False),
+                                   ("11_data_entry_by_urls", False),
+                                   ("02_extract Kinguin", True), (None, True)):
+                with self.subTest(label=label):
+                    holder = {"held": label is not None, "label": label, "pid": 4242, "since": None}
+                    ok, why = M.safe_to_stop(run, holder=holder)
+                    self.assertEqual(ok, attendu, why)
+                    if not attendu:
+                        self.assertIn("navigateur tenu", why)
+            # … et un détenteur MORT (pid disparu : `held` False) ne compte pas
+            self.assertTrue(M.safe_to_stop(run, holder={"held": False, "label": "05_submit", "pid": 1,
+                                                        "since": None})[0])
+
+    def test_p1_stop_and_wait_ne_demande_rien_sous_un_navigateur_tenu(self):
+        appels = []
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(M, "browser_holder", return_value={"held": True, "pid": 7,
+                                                                     "label": "05_submit --submit", "since": None}):
+            ok, why = M.stop_and_wait("r", timeout=30, run_dir=_recap_dir(tmp, {"stage": "extract"}),
+                                      admin=lambda p, b=None: appels.append(p) or {"busy": None},
+                                      runner=lambda *a, **k: _cp(0, "0"), sleep=lambda s: None)
+        self.assertFalse(ok)
+        self.assertNotIn("/api/sort/stop", appels)
+        self.assertIn("navigateur tenu", why)
+
+    # ── P1 : le pull sous le verrou du navigateur, après un contrôle relu ──────────────
+    def test_p1_le_pull_se_fait_sous_le_verrou_et_apres_un_controle_relu(self):
+        from src.browser_lock import browser_lock
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(M, "ROOT", pathlib.Path(tmp)):
+            cmds = []
+
+            def runner(cmd, timeout=0):
+                cmds.append(cmd)
+                if cmd[:2] == ["systemctl", "show"]:
+                    return _cp(0, "1234\n")
+                if cmd[:2] == ["pgrep", "-P"]:
+                    return _cp(1, "")
+                return _cp(0, "abc1234 ok\n")
+            # un run démarré entre l'arrêt et le pull → pas de pull
+            out = M.pull_under_lock(runner=runner, admin=lambda p, b=None: {"busy": {"run_id": "nouveau"}})
+            self.assertIn("pull NON fait", out)
+            self.assertIn("nouveau", out)
+            self.assertFalse(any("git" in c for c in cmds))
+            # un run qui tient le navigateur (pas encore déclaré) → pas de pull
+            with browser_lock(pathlib.Path(tmp), label="02_extract Kinguin"):
+                out = M.pull_under_lock(runner=runner, admin=lambda p, b=None: {"busy": None})
+            self.assertIn("navigateur tenu", out)
+            self.assertFalse(any("git" in c for c in cmds))
+            # des enfants sous aks-admin sans run déclaré → pas de pull
+            kids = lambda cmd, timeout=0: _cp(0, "999\n") if cmd[:2] == ["pgrep", "-P"] else runner(cmd)
+            out = M.pull_under_lock(runner=kids, admin=lambda p, b=None: {"busy": None})
+            self.assertIn("1 processus", out)
+            self.assertFalse(any("git" in c for c in cmds))
+            # rien ne tourne → pull, et le verrou est tenu PENDANT le pull
+            tenu = {}
+
+            def pendant(cmd, timeout=0):
+                if cmd[:1] == ["git"]:
+                    from src.browser_lock import lock_status
+                    tenu["pendant"] = lock_status(pathlib.Path(tmp))
+                return runner(cmd, timeout)
+            out = M.pull_under_lock(runner=pendant, admin=lambda p, b=None: {"busy": None})
+            self.assertTrue(out.startswith("à jour"), out)
+            self.assertTrue(tenu["pendant"]["held"])
+            self.assertIn("maintenance", tenu["pendant"]["label"])
+
+    def test_p1_cmd_run_tire_le_code_par_pull_under_lock(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(M, "STATE_DIR", pathlib.Path(tmp) / "state"), \
+                mock.patch.object(M, "ROOT", pathlib.Path(tmp)), \
+                mock.patch.object(M, "status", return_value={"host": "h", "boot_id": "b"}), \
+                mock.patch.object(M, "plan_for", return_value={"blocked": None, "stop": None, "reboot": False}), \
+                mock.patch.object(M, "pull_under_lock", return_value="pull NON fait : test") as pull, \
+                mock.patch.object(M, "git_pull") as brut, \
+                mock.patch.object(M, "apt_upgrade", return_value=(True, "à jour")), \
+                mock.patch.object(M, "reboot_decision", return_value=(False, "pas requis")), \
+                mock.patch.object(M, "finish", side_effect=lambda r, context: (0, dict(context, exit=0))), \
+                mock.patch.object(M.signal, "signal"):
+            M.cmd_run(M.argparse.Namespace(dry_run=False, reboot="auto", allow_hermes=False,
+                                           stop_timeout=60, pull=True))
+        pull.assert_called_once()
+        brut.assert_not_called()
+
+    # ── P2 : une erreur de pgrep n'est jamais « zéro processus » ──────────────────────
+    def test_p2_pgrep_en_erreur_est_illisible_pas_zero(self):
+        self.assertEqual(M.pgrep_count(_cp(0, "12\n34\n")), 2)
+        self.assertEqual(M.pgrep_count(_cp(1, "")), 0)
+        for code in (2, 3, 124):
+            self.assertIsNone(M.pgrep_count(_cp(code, "", "pgrep: erreur")), code)
+
+        def runner(cmd, timeout=0):
+            if cmd[:2] == ["systemctl", "show"]:
+                return _cp(0, "1234\n")
+            return _cp(2, "", "pgrep: invalid option")
+        self.assertIsNone(M.admin_children(runner))
+        plan = M.plan_for({"admin": "ok", "sudo": True, "busy": None, "admin_children": None,
+                           "reboot_required": False, "hermes_processes": 0}, "auto")
+        self.assertIn("illisibles", plan["blocked"] or "")
+        # … même avec un run déclaré : on ne saurait pas prouver l'arrêt
+        plan = M.plan_for({"admin": "ok", "sudo": True, "admin_children": None, "reboot_required": False,
+                           "hermes_processes": 0, "busy": {"run_id": "r", "kind": "data_entry_auto",
+                                                           "source": "admin"}}, "auto")
+        self.assertIn("illisibles", plan["blocked"] or "")
+        self.assertIsNone(plan["stop"])
+
+    def test_p2_hermes_illisible_interdit_le_redemarrage_mais_un_compte_absent_vaut_zero(self):
+        def absent(cmd, timeout=0):
+            if cmd[:1] == ["getent"]:
+                return _cp(2, "")
+            raise AssertionError("pgrep ne doit pas être appelé pour un compte absent")
+        self.assertEqual(M.hermes_processes(absent), 0)
+        self.assertIsNone(M.hermes_processes(lambda cmd, timeout=0: _cp(0, "hermes:x:1001") if cmd[:1] == ["getent"]
+                                             else _cp(2, "", "pgrep: erreur")))
+        self.assertEqual(M.hermes_processes(lambda cmd, timeout=0: _cp(0, "hermes:x:1001") if cmd[:1] == ["getent"]
+                                            else _cp(0, "5\n6\n7\n")), 3)
+        with tempfile.TemporaryDirectory() as tmp:
+            requis = pathlib.Path(tmp) / "reboot-required"
+            requis.write_text("x")
+
+            def runner(cmd, timeout=0):
+                if cmd[:2] == ["systemctl", "is-enabled"]:
+                    return _cp(0, "enabled\n")
+                if cmd[:2] == ["systemctl", "show"]:
+                    return _cp(0, "1234\n")
+                if cmd[:2] == ["pgrep", "-P"]:
+                    return _cp(1, "")
+                if cmd[:1] == ["getent"]:
+                    return _cp(0, "hermes:x:1001")
+                return _cp(2, "", "pgrep: erreur")                  # pgrep -u hermes en erreur
+            with mock.patch.object(M, "REBOOT_REQUIRED", requis):
+                ok, why = M.reboot_decision("auto", False, runner=runner,
+                                            admin=lambda p, b=None: {"busy": None})
+        self.assertFalse(ok)
+        self.assertIn("hermes illisibles", why)
+        plan = M.plan_for({"admin": "ok", "sudo": True, "busy": None, "admin_children": 0,
+                           "reboot_required": True, "hermes_processes": None}, "auto")
+        self.assertFalse(plan["reboot"])
+        self.assertIn("illisibles", plan["reboot_note"])
+
+    def test_p2_l_arret_non_abouti_dit_ce_qu_il_a_vu(self):
+        def runner(cmd, timeout=0):
+            if cmd[:2] == ["systemctl", "show"]:
+                return _cp(0, "1234\n")
+            return _cp(3, "", "pgrep: fatal")
+        with tempfile.TemporaryDirectory() as tmp:
+            ok, why = M.stop_and_wait("r", timeout=20, run_dir=_recap_dir(tmp, {"stage": "extract"}),
+                                      admin=lambda p, b=None: {"busy": None} if p != "/api/sort/stop" else {},
+                                      runner=runner, sleep=lambda s: None)
+        self.assertFalse(ok)
+        self.assertIn("illisibles", why)
+
+    # ── P2 : un ajout temporaire reste temporaire ─────────────────────────────────────
+    def _boucle(self, tmp):
+        launch = pathlib.Path(tmp) / "runs" / "20261006-080000-auto"
+        p1 = launch.parent / (launch.name + "-pass1")
+        p2 = launch.parent / (launch.name + "-pass2")
+        for d in (launch, p1, p2):
+            d.mkdir(parents=True, exist_ok=True)
+        (launch / "loop.json").write_text(json.dumps({
+            "loop": True, "state": "running", "current_run_id": p2.name,
+            "passes": [{"run_id": p1.name}, {"run_id": p2.name}]}), encoding="utf-8")
+        # passe 1 (finie) a pris Wyrel ; passe 2 (interrompue) a pris K4G (jamais démarré), Eneba
+        # (balayé jusqu'au bout) et Gamivo (en cours à l'arrêt) ; Difmark refusé ; GOG = lancement
+        (p1 / "recap.json").write_text(json.dumps({
+            "targets_added": [{"merchant": "Wyrel", "store_id": "162"}],
+            "targets": [{"merchant": "GOG", "store_id": "34", "finished_at": "x", "recap": {"halted": None}},
+                        {"merchant": "Wyrel", "store_id": "162", "finished_at": "x", "recap": {"halted": None}}]}),
+            encoding="utf-8")
+        (p2 / "recap.json").write_text(json.dumps({
+            "targets_added": [{"merchant": "K4G", "store_id": "92"}, {"merchant": "Eneba", "store_id": "19"},
+                              {"merchant": "Gamivo", "store_id": "51"}],
+            "targets_refused": [{"merchant": "Difmark", "store_id": "167"}],
+            "targets": [{"merchant": "GOG", "store_id": "34", "finished_at": "x", "recap": {"halted": None}},
+                        {"merchant": "Eneba", "store_id": "19", "finished_at": "x", "recap": {"halted": None}},
+                        {"merchant": "Gamivo", "store_id": "51", "finished_at": "x",
+                         "recap": {"halted": "operator_stop"}}]}), encoding="utf-8")
+        (launch / "targets_queue.json").write_text(json.dumps([
+            {"merchant": "Wyrel", "store_id": "162"}, {"merchant": "K4G", "store_id": "92"},
+            {"merchant": "Eneba", "store_id": "19"}, {"merchant": "Gamivo", "store_id": "51"},
+            {"merchant": "Difmark", "store_id": "167"}, {"merchant": "GOG", "store_id": "34"},
+            {"merchant": "Loaded", "store_id": "77"}]), encoding="utf-8")
+        return launch
+
+    def test_p2_les_ajouts_dus_une_passe_ni_plus_ni_moins(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            launch = self._boucle(tmp)
+            out = M.loop_additions_due([{"merchant": "GOG", "store_id": "34"}], launch)
+        # dus : K4G (pris, jamais démarré), Gamivo (interrompu), Loaded (jamais pris) ;
+        # pas Wyrel (passe finie), pas Eneba (balayé), pas Difmark (refusé), pas GOG (lancement)
+        self.assertEqual([t["merchant"] for t in out], ["K4G", "Gamivo", "Loaded"])
+
+    def test_p2_la_boucle_repart_sur_le_lancement_et_remet_les_ajouts_en_file(self):
+        vu = {}
+        with tempfile.TemporaryDirectory() as tmp:
+            racine = pathlib.Path(tmp)
+            launch = self._boucle(tmp)
+
+            def fin(relaunch, context):
+                vu["relaunch"], vu["context"] = relaunch, context
+                return 0, {"exit": 0}
+            with mock.patch.object(M, "STATE_DIR", racine / "state"), \
+                    mock.patch.object(M, "ROOT", racine), \
+                    mock.patch.object(M, "status", return_value={"host": "h", "boot_id": "b"}), \
+                    mock.patch.object(M, "plan_for", return_value={"blocked": None, "stop": launch.name,
+                                                                   "reboot": False}), \
+                    mock.patch.object(M, "relaunch_spec", return_value={
+                        "targets": [{"merchant": "GOG", "store_id": "34"}], "loop": True}), \
+                    mock.patch.object(M, "stop_and_wait", return_value=(True, "arrêté")), \
+                    mock.patch.object(M, "apt_upgrade", return_value=(True, "à jour")), \
+                    mock.patch.object(M, "reboot_decision", return_value=(False, "pas requis")), \
+                    mock.patch.object(M, "finish", side_effect=fin), \
+                    mock.patch.object(M.signal, "signal"):
+                M.cmd_run(M.argparse.Namespace(dry_run=False, reboot="auto", allow_hermes=False,
+                                               stop_timeout=60, pull=False))
+        self.assertEqual([t["merchant"] for t in vu["relaunch"]["targets"]], ["GOG"],
+                         "la boucle repart sur ses cibles de lancement, sans les ajouts")
+        self.assertEqual([t["merchant"] for t in vu["context"]["additions_due"]], ["K4G", "Gamivo", "Loaded"])
+
+        # finish : après la relance, chaque ajout dû passe par la route de la console, GO + run_id
+        appels = []
+
+        def admin(path, body=None):
+            appels.append((path, body))
+            if path == "/api/sort/runs":
+                return {"busy": None}
+            if path == "/api/data-entry/auto":
+                return {"started": True, "run_id": "nouveau"}
+            if path == "/api/data-entry/auto/add-target":
+                if body["merchant"] == "Loaded":
+                    raise RuntimeError("admin → HTTP 403: merchant_not_allowed")
+                return {"queued": True}
+            return {}
+        with mock.patch.object(M, "wait_services", return_value=(True, "actifs")), \
+                mock.patch.object(M, "check_invariants", return_value=(True, "verts")):
+            code, result = M.finish({"targets": [{"merchant": "GOG", "store_id": "34"}], "loop": True},
+                                    context={"additions_due": vu["context"]["additions_due"]},
+                                    admin=admin, session_check=lambda: (True, "connectée"),
+                                    sleep=lambda s: None)
+        self.assertEqual(code, 0)
+        ajouts = [(p, b) for p, b in appels if p == "/api/data-entry/auto/add-target"]
+        self.assertEqual([b["merchant"] for _, b in ajouts], ["K4G", "Gamivo", "Loaded"])
+        self.assertTrue(all(b["confirm"] == "GO" and b["run_id"] == "nouveau" for _, b in ajouts))
+        self.assertEqual([a["queued"] for a in result["additions"]], [True, True, False])
+        self.assertIn("403", result["additions"][2]["reason"])
+        # l'ordre : la relance D'ABORD, les ajouts ensuite (la route exige un sweep en cours)
+        self.assertLess([p for p, _ in appels].index("/api/data-entry/auto"),
+                        [p for p, _ in appels].index("/api/data-entry/auto/add-target"))
+
+    def test_p2_sans_relance_aucun_ajout_n_est_remis(self):
+        appels = []
+
+        def admin(path, body=None):
+            appels.append(path)
+            return {"busy": {"run_id": "deja"}} if path == "/api/sort/runs" else {}
+        with mock.patch.object(M, "wait_services", return_value=(True, "actifs")), \
+                mock.patch.object(M, "check_invariants", return_value=(True, "verts")):
+            code, result = M.finish({"targets": [], "loop": True},
+                                    context={"additions_due": [{"merchant": "K4G", "store_id": "92"}]},
+                                    admin=admin, session_check=lambda: (True, "connectée"),
+                                    sleep=lambda s: None)
+        self.assertNotIn("/api/data-entry/auto/add-target", appels)
+        self.assertNotIn("additions", result)
+        # … ni quand l'admin REFUSE la relance (la route exige un sweep en cours)
+        appels.clear()
+
+        def refuse(path, body=None):
+            appels.append(path)
+            if path == "/api/sort/runs":
+                return {"busy": None}
+            if path == "/api/data-entry/auto":
+                return {"started": False, "reason": "whitelist"}
+            return {"queued": True}
+        with mock.patch.object(M, "wait_services", return_value=(True, "actifs")), \
+                mock.patch.object(M, "check_invariants", return_value=(True, "verts")):
+            code, result = M.finish({"targets": [], "loop": True},
+                                    context={"additions_due": [{"merchant": "K4G", "store_id": "92"}]},
+                                    admin=refuse, session_check=lambda: (True, "connectée"),
+                                    sleep=lambda s: None)
+        self.assertEqual(code, M.EXIT_RELAUNCH)
+        self.assertNotIn("/api/data-entry/auto/add-target", appels)
+        self.assertNotIn("additions", result)
 
 
 class UnePanneApresLArretNEstJamaisMuette(unittest.TestCase):

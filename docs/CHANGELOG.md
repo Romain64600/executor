@@ -3,6 +3,22 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-10-06 — Maintenance des VPS : ré-audit Codex de `2c5cb19` (4 défauts de maintenance) corrigé
+
+- **Ré-audit Codex de `2c5cb19` (Romain, 06/10) — les 4 défauts de maintenance corrigés**
+  (`scripts/18`, `tests/test_vps_maintenance.py` classe `ReAuditDu0610`, chaque correctif rougi par
+  mutation ; les 2 défauts Price check du même audit sont traités dans la session du VPS 3) :
+  (P1) un **recap périmé** n'est plus un moment sûr — le verrou du navigateur tenu par autre chose
+  qu'une extraction interdit l'arrêt quoi que dise le recap, et les horodatages (`stage_at`,
+  `updated_at`, `loop.json`) sont bornés (15 min, `wait_s` + 5 min, 5 min en pause de boucle) ;
+  (P1) le **`git pull` sous le verrou du navigateur** après un contrôle relu (un run démarré entre
+  l'arrêt et le pull → « pull NON fait ») ; (P2) une **erreur de `pgrep`** est « illisible »
+  (maintenance reportée, redémarrage refusé), jamais « zéro processus » — `getent` tranche le
+  compte `hermes` absent ; (P2) un **ajout de la console à une boucle reste un ajout d'UNE passe** :
+  la boucle repart sur ses cibles de lancement et les ajouts encore dus sont remis en file après la
+  relance (`add-target`, une fois chacun) — « une passe ou permanent » pour la boucle reste la
+  décision 4 de l'audit du 02/10. Détail : `ops/MAINTENANCE_VPS.md`.
+
 ## 2026-10-02 — Maintenance des VPS : ré-audit de Romain (5 défauts) corrigé ; vue d'ensemble : VPS 3 ajouté
 
 - **Ré-audit de `2272e92` par Romain (01/10), 5 défauts confirmés, corrigés** (`scripts/18`, `19`,

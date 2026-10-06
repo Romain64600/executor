@@ -33,6 +33,14 @@ la v2 corrige, et donc ce que ce script garantit :
   la reconnexion reste le transfert de cookies par Romain, jamais déclenché par le code.
 * **Jamais ``tmux kill-server``** : ni utile (le serveur tmux garde son binaire jusqu'à son
   prochain démarrage) ni sûr (il porte des sessions de travail, dont celle de Claude).
+* **Ré-audit Codex du 06/10 (sur ``2c5cb19``), quatre défauts de maintenance corrigés :** un recap
+  PÉRIMÉ ne donne plus un moment sûr (horodatages bornés — ``STAGE_FRESH_S`` —, et le verrou du
+  navigateur tenu par autre chose qu'une extraction interdit l'arrêt, quoi que dise le recap) ;
+  le ``git pull`` se fait SOUS le verrou du navigateur après un contrôle relu (un run démarré entre
+  l'arrêt et le pull → pull NON fait) ; une erreur de ``pgrep`` est « illisible » (maintenance
+  reportée, redémarrage refusé), jamais « zéro processus » ; les marchands ajoutés à une boucle
+  depuis la console restent des ajouts d'UNE passe : la boucle repart sur ses cibles de lancement
+  et les ajouts encore dus sont remis en file par la route de la console (``add-target``).
 
 Sous-commandes (sorties JSON, une ligne) ::
 
@@ -64,6 +72,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -97,6 +106,19 @@ EXIT_REBOOT = 42
 # est vu par 10 avant tout lancement de 05 (`should_stop` avant la saisie).
 SAFE_STAGES = frozenset({"probe", "extract", "pause"})
 WRITE_STAGES = frozenset({"submit", "move"})
+# Ré-audit du 06/10 (P1) : le recap peut être PÉRIMÉ (une écriture de `recap.json` qui échoue
+# est avalée par le balayage, un processus figé ne l'écrit plus) et dire « extract » pendant une
+# saisie. Deux gardes indépendantes, lues sans rien toucher : (1) le VERROU DU NAVIGATEUR — une
+# saisie (05) ou un déplacement (06) le tient tant qu'il vit ; tenu par autre chose qu'une
+# extraction (02), ce n'est jamais un moment sûr, quoi que dise le recap ; (2) la FRAÎCHEUR des
+# horodatages — `stage_at` d'une étape sûre, `updated_at` du recap entre deux pages,
+# `updated_at` de `loop.json` en pause (battement toutes les ~60 s). Au-delà de la borne, ou
+# sans horodatage, le recap est tenu pour périmé : pas d'arrêt, on réessaie 10 s plus tard (une
+# borne dépassée à tort ne coûte qu'un délai — jamais une saisie coupée).
+STAGE_FRESH_S = 15 * 60          # probe / extract / entre deux pages / avant le 1er marchand
+PAUSE_MARGIN_S = 5 * 60          # pause de reprise : stage_at + wait_s + cette marge
+LOOP_PAUSE_FRESH_S = 5 * 60      # loop.json en pause : battement de cœur ~60 s
+EXTRACT_LABEL = "02_extract"     # le seul détenteur du navigateur compatible avec un moment sûr
 
 # La mise à jour : jamais d'invite, jamais de service redémarré par needrestart, les fichiers de
 # config locaux gardés, le verrou d'apt attendu (unattended-upgrades).
@@ -251,23 +273,77 @@ def live_recap(run_dir: Path) -> dict | None:
     return rec if isinstance(rec, dict) else None
 
 
-def safe_to_stop(run_dir: Path) -> tuple[bool, str]:
-    """Peut-on demander l'arrêt MAINTENANT sans risquer une écriture coupée ? Illisible = non."""
+def parse_stamp(value: Any) -> float | None:
+    """Un horodatage du dépôt (« 2026-10-06T10:00:00Z ») en secondes epoch ; None s'il est absent
+    ou illisible (et un horodatage illisible n'est jamais « frais »)."""
+
+    try:
+        return datetime.strptime(str(value), "%Y-%m-%dT%H:%M:%SZ").replace(
+            tzinfo=timezone.utc).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def _age_text(age: float | None) -> str:
+    return "sans horodatage" if age is None else f"depuis {int(age) // 60} min {int(age) % 60} s"
+
+
+def browser_holder() -> dict[str, Any]:
+    """Qui tient le navigateur, lu SANS toucher au verrou (`lock_status` : étiquette + pid vivant)."""
+
+    from src.browser_lock import lock_status
+    return lock_status(ROOT)
+
+
+def safe_to_stop(run_dir: Path, *, now: float | None = None,
+                 holder: dict[str, Any] | None = None) -> tuple[bool, str]:
+    """Peut-on demander l'arrêt MAINTENANT sans risquer une écriture coupée ? Illisible = non,
+    périmé = non (ré-audit du 06/10, P1 : voir STAGE_FRESH_S), navigateur tenu par une autre
+    chose qu'une extraction = non."""
+
+    now = time.time() if now is None else now
+    held = browser_holder() if holder is None else holder
+    if held.get("held") and not str(held.get("label") or "").startswith(EXTRACT_LABEL):
+        return False, (f"navigateur tenu par {held.get('label') or '?'} (pid {held.get('pid')}) "
+                       "— une écriture peut être en cours, quoi que dise le recap")
+
+    def fresh(stamp: Any, bound: float) -> tuple[bool, float | None]:
+        ts = parse_stamp(stamp)
+        age = None if ts is None else now - ts
+        return (age is not None and age <= bound), age
 
     loop = read_json(run_dir / "loop.json")
     if isinstance(loop, dict) and loop.get("state") == "pause":
+        ok, age = fresh(loop.get("updated_at"), LOOP_PAUSE_FRESH_S)
+        if not ok:
+            return False, f"loop.json périmé (pause sans battement, {_age_text(age)})"
         return True, "boucle en pause"
     rec = live_recap(run_dir)
     if rec is None:
         return False, "recap illisible"
+    rec_ok, rec_age = fresh(rec.get("updated_at"), STAGE_FRESH_S)
     targets = rec.get("targets") or []
     if not targets:
+        if not rec_ok:
+            return False, f"recap périmé (aucun marchand démarré, dernière écriture {_age_text(rec_age)})"
         return True, "aucun marchand démarré"
     current = (targets[-1].get("recap") or {}).get("current") if isinstance(targets[-1], dict) else None
     if current is None:
+        if not rec_ok:
+            return False, f"recap périmé (entre deux pages, dernière écriture {_age_text(rec_age)})"
         return True, "entre deux pages"
     stage = str(current.get("stage") or "")
     if stage in SAFE_STAGES:
+        bound = STAGE_FRESH_S
+        if stage == "pause":
+            try:
+                bound = float(current.get("wait_s") or 0) + PAUSE_MARGIN_S
+            except (TypeError, ValueError):
+                bound = PAUSE_MARGIN_S
+        ok, age = fresh(current.get("stage_at"), bound)
+        if not ok:
+            return False, (f"recap périmé (étape {stage} {_age_text(age)}, borne {int(bound)} s) "
+                           "— l'étape réelle est inconnue")
         return True, f"étape {stage}"
     return False, f"écriture en cours ({stage or '?'}, page {current.get('page')})"
 
@@ -340,6 +416,18 @@ def dns_survives_reboot(runner: Runner = run_cmd) -> tuple[bool, str]:
     return True, f"resolv.conf fixe ({target})"
 
 
+def pgrep_count(res: subprocess.CompletedProcess) -> int | None:
+    """Ce que dit un `pgrep` : 0 = des processus (comptés), 1 = aucun, tout autre code (2 usage,
+    3 fatal, 124 délai) = ILLISIBLE → None, jamais zéro (ré-audit du 06/10, P2 : une erreur de
+    pgrep passait pour « aucun processus », donc pour un feu vert)."""
+
+    if res.returncode == 0:
+        return len([x for x in (res.stdout or "").split() if x.strip()])
+    if res.returncode == 1:
+        return 0
+    return None
+
+
 def admin_children(runner: Runner = run_cmd) -> int | None:
     """Le nombre de processus enfants du service aks-admin (None si illisible)."""
 
@@ -347,8 +435,20 @@ def admin_children(runner: Runner = run_cmd) -> int | None:
     main = (pid.stdout or "").strip()
     if pid.returncode != 0 or not main.isdigit() or main == "0":
         return None
-    kids = runner(["pgrep", "-P", main], timeout=20)
-    return len([x for x in (kids.stdout or "").split() if x.strip()])
+    return pgrep_count(runner(["pgrep", "-P", main], timeout=20))
+
+
+def hermes_processes(runner: Runner = run_cmd) -> int | None:
+    """Les processus du compte hermes (price check, VPS de secours) : 0 quand le compte n'existe
+    pas sur cette machine (A, B — `pgrep -u` y rend 2 « invalid user name », qui n'est PAS un
+    zéro), None si illisible."""
+
+    user = runner(["getent", "passwd", "hermes"], timeout=20)
+    if user.returncode == 2:
+        return 0                              # compte absent : aucun processus possible
+    if user.returncode != 0:
+        return None
+    return pgrep_count(runner(["pgrep", "-u", "hermes"], timeout=20))
 
 
 # ── l'état (lecture seule) ────────────────────────────────────────────────────────────
@@ -371,8 +471,7 @@ def status(runner: Runner = run_cmd, admin: Callable[..., dict] = admin_request)
     up = runner(["apt", "list", "--upgradable"], timeout=120)
     out["upgradable"] = len([ln for ln in (up.stdout or "").splitlines() if "/" in ln])
     out["sudo"] = runner(["sudo", "-n", "true"], timeout=20).returncode == 0
-    hermes = runner(["pgrep", "-u", "hermes"], timeout=20)
-    out["hermes_processes"] = len((hermes.stdout or "").split()) if hermes.returncode == 0 else 0
+    out["hermes_processes"] = hermes_processes(runner)
     out["dns_boot_ok"], out["dns_boot"] = dns_survives_reboot(runner)
     out["pending"] = (STATE_DIR / PENDING).exists()
     out["last_result"] = read_json(STATE_DIR / LAST)
@@ -397,6 +496,10 @@ def plan_for(st: dict[str, Any], reboot_policy: str) -> dict[str, Any]:
         plan["blocked"] = ("Chromium n'est pas bloqué en version (apt-mark hold) — la mise à jour "
                            "le changerait sous le navigateur de saisie ; maintenance reportée")
         return plan
+    if st.get("admin_children") is None:
+        plan["blocked"] = ("processus d'aks-admin illisibles (systemctl / pgrep en erreur) — on ne "
+                           "saurait ni arrêter ni prouver l'arrêt ; maintenance reportée")
+        return plan
     if isinstance(busy, dict) and busy.get("run_id"):
         if busy.get("kind") != "data_entry_auto" or busy.get("source", "admin") != "admin":
             plan["blocked"] = (f"run {busy.get('kind')} ({busy.get('source', 'admin')}) "
@@ -416,6 +519,9 @@ def plan_for(st: dict[str, Any], reboot_policy: str) -> dict[str, Any]:
         if reboot_policy != "auto":
             plan["reboot"] = False
             plan["reboot_note"] = "redémarrage requis par Debian, NON fait (politique « never »)"
+        elif st.get("hermes_processes") is None:
+            plan["reboot_note"] = ("redémarrage requis mais les processus du compte hermes sont "
+                                   "illisibles — NON fait")
         elif st.get("hermes_processes"):
             plan["reboot_note"] = ("redémarrage requis mais le compte hermes (price check) a des "
                                    "processus — NON fait (--allow-hermes pour forcer)")
@@ -448,6 +554,7 @@ def stop_and_wait(run_id: str, *, timeout: int, runner: Runner = run_cmd,
         note = (f" — ATTENTION : une {cur.get('stage')} a démarré entre la lecture et l'arrêt "
                 f"(page {cur.get('page')}) ; vérifier ses offres UNKNOWN")
     waited = 0
+    busy, kids = "?", None
     while waited <= timeout:
         try:
             busy = admin("/api/sort/runs").get("busy")
@@ -458,7 +565,9 @@ def stop_and_wait(run_id: str, *, timeout: int, runner: Runner = run_cmd,
             return True, f"arrêté ({run_id}, {why_safe}) en {waited} s{note}"
         sleep(10)
         waited += 10
-    return False, f"toujours actif après {timeout} s — rien d'autre n'est fait"
+    seen = (f"run {busy.get('run_id') if isinstance(busy, dict) else busy}, enfants d'aks-admin "
+            f"{'illisibles' if kids is None else kids}")
+    return False, f"toujours actif après {timeout} s ({seen}) — rien d'autre n'est fait"
 
 
 def apt_upgrade(runner: Runner = run_cmd, log: Path | None = None) -> tuple[bool, str]:
@@ -599,6 +708,9 @@ def finish(relaunch: dict | None, *, context: dict[str, Any], runner: Runner = r
                 result["relaunched"] = ans.get("run_id") if ans.get("started") else f"refusé : {ans}"
                 if not ans.get("started"):
                     code = EXIT_RELAUNCH
+                elif context.get("additions_due"):
+                    result["additions"] = requeue_additions(list(context["additions_due"]),
+                                                            str(ans.get("run_id") or ""), admin=admin)
             except Exception as exc:          # noqa: BLE001
                 result["relaunched"] = f"refusé : {exc}"
                 code = EXIT_RELAUNCH
@@ -607,6 +719,8 @@ def finish(relaunch: dict | None, *, context: dict[str, Any], runner: Runner = r
     notify(f"🔧 Maintenance {result.get('host')} : services {result['services']}, invariants "
            f"{result['invariants']}, session AKS {result['session']}"
            + (f", relance : {result['relaunched']}" if relaunch else ", rien à relancer")
+           + (f", ajouts remis en file : {sum(1 for a in result['additions'] if a.get('queued'))}"
+              f"/{len(result['additions'])}" if result.get("additions") else "")
            + (f", apt : {result.get('apt')}" if result.get('apt') else ""))
     return code, result
 
@@ -636,10 +750,12 @@ def reboot_decision(policy: str, allow_hermes: bool, *, runner: Runner = run_cmd
         return False, "redémarrage requis, NON fait : processus d'aks-admin illisibles"
     if kids:
         return False, f"redémarrage requis, NON fait : {kids} processus sous aks-admin"
-    hermes = runner(["pgrep", "-u", "hermes"], timeout=20)
-    if hermes.returncode == 0 and (hermes.stdout or "").strip() and not allow_hermes:
+    hermes = hermes_processes(runner)
+    if hermes is None:
+        return False, "redémarrage requis, NON fait : processus du compte hermes illisibles"
+    if hermes and not allow_hermes:
         return False, ("redémarrage requis, NON fait : le compte hermes (price check) a des "
-                       "processus (--allow-hermes pour forcer)")
+                       f"processus ({hermes}) (--allow-hermes pour forcer)")
     return True, "redémarrage requis"
 
 
@@ -648,6 +764,33 @@ def git_pull(runner: Runner = run_cmd) -> str:
     head = runner(["git", "-C", str(ROOT), "log", "--oneline", "-1"], timeout=30)
     return ("à jour : " if res.returncode == 0 else f"pull refusé ({res.stderr.strip()[:120]}) : ") + \
         (head.stdout or "").strip()[:80]
+
+
+def pull_under_lock(runner: Runner = run_cmd, admin: Callable[..., dict] = admin_request) -> str:
+    """`git pull` SOUS le verrou du navigateur, après un contrôle RELU sous ce verrou (ré-audit du
+    06/10, P1) : entre l'arrêt du balayage et le pull, la console était libre — un run lancé dans
+    cette fenêtre tournait sur un clone qui changeait sous lui. Désormais un run déjà lancé tient
+    le verrou (ou se déclare à l'admin) → pull NON fait, motif nommé, la maintenance continue ; un
+    run lancé pendant le pull ne peut pas ouvrir le navigateur. Jamais fatal : le code se tire au
+    prochain passage."""
+
+    from src.browser_lock import BrowserBusyError, browser_lock
+    try:
+        with browser_lock(ROOT, label="maintenance: mise à jour du code"):
+            try:
+                busy = admin("/api/sort/runs").get("busy")
+            except Exception as exc:          # noqa: BLE001
+                return f"pull NON fait : admin injoignable ({exc})"
+            if busy:
+                return f"pull NON fait : un run a démarré entre-temps ({busy.get('run_id')})"
+            kids = admin_children(runner)
+            if kids is None:
+                return "pull NON fait : processus d'aks-admin illisibles"
+            if kids:
+                return f"pull NON fait : {kids} processus sous aks-admin"
+            return git_pull(runner)
+    except BrowserBusyError as exc:
+        return f"pull NON fait : navigateur tenu ({exc})"
 
 
 def reboot_under_lock(args: argparse.Namespace, context: dict[str, Any],
@@ -681,34 +824,74 @@ def reboot_under_lock(args: argparse.Namespace, context: dict[str, Any],
         return None
 
 
-def loop_targets(meta_targets: list[dict], run_dir: Path) -> list[dict]:
-    """Les cibles d'une BOUCLE à relancer (ré-audit du 01/10, P2) : celles du lancement, plus
-    les marchands AJOUTÉS depuis la console — déjà pris par la passe courante (``planned`` de
-    son recap) ou encore en file (``targets_queue.json`` du lancement) —, moins ceux que la
-    passe a refusés (``targets_refused``). Ordre : lancement, puis ajouts."""
+def _key(t: Any) -> tuple[str, str]:
+    return (str(t.get("merchant") or "").casefold(), str(t.get("store_id") or "")) if isinstance(t, dict) \
+        else ("", "")
 
+
+def loop_additions_due(meta_targets: list[dict], launch_dir: Path) -> list[dict]:
+    """Les marchands AJOUTÉS depuis la console à une BOUCLE et encore DUS à l'arrêt (ré-audit du
+    06/10, P2). Dans `scripts/10`, un ajout vaut pour UNE passe (`consumed`) ; la version du 01/10
+    le mettait dans les cibles de la relance, donc dans TOUTES les passes à venir — un ajout
+    temporaire rendu permanent. Désormais la boucle repart sur les cibles du lancement, et ces
+    ajouts sont REMIS EN FILE, une fois chacun, par la route de la console (`requeue_additions`).
+    Dû = dans `targets_queue.json` du lancement, pas une cible du lancement, ni refusé par une
+    passe, ni pris par une passe FINIE, ni pris par la passe courante et balayé jusqu'au bout
+    (démarré, fini, sans arrêt opérateur). « Une passe ou permanent » reste la décision 4 de
+    l'audit du 02/10, à Romain : ici on suit ce que la boucle fait aujourd'hui."""
+
+    queue = read_json(launch_dir / "targets_queue.json")
+    entries = [q for q in (queue if isinstance(queue, list) else [])
+               if isinstance(q, dict) and q.get("merchant") and str(q.get("store_id") or "")]
+    if not entries:
+        return []
+    loop = read_json(launch_dir / "loop.json")
+    loop = loop if isinstance(loop, dict) else {}
+    current = str(loop.get("current_run_id") or "")
+    passes = [str(p.get("run_id")) for p in (loop.get("passes") or [])
+              if isinstance(p, dict) and p.get("run_id")]
+    done = {_key(t) for t in meta_targets}
+    refused: set[tuple[str, str]] = set()
+    for pid in passes:
+        rec = read_json(launch_dir.parent / pid / "recap.json")
+        if not isinstance(rec, dict):
+            continue
+        refused |= {_key(t) for t in rec.get("targets_refused") or []}
+        taken = {_key(t) for t in rec.get("targets_added") or []}
+        if pid != current:
+            done |= taken                     # une passe finie a balayé ce qu'elle avait pris
+            continue
+        for t in rec.get("targets") or []:    # la passe interrompue : fini sans arrêt = fait
+            if (_key(t) in taken and isinstance(t, dict) and t.get("finished_at")
+                    and (t.get("recap") or {}).get("halted") != "operator_stop"):
+                done.add(_key(t))
     out: list[dict] = []
     seen: set[tuple[str, str]] = set()
+    for q in entries:
+        k = _key(q)
+        if k in seen or k in refused or k in done:
+            continue
+        seen.add(k)
+        out.append({"merchant": str(q["merchant"]), "store_id": str(q["store_id"])})
+    return out
 
-    def add(m: Any, s: Any) -> None:
-        key = (str(m or "").casefold(), str(s or ""))
-        if key[0] and key[1] and key not in seen:
-            seen.add(key)
-            out.append({"merchant": str(m), "store_id": str(s)})
 
-    for t in meta_targets:
-        add(t.get("merchant"), t.get("store_id"))
-    rec = live_recap(run_dir) or {}
-    refused = {(str(t.get("merchant") or "").casefold(), str(t.get("store_id") or ""))
-               for t in (rec.get("targets_refused") or []) if isinstance(t, dict)}
-    for t in rec.get("planned") or []:
-        if isinstance(t, dict):
-            add(t.get("merchant"), t.get("store_id"))
-    queue = read_json(run_dir / "targets_queue.json")
-    for t in queue if isinstance(queue, list) else []:
-        if isinstance(t, dict):
-            add(t.get("merchant"), t.get("store_id"))
-    return [t for t in out if (t["merchant"].casefold(), t["store_id"]) not in refused]
+def requeue_additions(due: list[dict], run_id: str, *,
+                      admin: Callable[..., dict] = admin_request) -> list[dict]:
+    """Remet chaque ajout dû en file du balayage relancé, par la route de la console (le SEUL
+    écrivain de `targets_queue.json`), avec les mêmes portes qu'un clic : liste blanche, GO, run
+    affiché. Un refus est noté, jamais fatal."""
+
+    out: list[dict] = []
+    for t in due:
+        body = {"merchant": t["merchant"], "store_id": t["store_id"], "confirm": "GO",
+                "run_id": run_id, "by": RELAUNCH_BY}
+        try:
+            ans = admin("/api/data-entry/auto/add-target", body)
+            out.append({**t, "queued": bool(ans.get("queued")), "reason": ans.get("reason")})
+        except Exception as exc:              # noqa: BLE001
+            out.append({**t, "queued": False, "reason": f"refusé : {exc}"[:200]})
+    return out
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -720,6 +903,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         # À blanc : montrer ce qui serait relancé et si l'arrêt serait possible tout de suite.
         run_dir = ROOT / "runs" / str(plan["stop"])
         plan["relaunch"] = relaunch_spec(run_dir)
+        if plan["relaunch"] and plan["relaunch"].get("loop"):
+            plan["additions_due"] = loop_additions_due(plan["relaunch"]["targets"], run_dir)
         plan["safe_to_stop_now"] = safe_to_stop(run_dir)[1]
     if args.dry_run or plan["blocked"]:
         emit({"dry_run": args.dry_run, "status": st, "plan": plan})
@@ -749,11 +934,14 @@ def cmd_run(args: argparse.Namespace) -> int:
             if not relaunch["targets"]:
                 relaunch = None               # il était au bout : rien à relancer
         elif stopped:
-            relaunch["targets"] = loop_targets(relaunch["targets"], ROOT / "runs" / str(plan["stop"]))
+            # La boucle repart sur ses cibles de lancement ; les ajouts encore dus sont remis en
+            # file après la relance (une passe chacun, comme dans la boucle).
+            context["additions_due"] = loop_additions_due(relaunch["targets"],
+                                                          ROOT / "runs" / str(plan["stop"]))
         if relaunch is not None:
             write_json(STATE_DIR / "relaunch.json", relaunch)
         if args.pull:
-            context["code"] = git_pull()
+            context["code"] = pull_under_lock()
         ok_apt, context["apt"] = apt_upgrade(
             log=STATE_DIR / f"apt-{time.strftime('%Y%m%d-%H%M%S')}.log")
         if ok_apt:
