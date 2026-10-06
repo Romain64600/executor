@@ -161,8 +161,11 @@ AKS_SEARCH_CANDIDATE_LIMIT = 3
 CONSOLE_TOKENS = ("XBOX", "PLAYSTATION", "PS4", "PS5", "PSN", "NINTENDO", "SWITCH")
 # Bare short tokens (NA/OTHER/SEA) are deliberately excluded — they collide with
 # ordinary title words (e.g. "Sea of Thieves"). Candidates are human-reviewed.
+# [R70] (Romain, 2026-10-06 : « go pour NA, PC et consoles ») : « NORTH AMERICA » n'est PLUS un
+# verrou — c'est une base vendable (REGION_IDS "na" : STEAM steamna, gift 2571, EA 643, UBISOFT 606,
+# BATTLENET 625 ; consoles dans console_keys). Les verrous composés (« EU NA », « AMERICAS ») restent.
 FORBIDDEN_REGIONS = (
-    "ROW", "ROW ONLY", "AMERICAS", "ASIA", "NORTH AMERICA", "EMEA",
+    "ROW", "ROW ONLY", "AMERICAS", "ASIA", "EMEA",
     "CIS", "TURKEY", "GERMANY", "EASTERN EUROPE", "MIDDLE EAST", "MENA",
     "LATAM", "SOUTH AMERICA", "RU ONLY", "CHINA", "JAPAN", "KOREA", "BRAZIL",
     "INDIA", "ARGENTINA", "RUSSIA", "AUSTRALIA",
@@ -598,11 +601,19 @@ def is_account_offer(name: str, url: str = "", merchant: str = "") -> bool:
 # refusals where the bucket did exist but was never mapped: ROCKSTAR (global / eu / us / uk),
 # EPIC (us / uk), EA (us / uk).
 REGION_IDS = {
-    "STEAM": {"global": "2", "eu": "9", "us": "8", "uk": "71",
+    # [R70] (Romain, 2026-10-06 : « go pour NA, PC et consoles ») : la base ``na`` (Amérique du
+    # Nord) là où le menu du modal a une case — lu dans runs/…-pass27/catalog.json le 06/10 :
+    # « STEAM NA (steamna) », « Steam Gift NA (2571) », « Origin NA (643) », « ubisoft na (606) »,
+    # « battlenet na (625) ». GOG / EPIC / PUBLISHER / ROCKSTAR / MICROSOFT n'ont pas de case NA
+    # (« Publisher NA/SA (531) » couvre les deux Amériques, « microsoft software na/sa (562) » est
+    # la famille logiciels) : une clé NA y reste « no region id », fail-closed. Avant : 1 260
+    # offres distinctes refusées « forbidden region: NORTH AMERICA » en production.
+    "STEAM": {"global": "2", "eu": "9", "us": "8", "uk": "71", "na": "steamna",
               "gift": "25", "gift_eu": "259", "gift_us": "2577", "gift_uk": "2572",
+              "gift_na": "2571",
               "gmg_gift": "386", "gmg_gift_eu": "387"},
     "GOG": {"global": "6", "eu": "62", "us": "63", "uk": "64"},
-    "UBISOFT": {"global": "50", "eu": "54", "us": "55", "uk": "52",
+    "UBISOFT": {"global": "50", "eu": "54", "us": "55", "uk": "52", "na": "606",
                 "gift": "501", "gift_eu": "504", "gift_us": "505",
                 "gmg_gift": "60", "gmg_gift_eu": "58", "gmg_gift_us": "59"},
     "EPIC": {"global": "80", "eu": "80eu", "us": "80us", "uk": "805",
@@ -611,7 +622,7 @@ REGION_IDS = {
     # the EA family — read ONLY by the [R63] route (``english_only_route``), never by a
     # region scan (``_detect_region_parts`` yields global / eu / us / uk only). See
     # EA_ENGLISH_ONLY_LABELS below for the three names each bucket carries.
-    "EA": {"global": "3", "eu": "3eu", "us": "3us", "uk": "3uk",
+    "EA": {"global": "3", "eu": "3eu", "us": "3us", "uk": "3uk", "na": "643",
            "gmg_gift": "35", "gmg_gift_eu": "36", "gmg_gift_us": "37",
            "en_only": "31", "eu_en_only": "3euen"},
     # Rockstar: the PLAIN "Rockstar (15)" option is the GLOBAL bucket — same shape as
@@ -623,7 +634,7 @@ REGION_IDS = {
     # FRANCE 335, Germany 336, Netherlands 337, MIDDLE EAST 338) stay out: they are
     # forbidden regions, not bases.
     "ROCKSTAR": {"global": "15", "eu": "152", "us": "151", "uk": "158", "gmg_gift": "159"},
-    "BATTLENET": {"global": "45", "eu": "4", "us": "41", "uk": "47",
+    "BATTLENET": {"global": "45", "eu": "4", "us": "41", "uk": "47", "na": "625",
                   "gift": "570", "gift_eu": "567", "gift_us": "568",
                   "gmg_gift": "630", "gmg_gift_eu": "631", "gmg_gift_us": "632"},
     # "Publisher (1)" is the GLOBAL bucket (the dropdown has no "Publisher
@@ -761,7 +772,8 @@ def english_only_bucket(route: str, resolution: "AksResolution") -> tuple[str, s
 #       s'il reste un verrou US / UK.
 _R63_LOCK_WORD_RE = re.compile(
     r"(?<![A-Za-z0-9])(?:(?P<code>EU|US|USA|UK|GB)"
-    r"|(?i:(?P<word>EUROPEAN|EUROPE|UNITED[\s-]+STATES|UNITED[\s-]+KINGDOM)))(?![A-Za-z0-9])")
+    r"|(?i:(?P<word>EUROPEAN|EUROPE|UNITED[\s-]+STATES|UNITED[\s-]+KINGDOM|NORTH[\s-]+AMERICA)))"
+    r"(?![A-Za-z0-9])")      # [R70] NORTH AMERICA : un verrou NA écrit interdit la case 31
 # Dans le CHEMIN de l'URL (jamais l'hôte : un « eu. » de sous-domaine ou un « /eu/ » de locale
 # n'est pas un verrou) et en minuscules, donc sans la casse qui sépare « US » de « Us » : les
 # mots longs seulement. Un « -us- » / « -uk- » en milieu de slug est un mot de nom
@@ -769,9 +781,10 @@ _R63_LOCK_WORD_RE = re.compile(
 # le titre, lu avec sa casse, les porte quand ils sont un verrou. « -eu » n'y figure pas : la
 # lecture de région le lit partout, avant GLOBAL, il ne peut donc pas rester « non lu ».
 _R63_LOCK_URL_RE = re.compile(
-    r"(?:^|-)(?P<word>europe|european|united-states|united-kingdom)(?=[-/.]|$)")
+    r"(?:^|-)(?P<word>europe|european|united-states|united-kingdom|north-america)(?=[-/.]|$)")
 _R63_LOCK_BASE = {"EU": "eu", "EUROPE": "eu", "EUROPEAN": "eu", "US": "us", "USA": "us",
-                  "UNITED STATES": "us", "UK": "uk", "GB": "uk", "UNITED KINGDOM": "uk"}
+                  "UNITED STATES": "us", "UK": "uk", "GB": "uk", "UNITED KINGDOM": "uk",
+                  "NORTH AMERICA": "na"}       # [R70] : un verrou NA écrit n'est jamais la case 31
 
 
 def english_only_region(offer: NormalizedOffer, platform: str,
@@ -821,7 +834,7 @@ def english_only_unread_lock(offer: NormalizedOffer, route: str) -> str | None:
     None. Route ``en_only`` (→ 31, « sans verrou ») : aucun mot EU / Europe / US / UK ne doit
     rester écrit. Route ``eu_en_only`` (→ 3euen / 3eu) : aucun mot US / UK."""
 
-    refused = ("eu", "us", "uk") if route == "en_only" else ("us", "uk")
+    refused = ("eu", "us", "uk", "na") if route == "en_only" else ("us", "uk", "na")
     for base, word in _written_locks(offer):
         if base in refused:
             target = "la case 31 (sans verrou)" if route == "en_only" else "3euen / 3eu (Europe)"
@@ -838,6 +851,7 @@ NOISE_TOKENS = {
     "KEY", "KEYS", "CD", "CDKEY", "DIGITAL", "DOWNLOAD",
     "CODE", "GAME", "VERSION", "FULL", "PLATFORM", "WINDOWS", "ACTIVATION", "EDITION",
     "STANDARD", "GLOBAL", "WORLDWIDE", "WW", "EU", "EUROPE", "US", "USA", "UK", "ROW",
+    "NORTH", "AMERICA",   # [R70] « North America » est une région vendable, comme UNITED STATES
     "COM",  # "GOG.COM Key" tokenizes to GOG + COM
     "GIFT", "REGION", "FREE", "DELUXE", "ULTIMATE", "PREMIUM", "GOLD", "GOTY",
     "COMPLETE", "COLLECTION", "BUNDLE", "PACK", "DEFINITIVE", "REMASTERED", "REMASTER",
@@ -1187,6 +1201,7 @@ _REGION_IDENTITY_PHRASES = {
     "US": ("UNITED STATES", "USA"),
     "UK": ("UNITED KINGDOM",),
     "EU": ("EUROPE",),
+    "NA": ("NORTH AMERICA",),      # [R70] : « … North America » dans le NOM de la page = identité
 }
 
 
@@ -1227,7 +1242,7 @@ def dangerous_qualifier(merchant_title: str, aks_name: str, *, dlc_page: bool = 
 # seulement à savoir qu'une région vendable a été déclarée APRÈS un nom de pays.
 _SELLABLE_REGION_WORDS = (
     "GLOBAL", "WORLDWIDE", "WW", "EUROPE", "EU", "USA", "US", "UK",
-    "UNITED STATES", "UNITED KINGDOM",
+    "UNITED STATES", "UNITED KINGDOM", "NORTH AMERICA",     # [R70]
 )
 
 
@@ -1739,6 +1754,18 @@ def _detect_region_parts(offer: NormalizedOffer) -> tuple[str, str, bool, bool, 
         # the same title, so the generic URL scan cannot know better).
         base, label = hook_base, ("GLOBAL" if hook_base == "global" else hook_base.upper())
     elif (
+        # [R70] (Romain, 2026-10-06) : l'Amérique du Nord, lue comme EUROPE — le nom entier dans
+        # le slug ou le titre, le code « NA » seulement dans un créneau (queue de titre, slot
+        # d'URL, parenthèse) : un « NA » nu en plein titre reste un mot comme un autre.
+        re.search(r"-north-america(?:[-/]|$)", url)
+        or _url_region_code(url, "na")
+        or " NORTH AMERICA " in padded
+        or "(NORTH AMERICA)" in padded
+        or "(NA)" in padded
+        or tail in ("NORTH AMERICA", "NA")
+    ):
+        base, label = "na", "NA"
+    elif (
         "gift-eu" in url
         or re.search(r"-eu(?:[-/]|$)", url)
         or re.search(r"-europe(?:[-/]|$)", url)
@@ -1804,7 +1831,7 @@ def _detect_region_parts(offer: NormalizedOffer) -> tuple[str, str, bool, bool, 
         for group in re.findall(r"\(([^)]+)\)", offer.name):
             reg = group.strip().upper()
             if reg in ("EU", "EUROPE", "GLOBAL", "WORLDWIDE", "WW",
-                       "US", "USA", "UNITED STATES"):
+                       "US", "USA", "UNITED STATES", "NORTH AMERICA", "NA"):
                 reg_found = reg
                 break
         if reg_found in ("EU", "EUROPE"):
@@ -1813,6 +1840,8 @@ def _detect_region_parts(offer: NormalizedOffer) -> tuple[str, str, bool, bool, 
             base, label = "global", "GLOBAL"
         elif reg_found in ("US", "USA", "UNITED STATES"):
             base, label = "us", "US"
+        elif reg_found in ("NORTH AMERICA", "NA"):
+            base, label = "na", "NA"               # [R70]
         else:
             implicit = True  # Kinguin-style implicit GLOBAL
     return base, label, implicit, is_gift, is_green_gift(offer.name, offer.url)
@@ -1820,7 +1849,7 @@ def _detect_region_parts(offer: NormalizedOffer) -> tuple[str, str, bool, bool, 
 
 def detect_region_base(offer: NormalizedOffer) -> tuple[str, str, bool, bool]:
     """[R45] (2026-09-12) the platform-INDEPENDENT region read of a merchant row:
-    ``(base, label, implicit, gift)`` — ``base`` ∈ global/eu/us/uk, ``label`` its label,
+    ``(base, label, implicit, gift)`` — ``base`` ∈ global/eu/us/uk/na, ``label`` its label,
     ``implicit`` when nothing declared it, ``gift`` when the row is a (green-)gift
     delivery. The console branch maps ``base`` per declared family (``REGION_IDS[fam]``)
     and refuses gifts (no console gift bucket exists); :func:`detect_region` is the
@@ -1868,13 +1897,17 @@ def detect_region(offer: NormalizedOffer, platform: str) -> tuple[str, str | Non
     # its OWN per-base bucket and never widens to the platform-global one. Still absent for
     # real, and still fail-closed: ``gmg_gift_uk`` (no platform has it), a Battle.net gift UK,
     # an EA / EPIC / GOG / PUBLISHER / ROCKSTAR plain gift.
+    # [R70] : une base NA verrouillée résout SA case cadeau (Steam Gift NA 2571) et jamais le
+    # cadeau mondial ; aucune plateforme n'a de gmg_gift_na → None → refus fail-closed.
     if green:
-        key = {"eu": "gmg_gift_eu", "us": "gmg_gift_us", "uk": "gmg_gift_uk"}.get(base, "gmg_gift")
+        key = {"eu": "gmg_gift_eu", "us": "gmg_gift_us", "uk": "gmg_gift_uk",
+               "na": "gmg_gift_na"}.get(base, "gmg_gift")
         gid = _region_id(platform, key)
-        return ("GMG GIFT" + {"eu": " EU", "us": " US", "uk": " UK"}.get(base, ""), gid, implicit)
+        return ("GMG GIFT" + {"eu": " EU", "us": " US", "uk": " UK", "na": " NA"}.get(base, ""),
+                gid, implicit)
     if is_gift:
-        key = {"eu": "gift_eu", "us": "gift_us", "uk": "gift_uk"}.get(base, "gift")
-        return ("GIFT" + {"eu": " EU", "us": " US", "uk": " UK"}.get(base, ""),
+        key = {"eu": "gift_eu", "us": "gift_us", "uk": "gift_uk", "na": "gift_na"}.get(base, "gift")
+        return ("GIFT" + {"eu": " EU", "us": " US", "uk": " UK", "na": " NA"}.get(base, ""),
                 _region_id(platform, key), implicit)
     return (label, _region_id(platform, base), implicit)
 
@@ -1970,6 +2003,7 @@ _TRAILING_NOISE_PHRASES = tuple(sorted(
         "ROCKSTAR", "MICROSOFT STORE", "WINDOWS 11", "WINDOWS 10", "WINDOWS",
         "PC", "GIFT", "DIGITAL DOWNLOAD", "DIGITAL",
         "EUROPE & NORTH AMERICA", "EUROPE", "UNITED STATES", "UNITED KINGDOM",
+        "NORTH AMERICA",                       # [R70] : région vendable, retirée de la queue
         "GLOBAL", "WORLDWIDE", "USA", "UK",
         *FORBIDDEN_REGIONS,
     },
@@ -4301,7 +4335,8 @@ def _pc_plan(
             _rid = _region_id(platform, _page_region_base)
             if _rid is None:
                 return SkippedOffer(offer, f"region {_page_region_base!r} unavailable for {platform} (R33)")
-            region_label = {"global": "GLOBAL", "eu": "EU", "us": "US", "uk": "UK"}[_page_region_base]
+            region_label = {"global": "GLOBAL", "eu": "EU", "us": "US", "uk": "UK",
+                            "na": "NA"}[_page_region_base]            # [R70]
             region_id, implicit = _rid, False
         else:
             return SkippedOffer(offer, f"forbidden region: {_page_region_label}")

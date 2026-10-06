@@ -137,14 +137,13 @@ class HooksTests(_Registry):
             "Game United Kingdom Steam CD Key": "uk",
             "Tom Clancy's Ghost Recon Breakpoint Gold Edition Global XBOX One/Series X|S CD Key": "global",
             "Goblin Vyke: The Thief Tycoon Steam CD Key": None,
-            "Mato Anomalies North America Steam Altergift": None,
+            "Mato Anomalies North America Steam Altergift": "na",      # [R70] (2026-10-06)
         }.items():
             with self.subTest(title=title):
                 self.assertEqual(title_region(title), base)
 
     def test_precheck_forbidden_names(self):
         for title, label in {
-            "Age of Empires II: Definitive Edition - Victors and Vanquished North America Steam CD Key": "NORTH AMERICA",
             "Persona 5 Royal Canada XBOX One/PC/XBOX Series X|S CD Key": "CANADA",
             "Xbox Game Pass Essential (Core) Subscription Card 3 Months Mexico XBOX Live CD Key": "MEXICO",
             "Playstation Plus CARD 365 Days United Arab Emirates PSN CD Key": "UNITED ARAB EMIRATES",
@@ -186,8 +185,9 @@ class HooksTests(_Registry):
         # an explicit False (« not a gift »), never None (which would let the generic read say GIFT)
         self.assertIs(gift_delivery(title, GIFT_URL), False)
         self.assertEqual(precheck(title, GIFT_URL), NOT_STEAM)
-        # a forbidden region stays the precheck skip, Altergift or not
-        self.assertEqual(precheck("Mato Anomalies North America Steam Altergift", GIFT_URL), "forbidden region: NORTH AMERICA")
+        # [R70] (2026-10-06) : North America est une base — un Altergift NA n'est plus un refus
+        self.assertIsNone(precheck("Mato Anomalies North America Steam Altergift", GIFT_URL))
+        self.assertEqual(precheck("Mato Anomalies Canada Steam Altergift", GIFT_URL), "forbidden region: CANADA")
         # the K4G region-slot rule is unchanged: "Americas" right before the store phrase is the slot
         # (fail-closed, the same outcome the 2026-09-12 run recorded for these 2 rows)
         self.assertEqual(precheck("Strategic Command: American Civil War - Wars in the Americas Steam Altergift", GIFT_URL), "forbidden region: AMERICAS")
@@ -335,7 +335,6 @@ class AltergiftPipelineTests(_Registry):
                 self.assertEqual(build_slug_candidates(resolve_name(title))[0], build_slug_candidates(name)[0])
         # every other K4G rule is kept: forbidden regions, bundles, passes, season pass on a base page
         still_skipped = {
-            ("Sonic Origins - Plus Expansion Pack North America Steam Altergift", "https://k4g.com/product/sonic-origins-plus-expansion-pack-steam-north-america-altergift-alter-gift-EDVT5Z29"): "forbidden region: NORTH AMERICA",
             ("Middle-earth: The Shadow Bundle Europe Steam Altergift", "https://k4g.com/product/middle-earth-the-shadow-bundle-steam-europe-altergift-alter-gift-AAAAAAAA"): "skip category: BUNDLE (no bundles/skins)",
             ("Far Cry 6 Game of the Year Upgrade Pass Steam Altergift", "https://k4g.com/product/far-cry-6-game-of-the-year-upgrade-pass-steam-global-altergift-alter-gift-AAAAAAAA"): "skip category: PASS (in-game/battle pass)",
         }

@@ -164,13 +164,17 @@ class BucketTableTests(unittest.TestCase):
             # Switch 2 offers use the NINTENDO family bucket (2026-09-14: prices region 99,
             # regions map {99: GLOBAL}, activationPlatform nintendo-eshop on both saved pages)
             ("SWITCH2", "global"): "99", ("SWITCH2", "eu"): "99eu", ("SWITCH2", "us"): "99us", ("SWITCH2", "uk"): "992",
+            # [R70] (Romain, 2026-10-06 : « go pour NA, PC et consoles ») — les cases NA du catalogue
+            ("XBOX_ONE", "na"): "582", ("XBOX_SERIES", "na"): "304", ("XBOX_PC", "na"): "605",
+            ("PS4", "na"): "610", ("PS5", "na"): "610", ("SWITCH", "na"): "496", ("SWITCH2", "na"): "496",
         }
         flat = {(fam, base): rid for fam, bases in CONSOLE_REGION_IDS.items() for base, rid in bases.items()}
         self.assertEqual(flat, expected)
         self.assertEqual(CONSOLE_REGION_IDS["SWITCH2"], CONSOLE_REGION_IDS["SWITCH"])
-        # PS5: its own GLOBAL bucket, the PlayStation EU / US / UK buckets of PS4 (P3,
+        # PS5: its own GLOBAL bucket, the PlayStation EU / US / UK / NA buckets of PS4 (P3,
         # Romain 2026-09-25 — AKS already files PS5 offers there), no gift anywhere
-        self.assertEqual(CONSOLE_REGION_IDS["PS5"], {"global": "88ps5h", "eu": "88eu", "us": "88us", "uk": "88uk"})
+        self.assertEqual(CONSOLE_REGION_IDS["PS5"], {"global": "88ps5h", "eu": "88eu", "us": "88us", "uk": "88uk",
+                                                     "na": "610"})
         self.assertEqual({b: r for b, r in CONSOLE_REGION_IDS["PS5"].items() if b != "global"},
                          {b: r for b, r in CONSOLE_REGION_IDS["PS4"].items() if b != "global"})
         for bases in CONSOLE_REGION_IDS.values():
@@ -188,6 +192,9 @@ class BucketTableTests(unittest.TestCase):
             "88ps5h": "PS5",
             "99": "NINTENDO GAME CODE GLOBAL", "99eu": "Nintendo GAME CODE EU", "99us": "Nintendo GAME CODE US",
             "992": "Nintendo GAME CODE UK",
+            # [R70] les cases NA, texte du catalogue (tests/fixtures/region_catalog_2026-09-26.json)
+            "582": "xbox game code north america", "304": "Xbox Series NA Game Code", "605": "xbox/pc na",
+            "610": "playstation game code na", "496": "nintendo game code north america",
         }
         self.assertEqual(CONSOLE_REGION_LABELS, expected)
         all_ids = {rid for bases in CONSOLE_REGION_IDS.values() for rid in bases.values()}
@@ -838,13 +845,13 @@ class RegionSlotTests(unittest.TestCase):
             ("Planet Coaster: Console Edition AU Xbox One / Xbox Series X|S CD Key", (None, "AUSTRALIA", ("AU",)), ONE_SERIES),
             ("MotoGP 26 AU Xbox Series X|S / PC CD Key", (None, "AUSTRALIA", ("AU",)), ("XBOX_SERIES",)),
             ("Destiny 2 - The Collection Bundle DLC AU XBOX One / Xbox Series X|S CD Key", (None, "AUSTRALIA", ("AU",)), ONE_SERIES),
-            ("Onimusha: Way of the Sword NA PS5 CD Key", (None, "NORTH AMERICA", ("NA",)), ("PS5",)),
-            ("Onimusha: Way of the Sword Premium Deluxe Edition NA PS5 CD Key", (None, "NORTH AMERICA", ("NA",)), ("PS5",)),
+            ("Onimusha: Way of the Sword NA PS5 CD Key", ("na", None, ("NA",)), ("PS5",)),          # [R70]
+            ("Onimusha: Way of the Sword Premium Deluxe Edition NA PS5 CD Key", ("na", None, ("NA",)), ("PS5",)),
             ("Fortnite - Witching Wing Quest Pack TR XBOX One / Xbox Series X|S CD Key", (None, "TURKEY", ("TR",)), ONE_SERIES),
             ("Bus Simulator 21 EN Language Only AR XBOX One / Xbox Series X|S CD Key", (None, "ARGENTINA", ("AR",)), ONE_SERIES),
             ("Snufkin: Melody of Moominvalley CO Xbox Series X|S / PC CD Key", (None, "COLOMBIA", ("CO",)), ("XBOX_SERIES",)),
             ("Dynasty Warriors: Origins ZA Xbox Series X|S CD Key", (None, "SOUTH AFRICA", ("ZA",)), ("XBOX_SERIES",)),
-            ("EA SPORTS Madden NFL 27 NA Nintendo Switch 2 CD Key", (None, "NORTH AMERICA", ("NA",)), ("SWITCH2",)),
+            ("EA SPORTS Madden NFL 27 NA Nintendo Switch 2 CD Key", ("na", None, ("NA",)), ("SWITCH2",)),   # [R70]
         ]
         for title, slot, families in cases:
             with self.subTest(title=title):
@@ -871,7 +878,7 @@ class RegionSlotTests(unittest.TestCase):
             "Game United Kingdom PS5 CD Key": ("uk", None, ("United Kingdom",)),
             "Game Global PS5 CD Key": ("global", None, ("Global",)),
             "Game Worldwide PS5 CD Key": ("global", None, ("Worldwide",)),
-            "Game North America PS5 CD Key": (None, "NORTH AMERICA", ("North America",)),
+            "Game North America PS5 CD Key": ("na", None, ("North America",)),      # [R70]
             "Game Canada PS5 CD Key": (None, "CANADA", ("Canada",)),
             "Game Australia PS5 CD Key": (None, "AUSTRALIA", ("Australia",)),
             "Game Mexico PS5 CD Key": (None, "MEXICO", ("Mexico",)),

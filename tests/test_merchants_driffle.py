@@ -124,13 +124,15 @@ class HooksTests(_Registry):
             "For The King II - Smoke and Steel Cosmetic Pack DLC (MENA) (PC) - Steam - Digital Key": "MENA",
             "Xbox 500 TRY Gift Card (Turkey) - Digital Key": "TURKEY",
             "Onimusha 1+2 Pack (ROW) (PC) - Steam - Digital Key": "ROW",
-            "FINAL FANTASY (North America) (PC) - Steam Gift": "NORTH AMERICA",
             "DRAGON BALL Sparking! ZERO (United States / Canada) (PC) - Steam - Digital Key": "CANADA",
         }
         for title, label in cases.items():
             with self.subTest(title=title):
                 self.assertEqual(precheck(title, URL), f"forbidden region: {label}")
                 self.assertIsNone(title_region(title))
+        # [R70] (2026-10-06) : « (North America) » est une base, plus un verrou
+        self.assertIsNone(precheck("FINAL FANTASY (North America) (PC) - Steam Gift", URL))
+        self.assertEqual(title_region("FINAL FANTASY (North America) (PC) - Steam Gift"), "na")
         self._use(CONFIG)
         self.assertEqual(precheck_skip(_offer("Fortnite - 12500 V-Bucks Card (France) - Epic Games - Digital Key",
                                               "https://www.driffle.com/fortnite-12500-v-bucks-card-france-epic-games-digital-key-p9998874")),

@@ -48,7 +48,7 @@ class IgOfferAttributes:
 # R33 (2026-08-13): IG feed titles/URLs carry NO region, but the offer page's
 # <title>/og:title trailing segment does ("… - PC (Steam) - Latin America"; no
 # suffix = worldwide). Map the clean sellable regions; ANY other suffix (Latin
-# America / ROW / North America / Asia …) → None → the offer is region-locked to a
+# America / ROW / Asia …; North America is a BASE since [R70], 2026-10-06) → None → the offer is region-locked to a
 # region we don't sell → SKIP (never enter it as GLOBAL). A whole IG sweep entered
 # 32/54 region-locked offers as GLOBAL before this.
 IG_REGION_TEXT_MAP = {
@@ -56,6 +56,7 @@ IG_REGION_TEXT_MAP = {
     "EUROPE": "eu", "EU": "eu",
     "UNITED STATES": "us", "US": "us", "USA": "us",
     "UK": "uk", "UNITED KINGDOM": "uk",
+    "NORTH AMERICA": "na", "NA": "na",     # [R70] (Romain, 2026-10-06)
 }
 # Region policy (Romain 2026-08-13): "on est sur Global, Europe et US. Le reste, on
 # skippe et certaines régions qu'on va blacklist, comme les Latam, le Brésil et les

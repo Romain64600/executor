@@ -68,15 +68,16 @@ class HooksTests(unittest.TestCase):
             "Train Sim World 6 | Deluxe Edition (Xbox Series X/S, PC) - Xbox Live Key - UNITED KINGDOM": "uk",
             "Steam Squad Steam Gift GLOBAL": "global",
             "It's Quiz Time Steam Gift EUROPE": "eu",
+            "Ultimate Zombie Defense 2 (PC) - Steam Key - NORTH AMERICA": "na",      # [R70] (2026-10-06)
             "Some Game": None,
         }.items():
             with self.subTest(title=title):
                 self.assertEqual(title_region(title), base)
                 self.assertIsNone(precheck(title, URL))
         for title, label in {
-            "Ultimate Zombie Defense 2 (PC) - Steam Key - NORTH AMERICA": "NORTH AMERICA",
             "VALORANT Gift Card 45.98 SGD - Riot Key - SINGAPORE": "SINGAPORE",
-            "Hunt: Showdown 1896 - Sage of Joseon (PC) - Steam Key - EUROPE / NORTH AMERICA": "NORTH AMERICA",
+            # [R70] : deux bases (EU + NA) = un verrou, texte verbatim — comme « EU / US »
+            "Hunt: Showdown 1896 - Sage of Joseon (PC) - Steam Key - EUROPE / NORTH AMERICA": "EUROPE / NORTH AMERICA",
             "Uber Gift Card 150 ZAR - Uber Key - SOUTH AFRICA": "SOUTH AFRICA",
             "Steelrising (PC) - Steam Key - CIS": "CIS",
             "Diablo IV: Lord of Hatred (Xbox Series X/S) - Xbox Live Key - JAPAN": "JAPAN",
@@ -97,8 +98,9 @@ class HooksTests(unittest.TestCase):
         self.assertEqual(detect_region(_offer("Puzzle Forge Dungeon (PC) - Steam Gift - EUROPE"), "STEAM"), ("GIFT EU", "259", False))
         url = "https://www.g2a.com/runescape-pc-key-europe-i10000044281020?___currency=EUR&utm_campaign=COM_GLOBAL_PB"
         self.assertEqual(detect_region(_offer("X", url=url), "STEAM"), ("EU", "9", False))
-        self.assertEqual(precheck_skip(_offer("Ultimate Zombie Defense 2 (PC) - Steam Key - NORTH AMERICA")),
-                         "forbidden region: NORTH AMERICA")
+        self.assertIsNone(precheck_skip(_offer("Ultimate Zombie Defense 2 (PC) - Steam Key - NORTH AMERICA")))   # [R70]
+        self.assertEqual(detect_region(_offer("Ultimate Zombie Defense 2 (PC) - Steam Key - NORTH AMERICA"), "STEAM"),
+                         ("NA", "steamna", False))
         self.assertEqual(precheck_skip(_offer("VALORANT Gift Card 45.98 SGD - Riot Key - SINGAPORE")),
                          "forbidden region: SINGAPORE")
 

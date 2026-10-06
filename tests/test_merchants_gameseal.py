@@ -88,7 +88,6 @@ class HooksTests(_Registry):
     def test_precheck_tails(self):
         for title, label in {
             "Destroy All Humans! (PC) Steam Key - AU": "AUSTRALIA",              # was "extra words: ['AU']"
-            "vROVpilot: TITANIC (PC) Steam Gift - NA": "NORTH AMERICA",           # 27 rows, were 404 / "extra words: ['NA']"
             "lastminute.com Travel Gift Card 5 EUR Key - BELGIUM": "BELGIUM",
             "Resident Evil 7: Biohazard Gold Edition (PC) Steam Key - EMEA": "EMEA",
             "VoidBound (PC) Steam Key - ROW": "ROW",
@@ -99,6 +98,9 @@ class HooksTests(_Registry):
             with self.subTest(title=title):
                 self.assertEqual(precheck(title, URL), f"forbidden region: {label}")
                 self.assertIsNone(title_region(title))
+        # [R70] (2026-10-06) : « - NA » (27 lignes) est une base — Steam Gift NA (2571)
+        self.assertIsNone(precheck("vROVpilot: TITANIC (PC) Steam Gift - NA", URL))
+        self.assertEqual(title_region("vROVpilot: TITANIC (PC) Steam Gift - NA"), "na")
 
     def test_pipeline(self):
         self._use(CONFIG)

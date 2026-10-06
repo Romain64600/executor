@@ -141,6 +141,24 @@ No degraded mode.
 These are deliberate, Romain-reviewed calls. An adversarial audit re-derives them as
 "findings" every time; leave them AS-IS unless Romain explicitly changes his mind.
 
+- **`[R70]` L'Amérique du Nord est une région VENDABLE, PC et consoles — Romain, 2026-10-06**
+  (« tu sais ajouter ça, c'est "Steam NA" — pourquoi j'ai ce log », puis « go pour NA, PC et
+  consoles »). `NORTH AMERICA` était dans `FORBIDDEN_REGIONS` depuis le début, d'avant la règle
+  « vérifier le dropdown » (16/09) ; le menu du modal a STEAM NA (`steamna`), Steam Gift NA (2571),
+  Origin NA (643), ubisoft na (606), battlenet na (625), xbox game code north america (582), Xbox
+  Series NA Game Code (304), xbox/pc na (605), playstation game code na (610), nintendo game code
+  north america (496) ; 1 260 offres distinctes refusées en production avant ça. Base `na` dans
+  `SELLABLE_WORDS` (« NORTH AMERICA », code « NA » en capitales), le scan générique (nom entier
+  partout, code « NA » seulement en créneau : queue, slot d'URL, parenthèse), le classifieur console
+  et les tables de Gamivo / Loaded / Instant Gaming. Un audit voudra : (a) remettre NORTH AMERICA
+  en verrou « parce qu'on est sur Global, Europe et US » (13/08) — non, Romain a tranché le 06/10
+  sur les cases du menu ; (b) retomber sur US (8) ou GLOBAL pour GOG / EPIC / PUBLISHER / ROCKSTAR /
+  MICROSOFT, qui n'ont pas de case NA — non, refus « no region id » ; (c) lire un « NA » nu en
+  plein titre — non, collision avec des mots de jeux ; (d) faire entrer « EU NA », « AMERICAS » ou
+  « EUROPE / NORTH AMERICA » — non, deux régions ou plus = verrou ; (e) utiliser « Publisher NA/SA
+  (531) » pour une clé Publisher NA — non, le seau couvre l'Amérique du Sud. EXECUTOR_RULES
+  `[R70]`, `tests/test_region_na_r70.py`.
+
 - **`[R69]` Indiegala : la FICHE produit fait foi (plateforme + pays INTERDITS), la fiche DLC est
   une GARDE — Romain, 2026-10-06** (« Si on peut ouvrir la page, on trouvera les infos », puis, le
   tableau ligne par ligne lu — `docs/apercu_indiegala_2026-10-06.md`, 34 entrées / 175 —, « go pour
@@ -735,7 +753,7 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   `k4g.gift_delivery` answers True for the whole word ALTERGIFT (`MerchantConfig.gift_delivery`,
   R32e) and `detect_region` layers the Steam GIFT bucket on the base region — GIFT (25) for
   no region / Global, GIFT EU (259) for Europe, GIFT US (2577) and GIFT UK (2572) for those
-  bases; forbidden regions (North America, Americas) keep their precheck skip.
+  bases; forbidden regions (Americas, Canada…) keep their precheck skip — North America is a BASE since `[R70]` (2026-10-06).
   **Corrected 2026-09-16 (`[R50]`, Romain: « si ça existe le fichier marchand ne devrait pas
   affirmer le contraire, fix la config marchand »):** this decision used to state that a US /
   UK base "has no Steam gift bucket" and therefore failed closed. That premise was FALSE —

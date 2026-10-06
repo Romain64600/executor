@@ -40,9 +40,10 @@ REGION_TEXT: dict[str, str] = {
     "ww": "global", "worldwide": "global", "global": "global",
     "uk": "uk", "united kingdom": "uk",
     "us": "us", "usa": "us", "united states": "us",
+    "north america": "na", "na": "na",     # [R70] (Romain, 2026-10-06) : une base, plus un verrou
 }
 # Ce que le classifieur console partagé comprend (``console_keys._REGION_BASE_OF``).
-_CONSOLE_TEXT = {"eu": "Europe", "global": "WW", "uk": "UK", "us": "US"}
+_CONSOLE_TEXT = {"eu": "Europe", "global": "WW", "uk": "UK", "us": "US", "na": "NA"}
 
 
 def region_slot(name: str) -> str | None:

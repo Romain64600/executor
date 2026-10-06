@@ -223,9 +223,13 @@ class GenericGiftTests(unittest.TestCase):
                          ("GIFT UK", None, False))
 
     def test_forbidden_region_keeps_its_skip(self):
-        self.assertEqual(precheck_skip(_offer(FUTURE, "Mato Anomalies North America Steam Altergift",
+        self.assertEqual(precheck_skip(_offer(FUTURE, "Mato Anomalies Canada Steam Altergift",
                                               "https://shop.example/p/mato-anomalies")),
-                         "forbidden region: NORTH AMERICA")
+                         "forbidden region: CANADA")
+        # [R70] (2026-10-06) : North America est une base — un Altergift NA = Steam Gift NA (2571)
+        na = _offer(FUTURE, "Mato Anomalies North America Steam Altergift", "https://shop.example/p/mato-anomalies")
+        self.assertIsNone(precheck_skip(na))
+        self.assertEqual(detect_region(na, "STEAM"), ("GIFT NA", "2571", False))
 
     def test_word_never_reaches_the_slug_nor_the_guard(self):
         offer = _offer(FUTURE, "Seafrog Steam Altergift", "https://shop.example/p/seafrog")

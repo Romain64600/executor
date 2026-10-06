@@ -267,7 +267,7 @@ matcher et le classifieur importent le registre.
   `title_region` (United Kingdom / UK → uk, United States / USA → us, EU / Europe → eu,
   Global / Worldwide → global ; sensible à la casse — « The Last of Us » n'est pas US) ;
   `precheck` (toute autre queue de région → `forbidden region: <LABEL>` avec le vocabulaire
-  du matcher — COLOMBIA, ROW, CANADA, NETHERLANDS, NORTH AMERICA, CIS, SOUTH EAST ASIA… —
+  du matcher — COLOMBIA, ROW, CANADA, NETHERLANDS, CIS, SOUTH EAST ASIA… (NORTH AMERICA est une base vendable depuis `[R70]`, 06/10) —
   routée par `aks_lists.suggest_target_list` comme aujourd'hui ; sans queue de titre, le code
   de l'URL juste après le run décide : code interdit ou inconnu → `forbidden region:
   <LABEL|CODE>`, `us` / `uk` seulement dans l'URL → skip explicite « region US declared only
@@ -508,7 +508,7 @@ matcher et le classifieur importent le registre.
   `detect_region` superpose le bucket GIFT Steam à la région de base du titre / de l'URL —
   GIFT (25) sans région ou Global, GIFT EU (259) pour Europe ; base US / UK sans bucket gift
   Steam → skip fail-closed « no region id for STEAM/GIFT US » (inchangé) ; région interdite
-  (North America, Americas) → précheck inchangé ; plateforme STEAM (le titre colloque STEAM
+  (Americas, Canada… — North America est une base depuis `[R70]`, 06/10) → précheck inchangé ; plateforme STEAM (le titre colloque STEAM
   et ALTERGIFT). « Altergift » n'est jamais un mot de produit : `guard_name` retire ce mot —
   et lui seul — du titre des gardes (R16 comptait « extra words: ['ALTERGIFT'] »),
   `resolve_name` le retire du slug (`seafrog`, plus `seafrog-steam-altergift`). Rejeu
@@ -765,7 +765,7 @@ matcher et le classifieur importent le registre.
   → `"EU"`, `"United States"`) ; URL `<slug>-xbox-one-xbox-series-x-s-xbox-live-key-eu` (runs
   du vocabulaire partagé).
 - **Hooks (14/09)** : `domain` ; PC — `precheck` / `title_region` (la queue ` - <RÉGION>`
-  explicite : « - NA » → NORTH AMERICA, « - AU » → AUSTRALIA, « - BELGIUM » — hors du
+  explicite : « - AU » → AUSTRALIA, « - BELGIUM » (« - NA » = base NA depuis `[R70]`, 06/10) — hors du
   vocabulaire générique, ces lignes finissaient en 404 ou en « extra words: ['NA'] ») ;
   console — `console_url_families` (runs partagés ; `xbox-360` → skip R45) ;
   `console_region_slot` (queue ` - <RÉGION>`). Mesure (sweep du 15/07, vs code committé) :
@@ -1213,7 +1213,7 @@ matcher et le classifieur importent le registre.
   fiche est dans `u`, son slug répète plateforme / boutique / région (`-pc-steam-eu`, `-xbox-pc-eu`).
 - **Région = parenthèse finale** — décisions de Romain (25/09) : « (Europe & UK) » → **Europe** ;
   **pas de parenthèse → GLOBAL implicite**, comme Kinguin et MMOGA ; « (WW) » → GLOBAL ;
-  « (North America) » et tout verrou → refus ; un texte inconnu → refus nommé.
+  tout verrou → refus (« (North America) » est une base depuis `[R70]`, 06/10) ; un texte inconnu → refus nommé.
 - **Boutique PC = slug de la fiche** (`-pc-steam` → STEAM, `-pc-epic` → EPIC…). Consoles : le
   classifieur partagé, avec la région du créneau (`console_region_slot`), la génération lue dans
   le slug quand le titre dit seulement « Xbox/PC » (`console_url_families` :
