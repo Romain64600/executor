@@ -70,11 +70,17 @@ class GameBoostPrecheckTests(unittest.TestCase):
             ("Wardogs (PC) - Steam Key - Turkey", "TURKEY"),
             ("Wardogs | Supporter Edition (PC) - Steam Key - Canada", "CANADA"),
             ("SCUM Eastern Furniture DLC (PC) - Steam Key - ROW", "ROW"),
-            ("Blasphemous - Steam - Key (NORTH AMERICA)", "NORTH AMERICA"),
-            ("Marvel’s Spider-Man 2 (Deluxe Edition) (Steam) (NA)", "NORTH AMERICA"),
         ):
             with self.subTest(name=name):
                 self.assertEqual(gb.precheck(name, self.URL), f"forbidden region: {label}")
+
+    def test_r70_north_america_est_une_base(self):
+        # [R70] (Romain, 2026-10-06) : « North America » / « NA » en créneau = base na, plus un verrou
+        for name in ("Blasphemous - Steam - Key (NORTH AMERICA)",
+                     "Marvel’s Spider-Man 2 (Deluxe Edition) (Steam) (NA)"):
+            with self.subTest(name=name):
+                self.assertIsNone(gb.precheck(name, self.URL))
+                self.assertEqual(gb.title_region(name), "na")
 
     def test_non_game_listings_are_categorical_skips(self):
         for name, url in (

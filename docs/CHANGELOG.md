@@ -3,6 +3,24 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-10-06 — `[R70]` Amérique du Nord : une région vendable, PC et consoles (go de Romain)
+
+- **Romain : « tu sais ajouter ça, c'est "Steam NA" — pourquoi j'ai ce log ? », puis « go pour NA,
+  PC et consoles ».** `NORTH AMERICA` était un verrou (`FORBIDDEN_REGIONS`) d'avant la règle
+  « vérifier le dropdown » : 1 260 offres distinctes refusées en production alors que le menu AKS a
+  STEAM NA (`steamna`), Steam Gift NA (2571), Origin NA (643), ubisoft na (606), battlenet na (625)
+  et les cases consoles NA (582 / 304 / 605 / 610 / 496). La base `na` (libellé `NA`) est lue par le
+  vocabulaire partagé (`SELLABLE_WORDS` : « NORTH AMERICA », code « NA » en capitales), le scan
+  générique (nom entier partout, code seulement en créneau), le classifieur console, et les tables
+  propres de Gamivo / Loaded / Instant Gaming ; sans case (GOG, EPIC, PUBLISHER, ROCKSTAR,
+  MICROSOFT) → refus « no region id », jamais US ni GLOBAL ; cadeau NA → 2571, jamais 25. Les
+  verrous composés (« EU NA », « AMERICAS », « EUROPE / NORTH AMERICA ») restent ; R44 / R63 / R16
+  connaissent la base. Tests : `tests/test_region_na_r70.py` + les attentes marchandes retournées ;
+  suite complète 3 422 OK. **Aperçu à blanc sur les 1 260 refus de production : 386 candidats**
+  (228 Steam NA, 105 Steam Gift NA, 37 PlayStation NA, 8 Nintendo NA, 4 Ubisoft NA, 3 Xbox NA, 1
+  GLOBAL juste — « Planet Zoo: North America Animal Pack », le nom du DLC), 874 refus pour d'autres
+  motifs, inchangés. Détail : EXECUTOR_RULES `[R70]`.
+
 ## 2026-10-06 — Saisie par jeu : l'opérateur choisit les listes AKS (toutes cochées sauf la blacklist)
 
 - **Romain : « Pour la saisie par jeu, je voudrais que l'opérateur puisse choisir les listes.

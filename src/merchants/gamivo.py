@@ -77,6 +77,7 @@ SELLABLE_TAILS = {
     "EU": "eu", "Europe": "eu", "EUROPE": "eu",
     "Global": "global", "GLOBAL": "global", "Worldwide": "global", "WORLDWIDE": "global",
     "WW": "global",
+    "North America": "na", "NORTH AMERICA": "na",     # [R70] (Romain, 2026-10-06)
 }
 # Region locks we never enter → the matcher's own FORBIDDEN_REGIONS / _URL_FORBIDDEN_CODES
 # label vocabulary where one exists, so ``suggest_target_list`` files them identically
@@ -86,7 +87,7 @@ SELLABLE_TAILS = {
 # Mexico 2, Latin America / Brazil / India / Germany / Singapore / South Africa / SEA 1.
 FORBIDDEN_TAILS = {
     "Colombia": "COLOMBIA", "ROW": "ROW", "Canada": "CANADA", "Australia": "AUSTRALIA",
-    "North America": "NORTH AMERICA", "Netherlands": "NETHERLANDS", "Turkey": "TURKEY",
+    "Netherlands": "NETHERLANDS", "Turkey": "TURKEY",
     "Poland": "POLAND", "Asia": "ASIA", "Mexico": "MEXICO", "Latin America": "LATIN AMERICA",
     "LATAM": "LATAM", "Brazil": "BRAZIL", "India": "INDIA", "CIS": "CIS", "Germany": "GERMANY",
     "Singapore": "SINGAPORE", "South Africa": "SOUTH AFRICA", "SEA": "SOUTH EAST ASIA",
@@ -146,9 +147,10 @@ _URL_RUN_PLATFORM = {
 SELLABLE_CODES = {
     "uk": "uk", "gb": "uk", "us": "us", "usa": "us", "eu": "eu", "europe": "eu",
     "global": "global", "ww": "global", "worldwide": "global",
+    "na": "na", "north-america": "na",                # [R70]
 }
 FORBIDDEN_CODES = {
-    "co": "COLOMBIA", "row": "ROW", "ca": "CANADA", "au": "AUSTRALIA", "na": "NORTH AMERICA",
+    "co": "COLOMBIA", "row": "ROW", "ca": "CANADA", "au": "AUSTRALIA",
     "tr": "TURKEY", "pl": "POLAND", "br": "BRAZIL", "mx": "MEXICO", "sg": "SINGAPORE",
     "za": "SOUTH AFRICA", "de": "GERMANY", "cis": "CIS", "asia": "ASIA", "in": "INDIA",
     "ru": "RUSSIA", "ar": "ARGENTINA", "cn": "CHINA", "jp": "JAPAN", "kr": "KOREA",
@@ -156,7 +158,7 @@ FORBIDDEN_CODES = {
     "nl": "NETHERLANDS", "cl": "CHILE", "pe": "PERU", "my": "MALAYSIA", "id": "INDONESIA",
     "sea": "SOUTH EAST ASIA", "emea": "EMEA", "mena": "MENA", "latam": "LATAM",
     "latin-america": "LATIN AMERICA", "south-america": "SOUTH AMERICA",
-    "north-america": "NORTH AMERICA", "south-africa": "SOUTH AFRICA",
+    "south-africa": "SOUTH AFRICA",
     "middle-east": "MIDDLE EAST", "hk": "HONG KONG", "tw": "TAIWAN", "nz": "NEW ZEALAND",
     "ch": "SWITZERLAND", "fr": "FRANCE", "it": "ITALY", "es": "SPAIN", "at": "AUSTRIA",
     "ro": "ROMANIA", "pt": "PORTUGAL", "ae": "UNITED ARAB EMIRATES", "africa": "AFRICA",
@@ -284,7 +286,7 @@ def precheck(name: str, url: str) -> str | None:
     if code is None:
         return None
     if code in SELLABLE_CODES:
-        if SELLABLE_CODES[code] in ("us", "uk"):
+        if SELLABLE_CODES[code] in ("us", "uk", "na"):     # [R70] NA comme US / UK : titre muet → refus
             return (f"region {code.upper()} declared only in the URL, title carries no "
                     f"region tail — not entered (R46)")
         return None

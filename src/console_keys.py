@@ -131,19 +131,30 @@ CONSOLE_FALLBACK_TEMPLATES: tuple[str, ...] = tuple(
 # SWITCH2 shares the Nintendo bucket ids with SWITCH (verified on the Street Fighter 6 /
 # ELDEN RING Tarnished Edition Switch 2 pages, 2026-09-14: prices region 99, regions map
 # {99: GLOBAL}).
+# [R70] (Romain, 2026-10-06 : « go pour NA, PC et consoles ») : la base ``na`` par famille, lue
+# dans le catalogue du modal (runs/20260930-193353-auto-pass27/catalog.json, 06/10) : « xbox game
+# code north america (582) », « Xbox Series NA Game Code (304) », « xbox/pc na (605) »,
+# « playstation game code na (610) » (une seule case PlayStation NA, comme 88eu / 88us pour PS4 et
+# PS5 — P3), « nintendo game code north america (496) ».
 CONSOLE_REGION_IDS: dict[str, dict[str, str]] = {
-    "XBOX_ONE": {"global": "24", "eu": "24eu", "us": "24us", "uk": "226"},
-    "XBOX_SERIES": {"global": "300", "eu": "302", "us": "303", "uk": "305"},
-    "XBOX_PC": {"global": "306", "eu": "241", "us": "242", "uk": "240"},
-    "PS4": {"global": "88", "eu": "88eu", "us": "88us", "uk": "88uk"},
-    "PS5": {"global": "88ps5h", "eu": "88eu", "us": "88us", "uk": "88uk"},
-    "SWITCH": {"global": "99", "eu": "99eu", "us": "99us", "uk": "992"},
-    "SWITCH2": {"global": "99", "eu": "99eu", "us": "99us", "uk": "992"},
+    "XBOX_ONE": {"global": "24", "eu": "24eu", "us": "24us", "uk": "226", "na": "582"},
+    "XBOX_SERIES": {"global": "300", "eu": "302", "us": "303", "uk": "305", "na": "304"},
+    "XBOX_PC": {"global": "306", "eu": "241", "us": "242", "uk": "240", "na": "605"},
+    "PS4": {"global": "88", "eu": "88eu", "us": "88us", "uk": "88uk", "na": "610"},
+    "PS5": {"global": "88ps5h", "eu": "88eu", "us": "88us", "uk": "88uk", "na": "610"},
+    "SWITCH": {"global": "99", "eu": "99eu", "us": "99us", "uk": "992", "na": "496"},
+    "SWITCH2": {"global": "99", "eu": "99eu", "us": "99us", "uk": "992", "na": "496"},
 }
 # id → catalog master text WITHOUT the " (id)" suffix and WITHOUT the BOM, verbatim
 # otherwise (capitalisation included: "Xbox Series Uk Game Code" is how AKS spells 305).
 # The submitter types this text into Selectize and re-resolves the id live.
 CONSOLE_REGION_LABELS: dict[str, str] = {
+    # [R70] les cases NA, texte du catalogue verbatim (casse comprise)
+    "582": "xbox game code north america",
+    "304": "Xbox Series NA Game Code",
+    "605": "xbox/pc na",
+    "610": "playstation game code na",
+    "496": "nintendo game code north america",
     "24": "Xbox One Game Code",
     "24eu": "Xbox Game Code EUROPE",
     "24us": "Xbox Game Code US",
@@ -413,6 +424,9 @@ _REGION_BASE_OF = {
     "US": "us", "USA": "us", "UNITED STATES": "us",
     "UK": "uk", "GB": "uk", "UNITED KINGDOM": "uk",
     "GLOBAL": "global", "WORLDWIDE": "global", "WW": "global",
+    # [R70] (Romain, 2026-10-06, « PC et consoles ») : l'Amérique du Nord est une base — les
+    # cases « … NA » / « … north america » des familles consoles sont dans CONSOLE_REGION_IDS.
+    "NORTH AMERICA": "na", "NA": "na",
 }
 # 2-letter codes → the matcher's FORBIDDEN_REGIONS / _URL_FORBIDDEN_CODES labels (the
 # same 2-letter vocabulary the merchant "<CODE> Key" grammars use, extended with the codes
@@ -424,7 +438,7 @@ _REGION_CODE_LABEL = {
     "RU": "RUSSIA", "TR": "TURKEY", "BR": "BRAZIL", "AR": "ARGENTINA", "CN": "CHINA",
     "KR": "KOREA", "JP": "JAPAN", "PL": "POLAND", "UA": "UKRAINE", "MX": "MEXICO",
     "PH": "PHILIPPINES", "VN": "VIETNAM", "TH": "THAILAND",
-    "CA": "CANADA", "AU": "AUSTRALIA", "ZA": "SOUTH AFRICA", "NA": "NORTH AMERICA",
+    "CA": "CANADA", "AU": "AUSTRALIA", "ZA": "SOUTH AFRICA",
     "CO": "COLOMBIA", "SG": "SINGAPORE", "HK": "HONG KONG", "IN": "INDIA",
     "DE": "GERMANY", "AT": "AUSTRIA", "NL": "NETHERLANDS", "RO": "ROMANIA",
     "EU/NA": "EU NA",          # the matcher spells it "EU NA" (punctuation → space)

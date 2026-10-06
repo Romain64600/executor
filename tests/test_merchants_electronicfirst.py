@@ -110,11 +110,13 @@ class ElectronicfirstPrecheckTests(unittest.TestCase):
             ("Two Point Hospital: Healthy Collection Vol. 4 Bundle RoW Steam CD Key", "ROW"),
             ("Warhammer 40,000: Dawn of War IV Commander Edition EU/NA PC Steam CD Key",
              "EU NA"),
-            ("Destroy All Humans! 2 Reprobed NA PS4 CD Key", "NORTH AMERICA"),
             ("Endzone 2 EU/US/JP PC Steam CD Key", "JAPAN"),
         ):
             with self.subTest(name=name):
                 self.assertEqual(ef.precheck(name, URL), f"forbidden region: {label}")
+        # [R70] (2026-10-06) : « NA » en créneau est une base, plus un verrou
+        self.assertIsNone(ef.precheck("Destroy All Humans! 2 Reprobed NA PS4 CD Key", URL))
+        self.assertEqual(ef.title_region("Assassin's Creed Rogue NA PC Ubisoft Connect CD Key"), "na")
 
     def test_r49b_a_spelled_out_region_in_the_name_with_an_empty_slot_is_refused(self):
         reason = ef.precheck(

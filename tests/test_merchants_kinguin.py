@@ -159,7 +159,6 @@ class RegionHooksTests(_Registry):
             "Destiny 2 - The Collection Bundle DLC AU XBOX One / Xbox Series X|S CD Key": "AUSTRALIA",
             "Crusader Kings III - Royal Court DLC RoW PC Steam CD Key": "ROW",
             "Darksiders Genesis TR PC Steam CD Key": "TURKEY",
-            "Assassin's Creed Rogue NA PC Ubisoft Connect CD Key": "NORTH AMERICA",
             "Call of Duty: World at War SEA PC Steam Gift": "SOUTH EAST ASIA",
             "Bus Simulator 21 EN Language Only AR XBOX One / Xbox Series X|S CD Key": "ARGENTINA",
             "Sons Of The Forest DE PC Steam Altergift": "GERMANY",
@@ -168,14 +167,19 @@ class RegionHooksTests(_Registry):
             "Grand Theft Auto V Enhanced BR PC Rockstar Digital Download CD Key": "BRAZIL",
             "Rocket League UAE PC Steam Gift": "UNITED ARAB EMIRATES",
             "Tom Clancy's Ghost Recon Breakpoint Ultimate Edition ANZ PC Ubisoft Connect CD Key": "ANZ",
-            "Onimusha: Way of the Sword NA PS5 CD Key": "NORTH AMERICA",
             "Red Dead Redemption EU/UK PC Windows CD Key": "EU/UK",     # two buckets → no single one (fail-closed)
-            "Planet Zoo - Africa Pack DLC NA PC Steam CD Key": "NORTH AMERICA",   # generic said AFRICA (the DLC name)
         }
         for title, label in cases.items():
             with self.subTest(title=title):
                 self.assertEqual(precheck(title, URL), f"forbidden region: {label}")
                 self.assertIsNone(title_region(title))
+        # [R70] (Romain, 2026-10-06) : le code « NA » (9 lignes du 12/09) est une base, plus un verrou
+        for title in ("Assassin's Creed Rogue NA PC Ubisoft Connect CD Key",
+                      "Planet Zoo - Africa Pack DLC NA PC Steam CD Key"):   # generic said AFRICA (the DLC name)
+            with self.subTest(title=title):
+                self.assertIsNone(precheck(title, URL))
+                self.assertEqual(title_region(title), "na")
+        self.assertIsNone(precheck("Onimusha: Way of the Sword NA PS5 CD Key", URL))
 
     def test_account_and_access_listings(self):
         rows = {

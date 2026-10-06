@@ -272,7 +272,7 @@ remaster `[critical learned rule]`.
 Console (Xbox/PS/Nintendo — the `console` skip fires on a title OR URL marker; lifted
 by the console branch — `--consoles`, the DEFAULT since 2026-09-15, `--no-consoles`
 restores the skip — §4.12 `[R45]`); forbidden regions
-(RoW/AMERICAS/ASIA/OTHER/North America/EU-NA/EMEA/NA/Eastern Europe/SEA/Middle
+(RoW/AMERICAS/ASIA/OTHER/EU-NA/EMEA/Eastern Europe/SEA/Middle
 East/Turkey/Germany); Country Gift (CZ/RU/TR/BR/AR/IN/CN);
 Prepaid/Subscription/Voucher/Gift Card/Wallet/in-game currency
 (Points/Coins/Gems/Diamonds/Credits/Top-Up)/Membership/Steam Account
@@ -596,7 +596,7 @@ row a gift) and `detect_region` layers the Steam GIFT bucket on the base
 region the title / URL declare — GIFT (25) for no region / Global, GIFT EU (259) for Europe;
 a US / UK base takes GIFT US (2577) / GIFT UK (2572) since `[R50]` (2026-09-16 — the buckets
 were in the dropdown all along); a base a platform really lacks keeps the fail-closed "no region id"
-skip; forbidden regions (North America, Americas) keep their precheck skip; the word
+skip; forbidden regions (Americas, Canada…) keep their precheck skip (North America is a BASE since `[R70]`, 2026-10-06); the word
 "Altergift" is never a product word — the matcher drops it, for EVERY merchant, from the
 guards' title (after the merchant's `guard_name`) and from `resolution_name` (after its
 `resolve_name`, so the list-22 export too). **Steam only, generically** (`precheck_skip`, right
@@ -1595,7 +1595,7 @@ d'Asie"* + *"les régions russes aussi"*. Three dispositions for a resolved regi
 - **BLACKLIST** — `LATAM` / `Latin America` / `Brazil` / `Argentina` / other Latin
   countries, `Asia` (+ China / Japan / Korea / India / SEA countries), `Russia` /
   `CIS` / `RU`. ⇒ routed to the **Blacklist** list (8) so it leaves the entry feed.
-- **SKIP (garder)** — any other non-sellable region (`ROW` / `North America` /
+- **SKIP (garder)** — any other non-sellable region (`ROW` / `EU NA` /
   `Turkey` / `EMEA` …). Left in place; the operator decides. **ROW spelled out
   (2026-09-24)**: « Rest of World » / « Rest of the World » are the same lock as the
   `ROW` code — in the generic scan (`FORBIDDEN_REGIONS` → `forbidden region: REST OF
@@ -3906,6 +3906,80 @@ verrouillée Europe. 0 faux positif sur 86 820 lignes distinctes des runs de cet
   rougies à la première écriture ; les classes `Revue…` ont été écrites ROUGES avant leurs
   correctifs (71 sous-tests en échec + 1 erreur, puis verts), et 14 mutations de ces correctifs
   les rougissent toutes.
+
+### `[R70]` Amérique du Nord : une région vendable, PC et consoles (2026-10-06)
+
+**Romain, 2026-10-06** (après le log K4G « STAR WARS: Galactic Racer Standard Edition North America
+Steam CD Key — ignorée, forbidden region: NORTH AMERICA ») : « tu sais ajouter ça, c'est "Steam
+NA" », puis « go pour NA, PC et consoles ». `NORTH AMERICA` était dans `FORBIDDEN_REGIONS` depuis le
+début — un refus d'avant la règle « vérifier le dropdown » (même famille que les trous comblés par
+R50), alors que le menu du modal a bien les cases. **1 260 offres distinctes** refusées en
+production sur cette VM (G2A 399, Kinguin 253, K4G 157, GameSeal 154, Gamivo 131, Driffle 89,
+Eneba 46, CJS 20, GameBoost 6, Electronicfirst 3, Gamerall 1, Instant Gaming 1).
+
+**La base `na`** (libellé `NA`), à côté de global / eu / us / uk, partout où une base se lit :
+
+* **vocabulaire partagé** (`merchants/common.SELLABLE_WORDS`) : « NORTH AMERICA » et le code « NA »
+  (code court : lu seulement écrit en CAPITALES par le marchand, comme « US ») — toutes les
+  grammaires qui passent par `region_kind` / `sellable_base` (Kinguin, K4G, GameBoost, GameSeal,
+  Driffle, G2A, Wyrel, GamersOutlet, Electronicfirst) le lisent d'elles-mêmes ; Gamivo (tables
+  propres : « North America », codes `na` / `north-america`), Loaded (parenthèse « (North
+  America) »), Instant Gaming (page « - North America ») ont leur entrée ;
+* **scan générique** (`_detect_region_parts`, lu comme EUROPE, avant les créneaux US / UK) : le nom
+  entier dans le slug (`-north-america`) ou le titre (« North America »), le code « NA » SEULEMENT
+  dans un créneau — queue de titre (« - NA »), slot d'URL (`…-steam-key-na`), parenthèse
+  (« (NA) ») ; un « NA » nu en plein titre reste un mot (« Sea of NA Thieves » → GLOBAL
+  implicite) ;
+* **consoles** (`console_keys._REGION_BASE_OF`) : « North America » / « NA » → base `na`, famille
+  par famille.
+
+**Les cases** (lues dans `runs/20260930-193353-auto-pass27/catalog.json` le 06/10) :
+
+| Plateforme | id | texte du menu |
+|---|---|---|
+| STEAM | `steamna` | STEAM NA |
+| STEAM, cadeau | `2571` | Steam Gift NA |
+| EA | `643` | Origin NA |
+| UBISOFT | `606` | ubisoft na |
+| BATTLENET | `625` | battlenet na |
+| XBOX_ONE | `582` | xbox game code north america |
+| XBOX_SERIES | `304` | Xbox Series NA Game Code |
+| XBOX_PC | `605` | xbox/pc na |
+| PS4, PS5 | `610` | playstation game code na (une seule case PlayStation NA, comme `88eu` / `88us`, P3) |
+| SWITCH, SWITCH2 | `496` | nintendo game code north america |
+
+GOG, EPIC, PUBLISHER, ROCKSTAR, MICROSOFT n'ont PAS de case NA (« Publisher NA/SA (531) » couvre les
+deux Amériques, « microsoft software na/sa (562) » est la famille logiciels) : une clé NA y reste
+« no region id for <PLATEFORME>/NA », fail-closed. Un cadeau NA prend `gift_na` (Steam 2571) et
+jamais le cadeau mondial ; aucune plateforme n'a de `gmg_gift_na` → refus.
+
+**Ce qui ne change pas** : les verrous composés restent des verrous — « EU NA » / « EU/NA »,
+« AMERICAS », « EUROPE / NORTH AMERICA » (deux bases = un verrou, comme « EU/UK ») ; « CANADA »,
+« Latin America », « South America » restent refusés ; R44 connaît la phrase (« … North America »
+dans le NOM de la page AKS = identité, refus sans grammaire marchande) ; R63 : un verrou NA écrit
+n'est jamais la case 31 ni 3euen / 3eu ; R16 : NORTH / AMERICA sont du bruit de région comme
+UNITED / STATES ; la queue de titre « North America » est retirée du slug
+(`_TRAILING_NOISE_PHRASES`). Gamivo : un code `na` déclaré dans la seule URL, titre muet, est
+refusé comme `us` / `uk` (R46).
+
+
+**Aperçu à blanc du 06/10 sur les 1 260 refus de production** (`03_match` hors ligne, marchand par
+marchand, lecture seule) : **386 candidats**, 874 refus pour d'autres motifs, inchangés (210 « mots
+en trop », 170 « plateforme invérifiable », 168 sans page AKS, 48 bundles, 19 « EUROPE / NORTH
+AMERICA », 29 restrictions de langue…). Les 386 : 228 Steam NA (`steamna`), 105 Steam Gift NA (2571,
+dont les Altergift K4G), 37 PlayStation NA (610), 8 Nintendo NA (496), 4 Ubisoft NA (606), 3 Xbox NA
+(304 / 582 / 605 Play Anywhere), et **1 GLOBAL juste** : Gamerall « Planet Zoo: North America Animal
+Pack - DLC (Steam) », slug `-global`, page AKS `planet-zoo-north-america-animal-pack` — « North
+America » est le NOM du DLC, le verrou d'avant était faux. Par marchand : GameSeal 116, K4G 102,
+G2A 49, Gamivo 48, Kinguin 31, Eneba 15, Driffle 10, CJS 9, GameBoost 2, Electronicfirst 2,
+Gamerall 1, Instant Gaming 1. Aucune écriture : ces offres entreront aux prochains balayages, une
+fois le code tiré sur les clones vivants.
+
+**Un audit voudra** : (a) lire un « NA » nu en plein titre comme la région — non, collision avec
+des mots de jeux, seul un créneau compte ; (b) retomber sur US (8) ou GLOBAL quand la plateforme
+n'a pas de case NA — non, refus nommé ; (c) accepter « EU NA » comme NA ou comme EU — non, deux
+régions = verrou ; (d) accepter « Americas » — non, Amérique du Sud comprise. Tests :
+`tests/test_region_na_r70.py`.
 
 ### `[R69]` Indiegala (store 95) — la fiche produit fait foi : plateforme, DLC, pays interdits (2026-10-06)
 

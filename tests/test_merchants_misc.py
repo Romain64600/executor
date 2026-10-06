@@ -53,7 +53,8 @@ class CommonVocabularyTests(unittest.TestCase):
 
     def test_compound_slots(self):
         self.assertEqual(compound_region_kind("United States / Canada"), ("forbidden", "CANADA"))
-        self.assertEqual(compound_region_kind("EUROPE / NORTH AMERICA"), ("forbidden", "NORTH AMERICA"))
+        self.assertEqual(compound_region_kind("EUROPE / NORTH AMERICA"), ("forbidden", "EUROPE / NORTH AMERICA"))   # [R70] deux bases
+        self.assertEqual(compound_region_kind("NORTH AMERICA"), ("base", "na"))
         self.assertEqual(compound_region_kind("EU / Europe"), ("base", "eu"))
         self.assertEqual(compound_region_kind("EU / US"), ("forbidden", "EU / US"))     # two buckets → none
         self.assertIsNone(compound_region_kind("PC / PS5 / Xbox Series X|S"))

@@ -1266,7 +1266,7 @@ class RegionBlacklistRoutingTests(unittest.TestCase):
         self.assertEqual(suggest_target_list("forbidden region: MIDDLE EAST"), "34")
         self.assertEqual(suggest_target_list("forbidden region: AFRICA"), "35")
         self.assertEqual(suggest_target_list("forbidden region: AUSTRALIA"), "32")
-        for label in ("NORTH AMERICA", "ROW", "TURKEY", "EMEA", "GERMANY", "EU NA"):
+        for label in ("ROW", "TURKEY", "EMEA", "GERMANY", "EU NA"):
             self.assertIsNone(suggest_target_list(f"forbidden region: {label}"), label)
 
     def test_sellable_regions_are_never_blacklisted(self):
@@ -4955,7 +4955,8 @@ class ConsoleMatchR45Tests(unittest.TestCase):
     def test_region_ids_and_platform_labels_carry_the_console_families(self):
         from src.matcher import PLATFORM_LABEL, REGION_IDS
         self.assertEqual(REGION_IDS["XBOX_ONE"]["eu"], "24eu")
-        self.assertEqual(REGION_IDS["PS5"], {"global": "88ps5h", "eu": "88eu", "us": "88us", "uk": "88uk"})
+        self.assertEqual(REGION_IDS["PS5"], {"global": "88ps5h", "eu": "88eu", "us": "88us", "uk": "88uk",
+                                             "na": "610"})                  # [R70] NA (2026-10-06)
         self.assertEqual(REGION_IDS["STEAM"]["global"], "2")                 # PC untouched
         for fam in ("XBOX_ONE", "XBOX_SERIES", "XBOX_PC", "PS4", "PS5", "SWITCH"):
             self.assertIn(fam, PLATFORM_LABEL)
@@ -5394,7 +5395,7 @@ class GamivoConfigR46Tests(unittest.TestCase):
             "Final Fantasy XV Global": "global",            # XV is not a language code
             "KIBORG EN Colombia": None,                     # forbidden → precheck's job
             "Storebound ROW": None,
-            "Quantum Break EN North America": None,
+            "Quantum Break EN North America": "na",             # [R70] (2026-10-06)
             "The Last of Us": None,                         # "Us" is not "US"
             "Lowes Gift Card USD US $73": None,             # no trailing region
             "Global": None,                                 # a lone region is no title
@@ -5422,7 +5423,6 @@ class GamivoConfigR46Tests(unittest.TestCase):
             "KIBORG EN Colombia": "COLOMBIA",
             "Some Game EN Netherlands": "NETHERLANDS",
             "Storebound ROW": "ROW",
-            "Quantum Break EN North America": "NORTH AMERICA",
             "Some Game Canada": "CANADA",
             "Universe Sandbox Australia": "AUSTRALIA",
             "Metro Exodus EN/DE/FR/IT CIS": "CIS",
@@ -5445,8 +5445,9 @@ class GamivoConfigR46Tests(unittest.TestCase):
         # never a bare "-us-" ("among-us")
         self.assertEqual(precheck("Some Game", self.G + "some-game-pc-steam-co-standard"),
                          "forbidden region: COLOMBIA")
-        self.assertEqual(precheck("Some Game", self.G + "some-game-pc-ubisoft-connect-na-standard"),
-                         "forbidden region: NORTH AMERICA")
+        # [R70] : na est une base — déclarée dans la seule URL, titre muet → refus R46 comme us / uk
+        self.assertIn("declared only in the URL",
+                      precheck("Some Game", self.G + "some-game-pc-ubisoft-connect-na-standard"))
         self.assertEqual(precheck("Some Game", self.G + "some-game-pc-steam-ch-standard"),
                          "forbidden region: SWITZERLAND")
         self.assertEqual(precheck("Some Game", self.G + "some-game-pc-steam-xq-standard"),

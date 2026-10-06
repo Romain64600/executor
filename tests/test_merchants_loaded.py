@@ -8,7 +8,7 @@ import unittest
 
 from src.console_keys import classify_console
 from src.contracts import NormalizedOffer
-from src.matcher import precheck_skip
+from src.matcher import detect_region, precheck_skip
 from src.merchants import loaded as L
 from src.merchants.registry import merchant_config, merchant_for_store
 
@@ -42,9 +42,11 @@ class LaRegionEstLaParentheseFinale(unittest.TestCase):
         o = _offre("Attack on Titan 3 / A.O.T. 3 PC (Europe & UK)", "attack-on-titan-3-a-o-t-3-pc-steam-eu")
         self.assertEqual(detect_region(o, "STEAM")[:2], ("EU", "9"))
 
-    def test_north_america_et_region_inconnue_sont_refusees(self):
+    def test_north_america_est_une_base_et_region_inconnue_refusee(self):
+        # [R70] (Romain, 2026-10-06) : « (North America) » = base na (STEAM NA, steamna)
         na = _offre("Attack on Titan 3 / A.O.T. 3 PC (North America)", "attack-on-titan-3-a-o-t-3-pc-steam-na")
-        self.assertEqual(precheck_skip(na, consoles=True), "forbidden region: NORTH AMERICA")
+        self.assertIsNone(precheck_skip(na, consoles=True))
+        self.assertEqual(detect_region(na, "STEAM")[:2], ("NA", "steamna"))
         inconnue = L.precheck("Some Game PC (Moonbase)", _aff("some-game-pc-steam-mb"))
         self.assertIn("Moonbase", inconnue)
         self.assertIn("R61", inconnue)

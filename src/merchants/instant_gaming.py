@@ -56,6 +56,7 @@ IG_REGION_TEXT_MAP = {
     "EUROPE": "eu", "EU": "eu",
     "UNITED STATES": "us", "US": "us", "USA": "us",
     "UK": "uk", "UNITED KINGDOM": "uk",
+    "NORTH AMERICA": "na", "NA": "na",     # [R70] (Romain, 2026-10-06)
 }
 # Region policy (Romain 2026-08-13): "on est sur Global, Europe et US. Le reste, on
 # skippe et certaines régions qu'on va blacklist, comme les Latam, le Brésil et les

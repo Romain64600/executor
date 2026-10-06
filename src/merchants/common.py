@@ -281,6 +281,12 @@ SELLABLE_WORDS: dict[str, str] = {
     "US": "us", "USA": "us", "UNITED STATES": "us",
     "UK": "uk", "GB": "uk", "UNITED KINGDOM": "uk",
     "GLOBAL": "global", "WORLDWIDE": "global", "WW": "global",
+    # [R70] (Romain, 2026-10-06 : « go pour NA, PC et consoles ») : l'Amérique du Nord est une
+    # base vendable — le menu AKS a STEAM NA (steamna), Steam Gift NA (2571), Origin NA (643),
+    # Ubisoft NA (606), Battle.net NA (625), xbox/pc NA (605) et les cases consoles NA. 1 260
+    # offres distinctes refusées « forbidden region: NORTH AMERICA » en production avant ça.
+    # « NA » reste un code court : lu seulement écrit en CAPITALES par le marchand (region_kind).
+    "NORTH AMERICA": "na", "NA": "na",
 }
 # Region locks → the matcher's label vocabulary (FORBIDDEN_REGIONS / _URL_FORBIDDEN_CODES /
 # the console classifier's _REGION_CODE_LABEL). A full name maps to its own upper-cased
@@ -297,7 +303,7 @@ FORBIDDEN_WORDS: dict[str, str] = {
     "RU": "RUSSIA", "TR": "TURKEY", "BR": "BRAZIL", "AR": "ARGENTINA", "CN": "CHINA",
     "KR": "KOREA", "JP": "JAPAN", "PL": "POLAND", "UA": "UKRAINE", "MX": "MEXICO",
     "PH": "PHILIPPINES", "VN": "VIETNAM", "TH": "THAILAND", "CA": "CANADA",
-    "AU": "AUSTRALIA", "ZA": "SOUTH AFRICA", "NA": "NORTH AMERICA", "CO": "COLOMBIA",
+    "AU": "AUSTRALIA", "ZA": "SOUTH AFRICA", "CO": "COLOMBIA",
     "SG": "SINGAPORE", "HK": "HONG KONG", "IN": "INDIA", "DE": "GERMANY", "AT": "AUSTRIA",
     "NL": "NETHERLANDS", "RO": "ROMANIA", "CL": "CHILE", "PE": "PERU", "MY": "MALAYSIA",
     "ID": "INDONESIA", "NZ": "NEW ZEALAND", "CH": "SWITZERLAND", "FR": "FRANCE",
@@ -319,7 +325,7 @@ FORBIDDEN_WORDS: dict[str, str] = {
     # fausse raison. Romain : une ROW n'entre que si on prouve qu'elle s'active en Europe.
     "REST OF WORLD": "ROW", "REST OF THE WORLD": "ROW",
     # full names (label = the name itself, matcher spelling)
-    "NORTH AMERICA": "NORTH AMERICA", "SOUTH AMERICA": "SOUTH AMERICA",
+    "SOUTH AMERICA": "SOUTH AMERICA",
     "LATIN AMERICA": "LATIN AMERICA", "SOUTH EAST ASIA": "SOUTH EAST ASIA",
     "EASTERN EUROPE": "EASTERN EUROPE", "MIDDLE EAST": "MIDDLE EAST",
     "HONG KONG": "HONG KONG", "NEW ZEALAND": "NEW ZEALAND", "SOUTH AFRICA": "SOUTH AFRICA",
@@ -407,7 +413,8 @@ def compound_region_kind(text: str) -> tuple[str, str] | None:
 
 
 def sellable_base(text: str) -> str | None:
-    """``"eu"`` / ``"us"`` / ``"uk"`` / ``"global"`` for a sellable region word, else None."""
+    """``"eu"`` / ``"us"`` / ``"uk"`` / ``"na"`` / ``"global"`` for a sellable region word, else
+    None ([R70] : « North America » / « NA » sont une base depuis le 2026-10-06)."""
 
     kind = region_kind(text)
     return kind[1] if kind is not None and kind[0] == "base" else None
