@@ -368,6 +368,9 @@ const COMPETITORS = {
       { product: "Battlefield 6", page_url: "https://www.allkeyshop.com/blog/buy-battlefield-6-cd-key-compare-prices/",
         aks: { price: 44.5, merchant: "Eneba" }, competitor: { price: 44.5, seller: "Eneba", url: "https://www.dlcompare.fr/jeux/1/bf6" },
         cheaper: "same", gap: 0 },
+      // a console page is not compared: the competitors give no price per console (EA SPORTS FC 27 PS5, 06/10/2026)
+      { product: "EA SPORTS FC 27 PS5", page_url: "https://www.allkeyshop.com/blog/buy-ea-sports-fc-27-ps5-key-compare-prices/",
+        aks: { price: 36.71, merchant: "BuyGames", account: true }, competitor: null, cheaper: null, gap: null, skipped: "console" },
       // an export written before the orange said "aks" for a tie: still the same price
       { product: "Hollow Knight Silksong", page_url: "https://www.allkeyshop.com/blog/buy-hollow-knight-silksong-cd-key-compare-prices/",
         aks: { price: 15.29, merchant: "GAMESEAL" }, competitor: { price: 15.29, seller: "GAMESEAL", url: "https://www.dlcompare.fr/jeux/2/hks" },
@@ -383,12 +386,15 @@ test("one widget per competitor: green when AllKeyShop is cheaper, orange at the
   assert.equal(widgets.length, 2);
   const [gg, dl] = widgets;
   assert.ok(gg.textContent.includes("bloqué") && gg.textContent.includes("API officielle"), gg.textContent);
-  assert.ok(dl.textContent.includes("1 AKS moins cher · 2 même prix · 1 concurrent moins cher · 1 introuvable"), dl.textContent);
+  assert.ok(dl.textContent.includes("1 AKS moins cher · 2 même prix · 1 concurrent moins cher · 1 introuvable · 1 page console non comparée"),
+    dl.textContent);
   const cells = dl.querySelectorAll("td").filter((td) => td.classList.contains("pc-comp-price"));
   assert.deepEqual(cells.map((td) => ["pc-win", "pc-even", "pc-lose"].filter((k) => td.classList.contains(k))),
-    [["pc-win"], ["pc-lose"], [], ["pc-even"], ["pc-even"]]);
+    [["pc-win"], ["pc-lose"], [], ["pc-even"], [], ["pc-even"]]);
+  assert.deepEqual(cells.map((td) => td.textContent).slice(2, 5), ["introuvable", "44,50 € · Eneba", "page console, non comparée"]);
   const gaps = dl.querySelectorAll("td").filter((td) => td.classList.contains("pc-comp-gap")).map((td) => td.textContent);
-  assert.deepEqual(gaps.slice(3), ["même prix", "même prix"]);
+  assert.deepEqual(gaps.slice(3), ["même prix", "", "même prix"]);
+  assert.ok(dl.textContent.includes("36,71 € · BuyGames (compte)"), "a console page lost AllKeyShop's first price");
   assert.ok(dl.textContent.includes("30,87 € · Kinguin (compte)"), "AKS's first price is not beside");
   assert.ok(dl.textContent.includes("AKS moins cher de 1,61 €") && dl.textContent.includes("AKS plus cher de 19,27 €"), dl.textContent);
   assert.ok(!anchors(dl).some((a) => String(a.getAttribute("href")).startsWith("javascript")), "a javascript: URL became a link");

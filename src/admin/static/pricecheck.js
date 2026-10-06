@@ -570,7 +570,9 @@ function competitorWidget(site) {
   const won = rows.filter((r) => outcome(r) === "aks").length;
   const even = rows.filter((r) => outcome(r) === "same").length;
   const lost = rows.filter((r) => outcome(r) === "competitor").length;
-  const missing = rows.filter((r) => !r.competitor).length;
+  // a console page is not compared (the competitors give no price per console): not "introuvable"
+  const consoles = rows.filter((r) => r.skipped === "console").length;
+  const missing = rows.filter((r) => !r.competitor && !r.skipped).length;
   const blocked = site.status === "blocked";
   const head = el("div", { class: "pc-comp-head" }, [
     safeLink(site.home, site.label || site.id),
@@ -578,7 +580,8 @@ function competitorWidget(site) {
       : el("span", { class: "pc-comp-score" }, [el("b", { class: "pc-win", text: String(won) }), " AKS moins cher · ",
         el("b", { class: "pc-even", text: String(even) }), " même prix · ",
         el("b", { class: "pc-lose", text: String(lost) }), " concurrent moins cher" +
-        (missing ? " · " + missing + " introuvable" + (missing > 1 ? "s" : "") : "")]),
+        (missing ? " · " + missing + " introuvable" + (missing > 1 ? "s" : "") : "") +
+        (consoles ? " · " + consoles + " page" + (consoles > 1 ? "s" : "") + " console non comparée" + (consoles > 1 ? "s" : "") : "")]),
   ]);
   if (blocked) return el("section", { class: "pc-comp-card blocked" }, [head, el("p", { class: "pc-comp-msg", text: site.message || "" })]);
   const body = rows.map((r) => {
@@ -586,7 +589,8 @@ function competitorWidget(site) {
     return el("tr", {}, [
       el("td", {}, [safeLink(r.page_url, r.product || "?")]),
       el("td", { class: "pc-comp-aks", text: a ? euros(a.price) + " · " + (a.merchant || "?") + (a.account ? " (compte)" : "") : "—" }),
-      el("td", { class: "pc-comp-price " + tone }, c ? [safeLink(c.url, euros(c.price)), " · " + (c.seller || "?")] : ["introuvable"]),
+      el("td", { class: "pc-comp-price " + tone }, c ? [safeLink(c.url, euros(c.price)), " · " + (c.seller || "?")]
+        : [r.skipped === "console" ? "page console, non comparée" : "introuvable"]),
       el("td", { class: "pc-comp-gap", text: gapLabel(r) }),
     ]);
   });

@@ -367,6 +367,9 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             "couleurs des concurrents": ('const TONE = { "aks": "pc-win", "same": "pc-even", "competitor": "pc-lose" };', 'const TONE = {};'),
             # 06/10/2026 : « couleur orange quand on est au même prix que le concurrent », même dans un ancien relevé
             "même prix en orange": ('"same": "pc-even", ', ''),
+            # 06/10/2026 : une page console n'est pas comparée (EA SPORTS FC 27 PS5), ni comptée introuvable
+            "page console non comparée": ('r.skipped === "console" ? "page console, non comparée" : "introuvable"', '"introuvable"'),
+            "page console pas introuvable": ('rows.filter((r) => !r.competitor && !r.skipped).length', 'rows.filter((r) => !r.competitor).length'),
             "égalité d'un ancien relevé en orange": ('&& cents(r.aks.price) === cents(r.competitor.price) ? "same" : r.cheaper',
                                                     '&& false ? "same" : r.cheaper'),
             "concurrent bloqué dit pourquoi": ('el("p", { class: "pc-comp-msg", text: site.message || "" })', 'el("p", { class: "pc-comp-msg" })'),
