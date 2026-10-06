@@ -120,6 +120,7 @@ du feed.
 | Eneba | 19 | `eneba.py` | `console_url_families`, `console_pc_declared`, `console_region_slot` | **non — dry-run du 12/09 fait (32 candidats, 90 % consoles), sweep réel sur go** | ≥ 30 |
 | Allyouplay | 17 | `allyouplay.py` (lien d'affiliation + lecteur de fiche `[R68]`, en ligne le 30/09) | `domain="allyouplay.com"`, `affiliate_hosts=("anandadigitalbv.sjv.io",)`, `url_identity_params=("u",)` ; `[R68]` : `precheck` (« [Mac] »), `url_platform` (`-ga-ste-` / `-ga-gog-`), `offer_page_resolver` (fiche : « Platform », `available_countries`, règle `[R59]`), `console_page_authoritative` | **non** — balayé 6 fois (groupe B, 17/09 → 26/09) mais 100 % refusé au contrôle de domaine : 0 saisie | 3 |
 | Indiegala | 95 | `indiegala.py` (**nouveau 06/10**, lecteur de fiche `[R69]`, modèle `[R68]`) | `domain="indiegala.com"` ; PC : `title_region` (suffixe « (US) / (EU) / (UK) » en queue, doit s'accorder avec la fiche), `resolve_name` / `guard_name` (suffixe retiré, titre multilingue réduit à sa première partie), `offer_page_resolver` (fiche : « is provided via », pays interdits `[R59]`, verrou pays, DLC = garde), `console_page_authoritative` | **non — hors liste blanche, hors groupe** : aperçu à blanc fait le 06/10 (34 / 175, `docs/apercu_indiegala_2026-10-06.md`) ; règle de région et go à confirmer par Romain | 175 lignes (21/09) |
+| Gamebillet | 15 | `gamebillet.py` (**nouveau 06/10**, lecteur de fiche `[R71]`, modèle `[R69]`) | `domain="gamebillet.com"` ; PC : `offer_page_resolver` (fiche : ligne « Delivery » = plateforme, fenêtre « Restricted countries » → pays exclus `[R59]`, fenêtre vide = GLOBAL, aucun signal DLC), `console_page_authoritative` ; ni `title_region` ni `resolve_name` (titre et URL muets) | **non — hors liste blanche, hors groupe** : aperçu à blanc fait le 06/10 (165 / 268, `docs/apercu_gamebillet_2026-10-06.md`) ; règle de région et go à confirmer par Romain | 268 lignes (21/09) |
 | GameSeal | 126 | `gameseal.py` | `domain` ; PC : `precheck`, `title_region` (queue ` - <RÉGION>`), `resolve_name` (queue pelée, 20/09) ; console : `console_url_families`, `console_region_slot` | oui (1er balayage 19/09) | 1 090 écrites, 1 089 justes (audit du 20/09) |
 | CJS-CDKeys | 30 | `cjs.py` (**nouveau**, identité seule) | `domain="cjs-cdkeys.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
 | Difmark | 167 | `difmark.py` | `console_url_families` (comptes) | parqué (hors liste blanche) | — |
@@ -749,6 +750,36 @@ matcher et le classifieur importent le registre.
   **Groupe : à choisir par Romain** (hors groupe en attendant, raison écrite dans
   `src/merchant_groups.py`) ; le feed du 21/09 a 15 jours, premier passage court conseillé. Fiches
   de test : `tests/fixtures/indiegala/` (9), `tests/test_merchants_indiegala_r69.py`.
+
+## Gamebillet (store 15)
+
+- **Fichier** : `src/merchants/gamebillet.py` (**2026-10-06**, lecteur de fiche `[R71]`, modèle
+  Indiegala `[R69]`) — **hors liste blanche, hors groupe** : aperçu à blanc fait le même jour
+  (165 entrées / 268, `docs/apercu_gamebillet_2026-10-06.md`), aucune saisie sans le go de Romain.
+  Romain : « Puis Gamebillet » (06/10, après le go d'Indiegala). Étude : `docs/PROCHAINS_MARCHANDS.md`
+  (25/09 « Gamebillet, le suivant », 06/10).
+- **Grammaire du feed (268 lignes du 21/09)** : titre = le nom du produit seul, URL
+  `gamebillet.com/<slug>` (suffixes `-2`, `-z`, `-pre-purchase` sans sens produit, 21 lignes) ;
+  ni plateforme ni région (0 / 268) ; 6 titres bilingues « A / B » gardés entiers. Sans lecteur de
+  fiche, chaque ligne s'arrête sur R27 / `[R51]`.
+- **Hooks** : `offer_page_resolver` (fiche), `console_page_authoritative`. Aucun hook de titre :
+  rien à lire.
+- **La fiche** (HTTP 200, pas de Cloudflare, UA navigateur, `gamebillet.page_get` — bibliothèque
+  standard, jamais `aks_env.http_get` ; 51 / 51 le 06/10) : tableau `Publisher / Developer /
+  Platform / Delivery / …` — **plateforme = ligne « Delivery »** (« Steam » 51 / 51 ; « Other DRM »
+  → refus nommé, 3 fiches Trove ; jamais STEAM par défaut), « Platform » = l'OS (Windows / Linux),
+  ignoré ; **région = fenêtre `#restrictedcountries-popup`**, liste des pays où la clé ne s'active
+  pas → `[R59]` sur les pays EXCLUS (même table que Gamesplanet FR / Allyouplay / Indiegala) ;
+  fenêtre vide = GLOBAL (24 entrées à l'aperçu, à confirmer), fenêtre absente = refus ;
+  l'info-bulle « current region » est ignorée ; **aucun signal DLC** (« Downloadable Content » des
+  Features est aussi porté par des jeux de base — FAIRY TAIL 2 Digital Deluxe) ; 404 = fiche
+  retirée = refus.
+- **Aperçu du 06/10** : 165 entrées (153 GLOBAL, 11 EU, 1 US ; 97 Standard,
+  42 DLC sur leur propre page, le reste en éditions nommées), 103 refus. À regarder par Romain :
+  les 24 fenêtres vides, Mortal Kombat Legacy Kollection en US (Chypre seule exclue, règle
+  `[R59]` stricte), 8 Standard sur des pages qui vendent aussi Early Access / Complete.
+- **Statut live** : **hors liste blanche** (aperçu fait, go de Romain attendu). Fiches de test :
+  `tests/fixtures/gamebillet/` (11), `tests/test_merchants_gamebillet_r71.py`.
 
 ## GameSeal (store 126)
 

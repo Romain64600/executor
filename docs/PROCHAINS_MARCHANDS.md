@@ -13,7 +13,7 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 | Rang | Marchand (store) | Lignes en attente* | Avec une page AKS* | Ce qui manque | Statut |
 |---|---|---|---|---|---|
 | ✓ | **Gamesplanet FR** (55) | 526 | 339 (64 %) | — | **fait** : fichier `[R59]` et liste blanche le 25/09 (groupe A) ; essai à blanc 77 candidats / 150 lignes |
-| 2 | **Gamebillet** (15) | 268 | 192 (72 %) | plateforme et région (URL et titre muets ; la page liste les pays exclus) | à étudier après Gamesplanet |
+| ✓ | **Gamebillet** (15) | 268 | 192 (72 %) | plateforme et région (URL et titre muets ; la page liste les pays exclus) | **fichier écrit le 06/10** (`[R71]`, branche `gamebillet`), **aperçu à blanc le 06/10 : 165 entrées / 268** (`apercu_gamebillet_2026-10-06.md`) — hors liste blanche, go de Romain attendu ; fenêtre « Restricted countries » vide = GLOBAL (24 entrées) à confirmer |
 | 3 | **Muve** (166) | 605 | 322 (53 %) | titre lisible pour ~35 % des lignes ; pas de région sur la page ; « sans région = Europe » refusé par Romain (25/09) | ~140 lignes seulement, en refusant les lignes sans région |
 | 4 | **Pixelcodes** (82) + **Software-codes** (6) | 1 547 + 1 538 | 1 377 + 1 365 (89 %) | **les produits du feed n'existent plus sur leurs sites** (API : « Product not found », 52 sur 52 testés ; sites devenus boutiques de logiciels) | à ne pas saisir ; liste « not found » en cours pour les marchands |
 | 5 | **Discover.games** (168) | 440 | 370 (84 %) | — | **fichier écrit le 25/09 (`[R60]`), essai à blanc : 106 candidats sur 150 lignes ; en liste blanche le 26/09, groupe A** |
@@ -28,6 +28,34 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 (19/09), GameBoost / Electronicfirst / GamersOutlet (16/09), Difmark (21/09).
 
 ---
+
+## 2026-10-06 (soir) — Gamebillet (15) codé : « Puis Gamebillet »
+
+Branche `gamebillet`, `src/merchants/gamebillet.py` (`[R71]`, modèle Indiegala `[R69]`), 11 fiches
+réelles dans `tests/fixtures/gamebillet/`, `tests/test_merchants_gamebillet_r71.py`, registre store
+15 — **hors liste blanche, hors groupe**.
+
+**Ce que la fiche dit** (51 lues) : un tableau `Publisher / Developer / Platform / Delivery / Release
+Date / Genres / Languages / Features` — la **livraison** (« Delivery : Steam », 51 / 51 ; « Other DRM »
+sur 3 packs Trove) est la plateforme, « Platform » est l'OS (Windows / Linux) ; une **fenêtre
+« Restricted countries »** avec la liste des pays où la clé ne s'active pas (0 à 133 pays) ; aucun
+marqueur DLC fiable (« Downloadable Content » des Features est une catégorie Steam que portent
+aussi des jeux de base : FAIRY TAIL 2 Digital Deluxe) ; une fiche retirée répond 404 (accueil).
+
+**Règles codées (les miennes, à confirmer)** : plateforme = « Delivery » (jamais STEAM par défaut) ;
+région = `[R59]` sur les pays restreints (fenêtre vide = GLOBAL, absente = refus) ; aucun signal
+DLC de la fiche ; titre bilingue gardé entier ; `console_page_authoritative`.
+
+**Aperçu à blanc du 06/10** (`03_match` hors ligne sur les 268 lignes du 21/09, détail dans
+[`apercu_gamebillet_2026-10-06.md`](apercu_gamebillet_2026-10-06.md)) : **165 entrées / 103 refus**,
+toutes Steam — 153 GLOBAL, 11 EU (USA exclus : les éditions japonaises Koei Tecmo /
+Capcom), 1 US ; 97 Standard, 42 DLC(16) sur leur propre page, le reste en éditions
+nommées (Deluxe, Ultimate, Supporter…). Refus : 39 sans page AKS, 36 « mots en trop » (DLC et variantes sans page, dont 10 via la recherche catalogue), 10 bundles, 4 éditions non vendues par la page (E06 : pages à seaux Bundle + DLC sans Standard), 3 fiches « Delivery : Other DRM » (refus voulu), 3 noms en désaccord, 1 DLC du titre sur une page sans seau DLC, 2 qualificatifs absents du nom AKS, 1 pass, 1 monnaie, 2 collections de DLC, 1 page AKS sans éditions, 0 sonde AKS en échec passager. **À trancher par Romain** : (1) go ou pas
+pour la liste blanche, et le groupe ; (2) une fenêtre « Restricted countries » VIDE = GLOBAL
+(24 entrées, dont les Supporter Packs et les précommandes) ; (3) Mortal Kombat Legacy
+Kollection en US parce que Chypre seule est exclue (règle `[R59]` du 25/09 appliquée à la lettre :
+« un pays UE exclu mais États-Unis autorisés → US ») ; (4) 8 entrées Standard sur des pages
+qui vendent aussi Early Access / Complete ; (5) « The Dead Await » deux fois au feed (deux URL).
 
 ## 2026-10-06 (soir) — « Quel marchand pourrait-on faire par la suite ? »
 

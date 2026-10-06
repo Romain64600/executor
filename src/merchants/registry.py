@@ -37,6 +37,7 @@ from src.merchants import (
     gameseal,
     gog,
     gamivo,
+    gamebillet,
     indiegala,
     instant_gaming,
     k4g,
@@ -84,6 +85,9 @@ MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
     # [R69] Indiegala (2026-10-06) — fichier écrit (lecteur de fiche, modèle Allyouplay [R68]),
     # PAS en liste blanche ni dans un groupe : aperçu à blanc d'abord (docs/PROCHAINS_MARCHANDS.md).
     "INDIEGALA": indiegala.CONFIG,
+    # [R71] Gamebillet (2026-10-06, Romain : « Puis Gamebillet ») — fichier écrit (lecteur de fiche,
+    # modèle Indiegala [R69]), PAS en liste blanche ni dans un groupe : aperçu à blanc d'abord.
+    "GAMEBILLET": gamebillet.CONFIG,
 }
 
 
@@ -100,7 +104,7 @@ MERCHANT_STORE_IDS: dict[str, str] = {
     "GameSeal": "126", "GameBoost": "157", "Electronicfirst": "70",
     "GamersOutlet": "31", "MMOGA": "12", "Difmark": "167", "Wyrel": "162",
     "Gamerall": "13", "GOG": "34", "Gamesplanet FR": "55",
-    "Discover.games": "168", "Loaded": "40", "Indiegala": "95",
+    "Discover.games": "168", "Loaded": "40", "Indiegala": "95", "Gamebillet": "15",
 }
 _BY_STORE: dict[str, str] = {store: name for name, store in MERCHANT_STORE_IDS.items()}
 

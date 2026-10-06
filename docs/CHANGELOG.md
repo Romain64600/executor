@@ -3,6 +3,24 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-10-06 — `[R71]` Gamebillet (store 15) : fichier marchand avec lecteur de fiche, aperçu à blanc (HORS liste blanche)
+
+- **Romain : « Puis Gamebillet »** (après le go d'Indiegala). `src/merchants/gamebillet.py` sur le
+  modèle Indiegala `[R69]` (EXECUTOR_RULES `[R71]`) : la fiche `gamebillet.com/<slug>` est lue par la
+  bibliothèque standard (`page_get`, UA navigateur, ~1 req / s) ; plateforme = ligne « Delivery »
+  du tableau (jamais STEAM par défaut, « Other DRM » refusé ; « Platform » = l'OS, ignoré) ; région =
+  fenêtre « Restricted countries » → `[R59]` sur les pays exclus (fenêtre vide = GLOBAL, absente =
+  refus) ; aucun signal DLC de la fiche (« Downloadable Content » des Features est aussi porté par
+  des jeux de base — FAIRY TAIL 2 Digital Deluxe, refusée à tort par un premier essai) ; 404 =
+  fiche retirée. Registre store 15, `console_page_authoritative` ; PAS en liste blanche, PAS dans un
+  groupe (pinné par un test). Tests sur 11 pages réelles (`tests/fixtures/gamebillet/`,
+  `tests/test_merchants_gamebillet_r71.py`).
+- **Aperçu à blanc du 06/10** (268 lignes du 21/09, lecture seule, `docs/apercu_gamebillet_2026-10-06.md`) :
+  **165 entrées / 103 refus**, toutes Steam (153 GLOBAL, 11 EU, 1 US ; 42 DLC sur leur
+  propre page). À trancher par Romain : go liste blanche / groupe, fenêtre vide = GLOBAL (24),
+  Mortal Kombat Legacy Kollection en US (Chypre seule exclue), 8 Standard sur des pages Early
+  Access / Complete.
+
 ## 2026-10-06 — Saisie par jeu : l'opérateur choisit les listes AKS (toutes cochées sauf la blacklist)
 
 - **Romain : « Pour la saisie par jeu, je voudrais que l'opérateur puisse choisir les listes.

@@ -3907,6 +3907,64 @@ verrouillée Europe. 0 faux positif sur 86 820 lignes distinctes des runs de cet
   correctifs (71 sous-tests en échec + 1 erreur, puis verts), et 14 mutations de ces correctifs
   les rougissent toutes.
 
+### `[R71]` Gamebillet (store 15) — la fiche produit fait foi : livraison et pays restreints (2026-10-06)
+
+**Fichier écrit le 2026-10-06 (Romain : « Puis Gamebillet », juste après le go d'Indiegala) ; aperçu
+à blanc le même jour (165 entrées / 268, lecture seule, `docs/apercu_gamebillet_2026-10-06.md`) ;
+HORS liste blanche et hors groupe tant que Romain n'a pas vu l'aperçu.** Modèle : `[R69]` Indiegala
+→ `[R68]` Allyouplay — fiche lue par la bibliothèque standard (`gamebillet.page_get`, UA navigateur,
+~1 req / s, jamais `aks_env.http_get`), règle de région `[R59]`, refus nommés. `[R70]` est le
+travail NA (région Amérique du Nord), séparé.
+
+**Constat (268 lignes du scan tous-magasins du 21/09, 51 fiches lues)** : titre = le nom du produit
+seul, URL `gamebillet.com/<slug>` avec des suffixes sans sens produit (`-2`, `-z`,
+`-pre-purchase`) ; ni plateforme ni région nulle part (0 / 268) ; 6 titres bilingues « A / B »
+(« Attack on Titan 3 / A.O.T. 3 », « FATAL FRAME / PROJECT ZERO ») gardés entiers (R01 refuse au
+pire, jamais un nom deviné — même décision qu'Indiegala). La fiche répond 200 (pas de Cloudflare)
+et porte un tableau de spécifications `Publisher / Developer / Platform / Delivery / Release Date /
+Genres / Languages / Features` et une fenêtre `#restrictedcountries-popup`.
+
+**Règles** (`src/merchants/gamebillet.py`, `offer_page_resolver` = `offer_signals`) :
+
+   * **plateforme = la ligne « Delivery »** (« Steam » sur 51 / 51 ; table `DELIVERY_TEXT`, autres
+     boutiques usuelles prévues ; libellé absent ou inconnu → refus NOMMÉ, jamais STEAM par défaut :
+     3 fiches « Other DRM » refusées à l'aperçu). La ligne **« Platform » est le SYSTÈME**
+     (Windows / Linux / Mac : 7 entrées « Linux » à l'aperçu, toutes des clés Steam), lue pour
+     mémoire, jamais décisive ; la page AKS doit vendre la plateforme lue (R20) ;
+   * **région = la fenêtre « Restricted countries »** (liste de pays séparés par des virgules où la
+     clé ne s'active pas) → `[R59]` sur les pays EXCLUS (`gamesplanet.region_from_lock`, mode
+     « NOT ») : aucun pays d'UE / UK / USA exclu → GLOBAL (153 entrées, dont des fiches avec
+     130 pays d'Asie / d'Amérique latine exclus) ; USA exclus sans l'UE → EU (11 : les éditions
+     japonaises Koei Tecmo / Capcom) ; un pays d'UE exclu sans les USA → US (1, Mortal Kombat
+     Legacy Kollection : Chypre seule exclue — règle de Romain du 25/09, à son regard) ; UE et USA
+     exclus → refus « GAMEBILLET LOCK (EU + US) ». **Fenêtre présente mais VIDE = aucune restriction
+     publiée = GLOBAL** (24 entrées, décision PROPOSÉE à confirmer) ; **fenêtre ABSENTE =
+     gabarit changé = refus**. L'info-bulle « can be activated and played in your current region »
+     est la politique de vente du site, IGNORÉE (comme chez Gamesplanet / Indiegala) ;
+   * **DLC : la fiche ne sait pas le dire.** « Downloadable Content » dans la ligne Features est une
+     catégorie Steam que portent aussi des JEUX DE BASE (« FAIRY TAIL 2 Digital Deluxe » : un premier
+     essai de l'aperçu en faisait une garde et refusait cette édition Deluxe à tort ; 42 vrais DLC
+     sur 45 ne la portaient pas) → `MerchantOfferSignals.dlc` reste `None`, le seau DLC(16) vient de
+     R18 / `[R43]` / `[R57]` et de la page AKS (42 entrées DLC(16), toutes sur leur propre page à
+     seau DLC unique) ;
+   * **fiche retirée** : 404 (la page d'accueil « GameBillet | PC, Mac and Linux Games », sans tableau
+     ni fenêtre) → refus ; une page 200 sans le tableau de spécifications → refus. Pas de lien
+     canonique sur ce site : l'identité est le chemin demandé.
+
+Fail-closed : lien hors gamebillet.com ou sans slug, fiche injoignable, statut ≠ 200, tableau absent,
+ligne « Delivery » absente ou inconnue, fenêtre de pays absente ou illisible → refus R32, JAMAIS STEAM
+ni GLOBAL par défaut. Lignes console : `console_page_authoritative` (aucune ligne console au feed ;
+une livraison « Steam » sur une ligne console est un conflit, refus). Registre : `"GAMEBILLET"`, store
+`15` ; PAS dans `auto_merchants`, PAS dans un groupe. Tests : `tests/test_merchants_gamebillet_r71.py`
+(pages réelles, `tests/fixtures/gamebillet/`, 11 fichiers).
+
+**Aperçu du 06/10** : 165 entrées / 103 refus, toutes Steam (97 Standard, 42 DLC, le reste
+en éditions nommées) ; refus : 39 sans page AKS, 36 « mots en trop » (DLC et variantes sans page, dont 10 via la recherche catalogue), 10 bundles, 4 éditions non vendues par la page (E06 : pages à seaux Bundle + DLC sans Standard), 3 fiches « Delivery : Other DRM » (refus voulu), 3 noms en désaccord, 1 DLC du titre sur une page sans seau DLC, 2 qualificatifs absents du nom AKS, 1 pass, 1 monnaie, 2 collections de DLC, 1 page AKS sans éditions, 0 sonde AKS en échec passager. À regarder par Romain : les 24 fenêtres vides (GLOBAL),
+Mortal Kombat Legacy Kollection en US (Chypre seule exclue), 8 pages qui vendent aussi « Early
+Access » / « Complete » quand le titre ne le dit pas (Standard), et « The Dead Await » présent deux
+fois au feed (deux URL, `-z` et nue). Pas de « North America » vu sur les fiches : la question NA
+(`[R70]`) ne se pose pas ici pour l'instant.
+
 ### `[R69]` Indiegala (store 95) — la fiche produit fait foi : plateforme, DLC, pays interdits (2026-10-06)
 
 **Fichier écrit le 2026-10-06 ; aperçu à blanc le même jour (34 entrées / 175, lecture seule,

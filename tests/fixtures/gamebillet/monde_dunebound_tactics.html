@@ -1,0 +1,663 @@
+
+<!DOCTYPE html>
+<!--[if IE 7 ]><html lang="en" class="ie7"><![endif]-->
+<!--[if IE 8 ]><html lang="en" class="ie8"><![endif]-->
+<!--[if IE 9 ]><html lang="en" class="ie9"><![endif]-->
+<!--[if (gt IE 9)|!(IE)]><!-->
+<html lang="en">
+<!--<![endif]-->
+<head>
+    <meta charset="utf-8">
+    <meta name="description" content="Authorized digital download store with indie and major publisher titles for PC, Mac and Linux platforms. Get the best prices, awesome deals." />
+    <meta name="keywords" content="dunebound tactics" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge"><script type="text/javascript">window.NREUM||(NREUM={});NREUM.info = {"beacon":"bam.nr-data.net","errorBeacon":"bam.nr-data.net","licenseKey":"92fb408120","applicationID":"69182879","transactionName":"blEGNUNYXEVWBhIKXVcbKTdyFmJEWAETAEZ6WwoVQ1ZeWlIXSTNAVlARAkV9V0JWDAoQ","queueTime":0,"applicationTime":336,"agent":"","atts":""}</script><script type="text/javascript">(window.NREUM||(NREUM={})).init={ajax:{deny_list:["bam.nr-data.net"]}};(window.NREUM||(NREUM={})).loader_config={licenseKey:"92fb408120",applicationID:"69182879",browserID:"69183475"};window.NREUM||(NREUM={}),__nr_require=function(t,e,n){function r(n){if(!e[n]){var i=e[n]={exports:{}};t[n][0].call(i.exports,function(e){var i=t[n][1][e];return r(i||e)},i,i.exports)}return e[n].exports}if("function"==typeof __nr_require)return __nr_require;for(var i=0;i<n.length;i++)r(n[i]);return r}({1:[function(t,e,n){function r(){}function i(t,e,n,r){return function(){return s.recordSupportability("API/"+e+"/called"),o(t+e,[u.now()].concat(c(arguments)),n?null:this,r),n?void 0:this}}var o=t("handle"),a=t(9),c=t(10),f=t("ee").get("tracer"),u=t("loader"),s=t(4),d=NREUM;"undefined"==typeof window.newrelic&&(newrelic=d);var p=["setPageViewName","setCustomAttribute","setErrorHandler","finished","addToTrace","inlineHit","addRelease"],l="api-",v=l+"ixn-";a(p,function(t,e){d[e]=i(l,e,!0,"api")}),d.addPageAction=i(l,"addPageAction",!0),d.setCurrentRouteName=i(l,"routeName",!0),e.exports=newrelic,d.interaction=function(){return(new r).get()};var m=r.prototype={createTracer:function(t,e){var n={},r=this,i="function"==typeof e;return o(v+"tracer",[u.now(),t,n],r),function(){if(f.emit((i?"":"no-")+"fn-start",[u.now(),r,i],n),i)try{return e.apply(this,arguments)}catch(t){throw f.emit("fn-err",[arguments,this,t],n),t}finally{f.emit("fn-end",[u.now()],n)}}}};a("actionText,setName,setAttribute,save,ignore,onEnd,getContext,end,get".split(","),function(t,e){m[e]=i(v,e)}),newrelic.noticeError=function(t,e){"string"==typeof t&&(t=new Error(t)),s.recordSupportability("API/noticeError/called"),o("err",[t,u.now(),!1,e])}},{}],2:[function(t,e,n){function r(t){if(NREUM.init){for(var e=NREUM.init,n=t.split("."),r=0;r<n.length-1;r++)if(e=e[n[r]],"object"!=typeof e)return;return e=e[n[n.length-1]]}}e.exports={getConfiguration:r}},{}],3:[function(t,e,n){var r=!1;try{var i=Object.defineProperty({},"passive",{get:function(){r=!0}});window.addEventListener("testPassive",null,i),window.removeEventListener("testPassive",null,i)}catch(o){}e.exports=function(t){return r?{passive:!0,capture:!!t}:!!t}},{}],4:[function(t,e,n){function r(t,e){var n=[a,t,{name:t},e];return o("storeMetric",n,null,"api"),n}function i(t,e){var n=[c,t,{name:t},e];return o("storeEventMetrics",n,null,"api"),n}var o=t("handle"),a="sm",c="cm";e.exports={constants:{SUPPORTABILITY_METRIC:a,CUSTOM_METRIC:c},recordSupportability:r,recordCustom:i}},{}],5:[function(t,e,n){function r(){return c.exists&&performance.now?Math.round(performance.now()):(o=Math.max((new Date).getTime(),o))-a}function i(){return o}var o=(new Date).getTime(),a=o,c=t(11);e.exports=r,e.exports.offset=a,e.exports.getLastTimestamp=i},{}],6:[function(t,e,n){function r(t,e){var n=t.getEntries();n.forEach(function(t){"first-paint"===t.name?l("timing",["fp",Math.floor(t.startTime)]):"first-contentful-paint"===t.name&&l("timing",["fcp",Math.floor(t.startTime)])})}function i(t,e){var n=t.getEntries();if(n.length>0){var r=n[n.length-1];if(u&&u<r.startTime)return;var i=[r],o=a({});o&&i.push(o),l("lcp",i)}}function o(t){t.getEntries().forEach(function(t){t.hadRecentInput||l("cls",[t])})}function a(t){var e=navigator.connection||navigator.mozConnection||navigator.webkitConnection;if(e)return e.type&&(t["net-type"]=e.type),e.effectiveType&&(t["net-etype"]=e.effectiveType),e.rtt&&(t["net-rtt"]=e.rtt),e.downlink&&(t["net-dlink"]=e.downlink),t}function c(t){if(t instanceof y&&!w){var e=Math.round(t.timeStamp),n={type:t.type};a(n),e<=v.now()?n.fid=v.now()-e:e>v.offset&&e<=Date.now()?(e-=v.offset,n.fid=v.now()-e):e=v.now(),w=!0,l("timing",["fi",e,n])}}function f(t){"hidden"===t&&(u=v.now(),l("pageHide",[u]))}if(!("init"in NREUM&&"page_view_timing"in NREUM.init&&"enabled"in NREUM.init.page_view_timing&&NREUM.init.page_view_timing.enabled===!1)){var u,s,d,p,l=t("handle"),v=t("loader"),m=t(8),g=t(3),y=NREUM.o.EV;if("PerformanceObserver"in window&&"function"==typeof window.PerformanceObserver){s=new PerformanceObserver(r);try{s.observe({entryTypes:["paint"]})}catch(h){}d=new PerformanceObserver(i);try{d.observe({entryTypes:["largest-contentful-paint"]})}catch(h){}p=new PerformanceObserver(o);try{p.observe({type:"layout-shift",buffered:!0})}catch(h){}}if("addEventListener"in document){var w=!1,b=["click","keydown","mousedown","pointerdown","touchstart"];b.forEach(function(t){document.addEventListener(t,c,g(!1))})}m(f)}},{}],7:[function(t,e,n){function r(t,e){if(!i)return!1;if(t!==i)return!1;if(!e)return!0;if(!o)return!1;for(var n=o.split("."),r=e.split("."),a=0;a<r.length;a++)if(r[a]!==n[a])return!1;return!0}var i=null,o=null,a=/Version\/(\S+)\s+Safari/;if(navigator.userAgent){var c=navigator.userAgent,f=c.match(a);f&&c.indexOf("Chrome")===-1&&c.indexOf("Chromium")===-1&&(i="Safari",o=f[1])}e.exports={agent:i,version:o,match:r}},{}],8:[function(t,e,n){function r(t){function e(){t(c&&document[c]?document[c]:document[o]?"hidden":"visible")}"addEventListener"in document&&a&&document.addEventListener(a,e,i(!1))}var i=t(3);e.exports=r;var o,a,c;"undefined"!=typeof document.hidden?(o="hidden",a="visibilitychange",c="visibilityState"):"undefined"!=typeof document.msHidden?(o="msHidden",a="msvisibilitychange"):"undefined"!=typeof document.webkitHidden&&(o="webkitHidden",a="webkitvisibilitychange",c="webkitVisibilityState")},{}],9:[function(t,e,n){function r(t,e){var n=[],r="",o=0;for(r in t)i.call(t,r)&&(n[o]=e(r,t[r]),o+=1);return n}var i=Object.prototype.hasOwnProperty;e.exports=r},{}],10:[function(t,e,n){function r(t,e,n){e||(e=0),"undefined"==typeof n&&(n=t?t.length:0);for(var r=-1,i=n-e||0,o=Array(i<0?0:i);++r<i;)o[r]=t[e+r];return o}e.exports=r},{}],11:[function(t,e,n){e.exports={exists:"undefined"!=typeof window.performance&&window.performance.timing&&"undefined"!=typeof window.performance.timing.navigationStart}},{}],ee:[function(t,e,n){function r(){}function i(t){function e(t){return t&&t instanceof r?t:t?u(t,f,a):a()}function n(n,r,i,o,a){if(a!==!1&&(a=!0),!l.aborted||o){t&&a&&t(n,r,i);for(var c=e(i),f=m(n),u=f.length,s=0;s<u;s++)f[s].apply(c,r);var p=d[w[n]];return p&&p.push([b,n,r,c]),c}}function o(t,e){h[t]=m(t).concat(e)}function v(t,e){var n=h[t];if(n)for(var r=0;r<n.length;r++)n[r]===e&&n.splice(r,1)}function m(t){return h[t]||[]}function g(t){return p[t]=p[t]||i(n)}function y(t,e){l.aborted||s(t,function(t,n){e=e||"feature",w[n]=e,e in d||(d[e]=[])})}var h={},w={},b={on:o,addEventListener:o,removeEventListener:v,emit:n,get:g,listeners:m,context:e,buffer:y,abort:c,aborted:!1};return b}function o(t){return u(t,f,a)}function a(){return new r}function c(){(d.api||d.feature)&&(l.aborted=!0,d=l.backlog={})}var f="nr@context",u=t("gos"),s=t(9),d={},p={},l=e.exports=i();e.exports.getOrSetContext=o,l.backlog=d},{}],gos:[function(t,e,n){function r(t,e,n){if(i.call(t,e))return t[e];var r=n();if(Object.defineProperty&&Object.keys)try{return Object.defineProperty(t,e,{value:r,writable:!0,enumerable:!1}),r}catch(o){}return t[e]=r,r}var i=Object.prototype.hasOwnProperty;e.exports=r},{}],handle:[function(t,e,n){function r(t,e,n,r){i.buffer([t],r),i.emit(t,e,n)}var i=t("ee").get("handle");e.exports=r,r.ee=i},{}],id:[function(t,e,n){function r(t){var e=typeof t;return!t||"object"!==e&&"function"!==e?-1:t===window?0:a(t,o,function(){return i++})}var i=1,o="nr@id",a=t("gos");e.exports=r},{}],loader:[function(t,e,n){function r(){if(!M++){var t=T.info=NREUM.info,e=m.getElementsByTagName("script")[0];if(setTimeout(u.abort,3e4),!(t&&t.licenseKey&&t.applicationID&&e))return u.abort();f(x,function(e,n){t[e]||(t[e]=n)});var n=a();c("mark",["onload",n+T.offset],null,"api"),c("timing",["load",n]);var r=m.createElement("script");0===t.agent.indexOf("http://")||0===t.agent.indexOf("https://")?r.src=t.agent:r.src=l+"://"+t.agent,e.parentNode.insertBefore(r,e)}}function i(){"complete"===m.readyState&&o()}function o(){c("mark",["domContent",a()+T.offset],null,"api")}var a=t(5),c=t("handle"),f=t(9),u=t("ee"),s=t(7),d=t(2),p=t(3),l=d.getConfiguration("ssl")===!1?"http":"https",v=window,m=v.document,g="addEventListener",y="attachEvent",h=v.XMLHttpRequest,w=h&&h.prototype,b=!1;NREUM.o={ST:setTimeout,SI:v.setImmediate,CT:clearTimeout,XHR:h,REQ:v.Request,EV:v.Event,PR:v.Promise,MO:v.MutationObserver};var E=""+location,x={beacon:"bam.nr-data.net",errorBeacon:"bam.nr-data.net",agent:"js-agent.newrelic.com/nr-1216.min.js"},O=h&&w&&w[g]&&!/CriOS/.test(navigator.userAgent),T=e.exports={offset:a.getLastTimestamp(),now:a,origin:E,features:{},xhrWrappable:O,userAgent:s,disabled:b};if(!b){t(1),t(6),m[g]?(m[g]("DOMContentLoaded",o,p(!1)),v[g]("load",r,p(!1))):(m[y]("onreadystatechange",i),v[y]("onload",r)),c("mark",["firstbyte",a.getLastTimestamp()],null,"api");var M=0}},{}],"wrap-function":[function(t,e,n){function r(t,e){function n(e,n,r,f,u){function nrWrapper(){var o,a,s,p;try{a=this,o=d(arguments),s="function"==typeof r?r(o,a):r||{}}catch(l){i([l,"",[o,a,f],s],t)}c(n+"start",[o,a,f],s,u);try{return p=e.apply(a,o)}catch(v){throw c(n+"err",[o,a,v],s,u),v}finally{c(n+"end",[o,a,p],s,u)}}return a(e)?e:(n||(n=""),nrWrapper[p]=e,o(e,nrWrapper,t),nrWrapper)}function r(t,e,r,i,o){r||(r="");var c,f,u,s="-"===r.charAt(0);for(u=0;u<e.length;u++)f=e[u],c=t[f],a(c)||(t[f]=n(c,s?f+r:r,i,f,o))}function c(n,r,o,a){if(!v||e){var c=v;v=!0;try{t.emit(n,r,o,e,a)}catch(f){i([f,n,r,o],t)}v=c}}return t||(t=s),n.inPlace=r,n.flag=p,n}function i(t,e){e||(e=s);try{e.emit("internal-error",t)}catch(n){}}function o(t,e,n){if(Object.defineProperty&&Object.keys)try{var r=Object.keys(t);return r.forEach(function(n){Object.defineProperty(e,n,{get:function(){return t[n]},set:function(e){return t[n]=e,e}})}),e}catch(o){i([o],n)}for(var a in t)l.call(t,a)&&(e[a]=t[a]);return e}function a(t){return!(t&&t instanceof Function&&t.apply&&!t[p])}function c(t,e){var n=e(t);return n[p]=t,o(t,n,s),n}function f(t,e,n){var r=t[e];t[e]=c(r,n)}function u(){for(var t=arguments.length,e=new Array(t),n=0;n<t;++n)e[n]=arguments[n];return e}var s=t("ee"),d=t(10),p="nr@original",l=Object.prototype.hasOwnProperty,v=!1;e.exports=r,e.exports.wrapFunction=c,e.exports.wrapInPlace=f,e.exports.argsToArray=u},{}]},{},["loader"]);</script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="format-detection" content="telephone=no">
+    <title>Dunebound Tactics</title>
+    <link href="/Content/paypal.css?dds" rel="stylesheet" />
+    
+    <link href="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/content/bootstrap.min.gz.css" rel="stylesheet">
+    <link href="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/content/font-awesome.min.gz.css" rel="stylesheet">
+    <link href="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/content/style.min.css?random" rel="stylesheet">
+    <link href="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/content/styles.min.gz.css" rel="stylesheet">
+    <link href="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/content/style-new.min.gz.css" rel="stylesheet">
+    <link rel="stylesheet" type="text/css" href="//fonts.googleapis.com/css?family=Oswald" />
+    <!--[if lt IE 9]>
+        <script src="https://oss.maxcdn.com/html5shiv/3.7.3/html5shiv.min.js"></script>
+        <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+    <![endif]-->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+    
+    <script src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/script/public.common.js"></script>
+    <script src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/script/public.ajaxcart.js"></script>    
+    <script src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/script/public.onepagecheckout.js"></script>
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="manifest" href="/manifest.json">
+    <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#f15f22">    
+    
+<!-- Global site tag (gtag.js) - Google Ads: 961537112 -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=AW-961537112"></script>
+<script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+
+    gtag('config', 'AW-961537112');
+</script>
+    <style>
+        .fa-instagram:before{content:"\f16d"}
+        .social-block li.s-ig a {
+            background-color: #bc2a8d;
+        }
+    </style>
+
+    <style>
+        .user-wallet .btn-tooltip {
+            padding: 0;
+            color: white;
+            font-size: 15px;
+            text-align: center;
+            border: 0;
+            height: 22px;
+            width: 22px;
+            text-decoration: none;
+            background-color: #005d99;
+            border-radius: 50%;
+            text-indent: 2px;
+            margin-top: -5px !important;
+        }
+            .user-wallet .btn-tooltip:hover {
+                background-color: #005d99;
+                color: #fff;
+            }
+            
+        .gb-icon-giants {
+            margin-bottom: -2px;
+            width: 25px;
+            height: 25px;
+            background: url(../images/icon-giants.png) no-repeat;
+        }
+		.gb-icon-uplay {
+			width: 60px!important;
+		}
+		
+		.grid-items .grid-item>a {
+			background-size: contain!important;
+			background-repeat: no-repeat!important;
+		}
+		
+		.grid-items .grid-item.grid-item--card>a {
+			height: 259px;
+			width: auto;
+		}
+        
+    </style>
+    <script type="application/ld+json">
+        {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "url": "https://www.gamebillet.com",
+        "logo": "https://www.gamebillet.com/images/logo112.png"
+        }
+    </script>
+</head>
+<body class="product-page">
+
+
+<div class="ajax-loading-block-window" style="display: none">
+</div>
+<div id="dialog-notifications-success" title="Notification" style="display:none;">
+</div>
+<div id="dialog-notifications-error" title="Error" style="display:none;">
+</div>
+<div id="bar-notification" class="bar-notification">
+    <span class="close" title="Close">&nbsp;</span>
+</div>
+<div class="page-wrapper">
+    <header role="banner">
+    <div class="header-top">
+        <div class="container">
+
+            <div class="row">
+                <div class="col-sm-4 hidden-xs">
+                    <ul class="list-unstyled social-block">
+        <li class="s-fb"><a href="http://www.facebook.com/Gamebillet" target="_blank" title="Facebook"><i class="fa fa-facebook"></i></a></li>
+            <li class="s-tw"><a href="http://twitter.com/Gamebillet" target="_blank" title="Twitter"><i class="fa fa-twitter"></i></a></li>
+            <li class="s-rd"><a href="https://www.reddit.com/user/Ardozs/submitted/" target="_blank" title="Reddit"><i class="fa fa-reddit-alien"></i></a></li>
+            <li class="s-ig"><a href="https://www.instagram.com/gamebillet/" target="_blank" title="Instagram"><i class="fa fa-instagram"></i></a></li>
+</ul>
+                </div>
+                <div class="col-sm-4">
+                    <div class="header-logo">
+                        <a href="/" title="">
+                        <img src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/images/logo.png" class="img-responsive center-block" alt=""></a>
+                    </div>
+                </div>
+                
+<div class="col-sm-4">
+        <ul class="list-unstyled user-block text-right">
+            <li><a href="/login" title="">LOGIN</a> / <a href="/register" title="">SIGN UP</a></li>
+                <li id="topcartlink" class="u-cart"><a href="/cart" title="">MY CART<span class="cart-qty">0</span></a></li>
+        </ul>
+</div>
+                
+<div class="modal fade" id="cart-popup" tabindex="-1" role="dialog" aria-labelledby="cart-popup-label" data-js-modal="cart">
+    <div class="modal-dialog-reset container modal-transparent is-margin-top-min" role="document">
+        <div class="modal-content">
+            <a class="btn btn-danger btn-modal-close" data-dismiss="modal" aria-label="Close"><i aria-hidden="true" class="gb-icon gb-icon-big-close"></i></a>
+            
+            <div class="filter-items is-popup">
+
+                    <div class="count">
+You have no items in your shopping cart.                    </div>
+            </div>
+            <!-- /.filter-items -->
+
+        </div>
+    </div>
+</div>
+            </div>
+
+        </div>
+    </div>
+    <!-- /.header-top -->
+
+    <div class="header-bottom">
+        <div class="container">
+            <div class="row header-bottom-row">
+                <div class="col-sm-3 col-md-2 left-cell search-box store-search-box">
+                    
+<form action="/search" id="small-search-box-form" method="get"><a href="#search-form" class="search-link search-toggle" title=""><i class="icon-search"></i>SEARCH</a>
+<div class="search-block" id="search-form">
+    <div class="search-line">
+        <input type="search" id="small-searchterms" autocomplete="off" name="q" placeholder="SEARCH STORE">        
+        <a href="#search-form" class="search-close search-toggle" title=""><i class="icon-close"></i></a>
+            <script type="text/javascript">
+            $("#small-search-box-form").submit(function(event) {
+                if ($("#small-searchterms").val() == "") {
+                    alert('Please enter some search keyword');
+                    $("#small-searchterms").focus();
+                    $('#ui-id-1').show();
+                    event.preventDefault();
+                }
+            });
+            </script>
+                    
+                <script type="text/javascript">
+                $(document).ready(function() {
+                    $('#small-searchterms').autocomplete({
+                            delay: 100,
+                            minLength: 3,
+                            source: '/catalog/searchtermautocomplete',
+                            appendTo: '.store-search-box',
+                            select: function(event, ui) {
+                                $("#small-searchterms").val(ui.item.label);
+                                setLocation(ui.item.producturl);
+                                return false;
+                            }
+                        })
+                        .data("ui-autocomplete")._renderItem = function(ul, item) {
+                            var t = item.label;
+                            var counter = item.counter;
+                            //html encode
+                            t = htmlEncode(t);
+                            return $('<li class="active-result ui-menu-item"></li>')
+                                .data("item.autocomplete", item)
+                                .append('<a id="ui-id-' + counter + '" tabindex="-1" class="ui-menu-item-wrapper"><span>' + t + '</span></a>')
+           .appendTo(ul);
+                        };
+                });
+                </script>
+            
+    </div>
+</div>
+</form>
+
+                </div>
+                <div class="col-sm-6 col-md-8 col-xs- center-cell">
+                    <div class="top-menu-wrapper">
+                        <a href="#" class="top-menu-toggle" title=""><span class="glyphicon glyphicon-menu-hamburger" aria-hidden="true"></span></a>
+                        <div class="top-menu-drop">
+                            <ul class="list-unstyled top-menu text-center">
+                                <li class=""><a href="/" title="">Home</a></li>
+                                <li class=""><a href="/allproducts" title="">All Games</a></li>
+                                <li class=""><a href="/hotdeals" title="">Hot Deals</a></li>
+                                <li class=""><a href="/bestsellers" title="">Best Sellers</a></li>
+                                <li class=""><a href="/preorders" title="">Pre Orders</a></li>
+                                <li class=""><a href="https://gamebillet.zendesk.com/hc/en-us/requests/new" title="">Support</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-sm-3 col-md-2 right-cell clearfix">                    
+                        <div class="dropdown dropdown-dynamic pull-right">
+
+                <div class="dropdown-result"><img src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/images/icon-eu.png" alt=""><span>EUR</span></div>
+    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- /.header-bottom -->
+
+</header>
+    <script type="text/javascript">
+        AjaxCart.init(false, '.cart-qty', '.header-links .wishlist-qty', '#cart-popup', '#billing-container');
+    </script>
+    <div class="content" role="main">
+        
+
+
+<style> 
+    .grid-items .grid-item.grid-item--small>a {
+        width: 180px !important;
+        height: 106px !important;
+    }
+
+    @media (max-width: 767px) {
+        .grid-items .grid-item.grid-item--small>a {
+            width: 100% !important;
+        }
+    }
+
+    .product-card>a {
+        padding-top: 0 !important;
+    }
+
+    .grid-items .grid-item.grid-item--card>a {
+        height: 172px !important;
+    }
+</style>
+
+<div class="modal fade" id="earn-popup" tabindex="-1" role="dialog" aria-labelledby="earn-popup-label" data-js-modal="earn">
+    <div class="modal-dialog modal-transparent is-margin-top-medium" role="document">
+        <div class="modal-content">
+            <a class="btn btn-danger btn-modal-close" data-dismiss="modal" aria-label="Close"><i aria-hidden="true" class="gb-icon gb-icon-big-close"></i></a>
+
+            <div class="earn-content">
+                <h1>Dunebound Tactics</h1>
+                <img src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/Thumbs/0204150_dunebound-tactics-header.jpeg" class="img-responsive" alt="">
+
+                <h2><p>Did you know you can get free games or earn 5% commission on every sale ? Join our affiliate program and earn with us. Spread the word ! Share your affiliate link.</p></h2>
+
+                <h1><a href="/earn-with-us" class="btn btn-success " title="">Learn More</a></h1>
+
+                    <div class="form-line earn-specific-link">
+                        <input class="form-control" id="link-area" readonly type="text">
+                        <a href="/customer/earnwithus" class="btn btn-success " title="">Start Earning</a>
+                    </div>
+
+            </div>
+            <!-- /.earn-content -->
+
+        </div>
+    </div>
+</div>
+<div class="modal fade" id="restrictedcountries-popup" tabindex="-1" role="dialog" aria-labelledby="restrictedcountries-popup-label" data-js-modal="restrictedcountries">
+    <div class="modal-dialog modal-transparent is-margin-top-medium" role="document">
+        <div class="modal-content">
+            <a class="btn btn-danger btn-modal-close" data-dismiss="modal" aria-label="Close"><i aria-hidden="true" class="gb-icon gb-icon-big-close"></i></a>
+            <div class="popup-small-content">
+                <div class="text-center">
+United Arab Emirates,Armenia,Argentina,Azerbaijan,Brazil,Belarus,Chile,China,Colombia,Costa Rica,Georgia,Hong Kong,Indonesia,India,Kyrgyzstan,Kuwait,Kazakhstan,Moldova,Mexico,Malaysia,Peru,Philippines,Qatar,Russian Federation,Saudi Arabia,Singapore,Thailand,Tajikistan,Turkmenistan,Turkey,Taiwan,Ukraine,Uruguay,Uzbekistan,Viet Nam,South Africa                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="main-content-image">
+    <div style="background-image: url(https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/images/background.png);"></div>
+</div>
+<!-- /.main-content-image -->
+
+<div class="main-content-wrapper">
+    <div class="container">
+
+        <div class="page-title">
+            <div class="row">
+                <div class="col-sm-8">
+                    <h1 class="product-title-big">Dunebound Tactics
+                        
+                <a href="/search?adv=true&amp;q=&amp;drm=74" class="link-title" title=""><i aria-hidden="true" class="gb-icon gb-icon-steam gb-icon-invert-hover"></i></a>
+
+                    </h1>
+                </div>
+                <div class="col-sm-4">
+
+                </div>
+            </div>
+        </div>
+	<style>
+
+		<!-- .background-image-link { -->
+			<!-- height: auto!important; -->
+		<!-- } -->
+
+        <!-- @media (max-width: 991px) { -->
+            <!-- .background-image-link { -->
+                <!-- height: 172px!important; -->
+            <!-- } -->
+        <!-- } -->
+		.product-card>a {
+			background-size: contain!important;
+			background-repeat: no-repeat!important;
+			height:auto;
+		}
+		
+    </style>
+        <div class="page-content">
+            <div class="row">
+                <div class="col-sm-12">
+
+                    <div class="product">
+                        <div class="row">
+
+                            <div class="col-md-4 col-md-push-8">
+                                <div class="row">
+                                    <div class="col-sm-12">
+                                        <div class="product-card">
+                                            <a href="#" title="">
+                                                <img src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/Thumbs/0204150_dunebound-tactics-header.jpeg" class="img-responsive center-block grid-img-as-bg" alt="">
+                                            </a>
+                                            <div class="product-card__wrap">
+                                                <div class="product-card__info">
+                                                    <div class="row">
+                                                        <div class="col-xs-4">
+                                                            
+                <a href="/search?adv=true&amp;q=&amp;drm=74" class="link-product-title" title=""><i aria-hidden="true" class="gb-icon gb-icon-steam gb-icon-invert-hover"></i></a>
+
+                                                        </div>
+                                                        <div class="col-xs-8">
+                                                            <span class="activate-product"><i class="gb-icon gb-icon-activate" aria-hidden="true"></i>ACTIVATES IN FR</span>
+                                                            <button type="button" class="btn btn-tooltip" style="font-size: 10px; font-weight: 300; padding: 5px 10px 6px; background-color: #1a1a1a;" data-toggle="tooltip" data-placement="top" title="This product can be activated and played in your current region. Your current region is determined by your geographical IP address.  This product may not activate in other regions. If you are connected via a VPN / proxy server, please disable this.">?</button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <div class="product-card__desc">
+                                                    <p>Lead your band of survivors on a perilous trek across unforgiving sands in search of a new home. Battle ruthless factions, scavenge dwindling resources, reshape the terrain to your advantage and make life-or-death choices in Dunebound Tactics, a Roguelite Turn-Based Tactical RPG.</p>
+                                                </div>
+                                                <div class="product-card__divider"></div>
+                                                <div class="product-card__footer">
+                                                    <div class="row">
+                                                        <div class="col-lg-3">
+                                                            
+        <div class="grid-icons">
+                    <a href="/search?adv=true&amp;q=&amp;pla=77" title="Windows" class="fa fa-windows gb-icon-invert-hover gb-icon" style="color: rgba(255, 255, 255, 1);font-size: 1.30rem;"></a>
+                                <a href="/search?adv=true&amp;q=&amp;drm=74" title="Steam Key" class="gb-icon gb-icon-steam"></a>
+        </div>
+
+                                                        </div>
+                                                        <div class="col-lg-9">
+                                                            <!--price & add to cart-->
+
+
+
+
+<div class="buy-block is-timer is-timer-sm">
+    <div class="buy-wrapper">
+        <div class="buy-wrapper-timer">
+            <div class="buy-actions">
+                    <a class="btn btn-success"  title="" href="#" id="add-to-cart-button-19008435" data-productid="19008435" onclick="AjaxCart.addproducttocart_details('/addproducttocart/details/19008435/1', '#product-details-form');return false;">Add to cart </a>
+                    <span>€13.99</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-sm-12">
+                                        <div class="product-trust-list">
+                                            <a href="https://www.trustpilot.com/review/gamebillet.com" class="link-trustpilot link-trustpilot--xl" title="" target="_blank">
+                                                <span class="t-star"></span>
+                                                <span>Trustpilot</span>
+                                                <span class="t-stars"></span>
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="row product-full-desc-row">
+                                    <div class="col-xs-6 col-md-12">
+                                        <div class="product-list">
+                                                <div class="product-list__item">
+                                                    <i class="gb-icon gb-icon-steam-old" aria-hidden="true"></i>
+                                                    <div class="product-list__desc">
+                                                        <h6>Redeem on Steam</h6>
+                                                        <p>You will require a 'Steam' account in order to activate this game</p>
+                                                    </div>
+                                                </div>
+
+                                                <div class="product-list__item">
+                                                    <i class="gb-icon gb-icon-delivery" aria-hidden="true"></i>
+                                                    <div class="product-list__desc">
+                                                        <h6>Instant delivery</h6>
+                                                        <p>Your game keys will be available immediately.</p>
+                                                    </div>
+                                                </div>
+                                            <div class="product-list__item">
+                                                <i class="gb-icon gb-icon-guard" aria-hidden="true"></i>
+                                                <div class="product-list__desc">
+                                                    <h6>Authorized Vendor</h6>
+                                                    <p>Games come directly from the game's official publisher.</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-xs-6 col-md-12">
+                                        <div class="product-tech-info">
+                                            <div class="table-responsive">
+                                                
+    <table class="table">        
+        <tr><td>Publisher</td><td>Indie. io</td></tr>
+                <tr><td>Developer</td><td>Terahard Ltd</td></tr>
+                <tr><td>Platform</td><td>Windows</td></tr>
+            <tr><td>Delivery</td><td>Steam</td></tr>
+                <tr><td>Release Date</td><td>14 Sep 2026</td></tr>
+                <tr><td>Genres</td><td>Indie, Strategy, RPG</td></tr>
+                <tr><td>Languages</td><td>English, Russian </td></tr>
+                        <tr><td>Features</td><td>Single-player, Steam Achievements, Steam Cloud, Family Sharing</td></tr>
+                            </table>
+
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                            </div>
+
+                            <div class="col-md-8 col-md-pull-4">
+
+                                
+
+<div class="slider-product-wrapper">
+    <a href="#" onclick="AjaxCart.addproducttocart_catalog('/addproducttocart/catalog/19008435/2/1');return false;" class="btn btn-warning btn-with-list btn-with-list-2x" title=""><i class="gb-icon gb-icon-heart"></i>Add to wishlist</a>
+
+    <div class="slider-product-body">
+        <a href="#" class="arrow-slider arrow-prev" title=""></a>
+        <a href="#" class="arrow-slider arrow-next" title=""></a>
+        <div class="slider-main-img clearfix" data-auto="true" data-prev=".arrow-prev" data-next=".arrow-next" data-progress=".slider-progress">
+                    <div class="main-item" data-id="0">
+                <a href="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203874_0.jpeg" class="fancybox" data-fancybox-group="gallery" title="Picture of Dunebound Tactics"><img src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203874_0.jpeg" class="img-responsive grid-img-as-bg" alt="Picture of Dunebound Tactics" title="Picture of Dunebound Tactics"></a>
+            </div>
+            <div class="main-item" data-id="1">
+                <a href="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203875_0.jpeg" class="fancybox" data-fancybox-group="gallery" title="Picture of Dunebound Tactics"><img src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203875_0.jpeg" class="img-responsive grid-img-as-bg" alt="Picture of Dunebound Tactics" title="Picture of Dunebound Tactics"></a>
+            </div>
+            <div class="main-item" data-id="2">
+                <a href="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203876_0.jpeg" class="fancybox" data-fancybox-group="gallery" title="Picture of Dunebound Tactics"><img src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203876_0.jpeg" class="img-responsive grid-img-as-bg" alt="Picture of Dunebound Tactics" title="Picture of Dunebound Tactics"></a>
+            </div>
+            <div class="main-item" data-id="3">
+                <a href="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203877_0.jpeg" class="fancybox" data-fancybox-group="gallery" title="Picture of Dunebound Tactics"><img src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203877_0.jpeg" class="img-responsive grid-img-as-bg" alt="Picture of Dunebound Tactics" title="Picture of Dunebound Tactics"></a>
+            </div>
+            <div class="main-item" data-id="4">
+                <a href="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203878_0.jpeg" class="fancybox" data-fancybox-group="gallery" title="Picture of Dunebound Tactics"><img src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203878_0.jpeg" class="img-responsive grid-img-as-bg" alt="Picture of Dunebound Tactics" title="Picture of Dunebound Tactics"></a>
+            </div>
+            <div class="main-item" data-id="5">
+                <a href="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203879_0.jpeg" class="fancybox" data-fancybox-group="gallery" title="Picture of Dunebound Tactics"><img src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203879_0.jpeg" class="img-responsive grid-img-as-bg" alt="Picture of Dunebound Tactics" title="Picture of Dunebound Tactics"></a>
+            </div>
+            <div class="main-item" data-id="6">
+                <a href="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203880_0.jpeg" class="fancybox" data-fancybox-group="gallery" title="Picture of Dunebound Tactics"><img src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203880_0.jpeg" class="img-responsive grid-img-as-bg" alt="Picture of Dunebound Tactics" title="Picture of Dunebound Tactics"></a>
+            </div>
+        </div>
+        <div class="slider-progress"></div>
+    </div>
+    <div class="slider-product-footer">
+        <div class="slider-product clearfix">
+
+                    <div class="product-item" data-id="0">
+                <a href="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203874_0.jpeg" class="fancybox" data-fancybox-group="gallery" title="Picture of Dunebound Tactics"><img src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203874_0.jpeg" class="img-responsive grid-img-as-bg" alt="Picture of Dunebound Tactics" title="Picture of Dunebound Tactics"></a>
+            </div>
+            <div class="product-item" data-id="1">
+                <a href="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203875_0.jpeg" class="fancybox" data-fancybox-group="gallery" title="Picture of Dunebound Tactics"><img src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203875_0.jpeg" class="img-responsive grid-img-as-bg" alt="Picture of Dunebound Tactics" title="Picture of Dunebound Tactics"></a>
+            </div>
+            <div class="product-item" data-id="2">
+                <a href="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203876_0.jpeg" class="fancybox" data-fancybox-group="gallery" title="Picture of Dunebound Tactics"><img src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203876_0.jpeg" class="img-responsive grid-img-as-bg" alt="Picture of Dunebound Tactics" title="Picture of Dunebound Tactics"></a>
+            </div>
+            <div class="product-item" data-id="3">
+                <a href="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203877_0.jpeg" class="fancybox" data-fancybox-group="gallery" title="Picture of Dunebound Tactics"><img src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203877_0.jpeg" class="img-responsive grid-img-as-bg" alt="Picture of Dunebound Tactics" title="Picture of Dunebound Tactics"></a>
+            </div>
+            <div class="product-item" data-id="4">
+                <a href="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203878_0.jpeg" class="fancybox" data-fancybox-group="gallery" title="Picture of Dunebound Tactics"><img src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203878_0.jpeg" class="img-responsive grid-img-as-bg" alt="Picture of Dunebound Tactics" title="Picture of Dunebound Tactics"></a>
+            </div>
+            <div class="product-item" data-id="5">
+                <a href="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203879_0.jpeg" class="fancybox" data-fancybox-group="gallery" title="Picture of Dunebound Tactics"><img src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203879_0.jpeg" class="img-responsive grid-img-as-bg" alt="Picture of Dunebound Tactics" title="Picture of Dunebound Tactics"></a>
+            </div>
+            <div class="product-item" data-id="6">
+                <a href="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203880_0.jpeg" class="fancybox" data-fancybox-group="gallery" title="Picture of Dunebound Tactics"><img src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/0203880_0.jpeg" class="img-responsive grid-img-as-bg" alt="Picture of Dunebound Tactics" title="Picture of Dunebound Tactics"></a>
+            </div>
+        </div>
+    </div>
+</div>
+
+                                <section class="product-full-desc">
+                                    <div class="product-full-desc__head">
+                                        EARN UP TO <span class="upto">€0.70</span>
+                                        <a href="#" data-toggle="modal" data-target="#earn-popup" class="btn btn-success" title=""><i class="gb-icon gb-icon-wallet"></i>EARN WITH US</a>
+                                    </div>
+                                    <div class="product-full-desc__typography">
+                                        <h1></h1>
+                                        <h3>Key Provider Instructions</h3><p>In order to activate this game, you will require a third-party 'Steam' account. For full details on how to activate please follow this link: https://support.steampowered.com/kb_article.php?ref=5414-TFBN-1352</p><h2>Description</h2><p><p><em>Dunebound Tactics</em> will push both your strategic and tactical prowess as you navigate the unforgiving wastes. Lead your crew on a daring voyage in search of a new life, making a perilous exodus across Imperial-controlled territories. </p><p> </p><p>Follow the Elios leylines aboard your fragile ship, embarking on a journey where risk and reward constantly intertwine. </p><p>Power your ship’s engine by gathering Elios through narrative-driven quests, or the bodies of fallen enemies, and—if desperation calls for it—your own crew-mates.</p><p>Steady your resolve, take the helm, and never look back.</p><br><h2><strong>Each Run a Stepping Stone</strong></h2><p>Stretch yourself thin to reach out to a better tomorrow in a Fully Roguelite Tactical RPG. </p><p>Sometimes failure is not an option, this time it's the cost of living free. The perilous sands stretch vast across an ever changing landscape that has claimed more experienced adventurers - sometimes even willingly... </p><p> Your previous mishaps, crushing defeats or triumphs will contribute to your next run, either in the form of modules, or potentially even survivors, as you find the previous caravan’s wreck.</p><p>Dynamic world generation ensures that whether in combat or roaming through the sands - battlefields, locations or quests will challenge you in new and unexpected ways, making each run unique. </p><br><h2><strong>Strategic Turn Based Combat</strong></h2><p>Dive into high-stakes tactical battles where every decision can tip the scales between survival and defeat.</p><br><p>Manipulate a fully destructible and reshapable terrain to mold the battlefield and seize the advantage. Unleash devastating abilities and devious tricks to outwit your enemies at every turn—this isn’t your typical cover-and-shoot affair, it’s a relentless test of strategy.</p><p>Use caravan skills to assist your party fighting in close quarters to either buff them, destroy cover - or hopefully the enemy before they do some permanent damage to your crew. </p><br><p>Hold firm in special events such as the last stand, or assassinate elite enemies in a multitude of missions along your way. </p><br><h2><strong>Friend, Fuel or Foe </strong></h2><p>With a roster of 15 distinct classes and 16 unique traits that enhance skills, stats, or add abilities, every run offers a fresh experience. As your characters grow, unlock their full potential by leveling up and equipping powerful modules (50+) to amplify their abilities. Rescue and recruit even more lost souls to bolster your numbers, but remember, your caravan has limited seats. Whether you find survivors wandering the desert or free them from the Imperial clutches, these narrative events will shape their future—as well as yours. </p><br><p>Decide whether to heal your wounded in the infirmary after battle takes its toll, or extract the Elios from their bodies, leaving them mere husks, to fuel your ambitions or power the caravan’s engine.</p><p>Caught between the Imperials and the Arcanists, your party must face 38 enemy classes in a desperate fight for a better tomorrow. Understanding your foes’ abilities and planning accordingly is key—your knowledge of this war-torn world is your greatest weapon. </p><br><h2><strong>Create your own strategic advantage</strong></h2><p>When the battlefield isn't working in your favor, take control and reshape it! </p><p>Obliterate cover, reposition it strategically, or create your own defenses with the power of Elios. Erect ice pillars to hinder enemy movement, or explosive pillars to trap and damage them. Lay mines and set traps to ambush foes, or shove them into your carefully placed pitfalls with a forceful push. </p><br><p>Master the terrain and turn every fight to your advantage!</p></p><h3>Minimum Requirements</h3><ul><ul><li>--Windows--
+Requires a 64-bit processor and operating system
+OS: Windows 10
+Processor: Core i5 or similar
+Memory: 6 GB RAM
+Graphics: GTX 1650 or similar
+Storage: 1 GB available space
+Sound Card: DirectX compatible</li></ul></ul><h3>Recommended Requirements</h3><ul><li>--Windows--
+Requires a 64-bit processor and operating system
+OS: Windows 10
+Processor: Core i5 or similar
+Memory: 8 GB RAM
+Graphics: GTX 1650 or similar
+Storage: 2 GB available space
+Sound Card: DirectX Compatible</li></ul><h3>Legal Notice / EULA</h3><p>© Terahard Ltd & Freedom Games - All Rights Reserved</p>
+                                    </div>
+                                </section>
+
+                            </div> 
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-8">
+                            </div>
+                            <div class="col-md-4">
+                            </div>
+                        </div>          
+
+                    </div>
+                    <!-- /.product -->
+
+                </div>
+            </div>
+        </div>
+
+
+    </div>
+</div>
+<!-- /.main-content-wrapper -->
+
+
+    </div>
+    <div class="page-wrap-gutter"></div>
+</div>
+<!-- /.page-wrapper -->
+    <footer role="contentinfo">
+
+
+<div class="footer-content">
+    <div class="container">
+
+        
+
+        <div class="row">
+            <div class="col-sm-9">
+
+                <div class="dl-footer-menu">
+                    <dl>
+                        <dt>Information</dt>
+                        <dd><a href="/terms-and-conditions-of-use">Terms &amp; Conditions</a></dd>
+                        <dd><a href="/privacy-policy">Privacy Policy</a></dd>
+                        <dd><a href="/about-us">About Us</a></dd>
+                        <dd><a href="/refund-policy">Refund Policy</a></dd>
+                    </dl>
+                    <dl>
+                        <dt>Customer service</dt>
+                        <dd><a href="https://gamebillet.zendesk.com/hc/en-us/requests/new">Support</a></dd>                                             
+                        <dd><a href="/cdn-cgi/l/email-protection#0c7f797c7c637e784c6b6d61696e6560606978226f6361">Email Support</a></dd>
+                                                                                                                                                                        <dd><a href="/affiliate-terms-and-conditions">Affiliate Terms and Conditions</a></dd>
+                    </dl>
+                    <dl>
+                        <dt>learn more</dt>
+                        <dd><a href="/developers" title="">Developers</a></dd>
+                        <dd><a href="/streamers" title="">Influencers and Streamers</a></dd>
+                            <dd><a href="/earn-with-us">Earn With Us</a></dd>
+                    </dl>
+                </div>
+
+            </div>
+            <div class="col-sm-3">
+
+                <div class="footer-info text-right">
+                    
+
+                    
+                    
+                    
+                    <div class="footer-copy">&copy; 2026 Gamebillet.com <p>All Rights Reserved. All trademarks are property of their respective owners. </p></div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+</div>
+</footer>
+
+
+<script data-cfasync="false" src="/cdn-cgi/scripts/5c5dd728/cloudflare-static/email-decode.min.js"></script><script src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/script/bootstrap.min.gz.js"></script>
+<script src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/script/plugins.min.gz.js"></script>
+<script src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/script/custom.min.gz.js"></script>
+<script src="https://s3-eu-west-1.amazonaws.com/gb.awsbucket.1/script/defaultpassiveevents.gz.js"></script>
+
+<!-- Google code for Analytics tracking -->
+<script type="text/javascript">
+var _gaq = _gaq || [];
+_gaq.push(['_setAccount', 'UA-52805841-1']);
+_gaq.push(['_trackPageview']);
+
+(function() {
+var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+})();
+</script>
+
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v31edd6df95cf4e85bb4c19e7a9bdbcba1788362987495" integrity="sha512-iIg7k2xntmwu6/uSb5tpc/hySgZc4eoL31yB29W6tJFo2akwjPWcEqnCEdJvGexCL0KEQwVYv5BlowfhVz26hg==" data-cf-beacon='{"version":"2024.11.0","token":"3cbea7da18354c9d91cd5f83e6b7db59","spa":2}' crossorigin="anonymous"></script>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a465ae54af743804',t:'MTc5MTMwMDM1MA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
