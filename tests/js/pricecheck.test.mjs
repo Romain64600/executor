@@ -63,6 +63,8 @@ const shown = (c) => c.$("#pc-list").children.filter((n) => n.tagName === "ARTIC
 const buttons = (el) => el.querySelectorAll("button");
 const anchors = (el) => el.querySelectorAll("a");
 const lastPost = (c) => [...c.net.calls].reverse().find((x) => x.method === "POST");
+// 06/10/2026: the reports decided Vrai positif / Faux positif, or found repaired, are in the « Archives » tab
+async function openTab(c, tab) { c.$("#tab-" + tab).fire("click"); await tick(); }
 
 const tests = [];
 function test(name, fn) { tests.push([name, fn]); }
@@ -82,6 +84,7 @@ test("each report is shown with its reason, its rank and its two URLs", async ()
 
 test("a javascript: URL from the file is never a clickable link", async () => {
   const c = await start();
+  await openTab(c, "archive");
   const el = card(c, TRAP.offer);
   assert.ok(el, "the second report is not rendered");
   assert.ok(!anchors(el).some((a) => String(a.getAttribute("href")).startsWith("javascript")),
@@ -135,6 +138,7 @@ const posts = (c) => c.net.calls.filter((x) => x.method === "POST").length;
 
 test("a note typed after the decision is saved on its own, with Enter or its button", async () => {
   const c = await start({ ...REPORTS, reports: [TORO, DECIDED] });
+  await openTab(c, "archive");
   let el = card(c, DECIDED.offer);
   assert.ok(el.querySelector(".pc-save-note").hidden, "the save button shows with nothing to save");
   assert.ok(el.querySelector(".pc-unsaved").hidden, "an empty note says it is not saved");
@@ -213,6 +217,7 @@ test("a decided report shows its saved note, and another decision keeps it", asy
   const saved = { ...DECIDED.decision, note: "la fiche dit ROW" };
   const NOTED = { ...DECIDED, offer: "140000007", decision: saved, history: [saved] };
   const c = await start({ ...REPORTS, reports: [NOTED] });
+  await openTab(c, "archive");
   const el = card(c, NOTED.offer);
   assert.equal(el.querySelector(".pc-note").value, "la fiche dit ROW", "the saved note is not in the field");
   assert.ok(el.querySelector(".pc-unsaved").hidden, "a saved note is flagged as not saved");
@@ -235,14 +240,15 @@ test("the « Comment trancher » box remembers being folded", async () => {
 // Romain, 05/10/2026 : « rend plus clair le fait qu'une tâche a été traitée par un opérateur et quel opérateur l'a traitée ».
 test("a handled report says who handled it at the top of its card, an open one says it is to handle", async () => {
   const c = await start({ ...REPORTS, reports: [TORO, DECIDED] });
+  assert.equal(card(c, TORO.offer).querySelector(".pc-done"), null, "an open report says it was handled");
+  assert.equal(card(c, TORO.offer).querySelector(".pc-todo").textContent, "À traiter");
+  await openTab(c, "archive");
   const done = card(c, DECIDED.offer).querySelector(".pc-done");
   assert.ok(done, "a handled report does not say so at the top of its card");
   assert.equal(done.textContent, "✔ Traité par remy · Faux positif");
   assert.ok(done.classList.contains("d-faux"), "the badge does not take the decision's colour");
   assert.ok(card(c, DECIDED.offer).querySelector(".pc-decision").textContent.startsWith("✔ Traité par remy le 05/10 15:20 : Faux positif"),
     card(c, DECIDED.offer).querySelector(".pc-decision").textContent);
-  assert.equal(card(c, TORO.offer).querySelector(".pc-done"), null, "an open report says it was handled");
-  assert.equal(card(c, TORO.offer).querySelector(".pc-todo").textContent, "À traiter");
 });
 
 test("the « Traité par » filter shows one operator's reports or the ones nobody handled, and counts them", async () => {
@@ -251,9 +257,12 @@ test("the « Traité par » filter shows one operator's reports or the ones nobo
   assert.deepEqual(sel.children.filter((o) => o.tagName === "OPTION").map((o) => o.getAttribute("value")), ["", "none", "remi", "remy"]);
   sel.value = "remy";
   await sel.fire("change");
+  await openTab(c, "archive");  // handled: archived
   assert.deepEqual(shown(c), ["offer-" + DECIDED.offer]);
   sel.value = "none";
   await sel.fire("change");
+  assert.deepEqual(shown(c), []);
+  await openTab(c, "current");
   assert.deepEqual(shown(c), ["offer-" + TORO.offer]);
   assert.equal(c.$("#pc-by").textContent, "Traités par : remi 1 · remy 1");
 });
@@ -297,11 +306,15 @@ test("an old export is flagged, a fresh one is not", async () => {
 });
 
 test("filters: undecided only, and still leading only", async () => {
-  const c = await start();
-  assert.deepEqual(shown(c), ["offer-" + TORO.offer, "offer-" + TRAP.offer]);
+  const GONE = { ...TORO, offer: "140000010", product: "Parti", seen_at: "2026-09-30 08:00", seen_lag_seconds: 90000 };
+  const c = await start({ ...REPORTS, reports: [TORO, GONE, TRAP] });
+  assert.deepEqual(shown(c), ["offer-" + TORO.offer, "offer-" + GONE.offer]);
+  await openTab(c, "archive");
+  assert.deepEqual(shown(c), ["offer-" + TRAP.offer]);
   c.$("#f-decision").value = "none";
   await c.$("#f-decision").fire("change");
-  assert.deepEqual(shown(c), ["offer-" + TORO.offer], "« Sans décision » keeps a decided report");
+  assert.deepEqual(shown(c), [], "« Sans décision » keeps a decided report");
+  await openTab(c, "current");
   c.$("#f-decision").value = "";
   c.$("#f-live").checked = true;
   await c.$("#f-live").fire("change");
@@ -310,8 +323,10 @@ test("filters: undecided only, and still leading only", async () => {
 
 test("a report no longer leading says so", async () => {
   const c = await start();
-  assert.ok(card(c, TRAP.offer).textContent.includes("Plus vu en premier prix depuis le 30/09 08:00"));
+  assert.ok(card(c, TORO.offer).textContent.includes(TORO.product), "the open report is not shown");
   assert.ok(!card(c, TORO.offer).textContent.includes("Plus vu en premier prix"));
+  await openTab(c, "archive");
+  assert.ok(card(c, TRAP.offer).textContent.includes("Plus vu en premier prix depuis le 30/09 08:00"));
 });
 
 test("an unreadable export is an error on screen, never an empty list", async () => {
@@ -356,10 +371,11 @@ test("the two run buttons show the monitor's state and send the mode", async () 
 
 test("re-check: a repaired offer says so, its filter finds it, a still-wrong one says so", async () => {
   const c = await start({ ...REPORTS, reports: [TORO, FIXED, STILL] });
+  assert.ok(card(c, STILL.offer).textContent.includes("Toujours en erreur au recontrôle du 02/10 18:31"));
+  await openTab(c, "archive");  // repaired: archived
   const fixed = card(c, FIXED.offer);
   assert.ok(fixed.textContent.includes("RÉPARÉE") && fixed.textContent.includes("Réparée le 02/10 18:30 : recontrôle OK (était SUSPECT)"),
             fixed.textContent);
-  assert.ok(card(c, STILL.offer).textContent.includes("Toujours en erreur au recontrôle du 02/10 18:31"));
   assert.ok(c.$("#pc-summary").textContent.includes("réparées"));
   c.$("#f-verdict").value = "fixed";
   await c.$("#f-verdict").fire("change");
@@ -371,6 +387,7 @@ test("re-check: a repaired offer says so, its filter finds it, a still-wrong one
 
 test("re-check: a false positive cleared by a rule is not a repair", async () => {
   const c = await start({ ...REPORTS, reports: [TORO, FIXED, RULE] });
+  await openTab(c, "archive");
   const rule = card(c, RULE.offer);
   assert.ok(rule.textContent.includes("FAUX POSITIF LEVÉ") && !rule.textContent.includes("RÉPARÉE"), rule.textContent);
   assert.ok(rule.textContent.includes("Faux positif levé par une règle le 02/10 18:37 : ancien faux positif : rien n'a changé, levé par une règle (était SUSPECT)"),
@@ -387,6 +404,7 @@ test("re-check: a false positive cleared by a rule is not a repair", async () =>
 
 test("re-check: an offer verified OK is neither repaired nor a false positive", async () => {
   const c = await start({ ...REPORTS, reports: [TORO, FIXED, RULE, VERIFIED] });
+  await openTab(c, "archive");
   const v = card(c, VERIFIED.offer);
   assert.ok(v.textContent.includes("VÉRIFIÉE OK") && !v.textContent.includes("RÉPARÉE") && !v.textContent.includes("FAUX POSITIF"),
             v.textContent);
@@ -518,9 +536,60 @@ test("a card put « à discuter » stays in place a few seconds, then goes up; a
   await decide("faux", "Faux positif", "romain");
   assert.equal(partOfCard(c, TOPR.offer), "💬 À discuter", "the card jumped away from under the cursor");
   assert.equal(card(c, TOPR.offer).querySelector(".pc-done-banner").textContent,
-    "✔ Décision enregistrée : Faux positif — dans quelques secondes, la carte passe dans « Price check top »");
+    "✔ Décision enregistrée : Faux positif — dans quelques secondes, la carte passe dans les archives");
   settle();
+  assert.equal(partOfCard(c, TOPR.offer), null, "a handled report stays in « En cours »");
+  await openTab(c, "archive");
   assert.equal(partOfCard(c, TOPR.offer), "Price check top");
+});
+
+// Romain, 06/10/2026 : « et une fois que ça a été traité, il faudrait les archiver sur un autre onglet ».
+test("handled reports are archived in another tab, what is left to do stays in « En cours »", async () => {
+  const c = await start({ ...REPORTS, reports: [TORO, TOPR, DISC, TRAP, FIXED] });
+  assert.equal(c.$("#tab-current").textContent, "En cours (3)");
+  assert.equal(c.$("#tab-archive").textContent, "Archives (2)");
+  assert.ok(c.$("#tab-current").classList.contains("on") && !c.$("#tab-archive").classList.contains("on"));
+  assert.deepEqual(shown(c), ["offer-" + DISC.offer, "offer-" + TOPR.offer, "offer-" + TORO.offer]);
+  assert.ok(c.$("#pc-tab-note").textContent.startsWith("Ce qui reste à faire"), c.$("#pc-tab-note").textContent);
+  await openTab(c, "archive");
+  assert.ok(c.$("#tab-archive").classList.contains("on") && !c.$("#tab-current").classList.contains("on"));
+  assert.equal(c.$("#tab-archive").getAttribute("aria-pressed"), "true");
+  const order = layout(c);
+  assert.ok(!order.some((x) => x.startsWith("H3:💬 À discuter")), "the archives have a part to discuss");
+  assert.ok(order[0].startsWith("H3:Price check top"), order[0]);
+  assert.equal(order[1], "DIV:Aucun report archivé sur les tops pour ces filtres.");
+  assert.deepEqual(shown(c), ["offer-" + TRAP.offer, "offer-" + FIXED.offer]);
+  assert.ok(c.$("#pc-tab-note").textContent.startsWith("Les reports tranchés"), c.$("#pc-tab-note").textContent);
+});
+
+test("a report decided Vrai positif stays in place a few seconds, then goes to the archives", async () => {
+  const timers = [];
+  const c = await loadConsole(CONSOLE, { setTimeout: (fn, ms) => { timers.push([fn, ms]); return timers.length; } });
+  await c.net.release("api/price-check/reports", JSON.parse(JSON.stringify({ ...REPORTS, reports: [TORO, TOPR] })));
+  await tick();
+  buttons(card(c, TORO.offer)).find((b) => b.textContent === "Vrai positif").fire("click");
+  await tick();
+  await c.net.release("api/price-check/decision",
+    { recorded: { offer: TORO.offer, decision: "vrai", note: "", by: "remy", at: "2026-10-06T09:20:00+02:00" } });
+  await tick();
+  assert.deepEqual(shown(c), ["offer-" + TOPR.offer, "offer-" + TORO.offer], "the decided card left at once, under the cursor");
+  assert.equal(card(c, TORO.offer).querySelector(".pc-done-banner").textContent,
+    "✔ Décision enregistrée : Vrai positif — dans quelques secondes, la carte passe dans les archives");
+  timers.filter(([, ms]) => ms === 4000).pop()[0]();
+  timers.filter(([, ms]) => ms === 600).pop()[0]();
+  assert.deepEqual(shown(c), ["offer-" + TOPR.offer]);
+  assert.equal(c.$("#tab-archive").textContent, "Archives (1)");
+  await openTab(c, "archive");
+  assert.deepEqual(shown(c), ["offer-" + TORO.offer]);
+});
+
+test("a link to an archived report opens the archives on it", async () => {
+  const c = await loadConsole(CONSOLE, { location: { hash: "#offer-" + TRAP.offer } });
+  await c.net.release("api/price-check/reports", JSON.parse(JSON.stringify(REPORTS)));
+  await tick();
+  assert.equal(c.$("#f-text").value, TRAP.offer);
+  assert.ok(c.$("#tab-archive").classList.contains("on"), "the link lands on a tab without its report");
+  assert.deepEqual(shown(c), ["offer-" + TRAP.offer]);
 });
 
 test("first-price problems are marked and can be shown alone", async () => {

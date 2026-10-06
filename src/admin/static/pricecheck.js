@@ -71,6 +71,12 @@ const PARTS = [
   ["discuss", "g-discuss", "💬 À discuter", "en attente d'une décision finale : Vrai positif ou Faux positif", "Aucun report à discuter."],
   ...MODE_GROUPS,
 ];
+// Romain, 06/10/2026 : « et une fois que ça a été traité, il faudrait les archiver sur un autre onglet ». Two tabs:
+// « En cours », what is left to do (to discuss, to handle), and « Archives », the reports decided Vrai positif or Faux
+// positif, or found repaired (cleared by a rule, verified OK) by the monitor. A report to discuss is never archived.
+const ARCHIVE_PARTS = MODE_GROUPS.map(([mode, cls, label, what, none]) =>
+  [mode, cls, label, what, none.replace("Aucun report", "Aucun report archivé")]);
+let TAB = "current";  // "current" | "archive"
 const PART_LABEL = { "discuss": "« À discuter », en tête de la liste", "top-games": "« Price check top »",
   "homepage": "« Price check homepage »" };
 const MODE_TITLE = {
@@ -109,6 +115,9 @@ const isToDiscuss = (r) => decisionKey(r) === "a_discuter";
 // part it was decided in, so that nothing moves under the cursor (05/10/2026)
 const partOf = (r) => (isToDiscuss(r) ? "discuss" : MODE_CARD[r.mode] ? r.mode : "");
 const shownPart = (r) => { const j = JUST_DONE.get(String(r.offer)); return j && j.part != null ? j.part : partOf(r); };
+const isArchived = (r) => !isOpen(r) && !isToDiscuss(r);
+const tabOf = (r) => (isArchived(r) ? "archive" : "current");
+const shownTab = (r) => { const j = JUST_DONE.get(String(r.offer)); return j && j.tab ? j.tab : tabOf(r); };
 const labelOf = (key) => shortLabel((DATA && DATA.decisions && DATA.decisions[key]) || key);
 const isGone = (r) => typeof r.seen_lag_seconds === "number" && r.seen_lag_seconds > GONE_SECONDS;
 // "2e prix de l'édition (compte)": the offer's rank in its edition when it was checked (Top Offers / Full Page).
@@ -134,9 +143,9 @@ const JUST_DONE_MS = 4000;
 const FADE_MS = 600;
 const JUST_DONE = new Map();  // offer -> { state: "kept" | "leaving", token }
 
-function keepJustDone(offer, part) {
+function keepJustDone(offer, part, tab) {
   const token = {};
-  JUST_DONE.set(offer, { state: "kept", token, part });
+  JUST_DONE.set(offer, { state: "kept", token, part, tab });
   setTimeout(() => {
     const cur = JUST_DONE.get(offer);
     if (!cur || cur.token !== token) return;  // decided again meanwhile: its own timer runs
@@ -213,6 +222,15 @@ function unsavedNote(offer, r) {
   return String(NOTES[offer]).trim() !== String((r && r.decision && r.decision.note) || "").trim();
 }
 
+// where a report just decided goes once its few seconds are over (05/10 and 06/10/2026)
+function doneWhere(r, just) {
+  if (!matchesFilters(r, true)) return " — la carte quitte cette liste dans quelques secondes";
+  if (just.tab && tabOf(r) !== just.tab) return tabOf(r) === "archive" ? " — dans quelques secondes, la carte passe dans les archives"
+    : " — dans quelques secondes, la carte revient en cours, dans " + PART_LABEL[partOf(r)];
+  if (PART_LABEL[partOf(r)] && partOf(r) !== just.part) return " — dans quelques secondes, la carte passe dans " + PART_LABEL[partOf(r)];
+  return "";
+}
+
 const step = (n, title) => el("div", { class: "pc-step-title" }, [el("span", { class: "pc-num", text: String(n) }), title]);
 
 function renderItem(r) {
@@ -272,9 +290,7 @@ function renderItem(r) {
     (just ? " pc-just-done" + (just.state === "leaving" ? " pc-leaving" : "") : ""),
     id: "offer-" + offer }, [
     just && cur ? el("div", { class: "pc-done-banner", role: "status", text: "✔ Décision enregistrée : " + labelOf(cur) +
-      (!matchesFilters(r, true) ? " — la carte quitte cette liste dans quelques secondes"
-        : PART_LABEL[partOf(r)] && partOf(r) !== just.part ? " — dans quelques secondes, la carte passe dans " + PART_LABEL[partOf(r)]
-          : "") }) : null,
+      doneWhere(r, just) }) : null,
     el("div", { class: "pc-head" }, [
       el("span", { class: "pc-verdict", text: pill }),
       cur ? el("span", { class: "pc-done d-" + cur, title: "Traité par " + (handledBy(r) || "?") +
@@ -333,24 +349,39 @@ function renderOperators(reports) {
     ? "Traités par : " + names.map((n) => n + " " + count[n]).join(" · ") : "Aucun report traité pour l'instant.";
 }
 
+// the two tabs, with their counts (all reports, whatever the filters)
+function renderTabs(reports) {
+  const current = reports.filter((r) => !isArchived(r)).length;
+  for (const [tab, text] of [["current", "En cours (" + current + ")"], ["archive", "Archives (" + (reports.length - current) + ")"]]) {
+    const b = $("#tab-" + tab);
+    b.textContent = text;
+    b.classList.toggle("on", TAB === tab);
+    b.setAttribute("aria-pressed", String(TAB === tab));
+  }
+  $("#pc-tab-note").textContent = TAB === "archive"
+    ? "Les reports tranchés Vrai positif ou Faux positif, et ceux que le moniteur a trouvés réparés. Mis « À discuter », un report revient en cours, en tête."
+    : "Ce qui reste à faire : les reports à discuter, puis ceux à traiter. Tranché Vrai positif ou Faux positif, un report passe dans les archives.";
+}
+
 function render() {
   if (!DATA) return;
   const reports = DATA.reports || [];
   renderSummary(reports);
   renderOperators(reports);
-  const shown = reports.filter(matchesFilters);
+  renderTabs(reports);
+  const shown = reports.filter(matchesFilters).filter((r) => shownTab(r) === TAB);
   if (!reports.length) {
     $("#pc-list").replaceChildren(el("div", { class: "pc-empty", text: "Aucun report : le moniteur n'a rien signalé." }));
     return;
   }
   const only = $("#f-mode").value;
   const parts = [];
-  for (const [part, cls, label, what, none] of PARTS) {
+  for (const [part, cls, label, what, none] of (TAB === "archive" ? ARCHIVE_PARTS : PARTS)) {
     const discuss = part === "discuss";
     if (only && !discuss && only !== part) continue;  // « À discuter » always shows (06/10/2026)
     const items = shown.filter((r) => shownPart(r) === part);
     const open = items.filter(isOpen).length;
-    const hidden = discuss ? reports.filter((r) => shownPart(r) === part).length - items.length : 0;
+    const hidden = discuss ? reports.filter((r) => shownPart(r) === part && shownTab(r) === TAB).length - items.length : 0;
     parts.push(el("h3", { class: "pc-group-title " + cls, id: discuss ? "pc-discuss" : null }, [
       el("span", { class: "pc-group-name", text: label }),
       el("span", { class: "pc-group-what", text: " · " + what }),
@@ -382,6 +413,11 @@ async function load() {
   setStatus("Lecture des reports…", true);
   try {
     DATA = await api("api/price-check/reports");
+    if (HASH_OFFER) {  // a link to one report opens the tab it is in
+      const target = (DATA.reports || []).find((r) => String(r.offer) === HASH_OFFER);
+      if (target) TAB = tabOf(target);
+      HASH_OFFER = null;
+    }
     $("#pc-error").classList.add("hidden");
     renderFreshness();
     render();
@@ -401,7 +437,7 @@ async function decide(offer, key) {
   delete ERRORS[offer];
   const current = ((DATA && DATA.reports) || []).find((x) => String(x.offer) === offer) || {};
   const was = decisionKey(current);
-  const part = shownPart(current);  // the part the card is in: it stays there a few seconds once decided
+  const part = shownPart(current), tab = shownTab(current);  // where the card is: it stays there a few seconds once decided
   // the note in the field: typed, or the saved one (another decision keeps it)
   const note = NOTES[offer] != null ? NOTES[offer] : ((current.decision && current.decision.note) || "");
   render();
@@ -417,7 +453,7 @@ async function decide(offer, key) {
       target.decision = rec;
     }
     delete NOTES[offer];
-    keepJustDone(offer, part);
+    keepJustDone(offer, part, tab);
     setStatus((was === key ? "Note enregistrée : " : "Décision enregistrée : ") + ((target && target.product) || offer) +
       " — " + labelOf(key) + (note.trim() ? " — « " + note.trim() + " »" : ""), false);
   } catch (e) {
@@ -433,10 +469,13 @@ for (const id of ["#f-verdict", "#f-mode", "#f-decision", "#f-by", "#f-live", "#
 $("#f-text").addEventListener("input", render);
 $("#refresh").addEventListener("click", load);
 
-// A link to one report (…/price-check#offer-<id>) opens the page filtered on that offer.
+// A link to one report (…/price-check#offer-<id>) opens the page filtered on that offer, in its tab.
+let HASH_OFFER = null;
 if (typeof location !== "undefined" && /^#offer-\d+$/.test(location.hash || "")) {
-  $("#f-text").value = location.hash.slice("#offer-".length);
+  HASH_OFFER = location.hash.slice("#offer-".length);
+  $("#f-text").value = HASH_OFFER;
 }
+for (const tab of ["current", "archive"]) $("#tab-" + tab).addEventListener("click", () => { TAB = tab; render(); });
 
 // Refresh in the background, but never under the operator's fingers: not while a note has
 // the focus, not while a decision is being sent (typed notes survive a refresh anyway).
