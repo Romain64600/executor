@@ -36,6 +36,7 @@ DEFAULT_DECISIONS = {
 }
 MAX_NOTE = 1000
 STATUS_FILE = "status.json"          # written by the monitor: state of each page mode
+COMPETITORS_FILE = "competitors.json"  # written by the monitor every 30 min: competitors' prices for the top pages
 REQUEST_FILE = "run-%s.request"      # written by the admin: run this mode now
 RUN_MODES = ("top-games", "homepage")  # Romain, 02/10/2026: « Price check top », « Price check homepage »
 OFFER_ID = re.compile(r"^[0-9]{1,20}$")
@@ -226,6 +227,25 @@ def read_status(directory: Path, *, now=time.time) -> dict[str, Any]:
         return base
     base.update(available=True, age_seconds=age, offers=payload.get("offers"),
                 updated_at=payload.get("updated_at"), modes=payload["modes"])
+    return base
+
+
+def read_competitors(directory: Path, *, now=time.time) -> dict[str, Any]:
+    """competitors.json (Romain, 2026-10-06 : « un widget par concurrent » sur l'onglet Price check, pour les tops) :
+    the AllKeyShop first price of each top page next to each competitor's best displayed price. Never an error:
+    without it the page says the monitor has not compared yet."""
+
+    path = directory / COMPETITORS_FILE
+    base = {"available": False, "sites": []}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        age = max(0, int(now() - path.stat().st_mtime))
+    except (OSError, ValueError):
+        return base
+    if not isinstance(payload, dict) or not isinstance(payload.get("sites"), list):
+        return base
+    base.update(available=True, age_seconds=age, generated_at=payload.get("generated_at"), every=payload.get("every"),
+                scope=payload.get("scope"), sites=[s for s in payload["sites"] if isinstance(s, dict)])
     return base
 
 

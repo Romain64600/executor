@@ -542,6 +542,71 @@ if (typeof window !== "undefined" && window.addEventListener) {
   });
 }
 
+// ---- Concurrents (Romain, 06/10/2026) : « un widget par concurrent », pour les pages des tops ----
+// « le meilleur prix en vert si AllKeyShop est moins cher, le meilleur prix du concurrent en rouge si AllKeyShop est plus
+// cher, le premier prix AKS à côté ». The monitor writes competitors.json every 30 min: for each top page, the AllKeyShop
+// first price (cheapest offer, accounts included, without payment fees) and each competitor's best displayed price.
+let COMPETITORS = null;
+const euros = (n) => (typeof n === "number" ? n.toFixed(2).replace(".", ",") + " €" : "—");
+const safeLink = (url, text) => (/^https?:\/\//i.test(String(url || ""))
+  ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text }) : el("span", { text }));
+const TONE = { "aks": "pc-win", "competitor": "pc-lose" };
+
+function gapLabel(r) {
+  if (typeof r.gap !== "number") return "";
+  if (r.gap > 0) return "AKS moins cher de " + euros(r.gap);
+  if (r.gap < 0) return "AKS plus cher de " + euros(-r.gap);
+  return "même prix";
+}
+
+function competitorWidget(site) {
+  const rows = site.rows || [];
+  const won = rows.filter((r) => r.cheaper === "aks").length;
+  const lost = rows.filter((r) => r.cheaper === "competitor").length;
+  const missing = rows.filter((r) => !r.competitor).length;
+  const blocked = site.status === "blocked";
+  const head = el("div", { class: "pc-comp-head" }, [
+    safeLink(site.home, site.label || site.id),
+    blocked ? el("span", { class: "pc-comp-blocked", text: "bloqué" })
+      : el("span", { class: "pc-comp-score" }, [el("b", { class: "pc-win", text: String(won) }), " AKS moins cher · ",
+        el("b", { class: "pc-lose", text: String(lost) }), " concurrent moins cher" +
+        (missing ? " · " + missing + " introuvable" + (missing > 1 ? "s" : "") : "")]),
+  ]);
+  if (blocked) return el("section", { class: "pc-comp-card blocked" }, [head, el("p", { class: "pc-comp-msg", text: site.message || "" })]);
+  const body = rows.map((r) => {
+    const a = r.aks, c = r.competitor, tone = TONE[r.cheaper] || "";
+    return el("tr", {}, [
+      el("td", {}, [safeLink(r.page_url, r.product || "?")]),
+      el("td", { class: "pc-comp-aks", text: a ? euros(a.price) + " · " + (a.merchant || "?") + (a.account ? " (compte)" : "") : "—" }),
+      el("td", { class: "pc-comp-price " + tone }, c ? [safeLink(c.url, euros(c.price)), " · " + (c.seller || "?")] : ["introuvable"]),
+      el("td", { class: "pc-comp-gap", text: gapLabel(r) }),
+    ]);
+  });
+  return el("section", { class: "pc-comp-card" }, [head, el("div", { class: "table-wrap" }, [el("table", { class: "pc-comp-table" }, [
+    el("thead", {}, [el("tr", {}, [el("th", { text: "Jeu" }), el("th", { text: "Premier prix AKS" }),
+      el("th", { text: "Meilleur prix " + (site.label || site.id) }), el("th", { text: "Écart" })])]),
+    el("tbody", {}, body)])])]);
+}
+
+function renderCompetitors() {
+  const d = COMPETITORS;
+  $("#pc-comp-note").textContent = d && d.available ? "— relevé du " + stamp(d.generated_at) +
+    (typeof d.age_seconds === "number" ? " (" + ago(d.age_seconds) + ")" : "") : "";
+  if (!d || !d.available) {
+    $("#pc-competitors").replaceChildren(el("p", { class: "pc-empty",
+      text: "Pas encore de relevé des concurrents : le moniteur le fait toutes les 30 min pour les pages des tops." }));
+    return;
+  }
+  $("#pc-competitors").replaceChildren(...(d.sites || []).map(competitorWidget));
+}
+
+async function loadCompetitors() {
+  try { COMPETITORS = await api("api/price-check/competitors"); } catch (e) { COMPETITORS = null; }
+  renderCompetitors();
+}
+setInterval(() => { if (document.visibilityState !== "hidden") loadCompetitors(); }, REFRESH_MS);
+loadCompetitors();
+
 // ---- the two run buttons (Romain, 02/10/2026: « Price check top », « Price check homepage ») ----
 // The admin never runs anything itself: it drops run-<mode>.request in the shared directory and the
 // monitor (its own root process) reads it within seconds. status.json, written by the monitor, feeds the state.

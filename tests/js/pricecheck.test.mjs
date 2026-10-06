@@ -347,6 +347,48 @@ test("a note changed while the decision is being saved is kept, and flagged as n
   assert.ok(card(d, TORO.offer).querySelector(".pc-unsaved").hidden, "a saved note still says it is not saved");
 });
 
+// Romain, 06/10/2026 : « un widget par concurrent ; le meilleur prix en vert si AllKeyShop est moins cher, le meilleur
+// prix du concurrent en rouge si AllKeyShop est plus cher, le premier prix AKS à côté ».
+const COMPETITORS = {
+  available: true, age_seconds: 120, generated_at: "2026-10-06T17:22:54+0200", every: 1800, scope: "Price check top",
+  sites: [
+    { id: "gg-deals", label: "gg.deals", home: "https://gg.deals/", status: "blocked", rows: [],
+      message: "gg.deals bloque le serveur (403, Cloudflare) : possible avec son API officielle" },
+    { id: "dlcompare", label: "dlcompare.fr", home: "https://www.dlcompare.fr/", status: "ok", rows: [
+      { product: "STAR WARS Galactic Racer", page_url: "https://www.allkeyshop.com/blog/buy-star-wars-galactic-racer-cd-key-compare-prices/",
+        aks: { price: 30.87, merchant: "Kinguin", account: true, edition: "Standard" },
+        competitor: { price: 32.48, seller: "GAMESEAL", url: "https://www.dlcompare.fr/jeux/100037294/acheter-star-wars-galactic-racer-steam-key" },
+        cheaper: "aks", gap: 1.61 },
+      { product: "WARDOGS", page_url: "https://www.allkeyshop.com/blog/buy-wardogs-cd-key-compare-prices/",
+        aks: { price: 31.88, merchant: "K4G", account: false }, competitor: { price: 12.61, seller: "Gamivo", url: "javascript:alert(1)" },
+        cheaper: "competitor", gap: -19.27 },
+      { product: "Gears of War E-Day", page_url: "https://www.allkeyshop.com/blog/x/", aks: { price: 46.78, merchant: "G2A" },
+        competitor: null, cheaper: null, gap: null }] },
+  ],
+};
+
+test("one widget per competitor: green when AllKeyShop is cheaper, red when the competitor is, AKS's first price beside", async () => {
+  const c = await loadConsole(CONSOLE);
+  await c.net.release("api/price-check/competitors", JSON.parse(JSON.stringify(COMPETITORS)));
+  await tick();
+  const widgets = c.$("#pc-competitors").children.filter((n) => n.tagName === "SECTION");
+  assert.equal(widgets.length, 2);
+  const [gg, dl] = widgets;
+  assert.ok(gg.textContent.includes("bloqué") && gg.textContent.includes("API officielle"), gg.textContent);
+  assert.ok(dl.textContent.includes("1 AKS moins cher · 1 concurrent moins cher · 1 introuvable"), dl.textContent);
+  const cells = dl.querySelectorAll("td").filter((td) => td.classList.contains("pc-comp-price"));
+  assert.deepEqual(cells.map((td) => [td.classList.contains("pc-win"), td.classList.contains("pc-lose")]),
+    [[true, false], [false, true], [false, false]]);
+  assert.ok(dl.textContent.includes("30,87 € · Kinguin (compte)"), "AKS's first price is not beside");
+  assert.ok(dl.textContent.includes("AKS moins cher de 1,61 €") && dl.textContent.includes("AKS plus cher de 19,27 €"), dl.textContent);
+  assert.ok(!anchors(dl).some((a) => String(a.getAttribute("href")).startsWith("javascript")), "a javascript: URL became a link");
+  assert.ok(c.$("#pc-comp-note").textContent.includes("relevé du 06/10 17:22"), c.$("#pc-comp-note").textContent);
+  const none = await loadConsole(CONSOLE);
+  await none.net.release("api/price-check/competitors", { available: false, sites: [] });
+  await tick();
+  assert.ok(none.$("#pc-competitors").textContent.includes("Pas encore de relevé des concurrents"));
+});
+
 test("an old export is flagged, a fresh one is not", async () => {
   const fresh = await start();
   assert.ok(fresh.$("#pc-stale").classList.contains("hidden"), "a fresh export is flagged");
