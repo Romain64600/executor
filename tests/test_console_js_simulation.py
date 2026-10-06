@@ -319,15 +319,27 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
                 'const note = NOTES[offer] || "";'),
             "deux étapes": ('el("div", { class: "pc-step pc-step-note" }', 'el("div", { class: "pc-step-note" }'),
             # 05/10/2026 : qui a traité le report
-            "traité par, en tête de carte": ('text: "✔ Traité par " + (handledBy(r) || "?") + " · " + labelOf(cur) })',
-                                             'text: "" })'),
+            "traité par, en tête de carte": (': "✔ Traité par " + (handledBy(r) || "?") + " · " + labelOf(cur) })',
+                                             ': "" })'),
             "filtre traité par": ('if (by === "none" ? !isOpen(r) : by && handledBy(r) !== by) return false;', ""),
             # 05/10/2026 : les reports des tops séparés de ceux de la homepage
-            "tops d'abord, sous leur titre": ("for (const [mode, cls, label, what, none] of MODE_GROUPS) {",
-                                              "for (const [mode, cls, label, what, none] of MODE_GROUPS.slice().reverse()) {"),
+            "à discuter, puis les tops, sous leur titre": ("for (const [part, cls, label, what, none] of PARTS) {",
+                                                          "for (const [part, cls, label, what, none] of PARTS.slice().reverse()) {"),
             "carte des tops marquée": ('(MODE_CARD[r.mode] ? " " + MODE_CARD[r.mode] : "")', '""'),
             # 05/10/2026 : un report tranché reste quelques secondes avant de quitter la liste
             "report tranché gardé quelques secondes": ("if (!strict && JUST_DONE.has(String(r.offer))) return true;", ""),
+            # 06/10/2026 : la partie « À discuter », en tête, bien visible (« il faut pas qu'on l'oublie »)
+            "à discuter, une partie à part": ('const partOf = (r) => (isToDiscuss(r) ? "discuss" : MODE_CARD[r.mode] ? r.mode : "");',
+                                              'const partOf = (r) => (MODE_CARD[r.mode] ? r.mode : "");'),
+            "à discuter toujours affiché": ("if (only && !discuss && only !== part) continue;", "if (only && only !== part) continue;"),
+            "à discuter masqués comptés": ("const hidden = discuss ? reports.filter((r) => shownPart(r) === part).length - items.length : 0;",
+                                           "const hidden = 0;"),
+            "carte gardée dans la partie où elle a été tranchée": (
+                "const shownPart = (r) => { const j = JUST_DONE.get(String(r.offer)); return j && j.part != null ? j.part : partOf(r); };",
+                "const shownPart = (r) => partOf(r);"),
+            "compteur à discuter": ('kpi("k-discuss" + (n(isToDiscuss) ? " hot" : ""), n(isToDiscuss), "à discuter"),', ""),
+            "question en tête de carte": ('cur === "a_discuter" ? el("div", { class: "pc-question" }',
+                                          'false ? el("div", { class: "pc-question" }'),
         }
         for name, (before, after) in mutations.items():
             with self.subTest(name):

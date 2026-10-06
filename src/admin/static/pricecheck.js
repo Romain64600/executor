@@ -63,6 +63,16 @@ const MODE_GROUPS = [
   ["homepage", "g-home", "Price check homepage", "toute la homepage : widgets de la home, TOP 50 de chaque plateforme",
     "Aucun report sur la homepage pour ces filtres."],
 ];
+// Romain, 06/10/2026 : « dans l'admin, il faudrait qu'on ait les tops, les home et la partie à discuter. Il faut pas
+// qu'on l'oublie, donc faut que ce soit bien visible ». A report put « à discuter » waits for a final decision (Vrai
+// positif or Faux positif): it leaves its mode's part for « À discuter », the first part of the list, in the colour of
+// that decision. The part always shows; the reports to discuss that the filters hide are counted, never silently gone.
+const PARTS = [
+  ["discuss", "g-discuss", "💬 À discuter", "en attente d'une décision finale : Vrai positif ou Faux positif", "Aucun report à discuter."],
+  ...MODE_GROUPS,
+];
+const PART_LABEL = { "discuss": "« À discuter », en tête de la liste", "top-games": "« Price check top »",
+  "homepage": "« Price check homepage »" };
 const MODE_TITLE = {
   "top-games": "Price check top : la page est dans les tops (5 premiers Popular, 4 premiers Coming soon PC)",
   "homepage": "Price check homepage : la page est dans les listes de la homepage (top clics, TOP 50)",
@@ -94,6 +104,11 @@ function ago(sec) {
 const price = (p) => (typeof p === "number" ? p.toFixed(2).replace(".", ",") + " €" : "");
 const shortLabel = (label) => String(label).split(" : ")[0];
 const decisionKey = (r) => (r.decision && r.decision.decision) || "";
+const isToDiscuss = (r) => decisionKey(r) === "a_discuter";
+// the part a report belongs in ("" : an older export, without mode); a report just decided stays a few seconds in the
+// part it was decided in, so that nothing moves under the cursor (05/10/2026)
+const partOf = (r) => (isToDiscuss(r) ? "discuss" : MODE_CARD[r.mode] ? r.mode : "");
+const shownPart = (r) => { const j = JUST_DONE.get(String(r.offer)); return j && j.part != null ? j.part : partOf(r); };
 const labelOf = (key) => shortLabel((DATA && DATA.decisions && DATA.decisions[key]) || key);
 const isGone = (r) => typeof r.seen_lag_seconds === "number" && r.seen_lag_seconds > GONE_SECONDS;
 // "2e prix de l'édition (compte)": the offer's rank in its edition when it was checked (Top Offers / Full Page).
@@ -119,9 +134,9 @@ const JUST_DONE_MS = 4000;
 const FADE_MS = 600;
 const JUST_DONE = new Map();  // offer -> { state: "kept" | "leaving", token }
 
-function keepJustDone(offer) {
+function keepJustDone(offer, part) {
   const token = {};
-  JUST_DONE.set(offer, { state: "kept", token });
+  JUST_DONE.set(offer, { state: "kept", token, part });
   setTimeout(() => {
     const cur = JUST_DONE.get(offer);
     if (!cur || cur.token !== token) return;  // decided again meanwhile: its own timer runs
@@ -164,6 +179,7 @@ function renderSummary(reports) {
     el("div", { class: "kpi-n", text: String(value) }), el("div", { class: "kpi-l", text: label })]);
   $("#pc-summary").replaceChildren(
     kpi("k-open", n(isOpen), "sans décision"),
+    kpi("k-discuss" + (n(isToDiscuss) ? " hot" : ""), n(isToDiscuss), "à discuter"),
     kpi("k-top", n((r) => isOpen(r) && r.mode === "top-games"), "tops à trancher"),
     kpi("k-home", n((r) => isOpen(r) && r.mode === "homepage"), "homepage à trancher"),
     kpi("k-first", n((r) => isOpen(r) && r.verdict === "SUSPECT" && isFirstPrice(r)), "premiers prix en erreur"),
@@ -180,6 +196,8 @@ function renderSummary(reports) {
 // opérateur l'a traitée » : « ✔ Traité par <opérateur> » en tête de carte et sous la décision, un
 // filtre « Traité par » et le décompte par opérateur.
 function decisionLine(d) {
+  if (d.decision === "a_discuter") return el("div", { class: "pc-decision" }, ["💬 Mis à discuter par ", el("b", { text: d.by || "?" }),
+    (d.at ? " le " + stamp(d.at) : "") + " : en attente d'une décision finale, Vrai positif ou Faux positif"]);
   return el("div", { class: "pc-decision" }, ["✔ Traité par ", el("b", { text: d.by || "?" }),
     (d.at ? " le " + stamp(d.at) : "") + " : " + labelOf(d.decision) + (d.note ? " — « " + d.note + " »" : "")]);
 }
@@ -254,11 +272,15 @@ function renderItem(r) {
     (just ? " pc-just-done" + (just.state === "leaving" ? " pc-leaving" : "") : ""),
     id: "offer-" + offer }, [
     just && cur ? el("div", { class: "pc-done-banner", role: "status", text: "✔ Décision enregistrée : " + labelOf(cur) +
-      (matchesFilters(r, true) ? "" : " — la carte quitte cette liste dans quelques secondes") }) : null,
+      (!matchesFilters(r, true) ? " — la carte quitte cette liste dans quelques secondes"
+        : PART_LABEL[partOf(r)] && partOf(r) !== just.part ? " — dans quelques secondes, la carte passe dans " + PART_LABEL[partOf(r)]
+          : "") }) : null,
     el("div", { class: "pc-head" }, [
       el("span", { class: "pc-verdict", text: pill }),
       cur ? el("span", { class: "pc-done d-" + cur, title: "Traité par " + (handledBy(r) || "?") +
-        (r.decision.at ? " le " + stamp(r.decision.at) : ""), text: "✔ Traité par " + (handledBy(r) || "?") + " · " + labelOf(cur) })
+        (r.decision.at ? " le " + stamp(r.decision.at) : ""), text: cur === "a_discuter"
+          ? "💬 À discuter (" + (handledBy(r) || "?") + (r.decision.at ? ", " + stamp(r.decision.at) : "") + ")"
+          : "✔ Traité par " + (handledBy(r) || "?") + " · " + labelOf(cur) })
         : isOpen(r) ? el("span", { class: "pc-todo", text: "À traiter" }) : null,
       MODE_BADGE[r.mode] ? el("span", { class: "pc-mode " + MODE_BADGE[r.mode][1], title: MODE_TITLE[r.mode],
         text: MODE_BADGE[r.mode][0] }) : null,
@@ -269,6 +291,8 @@ function renderItem(r) {
       el("span", { class: "pc-merchant", text: [r.merchant, price(r.price)].filter(Boolean).join(" · ") }),
       el("span", { class: "pc-where", text: where }),
     ]),
+    cur === "a_discuter" ? el("div", { class: "pc-question" }, [el("b", { text: "Question de " + (handledBy(r) || "?") + " : " }),
+      r.decision.note ? "« " + r.decision.note + " »" : "pas de note, à voir ensemble."]) : null,
     (r.reasons || []).length ? el("ul", { class: "pc-reasons" }, r.reasons.map((x) => el("li", { text: x }))) : null,
     recheck,
     el("div", { class: "pc-meta", text: meta }),
@@ -282,8 +306,9 @@ function renderItem(r) {
     el("div", { class: "pc-decide" }, [
       el("div", { class: "pc-step pc-step-note" }, [step(1, "Pourquoi ? (seulement si besoin)"), note, pending, saveNote]),
       el("div", { class: "pc-step pc-step-decision" }, [step(2, "Ta décision"), el("div", { class: "pc-buttons" }, buttons)]),
-      el("p", { class: "pc-howto", text: cur
-        ? "Pour changer la note : modifie-la, puis « Mettre à jour la note ». Pour changer d'avis : clique une autre décision, la note la suit."
+      el("p", { class: "pc-howto", text: cur === "a_discuter"
+        ? "Pour clore la discussion : clique Vrai positif ou Faux positif. La note la suit : modifie-la avant si besoin."
+        : cur ? "Pour changer la note : modifie-la, puis « Mettre à jour la note ». Pour changer d'avis : clique une autre décision, la note la suit."
         : "D'accord avec l'erreur décrite ? Clique directement ta décision, sans note. La note sert à dire pourquoi tu "
           + "n'es pas d'accord ou à préciser : écrite avant le clic, elle part avec ta décision." }),
     ]),
@@ -320,20 +345,24 @@ function render() {
   }
   const only = $("#f-mode").value;
   const parts = [];
-  for (const [mode, cls, label, what, none] of MODE_GROUPS) {
-    if (only && only !== mode) continue;
-    const items = shown.filter((r) => r.mode === mode);
+  for (const [part, cls, label, what, none] of PARTS) {
+    const discuss = part === "discuss";
+    if (only && !discuss && only !== part) continue;  // « À discuter » always shows (06/10/2026)
+    const items = shown.filter((r) => shownPart(r) === part);
     const open = items.filter(isOpen).length;
-    parts.push(el("h3", { class: "pc-group-title " + cls }, [
+    const hidden = discuss ? reports.filter((r) => shownPart(r) === part).length - items.length : 0;
+    parts.push(el("h3", { class: "pc-group-title " + cls, id: discuss ? "pc-discuss" : null }, [
       el("span", { class: "pc-group-name", text: label }),
       el("span", { class: "pc-group-what", text: " · " + what }),
       el("span", { class: "pc-group-count", text: " — " + items.length + " report" + (items.length > 1 ? "s" : "") +
-        (open ? ", dont " + open + " à traiter" : "") }),
+        (open ? ", dont " + open + " à traiter" : "") + (hidden ? " · " + hidden + " masqué" + (hidden > 1 ? "s" : "") +
+        " par les filtres" : "") }),
     ]));
-    parts.push(...(items.length ? items.map(renderItem) : [el("div", { class: "pc-empty", text: none })]));
+    parts.push(...(items.length ? items.map(renderItem) : [el("div", { class: "pc-empty", text: hidden
+      ? "Masqués par les filtres : " + hidden + " report" + (hidden > 1 ? "s" : "") + " à discuter." : none })]));
   }
-  // un export plus ancien, sans mode : après les deux parties
-  parts.push(...shown.filter((r) => !MODE_CARD[r.mode]).map(renderItem));
+  // un export plus ancien, sans mode : après les parties
+  parts.push(...shown.filter((r) => shownPart(r) === "").map(renderItem));
   $("#pc-list").replaceChildren(...parts);
 }
 
@@ -372,6 +401,7 @@ async function decide(offer, key) {
   delete ERRORS[offer];
   const current = ((DATA && DATA.reports) || []).find((x) => String(x.offer) === offer) || {};
   const was = decisionKey(current);
+  const part = shownPart(current);  // the part the card is in: it stays there a few seconds once decided
   // the note in the field: typed, or the saved one (another decision keeps it)
   const note = NOTES[offer] != null ? NOTES[offer] : ((current.decision && current.decision.note) || "");
   render();
@@ -387,7 +417,7 @@ async function decide(offer, key) {
       target.decision = rec;
     }
     delete NOTES[offer];
-    keepJustDone(offer);
+    keepJustDone(offer, part);
     setStatus((was === key ? "Note enregistrée : " : "Décision enregistrée : ") + ((target && target.product) || offer) +
       " — " + labelOf(key) + (note.trim() ? " — « " + note.trim() + " »" : ""), false);
   } catch (e) {

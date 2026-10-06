@@ -425,24 +425,102 @@ test("each report says whether it is a top games or a homepage problem, and the 
   assert.equal(shown(c).length, 3);
 });
 
-// Romain, 05/10/2026 : « je voudrais que les reports top soient différenciables des reports homepage ».
-test("top and homepage reports are listed apart, the tops first, each under its title, and an empty part says so", async () => {
-  const TOPR = { ...TORO, offer: "140000008", product: "EA SPORTS FC 27", list: "Popular", rank: 1, mode: "top-games",
-    modes: ["top-games", "homepage"], mode_label: "Price check top" };
+// Romain, 05/10/2026 : « je voudrais que les reports top soient différenciables des reports homepage » ; 06/10/2026 :
+// « il faudrait qu'on ait les tops, les home et la partie à discuter ».
+const TOPR = { ...TORO, offer: "140000008", product: "EA SPORTS FC 27", list: "Popular", rank: 1, mode: "top-games",
+  modes: ["top-games", "homepage"], mode_label: "Price check top" };
+// 06/10/2026 : Monster Hunter Wilds chez G2A, mis « à discuter » par Rémy, avec sa question
+const DISC = { ...TORO, offer: "136209040", product: "Monster Hunter Wilds", edition: "Deluxe", merchant: "G2A",
+  decision: { decision: "a_discuter", note: "la clé marche en Europe", by: "remy", at: "2026-10-06T05:03:34+02:00" },
+  history: [{ decision: "a_discuter", note: "la clé marche en Europe", by: "remy", at: "2026-10-06T05:03:34+02:00" }] };
+const layout = (c) => c.$("#pc-list").children.filter((n) => typeof n !== "string")
+  .map((n) => (n.tagName === "ARTICLE" ? n.id : n.tagName + ":" + n.textContent));
+// the part a card is listed in: the title above it
+function partOfCard(c, offer) {
+  let title = null;
+  for (const n of c.$("#pc-list").children) {
+    if (n.tagName === "H3") title = n.textContent.split(" · ")[0];
+    if (n.id === "offer-" + offer) return title;
+  }
+  return null;
+}
+
+test("the list has three parts: « À discuter » first, then the tops, then the homepage; an empty part says so", async () => {
   const c = await start({ ...REPORTS, reports: [TORO, TOPR] });
-  const order = c.$("#pc-list").children.filter((n) => typeof n !== "string")
-    .map((n) => (n.tagName === "ARTICLE" ? n.id : n.tagName + ":" + n.textContent));
-  assert.equal(order.length, 4, order.join(" | "));
-  assert.ok(order[0].startsWith("H3:Price check top") && order[0].endsWith(" — 1 report, dont 1 à traiter"), order[0]);
-  assert.equal(order[1], "offer-" + TOPR.offer, "the tops do not come first");
-  assert.ok(order[2].startsWith("H3:Price check homepage"), order[2]);
-  assert.equal(order[3], "offer-" + TORO.offer);
+  const order = layout(c);
+  assert.equal(order.length, 6, order.join(" | "));
+  assert.ok(order[0].startsWith("H3:💬 À discuter · en attente d'une décision finale") && order[0].endsWith(" — 0 report"), order[0]);
+  assert.equal(order[1], "DIV:Aucun report à discuter.");
+  assert.ok(order[2].startsWith("H3:Price check top") && order[2].endsWith(" — 1 report, dont 1 à traiter"), order[2]);
+  assert.equal(order[3], "offer-" + TOPR.offer, "the tops do not come first");
+  assert.ok(order[4].startsWith("H3:Price check homepage"), order[4]);
+  assert.equal(order[5], "offer-" + TORO.offer);
   assert.ok(card(c, TOPR.offer).classList.contains("mode-top"), "a top card is not marked");
   assert.ok(card(c, TORO.offer).classList.contains("mode-home"));
   const only = await start({ ...REPORTS, reports: [TORO] });
-  const empty = only.$("#pc-list").children.find((n) => n.classList && n.classList.contains("pc-empty"));
-  assert.ok(empty, "no top report: the tops part is silent");
-  assert.equal(empty.textContent, "Aucun report sur les tops pour ces filtres.");
+  const empty = only.$("#pc-list").children.filter((n) => n.classList && n.classList.contains("pc-empty")).map((n) => n.textContent);
+  assert.deepEqual(empty, ["Aucun report à discuter.", "Aucun report sur les tops pour ces filtres."]);
+});
+
+test("a report to discuss is listed first, with its question, counted, and never silently hidden by the filters", async () => {
+  const c = await start({ ...REPORTS, reports: [TORO, TOPR, DISC] });
+  const order = layout(c);
+  assert.ok(order[0].startsWith("H3:💬 À discuter") && order[0].endsWith(" — 1 report"), order[0]);
+  assert.equal(order[1], "offer-" + DISC.offer, "the report to discuss is not first");
+  assert.equal(partOfCard(c, DISC.offer), "💬 À discuter");
+  assert.ok(!order.slice(2).includes("offer-" + DISC.offer), "listed twice");
+  assert.ok(order.find((x) => x.startsWith("H3:Price check homepage")).endsWith(" — 1 report, dont 1 à traiter"));
+  const text = card(c, DISC.offer).textContent;
+  assert.ok(text.includes("💬 À discuter (remy, 06/10 05:03)"), text);
+  assert.ok(text.includes("Question de remy : « la clé marche en Europe »"), text);
+  assert.ok(text.includes("💬 Mis à discuter par remy le 06/10 05:03 : en attente d'une décision finale"), text);
+  assert.ok(text.includes("Pour clore la discussion : clique Vrai positif ou Faux positif"), text);
+  assert.ok(!text.includes("✔ Traité par"), "a report to discuss is not handled yet");
+  const kpi = c.$("#pc-summary").children.find((n) => n.classList && n.classList.contains("k-discuss"));
+  assert.ok(kpi && kpi.textContent === "1à discuter" && kpi.classList.contains("hot"), kpi && kpi.textContent);
+  for (const [id, value] of [["#f-decision", "none"], ["#f-mode", "top-games"]]) {
+    c.$(id).value = value;
+    await c.$(id).fire("change");
+    const now = layout(c);
+    assert.ok(now[0].startsWith("H3:💬 À discuter") && now[0].endsWith(" — 0 report · 1 masqué par les filtres"), now[0]);
+    assert.equal(now[1], "DIV:Masqués par les filtres : 1 report à discuter.");
+    assert.ok(!shown(c).includes("offer-" + DISC.offer));
+    c.$(id).value = "";
+    await c.$(id).fire("change");
+  }
+  const calm = await start({ ...REPORTS, reports: [TORO] });
+  const none = calm.$("#pc-summary").children.find((n) => n.classList && n.classList.contains("k-discuss"));
+  assert.ok(none.textContent === "0à discuter" && !none.classList.contains("hot"), "nothing to discuss is not flagged");
+});
+
+test("a card put « à discuter » stays in place a few seconds, then goes up; a final decision brings it back", async () => {
+  const timers = [];
+  const c = await loadConsole(CONSOLE, { setTimeout: (fn, ms) => { timers.push([fn, ms]); return timers.length; } });
+  await c.net.release("api/price-check/reports", JSON.parse(JSON.stringify({ ...REPORTS, reports: [TORO, TOPR] })));
+  await tick();
+  const decide = async (key, label, by) => {
+    buttons(card(c, TOPR.offer)).find((b) => b.textContent === label).fire("click");
+    await tick();
+    await c.net.release("api/price-check/decision",
+      { recorded: { offer: TOPR.offer, decision: key, note: "", by, at: "2026-10-06T09:10:00+02:00" } });
+    await tick();
+  };
+  const settle = () => {
+    timers.filter(([, ms]) => ms === 4000).pop()[0]();
+    timers.filter(([, ms]) => ms === 600).pop()[0]();
+  };
+  await decide("a_discuter", "À discuter", "remy");
+  assert.equal(partOfCard(c, TOPR.offer), "Price check top", "the card jumped away from under the cursor");
+  assert.equal(card(c, TOPR.offer).querySelector(".pc-done-banner").textContent,
+    "✔ Décision enregistrée : À discuter — dans quelques secondes, la carte passe dans « À discuter », en tête de la liste");
+  settle();
+  assert.equal(partOfCard(c, TOPR.offer), "💬 À discuter");
+  await decide("faux", "Faux positif", "romain");
+  assert.equal(partOfCard(c, TOPR.offer), "💬 À discuter", "the card jumped away from under the cursor");
+  assert.equal(card(c, TOPR.offer).querySelector(".pc-done-banner").textContent,
+    "✔ Décision enregistrée : Faux positif — dans quelques secondes, la carte passe dans « Price check top »");
+  settle();
+  assert.equal(partOfCard(c, TOPR.offer), "Price check top");
 });
 
 test("first-price problems are marked and can be shown alone", async () => {
