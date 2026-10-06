@@ -3907,6 +3907,97 @@ verrouillée Europe. 0 faux positif sur 86 820 lignes distinctes des runs de cet
   correctifs (71 sous-tests en échec + 1 erreur, puis verts), et 14 mutations de ces correctifs
   les rougissent toutes.
 
+### `[R69]` Indiegala (store 95) — la fiche produit fait foi : plateforme, DLC, pays interdits (2026-10-06)
+
+**Fichier écrit le 2026-10-06 ; aperçu à blanc le même jour (34 entrées / 175, lecture seule,
+`docs/apercu_indiegala_2026-10-06.md`) ; liste blanche le même soir sur le go de Romain (« go pour
+la liste blanche »), groupe à choisir par lui.** L'ordre voulu : aperçu d'abord (règle de Romain),
+aucune saisie sans son go. Romain : « garde ca de coté, regarde
+si possible de se former sur l ajout auto des offres indiegala.com », puis, l'étude lue
+(`docs/PROCHAINS_MARCHANDS.md`, section du 06/10) : « Si on peut ouvrir la page, on trouvera les
+infos ». Modèle : `[R68]` Allyouplay — même ordre titre → URL → fiche, même règle de région
+`[R59]`, même requête par la bibliothèque standard, mêmes refus nommés.
+
+**Constat (175 lignes du scan tous-magasins du 21/09, 8 fiches lues, 5 pages AKS)** : titre = le
+nom du jeu seul, URL `indiegala.com/store/game/<slug>/<id steam>[_us|_deluxe|…]` (l'identité est
+dans le chemin) ; **ni plateforme ni région** dans le titre ou l'URL (0 / 175), sauf 7 suffixes
+« (US) » / « (EU) » en queue de titre ; 161 lignes passent le precheck générique et s'arrêtent
+toutes sur R27 / `[R51]` ; 30 ont une page AKS au slug strict ; AKS n'affiche aucune offre
+Indiegala (aucun précédent de région).
+
+`src/merchants/indiegala.py`, dans l'ordre de Romain du 18/09 (« un check du titre par défaut
+avant d'ouvrir la page ») :
+
+1. **Titre** — un suffixe « (US) » / « (EU) » / « (UK) » en QUEUE déclare la région
+   (`title_region`) et sort du nom résolu et du nom des gardes (`resolve_name` / `guard_name`) ;
+   il doit S'ACCORDER avec la fiche (« (US) » sur une fiche GLOBAL ou EU → refus nommé « le
+   suffixe … contredit la fiche »). Un titre multilingue « A / B / C » est réduit à sa PREMIÈRE
+   partie quand chaque autre partie est une traduction dans une autre écriture (kana, han,
+   hangul, cyrillique… — un caractère hors du latin étendu) ou le même nom répété (« Death End
+   re;Quest Deluxe Edition Bundle / デラックスエディション / 豪華組合包 ») ; une alternative LATINE
+   (« Attack on Titan 3 / A.O.T. 3 », 2 lignes ; « … / Ensemble Edition Deluxe Complet ») n'est
+   PAS coupée : le titre entier va aux gardes d'identité R01 / R16 — un refus au pire, jamais un
+   nom deviné. Rien n'est ajouté au precheck (bundles, DLC pack, pass : le générique).
+2. **URL** — rien n'est lu du slug (il ne dit rien) ; seule une URL `indiegala.com/store/game/…`
+   est ouverte, sans query ni fragment.
+3. **Fiche** (HTTP, UA navigateur, bibliothèque standard `indiegala.page_get`, JAMAIS
+   `aks_env.http_get` — même raison que `[R68]` ; ~1 requête / s, une par fiche et par processus,
+   échecs compris) :
+   * lien canonique = la fiche demandée (attributs dans n'importe quel ordre) ; une fiche
+     PÉRIMÉE est redirigée vers l'accueil du magasin (canonique `/store`, « Attack on Titan 3 …
+     Digital Deluxe » le 06/10) → refus « fiche périmée ou retirée, non identifiée » ;
+   * plateforme = « *Nom* is provided via **Steam Key** » (table `PLATFORM_TEXT` ; 8 / 8 Steam ;
+     libellé absent ou inconnu → refus NOMMÉ, jamais STEAM) ; la page AKS doit vendre la
+     plateforme lue (R20) ;
+   * DLC = l'encart « This content requires the base product » (`ProductPage.is_dlc`, 2 fiches
+     sur 8 : SCUM Specialist Scout Pack, Thunder Ray - Origin) — une **GARDE, pas un routage**
+     (`MerchantOfferSignals.dlc` → `matcher.page_dlc_refusal`, générique pour tout marchand qui
+     le déclare) : le seau DLC(16) reste l'affaire de R18 / `[R43]` / `[R57]` (titre) et de la
+     page AKS, aucun `dlc_marker` inventé, mais une fiche DLC qui n'aboutit pas en DLC(16) est
+     REFUSÉE (« … offer page says DLC … but the match lands in Standard(1) … (R69) »). Aperçu du
+     06/10 : « Thunder Ray - Origin » — ORIGIN est du bruit de plateforme, le titre n'a pas de
+     marqueur, le slug est retombé sur `thunder-ray` — sortait Standard(1) sur la page du JEU DE
+     BASE ; les quatre autres fiches DLC (SCUM ×2, Sherman Commander Supporter Pack, Project
+     Motor Racing V8 Power Pack) ont leur page AKS à seau DLC unique et entrent en DLC(16) par
+     R18, inchangé ;
+   * région — TROIS blocs à ne pas confondre : **(1)** l'encart latéral « Region locked product —
+     It will only work in the region from where it is bought » (7 / 8) = politique de vente,
+     IGNORÉ comme la politique de vente de Gamesplanet FR `[R59]` (Romain : « si on trouve les
+     infos sur la page, OK ») ; **(2)** l'avertissement d'article dont le h3 est « Region locked
+     product » (« The keys of this product can only be activated in the country they were
+     purchased », Reach) = verrou PAYS → « clé activable seulement dans le pays d'achat — non
+     entrée (R69) », rendu `forbidden region: INDIEGALA LOCK (COUNTRY OF PURCHASE)` (routeur
+     central → garder) ; **(3)** « Country availability » / « Banned countries » + la liste des
+     pays où la vente est interdite « as per publisher request » → la règle `[R59]` de Romain
+     sur les pays EXCLUS, par la MÊME table (`gamesplanet.region_from_lock(("NOT", pays),
+     label="INDIEGALA")`) : ni UE, ni UK, ni USA exclus → GLOBAL ; UE entière autorisée, USA
+     exclus → EU ; USA autorisés, un pays de l'UE exclu → US ; UE touchée ET USA exclus → refus
+     `INDIEGALA LOCK (EU + US)` ; UK seul → `… (UK)`. Aucun avertissement → GLOBAL (Thunder Ray).
+     Un avertissement d'un autre genre, une liste absente ou vide → refus (gabarit changé). La
+     liste est coupée à la virgule bien que des noms en portent une (« Korea, Republic of »,
+     « Virgin Islands, U.S. ») : les fragments ne valent aucun des 29 noms qui décident, et
+     chaque nom qui décide est un item entier — épinglé par un test.
+
+**Règle de région PROPOSÉE par Claude — à confirmer par Romain à l'aperçu, PAS une décision
+revue.** Sur les 8 fiches du 06/10 : MHW Gold (18 pays interdits), SCUM Specialist Scout Pack
+(59), LBA2 (77), Thunder Ray (aucun bloc) → GLOBAL ; SH Townfall (US) (toute l'UE + UK interdits,
+USA autorisés) → US ; Castlevania LoS2 Digital Bundle (USA interdits, UE entière autorisée) → EU
+(refusé bundle au precheck de toute façon) ; Reach → verrou pays, refus ; **Belmont's Curse (EU)
+→ refus `INDIEGALA LOCK (EU + US)`** : sa liste interdit les USA ET Chypre — l'UE n'est pas
+entière, la lecture stricte de `[R59]` (« UE sans USA → EU » vaut pour l'UE complète) refuse une
+clé que son titre dit « (EU) ». À trancher par Romain : tel quel (aucune écriture fausse
+possible), ou « (EU) du titre + UE quasi complète → EU ». Rien de plus souple n'est codé.
+
+Fail-closed : lien hors indiegala.com ou hors `/store/game/`, fiche injoignable, statut ≠ 200,
+lien canonique absent ou autre que la fiche demandée, repères de fiche absents, pas de « is
+provided via », libellé de plateforme inconnu, avertissement inconnu, liste de pays absente ou
+vide, suffixe du titre en désaccord avec la fiche → refus R32, JAMAIS STEAM ni GLOBAL par défaut.
+Lignes console : `console_page_authoritative` (aucune ligne console au feed du 21/09 ; si la
+grammaire partagée en lisait une, une fiche « Steam Key » est un conflit, refus — jamais une page
+console écrite sur une clé Steam). Registre : `"INDIEGALA"`, store `95` ; PAS dans
+`auto_merchants`, PAS dans un groupe. Tests : `tests/test_merchants_indiegala_r69.py` (fiches
+réelles, `tests/fixtures/indiegala/`, 9 fichiers).
+
 ### `[R68]` Allyouplay (store 17) — la fiche produit fait foi : plateforme et pays autorisés (2026-09-30)
 
 **En ligne le 2026-09-30** (Romain : « go pour la mise en ligne », après l'aperçu final en lecture

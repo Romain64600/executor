@@ -47,6 +47,8 @@ EXPECTED_MODULE = {
     "Loaded": "loaded.py",                # liste blanche le 2026-09-26 (Romain, groupe A)
     "Wyrel": "wyrel.py",            # liste blanche le 2026-09-24 (Romain : « Go Wyrel, … puis
                                     # whitelist ce marchand »)
+    "Indiegala": "indiegala.py",    # liste blanche le 2026-10-06 (Romain : « go pour la liste
+                                    # blanche », après l'aperçu ligne par ligne), fichier [R69]
 }
 
 

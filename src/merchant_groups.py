@@ -51,12 +51,20 @@ PENDING_2026_09_21 = {
     "Gamesplanet FR": 526,
     # Même scan, à l'entrée de Discover.games et de Loaded en liste blanche (2026-09-26).
     "Discover.games": 440, "Loaded": 16,
+    # Même scan, à l'entrée d'Indiegala en liste blanche (2026-10-06).
+    "Indiegala": 175,
 }
 
 # Hors groupes, avec la raison — un marchand absent des deux groupes n'est PAS un oubli.
 EXCLUDED: dict[str, str] = {
     "Difmark": ("file Pending vide — ses lignes sont dans la liste account (30), que le "
                 "balayage ne lit pas ; saisie à la main avec --list 30"),
+    # Romain, 2026-10-06 : « go pour la liste blanche » — le groupe n'a pas été dit. Un groupe
+    # est SON choix (il l'a nommé pour Gamesplanet FR, Discover.games, Loaded) : Indiegala attend
+    # le sien ici plutôt que d'être rangé à sa place. En attendant, il se balaie seul (console,
+    # « Lancer » avec Indiegala:95) ou s'ajoute à une boucle en cours pour une passe.
+    "Indiegala": ("en liste blanche le 2026-10-06 (go de Romain), groupe à choisir par Romain — "
+                  "balayage seul ou ajout à une boucle en attendant"),
 }
 
 GROUPS: dict[str, tuple[str, ...]] = {

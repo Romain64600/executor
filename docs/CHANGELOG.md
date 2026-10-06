@@ -3,6 +3,44 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-10-06 — `[R69]` Indiegala (store 95) : fichier marchand avec lecteur de fiche, aperçu à blanc, puis liste blanche (go de Romain)
+
+- **Aperçu à blanc du 06/10** (175 lignes du 21/09, `03_match` hors ligne, lecture seule —
+  `docs/apercu_indiegala_2026-10-06.md`) : **34 candidats / 141 refus**, tous Steam (29 GLOBAL,
+  5 US par le suffixe du titre confirmé par la fiche). Une écriture fausse trouvée et fermée AVANT
+  toute liste blanche : « Thunder Ray - Origin » (fiche DLC, titre sans marqueur, ORIGIN = bruit de
+  plateforme) sortait Standard(1) sur la page du jeu de base → garde générique
+  `MerchantOfferSignals.dlc` / `matcher.page_dlc_refusal` (une fiche DLC qui n'aboutit pas en
+  DLC(16) est refusée ; jamais un routage), test `test_le_dlc_de_la_fiche_est_une_garde_pas_un_routage`
+  rougi par mutation. Reste à Romain : Belmont's Curse (EU) en refus strict `[R59]`, go liste
+  blanche / groupe, extract frais (navigateur), et le `\'` du feed (défaut générique : 109 offres
+  Eneba / Gamerall refusées « missing AKS words » en production).
+
+- **Romain : « Si on peut ouvrir la page, on trouvera les infos »** (après l'étude du 06/10,
+  `docs/PROCHAINS_MARCHANDS.md`). `src/merchants/indiegala.py`, sur le modèle d'Allyouplay `[R68]`
+  (EXECUTOR_RULES `[R69]`) : la fiche `indiegala.com/store/game/<slug>/<id>` est lue par la
+  bibliothèque standard (`page_get`, UA navigateur, ~1 req / s, une par fiche et par processus) ;
+  lien canonique = identité (fiche périmée → accueil `/store` → refus) ; plateforme = « is
+  provided via **Steam Key** » (jamais STEAM par défaut) ; DLC « requires the base product »
+  (`is_dlc`) = une GARDE générique (`MerchantOfferSignals.dlc` → `matcher.page_dlc_refusal` : une
+  fiche DLC qui n'aboutit pas en DLC(16) est refusée — « Thunder Ray - Origin » sortait Standard(1)
+  sur la page du jeu de base au premier aperçu), jamais un routage ; région = liste des pays
+  interdits (« Country availability » / « Banned
+  countries ») par la règle `[R59]` (même table que Gamesplanet FR / Allyouplay) ; h3 « Region
+  locked product » = verrou pays → refus ; l'encart « région d'achat » est ignoré.
+- **Titre** : suffixe « (US) / (EU) / (UK) » en queue = `title_region`, retiré du nom résolu et des
+  gardes, et qui doit s'accorder avec la fiche ; titre multilingue « A / B / C » réduit à sa
+  première partie quand les autres sont dans une autre écriture ; « Attack on Titan 3 / A.O.T. 3 »
+  reste entier (refus R01 au pire, jamais un nom deviné).
+- **Règle de région PROPOSÉE, à confirmer par Romain à l'aperçu** (pas une décision revue — AKS
+  n'affiche aucune offre Indiegala). Sur les 8 fiches réelles : 4 GLOBAL, SH Townfall (US) → US,
+  Castlevania LoS2 bundle → EU (bundle, refusé au precheck), Reach → verrou pays, **Belmont's Curse
+  (EU) → refus « INDIEGALA LOCK (EU + US) »** (Chypre ET les USA interdits : UE non entière).
+- Registre : `"INDIEGALA"`, store `95`. **PAS dans `auto_merchants`, PAS dans un groupe** (épinglé
+  par un test). Aucune autre règle, aucun autre marchand touché.
+- Tests : `tests/test_merchants_indiegala_r69.py` (fiches réelles `tests/fixtures/indiegala/`, 9
+  fichiers relevés le 06/10). Docs : EXECUTOR_RULES `[R69]`, MERCHANTS (section + tableau),
+  PROCHAINS_MARCHANDS (ligne 7).
 ## 2026-10-06 — Maintenance des VPS : ré-audit Codex de `2c5cb19` (4 défauts de maintenance) corrigé
 
 - **Ré-audit Codex de `2c5cb19` (Romain, 06/10) — les 4 défauts de maintenance corrigés**

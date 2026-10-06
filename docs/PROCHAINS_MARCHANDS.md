@@ -19,7 +19,7 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 | 5 | **Discover.games** (168) | 440 | 370 (84 %) | — | **fichier écrit le 25/09 (`[R60]`), essai à blanc : 106 candidats sur 150 lignes ; en liste blanche le 26/09, groupe A** |
 | 6 | **CDKeys → « Loaded »** (40) | 16 (21/09) | — | feed du jour à relire | **fichier écrit le 25/09 (`[R61]`, « Europe & UK » → Europe, sans région → GLOBAL) ; essai à blanc sur 16 lignes : 1 candidat ; en liste blanche le 26/09, groupe A** |
 | — | Greenmangaming (22) | 482 | 318 (66 %) | URL d'affiliation illisible (sjv.io), titre muet | pas prioritaire |
-| 7 | **Indiegala** (95) | 175 (21/09) | 30 (19 %, slug strict) | plateforme et région : ni titre ni URL ; la **fiche** les donne (« is provided via Steam Key », listes de pays, « Region locked product ») | **étudié le 06/10** : faisable comme Gamesplanet FR / Allyouplay (lecteur de fiche), rendement faible ; décision de Romain sur la règle de région (section du 06/10) |
+| ✓ | **Indiegala** (95) | 175 (21/09) | 30 (19 %, slug strict) | plateforme et région : ni titre ni URL ; la **fiche** les donne (« is provided via Steam Key », listes de pays, « Region locked product ») | **fichier écrit le 06/10** (`[R69]`), **aperçu à blanc le 06/10 : 34 entrées / 175** (`apercu_indiegala_2026-10-06.md`), **liste blanche le 06/10** (Romain : « go pour la liste blanche ») ; groupe à choisir ; Belmont's Curse (EU) reste refusée (Chypre ET les USA interdits), tant que Romain n'en décide pas autrement |
 
 \* Mesuré sur le scan tous-magasins du 21/09, **avant** la correction du tri du feed (`orderBy=id`,
 24/09) : ces comptes sont des minimums. Un nouveau scan tous-magasins les rafraîchira.
@@ -76,6 +76,54 @@ demi-journée (fichier + fixtures réelles + tests + aperçu à blanc sur le fee
 des pays interdits (proposé), et que fait-on de l'encart « liée à la région d'achat » présent
 sur presque toutes les fiches (ignoré, comme la politique de vente de Gamesplanet ?) ; (2) le
 verrou PAYS explicite (Reach) = refus (proposé) ; (3) go ou pas, vu le rendement.
+
+**Suite (06/10, même jour)** — Romain : « Si on peut ouvrir la page, on trouvera les infos ».
+Fichier écrit sur la branche `indiegala` : `src/merchants/indiegala.py` (`[R69]`, EXECUTOR_RULES ;
+MERCHANTS « Indiegala (store 95) »), tests `tests/test_merchants_indiegala_r69.py` sur les 8 fiches
+réelles (`tests/fixtures/indiegala/`), registre store 95 — hors liste blanche jusqu'à l'aperçu.
+Codé tel que proposé : (1) `[R59]` sur les pays interdits, encart « région d'achat » ignoré ;
+(2) verrou pays = refus. **À confirmer par Romain à l'aperçu** (règle proposée, pas revue) :
+sur les 8 fiches, MHW Gold / SCUM / LBA2 / Thunder Ray → GLOBAL, SH Townfall (US) → US, le bundle
+Castlevania → EU (refusé bundle), Reach → verrou, et **Belmont's Curse (EU) → refus « LOCK (EU +
+US) »** : sa liste interdit les USA ET Chypre, donc l'UE n'est pas entière — tel quel (aucune
+écriture fausse), ou « (EU) du titre + UE quasi complète → EU » ? Autre point : « Attack on Titan
+3 / A.O.T. 3 » (2 lignes) reste entier → refus R01 au pire ; couper l'alias demande un go.
+Prochaine étape : aperçu à blanc (`03_match`, lecture seule) sur le feed du jour, puis liste
+blanche / groupe sur le go de Romain.
+
+**Aperçu à blanc du 06/10** (`03_match` hors ligne sur les 175 lignes du scan du 21/09, HTTP seul,
+index AKS de 12 h ; détail dans [`apercu_indiegala_2026-10-06.md`](apercu_indiegala_2026-10-06.md)) :
+**34 candidats / 141 refus**, tous Steam — 22 GLOBAL Standard, 4 GLOBAL DLC (pages à seau DLC
+unique), 1 Deluxe / 1 Gold / 1 Ultimate GLOBAL, 5 US par le suffixe « (US) » du titre confirmé par
+la fiche (SH Townfall ×2, PAC-MAN World 2 ×2, Katamari). Les 8 fiches de l'étude sortent comme
+prévu (MHW Gold, SCUM, LBA2 → GLOBAL ; Townfall → US ; bundle Castlevania → refus bundle ; Reach →
+verrou pays ; Belmont's Curse (EU) → « LOCK (EU + US) » ; AOT3 Deluxe → fiche périmée). **Une
+écriture fausse trouvée et fermée** : « Thunder Ray - Origin » — fiche DLC, titre sans marqueur,
+ORIGIN lu comme du bruit de plateforme — sortait Standard(1) sur la page du JEU DE BASE ; la fiche
+DLC est désormais une GARDE générique (`MerchantOfferSignals.dlc` → `matcher.page_dlc_refusal` :
+une fiche DLC qui n'aboutit pas en DLC(16) est refusée, jamais un routage) ; les 4 autres fiches
+DLC entrent toujours en DLC(16) sur leur propre page. Les refus : 39 fiches « direct download »
+(ventes sans DRM, pas des clés Steam — refus voulu, plateforme inconnue d'AKS), 30 verrous « pays
+d'achat », 27 sans page AKS (dont les 2 « Attack on Titan 3 / A.O.T. 3 » : AKS n'a aucune page
+AOT 3 au sitemap — l'alias ne change rien aujourd'hui), 15 « mots en trop » (DLC / variantes sans
+page), 6 bundles + 2 multi-jeux + 5 collections de DLC + 1 pass, 5 fiches sans « is provided via »
+(illisibles, refus voulu), 2 Belmont's Curse (EU) en « LOCK (EU + US) », 4 noms cassés par le `\'`
+du feed (« Collector\'s Cove », « PO\'ed », « Farmer\'s Dynasty » : `tokenize` en fait « COLLECTOR S »
+— défaut GÉNÉRIQUE du feed, pas d'Indiegala : 109 offres Eneba / Gamerall refusées de la même façon
+en production, à corriger côté extracteur sur un go), 1 Kao Anniversary (R64), 1 SNK Deluxe Pack
+(édition ambiguë). **À trancher par Romain** : (1) Belmont's Curse (EU) — tel quel (refus strict
+`[R59]`, Chypre + USA interdits) ou « (EU) du titre + UE quasi complète → EU » ; (2) go ou pas pour
+la liste blanche + un groupe, vu le rendement (≈ 34 / 175, et le feed du 21/09 a 15 jours : un
+extract frais demande un navigateur — A et B sont en boucle, le VPS 3 n'est pas à toucher sans go) ;
+(3) le `\'` du feed, générique.
+
+**Go de Romain (06/10, soir) : « go pour la liste blanche »**, après le tableau ligne par ligne
+(fiche lue, page AKS, saisie du modal, ce que la page vend déjà, points à regarder : 5 premières
+offres US de leur page, Little Big Adventure / Nightmare Frontier / Tabletop en Standard alors que
+la page vend aussi Enhanced / Early Access). Indiegala (95) rejoint `AUTO_MERCHANTS` ; **le groupe
+reste à choisir par Romain** (hors groupe en attendant, raison écrite dans `merchant_groups.py`).
+Pour que ce soit vivant : tirer le code sur les clones et redémarrer l'admin entre deux balayages
+(jamais sous une boucle). Belmont's Curse (EU) : pas tranché, reste refusée.
 
 ## 2026-09-25 (suite) — CDKeys, devenu « Loaded » (store 40)
 

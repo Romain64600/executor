@@ -106,6 +106,13 @@ AUTO_MERCHANTS: list[tuple[str, str]] = [
                                 # boutique PC = slug de la fiche cachée dans le lien
                                 # d'affiliation. Petite file (16 lignes le 21/09) : premier
                                 # passage conseillé sur peu de pages. Feed store 40.
+    ("Indiegala", "95"),        # Romain 2026-10-06 (« go pour la liste blanche »), après
+                                # l'aperçu à blanc ligne par ligne (34 entrées / 175, toutes
+                                # Steam : 29 GLOBAL, 5 US ; docs/apercu_indiegala_2026-10-06.md).
+                                # Fichier [R69] : titre et URL muets, la FICHE donne la
+                                # plateforme (« is provided via Steam Key ») et la région (pays
+                                # interdits, règle [R59]) ; fiche DLC = garde (jamais un seau de
+                                # jeu de base). Petite file (175 lignes le 21/09). Feed store 95.
 ]
 
 # Deliberately NOT suggested (enforcement is simply "absent from the list";

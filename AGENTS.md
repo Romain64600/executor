@@ -141,6 +141,32 @@ No degraded mode.
 These are deliberate, Romain-reviewed calls. An adversarial audit re-derives them as
 "findings" every time; leave them AS-IS unless Romain explicitly changes his mind.
 
+- **`[R69]` Indiegala : la FICHE produit fait foi (plateforme + pays INTERDITS), la fiche DLC est
+  une GARDE — Romain, 2026-10-06** (« Si on peut ouvrir la page, on trouvera les infos », puis, le
+  tableau ligne par ligne lu — `docs/apercu_indiegala_2026-10-06.md`, 34 entrées / 175 —, « go pour
+  la liste blanche »). Titre et URL ne disent ni plateforme ni région : la fiche indiegala.com est
+  lue pour CHAQUE ligne (`indiegala.page_get`, bibliothèque standard, UA navigateur) ; plateforme =
+  « is provided via **Steam Key** » (libellé absent ou inconnu → refus, jamais STEAM par défaut :
+  39 fiches « direct download » refusées à l'aperçu) ; région = `[R59]` sur la liste des pays
+  INTERDITS (aucun pays d'UE / UK / USA → GLOBAL ; toute l'UE + UK sans les USA → US ; USA sans
+  l'UE → EU ; mélange → refus) ; h3 « Region locked product » → refus ; suffixe « (US) / (EU) » du
+  titre = `title_region`, doit s'accorder avec la fiche sinon refus. **La fiche DLC (« requires the
+  base product ») est une garde générique** (`MerchantOfferSignals.dlc` → `matcher.page_dlc_refusal`) :
+  elle ne choisit jamais le seau (R18 / `[R43]` / `[R57]` le font), mais une fiche DLC qui n'aboutit
+  pas en DLC(16) est refusée — « Thunder Ray - Origin » (ORIGIN = bruit de plateforme, titre sans
+  marqueur) sortait Standard(1) sur la page du jeu de base à l'aperçu. Romain a vu et laissé passer :
+  les 5 entrées US qui sont la PREMIÈRE offre US de leur page (le formulaire propose la région), et
+  Standard sur une page qui vend aussi Enhanced / Early Access quand le titre ne le dit pas. Un
+  audit voudra : (a) retomber sur STEAM / GLOBAL quand la fiche est illisible — non (`[R51]`) ; (b)
+  faire entrer Belmont's Curse (EU) en EU parce que « (EU) » est dans le titre — non : Chypre ET les
+  USA sont interdits, pas tranché par Romain, refus ; (c) faire du `dlc` de la fiche un routage
+  (« la fiche dit DLC, donc DLC(16) ») — non, c'est le seau de la page AKS et du titre qui décident,
+  la fiche ne fait que refuser le reste ; (d) lire la fiche par `aks_env.http_get` — non, même raison
+  que `[R68]` ; (e) couper « Attack on Titan 3 / A.O.T. 3 » à un alias — non : AKS n'a aucune page
+  AOT 3, et un alias demande un go ; (f) remettre Indiegala hors liste blanche parce que le
+  rendement est faible (≈ 34 / 175) — non, c'est le go de Romain, le rendement était connu.
+  EXECUTOR_RULES `[R69]`, MERCHANTS « Indiegala (store 95) », `tests/test_merchants_indiegala_r69.py`.
+
 - **`[R68]` Allyouplay : la FICHE produit fait foi (plateforme + pays autorisés) — Romain,
   2026-09-30** (« go pour 1 », puis « go pour la mise en ligne » après l'aperçu : 119 candidats PC
   Steam sur 296 lignes, toutes les lignes Xbox refusées sur leurs pays). Le feed Allyouplay passe

@@ -29,9 +29,14 @@ class LesGroupesFigesCouvrentLaListeBlanche(unittest.TestCase):
         self.assertEqual(c["doublons"], [], "un marchand ne peut pas être dans deux groupes")
         self.assertEqual(c["inconnus"], [], "un groupe ne cite que des marchands allowlistés")
 
-    def test_le_seul_marchand_hors_groupe_est_difmark_et_la_raison_est_ecrite(self):
-        self.assertEqual(coverage()["hors_groupes"], ["Difmark"])
+    def test_les_marchands_hors_groupe_sont_nommes_et_la_raison_est_ecrite(self):
+        # Difmark (file Pending vide) et, depuis le 06/10, Indiegala : en liste blanche sur le go
+        # de Romain, le groupe reste SON choix — pas un oubli, la raison est écrite.
+        self.assertEqual(coverage()["hors_groupes"], ["Difmark", "Indiegala"])
         self.assertIn("liste account", EXCLUDED["Difmark"])
+        self.assertIn("groupe à choisir par Romain", EXCLUDED["Indiegala"])
+        for nom in coverage()["hors_groupes"]:
+            self.assertIn(nom, EXCLUDED, f"{nom} hors groupe sans raison écrite")
 
     def test_les_deux_groupes_sont_a_peu_pres_equilibres(self):
         charges = coverage()["charge_estimee"]

@@ -3998,6 +3998,10 @@ class _Plan:
     # [R66] same carrier for a page PROPOSED by the AKS catalogue search: the title words the
     # page name lacks (`AksResolution.catalog_leftover`) — non-empty → same refusals as [R64].
     catalog_leftover: str = ""
+    # [R69] the merchant's OWN page said « DLC » (`MerchantOfferSignals.dlc`): the final
+    # edition must be DLC(16), else the row is refused (`page_dlc_refusal`). PC plans only —
+    # a console plan never carries it (a page-authoritative merchant refuses the conflict first).
+    page_dlc: bool = False
 
     @property
     def console(self) -> bool:
@@ -4051,6 +4055,27 @@ def r43_dlc_page_refusal(dlc_marker: str, resolution: AksResolution, resolve_nam
     return None
 
 
+def page_dlc_refusal(offer: NormalizedOffer, page_dlc: bool, edition_id: str, edition_label: str,
+                     resolution: AksResolution) -> "SkippedOffer | None":
+    """[R69] (2026-10-06) — the merchant's OWN page said the product is a DLC
+    (`MerchantOfferSignals.dlc`, Indiegala « This content requires the base product »). The
+    page never ROUTES the bucket (R18 / [R43] / [R57] keep deciding it from the title and the
+    AKS page), but it GATES the result: anything other than DLC(16) is a DLC written on a
+    base-game bucket, refused. Found at the 06/10 preview: « Thunder Ray - Origin » — ORIGIN is
+    platform noise for the matcher, the title had no DLC marker, the slug fell back to the
+    base game `thunder-ray` and the row came out Standard(1). The four other page-declared
+    DLC (SCUM packs, Sherman Commander Supporter Pack, V8 Power Pack) sit on their own
+    single-bucket DLC pages and keep entering DLC(16). None when the page said nothing."""
+
+    if not page_dlc or str(edition_id) == "16":
+        return None
+    return SkippedOffer(
+        offer,
+        f"{offer.merchant} offer page says DLC (« requires the base product ») but the match "
+        f"lands in {edition_label}({edition_id}) on {resolution.slug!r} — a DLC never enters a "
+        f"base-game bucket, not entered (R69)")
+
+
 def _pc_plan(
     offer: NormalizedOffer,
     resolver: Callable[..., AksResolution | None],
@@ -4079,6 +4104,7 @@ def _pc_plan(
     _page_region_resolved = False             # R33: the offer page gave a region
     _page_region_base: str | None = None      #      → ENTER with this base, or
     _page_region_label = ""                   #      → forbidden region: <label> skip
+    _page_dlc = False                         # [R69]: the offer page said « DLC »
     # A merchant whose signals live on its OWN offer page (Instant Gaming) is
     # resolved EVEN when the feed title already carries a platform token: the region
     # is NEVER in an IG title, so gating this on `declared_platform is None` would let
@@ -4110,6 +4136,7 @@ def _pc_plan(
         _page_region_resolved = _sig.region_resolved
         _page_region_base = _sig.region_base
         _page_region_label = _sig.region_label
+        _page_dlc = bool(getattr(_sig, "dlc", False))
     difmark_attrs: DifmarkOfferAttributes | None = None
     difmark_platform_verified = False
     difmark_is_account = False
@@ -4405,6 +4432,7 @@ def _pc_plan(
         dlc_page=dlc_page,
         identity_name=identity_name,
         guard_name=guard_name,
+        page_dlc=_page_dlc,
         # [R63] the bucket text (« Origin English Only -OR- … ») is not a base R44 can look
         # up: it reads the BASE the route came from, like a console plan.
         base_label=({"en_only": "GLOBAL", "eu_en_only": "EU"}[en_route]
@@ -4486,6 +4514,7 @@ def _match_offer(
     region_label, region_id, implicit = plan.region_label, plan.region_id, plan.implicit
     declared_platform, difmark_platform_verified = plan.declared_platform, plan.difmark_platform_verified
     dlc_page, identity_name, guard_name = plan.dlc_page, plan.identity_name, plan.guard_name
+    page_dlc = bool(getattr(plan, "page_dlc", False))      # [R69]
 
     # [R44] a region phrase that is part of the resolved product name is identity, not
     # a lock (see _REGION_IDENTITY_PHRASES) — fail-closed skip unless the merchant's
@@ -4615,6 +4644,9 @@ def _match_offer(
             )
         edition_id, edition_label = sw_edition
         region_id, region_label = sw_region
+        _dlc_gate = page_dlc_refusal(offer, page_dlc, edition_id, edition_label, resolution)
+        if _dlc_gate is not None:
+            return _dlc_gate
         # R25 duplicate guard RETIRED here too (Romain 2026-09-08) — see the main-path
         # note below; a PENDING offer is to be added regardless of the page's price table.
         return Candidate(
@@ -5150,6 +5182,9 @@ def _match_offer(
     # kept, ids no longer rotate) + submit-time prove-gone, not this page check. Do NOT
     # re-add — see AGENTS.md "Reviewed decisions". ``prices`` is still extracted (price
     # routing / diagnostics), just no longer a skip source.
+    _dlc_gate = page_dlc_refusal(offer, page_dlc, edition_id, edition_label, resolution)
+    if _dlc_gate is not None:
+        return _dlc_gate                      # [R69] the merchant page said DLC, this is not
     return Candidate(
         offer=offer,
         aks_product_id=resolution.product_id,
