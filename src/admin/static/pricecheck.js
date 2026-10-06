@@ -544,15 +544,21 @@ if (typeof window !== "undefined" && window.addEventListener) {
 
 // ---- Concurrents (Romain, 06/10/2026) : « un widget par concurrent », pour les pages des tops ----
 // « le meilleur prix en vert si AllKeyShop est moins cher, le meilleur prix du concurrent en rouge si AllKeyShop est plus
-// cher, le premier prix AKS à côté ». The monitor writes competitors.json every 30 min: for each top page, the AllKeyShop
-// first price (cheapest offer, accounts included, without payment fees) and each competitor's best displayed price.
+// cher, le premier prix AKS à côté » ; « couleur orange quand on est au même prix que le concurrent ». The monitor writes
+// competitors.json every 30 min: for each top page, the AllKeyShop first price (cheapest offer, accounts included, without
+// payment fees) and each competitor's best displayed price.
 let COMPETITORS = null;
 const euros = (n) => (typeof n === "number" ? n.toFixed(2).replace(".", ",") + " €" : "—");
 const safeLink = (url, text) => (/^https?:\/\//i.test(String(url || ""))
   ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text }) : el("span", { text }));
-const TONE = { "aks": "pc-win", "competitor": "pc-lose" };
+const TONE = { "aks": "pc-win", "same": "pc-even", "competitor": "pc-lose" };
+const cents = (n) => Math.round(n * 100);
+// the same price to the cent is "same", even in an export written before the orange (it said "aks" for a tie)
+const outcome = (r) => (r.aks && r.competitor && typeof r.aks.price === "number" && typeof r.competitor.price === "number"
+  && cents(r.aks.price) === cents(r.competitor.price) ? "same" : r.cheaper);
 
 function gapLabel(r) {
+  if (outcome(r) === "same") return "même prix";
   if (typeof r.gap !== "number") return "";
   if (r.gap > 0) return "AKS moins cher de " + euros(r.gap);
   if (r.gap < 0) return "AKS plus cher de " + euros(-r.gap);
@@ -561,20 +567,22 @@ function gapLabel(r) {
 
 function competitorWidget(site) {
   const rows = site.rows || [];
-  const won = rows.filter((r) => r.cheaper === "aks").length;
-  const lost = rows.filter((r) => r.cheaper === "competitor").length;
+  const won = rows.filter((r) => outcome(r) === "aks").length;
+  const even = rows.filter((r) => outcome(r) === "same").length;
+  const lost = rows.filter((r) => outcome(r) === "competitor").length;
   const missing = rows.filter((r) => !r.competitor).length;
   const blocked = site.status === "blocked";
   const head = el("div", { class: "pc-comp-head" }, [
     safeLink(site.home, site.label || site.id),
     blocked ? el("span", { class: "pc-comp-blocked", text: "bloqué" })
       : el("span", { class: "pc-comp-score" }, [el("b", { class: "pc-win", text: String(won) }), " AKS moins cher · ",
+        el("b", { class: "pc-even", text: String(even) }), " même prix · ",
         el("b", { class: "pc-lose", text: String(lost) }), " concurrent moins cher" +
         (missing ? " · " + missing + " introuvable" + (missing > 1 ? "s" : "") : "")]),
   ]);
   if (blocked) return el("section", { class: "pc-comp-card blocked" }, [head, el("p", { class: "pc-comp-msg", text: site.message || "" })]);
   const body = rows.map((r) => {
-    const a = r.aks, c = r.competitor, tone = TONE[r.cheaper] || "";
+    const a = r.aks, c = r.competitor, tone = TONE[outcome(r)] || "";
     return el("tr", {}, [
       el("td", {}, [safeLink(r.page_url, r.product || "?")]),
       el("td", { class: "pc-comp-aks", text: a ? euros(a.price) + " · " + (a.merchant || "?") + (a.account ? " (compte)" : "") : "—" }),

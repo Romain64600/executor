@@ -348,7 +348,8 @@ test("a note changed while the decision is being saved is kept, and flagged as n
 });
 
 // Romain, 06/10/2026 : « un widget par concurrent ; le meilleur prix en vert si AllKeyShop est moins cher, le meilleur
-// prix du concurrent en rouge si AllKeyShop est plus cher, le premier prix AKS à côté ».
+// prix du concurrent en rouge si AllKeyShop est plus cher, le premier prix AKS à côté » ; « couleur orange quand on est
+// au même prix que le concurrent ».
 const COMPETITORS = {
   available: true, age_seconds: 120, generated_at: "2026-10-06T17:22:54+0200", every: 1800, scope: "Price check top",
   sites: [
@@ -363,11 +364,18 @@ const COMPETITORS = {
         aks: { price: 31.88, merchant: "K4G", account: false }, competitor: { price: 12.61, seller: "Gamivo", url: "javascript:alert(1)" },
         cheaper: "competitor", gap: -19.27 },
       { product: "Gears of War E-Day", page_url: "https://www.allkeyshop.com/blog/x/", aks: { price: 46.78, merchant: "G2A" },
-        competitor: null, cheaper: null, gap: null }] },
+        competitor: null, cheaper: null, gap: null },
+      { product: "Battlefield 6", page_url: "https://www.allkeyshop.com/blog/buy-battlefield-6-cd-key-compare-prices/",
+        aks: { price: 44.5, merchant: "Eneba" }, competitor: { price: 44.5, seller: "Eneba", url: "https://www.dlcompare.fr/jeux/1/bf6" },
+        cheaper: "same", gap: 0 },
+      // an export written before the orange said "aks" for a tie: still the same price
+      { product: "Hollow Knight Silksong", page_url: "https://www.allkeyshop.com/blog/buy-hollow-knight-silksong-cd-key-compare-prices/",
+        aks: { price: 15.29, merchant: "GAMESEAL" }, competitor: { price: 15.29, seller: "GAMESEAL", url: "https://www.dlcompare.fr/jeux/2/hks" },
+        cheaper: "aks", gap: 0 }] },
   ],
 };
 
-test("one widget per competitor: green when AllKeyShop is cheaper, red when the competitor is, AKS's first price beside", async () => {
+test("one widget per competitor: green when AllKeyShop is cheaper, orange at the same price, red when the competitor is, AKS's first price beside", async () => {
   const c = await loadConsole(CONSOLE);
   await c.net.release("api/price-check/competitors", JSON.parse(JSON.stringify(COMPETITORS)));
   await tick();
@@ -375,10 +383,12 @@ test("one widget per competitor: green when AllKeyShop is cheaper, red when the 
   assert.equal(widgets.length, 2);
   const [gg, dl] = widgets;
   assert.ok(gg.textContent.includes("bloqué") && gg.textContent.includes("API officielle"), gg.textContent);
-  assert.ok(dl.textContent.includes("1 AKS moins cher · 1 concurrent moins cher · 1 introuvable"), dl.textContent);
+  assert.ok(dl.textContent.includes("1 AKS moins cher · 2 même prix · 1 concurrent moins cher · 1 introuvable"), dl.textContent);
   const cells = dl.querySelectorAll("td").filter((td) => td.classList.contains("pc-comp-price"));
-  assert.deepEqual(cells.map((td) => [td.classList.contains("pc-win"), td.classList.contains("pc-lose")]),
-    [[true, false], [false, true], [false, false]]);
+  assert.deepEqual(cells.map((td) => ["pc-win", "pc-even", "pc-lose"].filter((k) => td.classList.contains(k))),
+    [["pc-win"], ["pc-lose"], [], ["pc-even"], ["pc-even"]]);
+  const gaps = dl.querySelectorAll("td").filter((td) => td.classList.contains("pc-comp-gap")).map((td) => td.textContent);
+  assert.deepEqual(gaps.slice(3), ["même prix", "même prix"]);
   assert.ok(dl.textContent.includes("30,87 € · Kinguin (compte)"), "AKS's first price is not beside");
   assert.ok(dl.textContent.includes("AKS moins cher de 1,61 €") && dl.textContent.includes("AKS plus cher de 19,27 €"), dl.textContent);
   assert.ok(!anchors(dl).some((a) => String(a.getAttribute("href")).startsWith("javascript")), "a javascript: URL became a link");

@@ -71,6 +71,7 @@ main.pc-main { max-width:1100px; }
 .pc-comp-table th, .pc-comp-table td { text-align:left; padding:.25rem .35rem; border-bottom:1px solid var(--line); vertical-align:top; }
 .pc-win { color:var(--good); font-weight:700; }
 .pc-lose { color:var(--bad); font-weight:700; }
+.pc-even { color:var(--warn); font-weight:700; }
 /* 06/10/2026 : une page sortie des tops garde ses reports ouverts dans les tops */
 .pc-left-tops { font-size:.72rem; font-weight:600; padding:.06rem .45rem; border-radius:5px; border:1px dashed var(--accent); color:var(--accent); }
 .topbar-link { font:inherit; background:var(--panel-2); color:var(--ink); border:1px solid var(--line); border-radius:5px;

@@ -364,7 +364,11 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             "toutes les cartes tranchées restent": ("reports.filter((r) => matchesFilters(r))", "reports.filter(matchesFilters)"),
             "note retouchée pendant l'envoi gardée": ("if (NOTES[offer] === typed) delete NOTES[offer];", "delete NOTES[offer];"),
             # 06/10/2026 : un widget par concurrent, vert si AllKeyShop est moins cher, rouge sinon
-            "couleurs des concurrents": ('const TONE = { "aks": "pc-win", "competitor": "pc-lose" };', 'const TONE = {};'),
+            "couleurs des concurrents": ('const TONE = { "aks": "pc-win", "same": "pc-even", "competitor": "pc-lose" };', 'const TONE = {};'),
+            # 06/10/2026 : « couleur orange quand on est au même prix que le concurrent », même dans un ancien relevé
+            "même prix en orange": ('"same": "pc-even", ', ''),
+            "égalité d'un ancien relevé en orange": ('&& cents(r.aks.price) === cents(r.competitor.price) ? "same" : r.cheaper',
+                                                    '&& false ? "same" : r.cheaper'),
             "concurrent bloqué dit pourquoi": ('el("p", { class: "pc-comp-msg", text: site.message || "" })', 'el("p", { class: "pc-comp-msg" })'),
             "premier prix AKS à côté": ('text: a ? euros(a.price) + " · " + (a.merchant || "?")', 'text: a ? "" + (a.merchant || "?")'),
         }
