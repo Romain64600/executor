@@ -319,8 +319,9 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
                 'const note = NOTES[offer] || "";'),
             "deux étapes": ('el("div", { class: "pc-step pc-step-note" }', 'el("div", { class: "pc-step-note" }'),
             # 05/10/2026 : qui a traité le report
-            "traité par, en tête de carte": (': "✔ Traité par " + (handledBy(r) || "?") + " · " + labelOf(cur) })',
-                                             ': "" })'),
+            "traité par, en tête de carte": (
+                ': "✔ Traité par " + (handledBy(r) || "?") + " · " + labelOf(cur) + (isToFix(r) ? " · à corriger" : "") })',
+                ': "" })'),
             "filtre traité par": ('if (by === "none" ? !isOpen(r) : by && handledBy(r) !== by) return false;', ""),
             # 05/10/2026 : les reports des tops séparés de ceux de la homepage
             "à discuter, puis les tops, sous leur titre": (
@@ -343,8 +344,12 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             "question en tête de carte": ('cur === "a_discuter" ? el("div", { class: "pc-question" }',
                                           'false ? el("div", { class: "pc-question" }'),
             # 06/10/2026 : les reports traités archivés dans un autre onglet
-            "archives à part": ("const isArchived = (r) => !isOpen(r) && !isToDiscuss(r);", "const isArchived = (r) => false;"),
-            "à discuter jamais archivé": ("const isArchived = (r) => !isOpen(r) && !isToDiscuss(r);", "const isArchived = (r) => !isOpen(r);"),
+            "archives à part": ("const isArchived = (r) => ARCHIVED.has(stateOf(r));", "const isArchived = (r) => false;"),
+            "à discuter jamais archivé": ('  if (isToDiscuss(r)) return "discuss";  // jusqu\'à sa décision finale, même réparé\n', ""),
+            # 06/10/2026 : « les stats semblent fausses » : un vrai positif pas encore corrigé reste en cours
+            "vrai pas corrigé reste en cours": ('if (decisionKey(r) === "vrai") return "tofix";', 'if (decisionKey(r) === "vrai") return "faux";'),
+            "premiers prix en erreur, décidés compris": ('kpi("k-first", n((r) => !isArchived(r) && !isFixed(r) && r.verdict',
+                                                          'kpi("k-first", n((r) => isOpen(r) && r.verdict'),
             "onglet suivi": ("const shown = reports.filter((r) => matchesFilters(r)).filter((r) => shownTab(r) === TAB);",
                              "const shown = reports.filter((r) => matchesFilters(r));"),
             "carte gardée dans son onglet": (

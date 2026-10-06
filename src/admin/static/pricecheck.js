@@ -115,7 +115,22 @@ const isToDiscuss = (r) => decisionKey(r) === "a_discuter";
 // part it was decided in, so that nothing moves under the cursor (05/10/2026)
 const partOf = (r) => (isToDiscuss(r) ? "discuss" : MODE_CARD[r.mode] ? r.mode : "");
 const shownPart = (r) => { const j = JUST_DONE.get(String(r.offer)); return j && j.part != null ? j.part : partOf(r); };
-const isArchived = (r) => !isOpen(r) && !isToDiscuss(r);
+// Romain, 06/10/2026 : « les stats semblent fausses » (En cours 0, Archives 69, mais 8 SUSPECT) : un vrai positif dont l'offre
+// n'a pas encore changé est une erreur confirmée qui reste à corriger : il reste en cours. Chaque report a un seul état, et
+// les compteurs en sont la somme : en cours = à traiter + à discuter + à corriger ; archives = réparées + faux positifs
+// levés par une règle + vérifiées OK + faux positifs jugés.
+function stateOf(r) {
+  if (isToDiscuss(r)) return "discuss";  // jusqu'à sa décision finale, même réparé
+  if (isRuleCleared(r)) return "rule";
+  if (isVerified(r)) return "verified";
+  if (isFixed(r)) return "fixed";
+  if (decisionKey(r) === "faux") return "faux";
+  if (decisionKey(r) === "vrai") return "tofix";
+  return "open";
+}
+const ARCHIVED = new Set(["fixed", "rule", "verified", "faux"]);
+const isArchived = (r) => ARCHIVED.has(stateOf(r));
+const isToFix = (r) => stateOf(r) === "tofix";
 const tabOf = (r) => (isArchived(r) ? "archive" : "current");
 const shownTab = (r) => { const j = JUST_DONE.get(String(r.offer)); return j && j.tab ? j.tab : tabOf(r); };
 const labelOf = (key) => shortLabel((DATA && DATA.decisions && DATA.decisions[key]) || key);
@@ -186,18 +201,20 @@ function renderSummary(reports) {
   const n = (f) => reports.filter(f).length;
   const kpi = (cls, value, label) => el("div", { class: "kpi " + cls }, [
     el("div", { class: "kpi-n", text: String(value) }), el("div", { class: "kpi-l", text: label })]);
+  const state = (s) => (r) => stateOf(r) === s;
   $("#pc-summary").replaceChildren(
-    kpi("k-open", n(isOpen), "sans décision"),
+    // en cours
+    kpi("k-open", n(state("open")), "à traiter"),
     kpi("k-discuss" + (n(isToDiscuss) ? " hot" : ""), n(isToDiscuss), "à discuter"),
+    kpi("k-tofix", n(isToFix), "à corriger"),
+    kpi("k-first", n((r) => !isArchived(r) && !isFixed(r) && r.verdict === "SUSPECT" && isFirstPrice(r)), "premiers prix en erreur"),
     kpi("k-top", n((r) => isOpen(r) && r.mode === "top-games"), "tops à trancher"),
     kpi("k-home", n((r) => isOpen(r) && r.mode === "homepage"), "homepage à trancher"),
-    kpi("k-first", n((r) => isOpen(r) && r.verdict === "SUSPECT" && isFirstPrice(r)), "premiers prix en erreur"),
-    kpi("k-suspect", n((r) => r.verdict === "SUSPECT"), "SUSPECT"),
-    kpi("k-verifier", n((r) => r.verdict === "À VÉRIFIER"), "À VÉRIFIER"),
-    kpi("k-nv", n((r) => r.verdict === "NON VÉRIFIABLE"), "NON VÉRIFIABLE"),
-    kpi("k-fixed", n(isRepaired), "réparées"),
-    kpi("k-rule", n(isRuleCleared), "faux positifs levés"),
-    kpi("k-verified", n(isVerified), "vérifiées OK"),
+    // archives
+    kpi("k-fixed", n(state("fixed")), "réparées"),
+    kpi("k-rule", n(state("rule")), "faux positifs levés"),
+    kpi("k-verified", n(state("verified")), "vérifiées OK"),
+    kpi("k-faux", n(state("faux")), "faux positifs jugés"),
     kpi("", reports.length, "reports"));
 }
 
@@ -228,6 +245,7 @@ function doneWhere(r, just) {
   if (just.tab && tabOf(r) !== just.tab) return tabOf(r) === "archive" ? " — dans quelques secondes, la carte passe dans les archives"
     : " — dans quelques secondes, la carte revient en cours, dans " + PART_LABEL[partOf(r)];
   if (PART_LABEL[partOf(r)] && partOf(r) !== just.part) return " — dans quelques secondes, la carte passe dans " + PART_LABEL[partOf(r)];
+  if (isToFix(r)) return " — la carte reste en cours, « à corriger », jusqu'à ce que l'offre change";
   return "";
 }
 
@@ -301,7 +319,7 @@ function renderItem(r) {
       cur ? el("span", { class: "pc-done d-" + cur, title: "Traité par " + (handledBy(r) || "?") +
         (r.decision.at ? " le " + stamp(r.decision.at) : ""), text: cur === "a_discuter"
           ? "💬 À discuter (" + (handledBy(r) || "?") + (r.decision.at ? ", " + stamp(r.decision.at) : "") + ")"
-          : "✔ Traité par " + (handledBy(r) || "?") + " · " + labelOf(cur) })
+          : "✔ Traité par " + (handledBy(r) || "?") + " · " + labelOf(cur) + (isToFix(r) ? " · à corriger" : "") })
         : isOpen(r) ? el("span", { class: "pc-todo", text: "À traiter" }) : null,
       MODE_BADGE[r.mode] ? el("span", { class: "pc-mode " + MODE_BADGE[r.mode][1], title: MODE_TITLE[r.mode],
         text: MODE_BADGE[r.mode][0] }) : null,
@@ -319,6 +337,8 @@ function renderItem(r) {
       r.decision.note ? "« " + r.decision.note + " »" : "pas de note, à voir ensemble."]) : null,
     (r.reasons || []).length ? el("ul", { class: "pc-reasons" }, r.reasons.map((x) => el("li", { text: x }))) : null,
     recheck,
+    isToFix(r) ? el("div", { class: "pc-tofix", text: "🔧 À corriger : l'erreur est confirmée, l'offre n'a pas encore changé sur "
+      + "AllKeyShop" + (r.still_wrong_at ? " (toujours en erreur au recontrôle du " + stamp(r.still_wrong_at) + ")" : "") }) : null,
     el("div", { class: "pc-meta", text: meta }),
     isGone(r) ? el("div", { class: "pc-gone",
       text: "Plus vu en premier prix depuis le " + stamp(r.seen_at) + " : l'offre n'est plus en tête." }) : null,
@@ -368,8 +388,8 @@ function renderTabs(reports) {
     b.setAttribute("aria-pressed", String(TAB === tab));
   }
   $("#pc-tab-note").textContent = TAB === "archive"
-    ? "Les reports tranchés Vrai positif ou Faux positif, et ceux que le moniteur a trouvés réparés. Mis « À discuter », un report revient en cours, en tête."
-    : "Ce qui reste à faire : les reports à discuter, puis ceux à traiter. Tranché Vrai positif ou Faux positif, un report passe dans les archives.";
+    ? "Les reports réglés : réparés, faux positifs levés par une règle, vérifiés OK, et les faux positifs jugés. Mis « À discuter », un report revient en cours, en tête."
+    : "Ce qui reste à faire : les reports à discuter, à traiter, et à corriger (vrai positif dont l'offre n'a pas encore changé). Réparé ou jugé faux positif, un report passe dans les archives.";
 }
 
 function render() {
@@ -391,12 +411,14 @@ function render() {
     if (only && !discuss && only !== part) continue;  // « À discuter » always shows (06/10/2026)
     const items = shown.filter((r) => shownPart(r) === part);
     const open = items.filter(isOpen).length;
+    const tofix = items.filter(isToFix).length;
     const hidden = discuss ? reports.filter((r) => shownPart(r) === part && shownTab(r) === TAB).length - items.length : 0;
     parts.push(el("h3", { class: "pc-group-title " + cls, id: discuss ? "pc-discuss" : null }, [
       el("span", { class: "pc-group-name", text: label }),
       el("span", { class: "pc-group-what", text: " · " + what }),
       el("span", { class: "pc-group-count", text: " — " + items.length + " report" + (items.length > 1 ? "s" : "") +
-        (open ? ", dont " + open + " à traiter" : "") + (hidden ? " · " + hidden + " masqué" + (hidden > 1 ? "s" : "") +
+        (open || tofix ? ", dont " + [open ? open + " à traiter" : "", tofix ? tofix + " à corriger" : ""].filter(Boolean).join(" et ") : "")
+        + (hidden ? " · " + hidden + " masqué" + (hidden > 1 ? "s" : "") +
         " par les filtres" : "") }),
     ]));
     parts.push(...(items.length ? items.map(renderItem) : [el("div", { class: "pc-empty", text: hidden
