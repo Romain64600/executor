@@ -52,14 +52,14 @@ const isRuleCleared = (r) => isFixed(r) && r.fixed_kind === "rule";
 const isVerified = (r) => isFixed(r) && r.fixed_kind === "verified";
 const isRepaired = (r) => isFixed(r) && r.fixed_kind !== "rule" && r.fixed_kind !== "verified";
 // Romain, 03/10/2026: « que le report des problèmes sur les tops soit identifié des problèmes home page ». The monitor
-// exports `mode`: "top-games" when the offer's page is in the tops right now (first 5 Popular, first 4 Coming soon PC),
+// exports `mode`: "top-games" when the offer's page is in the tops right now (first 10 Popular, first 5 Coming soon PC since 06/10/2026),
 // otherwise "homepage"; a top page is also in the homepage TOP 50 (`modes` lists both). An older export has no mode.
 const MODE_BADGE = { "top-games": ["TOP", "m-top"], "homepage": ["HOMEPAGE", "m-home"] };
 // Romain, 05/10/2026 : « je voudrais que les reports top soient différenciables des reports homepage » : la liste en
 // deux parties (les tops d'abord), chacune sous son titre ; une carte des tops porte une bande et un badge pleins.
 const MODE_CARD = { "top-games": "mode-top", "homepage": "mode-home" };
 const MODE_GROUPS = [
-  ["top-games", "g-top", "Price check top", "les tops : 5 premiers Popular, 4 premiers Coming soon PC", "Aucun report sur les tops pour ces filtres."],
+  ["top-games", "g-top", "Price check top", "les tops : 10 premiers Popular, 5 premiers Coming soon PC", "Aucun report sur les tops pour ces filtres."],
   ["homepage", "g-home", "Price check homepage", "toute la homepage : widgets de la home, TOP 50 de chaque plateforme",
     "Aucun report sur la homepage pour ces filtres."],
 ];
@@ -80,7 +80,7 @@ let TAB = "current";  // "current" | "archive"
 const PART_LABEL = { "discuss": "« À discuter », en tête de la liste", "top-games": "« Price check top »",
   "homepage": "« Price check homepage »" };
 const MODE_TITLE = {
-  "top-games": "Price check top : la page est dans les tops (5 premiers Popular, 4 premiers Coming soon PC)",
+  "top-games": "Price check top : la page est dans les tops (10 premiers Popular, 5 premiers Coming soon PC)",
   "homepage": "Price check homepage : la page est dans les listes de la homepage (top clics, TOP 50)",
 };
 const isOpen = (r) => !decisionKey(r) && !isFixed(r);
