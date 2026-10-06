@@ -619,9 +619,10 @@ class LeRegistre(unittest.TestCase):
         from src.admin.auto_merchants import AUTO_MERCHANTS
         from src import merchant_groups
         self.assertIn(("Indiegala", "95"), AUTO_MERCHANTS)
-        for groupe in merchant_groups.group_names():
-            with self.subTest(groupe):
-                self.assertNotIn("95", {store for _, store in merchant_groups.group_targets(groupe)})
+        # Groupe B (Romain, 06/10, même soir : « groupe B pour Indiegala ») — et un seul groupe.
+        dans = [g for g in merchant_groups.group_names()
+                if "95" in {store for _, store in merchant_groups.group_targets(g)}]
+        self.assertEqual(dans, ["B"])
 
 
 class LesAutresMarchandsNeBougentPas(unittest.TestCase):
