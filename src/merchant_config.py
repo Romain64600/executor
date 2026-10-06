@@ -40,12 +40,19 @@ class MerchantOfferSignals:
           ``forbidden region: <label>`` skip. The blacklist-vs-park-vs-skip routing
           of that label is decided in ONE merchant-agnostic place
           (``aks_lists.suggest_target_list``) — LATAM / Brazil / Asia / Russia →
-          Blacklist (Romain 2026-08-13), the rest → garder."""
+          Blacklist (Romain 2026-08-13), the rest → garder.
+    - ``dlc`` ([R69], 2026-10-06 — Indiegala « This content requires the base product ») :
+      True when the merchant's page says the product is a DLC. A GATE, never a router: the
+      matcher keeps deciding the bucket from the title and the AKS page (R18 / [R43] /
+      [R57]), but a page-declared DLC that lands anywhere other than DLC(16) is REFUSED —
+      « Thunder Ray - Origin » (ORIGIN is platform noise) matched Standard(1) on the base
+      game's page at the 06/10 preview. None = the page says nothing (every other merchant)."""
 
     platform: Optional[str] = None
     region_resolved: bool = False
     region_base: Optional[str] = None
     region_label: str = ""
+    dlc: Optional[bool] = None
 
 
 @dataclass(frozen=True)

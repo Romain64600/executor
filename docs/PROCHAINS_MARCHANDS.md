@@ -91,6 +91,32 @@ US) »** : sa liste interdit les USA ET Chypre, donc l'UE n'est pas entière —
 Prochaine étape : aperçu à blanc (`03_match`, lecture seule) sur le feed du jour, puis liste
 blanche / groupe sur le go de Romain.
 
+**Aperçu à blanc du 06/10** (`03_match` hors ligne sur les 175 lignes du scan du 21/09, HTTP seul,
+index AKS de 12 h ; détail dans [`apercu_indiegala_2026-10-06.md`](apercu_indiegala_2026-10-06.md)) :
+**34 candidats / 141 refus**, tous Steam — 22 GLOBAL Standard, 4 GLOBAL DLC (pages à seau DLC
+unique), 1 Deluxe / 1 Gold / 1 Ultimate GLOBAL, 5 US par le suffixe « (US) » du titre confirmé par
+la fiche (SH Townfall ×2, PAC-MAN World 2 ×2, Katamari). Les 8 fiches de l'étude sortent comme
+prévu (MHW Gold, SCUM, LBA2 → GLOBAL ; Townfall → US ; bundle Castlevania → refus bundle ; Reach →
+verrou pays ; Belmont's Curse (EU) → « LOCK (EU + US) » ; AOT3 Deluxe → fiche périmée). **Une
+écriture fausse trouvée et fermée** : « Thunder Ray - Origin » — fiche DLC, titre sans marqueur,
+ORIGIN lu comme du bruit de plateforme — sortait Standard(1) sur la page du JEU DE BASE ; la fiche
+DLC est désormais une GARDE générique (`MerchantOfferSignals.dlc` → `matcher.page_dlc_refusal` :
+une fiche DLC qui n'aboutit pas en DLC(16) est refusée, jamais un routage) ; les 4 autres fiches
+DLC entrent toujours en DLC(16) sur leur propre page. Les refus : 39 fiches « direct download »
+(ventes sans DRM, pas des clés Steam — refus voulu, plateforme inconnue d'AKS), 30 verrous « pays
+d'achat », 27 sans page AKS (dont les 2 « Attack on Titan 3 / A.O.T. 3 » : AKS n'a aucune page
+AOT 3 au sitemap — l'alias ne change rien aujourd'hui), 15 « mots en trop » (DLC / variantes sans
+page), 6 bundles + 2 multi-jeux + 5 collections de DLC + 1 pass, 5 fiches sans « is provided via »
+(illisibles, refus voulu), 2 Belmont's Curse (EU) en « LOCK (EU + US) », 4 noms cassés par le `\'`
+du feed (« Collector\'s Cove », « PO\'ed », « Farmer\'s Dynasty » : `tokenize` en fait « COLLECTOR S »
+— défaut GÉNÉRIQUE du feed, pas d'Indiegala : 109 offres Eneba / Gamerall refusées de la même façon
+en production, à corriger côté extracteur sur un go), 1 Kao Anniversary (R64), 1 SNK Deluxe Pack
+(édition ambiguë). **À trancher par Romain** : (1) Belmont's Curse (EU) — tel quel (refus strict
+`[R59]`, Chypre + USA interdits) ou « (EU) du titre + UE quasi complète → EU » ; (2) go ou pas pour
+la liste blanche + un groupe, vu le rendement (≈ 34 / 175, et le feed du 21/09 a 15 jours : un
+extract frais demande un navigateur — A et B sont en boucle, le VPS 3 n'est pas à toucher sans go) ;
+(3) le `\'` du feed, générique.
+
 ## 2026-09-25 (suite) — CDKeys, devenu « Loaded » (store 40)
 
 Romain : « Pars sur CDKeys (nouveau nom du marchand est LOADED) », store 40.

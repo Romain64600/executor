@@ -75,16 +75,16 @@ class _FetchFixture:
         return ig.parse_product_page(_fiche(self.nom), urlsplit(cible).path.lower())
 
 
-def _aks(nom, plateformes=("Steam",)):
+def _aks(nom, plateformes=("Steam",), editions=None):
     return AksResolution(slug="x", url="https://aks/x", product_id="1", aks_name=nom,
-                         editions={"1": "Standard", "7": "Deluxe", "10": "Gold"},
+                         editions=editions or {"1": "Standard", "7": "Deluxe", "10": "Gold"},
                          regions={"2": "GLOBAL"}, official_platforms=plateformes)
 
 
-def _match(row, aks_name=None, plateformes=("Steam",), titre=None):
+def _match(row, aks_name=None, plateformes=("Steam",), titre=None, editions=None):
     fixture, nom, chemin = row
     nom = titre or nom
-    page = _aks(aks_name or ig.resolve_name(nom), plateformes)
+    page = _aks(aks_name or ig.resolve_name(nom), plateformes, editions)
     fetch = _FetchFixture(fixture)
     with mock.patch.object(ig, "fetch_product_page", side_effect=fetch):
         res = match_offer(_offre(nom, chemin), resolver=lambda n, **k: page, consoles=True)
@@ -501,7 +501,6 @@ class DeBoutEnBout(unittest.TestCase):
         for row, aks, region_id, label, edition in (
             (MHW, "Monster Hunter Wilds", "2", "GLOBAL", "10"),
             (LBA2, "Little Big Adventure 2", "2", "GLOBAL", "1"),
-            (THUNDER, "Thunder Ray - Origin", "2", "GLOBAL", "1"),
             (TOWNFALL, "SILENT HILL: Townfall", "8", "US", "1"),
         ):
             with self.subTest(row[1]):
@@ -555,12 +554,38 @@ class DeBoutEnBout(unittest.TestCase):
         self.assertIsInstance(res, SkippedOffer)
         self.assertIn("unreadable", res.reason)
 
-    def test_le_dlc_de_la_fiche_ne_route_pas(self):
-        # SCUM Specialist Scout Pack : `is_dlc` vrai sur la fiche, mais le seau reste celui que
-        # les règles de titre et la page AKS donnent (ici une page simulée sans seau DLC).
+    def test_le_dlc_de_la_fiche_est_une_garde_pas_un_routage(self):
+        # Aperçu du 06/10 : « Thunder Ray - Origin » (fiche DLC, titre sans marqueur, ORIGIN =
+        # bruit de plateforme) sortait Standard(1) sur la page du jeu de base. La fiche ne
+        # choisit pas le seau (R18 / [R43] / [R57] le font), mais une fiche DLC qui n'aboutit
+        # pas en DLC(16) est refusée — jamais un DLC écrit sur un seau de jeu de base.
+        res, fetch = _match(THUNDER, aks_name="Thunder Ray")
+        self.assertIsInstance(res, SkippedOffer, getattr(res, "edition_id", ""))
+        self.assertIn("offer page says DLC", res.reason)
+        self.assertIn("Standard(1)", res.reason)
+        self.assertIn("(R69)", res.reason)
+        self.assertEqual(len(fetch.appels), 1)
+        # SCUM Specialist Scout Pack sur une page AKS simulée SANS seau DLC : même refus…
         res, _ = _match(SCUM, aks_name="SCUM Specialist Scout Pack")
+        self.assertIsInstance(res, SkippedOffer)
+        self.assertIn("offer page says DLC", res.reason)
+        # … et sur SA page à seau DLC unique (la vraie, lue à l'aperçu) : candidat DLC(16) par
+        # R18 — la fiche n'a rien routé, elle a laissé passer ce qui aboutit en DLC.
+        res, _ = _match(SCUM, aks_name="SCUM Specialist Scout Pack", editions={"16": "DLC"})
         self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
-        self.assertNotEqual(res.edition_id, "16")
+        self.assertEqual((res.edition_id, res.region_id), ("16", "2"))
+        # Une fiche qui ne dit PAS « DLC » n'est jamais retenue par la garde (LBA2, Standard).
+        res, _ = _match(LBA2, aks_name="Little Big Adventure 2")
+        self.assertIsInstance(res, Candidate, getattr(res, "reason", ""))
+        self.assertEqual(res.edition_id, "1")
+
+    def test_le_signal_dlc_est_porte_par_offer_signals(self):
+        for row, attendu in ((THUNDER, True), (SCUM, True), (LBA2, False), (MHW, False)):
+            with self.subTest(row[1]):
+                fetch = _FetchFixture(row[0])
+                with mock.patch.object(ig, "fetch_product_page", side_effect=fetch):
+                    sig = ig.offer_signals(BASE + row[2], row[1])
+                self.assertIs(sig.dlc, attendu)
 
     def test_une_ligne_console_lit_la_fiche_et_refuse_le_conflit(self):
         # Aucune ligne console au feed du 21/09 ; si la grammaire partagée en lisait une, la fiche

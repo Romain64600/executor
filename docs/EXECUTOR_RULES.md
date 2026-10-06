@@ -3948,8 +3948,16 @@ avant d'ouvrir la page ») :
      libellé absent ou inconnu → refus NOMMÉ, jamais STEAM) ; la page AKS doit vendre la
      plateforme lue (R20) ;
    * DLC = l'encart « This content requires the base product » (`ProductPage.is_dlc`, 2 fiches
-     sur 8 : SCUM Specialist Scout Pack, Thunder Ray - Origin) — EXPOSÉ, NON routé : le seau
-     DLC(16) reste l'affaire de R18 / `[R43]` / `[R57]` (titre), aucun `dlc_marker` inventé ;
+     sur 8 : SCUM Specialist Scout Pack, Thunder Ray - Origin) — une **GARDE, pas un routage**
+     (`MerchantOfferSignals.dlc` → `matcher.page_dlc_refusal`, générique pour tout marchand qui
+     le déclare) : le seau DLC(16) reste l'affaire de R18 / `[R43]` / `[R57]` (titre) et de la
+     page AKS, aucun `dlc_marker` inventé, mais une fiche DLC qui n'aboutit pas en DLC(16) est
+     REFUSÉE (« … offer page says DLC … but the match lands in Standard(1) … (R69) »). Aperçu du
+     06/10 : « Thunder Ray - Origin » — ORIGIN est du bruit de plateforme, le titre n'a pas de
+     marqueur, le slug est retombé sur `thunder-ray` — sortait Standard(1) sur la page du JEU DE
+     BASE ; les quatre autres fiches DLC (SCUM ×2, Sherman Commander Supporter Pack, Project
+     Motor Racing V8 Power Pack) ont leur page AKS à seau DLC unique et entrent en DLC(16) par
+     R18, inchangé ;
    * région — TROIS blocs à ne pas confondre : **(1)** l'encart latéral « Region locked product —
      It will only work in the region from where it is bought » (7 / 8) = politique de vente,
      IGNORÉ comme la politique de vente de Gamesplanet FR `[R59]` (Romain : « si on trouve les

@@ -119,7 +119,7 @@ du feed.
 | Instant Gaming | 28 | `instant_gaming.py` | PC : `offer_page_resolver` ; console : `console_url_families` → toujours None (déclaré : l'URL ne dit rien ; une plateforme console lue sur la page IG → plateforme None → skip R32) | oui | 4-5 |
 | Eneba | 19 | `eneba.py` | `console_url_families`, `console_pc_declared`, `console_region_slot` | **non — dry-run du 12/09 fait (32 candidats, 90 % consoles), sweep réel sur go** | ≥ 30 |
 | Allyouplay | 17 | `allyouplay.py` (lien d'affiliation + lecteur de fiche `[R68]`, en ligne le 30/09) | `domain="allyouplay.com"`, `affiliate_hosts=("anandadigitalbv.sjv.io",)`, `url_identity_params=("u",)` ; `[R68]` : `precheck` (« [Mac] »), `url_platform` (`-ga-ste-` / `-ga-gog-`), `offer_page_resolver` (fiche : « Platform », `available_countries`, règle `[R59]`), `console_page_authoritative` | **non** — balayé 6 fois (groupe B, 17/09 → 26/09) mais 100 % refusé au contrôle de domaine : 0 saisie | 3 |
-| Indiegala | 95 | `indiegala.py` (**nouveau 06/10**, lecteur de fiche `[R69]`, modèle `[R68]`) | `domain="indiegala.com"` ; PC : `title_region` (suffixe « (US) / (EU) / (UK) » en queue, doit s'accorder avec la fiche), `resolve_name` / `guard_name` (suffixe retiré, titre multilingue réduit à sa première partie), `offer_page_resolver` (fiche : « is provided via », pays interdits `[R59]`, verrou pays, DLC exposé), `console_page_authoritative` | **non — hors liste blanche, hors groupe** : aperçu à blanc à venir ; règle de région à confirmer par Romain | 175 lignes (21/09) |
+| Indiegala | 95 | `indiegala.py` (**nouveau 06/10**, lecteur de fiche `[R69]`, modèle `[R68]`) | `domain="indiegala.com"` ; PC : `title_region` (suffixe « (US) / (EU) / (UK) » en queue, doit s'accorder avec la fiche), `resolve_name` / `guard_name` (suffixe retiré, titre multilingue réduit à sa première partie), `offer_page_resolver` (fiche : « is provided via », pays interdits `[R59]`, verrou pays, DLC = garde), `console_page_authoritative` | **non — hors liste blanche, hors groupe** : aperçu à blanc fait le 06/10 (34 / 175, `docs/apercu_indiegala_2026-10-06.md`) ; règle de région et go à confirmer par Romain | 175 lignes (21/09) |
 | GameSeal | 126 | `gameseal.py` | `domain` ; PC : `precheck`, `title_region` (queue ` - <RÉGION>`), `resolve_name` (queue pelée, 20/09) ; console : `console_url_families`, `console_region_slot` | oui (1er balayage 19/09) | 1 090 écrites, 1 089 justes (audit du 20/09) |
 | CJS-CDKeys | 30 | `cjs.py` (**nouveau**, identité seule) | `domain="cjs-cdkeys.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
 | Difmark | 167 | `difmark.py` | `console_url_families` (comptes) | parqué (hors liste blanche) | — |
@@ -729,7 +729,10 @@ matcher et le classifieur importent le registre.
   standard, jamais `aks_env.http_get` ; 8 / 8 le 06/10) : lien canonique = identité (une fiche
   périmée renvoie à l'accueil `/store` → refus) ; plateforme = « *Nom* is provided via **Steam
   Key** » (8 / 8 ; autre libellé connu → son jeton ; inconnu / absent → refus nommé) ; DLC =
-  « This content requires the base product » (`is_dlc`, 2 / 8 — exposé, non routé) ; région =
+  « This content requires the base product » (`is_dlc`, 2 / 8 — une GARDE, pas un routage :
+  `MerchantOfferSignals.dlc` → `matcher.page_dlc_refusal`, une fiche DLC qui n'aboutit pas en
+  DLC(16) est refusée ; aperçu du 06/10 : « Thunder Ray - Origin » sortait Standard(1) sur la
+  page du jeu de base) ; région =
   avertissement d'article « Country availability » / « Banned countries » + liste des pays
   interdits → règle `[R59]` sur les pays EXCLUS (même table que Gamesplanet FR / Allyouplay) ;
   h3 « Region locked product » (Reach) = verrou pays → `forbidden region: INDIEGALA LOCK (COUNTRY

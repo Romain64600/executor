@@ -22,10 +22,15 @@ et dit tout :
 
 * **plateforme** : « *<Nom>* is provided via **Steam Key** » (8 / 8). Un libellé connu → notre
   jeton (``PLATFORM_TEXT``) ; absent ou inconnu → refus NOMMÉ, jamais STEAM par défaut.
-* **DLC** : l'encart « This content requires the base product … » — EXPOSÉ (``ProductPage.is_dlc``,
-  2 fiches sur 8 : SCUM Specialist Scout Pack, Thunder Ray - Origin), PAS lu pour le routage :
-  le seau DLC(16) reste l'affaire des règles de titre R18 / `[R43]` / `[R57]` (aucun hook
-  ``dlc_marker`` inventé : le titre Indiegala ne porte pas de grammaire DLC propre).
+* **DLC** : l'encart « This content requires the base product … » (``ProductPage.is_dlc``, 2 fiches
+  sur 8 : SCUM Specialist Scout Pack, Thunder Ray - Origin) est une GARDE, pas un routage
+  (``MerchantOfferSignals.dlc`` → ``matcher.page_dlc_refusal``) : le seau reste décidé par les
+  règles de titre R18 / `[R43]` / `[R57]` et la page AKS (aucun hook ``dlc_marker`` inventé : le
+  titre Indiegala ne porte pas de grammaire DLC propre), mais une fiche DLC qui n'aboutit pas en
+  DLC(16) est REFUSÉE. Aperçu du 06/10 : « Thunder Ray - Origin » (ORIGIN = bruit de plateforme
+  pour le matcher, titre sans marqueur) sortait Standard(1) sur la page du jeu de base
+  `thunder-ray` ; les quatre autres fiches DLC (SCUM ×2, Sherman Commander Supporter Pack, V8
+  Power Pack) ont leur page AKS à seau DLC unique et entrent en DLC(16).
 * **région** — TROIS blocs, à ne pas confondre :
 
   1. l'encart latéral ``store-product-contents-aside-note-alt`` « Region locked product — It will
@@ -408,13 +413,15 @@ def offer_signals(url: str, name: str = "",
     base, label = page_region(page)
     if base is None:
         return MerchantOfferSignals(platform=platform, region_resolved=True,
-                                    region_base=None, region_label=label)
+                                    region_base=None, region_label=label, dlc=page.is_dlc)
     suffix = title_region(name)
     if suffix is not None and suffix != base:
         raise IndiegalaPageUnreadable(
             f"le suffixe « ({suffix.upper()}) » du titre contredit la fiche "
             f"({base.upper() if base != 'global' else 'GLOBAL'}) — non entrée ({RULE})")
-    return MerchantOfferSignals(platform=platform, region_resolved=True, region_base=base)
+    # `dlc` : la fiche dit « DLC » → garde du matcher (`page_dlc_refusal`), jamais un routage.
+    return MerchantOfferSignals(platform=platform, region_resolved=True, region_base=base,
+                                dlc=page.is_dlc)
 
 
 CONFIG = make_config(
@@ -430,11 +437,13 @@ CONFIG = make_config(
     # est un conflit, refusé — jamais une page Xbox / PlayStation écrite sur une clé Steam.
     console_page_authoritative=True,
     notes=("feed store 95 — URL `indiegala.com/store/game/<slug>/<id>` (identité dans le chemin). "
-           "[R69] (2026-10-06, hors liste blanche, aperçu à blanc à venir) : plateforme = « is "
+           "[R69] (2026-10-06, hors liste blanche ; aperçu à blanc du 06/10 : 34 / 175, décisions à Romain) : plateforme = « is "
            "provided via » de la fiche (jamais STEAM par défaut) ; région = liste des pays "
            "interdits de la fiche, règle [R59] de Romain — PROPOSÉE, à confirmer à l'aperçu ; "
            "verrou « Region locked product » (article) → refus ; encart « région d'achat » "
            "ignoré ; suffixe (US)/(EU)/(UK) du titre = title_region, doit s'accorder avec la "
            "fiche ; titre multilingue « A / B / C » réduit à sa première partie quand les autres "
-           "sont dans une autre écriture ; DLC de la fiche exposé, non routé."),
+           "sont dans une autre écriture ; DLC de la fiche = GARDE (une fiche DLC qui n'aboutit "
+           "pas en DLC(16) est refusée — « Thunder Ray - Origin », aperçu du 06/10), jamais un "
+           "routage."),
 )

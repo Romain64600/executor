@@ -3,15 +3,29 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
-## 2026-10-06 — `[R69]` Indiegala (store 95) : fichier marchand avec lecteur de fiche (HORS liste blanche — aperçu à blanc à venir)
+## 2026-10-06 — `[R69]` Indiegala (store 95) : fichier marchand avec lecteur de fiche (HORS liste blanche — aperçu à blanc fait)
+
+- **Aperçu à blanc du 06/10** (175 lignes du 21/09, `03_match` hors ligne, lecture seule —
+  `docs/apercu_indiegala_2026-10-06.md`) : **34 candidats / 141 refus**, tous Steam (29 GLOBAL,
+  5 US par le suffixe du titre confirmé par la fiche). Une écriture fausse trouvée et fermée AVANT
+  toute liste blanche : « Thunder Ray - Origin » (fiche DLC, titre sans marqueur, ORIGIN = bruit de
+  plateforme) sortait Standard(1) sur la page du jeu de base → garde générique
+  `MerchantOfferSignals.dlc` / `matcher.page_dlc_refusal` (une fiche DLC qui n'aboutit pas en
+  DLC(16) est refusée ; jamais un routage), test `test_le_dlc_de_la_fiche_est_une_garde_pas_un_routage`
+  rougi par mutation. Reste à Romain : Belmont's Curse (EU) en refus strict `[R59]`, go liste
+  blanche / groupe, extract frais (navigateur), et le `\'` du feed (défaut générique : 109 offres
+  Eneba / Gamerall refusées « missing AKS words » en production).
 
 - **Romain : « Si on peut ouvrir la page, on trouvera les infos »** (après l'étude du 06/10,
   `docs/PROCHAINS_MARCHANDS.md`). `src/merchants/indiegala.py`, sur le modèle d'Allyouplay `[R68]`
   (EXECUTOR_RULES `[R69]`) : la fiche `indiegala.com/store/game/<slug>/<id>` est lue par la
   bibliothèque standard (`page_get`, UA navigateur, ~1 req / s, une par fiche et par processus) ;
   lien canonique = identité (fiche périmée → accueil `/store` → refus) ; plateforme = « is
-  provided via **Steam Key** » (jamais STEAM par défaut) ; DLC « requires the base product » exposé
-  (`is_dlc`), non routé ; région = liste des pays interdits (« Country availability » / « Banned
+  provided via **Steam Key** » (jamais STEAM par défaut) ; DLC « requires the base product »
+  (`is_dlc`) = une GARDE générique (`MerchantOfferSignals.dlc` → `matcher.page_dlc_refusal` : une
+  fiche DLC qui n'aboutit pas en DLC(16) est refusée — « Thunder Ray - Origin » sortait Standard(1)
+  sur la page du jeu de base au premier aperçu), jamais un routage ; région = liste des pays
+  interdits (« Country availability » / « Banned
   countries ») par la règle `[R59]` (même table que Gamesplanet FR / Allyouplay) ; h3 « Region
   locked product » = verrou pays → refus ; l'encart « région d'achat » est ignoré.
 - **Titre** : suffixe « (US) / (EU) / (UK) » en queue = `title_region`, retiré du nom résolu et des
