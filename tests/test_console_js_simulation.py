@@ -351,6 +351,8 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
                 "const shownTab = (r) => { const j = JUST_DONE.get(String(r.offer)); return j && j.tab ? j.tab : tabOf(r); };",
                 "const shownTab = (r) => tabOf(r);"),
             "lien vers un report archivé": ("if (target) TAB = tabOf(target);", ""),
+            # 06/10/2026 : on tranche sur l'offre, pas sur le commentaire : le sens des boutons en clair
+            "sens des boutons en clair": ('(cur === "a_discuter" && MEANING[k] ? " : " + MEANING[k] : "")', '""'),
         }
         for name, (before, after) in mutations.items():
             with self.subTest(name):

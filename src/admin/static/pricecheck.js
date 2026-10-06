@@ -231,6 +231,11 @@ function doneWhere(r, just) {
   return "";
 }
 
+// Romain, 06/10/2026 : sur deux reports « à discuter », il a cliqué « Vrai positif » pour valider le commentaire de Rémy,
+// qui montrait que l'offre était juste. On tranche sur l'offre, pas sur le commentaire : sur une carte à discuter, le
+// sens de chaque bouton est écrit en clair.
+const MEANING = { vrai: "l'erreur est réelle", faux: "l'offre est correcte" };
+
 const step = (n, title) => el("div", { class: "pc-step-title" }, [el("span", { class: "pc-num", text: String(n) }), title]);
 
 function renderItem(r) {
@@ -263,7 +268,7 @@ function renderItem(r) {
   if (saveNote) saveNote.disabled = BUSY.has(offer);
   const buttons = Object.keys(labels).map((k) => {
     const b = el("button", { type: "button", class: "d-" + k + (cur === k ? " on" : ""), title: labels[k],
-      text: shortLabel(labels[k]), onclick: () => decide(offer, k) });
+      text: shortLabel(labels[k]) + (cur === "a_discuter" && MEANING[k] ? " : " + MEANING[k] : ""), onclick: () => decide(offer, k) });
     b.disabled = BUSY.has(offer);
     return b;
   });
@@ -307,7 +312,7 @@ function renderItem(r) {
       el("span", { class: "pc-merchant", text: [r.merchant, price(r.price)].filter(Boolean).join(" · ") }),
       el("span", { class: "pc-where", text: where }),
     ]),
-    cur === "a_discuter" ? el("div", { class: "pc-question" }, [el("b", { text: "Question de " + (handledBy(r) || "?") + " : " }),
+    cur === "a_discuter" ? el("div", { class: "pc-question" }, [el("b", { text: "Commentaire de " + (handledBy(r) || "?") + " : " }),
       r.decision.note ? "« " + r.decision.note + " »" : "pas de note, à voir ensemble."]) : null,
     (r.reasons || []).length ? el("ul", { class: "pc-reasons" }, r.reasons.map((x) => el("li", { text: x }))) : null,
     recheck,
@@ -323,7 +328,8 @@ function renderItem(r) {
       el("div", { class: "pc-step pc-step-note" }, [step(1, "Pourquoi ? (seulement si besoin)"), note, pending, saveNote]),
       el("div", { class: "pc-step pc-step-decision" }, [step(2, "Ta décision"), el("div", { class: "pc-buttons" }, buttons)]),
       el("p", { class: "pc-howto", text: cur === "a_discuter"
-        ? "Pour clore la discussion : clique Vrai positif ou Faux positif. La note la suit : modifie-la avant si besoin."
+        ? "Pour clore la discussion, tranche sur l'offre, pas sur le commentaire : Vrai positif si l'erreur est réelle, Faux "
+          + "positif si l'offre est correcte (par exemple quand le commentaire montre que la région est juste). La note suit ta décision."
         : cur ? "Pour changer la note : modifie-la, puis « Mettre à jour la note ». Pour changer d'avis : clique une autre décision, la note la suit."
         : "D'accord avec l'erreur décrite ? Clique directement ta décision, sans note. La note sert à dire pourquoi tu "
           + "n'es pas d'accord ou à préciser : écrite avant le clic, elle part avec ta décision." }),
