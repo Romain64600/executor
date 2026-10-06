@@ -3,6 +3,24 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-10-06 — Saisie par jeu : l'opérateur choisit les listes AKS (toutes cochées sauf la blacklist)
+
+- **Romain : « Pour la saisie par jeu, je voudrais que l'opérateur puisse choisir les listes.
+  Elles seraient toutes cochées par défaut, sauf la blacklist. »** La page `/urls` dessine le
+  catalogue des listes de travail en cases (`GET /api/data-entry/merchants` : `lists` +
+  `blacklists`), toutes cochées, les blacklists décochées et grisées, « tout cocher / tout
+  décocher », refus sans aucune liste ; le POST `by-urls` porte `lists` (`_parse_lists` : entiers,
+  blacklists refusées `forbidden_list`, `[]` refusé, absent = la 9) ; `scripts/11 --lists` cherche
+  chaque liste à son tour et marque chaque ligne de sa liste (`recap.lists`, `search.per_list`, un
+  bloc `merchants[]` par (marchand, liste) avec `list_id`) ; `scripts/12` fait un lot par
+  (magasin, liste) (sous-run `-s<store>-l<liste>` hors Pending) et passe `--list <liste>` à
+  `05_submit` : l'offre est relocalisée et prouvée disparue DANS la liste où elle a été trouvée ;
+  la console nomme la liste sur chaque bloc marchand et dans le lot du GO. Tests : Python
+  (`ListesChoisiesTests`, `ListeSurLArgvDe05Tests`, `ListesDeLaSaisieParJeuTests`, manager,
+  feed_status) et le harnais node `tests/js/urls_lists.test.mjs` exécuté par
+  `UrlsListsConsoleSimulationTests` (six mutations rougies). Détail : `docs/DATA_CONTRACTS.md`.
+  Coût dit à Romain : chaque liste cochée ajoute ses recherches à chaque jeu.
+
 ## 2026-10-06 — `[R69]` Indiegala (store 95) : fichier marchand avec lecteur de fiche, aperçu à blanc, puis liste blanche (go de Romain)
 
 - **Aperçu à blanc du 06/10** (175 lignes du 21/09, `03_match` hors ligne, lecture seule —

@@ -914,6 +914,24 @@ class DataEntryAutoTests(ManagerTestCase):
         state = json.loads((self.runs / r["run_id"] / "admin_submit.json").read_text(encoding="utf-8"))
         self.assertIs(state["consoles"], False)
 
+    def test_by_urls_lists_on_the_argv_and_in_meta(self):
+        # LISTES (Romain, 2026-10-06) : les listes cochées voyagent sur l'argv de scripts/11
+        # (`--lists 9,22`) et dans admin_submit.json ; absent = la file Pending seule.
+        script = self.root / "fake_by_urls.py"
+        script.write_text("import sys; sys.exit(0)\n", encoding="utf-8")
+        m = SubmitManager(self.root, log_dir=self.logs, clock=CLOCK)
+        m.by_urls_script = script
+        url = "https://www.allkeyshop.com/blog/buy-neon-beats-cd-key-compare-prices/"
+        r = m.start_data_entry_by_urls([url], by="Romain", lists=[9, 22])
+        self.assertEqual(r["argv"][r["argv"].index("--lists") + 1], "9,22")
+        self.assertTrue(m.wait_idle(timeout=10))
+        state = json.loads((self.runs / r["run_id"] / "admin_submit.json").read_text(encoding="utf-8"))
+        self.assertEqual(state["lists"], [9, 22])
+        m.clock = lambda: "2026-10-06T20:00:00Z"
+        r = m.start_data_entry_by_urls([url], by="Romain")
+        self.assertEqual(r["argv"][r["argv"].index("--lists") + 1], "9")
+        self.assertTrue(m.wait_idle(timeout=10))
+
     # ---- stage 2: submit the by-urls dry-run (the "Saisir" button) ----
     def _byurls_submit_mgr(self):
         script = self.root / "fake_by_urls_submit.py"

@@ -678,7 +678,8 @@ child and its outcome.
   `{mode, limit, dry_run, by, approved_count, max_pages}`; catalog →
   `{by, max_pages}`; extract → `{merchant, store_id, by}`; data_entry_auto →
   `{targets: [{merchant, store_id}], by, run_id, max_pages, continue_on_halt, consoles}`;
-  data_entry_by_urls → `{by, run_id, urls, mode: "dry-run", consoles}`;
+  data_entry_by_urls → `{by, run_id, urls, mode: "dry-run", consoles, lists}` (`lists` : les
+  listes AKS cherchées, entiers, 2026-10-06) ;
   data_entry_by_urls_submit → `{by, from_run, run_id, candidates, consoles}`.
   `consoles` (bool, R45, 2026-09-15) is the console mode the manager put on the child's
   argv (`--consoles` / `--no-consoles`, explicit either way) — `true` by default.
@@ -689,7 +690,13 @@ child and its outcome.
     — the console sends `all_pages: true` (« toutes ») or `all_pages: false, max_pages: N`
     (« de la page N jusqu'à la 1 », 2026-09-24) and never `start_page` (the page where the
     sweep STOPS; CLI only);
-  - `POST /api/data-entry/by-urls` — `{urls: [...] | "u1 u2", consoles?}`;
+  - `POST /api/data-entry/by-urls` — `{urls: [...] | "u1 u2", consoles?, lists?}` — `lists`
+    (2026-10-06, Romain : « que l'opérateur puisse choisir les listes ») : les listes AKS à
+    chercher, entiers ≥ 1 dans l'ordre voulu (`[9, 22, 30]` ou `"9,22,30"`), dédoublonnées ;
+    la Blacklist (8) et ses variantes (libellé « Blacklist … » : 14, 26, 31, 37) → `400
+    forbidden_list` ; `[]` → `400 lists_required` ; **absent = `[9]`** (la file Pending, le
+    comportement d'avant — la console envoie toujours ce qui est coché, toutes les listes de
+    travail par défaut) ;
   - `POST /api/data-entry/by-urls/submit` — `{from_run, recap_sha256, confirm: "GO",
     consoles?}`.
 
@@ -704,6 +711,36 @@ child and its outcome.
 
 The admin's status endpoint serves this file re-`redact()`-ed (same key-name
 redaction as the run log).
+
+## by-urls preview — listes AKS choisies (2026-10-06)
+
+Romain : « Pour la saisie par jeu, je voudrais que l'opérateur puisse choisir les listes. Elles
+seraient toutes cochées par défaut, sauf la blacklist. »
+
+- **Catalogue** : `GET /api/data-entry/merchants` sert `lists` (les listes de travail, Pending
+  en tête — `_work_lists()`) et `blacklists` (8 et ses variantes, affichées décochées et grisées,
+  jamais acceptées). `urls.html` les dessine en cases, toutes cochées sauf les blacklists ;
+  « tout cocher / tout décocher » ; sans aucune case, le lancement est refusé côté console et
+  `400 lists_required` côté serveur.
+- **Aperçu (`scripts/11`)** : `--lists 9,22,30` (défaut : la liste de `--feed-page`, la 9) ; chaque
+  liste est cherchée à son tour (nom, URL, et leurs variantes R42), dans l'ordre reçu ; chaque
+  ligne porte `list_id` ; dédoublonnage global (id puis URL), premier vu gagne — la file Pending
+  d'abord ; `truncated` dès qu'une liste touche le plafond ; une liste illisible = l'erreur du jeu
+  (comme avant). `recap.json` : `lists: ["9", "22"]` ; par jeu `search.per_list: {"9": n, "22": m}`
+  et `off_allowlist_offers[].list_id` ; **un bloc `merchants[]` par (marchand, liste)** avec
+  `list_id` — un aperçu d'avant (sans `list_id`) vaut la 9. `report.txt` : `[Marchand · liste 22]`
+  hors file Pending. JSONL : `run_start.lists`, `game_searched.per_list`, `candidate.list_id`,
+  `skipped.list_id`, `merchant_done.list_id`.
+- **Saisie (`scripts/12` → `05`)** : le lot est groupé par **(magasin, liste)**
+  (`_candidates_by_store` : `{merchant, store_id, list_id, candidates}`) ; sous-run
+  `<run>-s<store>` pour la 9, `<run>-s<store>-l<liste>` sinon ; `05_submit … --locate-by-search
+  --list <liste>` : l'offre est relocalisée et prouvée disparue DANS la liste où l'aperçu l'a
+  trouvée. `recap.json` du submit : `merchants[].list_id`. `feed_status` reconnaît les deux formes
+  de sous-run.
+- **Coût** : chaque liste cochée ajoute ses recherches à chaque jeu (2 à 4 lectures par liste) ;
+  vingt listes = un aperçu bien plus long. Savoir si la recherche AKS sait chercher toutes les
+  listes d'un coup (paramètre `list` omis) reste à sonder en lecture seule quand un navigateur est
+  libre.
 
 ## by-urls preview — pages consoles (2026-09-15)
 

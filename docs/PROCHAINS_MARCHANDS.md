@@ -29,6 +29,24 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 
 ---
 
+## 2026-10-06 (soir) — « Quel marchand pourrait-on faire par la suite ? »
+
+Réponse, dans l'ordre du tableau et des sondes :
+
+1. **Gamebillet (15)** — 268 lignes en attente au 21/09, 192 avec une page AKS (72 %, le meilleur
+   taux des candidats restants) ; titre et URL muets, mais la fiche se lit en HTTP (200) et porte
+   une rubrique « Platform » et un bloc « restricted countries » ; AKS le range déjà en Steam
+   GLOBAL (7 / 7 sur 10 pages lues le 25/09). Même modèle que Gamesplanet FR et Indiegala : un
+   lecteur de fiche, plateforme lue, région = `[R59]` sur les pays exclus. Petite file, rendement
+   attendu ≈ 100 à 150 lignes au premier passage.
+2. **Greenmangaming (22), à re-mesurer** — 482 lignes, 318 avec une page AKS (66 %) ; écarté le
+   25/09 pour son URL d'affiliation `sjv.io` illisible — depuis Allyouplay `[R68]`,
+   `affiliate_hosts` / `landing_url` savent décoder ce redirecteur (la fiche est dans `u`), et la
+   fiche GMG se lit en HTTP (sonde du 30/09). À remesurer avant de trancher : si la fiche donne
+   plateforme et région, c'est le plus gros stock restant.
+3. Muve (166) reste derrière : 605 lignes mais ~140 utilisables (pas de région sur la page,
+   « sans région = Europe » refusé par Romain le 25/09).
+
 ## 2026-10-06 — Indiegala (95) : « regarde si possible de se former sur l'ajout auto »
 
 **Mesure** (lecture seule ; feed = les 175 lignes du scan tous-magasins du 21/09, donc un

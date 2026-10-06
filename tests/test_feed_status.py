@@ -114,6 +114,18 @@ class ReportTests(unittest.TestCase):
         self.assertEqual([s for s, _ in find_sweeps(self.runs, "MMOGA")], ["20260910-170123-auto", "20260911-083407-auto"])
         self.assertEqual(find_sweeps(self.runs, "Gamivo"), [])
 
+    def test_un_sous_run_by_urls_d_une_autre_liste_compte_aussi(self):
+        # LISTES (2026-10-06) : la saisie par jeu nomme son lot `-s<store>-l<liste>` hors file
+        # Pending ; le statut du feed doit le compter comme les autres.
+        _write(self.runs / "20260912-101010-by-urls-submit-s12-l22" / "submit_plan.json", {"plan": [
+            {"merchant_title": "Game L", "aks_url": "https://www.allkeyshop.com/blog/buy-game-l-cd-key-compare-prices/",
+             "edition_text": "Standard", "region_text": "Steam (2)", "submitted": True}]})
+        _write(self.runs / "20260912-101010-by-urls-submit-s51-l22" / "submit_plan.json", {"plan": [
+            {"merchant_title": "Other store", "submitted": True}]})
+        by_day, _e, _r, total = created_by_day(self.runs, "MMOGA", "12")
+        self.assertEqual(total, 6)
+        self.assertEqual(by_day["20260912"], 1)
+
     def test_created_by_day_counts_pages_and_by_urls_only_for_the_store(self):
         by_day, editions, regions, total = created_by_day(self.runs, "MMOGA", "12")
         self.assertEqual(total, 5)

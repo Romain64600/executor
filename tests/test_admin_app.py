@@ -886,9 +886,10 @@ class DataEntryByUrlsRouteTests(AppTestCase):
 
     def test_launch_passes_urls_to_manager(self):
         seen = {}
-        def fake(urls, *, by, targets_spec=None, consoles=True):
+        def fake(urls, *, by, targets_spec=None, consoles=True, lists=None):
             seen["urls"] = urls
             seen["consoles"] = consoles
+            seen["lists"] = lists
             return {"run_id": "20260824-000000-by-urls", "started": True}
         self.manager.start_data_entry_by_urls = fake
         url = "https://www.allkeyshop.com/blog/buy-neon-beats-cd-key-compare-prices/"
@@ -898,6 +899,16 @@ class DataEntryByUrlsRouteTests(AppTestCase):
         self.assertEqual(body["run_id"], "20260824-000000-by-urls")
         self.assertEqual(seen["urls"], [url])
         self.assertIs(seen["consoles"], True)     # [R45] absent from the body = consoles on
+        self.assertEqual(seen["lists"], [9])      # listes absentes du corps = la file Pending seule
+        # LISTES (2026-10-06) : les listes cochées atteignent le manager ; une blacklist est refusée
+        response, body = self._json("POST", "/api/data-entry/by-urls",
+                                    body={"urls": [url], "lists": [9, 22, "30"]})
+        self.assertEqual(response.status, 200)
+        self.assertEqual(seen["lists"], [9, 22, 30])
+        response, body = self._json("POST", "/api/data-entry/by-urls",
+                                    body={"urls": [url], "lists": [9, 8]})
+        self.assertEqual(response.status, 400)
+        self.assertEqual(body["error"]["code"], "forbidden_list")
 
     def test_launch_consoles_opt_out_and_bad_value(self):
         # [R45] (2026-09-15) "consoles": false reaches the manager; a non-boolean is
@@ -1379,3 +1390,43 @@ class LaListeSeChoisitDepuisLAdmin(unittest.TestCase):
         self.assertTrue(all(l["id"] != 8 for l in listes), "la Blacklist n'est pas proposée")
         self.assertTrue(all("blacklist" not in str(l["label"]).lower() for l in listes))
         self.assertIn(30, [l["id"] for l in listes], "la liste account doit être offerte")
+
+
+class ListesDeLaSaisieParJeuTests(unittest.TestCase):
+    """Romain, 2026-10-06 : « pour la saisie par jeu, je voudrais que l'opérateur puisse choisir
+    les listes ; elles seraient toutes cochées par défaut, sauf la blacklist »."""
+
+    def test_absent_vaut_la_file_pending_seule(self):
+        from src.admin.app import _parse_lists
+        self.assertEqual(_parse_lists({}), [9])
+        self.assertEqual(_parse_lists({"lists": None}), [9])
+
+    def test_les_listes_cochees_dans_l_ordre_sans_doublon(self):
+        from src.admin.app import _parse_lists
+        self.assertEqual(_parse_lists({"lists": [9, 22, "30", 22]}), [9, 22, 30])
+        self.assertEqual(_parse_lists({"lists": "9,22 30"}), [9, 22, 30])
+
+    def test_les_blacklists_sont_refusees(self):
+        from src.admin.app import ApiError, _parse_lists
+        for lid in (8, 14, 26, 31, 37):
+            with self.subTest(lid):
+                with self.assertRaises(ApiError) as ctx:
+                    _parse_lists({"lists": [9, lid]})
+                self.assertEqual(ctx.exception.code, "forbidden_list")
+
+    def test_rien_de_coche_ou_une_valeur_fausse_est_refuse(self):
+        from src.admin.app import ApiError, _parse_lists
+        with self.assertRaises(ApiError) as ctx:
+            _parse_lists({"lists": []})
+        self.assertEqual(ctx.exception.code, "lists_required")
+        for mauvais in (["neuf"], [0], [-2], {"a": 1}, 9):
+            with self.subTest(mauvais):
+                with self.assertRaises(ApiError):
+                    _parse_lists({"lists": mauvais})
+
+    def test_le_catalogue_sert_aussi_les_blacklists_pour_les_griser(self):
+        from src.admin.app import _blacklists, _work_lists
+        ids = {b["id"] for b in _blacklists()}
+        self.assertIn(8, ids)
+        self.assertTrue(all("blacklist" in str(b["label"]).lower() for b in _blacklists()))
+        self.assertFalse(ids & {l["id"] for l in _work_lists()}, "jamais des deux côtés")

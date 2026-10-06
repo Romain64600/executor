@@ -107,9 +107,10 @@ def _read_submit_plan(run_dir: Path, rc: int) -> SubmitOutcome:
 def _make_submit_merchant(available: str, logger: RunLogger):
     py = sys.executable
 
-    def submit_merchant(merchant: str, store_id: str, candidates: list, sub_run: Path) -> SubmitOutcome:
+    def submit_merchant(merchant: str, store_id: str, candidates: list, sub_run: Path,
+                        list_id: str = "9") -> SubmitOutcome:
         logger.log("merchant_submit", merchant=merchant, store_id=store_id,
-                   attempted=len(candidates))
+                   attempted=len(candidates), list_id=str(list_id))
         sub_run.mkdir(parents=True, exist_ok=True)
         # The three inputs 05_submit expects, built exactly like Safe-Auto's approve:
         # offers.json (merchant/store derivation), candidates.json (the validated set),
@@ -147,7 +148,10 @@ def _make_submit_merchant(available: str, logger: RunLogger):
                 # by-urls offers are scattered (found by search, no feed page) — locate
                 # + prove-gone via the SEARCH (fast + fresh; a slow whole-feed scan let
                 # the row reflow away, 0 created, 2026-08-25).
-                "--locate-by-search"]
+                "--locate-by-search",
+                # LISTES (Romain, 2026-10-06) : la liste où l'aperçu a trouvé ces offres —
+                # c'est là que 05 les relocalise et prouve leur disparition.
+                "--list", str(list_id)]
         rc = _run_child(argv)
         outcome = _read_submit_plan(sub_run, rc)
         logger.log("merchant_submitted", merchant=merchant, created=outcome.created,
@@ -265,8 +269,12 @@ def main(argv: list[str] | None = None) -> int:
     def flush(recap: dict) -> None:
         _write_json_atomic(run_dir / "recap.json", recap)
 
-    def make_sub_run(store_id: str) -> Path:
-        return ROOT / "runs" / f"{args.run_id}-s{store_id}"
+    def make_sub_run(store_id: str, list_id: str = "9") -> Path:
+        # Un lot par (magasin, liste) : la file Pending garde son nom d'avant (`-s<store>`),
+        # une autre liste le dit (`-s<store>-l<liste>`) — deux listes du même magasin ne se
+        # marchent pas dessus.
+        suffix = f"-s{store_id}" + (f"-l{list_id}" if str(list_id) != "9" else "")
+        return ROOT / "runs" / f"{args.run_id}{suffix}"
 
     logger.log("submit_run_start", from_run=args.from_run, available=available,
                consoles=bool(args.consoles),

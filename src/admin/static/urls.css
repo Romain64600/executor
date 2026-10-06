@@ -111,3 +111,19 @@ button.primary:disabled {
   border-top: 1px solid rgba(128, 140, 170, .28);
 }
 .submit-note { font-size: .8rem; opacity: .75; }
+
+/* Listes AKS cherchées (saisie par jeu, 2026-10-06) */
+.lists-box {
+  margin: .6rem 0 .2rem;
+  padding: .5rem .8rem .6rem;
+  border: 1px solid rgba(128, 140, 170, .35);
+  border-radius: 8px;
+}
+.lists-box legend { font-size: .85rem; opacity: .9; padding: 0 .3rem; }
+.lists { display: flex; flex-wrap: wrap; gap: .25rem .9rem; font-size: .84rem; }
+.lists label { white-space: nowrap; }
+.lists label.blacklist { opacity: .45; text-decoration: line-through; cursor: not-allowed; }
+.linkbtn {
+  background: none; border: 0; padding: 0; color: #0195ff; cursor: pointer; font: inherit;
+  font-size: .82rem; text-decoration: underline;
+}
