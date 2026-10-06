@@ -144,7 +144,7 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
 - **`[R69]` Indiegala : la FICHE produit fait foi (plateforme + pays INTERDITS), la fiche DLC est
   une GARDE — Romain, 2026-10-06** (« Si on peut ouvrir la page, on trouvera les infos », puis, le
   tableau ligne par ligne lu — `docs/apercu_indiegala_2026-10-06.md`, 34 entrées / 175 —, « go pour
-  la liste blanche »). Titre et URL ne disent ni plateforme ni région : la fiche indiegala.com est
+  la liste blanche », puis « groupe B pour Indiegala »). Titre et URL ne disent ni plateforme ni région : la fiche indiegala.com est
   lue pour CHAQUE ligne (`indiegala.page_get`, bibliothèque standard, UA navigateur) ; plateforme =
   « is provided via **Steam Key** » (libellé absent ou inconnu → refus, jamais STEAM par défaut :
   39 fiches « direct download » refusées à l'aperçu) ; région = `[R59]` sur la liste des pays

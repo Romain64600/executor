@@ -30,11 +30,11 @@ class LesGroupesFigesCouvrentLaListeBlanche(unittest.TestCase):
         self.assertEqual(c["inconnus"], [], "un groupe ne cite que des marchands allowlistés")
 
     def test_les_marchands_hors_groupe_sont_nommes_et_la_raison_est_ecrite(self):
-        # Difmark (file Pending vide) et, depuis le 06/10, Indiegala : en liste blanche sur le go
-        # de Romain, le groupe reste SON choix — pas un oubli, la raison est écrite.
-        self.assertEqual(coverage()["hors_groupes"], ["Difmark", "Indiegala"])
+        # Difmark (file Pending vide) seul ; Indiegala a rejoint le groupe B le 06/10 (Romain :
+        # « groupe B pour Indiegala »). Un marchand hors groupe a toujours sa raison écrite.
+        self.assertEqual(coverage()["hors_groupes"], ["Difmark"])
         self.assertIn("liste account", EXCLUDED["Difmark"])
-        self.assertIn("groupe à choisir par Romain", EXCLUDED["Indiegala"])
+        self.assertIn("Indiegala", group_targets("B").__str__())
         for nom in coverage()["hors_groupes"]:
             self.assertIn(nom, EXCLUDED, f"{nom} hors groupe sans raison écrite")
 

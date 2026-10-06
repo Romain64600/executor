@@ -138,8 +138,8 @@ extract frais demande un navigateur — A et B sont en boucle, le VPS 3 n'est pa
 **Go de Romain (06/10, soir) : « go pour la liste blanche »**, après le tableau ligne par ligne
 (fiche lue, page AKS, saisie du modal, ce que la page vend déjà, points à regarder : 5 premières
 offres US de leur page, Little Big Adventure / Nightmare Frontier / Tabletop en Standard alors que
-la page vend aussi Enhanced / Early Access). Indiegala (95) rejoint `AUTO_MERCHANTS` ; **le groupe
-reste à choisir par Romain** (hors groupe en attendant, raison écrite dans `merchant_groups.py`).
+la page vend aussi Enhanced / Early Access). Indiegala (95) rejoint `AUTO_MERCHANTS` ; **groupe B**
+(Romain, même soir : « groupe B pour Indiegala »).
 Pour que ce soit vivant : tirer le code sur les clones et redémarrer l'admin entre deux balayages
 (jamais sous une boucle). Belmont's Curse (EU) : pas tranché, reste refusée.
 

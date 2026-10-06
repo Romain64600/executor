@@ -74,6 +74,8 @@ Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
   la boucle repart sur ses cibles de lancement et les ajouts encore dus sont remis en file après la
   relance (`add-target`, une fois chacun) — « une passe ou permanent » pour la boucle reste la
   décision 4 de l'audit du 02/10. Détail : `ops/MAINTENANCE_VPS.md`.
+- **Indiegala → groupe B** (Romain, même soir : « groupe B pour Indiegala ») — `merchant_groups.GROUPS["B"]`
+  ; ses fiches ont été lues depuis cette VM, l'ancienne VM n'a jamais été sondée pour lui.
 
 ## 2026-10-02 — Maintenance des VPS : ré-audit de Romain (5 défauts) corrigé ; vue d'ensemble : VPS 3 ajouté
 

@@ -746,8 +746,8 @@ matcher et le classifieur importent le registre.
 - **Statut live** : **en liste blanche depuis le 06/10** — Romain, « go pour la liste blanche »,
   après l'aperçu à blanc ligne par ligne (`docs/apercu_indiegala_2026-10-06.md` : 34 entrées sur
   175, toutes Steam, 29 GLOBAL et 5 US ; 141 refus ; une écriture fausse fermée avant, Thunder Ray).
-  **Groupe : à choisir par Romain** (hors groupe en attendant, raison écrite dans
-  `src/merchant_groups.py`) ; le feed du 21/09 a 15 jours, premier passage court conseillé. Fiches
+  **Groupe B** (Romain, 06/10 : « groupe B pour Indiegala ») ; le feed du 21/09 a 15 jours,
+  premier passage court conseillé. Fiches
   de test : `tests/fixtures/indiegala/` (9), `tests/test_merchants_indiegala_r69.py`.
 
 ## GameSeal (store 126)
