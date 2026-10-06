@@ -490,9 +490,13 @@ test("a report to discuss is listed first, with its question, counted, and never
   assert.ok(order.find((x) => x.startsWith("H3:Price check homepage")).endsWith(" — 1 report, dont 1 à traiter"));
   const text = card(c, DISC.offer).textContent;
   assert.ok(text.includes("💬 À discuter (remy, 06/10 05:03)"), text);
-  assert.ok(text.includes("Question de remy : « la clé marche en Europe »"), text);
+  assert.ok(text.includes("Commentaire de remy : « la clé marche en Europe »"), text);
   assert.ok(text.includes("💬 Mis à discuter par remy le 06/10 05:03 : en attente d'une décision finale"), text);
-  assert.ok(text.includes("Pour clore la discussion : clique Vrai positif ou Faux positif"), text);
+  assert.ok(text.includes("Pour clore la discussion, tranche sur l'offre, pas sur le commentaire"), text);
+  // Romain, 06/10/2026 : « Vrai positif » cliqué pour valider un commentaire qui montrait que l'offre était juste
+  assert.deepEqual(buttons(card(c, DISC.offer)).filter((b) => /^(Vrai|Faux) positif/.test(b.textContent)).map((b) => b.textContent),
+    ["Vrai positif : l'erreur est réelle", "Faux positif : l'offre est correcte"]);
+  assert.ok(buttons(card(c, TORO.offer)).some((b) => b.textContent === "Vrai positif"), "a card to handle keeps its short buttons");
   assert.ok(!text.includes("✔ Traité par"), "a report to discuss is not handled yet");
   const kpi = c.$("#pc-summary").children.find((n) => n.classList && n.classList.contains("k-discuss"));
   assert.ok(kpi && kpi.textContent === "1à discuter" && kpi.classList.contains("hot"), kpi && kpi.textContent);
@@ -517,7 +521,7 @@ test("a card put « à discuter » stays in place a few seconds, then goes up; a
   await c.net.release("api/price-check/reports", JSON.parse(JSON.stringify({ ...REPORTS, reports: [TORO, TOPR] })));
   await tick();
   const decide = async (key, label, by) => {
-    buttons(card(c, TOPR.offer)).find((b) => b.textContent === label).fire("click");
+    buttons(card(c, TOPR.offer)).find((b) => b.textContent.startsWith(label)).fire("click");
     await tick();
     await c.net.release("api/price-check/decision",
       { recorded: { offer: TOPR.offer, decision: key, note: "", by, at: "2026-10-06T09:10:00+02:00" } });
