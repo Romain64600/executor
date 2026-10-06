@@ -965,7 +965,7 @@ class SubmitManager:
 
     def start_data_entry_by_urls(
         self, urls: list[str], *, by: str, targets_spec: str | None = None,
-        consoles: bool = True,
+        consoles: bool = True, lists: "list[int] | None" = None,
     ) -> dict[str, Any]:
         """Launch the DRY-RUN data-entry planner from a list of AKS page URLs
         (stage 1, Romain 2026-08-24). For each pasted AKS product page we pin that
@@ -995,10 +995,14 @@ class SubmitManager:
             # [R45] consoles by DEFAULT (Romain 2026-09-15) — scripts/11 accepts the same
             # --consoles / --no-consoles pair (default True); explicit either way.
             argv.append("--consoles" if consoles else "--no-consoles")
+            # LISTES (Romain, 2026-10-06) : les listes AKS cochées par l'opérateur, déjà
+            # vérifiées par la route (`_parse_lists`) ; scripts/11 les revérifie. Absent = la 9.
+            chosen = [str(int(x)) for x in (lists or [int(PENDING_LIST_ID)])]
+            argv += ["--lists", ",".join(chosen)]
             return self._spawn(
                 run_dir, kind="data_entry_by_urls", argv=argv,
                 meta={"by": by, "run_id": run_id, "urls": len(clean), "mode": "dry-run",
-                      "consoles": bool(consoles)},
+                      "consoles": bool(consoles), "lists": [int(x) for x in chosen]},
             )
 
     def start_data_entry_by_urls_submit(

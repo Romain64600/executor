@@ -27,14 +27,14 @@ class ByUrlsSubmitTests(unittest.TestCase):
         tmp = Path(tempfile.mkdtemp())
         return run_by_urls_submit(
             recap, available="all", submit_merchant=submit_merchant,
-            make_sub_run=lambda sid: tmp / f"s{sid}", should_stop=should_stop)
+            make_sub_run=lambda sid, lid: tmp / f"s{sid}", should_stop=should_stop)
 
     def test_groups_by_store_merges_across_games(self):
         recap = {"available": "all", "games": [
             _game(("G2A", "38", [_cand("1")])),
             _game(("G2A", "38", [_cand("2")]), ("Kinguin", "58", [_cand("3")]))]}
         seen = []
-        def sm(merchant, store, cands, sub):
+        def sm(merchant, store, cands, sub, list_id="9"):
             seen.append((merchant, store, [c["offer"]["offer_id"] for c in cands]))
             return SubmitOutcome(ok=True, created=len(cands), offers=[])
         out = self._run(recap, sm)
@@ -49,7 +49,7 @@ class ByUrlsSubmitTests(unittest.TestCase):
         recap = {"available": "all", "games": [
             _game(("G2A", "38", [c])), _game(("G2A", "38", [dict(c)]))]}   # same fingerprint twice
         seen = {}
-        def sm(m, s, cands, sub):
+        def sm(m, s, cands, sub, list_id="9"):
             seen["n"] = len(cands)
             return SubmitOutcome(ok=True, created=len(cands))
         self._run(recap, sm)
@@ -59,7 +59,7 @@ class ByUrlsSubmitTests(unittest.TestCase):
         recap = {"available": "all", "games": [
             _game(("G2A", "38", [_cand("1")]), ("Kinguin", "58", [_cand("2")]))]}
         calls = []
-        def sm(m, s, cands, sub):
+        def sm(m, s, cands, sub, list_id="9"):
             calls.append(m)
             return SubmitOutcome(ok=False, aborted="not_logged_in") if m == "G2A" \
                 else SubmitOutcome(ok=True, created=1)
@@ -84,7 +84,7 @@ class ByUrlsSubmitTests(unittest.TestCase):
         recap = {"available": "all", "games": [
             _game(("G2A", "38", [_cand("1")]), ("Kinguin", "58", [_cand("2")]))]}
         calls = []
-        def sm(m, s, cands, sub):
+        def sm(m, s, cands, sub, list_id="9"):
             calls.append(m)
             return SubmitOutcome(ok=True, created=1)
         out = self._run(recap, sm, should_stop=lambda: True)   # stop before the first merchant

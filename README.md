@@ -437,7 +437,13 @@ for several platforms becomes a **multi-target** candidate (`targets` in
 and the admin body field `"consoles": false`) restores the PC-only behaviour (stamped
 `consoles: false`); the mode is written on the child argv either way, so a run dir always
 shows it. `05_submit` gates every entry (shape `targets_v2`, cap 3 targets, per-row
-readbacks). Rules: [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) §4.12 (matcher) and
+readbacks). **Saisie par jeu — listes AKS choisies (2026-10-06, Romain : « que l'opérateur puisse
+choisir les listes, toutes cochées par défaut, sauf la blacklist »)** : la page `/urls` dessine
+les listes de travail en cases (toutes cochées ; les blacklists décochées et grisées), le POST
+porte `lists`, `scripts/11 --lists 9,22,…` cherche chaque liste à son tour et marque chaque
+ligne de sa liste, `scripts/12` fait un lot par (magasin, liste) et `05_submit --list <liste>`
+saisit l'offre dans la liste où elle a été trouvée ([`docs/DATA_CONTRACTS.md`](docs/DATA_CONTRACTS.md)).
+Rules: [`docs/EXECUTOR_RULES.md`](docs/EXECUTOR_RULES.md) §4.12 (matcher) and
 §6 « Modal v2 » (submitter); history (opt-in phase, `--dry-run` guard, canaries):
 [`docs/CHANGELOG.md`](docs/CHANGELOG.md) 2026-09-12 → 15.
 

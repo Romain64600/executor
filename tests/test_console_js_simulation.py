@@ -413,3 +413,54 @@ class PriceCheckGuideSimulationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+URLS_LISTS_HARNESS = ROOT / "tests" / "js" / "urls_lists.test.mjs"
+
+
+@unittest.skipIf(NODE is None, "node absent (dépendance de test)")
+class UrlsListsConsoleSimulationTests(unittest.TestCase):
+    """La saisie par jeu, EXÉCUTÉE (Romain, 2026-10-06 : « que l'opérateur puisse choisir les
+    listes ; toutes cochées par défaut, sauf la blacklist ») : le catalogue dessiné en cases,
+    les blacklists décochées et grisées, le corps du lancement qui porte les listes cochées, le
+    refus sans aucune liste, et le lot du GO groupé par (magasin, liste)."""
+
+    def test_the_harness_targets_the_shipped_console(self):
+        self.assertTrue(URLS_LISTS_HARNESS.is_file(), URLS_LISTS_HARNESS)
+        self.assertIn('"src", "admin", "static", "urls.js"',
+                      URLS_LISTS_HARNESS.read_text(encoding="utf-8"))
+
+    def test_every_scenario_passes(self):
+        proc = subprocess.run([NODE, str(URLS_LISTS_HARNESS)], cwd=ROOT, capture_output=True,
+                              text=True, timeout=120)
+        self.assertEqual(proc.returncode, 0,
+                         f"\n--- sortie node ---\n{proc.stdout}\n{proc.stderr}")
+        self.assertIn("tout passe", proc.stdout)
+
+    def test_the_harness_goes_red_on_each_removed_piece(self):
+        import os
+        import tempfile
+        js = (ROOT / "src" / "admin" / "static" / "urls.js").read_text(encoding="utf-8")
+        mutations = {
+            "toutes cochées par défaut": ("    inp.checked = true;                      // toutes cochées par défaut (Romain, 06/10)\n",
+                                          "    inp.checked = false;\n"),
+            "blacklist grisée": ("    inp.disabled = true;                     // une blacklist n'est pas une liste de travail\n",
+                                 "    inp.disabled = false;\n"),
+            "les listes dans le corps du lancement": ("consoles: $(\"#consoles\").checked, lists })", "consoles: $(\"#consoles\").checked })"),
+            "refus sans liste": ("  if (!lists.length) {\n    $(\"#launch-msg\").textContent = \"✖ Coche au moins une liste AKS à chercher.\";",
+                                 "  if (false) {\n    $(\"#launch-msg\").textContent = \"✖ Coche au moins une liste AKS à chercher.\";"),
+            "un lot par (magasin, liste)": ("      const gk = sid + \"|\" + lid;", "      const gk = sid;"),
+            "la liste sur le bloc marchand": ("      const listTxt = per.list_id ? \" · liste \" + per.list_id", "      const listTxt = false ? \" · liste \" + per.list_id"),
+        }
+        for nom, (avant, apres) in mutations.items():
+            with self.subTest(nom):
+                self.assertIn(avant, js, f"la forme de « {nom} » a changé")
+                casse = js.replace(avant, apres, 1)
+                with tempfile.TemporaryDirectory() as tmp:
+                    faux = pathlib.Path(tmp) / "urls.js"
+                    faux.write_text(casse, encoding="utf-8")
+                    proc = subprocess.run([NODE, str(URLS_LISTS_HARNESS)], cwd=ROOT,
+                                          capture_output=True, text=True, timeout=120,
+                                          env=dict(os.environ, URLS_JS=str(faux)))
+                self.assertNotEqual(proc.returncode, 0,
+                                    f"le harnais passe sans « {nom} » :\n{proc.stdout}")

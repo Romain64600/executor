@@ -63,6 +63,7 @@ from src.admin.overview import Overview
 from src.admin import price_check_io
 from src.admin.auto_merchants import allowed_list as auto_allowed_list, rejection_reason
 from src.aks_lists import LISTS as AKS_LISTS, PENDING_LIST_ID, is_blacklist_label
+from src.aks_lists import label_for as aks_list_label
 from src.extractor import FEED_LIST_BLACKLIST
 from src.matcher import PLATFORM_LABEL, REGION_IDS
 from src.validation import candidate_fingerprint
@@ -193,6 +194,61 @@ def _parse_list_id(body: dict[str, Any]) -> int:
                        f"liste {FEED_LIST_BLACKLIST} (Blacklist) : interdite comme liste de "
                        "travail — les exclusions définitives ne se re-travaillent pas")
     return val
+
+
+def _blacklists() -> list[dict[str, object]]:
+    """Les listes de classe « Blacklist » du catalogue (8 et ses variantes) — servies à la
+    saisie par jeu pour être AFFICHÉES décochées et grisées (Romain, 2026-10-06 : « toutes
+    cochées par défaut, sauf la blacklist »), jamais acceptées comme listes de travail."""
+
+    out: list[dict[str, object]] = []
+    for entree in AKS_LISTS:
+        try:
+            lid = int(entree["id"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if lid == FEED_LIST_BLACKLIST or is_blacklist_label(entree.get("label")):
+            out.append({"id": lid, "label": str(entree.get("label") or lid)})
+    return out
+
+
+def _parse_lists(body: dict[str, Any]) -> list[int]:
+    """Les listes AKS que la saisie par jeu doit chercher (Romain, 2026-10-06 : « je voudrais
+    que l'opérateur puisse choisir les listes ; elles seraient toutes cochées par défaut, sauf
+    la blacklist »). ``lists: [9, 22, 30]`` — des entiers ≥ 1, dédoublonnés dans l'ordre reçu.
+    Refus : une valeur non entière, une liste vide donnée explicitement, la Blacklist (8) et
+    ses variantes (libellé « Blacklist … » du catalogue : 14, 26, 31, 37 — Romain, 2026-09-21 :
+    les exclusions définitives ne se re-travaillent pas). **Absent → ``[9]``** (la file
+    Pending, le comportement d'avant) : un ancien client qui ne sait pas envoyer le champ
+    n'obtient pas un aperçu de vingt listes à son insu — la console, elle, envoie toujours
+    ce qui est coché."""
+
+    brut = body.get("lists")
+    if brut is None:
+        return [int(PENDING_LIST_ID)]
+    if isinstance(brut, str):
+        brut = [t for t in re.split(r"[\s,;]+", brut) if t]
+    if not isinstance(brut, list):
+        raise ApiError(400, "bad_lists", "lists doit être une liste d'entiers (ex. [9, 22])")
+    out: list[int] = []
+    for item in brut:
+        try:
+            val = int(str(item).strip())
+        except (TypeError, ValueError):
+            raise ApiError(400, "bad_lists",
+                           f"lists : chaque liste est un entier, reçu {item!r}") from None
+        if val < 1:
+            raise ApiError(400, "bad_lists", f"lists : entier positif attendu, reçu {val}")
+        label = aks_list_label(str(val))
+        if val == FEED_LIST_BLACKLIST or is_blacklist_label(label):
+            raise ApiError(400, "forbidden_list",
+                           f"liste {val} ({label or 'Blacklist'}) : interdite comme liste de "
+                           "travail — les exclusions définitives ne se re-travaillent pas")
+        if val not in out:
+            out.append(val)
+    if not out:
+        raise ApiError(400, "lists_required", "coche au moins une liste AKS à chercher")
+    return out
 
 
 def _parse_consoles(body: dict[str, Any]) -> bool:
@@ -410,6 +466,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._send_json(200, {"merchants": auto_allowed_list(),
                                          "groups": _auto_groups(),
                                          "lists": _work_lists(),
+                                         # Saisie par jeu (2026-10-06) : affichées grisées.
+                                         "blacklists": _blacklists(),
                                          "default_list": int(PENDING_LIST_ID)})
         name = path.lstrip("/")
         if name in STATIC_FILES:
@@ -999,7 +1057,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             raise ApiError(400, "too_many_urls",
                            f"{len(urls)} URLs — plafonné à 200 par run (relance en lots)")
         result = self.state.manager.start_data_entry_by_urls(
-            urls, by=by, consoles=_parse_consoles(body))   # [R45] default True (2026-09-15)
+            urls, by=by, consoles=_parse_consoles(body),   # [R45] default True (2026-09-15)
+            lists=_parse_lists(body))                      # listes choisies (2026-10-06)
         self._send_json(200, result)
 
     def _get_by_urls_log(self, run_id: str, offset_raw: str) -> None:

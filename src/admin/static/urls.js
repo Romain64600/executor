@@ -48,6 +48,61 @@ let SUBMIT_RUNNING = false;  // a by-urls SUBMIT (Saisir) is active
 let RECAP_SHA = null;        // sha of the dry-run recap shown (binds the Saisir GO, AS1)
 let RECAP_RUN = null;        // the dry-run run id to submit from
 let RECAP_DATA = null;       // the dry-run recap shown (the Saisir summary lists ITS targets)
+
+// ---- listes AKS cherchées (Romain, 2026-10-06 : « que l'opérateur puisse choisir les listes,
+// toutes cochées par défaut, sauf la blacklist ») ----
+// Le catalogue vient de l'admin (`api/data-entry/merchants` : `lists` = listes de travail,
+// `blacklists` = les blacklists, affichées grisées et décochées, jamais cochables — le serveur
+// les refuserait de toute façon). Chaque offre est ensuite saisie dans la liste où l'aperçu
+// l'a trouvée (scripts/11 → recap `list_id` → scripts/12 → 05 --list).
+let LISTS = [];
+let BLACKLISTS = [];
+function listLabel(id) {
+  const hit = LISTS.concat(BLACKLISTS).find((l) => String(l.id) === String(id));
+  return hit ? String(hit.label || "") : "";
+}
+function renderLists() {
+  const box = $("#lists");
+  box.replaceChildren();
+  for (const l of LISTS) {
+    const inp = el("input", { type: "checkbox", class: "list-cb", id: "list-" + l.id });
+    inp.setAttribute("data-list", String(l.id));
+    inp.checked = true;                      // toutes cochées par défaut (Romain, 06/10)
+    inp.addEventListener("change", syncLaunch);
+    box.append(el("label", { title: "liste " + l.id }, [inp, " " + l.label + " (" + l.id + ")"]));
+  }
+  for (const l of BLACKLISTS) {
+    const inp = el("input", { type: "checkbox", class: "list-cb blacklist-cb", id: "list-" + l.id });
+    inp.setAttribute("data-list", String(l.id));
+    inp.checked = false;
+    inp.disabled = true;                     // une blacklist n'est pas une liste de travail
+    box.append(el("label", { class: "blacklist", title: "Blacklist : interdite comme liste de travail (Romain, 21/09) — les exclusions définitives ne se re-travaillent pas" },
+                  [inp, " " + l.label + " (" + l.id + ")"]));
+  }
+}
+function checkedLists() {
+  const box = $("#lists");
+  return Array.from(box.querySelectorAll(".list-cb"))
+    .filter((i) => i.checked && !i.disabled)
+    .map((i) => parseInt(i.getAttribute("data-list"), 10))
+    .filter((n) => Number.isFinite(n) && n > 0);
+}
+function setAllLists(on) {
+  for (const i of $("#lists").querySelectorAll(".list-cb")) if (!i.disabled) i.checked = !!on;
+  syncLaunch();
+}
+async function loadLists() {
+  try {
+    const d = await api("api/data-entry/merchants");
+    LISTS = (d && Array.isArray(d.lists)) ? d.lists : [];
+    BLACKLISTS = (d && Array.isArray(d.blacklists)) ? d.blacklists : [];
+  } catch (e) {
+    LISTS = []; BLACKLISTS = [];
+  }
+  if (!LISTS.length) LISTS = [{ id: 9, label: "Pending offers" }];   // catalogue muet : la file Pending
+  renderLists();
+  syncLaunch();
+}
 let SUBMIT_MERCHANTS = 0;    // distinct merchants with candidates in the shown recap
 
 // ---- targets [R45] ----
@@ -124,16 +179,20 @@ function candFingerprint(c) {
   return primary + "|+" + extra;
 }
 function submitBatch(rec) {
+  // LISTES (2026-10-06) : la clé du lot est (magasin, liste) — une offre trouvée dans la 22 est
+  // saisie dans la 22 ; un aperçu d'avant (sans list_id) vaut la file Pending (9).
   const order = [], groups = new Map();
   for (const g of ((rec && rec.games) || [])) {
     if (!g.resolved || g.error) continue;
     for (const per of (g.merchants || [])) {
       const sid = per.store_id == null ? "" : String(per.store_id);
       if (!sid) continue;
-      let grp = groups.get(sid);
+      const lid = per.list_id == null || per.list_id === "" ? "9" : String(per.list_id);
+      const gk = sid + "|" + lid;
+      let grp = groups.get(gk);
       if (!grp) {
-        grp = { merchant: per.merchant || "", store_id: sid, rows: [], seen: new Set() };
-        groups.set(sid, grp); order.push(sid);
+        grp = { merchant: per.merchant || "", store_id: sid, list_id: lid, rows: [], seen: new Set() };
+        groups.set(gk, grp); order.push(gk);
       }
       for (const c of (per.candidates || [])) {
         const key = candFingerprint(c);
@@ -143,7 +202,7 @@ function submitBatch(rec) {
       }
     }
   }
-  return order.map((sid) => groups.get(sid)).filter((grp) => grp.rows.length);
+  return order.map((gk) => groups.get(gk)).filter((grp) => grp.rows.length);
 }
 function batchCounts(groups) {
   let offers = 0, targets = 0;
@@ -158,6 +217,8 @@ function parseUrls() {
 function syncLaunch() {
   const n = parseUrls().length;
   $("#urls-count").textContent = n + " URL" + (n > 1 ? "s" : "");
+  const k = checkedLists().length;
+  $("#lists-count").textContent = "— " + k + (k > 1 ? " listes cochées" : " liste cochée");
   // Only disable while a run is active — NOT on an empty field. A hard reload can
   // restore the textarea value without firing 'input' (so syncLaunch never re-enabled
   // it), leaving the button silently disabled; instead the click handler validates and
@@ -175,11 +236,17 @@ $("#launch").addEventListener("click", async () => {
     $("#launch-msg").textContent = "✖ Colle au moins une URL de page AKS dans le champ.";
     return;
   }
+  const lists = checkedLists();
+  if (!lists.length) {
+    $("#launch-msg").textContent = "✖ Coche au moins une liste AKS à chercher.";
+    return;
+  }
   $("#launch").disabled = true;
   $("#launch-msg").textContent = "Lancement de l'aperçu…";
   try {
     // [R45] consoles by default (Romain 2026-09-15); unticked = PC-only preview (--no-consoles).
-    const r = await api("api/data-entry/by-urls", { method: "POST", body: JSON.stringify({ urls, consoles: $("#consoles").checked }) });
+    // Listes (2026-10-06) : celles que l'opérateur a laissées cochées, dans l'ordre du catalogue.
+    const r = await api("api/data-entry/by-urls", { method: "POST", body: JSON.stringify({ urls, consoles: $("#consoles").checked, lists }) });
     $("#launch-msg").textContent = "▶ aperçu lancé : " + (r.run_id || "");
     RUNNING = true;
     setStatus("Aperçu en cours…", true);
@@ -222,15 +289,15 @@ function endUi(finalText) {
 let LOG_OFFSET = 0;
 function fmtLogEvent(ev) {
   const n = ev.event || "";
-  if (n === "run_start") return `▶ démarrage · ${ev.urls} URL(s), ${ev.merchants} marchand(s)`;
+  if (n === "run_start") return `▶ démarrage · ${ev.urls} URL(s), ${ev.merchants} marchand(s)` + (Array.isArray(ev.lists) && ev.lists.length ? ` · liste(s) ${ev.lists.join(", ")}` : "");
   if (n === "game_resolved") return ev.ok
     ? `🎯 résolu : ${ev.aks_name} (AKS ${ev.aks_product_id})`
     : `❌ non résolu : ${ev.url} — ${ev.reason || ""}`;
   if (n === "game_start") return `— ${ev.aks_name} : recherche (tous marchands)…`;
-  if (n === "game_searched") return `   ⟳ ${ev.found} résultat(s) tous marchands` + (ev.off_allowlist ? ` · ${ev.off_allowlist} hors-liste ignoré(s)` : "") + (ev.truncated ? " · (tronqué)" : "");
-  if (n === "candidate") return `   ✔ [${ev.merchant}] ${ev.name} — ${ev.region}, ${ev.edition}`;
+  if (n === "game_searched") return `   ⟳ ${ev.found} résultat(s) tous marchands` + (ev.per_list && typeof ev.per_list === "object" ? " (" + Object.keys(ev.per_list).map((k) => "liste " + k + " : " + ev.per_list[k]).join(", ") + ")" : "") + (ev.off_allowlist ? ` · ${ev.off_allowlist} hors-liste ignoré(s)` : "") + (ev.truncated ? " · (tronqué)" : "");
+  if (n === "candidate") return `   ✔ [${ev.merchant}${ev.list_id ? " · liste " + ev.list_id : ""}] ${ev.name} — ${ev.region}, ${ev.edition}`;
   if (n === "skipped") return `   ✖ ${ev.merchant} ignorée : ${ev.name || ""} · ${ev.reason || ""}\n      ${ev.url || ""}`;
-  if (n === "merchant_done") return `   · ${ev.merchant} : ${ev.found} trouvée(s) · ${ev.candidates} à saisir` + (ev.skipped ? ` · ${ev.skipped} ignorée(s)` : "");
+  if (n === "merchant_done") return `   · ${ev.merchant}${ev.list_id ? " (liste " + ev.list_id + ")" : ""} : ${ev.found} trouvée(s) · ${ev.candidates} à saisir` + (ev.skipped ? ` · ${ev.skipped} ignorée(s)` : "");
   if (n === "game_done") return ev.error ? `⚠ ${ev.aks_name} : ${ev.error}` : `✓ ${ev.aks_name} : ${ev.candidates} à saisir`;
   if (n === "run_done") return `■ terminé · ${ev.resolved} résolu(s), ${ev.candidates} à saisir`;
   if (n === "run_aborted") return `■ arrêté : ${ev.reason}`;
@@ -368,12 +435,17 @@ function renderRecap(d) {
       wrap.append(el("div", { class: "pg" }, kids));
       continue;
     }
-    if (g.search) kids.push(el("div", { class: "game-url dim", text: g.search.found + " résultat(s) tous marchands" + (g.search.off_allowlist ? " · " + g.search.off_allowlist + " hors-liste" : "") + (g.search.truncated ? " · tronqué" : "") }));
+    if (g.search) {
+      const perList = g.search.per_list && typeof g.search.per_list === "object"
+        ? Object.keys(g.search.per_list).map((k) => "liste " + k + " : " + g.search.per_list[k]).join(", ") : "";
+      kids.push(el("div", { class: "game-url dim", text: g.search.found + " résultat(s) tous marchands" + (perList ? " (" + perList + ")" : "") + (g.search.off_allowlist ? " · " + g.search.off_allowlist + " hors-liste" : "") + (g.search.truncated ? " · tronqué" : "") }));
+    }
     for (const per of (g.merchants || [])) {
       const cands = per.candidates || [];
       const skips = per.skipped || [];
       if (!cands.length && !skips.length) continue;   // merchant with nothing found — omit
-      kids.push(el("div", { class: "m-title", text: per.merchant + " — " + cands.length + " à saisir" + (skips.length ? " · " + skips.length + " ignorée(s)" : "") }));
+      const listTxt = per.list_id ? " · liste " + per.list_id + (listLabel(per.list_id) ? " " + listLabel(per.list_id) : "") : "";
+      kids.push(el("div", { class: "m-title", text: per.merchant + listTxt + " — " + cands.length + " à saisir" + (skips.length ? " · " + skips.length + " ignorée(s)" : "") }));
       for (const c of cands) {
         const o = c.offer || {};
         const reg = labelId(c, "region", "region_label", "region_id"), ed = labelId(c, "edition", "edition_label", "edition_id");
@@ -473,7 +545,7 @@ $("#saisir").addEventListener("click", () => {
   const box = $("#confirm-targets");
   box.replaceChildren();
   for (const grp of batch) {
-    box.append(el("div", { class: "logline", text: "— " + grp.merchant + " (store " + grp.store_id + ") : " + plural(grp.rows.length, "offre", "offres") }));
+    box.append(el("div", { class: "logline", text: "— " + grp.merchant + " (store " + grp.store_id + ", liste " + grp.list_id + (listLabel(grp.list_id) ? " " + listLabel(grp.list_id) : "") + ") : " + plural(grp.rows.length, "offre", "offres") }));
     for (const r of grp.rows) {
       box.append(el("div", { class: "logline", text: "  " + r.name + (r.targets.length > 1 ? " — " + r.targets.length + " cibles" : "") }));
       for (const tg of r.targets) box.append(el("div", { class: "logline ok target-row", text: "     ↳ " + fmtTarget(tg) }));
@@ -538,9 +610,14 @@ function startSubmitPolling(runId) {
   tick(); POLL = setInterval(tick, 2000);
 }
 
+$("#lists-all").addEventListener("click", () => setAllLists(true));
+$("#lists-none").addEventListener("click", () => setAllLists(false));
+
 // ---- init ----
 (async function init() {
   setStatus("Prêt");
   syncLaunch();
+  const lists = loadLists();                 // le catalogue des listes, en parallèle de la reprise
   if (!(await resumeIfActive())) await showLastRecap();
+  await lists;
 })();

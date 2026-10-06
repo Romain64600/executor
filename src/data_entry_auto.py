@@ -58,6 +58,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from src.admin.auto_merchants import rejection_reason
+from src.aks_lists import PENDING_LIST_ID
 from src.validation import candidate_fingerprint
 
 # ``stopped`` values that are NOT a broken/blocked session. ``limit_reached``
@@ -677,12 +678,15 @@ def preview_incomplete_reason(from_recap: dict) -> "str | None":
 
 
 def _candidates_by_store(from_recap: dict) -> "list[dict[str, Any]]":
-    """Group a by-urls dry-run's candidates by merchant STORE, deduped by
+    """Group a by-urls dry-run's candidates by merchant STORE **and AKS LIST**, deduped by
     candidate_fingerprint (a merchant can appear across several games; a re-import
     can also surface the same offer twice). Returns ordered
-    ``[{merchant, store_id, candidates:[...]}, ...]`` — the unit of a safe submit."""
-    order: list[str] = []
-    groups: dict[str, dict[str, Any]] = {}
+    ``[{merchant, store_id, list_id, candidates:[...]}, ...]`` — the unit of a safe
+    submit. LISTES (Romain, 2026-10-06) : une offre trouvée dans la liste 22 est saisie
+    (relocalisée, prouvée disparue) dans la 22 — un lot par (magasin, liste) ; un aperçu
+    d'avant (sans ``list_id``) vaut la file Pending (9)."""
+    order: list[tuple[str, str]] = []
+    groups: dict[tuple[str, str], dict[str, Any]] = {}
     for game in from_recap.get("games") or []:
         if not game.get("resolved") or game.get("error"):
             continue
@@ -690,11 +694,13 @@ def _candidates_by_store(from_recap: dict) -> "list[dict[str, Any]]":
             sid = str(per.get("store_id") or "")
             if not sid:
                 continue
-            g = groups.get(sid)
+            lid = str(per.get("list_id") or PENDING_LIST_ID)
+            key = (sid, lid)
+            g = groups.get(key)
             if g is None:
-                g = groups[sid] = {"merchant": per.get("merchant", ""),
-                                   "store_id": sid, "candidates": [], "_seen": set()}
-                order.append(sid)
+                g = groups[key] = {"merchant": per.get("merchant", ""),
+                                   "store_id": sid, "list_id": lid, "candidates": [], "_seen": set()}
+                order.append(key)
             for c in per.get("candidates") or []:
                 fp = candidate_fingerprint(c)
                 if fp in g["_seen"]:
@@ -702,17 +708,18 @@ def _candidates_by_store(from_recap: dict) -> "list[dict[str, Any]]":
                 g["_seen"].add(fp)
                 g["candidates"].append(c)
     out = []
-    for sid in order:
-        g = groups[sid]
+    for key in order:
+        g = groups[key]
         if g["candidates"]:
-            out.append({"merchant": g["merchant"], "store_id": sid, "candidates": g["candidates"]})
+            out.append({"merchant": g["merchant"], "store_id": g["store_id"],
+                        "list_id": g["list_id"], "candidates": g["candidates"]})
     return out
 
 
 def run_by_urls_submit(
     from_recap: dict, *, available: str,
-    submit_merchant: Callable[[str, str, "list[dict[str, Any]]", Path], SubmitOutcome],
-    make_sub_run: Callable[[str], Path],
+    submit_merchant: Callable[[str, str, "list[dict[str, Any]]", Path, str], SubmitOutcome],
+    make_sub_run: Callable[[str, str], Path],
     flush: Callable[[dict], None] = lambda r: None,
     should_stop: Callable[[], bool] | None = None,
 ) -> dict:
@@ -762,9 +769,11 @@ def run_by_urls_submit(
             flush(recap)
             break
         merchant, store_id, cands = g["merchant"], g["store_id"], g["candidates"]
-        sub_run = make_sub_run(store_id)
-        outcome = submit_merchant(merchant, store_id, cands, sub_run)
-        entry = {"merchant": merchant, "store_id": store_id, "run": sub_run.name,
+        list_id = str(g.get("list_id") or PENDING_LIST_ID)
+        sub_run = make_sub_run(store_id, list_id)
+        outcome = submit_merchant(merchant, store_id, cands, sub_run, list_id)
+        entry = {"merchant": merchant, "store_id": store_id, "list_id": list_id,
+                 "run": sub_run.name,
                  "attempted": len(cands), "created": outcome.created,
                  "offers": outcome.offers, "halted": outcome.halt_reason()}
         recap["merchants"].append(entry)

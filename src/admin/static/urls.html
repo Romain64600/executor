@@ -79,6 +79,14 @@
         <label title="R45 — consoles par défaut depuis le 15/09 (décision Romain « 1 ») : les clés consoles sont planifiées puis saisies sur leurs pages AKS consoles. Décoché = --no-consoles (aperçu ET saisie PC seulement — le même réglage vaut pour les deux)."><input id="consoles" type="checkbox" checked> Consoles (pages Xbox / PlayStation / Switch)</label>
       </div>
       <p class="restrict">Consoles cochées par défaut (15/09) — décochez pour un aperçu / une saisie PC seulement.</p>
+      <fieldset id="lists-box" class="lists-box">
+        <legend>Listes AKS cherchées <span id="lists-count" class="dim"></span>
+          · <button type="button" id="lists-all" class="linkbtn">tout cocher</button>
+          · <button type="button" id="lists-none" class="linkbtn">tout décocher</button></legend>
+        <div id="lists" class="lists"><span class="dim">chargement du catalogue…</span></div>
+        <p class="restrict">Toutes cochées par défaut, sauf les blacklists (Romain, 06/10) — chaque offre est
+          saisie dans la liste où elle a été trouvée. Chaque liste cochée ajoute ses recherches à chaque jeu.</p>
+      </fieldset>
       <div class="golaunch">
         <span id="urls-count" class="golabel">0 URL</span>
         <button id="launch" type="button" class="primary" disabled>Lancer l'aperçu</button>

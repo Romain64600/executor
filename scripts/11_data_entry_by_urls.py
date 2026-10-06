@@ -66,7 +66,8 @@ from src.aks_env import OFFICIAL_CDP_ENDPOINT, _allkeyshop_host  # noqa: E402
 from src.browser_lock import BrowserBusyError, browser_lock  # noqa: E402
 from src.console_keys import CONSOLE_PAGE_KINDS, console_page_identity  # noqa: E402
 from src.contracts import NormalizedOffer  # noqa: E402
-from src.extractor import AKS_ADMIN_URL, DEFAULT_FEED_PAGE, NotLoggedInError  # noqa: E402
+from src.aks_lists import PENDING_LIST_ID, is_blacklist_label, label_for  # noqa: E402
+from src.extractor import AKS_ADMIN_URL, DEFAULT_FEED_PAGE, NotLoggedInError, feed_page_for_list  # noqa: E402
 from src.invariants import build_report  # noqa: E402
 from src.run_log import RunLogger  # noqa: E402
 from src.matcher import (  # noqa: E402
@@ -348,12 +349,48 @@ def _dedupe_rows(rows: list[dict]) -> list[dict]:
     return out
 
 
+def _list_no(feed_page: str) -> str:
+    return str(feed_page).rsplit("-", 1)[-1]        # "aks-merchant-feeds-9" -> "9"
+
+
+def parse_lists_arg(text: str | None, *, default_feed_page: str = DEFAULT_FEED_PAGE) -> list[str]:
+    """``--lists 9,22,30`` → ``["9", "22", "30"]`` (Romain, 2026-10-06 : « pour la saisie par
+    jeu, je voudrais que l'opérateur puisse choisir les listes »). Entiers ≥ 1, dédoublonnés
+    dans l'ordre donné ; la Blacklist (8) et ses variantes (« Blacklist Account »…) sont
+    refusées comme listes de travail (Romain, 2026-09-21), par `feed_page_for_list` pour la 8 et
+    par le libellé du catalogue pour les autres. Absent → la liste de ``--feed-page`` (la 9)."""
+
+    if not text or not str(text).strip():
+        return [_list_no(default_feed_page)]
+    out: list[str] = []
+    for tok in str(text).split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        feed_page_for_list(tok)                      # entier ≥ 1, jamais la 8 (lève sinon)
+        if is_blacklist_label(label_for(tok)):
+            raise ValueError(f"liste {tok} ({label_for(tok)}) : une blacklist n'est pas une liste "
+                             "de travail")
+        if tok not in out:
+            out.append(str(int(tok)))
+    if not out:
+        raise ValueError("--lists : aucune liste")
+    return out
+
+
 def search_all_merchants(session: Any, resolution: AksResolution, available: str,
-                         feed_page: str) -> tuple[list[dict], dict]:
+                         feed_page: "str | list[str] | tuple[str, ...]") -> tuple[list[dict], dict]:
     """ONE all-merchants search per game, by NAME and by URL(slug), unioned. Returns
     (rows, meta) — rows across every merchant (each carries its store_id); the caller
     filters to the vetted allowlist. ``meta.truncated`` flags a result deeper than
     the page cap (never silently cut).
+
+    LISTES (Romain, 2026-10-06) : ``feed_page`` peut être PLUSIEURS pages de feed (une par
+    liste AKS choisie) — chaque liste est cherchée à son tour, dans l'ordre de l'opérateur,
+    et chaque ligne porte ``list_id`` (la liste où elle a été trouvée : c'est là que la
+    saisie la relocalisera et prouvera sa disparition). Le dédoublonnage (id, puis URL) est
+    global, premier vu gagne — la file Pending d'abord. ``meta.per_list`` compte les lignes
+    de chaque liste ; ``truncated`` est vrai dès qu'UNE liste touche le plafond.
 
     [R45] for a CONSOLE page the name term is the page IDENTITY (``console_page_identity``:
     "Hades PS5" → "Hades", "Hades Xbox Series" → "Hades") — the merchant title carries
@@ -375,13 +412,23 @@ def search_all_merchants(session: Any, resolution: AksResolution, available: str
         if alt and alt != term:
             terms.append((alt, field))
     meta["alt_terms"] = [t for t, _ in terms[2:]]
+    feed_pages = [feed_page] if isinstance(feed_page, str) else list(feed_page)
+    meta["lists"] = [_list_no(fp) for fp in feed_pages]
+    meta["per_list"] = {}
     rows: list[dict] = []
-    for term, field in terms:
-        if not term:
-            continue
-        found, hit_cap = _read_search_pages(session, feed_page, available, term, field)
-        meta["truncated"] = meta["truncated"] or hit_cap
-        rows.extend(found)
+    for fp in feed_pages:
+        list_no = _list_no(fp)
+        found_in_list: list[dict] = []
+        for term, field in terms:
+            if not term:
+                continue
+            found, hit_cap = _read_search_pages(session, fp, available, term, field)
+            meta["truncated"] = meta["truncated"] or hit_cap
+            found_in_list.extend(found)
+        for r in found_in_list:
+            r["list_id"] = list_no
+        meta["per_list"][list_no] = len(_dedupe_rows(found_in_list))
+        rows.extend(found_in_list)
     return _dedupe_rows(rows), meta
 
 
@@ -546,15 +593,20 @@ def run_plan(urls: list[str], targets: list[tuple[str, str]], *, available: str,
              feed_page: str, endpoint: str, run_dir: Path,
              http_get_fn: Callable[..., Any] = http_get, session: Any = None,
              logger: Any = None, consoles: bool = True,
-             page_resolver: Callable[[str], AksResolution | None] | None = None) -> dict:
+             page_resolver: Callable[[str], AksResolution | None] | None = None,
+             lists: "list[str] | None" = None) -> dict:
     """[R45] ``consoles`` (default True, Romain 2026-09-15) is threaded to every match
     call and to the URL resolution (a console page URL is refused per-URL without it).
     ``page_resolver`` reads the console target pages by URL (default: the matcher's
     ``resolve_aks_url`` through ``http_get_fn``); in production it is wrapped in a
     throttle guard SHARING the URL-resolution guard's state — one consecutive-unreliable
     count / grace budget for the whole run, like ``match_feed``."""
+    # LISTES (Romain, 2026-10-06) : les listes AKS cherchées, dans l'ordre de l'opérateur ;
+    # sans `lists`, la seule liste de `feed_page` (la 9) — le comportement d'avant.
+    feed_pages = [feed_page_for_list(l) for l in lists] if lists else [feed_page]
     recap: dict[str, Any] = {"mode": "dry-run", "available": available,
                              "consoles": bool(consoles),
+                             "lists": [_list_no(fp) for fp in feed_pages],
                              "merchants": [m for m, _ in targets], "games": [],
                              "aborted": None,
                              "totals": {"games": len(urls), "resolved": 0, "candidates": 0}}
@@ -563,7 +615,8 @@ def run_plan(urls: list[str], targets: list[tuple[str, str]], *, available: str,
     def _flush() -> None:
         _write_json_atomic(run_dir / "recap.json", recap)
 
-    emit("run_start", urls=len(urls), merchants=len(targets), consoles=bool(consoles))
+    emit("run_start", urls=len(urls), merchants=len(targets), consoles=bool(consoles),
+         lists=recap["lists"])
     # Resolve every URL first (read-only http_get, no browser) so a bad URL is
     # reported without holding the browser lock.
     resolved: list[tuple[str, AksResolution]] = []
@@ -613,13 +666,13 @@ def run_plan(urls: list[str], targets: list[tuple[str, str]], *, available: str,
         return recap
 
     if session is not None:                       # injected (tests) — no real browser
-        _plan_games(session, resolved, targets, recap, available, feed_page, _flush, emit,
+        _plan_games(session, resolved, targets, recap, available, feed_pages, _flush, emit,
                     consoles=consoles, page_resolver=page_guard)
     else:
         with browser_lock(ROOT,
                           label="11_data_entry_by_urls (read-only) " + " ".join(urls)[:120]):
             with SubmitSession(endpoint) as live:
-                _plan_games(live, resolved, targets, recap, available, feed_page, _flush, emit,
+                _plan_games(live, resolved, targets, recap, available, feed_pages, _flush, emit,
                             consoles=consoles, page_resolver=page_guard)
     if recap.get("aborted"):
         emit("run_aborted", reason=recap["aborted"])
@@ -631,11 +684,13 @@ def run_plan(urls: list[str], targets: list[tuple[str, str]], *, available: str,
 
 
 def _plan_games(session: Any, resolved: list[tuple[str, AksResolution]], targets, recap: dict,
-                available: str, feed_page: str, flush: Callable[[], None],
+                available: str, feed_page: "str | list[str]", flush: Callable[[], None],
                 emit: Callable[..., Any] = lambda *a, **k: None, *, consoles: bool = True,
                 page_resolver: Callable[[str], AksResolution | None] = resolve_aks_url) -> None:
     # store_id -> merchant name, the vetted allowlist we keep from the results.
     store_to_merchant = {str(store): merchant for merchant, store in targets}
+    feed_pages = [feed_page] if isinstance(feed_page, str) else list(feed_page)
+    list_order = [_list_no(fp) for fp in feed_pages]
     for url, resolution in resolved:
         page_kind = page_kind_of(resolution.url)
         game: dict[str, Any] = {
@@ -648,7 +703,7 @@ def _plan_games(session: Any, resolved: list[tuple[str, AksResolution]], targets
         emit("game_start", aks_name=resolution.aks_name, aks_product_id=resolution.product_id,
              page_kind=page_kind)
         try:
-            rows, meta = search_all_merchants(session, resolution, available, feed_page)
+            rows, meta = search_all_merchants(session, resolution, available, feed_pages)
         except NotLoggedInError:
             # Fail-closed STOP — NEVER a re-auth trigger (AGENTS.md).
             recap["aborted"] = "not_logged_in"
@@ -668,23 +723,28 @@ def _plan_games(session: Any, resolved: list[tuple[str, AksResolution]], targets
         # Group the all-merchants results by store, keeping only the vetted allowlist.
         # Off-allowlist rows (non-vetted merchants) are recorded WITH their URL so the
         # operator can still see every search result, not just a count (Romain 2026-08-25).
-        by_store: dict[str, list[dict]] = {}
+        # LISTES (2026-10-06) : un bloc par (marchand, liste) — une ligne trouvée dans la liste
+        # 22 sera relocalisée et prouvée disparue dans la 22, jamais dans la 9.
+        by_store: dict[tuple[str, str], list[dict]] = {}
         off_allowlist_offers: list[dict] = []
         for r in rows:
             sid = str(r.get("store_id") or "")
+            lid = str(r.get("list_id") or list_order[0])
             if sid in store_to_merchant:
-                by_store.setdefault(sid, []).append(r)
+                by_store.setdefault((sid, lid), []).append(r)
             else:
                 off_allowlist_offers.append({"store_id": sid, "name": str(r.get("name") or ""),
-                                             "url": str(r.get("url") or "")})
+                                             "url": str(r.get("url") or ""), "list_id": lid})
         game["search"] = {**meta, "found": len(rows), "off_allowlist": len(off_allowlist_offers)}
         game["off_allowlist_offers"] = off_allowlist_offers
         emit("game_searched", aks_name=resolution.aks_name, found=len(rows),
-             off_allowlist=len(off_allowlist_offers), truncated=meta["truncated"])
+             off_allowlist=len(off_allowlist_offers), truncated=meta["truncated"],
+             per_list=meta.get("per_list"))
 
         for merchant, store_id in targets:
-            mrows = by_store.get(str(store_id))
-            if not mrows:                      # merchant absent from the results — omit
+          for lid in list_order:
+            mrows = by_store.get((str(store_id), lid))
+            if not mrows:                      # merchant absent from this list — omit
                 continue
             try:
                 per = plan_from_rows(mrows, resolution, merchant, str(store_id),
@@ -700,6 +760,7 @@ def _plan_games(session: Any, resolved: list[tuple[str, AksResolution]], targets
                 emit("game_done", aks_name=resolution.aks_name, error="aks_throttled")
                 flush()
                 return
+            per["list_id"] = lid
             game["merchants"].append(per)
             game["total_candidates"] += len(per["candidates"])
             for c in per["candidates"]:
@@ -707,15 +768,16 @@ def _plan_games(session: Any, resolved: list[tuple[str, AksResolution]], targets
                 emit("candidate", aks_name=resolution.aks_name, merchant=merchant,
                      name=o.get("name", ""), region=f"{reg.get('label')}({reg.get('id')})",
                      edition=f"{ed.get('label')}({ed.get('id')})",
-                     targets=len(c.get("targets") or []))
+                     targets=len(c.get("targets") or []), list_id=lid)
             # Stream each SKIPPED search result live, with its URL + reason, so the
             # operator sees what was ignored in real time (Romain 2026-08-25).
             for sk in per["skipped"]:
                 emit("skipped", aks_name=resolution.aks_name, merchant=merchant,
-                     name=sk.get("name", ""), url=sk.get("url", ""), reason=sk.get("reason", ""))
+                     name=sk.get("name", ""), url=sk.get("url", ""), reason=sk.get("reason", ""),
+                     list_id=lid)
             emit("merchant_done", aks_name=resolution.aks_name, merchant=merchant,
                  found=per["found"], candidates=len(per["candidates"]),
-                 skipped=len(per["skipped"]))
+                 skipped=len(per["skipped"]), list_id=lid)
         recap["totals"]["candidates"] += game["total_candidates"]
         recap["games"].append(game)
         emit("game_done", aks_name=resolution.aks_name, candidates=game["total_candidates"])
@@ -744,7 +806,8 @@ def write_report(recap: dict, run_dir: Path) -> None:
                 n += 1
                 o = cand["offer"]
                 reg, ed = cand["region"], cand["edition"]
-                lines.append(f"   #{n} [{per['merchant']}] {o['name']}")
+                liste = f" · liste {per['list_id']}" if str(per.get("list_id") or "9") != "9" else ""
+                lines.append(f"   #{n} [{per['merchant']}{liste}] {o['name']}")
                 lines.append(f"      {o['url']}")
                 lines.append(f"      {reg['label']}({reg['id']}), {ed['label']}({ed['id']})")
                 # [R45] every EXTRA target page of a multi-target candidate, and the rule
@@ -774,6 +837,11 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--targets", help="Override merchant scope 'M:store,...' (default: full allowlist).")
     ap.add_argument("--available", default="all", choices=["all", "pending"])
     ap.add_argument("--feed-page", default=DEFAULT_FEED_PAGE)
+    ap.add_argument("--lists", default=None,
+                    help="Listes AKS à chercher, séparées par des virgules (ex. 9,22,30) — Romain "
+                         "2026-10-06 : l'opérateur choisit les listes ; chaque offre est saisie dans "
+                         "la liste où elle a été trouvée. Défaut : la liste de --feed-page (9). La "
+                         "Blacklist (8) et ses variantes sont refusées.")
     ap.add_argument("--endpoint", default=OFFICIAL_CDP_ENDPOINT)
     ap.add_argument("--dry-run", action="store_true", default=True,
                     help="Read-only preview (the only mode in stage 1).")
@@ -796,6 +864,14 @@ def main(argv: list[str] | None = None) -> int:
     urls = _parse_urls(args)
     run_dir = ROOT / "runs" / args.run_id
     run_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        lists = parse_lists_arg(args.lists, default_feed_page=args.feed_page)
+    except ValueError as exc:
+        recap = {"mode": "dry-run", "aborted": f"bad_lists: {exc}"[:200], "games": [],
+                 "totals": {"games": len(urls), "resolved": 0, "candidates": 0}}
+        _write_json_atomic(run_dir / "recap.json", recap)
+        print(json.dumps({"run_id": args.run_id, "aborted": recap["aborted"]}, ensure_ascii=False))
+        return 2
     if not urls:
         recap = {"mode": "dry-run", "aborted": "no_urls", "games": [],
                  "totals": {"games": 0, "resolved": 0, "candidates": 0}}
@@ -828,12 +904,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         recap = run_plan(urls, _targets(args.targets), available=args.available,
                          feed_page=args.feed_page, endpoint=args.endpoint, run_dir=run_dir,
-                         logger=logger, consoles=args.consoles)
+                         logger=logger, consoles=args.consoles, lists=lists)
     except BrowserBusyError as exc:
         print(json.dumps({"run_id": args.run_id, "aborted": f"browser_busy: {exc}"}))
         return 2
     write_report(recap, run_dir)
     print(json.dumps({"run_id": args.run_id, "mode": "dry-run", "consoles": bool(args.consoles),
+                      "lists": recap.get("lists"),
                       "resolved": recap["totals"]["resolved"],
                       "games": recap["totals"]["games"],
                       "candidates": recap["totals"]["candidates"],

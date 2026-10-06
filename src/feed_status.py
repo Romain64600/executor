@@ -227,7 +227,7 @@ def created_by_day(runs_dir: Path, merchant: str, store_id: str) -> tuple[dict[s
             continue
         n = p.name
         is_page_run = f"-{merchant_slug}-s{store_id}-p" in n
-        is_by_urls = n.endswith(f"-by-urls-submit-s{store_id}")
+        is_by_urls = bool(re.search(rf"-by-urls-submit-s{re.escape(str(store_id))}(?:-l\d+)?$", n))
         if not (is_page_run or is_by_urls):
             continue
         plan = _load(p / "submit_plan.json")

@@ -7,6 +7,7 @@ the operator's typed GO.
 import importlib.util
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 
@@ -133,6 +134,51 @@ def _console_cand(oid="7"):
             ]}
 
 
+class ListeSurLArgvDe05Tests(unittest.TestCase):
+    """LISTES (Romain, 2026-10-06) : le lot d'une liste est saisi DANS cette liste — 05 reçoit
+    `--list <liste>` (relocalisation par recherche et preuve de disparition dans la même liste)."""
+
+    def test_submit_merchant_passe_la_liste_a_05(self):
+        vu = {}
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(M, "apply_overrides_and_validate", lambda *a, **k: None), \
+                mock.patch.object(M, "_run_child", lambda argv: vu.setdefault("argv", argv) and 0), \
+                mock.patch.object(M, "_read_submit_plan",
+                                  lambda run_dir, rc: M.SubmitOutcome(ok=True, created=1)):
+            sm = M._make_submit_merchant("all", _Log())
+            out = sm("G2A", "38", [_cand()], Path(d) / "sub", "22")
+        self.assertTrue(out.clean())
+        argv = vu["argv"]
+        self.assertEqual(argv[argv.index("--list") + 1], "22")
+        self.assertIn("--locate-by-search", argv)
+        # sans liste dite : la file Pending, comme avant
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(M, "apply_overrides_and_validate", lambda *a, **k: None), \
+                mock.patch.object(M, "_run_child", lambda argv: vu.update(argv2=argv) or 0), \
+                mock.patch.object(M, "_read_submit_plan",
+                                  lambda run_dir, rc: M.SubmitOutcome(ok=True, created=1)):
+            M._make_submit_merchant("all", _Log())("G2A", "38", [_cand()], Path(d) / "sub")
+        self.assertEqual(vu["argv2"][vu["argv2"].index("--list") + 1], "9")
+
+    def test_run_by_urls_submit_un_sous_run_par_liste(self):
+        seen = []
+
+        def submit_merchant(merchant, store_id, candidates, sub_run, list_id):
+            seen.append((store_id, list_id, sub_run.name, [c["offer"]["offer_id"] for c in candidates]))
+            return M.SubmitOutcome(ok=True, created=len(candidates))
+        a, b = _with_key(_cand("1")), _with_key(_cand("2"))
+        recap = {"available": "all", "consoles": True,
+                 "games": [_game("u1", "205027", [dict(_grp("G2A", "38", [a]), list_id="9"),
+                                                  dict(_grp("G2A", "38", [b]), list_id="22")])],
+                 "totals": {"games": 1, "resolved": 1, "candidates": 2}}
+        with tempfile.TemporaryDirectory() as d:
+            out = M.run_by_urls_submit(recap, available="all", submit_merchant=submit_merchant,
+                                       make_sub_run=lambda sid, lid: Path(d) / (f"s{sid}" + (f"-l{lid}" if lid != "9" else "")))
+        self.assertIsNone(out["aborted"])
+        self.assertEqual(seen, [("38", "9", "s38", ["1"]), ("38", "22", "s38-l22", ["2"])])
+        self.assertEqual([(m["store_id"], m["list_id"]) for m in out["merchants"]], [("38", "9"), ("38", "22")])
+
+
 class ConsoleFlagTests(unittest.TestCase):
     """[R45] Romain 2026-09-15: the admin launcher passes --consoles / --no-consoles to
     the submit as well; accepted (default ON). 05_submit reads the targets from
@@ -193,7 +239,7 @@ class MultiTargetWholeTests(unittest.TestCase):
         # untouched — a 2-target candidate reaches submit_merchant with both targets.
         seen = []
 
-        def submit_merchant(merchant, store_id, candidates, sub_run):
+        def submit_merchant(merchant, store_id, candidates, sub_run, list_id):
             seen.append((merchant, store_id, candidates))
             return M.SubmitOutcome(ok=True, created=len(candidates))
 
@@ -206,7 +252,7 @@ class MultiTargetWholeTests(unittest.TestCase):
                  "totals": {"games": 1, "resolved": 1, "candidates": 1}}
         with tempfile.TemporaryDirectory() as d:
             out = M.run_by_urls_submit(recap, available="all", submit_merchant=submit_merchant,
-                                       make_sub_run=lambda sid: Path(d) / f"s{sid}")
+                                       make_sub_run=lambda sid, lid: Path(d) / f"s{sid}")
         self.assertIsNone(out["aborted"])
         self.assertEqual(len(seen), 1)
         (_m, _s, cands) = seen[0]
@@ -476,7 +522,8 @@ def _js_cand_fingerprint(c):
 
 
 def _js_submit_batch(recap):
-    """Port of urls.js submitBatch (rows keep the candidate dict for the comparison)."""
+    """Port of urls.js submitBatch (rows keep the candidate dict for the comparison).
+    LISTES (2026-10-06) : la clé du lot est (magasin, liste) — `list_id` absent vaut la 9."""
     order, groups = [], {}
     for g in recap.get("games") or []:
         if not g.get("resolved") or g.get("error"):
@@ -485,18 +532,20 @@ def _js_submit_batch(recap):
             sid = "" if per.get("store_id") is None else str(per.get("store_id"))
             if not sid:
                 continue
-            grp = groups.get(sid)
+            lid = str(per.get("list_id") or "9")
+            key_g = sid + "|" + lid
+            grp = groups.get(key_g)
             if grp is None:
-                grp = groups[sid] = {"merchant": per.get("merchant") or "", "store_id": sid,
-                                     "rows": [], "seen": set()}
-                order.append(sid)
+                grp = groups[key_g] = {"merchant": per.get("merchant") or "", "store_id": sid,
+                                       "list_id": lid, "rows": [], "seen": set()}
+                order.append(key_g)
             for c in per.get("candidates") or []:
                 key = _js_cand_fingerprint(c)
                 if key in grp["seen"]:
                     continue
                 grp["seen"].add(key)
                 grp["rows"].append(c)
-    return [groups[sid] for sid in order if groups[sid]["rows"]]
+    return [groups[k] for k in order if groups[k]["rows"]]
 
 
 def _js_counts(groups):
@@ -531,10 +580,24 @@ class BatchMirrorTests(unittest.TestCase):
         self.engine = _candidates_by_store
 
     def _same(self, recap):
-        got = [{"merchant": g["merchant"], "store_id": g["store_id"], "candidates": g["rows"]}
+        got = [{"merchant": g["merchant"], "store_id": g["store_id"], "list_id": g["list_id"],
+                "candidates": g["rows"]}
                for g in _js_submit_batch(recap)]
         self.assertEqual(got, self.engine(recap))
         return got
+
+    def test_une_liste_par_lot_meme_magasin_deux_listes_deux_lots(self):
+        # LISTES (Romain, 2026-10-06) : la même offre G2A trouvée dans la liste 9 et une autre
+        # dans la 22 → DEUX lots (store 38, liste 9) et (store 38, liste 22), chacun saisi dans
+        # sa liste ; sans `list_id` (aperçu d'avant), le lot vaut la 9.
+        a, b = _with_key(_cand("1")), _with_key(_cand("2"))
+        g9 = dict(_grp("G2A", "38", [a]), list_id="9")
+        g22 = dict(_grp("G2A", "38", [b]), list_id="22")
+        recap = {"games": [_game("u1", "205027", [g9, g22]), _game("u2", "205027", [_grp("G2A", "38", [a])])],
+                 "totals": {"games": 2, "resolved": 2, "candidates": 3}}
+        groups = self._same(recap)
+        self.assertEqual([(g["store_id"], g["list_id"], [c["offer"]["offer_id"] for c in g["candidates"]])
+                          for g in groups], [("38", "9", ["1"]), ("38", "22", ["2"])])
 
     def test_hades_ps4_ps5_double_search_is_one_offer_two_pages(self):
         # Two pasted URLs (Hades PS4 + Hades PS5); ONE G2A offer « Hades (PS4 / PS5) »

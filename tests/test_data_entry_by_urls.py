@@ -10,6 +10,8 @@ closed, and the live log events. The browser is faked — no network, no CDP.
 import importlib.util
 import tempfile
 import unittest
+from unittest import mock
+import json
 import urllib.parse as _up
 from pathlib import Path
 
@@ -873,3 +875,97 @@ class ConsoleFlagTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class _ListAwareSearchSession(FakeSearchSession):
+    """Rows keyed on (``list``, ``search[field]``) — the AKS search is one list at a time."""
+
+    def __init__(self, rows_by_list_field, **kw):
+        super().__init__({}, **kw)
+        self.rows_by_list_field = rows_by_list_field
+        self._list = None
+
+    def navigate(self, url, settle=None):
+        super().navigate(url, settle)
+        q = _up.parse_qs(_up.urlsplit(url).query)
+        self._list = (q.get("list") or [None])[0]
+
+    def page_offer_rows(self):
+        if self._page > 1:
+            return []
+        return [dict(r) for r in self.rows_by_list_field.get((self._list, self._field), [])]
+
+
+class ListesChoisiesTests(unittest.TestCase):
+    """Romain, 2026-10-06 : « pour la saisie par jeu, je voudrais que l'opérateur puisse choisir
+    les listes ; elles seraient toutes cochées par défaut, sauf la blacklist ». Chaque liste est
+    cherchée à son tour, chaque ligne porte la liste où elle a été trouvée, et c'est là qu'elle
+    sera saisie."""
+
+    def test_parse_lists_arg(self):
+        self.assertEqual(M.parse_lists_arg(None), ["9"])
+        self.assertEqual(M.parse_lists_arg("", default_feed_page="aks-merchant-feeds-22"), ["22"])
+        self.assertEqual(M.parse_lists_arg("9, 22,30,9"), ["9", "22", "30"])
+        for mauvais in ("8", "9,8", "14", "neuf", "0", "-3"):
+            with self.subTest(mauvais):
+                with self.assertRaises(ValueError):
+                    M.parse_lists_arg(mauvais)
+
+    def test_une_liste_par_recherche_et_la_liste_sur_chaque_ligne(self):
+        s = _ListAwareSearchSession({
+            ("9", "name"): [_row("1", "Neon Beats Steam", "https://m/1", store="999")],
+            ("9", "url"): [_row("1", "Neon Beats Steam", "https://m/1", store="999")],
+            ("22", "name"): [_row("2", "Neon Beats Deluxe", "https://m/2", store="999"),
+                             _row("3", "Neon Beats Steam", "https://m/1", store="999")],   # même URL que la 9
+        })
+        rows, meta = M.search_all_merchants(s, PAGE, "all", ["aks-merchant-feeds-9", "aks-merchant-feeds-22"])
+        self.assertEqual([(r["id"], r["list_id"]) for r in rows], [("1", "9"), ("2", "22")],
+                         "premier vu gagne : la file Pending d'abord, l'URL doublée en 22 n'est pas reprise")
+        self.assertEqual(meta["lists"], ["9", "22"])
+        self.assertEqual(meta["per_list"], {"9": 1, "22": 2})
+        lists_hit = [_up.parse_qs(_up.urlsplit(u).query)["list"][0] for u in s.nav]
+        self.assertEqual(lists_hit, ["9", "9", "22", "22"], "la 9 d'abord, puis la 22, nom et URL chacune")
+        # une seule page de feed, comme avant : la forme chaîne reste acceptée
+        rows1, meta1 = M.search_all_merchants(s, PAGE, "all", "aks-merchant-feeds-22")
+        self.assertEqual([r["list_id"] for r in rows1], ["22", "22"])
+        self.assertEqual(meta1["lists"], ["22"])
+
+    def test_run_plan_un_bloc_par_marchand_et_par_liste(self):
+        s = _ListAwareSearchSession({
+            ("9", "name"): [_row("100", "Neon Beats - Steam Key - GLOBAL", "https://testmart.com/neon-beats", store="999")],
+            ("22", "name"): [_row("101", "Neon Beats - Steam Key - GLOBAL", "https://testmart.com/neon-beats-22", store="999"),
+                             _row("300", "Neon Beats - Steam Key - GLOBAL", "https://x/300", store="777")],
+        })
+        with tempfile.TemporaryDirectory() as d:
+            recap = M.run_plan([URL], TARGETS, available="all", feed_page="aks-merchant-feeds-9",
+                               endpoint="x", run_dir=Path(d), http_get_fn=_ok(AKS_BODY), session=s,
+                               lists=["9", "22"])
+            self.assertIsNone(recap["aborted"])
+            self.assertEqual(recap["lists"], ["9", "22"])
+            g = recap["games"][0]
+            self.assertEqual(g["search"]["per_list"], {"9": 1, "22": 2})
+            self.assertEqual([(m["merchant"], m["list_id"], [c["offer"]["offer_id"] for c in m["candidates"]])
+                              for m in g["merchants"]],
+                             [("TestMart", "9", ["100"]), ("TestMart", "22", ["101"])])
+            self.assertEqual(g["off_allowlist_offers"][0]["list_id"], "22")
+            M.write_report(recap, Path(d))
+            report = (Path(d) / "report.txt").read_text()
+            self.assertIn("[TestMart · liste 22]", report)
+            self.assertIn("[TestMart] Neon Beats", report)   # la file Pending reste nue
+
+    def test_sans_lists_le_comportement_d_avant(self):
+        s = FakeSearchSession({"name": [_row("100", "Neon Beats - Steam Key - GLOBAL",
+                                              "https://testmart.com/neon-beats", store="999")]})
+        with tempfile.TemporaryDirectory() as d:
+            recap = M.run_plan([URL], TARGETS, available="all", feed_page="aks-merchant-feeds-9",
+                               endpoint="x", run_dir=Path(d), http_get_fn=_ok(AKS_BODY), session=s)
+        self.assertEqual(recap["lists"], ["9"])
+        self.assertEqual([m["list_id"] for m in recap["games"][0]["merchants"]], ["9"])
+
+    def test_cli_refuse_une_blacklist_avant_tout(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(M, "ROOT", Path(d)):
+            (Path(d) / "runs").mkdir()
+            rc = M.main(["--run-id", "t", "--urls", URL, "--lists", "9,8"])
+            self.assertEqual(rc, 2)
+            recap = json.loads((Path(d) / "runs" / "t" / "recap.json").read_text())
+            self.assertIn("bad_lists", recap["aborted"])
