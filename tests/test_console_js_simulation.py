@@ -299,7 +299,7 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             "mode du lancement": ("body: JSON.stringify({ mode })", "body: JSON.stringify({})"),
             "bouton grisé pendant le passage": ("btn.disabled = !!pending || !!m.running;", "btn.disabled = false;"),
             # 02/10/2026 : le recontrôle (réparées)
-            "réparée affichée": ('const pill = isRuleCleared(r) ? "FAUX POSITIF LEVÉ" : isVerified(r) ? "VÉRIFIÉE OK" : isFixed(r) ? "RÉPARÉE" : (r.verdict || "?");',
+            "réparée affichée": ('const pill = isRuleCleared(r) ? T("FAUX POSITIF LEVÉ") : isVerified(r) ? T("VÉRIFIÉE OK") : isFixed(r) ? T("RÉPARÉE") : (r.verdict || "?");',
                                  'const pill = r.verdict || "?";'),
             # 03/10/2026 : les reports des tops identifiés de ceux de la homepage
             "mode affiché": ('MODE_BADGE[r.mode] ? el("span"', 'false ? el("span"'),
@@ -320,7 +320,7 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             "deux étapes": ('el("div", { class: "pc-step pc-step-note" }', 'el("div", { class: "pc-step-note" }'),
             # 05/10/2026 : qui a traité le report
             "traité par, en tête de carte": (
-                ': "✔ Traité par " + (handledBy(r) || "?") + " · " + labelOf(cur) + (isToFix(r) ? " · à corriger" : "") })',
+                ': T("✔ Traité par ") + (handledBy(r) || "?") + " · " + labelOf(cur) + (isToFix(r) ? T(" · à corriger") : "") })',
                 ': "" })'),
             "filtre traité par": ('if (by === "none" ? !isOpen(r) : by && handledBy(r) !== by) return false;', ""),
             # 05/10/2026 : les reports des tops séparés de ceux de la homepage
@@ -340,7 +340,7 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             "carte gardée dans la partie où elle a été tranchée": (
                 "const shownPart = (r) => { const j = JUST_DONE.get(String(r.offer)); return j && j.part != null ? j.part : partOf(r); };",
                 "const shownPart = (r) => partOf(r);"),
-            "compteur à discuter": ('kpi("k-discuss" + (n(isToDiscuss) ? " hot" : ""), n(isToDiscuss), "à discuter"),', ""),
+            "compteur à discuter": ('kpi("k-discuss" + (n(isToDiscuss) ? " hot" : ""), n(isToDiscuss), T("à discuter")),', ""),
             "question en tête de carte": ('cur === "a_discuter" ? el("div", { class: "pc-question" }',
                                           'false ? el("div", { class: "pc-question" }'),
             # 06/10/2026 : les reports traités archivés dans un autre onglet
@@ -357,7 +357,7 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
                 "const shownTab = (r) => tabOf(r);"),
             "lien vers un report archivé": ("if (target) TAB = tabOf(target);", ""),
             # 06/10/2026 : on tranche sur l'offre, pas sur le commentaire : le sens des boutons en clair
-            "sens des boutons en clair": ('(cur === "a_discuter" && MEANING[k] ? " : " + MEANING[k] : "")', '""'),
+            "sens des boutons en clair": ('(cur === "a_discuter" && MEANING[k] ? T(" : ") + MEANING[k] : "")', '""'),
             # 06/10/2026 : une page sortie des tops : la carte le dit
             "sortie des tops affichée": ('r.left_tops_at ? el("span", { class: "pc-left-tops"', 'false ? el("span", { class: "pc-left-tops"'),
             # audit Codex du 06/10/2026 : la 2e carte tranchée disparaissait aussitôt ; une note retouchée pendant l'envoi perdue
@@ -368,28 +368,36 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             # 06/10/2026 : « couleur orange quand on est au même prix que le concurrent », même dans un ancien relevé
             "même prix en orange": ('"same": "pc-even", ', ''),
             # 06/10/2026 : une page console n'est pas comparée (EA SPORTS FC 27 PS5), ni comptée introuvable
-            "page console non comparée": ('r.skipped === "console" ? "page console, non comparée" : "introuvable"', '"introuvable"'),
+            "page console non comparée": ('r.skipped === "console" ? T("page console, non comparée") : T("introuvable")', 'T("introuvable")'),
             "page console pas introuvable": ('rows.filter((r) => !r.competitor && !r.skipped).length', 'rows.filter((r) => !r.competitor).length'),
-            "égalité d'un ancien relevé en orange": ('&& cents(r.aks.price) === cents(r.competitor.price) ? "same" : r.cheaper',
-                                                    '&& false ? "same" : r.cheaper'),
+            "égalité d'un ancien relevé en orange": ('return cents(r.aks.price) === cents(best.total) ? "same" :',
+                                                    'return false ? "same" :'),
             "concurrent bloqué dit pourquoi": ('el("p", { class: "pc-comp-msg", text: site.message || "" })', 'el("p", { class: "pc-comp-msg" })'),
             # 06/10/2026 : « à la place de l'écart, mets le prix AKS »
-            "prix AKS à la place de l'écart": ('el("th", { text: account ? "Premier compte AKS" : "Première clé AKS" })',
+            "prix AKS à la place de l'écart": ('el("th", { text: account ? T("Premier compte AKS") : T("Première clé AKS") })',
                                                'el("th", { text: "Écart" })'),
             # 06/10/2026 : « on compare clé avec clé et compte avec compte. On ne mélange pas »
             "comptes à part": ("const accounts = site.accounts || [];", "const accounts = [];"),
             # 06/10/2026 : fee / error, « plus ou moins d'euros », par concurrent, page et genre
-            "fee envoyé avec son genre": ("body: JSON.stringify({ site: siteId, page_url: r.page_url, kind, value })",
-                                          "body: JSON.stringify({ site: siteId, page_url: r.page_url, value })"),
-            "prix corrigé du fee": ("return f == null ? null : Math.round((r.competitor.price + f) * 100) / 100;", "return null;"),
-            "couleur avec le fee": ("if (withFee != null && r.aks && typeof r.aks.price === \"number\") {", "if (false) {"),
-            "fee tapé gardé après un refus": ("box.value = FEE_DRAFTS[key] != null ? FEE_DRAFTS[key] : (r.fee ? feeText(r.fee.value) : \"\");",
-                                              "box.value = r.fee ? feeText(r.fee.value) : \"\";"),
+            "fee envoyé avec son genre": ("body: JSON.stringify({ site: siteId, page_url: r.page_url, kind, seller, value })",
+                                          "body: JSON.stringify({ site: siteId, page_url: r.page_url, seller, value })"),
+            # 06/10/2026 : « pourquoi Instant Gaming reste premier prix alors que j'y ai rajouté 20 € ? »
+            "fee chez le marchand affiché": ("body: JSON.stringify({ site: siteId, page_url: r.page_url, kind, seller, value })",
+                                             "body: JSON.stringify({ site: siteId, page_url: r.page_url, kind, value })"),
+            "prix corrigé du fee": ("total: f ? Math.round((o.price + f.value) * 100) / 100 : o.price", "total: o.price"),
+            "l'offre suivante prend la place": ("}).sort((x, y) => x.total - y.total || x.price - y.price);", "});"),
+            "couleur avec le fee": ("return cents(r.aks.price) === cents(best.total) ? \"same\" : cents(r.aks.price) < cents(best.total) ? \"aks\" : \"competitor\";",
+                                    "return r.cheaper;"),
+            "fee tapé gardé après un refus": ("box.value = FEE_DRAFTS[key] != null ? FEE_DRAFTS[key] : (best.fee ? feeText(best.fee.value) : \"\");",
+                                              "box.value = best.fee ? feeText(best.fee.value) : \"\";"),
+            "fee effaçable": ("for (const o of offers.slice(1).filter((x) => x.fee)) {", "for (const o of []) {"),
             # 06/10/2026 : la console, réservée à Romain et à l'équipe ; la récolte à Romain seul
             "console réservée": ('$("#pc-console").classList.toggle("hidden", !d);', '$("#pc-console").classList.toggle("hidden", false);'),
             "récolte réservée à Romain": ('$("#pc-harvest").classList.toggle("hidden", !owner);', '$("#pc-harvest").classList.toggle("hidden", false);'),
             "message envoyé": ('if (await sendChat("api/price-check/console", { text },', 'if (await sendChat("api/price-check/console", {},'),
             "lien vers l'onglet Romain": ('el("a", { href: "romain", text: "Romain" })', 'el("span", { text: "Romain" })'),
+            # 07/10/2026 : « une version anglaise et une version française » de l'admin
+            "traduction": ('const T = (fr) => (LANG === "en" &&', 'const T = (fr) => (false &&'),
             "premier prix AKS à côté": ('text: a ? euros(a.price) + " · " + (a.merchant || "?")', 'text: a ? "" + (a.merchant || "?")'),
         }
         for name, (before, after) in mutations.items():
@@ -465,7 +473,8 @@ class RomainTabSimulationTests(unittest.TestCase):
             "réponse envoyée": ('body: JSON.stringify({ question: id, note: ANSWERS[id] || "" })', "body: JSON.stringify({ question: id })"),
             "reports à discuter": ('r.decision.decision === "a_discuter"', "false"),
             "réglée une seule fois": ("SENT.add(id);", ""),
-            "refus affiché": ('setStatus(id + " non réglée : " + e.message, false);', ""),
+            "traduction": ('const T = (fr) => (LANG === "en" &&', 'const T = (fr) => (false &&'),
+            "refus affiché": ('setStatus(id + T(" non réglée : ") + e.message, false);', ""),
         }
         for name, (before, after) in mutations.items():
             with self.subTest(name):

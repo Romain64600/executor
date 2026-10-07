@@ -683,7 +683,7 @@ class AdminHandler(BaseHTTPRequestHandler):
             raise ApiError(403, "authentication_required", "fee : identité Basic authentifiée requise")
         try:
             entry = price_check_io.record_fee(self.state.price_check_dir, body.get("site"), body.get("page_url"),
-                                              body.get("kind"), body.get("value"), by=authed)
+                                              body.get("kind"), body.get("value"), by=authed, seller=body.get("seller"))
         except price_check_io.PriceCheckError as exc:
             raise ApiError(exc.http_status, exc.code, exc.message) from exc
         self._send_json(200, {"recorded": entry})

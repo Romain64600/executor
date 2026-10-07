@@ -12,20 +12,21 @@
   <header class="topbar">
     <div class="brand">
       <span class="dot"></span>
-      <h1>Romain <span class="sub">— les questions en cours</span></h1>
+      <h1>Romain <span class="sub"><span lang="fr">— les questions en cours</span><span lang="en">— the open questions</span></span></h1>
     </div>
     <nav class="tabs">
       <a href="." class="tab">Validation &amp; Submit</a>
-      <a href="tri" class="tab">Tri des listes</a>
+      <a href="tri" class="tab"><span lang="fr">Tri des listes</span><span lang="en">List sorting</span></a>
       <a href="auto" class="tab">Data Entry Auto</a>
-      <a href="games" class="tab">Saisie par jeux</a>
-      <a href="sql" class="tab">Tri SQL</a>
-      <a href="overview" class="tab">Vue d'ensemble</a>
+      <a href="games" class="tab"><span lang="fr">Saisie par jeux</span><span lang="en">Entry by games</span></a>
+      <a href="sql" class="tab"><span lang="fr">Tri SQL</span><span lang="en">SQL sorting</span></a>
+      <a href="overview" class="tab"><span lang="fr">Vue d'ensemble</span><span lang="en">Overview</span></a>
       <a href="price-check" class="tab">Price check</a>
       <a href="romain" class="tab active" aria-current="page">Romain</a>
     </nav>
     <div class="topbar-right">
-      <button id="refresh" type="button" title="Relire les questions">↻ Rafraîchir</button>
+      <button id="refresh" type="button" title="Relire les questions">↻ <span lang="fr">Rafraîchir</span><span lang="en">Refresh</span></button>
+      <button id="lang" type="button" title="Switch to English">EN</button>
       <button id="theme" type="button" title="Basculer le thème">◐</button>
     </div>
   </header>
@@ -33,30 +34,34 @@
   <main class="pc-main">
     <section class="card" id="rm-open">
       <div class="recap-head">
-        <h2>Questions en cours <span id="rm-count" class="dim"></span></h2>
+        <h2><span lang="fr">Questions en cours</span><span lang="en">Open questions</span> <span id="rm-count" class="dim"></span></h2>
       </div>
-      <p class="rm-legend">Tout ce qui attend la décision de Romain : les questions posées dans la
+      <p class="rm-legend"><span lang="fr">Tout ce qui attend la décision de Romain : les questions posées dans la
         <a href="price-check">console</a> (par Rémy, Garance, Lionel ou Claude) et les points de la récolte des décisions.
-        Tout le monde les consulte ; seul Romain les règle. <span id="rm-who"></span></p>
+        Tout le monde les consulte ; seul Romain les règle.</span><span lang="en">Everything waiting for Romain's decision:
+        the questions asked in the <a href="price-check">console</a> (by Rémy, Garance, Lionel or Claude) and the points of
+        the harvest of the decisions. Everyone can read them; only Romain settles them.</span> <span id="rm-who"></span></p>
       <div id="rm-questions" class="rm-list"></div>
     </section>
     <section class="card" id="rm-discuss">
       <div class="recap-head">
-        <h2>Reports à discuter <span id="rm-discuss-count" class="dim"></span></h2>
+        <h2><span lang="fr">Reports à discuter</span><span lang="en">Reports to discuss</span> <span id="rm-discuss-count" class="dim"></span></h2>
       </div>
-      <p class="rm-legend">Les reports tranchés « À discuter » attendent leur décision finale, sur la page
+      <p class="rm-legend" lang="fr">Les reports tranchés « À discuter » attendent leur décision finale, sur la page
         <a href="price-check">Price check</a>.</p>
+      <p class="rm-legend" lang="en">The reports put « To discuss » wait for their final decision, on the
+        <a href="price-check">Price check</a> page.</p>
       <div id="rm-reports" class="rm-list"></div>
     </section>
     <section class="card" id="rm-closed">
       <div class="recap-head">
-        <h2>Questions réglées <span id="rm-closed-count" class="dim"></span></h2>
+        <h2><span lang="fr">Questions réglées</span><span lang="en">Settled questions</span> <span id="rm-closed-count" class="dim"></span></h2>
       </div>
       <div id="rm-settled" class="rm-list"></div>
     </section>
   </main>
 
-  <footer id="status" class="idle">Chargement…</footer>
+  <footer id="status" class="idle"><span lang="fr">Chargement…</span><span lang="en">Loading…</span></footer>
   <script src="romain.js"></script>
 </body>
 </html>

@@ -1,4 +1,219 @@
 "use strict";
+// ---- FR / EN (Romain, 07/10/2026 : « comme t'as fait pour le guide, avoir une version anglaise et une version française »).
+// The interface is translated; the reports (the monitor's reasons, the notes, Claude's answers) stay in their language.
+// French is the source text and the key: T("…") gives English when the page is in English. The choice is kept per
+// browser (aks-lang); switching reloads the page. The fixed texts of the page exist in both languages (lang="fr" /
+// lang="en", pricecheck.css shows one).
+const LANG = (() => { try { return localStorage.getItem("aks-lang") === "en" ? "en" : "fr"; } catch (e) { return "fr"; } })();
+const EN = {
+ "les tops : 10 premiers Popular, 5 premiers Coming soon PC": "the tops: first 10 Popular, first 5 Coming soon PC",
+ "Aucun report sur les tops pour ces filtres.": "No report on the tops for these filters.",
+ "toute la homepage : widgets de la home, TOP 50 de chaque plateforme": "the whole homepage: home widgets, TOP 50 of every platform",
+ "Aucun report sur la homepage pour ces filtres.": "No report on the homepage for these filters.",
+ "💬 À discuter": "💬 To discuss",
+ "en attente d'une décision finale : Vrai positif ou Faux positif": "waiting for a final decision: True positive or False positive",
+ "Aucun report à discuter.": "No report to discuss.",
+ "Aucun report": "No report",
+ "Aucun report archivé": "No archived report",
+ "« À discuter », en tête de la liste": "« To discuss », at the top of the list",
+ "« Price check top »": "« Price check top »",
+ "« Price check homepage »": "« Price check homepage »",
+ "Price check top : la page est dans les tops (10 premiers Popular, 5 premiers Coming soon PC)": "Price check top: the page is in the tops (first 10 Popular, first 5 Coming soon PC)",
+ "Price check homepage : la page est dans les listes de la homepage (top clics, TOP 50)": "Price check homepage: the page is in the homepage lists (top clicks, TOP 50)",
+ "à traiter": "to handle",
+ "à discuter": "to discuss",
+ "à corriger": "to fix",
+ "premiers prix en erreur": "first prices wrong",
+ "tops à trancher": "tops to decide",
+ "homepage à trancher": "homepage to decide",
+ "réparées": "repaired",
+ "faux positifs levés": "false positives cleared",
+ "vérifiées OK": "verified OK",
+ "faux positifs jugés": "false positives judged",
+ "Vrai positif": "True positive",
+ "Faux positif": "False positive",
+ "À discuter": "To discuss",
+ "Vrai positif : alerter": "True positive: alert",
+ "Faux positif : ne pas alerter": "False positive: do not alert",
+ "💬 Mis à discuter par ": "💬 Put to discuss by ",
+ " le ": " on ",
+ " : en attente d'une décision finale, Vrai positif ou Faux positif": ": waiting for a final decision, True positive or False positive",
+ "✔ Traité par ": "✔ Handled by ",
+ " : ": ": ",
+ " — la carte quitte cette liste dans quelques secondes": " — the card leaves this list in a few seconds",
+ " — dans quelques secondes, la carte passe dans les archives": " — in a few seconds, the card moves to the archive",
+ " — dans quelques secondes, la carte revient en cours, dans ": " — in a few seconds, the card comes back in progress, in ",
+ " — dans quelques secondes, la carte passe dans ": " — in a few seconds, the card moves to ",
+ " — la carte reste en cours, « à corriger », jusqu'à ce que l'offre change": " — the card stays in progress, « to fix », until the offer changes",
+ "l'erreur est réelle": "the error is real",
+ "l'offre est correcte": "the offer is right",
+ "seulement si besoin, ex. « la fiche du marchand dit ROW »": "only if needed, e.g. « the merchant's page says ROW »",
+ "Pourquoi ? (note, seulement si besoin)": "Why? (note, only if needed)",
+ "Mettre à jour la note": "Update the note",
+ "Enregistre la note modifiée avec la décision déjà prise (": "Saves the changed note with the decision already taken (",
+ "Note modifiée, pas encore enregistrée : « Mettre à jour la note » ou Entrée": "Note changed, not saved yet: « Update the note » or Enter",
+ "Note pas encore enregistrée : elle part avec ta décision ②": "Note not saved yet: it leaves with your decision ②",
+ "région AKS : ": "AKS region: ",
+ "plateforme : ": "platform: ",
+ "contrôle : ": "check: ",
+ "offre ": "offer ",
+ " (était ": " (was ",
+ "Faux positif levé par une règle le ": "False positive cleared by a rule on ",
+ "rien n'a changé dans l'offre": "nothing changed in the offer",
+ "Vérifiée OK au recontrôle le ": "Verified OK at the re-check on ",
+ "vérifiée OK": "verified OK",
+ "Réparée le ": "Repaired on ",
+ "recontrôle OK": "re-check OK",
+ "Toujours en erreur au recontrôle du ": "Still wrong at the re-check of ",
+ "FAUX POSITIF LEVÉ": "FALSE POSITIVE CLEARED",
+ "VÉRIFIÉE OK": "VERIFIED OK",
+ "RÉPARÉE": "REPAIRED",
+ "✔ Décision enregistrée : ": "✔ Decision saved: ",
+ "Traité par ": "Handled by ",
+ "💬 À discuter (": "💬 To discuss (",
+ " · à corriger": " · to fix",
+ "À traiter": "To handle",
+ "sortie des tops le ": "left the tops on ",
+ "La page n'est plus dans les tops : le report reste dans « Price check top » jusqu'à sa décision": "The page is no longer in the tops: the report stays in « Price check top » until it is decided",
+ "PREMIER PRIX": "FIRST PRICE",
+ "L'une des 3 offres de clé les moins chères de son édition : un SUSPECT part sur le salon des urgences": "One of the 3 cheapest key offers of its edition: a SUSPECT goes to the emergency channel",
+ "Commentaire de ": "Comment by ",
+ "pas de note, à voir ensemble.": "no note, to see together.",
+ "🔧 À corriger : l'erreur est confirmée, l'offre n'a pas encore changé sur ": "🔧 To fix: the error is confirmed, the offer has not changed yet on ",
+ " (toujours en erreur au recontrôle du ": " (still wrong at the re-check of ",
+ "Plus vu en premier prix depuis le ": "Not seen as first price since ",
+ " : l'offre n'est plus en tête.": ": the offer is no longer first.",
+ "Page AllKeyShop": "AllKeyShop page",
+ "Offre marchand": "Merchant offer",
+ "Fil Discord": "Discord thread",
+ "Pourquoi ? (seulement si besoin)": "Why? (only if needed)",
+ "Ta décision": "Your decision",
+ "Pour clore la discussion, tranche sur l'offre, pas sur le commentaire : Vrai positif si l'erreur est réelle, Faux ": "To close the discussion, decide on the offer, not on the comment: True positive if the error is real, False ",
+ "positif si l'offre est correcte (par exemple quand le commentaire montre que la région est juste). La note suit ta décision.": "positive if the offer is right (for instance when the comment shows the region is right). The note follows your decision.",
+ "Pour changer la note : modifie-la, puis « Mettre à jour la note ». Pour changer d'avis : clique une autre décision, la note la suit.": "To change the note: edit it, then « Update the note ». To change your mind: click another decision, the note follows it.",
+ "D'accord avec l'erreur décrite ? Clique directement ta décision, sans note. La note sert à dire pourquoi tu ": "Agree with the error described? Click your decision right away, no note. The note is for saying why you ",
+ "n'es pas d'accord ou à préciser : écrite avant le clic, elle part avec ta décision.": "disagree or for a detail: written before the click, it leaves with your decision.",
+ "Avant : ": "Before: ",
+ "Non enregistrée : ": "Not saved: ",
+ "Tous": "All",
+ "Personne (à traiter)": "Nobody (to handle)",
+ "Traités par : ": "Handled by: ",
+ "Aucun report traité pour l'instant.": "No report handled yet.",
+ "En cours (": "In progress (",
+ "Archives (": "Archive (",
+ "Les reports réglés : réparés, faux positifs levés par une règle, vérifiés OK, et les faux positifs jugés. Mis « À discuter », un report revient en cours, en tête.": "The settled reports: repaired, false positives cleared by a rule, verified OK, and the false positives judged. Put « To discuss », a report comes back in progress, at the top.",
+ "Ce qui reste à faire : les reports à discuter, à traiter, et à corriger (vrai positif dont l'offre n'a pas encore changé). Réparé ou jugé faux positif, un report passe dans les archives.": "What is left to do: the reports to discuss, to handle, and to fix (true positive whose offer has not changed yet). Repaired or judged a false positive, a report moves to the archive.",
+ "Aucun report : le moniteur n'a rien signalé.": "No report: the monitor flagged nothing.",
+ ", dont ": ", including ",
+ " à traiter": " to handle",
+ " à corriger": " to fix",
+ " et ": " and ",
+ " masqué par les filtres": " hidden by the filters",
+ " masqués par les filtres": " hidden by the filters",
+ "Masqués par les filtres : ": "Hidden by the filters: ",
+ " à discuter.": " to discuss.",
+ "— export du ": "— export of ",
+ "Dernier export du moniteur ": "Last monitor export ",
+ " : le service price-check est peut-être arrêté (systemctl status price-check).": ": the price-check service may be stopped (systemctl status price-check).",
+ "Lecture des reports…": "Reading the reports…",
+ " report(s) lus dans ": " report(s) read from ",
+ "Reports illisibles : ": "Reports unreadable: ",
+ "Erreur : ": "Error: ",
+ "Enregistrement de la note…": "Saving the note…",
+ "Enregistrement de la décision…": "Saving the decision…",
+ "réponse inattendue du serveur": "unexpected server answer",
+ "Note enregistrée : ": "Note saved: ",
+ "Décision enregistrée : ": "Decision saved: ",
+ "Décision non enregistrée : ": "Decision not saved: ",
+ "Enregistrement du fee / error…": "Saving the fee / error…",
+ "Fee / error enregistré : ": "Fee / error saved: ",
+ "Fee / error effacé : ": "Fee / error cleared: ",
+ "Fee / error non enregistré : ": "Fee / error not saved: ",
+ "Fee / error chez ": "Fee / error at ",
+ "chez ": "at ",
+ "par ": "by ",
+ "Effacer le fee / error saisi chez ": "Clear the fee / error typed at ",
+ "dont fee / error ": "incl. fee / error ",
+ " affiché)": " shown)",
+ "page console, non comparée": "console page, not compared",
+ "introuvable": "not found",
+ " (compte)": " (account)",
+ "pas de compte sur AKS": "no account on AKS",
+ "Jeu": "Game",
+ "Meilleur compte ": "Best account at ",
+ "Meilleure clé ": "Best key at ",
+ "Ce que l'opérateur a vu au panier du concurrent : frais, ou prix faux, en euros, + ou −": "What the operator saw in the competitor's cart: fees, or a wrong price, in euros, + or −",
+ "Premier compte AKS": "AKS first account",
+ "Première clé AKS": "AKS first key",
+ "bloqué": "blocked",
+ " AKS moins cher · ": " AKS cheaper · ",
+ " même prix · ": " same price · ",
+ " concurrent moins cher": " competitor cheaper",
+ " introuvable": " not found",
+ " introuvables": " not found",
+ " page console non comparée": " console page not compared",
+ " pages console non comparées": " console pages not compared",
+ "Clés": "Keys",
+ "Comptes ": "Accounts ",
+ "— relevé du ": "— check of ",
+ "Pas encore de relevé des concurrents : le moniteur le fait toutes les 30 min pour les pages des tops.": "No competitor check yet: the monitor runs one every 30 min for the top pages.",
+ "— état du moniteur ": "— monitor state ",
+ "État du moniteur inconnu (status.json absent) : le bouton dépose quand même la demande.": "Monitor state unknown (no status.json): the button still files the request.",
+ " Demande en attente.": " Request waiting.",
+ "Mode non suivi par le moniteur.": "Mode not followed by the monitor.",
+ "En cours": "Running",
+ " : page ": ": page ",
+ " (demandé par ": " (requested by ",
+ " pages lues": " pages read",
+ "lancé depuis l'admin par ": "started from the admin by ",
+ "Dernier passage ": "Last pass ",
+ " nouvelle(s) offre(s) contrôlée(s)": " new offer(s) checked",
+ "aucune nouvelle offre à contrôler": "no new offer to check",
+ " alerte(s)": " alert(s)",
+ "Recontrôle complet ": "Full re-check ",
+ "Recontrôle des offres signalées ": "Re-check of the flagged offers ",
+ " offre(s), ": " offer(s), ",
+ " réparée(s), ": " repaired, ",
+ " faux positif(s) levé(s) par une règle, ": " false positive(s) cleared by a rule, ",
+ " vérifiée(s) OK, ": " verified OK, ",
+ " nouvelle(s) erreur(s), ": " new error(s), ",
+ " toujours en erreur": " still wrong",
+ "prochain passage ": "next pass ",
+ "demande en attente": "request waiting",
+ "Aucun passage encore.": "No pass yet.",
+ " par ": " by ",
+ "Demande déposée": "Request filed",
+ " : le moniteur la lit dans les secondes qui viennent.": ": the monitor reads it within seconds.",
+ "Refusé : ": "Refused: ",
+ " : question pour Romain, dans l'onglet ": ": question for Romain, in the tab ",
+ " : questions pour Romain, dans l'onglet ": ": questions for Romain, in the tab ",
+ " réglée": " settled",
+ " réglées": " settled",
+ "Pas encore de message : écris à Claude ci-dessous.": "No message yet: write to Claude below.",
+ "Le service de la console (price-check-console) n'a pas encore répondu.": "The console service (price-check-console) has not answered yet.",
+ "— Claude répond à ": "— Claude is answering ",
+ " en attente": " waiting",
+ "Console : ": "Console: ",
+ "Message envoyé : Claude répond dans la console": "Message sent: Claude answers in the console",
+ "Récolte demandée : Claude relit les décisions ; ses points à trancher iront dans l'onglet Romain": "Harvest requested: Claude reviews the decisions; its points to decide will go to the Romain tab",
+ "Nouvelle session demandée : Claude repart de zéro": "New session requested: Claude starts afresh",
+ "Relire les reports du moniteur": "Read the monitor's reports again",
+ "Guide de l'équipe : salons Discord, lire une alerte, trancher (FR / EN)": "Team guide: Discord channels, reading an alert, deciding (FR / EN)",
+ "Basculer le thème": "Switch the theme",
+ "Lancer un passage sur les top games maintenant": "Run a pass on the top games now",
+ "Lancer un passage sur la homepage maintenant": "Run a pass on the homepage now",
+ "Claude relit les décisions sur les reports et propose une action pour chacune ; chaque point à trancher va dans l'onglet Romain": "Claude reviews the decisions on the reports and proposes an action for each; every point to decide goes to the Romain tab",
+ "Claude repart de zéro (les messages restent affichés)": "Claude starts afresh (the messages stay on screen)",
+ "Message pour Claude": "Message for Claude",
+ "Écrire à Claude… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)": "Write to Claude… (Enter sends, Shift+Enter for a new line)",
+ "jeu, marchand, raison…": "game, merchant, reason…",
+ "Réparées": "Repaired",
+ "Faux positifs levés par une règle": "False positives cleared by a rule",
+ "Vérifiées OK (n'avaient pas pu être vérifiées)": "Verified OK (could not be verified before)",
+ "Toutes": "All",
+ "Sans décision": "No decision"
+};
+const T = (fr) => (LANG === "en" && typeof fr === "string" && Object.prototype.hasOwnProperty.call(EN, fr) ? EN[fr] : fr);
 // "Price check" — the reports of the first-price monitor (price-check repository). Each card is
 // an offer leading an AllKeyShop page, judged SUSPECT, À VÉRIFIER or NON VÉRIFIABLE, with its
 // AllKeyShop URL, its merchant URL and its reason. The operator decides (true positive / false
@@ -59,29 +274,29 @@ const MODE_BADGE = { "top-games": ["TOP", "m-top"], "homepage": ["HOMEPAGE", "m-
 // deux parties (les tops d'abord), chacune sous son titre ; une carte des tops porte une bande et un badge pleins.
 const MODE_CARD = { "top-games": "mode-top", "homepage": "mode-home" };
 const MODE_GROUPS = [
-  ["top-games", "g-top", "Price check top", "les tops : 10 premiers Popular, 5 premiers Coming soon PC", "Aucun report sur les tops pour ces filtres."],
-  ["homepage", "g-home", "Price check homepage", "toute la homepage : widgets de la home, TOP 50 de chaque plateforme",
-    "Aucun report sur la homepage pour ces filtres."],
+  ["top-games", "g-top", "Price check top", T("les tops : 10 premiers Popular, 5 premiers Coming soon PC"), T("Aucun report sur les tops pour ces filtres.")],
+  ["homepage", "g-home", "Price check homepage", T("toute la homepage : widgets de la home, TOP 50 de chaque plateforme"),
+    T("Aucun report sur la homepage pour ces filtres.")],
 ];
 // Romain, 06/10/2026 : « dans l'admin, il faudrait qu'on ait les tops, les home et la partie à discuter. Il faut pas
 // qu'on l'oublie, donc faut que ce soit bien visible ». A report put « à discuter » waits for a final decision (Vrai
 // positif or Faux positif): it leaves its mode's part for « À discuter », the first part of the list, in the colour of
 // that decision. The part always shows; the reports to discuss that the filters hide are counted, never silently gone.
 const PARTS = [
-  ["discuss", "g-discuss", "💬 À discuter", "en attente d'une décision finale : Vrai positif ou Faux positif", "Aucun report à discuter."],
+  ["discuss", "g-discuss", T("💬 À discuter"), T("en attente d'une décision finale : Vrai positif ou Faux positif"), T("Aucun report à discuter.")],
   ...MODE_GROUPS,
 ];
 // Romain, 06/10/2026 : « et une fois que ça a été traité, il faudrait les archiver sur un autre onglet ». Two tabs:
 // « En cours », what is left to do (to discuss, to handle), and « Archives », the reports decided Vrai positif or Faux
 // positif, or found repaired (cleared by a rule, verified OK) by the monitor. A report to discuss is never archived.
 const ARCHIVE_PARTS = MODE_GROUPS.map(([mode, cls, label, what, none]) =>
-  [mode, cls, label, what, none.replace("Aucun report", "Aucun report archivé")]);
+  [mode, cls, label, what, none.replace(T("Aucun report"), T("Aucun report archivé"))]);
 let TAB = "current";  // "current" | "archive"
-const PART_LABEL = { "discuss": "« À discuter », en tête de la liste", "top-games": "« Price check top »",
-  "homepage": "« Price check homepage »" };
+const PART_LABEL = { "discuss": T("« À discuter », en tête de la liste"), "top-games": T("« Price check top »"),
+  "homepage": T("« Price check homepage »") };
 const MODE_TITLE = {
-  "top-games": "Price check top : la page est dans les tops (10 premiers Popular, 5 premiers Coming soon PC)",
-  "homepage": "Price check homepage : la page est dans les listes de la homepage (top clics, TOP 50)",
+  "top-games": T("Price check top : la page est dans les tops (10 premiers Popular, 5 premiers Coming soon PC)"),
+  "homepage": T("Price check homepage : la page est dans les listes de la homepage (top clics, TOP 50)"),
 };
 const isOpen = (r) => !decisionKey(r) && !isFixed(r);
 // Romain, 03/10/2026: « je voudrais séparer les problèmes de premiers prix … premier prix = les 3 prix les moins chers
@@ -102,10 +317,9 @@ function stamp(s) {
   return m ? `${m[3]}/${m[2]} ${m[4]}:${m[5]}` : String(s || "");
 }
 function ago(sec) {
-  if (sec < 90) return "il y a " + Math.max(0, Math.round(sec)) + " s";
-  if (sec < 90 * 60) return "il y a " + Math.round(sec / 60) + " min";
-  if (sec < 48 * 3600) return "il y a " + Math.round(sec / 3600) + " h";
-  return "il y a " + Math.round(sec / 86400) + " j";
+  const [n, unit] = sec < 90 ? [Math.max(0, Math.round(sec)), "s"] : sec < 90 * 60 ? [Math.round(sec / 60), "min"]
+    : sec < 48 * 3600 ? [Math.round(sec / 3600), "h"] : [Math.round(sec / 86400), LANG === "en" ? "d" : "j"];
+  return LANG === "en" ? n + " " + unit + " ago" : "il y a " + n + " " + unit;
 }
 const price = (p) => (typeof p === "number" ? p.toFixed(2).replace(".", ",") + " €" : "");
 const shortLabel = (label) => String(label).split(" : ")[0];
@@ -133,11 +347,13 @@ const isArchived = (r) => ARCHIVED.has(stateOf(r));
 const isToFix = (r) => stateOf(r) === "tofix";
 const tabOf = (r) => (isArchived(r) ? "archive" : "current");
 const shownTab = (r) => { const j = JUST_DONE.get(String(r.offer)); return j && j.tab ? j.tab : tabOf(r); };
-const labelOf = (key) => shortLabel((DATA && DATA.decisions && DATA.decisions[key]) || key);
+const labelOf = (key) => T(shortLabel((DATA && DATA.decisions && DATA.decisions[key]) || key));
 const isGone = (r) => typeof r.seen_lag_seconds === "number" && r.seen_lag_seconds > GONE_SECONDS;
 // "2e prix de l'édition (compte)": the offer's rank in its edition when it was checked (Top Offers / Full Page).
-const rankLabel = (r) => (r.edition_rank ? (r.edition_rank === 1 ? "1er" : r.edition_rank + "e") +
-  " prix de l'édition" + (r.account ? " (compte)" : "") : "");
+const ordinal = (n) => (LANG === "en" ? n + (n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd"
+  : n % 10 === 3 && n % 100 !== 13 ? "rd" : "th") : n === 1 ? "1er" : n + "e");
+const rankLabel = (r) => (r.edition_rank ? ordinal(r.edition_rank) + (LANG === "en" ? " price of the edition" : " prix de l'édition") +
+  (r.account ? (LANG === "en" ? " (account)" : T(" (compte)")) : "") : "");
 
 // A link only for an http(s) URL: a value read from a file never becomes a clickable
 // "javascript:" URL.
@@ -204,17 +420,17 @@ function renderSummary(reports) {
   const state = (s) => (r) => stateOf(r) === s;
   $("#pc-summary").replaceChildren(
     // en cours
-    kpi("k-open", n(state("open")), "à traiter"),
-    kpi("k-discuss" + (n(isToDiscuss) ? " hot" : ""), n(isToDiscuss), "à discuter"),
-    kpi("k-tofix", n(isToFix), "à corriger"),
-    kpi("k-first", n((r) => !isArchived(r) && !isFixed(r) && r.verdict === "SUSPECT" && isFirstPrice(r)), "premiers prix en erreur"),
-    kpi("k-top", n((r) => isOpen(r) && r.mode === "top-games"), "tops à trancher"),
-    kpi("k-home", n((r) => isOpen(r) && r.mode === "homepage"), "homepage à trancher"),
+    kpi("k-open", n(state("open")), T("à traiter")),
+    kpi("k-discuss" + (n(isToDiscuss) ? " hot" : ""), n(isToDiscuss), T("à discuter")),
+    kpi("k-tofix", n(isToFix), T("à corriger")),
+    kpi("k-first", n((r) => !isArchived(r) && !isFixed(r) && r.verdict === "SUSPECT" && isFirstPrice(r)), T("premiers prix en erreur")),
+    kpi("k-top", n((r) => isOpen(r) && r.mode === "top-games"), T("tops à trancher")),
+    kpi("k-home", n((r) => isOpen(r) && r.mode === "homepage"), T("homepage à trancher")),
     // archives
-    kpi("k-fixed", n(state("fixed")), "réparées"),
-    kpi("k-rule", n(state("rule")), "faux positifs levés"),
-    kpi("k-verified", n(state("verified")), "vérifiées OK"),
-    kpi("k-faux", n(state("faux")), "faux positifs jugés"),
+    kpi("k-fixed", n(state("fixed")), T("réparées")),
+    kpi("k-rule", n(state("rule")), T("faux positifs levés")),
+    kpi("k-verified", n(state("verified")), T("vérifiées OK")),
+    kpi("k-faux", n(state("faux")), T("faux positifs jugés")),
     kpi("", reports.length, "reports"));
 }
 
@@ -222,10 +438,10 @@ function renderSummary(reports) {
 // opérateur l'a traitée » : « ✔ Traité par <opérateur> » en tête de carte et sous la décision, un
 // filtre « Traité par » et le décompte par opérateur.
 function decisionLine(d) {
-  if (d.decision === "a_discuter") return el("div", { class: "pc-decision" }, ["💬 Mis à discuter par ", el("b", { text: d.by || "?" }),
-    (d.at ? " le " + stamp(d.at) : "") + " : en attente d'une décision finale, Vrai positif ou Faux positif"]);
-  return el("div", { class: "pc-decision" }, ["✔ Traité par ", el("b", { text: d.by || "?" }),
-    (d.at ? " le " + stamp(d.at) : "") + " : " + labelOf(d.decision) + (d.note ? " — « " + d.note + " »" : "")]);
+  if (d.decision === "a_discuter") return el("div", { class: "pc-decision" }, [T("💬 Mis à discuter par "), el("b", { text: d.by || "?" }),
+    (d.at ? T(" le ") + stamp(d.at) : "") + T(" : en attente d'une décision finale, Vrai positif ou Faux positif")]);
+  return el("div", { class: "pc-decision" }, [T("✔ Traité par "), el("b", { text: d.by || "?" }),
+    (d.at ? T(" le ") + stamp(d.at) : "") + T(" : ") + labelOf(d.decision) + (d.note ? " — « " + d.note + " »" : "")]);
 }
 const handledBy = (r) => (r.decision && r.decision.by) || "";
 
@@ -241,18 +457,18 @@ function unsavedNote(offer, r) {
 
 // where a report just decided goes once its few seconds are over (05/10 and 06/10/2026)
 function doneWhere(r, just) {
-  if (!matchesFilters(r, true)) return " — la carte quitte cette liste dans quelques secondes";
-  if (just.tab && tabOf(r) !== just.tab) return tabOf(r) === "archive" ? " — dans quelques secondes, la carte passe dans les archives"
-    : " — dans quelques secondes, la carte revient en cours, dans " + PART_LABEL[partOf(r)];
-  if (PART_LABEL[partOf(r)] && partOf(r) !== just.part) return " — dans quelques secondes, la carte passe dans " + PART_LABEL[partOf(r)];
-  if (isToFix(r)) return " — la carte reste en cours, « à corriger », jusqu'à ce que l'offre change";
+  if (!matchesFilters(r, true)) return T(" — la carte quitte cette liste dans quelques secondes");
+  if (just.tab && tabOf(r) !== just.tab) return tabOf(r) === "archive" ? T(" — dans quelques secondes, la carte passe dans les archives")
+    : T(" — dans quelques secondes, la carte revient en cours, dans ") + PART_LABEL[partOf(r)];
+  if (PART_LABEL[partOf(r)] && partOf(r) !== just.part) return T(" — dans quelques secondes, la carte passe dans ") + PART_LABEL[partOf(r)];
+  if (isToFix(r)) return T(" — la carte reste en cours, « à corriger », jusqu'à ce que l'offre change");
   return "";
 }
 
 // Romain, 06/10/2026 : sur deux reports « à discuter », il a cliqué « Vrai positif » pour valider le commentaire de Rémy,
 // qui montrait que l'offre était juste. On tranche sur l'offre, pas sur le commentaire : sur une carte à discuter, le
 // sens de chaque bouton est écrit en clair.
-const MEANING = { vrai: "l'erreur est réelle", faux: "l'offre est correcte" };
+const MEANING = { vrai: T("l'erreur est réelle"), faux: T("l'offre est correcte") };
 
 const step = (n, title) => el("div", { class: "pc-step-title" }, [el("span", { class: "pc-num", text: String(n) }), title]);
 
@@ -263,13 +479,13 @@ function renderItem(r) {
   // Romain, 05/10/2026 : « mettre le texte à gauche, les boutons à droite et spécifier ça dans
   // l'admin » : ① Pourquoi ? (the note) on the left, ② Ta décision on the right, one click sends both.
   const note = el("textarea", { class: "pc-note", rows: "2", maxlength: "1000", autocomplete: "off",
-    placeholder: "seulement si besoin, ex. « la fiche du marchand dit ROW »", "aria-label": "Pourquoi ? (note, seulement si besoin)" });
+    placeholder: T("seulement si besoin, ex. « la fiche du marchand dit ROW »"), "aria-label": T("Pourquoi ? (note, seulement si besoin)") });
   note.value = NOTES[offer] != null ? NOTES[offer] : ((r.decision && r.decision.note) || "");
-  const saveNote = cur ? el("button", { type: "button", class: "pc-save-note", text: "Mettre à jour la note",
-    title: "Enregistre la note modifiée avec la décision déjà prise (" + labelOf(cur) + ")", onclick: () => decide(offer, cur) }) : null;
+  const saveNote = cur ? el("button", { type: "button", class: "pc-save-note", text: T("Mettre à jour la note"),
+    title: T("Enregistre la note modifiée avec la décision déjà prise (") + labelOf(cur) + ")", onclick: () => decide(offer, cur) }) : null;
   const pending = el("span", { class: "pc-unsaved", text: cur
-    ? "Note modifiée, pas encore enregistrée : « Mettre à jour la note » ou Entrée"
-    : "Note pas encore enregistrée : elle part avec ta décision ②" });
+    ? T("Note modifiée, pas encore enregistrée : « Mettre à jour la note » ou Entrée")
+    : T("Note pas encore enregistrée : elle part avec ta décision ②") });
   const showPending = () => {
     const open = unsavedNote(offer, r);
     note.classList.toggle("unsaved", open);
@@ -285,82 +501,82 @@ function renderItem(r) {
   });
   if (saveNote) saveNote.disabled = BUSY.has(offer);
   const buttons = Object.keys(labels).map((k) => {
-    const b = el("button", { type: "button", class: "d-" + k + (cur === k ? " on" : ""), title: labels[k],
-      text: shortLabel(labels[k]) + (cur === "a_discuter" && MEANING[k] ? " : " + MEANING[k] : ""), onclick: () => decide(offer, k) });
+    const b = el("button", { type: "button", class: "d-" + k + (cur === k ? " on" : ""), title: T(labels[k]),
+      text: T(shortLabel(labels[k])) + (cur === "a_discuter" && MEANING[k] ? T(" : ") + MEANING[k] : ""), onclick: () => decide(offer, k) });
     b.disabled = BUSY.has(offer);
     return b;
   });
   const where = [r.list, r.rank ? "#" + r.rank : "", r.at ? "· " + stamp(r.at) : ""].filter(Boolean).join(" ");
   const meta = [
-    r.region ? "région AKS : " + r.region + (r.region_filter ? " (" + r.region_filter + ")" : "") : "",
-    r.platform ? "plateforme : " + r.platform : "",
-    r.method ? "contrôle : " + r.method : "",
-    "offre " + offer,
+    r.region ? T("région AKS : ") + r.region + (r.region_filter ? " (" + r.region_filter + ")" : "") : "",
+    r.platform ? T("plateforme : ") + r.platform : "",
+    r.method ? T("contrôle : ") + r.method : "",
+    T("offre ") + offer,
   ].filter(Boolean).join(" · ");
   const before = (r.history || []).slice(0, -1).reverse();
-  const was = r.fixed_from ? " (était " + r.fixed_from + ")" : "";
+  const was = r.fixed_from ? T(" (était ") + r.fixed_from + ")" : "";
   const recheck = isRuleCleared(r)
-    ? el("div", { class: "pc-rule", text: "Faux positif levé par une règle le " + stamp(r.fixed_at) + " : " +
-      (r.fixed_how || "rien n'a changé dans l'offre") + was })
-    : isVerified(r) ? el("div", { class: "pc-fixed", text: "Vérifiée OK au recontrôle le " + stamp(r.fixed_at) + " : " +
-      (r.fixed_how || "vérifiée OK") + was })
-    : isFixed(r) ? el("div", { class: "pc-fixed", text: "Réparée le " + stamp(r.fixed_at) + " : " + (r.fixed_how || "recontrôle OK") + was })
-    : r.still_wrong_at ? el("div", { class: "pc-still", text: "Toujours en erreur au recontrôle du " + stamp(r.still_wrong_at) }) : null;
-  const pill = isRuleCleared(r) ? "FAUX POSITIF LEVÉ" : isVerified(r) ? "VÉRIFIÉE OK" : isFixed(r) ? "RÉPARÉE" : (r.verdict || "?");
+    ? el("div", { class: "pc-rule", text: T("Faux positif levé par une règle le ") + stamp(r.fixed_at) + T(" : ") +
+      (r.fixed_how || T("rien n'a changé dans l'offre")) + was })
+    : isVerified(r) ? el("div", { class: "pc-fixed", text: T("Vérifiée OK au recontrôle le ") + stamp(r.fixed_at) + T(" : ") +
+      (r.fixed_how || T("vérifiée OK")) + was })
+    : isFixed(r) ? el("div", { class: "pc-fixed", text: T("Réparée le ") + stamp(r.fixed_at) + T(" : ") + (r.fixed_how || T("recontrôle OK")) + was })
+    : r.still_wrong_at ? el("div", { class: "pc-still", text: T("Toujours en erreur au recontrôle du ") + stamp(r.still_wrong_at) }) : null;
+  const pill = isRuleCleared(r) ? T("FAUX POSITIF LEVÉ") : isVerified(r) ? T("VÉRIFIÉE OK") : isFixed(r) ? T("RÉPARÉE") : (r.verdict || "?");
   const tone = isRuleCleared(r) ? "v-rule" : isFixed(r) ? "v-fixed" : (VERDICT_CLASS[r.verdict] || "v-nv");
   const just = JUST_DONE.get(offer);
   return el("article", { class: "pc-item " + tone + (cur ? " decided" : "") + (MODE_CARD[r.mode] ? " " + MODE_CARD[r.mode] : "") +
     (just ? " pc-just-done" + (just.state === "leaving" ? " pc-leaving" : "") : ""),
     id: "offer-" + offer }, [
-    just && cur ? el("div", { class: "pc-done-banner", role: "status", text: "✔ Décision enregistrée : " + labelOf(cur) +
+    just && cur ? el("div", { class: "pc-done-banner", role: "status", text: T("✔ Décision enregistrée : ") + labelOf(cur) +
       doneWhere(r, just) }) : null,
     el("div", { class: "pc-head" }, [
       el("span", { class: "pc-verdict", text: pill }),
-      cur ? el("span", { class: "pc-done d-" + cur, title: "Traité par " + (handledBy(r) || "?") +
-        (r.decision.at ? " le " + stamp(r.decision.at) : ""), text: cur === "a_discuter"
-          ? "💬 À discuter (" + (handledBy(r) || "?") + (r.decision.at ? ", " + stamp(r.decision.at) : "") + ")"
-          : "✔ Traité par " + (handledBy(r) || "?") + " · " + labelOf(cur) + (isToFix(r) ? " · à corriger" : "") })
-        : isOpen(r) ? el("span", { class: "pc-todo", text: "À traiter" }) : null,
+      cur ? el("span", { class: "pc-done d-" + cur, title: T("Traité par ") + (handledBy(r) || "?") +
+        (r.decision.at ? T(" le ") + stamp(r.decision.at) : ""), text: cur === "a_discuter"
+          ? T("💬 À discuter (") + (handledBy(r) || "?") + (r.decision.at ? ", " + stamp(r.decision.at) : "") + ")"
+          : T("✔ Traité par ") + (handledBy(r) || "?") + " · " + labelOf(cur) + (isToFix(r) ? T(" · à corriger") : "") })
+        : isOpen(r) ? el("span", { class: "pc-todo", text: T("À traiter") }) : null,
       MODE_BADGE[r.mode] ? el("span", { class: "pc-mode " + MODE_BADGE[r.mode][1], title: MODE_TITLE[r.mode],
         text: MODE_BADGE[r.mode][0] }) : null,
       // 06/10/2026 : une page sortie des tops garde ses reports ouverts dans « Price check top », jusqu'à leur décision
-      r.left_tops_at ? el("span", { class: "pc-left-tops", text: "sortie des tops le " + stamp(r.left_tops_at),
-        title: "La page n'est plus dans les tops : le report reste dans « Price check top » jusqu'à sa décision" }) : null,
-      isFirstPrice(r) ? el("span", { class: "pc-mode m-first", text: "PREMIER PRIX",
-        title: "L'une des 3 offres de clé les moins chères de son édition : un SUSPECT part sur le salon des urgences" }) : null,
+      r.left_tops_at ? el("span", { class: "pc-left-tops", text: T("sortie des tops le ") + stamp(r.left_tops_at),
+        title: T("La page n'est plus dans les tops : le report reste dans « Price check top » jusqu'à sa décision") }) : null,
+      isFirstPrice(r) ? el("span", { class: "pc-mode m-first", text: T("PREMIER PRIX"),
+        title: T("L'une des 3 offres de clé les moins chères de son édition : un SUSPECT part sur le salon des urgences") }) : null,
       el("span", { class: "pc-product", text: (r.product || "?") + (r.edition ? " · " + r.edition : "") }),
       rankLabel(r) ? el("span", { class: "pc-rank", text: rankLabel(r) }) : null,
       el("span", { class: "pc-merchant", text: [r.merchant, price(r.price)].filter(Boolean).join(" · ") }),
       el("span", { class: "pc-where", text: where }),
     ]),
-    cur === "a_discuter" ? el("div", { class: "pc-question" }, [el("b", { text: "Commentaire de " + (handledBy(r) || "?") + " : " }),
-      r.decision.note ? "« " + r.decision.note + " »" : "pas de note, à voir ensemble."]) : null,
+    cur === "a_discuter" ? el("div", { class: "pc-question" }, [el("b", { text: T("Commentaire de ") + (handledBy(r) || "?") + T(" : ") }),
+      r.decision.note ? "« " + r.decision.note + " »" : T("pas de note, à voir ensemble.")]) : null,
     (r.reasons || []).length ? el("ul", { class: "pc-reasons" }, r.reasons.map((x) => el("li", { text: x }))) : null,
     recheck,
-    isToFix(r) ? el("div", { class: "pc-tofix", text: "🔧 À corriger : l'erreur est confirmée, l'offre n'a pas encore changé sur "
-      + "AllKeyShop" + (r.still_wrong_at ? " (toujours en erreur au recontrôle du " + stamp(r.still_wrong_at) + ")" : "") }) : null,
+    isToFix(r) ? el("div", { class: "pc-tofix", text: T("🔧 À corriger : l'erreur est confirmée, l'offre n'a pas encore changé sur ")
+      + "AllKeyShop" + (r.still_wrong_at ? T(" (toujours en erreur au recontrôle du ") + stamp(r.still_wrong_at) + ")" : "") }) : null,
     el("div", { class: "pc-meta", text: meta }),
     isGone(r) ? el("div", { class: "pc-gone",
-      text: "Plus vu en premier prix depuis le " + stamp(r.seen_at) + " : l'offre n'est plus en tête." }) : null,
+      text: T("Plus vu en premier prix depuis le ") + stamp(r.seen_at) + T(" : l'offre n'est plus en tête.") }) : null,
     (r.notes || []).length ? el("ul", { class: "pc-notes" }, r.notes.map((x) => el("li", { text: x }))) : null,
-    link("Page AllKeyShop", r.page_url),
-    link("Offre marchand", r.merchant_url),
+    link(T("Page AllKeyShop"), r.page_url),
+    link(T("Offre marchand"), r.merchant_url),
     // 03/10/2026 : le fil de feedback Discord de l'alerte (le bot l'ouvre ; on peut y trancher aussi)
-    r.discord_thread ? link("Fil Discord", r.discord_thread) : null,
+    r.discord_thread ? link(T("Fil Discord"), r.discord_thread) : null,
     el("div", { class: "pc-decide" }, [
-      el("div", { class: "pc-step pc-step-note" }, [step(1, "Pourquoi ? (seulement si besoin)"), note, pending, saveNote]),
-      el("div", { class: "pc-step pc-step-decision" }, [step(2, "Ta décision"), el("div", { class: "pc-buttons" }, buttons)]),
+      el("div", { class: "pc-step pc-step-note" }, [step(1, T("Pourquoi ? (seulement si besoin)")), note, pending, saveNote]),
+      el("div", { class: "pc-step pc-step-decision" }, [step(2, T("Ta décision")), el("div", { class: "pc-buttons" }, buttons)]),
       el("p", { class: "pc-howto", text: cur === "a_discuter"
-        ? "Pour clore la discussion, tranche sur l'offre, pas sur le commentaire : Vrai positif si l'erreur est réelle, Faux "
-          + "positif si l'offre est correcte (par exemple quand le commentaire montre que la région est juste). La note suit ta décision."
-        : cur ? "Pour changer la note : modifie-la, puis « Mettre à jour la note ». Pour changer d'avis : clique une autre décision, la note la suit."
-        : "D'accord avec l'erreur décrite ? Clique directement ta décision, sans note. La note sert à dire pourquoi tu "
-          + "n'es pas d'accord ou à préciser : écrite avant le clic, elle part avec ta décision." }),
+        ? T("Pour clore la discussion, tranche sur l'offre, pas sur le commentaire : Vrai positif si l'erreur est réelle, Faux ")
+          + T("positif si l'offre est correcte (par exemple quand le commentaire montre que la région est juste). La note suit ta décision.")
+        : cur ? T("Pour changer la note : modifie-la, puis « Mettre à jour la note ». Pour changer d'avis : clique une autre décision, la note la suit.")
+        : T("D'accord avec l'erreur décrite ? Clique directement ta décision, sans note. La note sert à dire pourquoi tu ")
+          + T("n'es pas d'accord ou à préciser : écrite avant le clic, elle part avec ta décision.") }),
     ]),
     r.decision ? decisionLine(r.decision) : null,
-    before.length ? el("div", { class: "pc-history", text: "Avant : " + before.map((h) =>
+    before.length ? el("div", { class: "pc-history", text: T("Avant : ") + before.map((h) =>
       labelOf(h.decision) + (h.by ? " (" + h.by + (h.at ? ", " + stamp(h.at) : "") + ")" : "")).join(" ; ") }) : null,
-    ERRORS[offer] ? el("div", { class: "pc-msg", text: "Non enregistrée : " + ERRORS[offer] }) : null,
+    ERRORS[offer] ? el("div", { class: "pc-msg", text: T("Non enregistrée : ") + ERRORS[offer] }) : null,
   ]);
 }
 
@@ -372,24 +588,24 @@ function renderOperators(reports) {
   const sel = $("#f-by");
   const keep = sel.value;
   const opt = (value, text) => el("option", { value, text });
-  sel.replaceChildren(opt("", "Tous"), opt("none", "Personne (à traiter)"), ...names.map((n) => opt(n, n)));
+  sel.replaceChildren(opt("", T("Tous")), opt("none", T("Personne (à traiter)")), ...names.map((n) => opt(n, n)));
   sel.value = keep === "none" || names.includes(keep) ? keep : "";
   $("#pc-by").textContent = names.length
-    ? "Traités par : " + names.map((n) => n + " " + count[n]).join(" · ") : "Aucun report traité pour l'instant.";
+    ? T("Traités par : ") + names.map((n) => n + " " + count[n]).join(" · ") : T("Aucun report traité pour l'instant.");
 }
 
 // the two tabs, with their counts (all reports, whatever the filters)
 function renderTabs(reports) {
   const current = reports.filter((r) => !isArchived(r)).length;
-  for (const [tab, text] of [["current", "En cours (" + current + ")"], ["archive", "Archives (" + (reports.length - current) + ")"]]) {
+  for (const [tab, text] of [["current", T("En cours (") + current + ")"], ["archive", T("Archives (") + (reports.length - current) + ")"]]) {
     const b = $("#tab-" + tab);
     b.textContent = text;
     b.classList.toggle("on", TAB === tab);
     b.setAttribute("aria-pressed", String(TAB === tab));
   }
   $("#pc-tab-note").textContent = TAB === "archive"
-    ? "Les reports réglés : réparés, faux positifs levés par une règle, vérifiés OK, et les faux positifs jugés. Mis « À discuter », un report revient en cours, en tête."
-    : "Ce qui reste à faire : les reports à discuter, à traiter, et à corriger (vrai positif dont l'offre n'a pas encore changé). Réparé ou jugé faux positif, un report passe dans les archives.";
+    ? T("Les reports réglés : réparés, faux positifs levés par une règle, vérifiés OK, et les faux positifs jugés. Mis « À discuter », un report revient en cours, en tête.")
+    : T("Ce qui reste à faire : les reports à discuter, à traiter, et à corriger (vrai positif dont l'offre n'a pas encore changé). Réparé ou jugé faux positif, un report passe dans les archives.");
 }
 
 function render() {
@@ -401,7 +617,7 @@ function render() {
   // never `filter(matchesFilters)`: the index would be taken for `strict` (audit Codex, 06/10/2026)
   const shown = reports.filter((r) => matchesFilters(r)).filter((r) => shownTab(r) === TAB);
   if (!reports.length) {
-    $("#pc-list").replaceChildren(el("div", { class: "pc-empty", text: "Aucun report : le moniteur n'a rien signalé." }));
+    $("#pc-list").replaceChildren(el("div", { class: "pc-empty", text: T("Aucun report : le moniteur n'a rien signalé.") }));
     return;
   }
   const only = $("#f-mode").value;
@@ -417,12 +633,11 @@ function render() {
       el("span", { class: "pc-group-name", text: label }),
       el("span", { class: "pc-group-what", text: " · " + what }),
       el("span", { class: "pc-group-count", text: " — " + items.length + " report" + (items.length > 1 ? "s" : "") +
-        (open || tofix ? ", dont " + [open ? open + " à traiter" : "", tofix ? tofix + " à corriger" : ""].filter(Boolean).join(" et ") : "")
-        + (hidden ? " · " + hidden + " masqué" + (hidden > 1 ? "s" : "") +
-        " par les filtres" : "") }),
+        (open || tofix ? T(", dont ") + [open ? open + T(" à traiter") : "", tofix ? tofix + T(" à corriger") : ""].filter(Boolean).join(T(" et ")) : "")
+        + (hidden ? " · " + hidden + (hidden > 1 ? T(" masqués par les filtres") : T(" masqué par les filtres")) : "") }),
     ]));
     parts.push(...(items.length ? items.map(renderItem) : [el("div", { class: "pc-empty", text: hidden
-      ? "Masqués par les filtres : " + hidden + " report" + (hidden > 1 ? "s" : "") + " à discuter." : none })]));
+      ? T("Masqués par les filtres : ") + hidden + " report" + (hidden > 1 ? "s" : "") + T(" à discuter.") : none })]));
   }
   // un export plus ancien, sans mode : après les parties
   parts.push(...shown.filter((r) => shownPart(r) === "").map(renderItem));
@@ -431,18 +646,18 @@ function render() {
 
 function renderFreshness() {
   const age = DATA.age_seconds;
-  $("#pc-fresh").textContent = "— export du " + stamp(DATA.generated_at) +
+  $("#pc-fresh").textContent = T("— export du ") + stamp(DATA.generated_at) +
     (typeof age === "number" ? " (" + ago(age) + ")" : "");
   const stale = typeof age === "number" && age > STALE_SECONDS;
   $("#pc-stale").classList.toggle("hidden", !stale);
-  $("#pc-stale").textContent = stale ? "Dernier export du moniteur " + ago(age) +
-    " : le service price-check est peut-être arrêté (systemctl status price-check)." : "";
+  $("#pc-stale").textContent = stale ? T("Dernier export du moniteur ") + ago(age) +
+    T(" : le service price-check est peut-être arrêté (systemctl status price-check).") : "";
 }
 
 async function load() {
   if (LOADING) return;
   LOADING = true;
-  setStatus("Lecture des reports…", true);
+  setStatus(T("Lecture des reports…"), true);
   try {
     DATA = await api("api/price-check/reports");
     if (HASH_OFFER) {  // a link to one report opens the tab it is in
@@ -453,11 +668,11 @@ async function load() {
     $("#pc-error").classList.add("hidden");
     renderFreshness();
     render();
-    setStatus((DATA.reports || []).length + " report(s) lus dans " + DATA.dir, false);
+    setStatus((DATA.reports || []).length + T(" report(s) lus dans ") + DATA.dir, false);
   } catch (e) {
-    $("#pc-error").textContent = "Reports illisibles : " + e.message;
+    $("#pc-error").textContent = T("Reports illisibles : ") + e.message;
     $("#pc-error").classList.remove("hidden");
-    setStatus("Erreur : " + e.message, false);
+    setStatus(T("Erreur : ") + e.message, false);
   } finally {
     LOADING = false;
   }
@@ -474,12 +689,12 @@ async function decide(offer, key) {
   const note = NOTES[offer] != null ? NOTES[offer] : ((current.decision && current.decision.note) || "");
   const typed = NOTES[offer];  // the field as it leaves: a note changed while saving is kept (audit Codex, 06/10/2026)
   render();
-  setStatus(was === key ? "Enregistrement de la note…" : "Enregistrement de la décision…", true);
+  setStatus(was === key ? T("Enregistrement de la note…") : T("Enregistrement de la décision…"), true);
   try {
     const res = await api("api/price-check/decision", { method: "POST",
       body: JSON.stringify({ offer, decision: key, note }) });
     const rec = res && res.recorded;
-    if (!rec || rec.offer !== offer || rec.decision !== key) throw new Error("réponse inattendue du serveur");
+    if (!rec || rec.offer !== offer || rec.decision !== key) throw new Error(T("réponse inattendue du serveur"));
     const target = ((DATA && DATA.reports) || []).find((x) => String(x.offer) === offer);
     if (target) {
       target.history = [...(target.history || []), rec];
@@ -487,11 +702,11 @@ async function decide(offer, key) {
     }
     if (NOTES[offer] === typed) delete NOTES[offer];
     keepJustDone(offer, part, tab);
-    setStatus((was === key ? "Note enregistrée : " : "Décision enregistrée : ") + ((target && target.product) || offer) +
+    setStatus((was === key ? T("Note enregistrée : ") : T("Décision enregistrée : ")) + ((target && target.product) || offer) +
       " — " + labelOf(key) + (note.trim() ? " — « " + note.trim() + " »" : ""), false);
   } catch (e) {
     ERRORS[offer] = e.message;
-    setStatus("Décision non enregistrée : " + e.message, false);
+    setStatus(T("Décision non enregistrée : ") + e.message, false);
   } finally {
     BUSY.delete(offer);
     render();
@@ -546,7 +761,7 @@ if (typeof window !== "undefined" && window.addEventListener) {
 // « le meilleur prix en vert si AllKeyShop est moins cher, le meilleur prix du concurrent en rouge si AllKeyShop est plus
 // cher, le premier prix AKS à côté » ; « couleur orange quand on est au même prix que le concurrent » ; « on compare clé
 // avec clé et compte avec compte. On ne mélange pas. C'est une règle importante ». The monitor writes competitors.json
-// every 30 min: for each top page, AllKeyShop's cheapest key (without payment fees) against each competitor's cheapest
+// every 30 min: for each top page, AllKeyShop's cheapest key (card fees included, as the page shows it) against each competitor's cheapest
 // key (rows), and the accounts apart (accounts), when the competitor sells accounts. « Fee / error » : what an operator
 // saw in the competitor's cart, + or − euros, kept in competitor-fees.jsonl for monitoring only.
 let COMPETITORS = null;
@@ -556,57 +771,64 @@ const safeLink = (url, text) => (/^https?:\/\//i.test(String(url || ""))
   ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text }) : el("span", { text }));
 const TONE = { "aks": "pc-win", "same": "pc-even", "competitor": "pc-lose" };
 const cents = (n) => Math.round(n * 100);
-// the competitor's price with the fee / error an operator typed (Romain, 06/10/2026 : « j'ai ajouté 20 € et ça ne se
-// reflète pas sur le prix du concurrent ») : the colour and the counts follow the corrected price
-const feeOf = (r) => (r.fee && typeof r.fee.value === "number" && r.competitor && typeof r.competitor.price === "number"
-  ? r.fee.value : null);
-const priceWithFee = (r) => { const f = feeOf(r); return f == null ? null : Math.round((r.competitor.price + f) * 100) / 100; };
+// The competitor's offers, the cheapest of each seller, with the fee / error typed for that seller, the cheapest first
+// (Romain, 06/10/2026 : « j'ai ajouté 20 € et ça ne se reflète pas sur le prix du concurrent » ; « pourquoi est-ce que va
+// toujours Instant Gaming, premier prix, alors que j'y ai rajouté 20 € ? ») : the best offer once the fees are counted
+// is the competitor's price, its colour and the counts follow it.
+function offersOf(r) {
+  const c = r.competitor;
+  if (!c || typeof c.price !== "number") return [];
+  const fees = r.fees || {};
+  const base = (c.offers || []).filter((o) => o && typeof o.price === "number");
+  return (base.length ? base : [{ price: c.price, seller: c.seller }]).map((o) => {
+    const f = fees[o.seller] && typeof fees[o.seller].value === "number" ? fees[o.seller] : null;
+    return { price: o.price, seller: o.seller, fee: f, total: f ? Math.round((o.price + f.value) * 100) / 100 : o.price };
+  }).sort((x, y) => x.total - y.total || x.price - y.price);
+}
 // the same price to the cent is "same", even in an export written before the orange (it said "aks" for a tie)
 function outcome(r) {
-  const withFee = priceWithFee(r);
-  if (withFee != null && r.aks && typeof r.aks.price === "number") {
-    return cents(r.aks.price) === cents(withFee) ? "same" : cents(r.aks.price) < cents(withFee) ? "aks" : "competitor";
-  }
-  return r.aks && r.competitor && typeof r.aks.price === "number" && typeof r.competitor.price === "number"
-    && cents(r.aks.price) === cents(r.competitor.price) ? "same" : r.cheaper;
+  const best = offersOf(r)[0];
+  if (!best || !r.aks || typeof r.aks.price !== "number") return r.cheaper;
+  return cents(r.aks.price) === cents(best.total) ? "same" : cents(r.aks.price) < cents(best.total) ? "aks" : "competitor";
 }
 
 const feeText = (v) => (typeof v === "number" ? (v > 0 ? "+" : "") + v.toFixed(2).replace(".", ",") : "");
 
 // Fee / error (Romain, 06/10/2026 : « dans le prix concurrent, on puisse rajouter un fee à la main » ; « on peut l'appeler
 // fee ou error, parce que si le prix du concurrent peut être inégal, on peut lui ajouter plus ou moins d'euros »)
+// the box is for the seller of the offer shown; the fees typed for the other sellers stay listed, each can be cleared
 function feeCell(site, kind, r) {
-  const c = r.competitor;
-  if (!c) return el("td", { class: "pc-comp-fee" });
-  const key = site.id + "|" + kind + "|" + r.page_url;
+  const offers = offersOf(r), best = offers[0];
+  if (!best) return el("td", { class: "pc-comp-fee" });
+  const key = site.id + "|" + kind + "|" + r.page_url + "|" + best.seller;
   const box = el("input", { type: "text", inputmode: "decimal", class: "pc-fee", size: "6", maxlength: "9",
-    placeholder: "± €", "aria-label": "Fee / error en euros, " + (r.product || "") });
-  box.value = FEE_DRAFTS[key] != null ? FEE_DRAFTS[key] : (r.fee ? feeText(r.fee.value) : "");
+    placeholder: "± €", "aria-label": T("Fee / error chez ") + (best.seller || "?") + ", " + (r.product || "") });
+  box.value = FEE_DRAFTS[key] != null ? FEE_DRAFTS[key] : (best.fee ? feeText(best.fee.value) : "");
   box.addEventListener("input", () => { FEE_DRAFTS[key] = box.value; });
-  box.addEventListener("change", () => saveFee(site.id, kind, r, box.value));
-  const kids = [box];
-  if (feeOf(r) != null) {
-    kids.push(el("span", { class: "pc-fee-by", text: "par " + (r.fee.by || "?") + ", " + stamp(r.fee.at),
-      title: typeof r.fee.price === "number" && cents(r.fee.price) !== cents(c.price)
-        ? "saisi quand le concurrent affichait " + euros(r.fee.price) : "saisi sur le prix affiché" }));
+  box.addEventListener("change", () => saveFee(site.id, kind, r, best.seller, box.value, key));
+  const kids = [el("span", { class: "pc-fee-for", text: T("chez ") + (best.seller || "?") }), box];
+  if (best.fee) kids.push(el("span", { class: "pc-fee-by", text: T("par ") + (best.fee.by || "?") + ", " + stamp(best.fee.at) }));
+  for (const o of offers.slice(1).filter((x) => x.fee)) {
+    kids.push(el("button", { type: "button", class: "pc-fee-clear", title: T("Effacer le fee / error saisi chez ") + o.seller,
+      text: "✕ " + o.seller + " " + feeText(o.fee.value) + " €", onclick: () => saveFee(site.id, kind, r, o.seller, "", null) }));
   }
   return el("td", { class: "pc-comp-fee" }, kids);
 }
 
-async function saveFee(siteId, kind, r, value) {
-  const key = siteId + "|" + kind + "|" + r.page_url;
-  setStatus("Enregistrement du fee / error…", true);
+async function saveFee(siteId, kind, r, seller, value, draftKey) {
+  setStatus(T("Enregistrement du fee / error…"), true);
   try {
     const res = await api("api/price-check/competitors/fee", { method: "POST",
-      body: JSON.stringify({ site: siteId, page_url: r.page_url, kind, value }) });
+      body: JSON.stringify({ site: siteId, page_url: r.page_url, kind, seller, value }) });
     const rec = res && res.recorded;
-    if (!rec || rec.page_url !== r.page_url || rec.site !== siteId) throw new Error("réponse inattendue du serveur");
-    if (typeof rec.value === "number") r.fee = rec; else delete r.fee;
-    delete FEE_DRAFTS[key];
-    setStatus(typeof rec.value === "number" ? "Fee / error enregistré : " + (r.product || "") + " " + feeText(rec.value) + " €"
-      : "Fee / error effacé : " + (r.product || ""), false);
+    if (!rec || rec.page_url !== r.page_url || rec.site !== siteId || rec.seller !== seller) throw new Error(T("réponse inattendue du serveur"));
+    r.fees = r.fees || {};
+    if (typeof rec.value === "number") r.fees[seller] = rec; else delete r.fees[seller];
+    if (draftKey) delete FEE_DRAFTS[draftKey];
+    setStatus(typeof rec.value === "number" ? T("Fee / error enregistré : ") + (r.product || "") + ", " + seller + " " + feeText(rec.value) + " €"
+      : T("Fee / error effacé : ") + (r.product || "") + ", " + seller, false);
   } catch (e) {
-    setStatus("Fee / error non enregistré : " + e.message, false);
+    setStatus(T("Fee / error non enregistré : ") + e.message, false);
   }
   renderCompetitors();
 }
@@ -615,22 +837,25 @@ function compTable(site, rows, kind) {
   const account = kind === "account";
   const body = rows.map((r) => {
     const a = r.aks, c = r.competitor, tone = TONE[outcome(r)] || "";
+    const offers = offersOf(r), best = offers[0];
     // « à la place de l'écart, mets le prix AKS » (Romain, 06/10/2026) : AllKeyShop's first price beside the competitor's
     return el("tr", {}, [
       el("td", {}, [safeLink(r.page_url, r.product || "?")]),
-      el("td", { class: "pc-comp-price " + tone }, c ? [safeLink(c.url, euros(c.price)), " · " + (c.seller || "?"),
-        priceWithFee(r) != null ? el("span", { class: "pc-fee-total", text: "avec fee / error : " + euros(priceWithFee(r)) }) : null]
-        : [r.skipped === "console" ? "page console, non comparée" : "introuvable"]),
+      el("td", { class: "pc-comp-price " + tone }, c && best ? [safeLink(c.url, euros(best.total)), " · " + (best.seller || "?"),
+        best.fee ? el("span", { class: "pc-fee-total", text: T("dont fee / error ") + feeText(best.fee.value) + " € (" + euros(best.price) + T(" affiché)") }) : null,
+        ...offers.slice(1).filter((o) => o.fee).map((o) => el("span", { class: "pc-fee-passed",
+          text: o.seller + T(" : ") + euros(o.price) + " " + feeText(o.fee.value) + " € = " + euros(o.total) }))]
+        : [r.skipped === "console" ? T("page console, non comparée") : T("introuvable")]),
       feeCell(site, kind, r),
-      el("td", { class: "pc-comp-aks", text: a ? euros(a.price) + " · " + (a.merchant || "?") + (a.account && !account ? " (compte)" : "")
-        : account ? "pas de compte sur AKS" : "—" }),
+      el("td", { class: "pc-comp-aks", text: a ? euros(a.price) + " · " + (a.merchant || "?") + (a.account && !account ? T(" (compte)") : "")
+        : account ? T("pas de compte sur AKS") : "—" }),
     ]);
   });
   return el("div", { class: "table-wrap" }, [el("table", { class: "pc-comp-table" }, [
-    el("thead", {}, [el("tr", {}, [el("th", { text: "Jeu" }),
-      el("th", { text: (account ? "Meilleur compte " : "Meilleure clé ") + (site.label || site.id) }),
-      el("th", { text: "Fee / error", title: "Ce que l'opérateur a vu au panier du concurrent : frais, ou prix faux, en euros, + ou −" }),
-      el("th", { text: account ? "Premier compte AKS" : "Première clé AKS" })])]),
+    el("thead", {}, [el("tr", {}, [el("th", { text: T("Jeu") }),
+      el("th", { text: (account ? T("Meilleur compte ") : T("Meilleure clé ")) + (site.label || site.id) }),
+      el("th", { text: "Fee / error", title: T("Ce que l'opérateur a vu au panier du concurrent : frais, ou prix faux, en euros, + ou −") }),
+      el("th", { text: account ? T("Premier compte AKS") : T("Première clé AKS") })])]),
     el("tbody", {}, body)])]);
 }
 
@@ -645,22 +870,22 @@ function competitorWidget(site) {
   const blocked = site.status === "blocked";
   const head = el("div", { class: "pc-comp-head" }, [
     safeLink(site.home, site.label || site.id),
-    blocked ? el("span", { class: "pc-comp-blocked", text: "bloqué" })
-      : el("span", { class: "pc-comp-score" }, [el("b", { class: "pc-win", text: String(won) }), " AKS moins cher · ",
-        el("b", { class: "pc-even", text: String(even) }), " même prix · ",
-        el("b", { class: "pc-lose", text: String(lost) }), " concurrent moins cher" +
-        (missing ? " · " + missing + " introuvable" + (missing > 1 ? "s" : "") : "") +
-        (consoles ? " · " + consoles + " page" + (consoles > 1 ? "s" : "") + " console non comparée" + (consoles > 1 ? "s" : "") : "")]),
+    blocked ? el("span", { class: "pc-comp-blocked", text: T("bloqué") })
+      : el("span", { class: "pc-comp-score" }, [el("b", { class: "pc-win", text: String(won) }), T(" AKS moins cher · "),
+        el("b", { class: "pc-even", text: String(even) }), T(" même prix · "),
+        el("b", { class: "pc-lose", text: String(lost) }), T(" concurrent moins cher") +
+        (missing ? " · " + missing + (missing > 1 ? T(" introuvables") : T(" introuvable")) : "") +
+        (consoles ? " · " + consoles + (consoles > 1 ? T(" pages console non comparées") : T(" page console non comparée")) : "")]),
   ]);
   if (blocked) return el("section", { class: "pc-comp-card blocked" }, [head, el("p", { class: "pc-comp-msg", text: site.message || "" })]);
   // clé contre clé ; compte contre compte, à part, seulement quand le concurrent vend des comptes
-  const kids = [head, el("h4", { class: "pc-comp-sub", text: "Clés" }), compTable(site, rows, "key")];
+  const kids = [head, el("h4", { class: "pc-comp-sub", text: T("Clés") }), compTable(site, rows, "key")];
   const accounts = site.accounts || [];
   if (accounts.length) {
     const count = (k) => String(accounts.filter((r) => outcome(r) === k).length);
-    kids.push(el("h4", { class: "pc-comp-sub" }, ["Comptes ", el("span", { class: "pc-comp-score" }, [
-      el("b", { class: "pc-win", text: count("aks") }), " AKS moins cher · ", el("b", { class: "pc-even", text: count("same") }),
-      " même prix · ", el("b", { class: "pc-lose", text: count("competitor") }), " concurrent moins cher"])]),
+    kids.push(el("h4", { class: "pc-comp-sub" }, [T("Comptes "), el("span", { class: "pc-comp-score" }, [
+      el("b", { class: "pc-win", text: count("aks") }), T(" AKS moins cher · "), el("b", { class: "pc-even", text: count("same") }),
+      T(" même prix · "), el("b", { class: "pc-lose", text: count("competitor") }), T(" concurrent moins cher")])]),
       compTable(site, accounts, "account"));
   }
   return el("section", { class: "pc-comp-card" }, kids);
@@ -668,11 +893,11 @@ function competitorWidget(site) {
 
 function renderCompetitors() {
   const d = COMPETITORS;
-  $("#pc-comp-note").textContent = d && d.available ? "— relevé du " + stamp(d.generated_at) +
+  $("#pc-comp-note").textContent = d && d.available ? T("— relevé du ") + stamp(d.generated_at) +
     (typeof d.age_seconds === "number" ? " (" + ago(d.age_seconds) + ")" : "") : "";
   if (!d || !d.available) {
     $("#pc-competitors").replaceChildren(el("p", { class: "pc-empty",
-      text: "Pas encore de relevé des concurrents : le moniteur le fait toutes les 30 min pour les pages des tops." }));
+      text: T("Pas encore de relevé des concurrents : le moniteur le fait toutes les 30 min pour les pages des tops.") }));
     return;
   }
   $("#pc-competitors").replaceChildren(...(d.sites || []).map(competitorWidget));
@@ -709,41 +934,41 @@ function duration(start, end) {
 
 function renderRuns() {
   const st = STATUS;
-  $("#pc-runs-note").textContent = st && st.available ? "— état du moniteur " + ago(st.age_seconds) : "";
+  $("#pc-runs-note").textContent = st && st.available ? T("— état du moniteur ") + ago(st.age_seconds) : "";
   for (const mode of RUN_MODES) {
     const state = $("#state-" + mode), btn = $("#launch-" + mode);
     const pending = st && st.pending && st.pending[mode];
     if (!st || !st.available) {
-      state.textContent = "État du moniteur inconnu (status.json absent) : le bouton dépose quand même la demande." +
-        (pending ? " Demande en attente." : "");
+      state.textContent = T("État du moniteur inconnu (status.json absent) : le bouton dépose quand même la demande.") +
+        (pending ? T(" Demande en attente.") : "");
       btn.disabled = !!pending;
       continue;
     }
     const m = st.modes[mode];
-    if (!m) { state.textContent = "Mode non suivi par le moniteur."; btn.disabled = true; continue; }
+    if (!m) { state.textContent = T("Mode non suivi par le moniteur."); btn.disabled = true; continue; }
     const parts = [];
     if (m.running) {
-      parts.push("En cours" + (m.progress ? " : page " + m.progress[0] + " / " + m.progress[1] : "") +
-        (m.requested_by ? " (demandé par " + m.requested_by + ")" : ""));
+      parts.push(T("En cours") + (m.progress ? T(" : page ") + m.progress[0] + " / " + m.progress[1] : "") +
+        (m.requested_by ? T(" (demandé par ") + m.requested_by + ")" : ""));
     } else if (m.last_end) {
       // a pass only checks offers never seen before: a quiet pass is the normal case, say so
-      const about = [duration(m.last_start, m.last_end), m.pages ? m.pages + " pages lues" : "",
-        m.last_requested_by ? "lancé depuis l'admin par " + m.last_requested_by : ""].filter(Boolean).join(", ");
-      parts.push("Dernier passage " + stamp(m.last_start) + (about ? " (" + about + ")" : "") + " : " +
-        (m.last_checked ? m.last_checked + " nouvelle(s) offre(s) contrôlée(s)" : "aucune nouvelle offre à contrôler") +
-        ", " + (m.last_alerts || 0) + " alerte(s)");
+      const about = [duration(m.last_start, m.last_end), m.pages ? m.pages + T(" pages lues") : "",
+        m.last_requested_by ? T("lancé depuis l'admin par ") + m.last_requested_by : ""].filter(Boolean).join(", ");
+      parts.push(T("Dernier passage ") + stamp(m.last_start) + (about ? " (" + about + ")" : "") + T(" : ") +
+        (m.last_checked ? m.last_checked + T(" nouvelle(s) offre(s) contrôlée(s)") : T("aucune nouvelle offre à contrôler")) +
+        ", " + (m.last_alerts || 0) + T(" alerte(s)"));
     }
     const rc = m.last_recheck;
     if (rc && rc.at) {
-      parts.push((rc.kind === "all" ? "Recontrôle complet " : "Recontrôle des offres signalées ") + stamp(rc.at) + " : " +
-        (rc.checked || 0) + " offre(s), " + (rc.fixed || 0) + " réparée(s), " +
-        (rc.rules ? rc.rules + " faux positif(s) levé(s) par une règle, " : "") +
-        (rc.verified ? rc.verified + " vérifiée(s) OK, " : "") + (rc.new || 0) + " nouvelle(s) erreur(s), " +
-        (rc.still || 0) + " toujours en erreur");
+      parts.push((rc.kind === "all" ? T("Recontrôle complet ") : T("Recontrôle des offres signalées ")) + stamp(rc.at) + T(" : ") +
+        (rc.checked || 0) + T(" offre(s), ") + (rc.fixed || 0) + T(" réparée(s), ") +
+        (rc.rules ? rc.rules + T(" faux positif(s) levé(s) par une règle, ") : "") +
+        (rc.verified ? rc.verified + T(" vérifiée(s) OK, ") : "") + (rc.new || 0) + T(" nouvelle(s) erreur(s), ") +
+        (rc.still || 0) + T(" toujours en erreur"));
     }
-    if (!m.running && m.next_at) parts.push("prochain passage " + stamp(m.next_at));
-    if (pending) parts.push("demande en attente" + (pending.by ? " (" + pending.by + ")" : ""));
-    state.textContent = parts.join(" · ") || "Aucun passage encore.";
+    if (!m.running && m.next_at) parts.push(T("prochain passage ") + stamp(m.next_at));
+    if (pending) parts.push(T("demande en attente") + (pending.by ? " (" + pending.by + ")" : ""));
+    state.textContent = parts.join(" · ") || T("Aucun passage encore.");
     btn.disabled = !!pending || !!m.running;
   }
 }
@@ -759,10 +984,10 @@ async function launch(mode) {
   msg.textContent = "";
   try {
     const r = await api("api/price-check/run", { method: "POST", body: JSON.stringify({ mode }) });
-    const who = r && r.requested && r.requested.by ? " par " + r.requested.by : "";
-    msg.textContent = "Demande déposée" + who + " : le moniteur la lit dans les secondes qui viennent.";
+    const who = r && r.requested && r.requested.by ? T(" par ") + r.requested.by : "";
+    msg.textContent = T("Demande déposée") + who + T(" : le moniteur la lit dans les secondes qui viennent.");
   } catch (e) {
-    msg.textContent = "Refusé : " + e.message;
+    msg.textContent = T("Refusé : ") + e.message;
     btn.disabled = false;
   }
   await loadStatus();
@@ -787,11 +1012,11 @@ function chatMessage(m) {
   if (m.error) kids.push(el("div", { class: "pc-chat-error", text: m.error }));
   const q = m.questions || {};
   if ((q.opened || []).length) {
-    kids.push(el("div", { class: "pc-chat-q" }, ["→ " + q.opened.join(", ") + " : question" + (q.opened.length > 1 ? "s" : "") +
-      " pour Romain, dans l'onglet ", el("a", { href: "romain", text: "Romain" })]));
+    kids.push(el("div", { class: "pc-chat-q" }, ["→ " + q.opened.join(", ") + (q.opened.length > 1
+      ? T(" : questions pour Romain, dans l'onglet ") : T(" : question pour Romain, dans l'onglet ")), el("a", { href: "romain", text: "Romain" })]));
   }
   if ((q.closed || []).length) {
-    kids.push(el("div", { class: "pc-chat-q", text: "✓ " + q.closed.join(", ") + " réglée" + (q.closed.length > 1 ? "s" : "") }));
+    kids.push(el("div", { class: "pc-chat-q", text: "✓ " + q.closed.join(", ") + (q.closed.length > 1 ? T(" réglées") : T(" réglée")) }));
   }
   return el("div", { class: "pc-chat-msg " + (CHAT_KIND[m.user] || "from-team") + (m.kind === "error" ? " is-error" : "") }, kids);
 }
@@ -805,13 +1030,13 @@ function renderChat() {
   $("#pc-new-session").classList.toggle("hidden", !owner);
   const msgs = d.messages || [];
   $("#pc-console-log").replaceChildren(...(msgs.length ? msgs.map(chatMessage) : [el("p", { class: "pc-empty",
-    text: d.available ? "Pas encore de message : écris à Claude ci-dessous."
-      : "Le service de la console (price-check-console) n'a pas encore répondu." })]));
+    text: d.available ? T("Pas encore de message : écris à Claude ci-dessous.")
+      : T("Le service de la console (price-check-console) n'a pas encore répondu.") })]));
   $("#pc-console-log").scrollTop = 1e9;
   const waiting = (d.pending || []).length;
-  $("#pc-console-note").textContent = d.busy ? "— Claude répond à " + (d.busy.label || d.busy.user) +
+  $("#pc-console-note").textContent = d.busy ? T("— Claude répond à ") + (d.busy.label || d.busy.user) +
     (d.busy.progress ? " (" + d.busy.progress + ")" : "") + "…"
-    : waiting ? "— " + waiting + " message" + (waiting > 1 ? "s" : "") + " en attente" : "";
+    : waiting ? "— " + waiting + " message" + (waiting > 1 ? "s" : "") + T(" en attente") : "";
 }
 
 async function loadChat() {
@@ -825,7 +1050,7 @@ async function sendChat(path, body, done) {
   try {
     await api(path, { method: "POST", body: JSON.stringify(body || {}) });
   } catch (e) {
-    setStatus("Console : " + e.message, false);
+    setStatus(T("Console : ") + e.message, false);
     return false;
   }
   setStatus(done, false);
@@ -837,7 +1062,7 @@ async function sendChatMessage() {
   const box = $("#pc-console-text"), send = $("#pc-console-send"), text = box.value.trim();
   if (!text || send.disabled) return;
   send.disabled = true;
-  if (await sendChat("api/price-check/console", { text }, "Message envoyé : Claude répond dans la console")) box.value = "";
+  if (await sendChat("api/price-check/console", { text }, T("Message envoyé : Claude répond dans la console"))) box.value = "";
   send.disabled = false;
 }
 $("#pc-console-form").addEventListener("submit", (ev) => { ev.preventDefault(); sendChatMessage(); });
@@ -845,7 +1070,37 @@ $("#pc-console-text").addEventListener("keydown", (ev) => {
   if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); sendChatMessage(); }
 });
 $("#pc-harvest").addEventListener("click", () => sendChat("api/price-check/console/harvest", {},
-  "Récolte demandée : Claude relit les décisions ; ses points à trancher iront dans l'onglet Romain"));
+  T("Récolte demandée : Claude relit les décisions ; ses points à trancher iront dans l'onglet Romain")));
 $("#pc-new-session").addEventListener("click", () => sendChat("api/price-check/console/new-session", {},
-  "Nouvelle session demandée : Claude repart de zéro"));
+  T("Nouvelle session demandée : Claude repart de zéro")));
 loadChat();
+
+// ---- FR / EN : the fixed texts of the page (07/10/2026) ----
+// The texts exist in both languages in pricecheck.html (lang="fr" / lang="en"); pricecheck.css shows the page's own.
+// The attributes (title, placeholder, aria-label) and the filters' options are translated here.
+if (document.documentElement) {
+  document.documentElement.setAttribute("data-lang", LANG);
+  document.documentElement.setAttribute("lang", LANG);
+}
+const STATIC_ATTRS = { "refresh": ["title"], "guide-link": ["title"], "theme": ["title"], "launch-top-games": ["title"],
+  "launch-homepage": ["title"], "pc-harvest": ["title"], "pc-new-session": ["title"], "pc-console-text": ["placeholder", "aria-label"],
+  "f-text": ["placeholder"] };
+for (const [id, keys] of Object.entries(STATIC_ATTRS)) {
+  const n = $("#" + id);
+  for (const k of keys) if (n && n.getAttribute && n.getAttribute(k)) n.setAttribute(k, T(n.getAttribute(k)));
+}
+if (LANG === "en" && document.querySelectorAll) {
+  try {
+    for (const o of document.querySelectorAll("#f-verdict option, #f-mode option, #f-decision option")) o.textContent = T(o.textContent);
+  } catch (e) { /* a page without them */ }
+}
+(() => {
+  const btn = $("#lang");
+  if (!btn) return;
+  btn.textContent = LANG === "en" ? "FR" : "EN";
+  btn.setAttribute("title", LANG === "en" ? "Passer en français" : "Switch to English");
+  btn.addEventListener("click", () => {
+    try { localStorage.setItem("aks-lang", LANG === "en" ? "fr" : "en"); } catch (e) { /* no storage */ }
+    if (typeof location !== "undefined") location.reload();
+  });
+})();

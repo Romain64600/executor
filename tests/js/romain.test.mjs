@@ -79,4 +79,17 @@ await test("a refused settlement says why and keeps the button", async () => {
   assert.ok(buttons(c.$("#q-Q2")).some((b) => b.textContent === "Régler Q2"), "the button is gone after a refusal");
 });
 
+// 07/10/2026 : « une version anglaise et une version française » ; the questions stay in their language
+await test("in English: the interface is translated, the questions stay as they are", async () => {
+  const c = await loadConsole(PAGE, { localStorage: { getItem: (k) => (k === "aks-lang" ? "en" : null), setItem() {} } });
+  await c.net.release("api/romain/questions", { ...JSON.parse(JSON.stringify(QUESTIONS)), role: "owner", me: "romain" });
+  await c.net.release("api/price-check/reports", JSON.parse(JSON.stringify(REPORTS)));
+  await tick();
+  assert.ok(buttons(c.$("#q-Q1")).some((b) => b.textContent === "Settle Q1"), "the button is not translated");
+  assert.ok(c.$("#q-Q1").textContent.includes("Garder merchants/battlestategames.toml ?"), "the question was translated");
+  assert.ok(c.$("#rm-who").textContent.includes("Only you see"), c.$("#rm-who").textContent);
+  assert.ok(c.$("#rm-reports").textContent.includes("Open the report"), c.$("#rm-reports").textContent);
+  assert.equal(c.$("#lang").textContent, "FR");
+});
+
 if (failed) { console.log(failed + " FAIL"); process.exit(1); }
