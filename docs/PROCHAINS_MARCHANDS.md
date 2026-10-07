@@ -20,7 +20,7 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 | 6 | **CDKeys → « Loaded »** (40) | 16 (21/09) | — | feed du jour à relire | **fichier écrit le 25/09 (`[R61]`, « Europe & UK » → Europe, sans région → GLOBAL) ; essai à blanc sur 16 lignes : 1 candidat ; en liste blanche le 26/09, groupe A** |
 | — | Greenmangaming (22) | 482 | 318 (66 %) | URL d'affiliation illisible (sjv.io), titre muet | pas prioritaire |
 | ✓ | **Indiegala** (95) | 175 (21/09) | 30 (19 %, slug strict) | plateforme et région : ni titre ni URL ; la **fiche** les donne (« is provided via Steam Key », listes de pays, « Region locked product ») | **fichier écrit le 06/10** (`[R69]`), **aperçu à blanc le 06/10 : 34 entrées / 175** (`apercu_indiegala_2026-10-06.md`), **liste blanche le 06/10** (Romain : « go pour la liste blanche ») ; groupe à choisir ; Belmont's Curse (EU) reste refusée (Chypre ET les USA interdits), tant que Romain n'en décide pas autrement |
-| 8 | **eww.gg** (store ?, id de page AKS 1011) | ? (absent du scan du 21/09) | ? | rien : grammaire = Driffle (même société, Driffle UAB), fiche lisible en HTTP | **étudié le 07/10** — il manque le store id du feed et le volume ; fichier = déclinaison de `driffle.py` |
+| ✓ | **eww.gg** (170, id de page AKS 1011) | ? (première passe réelle le 07/10) | ? | rien : grammaire = Driffle (même société, Driffle UAB), fiche lisible en HTTP | **fichier `eww.py` + liste blanche le 07/10** (instruction de Romain : « lance le data entry pour ce nouveau shop »), balayage lancé seul depuis l'admin, groupe à choisir |
 
 \* Mesuré sur le scan tous-magasins du 21/09, **avant** la correction du tri du feed (`orderBy=id`,
 24/09) : ces comptes sont des minimums. Un nouveau scan tous-magasins les rafraîchira.
@@ -61,9 +61,15 @@ ID AKS 1011 ID AKS feed ? ». Sonde du 07/10, lecture seule (une requête HTTP s
   range » tant qu'il n'a pas d'offres.
 
 **Classement** : le plus simple de tous les marchands étudiés — grammaire déjà codée (Driffle), fiche
-lisible en prime. Il manque deux faits : le **store id du feed** et le **volume de lignes en
-attente**. Dès qu'on les a : fichier `src/merchants/eww.py` (déclinaison Driffle), registre, tests
-sur des lignes réelles, aperçu à blanc, puis go.
+lisible en prime.
+
+**Suite (07/10, 14 h 40 UTC)** — Romain : « Store ID 170 stop B et lance le data entry pour ce nouveau
+shop, puis tu relanceras B depuis l'admin pour être sûr que j'ai le log ». Fait : `src/merchants/eww.py`
+(déclinaison de `driffle.py`, registre store 170, liste blanche, hors groupe), tests ; B arrêtée à un
+moment sûr, code tiré, admin redémarré, balayage eww.gg lancé seul depuis l'admin (une passe, toutes
+pages, consoles), B relancée depuis l'admin à sa fin. Pas d'aperçu à blanc préalable (instruction de
+Romain, grammaire éprouvée) : la première passe réelle en tient lieu — ses recap / log sont la mesure
+du volume et du rendement.
 
 ## 2026-10-06 (soir) — « Quel marchand pourrait-on faire par la suite ? »
 

@@ -3,6 +3,17 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-10-07 — eww.gg (store 170) : fichier marchand (déclinaison Driffle), liste blanche, première passe lancée depuis l'admin
+
+- **Romain : « Store ID 170 stop B et lance le data entry pour ce nouveau shop, puis tu relanceras B
+  depuis l'admin pour être sûr que j'ai le log. »** eww.gg est la seconde boutique de Driffle UAB
+  (étude du matin, `docs/PROCHAINS_MARCHANDS.md`) : `src/merchants/eww.py` = déclinaison de
+  `driffle.py` (mêmes hooks ; identifiant nu en fin de slug pour les familles console), registre
+  `EWW.GG` / store 170, liste blanche (hors groupe, raison écrite), `tests/test_merchants_eww.py`.
+  Déploiement : B arrêtée à un moment sûr, pull, restart admin, balayage eww.gg seul depuis l'admin,
+  puis B relancée depuis l'admin. Pas d'aperçu à blanc préalable : instruction de Romain sur une
+  grammaire déjà éprouvée.
+
 ## 2026-10-07 — `[R72]` CJS « Access (Digital Download) » : clé ou compte, seule la page le dit (bug signalé par Romain)
 
 - **Romain : « tu as rentré cette offre en clé à la place d'account car tu n'as sûrement pas ouvert

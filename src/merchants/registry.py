@@ -46,6 +46,7 @@ from src.merchants import (
     gamerall,
     gamesplanet,
     wyrel,
+    eww,
 )
 
 # Keys = the allowlist spelling (src/admin/auto_merchants.py AUTO_MERCHANTS) upper-cased;
@@ -84,6 +85,9 @@ MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
     # [R69] Indiegala (2026-10-06) — fichier écrit (lecteur de fiche, modèle Allyouplay [R68]),
     # PAS en liste blanche ni dans un groupe : aperçu à blanc d'abord (docs/PROCHAINS_MARCHANDS.md).
     "INDIEGALA": indiegala.CONFIG,
+    # eww.gg (2026-10-07) — la seconde boutique de Driffle UAB, store 170, déclinaison de driffle.py
+    # (Romain : « Store ID 170 stop B et lance le data entry pour ce nouveau shop »).
+    "EWW.GG": eww.CONFIG,
 }
 
 
@@ -100,7 +104,7 @@ MERCHANT_STORE_IDS: dict[str, str] = {
     "GameSeal": "126", "GameBoost": "157", "Electronicfirst": "70",
     "GamersOutlet": "31", "MMOGA": "12", "Difmark": "167", "Wyrel": "162",
     "Gamerall": "13", "GOG": "34", "Gamesplanet FR": "55",
-    "Discover.games": "168", "Loaded": "40", "Indiegala": "95",
+    "Discover.games": "168", "Loaded": "40", "Indiegala": "95", "eww.gg": "170",
 }
 _BY_STORE: dict[str, str] = {store: name for name, store in MERCHANT_STORE_IDS.items()}
 

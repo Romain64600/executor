@@ -120,6 +120,7 @@ du feed.
 | Eneba | 19 | `eneba.py` | `console_url_families`, `console_pc_declared`, `console_region_slot` | **non — dry-run du 12/09 fait (32 candidats, 90 % consoles), sweep réel sur go** | ≥ 30 |
 | Allyouplay | 17 | `allyouplay.py` (lien d'affiliation + lecteur de fiche `[R68]`, en ligne le 30/09) | `domain="allyouplay.com"`, `affiliate_hosts=("anandadigitalbv.sjv.io",)`, `url_identity_params=("u",)` ; `[R68]` : `precheck` (« [Mac] »), `url_platform` (`-ga-ste-` / `-ga-gog-`), `offer_page_resolver` (fiche : « Platform », `available_countries`, règle `[R59]`), `console_page_authoritative` | **non** — balayé 6 fois (groupe B, 17/09 → 26/09) mais 100 % refusé au contrôle de domaine : 0 saisie | 3 |
 | Indiegala | 95 | `indiegala.py` (**nouveau 06/10**, lecteur de fiche `[R69]`, modèle `[R68]`) | `domain="indiegala.com"` ; PC : `title_region` (suffixe « (US) / (EU) / (UK) » en queue, doit s'accorder avec la fiche), `resolve_name` / `guard_name` (suffixe retiré, titre multilingue réduit à sa première partie), `offer_page_resolver` (fiche : « is provided via », pays interdits `[R59]`, verrou pays, DLC = garde), `console_page_authoritative` | **non — hors liste blanche, hors groupe** : aperçu à blanc fait le 06/10 (34 / 175, `docs/apercu_indiegala_2026-10-06.md`) ; règle de région et go à confirmer par Romain | 175 lignes (21/09) |
+| eww.gg | 170 | `eww.py` (**nouveau 07/10**, déclinaison de `driffle.py`) | `domain="eww.gg"` ; mêmes hooks que Driffle (`precheck` parenthèse de région, `title_region`, `console_region_slot`, `console_url_families` avec l'identifiant nu en fin de slug) | **oui — liste blanche le 07/10 sur instruction de Romain** (« Store ID 170 … lance le data entry pour ce nouveau shop »), lancé seul depuis l'admin, groupe à choisir | volume inconnu (absent du scan du 21/09) |
 | GameSeal | 126 | `gameseal.py` | `domain` ; PC : `precheck`, `title_region` (queue ` - <RÉGION>`), `resolve_name` (queue pelée, 20/09) ; console : `console_url_families`, `console_region_slot` | oui (1er balayage 19/09) | 1 090 écrites, 1 089 justes (audit du 20/09) |
 | CJS-CDKeys | 30 | `cjs.py` (**nouveau**, identité seule) | `domain="cjs-cdkeys.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
 | Difmark | 167 | `difmark.py` | `console_url_families` (comptes) | parqué (hors liste blanche) | — |
@@ -707,6 +708,22 @@ matcher et le classifieur importent le registre.
   296 lignes) : 119 candidats PC Steam (GLOBAL 109, US 7, EU 3), toutes les lignes Xbox refusées
   sur leurs pays. L'ancienne VM (51.38.37.254) est bloquée par le Cloudflare d'Allyouplay (403) :
   la fiche y serait illisible, donc chaque ligne refusée — sans écriture fausse.
+
+## eww.gg (store 170) — la seconde boutique de Driffle UAB (2026-10-07)
+
+- **Instruction de Romain, 07/10** : « Store ID 170 stop B et lance le data entry pour ce nouveau
+  shop, puis tu relanceras B depuis l'admin pour être sûr que j'ai le log ». Étude du matin dans
+  `PROCHAINS_MARCHANDS.md` : pied de page « Possédé et exploité par Driffle UAB », titre à la grammaire
+  de Driffle (« George VS Bonny PP Wars (Global) (PC) - Steam - Digital Key »), URL
+  `eww.gg/<slug>-<région>-<plateforme>-<boutique>-digital-key-<id>`, fiche lisible en HTTP (non lue :
+  le titre suffit). L'id de page AKS 1011 n'est pas le store du feed (170).
+- **Fichier** : `src/merchants/eww.py` = déclinaison de `driffle.py` (mêmes hooks ; seule la lecture
+  des familles console dans l'URL diffère par l'identifiant nu). Registre `EWW.GG` / store 170,
+  liste blanche, hors groupe (raison écrite dans `merchant_groups.EXCLUDED`). Tests :
+  `tests/test_merchants_eww.py`.
+- **Première passe = la première passe réelle**, lancée seule depuis l'admin le 07/10 après l'arrêt
+  de B à un moment sûr ; B relancée depuis l'admin à sa fin. Pas d'aperçu à blanc préalable : c'est
+  l'instruction de Romain, sur une grammaire déjà éprouvée en production (Driffle).
 
 ## Indiegala (store 95)
 

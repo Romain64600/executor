@@ -113,6 +113,12 @@ AUTO_MERCHANTS: list[tuple[str, str]] = [
                                 # plateforme (« is provided via Steam Key ») et la région (pays
                                 # interdits, règle [R59]) ; fiche DLC = garde (jamais un seau de
                                 # jeu de base). Petite file (175 lignes le 21/09). Feed store 95.
+    ("eww.gg", "170"),          # Romain 2026-10-07 (« Store ID 170 stop B et lance le data entry
+                                # pour ce nouveau shop ») : la seconde boutique de Driffle UAB,
+                                # grammaire de titre identique à Driffle (src/merchants/eww.py en
+                                # est la déclinaison), fiche lisible. Volume inconnu (absent du scan
+                                # du 21/09) : premier passage = la première passe réelle, lancée
+                                # seule depuis l'admin. Feed store 170.
 ]
 
 # Deliberately NOT suggested (enforcement is simply "absent from the list";

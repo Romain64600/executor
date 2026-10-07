@@ -49,6 +49,7 @@ EXPECTED_MODULE = {
                                     # whitelist ce marchand »)
     "Indiegala": "indiegala.py",    # liste blanche le 2026-10-06 (Romain : « go pour la liste
                                     # blanche », après l'aperçu ligne par ligne), fichier [R69]
+    "eww.gg": "eww.py",              # 2026-10-07 (Romain : « Store ID 170 … lance le data entry »)
 }
 
 
