@@ -187,3 +187,5 @@ main.pc-main { max-width:1100px; }
 .pc-fee-for { display:block; font-size:.7rem; color:var(--dim); }
 .pc-fee-passed { display:block; font-size:.72rem; color:var(--dim); font-weight:400; }
 .pc-fee-clear { display:block; margin-top:.15rem; font-size:.7rem; padding:.05rem .3rem; }
+/* FR / EN (07/10/2026) : chaque texte fixe existe dans les deux langues (lang="fr" / lang="en"), la page montre la sienne */
+:root:not([data-lang="en"]) body [lang="en"], :root[data-lang="en"] body [lang="fr"] { display:none !important; }

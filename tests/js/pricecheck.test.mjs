@@ -535,6 +535,29 @@ test("the console: the team asks questions, a question for Romain links to his t
   assert.ok(other.$("#pc-console").classList.contains("hidden"), "the console shows to someone outside the team");
 });
 
+// Romain, 07/10/2026 : « comme t'as fait pour le guide, avoir une version anglaise et une version française » : the
+// interface in English, the reports (the monitor's reasons, the notes) in their language
+const IN_ENGLISH = { localStorage: { getItem: (k) => (k === "aks-lang" ? "en" : null), setItem() {} } };
+test("in English: the interface is translated, the monitor's reasons stay as they are", async () => {
+  const c = await loadConsole(CONSOLE, IN_ENGLISH);
+  await c.net.release("api/price-check/reports", JSON.parse(JSON.stringify({ ...REPORTS, reports: [TORO] })));
+  await tick();
+  const k = card(c, TORO.offer);
+  const labels = buttons(k).map((b) => b.textContent);
+  assert.ok(["True positive", "False positive", "To discuss"].every((x) => labels.includes(x)), labels.join(" | "));
+  assert.ok(k.textContent.includes("To handle") && k.textContent.includes("AllKeyShop page"), k.textContent);
+  assert.ok(k.textContent.includes("autre produit chez le marchand : « Metal Garden »"), "the monitor's reason was translated");
+  assert.ok(c.$("#tab-current").textContent.startsWith("In progress ("), c.$("#tab-current").textContent);
+  assert.equal(c.$("#lang").textContent, "FR", "the switch does not offer French");
+  await c.net.release("api/price-check/competitors", JSON.parse(JSON.stringify({ ...COMPETITORS, sites: [GOCDKEYS] })));
+  const [widget] = c.$("#pc-competitors").children.filter((n) => n.tagName === "SECTION");
+  assert.deepEqual(widget.querySelectorAll("table")[0].querySelectorAll("th").map((th) => th.textContent),
+    ["Game", "Best key at gocdkeys.fr", "Fee / error", "AKS first key"]);
+  assert.ok(widget.textContent.includes(" AKS cheaper · ") && widget.textContent.includes("Accounts "), widget.textContent);
+  const fr = await loadConsole(CONSOLE);
+  assert.equal(fr.$("#lang").textContent, "EN", "in French, the switch does not offer English");
+});
+
 test("an old export is flagged, a fresh one is not", async () => {
   const fresh = await start();
   assert.ok(fresh.$("#pc-stale").classList.contains("hidden"), "a fresh export is flagged");

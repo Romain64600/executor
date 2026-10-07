@@ -11,22 +11,25 @@
   <header class="topbar">
     <div class="brand">
       <span class="dot"></span>
-      <h1>Price check <span class="sub">— premiers prix AllKeyShop</span></h1>
+      <h1>Price check <span class="sub"><span lang="fr">— premiers prix AllKeyShop</span><span lang="en">— AllKeyShop first prices</span></span></h1>
     </div>
     <nav class="tabs">
       <a href="." class="tab">Validation &amp; Submit</a>
-      <a href="tri" class="tab">Tri des listes</a>
+      <a href="tri" class="tab"><span lang="fr">Tri des listes</span><span lang="en">List sorting</span></a>
       <a href="auto" class="tab">Data Entry Auto</a>
-      <a href="games" class="tab">Saisie par jeux</a>
-      <a href="sql" class="tab">Tri SQL</a>
-      <a href="overview" class="tab">Vue d'ensemble</a>
+      <a href="games" class="tab"><span lang="fr">Saisie par jeux</span><span lang="en">Entry by games</span></a>
+      <a href="sql" class="tab"><span lang="fr">Tri SQL</span><span lang="en">SQL sorting</span></a>
+      <a href="overview" class="tab"><span lang="fr">Vue d'ensemble</span><span lang="en">Overview</span></a>
       <a href="price-check" class="tab active" aria-current="page">Price check</a>
       <a href="romain" class="tab">Romain</a>
     </nav>
     <div class="topbar-right">
-      <button id="refresh" type="button" title="Relire les reports du moniteur">↻ Rafraîchir</button>
-      <a id="guide-link" class="topbar-link" href="price-check-guide"
+      <button id="refresh" type="button" title="Relire les reports du moniteur">↻ <span lang="fr">Rafraîchir</span><span lang="en">Refresh</span></button>
+      <a id="guide-link" class="topbar-link" href="price-check-guide" lang="fr"
          title="Guide de l'équipe : salons Discord, lire une alerte, trancher (FR / EN)">📘 Guide équipe</a>
+      <a class="topbar-link" href="price-check-guide#en" lang="en"
+         title="Team guide: Discord channels, reading an alert, deciding (FR / EN)">📘 Team guide</a>
+      <button id="lang" type="button" title="Switch to English">EN</button>
       <button id="doc-btn" type="button" title="Aide / Help">📖 Doc</button>
       <button id="theme" type="button" title="Basculer le thème">◐</button>
     </div>
@@ -40,7 +43,7 @@
       </header>
       <div class="doc-body">
         <section>
-          <h4>Ce que montre cette page · What it shows</h4>
+          <h4><span lang="fr">Ce que montre cette page</span><span lang="en">What it shows</span></h4>
           <p lang="fr">Le moniteur <b>price-check</b> (service <code>price-check</code>, dépôt à part)
             contrôle les <b>premiers prix</b> (les 3 premiers de chaque édition) de chaque page AllKeyShop suivie : le top 10
             Popular, le top 5 Coming soon PC (<b>Price check top</b>) et tous les jeux des tops clicks de la home
@@ -69,7 +72,7 @@
             Each card is one report: offer, verdict, reason, AllKeyShop page and merchant URL.</p>
         </section>
         <section>
-          <h4>Trancher · Deciding</h4>
+          <h4><span lang="fr">Trancher</span><span lang="en">Deciding</span></h4>
           <p lang="fr"><b>Vrai positif</b> : l'erreur est réelle, l'alerte était juste.
             <b>Faux positif</b> : l'offre est correcte, l'alerte n'aurait pas dû partir.
             <b>À discuter</b> : on en parle. D'accord avec l'erreur décrite sur le report : pas de note, il n'y
@@ -89,7 +92,7 @@
             sent, no AllKeyShop offer is changed.</p>
         </section>
         <section>
-          <h4>Lancer un passage · Running a pass</h4>
+          <h4><span lang="fr">Lancer un passage</span><span lang="en">Running a pass</span></h4>
           <p lang="fr">Le moniteur passe seul toutes les 2 min 30 sur les top games et toutes les 15 min sur la
             homepage. Les deux boutons <b>Lancer le price check top</b> et <b>Lancer le price check homepage</b>
             déclenchent un passage tout de suite, qui <b>recontrôle toutes les offres retenues</b> de ses pages, déjà vues
@@ -108,7 +111,7 @@
             running or a request is pending.</p>
         </section>
         <section>
-          <h4>Fraîcheur · Freshness</h4>
+          <h4><span lang="fr">Fraîcheur</span><span lang="en">Freshness</span></h4>
           <p lang="fr">Le moniteur réécrit les reports à chaque passage. Si l'export a plus de 45
             minutes, la page le signale : le service est peut-être arrêté. Une offre qui n'est plus
             le premier prix depuis plus d'une heure porte la mention « Plus vu en premier prix » ;
@@ -125,21 +128,23 @@
   <main class="pc-main">
     <section class="card" id="pc-runs">
       <div class="recap-head">
-        <h2>Passages <span id="pc-runs-note" class="dim"></span></h2>
+        <h2><span lang="fr">Passages</span><span lang="en">Passes</span> <span id="pc-runs-note" class="dim"></span></h2>
       </div>
       <div class="pc-runs">
         <div class="pc-run">
           <h3>Price check top</h3>
-          <p class="pc-run-desc">Top 10 Popular + top 5 Coming soon PC (jusqu'à 15 pages), toutes les 2 min 30, salon des top games.</p>
+          <p class="pc-run-desc" lang="fr">Top 10 Popular + top 5 Coming soon PC (jusqu'à 15 pages), toutes les 2 min 30, salon des top games.</p>
+          <p class="pc-run-desc" lang="en">Top 10 Popular + top 5 Coming soon PC (up to 15 pages), every 2 min 30, top games channel.</p>
           <p class="pc-run-state" id="state-top-games">…</p>
-          <button type="button" class="pc-launch" id="launch-top-games" title="Lancer un passage sur les top games maintenant">Lancer le price check top</button>
+          <button type="button" class="pc-launch" id="launch-top-games" title="Lancer un passage sur les top games maintenant"><span lang="fr">Lancer le price check top</span><span lang="en">Run the price check top</span></button>
           <p class="pc-msg" id="msg-top-games"></p>
         </div>
         <div class="pc-run">
           <h3>Price check homepage</h3>
-          <p class="pc-run-desc">Tous les jeux des top clics de la home (~430 pages, 9 min), toutes les 15 min, salon des top clics.</p>
+          <p class="pc-run-desc" lang="fr">Tous les jeux des top clics de la home (~430 pages, 9 min), toutes les 15 min, salon des top clics.</p>
+          <p class="pc-run-desc" lang="en">Every game of the home's top clicks (~430 pages, 9 min), every 15 min, top clicks channel.</p>
           <p class="pc-run-state" id="state-homepage">…</p>
-          <button type="button" class="pc-launch" id="launch-homepage" title="Lancer un passage sur la homepage maintenant">Lancer le price check homepage</button>
+          <button type="button" class="pc-launch" id="launch-homepage" title="Lancer un passage sur la homepage maintenant"><span lang="fr">Lancer le price check homepage</span><span lang="en">Run the price check homepage</span></button>
           <p class="pc-msg" id="msg-homepage"></p>
         </div>
       </div>
@@ -149,26 +154,35 @@
         <h2>Console · Claude <span id="pc-console-note" class="dim"></span></h2>
         <div class="pc-console-actions">
           <button type="button" id="pc-harvest" class="hidden"
-                  title="Claude relit les décisions sur les reports et propose une action pour chacune ; chaque point à trancher va dans l'onglet Romain">Récolter les décisions</button>
+                  title="Claude relit les décisions sur les reports et propose une action pour chacune ; chaque point à trancher va dans l'onglet Romain"><span lang="fr">Récolter les décisions</span><span lang="en">Harvest the decisions</span></button>
           <button type="button" id="pc-new-session" class="hidden"
-                  title="Claude repart de zéro (les messages restent affichés)">Nouvelle session</button>
+                  title="Claude repart de zéro (les messages restent affichés)"><span lang="fr">Nouvelle session</span><span lang="en">New session</span></button>
         </div>
       </div>
-      <p class="pc-console-legend">Questions-réponses avec Claude sur le moniteur, les reports et les règles : Romain, Rémy,
+      <p class="pc-console-legend" lang="fr">Questions-réponses avec Claude sur le moniteur, les reports et les règles : Romain, Rémy,
         Garance et Lionel. Seul Romain fait modifier le code. Une question qui demande la décision de Romain part dans
         l'onglet <a href="romain">Romain</a>.</p>
+      <p class="pc-console-legend" lang="en">Questions and answers with Claude about the monitor, the reports and the rules:
+        Romain, Rémy, Garance and Lionel. Only Romain has the code changed. A question that needs Romain's decision goes to
+        the <a href="romain">Romain</a> tab.</p>
       <div id="pc-console-log" class="pc-console-log" aria-live="polite"></div>
       <form id="pc-console-form" class="pc-console-form">
         <textarea id="pc-console-text" rows="3" maxlength="4000" aria-label="Message pour Claude"
                   placeholder="Écrire à Claude… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)"></textarea>
-        <button type="submit" id="pc-console-send">Envoyer</button>
+        <button type="submit" id="pc-console-send"><span lang="fr">Envoyer</span><span lang="en">Send</span></button>
       </form>
     </section>
     <section class="card" id="pc-comp">
       <div class="recap-head">
-        <h2>Concurrents · Price check top <span id="pc-comp-note" class="dim"></span></h2>
+        <h2><span lang="fr">Concurrents</span><span lang="en">Competitors</span> · Price check top <span id="pc-comp-note" class="dim"></span></h2>
       </div>
-      <p class="pc-comp-legend">Clé contre clé, compte contre compte, jamais mélangés : la clé AllKeyShop la moins chère,
+      <p class="pc-comp-legend" lang="en">Key against key, account against account, never mixed: AllKeyShop's cheapest key, card
+        fees included (the first price the page shows), against each competitor's best key; the accounts apart, when the
+        competitor sells them. <span class="pc-win">Green</span> when AllKeyShop is cheaper, <span class="pc-even">orange</span>
+        at the same price, <span class="pc-lose">red</span> when the competitor is cheaper. Fee / error: what you saw in the
+        competitor's cart (fees, or a wrong price), in euros, + or −; it counts for that seller: if its offer becomes dearer,
+        the competitor's next offer takes its place, with its colour. Checked every 30 min, top pages.</p>
+      <p class="pc-comp-legend" lang="fr">Clé contre clé, compte contre compte, jamais mélangés : la clé AllKeyShop la moins chère,
         frais de carte compris (le premier prix que montre la page), face à la meilleure clé de chaque concurrent ; les comptes à part, quand le concurrent en
         vend. <span class="pc-win">Vert</span> si AllKeyShop est moins cher, <span class="pc-even">orange</span> au même
         prix, <span class="pc-lose">rouge</span> si le concurrent est moins cher. Fee / error : ce que tu as vu au panier du
@@ -204,7 +218,7 @@
             <option value="homepage">Price check homepage</option>
           </select>
         </label>
-        <label>Décision
+        <label><span lang="fr">Décision</span><span lang="en">Decision</span>
           <select id="f-decision">
             <option value="">Toutes</option>
             <option value="none">Sans décision</option>
@@ -213,19 +227,20 @@
             <option value="a_discuter">À discuter</option>
           </select>
         </label>
-        <label>Traité par
+        <label><span lang="fr">Traité par</span><span lang="en">Handled by</span>
           <select id="f-by">
             <option value="">Tous</option>
             <option value="none">Personne (à traiter)</option>
           </select>
         </label>
-        <label>Recherche <input id="f-text" type="search" placeholder="jeu, marchand, raison…" autocomplete="off"></label>
-        <label><input id="f-live" type="checkbox"> encore en tête seulement</label>
-        <label><input id="f-first" type="checkbox"> premiers prix seulement</label>
+        <label><span lang="fr">Recherche</span><span lang="en">Search</span> <input id="f-text" type="search" placeholder="jeu, marchand, raison…" autocomplete="off"></label>
+        <label><input id="f-live" type="checkbox"> <span lang="fr">encore en tête seulement</span><span lang="en">still first only</span></label>
+        <label><input id="f-first" type="checkbox"> <span lang="fr">premiers prix seulement</span><span lang="en">first prices only</span></label>
       </div>
     </section>
     <details id="pc-howto" class="card pc-howto-box" open>
-      <summary>Comment trancher un report</summary>
+      <summary><span lang="fr">Comment trancher un report</span><span lang="en">How to decide a report</span></summary>
+      <div lang="fr">
       <p class="pc-howto-rule"><b>D'accord avec l'erreur décrite sur le report ? Clique Vrai positif, sans note :
         il n'y a rien à commenter.</b> La note sert seulement à dire pourquoi tu n'es pas d'accord, ou à préciser.</p>
       <ol>
@@ -245,11 +260,28 @@
       <p>Après coup : modifie la note, puis « Mettre à jour la note » (ou Entrée ; Maj+Entrée pour aller à la ligne).
         Une note pas encore enregistrée est signalée en orange, et la page prévient avant de se fermer.
         Tout est expliqué dans le <a href="price-check-guide">guide de l'équipe</a>.</p>
-      <p class="pc-howto-en" lang="en">EN: agree with the error described on the report? Click your decision, no note needed.
-        Otherwise write why (1), then click your decision (2): both are saved together.
-        <a href="price-check-guide#en">Team guide</a>.</p>
+      </div>
+      <div lang="en">
+      <p class="pc-howto-rule"><b>Agree with the error described on the report? Click True positive, no note: there is
+        nothing to comment.</b> The note is only for saying why you disagree, or for a detail.</p>
+      <ol>
+        <li><b>Read the reason</b>: what the monitor found.</li>
+        <li><b>Check both pages</b>: « AllKeyShop page » (edition, region and its filter name, platform) and « Merchant
+          offer » (what is really sold).</li>
+        <li><b>① Why?</b> Only if needed: for a False positive, a To discuss or a detail, write in one sentence what you
+          saw, for instance « the merchant's page says ROW ». Agree with the error described: nothing to write.</li>
+        <li><b>② Your decision</b>: <b>True positive</b> (the error is real), <b>False positive</b> (the offer is right)
+          or <b>To discuss</b>. The note leaves with the click, if there is one.</li>
+      </ol>
+      <p><b>To discuss</b>: the report moves to the « 💬 To discuss » part, at the top of the list, with your note as a
+        comment, until the final decision. To close it, decide on the offer, not on the comment: <b>True positive</b> if the
+        error is real, <b>False positive</b> if the offer is right (for instance when a comment shows the region is right).</p>
+      <p>Afterwards: edit the note, then « Update the note » (or Enter; Shift+Enter for a new line). A note not saved yet is
+        flagged in orange, and the page warns before closing. Everything is in the <a href="price-check-guide#en">team
+        guide</a>.</p>
+      </div>
     </details>
-    <nav class="pc-tabs" aria-label="Reports en cours ou archivés">
+    <nav class="pc-tabs" aria-label="Reports en cours ou archivés · reports in progress or archived">
       <button type="button" id="tab-current" class="pc-tab on" aria-pressed="true">En cours</button>
       <button type="button" id="tab-archive" class="pc-tab" aria-pressed="false">Archives</button>
       <span id="pc-tab-note" class="pc-tab-note"></span>
@@ -257,7 +289,7 @@
     <section id="pc-list" class="pc-list" aria-live="polite"></section>
   </main>
 
-  <footer id="status" class="idle">Chargement…</footer>
+  <footer id="status" class="idle"><span lang="fr">Chargement…</span><span lang="en">Loading…</span></footer>
   <script src="pricecheck.js"></script>
 </body>
 </html>
