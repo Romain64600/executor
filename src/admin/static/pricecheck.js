@@ -12,7 +12,7 @@ const EN = {
  "toute la homepage : widgets de la home, TOP 50 de chaque plateforme": "the whole homepage: home widgets, TOP 50 of every platform",
  "Aucun report sur la homepage pour ces filtres.": "No report on the homepage for these filters.",
  "💬 À discuter": "💬 To discuss",
- "en attente d'une décision finale : Vrai positif ou Faux positif": "waiting for a final decision: True positive or False positive",
+ "en attente d'une décision finale : Vrai positif ou Faux positif": "waiting for a final decision: True or False positive",
  "Aucun report à discuter.": "No report to discuss.",
  "Aucun report": "No report",
  "Aucun report archivé": "No archived report",
@@ -31,14 +31,14 @@ const EN = {
  "faux positifs levés": "false positives cleared",
  "vérifiées OK": "verified OK",
  "faux positifs jugés": "false positives judged",
- "Vrai positif": "True positive",
+ "Vrai positif": "True",
  "Faux positif": "False positive",
  "À discuter": "To discuss",
- "Vrai positif : alerter": "True positive: alert",
+ "Vrai positif : alerter": "True: alert",
  "Faux positif : ne pas alerter": "False positive: do not alert",
  "💬 Mis à discuter par ": "💬 Put to discuss by ",
  " le ": " on ",
- " : en attente d'une décision finale, Vrai positif ou Faux positif": ": waiting for a final decision, True positive or False positive",
+ " : en attente d'une décision finale, Vrai positif ou Faux positif": ": waiting for a final decision, True or False positive",
  "✔ Traité par ": "✔ Handled by ",
  " : ": ": ",
  " — la carte quitte cette liste dans quelques secondes": " — the card leaves this list in a few seconds",
@@ -89,7 +89,7 @@ const EN = {
  "Fil Discord": "Discord thread",
  "Pourquoi ? (seulement si besoin)": "Why? (only if needed)",
  "Ta décision": "Your decision",
- "Pour clore la discussion, tranche sur l'offre, pas sur le commentaire : Vrai positif si l'erreur est réelle, Faux ": "To close the discussion, decide on the offer, not on the comment: True positive if the error is real, False ",
+ "Pour clore la discussion, tranche sur l'offre, pas sur le commentaire : Vrai positif si l'erreur est réelle, Faux ": "To close the discussion, decide on the offer, not on the comment: True if the error is real, False ",
  "positif si l'offre est correcte (par exemple quand le commentaire montre que la région est juste). La note suit ta décision.": "positive if the offer is right (for instance when the comment shows the region is right). The note follows your decision.",
  "Pour changer la note : modifie-la, puis « Mettre à jour la note ». Pour changer d'avis : clique une autre décision, la note la suit.": "To change the note: edit it, then « Update the note ». To change your mind: click another decision, the note follows it.",
  "D'accord avec l'erreur décrite ? Clique directement ta décision, sans note. La note sert à dire pourquoi tu ": "Agree with the error described? Click your decision right away, no note. The note is for saying why you ",
@@ -103,7 +103,7 @@ const EN = {
  "En cours (": "In progress (",
  "Archives (": "Archive (",
  "Les reports réglés : réparés, faux positifs levés par une règle, vérifiés OK, et les faux positifs jugés. Mis « À discuter », un report revient en cours, en tête.": "The settled reports: repaired, false positives cleared by a rule, verified OK, and the false positives judged. Put « To discuss », a report comes back in progress, at the top.",
- "Ce qui reste à faire : les reports à discuter, à traiter, et à corriger (vrai positif dont l'offre n'a pas encore changé). Réparé ou jugé faux positif, un report passe dans les archives.": "What is left to do: the reports to discuss, to handle, and to fix (true positive whose offer has not changed yet). Repaired or judged a false positive, a report moves to the archive.",
+ "Ce qui reste à faire : les reports à discuter, à traiter, et à corriger (vrai positif dont l'offre n'a pas encore changé). Réparé ou jugé faux positif, un report passe dans les archives.": "What is left to do: the reports to discuss, to handle, and to fix (decided true, the offer has not changed yet). Repaired or judged a false positive, a report moves to the archive.",
  "Aucun report : le moniteur n'a rien signalé.": "No report: the monitor flagged nothing.",
  ", dont ": ", including ",
  " à traiter": " to handle",
@@ -316,8 +316,8 @@ function TM(text) {
 }
 // "Price check" — the reports of the first-price monitor (price-check repository). Each card is
 // an offer leading an AllKeyShop page, judged SUSPECT, À VÉRIFIER or NON VÉRIFIABLE, with its
-// AllKeyShop URL, its merchant URL and its reason. The operator decides (true positive / false
-// positive / to discuss): the decision is appended to decisions.jsonl, which the monitor re-reads
+// AllKeyShop URL, its merchant URL and its reason. The operator decides (true / false positive /
+// to discuss): the decision is appended to decisions.jsonl, which the monitor re-reads
 // before its next pass. Nothing else is written, nothing is sent.
 const $ = (s) => document.querySelector(s);
 function el(tag, attrs, kids) {
@@ -447,7 +447,11 @@ const isArchived = (r) => ARCHIVED.has(stateOf(r));
 const isToFix = (r) => stateOf(r) === "tofix";
 const tabOf = (r) => (isArchived(r) ? "archive" : "current");
 const shownTab = (r) => { const j = JUST_DONE.get(String(r.offer)); return j && j.tab ? j.tab : tabOf(r); };
-const labelOf = (key) => T(shortLabel((DATA && DATA.decisions && DATA.decisions[key]) || key));
+// The decisions' labels are the admin's own, in the page's language: since 07/10/2026 the monitor writes its labels in
+// English, which the page in French showed as they were. Romain, 07/10/2026 : « true », pas « true positive ».
+const DECISION_TEXT = { vrai: "Vrai positif", faux: "Faux positif", a_discuter: "À discuter" };
+const DECISION_TITLE = { vrai: "Vrai positif : alerter", faux: "Faux positif : ne pas alerter", a_discuter: "À discuter" };
+const labelOf = (key) => T(DECISION_TEXT[key] || shortLabel((DATA && DATA.decisions && DATA.decisions[key]) || key));
 const isGone = (r) => typeof r.seen_lag_seconds === "number" && r.seen_lag_seconds > GONE_SECONDS;
 // "2e prix de l'édition (compte)": the offer's rank in its edition when it was checked (Top Offers / Full Page).
 const ordinal = (n) => (LANG === "en" ? n + (n % 10 === 1 && n % 100 !== 11 ? "st" : n % 10 === 2 && n % 100 !== 12 ? "nd"
@@ -601,8 +605,8 @@ function renderItem(r) {
   });
   if (saveNote) saveNote.disabled = BUSY.has(offer);
   const buttons = Object.keys(labels).map((k) => {
-    const b = el("button", { type: "button", class: "d-" + k + (cur === k ? " on" : ""), title: T(labels[k]),
-      text: T(shortLabel(labels[k])) + (cur === "a_discuter" && MEANING[k] ? T(" : ") + MEANING[k] : ""), onclick: () => decide(offer, k) });
+    const b = el("button", { type: "button", class: "d-" + k + (cur === k ? " on" : ""), title: T(DECISION_TITLE[k] || labels[k]),
+      text: labelOf(k) + (cur === "a_discuter" && MEANING[k] ? T(" : ") + MEANING[k] : ""), onclick: () => decide(offer, k) });
     b.disabled = BUSY.has(offer);
     return b;
   });

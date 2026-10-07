@@ -547,7 +547,8 @@ test("in English: the interface and the monitor's texts are translated, the quot
   await tick();
   const k = card(c, TORO.offer);
   const labels = buttons(k).map((b) => b.textContent);
-  assert.ok(["True positive", "False positive", "To discuss"].every((x) => labels.includes(x)), labels.join(" | "));
+  assert.ok(["True", "False positive", "To discuss"].every((x) => labels.includes(x)), labels.join(" | "));
+  assert.ok(!labels.includes("True positive"), "Romain, 07/10/2026 : « ça ne se dit pas true positive »");
   assert.ok(k.textContent.includes("To handle") && k.textContent.includes("AllKeyShop page"), k.textContent);
   // Romain, 07/10/2026 : « traduis aussi les raisons, faut que tout soit traduit »
   assert.ok(k.textContent.includes("another product at the merchant: « Metal Garden » instead of « TORO 2 Nintendo Switch » (URL of the en-GB version)"),
@@ -563,14 +564,20 @@ test("in English: the interface and the monitor's texts are translated, the quot
   assert.ok(widget.textContent.includes(" AKS cheaper · ") && widget.textContent.includes("Accounts "), widget.textContent);
   const fr = await loadConsole(CONSOLE);
   assert.equal(fr.$("#lang").textContent, "EN", "in French, the switch does not offer English");
-  // 07/10/2026 : English by default, and the monitor's English labels (« True positive: alert ») read right
+  // 07/10/2026 : English by default, with the monitor's English labels (« True: alert »)
+  const MONITOR_EN = { vrai: "True: alert", faux: "False positive: do not alert", a_discuter: "To discuss" };
   const plain = await loadPage(CONSOLE);
-  await plain.net.release("api/price-check/reports", JSON.parse(JSON.stringify({ ...REPORTS, reports: [TORO],
-    decisions: { vrai: "True positive: alert", faux: "False positive: do not alert", a_discuter: "To discuss" } })));
+  await plain.net.release("api/price-check/reports", JSON.parse(JSON.stringify({ ...REPORTS, reports: [TORO], decisions: MONITOR_EN })));
   await tick();
   assert.equal(plain.$("#lang").textContent, "FR", "the page does not open in English");
-  assert.deepEqual(buttons(card(plain, TORO.offer)).map((b) => b.textContent).filter((t) => /positive|discuss/.test(t)),
-    ["True positive", "False positive", "To discuss"]);
+  assert.deepEqual(buttons(card(plain, TORO.offer)).map((b) => b.textContent).filter((t) => /^(True|False positive|To discuss)$/.test(t)),
+    ["True", "False positive", "To discuss"]);
+  // in French, the page shows its own labels, not the monitor's English ones
+  await fr.net.release("api/price-check/reports", JSON.parse(JSON.stringify({ ...REPORTS, reports: [TORO], decisions: MONITOR_EN })));
+  await tick();
+  const frLabels = buttons(card(fr, TORO.offer)).map((b) => b.textContent);
+  assert.deepEqual(frLabels.filter((t) => /^(Vrai positif|Faux positif|À discuter)$/.test(t)), ["Vrai positif", "Faux positif", "À discuter"]);
+  assert.ok(!frLabels.some((t) => /^(True|False positive|To discuss)$/.test(t)), frLabels.join(" | "));
 });
 
 test("an old export is flagged, a fresh one is not", async () => {
