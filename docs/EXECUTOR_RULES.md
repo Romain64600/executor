@@ -3907,6 +3907,42 @@ verrouillée Europe. 0 faux positif sur 86 820 lignes distinctes des runs de cet
   correctifs (71 sous-tests en échec + 1 erreur, puis verts), et 14 mutations de ces correctifs
   les rougissent toutes.
 
+### `[R72]` CJS « Access (Digital Download) » : clé ou compte, seule la page le dit — et elle ne se lit pas (2026-10-07)
+
+**Romain, 2026-10-07** : « On a trouvé une erreur sur notre data entry. C'est dû au fait que, sur la
+page CJS, on nous dit que l'offre est un account » (« Onimusha: Way of the Sword PS5 Access (Digital
+Download) »), « tu as rentré cette offre en clé à la place d'account car tu n'as sûrement pas ouvert
+la page », puis, à ma première correction : « ça ne va pas dire "Account". Account, on le voit que
+sur la page, avec un message : attention, ce jeu est un account ».
+
+**Les faits.** « <Jeu> <Plateforme> Access (Digital Download) » est le libellé CJS des codes console
+numériques — clé OU compte, le titre ne le dit pas ; seule la page porte l'avertissement. La page CJS
+ne se lit pas en HTTP (403 Cloudflare : sonde du 30/09, re-sonde du 07/10 sur cette page même). Le
+classifieur console lisait ces lignes comme des clés console et **52 ont été écrites comme des clés**
+du 17/09 au 30/09 (48 sur la VM B, 4 sur la VM A ; `docs/audit_2026-10-02/cjs_access_ecrites.csv`) —
+on ne sait pas lesquelles sont des comptes : **à relire une par une sur la page CJS**, seules celles
+qui portent l'avertissement sont à retirer. C'était la décision 1 de l'audit du 02/10 (A2).
+
+**La règle** : ce qu'on ne sait pas, on ne l'entre pas (`[R51]`, Romain : « si on n'arrive pas à
+ouvrir la page marchand on skip l'offre »). `cjs.access_listing` (« Access » en queue de titre, avec
+ou sans « (Digital Download) » ; jamais « Early Access ») → `precheck` → refus NOMMÉ
+`SKIP_ACCESS_UNVERIFIABLE`, **sans routage** (pas « skip category: ACCOUNT » — ce n'est pas un compte,
+c'est un inconnu ; la ligne reste à trier à la main). Le générique ne change pas : « Access » en
+queue n'est PAS un signal de compte chez les autres marchands (Kinguin garde sa grammaire propre et
+son URL `online-account-activation`).
+
+**Conséquence assumée** : tant que la page CJS ne se lit pas, aucune ligne « Access (Digital
+Download) » n'entre, clés comprises. La voie pour les rouvrir est un accès consenti par CJS
+(allowlist IP, API, ou un champ « account » dans leur feed) — jamais un navigateur de contournement
+(AGENTS « Forbidden »). Un lecteur de page CJS, le jour où elle se lit, ferait : avertissement
+« account » → liste 30 ; sinon → clé console comme avant.
+
+**Un audit voudra** : (a) lire « Access (Digital Download) » comme « compte » et router en liste 30 —
+non, c'est ce que j'avais codé d'abord et Romain l'a refusé : le titre ne le dit pas ; (b) revenir à
+« clé console » faute de page — non, c'est l'erreur des 52 ; (c) étendre le refus aux autres
+marchands — non, c'est la grammaire de CJS. Tests : `tests/test_merchants_cjs_r67.py`
+(`LesAccessSontInverifiables`).
+
 ### `[R70]` Amérique du Nord : une région vendable, PC et consoles (2026-10-06)
 
 **Romain, 2026-10-06** (après le log K4G « STAR WARS: Galactic Racer Standard Edition North America

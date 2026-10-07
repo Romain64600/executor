@@ -141,6 +141,19 @@ No degraded mode.
 These are deliberate, Romain-reviewed calls. An adversarial audit re-derives them as
 "findings" every time; leave them AS-IS unless Romain explicitly changes his mind.
 
+- **`[R72]` CJS « Access (Digital Download) » : clé ou compte, SEULE LA PAGE le dit — Romain,
+  2026-10-07** (« tu as rentré cette offre en clé à la place d'account car tu n'as sûrement pas
+  ouvert la page », puis « ça ne va pas dire "Account". Account, on le voit que sur la page, avec un
+  message : attention, ce jeu est un account »). La page CJS ne se lit pas (403) : ces lignes sont
+  REFUSÉES, nommément, sans routage (`cjs.SKIP_ACCESS_UNVERIFIABLE`) — ni clé (52 écrites ainsi du
+  17/09 au 30/09, `docs/audit_2026-10-02/cjs_access_ecrites.csv`, à relire une par une), ni « compte »
+  (on ne le sait pas, donc pas la liste 30). Le générique est inchangé : « Access » en queue n'est pas
+  un signal de compte (ma première correction le faisait, Romain l'a refusée). Un audit voudra :
+  (a) router en liste 30 « puisque ce sont des comptes » — non, certains sont des clés ; (b) revenir à
+  « clé console » faute de page — non, c'est l'erreur des 52 ; (c) un navigateur de contournement
+  pour lire CJS — non (« Forbidden ») : la voie est un accès consenti par CJS (allowlist IP, API,
+  champ de feed). EXECUTOR_RULES `[R72]`.
+
 - **`[R70]` L'Amérique du Nord est une région VENDABLE, PC et consoles — Romain, 2026-10-06**
   (« tu sais ajouter ça, c'est "Steam NA" — pourquoi j'ai ce log », puis « go pour NA, PC et
   consoles »). `NORTH AMERICA` était dans `FORBIDDEN_REGIONS` depuis le début, d'avant la règle

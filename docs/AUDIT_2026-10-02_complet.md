@@ -35,7 +35,10 @@ d'hygiène — et **neuf décisions à prendre par Romain**.
 
 ## Décisions à prendre (Romain)
 
-1. **CJS « Access (Digital Download) »** : compte ou vraie clé ? 35 offres déjà créées comme clés
+1. **CJS « Access (Digital Download) »** : compte ou vraie clé ? — *Tranché le 07/10 : clé OU compte,
+   seule la page CJS le dit et elle ne se lit pas → refus nommé `[R72]` ; 52 écrites en tout, à relire
+   une par une (`audit_2026-10-02/cjs_access_ecrites.csv`).*
+   35 offres déjà créées comme clés
    (A2). Si compte : correction manuelle des 35 + règle.
 2. **Monnaie de jeu quand AKS a une page dédiée** (A1) : on garde les 15 « Diablo IV Platinum »
    et on amende « jeux seulement » pour ces pages-là, ou on les retire et on bloque « montant +

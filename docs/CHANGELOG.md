@@ -3,6 +3,20 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-10-07 — `[R72]` CJS « Access (Digital Download) » : clé ou compte, seule la page le dit (bug signalé par Romain)
+
+- **Romain : « tu as rentré cette offre en clé à la place d'account car tu n'as sûrement pas ouvert
+  la page »**, puis « ça ne va pas dire "Account". Account, on le voit que sur la page, avec un
+  message : attention, ce jeu est un account » (CJS « Onimusha: Way of the Sword PS5 Access (Digital
+  Download) »). La page CJS ne se lit pas (403, re-sondé le 07/10) et le classifieur lisait ces
+  lignes comme des clés console : **52 écrites comme clés** du 17/09 au 30/09 (48 sur B, 4 sur A —
+  `docs/audit_2026-10-02/cjs_access_ecrites.csv`, à relire une par une : seules celles qui portent
+  l'avertissement sont des comptes à retirer). Correctif : `cjs.precheck` refuse ces lignes
+  nommément, **sans routage** (ni clé, ni liste 30 : on ne sait pas) ; le générique ne change pas.
+  Conséquence assumée : plus aucune « Access (Digital Download) » CJS n'entre tant que la page ne se
+  lit pas ; la voie est un accès consenti par CJS. Décision 1 de l'audit du 02/10 close. Tests :
+  `LesAccessSontInverifiables`.
+
 ## 2026-10-06 — `[R70]` Amérique du Nord : une région vendable, PC et consoles (go de Romain)
 
 - **Romain : « tu sais ajouter ça, c'est "Steam NA" — pourquoi j'ai ce log ? », puis « go pour NA,

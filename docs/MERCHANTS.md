@@ -799,6 +799,11 @@ matcher et le classifieur importent le registre.
   dry-run, rien n'est inventé d'ici là.
 - **Hooks** : `domain` et, depuis le 24/09, `url_identity_params=("variation",)` ; depuis le
   29/09, `title_region` + `precheck` (`[R67]`, ci-dessous).
+- **`[R72]` « … Access (Digital Download) » : clé ou compte, seule la page le dit (Romain,
+  2026-10-07).** Le titre ne dit rien (« Account, on le voit que sur la page, avec un message :
+  attention, ce jeu est un account ») et la page CJS ne se lit pas (403) → `precheck` → refus nommé
+  `SKIP_ACCESS_UNVERIFIABLE`, sans routage, jamais une clé. 52 de ces lignes écrites comme clés du
+  17/09 au 30/09, à relire une par une sur la page CJS (`docs/audit_2026-10-02/cjs_access_ecrites.csv`).
 - **Créneau de région `[R67]` (2026-09-29, correctif).** CJS écrit la région APRÈS « Key: » /
   « Code: » / « (Steam): » : « DYSMANTLE Steam Key: United Kingdom ». La lecture générique ne lit
   que la queue « - X » : **120 clés Steam « United Kingdom »** (plus une EA, une Epic) ont été

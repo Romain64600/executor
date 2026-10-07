@@ -75,10 +75,35 @@ def title_region(name: str) -> str | None:
     return _base(slot) if slot else None
 
 
-def precheck(name: str, url: str) -> str | None:
-    """Un créneau de lieu que CJS ne vend pas partout (pays, région hors UE / UK / USA /
-    monde) : refus nommé. Jamais le GLOBAL implicite d'une clé verrouillée."""
+# [R72] (Romain, 2026-10-07). « <Jeu> <Plateforme> Access (Digital Download) » ne dit PAS si c'est
+# une clé ou un compte : « Account, on le voit que sur la page, avec un message : attention, ce jeu
+# est un account ». La page CJS ne se lit pas en HTTP (403, sondes du 30/09 et du 07/10), donc on
+# ne sait pas — et ce qu'on ne sait pas, on ne l'entre pas (`[R51]` : « si on n'arrive pas à ouvrir
+# la page marchand on skip l'offre »). Refus NOMMÉ, sans routage (ce n'est pas « un compte », c'est
+# « inconnu ») : jamais une clé, jamais la liste 30. 52 de ces lignes avaient été écrites comme des
+# clés du 17/09 au 30/09 (`docs/audit_2026-10-02/cjs_access_ecrites.csv`) : à relire sur la page
+# CJS une par une, seules celles qui portent l'avertissement sont des comptes à retirer. « Early
+# Access » (phase du jeu) n'est pas ce créneau.
+_ACCESS_RE = re.compile(r"(?<!\bEarly )\bAccess(?:\s*\(\s*Digital Download\s*\))?\s*$", re.IGNORECASE)
+SKIP_ACCESS_UNVERIFIABLE = (
+    "CJS « Access (Digital Download) » : clé ou compte, seule la page CJS le dit (« attention, ce "
+    "jeu est un account ») et elle ne se lit pas (HTTP 403) — non entré, à vérifier à la main (R72)")
 
+
+def access_listing(name: str) -> bool:
+    """« … PS5 Access (Digital Download) », « … Nintendo Switch Access » → True ; « (Early Access) »,
+    « Access Pass » → False."""
+
+    return _ACCESS_RE.search(name or "") is not None
+
+
+def precheck(name: str, url: str) -> str | None:
+    """[R72] un « Access » de queue : clé ou compte, seule la page le dit → refus nommé ; puis un
+    créneau de lieu que CJS ne vend pas partout (pays, région hors UE / UK / USA / monde) : refus
+    nommé. Jamais le GLOBAL implicite d'une clé verrouillée."""
+
+    if access_listing(name):
+        return SKIP_ACCESS_UNVERIFIABLE
     slot = region_slot(name)
     if not slot or _base(slot) or not _looks_like_place(slot):
         return None
@@ -97,5 +122,8 @@ CONFIG = make_config(
     title_region=title_region,
     notes=("feed store 30 — [R67] région = créneau après « Key: » / « Code: » / « ): » (Global, "
            "Europe, EU, Europe & UK, USA, United Kingdom) ; tout autre pays ou zone → refus nommé "
-           "(2026-09-29 : 120 clés « United Kingdom » écrites en GLOBAL auparavant)"),
+           "(2026-09-29 : 120 clés « United Kingdom » écrites en GLOBAL auparavant) ; [R72] "
+           "« … Access (Digital Download) » : clé ou compte, seule la page CJS le dit et elle ne se "
+           "lit pas → refus nommé, sans routage (Romain, 2026-10-07 ; 52 écrites comme clés avant, "
+           "à relire une par une)"),
 )
