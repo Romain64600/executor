@@ -141,6 +141,15 @@ No degraded mode.
 These are deliberate, Romain-reviewed calls. An adversarial audit re-derives them as
 "findings" every time; leave them AS-IS unless Romain explicitly changes his mind.
 
+- **eww.gg (store 170) : liste blanche et première passe SANS aperçu à blanc préalable — Romain,
+  2026-10-07** (« Store ID 170 stop B et lance le data entry pour ce nouveau shop, puis tu relanceras
+  B depuis l'admin pour être sûr que j'ai le log »). eww.gg est la seconde boutique de Driffle UAB,
+  titre à la grammaire de Driffle à l'identique : `src/merchants/eww.py` en est la déclinaison. Un
+  audit « trouvera » un marchand allowlisté sans aperçu ni fiche lue : c'est l'instruction de Romain,
+  sur une grammaire déjà éprouvée en production — la première passe réelle (recap, log de l'admin)
+  tient lieu de mesure. Groupe à choisir par Romain (hors groupe, raison écrite). Ne pas en déduire
+  que l'aperçu préalable n'est plus la règle pour un marchand à grammaire NOUVELLE.
+
 - **`[R72]` CJS « Access (Digital Download) » : clé ou compte, SEULE LA PAGE le dit — Romain,
   2026-10-07** (« tu as rentré cette offre en clé à la place d'account car tu n'as sûrement pas
   ouvert la page », puis « ça ne va pas dire "Account". Account, on le voit que sur la page, avec un

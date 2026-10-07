@@ -32,8 +32,9 @@ class LesGroupesFigesCouvrentLaListeBlanche(unittest.TestCase):
     def test_les_marchands_hors_groupe_sont_nommes_et_la_raison_est_ecrite(self):
         # Difmark (file Pending vide) seul ; Indiegala a rejoint le groupe B le 06/10 (Romain :
         # « groupe B pour Indiegala »). Un marchand hors groupe a toujours sa raison écrite.
-        self.assertEqual(coverage()["hors_groupes"], ["Difmark"])
+        self.assertEqual(coverage()["hors_groupes"], ["Difmark", "eww.gg"])
         self.assertIn("liste account", EXCLUDED["Difmark"])
+        self.assertIn("groupe à choisir par Romain", EXCLUDED["eww.gg"])     # 2026-10-07
         self.assertIn("Indiegala", group_targets("B").__str__())
         for nom in coverage()["hors_groupes"]:
             self.assertIn(nom, EXCLUDED, f"{nom} hors groupe sans raison écrite")

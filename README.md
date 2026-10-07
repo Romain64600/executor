@@ -262,6 +262,7 @@ executor/
 │   │   ├── common.py           #   shared by the merchant files ONLY (region words, R45 skip strings, make_config) — never imports matcher / console_keys
 │   │   ├── kinguin.py  k4g.py  driffle.py  gameseal.py  allyouplay.py  cjs.py   # new 2026-09-14
 │   │   ├── mmoga.py  gamivo.py  eneba.py  g2a.py  instant_gaming.py                     # existing
+│   │   ├── eww.py              #   2026-10-07 — eww.gg (store 170), Driffle UAB's second store: a driffle.py variant, allowlisted on Romain's instruction
 │   │   ├── indiegala.py        #   [R69] 2026-10-06 — product-page reader (Allyouplay model); allowlisted after the 34/175 dry preview (Romain's go)
 │   │   └── difmark.py          #   parked merchant (outside the safe-auto allowlist)
 │   ├── console_keys.py         # R45 console classifier — SHARED vocabulary only (families, title phrases, page kinds, bucket table); merchant grammar via hooks — pure

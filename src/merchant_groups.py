@@ -53,12 +53,18 @@ PENDING_2026_09_21 = {
     "Discover.games": 440, "Loaded": 16,
     # Même scan, à l'entrée d'Indiegala en liste blanche (2026-10-06).
     "Indiegala": 175,
+    # eww.gg (2026-10-07) : absent du scan du 21/09 — volume inconnu, 0 pour la charge estimée.
+    "eww.gg": 0,
 }
 
 # Hors groupes, avec la raison — un marchand absent des deux groupes n'est PAS un oubli.
 EXCLUDED: dict[str, str] = {
     "Difmark": ("file Pending vide — ses lignes sont dans la liste account (30), que le "
                 "balayage ne lit pas ; saisie à la main avec --list 30"),
+    # Romain, 2026-10-07 : « Store ID 170 stop B et lance le data entry pour ce nouveau shop » —
+    # lancé SEUL depuis l'admin, le groupe reste son choix (volume encore inconnu).
+    "eww.gg": ("en liste blanche le 2026-10-07 (instruction de Romain), lancé seul depuis l'admin ; "
+               "groupe à choisir par Romain quand le volume sera connu"),
 }
 
 GROUPS: dict[str, tuple[str, ...]] = {

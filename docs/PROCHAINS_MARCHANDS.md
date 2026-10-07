@@ -20,6 +20,7 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 | 6 | **CDKeys → « Loaded »** (40) | 16 (21/09) | — | feed du jour à relire | **fichier écrit le 25/09 (`[R61]`, « Europe & UK » → Europe, sans région → GLOBAL) ; essai à blanc sur 16 lignes : 1 candidat ; en liste blanche le 26/09, groupe A** |
 | — | Greenmangaming (22) | 482 | 318 (66 %) | URL d'affiliation illisible (sjv.io), titre muet | pas prioritaire |
 | ✓ | **Indiegala** (95) | 175 (21/09) | 30 (19 %, slug strict) | plateforme et région : ni titre ni URL ; la **fiche** les donne (« is provided via Steam Key », listes de pays, « Region locked product ») | **fichier écrit le 06/10** (`[R69]`), **aperçu à blanc le 06/10 : 34 entrées / 175** (`apercu_indiegala_2026-10-06.md`), **liste blanche le 06/10** (Romain : « go pour la liste blanche ») ; groupe à choisir ; Belmont's Curse (EU) reste refusée (Chypre ET les USA interdits), tant que Romain n'en décide pas autrement |
+| ✓ | **eww.gg** (170, id de page AKS 1011) | ? (première passe réelle le 07/10) | ? | rien : grammaire = Driffle (même société, Driffle UAB), fiche lisible en HTTP | **fichier `eww.py` + liste blanche le 07/10** (instruction de Romain : « lance le data entry pour ce nouveau shop »), balayage lancé seul depuis l'admin, groupe à choisir |
 
 \* Mesuré sur le scan tous-magasins du 21/09, **avant** la correction du tri du feed (`orderBy=id`,
 24/09) : ces comptes sont des minimums. Un nouveau scan tous-magasins les rafraîchira.
@@ -28,6 +29,47 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 (19/09), GameBoost / Electronicfirst / GamersOutlet (16/09), Difmark (21/09).
 
 ---
+
+## 2026-10-07 — eww.gg : « Forme-toi sur ce marchand » (ID AKS 1011, ID feed ?)
+
+Romain : « Forme toi sur ce marchant https://eww.gg/george-vs-bonny-pp-wars-global-pc-steam-digital-key-151108
+ID AKS 1011 ID AKS feed ? ». Sonde du 07/10, lecture seule (une requête HTTP sur la fiche, une page AKS).
+
+- **C'est une boutique de Driffle.** Le pied de page dit « Possédé et exploité par Driffle UAB,
+  Naugarduko g. 3-401, 03231, Lithuania ». Le titre a la grammaire de Driffle à l'identique :
+  `George VS Bonny PP Wars (Global) (PC) - Steam - Digital Key` = `<Jeu> (<Région>) (<Plateforme>) -
+  <Boutique> - <Livraison>` (voir `src/merchants/driffle.py`, `[R45]` / R32). L'URL aussi, au suffixe
+  près : `eww.gg/<slug>-<région>-<plateforme>-<boutique>-digital-key-<id>` (Driffle écrit `-p<id>`).
+  Le fichier marchand serait donc **une déclinaison de `driffle.py`** (même `title_region`, même
+  `precheck`, même grammaire console), domaine `eww.gg` et son propre store id.
+- **La fiche se lit en HTTP** (200 avec un UA navigateur, Cloudflare présent mais servi ; redirection
+  vers `/fr/`). Application Next.js ; le texte rendu porte « Plateforme Steam », « Région Monde »,
+  « Version Standard », et un encart « Restrictions régionales » (« Pays autorisés », « Activable
+  dans… ») dont la liste de pays n'est pas en clair dans le HTML (flux RSC) — à relire sur quelques
+  fiches si on veut une règle `[R59]` sur les pays AUTORISÉS comme Allyouplay ; le titre suffit déjà
+  pour la région et la plateforme comme chez Driffle.
+- **ID AKS 1011 ≠ store id du feed.** Sur les pages AKS, les marchands ont un id de page (Kinguin 47,
+  G2A 61, CJS 67, Gamivo 218, Eneba 272, Driffle 408, GameSeal 557, Wyrel 1001) différent du store
+  id du feed (58, 38, 30, 51, 19, 127, 126, 162) : 1011 est l'id de page d'eww.gg, pas celui du feed.
+  **eww.gg n'a aucune ligne dans le scan toutes-boutiques du 21/09** (0 URL `eww.gg` sur ~20 000
+  lignes) : le marchand est arrivé après, ou n'avait pas encore d'offres en attente. Le store id du
+  feed se lit dans le menu « store » de l'outil feed (session navigateur) ou dans la colonne store
+  d'un extract toutes-boutiques frais (page 1, triée par id décroissant) — à faire à la prochaine
+  pause de B, ou à lire par Romain dans son menu.
+- **Sur AKS** : la page `george-vs-bonny-pp-wars` ne porte pas (encore) de prix eww.gg (Kinguin,
+  GameSeal, Wyrel, G2A, Eneba, Driffle, Gamivo, CJS, Steam) ; rien à mesurer sur « comment AKS le
+  range » tant qu'il n'a pas d'offres.
+
+**Classement** : le plus simple de tous les marchands étudiés — grammaire déjà codée (Driffle), fiche
+lisible en prime.
+
+**Suite (07/10, 14 h 40 UTC)** — Romain : « Store ID 170 stop B et lance le data entry pour ce nouveau
+shop, puis tu relanceras B depuis l'admin pour être sûr que j'ai le log ». Fait : `src/merchants/eww.py`
+(déclinaison de `driffle.py`, registre store 170, liste blanche, hors groupe), tests ; B arrêtée à un
+moment sûr, code tiré, admin redémarré, balayage eww.gg lancé seul depuis l'admin (une passe, toutes
+pages, consoles), B relancée depuis l'admin à sa fin. Pas d'aperçu à blanc préalable (instruction de
+Romain, grammaire éprouvée) : la première passe réelle en tient lieu — ses recap / log sont la mesure
+du volume et du rendement.
 
 ## 2026-10-06 (soir) — « Quel marchand pourrait-on faire par la suite ? »
 
