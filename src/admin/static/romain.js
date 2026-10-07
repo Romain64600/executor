@@ -2,7 +2,8 @@
 // ---- FR / EN (Romain, 07/10/2026 : « comme t'as fait pour le guide, avoir une version anglaise et une version française »).
 // French is the source text and the key: T("…") gives English when the page is in English (aks-lang, per browser, the
 // same choice as the Price check tab). The questions and the answers stay in their language.
-const LANG = (() => { try { return localStorage.getItem("aks-lang") === "en" ? "en" : "fr"; } catch (e) { return "fr"; } })();
+// English by default since 07/10/2026 (« tout l'outil en anglais ») ; French one click away
+const LANG = (() => { try { return localStorage.getItem("aks-lang") === "fr" ? "fr" : "en"; } catch (e) { return "en"; } })();
 const EN = {
  "récolte des décisions": "harvest of the decisions",
  "console": "console",

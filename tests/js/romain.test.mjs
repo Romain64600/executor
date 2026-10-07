@@ -7,7 +7,10 @@
 import { strict as assert } from "node:assert";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { loadConsole } from "./load_console.mjs";
+import { loadConsole as loadPage } from "./load_console.mjs";
+// English by default since 07/10/2026: the scenarios below read the French page unless they ask for English
+const IN_FRENCH = { localStorage: { getItem: (k) => (k === "aks-lang" ? "fr" : null), setItem() {} } };
+const loadConsole = (path, overrides = {}) => loadPage(path, { ...IN_FRENCH, ...overrides });
 import { tick } from "./dom_stub.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));

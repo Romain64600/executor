@@ -26,6 +26,7 @@
   $("#lang-fr").addEventListener("click", () => show("fr"));
   $("#lang-en").addEventListener("click", () => show("en"));
   const hash = (typeof location !== "undefined" && location.hash) || "";
-  const asked = hash.startsWith("#en") ? "en" : hash.startsWith("#fr") ? "fr" : store.get("pc-guide-lang");
-  show(asked === "en" ? "en" : "fr");
+  // English by default since 07/10/2026 (« tout l'outil en anglais »)
+  const asked = hash.startsWith("#en") ? "en" : hash.startsWith("#fr") ? "fr" : store.get("pc-guide-lang") || store.get("aks-lang");
+  show(asked === "fr" ? "fr" : "en");
 })();

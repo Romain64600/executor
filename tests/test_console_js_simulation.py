@@ -372,7 +372,7 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             "page console pas introuvable": ('rows.filter((r) => !r.competitor && !r.skipped).length', 'rows.filter((r) => !r.competitor).length'),
             "égalité d'un ancien relevé en orange": ('return cents(r.aks.price) === cents(best.total) ? "same" :',
                                                     'return false ? "same" :'),
-            "concurrent bloqué dit pourquoi": ('el("p", { class: "pc-comp-msg", text: site.message || "" })', 'el("p", { class: "pc-comp-msg" })'),
+            "concurrent bloqué dit pourquoi": ('el("p", { class: "pc-comp-msg", text: TM(site.message) || "" })', 'el("p", { class: "pc-comp-msg" })'),
             # 06/10/2026 : « à la place de l'écart, mets le prix AKS »
             "prix AKS à la place de l'écart": ('el("th", { text: account ? T("Premier compte AKS") : T("Première clé AKS") })',
                                                'el("th", { text: "Écart" })'),
@@ -394,7 +394,7 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             # 06/10/2026 : la console, réservée à Romain et à l'équipe ; la récolte à Romain seul
             "console réservée": ('$("#pc-console").classList.toggle("hidden", !d);', '$("#pc-console").classList.toggle("hidden", false);'),
             "récolte réservée à Romain": ('$("#pc-harvest").classList.toggle("hidden", !owner);', '$("#pc-harvest").classList.toggle("hidden", false);'),
-            "message envoyé": ('if (await sendChat("api/price-check/console", { text },', 'if (await sendChat("api/price-check/console", {},'),
+            "message envoyé": ('if (await sendChat("api/price-check/console", { text, lang: LANG },', 'if (await sendChat("api/price-check/console", { lang: LANG },'),
             "lien vers l'onglet Romain": ('el("a", { href: "romain", text: "Romain" })', 'el("span", { text: "Romain" })'),
             # 07/10/2026 : « une version anglaise et une version française » de l'admin
             "traduction": ('const T = (fr) => (LANG === "en" &&', 'const T = (fr) => (false &&'),

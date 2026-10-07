@@ -8,7 +8,10 @@
 import { strict as assert } from "node:assert";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { loadConsole } from "./load_console.mjs";
+import { loadConsole as loadPage } from "./load_console.mjs";
+// English by default since 07/10/2026: the scenarios below read the French page unless they ask for English
+const IN_FRENCH = { localStorage: { getItem: (k) => (k === "aks-lang" ? "fr" : null), setItem() {} } };
+const loadConsole = (path, overrides = {}) => loadPage(path, { ...IN_FRENCH, ...overrides });
 import { tick } from "./dom_stub.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -560,6 +563,14 @@ test("in English: the interface and the monitor's texts are translated, the quot
   assert.ok(widget.textContent.includes(" AKS cheaper · ") && widget.textContent.includes("Accounts "), widget.textContent);
   const fr = await loadConsole(CONSOLE);
   assert.equal(fr.$("#lang").textContent, "EN", "in French, the switch does not offer English");
+  // 07/10/2026 : English by default, and the monitor's English labels (« True positive: alert ») read right
+  const plain = await loadPage(CONSOLE);
+  await plain.net.release("api/price-check/reports", JSON.parse(JSON.stringify({ ...REPORTS, reports: [TORO],
+    decisions: { vrai: "True positive: alert", faux: "False positive: do not alert", a_discuter: "To discuss" } })));
+  await tick();
+  assert.equal(plain.$("#lang").textContent, "FR", "the page does not open in English");
+  assert.deepEqual(buttons(card(plain, TORO.offer)).map((b) => b.textContent).filter((t) => /positive|discuss/.test(t)),
+    ["True positive", "False positive", "To discuss"]);
 });
 
 test("an old export is flagged, a fresh one is not", async () => {

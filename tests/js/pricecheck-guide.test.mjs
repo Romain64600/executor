@@ -21,18 +21,22 @@ const shows = (c, lang) => !c.$("#guide-" + lang).classList.contains("hidden");
 const tests = [];
 function test(name, fn) { tests.push([name, fn]); }
 
-test("French by default, English one click away, and the choice is kept", async () => {
+// English by default since 07/10/2026 (Romain : « tout l'outil en anglais »), French one click away
+test("English by default, French one click away, and the choice is kept", async () => {
   const storage = memoryStorage();
   const c = await loadConsole(SCRIPT, { localStorage: storage, location: { hash: "" } });
-  assert.ok(shows(c, "fr") && !shows(c, "en"), "French first");
-  assert.equal(c.$("#lang-fr").getAttribute("aria-pressed"), "true");
-  await c.$("#lang-en").fire("click");
-  await tick();
-  assert.ok(shows(c, "en") && !shows(c, "fr"), "the English guide after a click on EN");
+  assert.ok(shows(c, "en") && !shows(c, "fr"), "English first");
   assert.equal(c.$("#lang-en").getAttribute("aria-pressed"), "true");
-  assert.equal(storage.data.get("pc-guide-lang"), "en");
+  await c.$("#lang-fr").fire("click");
+  await tick();
+  assert.ok(shows(c, "fr") && !shows(c, "en"), "the French guide after a click on FR");
+  assert.equal(c.$("#lang-fr").getAttribute("aria-pressed"), "true");
+  assert.equal(storage.data.get("pc-guide-lang"), "fr");
   const again = await loadConsole(SCRIPT, { localStorage: storage, location: { hash: "" } });
-  assert.ok(shows(again, "en"), "the language chosen last time");
+  assert.ok(shows(again, "fr"), "the language chosen last time");
+  // the admin's own choice (aks-lang) when the guide has none
+  const admin = await loadConsole(SCRIPT, { localStorage: memoryStorage({ "aks-lang": "fr" }), location: { hash: "" } });
+  assert.ok(shows(admin, "fr"), "the admin's language is not followed");
 });
 
 test("#en in the address opens the English guide (the help's link)", async () => {

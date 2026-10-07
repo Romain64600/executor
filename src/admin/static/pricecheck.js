@@ -4,7 +4,8 @@
 // French is the source text and the key: T("…") gives English when the page is in English. The choice is kept per
 // browser (aks-lang); switching reloads the page. The fixed texts of the page exist in both languages (lang="fr" /
 // lang="en", pricecheck.css shows one).
-const LANG = (() => { try { return localStorage.getItem("aks-lang") === "en" ? "en" : "fr"; } catch (e) { return "fr"; } })();
+// English by default since 07/10/2026 (« tout l'outil en anglais ») ; French one click away
+const LANG = (() => { try { return localStorage.getItem("aks-lang") === "fr" ? "fr" : "en"; } catch (e) { return "en"; } })();
 const EN = {
  "les tops : 10 premiers Popular, 5 premiers Coming soon PC": "the tops: first 10 Popular, first 5 Coming soon PC",
  "Aucun report sur les tops pour ces filtres.": "No report on the tops for these filters.",
@@ -421,7 +422,7 @@ function ago(sec) {
   return LANG === "en" ? n + " " + unit + " ago" : "il y a " + n + " " + unit;
 }
 const price = (p) => (typeof p === "number" ? p.toFixed(2).replace(".", ",") + " €" : "");
-const shortLabel = (label) => String(label).split(" : ")[0];
+const shortLabel = (label) => String(label).split(/ ?: /)[0];
 const decisionKey = (r) => (r.decision && r.decision.decision) || "";
 const isToDiscuss = (r) => decisionKey(r) === "a_discuter";
 // the part a report belongs in ("" : an older export, without mode); a report just decided stays a few seconds in the
