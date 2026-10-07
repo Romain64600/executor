@@ -245,13 +245,15 @@ def read_competitors(directory: Path, *, now=time.time) -> dict[str, Any]:
     if not isinstance(payload, dict) or not isinstance(payload.get("sites"), list):
         return base
     sites = [s for s in payload["sites"] if isinstance(s, dict)]
-    # the fee / error typed by an operator (competitor-fees.jsonl), on its row: keys and accounts apart
-    fees = read_fees(directory)
+    # the fees / errors typed by the operators (competitor-fees.jsonl), on their row, per seller: keys and accounts apart
+    lines = read_fee_lines(directory)
     for site in sites:
         for kind, key in (("key", "rows"), ("account", "accounts")):
             for row in site.get(key) or []:
-                if isinstance(row, dict) and (site.get("id"), row.get("page_url"), kind) in fees:
-                    row["fee"] = fees[(site.get("id"), row.get("page_url"), kind)]
+                if isinstance(row, dict):
+                    fees = row_fees(lines.get((site.get("id"), row.get("page_url"), kind), []), row_offers(row))
+                    if fees:
+                        row["fees"] = fees
     base.update(available=True, age_seconds=age, generated_at=payload.get("generated_at"), every=payload.get("every"),
                 scope=payload.get("scope"), sites=sites)
     return base
@@ -406,10 +408,10 @@ def request_console(directory: Path, kind: Any, *, by: str, text: Any = None, qu
     return entry
 
 
-def read_fees(directory: Path) -> dict[tuple[str, str, str], dict[str, Any]]:
-    """The latest fee / error per competitor, page and kind (key or account); a cleared one (value None) is dropped."""
+def read_fee_lines(directory: Path) -> dict[tuple[str, str, str], list[dict[str, Any]]]:
+    """competitor-fees.jsonl, per competitor, page and kind (key or account), in the order typed."""
 
-    latest: dict[tuple[str, str, str], dict[str, Any]] = {}
+    out: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
     try:
         lines = (directory / FEES_FILE).read_text(encoding="utf-8").splitlines()
     except OSError:
@@ -420,16 +422,46 @@ def read_fees(directory: Path) -> dict[tuple[str, str, str], dict[str, Any]]:
         except ValueError:
             continue
         if isinstance(entry, dict) and entry.get("site") and entry.get("page_url"):
-            latest[(entry["site"], entry["page_url"], entry.get("kind") or "key")] = entry
-    return {k: v for k, v in latest.items() if isinstance(v.get("value"), (int, float))}
+            out.setdefault((entry["site"], entry["page_url"], entry.get("kind") or "key"), []).append(entry)
+    return out
 
 
-def record_fee(directory: Path, site: Any, page_url: Any, kind: Any, value: Any, *, by: str,
+def row_offers(row: dict[str, Any]) -> list[dict[str, Any]]:
+    """The competitor's offers on a row, the cheapest of each seller (an export without them: its best offer alone)."""
+
+    competitor = row.get("competitor") if isinstance(row.get("competitor"), dict) else {}
+    offers = [o for o in competitor.get("offers") or [] if isinstance(o, dict) and o.get("seller")]
+    if offers:
+        return offers
+    return [{"price": competitor.get("price"), "seller": competitor.get("seller")}] if competitor.get("seller") else []
+
+
+def row_fees(entries: list[dict[str, Any]], offers: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """The fee / error of each seller of a row, the last word winning; a cleared one (value None) removed. An entry typed
+    before the sellers (2026-10-06 19:10, Romain's +20 € on Instant Gaming at 33,69 €) is found by its offer price."""
+
+    fees: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        seller = entry.get("seller")
+        if seller is None:
+            seller = next((o.get("seller") for o in offers if o.get("price") == entry.get("price")), None)
+            if seller is None:
+                continue
+        if isinstance(entry.get("value"), (int, float)):
+            fees[seller] = dict(entry, seller=seller)
+        else:
+            fees.pop(seller, None)
+    return fees
+
+
+def record_fee(directory: Path, site: Any, page_url: Any, kind: Any, value: Any, *, by: str, seller: Any = None,
                clock=_now_iso) -> dict[str, Any]:
     """Romain, 2026-10-06 : « dans le prix concurrent, on puisse rajouter un fee à la main […] l'opérateur ira mettre
     l'offre dans son panier, voir s'il a des fees […] ça servira juste au monitoring » ; « on peut l'appeler fee ou error,
-    parce que si le prix du concurrent peut être inégal, on peut lui ajouter plus ou moins d'euros ». One line per entry
-    in competitor-fees.jsonl, checked against the current competitors.json; an empty value clears it."""
+    parce que si le prix du concurrent peut être inégal, on peut lui ajouter plus ou moins d'euros » ; « pourquoi Instant
+    Gaming reste premier prix alors que j'y ai rajouté 20 € ? » : the fee belongs to one SELLER of the competitor, and the
+    next offer takes the place. One line per entry in competitor-fees.jsonl, checked against the current
+    competitors.json; an empty value clears it."""
 
     kind = kind or "key"
     if kind not in FEE_KINDS:
@@ -440,6 +472,10 @@ def record_fee(directory: Path, site: Any, page_url: Any, kind: Any, value: Any,
     if row is None:
         raise PriceCheckError("unknown_row", "ce prix n'est plus dans le relevé des concurrents : rafraîchir la page",
                               http_status=404)
+    offer = next((o for o in row_offers(row) if isinstance(seller, str) and o.get("seller") == seller), None)
+    if offer is None:
+        raise PriceCheckError("unknown_seller", "ce marchand n'est plus dans les offres du concurrent : rafraîchir la page",
+                              http_status=404)
     if value is None or (isinstance(value, str) and not value.strip()):
         amount = None
     else:
@@ -449,8 +485,8 @@ def record_fee(directory: Path, site: Any, page_url: Any, kind: Any, value: Any,
             raise PriceCheckError("bad_fee", "montant invalide : un nombre d'euros, + ou − (« 1,50 », « -0,80 »)") from exc
         if not -MAX_FEE <= amount <= MAX_FEE or amount != amount:
             raise PriceCheckError("bad_fee", f"montant invalide : entre -{MAX_FEE:.0f} et {MAX_FEE:.0f} €")
-    entry = {"site": site, "page_url": page_url, "kind": kind, "product": row.get("product"),
-             "price": (row.get("competitor") or {}).get("price"), "value": amount, "by": by, "at": clock()}
+    entry = {"site": site, "page_url": page_url, "kind": kind, "product": row.get("product"), "seller": seller,
+             "price": offer.get("price"), "value": amount, "by": by, "at": clock()}
     line = (json.dumps(entry, ensure_ascii=False) + "\n").encode("utf-8")
     path = directory / FEES_FILE
     with _APPEND_LOCK:

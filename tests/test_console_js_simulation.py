@@ -370,8 +370,8 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             # 06/10/2026 : une page console n'est pas comparée (EA SPORTS FC 27 PS5), ni comptée introuvable
             "page console non comparée": ('r.skipped === "console" ? "page console, non comparée" : "introuvable"', '"introuvable"'),
             "page console pas introuvable": ('rows.filter((r) => !r.competitor && !r.skipped).length', 'rows.filter((r) => !r.competitor).length'),
-            "égalité d'un ancien relevé en orange": ('&& cents(r.aks.price) === cents(r.competitor.price) ? "same" : r.cheaper',
-                                                    '&& false ? "same" : r.cheaper'),
+            "égalité d'un ancien relevé en orange": ('return cents(r.aks.price) === cents(best.total) ? "same" :',
+                                                    'return false ? "same" :'),
             "concurrent bloqué dit pourquoi": ('el("p", { class: "pc-comp-msg", text: site.message || "" })', 'el("p", { class: "pc-comp-msg" })'),
             # 06/10/2026 : « à la place de l'écart, mets le prix AKS »
             "prix AKS à la place de l'écart": ('el("th", { text: account ? "Premier compte AKS" : "Première clé AKS" })',
@@ -379,12 +379,18 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             # 06/10/2026 : « on compare clé avec clé et compte avec compte. On ne mélange pas »
             "comptes à part": ("const accounts = site.accounts || [];", "const accounts = [];"),
             # 06/10/2026 : fee / error, « plus ou moins d'euros », par concurrent, page et genre
-            "fee envoyé avec son genre": ("body: JSON.stringify({ site: siteId, page_url: r.page_url, kind, value })",
-                                          "body: JSON.stringify({ site: siteId, page_url: r.page_url, value })"),
-            "prix corrigé du fee": ("return f == null ? null : Math.round((r.competitor.price + f) * 100) / 100;", "return null;"),
-            "couleur avec le fee": ("if (withFee != null && r.aks && typeof r.aks.price === \"number\") {", "if (false) {"),
-            "fee tapé gardé après un refus": ("box.value = FEE_DRAFTS[key] != null ? FEE_DRAFTS[key] : (r.fee ? feeText(r.fee.value) : \"\");",
-                                              "box.value = r.fee ? feeText(r.fee.value) : \"\";"),
+            "fee envoyé avec son genre": ("body: JSON.stringify({ site: siteId, page_url: r.page_url, kind, seller, value })",
+                                          "body: JSON.stringify({ site: siteId, page_url: r.page_url, seller, value })"),
+            # 06/10/2026 : « pourquoi Instant Gaming reste premier prix alors que j'y ai rajouté 20 € ? »
+            "fee chez le marchand affiché": ("body: JSON.stringify({ site: siteId, page_url: r.page_url, kind, seller, value })",
+                                             "body: JSON.stringify({ site: siteId, page_url: r.page_url, kind, value })"),
+            "prix corrigé du fee": ("total: f ? Math.round((o.price + f.value) * 100) / 100 : o.price", "total: o.price"),
+            "l'offre suivante prend la place": ("}).sort((x, y) => x.total - y.total || x.price - y.price);", "});"),
+            "couleur avec le fee": ("return cents(r.aks.price) === cents(best.total) ? \"same\" : cents(r.aks.price) < cents(best.total) ? \"aks\" : \"competitor\";",
+                                    "return r.cheaper;"),
+            "fee tapé gardé après un refus": ("box.value = FEE_DRAFTS[key] != null ? FEE_DRAFTS[key] : (best.fee ? feeText(best.fee.value) : \"\");",
+                                              "box.value = best.fee ? feeText(best.fee.value) : \"\";"),
+            "fee effaçable": ("for (const o of offers.slice(1).filter((x) => x.fee)) {", "for (const o of []) {"),
             # 06/10/2026 : la console, réservée à Romain et à l'équipe ; la récolte à Romain seul
             "console réservée": ('$("#pc-console").classList.toggle("hidden", !d);', '$("#pc-console").classList.toggle("hidden", false);'),
             "récolte réservée à Romain": ('$("#pc-harvest").classList.toggle("hidden", !owner);', '$("#pc-harvest").classList.toggle("hidden", false);'),

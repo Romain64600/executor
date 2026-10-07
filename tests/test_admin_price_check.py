@@ -454,31 +454,48 @@ class CompetitorFeeTests(AppTestCase):
         self.pc_dir = Path(tmp.name)
         self.state.price_check_dir = self.pc_dir
         row = {"product": "STAR WARS Galactic Racer", "page_url": self.PAGE, "aks": {"price": 35.59},
-               "competitor": {"price": 33.69, "url": "https://www.gocdkeys.fr/x"}, "cheaper": "competitor", "gap": -1.9}
-        account = dict(row, aks={"price": 30.87, "account": True}, competitor={"price": 27.1, "url": "https://www.gocdkeys.fr/x"})
+               "competitor": {"price": 33.69, "seller": "Instant Gaming", "url": "https://www.gocdkeys.fr/x",
+                              "offers": [{"price": 33.69, "seller": "Instant Gaming"}, {"price": 36.4, "seller": "Kinguin"}]},
+               "cheaper": "competitor", "gap": -1.9}
+        account = dict(row, aks={"price": 30.87, "account": True}, competitor={
+            "price": 27.1, "seller": "GAMESEAL", "url": "https://www.gocdkeys.fr/x", "offers": [{"price": 27.1, "seller": "GAMESEAL"}]})
         (self.pc_dir / "competitors.json").write_text(json.dumps({"sites": [
             {"id": "gocdkeys", "label": "gocdkeys.fr", "status": "ok", "rows": [row], "accounts": [account]}]}), encoding="utf-8")
 
-    def fee(self, value, kind="account", user="remy", **kw):
-        body = dict({"site": "gocdkeys", "page_url": self.PAGE, "kind": kind, "value": value}, **kw)
+    def fee(self, value, kind="account", user="remy", seller=None, **kw):
+        seller = seller or ("GAMESEAL" if kind == "account" else "Instant Gaming")
+        body = dict({"site": "gocdkeys", "page_url": self.PAGE, "kind": kind, "seller": seller, "value": value}, **kw)
         return self._json("POST", "/api/price-check/competitors/fee", body, headers=_as(user) if user else {"Authorization": ""})
 
     def test_a_fee_is_signed_kept_apart_per_kind_and_shown_on_its_row(self):
         response, body = self.fee("1,50", by="romain")
         self.assertEqual(response.status, 200, body)
         rec = body["recorded"]
-        self.assertEqual((rec["value"], rec["by"], rec["kind"], rec["price"], rec["product"]), (1.5, "remy", "account", 27.1,
-                                                                                                "STAR WARS Galactic Racer"))
+        self.assertEqual((rec["value"], rec["by"], rec["kind"], rec["seller"], rec["price"], rec["product"]),
+                         (1.5, "remy", "account", "GAMESEAL", 27.1, "STAR WARS Galactic Racer"))
         response, body = self._json("GET", "/api/price-check/competitors")
         site = body["sites"][0]
-        self.assertEqual(site["accounts"][0]["fee"]["value"], 1.5)
-        self.assertNotIn("fee", site["rows"][0], "an account's fee landed on the key")
-        self.assertEqual(self.fee("-0,80 €", kind="key")[1]["recorded"]["value"], -0.8)
+        self.assertEqual(site["accounts"][0]["fees"]["GAMESEAL"]["value"], 1.5)
+        self.assertNotIn("fees", site["rows"][0], "an account's fee landed on the key")
+        # Romain, 06/10/2026 : « pourquoi Instant Gaming reste premier prix alors que j'y ai rajouté 20 € ? » : par marchand
+        self.assertEqual(self.fee("20", kind="key")[1]["recorded"]["seller"], "Instant Gaming")
+        self.assertEqual(self.fee("-0,80 €", kind="key", seller="Kinguin")[1]["recorded"]["price"], 36.4)
         response, body = self.fee("")  # effacé
         self.assertIsNone(body["recorded"]["value"])
         site = self._json("GET", "/api/price-check/competitors")[1]["sites"][0]
-        self.assertNotIn("fee", site["accounts"][0])
-        self.assertEqual(site["rows"][0]["fee"]["value"], -0.8)
+        self.assertNotIn("fees", site["accounts"][0])
+        self.assertEqual({s: f["value"] for s, f in site["rows"][0]["fees"].items()}, {"Instant Gaming": 20.0, "Kinguin": -0.8})
+
+    def test_a_fee_typed_before_the_sellers_is_found_by_its_offer_price(self):
+        # le 06/10 à 19:10, Romain : +20 € sur la ligne STAR WARS, quand la meilleure clé était Instant Gaming à 33,69 €
+        (self.pc_dir / "competitor-fees.jsonl").write_text(json.dumps({
+            "site": "gocdkeys", "page_url": self.PAGE, "kind": "key", "product": "STAR WARS Galactic Racer", "price": 33.69,
+            "value": 20.0, "by": "romain", "at": "2026-10-06T19:10:40+02:00"}) + "\n", encoding="utf-8")
+        site = self._json("GET", "/api/price-check/competitors")[1]["sites"][0]
+        self.assertEqual(site["rows"][0]["fees"]["Instant Gaming"]["value"], 20.0)
+        self.fee("", kind="key")  # effacé par marchand : l'ancienne saisie ne revient pas
+        site = self._json("GET", "/api/price-check/competitors")[1]["sites"][0]
+        self.assertNotIn("fees", site["rows"][0])
 
     def test_fee_refusals(self):
         self.assertEqual(self.fee("1", page_url="https://x/")[0].status, 404)
@@ -486,6 +503,7 @@ class CompetitorFeeTests(AppTestCase):
         self.assertEqual(self.fee("5000")[1]["error"]["code"], "bad_fee")
         self.assertEqual(self.fee("nan")[1]["error"]["code"], "bad_fee")
         self.assertEqual(self.fee("1", kind="gift")[1]["error"]["code"], "bad_kind")
+        self.assertEqual(self.fee("1", seller="Inconnu")[1]["error"]["code"], "unknown_seller")
         self.assertEqual(self.fee("1", user=None)[0].status, 403)
         self.assertFalse((self.pc_dir / "competitor-fees.jsonl").exists())
 

@@ -418,11 +418,15 @@ const SW = "https://www.allkeyshop.com/blog/buy-star-wars-galactic-racer-cd-key-
 const GOCDKEYS = {
   id: "gocdkeys", label: "gocdkeys.fr", home: "https://www.gocdkeys.fr/", status: "ok",
   rows: [{ product: "STAR WARS Galactic Racer", page_url: SW, aks: { price: 35.59, merchant: "Kinguin", account: false },
-    competitor: { price: 33.69, seller: "Instant Gaming", url: "https://www.gocdkeys.fr/acheter-star-wars-galactic-racer-pc-cd-key" },
-    cheaper: "competitor", gap: -1.9, fee: { value: 2.5, by: "remy", at: "2026-10-06T18:50:00+02:00", price: 33.69 } }],
+    competitor: { price: 33.69, seller: "Instant Gaming", url: "https://www.gocdkeys.fr/acheter-star-wars-galactic-racer-pc-cd-key",
+      offers: [{ price: 33.69, seller: "Instant Gaming" }, { price: 36.4, seller: "Kinguin" }, { price: 37.02, seller: "K4G" }] },
+    cheaper: "competitor", gap: -1.9,
+    // Romain, 06/10/2026 : « pourquoi Instant Gaming reste premier prix alors que j'y ai rajouté 20 € ? »
+    fees: { "Instant Gaming": { seller: "Instant Gaming", value: 20, by: "romain", at: "2026-10-06T19:10:40+02:00", price: 33.69 } } }],
   accounts: [
     { product: "STAR WARS Galactic Racer", page_url: SW, aks: { price: 30.87, merchant: "Kinguin", account: true },
-      competitor: { price: 27.1, seller: "GAMESEAL", url: "https://www.gocdkeys.fr/acheter-star-wars-galactic-racer-pc-cd-key" },
+      competitor: { price: 27.1, seller: "GAMESEAL", url: "https://www.gocdkeys.fr/acheter-star-wars-galactic-racer-pc-cd-key",
+        offers: [{ price: 27.1, seller: "GAMESEAL" }, { price: 28.93, seller: "Driffle" }] },
       cheaper: "competitor", gap: -3.77 },
     { product: "WARDOGS", page_url: "https://www.allkeyshop.com/blog/buy-wardogs-cd-key-compare-prices/", aks: null,
       competitor: { price: 12.61, seller: "Gamivo", url: "https://www.gocdkeys.fr/acheter-wardogs-pc-cd-key" }, cheaper: null, gap: null }],
@@ -439,15 +443,17 @@ test("keys against keys, accounts against accounts, in two tables; fee / error t
     ["Jeu", "Meilleure clé gocdkeys.fr", "Fee / error", "Première clé AKS"],
     ["Jeu", "Meilleur compte gocdkeys.fr", "Fee / error", "Premier compte AKS"]]);
   assert.ok(tables[1].textContent.includes("pas de compte sur AKS"), tables[1].textContent);
-  const [keyFee] = tables[0].querySelectorAll("input");
-  assert.equal(keyFee.value, "+2,50");
-  // Romain, 06/10/2026 : « j'ai ajouté 20 € et ça ne se reflète pas sur le prix du concurrent, il reste en rouge » :
-  // le prix du concurrent porte le prix corrigé, et sa couleur ; le compteur du widget aussi
+  // Instant Gaming + 20 € = 53,69 € : la meilleure offre de gocdkeys devient Kinguin à 36,40 €, plus chère qu'AllKeyShop
+  // (35,59 €) : vert, et le compteur du widget aussi ; la case est maintenant pour Kinguin
   const keyPrice = tables[0].querySelectorAll("td").find((td) => td.classList.contains("pc-comp-price"));
-  assert.ok(keyPrice.textContent.includes("avec fee / error : 36,19 €"), keyPrice.textContent);
+  assert.ok(keyPrice.textContent.startsWith("36,40 € · Kinguin"), keyPrice.textContent);
+  assert.ok(keyPrice.textContent.includes("Instant Gaming : 33,69 € +20,00 € = 53,69 €"), keyPrice.textContent);
   assert.ok(keyPrice.classList.contains("pc-win") && !keyPrice.classList.contains("pc-lose"),
-    "with its fee the competitor is dearer than AllKeyShop, its price stays red");
+    "Instant Gaming stays the competitor's first price despite its 20 €");
   assert.ok(widget.textContent.includes("1 AKS moins cher · 0 même prix · 0 concurrent moins cher"), widget.textContent);
+  const [keyFee] = tables[0].querySelectorAll("input");
+  assert.equal(keyFee.value, "");
+  assert.ok(String(keyFee.getAttribute("aria-label")).includes("chez Kinguin"), keyFee.getAttribute("aria-label"));
   const [accountFee] = tables[1].querySelectorAll("input");
   accountFee.value = "1,5";
   await accountFee.fire("input");
@@ -455,16 +461,29 @@ test("keys against keys, accounts against accounts, in two tables; fee / error t
   await tick();
   const sent = lastPost(c);
   assert.equal(sent.url, "api/price-check/competitors/fee");
-  assert.deepEqual(sent.body, { site: "gocdkeys", page_url: SW, kind: "account", value: "1,5" });
-  await c.net.release("api/price-check/competitors/fee", { recorded: { site: "gocdkeys", page_url: SW, kind: "account", value: 1.5,
-    by: "remy", at: "2026-10-06T19:00:00+02:00", price: 27.1 } });
+  assert.deepEqual(sent.body, { site: "gocdkeys", page_url: SW, kind: "account", seller: "GAMESEAL", value: "1,5" });
+  await c.net.release("api/price-check/competitors/fee", { recorded: { site: "gocdkeys", page_url: SW, kind: "account", seller: "GAMESEAL",
+    value: 1.5, by: "remy", at: "2026-10-06T19:00:00+02:00", price: 27.1 } });
   const [w2] = c.$("#pc-competitors").children.filter((n) => n.tagName === "SECTION");
   const accountPrice = w2.querySelectorAll("table")[1].querySelectorAll("td").find((td) => td.classList.contains("pc-comp-price"));
-  assert.ok(accountPrice.textContent.includes("avec fee / error : 28,60 €"), accountPrice.textContent);
+  // GAMESEAL + 1,50 € = 28,60 € reste moins cher que Driffle (28,93 €) : toujours la meilleure, comparée au compte AKS
+  assert.ok(accountPrice.textContent.startsWith("28,60 € · GAMESEAL") && accountPrice.textContent.includes("dont fee / error +1,50 € (27,10 € affiché)"),
+    accountPrice.textContent);
   assert.ok(accountPrice.classList.contains("pc-lose"), "the corrected account price is not compared with AllKeyShop's account");
-  assert.ok(c.$("#status").textContent.includes("Fee / error enregistré"), c.$("#status").textContent);
+  assert.ok(c.$("#status").textContent.includes("Fee / error enregistré : STAR WARS Galactic Racer, GAMESEAL +1,50 €"), c.$("#status").textContent);
+  // le fee d'Instant Gaming s'efface d'un clic, et Instant Gaming redevient la meilleure offre
+  const clear = w2.querySelectorAll("button").find((b) => b.textContent === "✕ Instant Gaming +20,00 €");
+  assert.ok(clear, "no way to clear the fee of a passed offer");
+  clear.fire("click");
+  await tick();
+  assert.deepEqual(lastPost(c).body, { site: "gocdkeys", page_url: SW, kind: "key", seller: "Instant Gaming", value: "" });
+  await c.net.release("api/price-check/competitors/fee", { recorded: { site: "gocdkeys", page_url: SW, kind: "key", seller: "Instant Gaming",
+    value: null, by: "romain", at: "2026-10-07T14:00:00+02:00", price: 33.69 } });
+  const [w4] = c.$("#pc-competitors").children.filter((n) => n.tagName === "SECTION");
+  assert.ok(w4.querySelectorAll("table")[0].textContent.includes("33,69 € · Instant Gaming"), w4.querySelectorAll("table")[0].textContent);
+  assert.ok(c.$("#status").textContent.includes("Fee / error effacé : STAR WARS Galactic Racer, Instant Gaming"), c.$("#status").textContent);
   // refusé : on le dit, et ce qui a été tapé reste dans la case
-  const [again] = w2.querySelectorAll("table")[0].querySelectorAll("input");
+  const [again] = w4.querySelectorAll("table")[0].querySelectorAll("input");
   again.value = "abc";
   await again.fire("input");
   again.fire("change");

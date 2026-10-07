@@ -184,3 +184,6 @@ main.pc-main { max-width:1100px; }
 .pc-fee { width:5.2em; font:inherit; font-size:.8rem; padding:.1rem .25rem; }
 .pc-fee-total { display:block; font-size:.78rem; }
 .pc-fee-by { display:block; font-size:.7rem; color:var(--dim); font-weight:400; }
+.pc-fee-for { display:block; font-size:.7rem; color:var(--dim); }
+.pc-fee-passed { display:block; font-size:.72rem; color:var(--dim); font-weight:400; }
+.pc-fee-clear { display:block; margin-top:.15rem; font-size:.7rem; padding:.05rem .3rem; }

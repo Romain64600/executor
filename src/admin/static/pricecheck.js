@@ -546,7 +546,7 @@ if (typeof window !== "undefined" && window.addEventListener) {
 // « le meilleur prix en vert si AllKeyShop est moins cher, le meilleur prix du concurrent en rouge si AllKeyShop est plus
 // cher, le premier prix AKS à côté » ; « couleur orange quand on est au même prix que le concurrent » ; « on compare clé
 // avec clé et compte avec compte. On ne mélange pas. C'est une règle importante ». The monitor writes competitors.json
-// every 30 min: for each top page, AllKeyShop's cheapest key (without payment fees) against each competitor's cheapest
+// every 30 min: for each top page, AllKeyShop's cheapest key (card fees included, as the page shows it) against each competitor's cheapest
 // key (rows), and the accounts apart (accounts), when the competitor sells accounts. « Fee / error » : what an operator
 // saw in the competitor's cart, + or − euros, kept in competitor-fees.jsonl for monitoring only.
 let COMPETITORS = null;
@@ -556,55 +556,62 @@ const safeLink = (url, text) => (/^https?:\/\//i.test(String(url || ""))
   ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text }) : el("span", { text }));
 const TONE = { "aks": "pc-win", "same": "pc-even", "competitor": "pc-lose" };
 const cents = (n) => Math.round(n * 100);
-// the competitor's price with the fee / error an operator typed (Romain, 06/10/2026 : « j'ai ajouté 20 € et ça ne se
-// reflète pas sur le prix du concurrent ») : the colour and the counts follow the corrected price
-const feeOf = (r) => (r.fee && typeof r.fee.value === "number" && r.competitor && typeof r.competitor.price === "number"
-  ? r.fee.value : null);
-const priceWithFee = (r) => { const f = feeOf(r); return f == null ? null : Math.round((r.competitor.price + f) * 100) / 100; };
+// The competitor's offers, the cheapest of each seller, with the fee / error typed for that seller, the cheapest first
+// (Romain, 06/10/2026 : « j'ai ajouté 20 € et ça ne se reflète pas sur le prix du concurrent » ; « pourquoi est-ce que va
+// toujours Instant Gaming, premier prix, alors que j'y ai rajouté 20 € ? ») : the best offer once the fees are counted
+// is the competitor's price, its colour and the counts follow it.
+function offersOf(r) {
+  const c = r.competitor;
+  if (!c || typeof c.price !== "number") return [];
+  const fees = r.fees || {};
+  const base = (c.offers || []).filter((o) => o && typeof o.price === "number");
+  return (base.length ? base : [{ price: c.price, seller: c.seller }]).map((o) => {
+    const f = fees[o.seller] && typeof fees[o.seller].value === "number" ? fees[o.seller] : null;
+    return { price: o.price, seller: o.seller, fee: f, total: f ? Math.round((o.price + f.value) * 100) / 100 : o.price };
+  }).sort((x, y) => x.total - y.total || x.price - y.price);
+}
 // the same price to the cent is "same", even in an export written before the orange (it said "aks" for a tie)
 function outcome(r) {
-  const withFee = priceWithFee(r);
-  if (withFee != null && r.aks && typeof r.aks.price === "number") {
-    return cents(r.aks.price) === cents(withFee) ? "same" : cents(r.aks.price) < cents(withFee) ? "aks" : "competitor";
-  }
-  return r.aks && r.competitor && typeof r.aks.price === "number" && typeof r.competitor.price === "number"
-    && cents(r.aks.price) === cents(r.competitor.price) ? "same" : r.cheaper;
+  const best = offersOf(r)[0];
+  if (!best || !r.aks || typeof r.aks.price !== "number") return r.cheaper;
+  return cents(r.aks.price) === cents(best.total) ? "same" : cents(r.aks.price) < cents(best.total) ? "aks" : "competitor";
 }
 
 const feeText = (v) => (typeof v === "number" ? (v > 0 ? "+" : "") + v.toFixed(2).replace(".", ",") : "");
 
 // Fee / error (Romain, 06/10/2026 : « dans le prix concurrent, on puisse rajouter un fee à la main » ; « on peut l'appeler
 // fee ou error, parce que si le prix du concurrent peut être inégal, on peut lui ajouter plus ou moins d'euros »)
+// the box is for the seller of the offer shown; the fees typed for the other sellers stay listed, each can be cleared
 function feeCell(site, kind, r) {
-  const c = r.competitor;
-  if (!c) return el("td", { class: "pc-comp-fee" });
-  const key = site.id + "|" + kind + "|" + r.page_url;
+  const offers = offersOf(r), best = offers[0];
+  if (!best) return el("td", { class: "pc-comp-fee" });
+  const key = site.id + "|" + kind + "|" + r.page_url + "|" + best.seller;
   const box = el("input", { type: "text", inputmode: "decimal", class: "pc-fee", size: "6", maxlength: "9",
-    placeholder: "± €", "aria-label": "Fee / error en euros, " + (r.product || "") });
-  box.value = FEE_DRAFTS[key] != null ? FEE_DRAFTS[key] : (r.fee ? feeText(r.fee.value) : "");
+    placeholder: "± €", "aria-label": "Fee / error chez " + (best.seller || "?") + ", " + (r.product || "") });
+  box.value = FEE_DRAFTS[key] != null ? FEE_DRAFTS[key] : (best.fee ? feeText(best.fee.value) : "");
   box.addEventListener("input", () => { FEE_DRAFTS[key] = box.value; });
-  box.addEventListener("change", () => saveFee(site.id, kind, r, box.value));
-  const kids = [box];
-  if (feeOf(r) != null) {
-    kids.push(el("span", { class: "pc-fee-by", text: "par " + (r.fee.by || "?") + ", " + stamp(r.fee.at),
-      title: typeof r.fee.price === "number" && cents(r.fee.price) !== cents(c.price)
-        ? "saisi quand le concurrent affichait " + euros(r.fee.price) : "saisi sur le prix affiché" }));
+  box.addEventListener("change", () => saveFee(site.id, kind, r, best.seller, box.value, key));
+  const kids = [el("span", { class: "pc-fee-for", text: "chez " + (best.seller || "?") }), box];
+  if (best.fee) kids.push(el("span", { class: "pc-fee-by", text: "par " + (best.fee.by || "?") + ", " + stamp(best.fee.at) }));
+  for (const o of offers.slice(1).filter((x) => x.fee)) {
+    kids.push(el("button", { type: "button", class: "pc-fee-clear", title: "Effacer le fee / error saisi chez " + o.seller,
+      text: "✕ " + o.seller + " " + feeText(o.fee.value) + " €", onclick: () => saveFee(site.id, kind, r, o.seller, "", null) }));
   }
   return el("td", { class: "pc-comp-fee" }, kids);
 }
 
-async function saveFee(siteId, kind, r, value) {
-  const key = siteId + "|" + kind + "|" + r.page_url;
+async function saveFee(siteId, kind, r, seller, value, draftKey) {
   setStatus("Enregistrement du fee / error…", true);
   try {
     const res = await api("api/price-check/competitors/fee", { method: "POST",
-      body: JSON.stringify({ site: siteId, page_url: r.page_url, kind, value }) });
+      body: JSON.stringify({ site: siteId, page_url: r.page_url, kind, seller, value }) });
     const rec = res && res.recorded;
-    if (!rec || rec.page_url !== r.page_url || rec.site !== siteId) throw new Error("réponse inattendue du serveur");
-    if (typeof rec.value === "number") r.fee = rec; else delete r.fee;
-    delete FEE_DRAFTS[key];
-    setStatus(typeof rec.value === "number" ? "Fee / error enregistré : " + (r.product || "") + " " + feeText(rec.value) + " €"
-      : "Fee / error effacé : " + (r.product || ""), false);
+    if (!rec || rec.page_url !== r.page_url || rec.site !== siteId || rec.seller !== seller) throw new Error("réponse inattendue du serveur");
+    r.fees = r.fees || {};
+    if (typeof rec.value === "number") r.fees[seller] = rec; else delete r.fees[seller];
+    if (draftKey) delete FEE_DRAFTS[draftKey];
+    setStatus(typeof rec.value === "number" ? "Fee / error enregistré : " + (r.product || "") + ", " + seller + " " + feeText(rec.value) + " €"
+      : "Fee / error effacé : " + (r.product || "") + ", " + seller, false);
   } catch (e) {
     setStatus("Fee / error non enregistré : " + e.message, false);
   }
@@ -615,11 +622,14 @@ function compTable(site, rows, kind) {
   const account = kind === "account";
   const body = rows.map((r) => {
     const a = r.aks, c = r.competitor, tone = TONE[outcome(r)] || "";
+    const offers = offersOf(r), best = offers[0];
     // « à la place de l'écart, mets le prix AKS » (Romain, 06/10/2026) : AllKeyShop's first price beside the competitor's
     return el("tr", {}, [
       el("td", {}, [safeLink(r.page_url, r.product || "?")]),
-      el("td", { class: "pc-comp-price " + tone }, c ? [safeLink(c.url, euros(c.price)), " · " + (c.seller || "?"),
-        priceWithFee(r) != null ? el("span", { class: "pc-fee-total", text: "avec fee / error : " + euros(priceWithFee(r)) }) : null]
+      el("td", { class: "pc-comp-price " + tone }, c && best ? [safeLink(c.url, euros(best.total)), " · " + (best.seller || "?"),
+        best.fee ? el("span", { class: "pc-fee-total", text: "dont fee / error " + feeText(best.fee.value) + " € (" + euros(best.price) + " affiché)" }) : null,
+        ...offers.slice(1).filter((o) => o.fee).map((o) => el("span", { class: "pc-fee-passed",
+          text: o.seller + " : " + euros(o.price) + " " + feeText(o.fee.value) + " € = " + euros(o.total) }))]
         : [r.skipped === "console" ? "page console, non comparée" : "introuvable"]),
       feeCell(site, kind, r),
       el("td", { class: "pc-comp-aks", text: a ? euros(a.price) + " · " + (a.merchant || "?") + (a.account && !account ? " (compte)" : "")
