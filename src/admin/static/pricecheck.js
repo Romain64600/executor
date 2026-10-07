@@ -544,48 +544,126 @@ if (typeof window !== "undefined" && window.addEventListener) {
 
 // ---- Concurrents (Romain, 06/10/2026) : « un widget par concurrent », pour les pages des tops ----
 // « le meilleur prix en vert si AllKeyShop est moins cher, le meilleur prix du concurrent en rouge si AllKeyShop est plus
-// cher, le premier prix AKS à côté ». The monitor writes competitors.json every 30 min: for each top page, the AllKeyShop
-// first price (cheapest offer, accounts included, without payment fees) and each competitor's best displayed price.
+// cher, le premier prix AKS à côté » ; « couleur orange quand on est au même prix que le concurrent » ; « on compare clé
+// avec clé et compte avec compte. On ne mélange pas. C'est une règle importante ». The monitor writes competitors.json
+// every 30 min: for each top page, AllKeyShop's cheapest key (without payment fees) against each competitor's cheapest
+// key (rows), and the accounts apart (accounts), when the competitor sells accounts. « Fee / error » : what an operator
+// saw in the competitor's cart, + or − euros, kept in competitor-fees.jsonl for monitoring only.
 let COMPETITORS = null;
+const FEE_DRAFTS = {};  // fees typed and not saved yet, kept across a refresh
 const euros = (n) => (typeof n === "number" ? n.toFixed(2).replace(".", ",") + " €" : "—");
 const safeLink = (url, text) => (/^https?:\/\//i.test(String(url || ""))
   ? el("a", { href: url, target: "_blank", rel: "noopener noreferrer", text }) : el("span", { text }));
-const TONE = { "aks": "pc-win", "competitor": "pc-lose" };
+const TONE = { "aks": "pc-win", "same": "pc-even", "competitor": "pc-lose" };
+const cents = (n) => Math.round(n * 100);
+// the competitor's price with the fee / error an operator typed (Romain, 06/10/2026 : « j'ai ajouté 20 € et ça ne se
+// reflète pas sur le prix du concurrent ») : the colour and the counts follow the corrected price
+const feeOf = (r) => (r.fee && typeof r.fee.value === "number" && r.competitor && typeof r.competitor.price === "number"
+  ? r.fee.value : null);
+const priceWithFee = (r) => { const f = feeOf(r); return f == null ? null : Math.round((r.competitor.price + f) * 100) / 100; };
+// the same price to the cent is "same", even in an export written before the orange (it said "aks" for a tie)
+function outcome(r) {
+  const withFee = priceWithFee(r);
+  if (withFee != null && r.aks && typeof r.aks.price === "number") {
+    return cents(r.aks.price) === cents(withFee) ? "same" : cents(r.aks.price) < cents(withFee) ? "aks" : "competitor";
+  }
+  return r.aks && r.competitor && typeof r.aks.price === "number" && typeof r.competitor.price === "number"
+    && cents(r.aks.price) === cents(r.competitor.price) ? "same" : r.cheaper;
+}
 
-function gapLabel(r) {
-  if (typeof r.gap !== "number") return "";
-  if (r.gap > 0) return "AKS moins cher de " + euros(r.gap);
-  if (r.gap < 0) return "AKS plus cher de " + euros(-r.gap);
-  return "même prix";
+const feeText = (v) => (typeof v === "number" ? (v > 0 ? "+" : "") + v.toFixed(2).replace(".", ",") : "");
+
+// Fee / error (Romain, 06/10/2026 : « dans le prix concurrent, on puisse rajouter un fee à la main » ; « on peut l'appeler
+// fee ou error, parce que si le prix du concurrent peut être inégal, on peut lui ajouter plus ou moins d'euros »)
+function feeCell(site, kind, r) {
+  const c = r.competitor;
+  if (!c) return el("td", { class: "pc-comp-fee" });
+  const key = site.id + "|" + kind + "|" + r.page_url;
+  const box = el("input", { type: "text", inputmode: "decimal", class: "pc-fee", size: "6", maxlength: "9",
+    placeholder: "± €", "aria-label": "Fee / error en euros, " + (r.product || "") });
+  box.value = FEE_DRAFTS[key] != null ? FEE_DRAFTS[key] : (r.fee ? feeText(r.fee.value) : "");
+  box.addEventListener("input", () => { FEE_DRAFTS[key] = box.value; });
+  box.addEventListener("change", () => saveFee(site.id, kind, r, box.value));
+  const kids = [box];
+  if (feeOf(r) != null) {
+    kids.push(el("span", { class: "pc-fee-by", text: "par " + (r.fee.by || "?") + ", " + stamp(r.fee.at),
+      title: typeof r.fee.price === "number" && cents(r.fee.price) !== cents(c.price)
+        ? "saisi quand le concurrent affichait " + euros(r.fee.price) : "saisi sur le prix affiché" }));
+  }
+  return el("td", { class: "pc-comp-fee" }, kids);
+}
+
+async function saveFee(siteId, kind, r, value) {
+  const key = siteId + "|" + kind + "|" + r.page_url;
+  setStatus("Enregistrement du fee / error…", true);
+  try {
+    const res = await api("api/price-check/competitors/fee", { method: "POST",
+      body: JSON.stringify({ site: siteId, page_url: r.page_url, kind, value }) });
+    const rec = res && res.recorded;
+    if (!rec || rec.page_url !== r.page_url || rec.site !== siteId) throw new Error("réponse inattendue du serveur");
+    if (typeof rec.value === "number") r.fee = rec; else delete r.fee;
+    delete FEE_DRAFTS[key];
+    setStatus(typeof rec.value === "number" ? "Fee / error enregistré : " + (r.product || "") + " " + feeText(rec.value) + " €"
+      : "Fee / error effacé : " + (r.product || ""), false);
+  } catch (e) {
+    setStatus("Fee / error non enregistré : " + e.message, false);
+  }
+  renderCompetitors();
+}
+
+function compTable(site, rows, kind) {
+  const account = kind === "account";
+  const body = rows.map((r) => {
+    const a = r.aks, c = r.competitor, tone = TONE[outcome(r)] || "";
+    // « à la place de l'écart, mets le prix AKS » (Romain, 06/10/2026) : AllKeyShop's first price beside the competitor's
+    return el("tr", {}, [
+      el("td", {}, [safeLink(r.page_url, r.product || "?")]),
+      el("td", { class: "pc-comp-price " + tone }, c ? [safeLink(c.url, euros(c.price)), " · " + (c.seller || "?"),
+        priceWithFee(r) != null ? el("span", { class: "pc-fee-total", text: "avec fee / error : " + euros(priceWithFee(r)) }) : null]
+        : [r.skipped === "console" ? "page console, non comparée" : "introuvable"]),
+      feeCell(site, kind, r),
+      el("td", { class: "pc-comp-aks", text: a ? euros(a.price) + " · " + (a.merchant || "?") + (a.account && !account ? " (compte)" : "")
+        : account ? "pas de compte sur AKS" : "—" }),
+    ]);
+  });
+  return el("div", { class: "table-wrap" }, [el("table", { class: "pc-comp-table" }, [
+    el("thead", {}, [el("tr", {}, [el("th", { text: "Jeu" }),
+      el("th", { text: (account ? "Meilleur compte " : "Meilleure clé ") + (site.label || site.id) }),
+      el("th", { text: "Fee / error", title: "Ce que l'opérateur a vu au panier du concurrent : frais, ou prix faux, en euros, + ou −" }),
+      el("th", { text: account ? "Premier compte AKS" : "Première clé AKS" })])]),
+    el("tbody", {}, body)])]);
 }
 
 function competitorWidget(site) {
   const rows = site.rows || [];
-  const won = rows.filter((r) => r.cheaper === "aks").length;
-  const lost = rows.filter((r) => r.cheaper === "competitor").length;
-  const missing = rows.filter((r) => !r.competitor).length;
+  const won = rows.filter((r) => outcome(r) === "aks").length;
+  const even = rows.filter((r) => outcome(r) === "same").length;
+  const lost = rows.filter((r) => outcome(r) === "competitor").length;
+  // a console page is not compared (the competitors give no price per console): not "introuvable"
+  const consoles = rows.filter((r) => r.skipped === "console").length;
+  const missing = rows.filter((r) => !r.competitor && !r.skipped).length;
   const blocked = site.status === "blocked";
   const head = el("div", { class: "pc-comp-head" }, [
     safeLink(site.home, site.label || site.id),
     blocked ? el("span", { class: "pc-comp-blocked", text: "bloqué" })
       : el("span", { class: "pc-comp-score" }, [el("b", { class: "pc-win", text: String(won) }), " AKS moins cher · ",
+        el("b", { class: "pc-even", text: String(even) }), " même prix · ",
         el("b", { class: "pc-lose", text: String(lost) }), " concurrent moins cher" +
-        (missing ? " · " + missing + " introuvable" + (missing > 1 ? "s" : "") : "")]),
+        (missing ? " · " + missing + " introuvable" + (missing > 1 ? "s" : "") : "") +
+        (consoles ? " · " + consoles + " page" + (consoles > 1 ? "s" : "") + " console non comparée" + (consoles > 1 ? "s" : "") : "")]),
   ]);
   if (blocked) return el("section", { class: "pc-comp-card blocked" }, [head, el("p", { class: "pc-comp-msg", text: site.message || "" })]);
-  const body = rows.map((r) => {
-    const a = r.aks, c = r.competitor, tone = TONE[r.cheaper] || "";
-    return el("tr", {}, [
-      el("td", {}, [safeLink(r.page_url, r.product || "?")]),
-      el("td", { class: "pc-comp-aks", text: a ? euros(a.price) + " · " + (a.merchant || "?") + (a.account ? " (compte)" : "") : "—" }),
-      el("td", { class: "pc-comp-price " + tone }, c ? [safeLink(c.url, euros(c.price)), " · " + (c.seller || "?")] : ["introuvable"]),
-      el("td", { class: "pc-comp-gap", text: gapLabel(r) }),
-    ]);
-  });
-  return el("section", { class: "pc-comp-card" }, [head, el("div", { class: "table-wrap" }, [el("table", { class: "pc-comp-table" }, [
-    el("thead", {}, [el("tr", {}, [el("th", { text: "Jeu" }), el("th", { text: "Premier prix AKS" }),
-      el("th", { text: "Meilleur prix " + (site.label || site.id) }), el("th", { text: "Écart" })])]),
-    el("tbody", {}, body)])])]);
+  // clé contre clé ; compte contre compte, à part, seulement quand le concurrent vend des comptes
+  const kids = [head, el("h4", { class: "pc-comp-sub", text: "Clés" }), compTable(site, rows, "key")];
+  const accounts = site.accounts || [];
+  if (accounts.length) {
+    const count = (k) => String(accounts.filter((r) => outcome(r) === k).length);
+    kids.push(el("h4", { class: "pc-comp-sub" }, ["Comptes ", el("span", { class: "pc-comp-score" }, [
+      el("b", { class: "pc-win", text: count("aks") }), " AKS moins cher · ", el("b", { class: "pc-even", text: count("same") }),
+      " même prix · ", el("b", { class: "pc-lose", text: count("competitor") }), " concurrent moins cher"])]),
+      compTable(site, accounts, "account"));
+  }
+  return el("section", { class: "pc-comp-card" }, kids);
 }
 
 function renderCompetitors() {
@@ -693,3 +771,81 @@ async function launch(mode) {
 for (const mode of RUN_MODES) $("#launch-" + mode).addEventListener("click", () => launch(mode));
 setInterval(() => { if (document.visibilityState !== "hidden") loadStatus(); }, STATUS_MS);
 loadStatus();
+
+// ---- Console Claude (Romain, 06/10/2026) ----
+// « une console pour pouvoir en discuter en temps réel depuis l'admin, sur ce même onglet Price check » ; Romain, Rémy,
+// Garance et Lionel ; « pour les modifications sur le code, il faudra passer par moi ». The admin runs nothing: a message
+// becomes a request file for the console service (price-check-console, root), which answers into console.json. Anyone
+// else gets a 403 and the card stays hidden. A question for Romain goes to the Romain tab.
+let CHAT = null, CHAT_TIMER = null;
+const CHAT_FAST_MS = 3000, CHAT_SLOW_MS = 20000;
+const CHAT_KIND = { "claude": "from-claude", "console": "from-console" };
+
+function chatMessage(m) {
+  const kids = [el("div", { class: "pc-chat-head" }, [el("b", { text: m.label || m.user || "?" }), " · " + stamp(m.at)]),
+    el("div", { class: "pc-chat-text", text: m.text || "" })];
+  if (m.error) kids.push(el("div", { class: "pc-chat-error", text: m.error }));
+  const q = m.questions || {};
+  if ((q.opened || []).length) {
+    kids.push(el("div", { class: "pc-chat-q" }, ["→ " + q.opened.join(", ") + " : question" + (q.opened.length > 1 ? "s" : "") +
+      " pour Romain, dans l'onglet ", el("a", { href: "romain", text: "Romain" })]));
+  }
+  if ((q.closed || []).length) {
+    kids.push(el("div", { class: "pc-chat-q", text: "✓ " + q.closed.join(", ") + " réglée" + (q.closed.length > 1 ? "s" : "") }));
+  }
+  return el("div", { class: "pc-chat-msg " + (CHAT_KIND[m.user] || "from-team") + (m.kind === "error" ? " is-error" : "") }, kids);
+}
+
+function renderChat() {
+  const d = CHAT;
+  $("#pc-console").classList.toggle("hidden", !d);
+  if (!d) return;
+  const owner = d.role === "owner";
+  $("#pc-harvest").classList.toggle("hidden", !owner);
+  $("#pc-new-session").classList.toggle("hidden", !owner);
+  const msgs = d.messages || [];
+  $("#pc-console-log").replaceChildren(...(msgs.length ? msgs.map(chatMessage) : [el("p", { class: "pc-empty",
+    text: d.available ? "Pas encore de message : écris à Claude ci-dessous."
+      : "Le service de la console (price-check-console) n'a pas encore répondu." })]));
+  $("#pc-console-log").scrollTop = 1e9;
+  const waiting = (d.pending || []).length;
+  $("#pc-console-note").textContent = d.busy ? "— Claude répond à " + (d.busy.label || d.busy.user) +
+    (d.busy.progress ? " (" + d.busy.progress + ")" : "") + "…"
+    : waiting ? "— " + waiting + " message" + (waiting > 1 ? "s" : "") + " en attente" : "";
+}
+
+async function loadChat() {
+  try { CHAT = await api("api/price-check/console"); } catch (e) { CHAT = null; }
+  renderChat();
+  clearTimeout(CHAT_TIMER);
+  if (CHAT) CHAT_TIMER = setTimeout(loadChat, CHAT.busy || (CHAT.pending || []).length ? CHAT_FAST_MS : CHAT_SLOW_MS);
+}
+
+async function sendChat(path, body, done) {
+  try {
+    await api(path, { method: "POST", body: JSON.stringify(body || {}) });
+  } catch (e) {
+    setStatus("Console : " + e.message, false);
+    return false;
+  }
+  setStatus(done, false);
+  loadChat();
+  return true;
+}
+
+async function sendChatMessage() {
+  const box = $("#pc-console-text"), send = $("#pc-console-send"), text = box.value.trim();
+  if (!text || send.disabled) return;
+  send.disabled = true;
+  if (await sendChat("api/price-check/console", { text }, "Message envoyé : Claude répond dans la console")) box.value = "";
+  send.disabled = false;
+}
+$("#pc-console-form").addEventListener("submit", (ev) => { ev.preventDefault(); sendChatMessage(); });
+$("#pc-console-text").addEventListener("keydown", (ev) => {
+  if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); sendChatMessage(); }
+});
+$("#pc-harvest").addEventListener("click", () => sendChat("api/price-check/console/harvest", {},
+  "Récolte demandée : Claude relit les décisions ; ses points à trancher iront dans l'onglet Romain"));
+$("#pc-new-session").addEventListener("click", () => sendChat("api/price-check/console/new-session", {},
+  "Nouvelle session demandée : Claude repart de zéro"));
+loadChat();

@@ -21,6 +21,7 @@
       <a href="sql" class="tab">Tri SQL</a>
       <a href="overview" class="tab">Vue d'ensemble</a>
       <a href="price-check" class="tab active" aria-current="page">Price check</a>
+      <a href="romain" class="tab">Romain</a>
     </nav>
     <div class="topbar-right">
       <button id="refresh" type="button" title="Relire les reports du moniteur">↻ Rafraîchir</button>
@@ -143,13 +144,37 @@
         </div>
       </div>
     </section>
+    <section class="card hidden" id="pc-console">
+      <div class="recap-head">
+        <h2>Console · Claude <span id="pc-console-note" class="dim"></span></h2>
+        <div class="pc-console-actions">
+          <button type="button" id="pc-harvest" class="hidden"
+                  title="Claude relit les décisions sur les reports et propose une action pour chacune ; chaque point à trancher va dans l'onglet Romain">Récolter les décisions</button>
+          <button type="button" id="pc-new-session" class="hidden"
+                  title="Claude repart de zéro (les messages restent affichés)">Nouvelle session</button>
+        </div>
+      </div>
+      <p class="pc-console-legend">Questions-réponses avec Claude sur le moniteur, les reports et les règles : Romain, Rémy,
+        Garance et Lionel. Seul Romain fait modifier le code. Une question qui demande la décision de Romain part dans
+        l'onglet <a href="romain">Romain</a>.</p>
+      <div id="pc-console-log" class="pc-console-log" aria-live="polite"></div>
+      <form id="pc-console-form" class="pc-console-form">
+        <textarea id="pc-console-text" rows="3" maxlength="4000" aria-label="Message pour Claude"
+                  placeholder="Écrire à Claude… (Entrée pour envoyer, Maj+Entrée pour aller à la ligne)"></textarea>
+        <button type="submit" id="pc-console-send">Envoyer</button>
+      </form>
+    </section>
     <section class="card" id="pc-comp">
       <div class="recap-head">
         <h2>Concurrents · Price check top <span id="pc-comp-note" class="dim"></span></h2>
       </div>
-      <p class="pc-comp-legend">Le premier prix AKS (l'offre la moins chère, comptes compris, sans frais de paiement) face au
-        meilleur prix affiché par chaque concurrent : <span class="pc-win">vert</span> si AllKeyShop est moins cher ou au
-        même prix, <span class="pc-lose">rouge</span> si le concurrent est moins cher. Relevé toutes les 30 min, pages des tops.</p>
+      <p class="pc-comp-legend">Clé contre clé, compte contre compte, jamais mélangés : la clé AllKeyShop la moins chère
+        (sans frais de paiement) face à la meilleure clé de chaque concurrent ; les comptes à part, quand le concurrent en
+        vend. <span class="pc-win">Vert</span> si AllKeyShop est moins cher, <span class="pc-even">orange</span> au même
+        prix, <span class="pc-lose">rouge</span> si le concurrent est moins cher. Fee / error : ce que tu as vu au panier du
+        concurrent (frais, ou prix faux), en euros, + ou − ; le prix du concurrent devient le prix corrigé, et sa couleur
+        avec. Relevé toutes les 30 min,
+        pages des tops.</p>
       <div id="pc-competitors" class="pc-competitors"></div>
     </section>
     <section class="card">

@@ -120,6 +120,10 @@ STATIC_FILES = {
     # Le guide de l'équipe (Romain, 2026-10-03 : « quelqu'un qui a accès à l'admin a accès à ce guide ») : une page
     # générée par price-check/tools/guide_html.py depuis le Markdown du guide (FR + EN), rien en ligne (CSP).
     "pricecheck-guide.html": "text/html; charset=utf-8",
+    # L'onglet Romain (2026-10-06) : les questions en cours, visibles par tous, réglées par Romain seul.
+    "romain.html": "text/html; charset=utf-8",
+    "romain.js": "application/javascript; charset=utf-8",
+    "romain.css": "text/css; charset=utf-8",
     "pricecheck-guide.js": "application/javascript; charset=utf-8",
     "pricecheck-guide.css": "text/css; charset=utf-8",
 }
@@ -440,6 +444,20 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._serve_static("pricecheck.html")
         if path in ("/price-check-guide", "/pricecheck-guide"):
             return self._serve_static("pricecheck-guide.html")
+        if path in ("/romain", "/questions"):
+            return self._serve_static("romain.html")
+        if path == "/api/price-check/console":
+            # La console (Romain, 2026-10-06) : Romain, Rémy, Garance et Lionel ; personne d'autre ne la lit.
+            authed = self._basic_user()
+            role = price_check_io.console_role(authed)
+            if role == "viewer":
+                raise ApiError(403, "console_forbidden", "la console est réservée à Romain, Rémy, Garance et Lionel")
+            return self._send_json(200, dict(price_check_io.read_console(self.state.price_check_dir), me=authed, role=role))
+        if path == "/api/romain/questions":
+            # L'onglet Romain : tout le monde le consulte, seul Romain agit (le rôle le dit à la page).
+            authed = self._basic_user()
+            return self._send_json(200, dict(price_check_io.read_questions(self.state.price_check_dir), me=authed,
+                                             role=price_check_io.console_role(authed), owner=price_check_io.CONSOLE_OWNER))
         if path == "/api/price-check/reports":
             return self._get_price_check_reports()
         if path == "/api/price-check/competitors":
@@ -596,7 +614,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         # JS/CSS on its next reload (index.html itself is no-store). Deterministic
         # (content hash, no timestamps).
         if name in ("index.html", "sort.html", "auto.html", "urls.html", "overview.html", "pricecheck.html",
-                    "pricecheck-guide.html"):
+                    "pricecheck-guide.html", "romain.html"):
             body = self._version_assets(body)
         self._send_bytes(200, STATIC_FILES[name], body)
 
@@ -607,7 +625,7 @@ class AdminHandler(BaseHTTPRequestHandler):
         # itself is no-store). Covers both pages' assets; a no-op for those absent.
         for asset in ("app.js", "style.css", "sort.js", "sort.css", "auto.js", "auto.css",
                       "urls.js", "urls.css", "overview.js", "overview.css", "pricecheck.js",
-                      "pricecheck.css", "pricecheck-guide.js", "pricecheck-guide.css"):
+                      "pricecheck.css", "pricecheck-guide.js", "pricecheck-guide.css", "romain.js", "romain.css"):
             asset_path = STATIC_DIR / asset
             if not asset_path.is_file():
                 continue
@@ -638,6 +656,34 @@ class AdminHandler(BaseHTTPRequestHandler):
             entry = price_check_io.record_decision(
                 self.state.price_check_dir, body.get("offer"), body.get("decision"),
                 body.get("note"), by=authed)
+        except price_check_io.PriceCheckError as exc:
+            raise ApiError(exc.http_status, exc.code, exc.message) from exc
+        self._send_json(200, {"recorded": entry})
+
+    def _post_console(self, kind: str) -> None:
+        # Une demande pour le service de la console (price-check-console, root), signée de l'identité Basic de nginx,
+        # jamais d'un champ du corps : c'est elle qui dit qui parle à Claude, et qui peut agir (Romain seul).
+        body = self._json_body()
+        authed = self._basic_user()
+        if not authed:
+            raise ApiError(403, "authentication_required", "console : identité Basic authentifiée requise")
+        try:
+            entry = price_check_io.request_console(
+                self.state.price_check_dir, kind, by=authed, text=body.get("text"),
+                question=body.get("question"), note=body.get("note"))
+        except price_check_io.PriceCheckError as exc:
+            raise ApiError(exc.http_status, exc.code, exc.message) from exc
+        self._send_json(200, {"requested": entry})
+
+    def _post_competitor_fee(self) -> None:
+        # Fee / error (Romain, 2026-10-06) : ce que l'opérateur a vu au panier du concurrent, signé de l'identité Basic.
+        body = self._json_body()
+        authed = self._basic_user()
+        if not authed:
+            raise ApiError(403, "authentication_required", "fee : identité Basic authentifiée requise")
+        try:
+            entry = price_check_io.record_fee(self.state.price_check_dir, body.get("site"), body.get("page_url"),
+                                              body.get("kind"), body.get("value"), by=authed)
         except price_check_io.PriceCheckError as exc:
             raise ApiError(exc.http_status, exc.code, exc.message) from exc
         self._send_json(200, {"recorded": entry})
@@ -803,6 +849,16 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._post_price_check_decision()
         if path == "/api/price-check/run":
             return self._post_price_check_run()
+        if path == "/api/price-check/console":
+            return self._post_console("message")
+        if path == "/api/price-check/console/harvest":
+            return self._post_console("harvest")
+        if path == "/api/price-check/console/new-session":
+            return self._post_console("new-session")
+        if path == "/api/romain/questions/close":
+            return self._post_console("close")
+        if path == "/api/price-check/competitors/fee":
+            return self._post_competitor_fee()
         if path == "/api/sort/scan":
             body = self._json_body()
             by = str(self._basic_user() or body.get("by") or "operateur")  # [35] authed wins; body "by" cannot forge attribution

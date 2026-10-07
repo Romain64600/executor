@@ -244,8 +244,16 @@ def read_competitors(directory: Path, *, now=time.time) -> dict[str, Any]:
         return base
     if not isinstance(payload, dict) or not isinstance(payload.get("sites"), list):
         return base
+    sites = [s for s in payload["sites"] if isinstance(s, dict)]
+    # the fee / error typed by an operator (competitor-fees.jsonl), on its row: keys and accounts apart
+    fees = read_fees(directory)
+    for site in sites:
+        for kind, key in (("key", "rows"), ("account", "accounts")):
+            for row in site.get(key) or []:
+                if isinstance(row, dict) and (site.get("id"), row.get("page_url"), kind) in fees:
+                    row["fee"] = fees[(site.get("id"), row.get("page_url"), kind)]
     base.update(available=True, age_seconds=age, generated_at=payload.get("generated_at"), every=payload.get("every"),
-                scope=payload.get("scope"), sites=[s for s in payload["sites"] if isinstance(s, dict)])
+                scope=payload.get("scope"), sites=sites)
     return base
 
 
@@ -269,4 +277,192 @@ def request_run(directory: Path, mode: Any, *, by: str, clock=_now_iso) -> dict[
                               http_status=500) from exc
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(json.dumps(entry, ensure_ascii=False))
+    return entry
+
+
+# ---- Console Claude et onglet Romain (Romain, 2026-10-06) -------------------------------------------------------------
+# « une console pour pouvoir en discuter en temps réel depuis l'admin, sur ce même onglet Price check » ; « Rémy, Garance
+# et moi pourrons avoir accès » (+ Lionel, « les mêmes droits ») ; « pour les modifications sur le code, il faudra passer
+# par moi » ; « il faudra jamais oublier de me reporter les questions en cours » ; « un onglet Romain où il y a toutes les
+# questions en cours, que tout le monde peut consulter, mais il n'y a que moi qui peux agir dessus ». The admin runs
+# nothing: it drops a request file into the shared directory; the console service (price-check-console, root) reads it,
+# runs Claude Code and writes console.json and questions.json, which the admin reads back.
+
+CONSOLE_FILE = "console.json"        # written by the console service: the conversation
+QUESTIONS_FILE = "questions.json"    # written by the console service: Romain's questions, open or settled
+CONSOLE_REQUEST = "console-%d-%s.request"  # written by the admin: one message / harvest / settled question
+CONSOLE_KINDS = ("message", "harvest", "close", "new-session")
+CONSOLE_OWNER = os.environ.get("PRICE_CHECK_CONSOLE_OWNER", "romain")
+CONSOLE_TEAM = tuple(u.strip() for u in os.environ.get("PRICE_CHECK_CONSOLE_TEAM", "remy,garance,lionel").split(",")
+                     if u.strip())
+MAX_CONSOLE_TEXT = 4000
+MAX_ANSWER = 2000
+QUESTION_ID = re.compile(r"^Q[0-9]{1,6}$")
+FEES_FILE = "competitor-fees.jsonl"  # written by the admin: fee / error seen in a competitor's cart
+MAX_FEE = 1000.0
+FEE_KINDS = ("key", "account")
+
+
+def console_role(user: str | None) -> str:
+    """owner (Romain: acts), team (Rémy, Garance, Lionel: questions and answers), viewer (everyone else: the Romain tab)."""
+
+    if user and user == CONSOLE_OWNER:
+        return "owner"
+    return "team" if user in CONSOLE_TEAM else "viewer"
+
+
+def _read_json(path: Path, key: str, *, now=time.time) -> dict[str, Any] | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        age = max(0, int(now() - path.stat().st_mtime))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(payload, dict) or not isinstance(payload.get(key), list):
+        return None
+    payload["age_seconds"] = age
+    return payload
+
+
+def pending_console(directory: Path) -> list[dict[str, Any]]:
+    """The requests not yet answered by the console service, oldest first (taken = being answered)."""
+
+    out = []
+    for suffix in (".work", ".request"):
+        for path in sorted(directory.glob("console-*" + suffix)):
+            try:
+                request = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if isinstance(request, dict):
+                out.append({"user": request.get("user"), "kind": request.get("kind"), "at": request.get("at"),
+                            "taken": suffix == ".work"})
+    return out
+
+
+def read_console(directory: Path, *, now=time.time) -> dict[str, Any]:
+    """console.json and the requests waiting for an answer. Never an error: without the service, the page says so."""
+
+    base: dict[str, Any] = {"available": False, "messages": [], "busy": None, "pending": pending_console(directory)}
+    payload = _read_json(directory / CONSOLE_FILE, "messages", now=now)
+    if payload is None:
+        return base
+    busy = payload.get("busy")
+    base.update(available=True, age_seconds=payload["age_seconds"], updated_at=payload.get("updated_at"),
+                busy=busy if isinstance(busy, dict) else None,
+                messages=[m for m in payload["messages"] if isinstance(m, dict)][-300:])
+    return base
+
+
+def read_questions(directory: Path, *, now=time.time) -> dict[str, Any]:
+    """questions.json: Romain's questions, open and settled. Never an error."""
+
+    payload = _read_json(directory / QUESTIONS_FILE, "questions", now=now)
+    if payload is None:
+        return {"available": False, "questions": []}
+    return {"available": True, "age_seconds": payload["age_seconds"], "updated_at": payload.get("updated_at"),
+            "questions": [q for q in payload["questions"] if isinstance(q, dict)]}
+
+
+def request_console(directory: Path, kind: Any, *, by: str, text: Any = None, question: Any = None, note: Any = None,
+                    clock=_now_iso) -> dict[str, Any]:
+    """One request for the console service, signed with the Basic identity: a message (Romain and the team), the harvest
+    of the decisions, a settled question, a new session (Romain only)."""
+
+    role = console_role(by)
+    if role == "viewer":
+        raise PriceCheckError("console_forbidden",
+                              "la console est réservée à Romain, Rémy, Garance et Lionel", http_status=403)
+    if not isinstance(kind, str) or kind not in CONSOLE_KINDS:
+        raise PriceCheckError("bad_kind", f"demande inconnue : {kind!r}")
+    if kind != "message" and role != "owner":
+        raise PriceCheckError("owner_only", "seul Romain peut le faire : récolte, question réglée, nouvelle session",
+                              http_status=403)
+    entry: dict[str, Any] = {"kind": kind, "user": by, "at": clock()}
+    if kind == "message":
+        if not isinstance(text, str) or not text.strip():
+            raise PriceCheckError("bad_text", "message vide")
+        text = text.strip()
+        if len(text) > MAX_CONSOLE_TEXT:
+            raise PriceCheckError("bad_text", f"message trop long ({len(text)} caractères, {MAX_CONSOLE_TEXT} au plus)")
+        entry["text"] = text
+    if kind == "close":
+        if not isinstance(question, str) or not QUESTION_ID.match(question):
+            raise PriceCheckError("bad_question", "question invalide : Q suivi d'un numéro attendu")
+        if note is None:
+            note = ""
+        if not isinstance(note, str) or len(note.strip()) > MAX_ANSWER:
+            raise PriceCheckError("bad_note", f"réponse invalide ({MAX_ANSWER} caractères au plus)")
+        known = {q.get("id"): q for q in read_questions(directory)["questions"]}
+        if known.get(question, {}).get("status") != "open":
+            raise PriceCheckError("unknown_question", f"pas de question en cours {question}", http_status=404)
+        entry.update(question=question, note=note.strip())
+    path = directory / (CONSOLE_REQUEST % (time.time_ns() // 1_000_000, os.urandom(3).hex()))
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o664)
+    except OSError as exc:
+        raise PriceCheckError("request_unwritable", f"{path} : écriture impossible : {exc}", http_status=500) from exc
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, ensure_ascii=False))
+    return entry
+
+
+def read_fees(directory: Path) -> dict[tuple[str, str, str], dict[str, Any]]:
+    """The latest fee / error per competitor, page and kind (key or account); a cleared one (value None) is dropped."""
+
+    latest: dict[tuple[str, str, str], dict[str, Any]] = {}
+    try:
+        lines = (directory / FEES_FILE).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+    for line in lines:
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(entry, dict) and entry.get("site") and entry.get("page_url"):
+            latest[(entry["site"], entry["page_url"], entry.get("kind") or "key")] = entry
+    return {k: v for k, v in latest.items() if isinstance(v.get("value"), (int, float))}
+
+
+def record_fee(directory: Path, site: Any, page_url: Any, kind: Any, value: Any, *, by: str,
+               clock=_now_iso) -> dict[str, Any]:
+    """Romain, 2026-10-06 : « dans le prix concurrent, on puisse rajouter un fee à la main […] l'opérateur ira mettre
+    l'offre dans son panier, voir s'il a des fees […] ça servira juste au monitoring » ; « on peut l'appeler fee ou error,
+    parce que si le prix du concurrent peut être inégal, on peut lui ajouter plus ou moins d'euros ». One line per entry
+    in competitor-fees.jsonl, checked against the current competitors.json; an empty value clears it."""
+
+    kind = kind or "key"
+    if kind not in FEE_KINDS:
+        raise PriceCheckError("bad_kind", f"genre inconnu : {kind!r} (attendu : clé ou compte)")
+    sites = {s.get("id"): s for s in read_competitors(directory)["sites"]}
+    rows = (sites.get(site) or {}).get("rows" if kind == "key" else "accounts") or []
+    row = next((r for r in rows if isinstance(r, dict) and r.get("page_url") == page_url and r.get("competitor")), None)
+    if row is None:
+        raise PriceCheckError("unknown_row", "ce prix n'est plus dans le relevé des concurrents : rafraîchir la page",
+                              http_status=404)
+    if value is None or (isinstance(value, str) and not value.strip()):
+        amount = None
+    else:
+        try:
+            amount = round(float(str(value).strip().replace(",", ".").replace("€", "").replace(" ", "")), 2)
+        except ValueError as exc:
+            raise PriceCheckError("bad_fee", "montant invalide : un nombre d'euros, + ou − (« 1,50 », « -0,80 »)") from exc
+        if not -MAX_FEE <= amount <= MAX_FEE or amount != amount:
+            raise PriceCheckError("bad_fee", f"montant invalide : entre -{MAX_FEE:.0f} et {MAX_FEE:.0f} €")
+    entry = {"site": site, "page_url": page_url, "kind": kind, "product": row.get("product"),
+             "price": (row.get("competitor") or {}).get("price"), "value": amount, "by": by, "at": clock()}
+    line = (json.dumps(entry, ensure_ascii=False) + "\n").encode("utf-8")
+    path = directory / FEES_FILE
+    with _APPEND_LOCK:
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o664)
+        except OSError as exc:
+            raise PriceCheckError("fees_unwritable", f"{path} : écriture impossible : {exc}", http_status=500) from exc
+        try:
+            view = memoryview(line)
+            while view:
+                view = view[os.write(fd, view):]
+            os.fsync(fd)
+        finally:
+            os.close(fd)
     return entry

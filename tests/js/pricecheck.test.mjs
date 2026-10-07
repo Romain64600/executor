@@ -348,12 +348,13 @@ test("a note changed while the decision is being saved is kept, and flagged as n
 });
 
 // Romain, 06/10/2026 : « un widget par concurrent ; le meilleur prix en vert si AllKeyShop est moins cher, le meilleur
-// prix du concurrent en rouge si AllKeyShop est plus cher, le premier prix AKS à côté ».
+// prix du concurrent en rouge si AllKeyShop est plus cher, le premier prix AKS à côté » ; « couleur orange quand on est
+// au même prix que le concurrent ».
 const COMPETITORS = {
   available: true, age_seconds: 120, generated_at: "2026-10-06T17:22:54+0200", every: 1800, scope: "Price check top",
   sites: [
     { id: "gg-deals", label: "gg.deals", home: "https://gg.deals/", status: "blocked", rows: [],
-      message: "gg.deals bloque le serveur (403, Cloudflare) : possible avec son API officielle" },
+      message: "clé de l'API gg.deals pas encore active : confirmer l'adresse e-mail du compte gg.deals" },
     { id: "dlcompare", label: "dlcompare.fr", home: "https://www.dlcompare.fr/", status: "ok", rows: [
       { product: "STAR WARS Galactic Racer", page_url: "https://www.allkeyshop.com/blog/buy-star-wars-galactic-racer-cd-key-compare-prices/",
         aks: { price: 30.87, merchant: "Kinguin", account: true, edition: "Standard" },
@@ -363,30 +364,156 @@ const COMPETITORS = {
         aks: { price: 31.88, merchant: "K4G", account: false }, competitor: { price: 12.61, seller: "Gamivo", url: "javascript:alert(1)" },
         cheaper: "competitor", gap: -19.27 },
       { product: "Gears of War E-Day", page_url: "https://www.allkeyshop.com/blog/x/", aks: { price: 46.78, merchant: "G2A" },
-        competitor: null, cheaper: null, gap: null }] },
+        competitor: null, cheaper: null, gap: null },
+      { product: "Battlefield 6", page_url: "https://www.allkeyshop.com/blog/buy-battlefield-6-cd-key-compare-prices/",
+        aks: { price: 44.5, merchant: "Eneba" }, competitor: { price: 44.5, seller: "Eneba", url: "https://www.dlcompare.fr/jeux/1/bf6" },
+        cheaper: "same", gap: 0 },
+      // a console page is not compared: the competitors give no price per console (EA SPORTS FC 27 PS5, 06/10/2026)
+      { product: "EA SPORTS FC 27 PS5", page_url: "https://www.allkeyshop.com/blog/buy-ea-sports-fc-27-ps5-key-compare-prices/",
+        aks: { price: 36.71, merchant: "BuyGames", account: true }, competitor: null, cheaper: null, gap: null, skipped: "console" },
+      // an export written before the orange said "aks" for a tie: still the same price
+      { product: "Hollow Knight Silksong", page_url: "https://www.allkeyshop.com/blog/buy-hollow-knight-silksong-cd-key-compare-prices/",
+        aks: { price: 15.29, merchant: "GAMESEAL" }, competitor: { price: 15.29, seller: "GAMESEAL", url: "https://www.dlcompare.fr/jeux/2/hks" },
+        cheaper: "aks", gap: 0 }] },
   ],
 };
 
-test("one widget per competitor: green when AllKeyShop is cheaper, red when the competitor is, AKS's first price beside", async () => {
+test("one widget per competitor: green when AllKeyShop is cheaper, orange at the same price, red when the competitor is, AKS's first price beside", async () => {
   const c = await loadConsole(CONSOLE);
   await c.net.release("api/price-check/competitors", JSON.parse(JSON.stringify(COMPETITORS)));
   await tick();
   const widgets = c.$("#pc-competitors").children.filter((n) => n.tagName === "SECTION");
   assert.equal(widgets.length, 2);
   const [gg, dl] = widgets;
-  assert.ok(gg.textContent.includes("bloqué") && gg.textContent.includes("API officielle"), gg.textContent);
-  assert.ok(dl.textContent.includes("1 AKS moins cher · 1 concurrent moins cher · 1 introuvable"), dl.textContent);
+  assert.ok(gg.textContent.includes("bloqué") && gg.textContent.includes("confirmer l'adresse e-mail"), gg.textContent);
+  assert.ok(dl.textContent.includes("1 AKS moins cher · 2 même prix · 1 concurrent moins cher · 1 introuvable · 1 page console non comparée"),
+    dl.textContent);
   const cells = dl.querySelectorAll("td").filter((td) => td.classList.contains("pc-comp-price"));
-  assert.deepEqual(cells.map((td) => [td.classList.contains("pc-win"), td.classList.contains("pc-lose")]),
-    [[true, false], [false, true], [false, false]]);
+  assert.deepEqual(cells.map((td) => ["pc-win", "pc-even", "pc-lose"].filter((k) => td.classList.contains(k))),
+    [["pc-win"], ["pc-lose"], [], ["pc-even"], [], ["pc-even"]]);
+  assert.deepEqual(cells.map((td) => td.textContent).slice(2, 5), ["introuvable", "44,50 € · Eneba", "page console, non comparée"]);
+  // « à la place de l'écart, mets le prix AKS » (Romain, 06/10/2026): the AKS price right after the competitor's, no gap
+  // clé contre clé (Romain, 06/10/2026 : « on ne mélange pas »), avec la case fee / error à côté du prix du concurrent
+  assert.deepEqual(dl.querySelectorAll("th").map((th) => th.textContent),
+    ["Jeu", "Meilleure clé dlcompare.fr", "Fee / error", "Première clé AKS"]);
+  const rowsOf = dl.querySelectorAll("tr").filter((tr) => tr.querySelectorAll("td").length);
+  assert.deepEqual(rowsOf.map((tr) => tr.querySelectorAll("td").map((td) => td.classList.contains("pc-comp-price") ? "concurrent"
+    : td.classList.contains("pc-comp-aks") ? "aks" : td.classList.contains("pc-comp-fee") ? "fee" : "jeu")),
+    rowsOf.map(() => ["jeu", "concurrent", "fee", "aks"]));
+  assert.equal(rowsOf[0].querySelectorAll("td")[3].textContent, "30,87 € · Kinguin (compte)");
+  assert.ok(dl.textContent.includes("36,71 € · BuyGames (compte)"), "a console page lost AllKeyShop's first price");
   assert.ok(dl.textContent.includes("30,87 € · Kinguin (compte)"), "AKS's first price is not beside");
-  assert.ok(dl.textContent.includes("AKS moins cher de 1,61 €") && dl.textContent.includes("AKS plus cher de 19,27 €"), dl.textContent);
+  assert.ok(!dl.textContent.includes("Écart") && !dl.textContent.includes("AKS moins cher de"), "the gap is still shown");
   assert.ok(!anchors(dl).some((a) => String(a.getAttribute("href")).startsWith("javascript")), "a javascript: URL became a link");
   assert.ok(c.$("#pc-comp-note").textContent.includes("relevé du 06/10 17:22"), c.$("#pc-comp-note").textContent);
   const none = await loadConsole(CONSOLE);
   await none.net.release("api/price-check/competitors", { available: false, sites: [] });
   await tick();
   assert.ok(none.$("#pc-competitors").textContent.includes("Pas encore de relevé des concurrents"));
+});
+
+// Romain, 06/10/2026 : « on compare clé avec clé et compte avec compte. On ne mélange pas » ; « dans le prix concurrent,
+// on puisse rajouter un fee à la main » ; « on peut l'appeler fee ou error […] plus ou moins d'euros ».
+const SW = "https://www.allkeyshop.com/blog/buy-star-wars-galactic-racer-cd-key-compare-prices/";
+const GOCDKEYS = {
+  id: "gocdkeys", label: "gocdkeys.fr", home: "https://www.gocdkeys.fr/", status: "ok",
+  rows: [{ product: "STAR WARS Galactic Racer", page_url: SW, aks: { price: 35.59, merchant: "Kinguin", account: false },
+    competitor: { price: 33.69, seller: "Instant Gaming", url: "https://www.gocdkeys.fr/acheter-star-wars-galactic-racer-pc-cd-key" },
+    cheaper: "competitor", gap: -1.9, fee: { value: 2.5, by: "remy", at: "2026-10-06T18:50:00+02:00", price: 33.69 } }],
+  accounts: [
+    { product: "STAR WARS Galactic Racer", page_url: SW, aks: { price: 30.87, merchant: "Kinguin", account: true },
+      competitor: { price: 27.1, seller: "GAMESEAL", url: "https://www.gocdkeys.fr/acheter-star-wars-galactic-racer-pc-cd-key" },
+      cheaper: "competitor", gap: -3.77 },
+    { product: "WARDOGS", page_url: "https://www.allkeyshop.com/blog/buy-wardogs-cd-key-compare-prices/", aks: null,
+      competitor: { price: 12.61, seller: "Gamivo", url: "https://www.gocdkeys.fr/acheter-wardogs-pc-cd-key" }, cheaper: null, gap: null }],
+};
+
+test("keys against keys, accounts against accounts, in two tables; fee / error typed, sent with its kind, corrected price shown", async () => {
+  const c = await loadConsole(CONSOLE);
+  await c.net.release("api/price-check/competitors", JSON.parse(JSON.stringify({ ...COMPETITORS, sites: [GOCDKEYS] })));
+  await tick();
+  const [widget] = c.$("#pc-competitors").children.filter((n) => n.tagName === "SECTION");
+  const tables = widget.querySelectorAll("table");
+  assert.equal(tables.length, 2, "the accounts are not apart");
+  assert.deepEqual(tables.map((t) => t.querySelectorAll("th").map((th) => th.textContent)), [
+    ["Jeu", "Meilleure clé gocdkeys.fr", "Fee / error", "Première clé AKS"],
+    ["Jeu", "Meilleur compte gocdkeys.fr", "Fee / error", "Premier compte AKS"]]);
+  assert.ok(tables[1].textContent.includes("pas de compte sur AKS"), tables[1].textContent);
+  const [keyFee] = tables[0].querySelectorAll("input");
+  assert.equal(keyFee.value, "+2,50");
+  // Romain, 06/10/2026 : « j'ai ajouté 20 € et ça ne se reflète pas sur le prix du concurrent, il reste en rouge » :
+  // le prix du concurrent porte le prix corrigé, et sa couleur ; le compteur du widget aussi
+  const keyPrice = tables[0].querySelectorAll("td").find((td) => td.classList.contains("pc-comp-price"));
+  assert.ok(keyPrice.textContent.includes("avec fee / error : 36,19 €"), keyPrice.textContent);
+  assert.ok(keyPrice.classList.contains("pc-win") && !keyPrice.classList.contains("pc-lose"),
+    "with its fee the competitor is dearer than AllKeyShop, its price stays red");
+  assert.ok(widget.textContent.includes("1 AKS moins cher · 0 même prix · 0 concurrent moins cher"), widget.textContent);
+  const [accountFee] = tables[1].querySelectorAll("input");
+  accountFee.value = "1,5";
+  await accountFee.fire("input");
+  accountFee.fire("change");
+  await tick();
+  const sent = lastPost(c);
+  assert.equal(sent.url, "api/price-check/competitors/fee");
+  assert.deepEqual(sent.body, { site: "gocdkeys", page_url: SW, kind: "account", value: "1,5" });
+  await c.net.release("api/price-check/competitors/fee", { recorded: { site: "gocdkeys", page_url: SW, kind: "account", value: 1.5,
+    by: "remy", at: "2026-10-06T19:00:00+02:00", price: 27.1 } });
+  const [w2] = c.$("#pc-competitors").children.filter((n) => n.tagName === "SECTION");
+  const accountPrice = w2.querySelectorAll("table")[1].querySelectorAll("td").find((td) => td.classList.contains("pc-comp-price"));
+  assert.ok(accountPrice.textContent.includes("avec fee / error : 28,60 €"), accountPrice.textContent);
+  assert.ok(accountPrice.classList.contains("pc-lose"), "the corrected account price is not compared with AllKeyShop's account");
+  assert.ok(c.$("#status").textContent.includes("Fee / error enregistré"), c.$("#status").textContent);
+  // refusé : on le dit, et ce qui a été tapé reste dans la case
+  const [again] = w2.querySelectorAll("table")[0].querySelectorAll("input");
+  again.value = "abc";
+  await again.fire("input");
+  again.fire("change");
+  await tick();
+  await c.net.release("api/price-check/competitors/fee", { error: { code: "bad_fee", message: "montant invalide" } }, false);
+  assert.ok(c.$("#status").textContent.includes("non enregistré : montant invalide"), c.$("#status").textContent);
+  const [w3] = c.$("#pc-competitors").children.filter((n) => n.tagName === "SECTION");
+  assert.equal(w3.querySelectorAll("table")[0].querySelectorAll("input")[0].value, "abc");
+});
+
+// Romain, 06/10/2026 : la console (« Rémy, Garance et moi » + Lionel), « pour les modifications sur le code, il faudra
+// passer par moi » ; les questions pour Romain vont dans l'onglet Romain.
+const CHAT = {
+  available: true, busy: null, pending: [], me: "remy", role: "team", messages: [
+    { id: "m1", at: "2026-10-06T18:50:00+02:00", user: "remy", label: "Rémy", kind: "message", text: "Dawnwalker chez Eneba : erreur ?" },
+    { id: "m2", at: "2026-10-06T18:51:00+02:00", user: "claude", label: "Claude", kind: "reply", text: "Une égalité « eclipse » contre « deluxe ».",
+      reply_to: "m1", questions: { opened: ["Q13"], closed: [] } }],
+};
+
+test("the console: the team asks questions, a question for Romain links to his tab, only Romain harvests", async () => {
+  const c = await loadConsole(CONSOLE);
+  await c.net.release("api/price-check/console", JSON.parse(JSON.stringify(CHAT)));
+  assert.ok(!c.$("#pc-console").classList.contains("hidden"), "the team does not see the console");
+  assert.ok(c.$("#pc-harvest").classList.contains("hidden"), "the team can harvest");
+  const log = c.$("#pc-console-log");
+  assert.ok(log.textContent.includes("Rémy") && log.textContent.includes("Q13 : question pour Romain"), log.textContent);
+  assert.ok(anchors(log).some((a) => a.getAttribute("href") === "romain"), "no link to the Romain tab");
+  c.$("#pc-console-text").value = "  Et la règle des 70 % ?  ";
+  await c.$("#pc-console-form").fire("submit", { preventDefault() {} });
+  const sent = lastPost(c);
+  assert.deepEqual([sent.url, sent.body], ["api/price-check/console", { text: "Et la règle des 70 % ?" }]);
+  await c.net.release("api/price-check/console", { requested: { kind: "message", user: "remy" } });
+  assert.equal(c.$("#pc-console-text").value, "", "the message stays in the box once sent");
+  // Entrée envoie, Maj+Entrée va à la ligne
+  c.$("#pc-console-text").value = "Deuxième";
+  const before = c.net.calls.filter((x) => x.method === "POST").length;
+  await c.$("#pc-console-text").fire("keydown", { key: "Enter", shiftKey: true, preventDefault() {} });
+  assert.equal(c.net.calls.filter((x) => x.method === "POST").length, before, "Shift+Enter sent the message");
+  await c.$("#pc-console-text").fire("keydown", { key: "Enter", shiftKey: false, preventDefault() {} });
+  assert.equal(c.net.calls.filter((x) => x.method === "POST").length, before + 1, "Enter sent nothing");
+  const owner = await loadConsole(CONSOLE);
+  await owner.net.release("api/price-check/console", { ...JSON.parse(JSON.stringify(CHAT)), role: "owner", me: "romain" });
+  assert.ok(!owner.$("#pc-harvest").classList.contains("hidden"), "Romain cannot harvest");
+  owner.$("#pc-harvest").fire("click");
+  await tick();
+  assert.equal(lastPost(owner).url, "api/price-check/console/harvest");
+  const other = await loadConsole(CONSOLE);
+  await other.net.release("api/price-check/console", { error: { code: "console_forbidden", message: "réservée" } }, false);
+  assert.ok(other.$("#pc-console").classList.contains("hidden"), "the console shows to someone outside the team");
 });
 
 test("an old export is flagged, a fresh one is not", async () => {

@@ -71,6 +71,7 @@ main.pc-main { max-width:1100px; }
 .pc-comp-table th, .pc-comp-table td { text-align:left; padding:.25rem .35rem; border-bottom:1px solid var(--line); vertical-align:top; }
 .pc-win { color:var(--good); font-weight:700; }
 .pc-lose { color:var(--bad); font-weight:700; }
+.pc-even { color:var(--warn); font-weight:700; }
 /* 06/10/2026 : une page sortie des tops garde ses reports ouverts dans les tops */
 .pc-left-tops { font-size:.72rem; font-weight:600; padding:.06rem .45rem; border-radius:5px; border:1px dashed var(--accent); color:var(--accent); }
 .topbar-link { font:inherit; background:var(--panel-2); color:var(--ink); border:1px solid var(--line); border-radius:5px;
@@ -161,3 +162,25 @@ main.pc-main { max-width:1100px; }
 .pc-rule { color:var(--dim); font-size:.8rem; font-weight:600; }
 .kpi.k-verified .kpi-n { color:var(--good); }
 .pc-still { color:var(--bad); font-size:.8rem; }
+
+/* Console Claude (06/10/2026) */
+.pc-console-legend { font-size:.8rem; color:var(--dim); margin:0 0 .5rem; }
+.pc-console-actions { margin-left:auto; display:flex; gap:.4rem; }
+.pc-console-log { max-height:420px; overflow:auto; display:flex; flex-direction:column; gap:.45rem; padding:.45rem;
+  background:var(--panel-2); border:1px solid var(--line); border-radius:5px; }
+.pc-chat-msg { padding:.4rem .55rem; border-radius:5px; border:1px solid var(--line); background:var(--panel); max-width:92%; }
+.pc-chat-msg.from-claude { align-self:flex-start; border-left:3px solid var(--accent); }
+.pc-chat-msg.from-team { align-self:flex-end; border-right:3px solid var(--good); }
+.pc-chat-msg.from-console { align-self:center; font-size:.78rem; color:var(--dim); background:transparent; }
+.pc-chat-msg.is-error { border-color:var(--bad); }
+.pc-chat-head { font-size:.75rem; color:var(--dim); margin-bottom:.15rem; }
+.pc-chat-text { white-space:pre-wrap; font-size:.85rem; overflow-wrap:anywhere; }
+.pc-chat-error { color:var(--bad); font-size:.78rem; margin-top:.2rem; }
+.pc-chat-q { font-size:.78rem; color:var(--warn); margin-top:.2rem; }
+.pc-console-form { display:flex; gap:.5rem; margin-top:.5rem; align-items:flex-end; }
+.pc-console-form textarea { flex:1; min-height:3.2rem; resize:vertical; font:inherit; }
+/* Concurrents : clés et comptes à part, fee / error (06/10/2026) */
+.pc-comp-sub { margin:.5rem 0 .25rem; font-size:.82rem; }
+.pc-fee { width:5.2em; font:inherit; font-size:.8rem; padding:.1rem .25rem; }
+.pc-fee-total { display:block; font-size:.78rem; }
+.pc-fee-by { display:block; font-size:.7rem; color:var(--dim); font-weight:400; }

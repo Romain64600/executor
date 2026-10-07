@@ -357,5 +357,138 @@ class RunRequestTests(AppTestCase):
         self.assertEqual(list(self.pc_dir.iterdir()), [], "a refused request left a file")
 
 
+def _as(user):
+    import base64
+    return {"Authorization": "Basic " + base64.b64encode(("%s:x" % user).encode()).decode()}
+
+
+class ConsoleAndRomainTabTests(AppTestCase):
+    """Romain, 06/10/2026 : la console (« Rémy, Garance et moi » + Lionel ; « pour les modifications sur le code, il faudra
+    passer par moi ») et l'onglet Romain (« tout le monde peut le consulter, mais il n'y a que moi qui peux agir dessus »).
+    L'admin dépose une demande signée de l'identité Basic ; le service de la console (root) répond. Rien n'est exécuté ici."""
+
+    def setUp(self):
+        super().setUp()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.pc_dir = Path(tmp.name)
+        self.state.price_check_dir = self.pc_dir
+
+    def requests_on_disk(self):
+        return [json.loads(p.read_text(encoding="utf-8")) for p in sorted(self.pc_dir.glob("console-*.request"))]
+
+    def test_the_console_is_for_romain_and_the_team_only(self):
+        response, body = self._json("GET", "/api/price-check/console")  # « operateur » : ni Romain ni l'équipe
+        self.assertEqual((response.status, body["error"]["code"]), (403, "console_forbidden"))
+        response, body = self._json("GET", "/api/price-check/console", headers=_as("lionel"))
+        self.assertEqual((response.status, body["role"], body["available"], body["messages"]), (200, "team", False, []))
+        response, body = self._json("POST", "/api/price-check/console", {"text": "bonjour"}, headers=_as("meljoy"))
+        self.assertEqual(response.status, 403)
+        self.assertEqual(self.requests_on_disk(), [])
+
+    def test_a_message_is_a_request_signed_by_the_basic_identity(self):
+        response, body = self._json("POST", "/api/price-check/console", {"text": "  Pourquoi Minecraft ?  ", "user": "romain"},
+                                    headers=_as("remy"))
+        self.assertEqual(response.status, 200, body)
+        [request] = self.requests_on_disk()
+        self.assertEqual((request["kind"], request["user"], request["text"]), ("message", "remy", "Pourquoi Minecraft ?"))
+        response, body = self._json("GET", "/api/price-check/console", headers=_as("remy"))
+        self.assertEqual([(p["user"], p["taken"]) for p in body["pending"]], [("remy", False)])
+        for bad in ("", "   ", "x" * 4001):
+            response, body = self._json("POST", "/api/price-check/console", {"text": bad}, headers=_as("remy"))
+            self.assertEqual((response.status, body["error"]["code"]), (400, "bad_text"), bad[:5])
+
+    def test_only_romain_harvests_settles_or_starts_a_new_session(self):
+        for path in ("/api/price-check/console/harvest", "/api/price-check/console/new-session"):
+            response, body = self._json("POST", path, {}, headers=_as("garance"))
+            self.assertEqual((response.status, body["error"]["code"]), (403, "owner_only"), path)
+        response, body = self._json("POST", "/api/price-check/console/harvest", {}, headers=_as("romain"))
+        self.assertEqual(response.status, 200, body)
+        self.assertEqual([r["kind"] for r in self.requests_on_disk()], ["harvest"])
+
+    def test_the_console_conversation_from_the_service_file(self):
+        (self.pc_dir / "console.json").write_text(json.dumps({"busy": {"user": "remy", "label": "Rémy"}, "messages": [
+            {"id": "m1", "user": "remy", "text": "?"}, "pas un message"]}), encoding="utf-8")
+        response, body = self._json("GET", "/api/price-check/console", headers=_as("romain"))
+        self.assertEqual((body["available"], body["role"], body["busy"]["user"], [m["id"] for m in body["messages"]]),
+                         (True, "owner", "remy", ["m1"]))
+
+    def test_the_romain_tab_everyone_reads_romain_settles(self):
+        (self.pc_dir / "questions.json").write_text(json.dumps({"questions": [
+            {"id": "Q1", "text": "Garder battlestategames.toml ?", "status": "open"},
+            {"id": "Q2", "text": "déjà réglée", "status": "closed"}, "pas une question"]}), encoding="utf-8")
+        response, body = self._json("GET", "/api/romain/questions")  # « operateur » consulte
+        self.assertEqual((response.status, body["role"], body["owner"], [q["id"] for q in body["questions"]]),
+                         (200, "viewer", "romain", ["Q1", "Q2"]))
+        response, body = self._json("POST", "/api/romain/questions/close", {"question": "Q1", "note": "on garde"}, headers=_as("remy"))
+        self.assertEqual((response.status, body["error"]["code"]), (403, "owner_only"))
+        response, body = self._json("POST", "/api/romain/questions/close", {"question": "Q2"}, headers=_as("romain"))
+        self.assertEqual((response.status, body["error"]["code"]), (404, "unknown_question"))
+        response, body = self._json("POST", "/api/romain/questions/close", {"question": "Q1; rm"}, headers=_as("romain"))
+        self.assertEqual((response.status, body["error"]["code"]), (400, "bad_question"))
+        response, body = self._json("POST", "/api/romain/questions/close", {"question": "Q1", "note": " on garde "}, headers=_as("romain"))
+        self.assertEqual(response.status, 200, body)
+        self.assertEqual([(r["kind"], r["question"], r["note"], r["user"]) for r in self.requests_on_disk()],
+                         [("close", "Q1", "on garde", "romain")])
+
+    def test_the_romain_page_is_served_with_its_assets_stamped(self):
+        response, data = self._request("GET", "/romain")
+        self.assertEqual(response.status, 200)
+        self.assertIn(b'romain.js?v=', data)
+        for asset in ("/romain.js", "/romain.css"):
+            response, _ = self._request("GET", asset)
+            self.assertEqual(response.status, 200, asset)
+
+
+class CompetitorFeeTests(AppTestCase):
+    """Romain, 06/10/2026 : « dans le prix concurrent, on puisse rajouter un fee à la main […] ça servira juste au
+    monitoring » ; « on peut l'appeler fee ou error […] plus ou moins d'euros ». Clé contre clé, compte contre compte
+    (« on ne mélange pas ») : une saisie par concurrent, page et genre, signée de l'identité Basic."""
+
+    PAGE = "https://www.allkeyshop.com/blog/buy-star-wars-galactic-racer-cd-key-compare-prices/"
+
+    def setUp(self):
+        super().setUp()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.pc_dir = Path(tmp.name)
+        self.state.price_check_dir = self.pc_dir
+        row = {"product": "STAR WARS Galactic Racer", "page_url": self.PAGE, "aks": {"price": 35.59},
+               "competitor": {"price": 33.69, "url": "https://www.gocdkeys.fr/x"}, "cheaper": "competitor", "gap": -1.9}
+        account = dict(row, aks={"price": 30.87, "account": True}, competitor={"price": 27.1, "url": "https://www.gocdkeys.fr/x"})
+        (self.pc_dir / "competitors.json").write_text(json.dumps({"sites": [
+            {"id": "gocdkeys", "label": "gocdkeys.fr", "status": "ok", "rows": [row], "accounts": [account]}]}), encoding="utf-8")
+
+    def fee(self, value, kind="account", user="remy", **kw):
+        body = dict({"site": "gocdkeys", "page_url": self.PAGE, "kind": kind, "value": value}, **kw)
+        return self._json("POST", "/api/price-check/competitors/fee", body, headers=_as(user) if user else {"Authorization": ""})
+
+    def test_a_fee_is_signed_kept_apart_per_kind_and_shown_on_its_row(self):
+        response, body = self.fee("1,50", by="romain")
+        self.assertEqual(response.status, 200, body)
+        rec = body["recorded"]
+        self.assertEqual((rec["value"], rec["by"], rec["kind"], rec["price"], rec["product"]), (1.5, "remy", "account", 27.1,
+                                                                                                "STAR WARS Galactic Racer"))
+        response, body = self._json("GET", "/api/price-check/competitors")
+        site = body["sites"][0]
+        self.assertEqual(site["accounts"][0]["fee"]["value"], 1.5)
+        self.assertNotIn("fee", site["rows"][0], "an account's fee landed on the key")
+        self.assertEqual(self.fee("-0,80 €", kind="key")[1]["recorded"]["value"], -0.8)
+        response, body = self.fee("")  # effacé
+        self.assertIsNone(body["recorded"]["value"])
+        site = self._json("GET", "/api/price-check/competitors")[1]["sites"][0]
+        self.assertNotIn("fee", site["accounts"][0])
+        self.assertEqual(site["rows"][0]["fee"]["value"], -0.8)
+
+    def test_fee_refusals(self):
+        self.assertEqual(self.fee("1", page_url="https://x/")[0].status, 404)
+        self.assertEqual(self.fee("abc")[1]["error"]["code"], "bad_fee")
+        self.assertEqual(self.fee("5000")[1]["error"]["code"], "bad_fee")
+        self.assertEqual(self.fee("nan")[1]["error"]["code"], "bad_fee")
+        self.assertEqual(self.fee("1", kind="gift")[1]["error"]["code"], "bad_kind")
+        self.assertEqual(self.fee("1", user=None)[0].status, 403)
+        self.assertFalse((self.pc_dir / "competitor-fees.jsonl").exists())
+
+
 if __name__ == "__main__":
     unittest.main()
