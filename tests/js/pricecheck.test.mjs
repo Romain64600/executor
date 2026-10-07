@@ -514,7 +514,7 @@ test("the console: the team asks questions, a question for Romain links to his t
   c.$("#pc-console-text").value = "  Et la règle des 70 % ?  ";
   await c.$("#pc-console-form").fire("submit", { preventDefault() {} });
   const sent = lastPost(c);
-  assert.deepEqual([sent.url, sent.body], ["api/price-check/console", { text: "Et la règle des 70 % ?" }]);
+  assert.deepEqual([sent.url, sent.body], ["api/price-check/console", { text: "Et la règle des 70 % ?", lang: "fr" }]);
   await c.net.release("api/price-check/console", { requested: { kind: "message", user: "remy" } });
   assert.equal(c.$("#pc-console-text").value, "", "the message stays in the box once sent");
   // Entrée envoie, Maj+Entrée va à la ligne
@@ -538,7 +538,7 @@ test("the console: the team asks questions, a question for Romain links to his t
 // Romain, 07/10/2026 : « comme t'as fait pour le guide, avoir une version anglaise et une version française » : the
 // interface in English, the reports (the monitor's reasons, the notes) in their language
 const IN_ENGLISH = { localStorage: { getItem: (k) => (k === "aks-lang" ? "en" : null), setItem() {} } };
-test("in English: the interface is translated, the monitor's reasons stay as they are", async () => {
+test("in English: the interface and the monitor's texts are translated, the quoted words stay as they are", async () => {
   const c = await loadConsole(CONSOLE, IN_ENGLISH);
   await c.net.release("api/price-check/reports", JSON.parse(JSON.stringify({ ...REPORTS, reports: [TORO] })));
   await tick();
@@ -546,7 +546,11 @@ test("in English: the interface is translated, the monitor's reasons stay as the
   const labels = buttons(k).map((b) => b.textContent);
   assert.ok(["True positive", "False positive", "To discuss"].every((x) => labels.includes(x)), labels.join(" | "));
   assert.ok(k.textContent.includes("To handle") && k.textContent.includes("AllKeyShop page"), k.textContent);
-  assert.ok(k.textContent.includes("autre produit chez le marchand : « Metal Garden »"), "the monitor's reason was translated");
+  // Romain, 07/10/2026 : « traduis aussi les raisons, faut que tout soit traduit »
+  assert.ok(k.textContent.includes("another product at the merchant: « Metal Garden » instead of « TORO 2 Nintendo Switch » (URL of the en-GB version)"),
+    k.textContent);
+  assert.ok(k.textContent.includes("check: URL of the en-GB version"), "the method is not translated");
+  assert.ok(!k.textContent.includes("autre produit"), "a French reason is left");
   assert.ok(c.$("#tab-current").textContent.startsWith("In progress ("), c.$("#tab-current").textContent);
   assert.equal(c.$("#lang").textContent, "FR", "the switch does not offer French");
   await c.net.release("api/price-check/competitors", JSON.parse(JSON.stringify({ ...COMPETITORS, sites: [GOCDKEYS] })));

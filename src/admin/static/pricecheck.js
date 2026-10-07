@@ -214,6 +214,105 @@ const EN = {
  "Sans décision": "No decision"
 };
 const T = (fr) => (LANG === "en" && typeof fr === "string" && Object.prototype.hasOwnProperty.call(EN, fr) ? EN[fr] : fr);
+
+// The monitor's texts in English (Romain, 07/10/2026 : « traduis aussi les raisons, faut que tout soit traduit ») : its
+// reasons, notes, re-checks and methods come from a known set of sentences (price_check.py, bot/console.py); the words
+// it quotes (« … », the games' names, the merchants' words) stay as they are.
+const VERDICT_EN = { "À VÉRIFIER": "TO CHECK", "NON VÉRIFIABLE": "UNVERIFIABLE" };
+const CHANGED_EN = { "édition": "edition", "région": "region", "plateforme": "platform", "page marchand": "merchant page" };
+const orEn = (s) => s.split(" ou ").join(" or ");
+const MONITOR_EN = [
+  [/^en doute : (.+)$/, (m, a) => "in doubt: " + TM(a)],
+  [/^(.+) ; chez (.+), une clé (.+) peut s'activer en (.+) : vérifier les pays d'activation sur la page du marchand$/,
+    (m, a, b, c, d) => TM(a) + "; at " + b + ", a " + c + " key can activate in " + d + ": check the activation countries on the merchant's page"],
+  [/^mots en plus après le nom : (.+)$/, "extra words after the name: $1"],
+  [/^mots en plus déjà jugés comme une erreur sur cette page : (.+) \(offre (\d+)\)$/, "extra words already judged an error on this page: $1 (offer $2)"],
+  [/^mots en plus acceptés pour ce jeu : (.+) \(offre (\d+) jugée faux positif\)$/, "extra words accepted for this game: $1 (offer $2 judged a false positive)"],
+  [/^mots en plus acceptés pour cette page : (.+) \(offre (\d+) jugée faux positif\)$/, "extra words accepted for this page: $1 (offer $2 judged a false positive)"],
+  [/^même doute que l'offre (\d+) : une seule alerte par page et par mots$/, "same doubt as offer $1: one alert per page and per words"],
+  [/^premier prix anormalement bas : (.+?), (\d+) % du deuxième prix de la page \((.+)\)$/, "abnormally low first price: $1, $2 % of the page's second price ($3)"],
+  [/^édition : rangée en (.+), le marchand vend (.+) \(la page a une édition (.+)\)$/,
+    (m, a, b, c) => "edition: filed under " + a + ", the merchant sells " + b + " (the page has the edition " + orEn(c) + ")"],
+  [/^édition : AllKeyShop (.+), marchand (.+)$/, "edition: AllKeyShop $1, merchant $2"],
+  [/^autre produit chez le marchand : (« .+ ») au lieu de (« .+ ») \((.+)\)$/,
+    (m, a, b, c) => "another product at the merchant: " + a + " instead of " + b + " (" + TM(c) + ")"],
+  [/^nom du produit introuvable \((.+)\)$/, (m, a) => "product name not found (" + TM(a) + ")"],
+  [/^nom du produit introuvable dans l'URL(?: \(elle nomme (« .+ »)\))?, page marchand illisible$/,
+    (m, a) => "product name not found in the URL" + (a ? " (it names " + a + ")" : "") + ", merchant page unreadable"],
+  [/^édition (.+) : nom non contrôlé dans l'URL(?: \(elle nomme (« .+ »)\))?, page marchand illisible$/,
+    (m, e, a) => "edition " + e + ": name not checked in the URL" + (a ? " (it names " + a + ")" : "") + ", merchant page unreadable"],
+  [/^URL sans nom du produit et page marchand illisible$/, "URL without the product name and merchant page unreadable"],
+  [/^nom du produit non vérifiable \(page marchand illisible\)$/, "product name not verifiable (merchant page unreadable)"],
+  [/^titre du marchand dans une autre langue, nom non reconnu : (.*)$/, "merchant title in another language, name not recognized: $1"],
+  [/^compte chez le marchand, saisi en clé$/, "account at the merchant, entered as a key"],
+  [/^région interdite : (.+)$/, "forbidden region: $1"],
+  [/^région : AllKeyShop (.+), marchand (.+)$/, "region: AllKeyShop $1, merchant $2"],
+  [/^gift chez le marchand, affiché en clé (.+)$/, "gift at the merchant, shown as a key $1"],
+  [/^plateforme : page AllKeyShop (.+), marchand (.+)$/, "platform: AllKeyShop page $1, merchant $2"],
+  [/^plateforme : AllKeyShop (.+), marchand (.+)$/, "platform: AllKeyShop $1, merchant $2"],
+  [/^contenu additionnel : (.+)$/, "additional content: $1"],
+  [/^monnaie de jeu chez le marchand : (.+)$/, "in-game currency at the merchant: $1"],
+  [/^offre en rupture chez le marchand : le lien redirige vers une autre fiche \((.+)\), mais le prix reste dans le feed$/,
+    "offer out of stock at the merchant: the link redirects to another page ($1), but the price stays in the feed"],
+  // the notes
+  [/^nom partiel$/, "partial name"],
+  [/^titre court contenu dans le nom$/, "short title contained in the name"],
+  [/^édition (.+) : nom non contrôlé en entier \(un mot du nom présent\)$/, "edition $1: name not fully checked (one word of the name present)"],
+  [/^édition (.+) : nom non contrôlé$/, "edition $1: name not checked"],
+  [/^région lue dans le paramètre (.+) de l'URL$/, "region read from the URL parameter $1"],
+  [/^région lue sur la variante choisie par le lien : (.+)$/, "region read on the variant chosen by the link: $1"],
+  [/^variante choisie par le lien non lue \(page illisible\) : région de l'URL seule$/, "variant chosen by the link not read (page unreadable): the URL's region alone"],
+  [/^région lue sur la page, d'après les pays d'activation de la clé : (.+)$/, "region read on the page, from the key's activation countries: $1"],
+  [/^pays d'activation non lus \(page illisible\) : région de l'URL seule$/, "activation countries not read (page unreadable): the URL's region alone"],
+  [/^région lue sur la fiche servie, qui correspond à l'affichage$/, "region read on the page served, which matches the display"],
+  [/^nom contrôlé sur (.+)$/, "name checked on $1"],
+  [/^fiche renommée chez le marchand : (.+)$/, "page renamed at the merchant: $1"],
+  [/^confirmé par la page : (.+)$/, "confirmed by the page: $1"],
+  [/^URL contredite par la page : (.+)$/, "URL contradicted by the page: $1"],
+  [/^la page ne dit rien sur ce point : (.+)$/, "the page says nothing on this point: $1"],
+  [/^redirection vers une page d'étape ignorée : (.+)$/, "redirect to an intermediate page ignored: $1"],
+  [/^boutique qui ne vend que (.+) \(config marchand\)$/, "shop that sells only $1 (merchant config)"],
+  [/^passage complet du (.+?) \(doc\)( : option choisie lue sur la page)?$/,
+    (m, a, b) => "full pass of " + a + " (doc)" + (b ? ": chosen option read on the page" : "")],
+  [/^recontrôle du (.+) sans conclusion \((.+)\) : (.+) du (.+) rétabli$/, "re-check of $1 without a conclusion ($2): $3 of $4 restored"],
+  [/^faux positif \(étude du (.+)\) : (.+)$/, (m, a, b) => "false positive (study of " + a + "): " + b.split("slug trompeur").join("misleading slug")],
+  [/^rejugé le (.+) : nom reconnu \(alias (« .+ »), préfixe (« .+ ») facultatif\)$/, "judged again on $1: name recognized (alias $2, optional prefix $3)"],
+  // the re-checks (fixed_how)
+  [/^offre retirée de la page$/, "offer removed from the page"],
+  [/^ancien faux positif : rien n'a changé, levé par une règle$/, "old false positive: nothing changed, cleared by a rule"],
+  [/^recontrôle OK, l'offre a changé \((.+)\)$/, (m, a) => "re-check OK, the offer changed (" + a.split(", ").map((w) => CHANGED_EN[w] || w).join(", ") + ")"],
+  [/^vérifiée OK au recontrôle$/, "verified OK at the re-check"],
+  // the methods (« contrôle : … », and in the reasons)
+  [/^URL après 301 marchand$/, "URL after the merchant's 301"],
+  [/^URL après redirection du marchand$/, "URL after the merchant's redirect"],
+  [/^URL de la version (.+)$/, "URL of the $1 version"],
+  [/^URL et variante de la page \((.+)\)$/, (m, a) => "URL and the page's variant (" + TM(a) + ")"],
+  [/^URL et pays d'activation de la page \((.+)\)$/, (m, a) => "URL and the page's activation countries (" + TM(a) + ")"],
+  [/^titre de la page$/, "page title"],
+  [/^aucune$/, "none"],
+  // the passes (status.json)
+  [/^(.+) \(reprise après redémarrage\)$/, "$1 (resumed after a restart)"],
+  // the competitors' widgets
+  [/^clé de l'API gg\.deals pas encore active : confirmer l'adresse e-mail du compte gg\.deals$/,
+    "gg.deals API key not active yet: confirm the email address of the gg.deals account"],
+  [/^clé de l'API gg\.deals absente \(GGDEALS_API_KEY dans \.env\)$/, "gg.deals API key missing (GGDEALS_API_KEY in .env)"],
+  [/^API gg\.deals injoignable \((.+)\)$/, "gg.deals API unreachable ($1)"],
+  [/^réponse de l'API gg\.deals illisible \(HTTP (.+)\)$/, "gg.deals API answer unreadable (HTTP $1)"],
+  [/^API gg\.deals : (.+)$/, "gg.deals API: $1"],
+  // the console service (bot/console.py)
+  [/^(.+) a réglé (Q\d+) : (.+)$/, "$1 settled $2: $3"],
+  [/^(.+) a ouvert une nouvelle session : Claude repart de zéro\.$/, "$1 opened a new session: Claude starts afresh."],
+  [/^(.+) : seul (.+) peut le faire\.$/, "$1: only $2 can do it."],
+  [/^Le message de (.+) n'a pas reçu de réponse \(service redémarré\) : renvoie-le si besoin\.$/,
+    "$1's message got no answer (service restarted): send it again if needed."],
+  [/^La demande a échoué \(voir le journal du service\)\.$/, "The request failed (see the service's log)."],
+  [/^Récolte des décisions sur les feedbacks des reports$/, "Harvest of the decisions on the reports' feedback"],
+];
+function TM(text) {
+  if (LANG !== "en" || typeof text !== "string") return text;
+  for (const [re, to] of MONITOR_EN) if (re.test(text)) return text.replace(re, to);
+  return text;
+}
 // "Price check" — the reports of the first-price monitor (price-check repository). Each card is
 // an offer leading an AllKeyShop page, judged SUSPECT, À VÉRIFIER or NON VÉRIFIABLE, with its
 // AllKeyShop URL, its merchant URL and its reason. The operator decides (true positive / false
@@ -510,19 +609,19 @@ function renderItem(r) {
   const meta = [
     r.region ? T("région AKS : ") + r.region + (r.region_filter ? " (" + r.region_filter + ")" : "") : "",
     r.platform ? T("plateforme : ") + r.platform : "",
-    r.method ? T("contrôle : ") + r.method : "",
+    r.method ? T("contrôle : ") + TM(r.method) : "",
     T("offre ") + offer,
   ].filter(Boolean).join(" · ");
   const before = (r.history || []).slice(0, -1).reverse();
   const was = r.fixed_from ? T(" (était ") + r.fixed_from + ")" : "";
   const recheck = isRuleCleared(r)
     ? el("div", { class: "pc-rule", text: T("Faux positif levé par une règle le ") + stamp(r.fixed_at) + T(" : ") +
-      (r.fixed_how || T("rien n'a changé dans l'offre")) + was })
+      (TM(r.fixed_how) || T("rien n'a changé dans l'offre")) + was })
     : isVerified(r) ? el("div", { class: "pc-fixed", text: T("Vérifiée OK au recontrôle le ") + stamp(r.fixed_at) + T(" : ") +
-      (r.fixed_how || T("vérifiée OK")) + was })
-    : isFixed(r) ? el("div", { class: "pc-fixed", text: T("Réparée le ") + stamp(r.fixed_at) + T(" : ") + (r.fixed_how || T("recontrôle OK")) + was })
+      (TM(r.fixed_how) || T("vérifiée OK")) + was })
+    : isFixed(r) ? el("div", { class: "pc-fixed", text: T("Réparée le ") + stamp(r.fixed_at) + T(" : ") + (TM(r.fixed_how) || T("recontrôle OK")) + was })
     : r.still_wrong_at ? el("div", { class: "pc-still", text: T("Toujours en erreur au recontrôle du ") + stamp(r.still_wrong_at) }) : null;
-  const pill = isRuleCleared(r) ? T("FAUX POSITIF LEVÉ") : isVerified(r) ? T("VÉRIFIÉE OK") : isFixed(r) ? T("RÉPARÉE") : (r.verdict || "?");
+  const pill = isRuleCleared(r) ? T("FAUX POSITIF LEVÉ") : isVerified(r) ? T("VÉRIFIÉE OK") : isFixed(r) ? T("RÉPARÉE") : LANG === "en" && VERDICT_EN[r.verdict] ? VERDICT_EN[r.verdict] : (r.verdict || "?");
   const tone = isRuleCleared(r) ? "v-rule" : isFixed(r) ? "v-fixed" : (VERDICT_CLASS[r.verdict] || "v-nv");
   const just = JUST_DONE.get(offer);
   return el("article", { class: "pc-item " + tone + (cur ? " decided" : "") + (MODE_CARD[r.mode] ? " " + MODE_CARD[r.mode] : "") +
@@ -551,14 +650,14 @@ function renderItem(r) {
     ]),
     cur === "a_discuter" ? el("div", { class: "pc-question" }, [el("b", { text: T("Commentaire de ") + (handledBy(r) || "?") + T(" : ") }),
       r.decision.note ? "« " + r.decision.note + " »" : T("pas de note, à voir ensemble.")]) : null,
-    (r.reasons || []).length ? el("ul", { class: "pc-reasons" }, r.reasons.map((x) => el("li", { text: x }))) : null,
+    (r.reasons || []).length ? el("ul", { class: "pc-reasons" }, r.reasons.map((x) => el("li", { text: TM(x) }))) : null,
     recheck,
     isToFix(r) ? el("div", { class: "pc-tofix", text: T("🔧 À corriger : l'erreur est confirmée, l'offre n'a pas encore changé sur ")
       + "AllKeyShop" + (r.still_wrong_at ? T(" (toujours en erreur au recontrôle du ") + stamp(r.still_wrong_at) + ")" : "") }) : null,
     el("div", { class: "pc-meta", text: meta }),
     isGone(r) ? el("div", { class: "pc-gone",
       text: T("Plus vu en premier prix depuis le ") + stamp(r.seen_at) + T(" : l'offre n'est plus en tête.") }) : null,
-    (r.notes || []).length ? el("ul", { class: "pc-notes" }, r.notes.map((x) => el("li", { text: x }))) : null,
+    (r.notes || []).length ? el("ul", { class: "pc-notes" }, r.notes.map((x) => el("li", { text: TM(x) }))) : null,
     link(T("Page AllKeyShop"), r.page_url),
     link(T("Offre marchand"), r.merchant_url),
     // 03/10/2026 : le fil de feedback Discord de l'alerte (le bot l'ouvre ; on peut y trancher aussi)
@@ -877,7 +976,7 @@ function competitorWidget(site) {
         (missing ? " · " + missing + (missing > 1 ? T(" introuvables") : T(" introuvable")) : "") +
         (consoles ? " · " + consoles + (consoles > 1 ? T(" pages console non comparées") : T(" page console non comparée")) : "")]),
   ]);
-  if (blocked) return el("section", { class: "pc-comp-card blocked" }, [head, el("p", { class: "pc-comp-msg", text: site.message || "" })]);
+  if (blocked) return el("section", { class: "pc-comp-card blocked" }, [head, el("p", { class: "pc-comp-msg", text: TM(site.message) || "" })]);
   // clé contre clé ; compte contre compte, à part, seulement quand le concurrent vend des comptes
   const kids = [head, el("h4", { class: "pc-comp-sub", text: T("Clés") }), compTable(site, rows, "key")];
   const accounts = site.accounts || [];
@@ -949,11 +1048,11 @@ function renderRuns() {
     const parts = [];
     if (m.running) {
       parts.push(T("En cours") + (m.progress ? T(" : page ") + m.progress[0] + " / " + m.progress[1] : "") +
-        (m.requested_by ? T(" (demandé par ") + m.requested_by + ")" : ""));
+        (m.requested_by ? T(" (demandé par ") + TM(m.requested_by) + ")" : ""));
     } else if (m.last_end) {
       // a pass only checks offers never seen before: a quiet pass is the normal case, say so
       const about = [duration(m.last_start, m.last_end), m.pages ? m.pages + T(" pages lues") : "",
-        m.last_requested_by ? T("lancé depuis l'admin par ") + m.last_requested_by : ""].filter(Boolean).join(", ");
+        m.last_requested_by ? T("lancé depuis l'admin par ") + TM(m.last_requested_by) : ""].filter(Boolean).join(", ");
       parts.push(T("Dernier passage ") + stamp(m.last_start) + (about ? " (" + about + ")" : "") + T(" : ") +
         (m.last_checked ? m.last_checked + T(" nouvelle(s) offre(s) contrôlée(s)") : T("aucune nouvelle offre à contrôler")) +
         ", " + (m.last_alerts || 0) + T(" alerte(s)"));
@@ -1008,7 +1107,7 @@ const CHAT_KIND = { "claude": "from-claude", "console": "from-console" };
 
 function chatMessage(m) {
   const kids = [el("div", { class: "pc-chat-head" }, [el("b", { text: m.label || m.user || "?" }), " · " + stamp(m.at)]),
-    el("div", { class: "pc-chat-text", text: m.text || "" })];
+    el("div", { class: "pc-chat-text", text: (m.user === "console" || m.text === "Récolte des décisions sur les feedbacks des reports" ? TM(m.text) : m.text) || "" })];
   if (m.error) kids.push(el("div", { class: "pc-chat-error", text: m.error }));
   const q = m.questions || {};
   if ((q.opened || []).length) {
@@ -1062,14 +1161,14 @@ async function sendChatMessage() {
   const box = $("#pc-console-text"), send = $("#pc-console-send"), text = box.value.trim();
   if (!text || send.disabled) return;
   send.disabled = true;
-  if (await sendChat("api/price-check/console", { text }, T("Message envoyé : Claude répond dans la console"))) box.value = "";
+  if (await sendChat("api/price-check/console", { text, lang: LANG }, T("Message envoyé : Claude répond dans la console"))) box.value = "";
   send.disabled = false;
 }
 $("#pc-console-form").addEventListener("submit", (ev) => { ev.preventDefault(); sendChatMessage(); });
 $("#pc-console-text").addEventListener("keydown", (ev) => {
   if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); sendChatMessage(); }
 });
-$("#pc-harvest").addEventListener("click", () => sendChat("api/price-check/console/harvest", {},
+$("#pc-harvest").addEventListener("click", () => sendChat("api/price-check/console/harvest", { lang: LANG },
   T("Récolte demandée : Claude relit les décisions ; ses points à trancher iront dans l'onglet Romain")));
 $("#pc-new-session").addEventListener("click", () => sendChat("api/price-check/console/new-session", {},
   T("Nouvelle session demandée : Claude repart de zéro")));
@@ -1091,7 +1190,7 @@ for (const [id, keys] of Object.entries(STATIC_ATTRS)) {
 }
 if (LANG === "en" && document.querySelectorAll) {
   try {
-    for (const o of document.querySelectorAll("#f-verdict option, #f-mode option, #f-decision option")) o.textContent = T(o.textContent);
+    for (const o of document.querySelectorAll("#f-verdict option, #f-mode option, #f-decision option")) o.textContent = VERDICT_EN[o.textContent] || T(o.textContent);
   } catch (e) { /* a page without them */ }
 }
 (() => {

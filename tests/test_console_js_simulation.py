@@ -299,7 +299,7 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             "mode du lancement": ("body: JSON.stringify({ mode })", "body: JSON.stringify({})"),
             "bouton grisé pendant le passage": ("btn.disabled = !!pending || !!m.running;", "btn.disabled = false;"),
             # 02/10/2026 : le recontrôle (réparées)
-            "réparée affichée": ('const pill = isRuleCleared(r) ? T("FAUX POSITIF LEVÉ") : isVerified(r) ? T("VÉRIFIÉE OK") : isFixed(r) ? T("RÉPARÉE") : (r.verdict || "?");',
+            "réparée affichée": ('const pill = isRuleCleared(r) ? T("FAUX POSITIF LEVÉ") : isVerified(r) ? T("VÉRIFIÉE OK") : isFixed(r) ? T("RÉPARÉE") : LANG === "en" && VERDICT_EN[r.verdict] ? VERDICT_EN[r.verdict] : (r.verdict || "?");',
                                  'const pill = r.verdict || "?";'),
             # 03/10/2026 : les reports des tops identifiés de ceux de la homepage
             "mode affiché": ('MODE_BADGE[r.mode] ? el("span"', 'false ? el("span"'),
