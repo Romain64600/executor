@@ -347,6 +347,31 @@ class RunRequestTests(AppTestCase):
         self.assertEqual((response.status, body["error"]["code"]), (409, "already_requested"))
         self.assertFalse((self.pc_dir / "run-top-games.request").exists())
 
+    def test_a_recalc_request_is_a_file_signed_by_the_operator_once(self):
+        # Romain, 08/10/2026 : « un bouton Recalcule » : les reports ouverts recontrôlés tout de suite par le moniteur
+        response, body = self._json("POST", "/api/price-check/recalc", {"by": "quelquun"})
+        self.assertEqual(response.status, 200, body)
+        self.assertEqual(body["requested"]["by"], "operateur")
+        on_disk = json.loads((self.pc_dir / "recalc.request").read_text(encoding="utf-8"))
+        self.assertEqual(on_disk["by"], "operateur")
+        response, body = self._json("GET", "/api/price-check/status")
+        self.assertEqual(body["pending_recalc"]["by"], "operateur")
+        response, body = self._json("POST", "/api/price-check/recalc", {})
+        self.assertEqual((response.status, body["error"]["code"]), (409, "already_requested"))
+
+    def test_recalc_refusals_and_state(self):
+        response, body = self._json("POST", "/api/price-check/recalc", {}, csrf=False)
+        self.assertEqual((response.status, body["error"]["code"]), (403, "csrf"))
+        response, body = self._json("POST", "/api/price-check/recalc", {}, headers={"Authorization": ""})
+        self.assertEqual((response.status, body["error"]["code"]), (403, "authentication_required"))
+        self.assertEqual(list(self.pc_dir.iterdir()), [], "a refused request left a file")
+        # l'état du dernier recalcul, écrit par le moniteur dans status.json
+        (self.pc_dir / "status.json").write_text(json.dumps({"modes": {}, "recalc": {
+            "by": "romain", "at": "2026-10-08T12:40:00+0200", "running": False, "end": "2026-10-08T12:41:10+0200",
+            "offers": 7, "fixed": 1, "rules": 1, "verified": 0, "still": 5, "unknown": 0}}), encoding="utf-8")
+        response, body = self._json("GET", "/api/price-check/status")
+        self.assertEqual((body["recalc"]["offers"], body["recalc"]["rules"], body["pending_recalc"]), (7, 1, None))
+
     def test_run_refusals(self):
         response, body = self._json("POST", "/api/price-check/run", {"mode": "full-page"})
         self.assertEqual((response.status, body["error"]["code"]), (400, "bad_mode"))

@@ -703,6 +703,20 @@ class AdminHandler(BaseHTTPRequestHandler):
             raise ApiError(exc.http_status, exc.code, exc.message) from exc
         self._send_json(200, {"requested": entry})
 
+    def _post_price_check_recalc(self) -> None:
+        # Romain, 08/10/2026 : « un bouton Recalcule » : les reports ouverts recontrôlés tout de suite par le moniteur.
+        # Même chemin que les passages : un fichier signé de l'identité Basic, lu par le moniteur (root, à part).
+        self._json_body()
+        authed = self._basic_user()
+        if not authed:
+            raise ApiError(403, "authentication_required",
+                           "recalcul refusé : identité Basic authentifiée requise")
+        try:
+            entry = price_check_io.request_recalc(self.state.price_check_dir, by=authed)
+        except price_check_io.PriceCheckError as exc:
+            raise ApiError(exc.http_status, exc.code, exc.message) from exc
+        self._send_json(200, {"requested": entry})
+
     def _get_validation(self, run_dir: Path) -> None:
         candidates = read_run_json(run_dir, "candidates.json")
         if not isinstance(candidates, list):
@@ -849,6 +863,8 @@ class AdminHandler(BaseHTTPRequestHandler):
             return self._post_price_check_decision()
         if path == "/api/price-check/run":
             return self._post_price_check_run()
+        if path == "/api/price-check/recalc":
+            return self._post_price_check_recalc()
         if path == "/api/price-check/console":
             return self._post_console("message")
         if path == "/api/price-check/console/harvest":

@@ -38,6 +38,7 @@ MAX_NOTE = 1000
 STATUS_FILE = "status.json"          # written by the monitor: state of each page mode
 COMPETITORS_FILE = "competitors.json"  # written by the monitor every 30 min: competitors' prices for the top pages
 REQUEST_FILE = "run-%s.request"      # written by the admin: run this mode now
+RECALC_FILE = "recalc.request"       # written by the admin: re-check the open reports now (Romain, 2026-10-08)
 RUN_MODES = ("top-games", "homepage")  # Romain, 02/10/2026: « Price check top », « Price check homepage »
 OFFER_ID = re.compile(r"^[0-9]{1,20}$")
 _APPEND_LOCK = threading.Lock()  # one line at a time from this process (ThreadingHTTPServer)
@@ -212,12 +213,22 @@ def pending_requests(directory: Path) -> dict[str, Any]:
     return out
 
 
+def pending_recalc(directory: Path) -> Any:
+    """The recalculation request not yet consumed by the monitor (None when none; {} when unreadable)."""
+
+    path = directory / RECALC_FILE
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+    except (OSError, ValueError):
+        return {}
+
+
 def read_status(directory: Path, *, now=time.time) -> dict[str, Any]:
     """status.json, written by the monitor every few seconds and at each step of a pass. Never an
     error: without it the page still shows the reports, and says the monitor's state is unknown."""
 
     path = directory / STATUS_FILE
-    base = {"available": False, "modes": {}, "pending": pending_requests(directory)}
+    base = {"available": False, "modes": {}, "pending": pending_requests(directory), "pending_recalc": pending_recalc(directory)}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
         age = max(0, int(now() - path.stat().st_mtime))
@@ -226,7 +237,7 @@ def read_status(directory: Path, *, now=time.time) -> dict[str, Any]:
     if not isinstance(payload, dict) or not isinstance(payload.get("modes"), dict):
         return base
     base.update(available=True, age_seconds=age, offers=payload.get("offers"),
-                updated_at=payload.get("updated_at"), modes=payload["modes"])
+                updated_at=payload.get("updated_at"), modes=payload["modes"], recalc=payload.get("recalc"))
     return base
 
 
@@ -273,6 +284,28 @@ def request_run(directory: Path, mode: Any, *, by: str, clock=_now_iso) -> dict[
         raise PriceCheckError(
             "already_requested",
             "un passage est déjà demandé pour ce mode — le moniteur le lit dans les secondes qui viennent",
+            http_status=409) from exc
+    except OSError as exc:
+        raise PriceCheckError("request_unwritable", f"{path} : écriture impossible : {exc}",
+                              http_status=500) from exc
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, ensure_ascii=False))
+    return entry
+
+
+def request_recalc(directory: Path, *, by: str, clock=_now_iso) -> dict[str, Any]:
+    """Romain, 2026-10-08 : « un bouton Recalcule ou, toi, penser à recalculer lorsqu'on fait une modification ». Ask the
+    monitor to re-check every open report now, on its page, with the rules it runs (it also does it at each start). One
+    request file, created exclusively (two clicks make one request), consumed by the monitor within seconds."""
+
+    path = directory / RECALC_FILE
+    entry = {"by": by, "at": clock()}
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o664)
+    except FileExistsError as exc:
+        raise PriceCheckError(
+            "already_requested",
+            "un recalcul est déjà demandé — le moniteur le lit dans les secondes qui viennent",
             http_status=409) from exc
     except OSError as exc:
         raise PriceCheckError("request_unwritable", f"{path} : écriture impossible : {exc}",

@@ -652,6 +652,31 @@ test("the two run buttons show the monitor's state and send the mode", async () 
   assert.ok(c.$("#msg-top-games").textContent.includes("Demande déposée par romain"), c.$("#msg-top-games").textContent);
 });
 
+test("the recalc button: the last recalculation, then the request", async () => {
+  // Romain, 08/10/2026 : « un bouton Recalcule ou, toi, penser à recalculer lorsqu'on fait une modification »
+  const c = await start();
+  await c.net.release("api/price-check/status", JSON.parse(JSON.stringify({ ...STATUS, pending_recalc: null, recalc: {
+    by: "the monitor's start", at: "2026-10-08T12:22:00+0200", running: false, end: "2026-10-08T12:23:40+0200",
+    offers: 7, fixed: 1, rules: 1, verified: 0, still: 5, unknown: 0 } })));
+  await tick();
+  const state = c.$("#state-recalc").textContent;
+  assert.ok(state.includes("Dernier recalcul 08/10 12:22 au démarrage du moniteur") && state.includes("7 offre(s), 1 réparée(s), 1 faux positif(s) levé(s) par une règle")
+    && state.includes("5 toujours en erreur"), state);
+  assert.ok(!c.$("#launch-recalc").disabled, "the recalc button must be clickable");
+  c.$("#launch-recalc").fire("click");
+  await tick();
+  const post = lastPost(c);
+  assert.ok(post && post.url === "api/price-check/recalc", "no recalc request left the page");
+  assert.ok(c.$("#launch-recalc").disabled, "the button must be disabled while the request is sent");
+  await c.net.release("api/price-check/recalc", { requested: { by: "romain", at: "2026-10-08T12:40:00+02:00" } });
+  await tick();
+  assert.ok(c.$("#msg-recalc").textContent.includes("Demande déposée par romain"), c.$("#msg-recalc").textContent);
+  // une demande en attente, puis un recalcul en cours : le bouton attend
+  await c.net.release("api/price-check/status", JSON.parse(JSON.stringify({ ...STATUS, pending_recalc: { by: "romain" }, recalc: null })));
+  await tick();
+  assert.ok(c.$("#state-recalc").textContent.includes("demande en attente (romain)") && c.$("#launch-recalc").disabled, c.$("#state-recalc").textContent);
+});
+
 test("re-check: a repaired offer says so, its filter finds it, a still-wrong one says so", async () => {
   const c = await start({ ...REPORTS, reports: [TORO, FIXED, STILL] });
   assert.ok(card(c, STILL.offer).textContent.includes("Toujours en erreur au recontrôle du 02/10 18:31"));

@@ -212,7 +212,13 @@ const EN = {
  "Faux positifs levés par une règle": "False positives cleared by a rule",
  "Vérifiées OK (n'avaient pas pu être vérifiées)": "Verified OK (could not be verified before)",
  "Toutes": "All",
- "Sans décision": "No decision"
+ "Sans décision": "No decision",
+ "Recalcul en cours": "Recalculation running",
+ "Dernier recalcul ": "Last recalculation ",
+ " au démarrage du moniteur": " at the monitor's start",
+ " sans conclusion": " without a conclusion",
+ "Aucun recalcul encore.": "No recalculation yet.",
+ "Recontrôler tout de suite les reports ouverts, sur leur page, avec les règles du moment": "Re-check the open reports right away, on their page, with the current rules"
 };
 const T = (fr) => (LANG === "en" && typeof fr === "string" && Object.prototype.hasOwnProperty.call(EN, fr) ? EN[fr] : fr);
 
@@ -1077,9 +1083,49 @@ function renderRuns() {
   }
 }
 
+// Romain, 08/10/2026 : « un bouton Recalcule ou, toi, penser à recalculer lorsqu'on fait une modification » : the monitor
+// re-checks the open reports at each start (a rule change restarts it) and on this request; its state is status.recalc.
+const RECALC_AT_START = "the monitor's start";
+
+function renderRecalc() {
+  const st = STATUS, state = $("#state-recalc"), btn = $("#launch-recalc");
+  const pending = st && st.pending_recalc;
+  const rc = st && st.available ? st.recalc : null;
+  const parts = [];
+  if (rc && rc.running) {
+    parts.push(T("Recalcul en cours") + (rc.by && rc.by !== RECALC_AT_START ? T(" (demandé par ") + TM(rc.by) + ")" : ""));
+  } else if (rc && rc.end) {
+    parts.push(T("Dernier recalcul ") + stamp(rc.at) +
+      (rc.by === RECALC_AT_START ? T(" au démarrage du moniteur") : T(" (demandé par ") + TM(rc.by || "?") + ")") + T(" : ") +
+      (rc.offers || 0) + T(" offre(s), ") + (rc.fixed || 0) + T(" réparée(s), ") +
+      (rc.rules ? rc.rules + T(" faux positif(s) levé(s) par une règle, ") : "") +
+      (rc.verified ? rc.verified + T(" vérifiée(s) OK, ") : "") + (rc.still || 0) + T(" toujours en erreur") +
+      (rc.unknown ? ", " + rc.unknown + T(" sans conclusion") : ""));
+  }
+  if (pending) parts.push(T("demande en attente") + (pending.by ? " (" + pending.by + ")" : ""));
+  state.textContent = parts.join(" · ") || T("Aucun recalcul encore.");
+  btn.disabled = !!pending || !!(rc && rc.running);
+}
+
 async function loadStatus() {
   try { STATUS = await api("api/price-check/status"); } catch (e) { STATUS = null; }
   renderRuns();
+  renderRecalc();
+}
+
+async function launchRecalc() {
+  const btn = $("#launch-recalc"), msg = $("#msg-recalc");
+  btn.disabled = true;
+  msg.textContent = "";
+  try {
+    const r = await api("api/price-check/recalc", { method: "POST", body: JSON.stringify({}) });
+    const who = r && r.requested && r.requested.by ? T(" par ") + r.requested.by : "";
+    msg.textContent = T("Demande déposée") + who + T(" : le moniteur la lit dans les secondes qui viennent.");
+  } catch (e) {
+    msg.textContent = T("Refusé : ") + e.message;
+    btn.disabled = false;
+  }
+  await loadStatus();
 }
 
 async function launch(mode) {
@@ -1098,6 +1144,7 @@ async function launch(mode) {
 }
 
 for (const mode of RUN_MODES) $("#launch-" + mode).addEventListener("click", () => launch(mode));
+$("#launch-recalc").addEventListener("click", launchRecalc);
 setInterval(() => { if (document.visibilityState !== "hidden") loadStatus(); }, STATUS_MS);
 loadStatus();
 
@@ -1187,7 +1234,7 @@ if (document.documentElement) {
   document.documentElement.setAttribute("lang", LANG);
 }
 const STATIC_ATTRS = { "refresh": ["title"], "guide-link": ["title"], "theme": ["title"], "launch-top-games": ["title"],
-  "launch-homepage": ["title"], "pc-harvest": ["title"], "pc-new-session": ["title"], "pc-console-text": ["placeholder", "aria-label"],
+  "launch-homepage": ["title"], "launch-recalc": ["title"], "pc-harvest": ["title"], "pc-new-session": ["title"], "pc-console-text": ["placeholder", "aria-label"],
   "f-text": ["placeholder"] };
 for (const [id, keys] of Object.entries(STATIC_ATTRS)) {
   const n = $("#" + id);
