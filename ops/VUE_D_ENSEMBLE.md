@@ -18,6 +18,11 @@ une carte par machine, rafraîchie toutes les 15 s (« mis à jour il y a N s »
   « … le dernier balayage s'est interrompu sans fin propre » quand son processus a disparu —
   admin redémarré, OOM, SIGKILL —, avec une alerte rouge : à relancer depuis la console),
   « Tâche inconnue » quand l'admin répond sans dire quel run tourne ;
+* la ligne **Price check** (Romain, 08/10/2026 : « pourquoi notre VM annonce ce statut à la place de dire que ça
+  check ? ») : le moniteur price check est un service à part de la saisie ; sa ligne vient de `status.json` et
+  `reports.json` du dossier partagé (`/var/lib/price-check`) : « contrôle en cours — homepage page 407 / 440 », ou
+  « entre deux passages », le dernier passage de chaque mode et ses alertes, le prochain, les reports ouverts ; « état
+  du moniteur inconnu » sans `status.json`. Seule la machine qui porte le dossier l'affiche ;
 * les offres créées (total de la boucle, passe en cours, page en cours), l'heure de lancement,
   la version du code (un avertissement quand les machines ne sont pas sur le même commit),
   l'uptime, la charge, le disque, la mémoire, la dernière maintenance ;

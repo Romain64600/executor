@@ -241,6 +241,7 @@ class OverviewConsoleSimulationTests(unittest.TestCase):
             "rafraîchissement": ("  setInterval(refresh, REFRESH_MS);\n", ""),
             "garde d'ordre": ("  if (seq !== SEQ) return;   // une réponse plus ancienne", "  //"),
             "lien filtré": ("const url = safeUrl(h.console_url);", "const url = h.console_url;"),
+            "ligne price check": ("const pcLine = priceCheckLine(s.price_check);", "const pcLine = null;"),
             "âge de la photo": ("a.textContent = ageText(sec);", ""),
             # revue adverse du 2026-09-30
             "garde des alertes": ("const alerts = liste(s.alerts);", "const alerts = s.alerts || [];"),

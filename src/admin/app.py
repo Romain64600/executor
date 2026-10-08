@@ -313,7 +313,7 @@ class AppState:
         # CETTE machine est prise en processus avec le `busy()` du manager — jamais un appel
         # HTTP de l'admin vers lui-même. Remplaçable par les tests (coutures d'`Overview`).
         self.overview = Overview(repo_root, runs_dir=self.runs_dir, log_dir=self.log_dir,
-                                 busy=lambda: self.manager.busy())
+                                 busy=lambda: self.manager.busy(), price_check_dir=self.price_check_dir)
 
 
 class AdminHandler(BaseHTTPRequestHandler):

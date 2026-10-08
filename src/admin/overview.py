@@ -50,6 +50,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from src import vps_snapshot
+from src.admin import price_check_io
 from src.vps_snapshot import scrub, scrub_text
 
 CONFIG_NAME = "overview_hosts.json"
@@ -184,6 +185,36 @@ def load_config(path: Path) -> dict[str, Any]:
     return out
 
 
+REPORTED = ("SUSPECT", "À VÉRIFIER", "NON VÉRIFIABLE")
+
+
+def price_check_summary(directory: Path, *, now=time.time) -> dict[str, Any]:
+    """Romain, 08/10/2026 (« pourquoi notre VM annonce ce statut à la place de dire que ça check ? », puis « ajoute la
+    ligne Price check à la vue d'ensemble ») : l'état du moniteur price check de CETTE machine, lu dans status.json et
+    reports.json du dossier partagé — un service à part de la saisie, que la photo de la machine ignorait. Jamais d'erreur :
+    sans fichier, « available » est faux et la page le dit."""
+
+    try:
+        status = price_check_io.read_status(Path(directory), now=now)
+    except Exception:                                 # noqa: BLE001 — la page s'affiche quoi qu'il arrive
+        status = {"available": False, "modes": {}}
+    out: dict[str, Any] = {"available": bool(status.get("available")), "age_s": status.get("age_seconds"),
+                           "modes": {}, "open_reports": None}
+    for mode, st in (status.get("modes") or {}).items():
+        if isinstance(st, dict):
+            out["modes"][str(mode)] = {k: st.get(k) for k in ("label", "running", "progress", "last_start", "last_end",
+                                                                "last_alerts", "next_at", "requested_by")}
+    try:
+        payload = json.loads((Path(directory) / "reports.json").read_text(encoding="utf-8"))
+        reports = payload.get("reports") if isinstance(payload, dict) else None
+        if isinstance(reports, list):
+            out["open_reports"] = sum(1 for r in reports if isinstance(r, dict) and r.get("verdict") in REPORTED
+                                      and not r.get("fixed_at") and ((r.get("decision") or {}).get("decision") != "faux"))
+    except (OSError, ValueError, AttributeError):
+        pass
+    return out
+
+
 def normalize_snapshot(snap: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     """La photo mise dans la forme que la page sait dessiner, et ce qui n'y était pas.
 
@@ -210,7 +241,7 @@ def normalize_snapshot(snap: dict[str, Any]) -> tuple[dict[str, Any], list[str]]
                     clean[str(name)] = "illisible"
                     problems.append(f"services.{name}")
             out["services"] = clean
-    for key in ("admin", "task", "errors", "code", "disk", "mem", "last_maintenance"):
+    for key in ("admin", "task", "errors", "code", "disk", "mem", "last_maintenance", "price_check"):
         if out.get(key) is not None and not isinstance(out[key], dict):
             out[key] = None
             problems.append(key)
@@ -278,7 +309,7 @@ class Overview:
 
     def __init__(self, repo_root: Path, *, runs_dir: Path | None = None,
                  log_dir: Path | None = None, busy: Callable[[], Any] | None = None,
-                 config_path: Path | None = None,
+                 config_path: Path | None = None, price_check_dir: Path | None = None,
                  runner: Callable[[list[str], float], subprocess.CompletedProcess] = run_ssh,
                  local_snapshot: Callable[[], dict[str, Any]] | None = None,
                  clock: Callable[[], float] = time.monotonic,
@@ -287,6 +318,7 @@ class Overview:
         self.runs_dir = Path(runs_dir) if runs_dir is not None else self.repo_root / "runs"
         self.log_dir = Path(log_dir) if log_dir is not None else self.repo_root / "logs"
         self.busy = busy or (lambda: None)
+        self.price_check_dir = Path(price_check_dir) if price_check_dir is not None else None
         self.config_path = Path(config_path) if config_path is not None \
             else self.repo_root / "state" / CONFIG_NAME
         self.runner = runner
@@ -301,10 +333,13 @@ class Overview:
     # -- la photo de chaque machine ------------------------------------------------------
     def _local_snapshot(self) -> dict[str, Any]:
         busy = self.busy
-        return vps_snapshot.snapshot(
+        snap = vps_snapshot.snapshot(
             self.repo_root, runs_dir=self.runs_dir, log_dir=self.log_dir,
             admin_probe=lambda: {"reachable": True, "busy": busy(), "error": None,
                                  "via": "en processus"})
+        if self.price_check_dir is not None and isinstance(snap, dict):
+            snap["price_check"] = price_check_summary(self.price_check_dir)  # le moniteur price check, à part de la saisie
+        return snap
 
     def _read_local(self, host: dict[str, Any]) -> dict[str, Any]:
         started = time.monotonic()

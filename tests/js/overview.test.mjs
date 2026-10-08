@@ -99,6 +99,26 @@ test("UP / DOWN : le badge, le motif du DOWN, la tâche en clair, les alertes", 
   assert.ok(c.$("#status").textContent.includes("2 DOWN"), c.$("#status").textContent);
 });
 
+test("PRICE CHECK : la ligne du moniteur, un service à part de la saisie (Romain, 08/10/2026)", async () => {
+  const c = await ouvrir();
+  const running = { available: true, age_s: 7, open_reports: 2, modes: {
+    "top-games": { running: false, last_end: "2026-10-08T20:31:53+0200", last_alerts: 1, next_at: "2026-10-08T20:34:23+0200" },
+    "homepage": { running: true, progress: [407, 440], requested_by: "romain" } } };
+  const quiet = { available: true, age_s: 400, open_reports: 1, modes: {
+    "top-games": { running: false, last_end: "2026-10-08T20:31:53+0200", last_alerts: 0 } } };
+  const check = Object.assign({}, PROD, { snapshot: snap({ price_check: running }) });
+  const idle = Object.assign({}, ANCIENNE, { name: "veille", status: "up", down_reasons: [], snapshot: snap({ price_check: quiet }) });
+  const none = Object.assign({}, ANCIENNE, { name: "sans", status: "up", down_reasons: [], snapshot: snap({ price_check: { available: false } }) });
+  await c.net.release("api/overview", payload([check, idle, none, SECOURS]));
+  const t = texte(carte(c, "cette-vm").querySelector(".task-pricecheck"));
+  assert.ok(t.includes("Price check : contrôle en cours — homepage page 407 / 440 (demandé par romain)"), t);
+  assert.ok(t.includes("dernier passage : tops 20:31 (1 alerte(s))") && t.includes("prochain 20:34") && t.includes("2 reports ouverts"), t);
+  const v = texte(carte(c, "veille").querySelector(".task-pricecheck"));
+  assert.ok(v.includes("entre deux passages") && v.includes("1 report ouvert") && v.includes("état d'il y a 7 min"), v);
+  assert.ok(texte(carte(c, "sans").querySelector(".task-pricecheck")).includes("état du moniteur inconnu"));
+  assert.equal(carte(c, "secours").querySelector(".task-pricecheck"), null, "une machine sans price check n'a pas la ligne");
+});
+
 test("LIENS : la console de chaque machine, jamais un lien javascript:", async () => {
   const c = await ouvrir();
   const piege = Object.assign({}, ANCIENNE, { name: "piege", console_url: "javascript:alert(1)" });

@@ -111,6 +111,33 @@ function taskMeta(task) {
   }
   return out;
 }
+// Romain, 08/10/2026 : « pourquoi notre VM annonce ce statut à la place de dire que ça check ? » — le moniteur price
+// check est un service à part de la saisie ; sa ligne vient de status.json et reports.json (snapshot.price_check).
+function priceCheckLine(pc) {
+  if (!pc || typeof pc !== "object") return null;
+  if (!pc.available) return "Price check : état du moniteur inconnu (status.json absent)";
+  const hm = (s) => { const m = /T(\d{2}:\d{2})/.exec(String(s || "")); return m ? m[1] : "?"; };
+  const modes = pc.modes && typeof pc.modes === "object" ? pc.modes : {};
+  const names = { "top-games": "tops", "homepage": "homepage" };
+  const running = Object.keys(modes).filter((m) => modes[m] && modes[m].running);
+  const parts = [];
+  if (running.length) {
+    parts.push("contrôle en cours — " + running.map((m) => {
+      const st = modes[m], p = Array.isArray(st.progress) && st.progress.length === 2 ? " page " + st.progress[0] + " / " + st.progress[1] : "";
+      return (names[m] || m) + p + (st.requested_by ? " (demandé par " + st.requested_by + ")" : "");
+    }).join(", "));
+  } else {
+    parts.push("entre deux passages");
+  }
+  const last = Object.keys(modes).filter((m) => modes[m] && modes[m].last_end && !modes[m].running)
+    .map((m) => (names[m] || m) + " " + hm(modes[m].last_end) + (modes[m].last_alerts ? " (" + modes[m].last_alerts + " alerte(s))" : ""));
+  if (last.length) parts.push("dernier passage : " + last.join(", "));
+  const next = Object.keys(modes).filter((m) => modes[m] && modes[m].next_at && !modes[m].running).map((m) => modes[m].next_at).sort()[0];
+  if (next) parts.push("prochain " + hm(next));
+  if (pc.open_reports != null) parts.push(pc.open_reports + " report" + (pc.open_reports === 1 ? "" : "s") + " ouvert" + (pc.open_reports === 1 ? "" : "s"));
+  if (pc.age_s != null && pc.age_s > 120) parts.push("état d'il y a " + Math.round(pc.age_s / 60) + " min");
+  return "Price check : " + parts.join(" · ");
+}
 function facts(s) {
   const rows = [];
   const add = (k, v) => { if (v) rows.push(el("div", { class: "fact" }, [el("span", { class: "fk", text: k }), el("span", { class: "fv", text: v })])); };
@@ -152,6 +179,8 @@ function renderHost(h) {
     card.append(el("div", { class: "task task-" + (task.type || "autre"), text: task.label || "Rien en cours" }));
     const meta = taskMeta(task);
     if (meta.length) card.append(el("div", { class: "task-meta" }, meta.map((t) => el("span", { text: t }))));
+    const pcLine = priceCheckLine(s.price_check);
+    if (pcLine) card.append(el("div", { class: "task task-pricecheck", text: pcLine }));
     // Une photo d'une autre version peut avoir une autre forme (revue adverse du 2026-09-30) :
     // le serveur la normalise déjà, la page revérifie ce qu'elle parcourt.
     const alerts = liste(s.alerts);

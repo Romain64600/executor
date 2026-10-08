@@ -306,6 +306,42 @@ class SnapshotClassificationTests(SnapshotCase):
         self.assertIn("introuvable", s["task"]["label"])
 
 
+class PriceCheckLineTests(unittest.TestCase):
+    """Romain, 08/10/2026 : « ajoute la ligne Price check à la vue d'ensemble » : le moniteur price check, un service à
+    part de la saisie, lu dans le dossier partagé ; jamais d'erreur."""
+
+    def test_the_monitor_s_state_and_the_open_reports(self):
+        from src.admin.overview import normalize_snapshot, price_check_summary
+        with tempfile.TemporaryDirectory() as d:
+            shared = Path(d)
+            self.assertEqual(price_check_summary(shared)["available"], False)
+            (shared / "status.json").write_text(json.dumps({"modes": {
+                "top-games": {"label": "Price check top", "running": False, "last_start": "2026-10-08T20:31:35+0200",
+                              "last_end": "2026-10-08T20:31:53+0200", "last_alerts": 1, "next_at": "2026-10-08T20:34:23+0200"},
+                "homepage": {"label": "Price check homepage", "running": True, "progress": [407, 440], "requested_by": "romain"}}}),
+                encoding="utf-8")
+            (shared / "reports.json").write_text(json.dumps({"reports": [
+                {"offer": "1", "verdict": "SUSPECT", "fixed_at": None, "decision": None},
+                {"offer": "2", "verdict": "SUSPECT", "fixed_at": None, "decision": {"decision": "faux"}},
+                {"offer": "3", "verdict": "À VÉRIFIER", "fixed_at": None, "decision": {"decision": "a_discuter"}},
+                {"offer": "4", "verdict": "OK", "fixed_at": "2026-10-08 20:33", "decision": {"decision": "vrai"}},
+                "pas un report"]}), encoding="utf-8")
+            pc = price_check_summary(shared, now=lambda: time.time())
+            self.assertTrue(pc["available"])
+            self.assertEqual(pc["open_reports"], 2)
+            self.assertEqual(pc["modes"]["homepage"]["progress"], [407, 440])
+            self.assertEqual(pc["modes"]["top-games"]["last_alerts"], 1)
+            self.assertNotIn("interval", pc["modes"]["top-games"])
+            # la photo normalisée garde la ligne ; une forme inattendue est nommée et retirée
+            snap, problems = normalize_snapshot({"price_check": pc})
+            self.assertEqual((snap["price_check"]["open_reports"], problems), (2, []))
+            snap, problems = normalize_snapshot({"price_check": "ça check"})
+            self.assertEqual((snap["price_check"], problems), (None, ["price_check"]))
+            # reports.json illisible : l'état du moniteur reste, le compte manque
+            (shared / "reports.json").write_text("{", encoding="utf-8")
+            self.assertEqual(price_check_summary(shared)["open_reports"], None)
+
+
 class SnapshotRobustnessTests(SnapshotCase):
     def test_ne_leve_jamais_et_dit_pourquoi(self):
         def cassé(cmd, timeout=None):
