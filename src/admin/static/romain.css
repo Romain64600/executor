@@ -9,3 +9,6 @@
 .rm-actions textarea { flex:1; font:inherit; min-height:2.4rem; resize:vertical; }
 .rm-legend { font-size:.82rem; color:var(--dim); margin:0 0 .6rem; }
 .rm-pending { font-size:.8rem; color:var(--warn); margin:.2rem 0 0; }
+
+.rm-links { margin:.2rem 0 0; font-size:.85rem; }
+.rm-links a { margin-right:.1rem; }

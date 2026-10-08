@@ -56,6 +56,26 @@ await test("everyone sees the open questions, the reports to discuss and the set
   assert.ok(anchors(discuss).some((a) => a.getAttribute("href") === "price-check#offer-138082170"), "no link to the report");
 });
 
+await test("a doubt on a report carries its links on the card", async () => {
+  // Romain, 08/10/2026 : « quand tu as un doute sur les reports, tu peux les renvoyer sur l'onglet Romain »
+  const c = await loadConsole(PAGE);
+  const doubt = { id: "Q13", at: "2026-10-08T14:00:00+02:00", from: "claude", from_label: "Claude", source: "report", status: "open",
+    text: "Ready Or Not · Bundle · Keycense (offer 136576203): the page has an LSPD Bundle edition with 32 offers.", offer: "136576203",
+    links: { page: "https://www.allkeyshop.com/blog/buy-ready-or-not-cd-key-compare-prices/",
+             merchant: "https://www.keycense.com/ready-or-not-lspd-bundle-steam", thread: "https://discord.com/channels/1/2",
+             evil: "javascript:alert(1)" } };
+  await c.net.release("api/romain/questions", { ...JSON.parse(JSON.stringify(QUESTIONS)), questions: [doubt], role: "owner", me: "romain" });
+  await c.net.release("api/price-check/reports", JSON.parse(JSON.stringify(REPORTS)));
+  await tick();
+  const card = c.$("#q-Q13");
+  assert.ok(card && card.textContent.includes("doute sur un report"), "the source is not shown");
+  const hrefs = anchors(card).map((a) => a.getAttribute("href"));
+  assert.deepEqual(hrefs, ["https://www.allkeyshop.com/blog/buy-ready-or-not-cd-key-compare-prices/",
+    "https://www.keycense.com/ready-or-not-lspd-bundle-steam", "https://discord.com/channels/1/2", "price-check#offer-136576203"]);
+  assert.ok(anchors(card).slice(0, 3).every((a) => a.getAttribute("rel") === "noopener"), "an external link without noopener");
+  assert.equal(buttons(card).length, 1, "Romain cannot settle it");
+});
+
 await test("Romain settles a question with his answer", async () => {
   const c = await start("owner");
   const card = c.$("#q-Q1");

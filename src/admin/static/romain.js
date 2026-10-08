@@ -30,7 +30,11 @@ const EN = {
  "Questions à jour": "Questions up to date",
  "Questions illisibles : ": "Questions unreadable: ",
  "Relire les questions": "Read the questions again",
- "Basculer le thème": "Switch the theme"
+ "Basculer le thème": "Switch the theme",
+ "doute sur un report": "doubt on a report",
+ "Page AllKeyShop": "AllKeyShop page",
+ "Offre chez le marchand": "Merchant offer",
+ "Fil Discord": "Discord thread"
 };
 const T = (fr) => (LANG === "en" && typeof fr === "string" && Object.prototype.hasOwnProperty.call(EN, fr) ? EN[fr] : fr);
 // The "Romain" tab (Romain, 06/10/2026) : « un onglet Romain où il y a toutes les questions en cours, que tout le monde
@@ -74,7 +78,18 @@ function stamp(s) {
   const m = /^\d{4}-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(String(s || ""));
   return m ? m[2] + "/" + m[1] + " " + m[3] + ":" + m[4] : String(s || "");
 }
-const SOURCE = { "récolte": T("récolte des décisions"), "console": T("console") };
+const SOURCE = { "récolte": T("récolte des décisions"), "console": T("console"), "report": T("doute sur un report") };
+
+// Romain, 08/10/2026 : « quand tu as un doute sur les reports, tu peux les renvoyer sur l'onglet Romain » : a question
+// filed by Claude on a report carries the offer and its links; they are shown on the card, to decide from here.
+function linksRow(q) {
+  const links = (q && q.links && typeof q.links === "object") ? q.links : {};
+  const items = [["page", T("Page AllKeyShop")], ["merchant", T("Offre chez le marchand")], ["thread", T("Fil Discord")]]
+    .filter(([k]) => typeof links[k] === "string" && /^https:\/\//.test(links[k]))
+    .map(([k, label]) => el("a", { href: links[k], target: "_blank", rel: "noopener", text: label }));
+  if (q && q.offer) items.push(el("a", { href: "price-check#offer-" + encodeURIComponent(String(q.offer)), text: T("Ouvrir le report") }));
+  return items.length ? el("p", { class: "rm-links" }, items.flatMap((a, i) => (i ? [" · ", a] : [a]))) : null;
+}
 
 let DATA = null, REPORTS = null;
 const ANSWERS = {};  // typed answers, kept across a refresh
@@ -84,7 +99,7 @@ const SENT = new Set();  // settled here, until the console service writes it do
 function questionCard(q, owner) {
   const kids = [el("div", { class: "rm-head" }, [el("b", { text: q.id || "?" }),
       " · " + (q.from_label || q.from || "?") + " · " + stamp(q.at) + " · " + (SOURCE[q.source] || q.source || "")]),
-    el("p", { class: "rm-text", text: q.text || "" })];
+    el("p", { class: "rm-text", text: q.text || "" }), linksRow(q)];
   if (SENT.has(q.id)) {
     kids.push(el("p", { class: "rm-pending", text: T("Réglée : la console l'enregistre dans quelques secondes.") }));
   } else if (owner) {
@@ -104,7 +119,7 @@ function settledCard(q) {
   return el("article", { class: "rm-item settled" }, [
     el("div", { class: "rm-head" }, [el("b", { text: q.id || "?" }), " · " + (q.from_label || q.from || "?") + " · " + stamp(q.at) +
       T(" · réglée par ") + (q.closed_by || "?") + T(" le ") + stamp(q.closed_at)]),
-    el("p", { class: "rm-text", text: q.text || "" }),
+    el("p", { class: "rm-text", text: q.text || "" }), linksRow(q),
     q.answer ? el("p", { class: "rm-answer-shown", text: "→ " + q.answer }) : null]);
 }
 
