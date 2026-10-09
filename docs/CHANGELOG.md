@@ -22,8 +22,10 @@ Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
   marchand (`console_url_families`, `console_pc_declared`) reçoivent l'URL DU FEED, plus la fiche de `u`
   (`src/console_keys.py`) — leur grammaire est celle du feed. `gamesplanet.ISO2_TO_NAME` partagée
   (Allyouplay l'importe désormais).
-- Registre : `GREENMANGAMING` / store 22. **PAS en liste blanche** : aperçu à blanc d'abord
-  (`docs/apercu_greenmangaming_2026-10-09.md`), liste blanche et groupe sur le go de Romain. Tests :
+- Registre : `GREENMANGAMING` / store 22. **PAS en liste blanche** : aperçu à blanc le même jour
+  (`docs/apercu_greenmangaming_2026-10-09.md` : **218 entrées / 482**, dont 32 Steam ROW listées à part, 13
+  Xbox, 1 Epic ; 264 refus dont 43 lots, 17 fiches disparues de GMG, 76 sans page AKS ; DRM vus : steam 204,
+  xbox-one 13, epicgames 1), liste blanche et groupe sur le go de Romain. Tests :
   `tests/test_merchants_greenmangaming_r73.py` (11 fiches réelles du 09/10 en fixtures). Docs :
   EXECUTOR_RULES `[R73]`, MERCHANTS, PROCHAINS_MARCHANDS, AGENTS.
 
