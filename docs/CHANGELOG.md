@@ -3,6 +3,30 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-10-09 — `[R73]` Greenmangaming (store 22) : fichier marchand (fiche JSON, ROW prouvé), aperçu à blanc
+
+- **Romain : « go pour Greenmangaming avec ta règle R59, 1. L'executor continue de rentrer l'offre en ROW
+  mais il vérifie que ce soit bien dispo en EU + US avant de l'ajouter, sinon il skip 2. consoles oui
+  mais ça peut être xbox + PC sur certaines offres, 3. Standard oui 4. OK, go ».** `src/merchants/
+  greenmangaming.py` (modèle Allyouplay `[R68]`) : lien d'affiliation `greenmangaming.sjv.io` (`u` =
+  fiche, `prodsku` = code produit, identité `u` + `prodsku`), fiche lue en HTTP (bibliothèque standard),
+  édition choisie par `Code` == `prodsku`, plateforme = `Drm` (vocabulaire fermé), région = `[R59]` sur
+  `ExcludedCountries` bornée (vide → GLOBAL ; exclus hors UE / UK / USA → **ROW** ; UE, UK ou USA exclus
+  → refus), édition = `Name` confronté au titre (palier non nommé, « 2 Pack », « Bundle » → refus),
+  consoles par le sku (P1) + « Xbox + PC » par la fiche (P2), `console_page_authoritative`. Refus nommés :
+  « (MAC) », monnaies / crédits, sku PlayStation, lien sans `u` / `prodsku`, fiche illisible.
+- **Générique, deux touches :** `REGION_IDS` gagne la base `row` (« Steam ROW (steamrow) », « Origin ROW
+  (3row) », « Ubisoft ROW (uplayrow) », « Epic Store ROW (80row) », « Battlenet ROW (4row) », « Publisher
+  ROW (1row) » — catalogue du modal du 26/09 ; GOG / Rockstar / Microsoft / consoles : aucun, fail-closed),
+  atteinte seulement par un résolveur de marchand qui prouve UE + UK + USA ; et les hooks console d'un
+  marchand (`console_url_families`, `console_pc_declared`) reçoivent l'URL DU FEED, plus la fiche de `u`
+  (`src/console_keys.py`) — leur grammaire est celle du feed. `gamesplanet.ISO2_TO_NAME` partagée
+  (Allyouplay l'importe désormais).
+- Registre : `GREENMANGAMING` / store 22. **PAS en liste blanche** : aperçu à blanc d'abord
+  (`docs/apercu_greenmangaming_2026-10-09.md`), liste blanche et groupe sur le go de Romain. Tests :
+  `tests/test_merchants_greenmangaming_r73.py` (11 fiches réelles du 09/10 en fixtures). Docs :
+  EXECUTOR_RULES `[R73]`, MERCHANTS, PROCHAINS_MARCHANDS, AGENTS.
+
 ## 2026-10-09 — trois groupes A, B, C (un par machine) : C = eww.gg seul ; mesure de sa première passe
 
 - **Romain : « on créera le groupe A, B et C et on lancera un groupe par machine »** (après, le même

@@ -114,6 +114,22 @@ _ALIASES: dict[str, str] = {
 }
 UK, US = "united kingdom", "united states"
 
+# Les pays qui décident, en ISO-2 → les noms de la table ci-dessus. Déclarée chez Allyouplay le
+# 30/09 (`[R68]`, liste des pays AUTORISÉS), partagée ici depuis le 2026-10-09 avec Greenmangaming
+# (`[R73]`, liste des pays EXCLUS) : UNE table, et l'égalité ci-dessous casse l'import si l'une des
+# deux listes de l'UE bougeait seule.
+ISO2_TO_NAME: dict[str, str] = {
+    "AT": "austria", "BE": "belgium", "BG": "bulgaria", "HR": "croatia", "CY": "cyprus",
+    "CZ": "czechia", "DK": "denmark", "EE": "estonia", "FI": "finland", "FR": "france",
+    "DE": "germany", "GR": "greece", "HU": "hungary", "IE": "ireland", "IT": "italy",
+    "LV": "latvia", "LT": "lithuania", "LU": "luxembourg", "MT": "malta", "NL": "netherlands",
+    "PL": "poland", "PT": "portugal", "RO": "romania", "SK": "slovakia", "SI": "slovenia",
+    "ES": "spain", "SE": "sweden",
+    "GB": UK, "US": US,
+}
+if frozenset(v for k, v in ISO2_TO_NAME.items() if k not in ("GB", "US")) != EU_MEMBERS:
+    raise RuntimeError("gamesplanet.ISO2_TO_NAME diverge de EU_MEMBERS")
+
 _PRODUCT_PAGE_MARKERS = ('class="prod-data"', "platform badge")
 _NOTICE_RE = re.compile(r"REGION LOCK INFO</p>(?P<notice>.*?)</strong>", re.S)
 _MODE_RE = re.compile(r"It will\s*<u>\s*(NOT|ONLY)\s*</u>\s*activate in", re.S)

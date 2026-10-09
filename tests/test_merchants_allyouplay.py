@@ -240,7 +240,9 @@ class LesAutresMarchandsNeBougentPas(unittest.TestCase):
     def test_aucun_autre_marchand_ne_declare_d_hote_d_affiliation(self):
         from src.merchants.registry import MERCHANT_CONFIGS
         declares = sorted(c.name for c in MERCHANT_CONFIGS.values() if c.affiliate_hosts)
-        self.assertEqual(declares, ["Allyouplay"])
+        # Greenmangaming `[R73]` (2026-10-09) passe par le même redirecteur Impact (`sjv.io`) :
+        # deuxième marchand à le déclarer, et le seul autre.
+        self.assertEqual(declares, ["Allyouplay", "Greenmangaming"])
 
 
 if __name__ == "__main__":

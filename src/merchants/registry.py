@@ -45,6 +45,7 @@ from src.merchants import (
     mmoga,
     gamerall,
     gamesplanet,
+    greenmangaming,
     wyrel,
     eww,
 )
@@ -88,6 +89,9 @@ MERCHANT_CONFIGS: dict[str, MerchantConfig] = {
     # eww.gg (2026-10-07) — la seconde boutique de Driffle UAB, store 170, déclinaison de driffle.py
     # (Romain : « Store ID 170 stop B et lance le data entry pour ce nouveau shop »).
     "EWW.GG": eww.CONFIG,
+    # [R73] Greenmangaming (2026-10-09) — fichier écrit (lecteur de fiche, modèle Allyouplay [R68]),
+    # PAS en liste blanche : aperçu à blanc d'abord (docs/PROCHAINS_MARCHANDS.md, section 2026-10-09).
+    "GREENMANGAMING": greenmangaming.CONFIG,
 }
 
 
@@ -105,6 +109,7 @@ MERCHANT_STORE_IDS: dict[str, str] = {
     "GamersOutlet": "31", "MMOGA": "12", "Difmark": "167", "Wyrel": "162",
     "Gamerall": "13", "GOG": "34", "Gamesplanet FR": "55",
     "Discover.games": "168", "Loaded": "40", "Indiegala": "95", "eww.gg": "170",
+    "Greenmangaming": "22",
 }
 _BY_STORE: dict[str, str] = {store: name for name, store in MERCHANT_STORE_IDS.items()}
 

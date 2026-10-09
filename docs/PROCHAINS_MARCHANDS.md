@@ -18,7 +18,7 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 | 4 | **Pixelcodes** (82) + **Software-codes** (6) | 1 547 + 1 538 | 1 377 + 1 365 (89 %) | **les produits du feed n'existent plus sur leurs sites** (API : « Product not found », 52 sur 52 testés ; sites devenus boutiques de logiciels) | à ne pas saisir ; liste « not found » en cours pour les marchands |
 | 5 | **Discover.games** (168) | 440 | 370 (84 %) | — | **fichier écrit le 25/09 (`[R60]`), essai à blanc : 106 candidats sur 150 lignes ; en liste blanche le 26/09, groupe A** |
 | 6 | **CDKeys → « Loaded »** (40) | 16 (21/09) | — | feed du jour à relire | **fichier écrit le 25/09 (`[R61]`, « Europe & UK » → Europe, sans région → GLOBAL) ; essai à blanc sur 16 lignes : 1 candidat ; en liste blanche le 26/09, groupe A** |
-| **1** | **Greenmangaming** (22) | 482 | 318 (66 %) | titre muet, mais `prodsku` dit la plateforme (PC 444, Xbox 32, PS4 5) et la **fiche** (JSON embarqué) dit tout : `Drm`, édition (`Name`), pays EXCLUS, `Code` = `prodsku` | **étudié le 09/10, choisi comme prochain** : lecteur de fiche à écrire (modèle `[R59]` / `[R68]`), décisions à Romain (section 2026-10-09) |
+| **1** | **Greenmangaming** (22) | 482 | 318 (66 %) | titre muet, mais `prodsku` dit la plateforme (PC 444, Xbox 32, PS4 5) et la **fiche** (JSON embarqué) dit tout : `Drm`, édition (`Name`), pays EXCLUS, `Code` = `prodsku` | **étudié et codé le 09/10** (`[R73]`, `greenmangaming.py`, décisions de Romain reçues : R59 bornée + ROW prouvé, consoles avec Xbox + PC, Standard, go) ; **aperçu à blanc en cours**, liste blanche et groupe sur son go après lecture |
 | ✓ | **Indiegala** (95) | 175 (21/09) | 30 (19 %, slug strict) | plateforme et région : ni titre ni URL ; la **fiche** les donne (« is provided via Steam Key », listes de pays, « Region locked product ») | **fichier écrit le 06/10** (`[R69]`), **aperçu à blanc le 06/10 : 34 entrées / 175** (`apercu_indiegala_2026-10-06.md`), **liste blanche le 06/10** (Romain : « go pour la liste blanche ») ; groupe à choisir ; Belmont's Curse (EU) reste refusée (Chypre ET les USA interdits), tant que Romain n'en décide pas autrement |
 | ✓ | **eww.gg** (170, id de page AKS 1011) | **~10 400** (mesuré le 09/10 pendant la première passe ; feed réimporté par AKS chaque jour) | **~70 %** (3 143 créées sur 39 h, 0 halte) | rien : grammaire = Driffle (même société, Driffle UAB), fiche lisible en HTTP | **fichier `eww.py` + liste blanche le 07/10** (instruction de Romain : « lance le data entry pour ce nouveau shop »), première passe seule depuis l'admin du 07/10, **groupe C (seul) le 09/10** (« on créera le groupe A, B et C et on lancera un groupe par machine ») |
 
@@ -89,6 +89,22 @@ sans doute quand la fiche exclut des pays d'Asie —, ce que notre règle `[R59]
 Rendement attendu : 300 à 320 lignes avec une page AKS, dont il faut retirer les Mac, packs, prépayés et
 les éditions non vendues par la page — de l'ordre de 150 à 220 entrées au premier passage, en Steam
 GLOBAL pour l'essentiel.
+
+**Décisions de Romain (09/10, ~10:30 UTC), mot pour mot : « go pour Greenmangaming avec ta règle R59,
+1. L'executor continue de rentrer l'offre en ROW mais il vérifie que ce soit bien dispo en EU + US avant
+de l'ajouter, sinon il skip 2. consoles oui mais ça peut être xbox + PC sur certaines offres, 3. Standard
+oui 4. OK, go ».** Lecture codée (`[R73]`, `src/merchants/greenmangaming.py`) :
+1. liste d'exclusion vide → GLOBAL (`[R59]`) ; pays exclus mais ni l'UE, ni le Royaume-Uni, ni les USA →
+   le seau **ROW** du menu (« Steam ROW (steamrow) », vérifié dans le catalogue du modal du 26/09, qui
+   porte aussi Origin / Ubisoft / Epic / Battlenet / Publisher ROW) ; UE, UK ou USA exclus → refus,
+   jamais le repli US / EU de `[R59]` ;
+2. la génération Xbox est DÉCLARÉE par le suffixe du sku (P1) ; une fiche qui liste PC ET une Xbox
+   déclare « Xbox + PC » (P2) ; la clé « - Windows 10 » (`Drm` microsoft) est une clé Microsoft Store
+   PC ; les crédits PSN sont refusés ;
+3. « Standard Edition » (ou `Name` vide) sur un titre nu → le chemin générique, Standard quand la page
+   AKS le vend ; un palier que la fiche nomme et que le titre ne porte pas → refus ;
+4. fichier + tests (11 fiches réelles en fixtures) + aperçu à blanc sur les 482 lignes
+   (`docs/apercu_greenmangaming_2026-10-09.md`) ; liste blanche et groupe après lecture de l'aperçu.
 
 ## 2026-10-07 — eww.gg : « Forme-toi sur ce marchand » (ID AKS 1011, ID feed ?)
 

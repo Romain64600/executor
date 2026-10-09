@@ -1196,7 +1196,11 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
     cfg = _config_of(merchant)
     # La fiche d'un lien d'affiliation déclaré (``MerchantConfig.affiliate_hosts``,
     # 2026-09-30 — Allyouplay) : le chemin du redirecteur ne dit rien, la fiche dit `/xbox/…`,
-    # `…-xbox-one`. Tous les autres marchands : l'URL telle quelle.
+    # `…-xbox-one`. Tous les autres marchands : l'URL telle quelle. Les HOOKS du marchand
+    # (``console_url_families``, ``console_pc_declared``) reçoivent, eux, l'URL DU FEED : c'est
+    # leur grammaire — Greenmangaming `[R73]` (2026-10-09) lit la génération Xbox dans le
+    # ``prodsku`` du lien d'affiliation, que la fiche ne porte pas (`/games/nhl-27-xbox/`).
+    feed_url = url
     if cfg is not None:
         url = cfg.landing_url(url)
     if not console_marker_in_title(name) and not console_marker_in_url(url):
@@ -1230,9 +1234,9 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
     hook_xbox_undeclared = hook_windows_key = url_xbox_undeclared = False
     if not families:
         if cfg is not None and cfg.console_url_families is not None:
-            declared, skip = _hook_url_read(cfg, url)
+            declared, skip = _hook_url_read(cfg, feed_url)
             if skip:
-                return signal(declared, pc_declared or _hook_pc_declared(cfg, name, url), skip)
+                return signal(declared, pc_declared or _hook_pc_declared(cfg, name, feed_url), skip)
             if declared == (XBOX_GENERATION_UNDECLARED,):
                 hook_xbox_undeclared, declared = True, ()
             elif declared == (XBOX_WINDOWS_KEY,):
@@ -1255,7 +1259,7 @@ def classify_console(name: str, url: str, merchant: str) -> ConsoleSignal | None
             families = list(read.families)
             pc_declared = pc_declared or read.pc_declared
             url_xbox_undeclared = read.xbox_undeclared and not read.xbox_pc
-    pc_declared = pc_declared or _hook_pc_declared(cfg, name, url)
+    pc_declared = pc_declared or _hook_pc_declared(cfg, name, feed_url)
     if not families:
         # P4 Xbox — DÉCIDÉ Romain 2026-09-25 : « Xbox sur les deux ». Un Xbox SANS génération
         # (« Tin & Kuna XBOX LIVE Key EUROPE », « EA SPORTS FC 25 (Xbox Live) », Gamivo

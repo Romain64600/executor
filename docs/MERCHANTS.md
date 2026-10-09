@@ -121,6 +121,7 @@ du feed.
 | Allyouplay | 17 | `allyouplay.py` (lien d'affiliation + lecteur de fiche `[R68]`, en ligne le 30/09) | `domain="allyouplay.com"`, `affiliate_hosts=("anandadigitalbv.sjv.io",)`, `url_identity_params=("u",)` ; `[R68]` : `precheck` (« [Mac] »), `url_platform` (`-ga-ste-` / `-ga-gog-`), `offer_page_resolver` (fiche : « Platform », `available_countries`, règle `[R59]`), `console_page_authoritative` | **non** — balayé 6 fois (groupe B, 17/09 → 26/09) mais 100 % refusé au contrôle de domaine : 0 saisie | 3 |
 | Indiegala | 95 | `indiegala.py` (**nouveau 06/10**, lecteur de fiche `[R69]`, modèle `[R68]`) | `domain="indiegala.com"` ; PC : `title_region` (suffixe « (US) / (EU) / (UK) » en queue, doit s'accorder avec la fiche), `resolve_name` / `guard_name` (suffixe retiré, titre multilingue réduit à sa première partie), `offer_page_resolver` (fiche : « is provided via », pays interdits `[R59]`, verrou pays, DLC = garde), `console_page_authoritative` | **non — hors liste blanche, hors groupe** : aperçu à blanc fait le 06/10 (34 / 175, `docs/apercu_indiegala_2026-10-06.md`) ; règle de région et go à confirmer par Romain | 175 lignes (21/09) |
 | eww.gg | 170 | `eww.py` (**nouveau 07/10**, déclinaison de `driffle.py`) | `domain="eww.gg"` ; mêmes hooks que Driffle (`precheck` parenthèse de région, `title_region`, `console_region_slot`, `console_url_families` avec l'identifiant nu en fin de slug) | **oui — liste blanche le 07/10 sur instruction de Romain** (« Store ID 170 … lance le data entry pour ce nouveau shop »), lancé seul depuis l'admin le 07/10, **groupe C, seul, depuis le 09/10** (Romain : « on créera le groupe A, B et C et on lancera un groupe par machine » ; une passe de eww.gg vaut dix passes de A ou de B) | **~10 400 lignes** mesurées le 09/10 pendant la première passe (feed de 147 pages au départ, réimporté par AKS chaque jour) |
+| Greenmangaming | 22 | `greenmangaming.py` (**nouveau 09/10**, `[R73]`, modèle Allyouplay `[R68]`) | `affiliate_hosts=("greenmangaming.sjv.io",)`, `url_identity_params=("u", "prodsku")`, `precheck` ((MAC), monnaies, sku PlayStation), `offer_page_resolver` (fiche : `Drm` → plateforme, `ExcludedCountries` → GLOBAL / ROW / refus, `Name` → édition), `console_url_families` (génération du sku), `console_pc_declared` (fiche : PC + Xbox), `console_page_authoritative` | **non — aperçu à blanc d'abord** (`apercu_greenmangaming_2026-10-09.md`), liste blanche et groupe sur le go de Romain | 482 lignes au scan du 21/09, 318 avec une page AKS (66 %) |
 | GameSeal | 126 | `gameseal.py` | `domain` ; PC : `precheck`, `title_region` (queue ` - <RÉGION>`), `resolve_name` (queue pelée, 20/09) ; console : `console_url_families`, `console_region_slot` | oui (1er balayage 19/09) | 1 090 écrites, 1 089 justes (audit du 20/09) |
 | CJS-CDKeys | 30 | `cjs.py` (**nouveau**, identité seule) | `domain="cjs-cdkeys.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
 | Difmark | 167 | `difmark.py` | `console_url_families` (comptes) | parqué (hors liste blanche) | — |
@@ -708,6 +709,32 @@ matcher et le classifieur importent le registre.
   296 lignes) : 119 candidats PC Steam (GLOBAL 109, US 7, EU 3), toutes les lignes Xbox refusées
   sur leurs pays. L'ancienne VM (51.38.37.254) est bloquée par le Cloudflare d'Allyouplay (403) :
   la fiche y serait illisible, donc chaque ligne refusée — sans écriture fausse.
+
+## Greenmangaming (store 22, `[R73]`, fichier le 09/10, aperçu à blanc avant la liste blanche)
+
+Romain, 2026-10-09 : « go pour Greenmangaming avec ta règle R59, 1. L'executor continue de rentrer
+l'offre en ROW mais il vérifie que ce soit bien dispo en EU + US avant de l'ajouter, sinon il skip
+2. consoles oui mais ça peut être xbox + PC sur certaines offres, 3. Standard oui 4. OK, go ».
+Règle complète : EXECUTOR_RULES `[R73]` ; étude : `PROCHAINS_MARCHANDS.md` (section 2026-10-09).
+
+- **Le feed** passe par le redirecteur Impact (`greenmangaming.sjv.io/…?prodsku=<sku>&u=<fiche>`),
+  comme Allyouplay : `u` est la fiche, `prodsku` le code produit (suffixe = plateforme : PC 444, Xbox
+  Series 24, Xbox One 8, PlayStation 4 (crédits PSN) 5, Windows 10 1). Titre nu, ni boutique ni région.
+- **La fiche** (`www.greenmangaming.com/games/<slug>/`, HTTP, bibliothèque standard, UA navigateur)
+  embarque le JSON `var games` : l'édition dont `Code` == `prodsku` donne `Drm` (steam / microsoft ;
+  xbox-one = console), `Name` (édition), `ExcludedCountries`, `SystemRequirements` (PC / Xbox One /
+  Xbox Series X/S).
+- **Région** : liste vide → GLOBAL ; pays exclus hors UE / UK / USA → **ROW** (« Steam ROW
+  (steamrow) », base `row` de `REGION_IDS`, Romain : la clé est prouvée disponible en UE + US) ; UE,
+  UK ou USA exclus → refus `GREENMANGAMING LOCK`. Jamais le repli US / EU de `[R59]` ici.
+- **Édition** : la fiche « Deluxe » sur un titre nu → refus ; « 2 Pack » / « Bundle » → refus ;
+  « Standard Edition » ou vide → chemin générique (Standard quand la page AKS le vend).
+- **Consoles** : génération déclarée par le sku (P1) ; la fiche fait foi (région) ; PC + Xbox listés
+  par la fiche → « Xbox + PC » (P2) ; « - Windows 10 » (microsoft) = clé Microsoft Store PC (`[R62]`).
+- **Refus nommés** : « (MAC) », monnaies / crédits (Bucks, Points, CREDIT, Game Pass), sku PlayStation,
+  lien sans `u` / sans `prodsku`, fiche illisible, sku absent de la fiche, DRM inconnu.
+- **Identité** = `u` + `prodsku`. Tests : `tests/test_merchants_greenmangaming_r73.py`, fixtures réelles
+  `tests/fixtures/greenmangaming/` (11 fiches du 09/10).
 
 ## eww.gg (store 170) — la seconde boutique de Driffle UAB (2026-10-07)
 

@@ -141,6 +141,26 @@ No degraded mode.
 These are deliberate, Romain-reviewed calls. An adversarial audit re-derives them as
 "findings" every time; leave them AS-IS unless Romain explicitly changes his mind.
 
+- **`[R73]` Greenmangaming : la FICHE fait foi (DRM, édition, pays EXCLUS), et une clé à pays exclus
+  entre en ROW si l'UE, le Royaume-Uni et les USA sont disponibles — Romain, 2026-10-09** (« go pour
+  Greenmangaming avec ta règle R59, 1. L'executor continue de rentrer l'offre en ROW mais il vérifie que
+  ce soit bien dispo en EU + US avant de l'ajouter, sinon il skip 2. consoles oui mais ça peut être xbox
+  + PC sur certaines offres, 3. Standard oui 4. OK, go »). Le feed passe par le redirecteur Impact
+  (`u` = fiche, `prodsku` = code produit = identité avec `u`) ; la fiche embarque un JSON (`var games`)
+  dont l'édition `Code` == `prodsku` donne `Drm`, `Name`, `ExcludedCountries`, `SystemRequirements`.
+  Un audit voudra : (a) retomber sur STEAM / GLOBAL quand la fiche est illisible — non (`[R51]`) ;
+  (b) faire entrer « UE exclue » en US ou « USA exclus » en EU « puisque `[R59]` le fait » — non,
+  Romain a borné : « sinon il skip » ; (c) ranger une clé à pays exclus en GLOBAL « comme Gamesplanet
+  FR » — non, Romain a choisi le seau ROW (« Steam ROW (steamrow) », base `row` de `REGION_IDS`) avec
+  la preuve UE + US ; (d) ouvrir la base `row` aux titres qui disent ROW — non, sans fiche pas de
+  preuve, ROW reste une région interdite ; (e) inventer des seaux ROW pour GOG / Rockstar / Microsoft /
+  consoles — non, le menu n'en a pas ou ce sont des verrous ; (f) prendre « la première édition » de la
+  fiche quand le sku n'y est pas — non, c'est l'identité ; (g) lire `IsSellable` — non, une offre épuisée
+  est à saisir ; (h) laisser entrer « 2 Pack » / « Bundle », ou un palier de la fiche que le titre ne
+  nomme pas — non, refus ; (i) rendre aux hooks console la fiche de `u` au lieu de l'URL du feed — non,
+  leur grammaire est celle du feed (le sku porte la génération). PAS en liste blanche tant que Romain
+  n'a pas lu l'aperçu. EXECUTOR_RULES `[R73]`, `tests/test_merchants_greenmangaming_r73.py`.
+
 - **eww.gg (store 170) : liste blanche et première passe SANS aperçu à blanc préalable — Romain,
   2026-10-07** (« Store ID 170 stop B et lance le data entry pour ce nouveau shop, puis tu relanceras
   B depuis l'admin pour être sûr que j'ai le log »). eww.gg est la seconde boutique de Driffle UAB,

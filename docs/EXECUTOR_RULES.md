@@ -3907,6 +3907,86 @@ verrouillée Europe. 0 faux positif sur 86 820 lignes distinctes des runs de cet
   correctifs (71 sous-tests en échec + 1 erreur, puis verts), et 14 mutations de ces correctifs
   les rougissent toutes.
 
+### `[R73]` Greenmangaming (store 22) — la fiche produit fait foi : DRM, édition, pays exclus, ROW prouvé (2026-10-09)
+
+**Fichier écrit le 2026-10-09 (`src/merchants/greenmangaming.py`), PAS en liste blanche : aperçu à blanc
+d'abord (`docs/apercu_greenmangaming_2026-10-09.md`), liste blanche et groupe sur un go de Romain après
+lecture.** Romain : « Formons-nous sur un nouveau marchand. Choisis un marchand selon nos critères, soit
+assez facile à rentrer et qui ait des pending offers disponibles », puis, l'étude lue
+(`docs/PROCHAINS_MARCHANDS.md`, section 2026-10-09), mot pour mot : « go pour Greenmangaming avec ta
+règle R59, 1. L'executor continue de rentrer l'offre en ROW mais il vérifie que ce soit bien dispo en
+EU + US avant de l'ajouter, sinon il skip 2. consoles oui mais ça peut être xbox + PC sur certaines
+offres, 3. Standard oui 4. OK, go ». Modèle : `[R68]` Allyouplay (même redirecteur Impact, même ordre
+titre → URL → fiche, même requête par la bibliothèque standard, mêmes refus nommés) et `[R59]`.
+
+**Constat (482 lignes du scan tous-magasins du 21/09, 16 fiches lues, 16 pages AKS)** : titre NU
+(« Reus 2 - Jurassic », 42 avec ™ / ®) ; URL = redirecteur
+`greenmangaming.sjv.io/c/1297091/1272000/15105?prodsku=<sku>&u=<fiche>` — `u` est la fiche
+`www.greenmangaming.com/games/<slug>/`, `prodsku` le code produit GMG dont le suffixe est la
+PLATEFORME (« - PC » 444, « - Xbox Series XS » 24, « - Xbox One » 8, « - PlayStation 4 » 5 — des
+crédits PSN, « - Windows 10 » 1) ; ni la boutique ni la région dans le titre ou l'URL. La fiche se lit
+en HTTP (200, 16 / 16) et embarque `<script> var games = {…, "platforms": [{"ClassName": "steam",
+"Editions": [{…}]}]}` : chaque édition porte `Code` (= `prodsku`), `GameName`, `Name` (« Standard
+Edition », « Ultimate Edition », « Bundle », « 2 Pack Edition », ou vide), `Drm` (`["steam"]`,
+`["xbox-one"]` pour TOUTE génération Xbox, `["microsoft"]`), `ExcludedCountries` (ISO-2 ; vide = « This
+product has no regional restrictions »), `SystemRequirements[].PlatformName` (« PC », « Xbox One », « Xbox
+Series X/S »). AKS range déjà GMG en Steam GLOBAL (2) sur la plupart des pages lues, mais aussi en
+« Steam ROW (steamrow) » (Elden Ring, Warhammer 40K Gladius) et « Epic Store ROW (80row) » (RDR2).
+
+**Règles codées :**
+
+1. **Titre / sku** (`precheck`) — « (MAC) » → refus nommé (pages « for Mac » à part chez AKS) ; une
+   monnaie / un crédit / un abonnement (CREDIT, Bucks, Points, Coins, Game Pass…) → refus nommé ; un sku
+   PlayStation → refus nommé (GMG n'y vend que du crédit PSN) ; un lien sans `u` sur greenmangaming.com
+   ou sans `prodsku` → refus nommé.
+2. **URL** — la génération console du suffixe du sku, DÉCLARÉE (P1) : « Xbox Series XS » → XBOX_SERIES,
+   « Xbox One » → XBOX_ONE (`console_url_families`) ; « - PC » / « - Windows 10 » ne disent pas la
+   boutique. Les hooks console d'un marchand reçoivent l'URL DU FEED (le classifieur ne leur substitue
+   plus la fiche de `u`, `src/console_keys.py`) : c'est leur grammaire.
+3. **Fiche** — l'édition dont `Code` == `prodsku`, exactement une (sinon refus : « ligne et fiche ne se
+   correspondent pas », une fiche sert plusieurs codes) ; lien canonique = la fiche demandée ;
+   * **plateforme** = `Drm`, vocabulaire FERMÉ (`steam` → STEAM, `microsoft` → MICROSOFT, observés ;
+     `epic` / `uplay` / `origin` / `gog` / `rockstar` / `battlenet` → leurs jetons, non observés ;
+     `xbox-one` → console, plateforme None ; tout autre libellé, ou deux DRM → refus nommé) ; le
+     matcher confronte la plateforme de la fiche à celle du titre / de l'URL comme pour `[R68]` ;
+   * **région** = `[R59]` sur les pays EXCLUS, **bornée par la décision du 09/10** : liste vide →
+     GLOBAL ; liste non vide mais NI l'UE, NI le Royaume-Uni, NI les USA exclus → base **`row`**
+     (« L'executor continue de rentrer l'offre en ROW mais il vérifie que ce soit bien dispo en EU +
+     US ») ; un pays de l'UE, le Royaume-Uni ou les USA exclus → refus `forbidden region: GREENMANGAMING
+     LOCK (…)` (« sinon il skip » — JAMAIS le repli US / EU de `[R59]` chez ce marchand) ;
+   * **édition** = `Name` confronté au titre : un palier nommé par la fiche (Deluxe, Ultimate, Gold…)
+     que le titre ne porte pas → refus ; « 2 Pack » / « Bundle » (dans `Name` ou `GameName`) → refus
+     (plusieurs clés) ; « Standard Edition » ou vide → le chemin générique (Romain : « Standard oui »,
+     Standard(1) quand la page AKS le vend) ; la fiche n'a pas de drapeau DLC → `dlc` = None, R18 /
+     `[R43]` / `[R57]` inchangés ;
+   * **consoles** — `console_page_authoritative` : la fiche fait foi pour toute ligne Xbox (région, et
+     une fiche « steam » sur une ligne console est un conflit) ; « Xbox + PC » = la fiche liste PC ET
+     une Xbox dans `SystemRequirements` (`console_pc_declared` → P2, §4.12) ; la clé « - Windows 10 »
+     (`Drm` microsoft) est une clé Microsoft Store PC (MICROSOFT, `[R62]`), pas P2.
+4. **La base `row`** (`REGION_IDS`) : « Steam ROW (steamrow) », « Origin ROW (3row) », « Ubisoft ROW
+   (uplayrow) », « Epic Store ROW (80row) », « Battlenet ROW (4row) », « Publisher ROW (1row) » — lus
+   dans `tests/fixtures/region_catalog_2026-09-26.json`. GOG / ROCKSTAR / MICROSOFT n'en ont pas
+   (« Rockstar ROW (156) » est un verrou) : « region 'row' unavailable », fail-closed. Les consoles non
+   plus : une clé Xbox à pays exclus est refusée (« no region id »). La base n'est atteinte QUE par le
+   résolveur d'un marchand dont la fiche PROUVE la disponibilité UE + UK + USA ; le mot ROW d'un titre
+   reste une région INTERDITE (24/09).
+5. **Identité** = `u` + `prodsku` (`url_identity_params`) : le chemin du redirecteur est commun aux 482
+   lignes, et une fiche sert plusieurs codes. Fail-closed partout : fiche injoignable, statut ≠ 200,
+   canonique autre, JSON absent / illisible, sku absent ou multiple, DRM inconnu → refus nommé, jamais
+   un repli sur STEAM ou GLOBAL ; une fiche par processus (cache), ~1 requête / s.
+
+**Un audit voudra :** (a) retomber sur STEAM / GLOBAL quand la fiche est illisible, ou lire la
+plateforme dans le « - PC » du sku — non (`[R51]`) ; (b) faire entrer une clé « UE exclue » en US ou
+« USA exclus » en EU « puisque `[R59]` le fait » — non, Romain a borné la règle (« sinon il skip ») ;
+(c) ranger une clé à pays exclus en GLOBAL « comme Gamesplanet FR » — non, Romain a choisi le seau ROW
+avec la preuve UE + US ; (d) étendre la base `row` aux titres qui disent ROW — non, sans fiche il n'y a
+pas de preuve ; (e) ajouter des seaux ROW pour GOG / Rockstar / Microsoft / consoles — non, le menu
+n'en a pas ou ce sont des verrous ; (f) prendre « la première édition » de la fiche quand le sku n'y
+est pas — non, c'est l'identité ; (g) lire `IsSellable` / `IsOutOfStock` — non, une offre épuisée est
+à saisir (21/09) ; (h) laisser entrer un « 2 Pack » ou un « Bundle » — non, plusieurs clés ; (i) un
+palier de la fiche que le titre ne nomme pas — non, refus. Tests : `tests/test_merchants_greenmangaming_r73.py`
+(fixtures réelles `tests/fixtures/greenmangaming/`).
+
 ### `[R72]` CJS « Access (Digital Download) » : clé ou compte, seule la page le dit — et elle ne se lit pas (2026-10-07)
 
 **Romain, 2026-10-07** : « On a trouvé une erreur sur notre data entry. C'est dû au fait que, sur la

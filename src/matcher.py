@@ -608,21 +608,30 @@ REGION_IDS = {
     # (« Publisher NA/SA (531) » couvre les deux Amériques, « microsoft software na/sa (562) » est
     # la famille logiciels) : une clé NA y reste « no region id », fail-closed. Avant : 1 260
     # offres distinctes refusées « forbidden region: NORTH AMERICA » en production.
-    "STEAM": {"global": "2", "eu": "9", "us": "8", "uk": "71", "na": "steamna",
+    # [R73] (Romain, 2026-10-09, Greenmangaming : « L'executor continue de rentrer l'offre en ROW
+    # mais il vérifie que ce soit bien dispo en EU + US avant de l'ajouter, sinon il skip ») : la
+    # base ``row`` — le seau « … ROW » du menu (lu dans tests/fixtures/region_catalog_2026-09-26.json :
+    # « Steam ROW (steamrow) », « Origin ROW (3row) », « Ubisoft ROW (uplayrow) », « Epic Store ROW
+    # (80row) », « Battlenet ROW (4row) », « Publisher ROW (1row) »). Elle n'est atteinte QUE par le
+    # résolveur d'un marchand dont la FICHE prouve que la clé s'active dans l'UE, au Royaume-Uni et
+    # aux USA malgré des pays exclus ; le mot ROW d'un titre reste une région INTERDITE (24/09).
+    # GOG / ROCKSTAR / MICROSOFT n'ont pas de seau ROW de base (« Rockstar ROW (156) » est un
+    # verrou) : une telle clé reste « region 'row' unavailable », fail-closed.
+    "STEAM": {"global": "2", "eu": "9", "us": "8", "uk": "71", "na": "steamna", "row": "steamrow",
               "gift": "25", "gift_eu": "259", "gift_us": "2577", "gift_uk": "2572",
               "gift_na": "2571",
               "gmg_gift": "386", "gmg_gift_eu": "387"},
     "GOG": {"global": "6", "eu": "62", "us": "63", "uk": "64"},
-    "UBISOFT": {"global": "50", "eu": "54", "us": "55", "uk": "52", "na": "606",
+    "UBISOFT": {"global": "50", "eu": "54", "us": "55", "uk": "52", "na": "606", "row": "uplayrow",
                 "gift": "501", "gift_eu": "504", "gift_us": "505",
                 "gmg_gift": "60", "gmg_gift_eu": "58", "gmg_gift_us": "59"},
-    "EPIC": {"global": "80", "eu": "80eu", "us": "80us", "uk": "805",
+    "EPIC": {"global": "80", "eu": "80eu", "us": "80us", "uk": "805", "row": "80row",
              "gmg_gift": "633", "gmg_gift_us": "635"},
     # [R63] (Romain, 2026-09-28) ``en_only`` / ``eu_en_only`` are the English-only buckets of
     # the EA family — read ONLY by the [R63] route (``english_only_route``), never by a
     # region scan (``_detect_region_parts`` yields global / eu / us / uk only). See
     # EA_ENGLISH_ONLY_LABELS below for the three names each bucket carries.
-    "EA": {"global": "3", "eu": "3eu", "us": "3us", "uk": "3uk", "na": "643",
+    "EA": {"global": "3", "eu": "3eu", "us": "3us", "uk": "3uk", "na": "643", "row": "3row",
            "gmg_gift": "35", "gmg_gift_eu": "36", "gmg_gift_us": "37",
            "en_only": "31", "eu_en_only": "3euen"},
     # Rockstar: the PLAIN "Rockstar (15)" option is the GLOBAL bucket — same shape as
@@ -634,13 +643,13 @@ REGION_IDS = {
     # FRANCE 335, Germany 336, Netherlands 337, MIDDLE EAST 338) stay out: they are
     # forbidden regions, not bases.
     "ROCKSTAR": {"global": "15", "eu": "152", "us": "151", "uk": "158", "gmg_gift": "159"},
-    "BATTLENET": {"global": "45", "eu": "4", "us": "41", "uk": "47", "na": "625",
+    "BATTLENET": {"global": "45", "eu": "4", "us": "41", "uk": "47", "na": "625", "row": "4row",
                   "gift": "570", "gift_eu": "567", "gift_us": "568",
                   "gmg_gift": "630", "gmg_gift_eu": "631", "gmg_gift_us": "632"},
     # "Publisher (1)" is the GLOBAL bucket (the dropdown has no "Publisher
     # GLOBAL" label); ids read from the live session catalogs of 2026-07-07
     # and 2026-07-08 (identical). No gift mapping — publisher gifts fail closed.
-    "PUBLISHER": {"global": "1", "eu": "12", "us": "13", "uk": "266"},
+    "PUBLISHER": {"global": "1", "eu": "12", "us": "13", "uk": "266", "row": "1row"},
     # Microsoft Store: the dropdown carries TWO families and Romain ruled between them
     # (2026-09-16): « Windows 10 pour les jeux, microsoft software pour les logiciels ».
     # GAMES take the "Windows 10 …" family here (Global 246 / EU 244 / US 245 / UK 249;
@@ -4336,7 +4345,7 @@ def _pc_plan(
             if _rid is None:
                 return SkippedOffer(offer, f"region {_page_region_base!r} unavailable for {platform} (R33)")
             region_label = {"global": "GLOBAL", "eu": "EU", "us": "US", "uk": "UK",
-                            "na": "NA"}[_page_region_base]            # [R70]
+                            "na": "NA", "row": "ROW"}[_page_region_base]   # [R70], [R73]
             region_id, implicit = _rid, False
         else:
             return SkippedOffer(offer, f"forbidden region: {_page_region_label}")

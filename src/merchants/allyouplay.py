@@ -98,7 +98,7 @@ from urllib.parse import urlsplit
 from src.aks_env import REQUIRED_USER_AGENT, HttpProbeResult
 from src.merchant_config import MerchantOfferSignals, affiliate_landing
 from src.merchants.common import make_config
-from src.merchants.gamesplanet import EU_MEMBERS, UK, US, region_from_lock
+from src.merchants.gamesplanet import ISO2_TO_NAME, region_from_lock
 
 DOMAIN = "allyouplay.com"
 AFFILIATE_HOST = "anandadigitalbv.sjv.io"
@@ -178,19 +178,8 @@ PLATFORM_TEXT: dict[str, str] = {
 # la région de la fiche ; la branche PC refuse (plateforme non reconnue).
 CONSOLE_PLATFORM_TEXT: frozenset[str] = frozenset({"XBOX CONSOLE"})
 
-# Les pays qui décident, en ISO-2 → les noms de la table de Romain (``gamesplanet``). La table
-# reste UNE : l'égalité ci-dessous casse l'import si l'une des deux listes de l'UE bougeait seule.
-ISO2_TO_NAME: dict[str, str] = {
-    "AT": "austria", "BE": "belgium", "BG": "bulgaria", "HR": "croatia", "CY": "cyprus",
-    "CZ": "czechia", "DK": "denmark", "EE": "estonia", "FI": "finland", "FR": "france",
-    "DE": "germany", "GR": "greece", "HU": "hungary", "IE": "ireland", "IT": "italy",
-    "LV": "latvia", "LT": "lithuania", "LU": "luxembourg", "MT": "malta", "NL": "netherlands",
-    "PL": "poland", "PT": "portugal", "RO": "romania", "SK": "slovakia", "SI": "slovenia",
-    "ES": "spain", "SE": "sweden",
-    "GB": UK, "US": US,
-}
-if frozenset(v for k, v in ISO2_TO_NAME.items() if k not in ("GB", "US")) != EU_MEMBERS:
-    raise RuntimeError("allyouplay.ISO2_TO_NAME diverge de gamesplanet.EU_MEMBERS")
+# Les pays qui décident, en ISO-2 → les noms de la table de Romain : `gamesplanet.ISO2_TO_NAME`,
+# partagée avec Greenmangaming `[R73]` depuis le 2026-10-09 (une table, pas une copie).
 
 _NUXT_RE = re.compile(r'<script[^>]*\bid="__NUXT_DATA__"[^>]*>(?P<json>.*?)</script>', re.S)
 _CANONICAL_RE = re.compile(r'<link[^>]*\brel="canonical"[^>]*\bhref="(?P<href>[^"]+)"', re.I)
