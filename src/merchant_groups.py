@@ -26,22 +26,18 @@ Gamivo ~5 %, CJS 0,6 %). Ces groupes sont donc un point de départ raisonnable, 
 démontré — et c'est exactement pourquoi ils vivent dans une liste éditable plutôt que dans du
 code : après un tour complet, on les rééquilibre sur les durées observées.
 
-**Trois groupes depuis le 2026-10-09, un par machine** (Romain : « on créera le groupe A, B et C et on
-lancera un groupe par machine »). La mesure qui compte est la DURÉE OBSERVÉE d'une passe en régime
-de croisière (les feeds sont stables, les créations rares) — lue dans les recaps des boucles du
-2026-10-07 (deuxième passe après la mise en ligne du matin, 1 h 40 pour A, 1 h 57 pour B) :
-
-    A : GameSeal 21 · G2A 27 · GameBoost 9 · GOG 17 · Instant Gaming 8 · Gamesplanet FR 8 ·
-        Discover.games 4 · Driffle 2 · MMOGA 2 · GamersOutlet 2 · Loaded 2        → ~102 min
-    B : Kinguin 33 · Eneba 27 · CJS 16 · Wyrel 15 · Gamivo 12 · Indiegala 6 · Gamerall 3 ·
-        Allyouplay 3 · Electronicfirst 1 · K4G 1                                   → ~117 min
-    C : eww.gg — première passe 41 h pour 73 pages (3 346 créations, ~44 s chacune), feed
-        RÉIMPORTÉ par AKS chaque jour (~2 300 lignes neuves le 08/10) → ~15-20 h par passe ensuite
-
-eww.gg pèse donc à lui seul dix fois une passe de A ou de B : il forme le groupe C, seul. Le mettre
-dans A ou B (c'était B, décision du matin du 09/10, remplacée le même jour par les trois groupes)
-aurait suspendu les autres marchands du groupe une journée par passe. A et B restent tels quels :
-leurs durées de passe sont déjà voisines.
+**Deux groupes, et eww.gg dans le B — Romain, 2026-10-09 (soir).** Le matin du 09/10 il avait dit
+« On ajoutera ce marchand à la liste B », puis « on créera le groupe A, B et C et on lancera un groupe
+par machine » (C = eww.gg seul, commit 8c69dc5) ; le soir, mot pour mot : « sur la VM3, au lieu de
+faire tourner un groupe C, on va roll back. On va pas avoir de groupes A, B et C. On va rester sur tous
+les marchands en groupe A et B, car sur la nouvelle VM, on va faire tourner tous nos marchands sur la
+liste […] PRICE TEAM Priorities (17) et on va entrer les offres des marchands que l'on sait ajouter. »
+Donc : A et B couvrent toute la liste blanche, eww.gg dans le B (sa décision du matin) ; le VPS 3
+tourne « tous les marchands » (le sweep de nuit de la console) sur la liste 17 au lieu de la 9, en
+boucle. La mesure qui reste vraie, lue dans les recaps du 07/10 (deuxième passe) : A ~102 min, B
+~117 min par passe, et eww.gg ~10 400 lignes réimportées chaque jour par AKS (41 h pour ses 73
+premières pages) — le B passe donc loin devant le A tant que eww.gg y est : déséquilibre ASSUMÉ par
+la décision, à rééquilibrer sur les durées observées.
 
 **Difmark n'est dans aucun groupe.** Sa file Pending est VIDE : ses lignes vivent dans la liste
 *account* (30), que le balayage ne sait pas lire (il lit la 9). L'y mettre ferait une passe à
@@ -100,14 +96,13 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # Mis ici parce que le B était le plus léger ; le B passe donc devant le A (12 828).
     # + Indiegala (175 lignes), entré le 2026-10-06 (Romain : « groupe B pour Indiegala ») : ses
     # fiches ont été lues depuis cette VM, l'ancienne VM n'a jamais été sondée pour lui.
+    # + eww.gg (~10 400 lignes mesurées le 09/10, feed réimporté par AKS chaque jour) : Romain,
+    # 2026-10-09, « On ajoutera ce marchand à la liste B » le matin, groupe C seul à midi
+    # (8c69dc5), puis le soir « on va roll back […] rester sur tous les marchands en groupe A et
+    # B » — retour dans le B. Une passe de eww.gg vaut dix passes de A ou de B : déséquilibre
+    # assumé (voir la mesure en tête de module).
     "B": ("Gamivo", "Eneba", "Kinguin", "CJS-CDKeys", "Gamerall", "Electronicfirst",
-          "Allyouplay", "K4G", "Wyrel", "Indiegala"),
-    # ~10 400 lignes mesurées le 09/10 pendant sa première passe seule (07/10 →), et un feed
-    # réimporté par AKS chaque jour : une passe de eww.gg vaut dix passes de A ou de B (voir la
-    # mesure en tête de module). Romain, 2026-10-09 : « On ajoutera ce marchand à la liste B »
-    # le matin, puis « on créera le groupe A, B et C et on lancera un groupe par machine » — C
-    # est le groupe de eww.gg, seul, pour que A et B gardent leur cadence de ~2 h par passe.
-    "C": ("eww.gg",),
+          "Allyouplay", "K4G", "Wyrel", "Indiegala", "eww.gg"),
 }
 
 

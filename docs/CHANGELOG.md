@@ -3,6 +3,22 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-10-09 (soir) — roll back du groupe C : deux groupes A et B, eww.gg dans le B ; le VPS 3 tournera sur la liste 17
+
+- **Romain : « sur la VM3, au lieu de faire tourner un groupe C, on va roll back. On va pas avoir de
+  groupes A, B et C. On va rester sur tous les marchands en groupe A et B, car sur la nouvelle VM, on va
+  faire tourner tous nos marchands sur la liste […] PRICE TEAM Priorities (17) et on va entrer les
+  offres des marchands que l'on sait ajouter. »** `src/merchant_groups.py` : `GROUPS["C"]` retiré,
+  eww.gg de retour dans le B (sa décision du matin, « On ajoutera ce marchand à la liste B ») ; le B
+  pèse ~26 000 lignes contre ~13 800, déséquilibre assumé. Tests (groupes, route de la console) alignés.
+- **Rien à coder pour la liste 17** : la console a déjà le sélecteur « Liste AKS balayée » (Romain,
+  2026-09-23 ; « PRICE TEAM Priorities (17) » y figure), le bouton « Sweep de nuit — tous les marchands
+  whitelistés », la case « Boucler » ; la liste choisie voyage jusqu'au submit, qui prouve la
+  disparition dans CETTE file (`page=aks-merchant-feeds-17`). Sur le VPS 3 : transfert de cookies
+  (session perdue au redémarrage du 09/10 07:31 UTC), pull + redémarrage de l'admin, puis « Sweep de
+  nuit » + liste 17 + « Boucler » depuis sa console. Toujours aucun déploiement de ma part (« touche
+  pas les VPS »).
+
 ## 2026-10-09 — `[R73]` Greenmangaming (store 22) : fichier marchand (fiche JSON, ROW prouvé), aperçu à blanc
 
 - **Romain : « go pour Greenmangaming avec ta règle R59, 1. L'executor continue de rentrer l'offre en ROW
