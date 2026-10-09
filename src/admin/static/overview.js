@@ -148,7 +148,9 @@ function facts(s) {
   if (s.disk && s.disk.used_pct != null) add("Disque " + (s.disk.path || "/"), Math.round(s.disk.used_pct) + " % (" + s.disk.free_gb + " Go libres)");
   if (s.mem && s.mem.used_pct != null) add("Mémoire", Math.round(s.mem.used_pct) + " %");
   const m = s.last_maintenance;
-  if (m && (m.finished_at || m.exit != null)) add("Dernière maintenance", (jourHeure(m.finished_at) || "?") + " — code " + (m.exit != null ? m.exit : "?"));
+  // code 6 : ajouts dus, relance refusée par la liste blanche — une information (Romain, 09/10/2026)
+  if (m && (m.finished_at || m.exit != null)) add("Dernière maintenance", (jourHeure(m.finished_at) || "?") + " — code " + (m.exit != null ? m.exit : "?") +
+    (m.exit === 6 ? " (ajouts dus, relance refusée : liste blanche)" : ""));
   if (s.at) add("Photo", hhmm(s.at));
   return rows;
 }

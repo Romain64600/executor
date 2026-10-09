@@ -436,6 +436,11 @@ class AlertTests(SnapshotCase):
         self.assertIn("Dernière maintenance : code 5 le 30/09 à 14:40 UTC", alerts)
         self.assertEqual(s["last_maintenance"]["exit"], 5)
         self.assertTrue(s["reboot_required"])
+        # code 6 : des ajouts dus, relance refusée (liste blanche) — une information, pas une alerte (Romain, 09/10/2026)
+        self.write("state/maintenance/last_result.json", {"exit": 6, "finished_at": "2026-10-09T07:28:50Z"})
+        s6 = self.snap({"run_id": LAUNCH, "kind": "data_entry_auto", "source": "admin"})
+        self.assertFalse(any(a.startswith("Dernière maintenance") for a in s6["alerts"]), s6["alerts"])
+        self.assertEqual(s6["last_maintenance"]["exit"], 6)
 
     def test_boucle_arretee_session_expiree_quand_la_machine_est_au_repos(self):
         self.write(f"runs/{LAUNCH}/loop.json", {

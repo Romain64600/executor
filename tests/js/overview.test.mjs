@@ -117,6 +117,11 @@ test("PRICE CHECK : la ligne du moniteur, un service à part de la saisie (Romai
   assert.ok(v.includes("entre deux passages") && v.includes("1 report ouvert") && v.includes("état d'il y a 7 min"), v);
   assert.ok(texte(carte(c, "sans").querySelector(".task-pricecheck")).includes("état du moniteur inconnu"));
   assert.equal(carte(c, "secours").querySelector(".task-pricecheck"), null, "une machine sans price check n'a pas la ligne");
+  // code 6 de la maintenance : une information en clair (Romain, 09/10/2026 : « code 6 en info »)
+  const six = Object.assign({}, ANCIENNE, { name: "six", status: "up", down_reasons: [], snapshot: snap({ last_maintenance: { finished_at: "2026-10-09T07:28:50Z", exit: 6 } }) });
+  const c2 = await ouvrir();
+  await c2.net.release("api/overview", payload([six]));
+  assert.ok(texte(carte(c2, "six")).includes("code 6 (ajouts dus, relance refusée : liste blanche)"), texte(carte(c2, "six")));
 });
 
 test("LIENS : la console de chaque machine, jamais un lien javascript:", async () => {

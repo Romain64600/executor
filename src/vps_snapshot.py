@@ -988,7 +988,9 @@ def build_alerts(*, task: dict[str, Any], logs: list[dict[str, Any]], disk: Any,
                       "dans la console de cette machine")
     if reboot_required:
         alerts.append("Redémarrage requis par Debian (/var/run/reboot-required)")
-    if isinstance(last_maint, dict) and last_maint.get("exit") not in (None, 0, 42):
+    # code 6 : des ajouts sont dus mais la relance est refusée (liste blanche) — une information, pas une panne
+    # (Romain, 09/10/2026 : « code 6 en info »)
+    if isinstance(last_maint, dict) and last_maint.get("exit") not in (None, 0, 6, 42):
         alerts.append(f"Dernière maintenance : code {last_maint.get('exit')}"
                       + (f" le {jour_heure(last_maint.get('finished_at'))}"
                          if last_maint.get("finished_at") else "")
