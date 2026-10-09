@@ -3,9 +3,23 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
-## 2026-10-09 — eww.gg rejoint le groupe B (décision de Romain), mesure de sa première passe
+## 2026-10-09 — trois groupes A, B, C (un par machine) : C = eww.gg seul ; mesure de sa première passe
 
-- **Romain : « On ajoutera ce marchand à la liste B. »** `src/merchant_groups.py` : eww.gg sort de
+- **Romain : « on créera le groupe A, B et C et on lancera un groupe par machine »** (après, le même
+  matin, « On ajoutera ce marchand à la liste B » — remplacé). `src/merchant_groups.py` : `GROUPS["C"]
+  = ("eww.gg",)`, A et B inchangés. La mesure qui tranche est la **durée de passe observée** (recaps
+  des boucles du 07/10, deuxième passe après la mise en ligne) : A ~102 min, B ~117 min, eww.gg
+  41 h pour ses 73 premières pages et ~15-20 h par passe ensuite (feed réimporté chaque jour). Dans
+  A ou B, eww.gg aurait suspendu les autres marchands une journée par passe. La console sert les
+  trois groupes (`_auto_groups`), `tests/test_merchant_groups.py` épingle la composition et
+  l'équilibre A/B retrouvé. **Toujours aucun déploiement** (« touche pas les VPS ») : à la fin de la
+  passe eww.gg, sur chaque machine, pull + redémarrage de l'admin à un moment sûr, transfert de
+  cookies sur le VPS 3 (session perdue au redémarrage du 09/10 07:31 UTC), puis un groupe par
+  console. Proposition de placement soumise à Romain : C sur le VPS 2 (le plus puissant, déjà sur
+  eww.gg), B sur le VPS 1 (où Romain l'a lancée le 09/10 07:48), A sur le VPS 3 (la passe la plus
+  légère ; IP partagée avec le price check).
+
+- **[remplacé le même jour par le groupe C ci-dessus] Romain : « On ajoutera ce marchand à la liste B. »** `src/merchant_groups.py` : eww.gg sort de
   `EXCLUDED` et entre dans `GROUPS["B"]` ; son poids passe de 0 (inconnu) à **10 400 lignes**, mesuré
   pendant la première passe seule (`20261007-143947-auto`, lancée le 07/10 14:39 UTC : 147 pages au
   départ, 104 à la lecture du 09/10 07:30 après 3 100 créations). Le B pèse ~26 000 lignes contre

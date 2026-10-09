@@ -31,27 +31,27 @@ class LesGroupesFigesCouvrentLaListeBlanche(unittest.TestCase):
 
     def test_les_marchands_hors_groupe_sont_nommes_et_la_raison_est_ecrite(self):
         # Difmark (file Pending vide) seul ; Indiegala a rejoint le groupe B le 06/10 (Romain :
-        # « groupe B pour Indiegala »), eww.gg le 09/10 (« On ajoutera ce marchand à la liste B »,
-        # après sa première passe seule). Un marchand hors groupe a toujours sa raison écrite.
+        # « groupe B pour Indiegala ») ; eww.gg forme le groupe C depuis le 09/10 (« on créera le
+        # groupe A, B et C et on lancera un groupe par machine »). Un marchand hors groupe a
+        # toujours sa raison écrite.
         self.assertEqual(coverage()["hors_groupes"], ["Difmark"])
         self.assertIn("liste account", EXCLUDED["Difmark"])
         self.assertNotIn("eww.gg", EXCLUDED)                                  # 2026-10-09
-        cibles_b = group_targets("B")
-        self.assertIn(("Indiegala", "95"), cibles_b)
-        self.assertIn(("eww.gg", "170"), cibles_b)
-        self.assertNotIn(("eww.gg", "170"), group_targets("A"))
+        self.assertIn(("Indiegala", "95"), group_targets("B"))
+        self.assertEqual(group_targets("C"), [("eww.gg", "170")])
+        for g in ("A", "B"):
+            self.assertNotIn(("eww.gg", "170"), group_targets(g))
         for nom in coverage()["hors_groupes"]:
             self.assertIn(nom, EXCLUDED, f"{nom} hors groupe sans raison écrite")
 
-    def test_les_deux_groupes_sont_a_peu_pres_equilibres(self):
-        """Hors eww.gg : son poids (~10 400 lignes, 09/10) a été mis dans le B par la décision de
-        Romain du 2026-10-09 (« On ajoutera ce marchand à la liste B »), déséquilibre assumé en
-        attendant le rééquilibrage sur les durées observées. Le reste des deux groupes garde
-        l'équilibre d'origine — c'est lui qu'on protège ici."""
+    def test_les_groupes_a_et_b_sont_a_peu_pres_equilibres_et_c_porte_eww(self):
+        """A et B gardent l'équilibre d'origine ; C (eww.gg seul, 2026-10-09) pèse à lui seul
+        autant qu'un des deux — en lignes comme en durée de passe (dix fois, voir le module)."""
         charges = coverage()["charge_estimee"]
-        a, b = charges["A"], charges["B"] - PENDING_2026_09_21["eww.gg"]
+        a, b, c = charges["A"], charges["B"], charges["C"]
         self.assertLess(abs(a - b) / max(a, b), 0.20, f"déséquilibre trop grand : {charges}")
-        self.assertGreater(charges["B"], charges["A"], "eww.gg pèse sur le B, décision du 09/10")
+        self.assertEqual(c, PENDING_2026_09_21["eww.gg"])
+        self.assertGreater(c, 0.6 * min(a, b), "le groupe C n'a de sens que parce que eww.gg est lourd")
 
     def test_un_groupe_rend_des_cibles_utilisables(self):
         cibles = group_targets("a")                     # insensible à la casse
@@ -134,7 +134,7 @@ class LaConsoleVoitLesGroupes(unittest.TestCase):
         from src.admin.app import _auto_groups
 
         groupes = _auto_groups()
-        self.assertEqual([g["name"] for g in groupes], ["A", "B"])
+        self.assertEqual([g["name"] for g in groupes], ["A", "B", "C"])     # C = eww.gg, 2026-10-09
         for g in groupes:
             with self.subTest(groupe=g["name"]):
                 self.assertTrue(g["merchants"])

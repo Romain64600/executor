@@ -678,10 +678,12 @@ class DataEntryAutoAllowlistTests(AppTestCase):
         self.assertEqual(response.status, 200)
         groupes = body.get("groups")
         self.assertTrue(groupes, "la route doit servir les groupes")
-        self.assertEqual([g["name"] for g in groupes], ["A", "B"])
+        self.assertEqual([g["name"] for g in groupes], ["A", "B", "C"])    # C = eww.gg, 2026-10-09
         a = next(g for g in groupes if g["name"] == "A")
         self.assertIn("GameSeal", [m["name"] for m in a["merchants"]])
         self.assertGreater(a["pending"], 0)
+        c = next(g for g in groupes if g["name"] == "C")
+        self.assertEqual([m["name"] for m in c["merchants"]], ["eww.gg"])
 
     def test_a_group_launch_expands_server_side(self):
         vus = []

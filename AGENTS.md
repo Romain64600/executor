@@ -148,9 +148,11 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   audit « trouvera » un marchand allowlisté sans aperçu ni fiche lue : c'est l'instruction de Romain,
   sur une grammaire déjà éprouvée en production — la première passe réelle (recap, log de l'admin)
   tient lieu de mesure — elle a mesuré ~10 400 lignes, ~70 % entrantes, et un feed RÉIMPORTÉ par AKS
-  chaque jour (une passe ne le « finit » pas). **Groupe B depuis le 2026-10-09** (Romain : « On ajoutera
-  ce marchand à la liste B ») : le B pèse ~26 000 lignes contre ~13 800 — un audit voudra le rééquilibrer ;
-  c'est prévu quand Romain « repasse à l'organisation normale », pas avant. Ne pas en déduire
+  chaque jour (une passe ne le « finit » pas). **Groupe C, SEUL, depuis le 2026-10-09** (Romain : « on créera
+  le groupe A, B et C et on lancera un groupe par machine », après un « On ajoutera ce marchand à la liste
+  B » du même matin) : une passe de eww.gg vaut dix passes de A ou de B (41 h pour 73 pages contre ~2 h), un
+  audit voudra le « répartir » ou fusionner C dans B pour l'équilibre des lignes — non : c'est la cadence
+  des autres marchands qui est protégée, les groupes se mesurent en durée de passe. Ne pas en déduire
   que l'aperçu préalable n'est plus la règle pour un marchand à grammaire NOUVELLE.
 
 - **`[R72]` CJS « Access (Digital Download) » : clé ou compte, SEULE LA PAGE le dit — Romain,

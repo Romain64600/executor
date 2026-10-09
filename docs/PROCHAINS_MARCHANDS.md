@@ -13,14 +13,14 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 | Rang | Marchand (store) | Lignes en attente* | Avec une page AKS* | Ce qui manque | Statut |
 |---|---|---|---|---|---|
 | ✓ | **Gamesplanet FR** (55) | 526 | 339 (64 %) | — | **fait** : fichier `[R59]` et liste blanche le 25/09 (groupe A) ; essai à blanc 77 candidats / 150 lignes |
-| 2 | **Gamebillet** (15) | 268 | 192 (72 %) | plateforme et région (URL et titre muets ; la page liste les pays exclus) | à étudier après Gamesplanet |
+| 2 | **Gamebillet** (15) | 268 | 192 (72 %) | plateforme et région (URL et titre muets ; la page liste les pays exclus) | **fichier écrit le 06/10 (`[R71]`, branche `gamebillet`, non fusionnée), aperçu à blanc 165 entrées / 268** ; en attente des décisions de Romain (modal vide = GLOBAL ? Mortal Kombat Legacy → US ? les 11 EU ; go + groupe) |
 | 3 | **Muve** (166) | 605 | 322 (53 %) | titre lisible pour ~35 % des lignes ; pas de région sur la page ; « sans région = Europe » refusé par Romain (25/09) | ~140 lignes seulement, en refusant les lignes sans région |
 | 4 | **Pixelcodes** (82) + **Software-codes** (6) | 1 547 + 1 538 | 1 377 + 1 365 (89 %) | **les produits du feed n'existent plus sur leurs sites** (API : « Product not found », 52 sur 52 testés ; sites devenus boutiques de logiciels) | à ne pas saisir ; liste « not found » en cours pour les marchands |
 | 5 | **Discover.games** (168) | 440 | 370 (84 %) | — | **fichier écrit le 25/09 (`[R60]`), essai à blanc : 106 candidats sur 150 lignes ; en liste blanche le 26/09, groupe A** |
 | 6 | **CDKeys → « Loaded »** (40) | 16 (21/09) | — | feed du jour à relire | **fichier écrit le 25/09 (`[R61]`, « Europe & UK » → Europe, sans région → GLOBAL) ; essai à blanc sur 16 lignes : 1 candidat ; en liste blanche le 26/09, groupe A** |
-| — | Greenmangaming (22) | 482 | 318 (66 %) | URL d'affiliation illisible (sjv.io), titre muet | pas prioritaire |
+| **1** | **Greenmangaming** (22) | 482 | 318 (66 %) | titre muet, mais `prodsku` dit la plateforme (PC 444, Xbox 32, PS4 5) et la **fiche** (JSON embarqué) dit tout : `Drm`, édition (`Name`), pays EXCLUS, `Code` = `prodsku` | **étudié le 09/10, choisi comme prochain** : lecteur de fiche à écrire (modèle `[R59]` / `[R68]`), décisions à Romain (section 2026-10-09) |
 | ✓ | **Indiegala** (95) | 175 (21/09) | 30 (19 %, slug strict) | plateforme et région : ni titre ni URL ; la **fiche** les donne (« is provided via Steam Key », listes de pays, « Region locked product ») | **fichier écrit le 06/10** (`[R69]`), **aperçu à blanc le 06/10 : 34 entrées / 175** (`apercu_indiegala_2026-10-06.md`), **liste blanche le 06/10** (Romain : « go pour la liste blanche ») ; groupe à choisir ; Belmont's Curse (EU) reste refusée (Chypre ET les USA interdits), tant que Romain n'en décide pas autrement |
-| ✓ | **eww.gg** (170, id de page AKS 1011) | **~10 400** (mesuré le 09/10 pendant la première passe ; feed réimporté par AKS chaque jour) | **~70 %** (3 143 créées sur 39 h, 0 halte) | rien : grammaire = Driffle (même société, Driffle UAB), fiche lisible en HTTP | **fichier `eww.py` + liste blanche le 07/10** (instruction de Romain : « lance le data entry pour ce nouveau shop »), première passe seule depuis l'admin du 07/10, **groupe B le 09/10** (« On ajoutera ce marchand à la liste B ») |
+| ✓ | **eww.gg** (170, id de page AKS 1011) | **~10 400** (mesuré le 09/10 pendant la première passe ; feed réimporté par AKS chaque jour) | **~70 %** (3 143 créées sur 39 h, 0 halte) | rien : grammaire = Driffle (même société, Driffle UAB), fiche lisible en HTTP | **fichier `eww.py` + liste blanche le 07/10** (instruction de Romain : « lance le data entry pour ce nouveau shop »), première passe seule depuis l'admin du 07/10, **groupe C (seul) le 09/10** (« on créera le groupe A, B et C et on lancera un groupe par machine ») |
 
 \* Mesuré sur le scan tous-magasins du 21/09, **avant** la correction du tri du feed (`orderBy=id`,
 24/09) : ces comptes sont des minimums. Un nouveau scan tous-magasins les rafraîchira.
@@ -29,6 +29,66 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 (19/09), GameBoost / Electronicfirst / GamersOutlet (16/09), Difmark (21/09).
 
 ---
+
+## 2026-10-09 — « Formons-nous sur un nouveau marchand » : Greenmangaming (store 22)
+
+Romain : « Choisis un marchand selon nos critères, soit assez facile à rentrer et qui ait des pending
+offers disponibles. » Lecture seule : les 482 lignes GMG du scan du 21/09, 16 fiches GMG lues en HTTP
+(bibliothèque standard, UA navigateur, 2 s entre deux), 16 pages AKS lues (UA AKS/Staff).
+
+**Pourquoi lui.** C'est le plus gros stock restant hors liste blanche (482 lignes, 318 avec une page AKS
+d'après le nom, 66 %), et l'obstacle du 25/09 (URL d'affiliation `sjv.io` illisible) est tombé avec
+`[R68]` : comme Allyouplay, le feed passe par un redirecteur (`greenmangaming.sjv.io/c/…?prodsku=…&u=…`)
+dont le paramètre `u` est la fiche — `MerchantConfig.affiliate_hosts` + `url_identity_params`
+savent déjà faire. Gamebillet (268 lignes) reste prêt sur sa branche, en attente des décisions de Romain.
+
+**Ce que disent le feed et la fiche.**
+- Le titre est NU (« Reus 2 - Jurassic », « Cozy Builder ») ; 42 portent ™ / ®. Le `prodsku` de l'URL
+  finit par la plateforme : « - PC » 444, « - Xbox Series XS » 24, « - Xbox One » 8,
+  « - PlayStation 4 » 5 (crédits PSN), « - Windows 10 » 1. Jamais la boutique ni la région.
+- **La fiche `www.greenmangaming.com/games/<slug>/` se lit en HTTP (200, 16 / 16)** et embarque un JSON
+  produit de 114 champs. Ceux qui comptent : `Code` (= le `prodsku` du feed, 16 / 16 — l'identité
+  ligne ↔ fiche se vérifie), `GameName`, `Name` (l'édition : « Standard Edition », « Bundle »,
+  « 2 Pack Edition », ou vide), `Drm` (`["steam"]` 14 fois, `["xbox-one"]` NHL 27, `["microsoft"]`
+  Minecraft Windows 10), `DrmFormats` (« Digital PC Download » / « Digital XBOX Download »),
+  **`ExcludedCountries`** (codes ISO-2 des pays où la clé ne s'active pas : vide 13 fois,
+  `["BB","BS"]` un DLC, `["CN","HK","MO",…]` Breath of Fire IV), `SystemRequirements[].PlatformName`
+  (« PC », « Xbox Series X/S »), `DisplayEditionSelector` / `AssociatedVariants`, `IsSellable`,
+  `IsEarlyAccess`, `Source` (« Authorised Distributor »). La page affiche « This product has no
+  regional restrictions » quand la liste est vide, sinon la liste des pays.
+- **Le modèle est donc celui de Gamesplanet FR `[R59]` et d'Allyouplay `[R68]`** : plateforme = `Drm`
+  de la fiche (vocabulaire à fermer : steam / xbox-one / microsoft vus ; epic, uplay, origin, gog,
+  rockstar… à découvrir à l'aperçu, tout inconnu = refus), région = `[R59]` sur les pays EXCLUS
+  (aucun pays d'UE / UK / USA exclu → GLOBAL ; UE sans USA → US ; USA sans UE → EU ; mélange → refus),
+  édition = `Name` de la fiche croisé avec le titre, identité = `Code` == `prodsku` (sinon refus : la
+  fiche montre une autre variante).
+- Dans les 482 titres : 76 « Pack / Bundle / Collection » (dont des « 2 Pack » — plusieurs clés,
+  à refuser), 92 à l'air de DLC (`[R43]` / R18 comme ailleurs), 73 avec un mot d'édition, 5 « (MAC) »
+  (refus), 8 prépayés (crédits PSN, Game Pass — hors périmètre). Aucune ligne en rupture, aucun prix 0.
+
+**Comment AKS range déjà Greenmangaming** (16 pages lues : 6 des titres du feed — sans prix GMG, ce
+sont des lignes en attente —, puis 10 pages de gros titres hors feed) : 5 pages sur 10 portent GMG,
+**Steam GLOBAL (2)** dans la plupart des cas (Hogwarts Legacy, Monster Hunter Wilds, Civilization VII,
+Elden Ring ×2), mais aussi **`steamrow`** (Elden Ring Standard, Warhammer 40K Gladius) et, sur Red
+Dead Redemption 2, des seaux Rockstar dont `80row`. AKS utilise donc parfois un seau « ROW » pour GMG —
+sans doute quand la fiche exclut des pays d'Asie —, ce que notre règle `[R59]` rangerait en GLOBAL
+(c'est ainsi qu'AKS range Gamesplanet FR, 20 / 28). `steamrow` n'est dans aucune de nos tables.
+
+**Décisions pour Romain avant d'écrire le fichier.**
+1. **Région** : `[R59]` sur `ExcludedCountries` (GLOBAL tant qu'aucun pays UE / UK / USA n'est exclu,
+   même avec la Chine ou le Brésil exclus), ou un seau ROW (`steamrow`) dès qu'un pays est exclu,
+   comme AKS le fait parfois pour GMG ? Dans le second cas il faut d'abord lire le menu du modal
+   (règle du 16/09 : vérifier le dropdown) et étendre les tables.
+2. **Consoles** : les 32 lignes Xbox (`Drm` xbox-one, `prodsku` « Xbox Series XS » / « Xbox One ») suivent-
+   elles la branche console (P1, génération DÉCLARÉE par le `prodsku`) ? Les 5 crédits PSN sont refusés.
+3. **Éditions sans mot dans le titre** (« Standard Edition » dans `Name`, titre nu) : Standard(1) quand la
+   page AKS vend Standard — le même choix que Gamebillet / Indiegala, que Romain a laissé passer.
+4. **Go pour le fichier + l'aperçu à blanc** (`03_match` hors ligne sur les 482 lignes, une requête de
+   fiche par ligne, ~20 min), puis liste blanche et groupe.
+
+Rendement attendu : 300 à 320 lignes avec une page AKS, dont il faut retirer les Mac, packs, prépayés et
+les éditions non vendues par la page — de l'ordre de 150 à 220 entrées au premier passage, en Steam
+GLOBAL pour l'essentiel.
 
 ## 2026-10-07 — eww.gg : « Forme-toi sur ce marchand » (ID AKS 1011, ID feed ?)
 
