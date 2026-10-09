@@ -718,6 +718,17 @@ function renderTabs(reports) {
     : T("Ce qui reste à faire : les reports à discuter, à traiter, et à corriger (vrai positif dont l'offre n'a pas encore changé). Réparé ou jugé faux positif, un report passe dans les archives.");
 }
 
+// Romain, 09/10/2026 : « que les reports en archive soient triés chronologiquement, avec le plus récent en haut de page » :
+// the archive is ordered by the moment the report was settled (repaired, cleared, verified, or decided), newest first;
+// the monitor's export orders by detection, which the "In progress" tab keeps.
+const settledKey = (r) => {
+  const d = r.decision && r.decision.at ? String(r.decision.at) : "";
+  const f = r.fixed_at ? String(r.fixed_at) : "";
+  const norm = (s) => s.slice(0, 16).replace("T", " ");
+  return [norm(d), norm(f), norm(String(r.at || ""))].sort().pop();
+};
+const bySettled = (a, b) => settledKey(b).localeCompare(settledKey(a)) || String(b.offer).localeCompare(String(a.offer));
+
 function render() {
   if (!DATA) return;
   const reports = DATA.reports || [];
@@ -736,6 +747,7 @@ function render() {
     const discuss = part === "discuss";
     if (only && !discuss && only !== part) continue;  // « À discuter » always shows (06/10/2026)
     const items = shown.filter((r) => shownPart(r) === part);
+    if (TAB === "archive") items.sort(bySettled);
     const open = items.filter(isOpen).length;
     const tofix = items.filter(isToFix).length;
     const hidden = discuss ? reports.filter((r) => shownPart(r) === part && shownTab(r) === TAB).length - items.length : 0;

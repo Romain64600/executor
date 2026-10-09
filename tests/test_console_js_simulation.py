@@ -359,6 +359,8 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             "lien vers un report archivé": ("if (target) TAB = tabOf(target);", ""),
             # 06/10/2026 : on tranche sur l'offre, pas sur le commentaire : le sens des boutons en clair
             "sens des boutons en clair": ('(cur === "a_discuter" && MEANING[k] ? T(" : ") + MEANING[k] : "")', '""'),
+            # Romain, 09/10/2026 : les archives, le plus récent en haut
+            "archives par date de règlement": ('    if (TAB === "archive") items.sort(bySettled);\n', ""),
             # 06/10/2026 : une page sortie des tops : la carte le dit
             "sortie des tops affichée": ('r.left_tops_at ? el("span", { class: "pc-left-tops"', 'false ? el("span", { class: "pc-left-tops"'),
             # audit Codex du 06/10/2026 : la 2e carte tranchée disparaissait aussitôt ; une note retouchée pendant l'envoi perdue

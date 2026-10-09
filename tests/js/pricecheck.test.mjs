@@ -677,6 +677,21 @@ test("the recalc button: the last recalculation, then the request", async () => 
   assert.ok(c.$("#state-recalc").textContent.includes("demande en attente (romain)") && c.$("#launch-recalc").disabled, c.$("#state-recalc").textContent);
 });
 
+test("archive: the most recently settled report comes first (Romain, 09/10/2026)", async () => {
+  // detected first but settled last → on top; a decision counts as much as a repair
+  const oldFixed = { ...FIXED, offer: "140000020", product: "Réparé tôt", at: "2026-10-05 09:00", fixed_at: "2026-10-06 08:00" };
+  const lateDecided = { ...TORO, offer: "140000021", product: "Jugé tard", at: "2026-10-01 09:00",
+    decision: { decision: "faux", by: "remy", at: "2026-10-08T13:13:00+02:00" } };
+  const midFixed = { ...FIXED, offer: "140000022", product: "Réparé entre", at: "2026-10-07 09:00", fixed_at: "2026-10-07 10:00" };
+  const c = await start({ ...REPORTS, reports: [oldFixed, lateDecided, midFixed, TORO] });
+  await openTab(c, "archive");
+  const ids = c.$("#pc-list").querySelectorAll(".pc-item, article").map((n) => n.id).filter((id) => id && id.startsWith("offer-"));
+  assert.deepEqual(ids, ["offer-140000021", "offer-140000022", "offer-140000020"], ids.join(" | "));
+  // the "In progress" tab keeps the monitor's order (TORO stays where the export put it)
+  await openTab(c, "current");
+  assert.ok(card(c, TORO.offer), "the open report is in progress");
+});
+
 test("re-check: a repaired offer says so, its filter finds it, a still-wrong one says so", async () => {
   const c = await start({ ...REPORTS, reports: [TORO, FIXED, STILL] });
   assert.ok(card(c, STILL.offer).textContent.includes("Toujours en erreur au recontrôle du 02/10 18:31"));
@@ -870,7 +885,8 @@ test("handled reports are archived in another tab, what is left to do stays in �
   assert.ok(!order.some((x) => x.startsWith("H3:💬 À discuter")), "the archives have a part to discuss");
   assert.ok(order[0].startsWith("H3:Price check top"), order[0]);
   assert.equal(order[1], "DIV:Aucun report archivé sur les tops pour ces filtres.");
-  assert.deepEqual(shown(c), ["offer-" + TRAP.offer, "offer-" + FIXED.offer]);
+  // 09/10/2026 : the archive is ordered by settlement, newest first (FIXED repaired 02/10 18:30, TRAP decided 01/10 11:00)
+  assert.deepEqual(shown(c), ["offer-" + FIXED.offer, "offer-" + TRAP.offer]);
   assert.ok(c.$("#pc-tab-note").textContent.startsWith("Les reports réglés"), c.$("#pc-tab-note").textContent);
 });
 
