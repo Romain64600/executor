@@ -31,18 +31,27 @@ class LesGroupesFigesCouvrentLaListeBlanche(unittest.TestCase):
 
     def test_les_marchands_hors_groupe_sont_nommes_et_la_raison_est_ecrite(self):
         # Difmark (file Pending vide) seul ; Indiegala a rejoint le groupe B le 06/10 (Romain :
-        # « groupe B pour Indiegala »). Un marchand hors groupe a toujours sa raison écrite.
-        self.assertEqual(coverage()["hors_groupes"], ["Difmark", "eww.gg"])
+        # « groupe B pour Indiegala »), eww.gg le 09/10 (« On ajoutera ce marchand à la liste B »,
+        # après sa première passe seule). Un marchand hors groupe a toujours sa raison écrite.
+        self.assertEqual(coverage()["hors_groupes"], ["Difmark"])
         self.assertIn("liste account", EXCLUDED["Difmark"])
-        self.assertIn("groupe à choisir par Romain", EXCLUDED["eww.gg"])     # 2026-10-07
-        self.assertIn("Indiegala", group_targets("B").__str__())
+        self.assertNotIn("eww.gg", EXCLUDED)                                  # 2026-10-09
+        cibles_b = group_targets("B")
+        self.assertIn(("Indiegala", "95"), cibles_b)
+        self.assertIn(("eww.gg", "170"), cibles_b)
+        self.assertNotIn(("eww.gg", "170"), group_targets("A"))
         for nom in coverage()["hors_groupes"]:
             self.assertIn(nom, EXCLUDED, f"{nom} hors groupe sans raison écrite")
 
     def test_les_deux_groupes_sont_a_peu_pres_equilibres(self):
+        """Hors eww.gg : son poids (~10 400 lignes, 09/10) a été mis dans le B par la décision de
+        Romain du 2026-10-09 (« On ajoutera ce marchand à la liste B »), déséquilibre assumé en
+        attendant le rééquilibrage sur les durées observées. Le reste des deux groupes garde
+        l'équilibre d'origine — c'est lui qu'on protège ici."""
         charges = coverage()["charge_estimee"]
-        a, b = charges["A"], charges["B"]
+        a, b = charges["A"], charges["B"] - PENDING_2026_09_21["eww.gg"]
         self.assertLess(abs(a - b) / max(a, b), 0.20, f"déséquilibre trop grand : {charges}")
+        self.assertGreater(charges["B"], charges["A"], "eww.gg pèse sur le B, décision du 09/10")
 
     def test_un_groupe_rend_des_cibles_utilisables(self):
         cibles = group_targets("a")                     # insensible à la casse

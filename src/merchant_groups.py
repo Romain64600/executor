@@ -53,18 +53,17 @@ PENDING_2026_09_21 = {
     "Discover.games": 440, "Loaded": 16,
     # Même scan, à l'entrée d'Indiegala en liste blanche (2026-10-06).
     "Indiegala": 175,
-    # eww.gg (2026-10-07) : absent du scan du 21/09 — volume inconnu, 0 pour la charge estimée.
-    "eww.gg": 0,
+    # eww.gg (2026-10-07) : absent du scan du 21/09. Mesuré pendant sa première passe réelle
+    # (20261007-143947-auto) : feed de 147 pages au départ, réimporté par AKS chaque jour
+    # (14:25 le 07/10, 02:13 le 08/10, ~00:30 le 09/10), 104 pages × 100 lignes à la lecture du
+    # 09/10 07:30 UTC après 3 100 créations — ~70 % des lignes entrent. De loin le plus gros feed.
+    "eww.gg": 10400,
 }
 
 # Hors groupes, avec la raison — un marchand absent des deux groupes n'est PAS un oubli.
 EXCLUDED: dict[str, str] = {
     "Difmark": ("file Pending vide — ses lignes sont dans la liste account (30), que le "
                 "balayage ne lit pas ; saisie à la main avec --list 30"),
-    # Romain, 2026-10-07 : « Store ID 170 stop B et lance le data entry pour ce nouveau shop » —
-    # lancé SEUL depuis l'admin, le groupe reste son choix (volume encore inconnu).
-    "eww.gg": ("en liste blanche le 2026-10-07 (instruction de Romain), lancé seul depuis l'admin ; "
-               "groupe à choisir par Romain quand le volume sera connu"),
 }
 
 GROUPS: dict[str, tuple[str, ...]] = {
@@ -84,8 +83,13 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # Mis ici parce que le B était le plus léger ; le B passe donc devant le A (12 828).
     # + Indiegala (175 lignes), entré le 2026-10-06 (Romain : « groupe B pour Indiegala ») : ses
     # fiches ont été lues depuis cette VM, l'ancienne VM n'a jamais été sondée pour lui.
+    # + eww.gg (~10 400 lignes mesurées le 09/10), entré le 2026-10-09 (Romain : « On ajoutera ce
+    # marchand à la liste B ») après sa première passe seule depuis l'admin (07/10 →). Le B passe
+    # à ~26 000 lignes contre ~13 800 pour le A : déséquilibre ASSUMÉ par cette décision, à
+    # rééquilibrer sur les durées observées quand Romain « repasse à l'organisation normale ».
+    # Son feed est réimporté par AKS chaque jour : seule une boucle le couvre, pas une passe.
     "B": ("Gamivo", "Eneba", "Kinguin", "CJS-CDKeys", "Gamerall", "Electronicfirst",
-          "Allyouplay", "K4G", "Wyrel", "Indiegala"),
+          "Allyouplay", "K4G", "Wyrel", "Indiegala", "eww.gg"),
 }
 
 

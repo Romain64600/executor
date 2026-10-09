@@ -120,7 +120,7 @@ du feed.
 | Eneba | 19 | `eneba.py` | `console_url_families`, `console_pc_declared`, `console_region_slot` | **non — dry-run du 12/09 fait (32 candidats, 90 % consoles), sweep réel sur go** | ≥ 30 |
 | Allyouplay | 17 | `allyouplay.py` (lien d'affiliation + lecteur de fiche `[R68]`, en ligne le 30/09) | `domain="allyouplay.com"`, `affiliate_hosts=("anandadigitalbv.sjv.io",)`, `url_identity_params=("u",)` ; `[R68]` : `precheck` (« [Mac] »), `url_platform` (`-ga-ste-` / `-ga-gog-`), `offer_page_resolver` (fiche : « Platform », `available_countries`, règle `[R59]`), `console_page_authoritative` | **non** — balayé 6 fois (groupe B, 17/09 → 26/09) mais 100 % refusé au contrôle de domaine : 0 saisie | 3 |
 | Indiegala | 95 | `indiegala.py` (**nouveau 06/10**, lecteur de fiche `[R69]`, modèle `[R68]`) | `domain="indiegala.com"` ; PC : `title_region` (suffixe « (US) / (EU) / (UK) » en queue, doit s'accorder avec la fiche), `resolve_name` / `guard_name` (suffixe retiré, titre multilingue réduit à sa première partie), `offer_page_resolver` (fiche : « is provided via », pays interdits `[R59]`, verrou pays, DLC = garde), `console_page_authoritative` | **non — hors liste blanche, hors groupe** : aperçu à blanc fait le 06/10 (34 / 175, `docs/apercu_indiegala_2026-10-06.md`) ; règle de région et go à confirmer par Romain | 175 lignes (21/09) |
-| eww.gg | 170 | `eww.py` (**nouveau 07/10**, déclinaison de `driffle.py`) | `domain="eww.gg"` ; mêmes hooks que Driffle (`precheck` parenthèse de région, `title_region`, `console_region_slot`, `console_url_families` avec l'identifiant nu en fin de slug) | **oui — liste blanche le 07/10 sur instruction de Romain** (« Store ID 170 … lance le data entry pour ce nouveau shop »), lancé seul depuis l'admin, groupe à choisir | volume inconnu (absent du scan du 21/09) |
+| eww.gg | 170 | `eww.py` (**nouveau 07/10**, déclinaison de `driffle.py`) | `domain="eww.gg"` ; mêmes hooks que Driffle (`precheck` parenthèse de région, `title_region`, `console_region_slot`, `console_url_families` avec l'identifiant nu en fin de slug) | **oui — liste blanche le 07/10 sur instruction de Romain** (« Store ID 170 … lance le data entry pour ce nouveau shop »), lancé seul depuis l'admin le 07/10, **groupe B depuis le 09/10** (Romain : « On ajoutera ce marchand à la liste B ») | **~10 400 lignes** mesurées le 09/10 pendant la première passe (feed de 147 pages au départ, réimporté par AKS chaque jour) |
 | GameSeal | 126 | `gameseal.py` | `domain` ; PC : `precheck`, `title_region` (queue ` - <RÉGION>`), `resolve_name` (queue pelée, 20/09) ; console : `console_url_families`, `console_region_slot` | oui (1er balayage 19/09) | 1 090 écrites, 1 089 justes (audit du 20/09) |
 | CJS-CDKeys | 30 | `cjs.py` (**nouveau**, identité seule) | `domain="cjs-cdkeys.com"` (à confirmer au 1er dry-run) — aucun hook de grammaire (aucune donnée) | **non, dry-run d'abord** | ? |
 | Difmark | 167 | `difmark.py` | `console_url_families` (comptes) | parqué (hors liste blanche) | — |
@@ -710,6 +710,16 @@ matcher et le classifieur importent le registre.
   la fiche y serait illisible, donc chaque ligne refusée — sans écriture fausse.
 
 ## eww.gg (store 170) — la seconde boutique de Driffle UAB (2026-10-07)
+
+**Groupe B depuis le 2026-10-09** (Romain : « On ajoutera ce marchand à la liste B »), après sa première
+passe seule depuis l'admin (`20261007-143947-auto`, lancée le 07/10 14:39 UTC). Mesuré pendant cette passe :
+feed de 147 pages (~100 lignes la page) au départ, **réimporté par AKS chaque jour** (toutes les lignes du départ
+créées le 07/10 14:25 ; nouvel import le 08/10 02:13 — 23 pages de plus, toutes neuves ; nouvelle
+restructuration le 09/10 vers 00:30 — le contenu de la page 114 retrouvé en page 87) ; ~70 % des lignes
+entrent, ~44 s par création, 45 à 60 min la page pleine ; 3 143 créations en 39 h, 0 halte. Conséquence :
+une passe unique ne « finit » pas ce marchand, seule une boucle le couvre — d'où le groupe. Le B pèse
+désormais ~26 000 lignes contre ~13 800 pour le A : déséquilibre assumé, à rééquilibrer quand Romain
+« repasse à l'organisation normale ».
 
 - **Instruction de Romain, 07/10** : « Store ID 170 stop B et lance le data entry pour ce nouveau
   shop, puis tu relanceras B depuis l'admin pour être sûr que j'ai le log ». Étude du matin dans

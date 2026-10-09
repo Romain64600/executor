@@ -3,6 +3,32 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-10-09 — eww.gg rejoint le groupe B (décision de Romain), mesure de sa première passe
+
+- **Romain : « On ajoutera ce marchand à la liste B. »** `src/merchant_groups.py` : eww.gg sort de
+  `EXCLUDED` et entre dans `GROUPS["B"]` ; son poids passe de 0 (inconnu) à **10 400 lignes**, mesuré
+  pendant la première passe seule (`20261007-143947-auto`, lancée le 07/10 14:39 UTC : 147 pages au
+  départ, 104 à la lecture du 09/10 07:30 après 3 100 créations). Le B pèse ~26 000 lignes contre
+  ~13 800 pour le A : déséquilibre **assumé** par la décision, à rééquilibrer sur les durées
+  observées quand Romain « repasse à l'organisation normale ». `tests/test_merchant_groups.py`
+  épingle la composition ; le test d'équilibre des deux groupes figés compte hors eww.gg et dit
+  pourquoi. Docs : MERCHANTS (tableau + section eww.gg), PROCHAINS_MARCHANDS, AGENTS.
+- **Ce que la première passe a mesuré (lecture seule des `runs/`).** ~70 % des lignes entrent
+  (3 143 créées sur 39 h, 0 halte, 0 reprise ; 14 refus AKS 400 « paramètre offer manquant »,
+  transitoires connus, 4 lignes disparues entre le scan et le modal), ~44 s par création, 45 à 60 min
+  la page pleine. **Le feed est réimporté par AKS chaque jour** : toutes les lignes du départ
+  créées le 07/10 14:25 (15 min avant le lancement) ; import du 08/10 02:13 (+ 23 pages, toutes
+  neuves, lues ensuite par la passe) ; restructuration du 09/10 vers 00:30 (le contenu de la
+  page 114 retrouvé en page 87 : pages 86-85 entièrement déjà vues, sautées en 12 s). Une passe
+  unique ne « finit » donc pas ce marchand ; seule une boucle le couvre.
+- **Déploiement : AUCUN pour l'instant** (Romain : « touche pas les VPS »). Le script détaché qui
+  devait relancer B à la fin de eww.gg a été arrêté (Romain relancera B lui-même). Au retour à
+  l'organisation normale : `git pull` + redémarrage de `aks-admin` (le serveur détend le groupe en
+  cibles — `targets_for` — et garde le module en cache) à un moment où aucun balayage n'est son
+  enfant, puis lancement de la boucle B depuis la console. Tant que la passe eww.gg tourne sur
+  cette VM, ne pas déployer ce commit sur une machine qui lancerait B : elle balaierait eww.gg en
+  même temps.
+
 ## 2026-10-07 — eww.gg (store 170) : fichier marchand (déclinaison Driffle), liste blanche, première passe lancée depuis l'admin
 
 - **Romain : « Store ID 170 stop B et lance le data entry pour ce nouveau shop, puis tu relanceras B
