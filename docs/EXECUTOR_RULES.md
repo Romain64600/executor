@@ -3909,9 +3909,9 @@ verrouillée Europe. 0 faux positif sur 86 820 lignes distinctes des runs de cet
 
 ### `[R73]` Greenmangaming (store 22) — la fiche produit fait foi : DRM, édition, pays exclus, ROW prouvé (2026-10-09)
 
-**Fichier écrit le 2026-10-09 (`src/merchants/greenmangaming.py`), PAS en liste blanche : aperçu à blanc
-d'abord (`docs/apercu_greenmangaming_2026-10-09.md`), liste blanche et groupe sur un go de Romain après
-lecture.** Romain : « Formons-nous sur un nouveau marchand. Choisis un marchand selon nos critères, soit
+**Fichier écrit le 2026-10-09 (`src/merchants/greenmangaming.py`) ; aperçu à blanc le même jour (218 entrées /
+482, dont 32 Steam ROW listées à part, `docs/apercu_greenmangaming_2026-10-09.md`) ; liste blanche et groupe A le
+même soir sur le go de Romain : « ok pour ROW sur les 32, go liste blanche groupe A ».** Romain : « Formons-nous sur un nouveau marchand. Choisis un marchand selon nos critères, soit
 assez facile à rentrer et qui ait des pending offers disponibles », puis, l'étude lue
 (`docs/PROCHAINS_MARCHANDS.md`, section 2026-10-09), mot pour mot : « go pour Greenmangaming avec ta
 règle R59, 1. L'executor continue de rentrer l'offre en ROW mais il vérifie que ce soit bien dispo en

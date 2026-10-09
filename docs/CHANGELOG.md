@@ -3,6 +3,15 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-10-09 (soir) — Greenmangaming en liste blanche, groupe A ; le seau ROW confirmé sur les 32 entrées de l'aperçu
+
+- **Romain : « ok pour ROW sur les 32, go liste blanche groupe A ».** `src/admin/auto_merchants.py` :
+  `("Greenmangaming", "22")` ; `src/merchant_groups.py` : groupe A (le plus léger), poids 482 (scan du
+  21/09). La lecture `[R73]` de la région est donc confirmée : pays exclus hors UE / UK / USA → « Steam ROW
+  (steamrow) ». Test `test_en_liste_blanche_groupe_a_apres_l_apercu`. Docs : EXECUTOR_RULES `[R73]`,
+  MERCHANTS, PROCHAINS_MARCHANDS, AGENTS. **Pas déployé** : les clones vivants prennent ce commit au prochain
+  pull + redémarrage de l'admin (moment sûr), Greenmangaming apparaît alors dans le groupe A de la console.
+
 ## 2026-10-09 (soir) — roll back du groupe C : deux groupes A et B, eww.gg dans le B ; le VPS 3 tournera sur la liste 17
 
 - **Romain : « sur la VM3, au lieu de faire tourner un groupe C, on va roll back. On va pas avoir de

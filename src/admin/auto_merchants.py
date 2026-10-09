@@ -119,6 +119,11 @@ AUTO_MERCHANTS: list[tuple[str, str]] = [
                                 # est la déclinaison), fiche lisible. Volume inconnu (absent du scan
                                 # du 21/09) : premier passage = la première passe réelle, lancée
                                 # seule depuis l'admin. Feed store 170.
+    ("Greenmangaming", "22"),   # Romain 2026-10-09 (« ok pour ROW sur les 32, go liste blanche
+                                # groupe A »), après l'aperçu à blanc du même jour (218 entrées /
+                                # 482, docs/apercu_greenmangaming_2026-10-09.md) : [R73], la fiche
+                                # fait foi (src/merchants/greenmangaming.py), lien d'affiliation
+                                # greenmangaming.sjv.io. Feed store 22.
 ]
 
 # Deliberately NOT suggested (enforcement is simply "absent from the list";

@@ -158,8 +158,9 @@ These are deliberate, Romain-reviewed calls. An adversarial audit re-derives the
   fiche quand le sku n'y est pas — non, c'est l'identité ; (g) lire `IsSellable` — non, une offre épuisée
   est à saisir ; (h) laisser entrer « 2 Pack » / « Bundle », ou un palier de la fiche que le titre ne
   nomme pas — non, refus ; (i) rendre aux hooks console la fiche de `u` au lieu de l'URL du feed — non,
-  leur grammaire est celle du feed (le sku porte la génération). PAS en liste blanche tant que Romain
-  n'a pas lu l'aperçu. EXECUTOR_RULES `[R73]`, `tests/test_merchants_greenmangaming_r73.py`.
+  leur grammaire est celle du feed (le sku porte la génération). **Liste blanche et groupe A le 09/10 au
+  soir, après l'aperçu à blanc (218 entrées / 482) : « ok pour ROW sur les 32, go liste blanche groupe A ».**
+  EXECUTOR_RULES `[R73]`, `tests/test_merchants_greenmangaming_r73.py`.
 
 - **eww.gg (store 170) : liste blanche et première passe SANS aperçu à blanc préalable — Romain,
   2026-10-07** (« Store ID 170 stop B et lance le data entry pour ce nouveau shop, puis tu relanceras

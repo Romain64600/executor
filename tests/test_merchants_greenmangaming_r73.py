@@ -337,9 +337,16 @@ class LeModule(unittest.TestCase):
         src = pathlib.Path(g.__file__).read_text(encoding="utf-8")
         self.assertIsNone(re.search(r"^\s*(?:from|import)\s+src\.(?:matcher|console_keys|merchants\.registry)\b", src, re.M))
 
-    def test_pas_en_liste_blanche_avant_l_apercu(self):
-        from src.admin.auto_merchants import AUTO_MERCHANTS
-        self.assertNotIn("Greenmangaming", [n for n, _ in AUTO_MERCHANTS])
+    def test_en_liste_blanche_groupe_a_apres_l_apercu(self):
+        """Romain, 2026-10-09, après l'aperçu (218 entrées / 482) : « ok pour ROW sur les 32, go liste
+        blanche groupe A »."""
+        from src.admin.auto_merchants import AUTO_MERCHANTS, rejection_reason
+        from src.merchant_groups import group_targets
+        self.assertIn(("Greenmangaming", "22"), AUTO_MERCHANTS)
+        self.assertIsNone(rejection_reason("Greenmangaming", "22"))
+        self.assertIsNotNone(rejection_reason("Greenmangaming", "17"))     # le store d'Allyouplay
+        self.assertIn(("Greenmangaming", "22"), group_targets("A"))
+        self.assertNotIn(("Greenmangaming", "22"), group_targets("B"))
 
 
 if __name__ == "__main__":

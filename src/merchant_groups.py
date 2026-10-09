@@ -71,6 +71,8 @@ PENDING_2026_09_21 = {
     # (14:25 le 07/10, 02:13 le 08/10, ~00:30 le 09/10), 104 pages × 100 lignes à la lecture du
     # 09/10 07:30 UTC après 3 100 créations — ~70 % des lignes entrent. De loin le plus gros feed.
     "eww.gg": 10400,
+    # Même scan du 21/09, à l'entrée de Greenmangaming en liste blanche (2026-10-09).
+    "Greenmangaming": 482,
 }
 
 # Hors groupes, avec la raison — un marchand absent des deux groupes n'est PAS un oubli.
@@ -90,7 +92,10 @@ GROUPS: dict[str, tuple[str, ...]] = {
     # + Discover.games (440) et Loaded (16), entrés le 2026-09-26 (Romain : « Go », groupe A
     # proposé) → ~13 810 lignes, toujours sous le B.
     "A": ("GameSeal", "G2A", "GameBoost", "Driffle", "Instant Gaming", "MMOGA",
-          "GamersOutlet", "GOG", "Gamesplanet FR", "Discover.games", "Loaded"),
+          "GamersOutlet", "GOG", "Gamesplanet FR", "Discover.games", "Loaded",
+          # + Greenmangaming (482 lignes au 21/09), entré le 2026-10-09 (Romain : « go liste blanche
+          # groupe A » — le plus léger, après l'aperçu à blanc : 218 entrées / 482).
+          "Greenmangaming"),
     # ~15 555 lignes : trois files moyennes et le reste — et Wyrel, entré en liste blanche le
     # 2026-09-24 avec 4 725 lignes, dont une bonne part refusée d'office (non-jeux, ROW).
     # Mis ici parce que le B était le plus léger ; le B passe donc devant le A (12 828).

@@ -18,7 +18,7 @@ Les marchands déjà en liste blanche sont dans `src/admin/auto_merchants.py` et
 | 4 | **Pixelcodes** (82) + **Software-codes** (6) | 1 547 + 1 538 | 1 377 + 1 365 (89 %) | **les produits du feed n'existent plus sur leurs sites** (API : « Product not found », 52 sur 52 testés ; sites devenus boutiques de logiciels) | à ne pas saisir ; liste « not found » en cours pour les marchands |
 | 5 | **Discover.games** (168) | 440 | 370 (84 %) | — | **fichier écrit le 25/09 (`[R60]`), essai à blanc : 106 candidats sur 150 lignes ; en liste blanche le 26/09, groupe A** |
 | 6 | **CDKeys → « Loaded »** (40) | 16 (21/09) | — | feed du jour à relire | **fichier écrit le 25/09 (`[R61]`, « Europe & UK » → Europe, sans région → GLOBAL) ; essai à blanc sur 16 lignes : 1 candidat ; en liste blanche le 26/09, groupe A** |
-| **1** | **Greenmangaming** (22) | 482 | 318 (66 %) | titre muet, mais `prodsku` dit la plateforme (PC 444, Xbox 32, PS4 5) et la **fiche** (JSON embarqué) dit tout : `Drm`, édition (`Name`), pays EXCLUS, `Code` = `prodsku` | **étudié et codé le 09/10** (`[R73]`, `greenmangaming.py`, décisions de Romain : R59 bornée + ROW prouvé, consoles avec Xbox + PC, Standard, go) ; **aperçu à blanc le 09/10 : 218 entrées / 482** (dont 32 ROW à confirmer, `apercu_greenmangaming_2026-10-09.md`) ; liste blanche et groupe sur son go après lecture |
+| ✓ | **Greenmangaming** (22) | 482 | 318 (66 %) | titre muet, mais `prodsku` dit la plateforme (PC 444, Xbox 32, PS4 5) et la **fiche** (JSON embarqué) dit tout : `Drm`, édition (`Name`), pays EXCLUS, `Code` = `prodsku` | **étudié et codé le 09/10** (`[R73]`, `greenmangaming.py`, décisions de Romain : R59 bornée + ROW prouvé, consoles avec Xbox + PC, Standard, go) ; **aperçu à blanc le 09/10 : 218 entrées / 482** (dont 32 ROW, `apercu_greenmangaming_2026-10-09.md`) ; **liste blanche le 09/10, groupe A** (« ok pour ROW sur les 32, go liste blanche groupe A ») |
 | ✓ | **Indiegala** (95) | 175 (21/09) | 30 (19 %, slug strict) | plateforme et région : ni titre ni URL ; la **fiche** les donne (« is provided via Steam Key », listes de pays, « Region locked product ») | **fichier écrit le 06/10** (`[R69]`), **aperçu à blanc le 06/10 : 34 entrées / 175** (`apercu_indiegala_2026-10-06.md`), **liste blanche le 06/10** (Romain : « go pour la liste blanche ») ; groupe à choisir ; Belmont's Curse (EU) reste refusée (Chypre ET les USA interdits), tant que Romain n'en décide pas autrement |
 | ✓ | **eww.gg** (170, id de page AKS 1011) | **~10 400** (mesuré le 09/10 pendant la première passe ; feed réimporté par AKS chaque jour) | **~70 %** (3 143 créées sur 39 h, 0 halte) | rien : grammaire = Driffle (même société, Driffle UAB), fiche lisible en HTTP | **fichier `eww.py` + liste blanche le 07/10** (instruction de Romain : « lance le data entry pour ce nouveau shop »), première passe seule depuis l'admin du 07/10, **groupe B le 09/10** (« On ajoutera ce marchand à la liste B » ; le groupe C de midi a été retiré le soir, roll back de Romain) |
 
@@ -119,6 +119,10 @@ nommées (Deluxe, Enhanced, Starter, Ancestral…) 19, Xbox 13 lignes (10 Xbox S
 page AKS, 2 « console: no declared generation » (« Switch Galaxy Ultra » — « Switch » dans un nom de jeu PC
 sans mot de boutique dans le titre —, « MLB THE SHOW 19 STUBS » — monnaie non reconnue), le reste à
 l'unité. Aucun refus « LOCK » : aucune fiche n'exclut l'UE, le Royaume-Uni ou les USA.
+
+**Décision finale de Romain (09/10, soir) : « ok pour ROW sur les 32, go liste blanche groupe A ».** Liste blanche
+(`src/admin/auto_merchants.py`) et groupe A (`src/merchant_groups.py`) le même soir ; déploiement sur les clones
+vivants au prochain moment sûr (pull + redémarrage de l'admin), hors de mon ressort tant que « touche pas les VPS » tient.
 
 ## 2026-10-07 — eww.gg : « Forme-toi sur ce marchand » (ID AKS 1011, ID feed ?)
 
