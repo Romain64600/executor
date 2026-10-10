@@ -976,6 +976,20 @@ croisière le 07/10) il suspend les autres marchands du groupe une journée par 
 
 ## GameBoost (store 157, liste blanche safe-auto depuis le 2026-09-16)
 
+**R47, suite — Romain, 2026-10-10 : « 2 » = lire la fiche par un accès CONSENTI.** Question du jour : pourquoi
+« Homefront: The Revolution Freedom Fighter Bundle » et « Riders Republic - Complete Edition » sont refusés —
+réponse : R47, pas de région dans le titre ; sur la passe du 09/10 (39 pages, 3 825 lignes) : 3 226 cartes
+cadeaux, **285 jeux refusés par R47**, 3 candidats. Sondes du 10/10, lecture seule : la fiche et le sitemap
+répondent 403 (page de blocage Cloudflare, pas un défi JS), les lignes du feed AKS n'ont ni `sku` ni région,
+l'URL ne code pas la région (son dernier jeton est le dernier mot du titre). Des trois voies proposées
+(garder le refus / lire la fiche / « sans région = GLOBAL », déconseillée), Romain a choisi la lecture par un
+accès consenti : GameBoost publie son programme sur Impact.com et Admitad — AKS est déjà partenaire Impact
+(les liens Allyouplay et Greenmangaming sont des `sjv.io`) ; le **catalogue produit Impact** de GameBoost (ou
+un champ de feed / une API côté GameBoost) donnerait région et plateforme par identifiant produit (le `-66502`
+de l'URL). Un navigateur de contournement n'est pas une option de ce projet (`[R72]`, Camoufox mis de côté le
+07/10). À coder quand l'accès existe : un résolveur GameBoost sur le modèle `[R68]`, lecture par identifiant,
+fail-closed sur tout produit absent du catalogue.
+
 - **Fichier** : `src/merchants/gameboost.py`. **Hors liste blanche safe-auto**
   (`src/admin/auto_merchants.py`) : le fichier sert aux runs **supervisés** (02 → 03 → 04 →
   05), jamais à `/auto`.
