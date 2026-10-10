@@ -25,7 +25,7 @@ import os
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Mapping
 
 MARKER_NAME = "active_run.json"
 
@@ -64,6 +64,19 @@ class ActiveRunExists(RuntimeError):
             f"pid {marker.get('pid')}) — attends sa fin ou arrête-le dans son terminal"
         )
         self.marker = marker
+
+
+SOURCE_ENV = "AKS_RUN_SOURCE"
+
+
+def source_from_env(environ: "Mapping[str, str] | None" = None) -> str:
+    """« admin » quand le processus a été lancé par l'admin (`SubmitManager._spawn` pose
+    ``AKS_RUN_SOURCE=admin``), « cli » sinon — deux valeurs, rien d'autre n'est inventé
+    (2026-10-10 : le marqueur d'un balayage lancé depuis la console disait « cli », et la console
+    refusait un second lancement en parlant d'« un run lancé en ligne de commande »)."""
+
+    env = os.environ if environ is None else environ
+    return "admin" if str(env.get(SOURCE_ENV, "")).strip().lower() == "admin" else "cli"
 
 
 def write_marker(repo_root: Path | str, *, run_id: str, kind: str,

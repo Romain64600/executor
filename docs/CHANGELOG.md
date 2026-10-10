@@ -3,6 +3,20 @@
 Notable changes, newest first. Dates are UTC. Complements [`AUDIT.md`](AUDIT.md)
 (findings) and the roadmap in [`../README.md`](../README.md).
 
+## 2026-10-10 — un balayage lancé depuis l'admin n'est plus annoncé comme « lancé en ligne de commande »
+
+- **Romain : « tu relances mal, tu devrais relancer depuis l'admin : ✖ un run lancé en ligne de commande
+  est en cours (data_entry_auto sur 20261010-145433-auto, pid 1335027) — attends sa fin ou arrête-le dans
+  son terminal ».** Le run L'ÉTAIT, lancé depuis l'admin (fils d'`aks-admin`, `busy.source = "admin"`) ;
+  le refus — correct : un seul balayage à la fois — portait la mauvaise étiquette, parce que
+  `scripts/10_data_entry_auto.py` et `scripts/05_submit.py` écrivaient leur marqueur
+  (`state/active_run.json`) avec `source="cli"` quel que soit le lanceur, et `SubmitManager._ensure_free`
+  lisait ce marqueur avant son propre état. Désormais `_spawn` pose `AKS_RUN_SOURCE=admin` dans
+  l'environnement du fils, les deux scripts écrivent `run_marker.source_from_env()` (« admin » / « cli »,
+  rien d'autre), et le refus devant un marqueur « admin » dit « un balayage lancé depuis l'admin est déjà
+  en cours … arrête-le avec « Arrêter » » (code `submit_in_progress`). Un vrai run de terminal garde son
+  message. Tests : `tests/test_cli_run_visibility.py`. À déployer au prochain moment sûr de chaque VPS.
+
 ## 2026-10-09 (soir) — Greenmangaming en liste blanche, groupe A ; le seau ROW confirmé sur les 32 entrées de l'aperçu
 
 - **Romain : « ok pour ROW sur les 32, go liste blanche groupe A ».** `src/admin/auto_merchants.py` :

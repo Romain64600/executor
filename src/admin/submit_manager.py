@@ -326,6 +326,15 @@ class SubmitManager:
         # opaque error (Romain 2026-09-17).
         marker = read_marker(self.repo_root)
         if marker is not None:
+            if str(marker.get("source") or "cli") == "admin":
+                # Son propre fils (ou celui d'un admin redémarré) : le dire tel quel — le
+                # bouton « Arrêter » le concerne, pas « son terminal » (2026-10-10).
+                raise SubmitStartError(
+                    "submit_in_progress",
+                    f"un balayage lancé depuis l'admin est déjà en cours "
+                    f"({marker.get('kind')} sur {marker.get('run_id')}, pid {marker.get('pid')}) "
+                    f"— un seul à la fois : attends sa fin ou arrête-le avec « Arrêter »",
+                )
             raise SubmitStartError(
                 "cli_run_in_progress",
                 f"un run lancé en ligne de commande est en cours "
@@ -1180,12 +1189,18 @@ class SubmitManager:
     def _spawn(
         self, run_dir: Path, *, kind: str, argv: list[str], meta: dict[str, Any]
     ) -> dict[str, Any]:
+        # Le fils sait qu'il est lancé PAR L'ADMIN : il écrit son marqueur avec `source="admin"`
+        # (`src/run_marker.py`), et la console ne le prend plus pour « un run lancé en ligne de
+        # commande » (Romain, 2026-10-10 : « tu relances mal, tu devrais relancer depuis
+        # l'admin » — le run l'était ; seule l'étiquette du marqueur disait le contraire).
+        env = {**os.environ, "AKS_RUN_SOURCE": "admin"}
         proc = subprocess.Popen(
             argv,
             cwd=str(self.repo_root),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            env=env,
         )
         try:
             state = {

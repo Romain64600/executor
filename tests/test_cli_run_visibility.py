@@ -171,6 +171,59 @@ class TheManagerSeesCliRunsTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "cli_run_in_progress")
         self.assertIn("cli-run", str(ctx.exception))
 
+    def test_a_console_launch_refused_by_the_admins_own_run_says_so(self):
+        """2026-10-10 : le marqueur d'un balayage lancé DEPUIS L'ADMIN disait « cli », et la console
+        refusait un second lancement en parlant d'« un run lancé en ligne de commande … arrête-le
+        dans son terminal » (Romain : « tu relances mal, tu devrais relancer depuis l'admin »). Le
+        fils de l'admin se déclare « admin » ; le refus le dit, et renvoie au bouton « Arrêter »."""
+        from src.admin.submit_manager import SubmitStartError
+        mgr = self._manager()
+        run_marker.write_marker(self.tmp, run_id="20261010-145433-auto", kind="data_entry_auto", source="admin")
+        self.assertEqual(mgr.busy()["source"], "admin")
+        with self.assertRaises(SubmitStartError) as ctx:
+            mgr._ensure_free()
+        self.assertEqual(ctx.exception.code, "submit_in_progress")
+        self.assertIn("depuis l'admin", str(ctx.exception))
+        self.assertIn("Arrêter", str(ctx.exception))
+        self.assertNotIn("ligne de commande", str(ctx.exception))
+
+    def test_the_source_comes_from_the_environment_the_admin_sets(self):
+        self.assertEqual(run_marker.source_from_env({}), "cli")
+        self.assertEqual(run_marker.source_from_env({run_marker.SOURCE_ENV: "admin"}), "admin")
+        self.assertEqual(run_marker.source_from_env({run_marker.SOURCE_ENV: "autre"}), "cli")
+        # les deux points d'entrée écrivent la source réelle, plus « cli » en dur
+        root = pathlib.Path(__file__).resolve().parents[1]
+        for script in ("scripts/10_data_entry_auto.py", "scripts/05_submit.py"):
+            src = (root / script).read_text(encoding="utf-8")
+            self.assertIn("source=run_marker.source_from_env()", src, script)
+            self.assertNotIn('source="cli"', src, script)
+
+    def test_spawn_tells_the_child_it_is_the_admin(self):
+        import subprocess
+        from unittest import mock
+        mgr = self._manager()
+        seen = {}
+
+        class _Proc:
+            pid = 4242
+            returncode = None
+            stdout = iter(())
+            def poll(self): return None
+            def wait(self, timeout=None): return 0
+            def communicate(self, timeout=None): return ("", "")
+
+        def fake_popen(argv, **kw):
+            seen.update(kw); return _Proc()
+
+        run_dir = self.tmp / "runs" / "r-admin"; run_dir.mkdir(parents=True)
+        with mock.patch.object(subprocess, "Popen", side_effect=fake_popen):
+            try:
+                mgr._spawn(run_dir, kind="data_entry_auto", argv=["python3", "-c", "pass"], meta={})
+            except Exception:
+                pass            # ce qui suit le Popen (fils de lecture, état) n'est pas le sujet
+        self.assertEqual(seen.get("env", {}).get(run_marker.SOURCE_ENV), "admin")
+        self.assertIn("PATH", seen.get("env", {}), "l'environnement du service est conservé")
+
     def test_the_guard_is_lifted_once_the_cli_run_is_gone(self):
         mgr = self._manager()
         run_marker.write_marker(self.tmp, run_id="cli-run", kind="submit", pid=_dead_pid())

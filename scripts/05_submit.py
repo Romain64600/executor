@@ -397,7 +397,7 @@ def _main() -> int:
     # sortant. Le sweep continuait, mais la console ne le voyait plus et acceptait un nouveau
     # lancement. Un enfant ne s'annonce donc que si personne n'est déjà annoncé.
     if run_marker.read_marker(ROOT) is None:
-        run_marker.write_marker(ROOT, run_id=run_id, kind="submit", source="cli")
+        run_marker.write_marker(ROOT, run_id=run_id, kind="submit", source=run_marker.source_from_env())
         atexit.register(run_marker.clear_marker, ROOT, run_id)
 
     # Effective feed-scan ceiling — AUTO from the feed's own page count unless

@@ -1145,7 +1145,7 @@ def main() -> int:
     # `runs/<run-id>/` vide (audit du 2026-09-18). En boucle, il porte l'id du LANCEMENT d'un
     # bout à l'autre : la console suit ce run, et lit `loop.json` pour la passe courante.
     try:
-        run_marker.write_marker(ROOT, run_id=run_id, kind="data_entry_auto", source="cli")
+        run_marker.write_marker(ROOT, run_id=run_id, kind="data_entry_auto", source=run_marker.source_from_env())
     except run_marker.ActiveRunExists as exc:
         print(json.dumps({"aborted": True, "reason": str(exc), "active": exc.marker},
                          ensure_ascii=False, indent=2))
