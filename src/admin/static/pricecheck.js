@@ -218,7 +218,10 @@ const EN = {
  " au démarrage du moniteur": " at the monitor's start",
  " sans conclusion": " without a conclusion",
  "Aucun recalcul encore.": "No recalculation yet.",
- "Recontrôler tout de suite les reports ouverts, sur leur page, avec les règles du moment": "Re-check the open reports right away, on their page, with the current rules"
+ "Recontrôler tout de suite les reports ouverts, sur leur page, avec les règles du moment": "Re-check the open reports right away, on their page, with the current rules",
+ "tous les reports réglés, le plus récent en haut": "every settled report, the most recently settled first",
+ "Aucun report archivé pour ces filtres.": "No archived report for these filters.",
+ "Archives": "Archive"
 };
 const T = (fr) => (LANG === "en" && typeof fr === "string" && Object.prototype.hasOwnProperty.call(EN, fr) ? EN[fr] : fr);
 
@@ -395,8 +398,9 @@ const PARTS = [
 // Romain, 06/10/2026 : « et une fois que ça a été traité, il faudrait les archiver sur un autre onglet ». Two tabs:
 // « En cours », what is left to do (to discuss, to handle), and « Archives », the reports decided Vrai positif or Faux
 // positif, or found repaired (cleared by a rule, verified OK) by the monitor. A report to discuss is never archived.
-const ARCHIVE_PARTS = MODE_GROUPS.map(([mode, cls, label, what, none]) =>
-  [mode, cls, label, what, none.replace(T("Aucun report"), T("Aucun report archivé"))]);
+// Romain, 10/10/2026 (« pourquoi les reports archivés ne sont pas en ordre chronologique DESC ? ») : the archive is ONE list,
+// the most recently settled report first, whatever its mode; the "Mode" filter still narrows it to the tops or the homepage.
+const ARCHIVE_PARTS = [["all", "pc-archive", T("Archives"), T("tous les reports réglés, le plus récent en haut"), T("Aucun report archivé pour ces filtres.")]];
 let TAB = "current";  // "current" | "archive"
 const PART_LABEL = { "discuss": T("« À discuter », en tête de la liste"), "top-games": T("« Price check top »"),
   "homepage": T("« Price check homepage »") };
@@ -745,8 +749,8 @@ function render() {
   const parts = [];
   for (const [part, cls, label, what, none] of (TAB === "archive" ? ARCHIVE_PARTS : PARTS)) {
     const discuss = part === "discuss";
-    if (only && !discuss && only !== part) continue;  // « À discuter » always shows (06/10/2026)
-    const items = shown.filter((r) => shownPart(r) === part);
+    if (only && !discuss && part !== "all" && only !== part) continue;  // « À discuter » always shows (06/10/2026)
+    const items = shown.filter((r) => (part === "all" ? (!only || shownPart(r) === only) : shownPart(r) === part));
     if (TAB === "archive") items.sort(bySettled);
     const open = items.filter(isOpen).length;
     const tofix = items.filter(isToFix).length;

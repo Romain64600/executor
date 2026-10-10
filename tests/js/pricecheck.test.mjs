@@ -867,7 +867,7 @@ test("a card put « à discuter » stays in place a few seconds, then goes up; a
   settle();
   assert.equal(partOfCard(c, TOPR.offer), null, "a handled report stays in « En cours »");
   await openTab(c, "archive");
-  assert.equal(partOfCard(c, TOPR.offer), "Price check top");
+  assert.equal(partOfCard(c, TOPR.offer), "Archives");  // 10/10/2026 : one list for the archive
 });
 
 // Romain, 06/10/2026 : « et une fois que ça a été traité, il faudrait les archiver sur un autre onglet ».
@@ -883,8 +883,9 @@ test("handled reports are archived in another tab, what is left to do stays in �
   assert.equal(c.$("#tab-archive").getAttribute("aria-pressed"), "true");
   const order = layout(c);
   assert.ok(!order.some((x) => x.startsWith("H3:💬 À discuter")), "the archives have a part to discuss");
-  assert.ok(order[0].startsWith("H3:Price check top"), order[0]);
-  assert.equal(order[1], "DIV:Aucun report archivé sur les tops pour ces filtres.");
+  // 10/10/2026 : one list for the archive, whatever the mode
+  assert.ok(order[0].startsWith("H3:Archives") && order[0].includes("2 reports"), order[0]);
+  assert.ok(!order.some((x) => x.startsWith("H3:Price check top")), "the archive is split by mode");
   // 09/10/2026 : the archive is ordered by settlement, newest first (FIXED repaired 02/10 18:30, TRAP decided 01/10 11:00)
   assert.deepEqual(shown(c), ["offer-" + FIXED.offer, "offer-" + TRAP.offer]);
   assert.ok(c.$("#pc-tab-note").textContent.startsWith("Les reports réglés"), c.$("#pc-tab-note").textContent);

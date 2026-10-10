@@ -334,7 +334,7 @@ class PriceCheckConsoleSimulationTests(unittest.TestCase):
             # 06/10/2026 : la partie « À discuter », en tête, bien visible (« il faut pas qu'on l'oublie »)
             "à discuter, une partie à part": ('const partOf = (r) => (isToDiscuss(r) ? "discuss" : MODE_CARD[r.mode] ? r.mode : "");',
                                               'const partOf = (r) => (MODE_CARD[r.mode] ? r.mode : "");'),
-            "à discuter toujours affiché": ("if (only && !discuss && only !== part) continue;", "if (only && only !== part) continue;"),
+            "à discuter toujours affiché": ("if (only && !discuss && part !== "all" && only !== part) continue;", "if (only && only !== part) continue;"),
             "à discuter masqués comptés": (
                 "const hidden = discuss ? reports.filter((r) => shownPart(r) === part && shownTab(r) === TAB).length - items.length : 0;",
                 "const hidden = 0;"),
