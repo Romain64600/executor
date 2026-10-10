@@ -164,7 +164,6 @@ class LePlan(unittest.TestCase):
              "data_entry_by_urls_submit"),
             ({"busy": {"run_id": "r", "kind": "data_entry_auto", "source": "cli"}}, "(cli)"),
             ({"admin_children": 2}, "sans run déclaré"),
-            ({"chromium_held": False}, "Chromium n'est pas bloqué"),
         ):
             with self.subTest(motif):
                 plan = self._plan(**kw)

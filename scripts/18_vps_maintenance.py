@@ -492,10 +492,9 @@ def plan_for(st: dict[str, Any], reboot_policy: str) -> dict[str, Any]:
     if not st.get("sudo"):
         plan["blocked"] = "sudo sans mot de passe indisponible — maintenance reportée"
         return plan
-    if st.get("chromium_held") is False:
-        plan["blocked"] = ("Chromium n'est pas bloqué en version (apt-mark hold) — la mise à jour "
-                           "le changerait sous le navigateur de saisie ; maintenance reportée")
-        return plan
+    # Romain, 10/10/2026 (« Mets Chromium à jour, lève le hold ») : Chromium suit les mises à jour de sécurité comme les
+    # autres paquets ; l'unité force toujours l'UA Chrome/149.0.0.0, l'invariant tient. `status` dit encore si un hold est
+    # posé (`chromium_held`), à titre d'information ; un SIGTRAP après mise à jour se voit dans les alertes de la vue d'ensemble.
     if st.get("admin_children") is None:
         plan["blocked"] = ("processus d'aks-admin illisibles (systemctl / pgrep en erreur) — on ne "
                            "saurait ni arrêter ni prouver l'arrêt ; maintenance reportée")

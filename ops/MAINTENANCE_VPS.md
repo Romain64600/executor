@@ -126,6 +126,8 @@ passage qui le tire tourne encore avec l'ancien agent).
 * **La relance est une écriture** : elle n'a lieu que sur preuve (services actifs, admin qui
   répond, `01_check_invariants.py` vert et faisant foi, tableau de bord wp-admin prouvé). Une
   session AKS perdue au redémarrage = transfert de cookies par Romain, jamais par le code.
-* **Chromium reste bloqué** (`apt-mark hold chromium chromium-common chromium-sandbox`) : son
-  User-Agent est un invariant ; `status` le vérifie (`chromium_held`).
+* **Chromium n'est plus bloqué** depuis le 10/10/2026 (Romain : « Mets Chromium à jour, lève le hold ») : il suit les
+  mises à jour de sécurité comme les autres paquets (154.0.8037.92 installé le 10/10, redémarré sans SIGTRAP, invariants
+  verts). L'unité force toujours l'UA `Chrome/149.0.0.0`, l'invariant tient ; `status` dit encore si un hold est posé
+  (`chromium_held`), à titre d'information.
 * **Jamais pendant une urgence sur une machine** : `--only` / `--skip` choisissent les VPS.
